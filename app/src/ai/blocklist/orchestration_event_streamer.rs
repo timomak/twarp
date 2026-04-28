@@ -179,6 +179,14 @@ impl OrchestrationEventStreamer {
                     .unwrap_or(0)
             );
         }
+        // The driver-hosted path stamps `parent_agent_id` onto the
+        // conversation immediately before calling `register_consumer`,
+        // which is often *after* `ConversationServerTokenAssigned` has
+        // already been processed by `on_server_token_assigned`. In that
+        // case `self_run_id` was never registered. Re-run the helper
+        // here so eligibility re-evaluation sees a non-empty
+        // `watched_run_ids` and `start_sse_connection` opens the stream.
+        self.ensure_child_self_run_id_registered(conversation_id, ctx);
         self.reevaluate_eligibility(conversation_id, ctx);
     }
 
@@ -282,6 +290,29 @@ impl OrchestrationEventStreamer {
         conversation_id: AIConversationId,
         ctx: &mut ModelContext<Self>,
     ) {
+        // Solo exclusion + child registration both flow through the
+        // shared helper, which is also called from `register_consumer`
+        // and `register_watched_run_id`. This keeps the invariant
+        // "if the conversation is recognized as a child, self_run_id
+        // is in watched_run_ids" true regardless of which signal
+        // arrives first — the parent's `parent_conversation_id`
+        // (parent's GUI) or the driver's `parent_agent_id` stamp
+        // (driver-hosted process), which can land *after* the
+        // ConversationServerTokenAssigned event has already fired.
+        self.ensure_child_self_run_id_registered(conversation_id, ctx);
+    }
+
+    /// Idempotently registers the conversation's `self_run_id` into
+    /// `watched_run_ids` if the conversation is recognized as a child
+    /// (and not a passive view of a remote run). Safe to call multiple
+    /// times; safe to call before `is_child_agent_conversation()`
+    /// becomes true (it's a no-op then and re-running it later picks up
+    /// the change).
+    fn ensure_child_self_run_id_registered(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
         let (run_id, is_child) = {
             let history = BlocklistAIHistoryModel::as_ref(ctx);
             let Some(conversation) = history.conversation(&conversation_id) else {
@@ -298,17 +329,26 @@ impl OrchestrationEventStreamer {
             let Some(run_id) = conversation.run_id() else {
                 return;
             };
-            (run_id, conversation.is_child_agent_conversation())
+            // Mirrors the broader child-role check in the streamer:
+            // either the parent has a local placeholder
+            // (parent_conversation_id) or the conversation knows the
+            // parent's run_id (parent_agent_id under v2).
+            let is_child = conversation.is_child_agent_conversation()
+                || conversation.parent_agent_id().is_some();
+            (run_id, is_child)
         };
 
-        // Solo exclusion: a non-child conversation registers its own
-        // run_id only when it later becomes a parent (via
-        // `register_watched_run_id`). At server-token time we register
-        // self_run_id only for children, since for them this run_id IS
-        // their inbox.
-        if is_child {
-            self.register_watched_run_id(conversation_id, run_id, ctx);
+        if !is_child {
+            return;
         }
+        let already_watched = self
+            .watched_run_ids
+            .get(&conversation_id)
+            .is_some_and(|set| set.contains(&run_id));
+        if already_watched {
+            return;
+        }
+        self.register_watched_run_id(conversation_id, run_id, ctx);
     }
 
     fn on_streaming_exchange_updated(
