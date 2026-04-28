@@ -42,9 +42,9 @@ const DIALOG_OFFSET_PIXELS: f32 = -16.;
 /// row.
 const LIST_ITEM_AGENT_SIZE: f32 = 22.;
 /// Extra overhang past the default overlay position, as a fraction of
-/// `LIST_ITEM_AGENT_SIZE`. Pushes the badge all the way to the bounding box's BR
-/// corner, matching the Figma natural overlap; the conversation list reads better
-/// with the status sitting slightly further out than the other surfaces.
+/// `LIST_ITEM_AGENT_SIZE`. Pushes the badge all the way to the bounding box's BR corner;
+/// the conversation list reads better with the status sitting slightly further out than
+/// on the other surfaces.
 const LIST_ITEM_OVERLAY_EXTRA_OVERHANG: f32 = 0.05;
 
 /// Generate a position ID for a conversation list item

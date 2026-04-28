@@ -229,12 +229,12 @@ impl CanonicalRunState {
 
     /// Task-card inputs for this state, if it can surface as a task card.
     /// Cards only exist for cloud/ambient runs; local states return `None`.
-    fn task_inputs(&self) -> Option<(Option<&'static str>, ConversationStatus)> {
+    fn task_inputs(&self) -> Option<(Harness, ConversationStatus)> {
         use CanonicalRunState::*;
         match self {
-            CloudOzInProgress => Some((Some("oz"), ConversationStatus::InProgress)),
+            CloudOzInProgress => Some((Harness::Oz, ConversationStatus::InProgress)),
             CloudClaudePreDispatch | CloudClaudeInProgress => {
-                Some((Some("claude"), ConversationStatus::InProgress))
+                Some((Harness::Claude, ConversationStatus::InProgress))
             }
             PlainTerminal
             | LocalOzInProgress
@@ -260,8 +260,8 @@ fn every_canonical_state_produces_consistent_icon_across_surfaces() {
             "terminal surface disagreed for {state:?}"
         );
 
-        if let Some((harness_name, status)) = state.task_inputs() {
-            let task_variant = agent_icon_variant_for_task(harness_name, status.clone());
+        if let Some((harness, status)) = state.task_inputs() {
+            let task_variant = agent_icon_variant_for_task(harness, status.clone());
             let task_actual = AgentIconFields::from_variant(&task_variant);
             // Task cards always populate status (they derive it from `ConversationOrTask::status`).
             let expected_for_task = expected.clone().map(|mut fields| {
@@ -305,19 +305,23 @@ fn cli_agent_from_harness_maps_known_harnesses() {
         CLIAgent::from_harness(Harness::Gemini),
         Some(CLIAgent::Gemini)
     );
+    assert_eq!(
+        CLIAgent::from_harness(Harness::OpenCode),
+        Some(CLIAgent::OpenCode)
+    );
 }
 
 #[test]
-fn task_with_missing_or_unknown_harness_falls_back_to_oz() {
-    // Missing harness entry.
-    let variant = agent_icon_variant_for_task(None, ConversationStatus::Success);
+fn task_with_oz_or_unknown_harness_renders_as_oz() {
+    // Oz harness explicitly: local Oz is the spec-defined fallback.
+    let variant = agent_icon_variant_for_task(Harness::Oz, ConversationStatus::Success);
     let fields = AgentIconFields::from_variant(&variant).unwrap();
     assert!(!fields.is_cli);
     assert!(fields.is_ambient);
 
-    // Unknown harness name → `Harness::from_config_name` falls back to Oz.
-    let variant =
-        agent_icon_variant_for_task(Some("not-a-known-harness"), ConversationStatus::Success);
+    // Unknown harness (e.g. server surfaced a future variant): also falls back to Oz so we
+    // don't render an unbranded gray circle.
+    let variant = agent_icon_variant_for_task(Harness::Unknown, ConversationStatus::Success);
     let fields = AgentIconFields::from_variant(&variant).unwrap();
     assert!(!fields.is_cli);
     assert!(fields.is_ambient);

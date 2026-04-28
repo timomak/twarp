@@ -165,18 +165,19 @@ impl AgentNotificationsModel {
                         CLIAgent::Codex => "Notification from Codex",
                         _ => "Task completed.",
                     };
-                    let is_ambient = is_terminal_view_ambient(*terminal_view_id, ctx);
+                    let metadata = TerminalViewMetadata::lookup(*terminal_view_id, ctx);
                     self.add_notification(
                         title,
                         message.to_owned(),
                         NotificationCategory::Complete,
                         NotificationSourceAgent::CLI {
                             agent: *agent,
-                            is_ambient,
+                            is_ambient: metadata.is_ambient,
                         },
                         NotificationOrigin::CLISession(*terminal_view_id),
                         *terminal_view_id,
                         vec![],
+                        metadata.branch,
                         ctx,
                     );
                 }
@@ -184,7 +185,7 @@ impl AgentNotificationsModel {
                     let title = session_context
                         .display_title()
                         .unwrap_or_else(|| format!("{} needs attention", agent.display_name()));
-                    let is_ambient = is_terminal_view_ambient(*terminal_view_id, ctx);
+                    let metadata = TerminalViewMetadata::lookup(*terminal_view_id, ctx);
                     self.add_notification(
                         title,
                         message
@@ -193,11 +194,12 @@ impl AgentNotificationsModel {
                         NotificationCategory::Request,
                         NotificationSourceAgent::CLI {
                             agent: *agent,
-                            is_ambient,
+                            is_ambient: metadata.is_ambient,
                         },
                         NotificationOrigin::CLISession(*terminal_view_id),
                         *terminal_view_id,
                         vec![],
+                        metadata.branch,
                         ctx,
                     );
                 }
@@ -318,8 +320,10 @@ impl AgentNotificationsModel {
         }
 
         let title = latest_query.unwrap_or_else(|| "Agent task".to_owned());
-        let is_ambient = is_terminal_view_ambient(terminal_view_id, ctx);
-        let oz_agent = NotificationSourceAgent::Oz { is_ambient };
+        let metadata = TerminalViewMetadata::lookup(terminal_view_id, ctx);
+        let oz_agent = NotificationSourceAgent::Oz {
+            is_ambient: metadata.is_ambient,
+        };
 
         match status {
             // When the agent resumes its work, clear stale notifications.
@@ -336,6 +340,7 @@ impl AgentNotificationsModel {
                     origin,
                     terminal_view_id,
                     artifacts,
+                    metadata.branch,
                     ctx,
                 );
             }
@@ -349,6 +354,7 @@ impl AgentNotificationsModel {
                     origin,
                     terminal_view_id,
                     artifacts,
+                    metadata.branch,
                     ctx,
                 );
             }
@@ -361,6 +367,7 @@ impl AgentNotificationsModel {
                     origin,
                     terminal_view_id,
                     vec![],
+                    metadata.branch,
                     ctx,
                 );
             }
@@ -374,6 +381,7 @@ impl AgentNotificationsModel {
                     origin,
                     terminal_view_id,
                     artifacts,
+                    metadata.branch,
                     ctx,
                 );
             }
@@ -411,6 +419,7 @@ impl AgentNotificationsModel {
         origin: NotificationOrigin,
         terminal_view_id: EntityId,
         artifacts: Vec<Artifact>,
+        branch: Option<String>,
         ctx: &mut ModelContext<Self>,
     ) {
         if !*AISettings::as_ref(ctx).show_agent_notifications {
@@ -418,7 +427,6 @@ impl AgentNotificationsModel {
         }
 
         let is_visible = is_terminal_view_visible(terminal_view_id, ctx);
-        let branch = resolve_git_branch_for_terminal_view(terminal_view_id, ctx);
         let item = NotificationItem::new(
             title,
             message,
@@ -512,6 +520,30 @@ fn window_and_tab_idx_id_for_conversation(
         })
 }
 
+/// Per-notification metadata derived from a single [`TerminalView`] lookup. Both fields
+/// are read on the same emit path, so we resolve the view once and pass the projection
+/// down rather than walking the workspace tree for each.
+struct TerminalViewMetadata {
+    is_ambient: bool,
+    branch: Option<String>,
+}
+
+impl TerminalViewMetadata {
+    fn lookup(terminal_view_id: EntityId, app: &AppContext) -> Self {
+        let Some(terminal_view) = find_terminal_view_by_id(terminal_view_id, app) else {
+            return Self {
+                is_ambient: false,
+                branch: None,
+            };
+        };
+        let view = terminal_view.as_ref(app);
+        Self {
+            is_ambient: view.is_ambient_agent_session(app),
+            branch: view.current_git_branch(app),
+        }
+    }
+}
+
 fn find_terminal_view_by_id(
     terminal_view_id: EntityId,
     app: &AppContext,
@@ -529,26 +561,6 @@ fn find_terminal_view_by_id(
         }
     }
     None
-}
-
-fn resolve_git_branch_for_terminal_view(
-    terminal_view_id: EntityId,
-    app: &AppContext,
-) -> Option<String> {
-    find_terminal_view_by_id(terminal_view_id, app)
-        .and_then(|terminal_view| terminal_view.as_ref(app).current_git_branch(app))
-}
-
-fn is_terminal_view_ambient(terminal_view_id: EntityId, app: &AppContext) -> bool {
-    find_terminal_view_by_id(terminal_view_id, app)
-        .map(|terminal_view| {
-            terminal_view
-                .as_ref(app)
-                .ambient_agent_view_model()
-                .as_ref(app)
-                .is_ambient_agent()
-        })
-        .unwrap_or(false)
 }
 
 fn active_focused_terminal_id(app: &AppContext) -> Option<EntityId> {

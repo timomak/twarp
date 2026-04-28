@@ -937,21 +937,19 @@ impl TerminalView {
     }
 
     /// Returns the conversation status for display purposes, suppressing the status when the
-    /// conversation is empty (no exchanges yet). This avoids showing a misleading "In progress"
-    /// indicator when a new conversation hasn't started streaming, except when a shell command
-    /// is actively long-running or the cloud environment is still spinning up — those
-    /// InProgress states are real and should always surface.
+    /// conversation is empty (no exchanges yet) AND nothing else makes the run "busy". This
+    /// avoids showing a misleading "In progress" indicator on a brand-new conversation; real
+    /// InProgress states (long-running shell commands, cloud-environment setup) come through
+    /// because [`Self::selected_conversation_status`] surfaces them as `InProgress`.
     pub fn selected_conversation_status_for_display(
         &self,
         ctx: &AppContext,
     ) -> Option<ConversationStatus> {
-        if self.selected_conversation_is_empty(ctx)
-            && !self.is_long_running()
-            && !self.is_in_cloud_agent_setup_phase(ctx)
-        {
-            None
+        let status = self.selected_conversation_status(ctx)?;
+        if matches!(status, ConversationStatus::InProgress) || !self.selected_conversation_is_empty(ctx) {
+            Some(status)
         } else {
-            self.selected_conversation_status(ctx)
+            None
         }
     }
 

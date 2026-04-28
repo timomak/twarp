@@ -21,12 +21,10 @@ const OZ_AMBIENT_BACKGROUND_COLOR: ColorU = ColorU {
     a: 255,
 };
 
-// Sub-component size ratios, expressed as fractions of `total_size`. Match the Figma
-// reference (https://www.figma.com/design/chk9pwt35jTJhf9KnHmZyE/Components?node-id=6447-4288):
-// in a `total` box the brand circle is ~76% wide and the status badge is ~57% wide,
-// with the badge's bottom-right anchored at the box's bottom-right corner. With these
-// ratios the badge center sits *inside* the brand circle (not on its edge), giving the
-// design's intended overlap.
+// Sub-component size ratios, expressed as fractions of `total_size`. The brand circle is
+// ~76% wide and the status badge is ~57% wide, with the badge's bottom-right anchored at
+// the box's bottom-right corner. With these ratios the badge center sits *inside* the
+// brand circle (not on its edge).
 const CIRCLE_RATIO: f32 = 0.76;
 const ICON_RATIO: f32 = 0.43;
 const BADGE_RATIO: f32 = 0.57;

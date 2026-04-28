@@ -261,14 +261,10 @@ impl AmbientAgentViewModel {
     }
 
     /// Returns the [`CLIAgent`] corresponding to the currently selected harness when it is a
-    /// third-party harness (e.g. Claude, Gemini).
-    /// Returns `None` for [`Harness::Oz`] and when [`FeatureFlag::AgentHarness`] is disabled.
+    /// third-party harness (e.g. Claude, Gemini). Returns `None` for [`Harness::Oz`].
     /// Used to drive the correct tab icon for a cloud run as soon as a non-oz harness is
     /// selected, even before the CLI session is registered with [`CLIAgentSessionsModel`].
     pub fn selected_third_party_cli_agent(&self) -> Option<CLIAgent> {
-        if !self.is_third_party_harness() {
-            return None;
-        }
         CLIAgent::from_harness(self.harness)
     }
 

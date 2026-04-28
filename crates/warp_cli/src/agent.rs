@@ -164,35 +164,48 @@ impl Harness {
             Self::Unknown => "Unknown",
         }
     }
-}
 
-impl fmt::Display for Harness {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let name = match self {
+    /// Parses a harness config-name string (the lowercase name written into
+    /// `HarnessConfig::harness_type` by the spawner, e.g. `"claude"`, `"gemini"`, `"oz"`)
+    /// into a [`Harness`] variant. Inverse of [`Harness::config_name`]. Unrecognized
+    /// names fall back to [`Harness::Unknown`] so a future-server harness is not silently
+    /// misrepresented as Oz; UI surfaces should treat `Unknown` as a non-Oz, non-runnable
+    /// harness.
+    pub fn from_config_name(name: &str) -> Self {
+        match name {
+            "oz" => Harness::Oz,
+            "claude" => Harness::Claude,
+            "opencode" => Harness::OpenCode,
+            "gemini" => Harness::Gemini,
+            _ => Harness::Unknown,
+        }
+    }
+
+    /// Canonical config name for this harness (the lowercase string written into
+    /// `HarnessConfig::harness_type`). Inverse of [`Harness::from_config_name`].
+    /// The exhaustive match here forces every new [`Harness`] variant to declare a
+    /// canonical name, which prevents `from_config_name` from silently falling back to
+    /// `Unknown` when a new variant is added.
+    pub fn config_name(self) -> &'static str {
+        match self {
             Harness::Oz => "oz",
             Harness::Claude => "claude",
             Harness::OpenCode => "opencode",
             Harness::Gemini => "gemini",
             Harness::Unknown => "unknown",
-        };
-        f.write_str(name)
-    }
-}
-
-impl Harness {
-    /// Parses a harness config-name string (the lowercase name written into
-    /// `HarnessConfig::harness_type` by the spawner, e.g. "claude", "gemini", "oz") into a
-    /// [`Harness`] variant. Unknown values fall back to [`Harness::Oz`] so clients never get
-    /// stuck in a mismatched non-oz state when the server surfaces an unexpected harness name.
-    pub fn from_config_name(name: &str) -> Self {
-        match name {
-            "claude" => Harness::Claude,
-            "gemini" => Harness::Gemini,
-            "oz" => Harness::Oz,
-            _ => Harness::Oz,
         }
     }
 }
+
+impl fmt::Display for Harness {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.config_name())
+    }
+}
+
+#[cfg(test)]
+#[path = "agent_tests.rs"]
+mod tests;
 
 /// Profile subcommands.
 #[derive(Debug, Clone, Subcommand)]
