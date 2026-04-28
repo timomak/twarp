@@ -10,7 +10,7 @@ Today the lifecycle is wrong in three ways:
 
 1. **Wrong start trigger.** SSE only opens on the `ConversationStatus::Success` transition (`orchestration_event_streamer.rs:229-237`, `start_event_delivery` at line 494). A conversation that is open in the UI but still in-progress will not subscribe; conversely once it has subscribed, status no longer matters.
 2. **Wrong stop trigger for parents.** Cleanup only runs on `RemoveConversation`/`DeletedConversation` (lines 178-193). Closing the agent view of a parent conversation does not tear down its SSE, so a parent the user has abandoned in the UI keeps a live connection.
-3. **Wrong scope.** `on_server_token_assigned` (line 240) registers the conversation's own run_id for *every* cloud-backed conversation that gets a server token (except shared-session viewers, line 254). Solo conversations — neither parents (have spawned children) nor children (`parent_conversation_id` set) — are not part of an orchestration tree and cannot meaningfully receive or send orchestration events. They should not subscribe.
+3. **Wrong scope.** `on_server_token_assigned` (line 240) registers the conversation's own run_id for *every* cloud-backed conversation that gets a server token (except shared-session viewers, line 254). Solo conversations — neither parents (have spawned children) nor children (`parent_conversation_id` set) — are not part of an orchestration tree and cannot meaningfully receive or send orchestration events. They should not subscribe. The shared-session-viewer exclusion is also incomplete: the GUI auto-opens a viewer pane for cloud children spawned via `start_agent` (`Conversation::is_remote_child()` is true), and those placeholders look like child conversations to the predicate — they have `parent_conversation_id` set — even though the actual run is on a cloud worker. Without a guard they open a redundant SSE in the parent's process for events the parent's own SSE will already deliver.
 
 There is also a related state-leak: `register_watched_run_id` (line 138) only inserts into `watched_run_ids`; nothing removes a child's run_id when the child finishes or is deleted. A long-lived parent accumulates dead run_ids and reconnects with an ever-growing filter.
 
@@ -245,12 +245,17 @@ GUI expectations: parent and child SSEs only if the user has either view open; o
 
 Like D but split across two worker processes. The parent worker holds the parent's SSE; the child worker holds the child's SSE. Each driver consumer is in its process. GUI expectations are the same as D.
 
-### F. Shared-session viewer
+### F. Passive view of a remote run
 
-Open a pane that views someone else's shared session (a viewer of a remote agent's conversation). The local conversation has `is_viewing_shared_session() == true`.
+A conversation in the local process that is a passive view of an agent run hosted in another process. Two flavors share the same predicate path:
 
-- GUI: `register_consumer` (AgentView) when the pane opens, but **no** `Opening SSE stream` at any point. The viewer guard in `is_eligible` prevents subscription even if the conversation has `parent_conversation_id` set or appears to have a watched run_id.
-- Server: no `stream_agent_events` request from this client for the viewer's conversation_id.
+- **Shared-session viewer.** Open a pane that views someone else's shared session. The local conversation has `is_viewing_shared_session() == true`.
+- **Remote-child placeholder.** Spawn a child via `start_agent` with `execution_mode: cloud` (e.g. cloud Oz). The user's GUI auto-opens a viewer pane for the child; the local placeholder conversation has `is_remote_child() == true` and `parent_conversation_id` set, but the actual run lives on the cloud worker.
+
+In both cases the local process has no run to host — the inbox lives elsewhere — so opening an SSE here would re-inject events the real consumer has already processed.
+
+- GUI: `register_consumer` (AgentView) when the pane opens, but **no** `Opening SSE stream` for the viewer's conversation_id at any point. The `is_remote_run_view` guard in `is_eligible` covers both flavors and prevents subscription even when the conversation has `parent_conversation_id` set or appears to have a watched run_id (the auto-opened cloud-child viewer satisfies both).
+- Server: no `stream_agent_events` request from this client for the viewer's conversation_id. The parent's SSE in the same process is unaffected and continues to deliver child events for the cloud child via the parent's `watched_run_ids`.
 
 ### Specific behaviors to spot-check after running B or C
 

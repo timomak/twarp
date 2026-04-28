@@ -287,10 +287,12 @@ impl OrchestrationEventStreamer {
             let Some(conversation) = history.conversation(&conversation_id) else {
                 return;
             };
-            // Shared session viewers must not subscribe — the actual
-            // agent handles event delivery. Subscribing here would
-            // re-inject events the session has already processed.
-            if conversation.is_viewing_shared_session() {
+            // Passive views of agent runs hosted elsewhere (shared-session
+            // viewers and remote-child placeholders) must not subscribe —
+            // the actual agent (in another process) is the inbox.
+            // Subscribing here would re-inject events the real consumer
+            // has already processed.
+            if conversation.is_viewing_shared_session() || conversation.is_remote_child() {
                 return;
             }
             let Some(run_id) = conversation.run_id() else {
@@ -468,41 +470,44 @@ impl OrchestrationEventStreamer {
             .is_some_and(|s| !s.is_empty())
     }
 
-    /// True iff this conversation is a viewer of a shared session run
-    /// hosted elsewhere. Viewers must never subscribe — the actual agent
-    /// (in another process) is the inbox; subscribing here would
-    /// re-inject events that have already been processed.
-    fn is_viewing_shared_session(
+    /// True iff this conversation is a passive view of an agent run that
+    /// is actually executing in another process — either a shared-session
+    /// viewer or a placeholder for a remote child run spawned via
+    /// `start_agent` with cloud `execution_mode`. Either way the actual
+    /// run lives elsewhere (and that process owns the inbox), so this
+    /// process should not open its own SSE for the conversation.
+    fn is_remote_run_view(
         &self,
         conversation_id: AIConversationId,
         ctx: &warpui::AppContext,
     ) -> bool {
         BlocklistAIHistoryModel::as_ref(ctx)
             .conversation(&conversation_id)
-            .is_some_and(|c| c.is_viewing_shared_session())
+            .is_some_and(|c| c.is_viewing_shared_session() || c.is_remote_child())
     }
 
     /// True iff this conversation should currently hold an SSE connection.
     /// A subscription is needed only when there is an active consumer in
     /// this process (an open agent view or an agent_sdk driver) AND the
-    /// conversation has a real role to consume events for. Shared-session
-    /// viewers are excluded regardless of their other state.
+    /// conversation has a real role to consume events for. Passive views
+    /// of agent runs hosted elsewhere (shared-session viewers, remote
+    /// child placeholders) are excluded regardless of their other state.
     fn is_eligible(&self, conversation_id: AIConversationId, ctx: &warpui::AppContext) -> bool {
         if !self.has_active_consumer(conversation_id) {
             return false;
         }
-        if self.is_viewing_shared_session(conversation_id, ctx) {
+        if self.is_remote_run_view(conversation_id, ctx) {
             return false;
         }
         self.is_child_agent_conversation(conversation_id, ctx)
             || self.has_watched_child_run_id(conversation_id, ctx)
     }
 
-    /// Returns the run_ids to include in the SSE filter for an eligible
-    /// conversation. The set is the union of `{self_run_id}` (when this
-    /// conversation is a child) and any registered child run_ids (when it
-    /// is a parent). Both contributions live in `watched_run_ids` already,
-    /// so this is a straight clone.
+    /// Returns the list of run_ids to subscribe to for `conversation_id`.
+    /// Includes both the conversation's own `self_run_id` (when it is a
+    /// child) and any registered child run_ids (when the conversation
+    /// is a parent). Both contributions live in `watched_run_ids`
+    /// already, so this is a straight clone.
     fn run_ids_for_sse(&self, conversation_id: AIConversationId) -> Vec<String> {
         self.watched_run_ids
             .get(&conversation_id)
