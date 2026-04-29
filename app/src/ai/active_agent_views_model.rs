@@ -122,6 +122,34 @@ impl ActiveAgentViewsModel {
             },
         );
 
+        // If the controller already has an active agent view (typical on
+        // pane re-attach after a `HiddenForClose` detach — the
+        // unregister path tore down the streamer consumer, but the
+        // controller's `agent_view_state` is still `Active`), restore the
+        // streamer consumer registration. The `EnteredAgentView`
+        // subscription below only fires on subsequent state transitions,
+        // not on the existing-already-Active state at registration time.
+        if warp_core::features::FeatureFlag::OrchestrationV2.is_enabled() {
+            if let Some(conversation_id) = controller
+                .as_ref(ctx)
+                .agent_view_state()
+                .active_conversation_id()
+            {
+                crate::ai::blocklist::orchestration_event_streamer::OrchestrationEventStreamer::handle(
+                    ctx,
+                )
+                .update(ctx, |streamer, ctx| {
+                    streamer.register_consumer(
+                        conversation_id,
+                        crate::ai::blocklist::orchestration_event_streamer::ConsumerId::AgentView(
+                            terminal_view_id,
+                        ),
+                        ctx,
+                    );
+                });
+            }
+        }
+
         ctx.subscribe_to_model(controller, move |model, event, ctx| match event {
             AgentViewControllerEvent::EnteredAgentView {
                 conversation_id, ..
