@@ -209,7 +209,7 @@ In the user's GUI, spawn a child via `start_agent` with `execution_mode: local` 
 
 GUI process expectations:
 
-- With parent's pane open and a child registered: `register_consumer` (AgentView) for parent, then `Opening SSE stream` for parent with `run_ids` containing the child's run_id.
+- With parent's pane open and a child registered: `register_consumer` (AgentView) for parent, then `Opening SSE stream` for parent with `run_ids = [child_run_id, parent_self_run_id]` — the child run_id for child lifecycle events and the parent's self_run_id for child→parent messages.
 - Child's `Opening SSE stream` does **not** appear in the GUI unless the user explicitly opens the child's view.
 - Closing parent's pane: `unregister_consumer` for parent, then `SSE driver exited` for parent.
 
@@ -226,7 +226,7 @@ In the user's GUI, spawn a child via `start_agent` with cloud Oz harness. Parent
 
 GUI process expectations:
 
-- Parent: same as B — SSE only while parent's pane is open and the child run_id is registered.
+- Parent: same as B — SSE only while parent's pane is open and the child run_id is registered. `run_ids = [child_run_id, parent_self_run_id]`.
 - Child: **no** `Opening SSE stream` for the child in the GUI unless the user opens the child's view (e.g. via the cloud agent transcript). The intentional behavior is that child→parent traffic flows through the parent's SSE; the child's own SSE in the GUI would be redundant.
 
 Cloud worker expectations:
@@ -236,19 +236,17 @@ Cloud worker expectations:
 
 ### D. Cloud parent + Local child (both in same cloud worker process)
 
-A top-level cloud Oz parent driver spawns a CLI subagent locally (in the same worker process). Two `AgentDriver` instances register two `Driver` consumers with the worker's single streamer.
+A top-level cloud Oz parent driver spawns a CLI subagent locally (in the same worker process). Both runs are headless on the cloud worker — driver runs do not have a GUI; any user-side viewer pane on the parent or child is a passive remote-run view and is covered by section F. Two `AgentDriver` instances register two `Driver` consumers with the worker's single streamer.
 
 Cloud worker expectations:
 
-- Parent: `register_consumer` (Driver) for parent on run start. Once the parent registers a child run_id (from `start_agent`), `Opening SSE stream` for parent with `run_ids = [child_run_id]`.
+- Parent: `register_consumer` (Driver) for parent on run start. Once the parent registers a child run_id (from `start_agent`), `Opening SSE stream` for parent with `run_ids = [child_run_id, parent_self_run_id]` — the child run_id for child lifecycle and the parent's self_run_id for child→parent messages.
 - Child: `register_consumer` (Driver) for child, then `Opening SSE stream` for child with `run_ids = [child_self_run_id]`.
 - Parent and child each unregister and tear down their own SSE when their respective drivers complete.
 
-GUI expectations: parent and child SSEs only if the user has either view open; otherwise nothing.
-
 ### E. Cloud parent + Cloud child (separate cloud workers)
 
-Like D but split across two worker processes. The parent worker holds the parent's SSE; the child worker holds the child's SSE. Each driver consumer is in its process. GUI expectations are the same as D.
+Like D but split across two worker processes. The parent worker holds the parent's SSE (with `run_ids = [child_run_id, parent_self_run_id]`); the child worker holds the child's SSE (`run_ids = [child_self_run_id]`). Each driver consumer is in its own process. Both runs are headless; any user-side viewer pane is covered by section F.
 
 ### F. Passive view of a remote run
 
