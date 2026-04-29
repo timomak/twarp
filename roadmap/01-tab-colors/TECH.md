@@ -210,7 +210,26 @@ Add `BindingGroup::TabColor` to whatever enum lives at `app/src/workspace/bindin
 
 The settings page at `app/src/settings_view/appearance_page.rs` currently iterates `TAB_COLOR_OPTIONS` to render a 6-swatch row in two places (around lines 1222, 2471, 4819). With the palette change to 8, those rows automatically grow; verify the layout still fits and adjust the swatch row width if needed. No new settings UI is added — configurable bindings are out of scope.
 
-### 9. Decision: Should `ToggleTabColor` remain ANSI-typed or move to `TabColor`?
+### 9. Right-click menu tooltips show the keyboard shortcut
+
+PRODUCT.md §15 requires the right-click "Set color" menu to surface the keyboard shortcut alongside each color, so a user discovering the menu also discovers the shortcut. Two surfaces to update:
+
+- **`render_color_dot` tooltip** (`app/src/tab.rs:470-482`, the new picker). The `tooltip` string is built locally:
+  ```rust
+  let tooltip = match ansi_id {
+      None => "Default (no color)".to_string(),
+      Some(id) => id.to_string(),
+  };
+  ```
+  Change this to also format the bound shortcut. Build a helper that, given a `TabColor` (or `None` for reset), looks up the active binding for the corresponding `EditableBinding` (e.g. `"workspace:set_active_tab_color_red"` / `"workspace:reset_active_tab_color"`) and returns its key-combination string in twarp's standard glyph form (⌘⌥1 etc.). Format as `"<Color> — <shortcut>"`. If the binding lookup returns no current key combo (user unbound it), fall back to just `<Color>` — no `Unbound` placeholder.
+
+- **`legacy_color_option_menu_items`** (`app/src/tab.rs:518-540`, the icon-row variant). Each item is built via `MenuItemFields::new_with_icon(..., color_option.to_string())`. Replace the third argument with the same `<Color> — <shortcut>` formatter, **or** prefer twarp's existing right-aligned-shortcut-hint affordance on `MenuItemFields` if one exists (check the `MenuItemFields` API around `app/src/menu.rs` — the `MAC_MENUS_CONTEXT` description override pattern in `mod.rs:927` suggests there's already a way to attach shortcut hints to menu items; if so, use it, since it'll layout the shortcut on the right of the row instead of inline in the label).
+
+The shortcut text must source from the live `EditableBinding` (look up by `id`), not a hardcoded string, so a future "configurable bindings" feature flips this for free. Search the codebase for existing call sites that read a binding's bound key for display — there is precedent (e.g. menu items in `mod.rs:927` use `with_custom_description(bindings::MAC_MENUS_CONTEXT, …)`); the impl agent should reuse that helper rather than inventing a new one.
+
+Add a small unit test that stubs a known binding for `"workspace:set_active_tab_color_red"` and asserts the formatter produces `"Red — ⌘⌥1"` (or whatever the canonical glyph form is in twarp), and that an unbound id produces `"Red"` with no suffix.
+
+### 10. Decision: Should `ToggleTabColor` remain ANSI-typed or move to `TabColor`?
 
 Move it to `TabColor`. The right-click menu now offers `TabColor::ALL`; the action's parameter should match. Update `Workspace::toggle_tab_color` accordingly, plus the dispatch sites at `tab.rs:487, 492, 533`.
 
@@ -231,7 +250,8 @@ Move it to `TabColor`. The right-click menu now offers `TabColor::ALL`; the acti
 | §11 (new tabs unaffected) | Unit test: open a new tab after `set_active_tab_color`; assert its `selected_color` is `Unset`. |
 | §13 (multiple windows) | Manual only — multi-window integration tests are heavy; the action dispatches per-window and the state is per-`Workspace`, which is per-window. Add a code comment if non-obvious. |
 | §14 (shortcut surface lists actions) | Visual check in keybindings settings: nine new entries appear under "Tab color". Verified by reading `BindingGroup::TabColor`. |
-| §15 (no extra telemetry) | Unit test asserts `set_active_tab_color` emits exactly one `TabTelemetryAction::SetColor` (or `ResetColor`) per call. |
+| §15 (right-click menu shows shortcuts) | Manual smoke step 9 (hover each color in the right-click menu, confirm tooltip text). Plus the unit test in §9 covering the `(color, binding) → tooltip` formatter, including the unbound fallback. |
+| §16 (no extra telemetry) | Unit test asserts `set_active_tab_color` emits exactly one `TabTelemetryAction::SetColor` (or `ResetColor`) per call. |
 
 Required new unit tests live in:
 

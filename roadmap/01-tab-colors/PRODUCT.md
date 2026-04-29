@@ -59,9 +59,15 @@ Keyboard shortcuts that recolor the currently-active tab so users can visually d
 
 13. **Multiple windows:** each window has its own active tab; ⌘⌥<n> in window A only affects window A's active tab.
 
-14. **Discoverability:** the shortcuts appear in twarp's keyboard-shortcut surface (command palette / shortcut help) under names like "Set tab color: Red", "Reset tab color". They behave the same way whether invoked by keyboard or by command palette.
+14. **Discoverability — keyboard surface:** the shortcuts appear in twarp's keyboard-shortcut surface (command palette / shortcut help) under names like "Set tab color: Red", "Reset tab color". They behave the same way whether invoked by keyboard or by command palette.
 
-15. Color shortcuts do not steal focus, scroll the terminal, or emit telemetry distinct from the existing right-click color flow.
+15. **Discoverability — right-click menu:** the existing right-click "Set color" menu shows the keyboard shortcut alongside each color, so a user discovering the menu also discovers the shortcut. Concretely:
+    - Each color swatch's hover tooltip reads `<Color> — <shortcut>` (e.g. `Red — ⌘⌥1`, `Default (no color) — ⌘⌥0`).
+    - In any text-row variant of the same menu, the shortcut appears as a right-aligned hint on the row (matching how other menu items in twarp display their bound shortcuts).
+    - The shortcut text reflects the **currently bound** key combination, not a hardcoded label. If a user later rebinds the shortcut (out of scope of this feature), the tooltip updates automatically.
+    - When a color has no binding (e.g. the user explicitly cleared it), the tooltip falls back to the color name with no shortcut suffix; no "Unbound" placeholder.
+
+16. Color shortcuts do not steal focus, scroll the terminal, or emit telemetry distinct from the existing right-click color flow.
 
 ## Smoke test
 
@@ -75,3 +81,4 @@ Run against a freshly built twarp binary.
 6. Press ⌘⌥6 on tab 3. Tab 3 transitions directly from green to purple with no uncolored frame.
 7. Quit twarp and relaunch. Tab 3 reopens purple; tabs 1 and 2 reopen uncolored.
 8. With twarp focused but the terminal pane actively running a foreground process (e.g. `top`), press ⌘⌥2 on the active tab. The tab indicator turns orange and the running process is unaffected.
+9. Right-click any tab and open the "Set color" menu. Hover each color swatch — the tooltip reads `<Color> — <shortcut>` (e.g. `Red — ⌘⌥1`). Hover the no-color/reset entry — the tooltip reads `Default (no color) — ⌘⌥0`.
