@@ -61,6 +61,34 @@ pub fn uses_vertical_tabs(ctx: &AppContext) -> bool {
     FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs
 }
 
+fn tab_color_binding_name(color: AnsiColorIdentifier) -> &'static str {
+    match color {
+        AnsiColorIdentifier::Red => "workspace:set_active_tab_color_red",
+        AnsiColorIdentifier::Yellow => "workspace:set_active_tab_color_yellow",
+        AnsiColorIdentifier::Green => "workspace:set_active_tab_color_green",
+        AnsiColorIdentifier::Cyan => "workspace:set_active_tab_color_cyan",
+        AnsiColorIdentifier::Blue => "workspace:set_active_tab_color_blue",
+        AnsiColorIdentifier::Magenta => "workspace:set_active_tab_color_magenta",
+        AnsiColorIdentifier::White => "workspace:set_active_tab_color_white",
+        AnsiColorIdentifier::Black => "workspace:set_active_tab_color_black",
+    }
+}
+
+fn format_tab_color_tooltip(color: AnsiColorIdentifier, shortcut: Option<&str>) -> String {
+    match shortcut {
+        Some(s) => format!("{color} \u{2014} {s}"),
+        None => color.to_string(),
+    }
+}
+
+fn tab_color_shortcut_tooltip(color: AnsiColorIdentifier, ctx: &AppContext) -> String {
+    let shortcut = crate::util::bindings::keybinding_name_to_display_string(
+        tab_color_binding_name(color),
+        ctx,
+    );
+    format_tab_color_tooltip(color, shortcut.as_deref())
+}
+
 const WARP_2_TAB_COLOR_OPACITY: Opacity = 25;
 const WARP_2_HOVERED_TAB_COLOR_OPACITY: Opacity = 50;
 /// Opacity applied to the colored fill of the active tab in the legacy
@@ -613,6 +641,7 @@ pub struct TabComponent<'a> {
     tooltip_message: Option<String>,
     tooltip_directory: Option<String>,
     tooltip_git_branch: Option<String>,
+    tooltip_color_hint: Option<String>,
     is_drag_target: bool,
     background_opacity: u8,
 }
@@ -747,6 +776,7 @@ impl<'a> TabComponent<'a> {
         let tooltip_message = Self::get_tooltip_message(&indicator, tab, ctx);
         let tooltip_directory = Self::get_tooltip_directory(&indicator, tab, ctx);
         let tooltip_git_branch = Self::get_tooltip_git_branch(&indicator, tab, ctx);
+        let tooltip_color_hint = tab.color().map(|c| tab_color_shortcut_tooltip(c, ctx));
         let window_id = tab.pane_group.window_id(ctx);
         let background_opacity = WindowSettings::as_ref(ctx)
             .background_opacity
@@ -767,6 +797,7 @@ impl<'a> TabComponent<'a> {
             tooltip_message,
             tooltip_directory,
             tooltip_git_branch,
+            tooltip_color_hint,
             is_drag_target,
             background_opacity,
         }
@@ -1494,6 +1525,7 @@ impl UiComponent for TabComponent<'_> {
         let tooltip_text = self.tooltip_message.clone();
         let tooltip_directory = self.tooltip_directory.clone();
         let tooltip_git_branch = self.tooltip_git_branch.clone();
+        let tooltip_color_hint = self.tooltip_color_hint.clone();
         let tab_text_position_id = self.tab_text_position_id();
         let tooltip_mouse_state = self.tab.tooltip_mouse_state.clone();
 
@@ -1508,6 +1540,7 @@ impl UiComponent for TabComponent<'_> {
             let tooltip_text_clone = tooltip_text.clone();
             let tooltip_directory_clone = tooltip_directory.clone();
             let tooltip_git_branch_clone = tooltip_git_branch.clone();
+            let tooltip_color_hint_clone = tooltip_color_hint.clone();
 
             // Layer the tooltip hover on top
             tab = Hoverable::new(tooltip_mouse_state, move |tooltip_state| {
@@ -1524,8 +1557,9 @@ impl UiComponent for TabComponent<'_> {
                     .with_color(font_color)
                     .finish();
 
-                    let has_extra_info =
-                        tooltip_directory_clone.is_some() || tooltip_git_branch_clone.is_some();
+                    let has_extra_info = tooltip_directory_clone.is_some()
+                        || tooltip_git_branch_clone.is_some()
+                        || tooltip_color_hint_clone.is_some();
 
                     let tooltip_content: Box<dyn Element> = if has_extra_info {
                         let mut column = Flex::column().with_child(title_text);
@@ -1593,6 +1627,18 @@ impl UiComponent for TabComponent<'_> {
 
                             column
                                 .add_child(Container::new(branch_row).with_margin_top(4.).finish());
+                        }
+
+                        if let Some(color_hint) = &tooltip_color_hint_clone {
+                            let color_text = Text::new(
+                                color_hint.clone(),
+                                appearance.ui_font_family(),
+                                appearance.ui_font_size(),
+                            )
+                            .with_color(font_color)
+                            .finish();
+                            column
+                                .add_child(Container::new(color_text).with_margin_top(4.).finish());
                         }
 
                         column.finish()
@@ -1708,5 +1754,45 @@ impl UiComponent for TabComponent<'_> {
             styles: self.styles.merge(style),
             ..self
         }
+    }
+}
+
+#[cfg(test)]
+mod tab_color_tooltip_tests {
+    use super::{format_tab_color_tooltip, tab_color_binding_name, AnsiColorIdentifier};
+
+    #[test]
+    fn formats_tooltip_with_shortcut() {
+        assert_eq!(
+            format_tab_color_tooltip(AnsiColorIdentifier::Red, Some("⌘⌥1")),
+            "Red \u{2014} ⌘⌥1"
+        );
+    }
+
+    #[test]
+    fn formats_tooltip_without_shortcut() {
+        assert_eq!(
+            format_tab_color_tooltip(AnsiColorIdentifier::Red, None),
+            "Red"
+        );
+    }
+
+    #[test]
+    fn binding_name_is_unique_per_color() {
+        let names: Vec<_> = [
+            AnsiColorIdentifier::Red,
+            AnsiColorIdentifier::Yellow,
+            AnsiColorIdentifier::Green,
+            AnsiColorIdentifier::Cyan,
+            AnsiColorIdentifier::Blue,
+            AnsiColorIdentifier::Magenta,
+            AnsiColorIdentifier::White,
+            AnsiColorIdentifier::Black,
+        ]
+        .iter()
+        .map(|c| tab_color_binding_name(*c))
+        .collect();
+        let unique: std::collections::HashSet<_> = names.iter().collect();
+        assert_eq!(names.len(), unique.len());
     }
 }
