@@ -394,7 +394,7 @@ impl UriHost {
     }
 
     /// When handling this URI action, determine which window(s) should be focused.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     fn window_behavior_hint(&self) -> WindowBehaviorHint {
         use WindowBehaviorHint as W;
         match self {
@@ -438,7 +438,7 @@ impl Default for WindowBehaviorHint {
 impl WindowBehaviorHint {
     /// Perform the desired window focus behavior for the URI being handled. This may change the
     /// "primary window" if a new one has to be created. Return the new primary WindowId.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     fn resolve(
         self,
         primary_window_id: Option<WindowId>,
@@ -486,7 +486,7 @@ enum WindowActivationFallbackBehavior {
 impl WindowActivationFallbackBehavior {
     /// Perform the desired window fallback behavior for the URI being handled. This may change the
     /// "primary window" if a new one has to be created. Return the new primary WindowId.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     fn resolve(self, primary_window_id: WindowId, ctx: &mut AppContext) -> Option<WindowId> {
         match self {
             WindowActivationFallbackBehavior::Notify { title, description } => {
@@ -635,7 +635,7 @@ impl Action {
     }
 
     fn handle(&self, primary_window_id: Option<WindowId>, url: &Url, ctx: &mut AppContext) {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         let primary_window_id = self.window_behavior_hint().resolve(primary_window_id, ctx);
         match self {
             Self::NewTab | Self::NewWindow => {
@@ -769,7 +769,7 @@ impl Action {
     }
 
     /// When handling this URI action, determine which window(s) should be focused.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     fn window_behavior_hint(&self) -> WindowBehaviorHint {
         use WindowBehaviorHint as W;
         match self {
@@ -819,7 +819,7 @@ pub fn handle_incoming_uri(url: &Url, ctx: &mut AppContext) {
 
     match validate_custom_uri(url) {
         Ok(host) => {
-            #[cfg(any(target_os = "linux", windows))]
+            #[cfg(any(target_os = "linux", target_os = "freebsd", windows))]
             let primary_window_id = host.window_behavior_hint().resolve(primary_window_id, ctx);
             host.handle(primary_window_id, url, ctx);
         }
