@@ -1,6 +1,6 @@
 # 02 — AI removal
 
-**Phase:** not-started
+**Phase:** spec-pending
 **Spec PR:** —
 **Impl PRs:** —
 
