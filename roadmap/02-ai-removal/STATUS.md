@@ -1,7 +1,7 @@
 # 02 — AI removal
 
-**Phase:** spec-pending
-**Spec PR:** —
+**Phase:** spec-in-review
+**Spec PR:** https://github.com/timomak/twarp/pull/4
 **Impl PRs:** —
 
 ## Scope
