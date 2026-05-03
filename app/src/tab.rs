@@ -1,5 +1,5 @@
 use crate::ai::agent::conversation::ConversationStatus;
-use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PADDING};
+use crate::ai::conversation_status_ui::{STATUS_ELEMENT_PADDING, render_status_element};
 use crate::appearance::Appearance;
 /// Tab module contains structures related to Tabs (such as TabData or TabComponent) that simplify
 /// the rendering and management of tabs in general.
@@ -18,25 +18,25 @@ use crate::terminal::shared_session::render_util::shared_session_indicator_color
 use crate::terminal::view::TerminalViewState;
 use crate::themes::theme::{AnsiColorIdentifier, Fill as ThemeFill, VerticalGradient};
 use crate::ui_components::buttons::icon_button;
-use crate::ui_components::color_dot::{render_color_dot, TAB_COLOR_OPTIONS};
-use crate::ui_components::icons::{Icon, ICON_DIMENSIONS};
-use crate::util::color::{coloru_with_opacity, Opacity};
+use crate::ui_components::color_dot::{TAB_COLOR_OPTIONS, render_color_dot};
+use crate::ui_components::icons::{ICON_DIMENSIONS, Icon};
+use crate::util::color::{Opacity, coloru_with_opacity};
 use crate::util::truncation::truncate_from_end;
 
+use crate::BlocklistAIHistoryModel;
 use crate::window_settings::WindowSettings;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::tab_settings::{TabCloseButtonPosition, TabSettings};
 use crate::workspace::{
     PaneViewLocator, TabBarDropTargetData, TabBarLocation, TabContextMenuAnchor, WorkspaceAction,
 };
-use crate::BlocklistAIHistoryModel;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use serde::{Deserialize, Serialize};
 use warp_core::context_flag::ContextFlag;
 use warp_core::ui::builder::UiBuilder;
-use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::AnsiColors;
+use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
     Align, Border, ChildAnchor, Clipped, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, DragAxis, Draggable, DraggableState, DropTarget, Element, Empty, Fill,
@@ -87,6 +87,23 @@ fn tab_color_shortcut_tooltip(color: AnsiColorIdentifier, ctx: &AppContext) -> S
         ctx,
     );
     format_tab_color_tooltip(color, shortcut.as_deref())
+}
+
+const TAB_COLOR_RESET_LABEL: &str = "Default (no color)";
+
+fn format_tab_color_reset_tooltip(shortcut: Option<&str>) -> String {
+    match shortcut {
+        Some(s) => format!("{TAB_COLOR_RESET_LABEL} \u{2014} {s}"),
+        None => TAB_COLOR_RESET_LABEL.to_string(),
+    }
+}
+
+fn tab_color_reset_shortcut_tooltip(ctx: &AppContext) -> String {
+    let shortcut = crate::util::bindings::keybinding_name_to_display_string(
+        "workspace:reset_active_tab_color",
+        ctx,
+    );
+    format_tab_color_reset_tooltip(shortcut.as_deref())
 }
 
 const WARP_2_TAB_COLOR_OPACITY: Opacity = 25;
@@ -237,7 +254,7 @@ impl TabData {
             self.modify_tab_menu_items(index, tabs_len, pane_name_target, ctx),
             self.close_tab_menu_items(index, tabs_len, ctx),
             Self::save_config_menu_items(index),
-            self.color_option_menu_items(index, terminal_colors),
+            self.color_option_menu_items(index, terminal_colors, ctx),
         ] {
             if menu_items
                 .last()
@@ -340,9 +357,11 @@ impl TabData {
 
         // TODO add option to show the keybinding once we figure out a nice API to retrieve
         // the actual keybinding (based on the user's preferences etc.)
-        menu_items.append(&mut vec![MenuItemFields::new("Rename tab")
-            .with_on_select_action(WorkspaceAction::RenameTab(index))
-            .into_item()]);
+        menu_items.append(&mut vec![
+            MenuItemFields::new("Rename tab")
+                .with_on_select_action(WorkspaceAction::RenameTab(index))
+                .into_item(),
+        ]);
         // Group together with rename option (note, resetting doesn't make
         // sense unless you're able to rename a tab).
         let title = self.pane_group.as_ref(ctx).custom_title(ctx);
@@ -402,9 +421,11 @@ impl TabData {
             .custom_vertical_tabs_title()
             .is_some();
 
-        let mut menu_items = vec![MenuItemFields::new(target.rename_label)
-            .with_on_select_action(WorkspaceAction::RenamePane(target.locator))
-            .into_item()];
+        let mut menu_items = vec![
+            MenuItemFields::new(target.rename_label)
+                .with_on_select_action(WorkspaceAction::RenamePane(target.locator))
+                .into_item(),
+        ];
         if has_custom_name {
             menu_items.push(
                 MenuItemFields::new(target.reset_label)
@@ -457,20 +478,23 @@ impl TabData {
         if !FeatureFlag::TabConfigs.is_enabled() {
             return vec![];
         }
-        vec![MenuItemFields::new("Save as new config")
-            .with_on_select_action(WorkspaceAction::SaveCurrentTabAsNewConfig(index))
-            .into_item()]
+        vec![
+            MenuItemFields::new("Save as new config")
+                .with_on_select_action(WorkspaceAction::SaveCurrentTabAsNewConfig(index))
+                .into_item(),
+        ]
     }
 
     fn color_option_menu_items(
         &self,
         index: usize,
         terminal_colors: AnsiColors,
+        ctx: &AppContext,
     ) -> Vec<MenuItem<WorkspaceAction>> {
         if FeatureFlag::DirectoryTabColors.is_enabled() {
             self.dot_color_option_menu_items(index, terminal_colors)
         } else {
-            self.legacy_color_option_menu_items(index, terminal_colors)
+            self.legacy_color_option_menu_items(index, terminal_colors, ctx)
         }
     }
 
@@ -488,7 +512,7 @@ impl TabData {
 
         vec![MenuItem::Item(
             MenuItemFields::new_with_custom_label(
-                Arc::new(move |_is_selected, _is_hovered, appearance, _app| {
+                Arc::new(move |_is_selected, _is_hovered, appearance, app| {
                     let theme = appearance.theme();
                     let ring_color: ColorU = theme.accent().into();
 
@@ -510,8 +534,8 @@ impl TabData {
                             Some(id) => id.to_ansi_color(&terminal_colors).into(),
                         };
                         let tooltip = match ansi_id {
-                            None => "Default (no color)".to_string(),
-                            Some(id) => id.to_string(),
+                            None => tab_color_reset_shortcut_tooltip(app),
+                            Some(id) => tab_color_shortcut_tooltip(id, app),
                         };
 
                         let dot = render_color_dot(
@@ -556,6 +580,7 @@ impl TabData {
         &self,
         index: usize,
         terminal_colors: AnsiColors,
+        ctx: &AppContext,
     ) -> Vec<MenuItem<WorkspaceAction>> {
         vec![MenuItem::ItemsRow {
             items: TAB_COLOR_OPTIONS
@@ -572,6 +597,7 @@ impl TabData {
                         color_option.to_string(),
                     )
                     .no_highlight_on_hover()
+                    .with_tooltip(tab_color_shortcut_tooltip(*color_option, ctx))
                     .with_on_select_action(WorkspaceAction::ToggleTabColor {
                         color: *color_option,
                         tab_index: index,
@@ -641,7 +667,6 @@ pub struct TabComponent<'a> {
     tooltip_message: Option<String>,
     tooltip_directory: Option<String>,
     tooltip_git_branch: Option<String>,
-    tooltip_color_hint: Option<String>,
     is_drag_target: bool,
     background_opacity: u8,
 }
@@ -776,7 +801,6 @@ impl<'a> TabComponent<'a> {
         let tooltip_message = Self::get_tooltip_message(&indicator, tab, ctx);
         let tooltip_directory = Self::get_tooltip_directory(&indicator, tab, ctx);
         let tooltip_git_branch = Self::get_tooltip_git_branch(&indicator, tab, ctx);
-        let tooltip_color_hint = tab.color().map(|c| tab_color_shortcut_tooltip(c, ctx));
         let window_id = tab.pane_group.window_id(ctx);
         let background_opacity = WindowSettings::as_ref(ctx)
             .background_opacity
@@ -797,7 +821,6 @@ impl<'a> TabComponent<'a> {
             tooltip_message,
             tooltip_directory,
             tooltip_git_branch,
-            tooltip_color_hint,
             is_drag_target,
             background_opacity,
         }
@@ -1525,7 +1548,6 @@ impl UiComponent for TabComponent<'_> {
         let tooltip_text = self.tooltip_message.clone();
         let tooltip_directory = self.tooltip_directory.clone();
         let tooltip_git_branch = self.tooltip_git_branch.clone();
-        let tooltip_color_hint = self.tooltip_color_hint.clone();
         let tab_text_position_id = self.tab_text_position_id();
         let tooltip_mouse_state = self.tab.tooltip_mouse_state.clone();
 
@@ -1540,7 +1562,6 @@ impl UiComponent for TabComponent<'_> {
             let tooltip_text_clone = tooltip_text.clone();
             let tooltip_directory_clone = tooltip_directory.clone();
             let tooltip_git_branch_clone = tooltip_git_branch.clone();
-            let tooltip_color_hint_clone = tooltip_color_hint.clone();
 
             // Layer the tooltip hover on top
             tab = Hoverable::new(tooltip_mouse_state, move |tooltip_state| {
@@ -1557,9 +1578,8 @@ impl UiComponent for TabComponent<'_> {
                     .with_color(font_color)
                     .finish();
 
-                    let has_extra_info = tooltip_directory_clone.is_some()
-                        || tooltip_git_branch_clone.is_some()
-                        || tooltip_color_hint_clone.is_some();
+                    let has_extra_info =
+                        tooltip_directory_clone.is_some() || tooltip_git_branch_clone.is_some();
 
                     let tooltip_content: Box<dyn Element> = if has_extra_info {
                         let mut column = Flex::column().with_child(title_text);
@@ -1627,18 +1647,6 @@ impl UiComponent for TabComponent<'_> {
 
                             column
                                 .add_child(Container::new(branch_row).with_margin_top(4.).finish());
-                        }
-
-                        if let Some(color_hint) = &tooltip_color_hint_clone {
-                            let color_text = Text::new(
-                                color_hint.clone(),
-                                appearance.ui_font_family(),
-                                appearance.ui_font_size(),
-                            )
-                            .with_color(font_color)
-                            .finish();
-                            column
-                                .add_child(Container::new(color_text).with_margin_top(4.).finish());
                         }
 
                         column.finish()
@@ -1759,7 +1767,10 @@ impl UiComponent for TabComponent<'_> {
 
 #[cfg(test)]
 mod tab_color_tooltip_tests {
-    use super::{format_tab_color_tooltip, tab_color_binding_name, AnsiColorIdentifier};
+    use super::{
+        AnsiColorIdentifier, format_tab_color_reset_tooltip, format_tab_color_tooltip,
+        tab_color_binding_name,
+    };
 
     #[test]
     fn formats_tooltip_with_shortcut() {
@@ -1775,6 +1786,19 @@ mod tab_color_tooltip_tests {
             format_tab_color_tooltip(AnsiColorIdentifier::Red, None),
             "Red"
         );
+    }
+
+    #[test]
+    fn formats_reset_tooltip_with_shortcut() {
+        assert_eq!(
+            format_tab_color_reset_tooltip(Some("⌘⌥0")),
+            "Default (no color) \u{2014} ⌘⌥0"
+        );
+    }
+
+    #[test]
+    fn formats_reset_tooltip_without_shortcut() {
+        assert_eq!(format_tab_color_reset_tooltip(None), "Default (no color)");
     }
 
     #[test]
