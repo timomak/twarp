@@ -23,6 +23,7 @@ mod alias;
 mod alt_screen;
 pub mod alt_screen_reporting;
 mod audible_bell;
+mod autosuggestion_validation;
 pub use audible_bell::AudibleBell;
 pub mod available_shells;
 

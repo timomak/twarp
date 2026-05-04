@@ -54,8 +54,7 @@ pub(crate) use input_model::{
     BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig, InputType,
 };
 pub(crate) use passive_suggestions::{
-    LegacyPassiveSuggestionsEvent, LegacyPassiveSuggestionsModel, MaaPassiveSuggestionsEvent,
-    MaaPassiveSuggestionsModel, PassiveSuggestionsModels,
+    MaaPassiveSuggestionsEvent, MaaPassiveSuggestionsModel, PassiveSuggestionsModels,
 };
 #[cfg_attr(target_family = "wasm", allow(unused))]
 pub(crate) use persistence::PersistedAIInputType;

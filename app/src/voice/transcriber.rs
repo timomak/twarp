@@ -35,6 +35,12 @@ impl VoiceTranscriber {
         }
     }
 
+    /// Constructs a `VoiceTranscriber` with no backing transcriber.
+    /// Voice input UI is expected to fall back to a disabled state when this is used.
+    pub fn disabled() -> Self {
+        Self { transcriber: None }
+    }
+
     /// Returns the transcriber if one is set.
     pub fn transcriber(&self) -> Option<&Arc<dyn Transcriber>> {
         self.transcriber.as_ref()

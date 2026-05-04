@@ -3,7 +3,7 @@ use super::{
     TerminalAction,
 };
 
-use crate::ai::predict::prompt_suggestions::ACCEPT_PROMPT_SUGGESTION_KEYBINDING;
+use crate::ai::prompt_suggestions::ACCEPT_PROMPT_SUGGESTION_KEYBINDING;
 use crate::server::telemetry::ToggleBlockFilterSource;
 
 use crate::server::telemetry::InteractionSource;

@@ -17,7 +17,7 @@ use warpui::{
 use crate::{
     ai::{
         agent::{AIAgentActionId, AIIdentifiers},
-        predict::prompt_suggestions::{
+        prompt_suggestions::{
             ACCEPT_PROMPT_SUGGESTION_KEYBINDING, REJECT_PROMPT_SUGGESTION_KEYSTROKE,
         },
     },
