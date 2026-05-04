@@ -2,7 +2,7 @@
 
 **Phase:** impl-in-review
 **Spec PR:** https://github.com/timomak/twarp/pull/4
-**Impl PRs:** 2a — https://github.com/timomak/twarp/pull/6 (merged); 2b — pending review
+**Impl PRs:** 2a — https://github.com/timomak/twarp/pull/6 (merged); 2b — https://github.com/timomak/twarp/pull/7
 
 ## Scope
 
