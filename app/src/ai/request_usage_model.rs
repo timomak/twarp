@@ -13,6 +13,10 @@ use instant::Instant;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use warp_core::user_preferences::GetUserPreferences as _;
+use warp_graphql::ai::{
+    RequestLimitInfo as RequestLimitInfoGraphql,
+    RequestLimitRefreshDuration as RequestLimitRefreshDurationGraphql,
+};
 use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
@@ -83,6 +87,38 @@ pub struct RequestLimitInfo {
 
 fn default_voice_requests_limit() -> usize {
     10000
+}
+
+impl From<RequestLimitRefreshDurationGraphql> for RequestLimitRefreshDuration {
+    fn from(value: RequestLimitRefreshDurationGraphql) -> Self {
+        match value {
+            RequestLimitRefreshDurationGraphql::Monthly => RequestLimitRefreshDuration::Monthly,
+            RequestLimitRefreshDurationGraphql::Weekly => RequestLimitRefreshDuration::Weekly,
+            RequestLimitRefreshDurationGraphql::EveryTwoWeeks => {
+                RequestLimitRefreshDuration::EveryTwoWeeks
+            }
+        }
+    }
+}
+
+impl From<RequestLimitInfoGraphql> for RequestLimitInfo {
+    fn from(value: RequestLimitInfoGraphql) -> Self {
+        RequestLimitInfo {
+            is_unlimited: value.is_unlimited,
+            limit: value.request_limit as usize,
+            num_requests_used_since_refresh: value.requests_used_since_last_refresh as usize,
+            next_refresh_time: value.next_refresh_time,
+            request_limit_refresh_duration: value.request_limit_refresh_duration.into(),
+            is_unlimited_voice: value.is_unlimited_voice,
+            voice_request_limit: value.voice_request_limit as usize,
+            voice_requests_used_since_last_refresh: value.voice_requests_used_since_last_refresh
+                as usize,
+            is_unlimited_codebase_indices: value.is_unlimited_codebase_indices,
+            max_codebase_indices: value.max_codebase_indices as usize,
+            max_files_per_repo: value.max_files_per_repo as usize,
+            embedding_generation_batch_size: value.embedding_generation_batch_size as usize,
+        }
+    }
 }
 
 impl Default for RequestLimitInfo {

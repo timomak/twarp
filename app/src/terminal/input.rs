@@ -116,6 +116,7 @@ use crate::{
             BLOCK_CONTEXT_ATTACHMENT_REGEX, DIFF_HUNK_ATTACHMENT_REGEX,
             DRIVE_OBJECT_ATTACHMENT_REGEX,
         },
+        execution_context::WarpAiExecutionContext,
         llms::{LLMPreferences, LLMPreferencesEvent},
         predict::{
             next_command_model::{
@@ -126,7 +127,6 @@ use crate::{
         },
         AIRequestUsageModel,
     },
-    ai_assistant::execution_context::WarpAiExecutionContext,
     appearance::{Appearance, AppearanceEvent},
     channel::{Channel, ChannelState},
     cloud_object::{

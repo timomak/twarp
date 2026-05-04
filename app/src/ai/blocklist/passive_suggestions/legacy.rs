@@ -14,11 +14,11 @@ use crate::ai::blocklist::controller::{
 use crate::ai::blocklist::{
     read_local_file_context, BlocklistAIHistoryModel, BlocklistAIPermissions,
 };
+use crate::ai::execution_context::WarpAiExecutionContext;
 use crate::ai::paths::host_native_absolute_path;
 use crate::ai::predict::generate_am_query_suggestions::{
     GenerateAMQuerySuggestionsRequest, GenerateAMQuerySuggestionsResponse, Suggestion,
 };
-use crate::ai_assistant::execution_context::WarpAiExecutionContext;
 use crate::network::NetworkStatus;
 use crate::report_error;
 use crate::server::server_api::ServerApiProvider;

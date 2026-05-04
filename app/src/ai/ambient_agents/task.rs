@@ -292,6 +292,7 @@ pub struct TaskAttachment {
     pub file_id: String,
     pub filename: String,
     pub download_url: String,
+    #[allow(dead_code)]
     pub mime_type: String,
 }
 
@@ -372,6 +373,7 @@ impl AmbientAgentTaskState {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_cancellable(&self) -> bool {
         self.is_working()
     }
@@ -406,6 +408,7 @@ impl AmbientAgentTaskState {
         }
     }
 
+    #[allow(dead_code)]
     pub fn status_icon_and_color(&self, theme: &WarpTheme) -> (Icon, ColorU) {
         match self {
             AmbientAgentTaskState::Queued
