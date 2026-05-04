@@ -2,14 +2,14 @@
 
 Single source of truth for what's being built next. `/twarp-next` reads this file every invocation; the user reads it to see status at a glance.
 
-**Currently active:** `01-tab-colors`
+**Currently active:** `02-ai-removal`
 
 ## Features
 
 | # | Feature | Phase | Spec PR | Impl PR(s) |
 |---|---------|-------|---------|-----------|
-| 01 | [Tab color shortcuts](01-tab-colors/STATUS.md) | impl-in-review | [#2](https://github.com/timomak/twarp/pull/2) | [#3](https://github.com/timomak/twarp/pull/3) |
-| 02 | [AI removal](02-ai-removal/STATUS.md) | not-started | — | — |
+| 01 | [Tab color shortcuts](01-tab-colors/STATUS.md) | merged | [#2](https://github.com/timomak/twarp/pull/2) | [#3](https://github.com/timomak/twarp/pull/3) |
+| 02 | [AI removal](02-ai-removal/STATUS.md) | impl-in-review | [#4](https://github.com/timomak/twarp/pull/4) | [#6](https://github.com/timomak/twarp/pull/6) |
 | 03 | [Render markdown by default](03-md-rendered/STATUS.md) | not-started | — | — |
 | 04 | [Custom command shortcuts](04-command-shortcuts/STATUS.md) | not-started | — | — |
 | 05 | [Open Changes panel](05-open-changes/STATUS.md) | not-started | — | — |
