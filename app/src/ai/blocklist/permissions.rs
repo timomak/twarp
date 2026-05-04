@@ -211,6 +211,8 @@ impl BlocklistAIPermissions {
         }
     }
 
+    // twarp: 2c-c. Last consumer was the deleted `ai_page.rs`. Kept for 2c-d.
+    #[allow(dead_code)]
     pub fn active_permissions_profile(
         &self,
         ctx: &AppContext,
@@ -935,6 +937,8 @@ impl BlocklistAIPermissions {
     ///
     /// The denylist (see [`Self::add_command_to_autoexecution_denylist`])
     /// takes precedence over the allowlist.
+    // twarp: 2c-c. Last consumer was the deleted `ai_page.rs`. Kept for 2c-d.
+    #[allow(dead_code)]
     pub fn add_command_to_autoexecution_allowlist(
         &mut self,
         command: AgentModeCommandExecutionPredicate,
@@ -954,6 +958,8 @@ impl BlocklistAIPermissions {
     /// Removes `command` from the auto-execution allowlist.
     ///
     /// See [`Self::add_command_to_autoexecution_allowlist`] for more about the allowlist.
+    // twarp: 2c-c. Last consumer was the deleted `ai_page.rs`. Kept for 2c-d.
+    #[allow(dead_code)]
     pub fn remove_command_from_autoexecution_allowlist(
         &mut self,
         command: &AgentModeCommandExecutionPredicate,
@@ -971,6 +977,8 @@ impl BlocklistAIPermissions {
     }
 
     /// Forces Agent Mode to ask for user consent before executing commands that match `command`.
+    // twarp: 2c-c. Last consumer was the deleted `ai_page.rs`. Kept for 2c-d.
+    #[allow(dead_code)]
     pub fn add_command_to_autoexecution_denylist(
         &mut self,
         command: AgentModeCommandExecutionPredicate,
@@ -990,6 +998,8 @@ impl BlocklistAIPermissions {
     /// Removes `command` from the auto-execution denylist.
     ///
     /// See [`Self::add_command_to_autoexecution_denylist`] for more about the denylist.
+    // twarp: 2c-c. Last consumer was the deleted `ai_page.rs`. Kept for 2c-d.
+    #[allow(dead_code)]
     pub fn remove_command_from_denylist(
         &mut self,
         command: &AgentModeCommandExecutionPredicate,
@@ -1112,6 +1122,8 @@ impl BlocklistAIPermissions {
     }
 
     /// Counterpart to [`Self::add_filepath_to_code_read_allowlist`].
+    // twarp: 2c-c. Last consumer was the deleted `ai_page.rs`. Kept for 2c-d.
+    #[allow(dead_code)]
     pub fn remove_filepath_from_code_read_allowlist(
         &mut self,
         filepath: PathBuf,

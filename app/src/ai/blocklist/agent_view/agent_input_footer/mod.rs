@@ -2337,10 +2337,15 @@ impl TypedActionView for AgentInputFooter {
                 ctx.emit(AgentInputFooterEvent::StopRemoteControl);
             }
             AgentInputFooterAction::OpenCodingAgentSettings => {
+                // twarp: 2c-c stub. The AI settings page (and its CLI-agent
+                // widget) was deleted; this code path is unreachable now that
+                // AI is gated off, but the call site is kept compiling until
+                // 2c-d removes app/src/ai/ entirely. Navigate to the default
+                // page with an empty widget id so nothing scrolls.
                 #[cfg(not(target_family = "wasm"))]
                 ctx.dispatch_typed_action_deferred(WorkspaceAction::ScrollToSettingsWidget {
-                    page: SettingsSection::ThirdPartyCLIAgents,
-                    widget_id: crate::settings_view::cli_agent_settings_widget_id(),
+                    page: SettingsSection::Account,
+                    widget_id: "",
                 });
             }
             AgentInputFooterAction::ShowContextMenu { position } => {
