@@ -273,6 +273,8 @@ impl AIExecutionProfilesModel {
         }
     }
 
+    // twarp: 2c-c. Last consumer was the deleted `ai_page.rs`. Kept for 2c-d.
+    #[allow(dead_code)]
     pub fn create_profile(&mut self, ctx: &mut ModelContext<Self>) -> Option<ClientProfileId> {
         let profile_id = ClientProfileId::new();
 

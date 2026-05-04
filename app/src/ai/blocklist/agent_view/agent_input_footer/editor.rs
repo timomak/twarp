@@ -44,6 +44,11 @@ pub struct AgentToolbarEditorModal {
     is_dirty: bool,
 }
 
+// twarp: 2c-c. The only constructor of `AgentToolbarInlineEditor` lived in
+// `ai_page.rs`, which was deleted. The struct/impl/action stays compiled for
+// 2c-d (which deletes `app/src/ai/` wholesale); silence dead-code warnings
+// until then.
+#[allow(dead_code)]
 pub struct AgentToolbarInlineEditor {
     mouse_handles: ChipEditorMouseHandles,
     chip_configurator: ChipConfigurator,
@@ -60,6 +65,7 @@ pub enum AgentToolbarEditorAction {
     Activate,
 }
 
+#[allow(dead_code)] // twarp: 2c-c — last consumer was the deleted `ai_page.rs`.
 #[derive(Clone, Copy, Debug)]
 pub enum AgentToolbarInlineEditorAction {
     Chip(ChipConfiguratorAction),
@@ -129,6 +135,7 @@ fn toolbar_items_match_defaults(
     default_left.as_slice() == left && default_right.as_slice() == right
 }
 
+#[allow(dead_code)] // twarp: 2c-c — last consumer was the deleted `ai_page.rs`.
 impl AgentToolbarInlineEditor {
     pub fn new(mode: AgentToolbarEditorMode, ctx: &mut ViewContext<Self>) -> Self {
         let mut editor = Self {
