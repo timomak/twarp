@@ -18,10 +18,7 @@ use warp_multi_agent_api::ConversationData;
 use super::auth::AuthClient;
 use super::ServerApi;
 use crate::ai::agent::api::ServerConversationToken;
-use crate::ai::agent::conversation::{
-    AIAgentConversationFormat, AIAgentHarness, AIAgentSerializedBlockFormat,
-    ServerAIConversationMetadata,
-};
+use crate::ai::agent::conversation::{AIAgentHarness, ServerAIConversationMetadata};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::artifacts::Artifact;
 use crate::ai::generate_code_review_content::api::{
@@ -46,10 +43,6 @@ use crate::{
             LLMUsageMetadata, ModelsByFeature, RoutingHostConfig,
         },
         RequestUsageInfo,
-    },
-    ai_assistant::{
-        execution_context::WarpAiExecutionContext, requests::GenerateDialogueResult,
-        utils::TranscriptPart, AIGeneratedCommand, GenerateCommandsFromNaturalLanguageError,
     },
     drive::workflows::ai_assist::{GeneratedCommandMetadata, GeneratedCommandMetadataError},
     server::graphql::{
@@ -87,15 +80,6 @@ use warp_graphql::{
         generate_code_embeddings::{
             GenerateCodeEmbeddings, GenerateCodeEmbeddingsInput, GenerateCodeEmbeddingsResult,
             GenerateCodeEmbeddingsVariables,
-        },
-        generate_commands::{
-            GenerateCommands, GenerateCommandsInput, GenerateCommandsResult,
-            GenerateCommandsStatus, GenerateCommandsVariables,
-        },
-        generate_dialogue::{
-            GenerateDialogue, GenerateDialogueInput,
-            GenerateDialogueResult as GenerateDialogueResultGraphql, GenerateDialogueStatus,
-            GenerateDialogueVariables, TranscriptPart as TranscriptPartGraphql,
         },
         generate_metadata_for_command::{
             GenerateMetadataForCommand, GenerateMetadataForCommandInput,
@@ -246,20 +230,6 @@ pub struct AgentRunEvent {
     pub ref_id: Option<String>,
     pub execution_id: Option<String>,
     pub occurred_at: String,
-    pub sequence: i64,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ReportAgentEventRequest {
-    pub event_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub execution_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ref_id: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ReportAgentEventResponse {
     pub sequence: i64,
 }
 
@@ -467,6 +437,7 @@ pub struct FileArtifactRecord {
     pub filepath: String,
     pub description: Option<String>,
     pub mime_type: String,
+    #[allow(dead_code)]
     pub size_bytes: Option<i32>,
 }
 
@@ -729,19 +700,6 @@ struct ListAgentsResponse {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 pub trait AIClient: 'static + Send + Sync {
-    async fn generate_commands_from_natural_language(
-        &self,
-        prompt: String,
-        ai_execution_context: Option<WarpAiExecutionContext>,
-    ) -> Result<Vec<AIGeneratedCommand>, GenerateCommandsFromNaturalLanguageError>;
-
-    async fn generate_dialogue_answer(
-        &self,
-        transcript: Vec<TranscriptPart>,
-        prompt: String,
-        ai_execution_context: Option<WarpAiExecutionContext>,
-    ) -> anyhow::Result<GenerateDialogueResult>;
-
     async fn generate_metadata_for_command(
         &self,
         command: String,
@@ -840,11 +798,6 @@ pub trait AIClient: 'static + Send + Sync {
         conversation_ids: Option<Vec<String>>,
     ) -> anyhow::Result<Vec<ServerAIConversationMetadata>>;
 
-    async fn get_ai_conversation_format(
-        &self,
-        server_conversation_token: ServerConversationToken,
-    ) -> anyhow::Result<AIAgentConversationFormat, anyhow::Error>;
-
     async fn get_block_snapshot(
         &self,
         server_conversation_token: ServerConversationToken,
@@ -933,12 +886,6 @@ pub trait AIClient: 'static + Send + Sync {
         sequence: i64,
     ) -> anyhow::Result<(), anyhow::Error>;
 
-    async fn report_agent_event(
-        &self,
-        run_id: &str,
-        request: ReportAgentEventRequest,
-    ) -> anyhow::Result<ReportAgentEventResponse, anyhow::Error>;
-
     async fn mark_message_delivered(&self, message_id: &str) -> anyhow::Result<(), anyhow::Error>;
 
     async fn read_agent_message(
@@ -982,99 +929,6 @@ fn into_file_artifact_record(
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl AIClient for ServerApi {
-    async fn generate_commands_from_natural_language(
-        &self,
-        prompt: String,
-        // TODO: use relevant context from RequestContext and deprecate usage of ai_execution_context
-        _ai_execution_context: Option<WarpAiExecutionContext>,
-    ) -> Result<Vec<AIGeneratedCommand>, GenerateCommandsFromNaturalLanguageError> {
-        let default_err = GenerateCommandsFromNaturalLanguageError::Other;
-
-        let variables = GenerateCommandsVariables {
-            input: GenerateCommandsInput { prompt },
-            request_context: get_request_context(),
-        };
-
-        let operation = GenerateCommands::build(variables);
-        let response = self
-            .send_graphql_request(
-                operation,
-                Some(Duration::from_secs(AI_ASSISTANT_REQUEST_TIMEOUT_SECONDS)),
-            )
-            .await
-            .map_err(|_| default_err)?;
-
-        match response.generate_commands {
-            GenerateCommandsResult::GenerateCommandsOutput(output) => match output.status {
-                GenerateCommandsStatus::GenerateCommandsSuccess(success) => {
-                    Ok(success.commands.into_iter().map(Into::into).collect_vec())
-                }
-                GenerateCommandsStatus::GenerateCommandsFailure(failure) => {
-                    Err(failure.type_.into())
-                }
-                GenerateCommandsStatus::Unknown => {
-                    Err(GenerateCommandsFromNaturalLanguageError::Other)
-                }
-            },
-            _ => Err(GenerateCommandsFromNaturalLanguageError::Other),
-        }
-    }
-
-    async fn generate_dialogue_answer(
-        &self,
-        transcript: Vec<TranscriptPart>,
-        prompt: String,
-        // TODO: use relevant context from RequestContext and deprecate usage of ai_execution_context
-        _ai_execution_context: Option<WarpAiExecutionContext>,
-    ) -> anyhow::Result<GenerateDialogueResult> {
-        let graphql_transcript: Vec<TranscriptPartGraphql> = transcript
-            .into_iter()
-            .map(|part| TranscriptPartGraphql {
-                user: part.raw_user_prompt().to_string(),
-                assistant: part.raw_assistant_answer().to_string(),
-            })
-            .collect();
-        let variables = GenerateDialogueVariables {
-            input: GenerateDialogueInput {
-                transcript: graphql_transcript,
-                prompt,
-            },
-            request_context: get_request_context(),
-        };
-
-        let operation = GenerateDialogue::build(variables);
-        let response = self
-            .send_graphql_request(
-                operation,
-                Some(Duration::from_secs(AI_ASSISTANT_REQUEST_TIMEOUT_SECONDS)),
-            )
-            .await?;
-        match response.generate_dialogue {
-            GenerateDialogueResultGraphql::GenerateDialogueOutput(output) => match output.status {
-                GenerateDialogueStatus::GenerateDialogueSuccess(success) => {
-                    Ok(GenerateDialogueResult::Success {
-                        answer: success.answer,
-                        truncated: success.truncated,
-                        request_limit_info: success.request_limit_info.into(),
-                        transcript_summarized: success.transcript_summarized,
-                    })
-                }
-                GenerateDialogueStatus::GenerateDialogueFailure(failure) => {
-                    Ok(GenerateDialogueResult::Failure {
-                        request_limit_info: failure.request_limit_info.into(),
-                    })
-                }
-                GenerateDialogueStatus::Unknown => Err(anyhow!("failed to generate AI dialogue")),
-            },
-            GenerateDialogueResultGraphql::UserFacingError(e) => {
-                Err(anyhow!(get_user_facing_error_message(e)))
-            }
-            GenerateDialogueResultGraphql::Unknown => {
-                Err(anyhow!("failed to generate AI dialogue"))
-            }
-        }
-    }
-
     async fn generate_metadata_for_command(
         &self,
         command: String,
@@ -1574,43 +1428,6 @@ impl AIClient for ServerApi {
         }
     }
 
-    async fn get_ai_conversation_format(
-        &self,
-        server_conversation_token: ServerConversationToken,
-    ) -> anyhow::Result<AIAgentConversationFormat, anyhow::Error> {
-        use warp_graphql::queries::get_ai_conversation_format::{
-            GetAIConversationFormat, GetAIConversationFormatResult,
-            GetAIConversationFormatVariables,
-        };
-        use warp_graphql::queries::list_ai_conversations::ListAIConversationsInput;
-
-        let conversation_id = server_conversation_token.as_str().to_string();
-        let operation = GetAIConversationFormat::build(GetAIConversationFormatVariables {
-            input: ListAIConversationsInput {
-                conversation_ids: Some(vec![cynic::Id::new(conversation_id)]),
-            },
-            request_context: get_request_context(),
-        });
-        let response = self.send_graphql_request(operation, None).await?;
-
-        match response.list_ai_conversations {
-            GetAIConversationFormatResult::ListAIConversationsOutput(output) => {
-                let conversation = output
-                    .conversations
-                    .into_iter()
-                    .next()
-                    .ok_or_else(|| anyhow!("Conversation not found"))?;
-                Ok(convert_conversation_format(conversation.format))
-            }
-            GetAIConversationFormatResult::UserFacingError(e) => {
-                Err(anyhow!(get_user_facing_error_message(e)))
-            }
-            GetAIConversationFormatResult::Unknown => {
-                Err(anyhow!("Failed to get AI conversation format"))
-            }
-        }
-    }
-
     async fn get_block_snapshot(
         &self,
         server_conversation_token: ServerConversationToken,
@@ -1909,17 +1726,6 @@ impl AIClient for ServerApi {
             &UpdateBody { sequence },
         )
         .await
-    }
-
-    async fn report_agent_event(
-        &self,
-        run_id: &str,
-        request: ReportAgentEventRequest,
-    ) -> anyhow::Result<ReportAgentEventResponse, anyhow::Error> {
-        let response: ReportAgentEventResponse = self
-            .post_public_api(&format!("agent/events/{run_id}"), &request)
-            .await?;
-        Ok(response)
     }
 
     async fn mark_message_delivered(&self, message_id: &str) -> anyhow::Result<(), anyhow::Error> {
@@ -2273,23 +2079,6 @@ fn convert_harness(harness: warp_graphql::ai::AgentHarness) -> AIAgentHarness {
             ));
             AIAgentHarness::Unknown
         }
-    }
-}
-
-fn convert_block_snapshot_format(
-    format: warp_graphql::ai::SerializedBlockFormat,
-) -> AIAgentSerializedBlockFormat {
-    match format {
-        warp_graphql::ai::SerializedBlockFormat::JsonV1 => AIAgentSerializedBlockFormat::JsonV1,
-    }
-}
-
-fn convert_conversation_format(
-    format: warp_graphql::ai::AIConversationFormat,
-) -> AIAgentConversationFormat {
-    AIAgentConversationFormat {
-        has_task_list: format.has_task_list,
-        block_snapshot: format.block_snapshot.map(convert_block_snapshot_format),
     }
 }
 

@@ -3521,12 +3521,14 @@ pub enum AIAgentHarness {
 
 /// Describes the format of the conversation transcript data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum AIAgentSerializedBlockFormat {
     JsonV1,
 }
 
 /// Describes the format capabilities of a conversation.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AIAgentConversationFormat {
     /// Whether there is a Warp MAA task list available for this conversation.
     pub has_task_list: bool,

@@ -39,6 +39,7 @@ use crate::ai::agent_management::view::{AgentManagementView, AgentManagementView
 use crate::ai::agent_management::AgentManagementEvent;
 use crate::ai::ambient_agents::telemetry::{CloudAgentTelemetryEvent, CloudModeEntryPoint};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::ai::ask_ai_type::AskAIType;
 use crate::ai::blocklist::agent_view::agent_input_footer::editor::AgentToolbarEditorMode;
 use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
 use crate::ai::blocklist::history_model::load_conversation_from_server;
@@ -62,7 +63,6 @@ use crate::ai::{
     },
     facts::{view::AIFactPage, AIFactManager, AIFactView, AIFactViewEvent},
 };
-use crate::ai_assistant::execution_context::WarpAiExecutionContext;
 use crate::app_state::{
     LeafContents, LeafSnapshot, LeftPanelDisplayedTab, LeftPanelSnapshot, NotebookPaneSnapshot,
     PaneNodeSnapshot, PaneUuid, RightPanelSnapshot, SettingsPaneSnapshot, TabSnapshot,
@@ -223,19 +223,16 @@ use crate::autoupdate::{
 };
 use crate::banner::BannerState;
 use crate::changelog_model::{ChangelogModel, ChangelogRequestType, Event as ChangelogEvent};
-use crate::channel::Channel;
 use crate::cloud_object::toast_message::CloudObjectToastMessage;
 use crate::cloud_object::{
     CloudObject, GenericStringObjectFormat, JsonObjectType, ObjectType, Owner, Space,
 };
 use crate::context_chips::ChipRuntimeCapabilities;
 use crate::drive::import::modal::{ImportModal, ImportModalEvent};
-use crate::drive::workflows::arguments::ArgumentsState;
 use crate::drive::workflows::modal::{WorkflowModal, WorkflowModalEvent};
 use crate::drive::{
     CloudObjectTypeAndId, DriveObjectType, DrivePanel, DrivePanelEvent, OpenWarpDriveObjectSettings,
 };
-use crate::experiments::{BlockOnboarding, Experiment};
 use crate::menu::{
     Event as MenuEvent, Menu, MenuItem, MenuItemFields, MenuSelectionSource,
     DEFAULT_WIDTH as MENU_DEFAULT_WIDTH,
@@ -279,8 +276,7 @@ use crate::server::server_api::{ServerApi, ServerApiEvent, ServerApiProvider, Se
 use crate::server::telemetry::{
     AddTabWithShellSource, AnonymousUserSignupEntrypoint, CloseTarget, EnvVarTelemetryMetadata,
     FileTreeSource, KnowledgePaneEntrypoint, LaunchConfigUiLocation,
-    MCPServerCollectionPaneEntrypoint, OpenedWarpAISource, SharingDialogSource, TierLimitHitEvent,
-    WarpDriveSource,
+    MCPServerCollectionPaneEntrypoint, SharingDialogSource, TierLimitHitEvent, WarpDriveSource,
 };
 use crate::session_management::{SessionNavigationData, SessionSource};
 use crate::settings::{
@@ -364,14 +360,6 @@ use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::toast_stack::{
     ToastStack as WorkspaceToastStack, ToastStackEvent as WorkspaceToastStackEvent,
 };
-use crate::{
-    ai_assistant::{
-        panel::{AIAssistantPanelEvent, AIAssistantPanelView},
-        AskAIType, AI_ASSISTANT_FEATURE_NAME, AI_ASSISTANT_LOGO_COLOR,
-    },
-    settings,
-    ui_components::blended_colors,
-};
 use crate::{send_telemetry_from_ctx, GlobalResourceHandles};
 
 use futures::Future;
@@ -393,7 +381,6 @@ use warpui::fonts::Weight;
 use warpui::modals::{AlertDialogWithCallbacks, AppModalCallback};
 use warpui::windowing::{StateEvent, WindowManager};
 
-use warp_core::user_preferences::GetUserPreferences as _;
 use warpui::clipboard::ClipboardContent;
 #[cfg(target_family = "wasm")]
 use warpui::elements::Percentage;
@@ -570,13 +557,10 @@ const TAB_CONTENT_POSITION_ID: &str = "workspace_view:tab_content";
 const WELCOME_TIPS_POSITION_ID: &str = "welcome_tips_pill";
 const ELLIPSE_SVG_PATH: &str = "bundled/svg/ellipse.svg";
 
-const AI_ASSISTANT_BUTTON_ID: &str = "workspace_view:ai_assistant_button";
-
 const VERSION_DEPRECATION_BANNER_TEXT: &str = "Your app is out of date and some features may not work as expected. Please update immediately.";
 
 const VERSION_DEPRECATION_WITHOUT_PERMISSIONS_BANNER_TEXT: &str = "Some Warp features may not work as expected without updating immediately, but Warp is unable to perform the update.";
 
-const ASK_AI_ASSISTANT_KEYBINDING_NAME: &str = "workspace:toggle_ai_assistant";
 const TOGGLE_RESOURCE_CENTER_KEYBINDING_NAME: &str = "workspace:toggle_resource_center";
 
 /// Shared position ID for the new-session sidecar overlay. Used for both the
@@ -622,8 +606,7 @@ pub(crate) const LEFT_PANEL_WARP_DRIVE_BINDING_NAME: &str = "workspace:left_pane
 pub(crate) const LEFT_PANEL_AGENT_CONVERSATIONS_BINDING_NAME: &str =
     "workspace:left_panel_agent_conversations";
 
-const KEYBINDINGS_TO_CACHE: [&str; 4] = [
-    ASK_AI_ASSISTANT_KEYBINDING_NAME,
+const KEYBINDINGS_TO_CACHE: [&str; 3] = [
     TOGGLE_RESOURCE_CENTER_KEYBINDING_NAME,
     SHOW_SETTINGS_KEYBINDING_NAME,
     TOGGLE_COMMAND_PALETTE_KEYBINDING_NAME,
@@ -951,9 +934,6 @@ pub struct Workspace {
     reauth_banner_dismissed: bool,
     settings_file_error: Option<crate::settings::SettingsFileError>,
     settings_error_banner_dismissed: bool,
-    ai_assistant_panel: ViewHandle<AIAssistantPanelView>,
-    should_show_ai_assistant_warm_welcome: bool,
-    ai_assistant_close_warm_welcome_mouse_state_handle: MouseStateHandle,
     auth_override_warning_modal: ViewHandle<AuthOverrideWarningModal>,
     require_login_modal: ViewHandle<AuthView>,
     workflow_modal: ViewHandle<WorkflowModal>,
@@ -1486,21 +1466,6 @@ impl Workspace {
             WelcomeTipsViewState::Unavailable
         };
         (welcome_tips_view, welcome_tips_view_state)
-    }
-
-    fn build_ai_assistant_panel_view(
-        ctx: &mut ViewContext<Self>,
-        server_api: Arc<ServerApi>,
-        ai_client: Arc<dyn AIClient>,
-    ) -> ViewHandle<AIAssistantPanelView> {
-        let ai_assistant_panel =
-            ctx.add_typed_action_view(|ctx| AIAssistantPanelView::new(server_api, ai_client, ctx));
-
-        ctx.subscribe_to_view(&ai_assistant_panel, |me, _, event, ctx| {
-            me.handle_ai_assistant_panel_event(event, ctx);
-        });
-
-        ai_assistant_panel
     }
 
     fn build_resource_center_view(
@@ -2682,8 +2647,7 @@ impl Workspace {
         let rewind_confirmation_dialog = Self::build_rewind_confirmation_dialog(ctx);
         let delete_conversation_confirmation_dialog =
             Self::build_delete_conversation_confirmation_dialog(ctx);
-        let command_search_view =
-            ctx.add_typed_action_view(|ctx| CommandSearchView::new(ai_client.clone(), ctx));
+        let command_search_view = ctx.add_typed_action_view(CommandSearchView::new);
         ctx.subscribe_to_view(&command_search_view, |me, _, event, ctx| {
             me.handle_command_search_event(event, ctx);
         });
@@ -2777,9 +2741,6 @@ impl Workspace {
             None
         };
 
-        let ai_assistant_panel =
-            Self::build_ai_assistant_panel_view(ctx, server_api.clone(), ai_client.clone());
-
         ctx.observe(&tips_completed, Workspace::on_tips_model_changed);
 
         let autoupdate_handle = AutoupdateState::handle(ctx);
@@ -2826,28 +2787,6 @@ impl Workspace {
         ctx.subscribe_to_model(&WindowSettings::handle(ctx), |me, _handle, event, ctx| {
             me.handle_window_settings_changed_event(event, ctx);
         });
-
-        // Show the Warp AI warm welcome iff the user hasn't dismissed it nor interacted with Warp AI before.
-        // Also, avoid showing it in integration tests to prevent interaction with other tests.
-        let mut should_show_ai_assistant_warm_welcome: bool = !FeatureFlag::AgentMode.is_enabled()
-            && AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
-            && !matches!(ChannelState::channel(), Channel::Integration)
-            && ctx
-                .private_user_preferences()
-                .read_value(settings::DISMISSED_AI_ASSISTANT_WELCOME_KEY)
-                .unwrap_or_default()
-                .and_then(|s| serde_json::from_str(&s).ok())
-                .map(|dismissed: bool| !dismissed)
-                .unwrap_or(true);
-
-        // Don't automatically show the Warp AI welcome during onboarding if the block onboarding flow is being used.
-        // This way, we can delay the reveal until the end of the onboarding flow so as not to overwhelm the user.
-        if matches!(
-            BlockOnboarding::get_group(ctx),
-            Some(BlockOnboarding::VariantOne) | Some(BlockOnboarding::VariantTwo)
-        ) {
-            should_show_ai_assistant_warm_welcome = false;
-        }
 
         let tab_settings_handle = TabSettings::handle(ctx);
         ctx.subscribe_to_model(&tab_settings_handle, |me, _, event, ctx| {
@@ -3079,9 +3018,6 @@ impl Workspace {
             reauth_banner_dismissed: false,
             settings_file_error,
             settings_error_banner_dismissed: false,
-            ai_assistant_panel,
-            should_show_ai_assistant_warm_welcome,
-            ai_assistant_close_warm_welcome_mouse_state_handle: Default::default(),
             auth_override_warning_modal,
             suggested_agent_mode_workflow_modal,
             suggested_rule_modal,
@@ -4268,15 +4204,6 @@ impl Workspace {
         });
     }
 
-    fn dismiss_ai_assistant_warm_welcome(&mut self, ctx: &mut ViewContext<Self>) {
-        self.should_show_ai_assistant_warm_welcome = false;
-        let _ = ctx.private_user_preferences().write_value(
-            settings::DISMISSED_AI_ASSISTANT_WELCOME_KEY,
-            true.to_string(),
-        );
-        ctx.notify();
-    }
-
     /// Add and focus a new terminal pane in AI mode in a new tab.
     fn add_terminal_tab_in_ai_mode(
         &mut self,
@@ -4341,51 +4268,6 @@ impl Workspace {
         });
     }
 
-    fn toggle_ai_assistant_panel(&mut self, ctx: &mut ViewContext<Self>) {
-        // Now that the user has interacted with the panel, we can close
-        // the dialogue and mark it as dismissed.
-        if self.should_show_ai_assistant_warm_welcome {
-            self.dismiss_ai_assistant_warm_welcome(ctx);
-        }
-
-        self.tips_completed.update(ctx, |tips_completed, ctx| {
-            mark_feature_used_and_write_to_user_defaults(
-                Tip::Action(TipAction::WarpAI),
-                tips_completed,
-                ctx,
-            );
-            ctx.notify();
-        });
-
-        // The panel is already open and no models are open, so just refocus the panel.
-        // If there is a modal open, it would sit above the Warp AI panel and we would end up
-        // focusing the Warp AI panel _behind_ the floating modal. Instead, we opt for the normal
-        // toggle behavior which will close the current modal view and then toggle Warp AI.
-        if self.current_workspace_state.is_ai_assistant_panel_open
-            && !self.ai_assistant_panel.is_self_or_child_focused(ctx)
-            && !self.current_workspace_state.is_any_modal_open(ctx)
-        {
-            ctx.focus(&self.ai_assistant_panel);
-            return;
-        }
-
-        // Otherwise, open / close the panel accordingly.
-        self.current_workspace_state.is_ai_assistant_panel_open =
-            !self.current_workspace_state.is_ai_assistant_panel_open;
-
-        // Close any other modals that could be floating on top of the Warp AI panel.
-        self.current_workspace_state.close_all_modals();
-
-        if self.current_workspace_state.is_ai_assistant_panel_open {
-            // Close the resource center panel if we open the AI Assistant panel.
-            self.current_workspace_state.is_resource_center_open = false;
-            ctx.focus(&self.ai_assistant_panel);
-        } else {
-            self.focus_active_tab(ctx);
-        }
-        ctx.notify();
-    }
-
     /// Sets focused to the index of either the selected object or the first item in WD
     fn reset_focused_index_in_warp_drive(
         &mut self,
@@ -4430,9 +4312,7 @@ impl Workspace {
             return FocusRegion::RightPanel;
         }
 
-        if self.ai_assistant_panel.is_self_or_child_focused(app)
-            || self.resource_center_view.is_self_or_child_focused(app)
-        {
+        if self.resource_center_view.is_self_or_child_focused(app) {
             return FocusRegion::RightPanel;
         }
 
@@ -4482,9 +4362,7 @@ impl Workspace {
             ctx.focus(&self.right_panel_view);
             return;
         }
-        if self.current_workspace_state.is_ai_assistant_panel_open {
-            ctx.focus(&self.ai_assistant_panel);
-        } else if self.current_workspace_state.is_resource_center_open {
+        if self.current_workspace_state.is_resource_center_open {
             ctx.focus(&self.resource_center_view);
         }
     }
@@ -4613,7 +4491,7 @@ impl Workspace {
     }
 
     /// This function shifts focus to the panel on the left.
-    /// The current focusable panels are: Warp Drive, theme chooser, AI, and resource center (keyboard shortcuts page only)
+    /// The current focusable panels are: Warp Drive, theme chooser, and resource center (keyboard shortcuts page only)
     fn focus_left_panel(&mut self, ctx: &mut ViewContext<Self>) {
         // Starts from terminal
         if self.active_tab_pane_group().is_self_or_child_focused(ctx) {
@@ -4621,25 +4499,19 @@ impl Workspace {
                 self.reset_focused_index_in_warp_drive(true, ctx);
             } else if self.is_theme_chooser_open() {
                 ctx.focus(&self.theme_chooser_view);
-            } else if self.current_workspace_state.is_ai_assistant_panel_open {
-                ctx.focus(&self.ai_assistant_panel);
             } else if self.current_workspace_state.is_resource_center_open {
                 ctx.focus(&self.resource_center_view);
             }
         }
-        // Starts from a right panel: AI panel, resource center (keyboard shortcuts page only)
-        else if self.ai_assistant_panel.is_self_or_child_focused(ctx)
-            || self.resource_center_view.is_self_or_child_focused(ctx)
-        {
+        // Starts from a right panel: resource center (keyboard shortcuts page only)
+        else if self.resource_center_view.is_self_or_child_focused(ctx) {
             self.focus_active_tab(ctx);
         }
         // Starts from a left panel: Warp Drive
         else if self.is_warp_drive_view_focused(ctx) {
             if self.current_workspace_state.is_right_panel_open() {
                 self.set_selected_object(None, ctx);
-                if self.current_workspace_state.is_ai_assistant_panel_open {
-                    ctx.focus(&self.ai_assistant_panel);
-                } else if self.current_workspace_state.is_resource_center_open {
+                if self.current_workspace_state.is_resource_center_open {
                     ctx.focus(&self.resource_center_view);
                 }
             } else {
@@ -4649,9 +4521,7 @@ impl Workspace {
         // Starts from a left panel: theme chooser
         else if self.theme_chooser_view.is_self_or_child_focused(ctx) {
             if self.current_workspace_state.is_right_panel_open() {
-                if self.current_workspace_state.is_ai_assistant_panel_open {
-                    ctx.focus(&self.ai_assistant_panel);
-                } else if self.current_workspace_state.is_resource_center_open {
+                if self.current_workspace_state.is_resource_center_open {
                     ctx.focus(&self.resource_center_view);
                 }
             } else {
@@ -4668,9 +4538,7 @@ impl Workspace {
     fn focus_right_panel(&mut self, ctx: &mut ViewContext<Self>) {
         // Starts from terminal
         if self.active_tab_pane_group().is_self_or_child_focused(ctx) {
-            if self.current_workspace_state.is_ai_assistant_panel_open {
-                ctx.focus(&self.ai_assistant_panel);
-            } else if self.current_workspace_state.is_resource_center_open {
+            if self.current_workspace_state.is_resource_center_open {
                 ctx.focus(&self.resource_center_view);
             } else if self.current_workspace_state.is_warp_drive_open {
                 self.reset_focused_index_in_warp_drive(true, ctx);
@@ -4684,10 +4552,8 @@ impl Workspace {
         {
             self.focus_active_tab(ctx);
         }
-        // Starts from a right panel: AI panel, resource center (keyboard shortcuts page only)
-        else if self.ai_assistant_panel.is_self_or_child_focused(ctx)
-            || self.resource_center_view.is_self_or_child_focused(ctx)
-        {
+        // Starts from a right panel: resource center (keyboard shortcuts page only)
+        else if self.resource_center_view.is_self_or_child_focused(ctx) {
             if self.current_workspace_state.is_left_panel_open() {
                 if self.current_workspace_state.is_warp_drive_open {
                     self.reset_focused_index_in_warp_drive(true, ctx);
@@ -7802,12 +7668,6 @@ impl Workspace {
     }
 
     pub fn toggle_resource_center(&mut self, ctx: &mut ViewContext<Self>) {
-        // Close AI Assistant panel when resource center is opened
-        if !self.current_workspace_state.is_resource_center_open {
-            self.current_workspace_state.is_ai_assistant_panel_open = false;
-            self.focus_active_tab(ctx);
-        }
-
         if !self.current_workspace_state.is_resource_center_open {
             self.open_resource_center_main_page(ctx);
             send_telemetry_from_ctx!(TelemetryEvent::ResourceCenterOpened, ctx);
@@ -8470,8 +8330,6 @@ impl Workspace {
                     resource_center_view.set_current_page(ResourceCenterPage::Keybindings, ctx)
                 });
 
-            // Ensure other right panels are closed
-            self.current_workspace_state.is_ai_assistant_panel_open = false;
             // Open side panel
             self.current_workspace_state.is_resource_center_open = true;
             send_telemetry_from_ctx!(TelemetryEvent::KeybindingsPageOpened, ctx);
@@ -12042,7 +11900,6 @@ impl Workspace {
         let is_tab_menu_open = self.show_tab_bar_overflow_menu
             || (self.show_tab_right_click_menu.is_some() && !is_vertical_tabs_active)
             || (self.show_new_session_dropdown_menu.is_some() && !is_vertical_tabs_active)
-            || (!FeatureFlag::AgentMode.is_enabled() && self.should_show_ai_assistant_warm_welcome)
             || self.is_user_menu_open
             || self.tab_bar_pinned_by_popup;
 
@@ -12729,10 +12586,8 @@ impl Workspace {
                             stack.add_ephemeral_toast(toast, ctx);
                         });
                     } else {
-                        // If resource center isn't already open and Warp AI isn't open, then open resource center
-                        if !self.current_workspace_state.is_resource_center_open
-                            && !self.current_workspace_state.is_ai_assistant_panel_open
-                        {
+                        // If resource center isn't already open, then open resource center
+                        if !self.current_workspace_state.is_resource_center_open {
                             self.open_resource_center_main_page(ctx);
                             self.update_resource_center_action_target(ctx);
                             ctx.notify();
@@ -12741,9 +12596,7 @@ impl Workspace {
                 }
             }
             (_, Some(ChangelogRequestType::UserAction), _) => {
-                if !self.current_workspace_state.is_resource_center_open
-                    && !self.current_workspace_state.is_ai_assistant_panel_open
-                {
+                if !self.current_workspace_state.is_resource_center_open {
                     self.open_resource_center_main_page(ctx);
                     self.update_resource_center_action_target(ctx);
                     ctx.notify();
@@ -13089,7 +12942,6 @@ impl Workspace {
             pane_group::Event::OpenPluginInstructionsPane(agent, kind) => {
                 self.open_plugin_instructions_pane(*agent, *kind, ctx);
             }
-            pane_group::Event::AskAIAssistant(ask_type) => self.ask_ai_assistant(ask_type, ctx),
             pane_group::Event::SyncInput(input_type) => {
                 self.process_sync_event_for_all_synced_pane_groups(input_type, ctx);
             }
@@ -14215,10 +14067,6 @@ impl Workspace {
                 input_handle.read(ctx, |input, ctx| input.completion_session_context(ctx))
             });
 
-            let ai_execution_context = session_context
-                .as_ref()
-                .map(|session_context| WarpAiExecutionContext::new(&session_context.session));
-
             let menu_positioning = active_input_handle
                 .as_ref()
                 .map_or_else(MenuPositioning::default, |input_handle| {
@@ -14249,7 +14097,6 @@ impl Workspace {
                     initial_query,
                     query_filter,
                     menu_positioning,
-                    ai_execution_context,
                     ctx,
                 );
             });
@@ -14990,17 +14837,6 @@ impl Workspace {
                                     ctx,
                                 )
                             });
-                        } else {
-                            active_input_handle.update(ctx, |input, ctx| {
-                                input.replace_buffer_content("", ctx);
-                            });
-
-                            self.ask_ai_assistant(
-                                &AskAIType::FromAICommandSearch {
-                                    query: Arc::new(query.to_string()),
-                                },
-                                ctx,
-                            );
                         }
                     }
                     AcceptAIQuery(ai_query) => {
@@ -15314,8 +15150,6 @@ impl Workspace {
                 self.focus_theme_chooser(ctx);
             } else if self.current_workspace_state.is_resource_center_open {
                 ctx.focus(&self.resource_center_view);
-            } else if self.current_workspace_state.is_ai_assistant_panel_open {
-                ctx.focus(&self.ai_assistant_panel);
             } else if self
                 .current_workspace_state
                 .is_close_session_confirmation_dialog_open
@@ -15574,7 +15408,6 @@ impl Workspace {
         self.current_workspace_state.is_palette_open = false;
         self.current_workspace_state.is_ctrl_tab_palette_open = false;
         self.previous_workspace_state = Some(self.current_workspace_state);
-        self.current_workspace_state.is_ai_assistant_panel_open = false;
         self.current_workspace_state.is_theme_chooser_open = true;
 
         self.previous_theme = Some(current_theme);
@@ -15806,46 +15639,6 @@ impl Workspace {
                 }
             }
         };
-    }
-
-    fn handle_ai_assistant_panel_event(
-        &mut self,
-        event: &AIAssistantPanelEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            AIAssistantPanelEvent::ClosePanel => {
-                self.current_workspace_state.is_ai_assistant_panel_open = false;
-                self.focus_active_tab(ctx);
-                ctx.notify();
-            }
-            AIAssistantPanelEvent::PasteInTerminalInput(code) => {
-                let command = code.trim().to_string();
-                let args_state =
-                    ArgumentsState::for_command_workflow(&Default::default(), command.clone());
-                let workflow = Workflow::new("Command from Warp AI", command)
-                    .with_arguments(args_state.arguments);
-                self.run_workflow_in_active_input(
-                    &WorkflowType::AIGenerated {
-                        workflow,
-                        origin: AIWorkflowOrigin::LegacyWarpAI,
-                    },
-                    WorkflowSource::WarpAI,
-                    WorkflowSelectionSource::WarpAI,
-                    None,
-                    TerminalSessionFallbackBehavior::default(),
-                    ctx,
-                );
-                ctx.notify();
-            }
-            AIAssistantPanelEvent::FocusTerminalInput => {
-                self.focus_active_tab(ctx);
-                ctx.notify();
-            }
-            AIAssistantPanelEvent::OpenWorkflowModalWithCommand(command) => {
-                self.open_workflow_with_command(command.clone(), ctx);
-            }
-        }
     }
 
     fn handle_openwarp_launch_modal_event(
@@ -16225,20 +16018,6 @@ impl Workspace {
         true
     }
 
-    fn ask_ai_assistant(&mut self, ask_type: &AskAIType, ctx: &mut ViewContext<Self>) {
-        if !self.current_workspace_state.is_ai_assistant_panel_open {
-            self.toggle_ai_assistant_panel(ctx);
-        }
-
-        ctx.focus(&self.ai_assistant_panel);
-
-        self.ai_assistant_panel.update(ctx, |ai_assistant, ctx| {
-            ai_assistant.ask_ai(ask_type, ctx);
-        });
-
-        ctx.notify();
-    }
-
     /// Determines if the changelog is currently being shown or if the changelog request is
     /// in-flight
     ///
@@ -16484,100 +16263,6 @@ impl Workspace {
         );
 
         ctx.notify();
-    }
-
-    fn render_ai_assistant_warm_welcome(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let theme = appearance.theme();
-        let background_color = theme.surface_2();
-        let border_color = theme.surface_3();
-        let sub_text_color = blended_colors::text_sub(theme, background_color);
-
-        let header = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(
-                Container::new(
-                    ConstrainedBox::new(
-                        WarpUiIcon::new(icons::Icon::AiAssistant.into(), *AI_ASSISTANT_LOGO_COLOR)
-                            .finish(),
-                    )
-                    .with_width(16.)
-                    .with_height(16.)
-                    .finish(),
-                )
-                .with_margin_right(4.)
-                .finish(),
-            )
-            .with_child(
-                Text::new_inline(AI_ASSISTANT_FEATURE_NAME, appearance.ui_font_family(), 14.)
-                    .with_style(Properties {
-                        weight: warpui::fonts::Weight::Bold,
-                        ..Default::default()
-                    })
-                    .finish(),
-            )
-            .with_child(
-                Shrinkable::new(
-                    1.,
-                    Align::new(
-                        appearance
-                            .ui_builder()
-                            .close_button(
-                                20.,
-                                self.ai_assistant_close_warm_welcome_mouse_state_handle
-                                    .clone(),
-                            )
-                            .build()
-                            .on_click(|ctx, _, _| {
-                                ctx.dispatch_typed_action(
-                                    WorkspaceAction::DismissAIAssistantWarmWelcome,
-                                )
-                            })
-                            .finish(),
-                    )
-                    .right()
-                    .finish(),
-                )
-                .finish(),
-            )
-            .finish();
-
-        let body = appearance
-            .ui_builder()
-            .wrappable_text(
-                "Ask Warp AI to explain errors, suggest commands or write scripts.".to_owned(),
-                true,
-            )
-            .with_style(UiComponentStyles {
-                font_size: Some(12.),
-                font_color: Some(sub_text_color),
-                ..Default::default()
-            })
-            .build()
-            .finish();
-
-        ConstrainedBox::new(
-            EventHandler::new(
-                Container::new(
-                    Flex::column()
-                        .with_child(header)
-                        .with_child(Container::new(body).with_margin_top(5.).finish())
-                        .finish(),
-                )
-                .with_background(background_color)
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
-                .with_uniform_padding(10.)
-                .with_border(Border::all(1.).with_border_color(border_color.into()))
-                .finish(),
-            )
-            .on_left_mouse_down(|ctx, _, _| {
-                ctx.dispatch_typed_action(WorkspaceAction::ClickedAIAssistantWarmWelcome);
-                DispatchEventResult::StopPropagation
-            })
-            .finish(),
-        )
-        .with_height(85.)
-        .with_width(210.)
-        .finish()
     }
 
     fn render_tab_in_tab_bar(
@@ -17396,25 +17081,6 @@ impl Workspace {
             }
         }
 
-        // Legacy AI assistant button (non-agent-mode only)
-        if is_online
-            && !FeatureFlag::AgentMode.is_enabled()
-            && !is_web_anonymous_user
-            && !self.current_workspace_state.is_ai_assistant_panel_open
-        {
-            target.add_child(
-                Container::new(
-                    SavePosition::new(
-                        self.render_legacy_warp_ai_entrypoint_button(appearance),
-                        AI_ASSISTANT_BUTTON_ID,
-                    )
-                    .finish(),
-                )
-                .with_margin_left(TAB_BAR_PADDING_LEFT)
-                .finish(),
-            );
-        }
-
         if FeatureFlag::AvatarInTabBar.is_enabled() {
             target.add_child(
                 Container::new(self.render_avatar_button(appearance, ctx))
@@ -18010,29 +17676,6 @@ impl Workspace {
         });
 
         Align::new(hoverable.finish()).finish()
-    }
-
-    fn render_legacy_warp_ai_entrypoint_button(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let (icon, action, label) = (
-            icons::Icon::AiAssistant,
-            WorkspaceAction::ClickedAIAssistantIcon,
-            AI_ASSISTANT_FEATURE_NAME.to_owned(),
-        );
-
-        Align::new(
-            self.render_tab_bar_icon_button(
-                appearance,
-                icon,
-                &self.mouse_states.ai_tab_bar_button,
-                action,
-                label,
-                self.cached_keybindings[ASK_AI_ASSISTANT_KEYBINDING_NAME].clone(),
-                false,
-                false,
-            )
-            .finish(),
-        )
-        .finish()
     }
 
     fn render_tab_bar_icon_button_tooltip(
@@ -18917,21 +18560,14 @@ impl Workspace {
             }
         }
 
-        // Resource center and AI assistant are workspace-level panels, not configurable.
+        // Resource center is a workspace-level panel, not configurable.
         #[cfg(not(target_family = "wasm"))]
         if self.current_workspace_state.is_right_panel_open() {
             let right_panel_content = if self.current_workspace_state.is_resource_center_open {
                 Some(self.render_panel(app, self.render_resource_center(), &PanelPosition::Right))
-            } else if self.current_workspace_state.is_ai_assistant_panel_open {
-                Some(self.render_panel(
-                    app,
-                    ChildView::new(&self.ai_assistant_panel).finish(),
-                    &PanelPosition::Right,
-                ))
             } else {
                 log::warn!(
-                    "is_right_panel_open() returned true, but neither the resource center nor AI \
-                    assistant are open"
+                    "is_right_panel_open() returned true, but the resource center is not open"
                 );
                 None
             };
@@ -20610,41 +20246,6 @@ impl TypedActionView for Workspace {
                     ctx.notify();
                 }
             }
-            ToggleAIAssistant => {
-                self.toggle_ai_assistant_panel(ctx);
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::ToggleWarpAI {
-                        opened: self.current_workspace_state.is_ai_assistant_panel_open
-                    },
-                    ctx
-                );
-            }
-            ClickedAIAssistantIcon => {
-                if !FeatureFlag::AgentMode.is_enabled() {
-                    self.toggle_ai_assistant_panel(ctx);
-                    if self.current_workspace_state.is_ai_assistant_panel_open {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::OpenedWarpAI {
-                                source: OpenedWarpAISource::GlobalEntryButton
-                            },
-                            ctx
-                        );
-                    }
-                }
-            }
-            ShowAIAssistantWarmWelcome => {
-                self.should_show_ai_assistant_warm_welcome = true;
-                ctx.notify();
-            }
-            ClickedAIAssistantWarmWelcome => {
-                self.toggle_ai_assistant_panel(ctx);
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::OpenedWarpAI {
-                        source: OpenedWarpAISource::WarmWelcome
-                    },
-                    ctx
-                );
-            }
             DragTab {
                 tab_index,
                 tab_position,
@@ -20669,9 +20270,6 @@ impl TypedActionView for Workspace {
                     .write(ClipboardContent::plain_text(text.to_string()));
             }
             DismissWorkspaceBanner(banner_type) => self.dismiss_workspace_banner(ctx, banner_type),
-            DismissAIAssistantWarmWelcome => {
-                self.dismiss_ai_assistant_warm_welcome(ctx);
-            }
             Crash => {
                 #[cfg(feature = "crash_reporting")]
                 crate::crash_reporting::crash();
@@ -22822,25 +22420,6 @@ impl View for Workspace {
                     ),
                 );
             }
-        }
-
-        if !FeatureFlag::AgentMode.is_enabled()
-            && AISettings::as_ref(app).is_any_ai_enabled(app)
-            && self.should_show_ai_assistant_warm_welcome
-            && !self.current_workspace_state.is_changelog_modal_open
-            && !self.current_workspace_state.is_resource_center_open
-            && tab_bar_mode.has_tab_bar()
-        {
-            stack.add_positioned_child(
-                self.render_ai_assistant_warm_welcome(appearance),
-                OffsetPositioning::offset_from_save_position_element(
-                    AI_ASSISTANT_BUTTON_ID,
-                    vec2f(0., 10.),
-                    PositionedElementOffsetBounds::Unbounded,
-                    PositionedElementAnchor::BottomRight,
-                    ChildAnchor::TopRight,
-                ),
-            );
         }
 
         let window_corner_radius = app.windows().window_corner_radius();
