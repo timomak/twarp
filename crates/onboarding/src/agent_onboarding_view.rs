@@ -3,9 +3,9 @@ use crate::model::{
     SelectedSettings,
 };
 use crate::slides::{
-    AgentSlide, AgentSlideEvent, CustomizeUISlide, FreeUserNoAiSlide, IntentionSlide, IntroSlide,
-    IntroSlideEvent, OnboardingModelInfo, OnboardingSlide, ProjectSlide, ThemePickerSlide,
-    ThemePickerSlideEvent, ThirdPartySlide,
+    CustomizeUISlide, FreeUserNoAiSlide, IntentionSlide, IntroSlide, IntroSlideEvent,
+    OnboardingModelInfo, OnboardingSlide, ProjectSlide, ThemePickerSlide, ThemePickerSlideEvent,
+    ThirdPartySlide,
 };
 use crate::telemetry::OnboardingEvent;
 use ai::LLMId;
@@ -56,8 +56,11 @@ pub enum AgentOnboardingEvent {
     /// rely on that to select the right visual / back-routing behavior.
     PrivacySettingsFromTerminalThemeSlideRequested,
     UpgradeRequested,
-    UpgradeCopyUrlRequested,
-    UpgradePasteTokenFromClipboardRequested,
+    // twarp: `UpgradeCopyUrlRequested` and
+    // `UpgradePasteTokenFromClipboardRequested` were emitted by the agent
+    // slide's "copy upgrade URL" / "paste auth token" buttons. The slide
+    // and those buttons were deleted in 2c-a, so these variants and their
+    // root_view / bin/main match arms are gone too.
     /// Emitted when the app regains focus (e.g. user returns from the browser).
     /// The parent should refresh any stale data: available models, workspace/billing metadata, etc.
     AppBecameActive,
@@ -70,7 +73,10 @@ pub struct AgentOnboardingView {
     intention_slide: ViewHandle<IntentionSlide>,
     customize_slide: ViewHandle<CustomizeUISlide>,
     free_user_no_ai_slide: ViewHandle<FreeUserNoAiSlide>,
-    agent_slide: ViewHandle<AgentSlide>,
+    // twarp: agent_slide field removed in 2c-a along with the AgentSlide
+    // source. OnboardingStep::Agent is unreachable per 2b's next/back
+    // bypass; the render arm in `view()` falls back to the intro slide
+    // defensively.
     third_party_slide: ViewHandle<ThirdPartySlide>,
     project_slide: ViewHandle<ProjectSlide>,
     skippable: bool,
@@ -188,19 +194,7 @@ impl AgentOnboardingView {
             me.handle_theme_picker_slide_event(event, ctx);
         });
 
-        let agent_slide = {
-            let onboarding_state = onboarding_state.clone();
-            ctx.add_typed_action_view(move |ctx| AgentSlide::new(onboarding_state, ctx))
-        };
-
-        ctx.subscribe_to_view(&agent_slide, |_me, _view, event, ctx| match event {
-            AgentSlideEvent::CopyUpgradeUrlRequested => {
-                ctx.emit(AgentOnboardingEvent::UpgradeCopyUrlRequested);
-            }
-            AgentSlideEvent::PasteAuthTokenFromClipboardRequested => {
-                ctx.emit(AgentOnboardingEvent::UpgradePasteTokenFromClipboardRequested);
-            }
-        });
+        // twarp: agent slide construction removed in 2c-a.
 
         let third_party_slide = {
             let onboarding_state = onboarding_state.clone();
@@ -238,7 +232,6 @@ impl AgentOnboardingView {
             intention_slide,
             customize_slide,
             free_user_no_ai_slide,
-            agent_slide,
             third_party_slide,
             project_slide,
             skippable,
@@ -444,7 +437,6 @@ impl View for AgentOnboardingView {
                 }
             }
             OnboardingStep::Customize => ChildView::new(&self.customize_slide).finish(),
-            OnboardingStep::Agent => ChildView::new(&self.agent_slide).finish(),
             OnboardingStep::ThirdParty => ChildView::new(&self.third_party_slide).finish(),
             OnboardingStep::Project => ChildView::new(&self.project_slide).finish(),
         };
@@ -519,9 +511,6 @@ impl TypedActionView for AgentOnboardingView {
                 }
             }
             OnboardingStep::Customize => self.customize_slide.update(ctx, |slide, ctx| {
-                dispatch_onboarding_action_to_slide(slide, *action, ctx)
-            }),
-            OnboardingStep::Agent => self.agent_slide.update(ctx, |slide, ctx| {
                 dispatch_onboarding_action_to_slide(slide, *action, ctx)
             }),
             OnboardingStep::ThirdParty => self.third_party_slide.update(ctx, |slide, ctx| {
