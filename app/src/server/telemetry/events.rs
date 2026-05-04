@@ -36,9 +36,6 @@ use crate::ai::blocklist::AIBlockResponseRating;
 use crate::ai::blocklist::CommandExecutionPermissionAllowedReason;
 use crate::ai::blocklist::InputType;
 use crate::ai::mcp::TemplateVariable;
-use crate::ai::predict::generate_ai_input_suggestions::GenerateAIInputSuggestionsRequest;
-use crate::ai::predict::generate_ai_input_suggestions::GenerateAIInputSuggestionsResponseV2;
-use crate::ai::predict::next_command_model::HistoryBasedAutosuggestionState;
 use crate::auth::auth_manager::LoginGatedFeature;
 use crate::channel::Channel;
 use crate::cloud_object::{
@@ -1989,6 +1986,9 @@ pub enum TelemetryEvent {
 
     /// This is a telemetry event used to help track performance of Agent Predict in Warp,
     /// by keeping track of the context given and the predictions generated.
+    /// twarp: variant retained for 2d cleanup; field types switched to opaque
+    /// `serde_json::Value` because their underlying types lived under the deleted
+    /// `app/src/ai/predict/` tree.
     AgentModePrediction {
         was_suggestion_accepted: bool,
         request_duration_ms: i64,
@@ -1999,9 +1999,9 @@ pub enum TelemetryEvent {
         total_history_count: usize,
         // The below fields are only collected if telemetry is enabled.
         actual_next_command_run: Option<String>,
-        history_based_autosuggestion_state: Option<HistoryBasedAutosuggestionState>,
-        generate_ai_input_suggestions_request: Option<GenerateAIInputSuggestionsRequest>,
-        generate_ai_input_suggestions_response: Option<GenerateAIInputSuggestionsResponseV2>,
+        history_based_autosuggestion_state: Option<serde_json::Value>,
+        generate_ai_input_suggestions_request: Option<serde_json::Value>,
+        generate_ai_input_suggestions_response: Option<serde_json::Value>,
     },
 
     /// Keeps track of number of times the user is presented with a Prompt Suggestions banner.
@@ -3522,8 +3522,10 @@ impl TelemetryEvent {
                 let (history_command_prediction, history_command_prediction_likelihood) =
                     if let Some(state) = history_based_autosuggestion_state {
                         (
-                            Some(state.history_command_prediction.clone()),
-                            Some(state.history_command_prediction_likelihood),
+                            state.get("history_command_prediction").cloned(),
+                            state
+                                .get("history_command_prediction_likelihood")
+                                .and_then(|v| v.as_f64()),
                         )
                     } else {
                         (None, None)

@@ -75,7 +75,7 @@ use crate::{
         },
         mcp::{mcp_provider_from_file_path, MCPProvider},
         paths::host_native_absolute_path,
-        predict::prompt_suggestions::ACCEPT_PROMPT_SUGGESTION_KEYBINDING,
+        prompt_suggestions::ACCEPT_PROMPT_SUGGESTION_KEYBINDING,
         skills::{
             icon_override_for_skill_name, render_skill_button, skill_path_from_file_path,
             SkillManager, SkillReference,

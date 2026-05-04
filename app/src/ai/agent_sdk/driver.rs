@@ -401,6 +401,8 @@ pub enum AgentDriverError {
     SecretsFetchFailed(#[source] anyhow::Error),
     #[error("Failed to load conversation: {0}")]
     ConversationLoadFailed(String),
+    // twarp: 2c-d.6 will delete agent_sdk; until then keep this variant compilable.
+    #[allow(dead_code)]
     #[error("Failed to initialize AWS Bedrock credentials: {0}")]
     AwsBedrockCredentialsFailed(String),
     #[error(

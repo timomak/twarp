@@ -57,7 +57,7 @@ use crate::ai::blocklist::agent_view::{
     ExitConfirmationTrigger, InlineAgentViewHeader, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
 use crate::ai::conversation_utils;
-use crate::ai::predict::prompt_suggestions::{
+use crate::ai::prompt_suggestions::{
     has_pending_code_or_unit_test_prompt_suggestion,
     is_accept_prompt_suggestion_bound_to_cmd_enter,
     is_accept_prompt_suggestion_bound_to_ctrl_enter,
@@ -157,7 +157,6 @@ use crate::terminal::view::ssh_remote_server_choice_view::{
 use crate::terminal::view::ssh_remote_server_failed_banner::{
     SshRemoteServerFailedBanner, SshRemoteServerFailedBannerEvent,
 };
-use crate::terminal::view::telemetry::PromptSuggestionFallbackReason;
 use crate::workspace::view::cloud_agent_capacity_modal::CloudAgentCapacityModalVariant;
 use crate::workspaces::user_workspaces::UserWorkspacesEvent;
 
@@ -216,10 +215,9 @@ use crate::ai::{
         BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIController,
         BlocklistAIControllerEvent, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
         BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig, InputType,
-        LegacyPassiveSuggestionsEvent, LegacyPassiveSuggestionsModel, MaaPassiveSuggestionsEvent,
-        MaaPassiveSuggestionsModel, PassiveSuggestionsModels, PendingQueryState,
-        RequestFileEditsFormatKind, ShellCommandExecutor, ShellCommandExecutorEvent,
-        StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
+        MaaPassiveSuggestionsEvent, MaaPassiveSuggestionsModel, PassiveSuggestionsModels,
+        PendingQueryState, RequestFileEditsFormatKind, ShellCommandExecutor,
+        ShellCommandExecutorEvent, StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
         ATTACH_AS_AGENT_MODE_CONTEXT_TEXT, PRE_REWIND_PREFIX,
     },
     execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId},
@@ -3337,23 +3335,8 @@ impl TerminalView {
             &maa_passive_suggestions_model,
             Self::handle_maa_passive_suggestions_event,
         );
-        let legacy_passive_suggestions_model = ctx.add_model(|ctx| {
-            LegacyPassiveSuggestionsModel::new(
-                active_session.clone(),
-                model.clone(),
-                ai_controller.clone(),
-                &model_events_handle,
-                terminal_view_id,
-                ctx,
-            )
-        });
-        ctx.subscribe_to_model(
-            &legacy_passive_suggestions_model,
-            Self::handle_legacy_passive_suggestions_event,
-        );
         let passive_suggestions_models = PassiveSuggestionsModels {
             maa: maa_passive_suggestions_model,
-            legacy: legacy_passive_suggestions_model,
         };
 
         let find_model = ctx.add_model(|_| TerminalFindModel::new(model.clone()));
@@ -4720,49 +4703,6 @@ impl TerminalView {
 
             self.update_input_prompt_suggestions_banner_state(ctx);
             ctx.notify();
-        }
-    }
-
-    fn handle_legacy_passive_suggestions_event(
-        &mut self,
-        _: ModelHandle<LegacyPassiveSuggestionsModel>,
-        event: &LegacyPassiveSuggestionsEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            LegacyPassiveSuggestionsEvent::PromptSuggestionsGenerated {
-                prompt_suggestion,
-                block_id,
-                command,
-                request_duration_ms,
-            } => {
-                self.on_legacy_prompt_suggestion_generated(
-                    prompt_suggestion.clone(),
-                    block_id.clone(),
-                    command.clone(),
-                    *request_duration_ms,
-                    ctx,
-                );
-            }
-            LegacyPassiveSuggestionsEvent::PassiveCodeDiffRequestStarted {
-                prompt_suggestion_id,
-                code_exchange_id,
-                block_id,
-            } => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::SuggestedCodeDiffBannerShown {
-                        prompt_suggestion_id: prompt_suggestion_id.clone(),
-                        code_exchange_id: *code_exchange_id,
-                        block_id: Some(block_id.to_string()),
-                        request_duration_ms: 0,
-                        server_request_token: None,
-                    },
-                    ctx
-                );
-            }
-            LegacyPassiveSuggestionsEvent::PassiveCodeDiffFailed { reason } => {
-                self.try_clear_prompt_suggestions_banner_code_state(*reason, ctx);
-            }
         }
     }
 
@@ -7256,14 +7196,6 @@ impl TerminalView {
             active_init_env_block.update(ctx, |init_env_block, ctx| {
                 init_env_block.handle_ctrl_c(ctx);
             });
-        } else if self
-            .passive_suggestions_models
-            .legacy
-            .as_ref(ctx)
-            .is_passive_code_diff_being_generated()
-        {
-            // Handle Ctrl-C for passive code generation blocks ("Generating fix..." state)
-            self.abort_prompt_and_code_suggestions(ctx);
         } else if let Some(active_env_var_block) = self.active_env_var_collection_block(ctx) {
             active_env_var_block.update(ctx, |env_var_block, ctx| {
                 env_var_block.handle_ctrl_c(ctx);
@@ -8865,30 +8797,6 @@ impl TerminalView {
         true
     }
 
-    /// Try clearing agent mode query banner's passive code generation state.
-    /// Called when a suggested code diff fails and we need to fall back to prompt suggestions.
-    fn try_clear_prompt_suggestions_banner_code_state(
-        &mut self,
-        fallback_reason: PromptSuggestionFallbackReason,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let Some(banner) = &mut self.inline_banners_state.prompt_suggestions_banner {
-            banner.should_hide = false;
-            banner.prompt_suggestion.coding_query_context = None;
-            self.input.update(ctx, |input, ctx| {
-                input.maybe_set_prompt_suggestions_banner_state_should_hide(false);
-                input.notify_and_notify_children(ctx);
-            });
-            send_telemetry_from_ctx!(
-                TelemetryEvent::SuggestedCodeDiffFailed {
-                    prompt_suggestion_id: banner.prompt_suggestion.id.clone(),
-                    reason: fallback_reason,
-                },
-                ctx
-            );
-        }
-    }
-
     fn associate_and_promote_block_for_conversation(
         &mut self,
         block_id: BlockId,
@@ -9876,36 +9784,9 @@ impl TerminalView {
 
     // Abort any pending prompt or code suggestions, which may now be irrelevant.
     fn abort_prompt_and_code_suggestions(&mut self, ctx: &mut ViewContext<Self>) {
-        // Abort both models to handle any in-flight requests from before a
-        // feature flag change.
         self.passive_suggestions_models
             .maa
             .update(ctx, |model, ctx| model.abort_pending_requests(ctx));
-        let pending_stream_ids = self
-            .passive_suggestions_models
-            .legacy
-            .update(ctx, |model, ctx| model.abort_pending_requests(ctx));
-        for stream_id in pending_stream_ids {
-            if let Some(passive_block) =
-                self.rich_content_views
-                    .iter()
-                    .rev()
-                    .find_map(|rich_content| {
-                        let ai_metadata = rich_content.ai_block_metadata()?;
-                        if ai_metadata
-                            .ai_block_handle
-                            .as_ref(ctx)
-                            .response_stream_id()
-                            .is_some_and(|id| id == &stream_id)
-                        {
-                            return Some(ai_metadata.ai_block_handle.clone());
-                        }
-                        None
-                    })
-            {
-                self.cleanup_and_remove_conversation_for_ai_block(&passive_block, ctx);
-            }
-        }
     }
 
     /// Cleans up and removes the conversation associated with the given AI block.

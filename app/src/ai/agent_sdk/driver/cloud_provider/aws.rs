@@ -7,8 +7,11 @@ use warp_core::safe_info;
 use warp_managed_secrets::ManagedSecretManager;
 use warpui::{ModelSpawner, SingletonEntity};
 
-use crate::ai::aws_credentials::aws_role_session_name;
 use crate::ai::cloud_environments::AwsProviderConfig;
+
+fn aws_role_session_name(run_id: &str) -> String {
+    format!("Oz_Run_{run_id}")
+}
 
 use super::super::terminal::TerminalDriver;
 use super::{CloudProvider, CloudProviderSetupError, Result};
