@@ -70,7 +70,7 @@ PR title: `[twarp 02b] ai-removal: default off and strip enable path`.
 
 ### 2c — Delete dead AI code
 
-**Diff shape:** large by line count (entire modules deleted), small by review surface (mechanical deletions). Iterative: 3-5 commits, `simplify` between each.
+**Diff shape:** large by line count (entire modules deleted), small by review surface (mechanical deletions). **Sub-split into focused per-module PRs (2c-a … 2c-f) — see STATUS.md for the breakdown.** The original "single PR, multi-commit" plan was unworkable in practice: ~204K lines across four module trees, plus 86 `ai_assistant` touchpoints in `app/src/workspace/view.rs` alone, made one mega-PR both review-impossible and merge-fragile (a single regression in any cascade would block the entire deletion). Each sub-PR compiles and passes presubmit on its own, runs `simplify` after the cascade settles, and ships independently.
 
 Order of deletion (leaves first):
 

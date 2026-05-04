@@ -7,7 +7,6 @@ use crate::auth::auth_state::AuthState;
 use crate::auth::auth_view_modal::AuthRedirectPayload;
 use crate::auth::login_slide::{LoginSlideEvent, LoginSlideSource, LoginSlideView};
 use crate::auth::needs_sso_link_view::NeedsSsoLinkView;
-use crate::auth::paste_auth_token_modal::{PasteAuthTokenModalEvent, PasteAuthTokenModalView};
 use crate::auth::{AuthStateProvider, LoginFailureReason};
 use crate::autoupdate::{AutoupdateState, AutoupdateStateEvent};
 use crate::cloud_object::model::persistence::CloudModel;
@@ -95,7 +94,6 @@ use std::{collections::HashMap, path::PathBuf};
 use url::Url;
 use warp_core::context_flag::ContextFlag;
 use warp_core::user_preferences::GetUserPreferences as _;
-use warpui::clipboard::ClipboardContent;
 use warpui::keymap::{EditableBinding, FixedBinding};
 use warpui::windowing::WindowManager;
 
@@ -1714,7 +1712,6 @@ pub struct RootView {
     pending_tutorial: Option<OnboardingTutorial>,
     /// settings to apply after a new user login / initial cloud load completes
     pending_post_auth_onboarding_settings: Option<SelectedSettings>,
-    paste_auth_token_modal: Option<ViewHandle<PasteAuthTokenModalView>>,
 }
 
 impl RootView {
@@ -1814,7 +1811,6 @@ impl RootView {
             window_id: ctx.window_id(),
             pending_tutorial: None,
             pending_post_auth_onboarding_settings: None,
-            paste_auth_token_modal: None,
         };
 
         match &root_view.auth_onboarding_state {
@@ -2354,28 +2350,6 @@ impl RootView {
                 let upgrade_url = AuthManager::handle(ctx)
                     .update(ctx, |auth_manager, _| auth_manager.upgrade_url());
                 ctx.open_url(&upgrade_url);
-            }
-            AgentOnboardingEvent::UpgradeCopyUrlRequested => {
-                let upgrade_url = AuthManager::handle(ctx)
-                    .update(ctx, |auth_manager, _| auth_manager.upgrade_url());
-                ctx.clipboard().write(ClipboardContent {
-                    plain_text: upgrade_url.clone(),
-                    paths: Some(vec![upgrade_url]),
-                    ..Default::default()
-                });
-            }
-            AgentOnboardingEvent::UpgradePasteTokenFromClipboardRequested => {
-                let modal = ctx.add_typed_action_view(PasteAuthTokenModalView::new);
-                ctx.subscribe_to_view(&modal, |me, _, event, ctx| match event {
-                    PasteAuthTokenModalEvent::Cancelled => {
-                        me.paste_auth_token_modal = None;
-                        me.focus(ctx);
-                        ctx.notify();
-                    }
-                });
-                ctx.focus(&modal);
-                self.paste_auth_token_modal = Some(modal);
-                ctx.notify();
             }
             AgentOnboardingEvent::PrivacySettingsFromTerminalThemeSlideRequested => {
                 let AuthOnboardingState::Onboarding {
@@ -2979,8 +2953,6 @@ impl RootView {
 
         match event {
             AuthManagerEvent::AuthComplete => {
-                self.paste_auth_token_modal = None;
-
                 // If onboarding was completed pre-login, sync the server-side flag now
                 // that the user is authenticated. This must happen regardless of the
                 // current `auth_onboarding_state` so we also cover users who skipped
@@ -3179,11 +3151,6 @@ impl RootView {
     }
 
     pub fn focus(&mut self, ctx: &mut ViewContext<Self>) -> bool {
-        if let Some(modal) = &self.paste_auth_token_modal {
-            ctx.focus(modal);
-            ctx.notify();
-            return true;
-        }
         match &self.auth_onboarding_state {
             AuthOnboardingState::Auth(_) => {
                 ctx.focus(&self.auth_view);
@@ -3346,8 +3313,6 @@ impl View for RootView {
     fn on_focus(&mut self, focus_ctx: &FocusContext, ctx: &mut ViewContext<Self>) {
         if focus_ctx.is_self_focused() {
             self.focus(ctx);
-        } else if self.paste_auth_token_modal.is_some() {
-            // Modal is open — focus belongs to the editor inside it.
         } else if matches!(
             self.auth_onboarding_state,
             AuthOnboardingState::Onboarding { .. }
@@ -3390,10 +3355,6 @@ impl View for RootView {
 
         let mut stack = Stack::new();
         stack.add_child(child);
-
-        if let Some(modal) = &self.paste_auth_token_modal {
-            stack.add_child(ChildView::new(modal).finish());
-        }
 
         if let Some(traffic_light_data) = self.traffic_light_data(app) {
             let theme = Appearance::as_ref(app).theme();

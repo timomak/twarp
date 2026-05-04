@@ -1,6 +1,4 @@
-use crate::slides::{
-    AgentAutonomy, AgentDevelopmentSettings, OnboardingModelInfo, ProjectOnboardingSettings,
-};
+use crate::slides::{AgentDevelopmentSettings, OnboardingModelInfo, ProjectOnboardingSettings};
 use crate::telemetry::OnboardingEvent;
 use crate::OnboardingIntention;
 use ai::LLMId;
@@ -108,12 +106,8 @@ pub(crate) enum OnboardingStep {
     Intro,
     Intention,
     Customize,
-    // twarp: AI is permanently disabled, so the Agent slide is bypassed by
-    // `next()` / `back()`. The variant is kept for defensive matches and
-    // the agent_onboarding_view's render arm; 2c removes it along with the
-    // slide source.
-    #[allow(dead_code)]
-    Agent,
+    // twarp: `OnboardingStep::Agent` and the slide it gated were deleted in
+    // 2c-a along with `agent_slide.rs`.
     ThirdParty,
     Project,
     ThemePicker,
@@ -178,10 +172,6 @@ impl OnboardingStateModel {
         }
     }
 
-    pub(crate) fn auth_state(&self) -> OnboardingAuthState {
-        self.auth_state
-    }
-
     pub(crate) fn set_auth_state(
         &mut self,
         auth_state: OnboardingAuthState,
@@ -244,10 +234,6 @@ impl OnboardingStateModel {
 
     pub(crate) fn project_settings(&self) -> &ProjectOnboardingSettings {
         &self.project_settings
-    }
-
-    pub(crate) fn workspace_enforces_autonomy(&self) -> bool {
-        self.workspace_enforces_autonomy
     }
 
     pub(crate) fn agent_modality_enabled(&self) -> bool {
@@ -431,21 +417,6 @@ impl OnboardingStateModel {
         ctx.notify();
     }
 
-    pub(crate) fn set_disable_oz(&mut self, value: bool, ctx: &mut ModelContext<Self>) {
-        if self.agent_settings.disable_oz == value {
-            return;
-        }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "disable_oz".to_string(),
-                value: value.to_string(),
-            },
-            ctx
-        );
-        self.agent_settings.disable_oz = value;
-        ctx.notify();
-    }
-
     pub(crate) fn set_free_user_no_ai_experiment(
         &mut self,
         value: bool,
@@ -468,10 +439,6 @@ impl OnboardingStateModel {
         }
         self.workspace_enforces_autonomy = value;
         ctx.notify();
-    }
-
-    pub(crate) fn models(&self) -> &Vec<OnboardingModelInfo> {
-        &self.models
     }
 
     fn set_intention(&mut self, intention: OnboardingIntention, ctx: &mut ModelContext<Self>) {
@@ -510,36 +477,8 @@ impl OnboardingStateModel {
         self.set_intention(OnboardingIntention::AgentDrivenDevelopment, ctx);
     }
 
-    pub(crate) fn is_model_disabled(&self, model_id: &LLMId) -> bool {
-        self.models
-            .iter()
-            .find(|m| &m.id == model_id)
-            .is_some_and(|m| m.requires_upgrade)
-    }
-
     pub(crate) fn request_upgrade(&mut self, ctx: &mut ModelContext<Self>) {
         ctx.emit(OnboardingStateEvent::UpgradeRequested);
-    }
-
-    pub(crate) fn on_user_selected_model(&mut self, model_id: LLMId, ctx: &mut ModelContext<Self>) {
-        if self.agent_settings.selected_model_id == model_id {
-            return;
-        }
-
-        if self.is_model_disabled(&model_id) {
-            return;
-        }
-
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "model".to_string(),
-                value: model_id.to_string(),
-            },
-            ctx
-        );
-
-        self.agent_settings.selected_model_id = model_id;
-        ctx.notify();
     }
 
     /// Updates the list of available models.
@@ -570,27 +509,6 @@ impl OnboardingStateModel {
 
         self.models = models;
         ctx.emit(OnboardingStateEvent::ModelsUpdated);
-        ctx.notify();
-    }
-
-    pub(crate) fn set_agent_autonomy(
-        &mut self,
-        autonomy: AgentAutonomy,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if self.workspace_enforces_autonomy || self.agent_settings.autonomy == Some(autonomy) {
-            return;
-        }
-
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "autonomy".to_string(),
-                value: autonomy.to_string(),
-            },
-            ctx
-        );
-
-        self.agent_settings.autonomy = Some(autonomy);
         ctx.notify();
     }
 
@@ -664,18 +582,14 @@ impl OnboardingStateModel {
         use warp_core::features::FeatureFlag;
         let theme_picker_last = FeatureFlag::OpenWarpNewSettingsModes.is_enabled();
 
-        // twarp: AI is permanently disabled, so the Agent slide is never
-        // shown. The `OnboardingStep::Agent` arms below remain only as a
-        // defensive fallback in case some path still sets the step there;
-        // 2c removes the variant along with the slide source.
+        // twarp: post-2c-a there is no `OnboardingStep::Agent` to land on,
+        // so the previous-step lookup goes straight from `ThirdParty`/
+        // `Project` back to `Customize`/`Intention` respectively.
         let prev = if theme_picker_last {
             match self.step {
                 OnboardingStep::Intro => None,
                 OnboardingStep::Intention => Some(OnboardingStep::Intro),
                 OnboardingStep::Customize => Some(OnboardingStep::Intention),
-                OnboardingStep::Agent => Some(OnboardingStep::Customize),
-                // Both Terminal and AgentDrivenDevelopment intents bypass the
-                // Agent slide now that AI is permanently disabled.
                 OnboardingStep::ThirdParty => Some(OnboardingStep::Customize),
                 OnboardingStep::Project => Some(OnboardingStep::ThirdParty),
                 OnboardingStep::ThemePicker => Some(OnboardingStep::ThirdParty),
@@ -687,8 +601,6 @@ impl OnboardingStateModel {
                 OnboardingStep::Intention => Some(OnboardingStep::ThemePicker),
                 OnboardingStep::Customize => None,
                 OnboardingStep::ThirdParty => None,
-                OnboardingStep::Agent => Some(OnboardingStep::Intention),
-                // Skip the Agent slide on the way back too.
                 OnboardingStep::Project => Some(OnboardingStep::Intention),
             }
         };
@@ -712,15 +624,12 @@ impl OnboardingStateModel {
             send_telemetry_from_ctx!(OnboardingEvent::SlideNavigatedNext, ctx);
         }
 
-        // twarp: AI is permanently disabled, so the Agent slide is bypassed
-        // for both intents. The `OnboardingStep::Agent` arms remain only as
-        // a defensive fallback; 2c removes them.
+        // twarp: post-2c-a, no `OnboardingStep::Agent` arm.
         if theme_picker_last {
             match self.step {
                 OnboardingStep::Intro => self.set_step(OnboardingStep::Intention, ctx),
                 OnboardingStep::Intention => self.set_step(OnboardingStep::Customize, ctx),
                 OnboardingStep::Customize => self.set_step(OnboardingStep::ThirdParty, ctx),
-                OnboardingStep::Agent => self.set_step(OnboardingStep::ThirdParty, ctx),
                 OnboardingStep::ThirdParty => self.set_step(OnboardingStep::ThemePicker, ctx),
                 OnboardingStep::Project => self.set_step(OnboardingStep::ThemePicker, ctx),
                 OnboardingStep::ThemePicker => {}
@@ -729,11 +638,9 @@ impl OnboardingStateModel {
             match self.step {
                 OnboardingStep::Intro => self.set_step(OnboardingStep::ThemePicker, ctx),
                 OnboardingStep::ThemePicker => self.set_step(OnboardingStep::Intention, ctx),
-                // Skip Agent: jump straight from Intention to Project.
                 OnboardingStep::Intention => self.set_step(OnboardingStep::Project, ctx),
                 OnboardingStep::Customize => {}
                 OnboardingStep::ThirdParty => {}
-                OnboardingStep::Agent => self.set_step(OnboardingStep::Project, ctx),
                 OnboardingStep::Project => {}
             }
         }
@@ -775,14 +682,6 @@ impl OnboardingStateModel {
                 send_telemetry_from_ctx!(
                     OnboardingEvent::SlideViewed {
                         slide_name: "customize".to_string(),
-                    },
-                    ctx
-                );
-            }
-            OnboardingStep::Agent => {
-                send_telemetry_from_ctx!(
-                    OnboardingEvent::SlideViewed {
-                        slide_name: "agent".to_string(),
                     },
                     ctx
                 );
