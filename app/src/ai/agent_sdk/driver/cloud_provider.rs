@@ -4,7 +4,7 @@ use anyhow::Error;
 use warpui::ModelSpawner;
 
 use super::terminal::TerminalDriver;
-use crate::ai::cloud_environments::ProvidersConfig;
+use crate::ai::agent_sdk::cloud_types::ProvidersConfig;
 
 mod aws;
 mod gcp;

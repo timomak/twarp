@@ -62,6 +62,7 @@ use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
 use chrono::Local;
 use warpui::text::SelectionType;
 
+use crate::experiments;
 use crate::terminal::shell::ShellType;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::themes::theme::AnsiColorIdentifier;
@@ -70,7 +71,6 @@ use crate::{
     editor::{DisplayPoint, Point},
     terminal::TerminalView,
 };
-use crate::{experiments, AgentNotificationsModel};
 use fuzzy_match::FuzzyMatchResult;
 use session_sharing_protocol::common::Role;
 use smol_str::SmolStr;
@@ -134,7 +134,6 @@ pub fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(|_| ActiveAgentViewsModel::new());
-    app.add_singleton_model(AgentNotificationsModel::new);
     app.add_singleton_model(BlocklistAIPermissions::new);
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);

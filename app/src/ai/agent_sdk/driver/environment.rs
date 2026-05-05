@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use crate::ai::cloud_environments::{AmbientAgentEnvironment, GithubRepo};
+use crate::ai::agent_sdk::cloud_types::{AmbientAgentEnvironment, GithubRepo};
 use crate::terminal::model::session::command_executor::shell_escape_single_quotes;
 use crate::terminal::shell::ShellType;
 use ai::index::full_source_code_embedding::manager::{

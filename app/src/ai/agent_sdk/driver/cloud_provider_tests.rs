@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ffi::OsString, path::PathBuf};
 
-use crate::ai::cloud_environments::{AwsProviderConfig, GcpProviderConfig, ProvidersConfig};
+use crate::ai::agent_sdk::cloud_types::{AwsProviderConfig, GcpProviderConfig, ProvidersConfig};
 
 use super::{
     aws::AwsCloudProvider, collect_env_vars, gcp::GcpCloudProvider, load_providers, CloudProvider,

@@ -182,7 +182,6 @@ pub use pane::ai_fact_pane::AIFactPane;
 pub use pane::code_diff_pane::CodeDiffPane;
 pub use pane::code_pane::CodePane;
 pub use pane::env_var_collection_pane::EnvVarCollectionPane;
-pub use pane::environment_management_pane::EnvironmentManagementPane;
 pub use pane::execution_profile_editor_pane::ExecutionProfileEditorPane;
 pub use pane::file_pane::FilePane;
 pub use pane::network_log_pane::NetworkLogPane;
@@ -658,7 +657,6 @@ pub enum Event {
         initial_content: Option<String>,
     },
     OpenAddRulePane,
-    OpenEnvironmentManagementPane,
     OpenFilesPalette {
         source: PaletteSource,
     },
@@ -865,11 +863,6 @@ pub struct PaneGroup {
     active_file_model: ModelHandle<ActiveFileModel>,
     /// If there is an open summarization cancel dialog, the terminal pane ID where summarization is active.
     terminal_with_open_summarization_dialog: Option<TerminalPaneId>,
-
-    /// Pane with an open environment setup mode selector modal (rendered at tab level).
-    pane_with_open_environment_setup_mode_selector: Option<PaneId>,
-    /// Pane with an open agent-assisted environment modal (rendered at tab level).
-    pane_with_open_agent_assisted_environment_modal: Option<PaneId>,
 
     /// If the left panel is open for this pane group
     pub left_panel_open: bool,
@@ -1913,13 +1906,6 @@ impl PaneGroup {
                     };
                     Ok((PaneData::new(pane_id), focus))
                 }
-            }
-            LeafContents::EnvironmentManagement(_) => {
-                // Environment management panes are not restored from persistence.
-                // They are opened on-demand via workspace actions.
-                Err(anyhow::anyhow!(
-                    "Environment management panes are not restored"
-                ))
             }
         };
 
@@ -2977,8 +2963,6 @@ impl PaneGroup {
             shared_session_role_change_modal,
             active_file_model,
             terminal_with_open_summarization_dialog: None,
-            pane_with_open_environment_setup_mode_selector: None,
-            pane_with_open_agent_assisted_environment_modal: None,
             right_panel_open: false,
             left_panel_open: false,
             is_right_panel_maximized: false,
@@ -4486,13 +4470,6 @@ impl PaneGroup {
                 self.terminal_with_open_share_block_modal = None;
             }
 
-            if self.pane_with_open_environment_setup_mode_selector == Some(pane_id) {
-                self.pane_with_open_environment_setup_mode_selector = None;
-            }
-            if self.pane_with_open_agent_assisted_environment_modal == Some(pane_id) {
-                self.pane_with_open_agent_assisted_environment_modal = None;
-            }
-
             self.focus_next_terminal_pane_and_activate_session(
                 pane_id,
                 PaneRemovalReason::Close,
@@ -4516,13 +4493,6 @@ impl PaneGroup {
             // Remove opened share modal associated with the closing session.
             if Some(pane_id) == self.terminal_with_open_share_block_modal.map(Into::into) {
                 self.terminal_with_open_share_block_modal = None;
-            }
-
-            if self.pane_with_open_environment_setup_mode_selector == Some(pane_id) {
-                self.pane_with_open_environment_setup_mode_selector = None;
-            }
-            if self.pane_with_open_agent_assisted_environment_modal == Some(pane_id) {
-                self.pane_with_open_agent_assisted_environment_modal = None;
             }
 
             self.focus_next_terminal_pane_and_activate_session(
@@ -6928,44 +6898,6 @@ impl View for PaneGroup {
                 }) {
                     stack.add_child(ChildView::new(&dialog_handle).finish());
                 }
-            }
-        }
-
-        // Render environment setup mode selector at tab level when open.
-        if let Some(pane_id) = self.pane_with_open_environment_setup_mode_selector {
-            let selector_handle = self
-                .terminal_view_from_pane_id(pane_id, app)
-                .and_then(|tv| {
-                    tv.as_ref(app)
-                        .environment_setup_mode_selector_handle()
-                        .cloned()
-                })
-                .or_else(|| {
-                    self.downcast_pane_by_id::<EnvironmentManagementPane>(pane_id)
-                        .and_then(|emp| {
-                            emp.environments_page_view(app)
-                                .as_ref(app)
-                                .environment_setup_mode_selector_handle()
-                                .cloned()
-                        })
-                });
-            if let Some(handle) = selector_handle {
-                stack.add_child(ChildView::new(&handle).finish());
-            }
-        }
-
-        // Render agent-assisted environment modal at tab level when open.
-        if let Some(pane_id) = self.pane_with_open_agent_assisted_environment_modal {
-            if let Some(handle) = self
-                .downcast_pane_by_id::<EnvironmentManagementPane>(pane_id)
-                .and_then(|emp| {
-                    emp.environments_page_view(app)
-                        .as_ref(app)
-                        .agent_assisted_environment_modal_handle(app)
-                        .cloned()
-                })
-            {
-                stack.add_child(ChildView::new(&handle).finish());
             }
         }
 

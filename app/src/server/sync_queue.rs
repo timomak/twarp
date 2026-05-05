@@ -22,8 +22,6 @@ use super::{
 use crate::ai::mcp::templatable::CloudTemplatableMCPServerModel;
 use crate::server::cloud_objects::update_manager::InitiatedBy;
 use crate::{
-    ai::cloud_agent_config::CloudAgentConfigModel,
-    ai::cloud_environments::CloudAmbientAgentEnvironmentModel,
     ai::{
         ambient_agents::scheduled::CloudScheduledAmbientAgentModel,
         execution_profiles::CloudAIExecutionProfileModel, facts::CloudAIFactModel,
@@ -220,18 +218,8 @@ pub enum QueueItem {
         id: SyncId,
         revision: Option<Revision>,
     },
-    UpdateCloudEnvironment {
-        model: Arc<CloudAmbientAgentEnvironmentModel>,
-        id: SyncId,
-        revision: Option<Revision>,
-    },
     UpdateScheduledAmbientAgent {
         model: Arc<CloudScheduledAmbientAgentModel>,
-        id: SyncId,
-        revision: Option<Revision>,
-    },
-    UpdateCloudAgentConfig {
-        model: Arc<CloudAgentConfigModel>,
         id: SyncId,
         revision: Option<Revision>,
     },
@@ -457,9 +445,7 @@ impl SyncQueue {
             QueueItem::UpdateCloudPreferences { id, .. } => self.get_update_dependencies(id),
             QueueItem::UpdateEnvVarCollection { id, .. } => self.get_update_dependencies(id),
             QueueItem::UpdateWorkflowEnum { id, .. } => self.get_update_dependencies(id),
-            QueueItem::UpdateCloudEnvironment { id, .. } => self.get_update_dependencies(id),
             QueueItem::UpdateScheduledAmbientAgent { id, .. } => self.get_update_dependencies(id),
-            QueueItem::UpdateCloudAgentConfig { id, .. } => self.get_update_dependencies(id),
 
             // Update workflow requests should depend on existing requests to that object, as well as
             // any enums or env vars they reference.
@@ -561,9 +547,7 @@ impl SyncQueue {
                 QueueItem::UpdateMCPServer { id, .. } => id.uid() == item_id,
                 QueueItem::UpdateAIExecutionProfile { id, .. } => id.uid() == item_id,
                 QueueItem::UpdateTemplatableMCPServer { id, .. } => id.uid() == item_id,
-                QueueItem::UpdateCloudEnvironment { id, .. } => id.uid() == item_id,
                 QueueItem::UpdateScheduledAmbientAgent { id, .. } => id.uid() == item_id,
-                QueueItem::UpdateCloudAgentConfig { id, .. } => id.uid() == item_id,
                 // We don't depend on object actions, since they don't affect an object's own content or metadata
                 QueueItem::RecordObjectAction { .. } => false,
             })
@@ -832,35 +816,7 @@ impl SyncQueue {
                         ctx,
                     );
                 }
-                QueueItem::UpdateCloudEnvironment {
-                    model,
-                    id,
-                    revision,
-                } => {
-                    self.update_object(
-                        model.clone(),
-                        id,
-                        revision,
-                        object_client,
-                        dequeued_item_id,
-                        ctx,
-                    );
-                }
                 QueueItem::UpdateScheduledAmbientAgent {
-                    model,
-                    id,
-                    revision,
-                } => {
-                    self.update_object(
-                        model.clone(),
-                        id,
-                        revision,
-                        object_client,
-                        dequeued_item_id,
-                        ctx,
-                    );
-                }
-                QueueItem::UpdateCloudAgentConfig {
                     model,
                     id,
                     revision,
@@ -1261,13 +1217,10 @@ impl SyncQueue {
                                 )
                                 .await
                             }
-                            JsonObjectType::CloudEnvironment => {
-                                CloudAmbientAgentEnvironmentModel::send_create_request(
-                                    object_client_clone,
-                                    create_request,
-                                )
-                                .await
-                            }
+                            // CloudEnvironment is no longer created/synced client-side.
+                            JsonObjectType::CloudEnvironment => Err(anyhow::anyhow!(
+                                "CloudEnvironment creation not supported from client"
+                            )),
                             JsonObjectType::ScheduledAmbientAgent => {
                                 CloudScheduledAmbientAgentModel::send_create_request(
                                     object_client_clone,
@@ -1849,13 +1802,7 @@ impl SyncQueue {
                 QueueItem::UpdateTemplatableMCPServer { id, .. } => {
                     self.handle_update_failure_response(id, item_id, ctx);
                 }
-                QueueItem::UpdateCloudEnvironment { id, .. } => {
-                    self.handle_update_failure_response(id, item_id, ctx);
-                }
                 QueueItem::UpdateScheduledAmbientAgent { id, .. } => {
-                    self.handle_update_failure_response(id, item_id, ctx);
-                }
-                QueueItem::UpdateCloudAgentConfig { id, .. } => {
                     self.handle_update_failure_response(id, item_id, ctx);
                 }
                 QueueItem::RecordObjectAction {

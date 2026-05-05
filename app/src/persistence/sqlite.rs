@@ -58,9 +58,6 @@ use crate::ai::ambient_agents::scheduled::{
     CloudScheduledAmbientAgent, CloudScheduledAmbientAgentModel,
 };
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::cloud_environments::{
-    CloudAmbientAgentEnvironment, CloudAmbientAgentEnvironmentModel,
-};
 use crate::ai::document::ai_document_model::AIDocumentId;
 use crate::ai::execution_profiles::{CloudAIExecutionProfile, CloudAIExecutionProfileModel};
 use crate::ai::facts::{CloudAIFact, CloudAIFactModel};
@@ -864,10 +861,7 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                 left_panel_open: Some(window.left_panel_open),
                 vertical_tabs_panel_open: Some(window.vertical_tabs_panel_open),
                 fullscreen_state: window.fullscreen_state as i32,
-                agent_management_filters: window
-                    .agent_management_filters
-                    .as_ref()
-                    .and_then(|f| serde_json::to_string(f).ok()),
+                agent_management_filters: None,
             };
             diesel::insert_into(schema::windows::dsl::windows)
                 .values(new_window)
@@ -1054,7 +1048,7 @@ fn save_pane_state(
         LeafContents::GetStarted => GET_STARTED_PANE_KIND,
         LeafContents::Welcome { .. } => WELCOME_PANE_KIND,
         LeafContents::AIDocument(_) => AI_DOCUMENT_PANE_KIND,
-        LeafContents::EnvironmentManagement(_) | LeafContents::NetworkLog => {
+        LeafContents::NetworkLog => {
             // These pane types are filtered out before this function is
             // called; see `LeafContents::is_persisted` and the skip in
             // `save_app_state`. Reaching this arm would mean a `pane_nodes`
@@ -1205,9 +1199,6 @@ fn save_pane_state(
             diesel::insert_into(schema::workflow_panes::dsl::workflow_panes)
                 .values(workflow)
                 .execute(conn)?;
-        }
-        LeafContents::EnvironmentManagement(_) => {
-            // Unreachable: filtered by `is_persisted` in `save_app_state`.
         }
         LeafContents::Settings(settings_pane_snapshot) => {
             let current_page = match settings_pane_snapshot {
@@ -2794,9 +2785,6 @@ fn read_sqlite_data(
                 fullscreen_state: fullscreen_state_val,
                 left_panel_width,
                 right_panel_width,
-                agent_management_filters: window
-                    .agent_management_filters
-                    .and_then(|s| serde_json::from_str(&s).ok()),
             }
         })
         .collect();
@@ -3046,21 +3034,8 @@ fn read_sqlite_data(
                                     boxed
                                 })
                             }
-                            JsonObjectType::CloudEnvironment => {
-                                let model = CloudAmbientAgentEnvironmentModel::deserialize_owned(
-                                    &object.data,
-                                );
-                                model.ok().map(|model| {
-                                    let boxed: Box<dyn CloudObject> =
-                                        Box::new(CloudAmbientAgentEnvironment::new(
-                                            server_id,
-                                            model,
-                                            to_cloud_object_metadata(metadata),
-                                            cloud_object_permissions,
-                                        ));
-                                    boxed
-                                })
-                            }
+                            // CloudEnvironment is no longer materialized client-side.
+                            JsonObjectType::CloudEnvironment => None,
                             JsonObjectType::ScheduledAmbientAgent => {
                                 let model = CloudScheduledAmbientAgentModel::deserialize_owned(
                                     &object.data,

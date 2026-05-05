@@ -8,8 +8,7 @@ use std::collections::HashMap;
 use super::{
     about_page::AboutPageView, appearance_page::AppearanceSettingsPageView,
     billing_and_usage_page::BillingAndUsagePageView, code_page::CodeSettingsPageView,
-    environments_page::EnvironmentsPageView, features_page::FeaturesPageView,
-    keybindings::KeybindingsView, main_page::MainSettingsPageView,
+    features_page::FeaturesPageView, keybindings::KeybindingsView, main_page::MainSettingsPageView,
     mcp_servers_page::MCPServersSettingsPageView, privacy_page::PrivacyPageView,
     referrals_page::ReferralsPageView, show_blocks_view::ShowBlocksView, teams_page::TeamsPageView,
     warp_drive_page::WarpDriveSettingsPageView, warpify_page::WarpifyPageView, SettingsSection,
@@ -103,7 +102,6 @@ pub enum SettingsPageViewHandle {
     Privacy(ViewHandle<PrivacyPageView>),
     Warpify(ViewHandle<WarpifyPageView>),
     Referrals(ViewHandle<ReferralsPageView>),
-    CloudEnvironments(ViewHandle<EnvironmentsPageView>),
     BillingAndUsage(ViewHandle<BillingAndUsagePageView>),
     MCPServers(ViewHandle<MCPServersSettingsPageView>),
     WarpDrive(ViewHandle<WarpDriveSettingsPageView>),
@@ -125,7 +123,6 @@ impl SettingsPageViewHandle {
             Privacy(view_handle) => ChildView::new(view_handle).finish(),
             Warpify(view_handle) => ChildView::new(view_handle).finish(),
             Referrals(view_handle) => ChildView::new(view_handle).finish(),
-            CloudEnvironments(view_handle) => ChildView::new(view_handle).finish(),
             BillingAndUsage(view_handle) => ChildView::new(view_handle).finish(),
             MCPServers(view_handle) => ChildView::new(view_handle).finish(),
             WarpDrive(view_handle) => ChildView::new(view_handle).finish(),
@@ -182,15 +179,17 @@ impl SettingsPage {
 #[derive(PartialEq, Eq)]
 pub enum SettingsPageEvent {
     FocusModal,
+    // twarp: 2c-d.3 — kept for shared SettingsPage scaffold; no constructors after env page removal
+    #[allow(dead_code)]
     Pane(PaneEventWrapper),
-    EnvironmentSetupModeSelectorToggled { is_open: bool },
-    AgentAssistedEnvironmentModalToggled { is_open: bool },
 }
 
 /// Wrapper for pane events to avoid circular dependency with pane module.
 /// The actual handling converts this to the real PaneEvent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PaneEventWrapper {
+    // twarp: 2c-d.3 — kept for shared SettingsPage scaffold; no constructors after env page removal
+    #[allow(dead_code)]
     Close,
 }
 
@@ -1226,17 +1225,6 @@ impl<V: warpui::View> PageType<V> {
                 ..
             } => {
                 *highlighted_widget_id = None;
-            }
-        }
-    }
-
-    /// Set the minimum page width for narrow panes.
-    pub fn set_min_page_width(&mut self, width: f32) {
-        match self {
-            Self::Monolith { min_page_width, .. }
-            | Self::Uncategorized { min_page_width, .. }
-            | Self::Categorized { min_page_width, .. } => {
-                *min_page_width = width;
             }
         }
     }

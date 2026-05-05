@@ -153,7 +153,6 @@ fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapsh
         vertical_tabs_panel_open,
         left_panel_width: None,
         right_panel_width: None,
-        agent_management_filters: None,
     }
 }
 
@@ -236,7 +235,6 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
             vertical_tabs_panel_open: false,
             left_panel_width: None,
             right_panel_width: None,
-            agent_management_filters: None,
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
@@ -308,7 +306,6 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
             vertical_tabs_panel_open: false,
             left_panel_width: None,
             right_panel_width: None,
-            agent_management_filters: None,
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),

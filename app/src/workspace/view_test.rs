@@ -70,8 +70,8 @@ use crate::test_util::settings::initialize_settings_for_tests;
 use crate::undo_close::UndoCloseSettings;
 use crate::warp_managed_paths_watcher::WarpManagedPathsWatcher;
 use crate::workflows::local_workflows::LocalWorkflows;
+use crate::ObjectActions;
 use crate::{experiments, workspace, GlobalResourceHandlesProvider};
-use crate::{AgentNotificationsModel, ObjectActions};
 
 use crate::settings::cloud_preferences_syncer::CloudPreferencesSyncer;
 use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
@@ -136,7 +136,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(|_| ActiveAgentViewsModel::new());
-    app.add_singleton_model(AgentNotificationsModel::new);
     app.add_singleton_model(AgentConversationsModel::new);
     app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(LLMPreferences::new);
@@ -2780,47 +2779,6 @@ fn test_standard_tab_context_menu_shows_hover_only_tab_bar() {
                 Some((0, TabContextMenuAnchor::Pointer(Vector2F::zero())));
 
             assert_eq!(workspace.tab_bar_mode(ctx), ShowTabBar::Stacked);
-        });
-    });
-}
-
-#[test]
-fn test_open_cloud_agent_setup_guide_action_opens_management_view_and_is_idempotent() {
-    let _agent_management_guard = FeatureFlag::AgentManagementView.override_enabled(true);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-
-        workspace.update(&mut app, |workspace, ctx| {
-            assert!(
-                !workspace
-                    .current_workspace_state
-                    .is_agent_management_view_open
-            );
-
-            workspace.handle_action(&WorkspaceAction::OpenCloudAgentSetupGuide, ctx);
-            assert!(
-                workspace
-                    .current_workspace_state
-                    .is_agent_management_view_open
-            );
-            assert!(workspace
-                .agent_management_view
-                .as_ref(ctx)
-                .is_showing_setup_guide());
-
-            workspace.handle_action(&WorkspaceAction::OpenCloudAgentSetupGuide, ctx);
-            assert!(
-                workspace
-                    .current_workspace_state
-                    .is_agent_management_view_open
-            );
-            assert!(workspace
-                .agent_management_view
-                .as_ref(ctx)
-                .is_showing_setup_guide());
         });
     });
 }

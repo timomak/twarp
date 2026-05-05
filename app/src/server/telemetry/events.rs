@@ -29,7 +29,6 @@ use crate::ai::agent::EntrypointType;
 use crate::ai::agent::PassiveSuggestionTrigger;
 use crate::ai::agent::ServerOutputId;
 use crate::ai::agent::SuggestedLoggingId;
-use crate::ai::agent_management::notifications::NotificationSourceAgent;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
 use crate::ai::blocklist::AIBlockResponseRating;
@@ -515,15 +514,6 @@ pub enum NotificationAgentVariant {
     Oz,
     /// A CLI agent (e.g., Claude Code, Gemini CLI, etc.).
     CLIAgent(CLIAgentType),
-}
-
-impl From<NotificationSourceAgent> for NotificationAgentVariant {
-    fn from(agent: NotificationSourceAgent) -> Self {
-        match agent {
-            NotificationSourceAgent::Oz => Self::Oz,
-            NotificationSourceAgent::CLI(cli_agent) => Self::CLIAgent(cli_agent.into()),
-        }
-    }
 }
 
 /// The action taken on a plugin chip (for telemetry purposes).

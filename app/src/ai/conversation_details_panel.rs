@@ -32,21 +32,14 @@ use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversation;
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::agent_conversations_model::AgentRunDisplayStatus;
-use crate::ai::agent_management::details_action_buttons::{
-    ActionButtonsConfig, AgentDetailsButtonEvent, ConversationActionButtonsRow,
-};
-use crate::ai::agent_management::telemetry::{AgentManagementTelemetryEvent, OpenedFrom};
 use crate::ai::ambient_agents::{cancel_task_with_toast, AmbientAgentTaskId};
 use crate::ai::artifacts::{Artifact, ArtifactButtonsRow, ArtifactButtonsRowEvent};
 use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::ai::cloud_environments::{AmbientAgentEnvironment, CloudAmbientAgentEnvironment};
 use crate::ai::harness_display;
 use crate::appearance::Appearance;
 #[cfg(target_family = "wasm")]
 use crate::auth::UserUid;
 use crate::notebooks::NotebookId;
-use crate::send_telemetry_from_ctx;
-use crate::server::ids::{ServerId, SyncId};
 use crate::server::server_api::ai::AmbientAgentTask;
 #[cfg(not(target_family = "wasm"))]
 use crate::settings::ai::{AISettings, AISettingsChangedEvent};
@@ -66,6 +59,76 @@ use crate::view_components::DismissibleToast;
 use crate::workspace::{ForkedConversationDestination, ToastStack, WorkspaceAction};
 #[cfg(target_family = "wasm")]
 use crate::workspaces::user_profiles::UserProfiles;
+
+// twarp 2c-d.3: stub types for the deleted agent_management subtree.
+#[derive(Default, Clone)]
+struct ActionButtonsConfig;
+
+impl ActionButtonsConfig {
+    fn for_task(
+        _task_id: AmbientAgentTaskId,
+        _display_status: &AgentRunDisplayStatus,
+        _open_action: Option<WorkspaceAction>,
+        _copy_link_url: Option<String>,
+    ) -> Self {
+        Self
+    }
+
+    fn for_conversation(
+        _conversation_id: AIConversationId,
+        _open_action: Option<WorkspaceAction>,
+        _copy_link_url: Option<String>,
+    ) -> Self {
+        Self
+    }
+}
+
+#[derive(Default)]
+struct ConversationActionButtonsRow;
+
+impl ConversationActionButtonsRow {
+    fn new(_ctx: &mut ViewContext<Self>) -> Self {
+        Self
+    }
+
+    fn set_config(&mut self, _config: ActionButtonsConfig, _ctx: &mut ViewContext<Self>) {}
+
+    fn is_empty(&self) -> bool {
+        true
+    }
+}
+
+impl Entity for ConversationActionButtonsRow {
+    type Event = AgentDetailsButtonEvent;
+}
+
+#[derive(Clone, Debug)]
+enum ConversationActionButtonsRowAction {}
+
+impl TypedActionView for ConversationActionButtonsRow {
+    type Action = ConversationActionButtonsRowAction;
+
+    fn handle_action(&mut self, _action: &Self::Action, _ctx: &mut ViewContext<Self>) {}
+}
+
+impl View for ConversationActionButtonsRow {
+    fn ui_name() -> &'static str {
+        "ConversationActionButtonsRow"
+    }
+
+    fn render(&self, _: &AppContext) -> Box<dyn Element> {
+        Empty::new().finish()
+    }
+}
+
+#[allow(dead_code)]
+enum AgentDetailsButtonEvent {
+    Open,
+    CancelTask { task_id: AmbientAgentTaskId },
+    ForkConversation { conversation_id: AIConversationId },
+    ViewDetails,
+    CopyLink { link: String },
+}
 
 const FIELD_SPACING: f32 = 16.0;
 const HEADER_SPACING: f32 = 12.0;
@@ -131,6 +194,8 @@ struct PanelMouseStates {
 }
 
 /// Tracks which copy button action was last triggered (for checkmark feedback).
+// twarp: 2c-d.3
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum CopyButtonKind {
     Directory,
@@ -169,6 +234,8 @@ impl CreatorInfo {
 }
 
 /// Credit usage information for a conversation or task.
+// twarp: 2c-d.3
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 enum CreditsInfo {
     LocalConversation(f32),
@@ -397,7 +464,8 @@ impl ConversationDetailsData {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    // twarp: 2c-d.3
+    #[allow(dead_code, clippy::too_many_arguments)]
     /// Used to populate the details panel from the management view, where we don't always have access
     /// to the full `AIConversation`.
     pub fn from_conversation_metadata(
@@ -445,6 +513,8 @@ pub enum ConversationDetailsPanelEvent {
 }
 
 /// Actions for the ConversationDetailsPanel.
+// twarp: 2c-d.3
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum ConversationDetailsPanelAction {
     Close,
@@ -712,25 +782,13 @@ impl ConversationDetailsPanel {
                         ai_conversation_id: Some(conversation_id),
                         ..
                     } => {
-                        send_telemetry_from_ctx!(
-                            AgentManagementTelemetryEvent::ConversationOpened {
-                                conversation_id: conversation_id.to_string(),
-                                opened_from: OpenedFrom::DetailsPanel,
-                            },
-                            ctx
-                        );
+                        let _ = conversation_id;
                     }
                     PanelMode::Task {
                         task_id: Some(task_id),
                         ..
                     } => {
-                        send_telemetry_from_ctx!(
-                            AgentManagementTelemetryEvent::CloudRunOpened {
-                                task_id: task_id.to_string(),
-                                opened_from: OpenedFrom::DetailsPanel,
-                            },
-                            ctx
-                        );
+                        let _ = task_id;
                     }
                     _ => {}
                 }
@@ -740,23 +798,9 @@ impl ConversationDetailsPanel {
                 }
             }
             AgentDetailsButtonEvent::CancelTask { task_id } => {
-                send_telemetry_from_ctx!(
-                    AgentManagementTelemetryEvent::CloudRunCancelled {
-                        task_id: task_id.to_string(),
-                    },
-                    ctx
-                );
-
                 cancel_task_with_toast(*task_id, ctx);
             }
             AgentDetailsButtonEvent::ForkConversation { conversation_id } => {
-                send_telemetry_from_ctx!(
-                    AgentManagementTelemetryEvent::ConversationForked {
-                        conversation_id: conversation_id.to_string(),
-                    },
-                    ctx
-                );
-
                 ctx.dispatch_typed_action(&WorkspaceAction::ForkAIConversation {
                     conversation_id: *conversation_id,
                     fork_from_exchange: None,
@@ -766,39 +810,11 @@ impl ConversationDetailsPanel {
                     destination: ForkedConversationDestination::NewTab,
                 });
             }
-            AgentDetailsButtonEvent::ViewDetails { .. } => {
+            AgentDetailsButtonEvent::ViewDetails => {
                 // ViewDetails not shown in the details panel because we're already viewing it,
                 // only in management view cards
             }
             AgentDetailsButtonEvent::CopyLink { link } => {
-                match &self.data.mode {
-                    PanelMode::Conversation {
-                        ai_conversation_id: Some(conversation_id),
-                        ..
-                    } => {
-                        send_telemetry_from_ctx!(
-                            AgentManagementTelemetryEvent::ConversationLinkCopied {
-                                conversation_id: conversation_id.to_string(),
-                                copied_from: OpenedFrom::DetailsPanel,
-                            },
-                            ctx
-                        );
-                    }
-                    PanelMode::Task {
-                        task_id: Some(task_id),
-                        ..
-                    } => {
-                        send_telemetry_from_ctx!(
-                            AgentManagementTelemetryEvent::SessionLinkCopied {
-                                task_id: task_id.to_string(),
-                                copied_from: OpenedFrom::DetailsPanel,
-                            },
-                            ctx
-                        );
-                    }
-                    _ => {}
-                }
-
                 ctx.clipboard()
                     .write(ClipboardContent::plain_text(link.clone()));
             }
@@ -1149,164 +1165,11 @@ impl ConversationDetailsPanel {
         )
     }
 
+    // twarp: 2c-d.3
+    #[allow(dead_code)]
     fn format_setup_commands_for_copy(commands: &[String]) -> String {
         let wrapped: Vec<String> = commands.iter().map(|cmd| format!("({cmd})")).collect();
         wrapped.join(" && \n")
-    }
-
-    fn render_setup_commands_section(
-        &self,
-        setup_commands: &[String],
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Option<Box<dyn Element>> {
-        if setup_commands.is_empty() {
-            return None;
-        }
-
-        let theme = appearance.theme();
-        let ui_font_size = appearance.ui_font_size();
-
-        let header_text = Text::new(
-            "Environment setup commands".to_string(),
-            appearance.ui_font_family(),
-            ui_font_size,
-        )
-        .with_color(blended_colors::text_sub(theme, theme.surface_1()))
-        .finish();
-
-        let commands_text = setup_commands
-            .iter()
-            .enumerate()
-            .map(|(i, cmd)| format!("{}. {cmd}", i + 1))
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let field = render_copyable_text_field(
-            CopyableTextFieldConfig::new(commands_text)
-                .with_font_size(ui_font_size)
-                .with_text_color(theme.foreground().into())
-                .with_icon_size(16.)
-                .with_wrap_text(true)
-                .with_mouse_state(self.mouse_state_for_copy_button(CopyButtonKind::SetupCommands))
-                .with_last_copied_at(self.copy_feedback_times.get(&CopyButtonKind::SetupCommands)),
-            {
-                let copy_text = Self::format_setup_commands_for_copy(setup_commands);
-                move |ctx| {
-                    ctx.dispatch_typed_action(ConversationDetailsPanelAction::CopySetupCommands(
-                        copy_text.clone(),
-                    ));
-                }
-            },
-            app,
-        );
-
-        Some(
-            Flex::column()
-                .with_cross_axis_alignment(CrossAxisAlignment::Start)
-                .with_child(
-                    Container::new(header_text)
-                        .with_margin_bottom(SECTION_HEADER_GAP)
-                        .finish(),
-                )
-                .with_child(
-                    Container::new(field)
-                        .with_margin_bottom(FIELD_SPACING)
-                        .finish(),
-                )
-                .finish(),
-        )
-    }
-
-    fn render_environment_section(
-        &self,
-        environment_id: &str,
-        env_model: &AmbientAgentEnvironment,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let environment_name = &env_model.name;
-        let docker_image = env_model.base_image.to_string();
-
-        let theme = appearance.theme();
-        let ui_font_size = appearance.ui_font_size();
-
-        // Section header
-        let header = Text::new(
-            "Environment details".to_string(),
-            appearance.ui_font_family(),
-            ui_font_size,
-        )
-        .with_color(blended_colors::text_sub(theme, theme.surface_1()))
-        .finish();
-
-        let mut section = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
-        section.add_child(
-            Container::new(header)
-                .with_margin_bottom(LABEL_VALUE_GAP)
-                .finish(),
-        );
-
-        // Helper to render a copyable field with "Label: Value" format
-        let render_copyable_field =
-            |label: &str,
-             value: &str,
-             copy_button_kind: CopyButtonKind,
-             action: ConversationDetailsPanelAction| {
-                render_copyable_text_field(
-                    CopyableTextFieldConfig::new(format!("{label}: {value}"))
-                        .with_font_size(ui_font_size)
-                        .with_text_color(theme.foreground().into())
-                        .with_icon_size(16.)
-                        .with_mouse_state(self.mouse_state_for_copy_button(copy_button_kind))
-                        .with_last_copied_at(self.copy_feedback_times.get(&copy_button_kind)),
-                    move |ctx| {
-                        ctx.dispatch_typed_action(action.clone());
-                    },
-                    app,
-                )
-            };
-
-        let name_text = Text::new(
-            format!("Name: {environment_name}"),
-            appearance.ui_font_family(),
-            ui_font_size,
-        )
-        .with_color(theme.foreground().into())
-        .with_selectable(true)
-        .finish();
-        section.add_child(
-            Container::new(name_text)
-                .with_vertical_padding(4.)
-                .with_margin_bottom(LABEL_VALUE_GAP)
-                .finish(),
-        );
-
-        section.add_child(
-            Container::new(render_copyable_field(
-                "ID",
-                environment_id,
-                CopyButtonKind::EnvironmentId,
-                ConversationDetailsPanelAction::CopyEnvironmentId,
-            ))
-            .with_margin_bottom(LABEL_VALUE_GAP)
-            .finish(),
-        );
-
-        section.add_child(
-            Container::new(render_copyable_field(
-                "Image",
-                &docker_image,
-                CopyButtonKind::DockerImage,
-                ConversationDetailsPanelAction::CopyDockerImage,
-            ))
-            .with_margin_bottom(LABEL_VALUE_GAP)
-            .finish(),
-        );
-
-        Container::new(section.finish())
-            .with_margin_bottom(FIELD_SPACING)
-            .finish()
     }
 
     // Render a simple field with a button to copy the field's contents.
@@ -1784,22 +1647,8 @@ impl View for ConversationDetailsPanel {
         }
 
         // Task-only fields
-        if let PanelMode::Task { environment_id, .. } = &self.data.mode {
-            if let Some((eid, env)) = environment_id.as_deref().and_then(|eid| {
-                let server_id = ServerId::try_from(eid).ok()?;
-                let sync_id = SyncId::ServerId(server_id);
-                let env = CloudAmbientAgentEnvironment::get_by_id(&sync_id, app).cloned()?;
-                Some((eid, env))
-            }) {
-                let env_model = &env.model().string_model;
-                content.add_child(self.render_environment_section(eid, env_model, appearance, app));
-
-                if let Some(setup_commands_section) =
-                    self.render_setup_commands_section(&env_model.setup_commands, appearance, app)
-                {
-                    content.add_child(setup_commands_section);
-                }
-            }
+        if let PanelMode::Task { .. } = &self.data.mode {
+            // Cloud-environment details rendering removed (twarp 2c-d.3).
 
             if let Some(error_field) = self.render_error_field(appearance, app) {
                 content.add_child(
@@ -1935,22 +1784,7 @@ impl TypedActionView for ConversationDetailsPanel {
                 }
             }
             ConversationDetailsPanelAction::CopyDockerImage => {
-                if let PanelMode::Task {
-                    environment_id: Some(env_id),
-                    ..
-                } = &self.data.mode
-                {
-                    // Fetch docker image from environment
-                    if let Ok(server_id) = ServerId::try_from(env_id.as_str()) {
-                        let sync_id = SyncId::ServerId(server_id);
-                        if let Some(env) = CloudAmbientAgentEnvironment::get_by_id(&sync_id, ctx) {
-                            let docker_image = env.model().string_model.base_image.to_string();
-                            ctx.clipboard()
-                                .write(ClipboardContent::plain_text(docker_image));
-                            self.record_copy(CopyButtonKind::DockerImage, ctx);
-                        }
-                    }
-                }
+                // Cloud-environment lookup removed (twarp 2c-d.3).
             }
             ConversationDetailsPanelAction::CopyError => {
                 if let PanelMode::Task {
@@ -1981,10 +1815,6 @@ impl TypedActionView for ConversationDetailsPanel {
             #[cfg(not(target_family = "wasm"))]
             ConversationDetailsPanelAction::ContinueLocally => {
                 if let Some(conversation_id) = self.continue_locally_conversation_id(ctx) {
-                    send_telemetry_from_ctx!(
-                        AgentManagementTelemetryEvent::DetailsPanelContinueLocally,
-                        ctx
-                    );
                     ctx.dispatch_typed_action(&WorkspaceAction::ContinueConversationLocally {
                         conversation_id,
                     });

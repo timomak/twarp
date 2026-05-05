@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::TryFutureExt;
-use inquire::{InquireError, Select};
 use warp_cli::agent::Harness;
 use warp_cli::environment::{EnvironmentCreateArgs, EnvironmentUpdateArgs};
 use warpui::r#async::FutureExt;
@@ -15,12 +14,10 @@ use warpui::{AppContext, GetSingletonModelHandle, SingletonEntity as _, UpdateMo
 use crate::ai::agent::conversation::ServerAIConversationMetadata;
 use crate::ai::agent_sdk::driver::{AgentDriverError, WARP_DRIVE_SYNC_TIMEOUT};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::auth::auth_state::AuthStateProvider;
-use crate::cloud_object::{CloudObject, Owner};
+use crate::cloud_object::Owner;
 use crate::server::cloud_objects::update_manager::UpdateManager;
-use crate::server::ids::{ServerId, SyncId};
 use crate::server::server_api::ai::AIClient;
 use crate::server::server_api::ServerApiProvider;
 use crate::workspaces::update_manager::TeamUpdateManager;
@@ -192,12 +189,18 @@ pub fn format_owner(owner: &Owner) -> &'static str {
 /// An error resolving an agent option, which we may have prompted the user for.
 #[derive(Debug, thiserror::Error)]
 pub enum ResolveConfigurationError {
+    // twarp: 2c-d.3 — kept for 2c-d.5 (agent_sdk removal); unused after env removal
     /// The user canceled the operation, and we should exit.
     #[error("Operation canceled")]
+    #[allow(dead_code)]
     Canceled,
+    // twarp: 2c-d.3 — kept for 2c-d.5 (agent_sdk removal); unused after env removal
     #[error("{id} is not a valid {kind} identifier")]
+    #[allow(dead_code)]
     InvalidId { id: String, kind: &'static str },
+    // twarp: 2c-d.3 — kept for 2c-d.5 (agent_sdk removal); unused after env removal
     #[error("{kind} {id} not found")]
+    #[allow(dead_code)]
     ObjectNotFound { id: String, kind: &'static str },
     #[error(transparent)]
     Other(anyhow::Error),
@@ -207,7 +210,9 @@ pub enum ResolveConfigurationError {
 pub enum EnvironmentChoice {
     /// The user explicitly chose not to use an environment.
     None,
+    // twarp: 2c-d.3 — kept for 2c-d.5 (agent_sdk removal); unused after env removal
     /// The user chose a specific environment.
+    #[allow(dead_code)]
     Environment { id: String, name: String },
 }
 
@@ -216,103 +221,38 @@ impl EnvironmentChoice {
     /// Warp Drive *must* have been synced first.
     pub fn resolve_for_create(
         args: EnvironmentCreateArgs,
-        ctx: &AppContext,
+        _ctx: &AppContext,
     ) -> Result<Self, ResolveConfigurationError> {
+        // twarp 2c-d.3: cloud environments are no longer materialized
+        // client-side. The only valid choice is "no environment".
         if args.no_environment {
             Ok(EnvironmentChoice::None)
-        } else if let Some(id) = args.environment {
-            Self::get_by_id(id, ctx)
+        } else if args.environment.is_some() {
+            Err(ResolveConfigurationError::Other(anyhow::anyhow!(
+                "Cloud environments are no longer supported in this build."
+            )))
         } else {
-            let all_environments = CloudAmbientAgentEnvironment::get_all(ctx);
-            let mut synced_environments: Vec<(ServerId, &CloudAmbientAgentEnvironment)> =
-                all_environments
-                    .iter()
-                    .filter_map(|env| {
-                        if let SyncId::ServerId(server_id) = env.sync_id() {
-                            Some((server_id, env))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-            synced_environments
-                .sort_by_key(|(_, env)| env.model().string_model.name.to_lowercase());
-
-            let environments: Vec<EnvironmentChoice> = synced_environments
-                .into_iter()
-                .map(|(server_id, env)| EnvironmentChoice::Environment {
-                    id: server_id.to_string(),
-                    name: env.model().string_model.name.clone(),
-                })
-                .collect();
-
-            let mut options = vec![EnvironmentChoice::None];
-            options.extend(environments);
-
-            // If there are no synced environments, require the user to create one or use --no-environment.
-            if options.len() == 1 {
-                let cli_name = warp_cli::binary_name().unwrap_or_else(|| "warp".to_string());
-                return Err(ResolveConfigurationError::Other(anyhow::anyhow!(
-                    "No environments are configured for this account.\n\
-You can create an environment with `{cli_name} environment create`.\n\
-Or, re-run this command with `--no-environment` to not use an environment.\n\
-Without an environment, the agent will not be able to access private repositories or create pull requests.",
-                )));
-            }
-
-            let prompt = "Select an environment to run the agent in (or 'No environment'):";
-
-            let choice = Select::new(prompt, options).prompt();
-
-            match choice {
-                Ok(choice) => Ok(choice),
-                Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
-                    Err(ResolveConfigurationError::Canceled)
-                }
-                Err(err) => Err(ResolveConfigurationError::Other(anyhow::anyhow!(
-                    "Error selecting environment: {err}"
-                ))),
-            }
+            Ok(EnvironmentChoice::None)
         }
     }
 
     /// Resolve the environment to use when updating an agent integration. If the user did not
     /// request any changes to the environment, this returns `Ok(None)`.
-    /// Warp Drive *must* have been synced first.
     pub fn resolve_for_update(
         args: EnvironmentUpdateArgs,
-        ctx: &AppContext,
+        _ctx: &AppContext,
     ) -> Result<Option<Self>, ResolveConfigurationError> {
+        // twarp 2c-d.3: cloud environments are no longer materialized
+        // client-side, so the only valid update is "remove environment".
         if args.remove_environment {
             Ok(Some(EnvironmentChoice::None))
-        } else if let Some(id) = args.environment {
-            Self::get_by_id(id, ctx).map(Some)
+        } else if args.environment.is_some() {
+            Err(ResolveConfigurationError::Other(anyhow::anyhow!(
+                "Cloud environments are no longer supported in this build."
+            )))
         } else {
             Ok(None)
         }
-    }
-
-    fn get_by_id(id: String, ctx: &AppContext) -> Result<Self, ResolveConfigurationError> {
-        let sync_id = SyncId::ServerId(ServerId::try_from(id.as_str()).map_err(|_| {
-            ResolveConfigurationError::InvalidId {
-                id: id.clone(),
-                kind: "environment",
-            }
-        })?);
-
-        let environment =
-            CloudAmbientAgentEnvironment::get_by_id(&sync_id, ctx).ok_or_else(|| {
-                ResolveConfigurationError::ObjectNotFound {
-                    id: id.clone(),
-                    kind: "environment",
-                }
-            })?;
-
-        Ok(EnvironmentChoice::Environment {
-            id,
-            name: environment.model().string_model.name.clone(),
-        })
     }
 }
 

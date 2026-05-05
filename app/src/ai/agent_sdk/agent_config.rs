@@ -1,7 +1,7 @@
 //! Commands to interact with available agents via the public API.
 
+use crate::ai::agent_sdk::cloud_types::GithubRepo;
 use crate::ai::agent_sdk::oauth_flow::poll_oauth_until_terminal;
-use crate::ai::cloud_environments::GithubRepo;
 use crate::server::server_api::ai::AgentListItem;
 use crate::server::server_api::ServerApiProvider;
 use warp_cli::agent::ListAgentConfigsArgs;

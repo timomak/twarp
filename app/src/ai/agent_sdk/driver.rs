@@ -36,6 +36,7 @@ use crate::{
         agent::{
             AIAgentExchange, AIAgentInput, AIAgentOutput, CancellationReason, RenderableAIError,
         },
+        agent_sdk::cloud_types::AmbientAgentEnvironment,
         ambient_agents::{
             conversation_output_status_from_conversation, AmbientAgentTaskId,
             AmbientConversationStatus,
@@ -44,7 +45,6 @@ use crate::{
             agent_view::AgentViewEntryOrigin, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
             BlocklistAIPermissions,
         },
-        cloud_environments::{AmbientAgentEnvironment, CloudAmbientAgentEnvironment},
         execution_profiles::profiles::AIExecutionProfilesModel,
         mcp::{
             file_based_manager::{FileBasedMCPManager, FileBasedMCPManagerEvent},
@@ -54,7 +54,6 @@ use crate::{
         },
     },
     auth::AuthStateProvider,
-    cloud_object::CloudObject,
     server::{
         ids::{ServerId, SyncId},
         server_api::{
@@ -740,16 +739,10 @@ impl AgentDriver {
     }
 
     /// Log all valid environment IDs for the user.
-    pub(super) fn log_valid_environments(app: &AppContext) {
-        let environments = CloudAmbientAgentEnvironment::get_all(app);
-        if environments.is_empty() {
-            log::error!("No environments available for this user.");
-        } else {
-            log::error!("Valid environment IDs:");
-            for env in environments {
-                log::error!("  - {} ({})", env.sync_id(), env.model().string_model.name);
-            }
-        }
+    ///
+    /// twarp 2c-d.3: cloud environments are no longer materialized client-side.
+    pub(super) fn log_valid_environments(_app: &AppContext) {
+        log::error!("Cloud environments are no longer supported in this build.");
     }
 
     /// Check that the working directory exists. Since it's user-specified, we don't automatically

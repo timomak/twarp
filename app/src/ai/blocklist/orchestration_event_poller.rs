@@ -4,7 +4,7 @@ use crate::ai::agent::{
     conversation::{AIConversationId, ConversationStatus},
     ReceivedMessageInput,
 };
-use crate::ai::agent_events::{
+use crate::ai::agent_sdk::agent_events::{
     run_agent_event_driver, AgentEventConsumer, AgentEventConsumerControlFlow,
     AgentEventDriverConfig, MessageHydrator, ServerApiAgentEventSource,
 };

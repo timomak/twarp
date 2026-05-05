@@ -23,7 +23,7 @@ use uuid::Uuid;
 use warpui::r#async::SpawnedFutureHandle;
 use warpui::ModelSpawner;
 
-use crate::ai::agent_events::{
+use crate::ai::agent_sdk::agent_events::{
     run_agent_event_driver, AgentEventConsumer, AgentEventConsumerControlFlow,
     AgentEventDriverConfig, MessageHydrator, ServerApiAgentEventSource,
 };

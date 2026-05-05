@@ -1,5 +1,5 @@
 use super::single_repo_name;
-use crate::ai::cloud_environments::GithubRepo;
+use crate::ai::agent_sdk::cloud_types::GithubRepo;
 
 #[test]
 fn single_repo_name_returns_repo_when_exactly_one_repo() {

@@ -58,7 +58,7 @@ use crate::{
         team_tester::TeamTesterStatus, update_manager::TeamUpdateManager,
         user_profiles::UserProfiles, user_workspaces::UserWorkspaces,
     },
-    AgentNotificationsModel, GlobalResourceHandles, GlobalResourceHandlesProvider,
+    GlobalResourceHandles, GlobalResourceHandlesProvider,
 };
 #[cfg(feature = "local_fs")]
 use repo_metadata::RepoMetadataModel;
@@ -125,7 +125,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(|_| ActiveAgentViewsModel::new());
-    app.add_singleton_model(AgentNotificationsModel::new);
     app.add_singleton_model(|ctx| {
         AIExecutionProfilesModel::new(&crate::LaunchMode::new_for_unit_test(), ctx)
     });

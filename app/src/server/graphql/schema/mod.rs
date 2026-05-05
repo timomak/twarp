@@ -1,7 +1,6 @@
 pub mod util;
 
 use crate::{
-    ai::cloud_environments::CloudAmbientAgentEnvironmentModel,
     ai::{
         ambient_agents::scheduled::CloudScheduledAmbientAgentModel,
         execution_profiles::CloudAIExecutionProfileModel,
@@ -237,31 +236,9 @@ impl TryFrom<UpdateGenericStringObjectResult> for UpdateCloudObjectResult<Box<dy
                                 boxed
                             }
                             GenericStringObjectFormat::JsonCloudEnvironment => {
-                                let gso = GenericServerObject::<
-                                    GenericStringObjectId,
-                                    CloudAmbientAgentEnvironmentModel,
-                                >::try_from_graphql_fields(
-                                    ServerId::from_string_lossy(
-                                        rejected
-                                            .conflicting_generic_string_object
-                                            .metadata
-                                            .uid
-                                            .inner(),
-                                    ),
-                                    Some(
-                                        rejected.conflicting_generic_string_object.serialized_model,
-                                    ),
-                                    rejected
-                                        .conflicting_generic_string_object
-                                        .metadata
-                                        .try_into()?,
-                                    rejected
-                                        .conflicting_generic_string_object
-                                        .permissions
-                                        .try_into()?,
-                                )?;
-                                let boxed: Box<dyn ServerObject> = Box::new(gso);
-                                boxed
+                                anyhow::bail!(
+                                    "CloudEnvironment objects are no longer supported client-side"
+                                )
                             }
                             GenericStringObjectFormat::JsonScheduledAmbientAgent => {
                                 let gso = GenericServerObject::<

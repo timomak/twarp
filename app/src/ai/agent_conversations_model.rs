@@ -5,13 +5,11 @@ use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::ambient_agents::{AgentSource, AmbientAgentTask, AmbientAgentTaskState};
 use crate::ai::artifacts::Artifact;
 use crate::ai::blocklist::{format_credits, BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
-use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::conversation_navigation::ConversationNavigationData;
 use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
 use crate::auth::{AuthStateProvider, UserUid};
 use crate::network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind};
 use crate::server::cloud_objects::update_manager::{UpdateManager, UpdateManagerEvent};
-use crate::server::ids::{ServerId, SyncId};
 use crate::server::retry_strategies::{
     is_transient_http_error, OUT_OF_BAND_REQUEST_RETRY_STRATEGY, PERIODIC_POLL_RETRY_STRATEGY,
 };
@@ -190,6 +188,8 @@ pub struct AgentManagementFilters {
     pub harness: HarnessFilter,
 }
 
+// twarp: 2c-d.3
+#[allow(dead_code)]
 impl AgentManagementFilters {
     pub fn reset_all_but_owner(&mut self) {
         self.status = StatusFilter::default();
@@ -317,6 +317,8 @@ impl AgentRunDisplayStatus {
         }
     }
 
+    // twarp: 2c-d.3
+    #[allow(dead_code)]
     pub fn is_cancellable(&self) -> bool {
         self.is_working()
     }
@@ -489,6 +491,8 @@ impl ConversationOrTask<'_> {
     }
 
     /// Returns the request usage for the task or conversation
+    // twarp: 2c-d.3
+    #[allow(dead_code)]
     pub(super) fn request_usage(&self, app: &AppContext) -> Option<f32> {
         match self {
             ConversationOrTask::Task(task) => task.credits_used(),
@@ -507,6 +511,8 @@ impl ConversationOrTask<'_> {
     }
 
     /// Formats the request usage for display.
+    // twarp: 2c-d.3
+    #[allow(dead_code)]
     pub fn display_request_usage(&self, app: &AppContext) -> Option<String> {
         self.request_usage(app).map(format_credits)
     }
@@ -551,6 +557,8 @@ impl ConversationOrTask<'_> {
         }
     }
 
+    // twarp: 2c-d.3
+    #[allow(dead_code)]
     pub fn run_time(&self) -> Option<String> {
         match self {
             // TODO this should really be done server-side
@@ -645,6 +653,8 @@ impl ConversationOrTask<'_> {
     }
 
     /// Get a link to a session or conversation, depending on whether the cloud agent is running
+    // twarp: 2c-d.3
+    #[allow(dead_code)]
     pub fn session_or_conversation_link(&self, app: &AppContext) -> Option<String> {
         match self.link_preference() {
             LinkPreference::Session => match self {
@@ -874,7 +884,11 @@ pub enum AgentConversationsModelEvent {
     /// Conversation status data was updated
     ConversationUpdated,
     /// Conversation artifacts were updated (plans, PRs, etc.)
-    ConversationArtifactsUpdated { conversation_id: AIConversationId },
+    // twarp: 2c-d.3
+    ConversationArtifactsUpdated {
+        #[allow(dead_code)]
+        conversation_id: AIConversationId,
+    },
     /// A task was manually opened from the management page.
     TaskManuallyOpened,
 }
@@ -949,6 +963,8 @@ impl AgentConversationsModel {
         model
     }
 
+    // twarp: 2c-d.3
+    #[allow(dead_code)]
     pub fn is_loading(&self) -> bool {
         !self.has_finished_initial_load
     }
@@ -1361,6 +1377,8 @@ impl AgentConversationsModel {
     }
 
     /// Returns true if we have tasks or local conversations in this view
+    // twarp: 2c-d.3
+    #[allow(dead_code)]
     pub fn has_items(&self) -> bool {
         !self.tasks.is_empty() || !self.conversations.is_empty()
     }
@@ -1658,6 +1676,8 @@ impl AgentConversationsModel {
     ///
     /// We use this function to populate the available creator filter list
     /// based on the tasks we have.
+    // twarp: 2c-d.3
+    #[allow(dead_code)]
     pub fn get_all_creators(&self, app: &AppContext) -> Vec<(String, String)> {
         let mut creators: Vec<(String, String)> = self
             .tasks
@@ -1684,43 +1704,11 @@ impl AgentConversationsModel {
 
     /// Returns a mapping of environment IDs to display names.
     ///
-    /// When multiple environments share the same name, each is disambiguated
-    /// as "<name> (<id>)".
-    pub fn get_all_environment_ids_and_names(&self, ctx: &AppContext) -> HashMap<String, String> {
-        let mut envs = HashMap::<String, String>::new();
-
-        for task in self.tasks.values() {
-            let Some(environment_id) = task
-                .agent_config_snapshot
-                .as_ref()
-                .and_then(|s| s.environment_id.as_deref())
-            else {
-                continue;
-            };
-
-            let Some(server_id) = ServerId::try_from(environment_id).ok() else {
-                continue;
-            };
-            let sync_id = SyncId::ServerId(server_id);
-            let Some(env) = CloudAmbientAgentEnvironment::get_by_id(&sync_id, ctx) else {
-                continue;
-            };
-            let env_model = &env.model().string_model;
-            envs.insert(environment_id.to_string(), env_model.name.clone());
-        }
-
-        // Disambiguate duplicate names by appending the environment ID.
-        let mut name_counts = HashMap::<String, usize>::new();
-        for name in envs.values() {
-            *name_counts.entry(name.clone()).or_default() += 1;
-        }
-        for (id, name) in &mut envs {
-            if name_counts.get(name.as_str()).copied().unwrap_or(0) > 1 {
-                *name = format!("{name} ({id})");
-            }
-        }
-
-        envs
+    /// twarp 2c-d.3: cloud environments are no longer materialized client-side,
+    /// so this always returns an empty map.
+    #[allow(dead_code)]
+    pub fn get_all_environment_ids_and_names(&self, _ctx: &AppContext) -> HashMap<String, String> {
+        HashMap::new()
     }
 
     pub fn mark_task_as_manually_opened(
@@ -1738,6 +1726,8 @@ impl AgentConversationsModel {
     }
 
     /// Converts AgentManagementFilters to TaskListFilter for server API calls.
+    // twarp: 2c-d.3
+    #[allow(dead_code)]
     pub fn build_task_list_filter(
         &self,
         filters: &AgentManagementFilters,
@@ -1803,6 +1793,8 @@ impl AgentConversationsModel {
 
     /// Fetches tasks matching the given filters from the server, merges them into the model,
     /// and enforces the task cap. Called when user changes filters in AgentManagementView.
+    // twarp: 2c-d.3
+    #[allow(dead_code)]
     pub fn fetch_tasks_for_filters(
         &mut self,
         filters: &AgentManagementFilters,
