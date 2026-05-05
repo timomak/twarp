@@ -15,9 +15,7 @@ use warp_core::send_telemetry_from_ctx;
 use warpui::{Entity, EntityId, ModelContext, ModelHandle, SingletonEntity as _, ViewHandle};
 
 use apply_diff_model::ApplyDiffModel;
-pub(crate) use diff_application::apply_edits;
 use diff_application::DiffApplicationError;
-pub(crate) use diff_application::FileReadResult;
 pub(crate) use telemetry::MalformedFinalLineProxyEvent;
 #[allow(unused_imports)]
 pub use telemetry::{EditAcceptAndContinueClickedEvent, EditAcceptClickedEvent};

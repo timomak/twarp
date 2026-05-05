@@ -3194,8 +3194,8 @@ impl BlockList {
         self.maintain_pinned_to_bottom();
     }
 
-    /// Insert a rich content item immediately after the given removable item.
-    /// Returns true if insertion succeeded.
+    #[allow(dead_code)]
+    // twarp: 2c-d.2 — kept for potential future use; only consumer was the deleted usage footer.
     pub(in crate::terminal) fn insert_rich_content_after_item(
         &mut self,
         after_item: RemovableBlocklistItem,

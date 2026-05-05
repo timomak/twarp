@@ -1,8 +1,5 @@
 use crate::{
     ai::blocklist::format_credits,
-    ai::blocklist::usage::conversation_usage_view::{
-        ConversationUsageInfo, ConversationUsageView, DisplayMode,
-    },
     settings_view::billing_and_usage_page::BillingAndUsagePageAction,
     ui_components::{blended_colors, icons::Icon},
 };
@@ -16,7 +13,7 @@ use warpui::{
         Shrinkable, Text,
     },
     platform::Cursor,
-    AppContext, Element, View,
+    AppContext, Element,
 };
 
 pub struct UsageHistoryEntry {
@@ -25,6 +22,8 @@ pub struct UsageHistoryEntry {
     entry: Option<ConversationUsage>,
     is_expanded: bool,
     mouse_state: Option<MouseStateHandle>,
+    // twarp: 2c-d.2 — kept for API stability; unused after ConversationUsageView removal.
+    #[allow(dead_code)]
     tooltip_mouse_state: MouseStateHandle,
 }
 
@@ -43,34 +42,10 @@ impl UsageHistoryEntry {
         }
     }
 
-    pub fn render(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
-        let mut res = Flex::column()
+    pub fn render(&self, appearance: &Appearance, _app: &AppContext) -> Box<dyn Element> {
+        let res = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_child(self.render_header(appearance));
-
-        if let Some(entry) = &self.entry {
-            if self.is_expanded {
-                res = res
-                    .with_child(
-                        // Separator between header and usage component
-                        Container::new(Empty::new().finish())
-                            .with_border(
-                                Border::top(2.0).with_border_fill(appearance.theme().outline()),
-                            )
-                            .with_overdraw_bottom(0.)
-                            .finish(),
-                    )
-                    .with_child(
-                        ConversationUsageView::new(
-                            ConversationUsageInfo::from(entry),
-                            DisplayMode::Settings,
-                            None,
-                            self.tooltip_mouse_state.clone(),
-                        )
-                        .render(app),
-                    );
-            }
-        }
 
         Container::new(res.finish())
             .with_border(Border::all(2.).with_border_fill(appearance.theme().surface_3()))

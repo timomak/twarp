@@ -7,7 +7,6 @@ mod context_model;
 mod controller;
 pub(crate) mod orchestration_event_poller;
 pub(crate) mod orchestration_events;
-mod passive_suggestions;
 pub(crate) mod task_status_sync_model;
 pub(super) use controller::RequestInput;
 pub mod history_model;
@@ -29,9 +28,9 @@ pub(super) mod view_util;
 
 #[cfg_attr(target_family = "wasm", allow(unused_imports))]
 pub(crate) use action_model::{
-    apply_edits, read_local_file_context, BlocklistAIActionEvent, BlocklistAIActionModel,
-    FileReadResult, ReadFileContextResult, RequestFileEditsFormatKind, ShellCommandExecutor,
-    ShellCommandExecutorEvent, StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
+    read_local_file_context, BlocklistAIActionEvent, BlocklistAIActionModel, ReadFileContextResult,
+    ShellCommandExecutor, ShellCommandExecutorEvent, StartAgentExecutor, StartAgentExecutorEvent,
+    StartAgentRequest,
 };
 
 #[cfg(any(test, feature = "integration_tests"))]
@@ -52,9 +51,6 @@ pub(crate) use history_model::{
 };
 pub(crate) use input_model::{
     BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig, InputType,
-};
-pub(crate) use passive_suggestions::{
-    MaaPassiveSuggestionsEvent, MaaPassiveSuggestionsModel, PassiveSuggestionsModels,
 };
 #[cfg_attr(target_family = "wasm", allow(unused))]
 pub(crate) use persistence::PersistedAIInputType;
