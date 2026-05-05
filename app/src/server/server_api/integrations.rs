@@ -3,8 +3,6 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cynic::{MutationBuilder, QueryBuilder};
 
-use crate::channel::ChannelState;
-use crate::features::FeatureFlag;
 #[cfg(test)]
 use mockall::automock;
 
@@ -13,11 +11,6 @@ use warp_graphql::mutations::create_simple_integration::{
     CreateSimpleIntegration, CreateSimpleIntegrationOutput, CreateSimpleIntegrationResult,
     CreateSimpleIntegrationVariables, SimpleIntegrationConfig,
 };
-use warp_graphql::queries::get_integrations_using_environment::{
-    GetIntegrationsUsingEnvironment, GetIntegrationsUsingEnvironmentInput,
-    GetIntegrationsUsingEnvironmentOutput, GetIntegrationsUsingEnvironmentResult,
-    GetIntegrationsUsingEnvironmentVariables,
-};
 use warp_graphql::queries::get_oauth_connect_tx_status::{
     GetOAuthConnectTxStatus, GetOAuthConnectTxStatusInput, GetOAuthConnectTxStatusResult,
     GetOAuthConnectTxStatusVariables, OauthConnectTxStatus,
@@ -25,14 +18,6 @@ use warp_graphql::queries::get_oauth_connect_tx_status::{
 use warp_graphql::queries::get_simple_integrations::{
     SimpleIntegrations, SimpleIntegrationsInput, SimpleIntegrationsOutput,
     SimpleIntegrationsResult, SimpleIntegrationsVariables,
-};
-use warp_graphql::queries::suggest_cloud_environment_image::{
-    RepoInput as SuggestCloudEnvironmentImageRepoInput, SuggestCloudEnvironmentImage,
-    SuggestCloudEnvironmentImageInput, SuggestCloudEnvironmentImageResult,
-    SuggestCloudEnvironmentImageVariables,
-};
-use warp_graphql::queries::user_github_info::{
-    GithubAuthRequiredOutput, UserGithubInfo, UserGithubInfoResult, UserGithubInfoVariables,
 };
 use warp_graphql::queries::user_repo_auth_status::{
     RepoInput as UserRepoAuthStatusRepoInput, UserRepoAuthStatus, UserRepoAuthStatusInput,
@@ -109,32 +94,6 @@ pub trait IntegrationsClient: 'static + IntegrationsClientBounds {
     /// * `Ok(OauthConnectTxStatus)` - The current status of the transaction
     /// * `Err` - If the transaction is not found or polling fails
     async fn poll_oauth_connect_status(&self, tx_id: String) -> Result<OauthConnectTxStatus>;
-
-    /// Gets the list of integration provider names that are using the specified environment.
-    ///
-    /// # Arguments
-    /// * `environment_id` - The ID of the environment to check
-    ///
-    /// # Returns
-    /// * `Ok(Vec<String>)` - List of provider names (e.g., ["linear", "slack"]) using this environment
-    /// * `Err` - If the query fails
-    async fn get_integrations_using_environment(
-        &self,
-        environment_id: String,
-    ) -> Result<GetIntegrationsUsingEnvironmentOutput>;
-
-    /// Gets the user's GitHub connection info, including accessible repos.
-    ///
-    /// # Returns
-    /// * `Ok(UserGithubInfoResult)` - Either connected with repos, or auth required
-    /// * `Err` - If the query fails
-    async fn get_user_github_info(&self) -> Result<UserGithubInfoResult>;
-
-    /// Suggests a Docker image for a cloud environment based on the provided repos.
-    async fn suggest_cloud_environment_image(
-        &self,
-        repos: Vec<(String, String)>,
-    ) -> Result<SuggestCloudEnvironmentImageResult>;
 }
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
@@ -206,31 +165,6 @@ impl IntegrationsClient for ServerApi {
         }
     }
 
-    async fn get_integrations_using_environment(
-        &self,
-        environment_id: String,
-    ) -> Result<GetIntegrationsUsingEnvironmentOutput> {
-        let variables = GetIntegrationsUsingEnvironmentVariables {
-            request_context: get_request_context(),
-            input: GetIntegrationsUsingEnvironmentInput { environment_id },
-        };
-
-        let operation = GetIntegrationsUsingEnvironment::build(variables);
-        let response = self.send_graphql_request(operation, None).await?;
-
-        match response.get_integrations_using_environment {
-            GetIntegrationsUsingEnvironmentResult::GetIntegrationsUsingEnvironmentOutput(
-                output,
-            ) => Ok(output),
-            GetIntegrationsUsingEnvironmentResult::UserFacingError(error) => {
-                Err(anyhow!(get_user_facing_error_message(error)))
-            }
-            GetIntegrationsUsingEnvironmentResult::Unknown => Err(anyhow!(
-                "Unknown error while getting integrations using environment"
-            )),
-        }
-    }
-
     async fn list_simple_integrations(
         &self,
         providers: Vec<String>,
@@ -275,76 +209,6 @@ impl IntegrationsClient for ServerApi {
             GetOAuthConnectTxStatusResult::Unknown => {
                 Err(anyhow!("Unknown error while polling OAuth status"))
             }
-        }
-    }
-
-    async fn get_user_github_info(&self) -> Result<UserGithubInfoResult> {
-        let variables = UserGithubInfoVariables {
-            request_context: get_request_context(),
-        };
-
-        let operation = UserGithubInfo::build(variables);
-        let response = self.send_graphql_request(operation, None).await?;
-
-        let result = response.user_github_info;
-
-        // Dev-only helper for testing GitHub-unauthed flows.
-        //
-        // Important: this runs after the network request completes so the UI can still
-        // show the loading state.
-        if FeatureFlag::SimulateGithubUnauthed.is_enabled() {
-            if let UserGithubInfoResult::GithubConnectedOutput(connected) = &result {
-                let auth_url = format!("{}/oauth/connect/github", ChannelState::server_root_url());
-                return Ok(UserGithubInfoResult::GithubAuthRequiredOutput(
-                    GithubAuthRequiredOutput {
-                        auth_url,
-                        // This value is unused by the app UI; it exists in the schema for
-                        // tx-bound flows. We intentionally omit txId from the auth URL so
-                        // the web flow can proceed without a server-created tx.
-                        tx_id: cynic::Id::new("simulated"),
-                        app_install_link: connected.app_install_link.clone(),
-                    },
-                ));
-            }
-        }
-
-        Ok(result)
-    }
-
-    async fn suggest_cloud_environment_image(
-        &self,
-        repos: Vec<(String, String)>,
-    ) -> Result<SuggestCloudEnvironmentImageResult> {
-        let repo_inputs: Vec<SuggestCloudEnvironmentImageRepoInput> = repos
-            .into_iter()
-            .map(|(owner, repo)| SuggestCloudEnvironmentImageRepoInput { owner, repo })
-            .collect();
-
-        let variables = SuggestCloudEnvironmentImageVariables {
-            request_context: get_request_context(),
-            input: SuggestCloudEnvironmentImageInput { repos: repo_inputs },
-        };
-
-        let operation = SuggestCloudEnvironmentImage::build(variables);
-        let response = self.send_graphql_request(operation, None).await?;
-
-        match response.suggest_cloud_environment_image {
-            SuggestCloudEnvironmentImageResult::SuggestCloudEnvironmentImageAuthRequiredOutput(
-                output,
-            ) => Ok(
-                SuggestCloudEnvironmentImageResult::SuggestCloudEnvironmentImageAuthRequiredOutput(
-                    output,
-                ),
-            ),
-            SuggestCloudEnvironmentImageResult::SuggestCloudEnvironmentImageOutput(output) => {
-                Ok(SuggestCloudEnvironmentImageResult::SuggestCloudEnvironmentImageOutput(output))
-            }
-            SuggestCloudEnvironmentImageResult::UserFacingError(error) => {
-                Err(anyhow!(get_user_facing_error_message(error)))
-            }
-            SuggestCloudEnvironmentImageResult::Unknown => Err(anyhow!(
-                "Unknown response from suggestCloudEnvironmentImage query"
-            )),
         }
     }
 }

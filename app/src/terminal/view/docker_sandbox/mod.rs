@@ -21,21 +21,12 @@ use crate::terminal::local_tty::docker_sandbox::resolve_sbx_path_from_user_shell
 use crate::terminal::TerminalManager;
 
 #[cfg(not(target_family = "wasm"))]
-use crate::ai::agent_sdk::driver::{
-    environment::prepare_environment, terminal::TerminalDriver, WARP_DRIVE_SYNC_TIMEOUT,
-};
-#[cfg(not(target_family = "wasm"))]
-use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
+use crate::ai::agent_sdk::driver::{terminal::TerminalDriver, WARP_DRIVE_SYNC_TIMEOUT};
 #[cfg(not(target_family = "wasm"))]
 use crate::server::cloud_objects::update_manager::UpdateManager;
 #[cfg(not(target_family = "wasm"))]
-use crate::server::ids::{ServerId, SyncId};
-#[cfg(not(target_family = "wasm"))]
-use crate::terminal::local_tty::docker_sandbox::DOCKER_SANDBOX_HOME_DIR;
 #[cfg(feature = "remote_tty")]
 use crate::terminal::remote_tty::TerminalManager as RemoteTtyTerminalManager;
-#[cfg(not(target_family = "wasm"))]
-use warp_cli::agent::Harness;
 #[cfg(not(target_family = "wasm"))]
 use warpui::r#async::FutureExt;
 
@@ -231,44 +222,10 @@ impl TerminalView {
                     return Err("terminal bootstrap failed");
                 }
 
-                // Look up the environment by hardcoded ID.
-                let environment = spawner
-                    .spawn(|_, ctx| {
-                        let server_id = ServerId::try_from("SVhg783GBFQHk1OfdPfFU9").ok()?;
-                        let sync_id = SyncId::ServerId(server_id);
-                        CloudAmbientAgentEnvironment::get_by_id(&sync_id, ctx)
-                            .map(|env| env.model().string_model.clone())
-                    })
-                    .await
-                    .map_err(|_| "view dropped")?
-                    .ok_or("environment not found")?;
-
-                // Prepare the environment (clone repos, run setup commands, index codebases).
-                let prepare_future = spawner
-                    .spawn(|_, ctx| {
-                        prepare_environment(
-                            environment,
-                            DOCKER_SANDBOX_HOME_DIR.into(),
-                            true, /* is_sandbox */
-                            Harness::Oz,
-                            ctx,
-                        )
-                    })
-                    .await
-                    .map_err(|_| "view dropped")?;
-
-                prepare_future.await.map_err(|e| {
-                    log::error!("Docker sandbox environment preparation failed: {e}");
-                    "environment preparation failed"
-                })?;
-
-                // Keep the TerminalDriver model alive for the entire duration of
-                // this async block. The spawner only holds a weak reference to the
-                // model; if the ModelHandle is dropped the model is released and
-                // all subsequent spawner calls fail with ModelDropped.
-                drop(terminal_driver);
-
-                Ok(())
+                // twarp 2c-d.3: cloud environments are no longer materialized client-side.
+                // The hardcoded "Oz Docker sandbox" environment is unavailable in this build.
+                let _ = terminal_driver;
+                Err("environment not found")
             },
             |_, result, _| match result {
                 Ok(()) => {

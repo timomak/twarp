@@ -17,11 +17,9 @@ use std::sync::Arc;
 
 use crate::{
     ai::ambient_agents::telemetry::CloudAgentTelemetryEvent,
-    ai::{
-        cloud_agent_settings::CloudAgentSettings, cloud_environments::CloudAmbientAgentEnvironment,
-    },
+    ai::cloud_agent_settings::CloudAgentSettings,
     appearance::Appearance,
-    cloud_object::model::{generic_string_model::StringModel, persistence::CloudModel},
+    cloud_object::model::persistence::CloudModel,
     context_chips::display_menu::{
         ChipMenuType, DisplayChipMenu, FixedFooter, GenericMenuItem, PromptDisplayMenuEvent,
     },
@@ -117,21 +115,8 @@ impl GenericMenuItem for NewEnvironmentMenuItem {
     }
 }
 
-fn sort_environments_by_recency(environments: &mut [CloudAmbientAgentEnvironment]) {
-    environments.sort_by(|a, b| {
-        // Sort by last-used timestamp descending (most recent first), then by display name ascending
-        b.metadata
-            .last_task_run_ts
-            .cmp(&a.metadata.last_task_run_ts)
-            .then_with(|| {
-                a.model()
-                    .string_model
-                    .name
-                    .to_lowercase()
-                    .cmp(&b.model().string_model.name.to_lowercase())
-            })
-    });
-}
+// twarp 2c-d.3: cloud environments are no longer materialized client-side, so
+// the helper is unused but kept as a placeholder to minimise the diff.
 
 impl EnvironmentSelector {
     pub fn new(
@@ -256,38 +241,13 @@ impl EnvironmentSelector {
         ctx.notify();
     }
 
-    /// Ensures a default environment is selected if none is currently selected.
-    fn ensure_default_selection(&mut self, ctx: &mut ViewContext<Self>) {
-        let current_selection = self
-            .ambient_agent_model
-            .as_ref(ctx)
-            .selected_environment_id();
-        if current_selection.is_some() {
-            return;
-        }
-
-        // First, try to restore the user's last selected environment from settings.
-        if let Some(env_id) = self.get_saved_environment_from_settings(ctx) {
-            // Verify the environment still exists.
-            if CloudAmbientAgentEnvironment::get_by_id(&env_id, ctx).is_some() {
-                self.ambient_agent_model.update(ctx, |model, ctx| {
-                    model.set_environment_id(Some(env_id), ctx);
-                });
-                return;
-            }
-        }
-
-        // Fall back to auto-selecting the most recently used environment.
-        let mut environments = CloudAmbientAgentEnvironment::get_all(ctx);
-        sort_environments_by_recency(&mut environments);
-        if let Some(first_env) = environments.first() {
-            self.ambient_agent_model.update(ctx, |model, ctx| {
-                model.set_environment_id(Some(first_env.id), ctx);
-            });
-        }
-    }
+    /// twarp 2c-d.3: cloud environments are no longer materialized
+    /// client-side, so there is nothing to default to.
+    fn ensure_default_selection(&mut self, _ctx: &mut ViewContext<Self>) {}
 
     /// Retrieves the last selected environment ID from settings.
+    // twarp: 2c-d.3 — kept for 2c-d.4 (agent_view removal); unused after env removal
+    #[allow(dead_code)]
     fn get_saved_environment_from_settings(&self, ctx: &ViewContext<Self>) -> Option<SyncId> {
         *CloudAgentSettings::as_ref(ctx)
             .last_selected_environment_id
@@ -304,41 +264,18 @@ impl EnvironmentSelector {
     }
 
     fn refresh_menu(&mut self, ctx: &mut ViewContext<Self>) {
-        let mut environments = CloudAmbientAgentEnvironment::get_all(ctx);
-        sort_environments_by_recency(&mut environments);
-
-        let selected_id = self
-            .ambient_agent_model
-            .as_ref(ctx)
-            .selected_environment_id()
-            .cloned();
-
-        let menu_items: Vec<EnvironmentMenuItem> = environments
-            .iter()
-            .map(|env| {
-                let is_selected = selected_id.as_ref() == Some(&env.id);
-                EnvironmentMenuItem {
-                    id: env.id,
-                    name: env.model().string_model.display_name(),
-                    is_selected,
-                }
-            })
-            .collect();
-
+        // twarp 2c-d.3: cloud environments are no longer materialized
+        // client-side, so the menu is always empty.
+        let menu_items: Vec<EnvironmentMenuItem> = Vec::new();
         self.dropdown.update(ctx, |menu, ctx| {
             menu.update_menu_items(menu_items, ctx);
         });
     }
 
     fn refresh_button(&mut self, ctx: &mut ViewContext<Self>) {
-        let label = self
-            .ambient_agent_model
-            .as_ref(ctx)
-            .selected_environment_id()
-            .and_then(|id| CloudAmbientAgentEnvironment::get_by_id(id, ctx))
-            .map(|env| env.model().string_model.display_name())
-            .unwrap_or_else(|| "New environment".to_string());
-
+        // twarp 2c-d.3: cloud environments are no longer materialized
+        // client-side, so we always show the "New environment" placeholder.
+        let label = "New environment".to_string();
         let is_configuring = self.is_configuring(ctx);
 
         self.button.update(ctx, |button, ctx| {

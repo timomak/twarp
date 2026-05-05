@@ -609,7 +609,7 @@ impl AgentInputFooter {
                 ctx.emit(AgentInputFooterEvent::ToggledChipMenu { open: *open });
             }
             EnvironmentSelectorEvent::OpenEnvironmentManagementPane => {
-                ctx.emit(AgentInputFooterEvent::OpenEnvironmentManagementPane);
+                // twarp 2c-d.3: environment management pane is gone.
             }
         });
 
@@ -2389,7 +2389,6 @@ pub enum AgentInputFooterEvent {
     ShowContextMenu {
         position: Vector2F,
     },
-    OpenEnvironmentManagementPane,
     PluginInstalled(CLIAgent),
     #[cfg(not(target_family = "wasm"))]
     OpenPluginInstructionsPane(CLIAgent, PluginModalKind),

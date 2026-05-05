@@ -19,7 +19,6 @@ use crate::ai::ambient_agents::{
     OUT_OF_CREDITS_TASK_FAILURE_MESSAGE, SERVER_OVERLOADED_TASK_FAILURE_MESSAGE,
 };
 use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::{CloudAgentComputerUseState, ComputerUsePermission};
 use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
@@ -211,16 +210,12 @@ impl AmbientAgentViewModel {
     }
 
     /// Validates the environment ID after Warp Drive initial load completes.
-    /// If the environment no longer exists, clears the selection.
+    /// twarp 2c-d.3: cloud environments are no longer materialized client-side,
+    /// so we always clear any previously persisted environment selection.
     fn validate_environment_after_initial_load(&mut self, ctx: &mut ModelContext<Self>) {
-        if let Some(id) = &self.environment_id {
-            if CloudAmbientAgentEnvironment::get_by_id(id, ctx).is_none() {
-                log::warn!(
-                    "Environment {id:?} no longer exists after initial load, clearing selection"
-                );
-                self.environment_id = None;
-                ctx.emit(AmbientAgentViewModelEvent::EnvironmentSelected);
-            }
+        if self.environment_id.is_some() {
+            self.environment_id = None;
+            ctx.emit(AmbientAgentViewModelEvent::EnvironmentSelected);
         }
     }
 
@@ -285,11 +280,11 @@ impl AmbientAgentViewModel {
         environment_id: Option<SyncId>,
         ctx: &mut ModelContext<Self>,
     ) {
-        if let Some(id) = &environment_id {
-            if CloudAmbientAgentEnvironment::get_by_id(id, ctx).is_none() {
-                log::warn!("Tried to select unknown environment {id:?}");
-                return;
-            }
+        // twarp 2c-d.3: cloud environments are no longer materialized
+        // client-side. Refuse any non-None selection.
+        if environment_id.is_some() {
+            log::warn!("Tried to select an environment, but cloud environments are disabled");
+            return;
         }
         self.environment_id = environment_id;
         ctx.emit(AmbientAgentViewModelEvent::EnvironmentSelected);

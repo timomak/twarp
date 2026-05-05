@@ -47,13 +47,9 @@ use warpui::{platform::TerminationMode, AppContext, SingletonEntity};
 
 use crate::{
     ai::ambient_agents::{task::HarnessConfig, AmbientAgentTaskId},
-    ai::cloud_environments::CloudAmbientAgentEnvironment,
     auth::AuthStateProvider,
     send_telemetry_sync_from_app_ctx,
-    server::{
-        ids::{ServerId, SyncId},
-        server_api::{ai::AgentConfigSnapshot, ServerApiProvider},
-    },
+    server::server_api::{ai::AgentConfigSnapshot, ServerApiProvider},
     terminal::view::ConversationRestorationInNewPaneType,
 };
 use driver::AgentDriverError;
@@ -74,9 +70,11 @@ use warp_cli::OZ_HARNESS_ENV;
 
 mod admin;
 mod agent_config;
+pub(crate) mod agent_events;
 mod ambient;
 mod artifact;
 pub(crate) mod artifact_upload;
+pub(crate) mod cloud_types;
 mod common;
 mod config_file;
 pub(crate) mod driver;
@@ -1143,23 +1141,21 @@ impl AgentDriverRunner {
             return Ok(());
         };
 
+        // twarp 2c-d.3: cloud environments are no longer materialized
+        // client-side, so the lookup always fails.
         let environment = foreground
-            .spawn(move |_, ctx| -> Result<_, AgentDriverError> {
-                let server_id = ServerId::try_from(environment_id.as_str()).map_err(|_| {
-                    log::error!("Invalid environment ID: {environment_id}");
+            .spawn(
+                move |_,
+                      ctx|
+                      -> Result<
+                    crate::ai::agent_sdk::cloud_types::AmbientAgentEnvironment,
+                    AgentDriverError,
+                > {
+                    log::error!("Environment not found with ID: {environment_id}");
                     AgentDriver::log_valid_environments(ctx);
-                    AgentDriverError::EnvironmentNotFound(environment_id.clone())
-                })?;
-                let sync_id = SyncId::ServerId(server_id);
-
-                CloudAmbientAgentEnvironment::get_by_id(&sync_id, ctx)
-                    .ok_or_else(|| {
-                        log::error!("Environment not found with ID: {environment_id}");
-                        AgentDriver::log_valid_environments(ctx);
-                        AgentDriverError::EnvironmentNotFound(environment_id)
-                    })
-                    .map(|env| env.model().string_model.clone())
-            })
+                    Err(AgentDriverError::EnvironmentNotFound(environment_id))
+                },
+            )
             .await??;
 
         if FeatureFlag::OzIdentityFederation.is_enabled() {

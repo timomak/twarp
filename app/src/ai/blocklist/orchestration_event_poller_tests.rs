@@ -1,5 +1,5 @@
 use super::*;
-use crate::ai::agent_events::{
+use crate::ai::agent_sdk::agent_events::{
     agent_event_backoff, agent_event_failures_exceeded_threshold,
     DEFAULT_AGENT_EVENT_RECONNECT_BACKOFF_STEPS,
 };

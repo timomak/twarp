@@ -128,6 +128,8 @@ where
         }
     }
 
+    // twarp: 2c-d.3 — kept for shared filterable dropdown component; no callers after agent UI removal
+    #[allow(dead_code)]
     pub fn set_menu_header_text_override<F>(&mut self, formatter: F)
     where
         F: Fn(&str) -> String + 'static,
@@ -159,6 +161,8 @@ where
     ///
     /// Default is MainAxisSize::Max, set to MainAxisSize::Min if you want to wrap the dropdown to
     /// the text that's filling it.
+    // twarp: 2c-d.3 — kept for shared filterable dropdown component; no callers after agent UI removal
+    #[allow(dead_code)]
     pub fn set_main_axis_size(
         &mut self,
         main_axis_size: MainAxisSize,
@@ -172,6 +176,8 @@ where
         self.style_override = Some(style);
     }
 
+    // twarp: 2c-d.3 — kept for shared filterable dropdown component; no callers after agent UI removal
+    #[allow(dead_code)]
     pub fn set_button_variant(&mut self, button_variant: ButtonVariant) {
         self.button_variant = button_variant;
     }

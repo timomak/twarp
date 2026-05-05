@@ -3,7 +3,7 @@ use std::{collections::HashMap, ffi::OsString, future::Future, pin::Pin, time::D
 use anyhow::Context as _;
 use warp_managed_secrets::{GcpCredentials, GcpFederationConfig};
 
-use crate::ai::cloud_environments::GcpProviderConfig;
+use crate::ai::agent_sdk::cloud_types::GcpProviderConfig;
 
 use super::{CloudProvider, CloudProviderSetupError, Result};
 

@@ -14,7 +14,6 @@ fn code_subpages_are_identified() {
 
 #[test]
 fn cloud_platform_subpages_are_identified() {
-    assert!(SettingsSection::CloudEnvironments.is_cloud_platform_subpage());
     assert!(SettingsSection::OzCloudAPIKeys.is_cloud_platform_subpage());
 
     assert!(!SettingsSection::Account.is_cloud_platform_subpage());
@@ -25,7 +24,6 @@ fn is_subpage_covers_all_umbrella_types() {
     // All subpages under any umbrella should return true.
     assert!(SettingsSection::CodeIndexing.is_subpage());
     assert!(SettingsSection::EditorAndCodeReview.is_subpage());
-    assert!(SettingsSection::CloudEnvironments.is_subpage());
     assert!(SettingsSection::OzCloudAPIKeys.is_subpage());
 
     // Top-level pages should not be subpages.
@@ -50,10 +48,6 @@ fn code_subpages_map_to_code_backing_page() {
 
 #[test]
 fn cloud_platform_subpages_map_to_their_backing_pages() {
-    assert_eq!(
-        SettingsSection::CloudEnvironments.parent_page_section(),
-        SettingsSection::CloudEnvironments
-    );
     assert_eq!(
         SettingsSection::OzCloudAPIKeys.parent_page_section(),
         SettingsSection::OzCloudAPIKeys
@@ -106,10 +100,6 @@ fn subpage_display_names_are_correct() {
     assert_eq!(
         SettingsSection::EditorAndCodeReview.to_string(),
         "Editor and Code Review"
-    );
-    assert_eq!(
-        SettingsSection::CloudEnvironments.to_string(),
-        "Environments"
     );
     assert_eq!(
         SettingsSection::OzCloudAPIKeys.to_string(),
@@ -255,7 +245,7 @@ fn collapsed_umbrella_is_a_single_nav_stop() {
         stops[3],
         NavStop::CollapsedUmbrella {
             nav_index: 3,
-            first_subpage: SettingsSection::CloudEnvironments,
+            first_subpage: SettingsSection::OzCloudAPIKeys,
             last_subpage: SettingsSection::OzCloudAPIKeys,
         }
     ));
@@ -502,7 +492,7 @@ fn arrow_down_from_expanded_last_subpage_leaves_umbrella() {
         SettingsSection::EditorAndCodeReview,
         CycleDirection::Down,
     );
-    assert_eq!(next, SettingsSection::CloudEnvironments);
+    assert_eq!(next, SettingsSection::OzCloudAPIKeys);
 }
 
 #[test]
@@ -530,5 +520,5 @@ fn arrow_down_across_adjacent_collapsed_umbrellas() {
         SettingsSection::CodeIndexing,
         CycleDirection::Down,
     );
-    assert_eq!(next_after_code, SettingsSection::CloudEnvironments);
+    assert_eq!(next_after_code, SettingsSection::OzCloudAPIKeys);
 }

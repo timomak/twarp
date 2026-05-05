@@ -8,7 +8,7 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 use super::*;
-use crate::ai::agent_events::MessageHydrator;
+use crate::ai::agent_sdk::agent_events::MessageHydrator;
 use crate::server::server_api::ai::{MockAIClient, ReadAgentMessageResponse};
 
 fn sample_parent_bridge_message(

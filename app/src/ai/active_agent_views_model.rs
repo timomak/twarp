@@ -21,7 +21,10 @@ struct ActiveAgentViewHandles {
 #[derive(Clone)]
 pub enum ActiveAgentViewsEvent {
     /// A conversation was closed (exited from the agent view or its pane was removed).
-    ConversationClosed { conversation_id: AIConversationId },
+    ConversationClosed {
+        #[allow(dead_code)]
+        conversation_id: AIConversationId,
+    },
     /// A conversation was entered within a terminal view.
     TerminalViewFocused,
     /// An ambient agent session was opened in a tab.

@@ -39,6 +39,8 @@ pub enum DropdownStyle {
     /// Similar to Secondary but with ActionButton-like hover behavior:
     /// background fill on hover instead of border color change.
     /// TODO this should probably replace the default `Secondary` theme
+    // twarp: 2c-d.3 — kept for shared dropdown component; no constructors after agent UI removal
+    #[allow(dead_code)]
     ActionButtonSecondary,
 }
 
@@ -245,6 +247,8 @@ where
         ctx.notify();
     }
 
+    // twarp: 2c-d.3 — kept for shared dropdown component; no callers after agent UI removal
+    #[allow(dead_code)]
     pub fn set_menu_header_text_override<F>(&mut self, formatter: F)
     where
         F: Fn(&str) -> String + 'static,
@@ -373,6 +377,8 @@ where
         })
     }
 
+    // twarp: 2c-d.3 — kept for shared dropdown component; no callers after agent UI removal
+    #[allow(dead_code)]
     pub fn set_menu_max_height(&mut self, height: f32, ctx: &mut ViewContext<Self>) {
         self.dropdown.update(ctx, |menu, ctx| {
             menu.set_height(height);

@@ -80,6 +80,8 @@ impl AgentToastStack {
     }
 
     /// Add a new agent toast to the stack
+    // twarp: 2c-d.3 — kept for 2c-d.4/.5 (agent UI removal); no callers after agent removal
+    #[allow(dead_code)]
     pub fn add_toast(&mut self, toast: AgentToast, ctx: &mut ViewContext<Self>) {
         let uuid = Uuid::new_v4();
         let abort_handle = ctx.spawn_abortable(
@@ -260,6 +262,8 @@ pub struct AgentToast {
 }
 
 impl AgentToast {
+    // twarp: 2c-d.3 — kept for 2c-d.4/.5 (agent UI removal); no callers after agent removal
+    #[allow(dead_code)]
     pub fn new(
         task_name: String,
         icon: Icon,

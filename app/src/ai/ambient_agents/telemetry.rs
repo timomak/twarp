@@ -20,6 +20,8 @@ pub enum CloudModeEntryPoint {
 }
 
 /// Telemetry events for client interactions with cloud agents.
+// twarp: 2c-d.3
+#[allow(dead_code)]
 #[derive(Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(EnumIter))]
 pub enum CloudAgentTelemetryEvent {
