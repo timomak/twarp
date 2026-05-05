@@ -25,9 +25,7 @@ use crate::ai::{
     blocklist::action_model::execute::suggest_new_conversation::SuggestNewConversationExecutor,
 };
 use chrono::Local;
-pub(crate) use execute::apply_edits;
 pub(crate) use execute::coerce_integer_args;
-pub(crate) use execute::FileReadResult;
 pub(crate) use execute::MalformedFinalLineProxyEvent;
 pub use execute::{
     read_local_file_context, EditAcceptAndContinueClickedEvent, EditAcceptClickedEvent,

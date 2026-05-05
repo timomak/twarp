@@ -1,8 +1,4 @@
-use warp_core::ui::theme::{Fill, WarpTheme};
 use warp_core::ui::Icon;
-use warpui::Element;
-
-pub mod conversation_usage_view;
 
 pub fn icon_for_context_window_usage(context_window_usage: f32) -> Icon {
     // Match the context window usage to the nearest 10% icon.
@@ -29,20 +25,4 @@ pub fn icon_for_context_window_usage(context_window_usage: f32) -> Icon {
     } else {
         Icon::ConversationContext0
     }
-}
-
-pub fn render_context_window_usage_icon(
-    context_window_usage: f32,
-    theme: &WarpTheme,
-    color_override: Option<Fill>,
-) -> Box<dyn Element> {
-    let icon = icon_for_context_window_usage(context_window_usage);
-
-    let fill = if context_window_usage >= 0.8 {
-        Fill::Solid(theme.ansi_fg_red())
-    } else {
-        color_override.unwrap_or_else(|| theme.main_text_color(theme.background()))
-    };
-
-    icon.to_warpui_icon(fill).finish()
 }

@@ -16,7 +16,6 @@ use super::{
     },
 };
 use crate::{
-    ai::blocklist::usage::conversation_usage_view::ConversationUsageInfo,
     ai::execution_profiles::{ActionPermission, ComputerUsePermission, WriteToPtyPermission},
     ai::{BonusGrant, BonusGrantScope},
     auth::UserUid,
@@ -64,9 +63,7 @@ use warp_graphql::{
         UsageBasedPricingPolicy as GqlUsageBasedPricingPolicy, WarpAiPolicy as GqlWarpAiPolicy,
     },
     object::CloudObjectWithDescendants,
-    queries::{
-        get_conversation_usage as gql_usage, get_workspaces_metadata_for_user::User as GqlUser,
-    },
+    queries::get_workspaces_metadata_for_user::User as GqlUser,
     subscriptions::get_warp_drive_updates::WarpDriveUpdate,
     user::{DiscoverableTeamData as GqlDiscoverableTeamData, PublicUserProfile},
     workspace::{
@@ -241,29 +238,6 @@ impl From<GqlUgcCollectionEnablementSetting> for UgcCollectionEnablementSetting 
                 ));
                 UgcCollectionEnablementSetting::RespectUserSetting
             }
-        }
-    }
-}
-
-impl From<&gql_usage::ConversationUsage> for ConversationUsageInfo {
-    fn from(gql: &gql_usage::ConversationUsage) -> Self {
-        let persistence::model::ConversationUsageMetadata {
-            credits_spent,
-            token_usage: models,
-            tool_usage_metadata: tool,
-            context_window_usage,
-            ..
-        } = (&gql.usage_metadata).into();
-        ConversationUsageInfo {
-            credits_spent,
-            credits_spent_for_last_block: None,
-            tool_calls: tool.total_tool_calls(),
-            models,
-            context_window_usage,
-            files_changed: tool.apply_file_diff_stats.files_changed,
-            lines_added: tool.apply_file_diff_stats.lines_added,
-            lines_removed: tool.apply_file_diff_stats.lines_removed,
-            commands_executed: tool.run_command_stats.commands_executed,
         }
     }
 }
