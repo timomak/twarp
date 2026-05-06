@@ -4091,6 +4091,7 @@ impl Workspace {
 
     /// Add a new terminal tab and enter the agent view with a new conversation.
     fn add_terminal_tab_with_new_agent_view(&mut self, ctx: &mut ViewContext<Self>) {
+        // twarp: 2c-d — agent_view portion removed; just opens a new terminal tab.
         let was_left_panel_open = self.active_tab_pane_group().as_ref(ctx).left_panel_open;
         self.add_new_session_tab_internal_with_default_session_mode_behavior(
             NewSessionSource::Tab,
@@ -4104,15 +4105,6 @@ impl Workspace {
         self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
             if was_left_panel_open {
                 pane_group.set_left_panel_open(true, ctx);
-            }
-            if let Some(terminal_view) = pane_group.active_session_view(ctx) {
-                terminal_view.update(ctx, |view, ctx| {
-                    view.enter_agent_view_for_new_conversation(
-                        None,
-                        AgentViewEntryOrigin::ConversationListView,
-                        ctx,
-                    );
-                });
             }
         });
     }
@@ -4486,29 +4478,18 @@ impl Workspace {
         })
     }
 
-    /// Finds the tab index containing a terminal viewing the given ambient agent conversation,
-    /// returning None if the ambient conversation is not open in any tab.
+    // twarp: 2c-d — find_tab_with_ambient_agent_conversation simplified (ActiveAgentViewsModel deleted).
     fn find_tab_with_ambient_agent_conversation(
         &self,
         task_id: AmbientAgentTaskId,
         ctx: &AppContext,
     ) -> Option<usize> {
-        // First, check ActiveAgentViewsModel for the terminal view that has this task registered.
-        // This is the authoritative source since it's updated when the session is joined.
-        let active_terminal_view_id =
-            ActiveAgentViewsModel::as_ref(ctx).get_terminal_view_id_for_ambient_task(task_id);
-
         self.tabs.iter().enumerate().find_map(|(index, tab)| {
             let pane_group = tab.pane_group.as_ref(ctx);
             let has_task = pane_group.terminal_pane_ids().into_iter().any(|pane_id| {
                 pane_group
                     .terminal_view_from_pane_id(pane_id, ctx)
                     .is_some_and(|tv| {
-                        // Check if this is the terminal view registered in ActiveAgentViewsModel
-                        if active_terminal_view_id == Some(tv.id()) {
-                            return true;
-                        }
-                        // Fall back to checking the terminal model directly
                         tv.as_ref(ctx).model.lock().ambient_agent_task_id() == Some(task_id)
                     })
             });
