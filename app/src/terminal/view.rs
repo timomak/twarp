@@ -4900,11 +4900,9 @@ impl TerminalView {
                         .set_is_executing_oz_environment_startup_commands(false);
                 }
 
-                let should_add_ai_block = history_model
-                    .as_ref(ctx)
-                    .conversation(conversation_id)
-                    .and_then(|conversation| conversation.get_task(task_id))
-                    .is_some_and(blocklist_filter::should_show_task_in_blocklist);
+                // twarp: 2c-d — blocklist_filter::should_show_task_in_blocklist removed with AI.
+                let should_add_ai_block = false;
+                let _ = (history_model, conversation_id, task_id);
                 if !should_add_ai_block {
                     // Only add AI blocks to the blocklist for root task exchanges (normal Agent Mode)
                     // and advice subagent exchanges (so advice tool calls/results are visible).
@@ -5619,12 +5617,8 @@ impl TerminalView {
             active_conversation_historical_ai_context_block_ids,
         );
 
-        let exchange_ids = blocklist_filter::exchanges_for_blocklist(conversation)
-            .into_iter()
-            .map(|exchange| exchange.id)
-            .collect();
-
-        let _ = ai_render_context.exchange_ids.insert(exchange_ids);
+        // twarp: 2c-d — blocklist_filter::exchanges_for_blocklist removed with AI.
+        let _ = (conversation, ai_render_context);
     }
 
     fn handle_ai_input_model_event(
@@ -14914,72 +14908,14 @@ impl TerminalView {
         }
     }
 
-    /// Show the context menu that lists the context blocks or selected text attached to an AI query.
-    /// The query is the query in the exchange with the given [`AIAgentExchangeId`].
+    // twarp: 2c-d — open_ai_block_attached_context_menu removed (depended on AIAgentContext + BlockContext deleted with AI).
     fn open_ai_block_attached_context_menu(
         &mut self,
-        ai_block_view_id: EntityId,
-        ai_exchange_id: AIAgentExchangeId,
-        ai_conversation_id: AIConversationId,
-        ctx: &mut ViewContext<Self>,
+        _ai_block_view_id: EntityId,
+        _ai_exchange_id: AIAgentExchangeId,
+        _ai_conversation_id: AIConversationId,
+        _ctx: &mut ViewContext<Self>,
     ) {
-        let Some(contexts) = BlocklistAIHistoryModel::as_ref(ctx)
-            .conversation(&ai_conversation_id)
-            .map(|conversation| conversation.context_for_exchange(ai_exchange_id))
-        else {
-            debug_assert!(
-                false,
-                "Attempted to open attachments menu for AI block with unknown conversation."
-            );
-            return;
-        };
-
-        let font_family = Appearance::as_ref(ctx).monospace_font_family();
-        let font_size = Appearance::as_ref(ctx).monospace_font_size();
-
-        const MAX_TEXT_DISPLAY_LENGTH: usize = 23;
-        let truncate_text = |text: &String| truncate_from_end(text, MAX_TEXT_DISPLAY_LENGTH);
-
-        let menu_items = contexts
-            .filter_map(|context| {
-                if let AIAgentContext::Block(block_context) = context {
-                    let BlockContext {
-                        index: block_index,
-                        command,
-                        ..
-                    } = block_context.as_ref();
-                    Some(
-                        MenuItemFields::new(truncate_text(command))
-                            .with_on_select_action(TerminalAction::SelectAIAttachedBlock(
-                                *block_index,
-                            ))
-                            .with_icon(icons::Icon::Paperclip)
-                            .with_font_override(font_family)
-                            .with_font_size_override(font_size)
-                            .into_item(),
-                    )
-                } else if let AIAgentContext::SelectedText(selected_text) = context {
-                    Some(
-                        MenuItemFields::new(truncate_text(selected_text))
-                            .with_icon(icons::Icon::Paperclip)
-                            .with_font_override(font_family)
-                            .with_font_size_override(font_size)
-                            .with_no_interaction_on_hover()
-                            .into_item(),
-                    )
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-
-        self.show_context_menu(
-            ContextMenuState {
-                menu_type: ContextMenuType::AIBlockAttachedContext { ai_block_view_id },
-            },
-            menu_items,
-            ctx,
-        );
     }
 
     fn ai_block_copying_menu_items(
@@ -19919,7 +19855,7 @@ impl TerminalView {
     #[cfg(feature = "local_fs")]
     pub fn send_diff_context_to_cli_agent_or_rich_input(
         &mut self,
-        file_diffs: &std::collections::HashMap<String, Vec<crate::ai::agent::DiffSetHunk>>,
+        file_diffs: &std::collections::HashMap<String, Vec<crate::code_review::code_review_view::DiffSetHunk>>,
         ctx: &mut ViewContext<Self>,
     ) -> Option<CliAgentRouting> {
         let text = cli_agent::build_diff_context_prompt(file_diffs);
@@ -22786,23 +22722,9 @@ impl TerminalView {
         }
     }
 
-    /// Starts all enabled LSP servers for the current working directory.
+    // twarp: 2c-d — start_lsp_server_in_active_pwd removed (PersistedWorkspace + LspTask deleted with AI).
     #[cfg(feature = "local_fs")]
-    fn start_lsp_server_in_active_pwd(&self, ctx: &mut ViewContext<Self>) {
-        use crate::ai::persisted_workspace::LspTask;
-
-        let Some(cwd) = self
-            .pwd_if_local(ctx)
-            .map(PathBuf::from)
-            .and_then(|p| p.canonicalize().ok())
-        else {
-            return;
-        };
-
-        PersistedWorkspace::handle(ctx).update(ctx, |workspace, ctx| {
-            workspace.execute_lsp_task(LspTask::Spawn { file_path: cwd }, ctx);
-        });
-    }
+    fn start_lsp_server_in_active_pwd(&self, _ctx: &mut ViewContext<Self>) {}
 
     pub(super) fn toggle_file_tree(
         &mut self,
