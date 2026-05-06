@@ -15,22 +15,8 @@ mod terminal;
 mod terminal_message_bar;
 mod universal;
 
-use crate::ai::active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId};
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::{AIAgentExchangeId, CancellationReason};
-use crate::ai::blocklist::agent_view::shortcuts::AgentShortcutViewModel;
-use crate::ai::blocklist::agent_view::{AgentViewEntryOrigin, EphemeralMessageModel};
-use crate::ai::blocklist::block::cli_controller::CLISubagentController;
-use crate::ai::blocklist::block::status_bar::BlocklistAIStatusBar;
-use crate::ai::blocklist::{ai_indicator_height, BlocklistAIActionModel, SlashCommandRequest};
-use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
-use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
-use crate::ai::prompt_suggestions::{
-    has_pending_code_or_unit_test_prompt_suggestion,
-    is_accept_prompt_suggestion_bound_to_ctrl_enter,
-};
-use crate::ai::skills::SkillManager;
-use crate::ai::skills::{SkillOpenOrigin, SkillTelemetryEvent};
+// twarp: 2c-d — AI imports replaced with file-local stubs (see definitions below)
+use crate::app_state::{AIConversationId, AIDocumentId, AIDocumentVersion};
 use crate::context_chips::spacing;
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
@@ -342,6 +328,144 @@ fn is_valid_search_query(_is_navigation: bool, _prev: &str, _filter: &str) -> bo
 enum AIContextMenuAction {
     Prev,
     Next,
+}
+
+// twarp: 2c-d — stubs for crate::ai::* types removed at top of file
+#[allow(dead_code)]
+struct ActiveAgentViewsModel;
+impl ActiveAgentViewsModel {
+    fn as_ref<C>(_: &C) -> &Self {
+        unimplemented!()
+    }
+    fn get_all_active_conversation_ids<C>(&self, _: &C) -> Vec<ConversationOrTaskId> {
+        Vec::new()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+enum ConversationOrTaskId {
+    ConversationId(AIConversationId),
+}
+
+#[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
+struct AIAgentExchangeId(pub uuid::Uuid);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+enum CancellationReason {
+    No,
+}
+
+#[allow(dead_code)]
+struct AgentShortcutViewModel;
+impl AgentShortcutViewModel {
+    fn new<B, A, C>(_: B, _: A, _: &mut C) -> Self {
+        unimplemented!()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+enum AgentViewEntryOrigin {
+    CloudAgent,
+    InlineConversationMenu,
+    InlineHistoryMenu,
+    SlashCommand { name: String },
+}
+
+#[allow(dead_code)]
+struct EphemeralMessageModel;
+impl EphemeralMessageModel {
+    fn new() -> Self {
+        Self
+    }
+}
+
+#[allow(dead_code)]
+struct CLISubagentController;
+
+#[allow(dead_code)]
+struct BlocklistAIStatusBar;
+impl BlocklistAIStatusBar {
+    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+        unimplemented!()
+    }
+}
+
+#[allow(dead_code)]
+struct BlocklistAIActionModel;
+
+#[allow(dead_code)]
+enum SlashCommandRequest {
+    InvokeSkill {
+        skill: (),
+        user_query: Option<String>,
+    },
+}
+
+#[allow(dead_code)]
+struct AIExecutionProfilesModel;
+impl AIExecutionProfilesModel {
+    fn as_ref<C>(_: &C) -> &Self {
+        unimplemented!()
+    }
+    fn handle<C>(_: &C) -> std::sync::Arc<Self> {
+        unimplemented!()
+    }
+    fn active_profile<C>(&self, _: Option<warpui::EntityId>, _: &C) -> AIExecutionProfile {
+        unimplemented!()
+    }
+    fn update<F, C>(&self, _: &mut C, _: F) {}
+    fn set_base_model<C, M>(&mut self, _: (), _: Option<M>, _: &mut C) {}
+    fn set_cli_agent_model<C, M>(&mut self, _: (), _: Option<M>, _: &mut C) {}
+}
+
+#[allow(dead_code)]
+struct AIExecutionProfile;
+impl AIExecutionProfile {
+    fn id(&self) -> &() {
+        &()
+    }
+}
+
+#[allow(dead_code)]
+fn has_pending_code_or_unit_test_prompt_suggestion<C>(_: &C) -> bool {
+    false
+}
+
+#[allow(dead_code)]
+fn is_accept_prompt_suggestion_bound_to_ctrl_enter<C>(_: &C) -> bool {
+    false
+}
+
+#[allow(dead_code)]
+struct SkillManager;
+impl SkillManager {
+    fn handle<C>(_: &C) -> std::sync::Arc<Self> {
+        unimplemented!()
+    }
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum SkillOpenOrigin {
+    OpenSkillCommand,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum SkillTelemetryEvent {
+    Opened {
+        name: String,
+        origin: SkillOpenOrigin,
+    },
+}
+
+#[allow(dead_code)]
+fn ai_indicator_height() -> f32 {
+    0.0
 }
 
 #[allow(dead_code)]
