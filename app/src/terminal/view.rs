@@ -18458,13 +18458,9 @@ impl TerminalView {
                 }
             }
             InputEvent::ExecuteAIQuery => {
-                // Clear the "enter again to send" ephemeral message if it's currently showing
+                // twarp: 2c-d — agent_view::ENTER_AGAIN_TO_SEND_MESSAGE_ID lookup removed with AI.
                 self.ephemeral_message_model.update(ctx, |model, ctx| {
-                    if model
-                        .current_message()
-                        .and_then(|msg| msg.id())
-                        .is_some_and(|id| id == agent_view::ENTER_AGAIN_TO_SEND_MESSAGE_ID)
-                    {
+                    if false {
                         model.clear_message(ctx);
                     }
                 });
@@ -24034,54 +24030,8 @@ impl TypedActionView for TerminalView {
             OpenRulesPane => {
                 ctx.emit(Event::OpenRulesPane);
             }
-            OpenEditSkillPane { skill_reference } => {
-                #[cfg(feature = "local_fs")]
-                {
-                    use ai::skills::SkillReference;
-
-                    match skill_reference {
-                        SkillReference::Path(path) => {
-                            ctx.emit(Event::OpenCodeInWarp {
-                                source: CodeSource::Skill {
-                                    reference: skill_reference.clone(),
-                                    path: path.clone(),
-                                    origin: SkillOpenOrigin::OpenSkillCommand,
-                                },
-                                layout:
-                                    *crate::util::file::external_editor::EditorSettings::as_ref(ctx)
-                                        .open_file_layout
-                                        .value(),
-                            });
-                        }
-                        SkillReference::BundledSkillId(_) => {
-                            let window_id = ctx.window_id();
-                            ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                                toast_stack.add_ephemeral_toast(
-                                    DismissibleToast::error(
-                                        "Bundled skills cannot be edited".to_string(),
-                                    ),
-                                    window_id,
-                                    ctx,
-                                );
-                            });
-                        }
-                    }
-                }
-
-                #[cfg(not(feature = "local_fs"))]
-                {
-                    let _ = skill_reference;
-                    let window_id = ctx.window_id();
-                    ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                        toast_stack.add_ephemeral_toast(
-                            DismissibleToast::error(
-                                "Editing skills is not supported in this build".to_string(),
-                            ),
-                            window_id,
-                            ctx,
-                        );
-                    });
-                }
+            OpenEditSkillPane { skill_reference: _ } => {
+                // twarp: 2c-d — skill editing pane removed (SkillOpenOrigin/SkillReference deleted with AI).
             }
             OpenAddPromptPane => ctx.emit(Event::OpenAddPromptPane {
                 initial_content: None,
