@@ -3455,158 +3455,10 @@ impl Workspace {
         self.activate_tab_internal(self.tab_count() - 1, ctx);
     }
 
-    /// Opens a cloud conversation by server token.
-    /// If the current user owns or created it, navigate to its open pane or restore it
-    /// into a new tab. Otherwise, open the read-only transcript viewer.
-    pub fn open_cloud_conversation_from_server_token(
-        &mut self,
-        server_token: ServerConversationToken,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let history = BlocklistAIHistoryModel::as_ref(ctx);
-        let Some(conversation_id) = history.find_conversation_id_by_server_token(&server_token)
-        else {
-            self.load_cloud_conversation_into_new_transcript_viewer(server_token, ctx);
-            return;
-        };
-
-        // Check whether the conversation was started/is owned by by the current user.
-        let user_id = AuthStateProvider::as_ref(ctx).get().user_id();
-        let server_metadata = history.get_server_conversation_metadata(&conversation_id);
-        let conversation_is_owned_by_current_user = match (user_id, server_metadata) {
-            (Some(user_uid), Some(metadata)) => {
-                let is_creator =
-                    metadata.metadata.creator_uid.as_deref() == Some(&*user_uid.to_string());
-                let is_owner = matches!(
-                    metadata.permissions.space,
-                    Owner::User { user_uid: ref owner } if *owner == user_uid
-                );
-                is_creator || is_owner
-            }
-            _ => false,
-        };
-
-        if !conversation_is_owned_by_current_user {
-            self.load_cloud_conversation_into_new_transcript_viewer(server_token, ctx);
-            return;
-        }
-
-        // If the conversation is open in a pane this session, grab its nav data so we can
-        // navigate directly to it. Otherwise we'll restore from scratch into a new tab.
-        let nav_data = AgentConversationsModel::as_ref(ctx)
-            .get_conversation(&conversation_id)
-            .and_then(|entry| match entry {
-                ConversationOrTask::Conversation(metadata) => Some(&metadata.nav_data),
-                ConversationOrTask::Task(_) => None,
-            });
-
-        if let Some(nav_data) = nav_data {
-            let is_active =
-                ActiveAgentViewsModel::as_ref(ctx).is_conversation_open(nav_data.id, ctx);
-            let pane_view_locator = is_active.then_some(nav_data.pane_view_locator).flatten();
-            self.restore_or_navigate_to_conversation(
-                nav_data.id,
-                nav_data.window_id,
-                pane_view_locator,
-                nav_data.terminal_view_id,
-                Some(RestoreConversationLayout::NewTab),
-                ctx,
-            );
-        } else {
-            self.restore_or_navigate_to_conversation(
-                conversation_id,
-                None,
-                None,
-                None,
-                Some(RestoreConversationLayout::NewTab),
-                ctx,
-            );
-        }
-    }
-
-    /// Load the conversation into a transcript viewer in a new tab (with no input/backing shell)
-    pub fn load_cloud_conversation_into_new_transcript_viewer(
-        &mut self,
-        conversation_id: ServerConversationToken,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        // Create the tab immediately with a loading state
-        let new_pane_group = ctx.add_typed_action_view(|ctx| {
-            PaneGroup::new_for_conversation_transcript_viewer_loading(
-                self.tips_completed.clone(),
-                self.user_default_shell_unsupported_banner_model_handle
-                    .clone(),
-                self.server_api.clone(),
-                self.model_event_sender.clone(),
-                ctx,
-            )
-        });
-
-        ctx.subscribe_to_view(&new_pane_group, move |me, pane_group, event, ctx| {
-            me.handle_file_tree_event(pane_group, event, ctx)
-        });
-
-        self.tabs.push(TabData::new(new_pane_group.clone()));
-        let new_tab_index = self.tab_count() - 1;
-        self.activate_tab_internal(new_tab_index, ctx);
-
-        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-        let server_token = conversation_id;
-
-        ctx.spawn(
-            async move {
-                load_conversation_from_server(AIConversationId::default(), server_token, ai_client)
-                    .await
-            },
-            move |me, cloud_conversation, ctx| {
-                let Some(cloud_conversation) = cloud_conversation else {
-                    log::error!("Failed to load conversation from server");
-                    me.toast_stack.update(ctx, |view, ctx| {
-                        let new_toast = DismissibleToast::error(
-                            "Failed to load conversation data.".to_string(),
-                        );
-                        view.add_ephemeral_toast(new_toast, ctx);
-                    });
-                    return;
-                };
-
-                // Update the pane group with the loaded conversation
-                new_pane_group.update(ctx, |pane_group, ctx| {
-                    pane_group
-                        .load_data_into_conversation_transcript_viewer(cloud_conversation, ctx);
-                });
-
-                // Open the transcript details panel by default on WASM (unless on mobile)
-                #[cfg(target_family = "wasm")]
-                {
-                    if !warpui::platform::wasm::is_mobile_device() {
-                        me.current_workspace_state.is_transcript_details_panel_open = true;
-                        me.transcript_info_button.update(ctx, |button, ctx| {
-                            button.set_active(true, ctx);
-                        });
-                    }
-                    me.update_transcript_details_panel_data(ctx);
-                }
-
-                // Refresh the focused conversation state.
-                if me.active_tab_pane_group().id() == new_pane_group.id() {
-                    let focused_terminal_view_id = me
-                        .active_tab_pane_group()
-                        .as_ref(ctx)
-                        .active_session_view(ctx)
-                        .map(|view| view.id());
-                    let ambient_agent_task_id = me
-                        .get_active_session_terminal_model(ctx)
-                        .and_then(|model| model.lock().ambient_agent_task_id());
-                    me.notify_terminal_focus_change(
-                        focused_terminal_view_id,
-                        ambient_agent_task_id,
-                        ctx,
-                    );
-                }
-            },
-        );
-    }
+    // twarp: 2c-d — removed open_cloud_conversation_from_server_token and
+    // load_cloud_conversation_into_new_transcript_viewer (depended on BlocklistAIHistoryModel,
+    // AgentConversationsModel, ActiveAgentViewsModel, load_conversation_from_server,
+    // AIConversationId, ServerConversationToken).
 
     fn open_share_session_modal(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
         // Focus on the clicked tab
@@ -4887,36 +4739,7 @@ impl Workspace {
         }
     }
 
-    fn handle_suggested_agent_mode_workflow_modal_event(
-        &mut self,
-        event: &SuggestedAgentModeWorkflowModalEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            SuggestedAgentModeWorkflowModalEvent::Close
-            | SuggestedAgentModeWorkflowModalEvent::WorkflowCreated => {
-                self.current_workspace_state
-                    .is_suggested_agent_mode_workflow_modal_open = false;
-                self.focus_active_tab(ctx);
-                ctx.notify();
-            }
-            SuggestedAgentModeWorkflowModalEvent::RunWorkflow {
-                workflow,
-                source,
-                argument_override,
-                workflow_selection_source,
-            } => {
-                self.run_workflow_in_active_input(
-                    workflow,
-                    *source.clone(),
-                    *workflow_selection_source,
-                    argument_override.clone(),
-                    TerminalSessionFallbackBehavior::default(),
-                    ctx,
-                );
-            }
-        }
-    }
+    // twarp: 2c-d — removed handle_suggested_agent_mode_workflow_modal_event
 
     /// Handle the call-to-action event from the reward modal view
     fn handle_reward_view_event(&mut self, event: &RewardEvent, ctx: &mut ViewContext<Self>) {
@@ -4942,19 +4765,7 @@ impl Workspace {
         }
     }
 
-    fn handle_agent_toolbar_editor_modal_event(
-        &mut self,
-        event: &AgentToolbarEditorEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            AgentToolbarEditorEvent::Close => {
-                self.current_workspace_state.is_agent_toolbar_editor_open = false;
-                self.focus_active_tab(ctx);
-                ctx.notify();
-            }
-        }
-    }
+    // twarp: 2c-d — removed handle_agent_toolbar_editor_modal_event
 
     fn build_header_toolbar_editor_modal(
         ctx: &mut ViewContext<Self>,
@@ -5070,46 +4881,7 @@ impl Workspace {
         ctx.focus(&self.header_toolbar_editor_modal);
     }
 
-    fn handle_ai_fact_view_event(&mut self, event: &AIFactViewEvent, ctx: &mut ViewContext<Self>) {
-        match event {
-            AIFactViewEvent::OpenSettings => {
-                self.show_settings_with_section(Some(SettingsSection::WarpAgent), ctx);
-            }
-            #[allow(unused_variables)]
-            AIFactViewEvent::OpenFile(path) => {
-                #[cfg(feature = "local_fs")]
-                self.open_code(
-                    CodeSource::Link {
-                        path: path.clone(),
-                        range_start: None,
-                        range_end: None,
-                    },
-                    *EditorSettings::as_ref(ctx).open_file_layout.value(),
-                    None,  // no line/column specified
-                    false, // preview
-                    &[],
-                    ctx,
-                );
-            }
-            AIFactViewEvent::InitializeProject(path) => {
-                let active_terminal_view = self
-                    .active_tab_pane_group()
-                    .as_ref(ctx)
-                    .active_session_view(ctx);
-
-                if let Some(terminal_view) = active_terminal_view {
-                    terminal_view.update(ctx, |terminal_view, ctx| {
-                        terminal_view.open_repo_folder(
-                            path.to_string_lossy().to_string(),
-                            true,
-                            ctx,
-                        );
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
+    // twarp: 2c-d — removed handle_ai_fact_view_event (depended on AIFactViewEvent which is AI-only)
 
     #[cfg(feature = "local_fs")]
     fn get_active_session(&self, ctx: &mut ViewContext<Self>) -> Option<Arc<Session>> {
@@ -6082,18 +5854,7 @@ impl Workspace {
         }
 
         if let Some(terminal_view_handle) = self.active_session_view(ctx) {
-            let terminal_view_id = terminal_view_handle.id();
-
-            // Don't show onboarding block while agent is actively streaming
-            let is_agent_in_progress = BlocklistAIHistoryModel::handle(ctx)
-                .as_ref(ctx)
-                .active_conversation(terminal_view_id)
-                .is_some_and(|conversation| conversation.status().is_in_progress());
-
-            if is_agent_in_progress {
-                return;
-            }
-
+            // twarp: 2c-d — removed BlocklistAIHistoryModel-based agent-in-progress check
             terminal_view_handle.update(ctx, |terminal_view, ctx| {
                 terminal_view.insert_drive_sharing_onboarding_block(object_id, ctx);
             });
@@ -6218,35 +5979,7 @@ impl Workspace {
         }
     }
 
-    fn open_suggested_agent_mode_workflow_modal(
-        &mut self,
-        workflow_and_id: &SuggestedAgentModeWorkflowAndId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.current_workspace_state
-            .is_suggested_agent_mode_workflow_modal_open = true;
-        self.suggested_agent_mode_workflow_modal.update(
-            ctx,
-            |suggested_agent_mode_workflow_modal, ctx| {
-                suggested_agent_mode_workflow_modal.open_workflow(workflow_and_id, ctx);
-            },
-        );
-        ctx.notify();
-    }
-
-    fn open_suggested_rule_modal(
-        &mut self,
-        rule_and_id: &SuggestedRuleAndId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.current_workspace_state.is_suggested_rule_modal_open = true;
-        self.suggested_rule_modal
-            .update(ctx, |suggested_rule_modal, ctx| {
-                suggested_rule_modal.set_rule_and_id(rule_and_id, ctx);
-                ctx.notify();
-            });
-        ctx.notify();
-    }
+    // twarp: 2c-d — removed open_suggested_agent_mode_workflow_modal and open_suggested_rule_modal
 
     /// Opens the Warp Drive object identified by `uid` in a new pane
     /// if it has a pane representation.
@@ -6285,7 +6018,7 @@ impl Workspace {
             ObjectType::GenericStringObject(GenericStringObjectFormat::Json(
                 JsonObjectType::AIFact,
             )) => {
-                self.open_ai_fact_collection_pane(None, None, ctx);
+                // twarp: 2c-d — removed open_ai_fact_collection_pane call (AI module).
             }
             _ => {}
         }
@@ -6842,95 +6575,18 @@ impl Workspace {
         }
     }
 
-    /// Open a code diff view by temporarily replacing the current pane or in a new tab.
-    fn open_code_diff(&mut self, view: ViewHandle<CodeDiffView>, ctx: &mut ViewContext<Self>) {
-        let focused_pane_id = self
-            .active_tab_pane_group()
-            .as_ref(ctx)
-            .focused_pane_id(ctx);
-        view.update(ctx, |view, _| {
-            view.set_original_pane_id(Some(focused_pane_id));
-        });
+    // twarp: 2c-d — removed open_code_diff (took ViewHandle<CodeDiffView> from AI module)
 
-        // Check if the ExpandEditToPane feature flag is enabled
-        if FeatureFlag::ExpandEditToPane.is_enabled() {
-            // Try to temporarily replace the current pane with the diff view
-            let new_pane = CodeDiffPane::from_view(view.clone(), ctx);
-            self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
-                if !pane_group.replace_pane(focused_pane_id, new_pane, true, ctx) {
-                    // If replacement failed, remove the pane we just added and fall back
-                    //pane_group.close_pane(new_pane_id, ctx);
-                    log::warn!("Failed to temporarily replace pane, falling back to new tab");
-                }
-            });
-        } else {
-            // Feature flag disabled: use the original behavior of opening in a new tab
-            let new_pane = CodeDiffPane::from_view(view, ctx);
-            let new_tab_placement_setting = TabSettings::as_ref(ctx).new_tab_placement;
-
-            let new_idx = match new_tab_placement_setting {
-                NewTabPlacement::AfterAllTabs => self.tab_count(),
-                NewTabPlacement::AfterCurrentTab => self.active_tab_index + 1,
-            };
-            self.add_tab_from_existing_pane(Box::new(new_pane), new_idx, ctx);
-        }
-    }
-
-    /// Open the AI Fact Collection pane in a split pane (default direction is left).
-    pub fn open_ai_fact_collection_pane(
-        &mut self,
-        direction: Option<Direction>,
-        page: Option<AIFactPage>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        // Ensure there is only one AI Fact Collection pane per window
-        let manager = AIFactManager::handle(ctx);
-
-        // Navigate to and focus existing pane
-        if let Some(locator) = manager.as_ref(ctx).find_pane(ctx.window_id()) {
-            if let Some(page) = page {
-                self.ai_fact_view.update(ctx, |view, ctx| {
-                    view.update_page(page, ctx);
-                });
-            }
-            self.focus_pane(locator, ctx);
-            return;
-        }
-
-        let pane = AIFactPane::from_view(self.ai_fact_view.clone(), ctx);
-        self.ai_fact_view.update(ctx, |view, ctx| {
-            view.update_page(page.unwrap_or_default(), ctx);
-        });
-        let direction = direction.unwrap_or(Direction::Left);
-        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
-            pane_group
-                .add_pane_with_direction(direction, pane, true /* focus_new_pane */, ctx);
-        });
-
-        // Focus WD index item
-        self.set_selected_object(Some(WarpDriveItemId::AIFactCollection), ctx);
-    }
-
-    /// Open the Execution Profile Editor pane
+    // twarp: 2c-d — removed open_ai_fact_collection_pane (depended on AIFactManager,
+    // AIFactPane, ai_fact_view) and open_execution_profile_editor_pane (depended on
+    // ExecutionProfileEditorManager, ExecutionProfileEditorPane).
     pub fn open_execution_profile_editor_pane(
         &mut self,
-        direction: Option<Direction>,
-        profile_id: ClientProfileId,
-        ctx: &mut ViewContext<Self>,
+        _direction: Option<Direction>,
+        _profile_id: ClientProfileId,
+        _ctx: &mut ViewContext<Self>,
     ) {
-        let manager = ExecutionProfileEditorManager::handle(ctx);
-
-        if let Some(locator) = manager.as_ref(ctx).find_pane(ctx.window_id(), profile_id) {
-            self.focus_pane(locator, ctx);
-            return;
-        }
-
-        let pane = ExecutionProfileEditorPane::new(profile_id, ctx);
-        let direction = direction.unwrap_or(Direction::Right);
-        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
-            pane_group
-                .add_pane_with_direction(direction, pane, true /* focus_new_pane */, ctx);
-        });
+        // no-op
     }
 
     pub(super) fn active_session_view(
@@ -7424,16 +7080,9 @@ impl Workspace {
             ctx,
         );
 
-        let active_conversation_id = panel_context
-            .terminal_view
-            .upgrade(ctx)
-            .and_then(|tv| BlocklistAIHistoryModel::as_ref(ctx).active_conversation_id(tv.id()));
-
-        if let Some(conversation_id) = active_conversation_id {
-            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, _| {
-                history_model.set_has_code_review_opened_to_true(conversation_id);
-            });
-        }
+        // twarp: 2c-d — removed BlocklistAIHistoryModel::set_has_code_review_opened_to_true
+        // (no AI history tracking).
+        let _ = &panel_context;
     }
 
     fn update_right_panel_open_state(
@@ -7960,35 +7609,10 @@ impl Workspace {
         .no_highlight_on_hover()
         .with_padding_override(0., 0.)
         .into_item();
-        let query = self.worktree_sidecar_search_query.trim().to_lowercase();
-        let mut items = vec![search_item];
-        items.extend(
-            PersistedWorkspace::as_ref(ctx)
-                .workspaces()
-                .filter(|ws| ws.path.exists())
-                .filter(|ws| Self::should_include_worktree_sidecar_repo(&ws.path, ctx))
-                .filter(|ws| {
-                    if query.is_empty() {
-                        true
-                    } else {
-                        ws.path
-                            .to_string_lossy()
-                            .to_lowercase()
-                            .contains(query.as_str())
-                    }
-                })
-                .map(|ws| {
-                    let path_str = ws.path.to_string_lossy().into_owned();
-                    MenuItemFields::new(path_str.clone())
-                        .with_on_select_action(NewSessionSidecarSelection::OpenWorktreeRepo {
-                            repo_path: path_str,
-                        })
-                        .with_icon(icons::Icon::Folder)
-                        .into_item()
-                })
-                .collect::<Vec<_>>(),
-        );
-        items
+        // twarp: 2c-d — removed PersistedWorkspace::workspaces lookup; sidecar shows only the search row.
+        let _ = self.worktree_sidecar_search_query.trim();
+        let _ = ctx;
+        vec![search_item]
     }
 
     fn configure_worktree_new_session_sidecar(
@@ -8430,14 +8054,8 @@ impl Workspace {
                 let Some(path) = paths.into_iter().next() else {
                     return;
                 };
-                // Register the chosen directory as a workspace so it appears in
-                // PersistedWorkspace (which is the data source for the repo picker
-                // and also triggers codebase indexing / project rules scanning).
+                // twarp: 2c-d — removed PersistedWorkspace::user_added_workspace call.
                 let path_buf: PathBuf = path.clone().into();
-                PersistedWorkspace::handle(ctx).update(ctx, |persisted, ctx| {
-                    persisted.user_added_workspace(path_buf.clone(), ctx);
-                });
-                // Refresh the repo picker and pre-select the new path.
                 modal_view.update(ctx, |modal, ctx| {
                     modal.body().update(ctx, |body, ctx| {
                         body.on_new_repo_selected(path_buf, param_index, ctx);
@@ -8634,10 +8252,8 @@ impl Workspace {
                 let Some(path) = paths.into_iter().next() else {
                     return;
                 };
+                // twarp: 2c-d — removed PersistedWorkspace::user_added_workspace call.
                 let path_buf: PathBuf = path.clone().into();
-                PersistedWorkspace::handle(ctx).update(ctx, |persisted, ctx| {
-                    persisted.user_added_workspace(path_buf.clone(), ctx);
-                });
                 modal_view.update(ctx, |modal, ctx| {
                     modal.body().update(ctx, |body, ctx| {
                         body.on_new_repo_selected(path_buf, ctx);
@@ -8740,10 +8356,9 @@ impl Workspace {
                 let Some(path) = paths.into_iter().next() else {
                     return;
                 };
-                let path_buf: PathBuf = path.into();
-                PersistedWorkspace::handle(ctx).update(ctx, |persisted, ctx| {
-                    persisted.user_added_workspace(path_buf, ctx);
-                });
+                // twarp: 2c-d — removed PersistedWorkspace::user_added_workspace call.
+                let _path_buf: PathBuf = path.into();
+                let _ = ctx;
             },
             warpui::platform::FilePickerConfiguration::new().folders_only(),
         );
@@ -9023,62 +8638,8 @@ impl Workspace {
         }
     }
 
-    fn handle_rewind_confirmation_dialog_event(
-        &mut self,
-        event: &RewindConfirmationEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            RewindConfirmationEvent::Cancel => {
-                self.current_workspace_state
-                    .is_rewind_confirmation_dialog_open = false;
-                self.focus_active_tab(ctx);
-                ctx.notify();
-            }
-            RewindConfirmationEvent::Confirm { rewind_source } => {
-                self.current_workspace_state
-                    .is_rewind_confirmation_dialog_open = false;
-                self.handle_action(
-                    &WorkspaceAction::ExecuteRewindAIConversation {
-                        ai_block_view_id: rewind_source.ai_block_view_id,
-                        exchange_id: rewind_source.exchange_id,
-                        conversation_id: rewind_source.conversation_id,
-                    },
-                    ctx,
-                );
-                self.focus_active_tab(ctx);
-                ctx.notify();
-            }
-        }
-    }
-
-    fn handle_delete_conversation_confirmation_dialog_event(
-        &mut self,
-        event: &DeleteConversationConfirmationEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            DeleteConversationConfirmationEvent::Cancel => {
-                self.current_workspace_state
-                    .is_delete_conversation_confirmation_dialog_open = false;
-                ctx.focus(&self.left_panel_view);
-                ctx.notify();
-            }
-            DeleteConversationConfirmationEvent::Confirm { source } => {
-                self.current_workspace_state
-                    .is_delete_conversation_confirmation_dialog_open = false;
-                self.handle_action(
-                    &WorkspaceAction::ExecuteDeleteConversation {
-                        conversation_id: source.conversation_id,
-                        terminal_view_id: source.terminal_view_id,
-                    },
-                    ctx,
-                );
-                ctx.focus(&self.left_panel_view);
-                ctx.notify();
-            }
-        }
-    }
+    // twarp: 2c-d — removed handle_rewind_confirmation_dialog_event &
+    // handle_delete_conversation_confirmation_dialog_event
 
     pub fn handle_network_status_event(
         &mut self,
@@ -11479,13 +11040,7 @@ impl Workspace {
                 });
             }
             SettingsViewEvent::OpenAIFactCollection => {
-                self.open_ai_fact_collection_pane(Some(Direction::Right), None, ctx);
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::KnowledgePaneOpened {
-                        entrypoint: KnowledgePaneEntrypoint::Settings,
-                    },
-                    ctx
-                );
+                // twarp: 2c-d — removed open_ai_fact_collection_pane call.
             }
             SettingsViewEvent::OpenMCPServerCollection => {
                 self.show_settings_with_section(Some(SettingsSection::MCPServers), ctx);
@@ -11764,47 +11319,18 @@ impl Workspace {
             pane_group::Event::OpenWorkflowModalWithTemporary(workflow) => {
                 self.open_workflow_with_temporary(*workflow.clone(), ctx)
             }
-            pane_group::Event::OpenAIFactCollection { sync_id } => {
-                // Entrypoint from AI blocklist
-                let page = if sync_id.is_some() {
-                    AIFactPage::RuleEditor { sync_id: *sync_id }
-                } else {
-                    AIFactPage::Rules
-                };
-                self.open_ai_fact_collection_pane(None, Some(page), ctx);
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::KnowledgePaneOpened {
-                        entrypoint: KnowledgePaneEntrypoint::AIBlocklist,
-                    },
-                    ctx
-                );
-            }
+            // twarp: 2c-d — removed OpenAIFactCollection / OpenAgentToolbarEditor /
+            // OpenCLIAgentToolbarEditor / OpenAddRulePane handlers (AI-only).
+            pane_group::Event::OpenAIFactCollection { .. }
+            | pane_group::Event::OpenAgentToolbarEditor
+            | pane_group::Event::OpenCLIAgentToolbarEditor
+            | pane_group::Event::OpenAddRulePane => {}
             pane_group::Event::OpenPromptEditor => {
                 self.open_prompt_editor(PromptEditorOpenSource::InputContextMenu, ctx);
-            }
-            pane_group::Event::OpenAgentToolbarEditor => {
-                self.open_agent_toolbar_editor(AgentToolbarEditorMode::AgentView, ctx);
-            }
-            pane_group::Event::OpenCLIAgentToolbarEditor => {
-                self.open_agent_toolbar_editor(AgentToolbarEditorMode::CLIAgent, ctx);
             }
             pane_group::Event::OpenMCPSettingsPage { page } => {
                 // Open the MCP servers settings page to the list page
                 self.open_mcp_servers_page(page.unwrap_or_default(), None, ctx);
-            }
-            pane_group::Event::OpenAddRulePane => {
-                // Open the AI Fact Collection pane directly with the Rule Editor page for adding a new rule
-                self.open_ai_fact_collection_pane(
-                    None,
-                    Some(AIFactPage::RuleEditor { sync_id: None }),
-                    ctx,
-                );
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::KnowledgePaneOpened {
-                        entrypoint: KnowledgePaneEntrypoint::SlashCommand,
-                    },
-                    ctx
-                );
             }
             #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
             pane_group::Event::OpenFileInWarp { path, session } => {
@@ -11914,14 +11440,8 @@ impl Workspace {
             }
             pane_group::Event::ToggleCodeReviewPane(arg) => {
                 self.toggle_right_panel(&pane_group, ctx);
-                let active_conversation_id = arg.terminal_view.upgrade(ctx).and_then(|tv| {
-                    BlocklistAIHistoryModel::as_ref(ctx).active_conversation_id(tv.id())
-                });
-                if let Some(conversation_id) = active_conversation_id {
-                    BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, _| {
-                        history_model.set_has_code_review_opened_to_true(conversation_id);
-                    });
-                }
+                // twarp: 2c-d — removed BlocklistAIHistoryModel::set_has_code_review_opened_to_true
+                let _ = arg;
             }
             pane_group::Event::RunWorkflow {
                 workflow,
@@ -12403,12 +11923,10 @@ impl Workspace {
             pane_group::Event::OpenWarpDriveObjectInPane(uid) => {
                 self.open_warp_drive_object_in_new_pane(uid, ctx);
             }
-            pane_group::Event::OpenSuggestedAgentModeWorkflowModal { workflow_and_id } => {
-                self.open_suggested_agent_mode_workflow_modal(workflow_and_id, ctx);
-            }
-            pane_group::Event::OpenSuggestedRuleModal { rule_and_id } => {
-                self.open_suggested_rule_modal(rule_and_id, ctx);
-            }
+            // twarp: 2c-d — removed OpenSuggestedAgentModeWorkflowModal &
+            // OpenSuggestedRuleModal handlers (AI-only).
+            pane_group::Event::OpenSuggestedAgentModeWorkflowModal { .. }
+            | pane_group::Event::OpenSuggestedRuleModal { .. } => {}
             pane_group::Event::AnonymousUserSignup => {
                 self.initiate_user_signup(AnonymousUserSignupEntrypoint::RenotificationBlock, ctx);
             }
@@ -13153,13 +12671,7 @@ impl Workspace {
                 ctx,
             ),
             DrivePanelEvent::OpenAIFactCollection => {
-                self.open_ai_fact_collection_pane(None, None, ctx);
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::KnowledgePaneOpened {
-                        entrypoint: KnowledgePaneEntrypoint::WarpDrive,
-                    },
-                    ctx
-                );
+                // twarp: 2c-d — removed open_ai_fact_collection_pane call.
             }
             DrivePanelEvent::OpenMCPServerCollection => {
                 self.show_settings_with_section(Some(SettingsSection::MCPServers), ctx);
@@ -14607,48 +14119,9 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         send_telemetry_from_ctx!(TelemetryEvent::LinearIssueLinkOpened, ctx);
-
-        self.add_new_session_tab_internal_with_default_session_mode_behavior(
-            NewSessionSource::Tab,
-            Some(ctx.window_id()),
-            None,  // Chosen shell
-            None,  // Conversation restoration
-            false, // Hide the agent view homepage
-            DefaultSessionModeBehavior::Ignore,
-            ctx,
-        );
-
-        let Some(terminal_view) = self
-            .active_tab_pane_group()
-            .as_ref(ctx)
-            .active_session_view(ctx)
-        else {
-            log::error!("No active terminal view after adding tab for Linear issue work");
-            return;
-        };
-
-        let prompt = args.prompt.clone();
-        terminal_view.update(ctx, |terminal_view, ctx| {
-            terminal_view.enter_agent_view_for_new_conversation(
-                prompt,
-                AgentViewEntryOrigin::LinearDeepLink,
-                ctx,
-            );
-        });
-
-        if let Some(conversation_id) = terminal_view
-            .as_ref(ctx)
-            .agent_view_controller()
-            .as_ref(ctx)
-            .agent_view_state()
-            .active_conversation_id()
-        {
-            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _ctx| {
-                if let Some(conversation) = history.conversation_mut(&conversation_id) {
-                    conversation.set_fallback_display_title("Linear Issue".to_string());
-                }
-            });
-        }
+        // twarp: 2c-d — gutted Linear deep-link handler (depended on enter_agent_view_for_new_conversation,
+        // AgentViewEntryOrigin, BlocklistAIHistoryModel — all AI-only).
+        let _ = args;
     }
 
     fn handle_cloud_agent_capacity_modal_event(
@@ -14817,20 +14290,7 @@ impl Workspace {
         );
     }
 
-    fn open_agent_toolbar_editor(
-        &mut self,
-        mode: AgentToolbarEditorMode,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if !FeatureFlag::AgentToolbarEditor.is_enabled() {
-            return;
-        }
-        self.agent_toolbar_editor_modal
-            .update(ctx, |modal, ctx| modal.open(mode, ctx));
-        self.close_all_overlays(ctx);
-        self.current_workspace_state.is_agent_toolbar_editor_open = true;
-        ctx.focus(&self.agent_toolbar_editor_modal);
-    }
+    // twarp: 2c-d — removed open_agent_toolbar_editor (AI-only modal)
 
     fn open_theme_creator_modal(&mut self, ctx: &mut ViewContext<Self>) {
         self.current_workspace_state.is_theme_creator_modal_open = true;
@@ -18885,12 +18345,9 @@ impl TypedActionView for Workspace {
             OpenPromptEditor { open_source } => {
                 self.open_prompt_editor(*open_source, ctx);
             }
-            OpenAgentToolbarEditor => {
-                self.open_agent_toolbar_editor(AgentToolbarEditorMode::AgentView, ctx);
-            }
-            OpenCLIAgentToolbarEditor => {
-                self.open_agent_toolbar_editor(AgentToolbarEditorMode::CLIAgent, ctx);
-            }
+            // twarp: 2c-d — removed OpenAgentToolbarEditor / OpenCLIAgentToolbarEditor
+            // (depended on open_agent_toolbar_editor / AgentToolbarEditorMode).
+            OpenAgentToolbarEditor | OpenCLIAgentToolbarEditor => {}
             OpenHeaderToolbarEditor => {
                 self.open_header_toolbar_editor(ctx);
             }
@@ -19017,13 +18474,7 @@ impl TypedActionView for Workspace {
                 });
             }
             OpenAIFactCollection => {
-                self.open_ai_fact_collection_pane(None, None, ctx);
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::KnowledgePaneOpened {
-                        entrypoint: KnowledgePaneEntrypoint::Global,
-                    },
-                    ctx
-                );
+                // twarp: 2c-d — removed open_ai_fact_collection_pane call.
             }
             OpenMCPServerCollection => {
                 self.show_settings_with_section(Some(SettingsSection::MCPServers), ctx);
@@ -19613,59 +19064,10 @@ impl TypedActionView for Workspace {
                     );
                 }
             }
-            ShowRewindConfirmationDialog {
-                ai_block_view_id,
-                exchange_id,
-                conversation_id,
-            } => {
-                self.show_rewind_confirmation_dialog(
-                    RewindDialogSource {
-                        ai_block_view_id: *ai_block_view_id,
-                        exchange_id: *exchange_id,
-                        conversation_id: *conversation_id,
-                    },
-                    ctx,
-                );
-            }
-            ExecuteRewindAIConversation {
-                ai_block_view_id,
-                exchange_id,
-                conversation_id,
-            } => {
-                // Extract the user query before the rewind to prefill the input
-                let user_query = BlocklistAIHistoryModel::as_ref(ctx)
-                    .conversation(conversation_id)
-                    .and_then(|c| c.root_task_exchanges().find(|e| e.id == *exchange_id))
-                    .and_then(|e| {
-                        e.input
-                            .iter()
-                            .find(|i| i.is_user_query())
-                            .and_then(|i| i.user_query())
-                    });
-
-                // Dispatch to the active terminal to execute the rewind
-                if let Some(terminal_view) = self
-                    .active_tab_pane_group()
-                    .as_ref(ctx)
-                    .focused_session_view(ctx)
-                {
-                    terminal_view.update(ctx, |terminal, ctx| {
-                        terminal.handle_action(
-                            &TerminalAction::ExecuteRewindAIConversation {
-                                ai_block_view_id: *ai_block_view_id,
-                                exchange_id: *exchange_id,
-                                conversation_id: *conversation_id,
-                            },
-                            ctx,
-                        );
-                    });
-                }
-
-                // Prefill the input after the rewind
-                if let Some(query) = user_query {
-                    self.insert_in_input(&query, true, false, true, ctx);
-                }
-            }
+            // twarp: 2c-d — ShowRewindConfirmationDialog and ExecuteRewindAIConversation
+            // handlers removed (depended on RewindDialogSource, BlocklistAIHistoryModel,
+            // TerminalAction::ExecuteRewindAIConversation).
+            ShowRewindConfirmationDialog { .. } | ExecuteRewindAIConversation { .. } => {}
             // twarp: 2c-d — ExecuteDeleteConversation handler removed (depends on ActiveAgentViewsModel + conversation_utils).
             ExecuteDeleteConversation { .. } => {}
             #[cfg(target_family = "wasm")]
