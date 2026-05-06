@@ -329,7 +329,9 @@ impl UseAgentToolbar {
 // twarp: 2c-d — cli_agent module deleted; alias to satisfy `cli_agent::*` references
 #[allow(dead_code)]
 mod cli_agent {
-    // Stubs for cli_agent module references in view.rs body code
+    pub fn build_review_prompt<R>(_: R) -> String { String::new() }
+    pub fn build_diff_context_prompt<R>(_: R) -> String { String::new() }
+    pub fn build_diff_hunk_prompt<R, S, T>(_: R, _: S, _: T) -> String { String::new() }
 }
 
 // twarp: 2c-d — file-local stubs for AI types removed by 2c-d (huge block)
@@ -344,8 +346,8 @@ enum AgentViewEntryOrigin {
     InlineConversationMenu,
     InlineHistoryMenu,
 }
-#[allow(dead_code)] enum AgentViewHeaderDisabledTheme {}
-#[allow(dead_code)] enum AgentViewHeaderTheme {}
+#[allow(dead_code)] struct AgentViewHeaderDisabledTheme;
+#[allow(dead_code)] struct AgentViewHeaderTheme;
 #[allow(dead_code)] struct AgentViewZeroStateBlock;
 #[allow(dead_code)] enum AgentViewZeroStateEvent {}
 #[allow(dead_code)] struct EphemeralMessageModel;
@@ -355,7 +357,9 @@ enum AgentViewEntryOrigin {
 #[allow(dead_code)] fn agent_view_bg_fill() {}
 #[allow(dead_code)] fn fork_from_last_known_good_state_exchange_id() {}
 
-#[allow(dead_code)] mod conversation_utils {}
+#[allow(dead_code)] mod conversation_utils {
+    pub fn remove_conversation<A, B, C, D>(_: A, _: B, _: C, _: D) {}
+}
 
 #[allow(dead_code)] fn has_pending_code_or_unit_test_prompt_suggestion<C>(_: &C) -> bool { false }
 #[allow(dead_code)] fn is_accept_prompt_suggestion_bound_to_cmd_enter<C>(_: &C) -> bool { false }
@@ -397,7 +401,7 @@ type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
 #[allow(dead_code)] enum CancellationReason { No }
 #[allow(dead_code)] enum PassiveSuggestionTrigger {}
 #[allow(dead_code)] struct ServerOutputId;
-#[allow(dead_code)] enum ShellCommandCompletedTrigger {}
+#[allow(dead_code)] struct ShellCommandCompletedTrigger;
 #[allow(dead_code)] enum AIBlockAction {}
 #[allow(dead_code)] enum FinishReason {}
 #[allow(dead_code)] enum CodebaseIndexSpeedbumpBannerAction {}
@@ -410,8 +414,8 @@ type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
 
 // CLI agent sessions
 #[allow(dead_code)] fn parse_event() {}
-#[allow(dead_code)] enum CLIAgentEvent {}
-#[allow(dead_code)] enum CLIAgentEventPayload {}
+#[allow(dead_code)] struct CLIAgentEvent { event_type: CLIAgentEventType, payload: CLIAgentEventPayload }
+#[allow(dead_code)] struct CLIAgentEventPayload { content: String }
 #[allow(dead_code)] enum CLIAgentEventType {}
 #[allow(dead_code)] const CLI_AGENT_NOTIFICATION_SENTINEL: &str = "";
 #[allow(dead_code)] fn is_agent_supported() -> bool { false }
@@ -497,6 +501,33 @@ type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
 #[allow(dead_code)] struct OnboardingAgenticSuggestionsBlock;
 #[allow(dead_code)] enum OnboardingAgenticSuggestionsBlockEvent {}
 #[allow(dead_code)] enum OnboardingChipType {}
+
+// twarp: 2c-d — AskAIType stub (was crate::ai::ask_ai_type)
+#[allow(dead_code)]
+enum AskAIType {
+    FromTextSelection { text: String, location: Option<()> },
+    FromBlock { block_index: usize, query: Option<String> },
+    FromBlocks { block_indices: Vec<usize> },
+    FromAICommandSearch { query: String },
+}
+
+// twarp: 2c-d — RequestFileEditsResult stub (was crate::ai::agent)
+#[allow(dead_code)]
+enum RequestFileEditsResult {
+    Success {},
+}
+
+// twarp: 2c-d — ConversationDetailsPanel stub (was crate::ai::conversation_details_panel)
+#[allow(dead_code)]
+struct ConversationDetailsPanel;
+impl ConversationDetailsPanel {
+    fn new<A, B, C, D>(_: A, _: B, _: C, _: &mut D) -> Self {
+        unimplemented!()
+    }
+}
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum ConversationDetailsPanelEvent {}
 
 use async_channel::{Receiver, Sender};
 use chrono::{DateTime, Local, NaiveDateTime};
@@ -584,7 +615,7 @@ use warpui::{
 
 use warpui::{windowing, CursorInfo, EntityId, EventContext, ModelAsRef, SingletonEntity, Tracked};
 
-use crate::ai::ask_ai_type::AskAIType;
+// twarp: 2c-d — ask_ai_type deleted; stub at top
 use crate::appearance::{Appearance, AppearanceEvent};
 use crate::banner::{
     Banner, BannerAction, BannerEvent, BannerState, BannerTextButton, BannerTextContent,
@@ -2887,8 +2918,7 @@ pub struct TerminalView {
     ambient_agent_view_model: ModelHandle<ambient_agent::AmbientAgentViewModel>,
 
     /// Cloud mode conversation details panel (side panel showing task metadata).
-    cloud_mode_details_panel:
-        ViewHandle<crate::ai::conversation_details_panel::ConversationDetailsPanel>,
+    cloud_mode_details_panel: ViewHandle<ConversationDetailsPanel>,
     /// Whether the cloud mode details panel is currently open.
     is_cloud_mode_details_panel_open: bool,
     /// Whether we've already auto-opened the panel when the agent started running.
@@ -4090,25 +4120,10 @@ impl TerminalView {
 
         // Cloud mode conversation details panel
         let cloud_mode_details_panel = ctx.add_typed_action_view(|ctx| {
-            crate::ai::conversation_details_panel::ConversationDetailsPanel::new(
-                false, // don't show "Open" button since we're already viewing the conversation
-                320.0, // initial width
-                ctx,
-            )
+            ConversationDetailsPanel::new(false, 320.0, (), ctx)
         });
-        ctx.subscribe_to_view(&cloud_mode_details_panel, |me, _, event, ctx| {
-            use crate::ai::conversation_details_panel::ConversationDetailsPanelEvent;
-            match event {
-                ConversationDetailsPanelEvent::Close => {
-                    me.is_cloud_mode_details_panel_open = false;
-                    ctx.notify();
-                }
-                ConversationDetailsPanelEvent::OpenPlanNotebook { notebook_uid } => {
-                    // Convert NotebookId -> SyncId -> ObjectUid (String)
-                    let object_uid = SyncId::from(*notebook_uid).uid();
-                    ctx.emit(Event::OpenWarpDriveObjectInPane(object_uid));
-                }
-            }
+        ctx.subscribe_to_view(&cloud_mode_details_panel, |_me, _, _event: &ConversationDetailsPanelEvent, _ctx| {
+            // twarp: 2c-d — ConversationDetailsPanelEvent stub has no variants; deleted body
         });
 
         let window_id = ctx.window_id();
@@ -5880,7 +5895,7 @@ impl TerminalView {
                 // Auto-open code review pane on first accepted file edits
                 if let Some(result) = action_result {
                     if let AIAgentActionResultType::RequestFileEdits(
-                        crate::ai::agent::RequestFileEditsResult::Success { .. },
+                        RequestFileEditsResult::Success { .. },
                     ) = &result.result
                     {
                         let history_model = BlocklistAIHistoryModel::handle(ctx);
@@ -19803,107 +19818,15 @@ impl TerminalView {
 
     /// Inserts a dummy AI block with the given query and output strings.
     /// The directory is set to ~.
+    /// twarp: 2c-d — body deleted (AI types gone).
     #[cfg(any(test, feature = "integration_tests"))]
     pub fn insert_dummy_ai_block(
         &mut self,
-        query: String,
-        output: String,
-        ctx: &mut ViewContext<Self>,
+        _query: String,
+        _output: String,
+        _ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<AIBlock> {
-        use rand::distributions::{Alphanumeric, DistString};
-
-        use crate::ai::{
-            agent::{
-                AIAgentInput, AIAgentOutput, AIAgentOutputMessage, AIAgentText, AIAgentTextSection,
-                MessageId, ServerOutputId,
-            },
-            blocklist::FakeAIBlockModel,
-        };
-
-        let inputs = vec![AIAgentInput::UserQuery {
-            query,
-            context: vec![AIAgentContext::Directory {
-                pwd: Some("~".to_owned()),
-                home_dir: None,
-                are_file_symbols_indexed: false,
-            }]
-            .into(),
-            static_query_type: None,
-            referenced_attachments: Default::default(),
-            user_query_mode: UserQueryMode::default(),
-            running_command: None,
-            intended_agent: None,
-        }];
-
-        let output = AIAgentOutput {
-            messages: vec![AIAgentOutputMessage::text(
-                MessageId::new("fake-id".to_owned()),
-                AIAgentText {
-                    sections: vec![AIAgentTextSection::PlainText {
-                        text: output.into(),
-                    }],
-                },
-            )],
-            server_output_id: Some(ServerOutputId::new(format!(
-                "test_output_id_{}",
-                Alphanumeric.sample_string(&mut rand::thread_rng(), 24)
-            ))),
-            ..Default::default()
-        };
-
-        // Create a real conversation in the history model for this dummy block so it renders.
-        let terminal_view_id = ctx.view_id();
-        let mut new_conversation_id = None;
-        BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, model_ctx| {
-            let id = history.start_new_conversation(terminal_view_id, false, false, model_ctx);
-            // Mark it active for good measure (not strictly required for rendering).
-            history.set_active_conversation_id(id, terminal_view_id, model_ctx);
-            new_conversation_id = Some(id);
-        });
-        let conversation_id = new_conversation_id.expect("conversation created for dummy AI block");
-
-        let ai_block_model = Rc::new(FakeAIBlockModel::new(inputs, output));
-        let ai_block = ctx.add_typed_action_view(|ctx| {
-            AIBlock::new(
-                ai_block_model,
-                self.model.clone(),
-                ClientIdentifiers {
-                    client_exchange_id: Default::default(),
-                    conversation_id,
-                    response_stream_id: None,
-                },
-                self.ai_controller.clone(),
-                self.get_relevant_files_controller.clone(),
-                None,
-                None,
-                self.ai_action_model.clone(),
-                self.ai_context_model.clone(),
-                self.find_model.clone(),
-                self.active_session.clone(),
-                self.ambient_agent_view_model.clone(),
-                &self.cli_subagent_controller,
-                &self.model_events_handle,
-                self.agent_view_controller.clone(),
-                self.view_handle.clone(),
-                ctx.view_id(),
-                ctx,
-            )
-        });
-
-        self.insert_rich_content(
-            Some(RichContentType::AIBlock),
-            ai_block.clone(),
-            Some(RichContentMetadata::AIBlock(AIBlockMetadata {
-                exchange_id: Default::default(),
-                conversation_id,
-                ai_block_handle: ai_block.clone(),
-            })),
-            RichContentInsertionPosition::Append {
-                insert_below_long_running_block: false,
-            },
-            ctx,
-        );
-        ai_block
+        unimplemented!()
     }
 
     pub fn last_ai_block(&self) -> Option<ViewHandle<AIBlock>> {
