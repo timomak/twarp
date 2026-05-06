@@ -256,11 +256,8 @@ use super::{
         SharedSessionStatus,
     },
     shell::ShellType,
-    universal_developer_input::{
-        UniversalDeveloperInputButtonBar, UniversalDeveloperInputButtonBarEvent,
-    },
+    // twarp: 2c-d — universal_developer_input + ambient_agent deleted; stubs at file bottom
     view::{
-        ambient_agent::AmbientAgentViewModel,
         inline_banner::{
             PromptSuggestionBannerState, ZeroStatePromptSuggestionTriggeredFrom,
             ZeroStatePromptSuggestionType,
@@ -271,10 +268,7 @@ use super::{
     warpify::SubshellSource,
     History, HistoryEntry, SizeInfo, TerminalModel, UpArrowHistoryConfig,
 };
-use crate::ai::blocklist::agent_view::{
-    AgentInputFooter, AgentInputFooterEvent, AgentViewController,
-};
-use crate::terminal::view::ambient_agent::{HarnessSelector, HostSelector, NakedHeaderButtonTheme};
+// twarp: 2c-d — agent_view + ambient_agent deleted; stubs at file bottom
 use async_channel::Sender;
 use futures::stream::AbortHandle;
 use parking_lot::FairMutex;
@@ -695,6 +689,88 @@ impl AIRequestUsageModel {
         false
     }
 }
+
+// twarp: 2c-d — stubs for universal_developer_input + ambient_agent + agent_view types
+#[allow(dead_code)]
+struct UniversalDeveloperInputButtonBar;
+impl UniversalDeveloperInputButtonBar {
+    fn new<A, B, C, D, E, F, G>(_: A, _: B, _: C, _: D, _: E, _: F, _: &mut G) -> Self {
+        unimplemented!()
+    }
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum UniversalDeveloperInputButtonBarEvent {}
+
+#[allow(dead_code)]
+struct AmbientAgentViewModel;
+impl AmbientAgentViewModel {
+    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+        unimplemented!()
+    }
+    fn task_id(&self) -> Option<crate::app_state::AmbientAgentTaskId> {
+        None
+    }
+    fn is_ambient_agent(&self) -> bool {
+        false
+    }
+    fn should_show_status_footer(&self) -> bool {
+        false
+    }
+    fn as_ref<C>(_: &C) -> &Self {
+        unimplemented!()
+    }
+}
+
+#[allow(dead_code)]
+struct AgentInputFooter;
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum AgentInputFooterEvent {}
+
+#[allow(dead_code)]
+struct AgentViewController;
+impl AgentViewController {
+    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+        unimplemented!()
+    }
+    fn as_ref<C>(_: &C) -> &Self {
+        unimplemented!()
+    }
+    fn is_fullscreen(&self) -> bool {
+        false
+    }
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum AgentViewControllerEvent {
+    EnteredAgentView {
+        origin: AgentViewEntryOrigin,
+    },
+}
+
+#[allow(dead_code)]
+struct HarnessSelector;
+impl HarnessSelector {
+    fn new<A, B, C>(_: A, _: B, _: &mut C) -> Self {
+        unimplemented!()
+    }
+    fn update<F, C>(&self, _: &mut C, _: F) {}
+}
+impl HarnessSelector {
+    fn set_button_theme<C>(&self, _: NakedHeaderButtonTheme, _: &mut C) {}
+}
+#[allow(dead_code)]
+struct HostSelector;
+impl HostSelector {
+    fn new<A, B>(_: A, _: &mut B) -> Self {
+        unimplemented!()
+    }
+}
+#[allow(dead_code)]
+struct NakedHeaderButtonTheme;
 
 #[allow(dead_code)]
 enum AIContextMenuSearchableAction {
@@ -2438,7 +2514,7 @@ impl Input {
             }
         });
         ctx.subscribe_to_model(&agent_view_controller, |me, _, event, ctx| {
-            use crate::ai::blocklist::agent_view::AgentViewControllerEvent;
+            // twarp: 2c-d — AgentViewControllerEvent stubbed to satisfy import; AI deleted
             if let AgentViewControllerEvent::EnteredAgentView { origin, .. } = event {
                 me.close_suggestion_modes_for_new_conversation(ctx);
                 // Entering Agent View can remove multiline same-line prompt decorator content in a
