@@ -344,6 +344,23 @@ struct InsertReviewComment;
 // twarp: 2c-d — ConversationRestorationInNewPaneType is `pub type ... = ()` stub in pane_group
 use crate::pane_group::ConversationRestorationInNewPaneType;
 
+// twarp: 2c-d — ambient_agent module deleted; file-local stub module so view.rs body type-checks
+#[allow(dead_code)]
+mod ambient_agent {
+    pub struct AmbientAgentViewModel;
+    impl AmbientAgentViewModel {
+        pub fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+            unimplemented!()
+        }
+    }
+    pub struct FirstTimeCloudAgentSetupView;
+    impl FirstTimeCloudAgentSetupView {
+        pub fn new<C>(_: &mut C) -> Self {
+            unimplemented!()
+        }
+    }
+}
+
 use async_channel::{Receiver, Sender};
 use chrono::{DateTime, Local, NaiveDateTime};
 use command_corrections::rules::{Rule, RuleId as CommandCorrectionsRuleId};
