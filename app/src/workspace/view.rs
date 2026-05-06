@@ -817,7 +817,7 @@ struct RightPanelUpdateParams<'a> {
     pane_group: &'a ViewHandle<PaneGroup>,
     target_open_state: bool,
     entrypoint: Option<CodeReviewPaneEntrypoint>,
-    cli_agent: Option<crate::terminal::CLIAgent>,
+    cli_agent: Option<crate::app_state::CLIAgent>,
     review_pane_context: Option<&'a CodeReviewPaneContext>,
 }
 
@@ -7835,7 +7835,7 @@ impl Workspace {
         context: &CodeReviewPaneContext,
         pane_group_handle: &ViewHandle<PaneGroup>,
         entrypoint: CodeReviewPaneEntrypoint,
-        cli_agent: Option<crate::terminal::CLIAgent>,
+        cli_agent: Option<crate::app_state::CLIAgent>,
         ctx: &mut ViewContext<Self>,
     ) {
         if pane_group_handle.as_ref(ctx).right_panel_open {
@@ -7870,7 +7870,7 @@ impl Workspace {
         _context: &CodeReviewPaneContext,
         _pane_group_handle: &ViewHandle<PaneGroup>,
         _entrypoint: CodeReviewPaneEntrypoint,
-        _cli_agent: Option<crate::terminal::CLIAgent>,
+        _cli_agent: Option<crate::app_state::CLIAgent>,
         _ctx: &mut ViewContext<Self>,
     ) {
     }
@@ -15540,7 +15540,7 @@ impl Workspace {
     #[cfg(not(target_family = "wasm"))]
     fn open_plugin_instructions_pane(
         &mut self,
-        agent: crate::terminal::CLIAgent,
+        agent: crate::app_state::CLIAgent,
         kind: PluginModalKind,
         ctx: &mut ViewContext<Self>,
     ) {

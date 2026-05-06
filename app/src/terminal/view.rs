@@ -57,7 +57,7 @@ use crate::view_components::action_button::{ActionButton, ButtonSize, KeystrokeS
 use use_agent_footer::UseAgentToolbar;
 
 use super::cli_agent;
-use super::CLIAgent;
+use crate::app_state::CLIAgent;
 #[cfg(feature = "local_fs")]
 use crate::ai::agent::{CurrentHead, DiffBase};
 use crate::ai::agent_conversations_model::{AgentConversationsModel, AgentConversationsModelEvent};
@@ -5448,7 +5448,7 @@ impl TerminalView {
         &mut self,
         delta_pref: GitDeltaPreference,
         entrypoint: CodeReviewPaneEntrypoint,
-        cli_agent: Option<super::CLIAgent>,
+        cli_agent: Option<crate::app_state::CLIAgent>,
         focus_new_pane: bool,
         event_constructor: impl Fn(CodeReviewPanelArg) -> Event,
         ctx: &mut ViewContext<Self>,
@@ -5493,7 +5493,7 @@ impl TerminalView {
         &mut self,
         delta_pref: GitDeltaPreference,
         entrypoint: CodeReviewPaneEntrypoint,
-        cli_agent: Option<super::CLIAgent>,
+        cli_agent: Option<crate::app_state::CLIAgent>,
         focus_new_pane: bool,
         ctx: &mut ViewContext<Self>,
     ) {
@@ -5511,7 +5511,7 @@ impl TerminalView {
         &mut self,
         delta_pref: GitDeltaPreference,
         entrypoint: CodeReviewPaneEntrypoint,
-        cli_agent: Option<super::CLIAgent>,
+        cli_agent: Option<crate::app_state::CLIAgent>,
         focus_new_pane: bool,
         ctx: &mut ViewContext<Self>,
     ) {
@@ -20077,7 +20077,7 @@ impl TerminalView {
     }
 
     /// Returns the CLI agent currently active in this terminal, if any.
-    pub fn active_cli_agent(&self, ctx: &AppContext) -> Option<super::CLIAgent> {
+    pub fn active_cli_agent(&self, ctx: &AppContext) -> Option<crate::app_state::CLIAgent> {
         if !FeatureFlag::HoaCodeReview.is_enabled() {
             return None;
         }
