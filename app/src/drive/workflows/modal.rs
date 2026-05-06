@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::{cmp::Ordering, sync::Arc};
+use std::cmp::Ordering;
 
 // twarp: 2c-d — AIClient deleted; stub trait kept so callers compile.
 pub trait AIClient {}

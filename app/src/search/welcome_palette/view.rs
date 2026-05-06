@@ -45,7 +45,6 @@ use crate::search::search_bar::{
 use crate::search::QueryFilter;
 use crate::send_telemetry_from_ctx;
 use crate::server::{ids::SyncId, telemetry::TelemetryEvent};
-use crate::settings::AISettings;
 use crate::terminal::History;
 use crate::themes::theme::WarpTheme;
 use crate::ui_components::icons::Icon;

@@ -1,5 +1,5 @@
 use warpui::{
-    async_assert, async_assert_eq,
+    async_assert_eq,
     integration::{AssertionCallback, AssertionWithDataCallback},
     AppContext, SingletonEntity,
 };

@@ -19,7 +19,7 @@ use warp_util::file::FileId;
 use super::proto::{
     client_message, delete_file_response, run_command_response, server_message,
     write_file_response, Abort, Authenticate, ClientMessage, DeleteFile, DeleteFileResponse,
-    DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead, FileContextProto,
+    DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead,
     FileOperationError, Initialize, InitializeResponse, NavigatedToDirectory,
     NavigatedToDirectoryResponse, ReadFileContextResponse, RunCommandError, RunCommandErrorCode,
     RunCommandRequest, RunCommandResponse, RunCommandSuccess, ServerMessage, SessionBootstrapped,

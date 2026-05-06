@@ -76,8 +76,6 @@ use crate::user_config::is_tab_config_toml;
 use crate::view_components::action_button::{
     ActionButton, ButtonSize, NakedTheme, PaneHeaderTheme,
 };
-#[cfg(feature = "local_fs")]
-use repo_metadata::repositories::DetectedRepositories;
 
 const FOOTER_HEIGHT: f32 = 24.;
 /// Margin around the LSP icon container

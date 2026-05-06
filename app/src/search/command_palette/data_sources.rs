@@ -23,7 +23,6 @@ use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
 // twarp: 2c-d — conversations submodule deleted; stubs.
 mod conversations {
-    use warpui::{AppContext, ModelContext, ModelHandle};
     pub struct DataSource;
 }
 use super::warp_drive;

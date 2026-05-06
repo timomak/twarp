@@ -82,7 +82,6 @@ use crate::code_review::DiffSetScope;
 use crate::terminal::model::blocks::RemovableBlocklistItem;
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::{settings::EditorLayout, EditorSettings};
-use crate::util::truncation::truncate_from_end;
 
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::redaction::redact_secrets;

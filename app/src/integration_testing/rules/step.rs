@@ -1,21 +1,8 @@
-use std::sync::Arc;
-
-use warpui::{
-    async_assert, integration::TestStep, windowing::WindowManager, SingletonEntity, WindowId,
-};
+use warpui::integration::TestStep;
 
 // twarp: 2c-d — AI facts deleted; stubs.
 pub struct AIFactPage;
 pub struct AIMemory;
-use crate::{
-    cloud_object::{model::persistence::CloudModel, Space},
-    integration_testing::view_getters::workspace_view,
-    server::{
-        cloud_objects::update_manager::UpdateManager,
-        ids::{ClientId, SyncId},
-    },
-    workspaces::user_workspaces::UserWorkspaces,
-};
 
 // twarp: 2c-d — AI rule/fact integration test helpers removed (AI deleted).
 pub fn create_a_personal_rule(

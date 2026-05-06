@@ -68,8 +68,6 @@ use crate::{
 };
 use ai::diff_validation::DiffType;
 use pathfinder_color::ColorU;
-#[cfg(feature = "local_fs")]
-use repo_metadata::repositories::DetectedRepositories;
 use vim::vim::{MotionType, VimMode};
 use warp_core::ui::icons::Icon;
 

@@ -9,7 +9,7 @@ mod block_onboarding_layer;
 mod login_layer;
 mod rendering;
 pub use block_onboarding_layer::{BlockOnboarding, BLOCK_ONBOARDING_LAYER};
-pub use free_tier_default_model_layer::{FreeTierDefaultModel, FREE_TIER_DEFAULT_MODEL_LAYER};
+pub use free_tier_default_model_layer::FREE_TIER_DEFAULT_MODEL_LAYER;
 pub use improved_palette_search_layer::{ImprovedPaletteSearch, IMPROVED_PALETTE_SEARCH_LAYER};
 pub use login_layer::{AuthFlowInstructions, LOGIN_LAYER};
 use warp_core::user_preferences::GetUserPreferences as _;

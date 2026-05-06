@@ -37,13 +37,14 @@ use pathfinder_geometry::vector::Vector2F;
 
 // twarp: 2c-d — removed cli_agent_sessions imports (CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent)
 use session_sharing_protocol::common::{
-    ActivePrompt, AgentPromptFailureReason, CLIAgentSessionState, CommandExecutionFailureReason,
-    ControlAction, ControlActionFailureReason, SelectedAgentModel,
+    ActivePrompt, AgentPromptFailureReason, CommandExecutionFailureReason,
+    ControlAction, ControlActionFailureReason,
     UniversalDeveloperInputContextUpdate, WriteToPtyFailureReason,
 };
 #[cfg(not(any(test, feature = "integration_tests")))]
 use session_sharing_protocol::common::{
-    LongRunningCommandAgentInteractionState, SelectedConversation, UniversalDeveloperInputContext,
+    CLIAgentSessionState, LongRunningCommandAgentInteractionState, SelectedConversation,
+    UniversalDeveloperInputContext,
 };
 use settings::Setting as _;
 use warpui::r#async::executor::Background;
@@ -67,10 +68,9 @@ use crate::pane_group::TerminalViewResources;
 use crate::persistence::ModelEvent;
 
 use crate::send_telemetry_on_executor;
-use crate::server::telemetry::{TelemetryAgentViewEntryOrigin, TelemetryEvent};
+use crate::server::telemetry::TelemetryEvent;
 use crate::settings::DebugSettings;
 use crate::settings::{PrivacySettings, SshSettings};
-use warp_core::send_telemetry_from_ctx;
 
 use crate::terminal::model::session::Sessions;
 
