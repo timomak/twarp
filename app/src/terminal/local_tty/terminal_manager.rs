@@ -61,7 +61,8 @@ use crate::ai::blocklist::{
     BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIControllerEvent,
     BlocklistAIHistoryEvent, BlocklistAIHistoryModel, InputConfig, SerializedBlockListItem,
 };
-use crate::terminal::view::ConversationRestorationInNewPaneType;
+// twarp: 2c-d — ConversationRestorationInNewPaneType moved to pane_group (was AI).
+use crate::pane_group::ConversationRestorationInNewPaneType;
 
 use crate::banner::BannerState;
 use crate::context_chips::current_prompt::CurrentPrompt;
