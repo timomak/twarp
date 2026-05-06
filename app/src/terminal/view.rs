@@ -321,6 +321,22 @@ use crate::report_if_error;
 #[allow(dead_code)]
 enum AIAgentActionResultType {}
 
+// twarp: 2c-d — AgentModeSetupSpeedbumpBanner stubs (deleted from inline_banner)
+#[allow(dead_code)]
+struct AgentModeSetupSpeedbumpBannerState;
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum AgentModeSetupSpeedbumpBannerAction {}
+#[allow(dead_code)]
+fn render_agent_mode_setup_banner() {}
+
+// twarp: 2c-d — Anonymous user AI banner stubs (deleted from inline_banner)
+#[allow(dead_code)]
+struct AnonymousUserAISignUpBannerState;
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum AnonymousUserLoginBannerAction {}
+
 use async_channel::{Receiver, Sender};
 use chrono::{DateTime, Local, NaiveDateTime};
 use command_corrections::rules::{Rule, RuleId as CommandCorrectionsRuleId};
@@ -470,11 +486,10 @@ use crate::terminal::model::{
     ansi::{ClearMode, Handler},
     blocks::BlockListPoint,
 };
+// twarp: 2c-d — agent_mode_setup_banner deleted; only non-AI banners imported
 use crate::terminal::view::inline_banner::{
-    render_agent_mode_setup_banner, AgentModeSetupSpeedbumpBannerAction,
-    AgentModeSetupSpeedbumpBannerState, AliasExpansionBannerState,
-    NotificationsDiscoveryBannerState, NotificationsErrorBannerState, PromptSuggestionBannerState,
-    VimModeBannerState,
+    AliasExpansionBannerState, NotificationsDiscoveryBannerState, NotificationsErrorBannerState,
+    PromptSuggestionBannerState, VimModeBannerState,
 };
 use crate::terminal::view::ssh_file_upload::FileUploadId;
 use crate::terminal::waterfall_gap_element::WaterfallGapElement;
@@ -547,14 +562,15 @@ use block_banner::{render_warpification_banner, WarpificationMode, WarpifyBanner
 use bookmarks::render_floating_block_snapshot;
 use command_corrections::rules::generic::history::History as CommandCorrectionsHistoryRule;
 use init::{INPUT_BOX_VISIBLE_KEY, TOGGLE_BLOCK_FILTER_KEYBINDING};
+// twarp: 2c-d — Anonymous user AI banner deleted from inline_banner; stubs at top of file
 use inline_banner::{
     render_alias_expansion_banner, render_aws_bedrock_login_banner,
     render_aws_cli_not_installed_banner, render_inline_notifications_discovery_banner,
     render_inline_notifications_error_banner, render_inline_shared_session_ended_banner,
     render_inline_shared_session_started_banner, render_inline_ssh_wrapper_banner,
     render_open_in_warp_banner, render_shell_process_terminated_banner, render_vim_mode_banner,
-    AliasExpansionBanner, AliasExpansionBannerAction, AnonymousUserAISignUpBannerState,
-    AnonymousUserLoginBannerAction, AwsBedrockLoginBannerAction, AwsBedrockLoginBannerState,
+    AliasExpansionBanner, AliasExpansionBannerAction,
+    AwsBedrockLoginBannerAction, AwsBedrockLoginBannerState,
     AwsCliNotInstalledBannerAction, AwsCliNotInstalledBannerState, ByoLlmAuthBannerSessionState,
     OpenInWarpBannerState, SSHBannerAction, SSHBannerState, VimModeBannerAction,
 };
