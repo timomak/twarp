@@ -148,13 +148,8 @@ use crate::{
     resource_center::{
         mark_feature_used_and_write_to_user_defaults, Tip, TipAction, TipHint, TipsCompleted,
     },
-    search::{
-        ai_context_menu::{
-            mixer::AIContextMenuSearchableAction, search::is_valid_search_query,
-            view::AIContextMenuAction,
-        },
-        QueryFilter,
-    },
+    // twarp: 2c-d — search::ai_context_menu deleted; stubs added below as file-local types
+    search::QueryFilter,
     send_telemetry_from_ctx,
     server::{
         cloud_objects::update_manager::UpdateManager,
@@ -336,6 +331,37 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use string_offset::ByteOffset;
+
+// twarp: 2c-d — file-local stubs replacing crate::search::ai_context_menu types
+#[allow(dead_code)]
+fn is_valid_search_query(_is_navigation: bool, _prev: &str, _filter: &str) -> bool {
+    false
+}
+
+#[allow(dead_code)]
+enum AIContextMenuAction {
+    Prev,
+    Next,
+}
+
+#[allow(dead_code)]
+enum AIContextMenuSearchableAction {
+    InsertText {
+        text: String,
+    },
+    InsertFilePath {
+        file_path: std::path::PathBuf,
+    },
+    InsertDriveObject {
+        // twarp: 2c-d — fields elided; AI deleted
+    },
+    InsertPlan {
+        ai_document_uid: crate::app_state::AIDocumentId,
+    },
+    InsertConversation {
+        conversation_id: crate::app_state::AIConversationId,
+    },
+}
 
 /// Drop target data for dropping content on the [`Input`].
 #[derive(Debug, Clone)]
