@@ -82,15 +82,10 @@ use crate::workspaces::user_workspaces::UserWorkspacesEvent;
 
 pub use self::link_detection::GridHighlightedLink;
 pub use self::link_detection::{RichContentLink, RichContentLinkTooltipInfo};
-use crate::ai::llms::{LLMId, LLMModelHost, LLMPreferences};
+// twarp: 2c-d — ai::llms, ai::api_keys, ai::index, block_onboarding agentic deleted; stubs at top
 use crate::settings::CodeSettings;
 pub use action::{AgentOnboardingVersion, OnboardingIntention, OnboardingVersion, TerminalAction};
-use ai::api_keys::{ApiKeyManager, AwsCredentialsState};
-use ai::index::full_source_code_embedding::manager::{BuildSource, CodebaseIndexManager};
 pub use block_banner::{WithinBlockBanner, BLOCK_BANNER_HEIGHT};
-use block_onboarding::onboarding_agentic_suggestions_block::{
-    OnboardingAgenticSuggestionsBlock, OnboardingAgenticSuggestionsBlockEvent, OnboardingChipType,
-};
 use block_onboarding::onboarding_drive_sharing_block::OnboardingDriveSharingBlock;
 pub use init::{
     init, CANCEL_COMMAND_KEYBINDING, TOGGLE_AUTOEXECUTE_MODE_KEYBINDING,
@@ -108,6 +103,9 @@ use warpui::elements::{shimmering_text::ShimmeringTextStateHandle, Border, Child
 use warpui::fonts::Properties;
 use warpui::{ViewHandle, WeakModelHandle};
 
+// twarp: 2c-d — crate::ai::* imports gone; stubs at top of file
+// Original imports below are commented out for reference:
+/*
 use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
 
 #[cfg(any(test, feature = "integration_tests"))]
@@ -142,6 +140,7 @@ use crate::ai::{
     execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId},
     get_relevant_files::controller::GetRelevantFilesController,
 };
+*/
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::auth_state::AuthState;
 use crate::auth::auth_view_modal::AuthViewVariant;
@@ -429,6 +428,75 @@ type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
 #[allow(dead_code)] enum CLIAgentSessionsModelEvent {
     Ended { terminal_view_id: warpui::EntityId },
 }
+
+// twarp: 2c-d — additional file-local stubs for view.rs body code
+#[allow(dead_code)] type AIConversationId = crate::app_state::AIConversationId;
+#[allow(dead_code)] enum AIConversation {}
+#[allow(dead_code)] enum ConversationStatus {}
+#[allow(dead_code)] enum UserQueryMode {}
+#[allow(dead_code)] enum AIAgentActionType {}
+#[allow(dead_code)] enum AIAgentOutputStatus {}
+#[allow(dead_code)] enum AIAgentTextSection {}
+#[allow(dead_code)] enum EntrypointType {}
+#[allow(dead_code)] struct FinishedAIAgentOutput;
+#[allow(dead_code)] enum RenderableAIError {}
+#[allow(dead_code)] enum StaticQueryType {}
+#[allow(dead_code)] enum AgentToolbarItemKind {}
+#[allow(dead_code)] struct SuggestedAgentModeWorkflowAndId;
+#[allow(dead_code)] struct SuggestedRuleAndId;
+#[allow(dead_code)] struct AIBlockModelImpl;
+#[allow(dead_code)] struct ClientIdentifiers;
+#[allow(dead_code)] struct AIAgentActionId;
+#[allow(dead_code)] struct AIAgentCitation;
+#[allow(dead_code)] enum AIAgentContext {}
+#[allow(dead_code)] struct AIAgentExchangeId;
+#[allow(dead_code)] enum AIAgentInput {}
+#[allow(dead_code)] struct FileLocations;
+#[allow(dead_code)] enum PassiveSuggestionResultType {}
+#[allow(dead_code)] fn ai_brand_color() {}
+#[allow(dead_code)] fn get_ai_block_overflow_menu_element_position_id() {}
+#[allow(dead_code)] fn get_attached_blocks_chip_element_position_id() {}
+#[allow(dead_code)] struct CodeDiffView;
+#[allow(dead_code)] struct SummarizationCancelDialog;
+#[allow(dead_code)] fn should_collect_ai_ugc_telemetry<C>(_: &C) -> bool { false }
+#[allow(dead_code)] struct TelemetryBanner;
+#[allow(dead_code)] struct AIBlock;
+#[allow(dead_code)] enum AIBlockEvent {}
+#[allow(dead_code)] enum BlocklistAIActionEvent {}
+#[allow(dead_code)] struct BlocklistAIActionModel;
+#[allow(dead_code)] enum BlocklistAIContextEvent {}
+#[allow(dead_code)] struct BlocklistAIContextModel;
+#[allow(dead_code)] struct BlocklistAIController;
+#[allow(dead_code)] enum BlocklistAIControllerEvent {}
+#[allow(dead_code)] enum BlocklistAIHistoryEvent {}
+#[allow(dead_code)] struct BlocklistAIHistoryModel;
+#[allow(dead_code)] enum BlocklistAIInputEvent {}
+#[allow(dead_code)] struct BlocklistAIInputModel;
+#[allow(dead_code)] struct InputConfig;
+#[allow(dead_code)] enum InputType { Terminal, AI }
+#[allow(dead_code)] enum PendingQueryState {}
+#[allow(dead_code)] struct ShellCommandExecutor;
+#[allow(dead_code)] enum ShellCommandExecutorEvent {}
+#[allow(dead_code)] struct StartAgentExecutor;
+#[allow(dead_code)] enum StartAgentExecutorEvent {}
+#[allow(dead_code)] struct StartAgentRequest;
+#[allow(dead_code)] const ATTACH_AS_AGENT_MODE_CONTEXT_TEXT: &str = "";
+#[allow(dead_code)] const PRE_REWIND_PREFIX: &str = "";
+#[allow(dead_code)] struct AIExecutionProfilesModel;
+#[allow(dead_code)] type ClientProfileId = crate::app_state::ClientProfileId;
+#[allow(dead_code)] struct GetRelevantFilesController;
+
+// LLMs/AI etc.
+#[allow(dead_code)] type LLMId = crate::app_state::LLMId;
+#[allow(dead_code)] enum LLMModelHost {}
+#[allow(dead_code)] struct LLMPreferences;
+#[allow(dead_code)] struct ApiKeyManager;
+#[allow(dead_code)] enum AwsCredentialsState {}
+#[allow(dead_code)] enum BuildSource {}
+#[allow(dead_code)] struct CodebaseIndexManager;
+#[allow(dead_code)] struct OnboardingAgenticSuggestionsBlock;
+#[allow(dead_code)] enum OnboardingAgenticSuggestionsBlockEvent {}
+#[allow(dead_code)] enum OnboardingChipType {}
 
 use async_channel::{Receiver, Sender};
 use chrono::{DateTime, Local, NaiveDateTime};
