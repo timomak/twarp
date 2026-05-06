@@ -152,7 +152,7 @@ use crate::{
         WorkspaceAction,
     },
     workspaces::user_workspaces::UserWorkspaces,
-    AgentModeEntrypoint, ServerApiProvider,
+    AgentModeEntrypoint,
 };
 
 use ai::skills::SkillReference;
