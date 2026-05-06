@@ -6494,18 +6494,7 @@ impl TerminalView {
             return false;
         }
 
-        // In cloud agent conversations, once the shared session is ready but before the first
-        // agent exchange arrives, we hide the interactive input view. A non-interactive footer is
-        // rendered instead (see `TerminalView::render`).
-        if !FeatureFlag::CloudModeSetupV2.is_enabled()
-            && is_cloud_agent_pre_first_exchange(
-                &self.ambient_agent_view_model,
-                &self.agent_view_controller,
-                app,
-            )
-        {
-            return false;
-        }
+        // twarp: 2c-d — is_cloud_agent_pre_first_exchange check removed with AI.
 
         if self.has_active_init_project(app) && self.is_last_block_init_step(app) {
             return false;
@@ -24248,14 +24237,7 @@ impl View for TerminalView {
 
                     if self.is_input_box_visible(&model, app) {
                         column.add_child(self.render_input());
-                    } else if !model.is_read_only()
-                        && is_cloud_agent_pre_first_exchange(
-                            &self.ambient_agent_view_model,
-                            &self.agent_view_controller,
-                            app,
-                        )
-                    {
-                        column.add_child(ambient_agent::render_loading_footer(appearance));
+                    // twarp: 2c-d — is_cloud_agent_pre_first_exchange/ambient_agent loading footer removed with AI.
                     } else if self.show_remote_server_loading_footer(&model, app) {
                         column.add_child(
                             self.render_remote_server_loading_footer(&model, appearance, app),

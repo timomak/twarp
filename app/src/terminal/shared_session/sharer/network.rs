@@ -595,13 +595,9 @@ impl Network {
         let auth_client = ServerApiProvider::as_ref(ctx).get_auth_client();
         let anonymous_id = AuthStateProvider::as_ref(ctx).get().anonymous_id();
 
-        // Get the selected model before spawning the async task
-        let llm_prefs = crate::ai::llms::LLMPreferences::as_ref(ctx);
-        let selected_model_id: String = llm_prefs
-            .get_active_base_model(ctx, Some(terminal_view_id))
-            .id
-            .clone()
-            .into();
+        // twarp: 2c-d — LLMPreferences-based model lookup removed with AI; sending empty model id.
+        let selected_model_id: String = String::new();
+        let _ = terminal_view_id;
 
         ctx.spawn(
             async move {
