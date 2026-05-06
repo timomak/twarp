@@ -1,5 +1,6 @@
+// twarp: 2c-d — AI InputType deleted; stub.
+pub enum InputType { Other }
 use crate::{
-    ai::blocklist::InputType,
     appearance::Appearance,
     context_chips::spacing,
     features::FeatureFlag,

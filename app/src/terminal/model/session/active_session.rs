@@ -1,8 +1,9 @@
 use std::sync::Arc;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle};
 
+// twarp: 2c-d — WarpAiExecutionContext deleted; stub.
+pub struct WarpAiExecutionContext;
 use crate::{
-    ai::execution_context::WarpAiExecutionContext,
     terminal::{
         model::session::SessionsEvent,
         model_events::{ModelEvent, ModelEventDispatcher},

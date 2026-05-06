@@ -1,9 +1,13 @@
 use std::collections::HashSet;
 
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::task::TaskId;
-use crate::ai::agent::AIAgentActionId;
-use crate::ai::blocklist::block::cli_controller::LongRunningCommandControlState;
+// twarp: 2c-d — AI agent task / action / blocklist controller deleted; stubs.
+use crate::app_state::AIConversationId;
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TaskId(pub String);
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct AIAgentActionId(pub String);
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum LongRunningCommandControlState { Other }
 use crate::terminal::model::block::{
     has_block_failed, AgentViewVisibility, Block, BlockState, PromptInfo,
     MAX_SERIALIZED_STYLIZED_OUTPUT_LINES,

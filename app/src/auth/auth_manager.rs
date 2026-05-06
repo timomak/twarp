@@ -20,9 +20,10 @@ use super::credentials::{Credentials, FirebaseToken, LoginToken};
 use super::user::User;
 use super::AuthStateProvider;
 use super::UserUid;
-use crate::ai::llms::LLMPreferences;
-use crate::ai::persisted_workspace::PersistedWorkspace;
-use crate::ai::AIRequestUsageModel;
+// twarp: 2c-d — AI llms / persisted workspace / usage deleted; stubs.
+pub struct LLMPreferences;
+pub struct PersistedWorkspace;
+pub struct AIRequestUsageModel;
 use crate::autoupdate::AutoupdateState;
 use crate::persistence::ModelEvent;
 use crate::server::cloud_objects::update_manager::UpdateManager;

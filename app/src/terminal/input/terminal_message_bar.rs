@@ -12,9 +12,10 @@ use super::message_bar::{
     common::render_terminal_message, truncated_command_for_block, Message, MessageItem,
     MessageProvider,
 };
-use crate::ai::blocklist::{
-    BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIInputModel,
-};
+// twarp: 2c-d — AI blocklist deleted; stubs.
+pub enum BlocklistAIContextEvent { Other }
+pub struct BlocklistAIContextModel;
+pub struct BlocklistAIInputModel;
 use crate::appearance::Appearance;
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::terminal::input::inline_history::{AcceptHistoryItem, HistoryTab};

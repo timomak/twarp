@@ -73,8 +73,11 @@ use repo_metadata::repositories::DetectedRepositories;
 use vim::vim::{MotionType, VimMode};
 use warp_core::ui::icons::Icon;
 
-use crate::ai::persisted_workspace::{PersistedWorkspace, PersistedWorkspaceEvent};
+// twarp: 2c-d — PersistedWorkspace deleted with AI; LSP install hooks become no-ops.
 use crate::workspace::WorkspaceAction;
+
+#[allow(dead_code)]
+pub enum PersistedWorkspaceEvent { InstallationSucceeded, InstallationFailed }
 
 const DROP_SHADOW_COLOR: ColorU = ColorU {
     r: 0,
@@ -905,14 +908,8 @@ impl LocalCodeEditorView {
         };
 
         let Some(lsp_server) = lsp_manager.as_ref(ctx).server_for_path(&path, ctx) else {
-            // If the LSP is not registered, try to start it via PersistedWorkspace.
-            #[cfg(feature = "local_fs")]
-            {
-                use crate::ai::persisted_workspace::LspTask;
-                PersistedWorkspace::handle(ctx).update(ctx, |workspace, ctx| {
-                    workspace.execute_lsp_task(LspTask::Spawn { file_path: path }, ctx);
-                });
-            }
+            // twarp: 2c-d — PersistedWorkspace LSP spawn fallback removed with AI.
+            let _ = path;
             return;
         };
 
@@ -1318,131 +1315,17 @@ impl LocalCodeEditorView {
                 | CodeFooterViewEvent::ManageServers => {}
             });
 
-            // Subscribe to PersistedWorkspace events for LSP installation completion
-            #[cfg(feature = "local_fs")]
-            {
-                ctx.subscribe_to_model(
-                    &PersistedWorkspace::handle(ctx),
-                    move |me, _, event, ctx| {
-                        Self::handle_persisted_workspace_event(me, event, ctx);
-                    },
-                );
-            }
+            // twarp: 2c-d — PersistedWorkspace LSP install/enable hooks removed with AI.
 
             self.footer = Some(footer);
         }
     }
 
-    /// Handles PersistedWorkspaceEvent for LSP installation completion.
-    /// Note: Toast notifications are handled directly by PersistedWorkspace.
-    #[cfg(feature = "local_fs")]
-    fn handle_persisted_workspace_event(
-        me: &mut Self,
-        event: &PersistedWorkspaceEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            PersistedWorkspaceEvent::InstallationSucceeded
-            | PersistedWorkspaceEvent::InstallationFailed => {
-                // PersistedWorkspace handles spawning the server after install;
-                // we only need to refresh the footer UI here.
-                if let Some(footer) = &me.footer {
-                    footer.update(ctx, |_, ctx| {
-                        ctx.notify();
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
+    // twarp: 2c-d — handle_persisted_workspace_event removed (PersistedWorkspace deleted).
 
-    /// Enables LSP for the given file path by:
-    /// 1. Determining the language from the file extension
-    /// 2. Finding the appropriate LSP server type
-    /// 3. Getting the repository root from DetectedRepositories
-    /// 4. Enabling the LSP server in PersistedWorkspace
-    /// 5. Starting the LSP server via PersistedWorkspace
-    #[cfg(feature = "local_fs")]
-    fn enable_lsp_for_path(path: &Path, ctx: &mut ViewContext<Self>) {
-        use crate::ai::persisted_workspace::LspTask;
-
-        // Get the language ID from the file path
-        let Some(language_id) = LanguageId::from_path(path) else {
-            log::warn!("Enable lsp for path should only work for supported file paths");
-            return;
-        };
-
-        // Find the appropriate LSP server type for this language
-        let lsp_server_type = language_id.server_type();
-
-        // Get the repository root from PersistedWorkspace.
-        // If it doesn't exist, try to get it from DetectedRepositories.
-        // If it also doesn't exist in DetectedRepositories, use the parent path.
-        let repo_root = if let Some(workspace_root) =
-            PersistedWorkspace::as_ref(ctx).root_for_workspace(path)
-        {
-            Some(workspace_root.to_path_buf())
-        } else {
-            match DetectedRepositories::as_ref(ctx).get_root_for_path(path) {
-                Some(root) => Some(root),
-                None => path.parent().map(|s| s.to_path_buf()), // If we can't find root, treat the parent as the root.
-            }
-        };
-
-        let Some(repo_root) = repo_root else {
-            return;
-        };
-
-        // Enable and start the LSP server via PersistedWorkspace
-        let path = path.to_path_buf();
-        PersistedWorkspace::handle(ctx).update(ctx, |workspace, ctx| {
-            workspace.enable_lsp_server_for_path(&repo_root, lsp_server_type);
-            workspace.execute_lsp_task(LspTask::Spawn { file_path: path }, ctx);
-        });
-    }
-
-    /// Installs the LSP server and then enables it for the given file path.
-    /// This delegates to PersistedWorkspace which handles the async installation
-    /// and emits events that are handled by handle_persisted_workspace_event.
-    #[cfg(feature = "local_fs")]
-    fn install_and_enable_lsp_for_path(path: &Path, ctx: &mut ViewContext<Self>) {
-        use crate::ai::persisted_workspace::LspTask;
-
-        let Some(language_id) = LanguageId::from_path(path) else {
-            log::warn!("Install and enable lsp for path should only work for supported file paths");
-            return;
-        };
-
-        let lsp_server_type = language_id.server_type();
-        let path = path.to_path_buf();
-
-        let repo_root = if let Some(workspace_root) =
-            PersistedWorkspace::as_ref(ctx).root_for_workspace(&path)
-        {
-            Some(workspace_root.to_path_buf())
-        } else {
-            match DetectedRepositories::as_ref(ctx).get_root_for_path(&path) {
-                Some(root) => Some(root),
-                None => path.parent().map(|s| s.to_path_buf()),
-            }
-        };
-
-        let Some(repo_root) = repo_root else {
-            return;
-        };
-
-        // Delegate to PersistedWorkspace which uses interactive PATH and emits events
-        PersistedWorkspace::handle(ctx).update(ctx, |workspace, ctx| {
-            workspace.execute_lsp_task(
-                LspTask::Install {
-                    file_path: path,
-                    repo_root,
-                    server_type: lsp_server_type,
-                },
-                ctx,
-            );
-        });
-    }
+    // twarp: 2c-d — enable_lsp_for_path / install_and_enable_lsp_for_path are now no-ops.
+    fn enable_lsp_for_path(_path: &Path, _ctx: &mut ViewContext<Self>) {}
+    fn install_and_enable_lsp_for_path(_path: &Path, _ctx: &mut ViewContext<Self>) {}
 
     /// Opens the LSP log file in a terminal pane using `tail -f`.
     /// Emits an event that bubbles up to Workspace which handles opening the terminal.

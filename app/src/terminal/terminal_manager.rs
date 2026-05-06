@@ -5,8 +5,10 @@ use std::{any::Any, path::PathBuf, sync::Arc};
 use warpui::{AppContext, SingletonEntity, ViewHandle};
 
 use crate::PrivacySettings;
+// twarp: 2c-d — AI telemetry banner / blocklist deleted; stubs.
+pub fn should_collect_ai_ugc_telemetry() -> bool { false }
+use crate::app_state::SerializedBlockListItem;
 use crate::{
-    ai::blocklist::{telemetry_banner::should_collect_ai_ugc_telemetry, SerializedBlockListItem},
     appearance::Appearance,
     settings::{BlockVisibilitySettings, DebugSettings, InputModeSettings},
 };

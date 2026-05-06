@@ -1,14 +1,13 @@
 use warp_core::features::FeatureFlag;
 use warpui::{SingletonEntity, ViewContext};
 
-use crate::{
-    ai::{
-        agent::{conversation::AIConversationId, CancellationReason},
-        blocklist::block::{FinishReason, PendingUserQueryBlock, PendingUserQueryBlockEvent},
-    },
-    auth::AuthStateProvider,
-    terminal::TerminalView,
-};
+// twarp: 2c-d — AI agent / blocklist deleted; stubs.
+use crate::app_state::AIConversationId;
+pub enum CancellationReason { Other }
+pub enum FinishReason { Other }
+pub struct PendingUserQueryBlock;
+pub enum PendingUserQueryBlockEvent { Other }
+use crate::{auth::AuthStateProvider, terminal::TerminalView};
 
 use super::rich_content::RichContentMetadata;
 

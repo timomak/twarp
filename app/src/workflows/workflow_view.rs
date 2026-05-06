@@ -12,8 +12,13 @@ use string_offset::CharOffset;
 use syntax_highlightable::SyntaxHighlightable;
 use url::Url;
 
+// twarp: 2c-d — AI secret redaction / usage / ai_assist / AIClient deleted; stubs.
+pub fn find_secrets_in_text(_text: &str) -> Vec<()> { Vec::new() }
+pub struct AIRequestUsageModel;
+pub enum GeneratedCommandMetadataError { Other }
+pub trait AIClient {}
+
 use crate::{
-    ai::{blocklist::secret_redaction::find_secrets_in_text, AIRequestUsageModel},
     appearance::Appearance,
     auth::{auth_state::AuthState, AuthStateProvider, UserUid},
     cloud_object::{
@@ -29,8 +34,8 @@ use crate::{
         drive_helpers::has_feature_gated_anonymous_user_reached_workflow_limit,
         items::WarpDriveItemId,
         sharing::{ContentEditability, ShareableObject, SharingAccessLevel},
+        // twarp: 2c-d — ai_assist deleted; stub.
         workflows::{
-            ai_assist::GeneratedCommandMetadataError,
             arguments::ArgumentsState,
             enum_creation_dialog::{EnumCreationDialog, EnumCreationDialogEvent, WorkflowEnumData},
             workflow_arg_selector::{WorkflowArgSelector, WorkflowArgSelectorEvent},
@@ -55,7 +60,8 @@ use crate::{
             UpdateManagerEvent,
         },
         ids::{ClientId, ServerId, SyncId},
-        server_api::{ai::AIClient, ServerApiProvider},
+        // twarp: 2c-d — server_api::ai deleted.
+        server_api::ServerApiProvider,
         telemetry::{
             CloudObjectTelemetryMetadata, SharingDialogSource, TelemetryCloudObjectType,
             TelemetryEvent,

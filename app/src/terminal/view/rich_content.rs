@@ -1,10 +1,8 @@
 use warpui::{prelude::ChildView, Element, EntityId, View, ViewContext, ViewHandle};
 
+// twarp: 2c-d — AI agent / blocklist / ambient-agent / init-step / onboarding deleted.
+use crate::app_state::AIConversationId;
 use crate::{
-    ai::{
-        agent::{conversation::AIConversationId, AIAgentExchangeId},
-        blocklist::{agent_view::AgentViewEntryOrigin, telemetry_banner::TelemetryBanner, AIBlock},
-    },
     env_vars::env_var_collection_block::EnvVarCollectionBlock,
     terminal::{
         block_list_viewport::ScrollPositionUpdate,
@@ -13,8 +11,6 @@ use crate::{
         },
         ssh::{error::SshErrorBlock, install_tmux::SshInstallTmuxBlock, warpify::SshWarpifyBlock},
         view::{
-            ambient_agent::AmbientAgentEntryBlock,
-            block_onboarding::onboarding_agentic_suggestions_block::OnboardingAgenticSuggestionsBlock,
             ssh_remote_server_choice_view::SshRemoteServerChoiceView,
             ssh_remote_server_failed_banner::SshRemoteServerFailedBanner,
         },
@@ -23,7 +19,17 @@ use crate::{
     },
 };
 
-use super::{InitStepBlock, InitStepKind};
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct AIAgentExchangeId(pub String);
+pub struct AIBlock;
+pub struct TelemetryBanner;
+pub struct AmbientAgentEntryBlock;
+pub struct OnboardingAgenticSuggestionsBlock;
+pub struct InitStepBlock;
+#[derive(Clone, Copy, Debug)]
+pub enum InitStepKind { Other }
+#[derive(Clone, Debug)]
+pub enum AgentViewEntryOrigin { Other }
 
 /// Specifies where to insert rich content in the blocklist.
 #[derive(Clone, Copy, Debug)]

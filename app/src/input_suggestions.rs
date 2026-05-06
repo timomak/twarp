@@ -1,4 +1,7 @@
-use crate::ai::blocklist::{render_ai_agent_mode_icon, AIQueryHistory, AIQueryHistoryOutputStatus};
+// twarp: 2c-d — AI agent icon / query history deleted; stubs.
+pub fn render_ai_agent_mode_icon() -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
+pub struct AIQueryHistory;
+pub enum AIQueryHistoryOutputStatus { Other }
 use crate::terminal::model::session::SessionId;
 use crate::ui_components::icons::Icon as UIComponentsIcon;
 use async_channel::Sender;

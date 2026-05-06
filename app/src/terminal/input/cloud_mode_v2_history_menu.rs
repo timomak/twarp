@@ -12,7 +12,8 @@ use warpui::{
     ViewHandle,
 };
 
-use crate::ai::blocklist::agent_view::AgentViewController;
+// twarp: 2c-d — AI agent view controller deleted; stub.
+pub struct AgentViewController;
 use crate::search::data_source::QueryFilter;
 use crate::terminal::input::buffer_model::InputBufferModel;
 use crate::terminal::input::inline_history::{

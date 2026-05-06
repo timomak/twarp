@@ -1,4 +1,4 @@
-use crate::ai::blocklist::telemetry_banner::should_collect_ai_ugc_telemetry;
+// twarp 2c-d: AI UGC telemetry helper removed; opt-out by default below.
 use crate::appearance::Appearance;
 use crate::coding_entrypoints::glowing_editor::{GlowingEditor, GlowingEditorEvent};
 use crate::settings::PrivacySettings;
@@ -83,19 +83,8 @@ impl CreateProjectView {
                     ctx
                 );
 
-                // Send content event only if UGC collection is enabled
-                let should_collect_ugc = should_collect_ai_ugc_telemetry(
-                    ctx,
-                    PrivacySettings::as_ref(ctx).is_telemetry_enabled,
-                );
-                if should_collect_ugc {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::CreateProjectPromptSubmittedContent {
-                            custom_prompt: prompt.clone(),
-                        },
-                        ctx
-                    );
-                }
+                // twarp 2c-d: UGC content telemetry removed alongside AI feature.
+                let _ = PrivacySettings::as_ref(ctx).is_telemetry_enabled;
 
                 ctx.emit(CreateProjectEvent::SubmitPrompt(prompt.clone()));
             }

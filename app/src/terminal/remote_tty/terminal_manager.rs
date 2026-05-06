@@ -1,4 +1,4 @@
-use crate::ai::blocklist::InputConfig;
+use crate::app_state::InputConfig;
 use crate::context_chips::prompt_type::PromptType;
 use crate::pane_group::TerminalViewResources;
 use crate::persistence::ModelEvent;

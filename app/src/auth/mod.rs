@@ -16,9 +16,10 @@ pub mod user_uid;
 #[cfg(target_family = "wasm")]
 pub mod web_handoff;
 
-use crate::ai::agent_conversations_model::AgentConversationsModel;
-use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
+// twarp: 2c-d — AI conversations / blocklist / execution profiles deleted; stubs.
+pub struct AgentConversationsModel;
+pub struct BlocklistAIHistoryModel;
+pub struct AIExecutionProfilesModel;
 use crate::code::editor_management::{CodeEditorStatus, CodeEditorSummary};
 use crate::env_vars::manager::EnvVarCollectionManager;
 use crate::notebooks::manager::NotebookManager;

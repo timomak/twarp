@@ -10,8 +10,9 @@ use warpui::{
     AppContext, EntityId, ViewAsRef as _,
 };
 
+// twarp: 2c-d — AIBlock deleted; stub.
+pub struct AIBlock;
 use crate::{
-    ai::blocklist::AIBlock,
     env_vars::env_var_collection_block::EnvVarCollectionBlock,
     terminal::{
         event::Event as TerminalEvent,

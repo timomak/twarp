@@ -1,8 +1,10 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::ai::agent::ProgrammingLanguage;
-use crate::ai::blocklist::code_block::{render_runnable_code_snippet, CodeSnippetButtonHandles};
+// twarp: 2c-d — AI agent / blocklist deleted; stubs.
+pub enum ProgrammingLanguage { Other }
+pub fn render_runnable_code_snippet() -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
+pub struct CodeSnippetButtonHandles;
 use crate::appearance::Appearance;
 use crate::terminal::model::terminal_model::SubshellInitializationInfo;
 use crate::terminal::shell::{Shell, ShellType};

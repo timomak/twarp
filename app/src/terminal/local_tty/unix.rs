@@ -1,6 +1,7 @@
 //! TTY related functionality.
 use crate::terminal::bootstrap::raw_init_shell_script_for_shell;
-use crate::terminal::cli_agent_sessions::event::current_protocol_version;
+// twarp: 2c-d — cli_agent_sessions::event deleted; stub.
+fn current_protocol_version() -> u32 { 0 }
 use crate::terminal::local_tty::docker_sandbox::{
     DockerSandboxShellStarter, DOCKER_SANDBOX_HOME_DIR,
 };

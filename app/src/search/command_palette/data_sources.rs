@@ -21,7 +21,11 @@ use warp_core::features::FeatureFlag;
 use warpui::keymap::BindingId;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
-use super::conversations;
+// twarp: 2c-d — conversations submodule deleted; stubs.
+mod conversations {
+    use warpui::{AppContext, ModelContext, ModelHandle};
+    pub struct DataSource;
+}
 use super::warp_drive;
 
 /// Store of all of the [`crate::search::DataSource`]s for the command palette.

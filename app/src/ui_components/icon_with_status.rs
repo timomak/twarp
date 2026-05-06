@@ -8,8 +8,8 @@ use warpui::elements::{
     ParentElement, ParentOffsetBounds, Radius, Stack,
 };
 
-use crate::ai::agent::conversation::ConversationStatus;
-use crate::terminal::CLIAgent;
+// twarp: 2c-d — AI conversation status deleted; use stubs.
+use crate::app_state::{CLIAgent, ConversationStatus};
 use crate::themes::theme::Fill as ThemeFill;
 
 /// Sizing configuration for the icon circle and its status badge.

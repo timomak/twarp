@@ -1,4 +1,3 @@
-pub mod ai;
 pub mod auth;
 pub mod block;
 pub mod harness_support;
@@ -10,13 +9,10 @@ pub mod referral;
 pub mod team;
 pub mod workspace;
 
-use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::get_relevant_files::api::{GetRelevantFiles, GetRelevantFilesResponse};
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::auth_state::AuthState;
 use crate::server::graphql::default_request_options;
 use crate::server::server_api::presigned_upload::HttpStatusError;
-use ai::AIClient;
 use auth::{AuthClient, AMBIENT_WORKLOAD_TOKEN_HEADER, CLOUD_AGENT_ID_HEADER};
 use base64::prelude::BASE64_URL_SAFE;
 use base64::Engine;
@@ -396,10 +392,6 @@ pub struct ServerApi {
     oauth_client: self::auth::OAuth2Client,
     /// Cached ambient workload token for requests from ambient agents.
     ambient_workload_token: Arc<Mutex<Option<warp_isolation_platform::WorkloadToken>>>,
-    /// The ambient agent task ID for requests from cloud agents.
-    ambient_agent_task_id: Arc<RwLock<Option<AmbientAgentTaskId>>>,
-    /// The source of agent runs (e.g. CLI, GitHub Action). Set once at startup and immutable.
-    agent_source: Option<ai::AgentSource>,
 
     #[cfg(feature = "agent_mode_evals")]
     eval_user_id: Option<i32>,
@@ -409,7 +401,6 @@ impl ServerApi {
     fn new(
         auth_state: Arc<AuthState>,
         event_sender: async_channel::Sender<ServerApiEvent>,
-        agent_source: Option<ai::AgentSource>,
     ) -> Self {
         // We generate a random user ID for evals so we can run evals in parallel.
         #[cfg(feature = "agent_mode_evals")]
@@ -428,8 +419,6 @@ impl ServerApi {
             last_server_time: Arc::new(Mutex::new(None)),
             oauth_client,
             ambient_workload_token: Arc::new(Mutex::new(None)),
-            ambient_agent_task_id: Arc::new(RwLock::new(None)),
-            agent_source,
             #[cfg(feature = "agent_mode_evals")]
             eval_user_id,
         }
@@ -449,38 +438,21 @@ impl ServerApi {
             last_server_time: Arc::new(Mutex::new(None)),
             oauth_client,
             ambient_workload_token: Arc::new(Mutex::new(None)),
-            ambient_agent_task_id: Arc::new(RwLock::new(None)),
-            agent_source: None,
             #[cfg(feature = "agent_mode_evals")]
             eval_user_id: None,
         }
     }
 
-    /// Sets the ambient agent task ID to be sent with all subsequent requests.
-    pub fn set_ambient_agent_task_id(&self, task_id: Option<AmbientAgentTaskId>) {
-        *self.ambient_agent_task_id.write() = task_id;
-    }
-
-    /// Returns ambient agent headers to attach to requests.
+    /// Returns ambient workload headers to attach to requests.
     async fn ambient_agent_headers(&self) -> Result<Vec<(&'static str, String)>> {
         let workload_token = self
             .get_or_create_ambient_workload_token()
             .await
             .context("Failed to get ambient workload token")?;
 
-        let task_id = self
-            .ambient_agent_task_id
-            .read()
-            .as_ref()
-            .map(|id| id.to_string());
-
-        let agent_source = self.agent_source.as_ref().map(|s| s.as_str().to_string());
-
         Ok(workload_token
             .map(|token| (AMBIENT_WORKLOAD_TOKEN_HEADER, token))
             .into_iter()
-            .chain(task_id.map(|id| (CLOUD_AGENT_ID_HEADER, id)))
-            .chain(agent_source.map(|s| (AGENT_SOURCE_HEADER, s)))
             .collect())
     }
 
@@ -920,30 +892,7 @@ impl ServerApi {
             .flush_and_persist_events(max_event_count, settings_snapshot)
     }
 
-    pub async fn get_relevant_files(
-        &self,
-        request: &GetRelevantFiles,
-    ) -> Result<GetRelevantFilesResponse, AIApiError> {
-        let auth_token = self.get_or_refresh_access_token().await?;
-
-        let request_builder = self.client.post(format!(
-            "{}/ai/relevant_files",
-            ChannelState::server_root_url()
-        ));
-        let response = if let Some(token) = auth_token.as_bearer_token() {
-            request_builder.bearer_auth(token)
-        } else {
-            request_builder
-        }
-        .json(request)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-
-        Ok(response)
-    }
+    // twarp: 2c-d — get_relevant_files removed (AI deleted).
 
     pub async fn generate_multi_agent_output(
         &self,
@@ -1145,15 +1094,16 @@ pub struct ServerApiProvider {
     server_api: Arc<ServerApi>,
 }
 
+// twarp: 2c-d — ai::AgentSource deleted; agent_source param dropped from ServerApiProvider::new.
+
 impl ServerApiProvider {
     /// Constructs a new ServerApiProvider.
     pub fn new(
         auth_state: Arc<AuthState>,
-        agent_source: Option<ai::AgentSource>,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
         let (event_sender, event_receiver) = async_channel::bounded(10);
-        let mut server_api = ServerApi::new(auth_state.clone(), event_sender, agent_source);
+        let mut server_api = ServerApi::new(auth_state.clone(), event_sender);
 
         if ContextFlag::NetworkLogConsole.is_enabled() {
             super::network_logging::init(
@@ -1243,10 +1193,6 @@ impl ServerApiProvider {
     }
 
     pub fn get_team_client(&self) -> Arc<dyn TeamClient> {
-        self.server_api.clone()
-    }
-
-    pub fn get_ai_client(&self) -> Arc<dyn AIClient> {
         self.server_api.clone()
     }
 

@@ -45,16 +45,19 @@ use warpui::ui_components::button::ButtonTooltipPosition;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::{elements, ViewHandle};
 
-use crate::ai::agent::ImageContext;
-use crate::ai::blocklist::{BlocklistAIContextModel, PendingAttachment, PendingFile};
+// twarp: 2c-d — AI agent / blocklist / context menu deleted; stubs.
+pub struct ImageContext { pub data: String, pub file_name: String, pub mime_type: String }
+pub struct BlocklistAIContextModel;
+pub struct PendingAttachment;
+pub struct PendingFile { pub file_path: std::path::PathBuf, pub file_name: String, pub mime_type: String }
+pub struct AIContextMenuSearchableAction;
+pub struct AIContextMenu;
+pub enum AIContextMenuCategory { Other }
+pub enum AIContextMenuEvent { Other }
 use crate::appearance::Appearance;
 use crate::channel::{Channel, ChannelState};
 use crate::editor::accept_autosuggestion_keybinding_view::AcceptAutosuggestionKeybinding;
 use crate::editor::autosuggestion_ignore_view::{AutosuggestionIgnore, AutosuggestionIgnoreEvent};
-use crate::search::ai_context_menu::mixer::AIContextMenuSearchableAction;
-use crate::search::ai_context_menu::view::{
-    AIContextMenu, AIContextMenuCategory, AIContextMenuEvent,
-};
 use crate::server::telemetry::TelemetryEvent;
 use crate::settings_view::flags;
 use crate::ui_components::buttons::icon_button;
@@ -62,7 +65,9 @@ use crate::ui_components::icons;
 use crate::view_components::DismissibleToast;
 use crate::vim_registers::{RegisterContent, VimRegisters};
 use crate::workspace::ToastStack;
-use crate::{ai::blocklist::InputType, settings::AISettings};
+// twarp: 2c-d — AI blocklist InputType deleted.
+use crate::settings::AISettings;
+pub enum InputType { Other }
 
 use crate::editor::RangeExt;
 use crate::features::FeatureFlag;
@@ -81,7 +86,9 @@ use crate::util::clipboard::clipboard_content_with_escaped_paths;
 use crate::util::color::{ContrastingColor, MinimumAllowedContrast};
 use crate::util::image::{resize_image, MAX_IMAGE_COUNT_FOR_QUERY, MAX_IMAGE_SIZE_BYTES};
 use crate::util::merge_ranges;
-use crate::{workspace::Workspace, BlocklistAIHistoryModel};
+// twarp: 2c-d — BlocklistAIHistoryModel deleted; stub.
+use crate::workspace::Workspace;
+pub struct BlocklistAIHistoryModel;
 use anyhow::Result;
 use core::f32;
 use std::path::Path;

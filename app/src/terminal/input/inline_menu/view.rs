@@ -31,9 +31,10 @@ use warpui::{
     WeakViewHandle,
 };
 
-use crate::ai::blocklist::agent_view::{
-    agent_view_bg_color, AgentViewController, AgentViewControllerEvent,
-};
+// twarp: 2c-d — AI agent view deleted; stubs.
+pub fn agent_view_bg_color() {}
+pub struct AgentViewController;
+pub enum AgentViewControllerEvent { Other }
 use crate::search::item::IconLocation;
 use crate::search::mixer::{SearchMixer, SearchMixerEvent};
 use crate::search::result_renderer::{
@@ -1121,11 +1122,8 @@ impl<A: InlineMenuAction, T: 'static + Send + Sync> View for InlineMenuView<A, T
                             !is_rendering_below_input || !has_header,
                             false,
                         )
-                        .with_border_fill(if self.agent_view_controller.as_ref(app).is_active() {
-                            input::agent::styles::default_border_color(theme)
-                        } else {
-                            input::terminal::styles::default_border_color(theme)
-                        }),
+                        // twarp: 2c-d — agent border color removed (input::agent deleted).
+                        .with_border_fill(input::terminal::styles::default_border_color(theme)),
                 )
                 .finish(),
         )

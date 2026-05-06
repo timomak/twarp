@@ -4,11 +4,6 @@ use std::sync::Arc;
 
 use warp_util::path::LineAndColumnArg;
 
-use crate::ai::agent::api::ServerConversationToken;
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::AIAgentExchangeId;
-use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
 use crate::auth::auth_manager::LoginGatedFeature;
 use crate::drive::items::WarpDriveItemId;
 use crate::drive::CloudObjectTypeAndId;
@@ -143,8 +138,9 @@ pub enum WorkspaceAction {
         source: AddTabWithShellSource,
     },
     AddGetStartedTab,
+    // twarp 2c-d: AI agent tab variants kept as no-op stubs so existing dispatch
+    // sites and tests still compile. Their handlers are intentionally empty.
     AddAmbientAgentTab,
-    /// Add a new tab that immediately enters agent view with a new conversation.
     AddAgentTab,
     /// Add a new tab running a local Docker sandbox via `sbx`.
     AddDockerSandboxTab,
@@ -374,18 +370,13 @@ pub enum WorkspaceAction {
         /// Whether to ensure agent mode is enabled when inserting content
         ensure_agent_mode: bool,
     },
-    /// Open a new tab with its input in AI mode.
+    // twarp 2c-d: AI agent action variants kept as no-op stubs.
     NewTabInAgentMode {
-        /// The entrypoint that triggered this action.
         entrypoint: AgentModeEntrypoint,
-        /// The type of zero state prompt suggestion to start with (optional).
         zero_state_prompt_suggestion_type: Option<ZeroStatePromptSuggestionType>,
     },
-    /// Open a new pane with its input in AI mode.
     NewPaneInAgentMode {
-        /// The entrypoint that triggered this action.
         entrypoint: AgentModeEntrypoint,
-        /// The type of zero state prompt suggestion to start with (optional).
         zero_state_prompt_suggestion_type: Option<ZeroStatePromptSuggestionType>,
     },
     OpenCloudAgentSetupGuide,
@@ -394,35 +385,28 @@ pub enum WorkspaceAction {
     /// information.
     #[cfg(target_os = "linux")]
     DismissWaylandCrashRecoveryBannerAndOpenLink,
-    /// Open a new pane with its input in AI mode
-    /// with query "Fix this" with error name and details from AI summary.
     FixInAgentMode {
         query: String,
     },
     OpenAIFactCollection,
     OpenMCPServerCollection,
     ToggleAIDocumentPane {
-        document_id: AIDocumentId,
-        document_version: AIDocumentVersion,
+        document_id: String,
+        document_version: u64,
     },
-    /// Closes all visible AI document panes in the active pane group.
     HideAIDocumentPanes,
-    /// Closes any other ai document panes in the active pane group, and opens the specified document_id.
     OpenAIDocumentPane {
-        document_id: AIDocumentId,
-        document_version: AIDocumentVersion,
+        document_id: String,
+        document_version: u64,
     },
     FocusTerminalViewInWorkspace {
         terminal_view_id: EntityId,
     },
     /// Focus a specific pane by its locator (pane_group_id and pane_id).
     FocusPane(PaneViewLocator),
-    /// Start a new AI conversation in a terminal view. This sets the pending query state
-    /// to default and focuses the terminal view.
     StartNewConversation {
         terminal_view_id: EntityId,
     },
-    /// Jump to the terminal pane of the most recent agent toast
     JumpToLatestToast,
     /// Open a file in a new tab with a code pane
     OpenFileInNewTab {
@@ -442,49 +426,30 @@ pub enum WorkspaceAction {
         page: SettingsSection,
         widget_id: &'static str,
     },
-    /// Navigate to an existing AI conversation, focusing on its terminal view.
-    ///
-    /// If the conversation is not in an open pane, restore it based on the layout setting or override.
     RestoreOrNavigateToConversation {
         pane_view_locator: Option<PaneViewLocator>,
         window_id: Option<WindowId>,
-        conversation_id: AIConversationId,
+        conversation_id: String,
         terminal_view_id: Option<EntityId>,
-        /// If provided, use this layout to restore the conversation.
-        /// Otherwise, fall back to the user's setting.
         restore_layout: Option<RestoreConversationLayout>,
     },
-    /// Fork an existing AI conversation.
-    /// Optionally summarizes the conversation after forking and/or sends an initial prompt.
     ForkAIConversation {
-        conversation_id: AIConversationId,
-        /// When Some, fork from the given response (or exchange if `fork_from_exact_exchange`
-        /// is true). When None, fork from the last exchange.
+        conversation_id: String,
         fork_from_exchange: Option<ForkFromExchange>,
-        /// Whether to summarize the conversation after forking.
         summarize_after_fork: bool,
-        /// Prompt to use for summarization when `summarize_after_fork` is true.
         summarization_prompt: Option<String>,
-        /// Initial prompt to send in the forked conversation (sent after summarization if enabled).
         initial_prompt: Option<String>,
-        /// Where to open the forked conversation.
         destination: ForkedConversationDestination,
     },
-    /// Fork an existing AI conversation into a new pane and prefill the input with a local
-    /// continuation command (selecting all text).
     #[cfg(not(target_family = "wasm"))]
     ContinueConversationLocally {
-        conversation_id: AIConversationId,
+        conversation_id: String,
     },
-    /// Insert the /fork slash command into the active terminal's input.
     InsertForkSlashCommand,
-    /// Summarize the active AI conversation in the focused pane.
     SummarizeAIConversation {
         prompt: Option<String>,
-        /// Optional prompt to send after summarization completes successfully.
         initial_prompt: Option<String>,
     },
-    /// Queue a prompt to be sent after the current conversation finishes.
     QueuePromptForConversation {
         prompt: String,
     },
@@ -567,34 +532,27 @@ pub enum WorkspaceAction {
     ViewAgentRunsForEnvironment {
         environment_id: String,
     },
-    /// Show the rewind confirmation dialog before rewinding an AI conversation
     ShowRewindConfirmationDialog {
         ai_block_view_id: EntityId,
-        exchange_id: AIAgentExchangeId,
-        conversation_id: AIConversationId,
+        exchange_id: String,
+        conversation_id: String,
     },
-    /// Execute the actual rewind after confirmation
     ExecuteRewindAIConversation {
         ai_block_view_id: EntityId,
-        exchange_id: AIAgentExchangeId,
-        conversation_id: AIConversationId,
+        exchange_id: String,
+        conversation_id: String,
     },
-    /// Execute the actual deletion of a conversation after confirmation
     ExecuteDeleteConversation {
-        conversation_id: AIConversationId,
+        conversation_id: String,
         terminal_view_id: Option<EntityId>,
     },
-    /// Open an ambient agent session by joining its shared session.
-    /// Used when the sandbox is running or when we need to view a live session.
     OpenAmbientAgentSession {
         session_id: SessionId,
-        task_id: AmbientAgentTaskId,
+        task_id: String,
     },
-    /// Load cloud conversation data into a transcript viewer.
-    /// Used when CloudConversations is enabled and the sandbox is not running.
     OpenConversationTranscriptViewer {
-        conversation_id: ServerConversationToken,
-        ambient_agent_task_id: Option<AmbientAgentTaskId>,
+        conversation_id: String,
+        ambient_agent_task_id: Option<String>,
     },
     /// Toggle the conversation transcript details panel (WASM-only).
     #[cfg(target_family = "wasm")]
@@ -698,8 +656,35 @@ impl WorkspaceAction {
     pub fn should_save_app_state_on_action(&self) -> bool {
         use WorkspaceAction::*;
         match self {
+            // twarp 2c-d: AI agent action stubs are no-ops, treat as no-save.
+            AddAgentTab
+            | AddAmbientAgentTab
+            | NewTabInAgentMode { .. }
+            | NewPaneInAgentMode { .. }
+            | OpenCloudAgentSetupGuide
+            | AttemptLoginGatedAIUpgrade
+            | FixInAgentMode { .. }
+            | OpenAIFactCollection
+            | ToggleAIDocumentPane { .. }
+            | HideAIDocumentPanes
+            | OpenAIDocumentPane { .. }
+            | StartNewConversation { .. }
+            | JumpToLatestToast
+            | RestoreOrNavigateToConversation { .. }
+            | ForkAIConversation { .. }
+            | InsertForkSlashCommand
+            | SummarizeAIConversation { .. }
+            | QueuePromptForConversation { .. }
+            | ToggleAgentManagementView
+            | ViewAgentRunsForEnvironment { .. }
+            | ShowRewindConfirmationDialog { .. }
+            | ExecuteRewindAIConversation { .. }
+            | ExecuteDeleteConversation { .. }
+            | OpenAmbientAgentSession { .. }
+            | OpenConversationTranscriptViewer { .. }
+            | StartAgentOnboardingTutorial(_) => false,
             #[cfg(not(target_family = "wasm"))]
-            ContinueConversationLocally { .. } => true,
+            ContinueConversationLocally { .. } => false,
             ActivateTab(_)
             | ActivateTabByNumber(_)
             | ActivatePrevTab
@@ -731,28 +716,18 @@ impl WorkspaceAction {
             | AddTerminalTab { .. }
             | AddTabWithShell { .. }
             | AddGetStartedTab
-            | AddAgentTab
-            | AddAmbientAgentTab
             | AddDockerSandboxTab
             | AddWindow
             | AddWindowWithShell { .. }
             | CloseWindow
             | ScrollToSettingsWidget { .. }
-            | NewTabInAgentMode { .. }
-            | NewPaneInAgentMode { .. }
-            | FixInAgentMode { .. }
             | OpenNotebook { .. }
             | RunWorkflow { .. }
             | OpenFileInNewTab { .. }
-            | RestoreOrNavigateToConversation { .. }
             | NewCodeFile
-            | ForkAIConversation { .. }
-            | SummarizeAIConversation { .. }
             | OpenRepository { .. }
             | SelectTabConfig(_)
-            | ToggleVerticalTabsPanel => true, // actions that actually change a state of the state of user's
-            // workspace would most likely require a save, so that if the app gets
-            // restarted, the user can continue working
+            | ToggleVerticalTabsPanel => true,
             AutoupdateFailureLink
             | ApplyUpdate
             | CopyVersion(_)
@@ -797,7 +772,6 @@ impl WorkspaceAction {
             | DispatchToSettingsTab { .. }
             | ToggleResourceCenter
             | ToggleUserMenu
-            | OpenCloudAgentSetupGuide
             | ToggleKeybindingsPage
             | ShowCommandSearch(_)
             | ToggleMouseReporting
@@ -879,9 +853,6 @@ impl WorkspaceAction {
             | RunAISuggestedCommand { .. }
             | RunCommand { .. }
             | InsertInInput { .. }
-            | InsertForkSlashCommand
-            | QueuePromptForConversation { .. }
-            | AttemptLoginGatedAIUpgrade
             | UndoTrash(_)
             | OpenFilePath { .. }
             | ViewObjectInWarpDrive(_)
@@ -890,13 +861,10 @@ impl WorkspaceAction {
             | SignInAnonymousWebUser
             | TabHoverWidthStart { .. }
             | TabHoverWidthEnd
-            | OpenAIFactCollection
             | OpenMCPServerCollection
             | FocusTerminalViewInWorkspace { .. }
             | FocusPane(..)
-            | StartNewConversation { .. }
             | UndoRevertInCodeReviewPane { .. }
-            | JumpToLatestToast
             | NavigatePrevPaneOrPanel
             | NavigateNextPaneOrPanel
             | ToggleProjectExplorer
@@ -904,19 +872,8 @@ impl WorkspaceAction {
             | OpenGlobalSearch
             | ToggleConversationListView
             | ToggleNotificationMailbox { .. }
-            | ToggleAgentManagementView
-            | ViewAgentRunsForEnvironment { .. }
-            | ToggleAIDocumentPane { .. }
-            | HideAIDocumentPanes
-            | OpenAIDocumentPane { .. }
-            | ShowRewindConfirmationDialog { .. }
-            | ExecuteRewindAIConversation { .. }
-            | ExecuteDeleteConversation { .. }
-            | OpenAmbientAgentSession { .. }
-            | OpenConversationTranscriptViewer { .. }
             | OpenLightbox { .. }
             | UpdateLightboxImage { .. }
-            | StartAgentOnboardingTutorial(_)
             | ShowSessionConfigModal
             | DismissSessionConfigTabConfigChip
             | SaveCurrentTabAsNewConfig(_)
@@ -949,17 +906,13 @@ impl WorkspaceAction {
             #[cfg(target_os = "macos")]
             InstallCLI | UninstallCLI => false,
             #[cfg(feature = "local_fs")]
-            FileRenamed { .. } => false, // File rename doesn't change workspace state
+            FileRenamed { .. } => false,
             #[cfg(feature = "local_fs")]
-            FileDeleted { .. } => false, // File deletion doesn't change workspace state
+            FileDeleted { .. } => false,
             #[cfg(target_os = "linux")]
             DismissWaylandCrashRecoveryBannerAndOpenLink => false,
             #[cfg(target_family = "wasm")]
             OpenLinkOnDesktop(_) => false,
-            // actions that are related to updating user settings or
-            // managing some ui elements (like closing/opening modals)
-            // that don't reflect on actual workspace and don't need to
-            // be preserved between restarts.
         }
     }
 }

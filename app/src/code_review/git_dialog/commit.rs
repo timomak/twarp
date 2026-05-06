@@ -17,8 +17,10 @@ use warpui::{
     AppContext, SingletonEntity, ViewContext, ViewHandle,
 };
 
+// twarp: 2c-d — AI code review content generation deleted; stubs.
+pub struct GenerateCodeReviewContentRequest;
+pub enum OutputType { Other }
 use crate::{
-    ai::generate_code_review_content::api::{GenerateCodeReviewContentRequest, OutputType},
     code_review::git_dialog::{
         interactive_path_future,
         pr::{create_pr_with_ai_content, show_pr_created_toast},

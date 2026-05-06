@@ -7,8 +7,10 @@ use warpui::{
     ViewHandle,
 };
 
+// twarp: 2c-d — AI document/facts deleted; stubs.
+use crate::app_state::AIDocumentId;
+pub struct CloudAIFactModel;
 use crate::{
-    ai::{document::ai_document_model::AIDocumentId, facts::CloudAIFactModel},
     cloud_object::{
         model::{persistence::CloudModel, view::CloudViewModel},
         CloudObjectEventEntrypoint, GenericStringObjectFormat, JsonObjectType, Owner, Space,

@@ -592,7 +592,7 @@ fn snapshot_round_trip_toml() {
 
 // ── snapshot pane_type derivation ──
 
-use crate::ai::agent::conversation::AIConversationId;
+use crate::app_state::AIConversationId;
 use crate::app_state::AmbientAgentPaneSnapshot;
 
 fn make_agent_leaf(cwd: Option<&str>, is_focused: bool) -> PaneNodeSnapshot {

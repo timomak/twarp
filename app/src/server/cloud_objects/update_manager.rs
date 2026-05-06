@@ -1,15 +1,16 @@
-#[cfg(not(target_family = "wasm"))]
-use crate::ai::mcp::templatable::{CloudTemplatableMCPServerModel, TemplatableMCPServer};
+// twarp: 2c-d — AI mcp / ambient / blocklist / execution_profiles / facts deleted; stubs.
+pub struct CloudTemplatableMCPServerModel;
+pub struct TemplatableMCPServer;
+use crate::app_state::AIConversationId;
+pub struct CloudScheduledAmbientAgentModel;
+pub struct ScheduledAmbientAgent;
+pub struct BlocklistAIHistoryModel;
+pub struct AIExecutionProfilesModel;
+pub struct AIExecutionProfile;
+pub struct CloudAIExecutionProfileModel;
+pub struct AIFact;
+pub struct CloudAIFactModel;
 use crate::{
-    ai::{
-        agent::conversation::AIConversationId,
-        ambient_agents::scheduled::{CloudScheduledAmbientAgentModel, ScheduledAmbientAgent},
-        blocklist::BlocklistAIHistoryModel,
-        execution_profiles::{
-            profiles::AIExecutionProfilesModel, AIExecutionProfile, CloudAIExecutionProfileModel,
-        },
-        facts::{AIFact, CloudAIFactModel},
-    },
     auth::{auth_manager::AuthManager, AuthStateProvider},
     cloud_object::{
         model::{
@@ -413,10 +414,6 @@ impl UpdateManager {
                                         self.save_to_db([workflow_object.upsert_event()]);
                                     }
                                 });
-                        } else if cloud_model.get_ai_execution_profile(&server_id).is_some() {
-                            AIExecutionProfilesModel::handle(ctx).update(ctx, |model, _| {
-                                model.replace_client_id_with_server_id(server_id, client_id);
-                            });
                         }
                     }
                 });

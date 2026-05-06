@@ -60,7 +60,7 @@ pub mod mock_terminal_manager;
 pub mod model;
 pub mod model_events;
 pub mod platform;
-pub mod profile_model_selector;
+// twarp: 2c-d — profile_model_selector deleted (AI-only)
 pub mod prompt;
 pub mod prompt_render_helper;
 pub mod recorder;
@@ -74,7 +74,7 @@ pub mod settings;
 mod share_block_modal;
 pub mod shared_session;
 mod shell_launch_state;
-pub mod universal_developer_input;
+// twarp: 2c-d — universal_developer_input deleted (AI-only)
 
 pub mod ssh;
 pub mod terminal_manager;
@@ -85,10 +85,6 @@ mod waterfall_gap_element;
 mod writeable_pty;
 #[cfg(windows)]
 pub mod wsl;
-
-pub mod cli_agent;
-pub use cli_agent::CLIAgent;
-pub(crate) mod cli_agent_sessions;
 
 pub use mock_terminal_manager::MockTerminalManager;
 use model_events::{ModelEvent, ModelEventDispatcher};

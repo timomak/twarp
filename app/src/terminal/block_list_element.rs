@@ -1,5 +1,8 @@
-use crate::ai::blocklist::agent_view::{agent_view_bg_fill, AgentViewState};
-use crate::ai::blocklist::{ai_brand_color, ATTACH_AS_AGENT_MODE_CONTEXT_TEXT};
+// twarp: 2c-d — AI agent view / blocklist deleted; stubs.
+pub fn agent_view_bg_fill() {}
+pub struct AgentViewState;
+pub fn ai_brand_color() {}
+pub const ATTACH_AS_AGENT_MODE_CONTEXT_TEXT: &str = "";
 use crate::appearance::Appearance;
 use crate::drive::settings::WarpDriveSettings;
 use crate::features::FeatureFlag;

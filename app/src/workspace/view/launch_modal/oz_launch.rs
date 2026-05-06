@@ -1,5 +1,7 @@
 use super::{CTAButton, CheckboxConfig, LaunchModalEvent, Slide};
-use crate::ai::ambient_agents::telemetry::{CloudAgentTelemetryEvent, CloudModeEntryPoint};
+// twarp: 2c-d — AI ambient agent telemetry deleted; stubs.
+pub enum CloudAgentTelemetryEvent { Other }
+pub enum CloudModeEntryPoint { Other }
 use crate::terminal::view::OnboardingIntention;
 use crate::ui_components::icons::Icon;
 use crate::workspace::action::WorkspaceAction;

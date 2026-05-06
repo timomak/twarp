@@ -25,7 +25,8 @@ use crate::{
 
 use super::grid_renderer::CellGlyphCache;
 use super::model::grid::RespectDisplayedOutput;
-use crate::ai::generate_block_title::api::GenerateBlockTitleRequest;
+// twarp: 2c-d — generate_block_title deleted; stub.
+pub struct GenerateBlockTitleRequest;
 use crate::editor::EditOrigin;
 use crate::settings::AISettings;
 use crate::workspaces::user_workspaces::UserWorkspaces;

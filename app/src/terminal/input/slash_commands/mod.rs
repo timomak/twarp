@@ -12,10 +12,13 @@ use warp_core::ui::appearance::Appearance;
 use warpui::clipboard::ClipboardContent;
 use warpui::{SingletonEntity, ViewContext};
 
-use crate::ai::blocklist::agent_view::{
-    AgentViewEntryOrigin, DismissalStrategy, EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
-};
-use crate::ai::blocklist::{BlocklistAIHistoryModel, SlashCommandRequest};
+// twarp: 2c-d — AI agent view / blocklist deleted; stubs.
+use crate::app_state::AgentViewEntryOrigin;
+pub enum DismissalStrategy { Other }
+pub struct EphemeralMessage;
+pub const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration = std::time::Duration::from_secs(0);
+pub struct BlocklistAIHistoryModel;
+pub struct SlashCommandRequest;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::search::slash_command_menu::static_commands::commands::{self, COMMAND_REGISTRY};

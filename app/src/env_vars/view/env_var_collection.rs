@@ -19,8 +19,9 @@ use warpui::{
     SingletonEntity, TypedActionView, View, ViewContext, ViewHandle, WindowId,
 };
 
+// twarp: 2c-d — AI secret redaction deleted; stub.
+pub fn find_secrets_in_text_with_levels(_text: &str) -> Vec<()> { Vec::new() }
 use crate::{
-    ai::blocklist::block::secret_redaction::find_secrets_in_text_with_levels,
     cloud_object::{
         breadcrumbs::ContainingObject,
         model::persistence::{CloudModel, CloudModelEvent},

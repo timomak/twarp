@@ -9,10 +9,10 @@ use async_trait::async_trait;
 use mockall::automock;
 
 use super::ServerApi;
-use crate::ai::agent::conversation::AIConversationId;
-#[cfg(not(target_family = "wasm"))]
-use crate::ai::agent_sdk::retry::with_bounded_retry;
-use crate::ai::artifacts::Artifact;
+use crate::app_state::AIConversationId;
+// twarp: 2c-d — AI agent_sdk retry / artifacts deleted; stubs.
+pub async fn with_bounded_retry<F, R>(_f: F) -> anyhow::Result<R> where F: std::future::Future<Output = anyhow::Result<R>> { Err(anyhow::anyhow!("stub")) }
+pub struct Artifact;
 
 /// A presigned upload target returned by the server.
 #[derive(Debug, Clone, serde::Deserialize)]

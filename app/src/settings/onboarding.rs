@@ -1,5 +1,6 @@
-use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
-use crate::ai::execution_profiles::{ActionPermission, WriteToPtyPermission};
+// twarp: 2c-d — AI execution profiles deleted; stubs (use workspace stubs).
+pub struct AIExecutionProfilesModel;
+use crate::workspaces::workspace::{ActionPermission, WriteToPtyPermission};
 use crate::drive::settings::WarpDriveSettings;
 use crate::report_if_error;
 use crate::settings::ai::DefaultSessionMode;

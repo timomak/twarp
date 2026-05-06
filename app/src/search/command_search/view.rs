@@ -50,8 +50,9 @@ use crate::{
     workspaces::user_workspaces::UserWorkspaces,
 };
 
+// twarp: 2c-d — ai_queries submodule deleted; stub.
+pub struct AIQueriesDataSource;
 use super::{
-    ai_queries::AIQueriesDataSource,
     env_var_collections::EnvVarCollectionDataSource,
     history::history_data_source_for_session,
     notebooks::notebooks_data_source,

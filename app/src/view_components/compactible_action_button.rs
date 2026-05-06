@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use crate::{
-    ai::blocklist::inline_action::inline_action_icons::icon_size,
     ui_components::icons::Icon,
     view_components::action_button::{
         ActionButton, ActionButtonTheme, AdjoinedSide, ButtonSize, KeystrokeSource,
@@ -13,8 +12,17 @@ use warpui::{
         ChildView, ConstrainedBox, Container, CrossAxisAlignment, Flex, MainAxisAlignment,
         MainAxisSize, ParentElement,
     },
-    Action, AppContext, Element, TypedActionView, View, ViewContext, ViewHandle,
+    Action, AppContext, Element, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
+
+// twarp: 2c-d.4 — inlined from deleted ai::blocklist::inline_action::inline_action_icons::icon_size
+fn icon_size(app: &AppContext) -> f32 {
+    let appearance = Appearance::as_ref(app);
+    app.font_cache().line_height(
+        appearance.monospace_font_size(),
+        appearance.line_height_ratio(),
+    )
+}
 const BUTTON_MARGIN: f32 = 8.;
 
 // Size switch thresholds for responsive button behavior

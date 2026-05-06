@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
-use crate::ai::blocklist::TextLocation;
+// twarp: 2c-d — TextLocation deleted; stub.
+pub struct TextLocation;
 use crate::terminal::model::index::Point;
 use anyhow::anyhow;
 use itertools::Itertools;

@@ -1,8 +1,25 @@
 use std::rc::Rc;
 
-use crate::ai::blocklist::inline_action::requested_action::{ENTER_KEYSTROKE, ESCAPE_KEYSTROKE};
-use crate::ai::blocklist::inline_action::requested_script::{self, RequestedScriptMouseStates};
-use crate::ai::blocklist::inline_action::requested_script::{RequestedScriptStatus, TitledScript};
+// twarp: 2c-d — AI blocklist inline action types deleted; stubs.
+use warpui::keymap::Keystroke;
+pub const ENTER_KEYSTROKE: Keystroke = Keystroke {
+    cmd: false, shift: false, alt: false, ctrl: false, function: false, key: String::new(),
+    primary_key: None,
+};
+pub const ESCAPE_KEYSTROKE: Keystroke = Keystroke {
+    cmd: false, shift: false, alt: false, ctrl: false, function: false, key: String::new(),
+    primary_key: None,
+};
+pub mod requested_script {
+    use warpui::elements::Empty;
+    use warpui::Element;
+    pub struct RequestedScriptMouseStates;
+    pub enum RequestedScriptStatus { Other }
+    pub struct TitledScript;
+    pub fn render_requested_scripts() -> Box<dyn Element> { Empty::new().finish() }
+    pub fn render_requested_script() -> Box<dyn Element> { Empty::new().finish() }
+}
+pub use requested_script::{RequestedScriptMouseStates, RequestedScriptStatus, TitledScript};
 use crate::appearance::Appearance;
 use crate::terminal::model::ansi::SystemDetails;
 use crate::terminal::model::escape_sequences;

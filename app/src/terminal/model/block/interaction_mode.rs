@@ -1,11 +1,14 @@
 use anyhow::anyhow;
 use warp_terminal::model::{grid::Dimensions, Point};
 
+// twarp: 2c-d — AI agent / blocklist deleted; stubs (use crate::app_state where present).
+use crate::app_state::AIConversationId;
+pub struct TaskId;
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct AIAgentActionId(pub String);
+pub enum LongRunningCommandControlState { Other }
+pub enum UserTakeOverReason { Other }
 use crate::{
-    ai::{
-        agent::{conversation::AIConversationId, task::TaskId, AIAgentActionId},
-        blocklist::block::cli_controller::{LongRunningCommandControlState, UserTakeOverReason},
-    },
     terminal::{
         event::Event,
         model::{

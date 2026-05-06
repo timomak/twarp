@@ -18,10 +18,12 @@ pub use super::BlockId;
 use super::{bootstrap::BootstrapStage, find::RegexDFAs};
 use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
 
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::blocklist::agent_view::{AgentViewDisplayMode, AgentViewState};
+// twarp: 2c-d — AI agent view / redaction deleted; stubs.
+use crate::app_state::AIConversationId;
+pub enum AgentViewDisplayMode { Other }
+pub struct AgentViewState;
+pub fn redact_secrets(_text: &str) -> String { String::new() }
 use crate::{
-    ai::agent::redaction::redact_secrets,
     context_chips::prompt_snapshot::PromptSnapshot,
     server::{block::DisplaySetting, ids::SyncId},
     terminal::{

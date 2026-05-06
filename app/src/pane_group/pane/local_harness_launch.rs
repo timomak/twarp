@@ -5,15 +5,17 @@ use uuid::Uuid;
 use warp_cli::agent::Harness;
 use warp_managed_secrets::ManagedSecretValue;
 
-use crate::ai::{
-    agent_sdk::{
-        driver::AgentDriverError, task_env_vars, validate_cli_installed, ClaudeHarness,
-        ThirdPartyHarness,
-    },
-    ambient_agents::{task::HarnessConfig, AgentConfigSnapshot, AmbientAgentTaskId},
-};
-use crate::server::server_api::ai::AIClient;
-use crate::terminal::cli_agent_sessions::plugin_manager::plugin_manager_for;
+// twarp: 2c-d — AI agent SDK / ambient / cli agent sessions deleted; stubs.
+use crate::app_state::AmbientAgentTaskId;
+pub enum AgentDriverError { Other }
+pub fn task_env_vars() {}
+pub fn validate_cli_installed() {}
+pub struct ClaudeHarness;
+pub struct ThirdPartyHarness;
+pub struct HarnessConfig;
+pub struct AgentConfigSnapshot;
+pub trait AIClient {}
+pub fn plugin_manager_for() {}
 use crate::terminal::shell::ShellType;
 
 #[derive(Clone)]

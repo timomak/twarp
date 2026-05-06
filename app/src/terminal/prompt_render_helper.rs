@@ -1,4 +1,5 @@
-use crate::ai::blocklist::BlocklistAIInputModel;
+// twarp: 2c-d — BlocklistAIInputModel deleted; stub.
+pub struct BlocklistAIInputModel;
 use crate::context_chips::display::PromptDisplay;
 use crate::context_chips::spacing;
 use crate::features::FeatureFlag;

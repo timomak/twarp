@@ -23,12 +23,32 @@ use warpui::platform::Cursor;
 use warpui::ui_components::components::UiComponent;
 use warpui::{Action, View, ViewContext};
 
-use crate::ai::blocklist::agent_view::toolbar_item::AgentToolbarItemKind;
+// twarp 2c-d: stub replacement for the removed AI agent toolbar item kind. The chip
+// configurator was originally generic over `AgentToolbarItemKind`; with the AI feature
+// gone, we only need the variants the non-AI consumers (header toolbar editor, prompt
+// editor) actually exercise, plus a `ContextChip` carrier for the chip path.
+#[derive(Clone, Debug)]
+pub enum AgentToolbarItemKind {
+    ContextChip(ContextChipKind),
+}
+
+impl AgentToolbarItemKind {
+    pub fn display_label(&self) -> &str {
+        match self {
+            AgentToolbarItemKind::ContextChip(_) => "",
+        }
+    }
+
+    pub fn icon(&self) -> Option<crate::ui_components::icons::Icon> {
+        None
+    }
+}
+
 use crate::appearance::Appearance;
 use crate::context_chips::display_chip::{chip_container, udi_font_size};
 use crate::context_chips::renderer::{ChipDragState, Renderer as ContextChipRenderer};
 use crate::context_chips::spacing;
-use crate::context_chips::{ChipAvailability, ContextChipKind};
+use crate::context_chips::ContextChipKind;
 use crate::ui_components::icons;
 
 const USED_CHIPS_POSITION_ID: &str = "chip_cfg_used";
@@ -44,29 +64,6 @@ pub enum ConfigurableItem {
 }
 
 impl ConfigurableItem {
-    pub fn from_toolbar_item(kind: AgentToolbarItemKind, appearance: &Appearance) -> Option<Self> {
-        match kind {
-            AgentToolbarItemKind::ContextChip(chip_kind) => {
-                ContextChipRenderer::default_from_kind_with_agent_view(
-                    chip_kind,
-                    ChipAvailability::Enabled,
-                    true,
-                    appearance,
-                )
-                .map(Box::new)
-                .map(Self::ContextChip)
-            }
-            control => Some(Self::Control(ControlItemRenderer::new(control))),
-        }
-    }
-
-    pub fn item_kind(&self) -> Option<AgentToolbarItemKind> {
-        match self {
-            Self::ContextChip(r) => Some(AgentToolbarItemKind::ContextChip(r.chip_kind().clone())),
-            Self::Control(r) => r.kind.clone(),
-        }
-    }
-
     pub fn chip_kind(&self) -> Option<&ContextChipKind> {
         match self {
             Self::ContextChip(r) => Some(r.chip_kind()),

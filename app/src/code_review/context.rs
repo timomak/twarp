@@ -1,4 +1,5 @@
-use crate::ai::agent::DiffSetHunk;
+// twarp: 2c-d — AI agent / blocklist deleted; stubs.
+use crate::code_review::code_review_view::DiffSetHunk;
 use crate::code_review::diff_state::{DiffLineType, FileDiff};
 use std::collections::HashMap;
 use warp_editor::render::model::LineCount;
@@ -6,8 +7,8 @@ use warp_editor::render::model::LineCount;
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
         use std::path::Path;
-        use crate::ai::agent::{AIAgentAttachment, CurrentHead, DiffBase};
-        use crate::ai::blocklist::BlocklistAIContextModel;
+        use crate::code_review::code_review_view::{AIAgentAttachment, CurrentHead, DiffBase};
+        pub struct BlocklistAIContextModel;
         use crate::code_review::{diff_state::DiffMode, DiffSetScope};
         use warpui::{AppContext, ModelHandle};
     }

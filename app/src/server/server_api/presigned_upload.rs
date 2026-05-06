@@ -16,8 +16,8 @@ use crc::{Crc, CRC_32_ISCSI};
 use futures_lite::io::AsyncReadExt as _;
 use thiserror::Error;
 
-#[cfg(not(target_family = "wasm"))]
-use super::ai::FileArtifactUploadTargetInfo;
+// twarp: 2c-d — server_api::ai deleted; stub.
+pub struct FileArtifactUploadTargetInfo;
 use super::harness_support::UploadTarget;
 
 /// Typed error for HTTP-backed operations so downstream classifiers (e.g. the agent-SDK

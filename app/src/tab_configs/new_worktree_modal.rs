@@ -29,8 +29,9 @@ pub fn init(app: &mut AppContext) {
 
 use warp_core::ui::theme::color::internal_colors;
 
+// twarp: 2c-d — PersistedWorkspace deleted; stub.
+pub struct PersistedWorkspace;
 use crate::{
-    ai::persisted_workspace::PersistedWorkspace,
     appearance::Appearance,
     editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions},
     modal::ModalAction,

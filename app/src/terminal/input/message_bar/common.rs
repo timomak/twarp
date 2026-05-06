@@ -1,4 +1,5 @@
-use crate::ai::blocklist::agent_view::agent_view_bg_color;
+// twarp: 2c-d — agent_view_bg_color deleted; stub.
+pub fn agent_view_bg_color() {}
 use pathfinder_color::ColorU;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::Fill;
@@ -12,7 +13,8 @@ use warpui::prelude::{Align, ConstrainedBox, CrossAxisAlignment, Flex, Text};
 use warpui::ui_components::keyboard_shortcut::keystroke_to_keys;
 use warpui::{AppContext, SingletonEntity};
 
-use crate::ai::blocklist::agent_view::shortcuts::render_keystroke_with_color_overrides;
+// twarp: 2c-d — render_keystroke_with_color_overrides deleted; stub.
+pub fn render_keystroke_with_color_overrides() -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
 use crate::terminal;
 use crate::terminal::input::message_bar::{ChipHorizontalAlignment, Message, MessageItem};
 use crate::ui_components::blended_colors;

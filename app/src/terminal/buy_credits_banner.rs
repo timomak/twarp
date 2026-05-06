@@ -20,9 +20,10 @@ use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::{Coords, UiComponent as _, UiComponentStyles};
 use warpui::{AppContext, Element, Entity, SingletonEntity as _, View, ViewContext, ViewHandle};
 
-use crate::ai::request_usage_model::{
-    AIRequestUsageModel, AIRequestUsageModelEvent, BuyCreditsBannerDisplayState,
-};
+// twarp: 2c-d — AI request usage deleted; stubs.
+pub struct AIRequestUsageModel;
+pub enum AIRequestUsageModelEvent { Other }
+pub enum BuyCreditsBannerDisplayState { Other }
 use crate::auth::AuthStateProvider;
 use crate::features::FeatureFlag;
 use crate::menu::MenuItemFields;

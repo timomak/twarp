@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
-use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
+// twarp: 2c-d — AI blocklist deleted; stubs.
+pub enum BlocklistAIHistoryEvent { Other }
+pub struct BlocklistAIHistoryModel;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::model::persistence::CloudModelEvent;
@@ -1189,7 +1191,7 @@ impl SharingDialog {
     fn remove_targeted_guest_for_conversation(
         &mut self,
         guest_idx: usize,
-        conversation_id: crate::ai::agent::conversation::AIConversationId,
+        conversation_id: crate::app_state::AIConversationId,
         ctx: &mut ViewContext<Self>,
     ) {
         let Some(guest) = self.guest_states.get(guest_idx) else {
@@ -1231,7 +1233,7 @@ impl SharingDialog {
         &mut self,
         guest_idx: usize,
         access_level: SharingAccessLevel,
-        conversation_id: crate::ai::agent::conversation::AIConversationId,
+        conversation_id: crate::app_state::AIConversationId,
         ctx: &mut ViewContext<Self>,
     ) {
         let guest_email = match self.guest_states.get(guest_idx) {
@@ -1273,7 +1275,7 @@ impl SharingDialog {
         &mut self,
         guest_emails: Vec<String>,
         access_level: SharingAccessLevel,
-        conversation_id: crate::ai::agent::conversation::AIConversationId,
+        conversation_id: crate::app_state::AIConversationId,
         ctx: &mut ViewContext<Self>,
     ) {
         // Get the conversation's server_id from metadata

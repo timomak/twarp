@@ -19,14 +19,14 @@ use super::{
     server_api::{auth::UserAuthenticationError, object::ObjectClient},
 };
 
-use crate::ai::mcp::templatable::CloudTemplatableMCPServerModel;
+// twarp: 2c-d — AI cloud models deleted; stubs.
+pub struct CloudTemplatableMCPServerModel;
+pub struct CloudScheduledAmbientAgentModel;
+pub struct CloudAIExecutionProfileModel;
+pub struct CloudAIFactModel;
+pub struct CloudMCPServerModel;
 use crate::server::cloud_objects::update_manager::InitiatedBy;
 use crate::{
-    ai::{
-        ambient_agents::scheduled::CloudScheduledAmbientAgentModel,
-        execution_profiles::CloudAIExecutionProfileModel, facts::CloudAIFactModel,
-        mcp::CloudMCPServerModel,
-    },
     cloud_object::{
         model::{
             actions::{ObjectAction, ObjectActionHistory, ObjectActionSubtype, ObjectActionType},

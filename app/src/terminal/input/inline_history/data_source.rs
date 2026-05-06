@@ -6,9 +6,10 @@
 //! - Commands are deduplicated, keeping the most recent occurrence
 //! - The result is that current session items appear at the bottom (closer to input)
 
-use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
-use crate::ai::blocklist::agent_view::AgentViewController;
-use crate::ai::blocklist::BlocklistAIHistoryModel;
+// twarp: 2c-d — AI conversation / agent_view / blocklist deleted; stubs.
+use crate::app_state::{AIConversationId, ConversationStatus};
+pub struct AgentViewController;
+pub struct BlocklistAIHistoryModel;
 use crate::input_suggestions::{HistoryInputSuggestion, HistoryOrder};
 use crate::search::data_source::{Query, QueryFilter, QueryResult};
 use crate::search::mixer::DataSourceRunErrorWrapper;

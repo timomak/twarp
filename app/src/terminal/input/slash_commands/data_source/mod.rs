@@ -15,24 +15,27 @@ use warp_core::ui::appearance::Appearance;
 use warpui::fonts::FamilyId;
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
-use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::ai::skills::{SkillDescriptor, SkillManager};
+// twarp: 2c-d — AI history / skills / agent view / CLI subagent / cli agent sessions deleted; stubs.
+use crate::context_chips::display::BlocklistAIHistoryModel;
+use crate::context_chips::display_chip::AgentViewController;
 use crate::search::data_source::{Query, QueryResult};
 use crate::search::mixer::DataSourceRunErrorWrapper;
 use crate::search::slash_command_menu::fuzzy_match::SlashCommandFuzzyMatchResult;
 use crate::search::slash_command_menu::static_commands::Availability;
-use crate::terminal::cli_agent_sessions::{
-    CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
-};
 use crate::terminal::model::session::SessionType;
 use warp_core::ui::Icon as WarpIcon;
 
+pub struct SkillDescriptor;
+pub struct SkillManager;
+pub struct CLIAgentInputState;
+pub struct CLIAgentSessionsModel;
+pub enum CLIAgentSessionsModelEvent { Other }
+pub enum AgentViewControllerEvent { Other }
+pub struct CLISubagentController;
+pub enum CLISubagentEvent { Other }
+
 use super::AcceptSlashCommandOrSavedPrompt;
 use crate::{
-    ai::blocklist::{
-        agent_view::{AgentViewController, AgentViewControllerEvent},
-        block::cli_controller::{CLISubagentController, CLISubagentEvent},
-    },
     search::{
         slash_command_menu::{
             static_commands::commands::{self, COMMAND_REGISTRY},

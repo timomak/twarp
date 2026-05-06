@@ -3,8 +3,10 @@ use input_classifier::InputType;
 use warp_core::features::FeatureFlag;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
-use crate::ai::blocklist::{BlocklistAIInputEvent, BlocklistAIInputModel};
-use crate::ai::skills::SkillManager;
+// twarp: 2c-d — AI blocklist / skills deleted; stubs.
+pub enum BlocklistAIInputEvent { Other }
+pub struct BlocklistAIInputModel;
+pub struct SkillManager;
 use crate::search::slash_command_menu::StaticCommand;
 use crate::settings::InputSettings;
 use crate::terminal::input::buffer_model::{InputBufferModel, InputBufferUpdateEvent};

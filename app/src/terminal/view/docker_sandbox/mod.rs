@@ -20,8 +20,11 @@ use crate::terminal::local_tty::docker_sandbox::resolve_sbx_path_from_user_shell
 #[cfg(feature = "local_tty")]
 use crate::terminal::TerminalManager;
 
+// twarp: 2c-d — agent_sdk driver deleted; stubs.
 #[cfg(not(target_family = "wasm"))]
-use crate::ai::agent_sdk::driver::{terminal::TerminalDriver, WARP_DRIVE_SYNC_TIMEOUT};
+pub struct TerminalDriver;
+#[cfg(not(target_family = "wasm"))]
+pub const WARP_DRIVE_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(0);
 #[cfg(not(target_family = "wasm"))]
 use crate::server::cloud_objects::update_manager::UpdateManager;
 #[cfg(not(target_family = "wasm"))]

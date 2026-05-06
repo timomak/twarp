@@ -1,12 +1,12 @@
 pub mod util;
 
+// twarp: 2c-d — AI ambient/execution_profiles/facts/mcp deleted; stubs.
+pub struct CloudScheduledAmbientAgentModel;
+pub struct CloudAIExecutionProfileModel;
+pub struct CloudAIFactModel;
+pub struct CloudTemplatableMCPServerModel;
+pub struct CloudMCPServerModel;
 use crate::{
-    ai::{
-        ambient_agents::scheduled::CloudScheduledAmbientAgentModel,
-        execution_profiles::CloudAIExecutionProfileModel,
-        facts::CloudAIFactModel,
-        mcp::{templatable::CloudTemplatableMCPServerModel, CloudMCPServerModel},
-    },
     cloud_object::{
         model::generic_string_model::GenericStringObjectId, GenericServerObject,
         RevisionAndLastEditor, ServerFolder, ServerObject, UpdateCloudObjectResult,

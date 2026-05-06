@@ -8,8 +8,6 @@ use crate::{app_state::get_app_state, server::server_api::ServerApiProvider};
 use ::settings::ToggleableSetting;
 use warp_core::execution_mode::AppExecutionMode;
 
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::AIAgentExchangeId;
 use crate::root_view::OpenPath;
 use crate::undo_close::UndoCloseStack;
 use crate::workspace::{Workspace, WorkspaceAction};
@@ -46,18 +44,16 @@ impl ForkedConversationDestination {
 }
 
 /// Specifies the exchange at which to fork an AI conversation.
+/// twarp 2c-d: kept as opaque stub after AI removal.
 #[derive(Debug, Clone, Copy)]
 pub struct ForkFromExchange {
-    pub exchange_id: AIAgentExchangeId,
-    /// When true, the fork stops immediately after this exchange without extending
-    /// to the next user query boundary.
     pub fork_from_exact_exchange: bool,
 }
 
 /// Parameters for forking an AI conversation.
+/// twarp 2c-d: kept as opaque stub after AI removal.
 pub struct ForkAIConversationParams {
-    pub conversation_id: AIConversationId,
-    /// When Some, fork from the given response (or exchange if `fork_from_exact_exchange` is true).
+    pub conversation_id: String,
     pub fork_from_exchange: Option<ForkFromExchange>,
     pub summarize_after_fork: bool,
     pub summarization_prompt: Option<String>,
@@ -213,7 +209,7 @@ fn fork_ai_conversation(params: &ForkAIConversationParams, ctx: &mut AppContext)
     dispatch_to_active_workspace(
         ctx,
         WorkspaceAction::ForkAIConversation {
-            conversation_id: params.conversation_id,
+            conversation_id: params.conversation_id.clone(),
             fork_from_exchange: params.fork_from_exchange,
             summarize_after_fork: params.summarize_after_fork,
             summarization_prompt: params.summarization_prompt.clone(),

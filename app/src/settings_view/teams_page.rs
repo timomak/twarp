@@ -11,7 +11,8 @@ use super::{
     tab_menu::Tabs,
 };
 
-use crate::ai::AIRequestUsageModel;
+// twarp: 2c-d — AIRequestUsageModel deleted; stub.
+pub struct AIRequestUsageModel;
 use crate::auth::auth_manager::{AuthManager, LoginGatedFeature};
 use crate::auth::auth_state::AuthState;
 use crate::auth::auth_view_modal::AuthViewVariant;

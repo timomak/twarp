@@ -31,8 +31,9 @@ use warpui::{
 
 use settings::Setting;
 
+// twarp: 2c-d — AI usage deleted; stub.
+pub struct AIRequestUsageModel;
 use crate::{
-    ai::AIRequestUsageModel,
     auth::{
         auth_manager::LoginGatedFeature, auth_state::AuthState, auth_view_modal::AuthViewVariant,
         AuthManager, AuthStateProvider, UserUid,
@@ -119,7 +120,8 @@ const ADDITIONAL_ADDON_CREDITS_DESCRIPTION_FOR_TEAM: &str =
 // Cloud agent trial widget constants.
 const AMBIENT_AGENT_TRIAL_TITLE: &str = "Cloud agent trial";
 /// The threshold below which we only show the "Buy more" button (not "New agent").
-use crate::ai::request_usage_model::AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD;
+// twarp: 2c-d — AI request usage threshold deleted; stub.
+pub const AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD: i64 = 0;
 
 pub fn create_discount_badge(discount: u32, appearance: &Appearance) -> Box<dyn Element> {
     if discount == 0 {

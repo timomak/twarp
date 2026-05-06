@@ -3,7 +3,8 @@ use super::{
     TerminalAction,
 };
 
-use crate::ai::prompt_suggestions::ACCEPT_PROMPT_SUGGESTION_KEYBINDING;
+// twarp: 2c-d.4 — inlined ACCEPT_PROMPT_SUGGESTION_KEYBINDING from deleted ai::prompt_suggestions
+const ACCEPT_PROMPT_SUGGESTION_KEYBINDING: &str = "terminal:accept_prompt_suggestions";
 use crate::server::telemetry::ToggleBlockFilterSource;
 
 use crate::server::telemetry::InteractionSource;

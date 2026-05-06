@@ -35,10 +35,7 @@ use warpui::{
 };
 
 use crate::{
-    ai::{
-        blocklist::secret_redaction::find_secrets_in_text,
-        document::ai_document_model::AIDocumentId,
-    },
+    app_state::AIDocumentId,
     appearance::Appearance,
     cloud_object::{
         grab_edit_access_modal::{GrabEditAccessModal, GrabEditAccessModalEvent},
@@ -811,28 +808,8 @@ impl NotebookView {
         self.send_edit_telemetry = true;
         let content = Arc::new(self.content(ctx));
 
-        // Block saving if secrets are detected in the notebook when secret redaction is enabled.
-        let secret_redaction = get_secret_obfuscation_mode(ctx);
-        if secret_redaction.should_redact_secret() {
-            let content_escaped = ESCAPE_PUNCTUATION_REGEX
-                .replace_all(&content, "$1")
-                .to_string();
-            let content_secrets = find_secrets_in_text(&content_escaped);
-            if !content_secrets.is_empty() {
-                let window_id = ctx.window_id();
-                ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    toast_stack.add_ephemeral_toast(
-                        DismissibleToast::error(
-                            "This notebook cannot be saved because its content contains secrets"
-                                .to_string(),
-                        ),
-                        window_id,
-                        ctx,
-                    );
-                });
-                return;
-            }
-        }
+        // twarp: 2c-d — secret detection removed with AI module; previous gating no-ops.
+        let _ = get_secret_obfuscation_mode(ctx);
 
         let active_notebook = self.active_notebook_data.as_ref(ctx).active_notebook();
         match active_notebook {
@@ -1740,27 +1717,8 @@ impl NotebookView {
         let title: Arc<String> = self.title.as_ref(ctx).buffer_text(ctx).into();
 
         // Block saving if secrets are detected in the notebook title when secret redaction is enabled.
-        let secret_redaction = get_secret_obfuscation_mode(ctx);
-        if secret_redaction.should_redact_secret() {
-            let title_escaped = ESCAPE_PUNCTUATION_REGEX
-                .replace_all(&title, "$1")
-                .to_string();
-            let title_secrets = find_secrets_in_text(&title_escaped);
-            if !title_secrets.is_empty() {
-                let window_id = ctx.window_id();
-                ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    toast_stack.add_ephemeral_toast(
-                        DismissibleToast::error(
-                            "This notebook cannot be saved because its title contains secrets"
-                                .to_string(),
-                        ),
-                        window_id,
-                        ctx,
-                    );
-                });
-                return;
-            }
-        }
+        // twarp: 2c-d — secret detection removed with AI module.
+        let _ = get_secret_obfuscation_mode(ctx);
 
         let active_notebook = self.active_notebook_data.as_ref(ctx).active_notebook();
         match active_notebook {

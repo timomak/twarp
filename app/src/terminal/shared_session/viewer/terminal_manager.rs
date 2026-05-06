@@ -16,14 +16,17 @@ use std::sync::Arc;
 
 use warpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WeakViewHandle, WindowId};
 
-use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::agent::conversation::ConversationStatus;
-use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
-use crate::ai::blocklist::{
-    BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIHistoryEvent,
-    BlocklistAIHistoryModel,
-};
-use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
+// twarp: 2c-d — AI active/agent/blocklist/llms deleted; stubs.
+use crate::app_state::ConversationStatus;
+pub struct ActiveAgentViewsModel;
+pub struct AgentViewController;
+pub enum AgentViewControllerEvent { Other }
+pub enum BlocklistAIContextEvent { Other }
+pub struct BlocklistAIContextModel;
+pub enum BlocklistAIHistoryEvent { Other }
+pub struct BlocklistAIHistoryModel;
+pub struct LLMPreferences;
+pub enum LLMPreferencesEvent { Other }
 use crate::context_chips::prompt_snapshot::PromptSnapshot;
 use crate::context_chips::prompt_type::PromptType;
 use crate::features::FeatureFlag;
@@ -41,9 +44,10 @@ use crate::terminal::PTY_READS_BROADCAST_CHANNEL_SIZE;
 
 use crate::terminal::session_settings::SessionSettings;
 
-use crate::terminal::cli_agent_sessions::{
-    CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
-};
+// twarp: 2c-d — cli agent sessions deleted; stubs.
+pub struct CLIAgentInputState;
+pub struct CLIAgentSessionsModel;
+pub enum CLIAgentSessionsModelEvent { Other }
 use crate::terminal::shared_session::manager::Manager;
 use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use crate::terminal::shared_session::shared_handlers::{
@@ -59,8 +63,9 @@ use super::network::{
     control_action_failure_reason_string, session_ended_reason_string,
     viewer_removed_reason_string, write_to_pty_failure_reason_string, Network, NetworkEvent,
 };
-use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::terminal::view::ambient_agent::is_cloud_agent_pre_first_exchange;
+use crate::app_state::AmbientAgentTaskId;
+// twarp: 2c-d — ambient agent helper deleted; stub.
+fn is_cloud_agent_pre_first_exchange() -> bool { false }
 use crate::terminal::view::ExecuteCommandEvent;
 use crate::terminal::{Event as TerminalViewEvent, TerminalModel, TerminalView};
 use crate::view_components::ToastFlavor;

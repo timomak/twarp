@@ -12,14 +12,17 @@ use warpui::{
     SingletonEntity, ViewContext,
 };
 
+// twarp: 2c-d — AI code review content / AIClient deleted; stubs.
+pub struct GenerateCodeReviewContentRequest;
+pub enum OutputType { Other }
+pub trait AIClient {}
 use crate::{
-    ai::generate_code_review_content::api::{GenerateCodeReviewContentRequest, OutputType},
     code_review::git_dialog::{
         interactive_path_future, render_branch_section, render_file_changes_box,
         should_send_git_ops_ai_request, show_toast, user_facing_git_error, GitDialog,
         GitDialogAction, GitDialogEvent, GitDialogMode,
     },
-    server::server_api::{ai::AIClient, ServerApiProvider},
+    server::server_api::ServerApiProvider,
     ui_components::icons::Icon,
     util::git::{
         create_pr, get_branch_commit_messages, get_branch_diff_entries, get_diff_for_pr,

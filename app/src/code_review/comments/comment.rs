@@ -1,12 +1,24 @@
-use crate::{
-    ai::agent::{CurrentHead, DiffBase},
-    code::editor::{line::EditorLineLocation, EditorReviewComment},
-};
+use crate::code::editor::{line::EditorLineLocation, EditorReviewComment};
 use chrono::{DateTime, Local};
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use warp_editor::render::model::LineCount;
 use warp_multi_agent_api::{self as api};
+
+// twarp 2c-d: stubs for the removed AI types these structs used to carry. They
+// were only consumed when sending review comments to the agent. The conversions
+// to api types previously sent comments to the agent — now they just materialize
+// the type and downstream code skips sending.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CurrentHead {
+    BranchName(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DiffBase {
+    UncommittedChanges,
+    BranchName(String),
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum CommentOrigin {
@@ -122,30 +134,33 @@ impl From<AttachedReviewComment> for api::ReviewComment {
                     }
                 });
 
+                // twarp 2c-d: AI agent integration removed; current/base no longer sent.
+                let _ = val.head.to_owned();
+                let _ = val.base;
                 api::review_comment::CommentTarget::CommentedLine(api::DiffHunk {
                     file_path: absolute_file_path.to_string_lossy().to_string(),
                     line_range,
                     diff_content: content.content,
                     lines_added: content.lines_added.as_u32(),
                     lines_removed: content.lines_removed.as_u32(),
-                    current: val.head.to_owned().map(Into::into),
-                    base: val.base.map(Into::into),
+                    current: None,
+                    base: None,
                 })
             }
             AttachedReviewCommentTarget::File { absolute_file_path } => {
                 api::review_comment::CommentTarget::CommentedFile(
                     api::review_comment::CommentedFile {
                         file_path: absolute_file_path.to_string_lossy().to_string(),
-                        current: val.head.to_owned().map(Into::into),
-                        base: val.base.map(Into::into),
+                        current: None,
+                        base: None,
                     },
                 )
             }
             AttachedReviewCommentTarget::General => {
                 api::review_comment::CommentTarget::CommentedDiffset(
                     api::review_comment::CommentedDiffset {
-                        current: val.head.to_owned().map(Into::into),
-                        base: val.base.map(Into::into),
+                        current: None,
+                        base: None,
                     },
                 )
             }

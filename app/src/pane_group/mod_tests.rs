@@ -290,29 +290,29 @@ impl pane::PaneContent for PreAttachReturnsFalsePane {
 // #[test]
 // #[allow(clippy::clone_on_copy)]
 // fn test_pane_history() {
-//     App::test((), |mut app| async move {
-//         let pane_group = mock_pane_group(&mut app, platform);
+    App::test((), |mut app| async move {
+        let pane_group = mock_pane_group(&mut app, platform);
 
-//         pane_group.update(&mut app, |panes, ctx| {
-//             let mut entity_ids: Vec<EntityId> =
-//                 panes.view_id_to_session_data.keys().cloned().collect();
+        pane_group.update(&mut app, |panes, ctx| {
+            let mut entity_ids: Vec<EntityId> =
+                panes.view_id_to_session_data.keys().cloned().collect();
 
-//             let first_entity_id = entity_ids.get(0).unwrap().clone();
+            let first_entity_id = entity_ids.get(0).unwrap().clone();
 
-//             // Add pane Left.
-//             panes.add_pane(Direction::Left, ctx);
-//             entity_ids = panes.view_id_to_session_data.keys().cloned().collect();
-//             entity_ids.retain(|x| *x != first_entity_id);
-//             let second_entity_id = entity_ids.get(0).unwrap().clone();
-//             // Add pane Up.
-//             panes.add_pane(Direction::Up, ctx);
-//             entity_ids = panes.view_id_to_session_data.keys().cloned().collect();
-//             entity_ids.retain(|x| *x != first_entity_id && *x != second_entity_id);
-//             let third_entity_id = entity_ids.get(0).unwrap().clone();
+            // Add pane Left.
+            panes.add_pane(Direction::Left, ctx);
+            entity_ids = panes.view_id_to_session_data.keys().cloned().collect();
+            entity_ids.retain(|x| *x != first_entity_id);
+            let second_entity_id = entity_ids.get(0).unwrap().clone();
+            // Add pane Up.
+            panes.add_pane(Direction::Up, ctx);
+            entity_ids = panes.view_id_to_session_data.keys().cloned().collect();
+            entity_ids.retain(|x| *x != first_entity_id && *x != second_entity_id);
+            let third_entity_id = entity_ids.get(0).unwrap().clone();
 
-//             assert!(panes.prev_session_id(third_entity_id).unwrap() == second_entity_id);
-//         })
-//     });
+            assert!(panes.prev_session_id(third_entity_id).unwrap() == second_entity_id);
+        })
+    });
 // }
 
 #[test]

@@ -2,8 +2,9 @@ use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::server::telemetry::MCPServerCollectionPaneEntrypoint;
 use crate::settings_view::mcp_servers_page::MCPServersSettingsPage;
 use crate::TelemetryEvent;
+// twarp: 2c-d — AI execution profiles deleted; use stub.
+use crate::app_state::ClientProfileId;
 use crate::{
-    ai::execution_profiles::profiles::ClientProfileId,
     appearance::Appearance,
     editor::{
         EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
@@ -81,7 +82,7 @@ mod features;
 mod features_page;
 pub mod keybindings;
 mod main_page;
-pub mod mcp_servers;
+// twarp: 2c-d — mcp_servers/ subdirectory removed; mcp_servers_page is now a stub
 pub mod mcp_servers_page;
 mod nav;
 pub mod pane_manager;

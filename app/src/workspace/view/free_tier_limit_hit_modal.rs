@@ -1,4 +1,6 @@
-use crate::ai::{AIRequestUsageModel, AIRequestUsageModelEvent};
+// twarp: 2c-d — AIRequestUsageModel deleted; stubs.
+pub struct AIRequestUsageModel;
+pub enum AIRequestUsageModelEvent { Other }
 use crate::auth::AuthStateProvider;
 use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};
 use crate::ui_components::blended_colors;

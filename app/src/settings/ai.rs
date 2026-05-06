@@ -8,9 +8,10 @@ use std::path::PathBuf;
 
 use indexmap::IndexMap;
 
-use crate::ai::request_usage_model::RequestLimitInfo;
+// twarp: 2c-d — AI request usage / CLIAgent deleted; stubs.
+pub struct RequestLimitInfo;
+use crate::app_state::CLIAgent;
 use crate::report_if_error;
-use crate::terminal::CLIAgent;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use cfg_if::cfg_if;
 use chrono::{DateTime, Utc};

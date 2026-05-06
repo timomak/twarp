@@ -1,4 +1,5 @@
-use crate::ai::agent::AgentReviewCommentBatch;
+// twarp: 2c-d — AI agent review batch deleted; reuse stub from code_review_view.
+use crate::code_review::code_review_view::AgentReviewCommentBatch;
 use crate::code_review::code_review_header::HEADER_BUTTON_PADDING;
 #[cfg(feature = "local_fs")]
 use crate::code_review::code_review_view::CodeReviewAction;
@@ -11,9 +12,10 @@ use crate::pane_group::pane::view::header::{components::HEADER_EDGE_PADDING, PAN
 use crate::pane_group::WorkingDirectoriesEvent;
 use crate::pane_group::{Event as PaneGroupEvent, PaneGroup, WorkingDirectoriesModel};
 use crate::settings::{AISettings, AISettingsChangedEvent};
-use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
+// twarp: 2c-d — CLI agent sessions deleted; stubs.
+use crate::app_state::CLIAgent;
+pub struct CLIAgentSessionsModel;
 use crate::terminal::input::MenuPositioning;
-use crate::terminal::CLIAgent;
 use crate::ui_components::{buttons::icon_button_with_color, icons};
 use crate::util::bindings::{keybinding_name_to_display_string, CustomAction};
 #[cfg(feature = "local_fs")]

@@ -9,7 +9,8 @@ use warp_core::ui::theme::{Fill, WarpTheme};
 use warpui::color::ColorU;
 use warpui::{AppContext, SingletonEntity};
 
-use crate::ai::blocklist::agent_view::agent_view_bg_fill;
+// twarp: 2c-d — agent_view_bg_fill deleted; stub.
+pub fn agent_view_bg_fill() {}
 use crate::search::result_renderer::ItemHighlightState;
 
 /// Font size used for inline menu items.

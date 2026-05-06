@@ -1,6 +1,6 @@
 //! [`TerminalView`]-specific implementation for shared sessions.
 
-use crate::ai::blocklist::BlocklistAIHistoryModel;
+// twarp: 2c-d — BlocklistAIHistoryModel deleted; conversation gating removed.
 use crate::auth::UserUid;
 use crate::context_chips::ContextChipKind;
 use crate::drive::sharing::ShareableObject;
@@ -22,8 +22,8 @@ use crate::terminal::shared_session::{
     COPY_LINK_TEXT,
 };
 use crate::terminal::view::{
-    ContextMenuAction, Event, InlineBannerItem, InlineBannerType, RichContentInsertionPosition,
-    SharedSessionBanners, SizeUpdateBuilder, TerminalAction, TerminalView,
+    ContextMenuAction, Event, InlineBannerItem, InlineBannerType, SharedSessionBanners,
+    SizeUpdateBuilder, TerminalAction, TerminalView,
 };
 use crate::terminal::TerminalModel;
 use crate::view_components::{DismissibleToast, ToastFlavor};
@@ -69,7 +69,7 @@ use super::adapter::{Adapter, Kind, Participant};
 use super::sharer::inactivity_modal::InactivityModalEvent;
 use super::sharer::Sharer;
 use super::viewer::Viewer;
-use super::ConversationEndedTombstoneView;
+// twarp: 2c-d — ConversationEndedTombstoneView deleted (AI-only).
 
 impl TerminalView {
     pub fn sharer_session_kind(&self) -> Option<&Kind> {
@@ -442,22 +442,8 @@ impl TerminalView {
             return;
         }
 
-        // Check if we're trying to share without scrollback while agent shared sessions is enabled
-        // and there are active conversations. This would break the viewer experience since they
-        // wouldn't receive the conversation history they need to continue conversations.
-        if !bypass_conversation_guard
-            && FeatureFlag::AgentSharedSessions.is_enabled()
-            && scrollback_type == SharedSessionScrollbackType::None
-        {
-            let has_conversations = BlocklistAIHistoryModel::as_ref(ctx)
-                .all_live_conversations_for_terminal_view(ctx.handle().id())
-                .any(|conv| conv.exchange_count() > 0);
-
-            if has_conversations {
-                log::warn!("Cannot share without scrollback when agent conversations exist. Agent shared sessions require conversation history to be shared.");
-                return;
-            }
-        }
+        // twarp: 2c-d — agent-shared-sessions conversation guard removed (no AI conversations).
+        let _ = bypass_conversation_guard;
 
         self.set_show_pane_accent_border(false, ctx);
 
@@ -1542,22 +1528,8 @@ impl TerminalView {
         ctx.notify();
     }
 
-    pub fn insert_conversation_ended_tombstone(&mut self, ctx: &mut ViewContext<Self>) {
-        let task_id = self.model.lock().ambient_agent_task_id();
-        let terminal_view_id = self.id();
-
-        let tombstone_view_handle = ctx.add_typed_action_view(|ctx| {
-            ConversationEndedTombstoneView::new(ctx, terminal_view_id, task_id)
-        });
-        self.insert_rich_content(
-            None,
-            tombstone_view_handle,
-            None,
-            RichContentInsertionPosition::Append {
-                insert_below_long_running_block: true,
-            },
-            ctx,
-        );
+    // twarp: 2c-d — conversation-ended tombstone deleted with AI; left as no-op.
+    pub fn insert_conversation_ended_tombstone(&mut self, _ctx: &mut ViewContext<Self>) {
         self.has_inserted_conversation_ended_tombstone = true;
     }
 

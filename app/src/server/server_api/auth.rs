@@ -1,5 +1,8 @@
 use std::{result::Result as StdResult, sync::Arc};
 
+// twarp: 2c-d — AI ModelsByFeature deleted; stub.
+pub struct ModelsByFeature;
+
 use anyhow::{anyhow, bail, Context as _, Result};
 use async_trait::async_trait;
 use cynic::{MutationBuilder, QueryBuilder};
@@ -111,7 +114,7 @@ pub struct FetchUserResult {
     /// Whether this attempt to fetch the user was for refreshing an existing logged-in user.
     pub from_refresh: bool,
     /// LLM model choices for this user.
-    pub llms: crate::ai::llms::ModelsByFeature,
+    pub llms: ModelsByFeature,
 }
 
 #[cfg_attr(test, automock)]
@@ -771,7 +774,7 @@ pub type OAuth2Client = oauth2::basic::BasicClient<
 struct UserProperties {
     user: User,
     server_experiments: Vec<ServerExperiment>,
-    llms: crate::ai::llms::ModelsByFeature,
+    llms: ModelsByFeature,
     api_key_owner_type: Option<OwnerType>,
 }
 

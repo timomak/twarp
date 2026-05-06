@@ -6,7 +6,8 @@ use warpui::elements::ChildView;
 use warpui::{AppContext, Element, ViewContext};
 use warpui::{Entity, ModelHandle, View, ViewHandle};
 
-use crate::ai::blocklist::agent_view::AgentViewController;
+// twarp: 2c-d — AgentViewController deleted; stub.
+pub struct AgentViewController;
 use crate::search::data_source::{Query, QueryFilter};
 use crate::search::mixer::{AddAsyncSourceOptions, SearchMixer};
 use crate::search::slash_command_menu::SlashCommandId;

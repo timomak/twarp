@@ -3,8 +3,9 @@ use warp_core::features::FeatureFlag;
 use warpui::{rendering::GPUPowerPreference, AppContext, SingletonEntity};
 use warpui_extras::user_preferences;
 
+// twarp: 2c-d — AI cloud_agent_settings deleted; stub.
+pub struct CloudAgentSettings;
 use crate::{
-    ai::cloud_agent_settings::CloudAgentSettings,
     appearance,
     banner::BannerState,
     drive::settings::WarpDriveSettings,

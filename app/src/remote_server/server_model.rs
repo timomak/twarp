@@ -32,8 +32,10 @@ pub const GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10 
 /// Unique identifier for a connected proxy session in daemon mode.
 pub type ConnectionId = uuid::Uuid;
 use super::protocol::RequestId;
-use crate::ai::agent::FileLocations;
-use crate::ai::blocklist::{read_local_file_context, ReadFileContextResult};
+// twarp: 2c-d — AI agent / blocklist read deleted; stubs.
+pub struct FileLocations;
+pub fn read_local_file_context() {}
+pub enum ReadFileContextResult { Other }
 use crate::terminal::model::session::command_executor::{
     ExecuteCommandOptions, LocalCommandExecutor,
 };
@@ -1058,51 +1060,11 @@ impl ServerModel {
     }
 }
 
-/// Converts a [`ReadFileContextResult`] into its protobuf equivalent.
-fn file_context_result_to_proto(result: ReadFileContextResult) -> ReadFileContextResponse {
-    use crate::ai::agent::AnyFileContent;
-
-    let file_contexts = result
-        .file_contexts
-        .into_iter()
-        .map(|fc| {
-            let content = match fc.content {
-                AnyFileContent::StringContent(text) => {
-                    super::proto::file_context_proto::Content::TextContent(text)
-                }
-                AnyFileContent::BinaryContent(bytes) => {
-                    super::proto::file_context_proto::Content::BinaryContent(bytes)
-                }
-            };
-            let last_modified_epoch_millis = fc
-                .last_modified
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as u64);
-            FileContextProto {
-                file_name: fc.file_name,
-                content: Some(content),
-                line_range_start: fc.line_range.as_ref().map(|r| r.start as u32),
-                line_range_end: fc.line_range.as_ref().map(|r| r.end as u32),
-                last_modified_epoch_millis,
-                line_count: fc.line_count as u32,
-            }
-        })
-        .collect();
-
-    let failed_files = result
-        .missing_files
-        .into_iter()
-        .map(|path| FailedFileRead {
-            path,
-            error: Some(FileOperationError {
-                message: "File not found or could not be read".to_string(),
-            }),
-        })
-        .collect();
-
+// twarp: 2c-d — file_context_result_to_proto stub (AI ReadFileContextResult deleted).
+fn file_context_result_to_proto(_result: ReadFileContextResult) -> ReadFileContextResponse {
     ReadFileContextResponse {
-        file_contexts,
-        failed_files,
+        file_contexts: Vec::new(),
+        failed_files: Vec::new(),
     }
 }
 

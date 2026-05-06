@@ -1,13 +1,25 @@
 use serde::Serialize;
 use std::rc::Rc;
 
-use crate::ai::agent::api::ServerConversationToken;
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::blocklist::prompt::prompt_alert::{
-    PromptAlertEvent, PromptAlertState, PromptAlertView,
-};
-use crate::ai::blocklist::BlocklistAIInputModel;
-use crate::ai::prompt_suggestions::ACCEPT_PROMPT_SUGGESTION_KEYBINDING;
+// twarp: 2c-d — AI prompt-alert/blocklist input/keybinding deleted; stubs to keep types compiling.
+use crate::app_state::AIConversationId;
+use crate::app_state::ServerConversationToken;
+
+pub const ACCEPT_PROMPT_SUGGESTION_KEYBINDING: &str = "AcceptPromptSuggestion";
+
+pub struct BlocklistAIInputModel;
+pub enum PromptAlertEvent { Other }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PromptAlertState {
+    None,
+    NoConnection,
+    AnonymousUserRequestLimitHardGate,
+    DelinquentDueToPaymentIssue,
+    OveragesToggleableButNotEnabled,
+    MonthlyOveragesSpendLimitReached,
+    RequestLimitReached,
+}
+pub struct PromptAlertView;
 use crate::server::telemetry::InteractionSource;
 use crate::settings::InputSettings;
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
@@ -36,7 +48,12 @@ use warp_core::ui::theme::color::internal_colors::{neutral_2, neutral_3};
 
 use crate::ui_components::icons::Icon as WarpUIIcon;
 
-use crate::ai::agent::{PassiveSuggestionTrigger, StaticQueryType};
+// twarp: 2c-d — AI agent PassiveSuggestionTrigger/StaticQueryType deleted; stubs.
+#[derive(Clone, Debug)]
+pub enum PassiveSuggestionTrigger { Other }
+#[derive(Clone, Debug)]
+pub enum StaticQueryType { Install, Code, Deploy, SomethingElse }
+
 use crate::server::ids::ServerId;
 
 const INLINE_BANNER_SPACING: f32 = 8.;

@@ -1,10 +1,11 @@
 #[cfg(target_family = "wasm")]
 use crate::uri::web_intent_parser::open_url_on_desktop;
+// twarp: 2c-d — AI document/facts/fact_collection deleted; stubs.
+use crate::app_state::AIDocumentId;
+pub struct AIFact;
+pub struct AIMemory;
+pub struct WarpDriveAIFactCollection;
 use crate::{
-    ai::{
-        document::ai_document_model::AIDocumentId,
-        facts::{AIFact, AIMemory},
-    },
     appearance::Appearance,
     auth::{
         auth_manager::{AuthManager, LoginGatedFeature},
@@ -60,8 +61,8 @@ use super::{
     },
     empty_trash_confirmation_dialog::{EmptyTrashConfirmationDialog, EmptyTrashConfirmationEvent},
     folders::CloudFolder,
+    // twarp: 2c-d — ai_fact_collection deleted; stub.
     items::{
-        ai_fact_collection::WarpDriveAIFactCollection,
         item::{tools_panel_menu_direction, ItemStates, WarpDriveRow},
         mcp_server_collection::WarpDriveMCPServerCollection,
         WarpDriveItemId,

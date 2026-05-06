@@ -1,17 +1,21 @@
 use std::sync::Arc;
 
-use crate::ai::blocklist::agent_view::AgentViewController;
-use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
-use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
+// twarp: 2c-d — AI agent view controller / blocklist input/context/history / AI document deleted.
+use crate::app_state::{AIDocumentId, AIDocumentVersion};
 use crate::context_chips::display_chip::format_git_branch_command;
+use crate::context_chips::display_chip::{
+    AgentViewController, BlocklistAIContextModel, BlocklistAIInputModel,
+};
 use crate::settings::InputSettings;
 use crate::terminal::model_events::ModelEventDispatcher;
 use crate::{
-    ai::blocklist::{BlocklistAIContextModel, BlocklistAIInputEvent, BlocklistAIInputModel},
-    completer::SessionContext,
-    context_chips::display_chip::DisplayChipAction,
+    completer::SessionContext, context_chips::display_chip::DisplayChipAction,
     terminal::input::MenuPositioningProvider,
 };
+
+pub struct BlocklistAIHistoryModel;
+pub enum BlocklistAIHistoryEvent { Other }
+pub enum BlocklistAIInputEvent { Other }
 use std::path::PathBuf;
 use warp_core::features::FeatureFlag;
 use warpui::{

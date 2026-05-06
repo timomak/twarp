@@ -1,6 +1,8 @@
 use super::auth::AuthClient;
 use super::ServerApi;
-use crate::ai::generate_block_title::api::{GenerateBlockTitleRequest, GenerateBlockTitleResponse};
+// twarp: 2c-d — AI generate_block_title deleted; stubs.
+pub struct GenerateBlockTitleRequest;
+pub struct GenerateBlockTitleResponse;
 use crate::server::{
     block::{Block, DisplaySetting},
     graphql::{get_request_context, get_user_facing_error_message},

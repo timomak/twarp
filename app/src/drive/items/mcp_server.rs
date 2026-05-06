@@ -1,6 +1,7 @@
 use super::{WarpDriveItem, WarpDriveItemId};
+// twarp: 2c-d — AI MCP CloudMCPServer deleted; stub.
+pub struct CloudMCPServer;
 use crate::{
-    ai::mcp::CloudMCPServer,
     appearance::Appearance,
     cloud_object::CloudObjectMetadata,
     drive::{index::DriveIndexAction, CloudObjectTypeAndId, DriveObjectType},

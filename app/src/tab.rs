@@ -1,5 +1,7 @@
-use crate::ai::agent::conversation::ConversationStatus;
-use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PADDING};
+// twarp: 2c-d — AI conversation status / status UI deleted; stubs.
+use crate::app_state::ConversationStatus;
+pub fn render_status_element() -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
+pub const STATUS_ELEMENT_PADDING: f32 = 0.0;
 use crate::appearance::Appearance;
 /// Tab module contains structures related to Tabs (such as TabData or TabComponent) that simplify
 /// the rendering and management of tabs in general.
@@ -29,7 +31,8 @@ use crate::workspace::tab_settings::{TabCloseButtonPosition, TabSettings};
 use crate::workspace::{
     PaneViewLocator, TabBarDropTargetData, TabBarLocation, TabContextMenuAnchor, WorkspaceAction,
 };
-use crate::BlocklistAIHistoryModel;
+// twarp: 2c-d — BlocklistAIHistoryModel deleted; stub.
+pub struct BlocklistAIHistoryModel;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use serde::{Deserialize, Serialize};

@@ -29,11 +29,12 @@ use warpui::{
     ViewHandle,
 };
 
+// twarp: 2c-d — AI blocklist deleted; stubs.
+pub fn rich_navigation_button() -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
+pub struct KeyboardNavigableButtons;
+pub struct HeaderConfig;
+pub const INLINE_ACTION_HORIZONTAL_PADDING: f32 = 12.0;
 use crate::{
-    ai::blocklist::{
-        block::keyboard_navigable_buttons::{rich_navigation_button, KeyboardNavigableButtons},
-        inline_action::inline_action_header::{HeaderConfig, INLINE_ACTION_HORIZONTAL_PADDING},
-    },
     send_telemetry_from_ctx,
     server::telemetry::TelemetryEvent,
     terminal::model::session::SessionId,

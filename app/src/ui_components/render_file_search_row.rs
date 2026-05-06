@@ -22,9 +22,20 @@ use warpui::text_layout::ClipConfig;
 use warpui::{AppContext, Element};
 
 use crate::appearance::Appearance;
-use crate::search::ai_context_menu::safe_truncate;
 use crate::search::ItemHighlightState;
 use warpui::SingletonEntity;
+
+// twarp: 2c-d.4 — inlined from deleted ai_context_menu::safe_truncate
+fn safe_truncate(s: &mut String, new_len: usize) {
+    if new_len >= s.len() {
+        return;
+    }
+    let mut safe_len = new_len;
+    while safe_len > 0 && !s.is_char_boundary(safe_len) {
+        safe_len -= 1;
+    }
+    s.truncate(safe_len);
+}
 
 pub const MAX_COMBINED_LENGTH: usize = 55;
 

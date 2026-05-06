@@ -1,7 +1,8 @@
 use std::rc::Rc;
 
+// twarp: 2c-d — AI DiffSessionType deleted; stub.
 #[cfg(not(target_family = "wasm"))]
-use crate::ai::blocklist::inline_action::code_diff_view::DiffSessionType;
+pub enum DiffSessionType { Other }
 use ai::diff_validation::DiffType;
 #[cfg(not(target_family = "wasm"))]
 use warp_files::{FileModel, FileModelEvent};

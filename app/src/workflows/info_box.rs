@@ -23,7 +23,7 @@ use string_offset::CharOffset;
 use crate::util::color::coloru_with_opacity;
 use crate::workflows::WorkflowType;
 use crate::{
-    ai::blocklist::ai_brand_color, server::ids::SyncId, settings::InputModeSettings,
+    server::ids::SyncId, settings::InputModeSettings,
     terminal::block_list_viewport::InputMode, ui_components::icons,
     view_components::FilterableDropdownOrientation, workspace::WorkspaceAction,
 };
@@ -923,7 +923,7 @@ impl WorkflowsMoreInfoView {
                         }
                         _ => Icon::new(
                             icons::Icon::Prompt.into(),
-                            ai_brand_color(appearance.theme()),
+                            appearance.theme().accent(), // twarp: 2c-d.4 — was ai_brand_color
                         )
                         .finish(),
                     }

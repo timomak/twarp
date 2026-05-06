@@ -1,7 +1,7 @@
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use crate::{
-    ai::document::ai_document_model::AIDocumentId,
+    app_state::AIDocumentId,
     cloud_object::{
         breadcrumbs::ContainingObject,
         model::{

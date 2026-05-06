@@ -7,10 +7,104 @@ use warpui::platform::FullscreenState;
 
 use warpui::AppContext;
 
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::blocklist::InputConfig;
-use crate::ai::blocklist::SerializedBlockListItem;
+// twarp: 2c-d.4 — local stubs for deleted AI types referenced by persisted snapshots
+// and various consumer files. These stubs keep code compiling; consumer call sites
+// using these types are no longer wired to any real AI behavior.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct AIConversationId(pub uuid::Uuid);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct AmbientAgentTaskId(pub uuid::Uuid);
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+pub struct InputConfig {}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SerializedBlockListItem {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct AIDocumentId(pub uuid::Uuid);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AIDocumentVersion(pub usize);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ClientProfileId(pub uuid::Uuid);
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct LLMId(pub String);
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AIConversation {}
+#[derive(Clone, Debug, PartialEq)]
+pub struct CloudConversationData {}
+#[derive(Clone, Debug, PartialEq)]
+pub enum ConversationStatus { InProgress, Done, Failed }
+#[derive(Clone, Debug, PartialEq)]
+pub struct AgentConversationsModelEvent {}
+#[derive(Clone, Debug, PartialEq)]
+pub struct ServerConversationToken {}
+#[derive(Clone, Debug, PartialEq)]
+pub enum AgentViewEntryOrigin {
+    Input { is_new_conversation: bool },
+    ChildAgent,
+    Other,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct RestoredAIConversation {}
+impl RestoredAIConversation { pub fn new(_c: AIConversation) -> Self { Self {} } }
+
+// twarp: 2c-d — CLIAgent stub (was crate::terminal::CLIAgent, deleted)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CLIAgent {
+    Claude,
+    Codex,
+    Gemini,
+    Unknown,
+}
+impl CLIAgent {
+    pub fn from_serialized_name(name: &str) -> Self {
+        match name {
+            "claude" => CLIAgent::Claude,
+            "codex" => CLIAgent::Codex,
+            "gemini" => CLIAgent::Gemini,
+            _ => CLIAgent::Unknown,
+        }
+    }
+    pub fn serialized_name(&self) -> &'static str {
+        match self {
+            CLIAgent::Claude => "claude",
+            CLIAgent::Codex => "codex",
+            CLIAgent::Gemini => "gemini",
+            CLIAgent::Unknown => "",
+        }
+    }
+}
+impl std::fmt::Display for CLIAgent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.serialized_name())
+    }
+}
+
+impl std::fmt::Display for AIDocumentId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+impl std::fmt::Display for AIConversationId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+impl std::fmt::Display for AmbientAgentTaskId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+impl std::fmt::Display for ClientProfileId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+impl std::fmt::Display for LLMId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 use crate::code::editor_management::CodeSource;
 use crate::drive::OpenWarpDriveObjectSettings;
 use crate::root_view::quake_mode_window_id;
@@ -170,8 +264,6 @@ impl LeafContents {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AmbientAgentPaneSnapshot {
     pub uuid: Vec<u8>,
-    // `task_id` is purposefully optional,
-    // as you can have a valid state (i.e. an empty cloud mode pane) where it is None.
     pub task_id: Option<AmbientAgentTaskId>,
 }
 

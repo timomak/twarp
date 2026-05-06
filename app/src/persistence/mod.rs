@@ -2,13 +2,13 @@
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
-        pub mod agent;
         mod block_list;
         mod cloud_objects;
         mod sqlite;
         pub mod commands;
     }
 }
+
 
 pub use persistence::model;
 #[cfg_attr(not(feature = "local_fs"), expect(unused_imports))]
@@ -24,8 +24,14 @@ use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
-use crate::ai::persisted_workspace::EnablementState;
+// twarp: 2c-d — AI persisted_workspace::EnablementState was deleted; stub locally.
 use ai::project_context::model::ProjectRulePath;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum EnablementState {
+    Enabled,
+    Disabled,
+}
 use chrono::{DateTime, Local, Utc};
 use lsp::supported_servers::LSPServerType;
 use uuid::Uuid;
@@ -34,8 +40,11 @@ use warp_graphql::scalars::time::ServerTimestamp;
 use warp_multi_agent_api as api;
 use warpui::{AppContext, Entity, SingletonEntity};
 
-use crate::ai::blocklist::PersistedAIInput;
-use crate::ai::mcp::TemplatableMCPServerInstallation;
+// twarp: 2c-d — PersistedAIInput / TemplatableMCPServerInstallation deleted; stub locally.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct PersistedAIInput;
+#[derive(Clone, Debug)]
+pub struct TemplatableMCPServerInstallation;
 use crate::app_state::AppState;
 use crate::auth::auth_manager::PersistedCurrentUserInformation;
 use crate::cloud_object::model::actions::ObjectAction;

@@ -1,5 +1,6 @@
-use crate::ai::agent::api::ServerConversationToken;
-use crate::ai::blocklist::SerializedBlockListItem;
+// twarp: 2c-d — AI ServerConversationToken deleted; use stub.
+use crate::app_state::ServerConversationToken;
+use crate::app_state::SerializedBlockListItem;
 use crate::appearance::Appearance;
 use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
 use crate::auth::auth_override_warning_modal::AuthOverrideWarningModalVariant;
@@ -96,10 +97,12 @@ use warp_core::user_preferences::GetUserPreferences as _;
 use warpui::keymap::{EditableBinding, FixedBinding};
 use warpui::windowing::WindowManager;
 
-use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
-use crate::ai::onboarding::{
-    apply_free_tier_default_model_override, build_onboarding_models, current_onboarding_auth_state,
-};
+// twarp: 2c-d — AI llms / onboarding deleted; stubs.
+pub struct LLMPreferences;
+pub enum LLMPreferencesEvent { Other }
+pub fn apply_free_tier_default_model_override() {}
+pub fn build_onboarding_models() {}
+pub fn current_onboarding_auth_state() {}
 use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};
 use warp_graphql::billing::StripeSubscriptionPlan;
 

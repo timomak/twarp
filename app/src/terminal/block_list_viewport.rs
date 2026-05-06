@@ -10,11 +10,13 @@ use warpui::{
     AppContext, ModelHandle,
 };
 
-use crate::{
-    ai::blocklist::agent_view::AgentViewDisplayMode,
-    terminal::{input::inline_menu::InlineMenuPositioner, model::index::Point as IndexPoint},
+// twarp: 2c-d — AI agent view deleted; stubs.
+pub enum AgentViewDisplayMode { Other }
+pub struct AgentViewState;
+use crate::terminal::{
+    input::inline_menu::InlineMenuPositioner, model::blocks::RichContentItem,
+    model::index::Point as IndexPoint,
 };
-use crate::{ai::blocklist::agent_view::AgentViewState, terminal::model::blocks::RichContentItem};
 
 use super::{
     block_list_element::{

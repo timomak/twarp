@@ -16,14 +16,28 @@ use super::{
     GridType, TerminalModel,
 };
 
-pub mod ai_agent;
 pub mod manager;
+// twarp: 2c-d — opaque ai_agent / replay_agent_conversations stubs
+pub mod ai_agent {
+    #[derive(Clone, Debug, Default, PartialEq)]
+    pub struct AIAgentSharing {}
+    pub fn encode_agent_response_event<T>(_event: T) -> Vec<u8> {
+        vec![]
+    }
+    pub fn decode_agent_response_event<T>(_data: T) -> Option<()> {
+        None
+    }
+}
+pub mod replay_agent_conversations {
+    pub fn reconstruct_response_events_from_conversations<T>(_conversations: T) -> Vec<()> {
+        vec![]
+    }
+}
 pub mod network;
 pub mod participant_avatar_view;
 pub mod permissions_manager;
 pub mod presence_manager;
 pub mod render_util;
-pub mod replay_agent_conversations;
 pub mod role_change_modal;
 mod selections;
 pub mod settings;

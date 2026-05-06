@@ -1,12 +1,16 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::ai::blocklist::agent_view::AgentViewController;
-use crate::ai::blocklist::prompt::plan_and_todo_list::{PlanAndTodoListEvent, PlanAndTodoListView};
-use crate::ai::{
-    blocklist::{BlocklistAIContextModel, BlocklistAIInputModel},
-    document::ai_document_model::{AIDocumentId, AIDocumentVersion},
-};
+// twarp: 2c-d — AI agent view controller / blocklist / plan-todo / document deleted; stubs.
+use crate::app_state::{AIDocumentId, AIDocumentVersion};
+
+pub struct AgentViewController;
+pub struct BlocklistAIContextModel;
+pub struct BlocklistAIInputModel;
+pub struct PlanAndTodoListView;
+pub enum PlanAndTodoListEvent {
+    OpenAIDocument { document_id: AIDocumentId, version: AIDocumentVersion },
+}
 use crate::code::editor::{add_color, remove_color};
 use crate::code_review::code_review_view::CODE_REVIEW_TOOLTIP_TEXT;
 use crate::code_review::diff_state::DiffStats;
@@ -14,10 +18,12 @@ use crate::context_chips::node_version_popup::{NodeVersionPopupEvent, NodeVersio
 use crate::context_chips::spacing;
 use crate::settings::{AISettings, AISettingsChangedEvent, InputSettings};
 use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier};
-use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
+// twarp: 2c-d — CLI agent sessions / ambient agent view deleted; stubs.
 use crate::terminal::input::{MenuPositioning, MenuPositioningProvider};
 use crate::terminal::model_events::ModelEventDispatcher;
-use crate::terminal::view::ambient_agent::AmbientAgentViewModel;
+
+pub struct CLIAgentSessionsModel;
+pub struct AmbientAgentViewModel;
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
 use crate::util::bindings::keybinding_name_to_display_string;

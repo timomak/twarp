@@ -4,9 +4,10 @@ use warpui::{
     ModelHandle, SingletonEntity, ViewHandle, WeakViewHandle, WindowId,
 };
 
+// twarp: 2c-d — AI active agent views / blocklist history deleted; stubs.
+pub struct ActiveAgentViewsModel;
+pub struct BlocklistAIHistoryModel;
 use crate::{
-    ai::active_agent_views_model::ActiveAgentViewsModel,
-    ai::blocklist::BlocklistAIHistoryModel,
     pane_group::{PaneGroup, PaneId},
     send_telemetry_from_app_ctx,
     server::telemetry::{TelemetryEvent, UndoCloseItemType},

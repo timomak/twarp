@@ -1,4 +1,5 @@
-use crate::ai::blocklist::BlocklistAIHistoryModel;
+// twarp: 2c-d — BlocklistAIHistoryModel deleted; stub.
+pub struct BlocklistAIHistoryModel;
 use crate::appearance::Appearance;
 
 use crate::terminal::shared_session::replay_agent_conversations::reconstruct_response_events_from_conversations;

@@ -1,11 +1,11 @@
+// twarp: 2c-d — AI ambient/document/execution_profiles/facts/mcp deleted; stubs.
+pub struct ScheduledAmbientAgent;
+pub struct AIExecutionProfile;
+pub struct AIFact;
+pub struct MCPServer;
+pub struct TemplatableMCPServer;
+use crate::app_state::AIDocumentId;
 use crate::{
-    ai::{
-        ambient_agents::scheduled::ScheduledAmbientAgent,
-        document::ai_document_model::AIDocumentId,
-        execution_profiles::AIExecutionProfile,
-        facts::AIFact,
-        mcp::{MCPServer, TemplatableMCPServer},
-    },
     channel::ChannelState,
     cloud_object::{
         model::{
