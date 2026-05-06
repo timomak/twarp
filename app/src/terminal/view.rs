@@ -303,9 +303,23 @@ use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::{CommandSearchOptions, OneTimeModalModel, ToastStack, WorkspaceAction};
 use crate::workspace::{ForkAIConversationParams, ForkFromExchange, ForkedConversationDestination};
 use crate::workspaces::{user_workspaces::UserWorkspaces, workspace::CustomerType};
-use crate::AIRequestUsageModel;
+// twarp: 2c-d — AIRequestUsageModel was at crate root via ai re-export; stub locally.
+#[allow(dead_code)]
+struct AIRequestUsageModel;
+impl AIRequestUsageModel {
+    fn as_ref<C>(_: &C) -> &Self {
+        // twarp: 2c-d — stubbed: AI deleted, so this code path is unreachable.
+        unimplemented!()
+    }
+    fn has_any_ai_remaining<C>(&self, _: &C) -> bool {
+        false
+    }
+}
 use crate::ActiveSession as WindowActiveSession;
-use crate::{report_if_error, AIAgentActionResultType};
+use crate::report_if_error;
+// twarp: 2c-d — AIAgentActionResultType deleted; stub locally for type slot.
+#[allow(dead_code)]
+enum AIAgentActionResultType {}
 
 use async_channel::{Receiver, Sender};
 use chrono::{DateTime, Local, NaiveDateTime};
