@@ -1,12 +1,11 @@
-use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
+// twarp: 2c-d — removed crate::ai::llms imports (LLMPreferences, LLMPreferencesEvent)
+// twarp: 2c-d — removed reconstruct_response_events_from_conversations import (AI replay)
 use crate::auth::auth_state::AuthState;
 use crate::auth::AuthStateProvider;
 use crate::terminal::model::terminal_model::ExitReason;
-use crate::terminal::shared_session::replay_agent_conversations::reconstruct_response_events_from_conversations;
 use crate::terminal::shared_session::shared_handlers::{
     apply_auto_approve_agent_actions_update, apply_cli_agent_state_update, apply_input_mode_update,
-    apply_selected_agent_model_update, apply_selected_conversation_update,
-    build_selected_conversation_update, RemoteUpdateGuard,
+    apply_selected_agent_model_update, apply_selected_conversation_update, RemoteUpdateGuard,
 };
 use crate::terminal::shell::ShellName;
 use crate::terminal::warpify::settings::WarpifySettings;
@@ -36,9 +35,7 @@ use crate::view_components::ToastFlavor;
 use parking_lot::{FairMutex, Mutex};
 use pathfinder_geometry::vector::Vector2F;
 
-use crate::terminal::cli_agent_sessions::{
-    CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
-};
+// twarp: 2c-d — removed cli_agent_sessions imports (CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent)
 use session_sharing_protocol::common::{
     ActivePrompt, AgentPromptFailureReason, CLIAgentSessionState, CommandExecutionFailureReason,
     ControlAction, ControlActionFailureReason, SelectedAgentModel,
@@ -54,13 +51,10 @@ use warpui::{AppContext, ModelContext, ModelHandle, SingletonEntity, ViewHandle,
 
 use warp_core::execution_mode::AppExecutionMode;
 
-use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::agent::conversation::AIConversation;
-use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
-use crate::ai::blocklist::{
-    BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIControllerEvent,
-    BlocklistAIHistoryEvent, BlocklistAIHistoryModel, InputConfig, SerializedBlockListItem,
-};
+// twarp: 2c-d — removed crate::ai::* imports (ActiveAgentViewsModel, AIConversation,
+// AgentViewController*, BlocklistAI*, InputConfig, SerializedBlockListItem)
+// InputConfig and SerializedBlockListItem are stub types in app_state — re-import them.
+use crate::app_state::{InputConfig, SerializedBlockListItem};
 // twarp: 2c-d — ConversationRestorationInNewPaneType moved to pane_group (was AI).
 use crate::pane_group::ConversationRestorationInNewPaneType;
 
@@ -450,264 +444,12 @@ impl TerminalManager {
 
         let sharer_remote_update_guard = RemoteUpdateGuard::new();
 
-        // Send model selection updates during session sharing
-        let session_sharer_for_models = session_sharer.clone();
-        let terminal_view_id = view.id();
-        let model_remote_update_guard = sharer_remote_update_guard.clone();
-        ctx.subscribe_to_model(&LLMPreferences::handle(ctx), move |_prefs, event, ctx| {
-            // Only react to agent mode LLM changes
-            if !matches!(event, LLMPreferencesEvent::UpdatedActiveAgentModeLLM) {
-                return;
-            }
-
-            if !model_remote_update_guard.should_broadcast() {
-                return;
-            }
-
-            if let Some(network) = session_sharer_for_models.borrow().as_ref() {
-                let llm_prefs = LLMPreferences::as_ref(ctx);
-                let selected_model_id: String = llm_prefs
-                    .get_active_base_model(ctx, Some(terminal_view_id))
-                    .id
-                    .clone()
-                    .into();
-
-                // The send method will check if it actually changed and skip if not
-                network.update(ctx, |network, _| {
-                    network.send_universal_developer_input_context_update(
-                        UniversalDeveloperInputContextUpdate {
-                            selected_model: Some(SelectedAgentModel::new(selected_model_id)),
-                            ..Default::default()
-                        },
-                    )
-                });
-            }
-        });
-
-        // Send input mode updates during session sharing.
-        // When AgentView is enabled, we only send updates when in an active agent view.
-        // For ambient agent sessions, input mode is controlled locally, so we skip sending updates.
-        let session_sharer_for_input_mode = session_sharer.clone();
-        let ai_input_model = view.as_ref(ctx).ai_input_model().clone();
-        let agent_view_controller_for_input_mode = view.as_ref(ctx).agent_view_controller().clone();
-        let model_for_input_mode = model.clone();
-        let input_mode_remote_update_guard = sharer_remote_update_guard.clone();
-        ctx.subscribe_to_model(&ai_input_model, move |_, event, ctx| {
-            if !input_mode_remote_update_guard.should_broadcast() {
-                return;
-            }
-
-            // In ambient agent sessions, input mode is controlled locally.
-            if model_for_input_mode
-                .lock()
-                .is_shared_ambient_agent_session()
-            {
-                return;
-            }
-
-            // When AgentView is enabled, only send input mode updates when in an active agent view.
-            if FeatureFlag::AgentView.is_enabled()
-                && !agent_view_controller_for_input_mode.as_ref(ctx).is_active()
-            {
-                return;
-            }
-
-            let config = event.updated_config();
-            if let Some(network) = session_sharer_for_input_mode.borrow().as_ref() {
-                // The send method will check if it actually changed and skip if not
-                network.update(ctx, |network, _| {
-                    network.send_universal_developer_input_context_update(
-                        UniversalDeveloperInputContextUpdate {
-                            input_mode: Some((*config).into()),
-                            ..Default::default()
-                        },
-                    )
-                });
-            }
-        });
-
-        let agent_view_controller = view.as_ref(ctx).agent_view_controller().clone();
-        let active_session = view.as_ref(ctx).active_session().clone();
-        ActiveAgentViewsModel::handle(ctx).update(ctx, |model, ctx| {
-            model.register_agent_view_controller(
-                &agent_view_controller,
-                &active_session,
-                terminal_view_id,
-                ctx,
-            );
-        });
-
-        let ai_context_model = view.as_ref(ctx).ai_context_model().clone();
-
-        // Send selected conversation updates during session sharing.
-        if FeatureFlag::AgentView.is_enabled() {
-            // When agent view is enabled, we listen to the agent view controller
-            // as the authoritative source for which conversation is selected.
-            let session_sharer_for_conversation = session_sharer.clone();
-            let ai_context_model_for_conversation = ai_context_model.clone();
-            let conversation_remote_update_guard = sharer_remote_update_guard.clone();
-            ctx.subscribe_to_model(
-                &agent_view_controller,
-                move |agent_view_controller, event, ctx| match event {
-                    AgentViewControllerEvent::EnteredAgentView { .. } => {
-                        if conversation_remote_update_guard.should_broadcast() {
-                            Self::send_selected_conversation_update_for_sharer(
-                                &session_sharer_for_conversation,
-                                &agent_view_controller,
-                                &ai_context_model_for_conversation,
-                                ctx,
-                            );
-                        }
-                    }
-                    AgentViewControllerEvent::ExitedAgentView {
-                        origin,
-                        final_exchange_count,
-                        ..
-                    } => {
-                        if conversation_remote_update_guard.should_broadcast() {
-                            Self::send_selected_conversation_update_for_sharer(
-                                &session_sharer_for_conversation,
-                                &agent_view_controller,
-                                &ai_context_model_for_conversation,
-                                ctx,
-                            );
-                        }
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::AgentViewExited {
-                                origin: TelemetryAgentViewEntryOrigin::from(*origin),
-                                was_empty: *final_exchange_count == 0,
-                            },
-                            ctx
-                        );
-                    }
-                    AgentViewControllerEvent::ExitConfirmed { .. } => {}
-                },
-            );
-        } else {
-            // When agent view is disabled, we fallback to the legacy behavior
-            // of listening for pending query state changes to know which conversation is selected.
-            let session_sharer_for_conversation = session_sharer.clone();
-            let agent_view_controller_for_conversation = agent_view_controller.clone();
-            let conversation_remote_update_guard = sharer_remote_update_guard.clone();
-            ctx.subscribe_to_model(&ai_context_model, move |ai_context_model, event, ctx| {
-                if !matches!(event, BlocklistAIContextEvent::PendingQueryStateUpdated) {
-                    return;
-                }
-
-                if !conversation_remote_update_guard.should_broadcast() {
-                    return;
-                }
-
-                Self::send_selected_conversation_update_for_sharer(
-                    &session_sharer_for_conversation,
-                    &agent_view_controller_for_conversation,
-                    &ai_context_model,
-                    ctx,
-                );
-            });
-        }
-        // Also send after a request is submitted so viewers stay pinned to the intended conversation
-        let session_sharer_for_sent_request = session_sharer.clone();
-        let agent_view_controller_for_sent_request = agent_view_controller.clone();
-        let ai_context_model_for_sent_request = ai_context_model.clone();
-        let ai_controller_for_sent_request = view.as_ref(ctx).ai_controller().clone();
-        ctx.subscribe_to_model(&ai_controller_for_sent_request, move |_, event, ctx| {
-            if let BlocklistAIControllerEvent::SentRequest { .. } = event {
-                Self::send_selected_conversation_update_for_sharer(
-                    &session_sharer_for_sent_request,
-                    &agent_view_controller_for_sent_request,
-                    &ai_context_model_for_sent_request,
-                    ctx,
-                );
-            }
-        });
-        // Finally, when the server assigns a token, resend with the concrete token,
-        // & when the user toggles auto-approve, fan out an update.
-        let session_sharer_for_stream_init = session_sharer.clone();
-        let view_id_for_stream_init = view.id();
-        let weak_view_for_stream_init = view.downgrade();
-        let auto_approve_remote_update_guard = sharer_remote_update_guard.clone();
-        ctx.subscribe_to_model(
-            &BlocklistAIHistoryModel::handle(ctx),
-            move |_, event, ctx| {
-                match event {
-                    BlocklistAIHistoryEvent::UpdatedStreamingExchange {
-                        terminal_view_id,
-                        conversation_id,
-                        ..
-                    } => {
-                        if *terminal_view_id != view_id_for_stream_init {
-                            return;
-                        }
-
-                        let Some(view) = weak_view_for_stream_init.upgrade(ctx) else {
-                            return;
-                        };
-                        let ai_context_model = view.as_ref(ctx).ai_context_model().clone();
-                        let agent_view_controller =
-                            view.as_ref(ctx).agent_view_controller().clone();
-
-                        let history_model = BlocklistAIHistoryModel::handle(ctx);
-
-                        // if the conversation is not selected or does not have a token,
-                        // don't emit an update.
-                        if !ai_context_model
-                            .as_ref(ctx)
-                            .selected_conversation_id(ctx)
-                            .is_some_and(|sel| sel == *conversation_id)
-                        {
-                            return;
-                        }
-                        if history_model
-                            .as_ref(ctx)
-                            .conversation(conversation_id)
-                            .and_then(|c| c.server_conversation_token())
-                            .is_none()
-                        {
-                            return;
-                        }
-
-                        Self::send_selected_conversation_update_for_sharer(
-                            &session_sharer_for_stream_init,
-                            &agent_view_controller,
-                            &ai_context_model,
-                            ctx,
-                        );
-                    }
-                    BlocklistAIHistoryEvent::UpdatedAutoexecuteOverride { terminal_view_id } => {
-                        if *terminal_view_id != view_id_for_stream_init {
-                            return;
-                        }
-
-                        if !auto_approve_remote_update_guard.should_broadcast() {
-                            return;
-                        }
-
-                        let Some(view) = weak_view_for_stream_init.upgrade(ctx) else {
-                            return;
-                        };
-                        let ai_context_model = view.as_ref(ctx).ai_context_model().clone();
-
-                        if let Some(network) = session_sharer_for_stream_init.borrow().as_ref() {
-                            let auto_approve = ai_context_model
-                                .as_ref(ctx)
-                                .pending_query_autoexecute_override(ctx)
-                                .is_autoexecute_any_action();
-
-                            network.update(ctx, |network, _| {
-                                network.send_universal_developer_input_context_update(
-                                    UniversalDeveloperInputContextUpdate {
-                                        auto_approve_agent_actions: Some(auto_approve),
-                                        ..Default::default()
-                                    },
-                                );
-                            });
-                        }
-                    }
-                    _ => {}
-                }
-            },
-        );
+        // twarp: 2c-d — removed AI subscriptions for shared session sharing
+        // (LLMPreferences, ai_input_model, agent_view_controller, ai_context_model,
+        // ai_controller, BlocklistAIHistoryModel) — these dispatched
+        // UniversalDeveloperInputContextUpdate / SelectedConversation updates from
+        // AI-only state changes.
+        let _ = &sharer_remote_update_guard;
 
         // Always wire up the model but check the flag when a share is attempted.
         Self::wire_up_session_sharer_with_view(
@@ -1194,67 +936,8 @@ impl TerminalManager {
         );
     }
 
-    /// Streams all historical agent conversations from this terminal to viewers.
-    /// This is called when starting a shared  session mid-conversation so that viewers
-    /// can see all conversation history and properly continue conversations.
-    fn stream_historical_agent_conversations(
-        terminal_view: &ViewHandle<TerminalView>,
-        model: &Arc<FairMutex<TerminalModel>>,
-        ctx: &mut AppContext,
-    ) {
-        // Get all conversations for this terminal view
-        // Any conversation could be continued during session sharing
-        let conversations: Vec<AIConversation> = BlocklistAIHistoryModel::as_ref(ctx)
-            .all_live_conversations_for_terminal_view(terminal_view.id())
-            .filter(|conv| conv.exchange_count() > 0)
-            .cloned()
-            .collect();
-
-        if conversations.is_empty() {
-            return;
-        }
-
-        // Get the sharer's participant id to use for historical conversations
-        let sharer_id = terminal_view
-            .as_ref(ctx)
-            .shared_session_presence_manager()
-            .map(|manager| manager.as_ref(ctx).sharer_id());
-
-        model
-            .lock()
-            .send_agent_conversation_replay_started_for_shared_session();
-
-        // Reconstruct and send all conversations' messages as ResponseEvent objects
-        // Exchanges are sorted chronologically to handle interleaved conversations
-        // Historical events use the original conversation token, so no need to pass forked_from.
-        let events = reconstruct_response_events_from_conversations(&conversations);
-        for event in events {
-            model
-                .lock()
-                .send_agent_response_for_shared_session(&event, sharer_id.clone(), None);
-        }
-        model
-            .lock()
-            .send_agent_conversation_replay_ended_for_shared_session();
-    }
-
-    /// Send selected_conversation update to viewers based on current selection.
-    fn send_selected_conversation_update_for_sharer(
-        session_sharer: &Rc<RefCell<Option<ModelHandle<Network>>>>,
-        agent_view_controller: &ModelHandle<AgentViewController>,
-        ai_context_model: &ModelHandle<BlocklistAIContextModel>,
-        ctx: &mut AppContext,
-    ) {
-        if let Some(network) = session_sharer.borrow().as_ref() {
-            if let Some(update) =
-                build_selected_conversation_update(agent_view_controller, ai_context_model, ctx)
-            {
-                network.update(ctx, |network, _| {
-                    network.send_universal_developer_input_context_update(update)
-                });
-            }
-        }
-    }
+    // twarp: 2c-d — removed stream_historical_agent_conversations and
+    // send_selected_conversation_update_for_sharer (AI-only session-sharing replay helpers).
 
     #[allow(clippy::too_many_arguments)]
     fn start_sharing_session(
@@ -1284,10 +967,8 @@ impl TerminalManager {
             .lock()
             .set_shared_session_source_type(source_type.clone());
         if matches!(source_type, SessionSourceType::AmbientAgent { .. }) {
-            let terminal_view_id = terminal_view.id();
-            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _ctx| {
-                history.mark_terminal_view_as_ambient_agent_session_view(terminal_view_id);
-            });
+            // twarp: 2c-d — removed BlocklistAIHistoryModel::mark_terminal_view_as_ambient_agent_session_view
+            let _ = terminal_view.id();
         }
 
         let active_prompt = if *SessionSettings::as_ref(ctx).honor_ps1 {
@@ -1334,65 +1015,17 @@ impl TerminalManager {
                     ctx,
                 ));
             } else {
-                let input_config = terminal_view.as_ref(ctx).input_config(ctx);
-                // Compute current auto-approve state from the AI context model
-                let auto_approve_agent_actions = terminal_view
-                    .as_ref(ctx)
-                    .ai_context_model()
-                    .as_ref(ctx)
-                    .pending_query_autoexecute_override(ctx)
-                    .is_autoexecute_any_action();
-
-                // Get selected conversation token to send in initial context
-                let agent_view_controller =
-                    terminal_view.as_ref(ctx).agent_view_controller().clone();
-                let context_model = terminal_view.as_ref(ctx).ai_context_model().clone();
-                let selected_conversation: Option<SelectedConversation> =
-                    build_selected_conversation_update(
-                        &agent_view_controller,
-                        &context_model,
-                        ctx,
-                    )
-                    .and_then(|update| update.selected_conversation);
-
-                let long_running_command_agent_interaction_state = {
-                    let model = model.lock();
-                    let active_block = model.block_list().active_block();
-                    let state = if active_block.is_active_and_long_running() {
-                        if active_block.is_agent_in_control() {
-                            LongRunningCommandAgentInteractionState::InControl
-                        } else if active_block.is_agent_tagged_in() {
-                            LongRunningCommandAgentInteractionState::TaggedIn
-                        } else {
-                            LongRunningCommandAgentInteractionState::NotInteracting
-                        }
-                    } else {
-                        LongRunningCommandAgentInteractionState::NotInteracting
-                    };
-                    Some(state)
-                };
-
-                // Include CLI agent session state in initial context so
-                // late-joining viewers see the footer immediately.
-                let terminal_view_id = terminal_view.id();
-                let cli_agent_session = {
-                    let sessions_model = CLIAgentSessionsModel::as_ref(ctx);
-                    match sessions_model.session(terminal_view_id) {
-                        Some(session) => CLIAgentSessionState::Active {
-                            cli_agent: session.agent.to_serialized_name(),
-                            is_rich_input_open: sessions_model.is_input_open(terminal_view_id),
-                        },
-                        None => CLIAgentSessionState::Inactive,
-                    }
-                };
-
+                // twarp: 2c-d — AI context (input_mode/auto_approve/selected_conversation/
+                // long_running_command_agent_interaction_state/cli_agent_session) replaced with defaults.
                 let universal_developer_input_context = UniversalDeveloperInputContext {
-                    input_mode: Some(input_config.into()),
-                    selected_conversation,
-                    auto_approve_agent_actions: Some(auto_approve_agent_actions),
+                    input_mode: None,
+                    selected_conversation: None,
+                    auto_approve_agent_actions: None,
                     selected_model: None,
-                    long_running_command_agent_interaction_state,
-                    cli_agent_session,
+                    long_running_command_agent_interaction_state: Some(
+                        LongRunningCommandAgentInteractionState::NotInteracting,
+                    ),
+                    cli_agent_session: CLIAgentSessionState::Inactive,
                 };
 
                 let network = ctx.add_model(|ctx| {
@@ -1446,11 +1079,7 @@ impl TerminalManager {
                         source_type.clone(),
                         ctx,
                     );
-
-                    // Set the sharer's participant id on the AI controller for tracking query initiators
-                    view.ai_controller().update(ctx, |controller, _ctx| {
-                        controller.set_sharer_participant_id(sharer_id.clone());
-                    });
+                    // twarp: 2c-d — removed view.ai_controller().set_sharer_participant_id call.
                 });
 
                 // Let the manager know the share is active with the relevant metadata.
@@ -1474,10 +1103,7 @@ impl TerminalManager {
                     );
                 });
 
-                // Stream historical agent conversations so viewers have conversation and task context.
-                if FeatureFlag::AgentSharedSessions.is_enabled() {
-                    Self::stream_historical_agent_conversations(&terminal_view, &model, ctx);
-                }
+                // twarp: 2c-d — removed stream_historical_agent_conversations call.
             }
             NetworkEvent::FailedToCreateSharedSession {
                 reason,
@@ -1597,12 +1223,8 @@ impl TerminalManager {
                     ControlAction::CancelConversation {
                         server_conversation_token,
                     } => {
-                        terminal_view.update(ctx, |view, ctx| {
-                            view.ai_controller().update(ctx, |controller, ctx| {
-                                controller
-                                    .handle_shared_session_cancel_action(*server_conversation_token, ctx);
-                            });
-                        });
+                        // twarp: 2c-d — removed view.ai_controller().handle_shared_session_cancel_action
+                        let _ = (terminal_view, server_conversation_token);
                     }
                 }
             }
@@ -1880,40 +1502,9 @@ impl TerminalManager {
                     }
                 }
 
-                // If a third-party CLI harness (e.g. Claude Code) is running, write
-                // the follow-up prompt directly to the PTY. The CLI handles it as
-                // interactive input. 
-                let terminal_view_id = terminal_view.id();
-                let has_active_cli_agent = CLIAgentSessionsModel::as_ref(ctx)
-                    .session(terminal_view_id)
-                    .is_some();
-                if has_active_cli_agent {
-                    // Reuse the rich input submit pipeline so agent-specific
-                    // strategies are applied. Bypasses the rich-input-UI side effects 
-  					// (telemetry, draft clear, editor buffer clear, pending-image consumption).
-                    terminal_view.update(ctx, |view, ctx| {
-                        view.submit_text_to_cli_agent_pty(request.prompt.clone(), ctx);
-                    });
-                    return;
-                }
-
-                // Execute the agent prompt in the Oz-harness case
-                terminal_view.update(ctx, |view, ctx| {
-                    // Clear the sharer's input (as the prompt in the input is now being executed)
-                    view.input().update(ctx, |input, ctx| {
-                        input.unfreeze_and_clear_agent_input(ctx);
-                    });
-
-                    view.ai_controller().update(ctx, |ai_controller, ctx| {
-                        ai_controller.execute_agent_prompt_for_shared_session(
-                            request.prompt.clone(),
-                            request.server_conversation_token,
-                            request.attachments.clone(),
-                            participant_id.clone(),
-                            ctx,
-                        );
-                    });
-                });
+                // twarp: 2c-d — removed CLI-harness PTY submit and Oz-harness AI prompt execution
+                // (depended on CLIAgentSessionsModel and view.ai_controller()).
+                let _ = (terminal_view, request, participant_id, id);
             }
             NetworkEvent::LinkAccessLevelUpdateResponse { response } => {
                 terminal_view.update(ctx, |view, ctx| match response {
@@ -2012,11 +1603,14 @@ impl TerminalManager {
             NetworkEvent::UniversalDeveloperInputContextUpdated(context_update) => {
                 let active_remote_update = sharer_remote_update_guard.start_remote_update();
 
-                if let Some(ref model) = context_update.selected_model {
+                if let Some(ref selected_model) = context_update.selected_model {
                     let terminal_view_id = terminal_view.id();
-
-                    // Update LLMPreferences to match the selected model received from the server.
-                    apply_selected_agent_model_update(terminal_view_id, model, &active_remote_update, ctx);
+                    apply_selected_agent_model_update(
+                        terminal_view_id,
+                        selected_model,
+                        &active_remote_update,
+                        ctx,
+                    );
                 }
                 if let Some(ref input_mode) = context_update.input_mode {
                     let weak_view_handle = terminal_view.downgrade();
@@ -2040,8 +1634,6 @@ impl TerminalManager {
                         ctx,
                     );
                 }
-
-                // Apply CLI agent rich input state from the viewer.
                 if let Some(ref cli_agent_session) = context_update.cli_agent_session {
                     let weak_view_handle = terminal_view.downgrade();
                     apply_cli_agent_state_update(
@@ -2051,25 +1643,9 @@ impl TerminalManager {
                         ctx,
                     );
                 }
-
-                // Only apply agent control / tagged-in updates if there is an active long-running command.
-                if model
-                    .lock()
-                    .block_list()
-                    .active_block()
-                    .is_active_and_long_running()
-                {
-                    if let Some(interaction_state) =
-                        context_update.long_running_command_agent_interaction_state
-                    {
-                        terminal_view.update(ctx, |view, ctx| {
-                            view.apply_long_running_command_agent_interaction_state(
-                                interaction_state,
-                                ctx,
-                            );
-                        });
-                    }
-                }
+                // twarp: 2c-d — removed apply_long_running_command_agent_interaction_state call
+                // (depends on AI block predicates).
+                let _ = model.clone();
             }
         });
 
@@ -2308,53 +1884,9 @@ impl TerminalManager {
             _ => (),
         });
 
-        // Broadcast CLI agent session lifecycle events to viewers.
-        let session_sharer_for_cli = shared_session_model.clone();
-        let cli_guard = sharer_remote_update_guard_for_cli;
-        let terminal_view_id = terminal_view.id();
-        ctx.subscribe_to_model(&CLIAgentSessionsModel::handle(ctx), move |_, event, ctx| {
-            if event.terminal_view_id() != terminal_view_id || !cli_guard.should_broadcast() {
-                return;
-            }
-            let Some(network) = session_sharer_for_cli.borrow().as_ref().cloned() else {
-                return;
-            };
-            let update = match event {
-                CLIAgentSessionsModelEvent::Started { agent, .. } => {
-                    UniversalDeveloperInputContextUpdate {
-                        cli_agent_session: Some(CLIAgentSessionState::Active {
-                            cli_agent: agent.to_serialized_name(),
-                            is_rich_input_open: false,
-                        }),
-                        ..Default::default()
-                    }
-                }
-                CLIAgentSessionsModelEvent::InputSessionChanged {
-                    agent,
-                    new_input_state,
-                    ..
-                } => UniversalDeveloperInputContextUpdate {
-                    cli_agent_session: Some(CLIAgentSessionState::Active {
-                        cli_agent: agent.to_serialized_name(),
-                        is_rich_input_open: matches!(
-                            new_input_state,
-                            &CLIAgentInputState::Open { .. }
-                        ),
-                    }),
-                    ..Default::default()
-                },
-                CLIAgentSessionsModelEvent::Ended { .. } => UniversalDeveloperInputContextUpdate {
-                    cli_agent_session: Some(CLIAgentSessionState::Inactive),
-                    ..Default::default()
-                },
-                // StatusChanged / SessionUpdated are enriched by OSC events;
-                // no protocol send needed.
-                _ => return,
-            };
-            network.update(ctx, |network, _| {
-                network.send_universal_developer_input_context_update(update);
-            });
-        });
+        // twarp: 2c-d — removed CLIAgentSessionsModel subscription that broadcast CLI agent
+        // session lifecycle events to viewers (depended on CLIAgentSessionsModel & CLIAgentInputState).
+        let _ = (shared_session_model, sharer_remote_update_guard_for_cli, terminal_view);
     }
 
     fn handle_network_status_events(
