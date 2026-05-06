@@ -1,21 +1,12 @@
-mod agent;
+// twarp: 2c-d — removed mod agent, cli_agent, conversations, models, plans, profiles, prompts, repos, rewind, skills, user_query (AI)
 pub mod buffer_model;
 mod classic;
-mod cli_agent;
 mod cloud_mode_v2_history_menu;
 mod common;
-pub mod conversations;
 pub mod decorations;
 pub mod inline_history;
 pub mod inline_menu;
 pub mod message_bar;
-pub mod models;
-pub mod plans;
-pub mod profiles;
-pub mod prompts;
-pub mod repos;
-pub mod rewind;
-pub mod skills;
 pub mod slash_command_model;
 pub mod slash_commands;
 mod suggestions_mode_menu;
@@ -23,7 +14,6 @@ pub mod suggestions_mode_model;
 mod terminal;
 mod terminal_message_bar;
 mod universal;
-pub mod user_query;
 
 use crate::ai::active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId};
 use crate::ai::agent::conversation::AIConversationId;
