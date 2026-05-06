@@ -337,6 +337,13 @@ struct AnonymousUserAISignUpBannerState;
 #[allow(dead_code)]
 enum AnonymousUserLoginBannerAction {}
 
+// twarp: 2c-d — InsertReviewComment was ai::agent::action; stub for type slot
+#[allow(dead_code)]
+struct InsertReviewComment;
+
+// twarp: 2c-d — ConversationRestorationInNewPaneType is `pub type ... = ()` stub in pane_group
+use crate::pane_group::ConversationRestorationInNewPaneType;
+
 use async_channel::{Receiver, Sender};
 use chrono::{DateTime, Local, NaiveDateTime};
 use command_corrections::rules::{Rule, RuleId as CommandCorrectionsRuleId};
