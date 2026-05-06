@@ -26,35 +26,13 @@ use self::vertical_tabs::{
 };
 pub(crate) use onboarding::OnboardingTutorial;
 
-use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::agent_conversations_model::AgentConversationsModel;
-use crate::ai::agent_conversations_model::ConversationOrTask;
-use crate::ai::ambient_agents::telemetry::{CloudAgentTelemetryEvent, CloudModeEntryPoint};
-use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::ask_ai_type::AskAIType;
-use crate::ai::blocklist::agent_view::agent_input_footer::editor::AgentToolbarEditorMode;
-use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
-use crate::ai::blocklist::history_model::load_conversation_from_server;
-use crate::ai::blocklist::suggested_agent_mode_workflow_modal::SuggestedAgentModeWorkflowAndId;
-use crate::ai::blocklist::suggested_rule_modal::{
-    SuggestedRuleAndId, SuggestedRuleModal, SuggestedRuleModalEvent,
-};
-use crate::ai::conversation_utils;
-use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentModel};
-use crate::ai::llms::LLMPreferences;
-use crate::ai::persisted_workspace::PersistedWorkspace;
-use crate::ai::AIRequestUsageModel;
-use crate::ai::{
-    agent::{api::ServerConversationToken, conversation::AIConversationId, EntrypointType},
-    blocklist::{
-        inline_action::code_diff_view::CodeDiffView,
-        suggested_agent_mode_workflow_modal::{
-            SuggestedAgentModeWorkflowModal, SuggestedAgentModeWorkflowModalEvent,
-        },
-        SlashCommandRequest,
-    },
-    facts::{view::AIFactPage, AIFactManager, AIFactView, AIFactViewEvent},
-};
+// twarp: 2c-d — removed crate::ai::* imports (active_agent_views_model,
+// agent_conversations_model, ambient_agents, ask_ai_type, blocklist::agent_view::*,
+// blocklist::history_model::load_conversation_from_server, suggested_*_modal,
+// conversation_utils, document, llms, persisted_workspace, AIRequestUsageModel,
+// agent::api::ServerConversationToken/conversation::AIConversationId/EntrypointType,
+// blocklist::{code_diff_view, suggested_agent_mode_workflow_modal::*, SlashCommandRequest},
+// facts::*).
 use crate::app_state::{
     LeafContents, LeafSnapshot, LeftPanelDisplayedTab, LeftPanelSnapshot, NotebookPaneSnapshot,
     PaneNodeSnapshot, PaneUuid, RightPanelSnapshot, SettingsPaneSnapshot, TabSnapshot,
@@ -77,15 +55,15 @@ use crate::terminal::enable_auto_reload_modal::{
 use crate::terminal::model::terminal_model::ConversationTranscriptViewerStatus;
 use crate::terminal::session_settings::SessionSettings;
 use crate::terminal::view::inline_banner::ZeroStatePromptSuggestionType;
-use crate::terminal::view::load_ai_conversation::{RestorationDirState, RestoredAIConversation};
-use crate::terminal::view::{
-    AgentOnboardingVersion, ConversationRestorationInNewPaneType, OnboardingIntention,
-    OnboardingVersion,
-};
+// twarp: 2c-d — removed load_ai_conversation imports; use stub from app_state for
+// RestoredAIConversation; ConversationRestorationInNewPaneType moved to pane_group.
+use crate::app_state::RestoredAIConversation;
+use crate::pane_group::ConversationRestorationInNewPaneType;
+use crate::terminal::view::{AgentOnboardingVersion, OnboardingIntention, OnboardingVersion};
 use crate::ui_components::red_notification_dot::RedNotificationDot;
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::settings::OpenConversationPreference;
-use crate::workspace::bonus_grant_notification_model::BonusGrantNotificationEvent;
+// twarp: 2c-d — removed bonus_grant_notification_model import (deleted module)
 use crate::workspace::toast_stack::ToastStack;
 use crate::workspace::view::global_search::view::GlobalSearchEntryFocus;
 use crate::workspace::view::left_panel::{
@@ -102,11 +80,9 @@ use crate::util::openable_file_type::FileTarget;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::{resolve_file_target_with_editor_choice, EditorLayout};
 
-use crate::ai::blocklist::history_model::CloudConversationData;
-use crate::ai::blocklist::FORK_PREFIX;
-#[cfg(not(target_family = "wasm"))]
-use crate::terminal::cli_agent_sessions::plugin_manager::{plugin_manager_for, PluginModalKind};
-use crate::terminal::cli_agent_sessions::{CLIAgentSessionsModel, CLIAgentSessionsModelEvent};
+// twarp: 2c-d — removed crate::ai::blocklist::history_model::CloudConversationData,
+// FORK_PREFIX, and cli_agent_sessions imports.
+use crate::app_state::CloudConversationData;
 use crate::workspace::header_toolbar_editor::{HeaderToolbarEditorEvent, HeaderToolbarEditorModal};
 use crate::workspace::header_toolbar_item::HeaderToolbarItemKind;
 use crate::workspace::tab_settings::TabCloseButtonPosition;
@@ -125,8 +101,7 @@ use crate::workspace::view::openwarp_launch_modal::{
     OpenWarpLaunchModal, OpenWarpLaunchModalEvent,
 };
 use crate::workspace::{ForkFromExchange, ForkedConversationDestination};
-use crate::BlocklistAIHistoryModel;
-use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
+// twarp: 2c-d — removed BlocklistAIHistoryModel and CodebaseIndexManager imports.
 #[cfg(all(target_os = "macos", feature = "crash_reporting"))]
 use sentry::protocol::{Attachment, AttachmentType};
 use serde_json;
@@ -138,8 +113,8 @@ use super::hoa_onboarding::{
 use super::lightbox_view::{LightboxParams, LightboxView, LightboxViewEvent};
 use super::util;
 use super::WorkspaceRegistry;
-use crate::ai::execution_profiles::editor::ExecutionProfileEditorManager;
-use crate::ai::execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId};
+// twarp: 2c-d — removed crate::ai::execution_profiles imports.
+use crate::app_state::ClientProfileId;
 use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
 use crate::auth::auth_override_warning_modal::{
     AuthOverrideWarningModal, AuthOverrideWarningModalEvent, AuthOverrideWarningModalVariant,
@@ -154,14 +129,14 @@ use crate::drive::export::ExportManager;
 use crate::drive::settings::WarpDriveSettings;
 use crate::launch_configs::launch_config::WindowTemplate;
 use crate::pane_group::{
-    AIFactPane, CodeReviewPanelArg, Direction as PaneGroupDirection, ExecutionProfileEditorPane,
-    NetworkLogPane, PaneGroup, PaneId, TerminalPaneId,
+    CodeReviewPanelArg, Direction as PaneGroupDirection, NetworkLogPane, PaneGroup, PaneId,
+    TerminalPaneId,
 };
 use crate::quit_warning::UnsavedStateSummary;
 use crate::search::command_palette::view::NavigationMode;
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::server::network_log_pane_manager::NetworkLogPaneManager;
-use crate::server::server_api::ai::AIClient;
+// twarp: 2c-d — removed AIClient import (server_api::ai module deleted)
 use crate::server::server_api::auth::AuthClient;
 use crate::settings::{
     AISettings, AISettingsChangedEvent, CodeSettings, CodeSettingsChangedEvent, CtrlTabBehavior,
@@ -179,10 +154,8 @@ use crate::terminal::ligature_settings::should_use_ligature_rendering;
 use crate::terminal::warpify::settings::WarpifySettings;
 use crate::ui_components::avatar::{Avatar, AvatarContent, StatusElementTypes};
 
-#[cfg(target_family = "wasm")]
-use crate::ai::agent_conversations_model::AgentConversationsModelEvent;
-#[cfg(target_family = "wasm")]
-use crate::ai::conversation_details_panel::ConversationDetailsPanel;
+// twarp: 2c-d — removed wasm-only crate::ai imports (AgentConversationsModelEvent,
+// ConversationDetailsPanel).
 #[cfg(target_family = "wasm")]
 use crate::uri::browser_url_handler::{parse_current_url, update_browser_url};
 use crate::workflows::manager::WorkflowManager;
@@ -234,8 +207,7 @@ use crate::notebooks::manager::{NotebookManager, NotebookSource};
 #[cfg(feature = "local_fs")]
 use crate::pane_group::FilePane;
 use crate::pane_group::{
-    self, AnyPaneContent, CodeDiffPane, CodePane, Direction, NewTerminalOptions, PanesLayout,
-    TabBarHoverIndex,
+    self, AnyPaneContent, CodePane, Direction, NewTerminalOptions, PanesLayout, TabBarHoverIndex,
 };
 use crate::remote_server::manager::RemoteServerManager;
 #[cfg(feature = "local_fs")]
@@ -243,7 +215,7 @@ use crate::remote_server::manager::RemoteServerManagerEvent;
 use crate::terminal::keys_settings::KeysSettings;
 use crate::terminal::shared_session::SharedSessionActionSource;
 
-use crate::ai::blocklist::agent_view::editor::{AgentToolbarEditorEvent, AgentToolbarEditorModal};
+// twarp: 2c-d — removed AgentToolbarEditor* imports
 use crate::prompt::editor_modal::{
     EditorModal as PromptEditorModal, EditorModalEvent as PromptEditorModalEvent,
     OpenSource as PromptEditorOpenSource,
@@ -337,7 +309,7 @@ use crate::view_components::action_button::ActionButton;
 use crate::view_components::callout_bubble::{
     render_callout_bubble, CalloutArrowDirection, CalloutArrowPosition, CalloutBubbleConfig,
 };
-use crate::view_components::{AgentToastStack, DismissibleToast, DismissibleToastStack, ToastLink};
+use crate::view_components::{DismissibleToast, DismissibleToastStack, ToastLink};
 use crate::window_settings::{WindowSettings, WindowSettingsChangedEvent, ZoomLevel};
 use crate::workflows::{
     manager::WorkflowOpenSource, AIWorkflowOrigin, CloudWorkflow, WorkflowSelectionSource,
@@ -381,7 +353,8 @@ use warpui::{elements::MouseStateHandle, fonts::Properties};
 
 use crate::{autoupdate, channel::ChannelState};
 
-use crate::ai::blocklist::{BlocklistAIHistoryEvent, PendingQueryState, SerializedBlockListItem};
+// twarp: 2c-d — removed BlocklistAIHistoryEvent, PendingQueryState; use stub from app_state for SerializedBlockListItem
+use crate::app_state::SerializedBlockListItem;
 use crate::editor::{
     EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
     TextOptions,
@@ -395,15 +368,10 @@ use super::action::{
 use super::close_session_confirmation_dialog::{
     CloseSessionConfirmationDialog, CloseSessionConfirmationEvent, OpenDialogSource,
 };
-use super::delete_conversation_confirmation_dialog::{
-    DeleteConversationConfirmationDialog, DeleteConversationConfirmationEvent,
-    DeleteConversationDialogSource,
-};
+// twarp: 2c-d — removed delete_conversation_confirmation_dialog (deleted module)
 use super::native_modal::{NativeModal, NativeModalEvent};
 use super::one_time_modal_model::OneTimeModalEvent;
-use super::rewind_confirmation_dialog::{
-    RewindConfirmationDialog, RewindConfirmationEvent, RewindDialogSource,
-};
+// twarp: 2c-d — removed rewind_confirmation_dialog (deleted module)
 use super::{ActiveSession, TabBarDropTargetData, TabBarLocation};
 
 use super::tab_settings::{
@@ -913,8 +881,7 @@ pub struct Workspace {
         Option<PendingSessionConfigTabConfigChipTutorial>,
     new_worktree_modal: ModalViewState<Modal<NewWorktreeModal>>,
     close_session_confirmation_dialog: ViewHandle<CloseSessionConfirmationDialog>,
-    rewind_confirmation_dialog: ViewHandle<RewindConfirmationDialog>,
-    delete_conversation_confirmation_dialog: ViewHandle<DeleteConversationConfirmationDialog>,
+    // twarp: 2c-d — removed rewind_confirmation_dialog & delete_conversation_confirmation_dialog
     resource_center_view: ViewHandle<ResourceCenterView>,
     command_search_view: ViewHandle<CommandSearchView>,
     autoupdate_unable_to_update_banner_dismissed: bool,
@@ -926,14 +893,13 @@ pub struct Workspace {
     require_login_modal: ViewHandle<AuthView>,
     workflow_modal: ViewHandle<WorkflowModal>,
     prompt_editor_modal: ViewHandle<PromptEditorModal>,
-    agent_toolbar_editor_modal: ViewHandle<AgentToolbarEditorModal>,
+    // twarp: 2c-d — removed agent_toolbar_editor_modal
     header_toolbar_editor_modal: ViewHandle<HeaderToolbarEditorModal>,
     header_toolbar_context_menu: ViewHandle<Menu<WorkspaceAction>>,
     show_header_toolbar_context_menu: Option<Vector2F>,
     theme_creator_modal: ViewHandle<ThemeCreatorModal>,
     theme_deletion_modal: ViewHandle<ThemeDeletionModal>,
-    suggested_agent_mode_workflow_modal: ViewHandle<SuggestedAgentModeWorkflowModal>,
-    suggested_rule_modal: ViewHandle<SuggestedRuleModal>,
+    // twarp: 2c-d — removed suggested_agent_mode_workflow_modal & suggested_rule_modal
     oz_launch_modal: ModalWithTab<LaunchModal<OzLaunchSlide>>,
     openwarp_launch_modal: ViewHandle<OpenWarpLaunchModal>,
     enable_auto_reload_modal: ViewHandle<EnableAutoReloadModal>,
@@ -943,7 +909,7 @@ pub struct Workspace {
     free_tier_limit_hit_modal: ViewHandle<FreeTierLimitHitModal>,
     free_tier_limit_check_triggered: bool,
     toast_stack: ViewHandle<DismissibleToastStack<WorkspaceAction>>,
-    agent_toast_stack: ViewHandle<AgentToastStack>,
+    // twarp: 2c-d — removed agent_toast_stack
     update_toast_stack: ViewHandle<DismissibleToastStack<WorkspaceAction>>,
     /// We need to render some dynamic keybindings for our tooltips. These cannot be looked up in the
     /// render method, so look them up when the view is constructed and cache them here. Note that they
@@ -968,11 +934,9 @@ pub struct Workspace {
     view_cloud_runs_button: ViewHandle<ActionButton>,
     #[cfg(target_family = "wasm")]
     transcript_info_button: ViewHandle<ActionButton>,
-    #[cfg(target_family = "wasm")]
-    transcript_details_panel: ViewHandle<ConversationDetailsPanel>,
+    // twarp: 2c-d — removed transcript_details_panel (wasm only) & ai_fact_view
 
     file_upload_sessions: FileUploadSessions,
-    ai_fact_view: ViewHandle<AIFactView>,
     left_panel_open: bool,
     vertical_tabs_panel_open: bool,
     vertical_tabs_panel: VerticalTabsPanelState,
@@ -1389,15 +1353,7 @@ impl Workspace {
         modal
     }
 
-    fn build_agent_toolbar_editor_modal(
-        ctx: &mut ViewContext<Self>,
-    ) -> ViewHandle<AgentToolbarEditorModal> {
-        let modal = ctx.add_typed_action_view(AgentToolbarEditorModal::new);
-        ctx.subscribe_to_view(&modal, |me, _, event, ctx| {
-            me.handle_agent_toolbar_editor_modal_event(event, ctx);
-        });
-        modal
-    }
+    // twarp: 2c-d — removed build_agent_toolbar_editor_modal (AI editor)
 
     fn build_reward_modal(ctx: &mut ViewContext<Self>) -> ViewHandle<Modal<RewardView>> {
         let reward_view = ctx.add_typed_action_view(|_| RewardView::new());
@@ -1572,59 +1528,8 @@ impl Workspace {
         theme_deletion_modal
     }
 
-    fn build_suggested_agent_mode_workflow_modal(
-        ctx: &mut ViewContext<Self>,
-    ) -> ViewHandle<SuggestedAgentModeWorkflowModal> {
-        let suggested_agent_mode_workflow_modal =
-            ctx.add_typed_action_view(|_| SuggestedAgentModeWorkflowModal::default());
-
-        ctx.subscribe_to_view(&suggested_agent_mode_workflow_modal, |me, _, event, ctx| {
-            me.handle_suggested_agent_mode_workflow_modal_event(event, ctx);
-        });
-
-        suggested_agent_mode_workflow_modal
-    }
-
-    fn build_suggested_rule_modal(ctx: &mut ViewContext<Self>) -> ViewHandle<SuggestedRuleModal> {
-        let suggested_rule_modal = ctx.add_typed_action_view(SuggestedRuleModal::new);
-        ctx.subscribe_to_view(&suggested_rule_modal, |me, _, event, ctx| {
-            me.handle_suggested_rule_modal_event(event, ctx);
-        });
-        suggested_rule_modal
-    }
-
-    fn handle_suggested_rule_modal_event(
-        &mut self,
-        event: &SuggestedRuleModalEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            SuggestedRuleModalEvent::AddNewRule { rule } => {
-                self.current_workspace_state.is_suggested_rule_modal_open = false;
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AISuggestedRuleAdded {
-                        rule_id: rule.logging_id.clone(),
-                    },
-                    ctx
-                );
-            }
-            SuggestedRuleModalEvent::OpenRuleForEditing { rule } => {
-                self.current_workspace_state.is_suggested_rule_modal_open = false;
-                self.open_ai_fact_collection_pane(Some(Direction::Right), None, ctx);
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AISuggestedRuleEdited {
-                        rule_id: rule.logging_id.clone(),
-                    },
-                    ctx
-                );
-            }
-            SuggestedRuleModalEvent::Close => {
-                self.current_workspace_state.is_suggested_rule_modal_open = false;
-                self.focus_active_tab(ctx);
-            }
-        }
-        ctx.notify();
-    }
+    // twarp: 2c-d — removed build_suggested_agent_mode_workflow_modal,
+    // build_suggested_rule_modal, and handle_suggested_rule_modal_event
 
     fn build_close_session_confirmation_dialog(
         ctx: &mut ViewContext<Self>,
@@ -1641,32 +1546,8 @@ impl Workspace {
         close_session_confirmation_dialog
     }
 
-    fn build_rewind_confirmation_dialog(
-        ctx: &mut ViewContext<Self>,
-    ) -> ViewHandle<RewindConfirmationDialog> {
-        let rewind_confirmation_dialog =
-            ctx.add_typed_action_view(|_| RewindConfirmationDialog::new());
-        ctx.subscribe_to_view(&rewind_confirmation_dialog, move |me, _, event, ctx| {
-            me.handle_rewind_confirmation_dialog_event(event, ctx);
-        });
-
-        rewind_confirmation_dialog
-    }
-
-    fn build_delete_conversation_confirmation_dialog(
-        ctx: &mut ViewContext<Self>,
-    ) -> ViewHandle<DeleteConversationConfirmationDialog> {
-        let delete_conversation_confirmation_dialog =
-            ctx.add_typed_action_view(DeleteConversationConfirmationDialog::new);
-        ctx.subscribe_to_view(
-            &delete_conversation_confirmation_dialog,
-            move |me, _, event, ctx| {
-                me.handle_delete_conversation_confirmation_dialog_event(event, ctx);
-            },
-        );
-
-        delete_conversation_confirmation_dialog
-    }
+    // twarp: 2c-d — removed build_rewind_confirmation_dialog and
+    // build_delete_conversation_confirmation_dialog
 
     fn build_native_modal_view(ctx: &mut ViewContext<Self>) -> ViewHandle<NativeModal> {
         let native_modal = ctx.add_typed_action_view(NativeModal::new);
@@ -2598,16 +2479,13 @@ impl Workspace {
 
         let auth_override_warning_modal = Self::build_auth_override_warning_modal(ctx);
 
-        let workflow_modal = Self::build_workflow_modal(ai_client.clone(), ctx);
+        let workflow_modal = Self::build_workflow_modal(ctx);
 
         let theme_creator_modal = Self::build_theme_creator_modal(ctx);
 
         let theme_deletion_modal = Self::build_theme_deletion_modal(ctx);
 
-        let suggested_agent_mode_workflow_modal =
-            Self::build_suggested_agent_mode_workflow_modal(ctx);
-
-        let suggested_rule_modal = Self::build_suggested_rule_modal(ctx);
+        // twarp: 2c-d — removed suggested_agent_mode_workflow_modal & suggested_rule_modal init
 
         let oz_launch_view = ctx.add_typed_action_view(LaunchModal::<OzLaunchSlide>::new);
         ctx.subscribe_to_view(&oz_launch_view, |me, _, event, ctx| {
@@ -2629,22 +2507,13 @@ impl Workspace {
         let enable_auto_reload_modal = Self::build_enable_auto_reload_modal(ctx);
 
         let close_session_confirmation_dialog = Self::build_close_session_confirmation_dialog(ctx);
-        let rewind_confirmation_dialog = Self::build_rewind_confirmation_dialog(ctx);
-        let delete_conversation_confirmation_dialog =
-            Self::build_delete_conversation_confirmation_dialog(ctx);
+        // twarp: 2c-d — removed rewind/delete_conversation confirmation dialogs
         let command_search_view = ctx.add_typed_action_view(CommandSearchView::new);
         ctx.subscribe_to_view(&command_search_view, |me, _, event, ctx| {
             me.handle_command_search_event(event, ctx);
         });
 
-        let ai_fact_view = ctx.add_typed_action_view(AIFactView::new);
-        ctx.subscribe_to_view(&ai_fact_view, move |me, _, event, ctx| {
-            me.handle_ai_fact_view_event(event, ctx);
-        });
-
-        AIFactManager::handle(ctx).update(ctx, |manager, _| {
-            manager.register_view(window_id, ai_fact_view.clone());
-        });
+        // twarp: 2c-d — removed ai_fact_view init and AIFactManager registration
 
         let working_directories_model =
             ctx.add_model(|_| pane_group::WorkingDirectoriesModel::new());
@@ -2679,13 +2548,7 @@ impl Workspace {
             }
         });
 
-        ctx.subscribe_to_model(
-            &BlocklistAIHistoryModel::handle(ctx),
-            Self::handle_history_model_event,
-        );
-        ctx.subscribe_to_model(&CLIAgentSessionsModel::handle(ctx), |me, _, event, ctx| {
-            me.handle_cli_agent_sessions_event(event, ctx);
-        });
+        // twarp: 2c-d — removed BlocklistAIHistoryModel and CLIAgentSessionsModel subscriptions
 
         ctx.subscribe_to_model(
             &SessionSettings::handle(ctx),
@@ -2738,8 +2601,7 @@ impl Workspace {
         let toast_stack =
             ctx.add_typed_action_view(|_| DismissibleToastStack::new(Duration::from_secs(4)));
 
-        let agent_toast_stack =
-            ctx.add_typed_action_view(|ctx| AgentToastStack::new(Duration::from_secs(4), ctx));
+        // twarp: 2c-d — removed AgentToastStack init (no AI toasts)
 
         let update_toast_stack =
             ctx.add_typed_action_view(|_| DismissibleToastStack::new(Duration::from_secs(4)));
@@ -2759,21 +2621,7 @@ impl Workspace {
         #[cfg(target_family = "wasm")]
         let transcript_details_panel = Self::build_transcript_details_panel(ctx);
 
-        // Subscribe to task updates so the transcript details panel can refresh when task data arrives
-        #[cfg(target_family = "wasm")]
-        ctx.subscribe_to_model(
-            &AgentConversationsModel::handle(ctx),
-            |me, _, event, ctx| match event {
-                // Update transcript details if task or conversation data is updated
-                AgentConversationsModelEvent::NewTasksReceived
-                | AgentConversationsModelEvent::TasksUpdated
-                | AgentConversationsModelEvent::ConversationUpdated
-                | AgentConversationsModelEvent::ConversationArtifactsUpdated { .. } => {
-                    me.update_transcript_details_panel_data(ctx);
-                }
-                _ => {}
-            },
-        );
+        // twarp: 2c-d — removed AgentConversationsModel subscription for transcript panel
 
         let update_manager = UpdateManager::handle(ctx);
         ctx.subscribe_to_model(&update_manager, |me, _handle, event, ctx| {
@@ -2791,7 +2639,7 @@ impl Workspace {
             .collect();
 
         let prompt_editor_modal = Self::build_prompt_editor_modal(ctx);
-        let agent_toolbar_editor_modal = Self::build_agent_toolbar_editor_modal(ctx);
+        // twarp: 2c-d — removed agent_toolbar_editor_modal init
 
         let import_modal = Self::build_import_modal(ctx);
 
@@ -2922,8 +2770,6 @@ impl Workspace {
             pending_session_config_tab_config_chip_tutorial: None,
             new_worktree_modal,
             close_session_confirmation_dialog,
-            rewind_confirmation_dialog,
-            delete_conversation_confirmation_dialog,
             resource_center_view,
             command_search_view,
             autoupdate_unable_to_update_banner_dismissed: false,
@@ -2932,8 +2778,6 @@ impl Workspace {
             settings_file_error,
             settings_error_banner_dismissed: false,
             auth_override_warning_modal,
-            suggested_agent_mode_workflow_modal,
-            suggested_rule_modal,
             build_plan_migration_modal,
             require_login_modal,
             workflow_modal,
@@ -2942,11 +2786,9 @@ impl Workspace {
             import_modal,
             window_id: ctx.window_id(),
             toast_stack,
-            agent_toast_stack,
             update_toast_stack,
             cached_keybindings,
             prompt_editor_modal,
-            agent_toolbar_editor_modal,
             header_toolbar_editor_modal: Self::build_header_toolbar_editor_modal(ctx),
             header_toolbar_context_menu: Self::build_header_toolbar_context_menu(ctx),
             show_header_toolbar_context_menu: None,
@@ -2956,7 +2798,6 @@ impl Workspace {
             native_modal,
             shared_objects_creation_denied_modal,
             file_upload_sessions: Default::default(),
-            ai_fact_view,
             left_panel_open: false,
             vertical_tabs_panel_open: false,
             vertical_tabs_panel: Default::default(),
@@ -2976,8 +2817,7 @@ impl Workspace {
             transcript_info_button,
             #[cfg(target_family = "wasm")]
             view_cloud_runs_button,
-            #[cfg(target_family = "wasm")]
-            transcript_details_panel,
+            // twarp: 2c-d — removed transcript_details_panel from struct construction
             tab_fixed_width: None,
             oz_launch_modal: ModalWithTab {
                 view: oz_launch_view,
@@ -3028,10 +2868,7 @@ impl Workspace {
         self.palette.clone()
     }
 
-    #[cfg(any(test, feature = "integration_tests"))]
-    pub fn ai_fact_view(&self) -> ViewHandle<AIFactView> {
-        self.ai_fact_view.clone()
-    }
+    // twarp: 2c-d — removed pub fn ai_fact_view (returned ViewHandle<AIFactView>)
 
     fn handle_task_status_reset(&mut self, pane_group_id: EntityId, ctx: &mut ViewContext<Self>) {
         // Re-render the workspace so the tab indicator picks up the new state.
@@ -3044,55 +2881,9 @@ impl Workspace {
         }
     }
 
-    /// Handles updating the tab status when an agent task status changes.
-    fn handle_history_model_event(
-        &mut self,
-        _: ModelHandle<BlocklistAIHistoryModel>,
-        event: &BlocklistAIHistoryEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        #[cfg(target_family = "wasm")]
-        if self
-            .current_workspace_state
-            .is_transcript_details_panel_open
-        {
-            let focused_terminal_view_id = self
-                .active_tab_pane_group()
-                .as_ref(ctx)
-                .focused_session_view(ctx)
-                .map(|view| view.id());
-
-            let is_relevant_update = matches!(
-                event,
-                BlocklistAIHistoryEvent::SetActiveConversation { .. }
-                    | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
-                    | BlocklistAIHistoryEvent::RestoredConversations { .. }
-                    | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
-                    | BlocklistAIHistoryEvent::UpdatedConversationStatus { .. }
-                    | BlocklistAIHistoryEvent::UpdatedStreamingExchange { .. }
-            );
-
-            if is_relevant_update
-                && event.terminal_view_id().is_some_and(|event_id| {
-                    focused_terminal_view_id.is_some_and(|id| id == event_id)
-                })
-            {
-                self.update_transcript_details_panel_data(ctx);
-                ctx.notify();
-            }
-        }
-
-        if matches!(
-            event,
-            BlocklistAIHistoryEvent::UpdatedConversationStatus { .. }
-        ) {
-            ctx.notify();
-        }
-
-        if self.agent_conversation_event_affects_vertical_tabs(event, ctx) {
-            ctx.notify();
-        }
-    }
+    // twarp: 2c-d — removed handle_history_model_event, agent_conversation_event_affects_vertical_tabs,
+    // and handle_cli_agent_sessions_event (depended on BlocklistAIHistoryEvent /
+    // CLIAgentSessionsModelEvent).
 
     fn workspace_contains_terminal_view(
         &self,
@@ -3104,44 +2895,6 @@ impl Workspace {
                 .as_ref(ctx)
                 .contains_terminal_view(terminal_view_id, ctx)
         })
-    }
-
-    fn agent_conversation_event_affects_vertical_tabs(
-        &self,
-        event: &BlocklistAIHistoryEvent,
-        ctx: &AppContext,
-    ) -> bool {
-        matches!(
-            event,
-            BlocklistAIHistoryEvent::StartedNewConversation { .. }
-                | BlocklistAIHistoryEvent::AppendedExchange { .. }
-                | BlocklistAIHistoryEvent::UpdatedStreamingExchange { .. }
-                | BlocklistAIHistoryEvent::SetActiveConversation { .. }
-                | BlocklistAIHistoryEvent::ClearedActiveConversation { .. }
-                | BlocklistAIHistoryEvent::ClearedConversationsInTerminalView { .. }
-                | BlocklistAIHistoryEvent::SplitConversation { .. }
-                | BlocklistAIHistoryEvent::RestoredConversations { .. }
-                | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
-        ) && event.terminal_view_id().is_some_and(|terminal_view_id| {
-            self.workspace_contains_terminal_view(terminal_view_id, ctx)
-        })
-    }
-
-    fn handle_cli_agent_sessions_event(
-        &mut self,
-        event: &CLIAgentSessionsModelEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if matches!(
-            event,
-            CLIAgentSessionsModelEvent::Started { .. }
-                | CLIAgentSessionsModelEvent::StatusChanged { .. }
-                | CLIAgentSessionsModelEvent::Ended { .. }
-                | CLIAgentSessionsModelEvent::SessionUpdated { .. }
-        ) && self.workspace_contains_terminal_view(event.terminal_view_id(), ctx)
-        {
-            ctx.notify();
-        }
     }
 
     /// Handle session settings changes.
