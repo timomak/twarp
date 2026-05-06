@@ -51,12 +51,9 @@ pub use crate::terminal::view::rich_content::{
     AIBlockMetadata, AgentViewEntryMetadata, RichContent, RichContentInsertionPosition,
     RichContentMetadata,
 };
-use crate::terminal::view::zero_state_block::TerminalViewZeroStateBlock;
+// twarp: 2c-d — zero_state_block + use_agent_footer + super::cli_agent deleted; stubs at top
 use crate::view_components::action_button::{ActionButton, ButtonSize, KeystrokeSource};
 
-use use_agent_footer::UseAgentToolbar;
-
-use super::cli_agent;
 use crate::app_state::CLIAgent;
 #[cfg(feature = "local_fs")]
 use crate::ai::agent::{CurrentHead, DiffBase};
@@ -359,6 +356,30 @@ mod ambient_agent {
             unimplemented!()
         }
     }
+}
+
+// twarp: 2c-d — TerminalViewZeroStateBlock was zero_state_block module; stub for type slot
+#[allow(dead_code)]
+struct TerminalViewZeroStateBlock;
+impl TerminalViewZeroStateBlock {
+    fn new<A, B, C>(_: A, _: B, _: &mut C) -> Self {
+        unimplemented!()
+    }
+}
+
+// twarp: 2c-d — UseAgentToolbar was use_agent_footer module; stub for type slot
+#[allow(dead_code)]
+struct UseAgentToolbar;
+impl UseAgentToolbar {
+    fn new<A, B, C, D, E, F, G>(_: A, _: B, _: C, _: D, _: E, _: F, _: &mut G) -> Self {
+        unimplemented!()
+    }
+}
+
+// twarp: 2c-d — cli_agent module deleted; alias to satisfy `cli_agent::*` references
+#[allow(dead_code)]
+mod cli_agent {
+    // Stubs for cli_agent module references in view.rs body code
 }
 
 use async_channel::{Receiver, Sender};
