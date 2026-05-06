@@ -53,8 +53,7 @@ use crate::{
     AIExecutionProfilesModel,
 };
 
-#[cfg(feature = "local_fs")]
-use crate::ai::blocklist::BlocklistAIHistoryEvent;
+// twarp: 2c-d — BlocklistAIHistoryEvent import removed with AI.
 #[cfg(not(target_family = "wasm"))]
 use crate::server::server_api::ServerApiProvider;
 
@@ -296,36 +295,7 @@ impl PaneContent for TerminalPane {
             }
         });
 
-        #[cfg(feature = "local_fs")]
-        {
-            ctx.subscribe_to_model(
-                &BlocklistAIHistoryModel::handle(ctx),
-                move |group, _, event, ctx| {
-                    let Some(model_event_sender) = group.model_event_sender.clone() else {
-                        return;
-                    };
-
-                    let is_shared_ambient_agent_session = group
-                        .terminal_view_from_pane_id(terminal_pane_id, ctx)
-                        .map(|view| {
-                            view.as_ref(ctx)
-                                .model
-                                .lock()
-                                .is_shared_ambient_agent_session()
-                        })
-                        .unwrap_or(false);
-
-                    handle_ai_history_event(
-                        event,
-                        terminal_view_id,
-                        terminal_pane_id,
-                        model_event_sender,
-                        is_shared_ambient_agent_session,
-                        ctx,
-                    );
-                },
-            );
-        }
+        // twarp: 2c-d — BlocklistAIHistoryModel subscription removed with AI.
 
         // Store the pane group entity ID on the agent view controller so the
         // message bar can perform pane-group-scoped visibility checks.
@@ -1414,142 +1384,4 @@ fn handle_terminal_view_event(
     }
 }
 
-#[cfg(feature = "local_fs")]
-fn handle_ai_history_event(
-    event: &BlocklistAIHistoryEvent,
-    terminal_view_id: EntityId,
-    terminal_pane_id: TerminalPaneId,
-    model_event_sender: SyncSender<ModelEvent>,
-    is_shared_ambient_agent_session: bool,
-    ctx: &mut ViewContext<PaneGroup>,
-) {
-    use std::sync::Arc;
-
-    use crate::ai::blocklist::{
-        AIQueryHistoryOutputStatus, PersistedAIInput, PersistedAIInputType,
-    };
-
-    if event
-        .terminal_view_id()
-        .is_some_and(|id| id != terminal_view_id)
-    {
-        return;
-    }
-
-    match event {
-        BlocklistAIHistoryEvent::AppendedExchange {
-            exchange_id,
-            conversation_id,
-            is_hidden,
-            ..
-        }
-        | BlocklistAIHistoryEvent::UpdatedStreamingExchange {
-            exchange_id,
-            conversation_id,
-            is_hidden,
-            ..
-        } => {
-            // Check if session restoration is enabled.
-            if !*GeneralSettings::as_ref(ctx).restore_session
-                || !AppExecutionMode::as_ref(ctx).can_save_session()
-            {
-                return;
-            }
-
-            let Some(conversation) =
-                BlocklistAIHistoryModel::as_ref(ctx).conversation(conversation_id)
-            else {
-                log::warn!("Received event with invalid conversation ID: {conversation_id:?}");
-                return;
-            };
-
-            let Some(exchange) = conversation.exchange_with_id(*exchange_id) else {
-                log::warn!("Received event with invalid exchange ID: {exchange_id:?}");
-                return;
-            };
-
-            // Hidden blocks and passive-only conversations should not be restored, so we skip
-            // them.
-            if *is_hidden || conversation.is_entirely_passive() {
-                return;
-            }
-
-            // Do not persist AI queries from shared ambient agent sessions that we've viewed,
-            // as these were sent as part of an ambient agent run and shouldn't polute the up arrow history.
-            if is_shared_ambient_agent_session {
-                return;
-            }
-
-            let persisted_query = PersistedAIInput {
-                start_ts: exchange.start_time,
-                inputs: exchange
-                    .input
-                    .iter()
-                    .filter_map(|input| PersistedAIInputType::try_from(input).ok())
-                    .collect(),
-                exchange_id: exchange.id,
-                conversation_id: *conversation_id,
-                output_status: AIQueryHistoryOutputStatus::from(&exchange.output_status),
-                working_directory: exchange.working_directory.clone(),
-                // TODO(CORE-3546): shell: exchange.shell.clone(),
-                model_id: exchange.model_id.clone(),
-                coding_model_id: exchange.coding_model_id.clone(),
-            };
-            let upsert_ai_query_event = ModelEvent::UpsertAIQuery {
-                query: Arc::new(persisted_query),
-            };
-            let _ = ctx.spawn(
-                // Sending over a sync sender can block the current thread, so we
-                // do this async.
-                async move { model_event_sender.send(upsert_ai_query_event) },
-                move |_, res, _| {
-                    if let Err(err) = res {
-                        log::error!(
-                            "Error sending upsert AI query event for terminal id {terminal_pane_id:?} {err:?}"
-                        );
-                    }
-                },
-            );
-        }
-        BlocklistAIHistoryEvent::ClearedConversationsInTerminalView { .. }
-        | BlocklistAIHistoryEvent::ClearedActiveConversation { .. } => {
-            ctx.emit(pane_group::Event::InvalidatedActiveConversation);
-        }
-        BlocklistAIHistoryEvent::RemoveConversation {
-            conversation_id, ..
-        } => {
-            let conversation_id = conversation_id.to_string();
-            // On remove, delete all related AI query and multi-agent conversation data for this conversation.
-            let _ = ctx.spawn(
-                async move {
-                    model_event_sender.send(ModelEvent::DeleteAIConversation {
-                        conversation_id: conversation_id.clone(),
-                    })?;
-                    model_event_sender.send(ModelEvent::DeleteMultiAgentConversations {
-                        conversation_ids: vec![conversation_id],
-                    })
-                },
-                |_, res, _| {
-                    if let Err(err) = res {
-                        log::error!("Error sending delete events for conversation: {err:?}");
-                    }
-                },
-            );
-        }
-        // DeletedConversation SQL cleanup is handled directly in delete_conversation().
-        BlocklistAIHistoryEvent::DeletedConversation { .. }
-        | BlocklistAIHistoryEvent::StartedNewConversation { .. }
-        | BlocklistAIHistoryEvent::UpdatedConversationStatus { .. }
-        | BlocklistAIHistoryEvent::ReassignedExchange { .. }
-        | BlocklistAIHistoryEvent::SetActiveConversation { .. }
-        | BlocklistAIHistoryEvent::UpdatedTodoList { .. }
-        | BlocklistAIHistoryEvent::UpdatedAutoexecuteOverride { .. }
-        | BlocklistAIHistoryEvent::SplitConversation { .. }
-        | BlocklistAIHistoryEvent::RestoredConversations { .. }
-        | BlocklistAIHistoryEvent::CreatedSubtask { .. }
-        | BlocklistAIHistoryEvent::UpgradedTask { .. }
-        | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
-        | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
-        | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. } => (),
-    }
-}
+// twarp: 2c-d — handle_ai_history_event removed (BlocklistAIHistoryEvent + AI history deleted).

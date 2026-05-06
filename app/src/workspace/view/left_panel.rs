@@ -16,9 +16,7 @@ use warpui::{
     ViewContext, ViewHandle, WeakViewHandle,
 };
 
-// twarp: 2c-d — AgentConversationsModel deleted; stub.
-pub struct AgentConversationsModel;
-use crate::app_state::AIConversationId;
+// twarp: 2c-d — AgentConversationsModel/AIConversationId stubs no longer needed in this file.
 #[cfg(feature = "local_fs")]
 use crate::code::file_tree::FileTreeEvent;
 use crate::coding_panel_enablement_state::CodingPanelEnablementState;
