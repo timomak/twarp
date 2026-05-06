@@ -2723,8 +2723,8 @@ pub struct TerminalView {
     pending_cloud_mode_start_callback: Option<TerminalViewCallback>,
     pending_cloud_mode_start_abort_handle: Option<SpawnedFutureHandle>,
 
-    /// Active /init flow model, if any. Cleared when cancelled or completed.
-    active_init_project_model: Option<ModelHandle<InitProjectModel>>,
+    /// twarp: 2c-d — InitProjectModel deleted with AI; field kept as Option<()> for compat.
+    active_init_project_model: Option<()>,
 
     /// Whether we're waiting for the result of an AWS CLI login command.
     /// Used to detect "command not found" errors when AWS CLI isn't installed.
@@ -11998,213 +11998,12 @@ impl TerminalView {
         });
     }
 
+    // twarp: 2c-d — init_project flow removed (InitProjectModel/InitStepKind/InitStepBlock/etc deleted with AI).
     fn init_project(
         &mut self,
-        open_code_review_pane_after_rule_generation: bool,
-        ctx: &mut ViewContext<Self>,
+        _open_code_review_pane_after_rule_generation: bool,
+        _ctx: &mut ViewContext<Self>,
     ) {
-        if self.has_active_init_project(ctx) {
-            return;
-        }
-
-        let Some(pwd_path) = self
-            .pwd()
-            .and_then(|pwd| Path::new(&pwd).canonicalize().ok())
-        else {
-            return;
-        };
-
-        let path_env_var = self
-            .active_block_session_id()
-            .and_then(|session_id| self.sessions.as_ref(ctx).get(session_id))
-            .and_then(|session| session.path().clone());
-
-        // Create new conversation for init flow (this ensures we enter the agent view)
-        let Some(conversation_id) = (if FeatureFlag::AgentView.is_enabled() {
-            self.enter_agent_view_for_new_conversation(None, AgentViewEntryOrigin::SlashInit, ctx);
-            self.agent_view_controller()
-                .as_ref(ctx)
-                .agent_view_state()
-                .active_conversation_id()
-        } else {
-            Some(
-                BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                    history_model.start_new_conversation(self.view_id, false, false, ctx)
-                }),
-            )
-        }) else {
-            return;
-        };
-
-        // Set fallback title since /init may have no initial query
-        BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _ctx| {
-            if let Some(conversation) = history.conversation_mut(&conversation_id) {
-                conversation.set_fallback_display_title("Project setup".to_string());
-            }
-        });
-
-        let init_model = ctx.add_model(|ctx| InitProjectModel::new(pwd_path, path_env_var, ctx));
-        self.active_init_project_model = Some(init_model.clone());
-
-        ctx.subscribe_to_model(&init_model, move |me, model, event, ctx| {
-            match event {
-                InitProjectModelEvent::InsertStep(kind) => {
-                    me.insert_init_step_block(*kind, model.clone(), ctx);
-                    me.redetermine_terminal_focus(ctx);
-                }
-                InitProjectModelEvent::StepCompleted(_) => {}
-                InitProjectModelEvent::Cancelled => {
-                    me.active_init_project_model = None;
-                    // Mark conversation as cancelled
-                    //
-                    // We have to do this to handle the case where an init flow is just made up
-                    // of `InitProjectBlock`s (no actual conversation steps were triggered) -
-                    // the controller doesn't update the conversation status in those cases, so
-                    // without this we'd see an "in progress" conversation.
-                    BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
-                        history.update_conversation_status(
-                            me.view_id,
-                            conversation_id,
-                            ConversationStatus::Cancelled,
-                            ctx,
-                        );
-                    });
-                    me.redetermine_terminal_focus(ctx);
-                }
-                InitProjectModelEvent::InitCompleted => {
-                    me.active_init_project_model = None;
-                    // Mark conversation as success
-                    //
-                    // We have to do this to handle the case where an init flow is just made up
-                    // of `InitProjectBlock`s (no actual conversation steps were triggered) -
-                    // the controller doesn't update the conversation status in those cases, so
-                    // without this we'd see an "in progress" conversation.
-                    BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
-                        history.update_conversation_status(
-                            me.view_id,
-                            conversation_id,
-                            ConversationStatus::Success,
-                            ctx,
-                        );
-                    });
-                    #[cfg(feature = "local_fs")]
-                    me.start_lsp_server_in_active_pwd(ctx);
-                    me.redetermine_terminal_focus(ctx);
-                    ctx.emit(Event::OnboardingInitCompleted);
-                }
-                InitProjectModelEvent::GenerateProjectRules => {
-                    me.ai_controller.update(ctx, |controller, ctx| {
-                        controller.send_ai_input_with_context(
-                            |context| AIAgentInput::InitProjectRules {
-                                context,
-                                display_query: None,
-                            },
-                            ctx,
-                        );
-                    });
-
-                    // Mark step completed when conversation finishes
-                    let model = model.clone();
-                    me.on_next_conversation_finished(move |me, _reason, ctx| {
-                        model.update(ctx, |m, ctx| {
-                            m.mark_step_completed(
-                                InitStepKind::ProjectScopedRules,
-                                InitActionResult::ProjectScopedRules(
-                                    ProjectScopedRulesResult::GenerateNew {
-                                        mouse_state: Default::default(),
-                                        button_disabled: false,
-                                    },
-                                ),
-                                ctx,
-                            );
-                        });
-
-                        if open_code_review_pane_after_rule_generation {
-                            me.toggle_code_review_pane(
-                                GitDeltaPreference::Always,
-                                CodeReviewPaneEntrypoint::AgentModeCompleted,
-                                None,
-                                false, /* focus_new_pane */
-                                ctx,
-                            );
-                        }
-                    });
-                }
-                InitProjectModelEvent::RegenerateProjectRules => {
-                    me.ai_controller.update(ctx, |controller, ctx| {
-                        controller.send_ai_input_with_context(
-                            |context| AIAgentInput::InitProjectRules {
-                                context,
-                                display_query: None,
-                            },
-                            ctx,
-                        );
-                    });
-                    // Clicking this button doesn't mark the step as running, so we don't need to
-                    // register anything to mark the step as complete.
-                }
-                InitProjectModelEvent::ViewCodebaseContextStatus => {
-                    ctx.emit(Event::OpenSettings(SettingsSection::CodeIndexing));
-                }
-                InitProjectModelEvent::LanguageServerInstalledAndEnabled => {
-                    #[cfg(feature = "local_fs")]
-                    me.start_lsp_server_in_active_pwd(ctx);
-                }
-                InitProjectModelEvent::CreateEnvironment => {
-                    me.ai_controller.update(ctx, |controller, ctx| {
-                        controller.send_ai_input_with_context(
-                            |context| AIAgentInput::CreateEnvironment {
-                                context,
-                                display_query: None,
-                                repo_paths: vec![".".to_string()],
-                            },
-                            ctx,
-                        );
-                    });
-                }
-                InitProjectModelEvent::EnvironmentCreated => {
-                    let model = model.clone();
-                    me.on_next_conversation_finished(move |_me, _reason, ctx| {
-                        model.update(ctx, |m, ctx| {
-                            m.mark_step_completed(
-                                InitStepKind::CreateEnvironment,
-                                init_project::InitActionResult::CreateEnvironment(
-                                    init_project::CreateEnvironmentResult::Created,
-                                ),
-                                ctx,
-                            );
-                        });
-                    });
-                }
-            }
-        });
-        // After subscribing, start the /init flow
-        init_model.update(ctx, |model, ctx| {
-            model.start(ctx);
-        });
-    }
-
-    /// Insert an InitStepBlock for the given step kind
-    fn insert_init_step_block(
-        &mut self,
-        kind: InitStepKind,
-        model: ModelHandle<InitProjectModel>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let step_block = ctx.add_typed_action_view(move |ctx| InitStepBlock::new(kind, model, ctx));
-
-        self.insert_rich_content(
-            None,
-            step_block.clone(),
-            Some(RichContentMetadata::InitStep {
-                step_kind: kind,
-                block_handle: step_block,
-            }),
-            RichContentInsertionPosition::Append {
-                insert_below_long_running_block: true,
-            },
-            ctx,
-        );
     }
 
     /// Try to focus the most recent init step block that's awaiting user input
@@ -12279,12 +12078,9 @@ impl TerminalView {
         // 4) There is no in-progress AI conversation (we don't want setup to show up mid conversation flow)
         // 5) Session is not remote
         // 6) There are available steps to show
-        !already_shown
-            && is_any_ai_enabled
-            && is_repo
-            && self.active_ai_block(ctx).is_none()
-            && !is_remote_session
-            && InitProjectModel::should_have_available_steps(directory, ctx)
+        // twarp: 2c-d — InitProjectModel availability check removed with AI.
+        let _ = (already_shown, is_any_ai_enabled, is_repo, is_remote_session, directory, ctx);
+        false
     }
 
     #[cfg(not(feature = "local_fs"))]
