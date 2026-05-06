@@ -32,26 +32,11 @@ use crate::terminal::autosuggestion_validation::{
 };
 use crate::terminal::buy_credits_banner::{BuyCreditsBanner, BuyCreditsBannerEvent};
 #[cfg(not(target_family = "wasm"))]
-use crate::terminal::cli_agent_sessions::plugin_manager::PluginModalKind;
-use crate::terminal::cli_agent_sessions::{
-    CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
-};
+// twarp: 2c-d — cli_agent_sessions and AI input submodules deleted; stubs at file bottom
 use crate::terminal::input::buffer_model::InputBufferModel;
 use crate::terminal::input::cloud_mode_v2_history_menu::CloudModeV2HistoryMenuView;
-use crate::terminal::input::conversations::{
-    InlineConversationMenuEvent, InlineConversationMenuView,
-};
 use crate::terminal::input::inline_history::InlineHistoryMenuView;
 use crate::terminal::input::inline_menu::InlineMenuPositioner;
-use crate::terminal::input::models::{
-    InlineModelSelectorEvent, InlineModelSelectorTab, InlineModelSelectorView,
-};
-use crate::terminal::input::plans::{InlinePlanMenuEvent, InlinePlanMenuView};
-use crate::terminal::input::profiles::{InlineProfileSelectorEvent, InlineProfileSelectorView};
-use crate::terminal::input::prompts::{InlinePromptsMenuEvent, InlinePromptsMenuView};
-use crate::terminal::input::repos::{InlineReposMenuEvent, InlineReposMenuView};
-use crate::terminal::input::rewind::{RewindMenuEvent, RewindMenuView};
-use crate::terminal::input::skills::{InlineSkillSelectorEvent, InlineSkillSelectorView};
 use crate::terminal::input::slash_command_model::{SlashCommandEntryState, SlashCommandModel};
 use crate::terminal::input::slash_commands::{
     InlineSlashCommandView, SlashCommandDataSource, SlashCommandTrigger,
@@ -60,11 +45,11 @@ use crate::terminal::input::suggestions_mode_model::{
     InputSuggestionsModeEvent, InputSuggestionsModeModel,
 };
 use crate::terminal::input::terminal_message_bar::TerminalInputMessageBar;
-use crate::terminal::input::user_query::{UserQueryMenuEvent, UserQueryMenuView};
+// twarp: 2c-d — user_query submodule deleted; stubs at file bottom
 use crate::terminal::model::session::active_session::ActiveSession;
 use crate::terminal::package_installers::command_at_cursor_has_common_package_installer_prefix;
 use crate::terminal::prompt_render_helper::should_render_ps1_prompt;
-use crate::terminal::universal_developer_input::AtContextMenuDisabledReason;
+// twarp: 2c-d — universal_developer_input deleted; stub at file bottom
 use crate::terminal::view::CodeDiffAction;
 use crate::app_state::CLIAgent;
 use crate::util::bindings::keybinding_name_to_normalized_string;
@@ -77,26 +62,8 @@ use crate::ASSETS;
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
 
-use crate::ai::attachment_utils::MAX_ATTACHMENT_SIZE_BYTES;
-use crate::ai::blocklist::AttachmentType;
-use crate::ai::mcp::TemplatableMCPServerManager;
-use crate::server::server_api::ai::{AttachmentFileInfo, AttachmentInput};
+// twarp: 2c-d — AI imports replaced with file-local stubs at bottom of file
 use crate::{
-    ai::{
-        agent::{AIAgentContext, EntrypointType},
-        blocklist::{
-            prompt::prompt_alert::{PromptAlertEvent, PromptAlertView},
-            render_ai_agent_mode_icon, render_ai_follow_up_icon,
-            telemetry_banner::should_collect_ai_ugc_telemetry,
-            BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIController,
-            BlocklistAIControllerEvent, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
-            BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig, InputType,
-            BLOCK_CONTEXT_ATTACHMENT_REGEX, DIFF_HUNK_ATTACHMENT_REGEX,
-            DRIVE_OBJECT_ATTACHMENT_REGEX,
-        },
-        llms::{LLMPreferences, LLMPreferencesEvent},
-        AIRequestUsageModel,
-    },
     appearance::{Appearance, AppearanceEvent},
     channel::{Channel, ChannelState},
     cloud_object::{
@@ -466,6 +433,267 @@ enum SkillTelemetryEvent {
 #[allow(dead_code)]
 fn ai_indicator_height() -> f32 {
     0.0
+}
+
+// twarp: 2c-d — stubs for cli_agent_sessions and other AI types
+#[allow(dead_code)]
+struct CLIAgentInputState;
+
+#[allow(dead_code)]
+struct CLIAgentSessionsModel;
+impl CLIAgentSessionsModel {
+    fn handle<C>(_: &C) -> std::sync::Arc<Self> {
+        unimplemented!()
+    }
+    fn as_ref<C>(_: &C) -> &Self {
+        unimplemented!()
+    }
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum CLIAgentSessionsModelEvent {
+    Ended {
+        terminal_view_id: warpui::EntityId,
+    },
+}
+
+#[allow(dead_code)]
+enum PluginModalKind {}
+
+#[allow(dead_code)]
+struct InlineConversationMenuView;
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum InlineConversationMenuEvent {
+    NavigateToConversation {
+        conversation_navigation_data: ConversationNavigationData,
+    },
+    Dismissed,
+}
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+struct ConversationNavigationData {
+    pub id: AIConversationId,
+    pub window_id: Option<warpui::WindowId>,
+    pub pane_view_locator: Option<()>,
+    pub terminal_view_id: Option<warpui::EntityId>,
+}
+
+#[allow(dead_code)]
+struct InlineModelSelectorView;
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum InlineModelSelectorEvent {
+    SelectedModel {
+        id: (),
+        selected_tab: InlineModelSelectorTab,
+        set_as_default: bool,
+    },
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+enum InlineModelSelectorTab {
+    BaseAgent,
+    FullTerminalUse,
+}
+
+#[allow(dead_code)]
+struct InlinePlanMenuView;
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum InlinePlanMenuEvent {}
+
+#[allow(dead_code)]
+struct InlineProfileSelectorView;
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum InlineProfileSelectorEvent {}
+
+#[allow(dead_code)]
+struct InlinePromptsMenuView;
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum InlinePromptsMenuEvent {}
+
+#[allow(dead_code)]
+struct InlineReposMenuView;
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum InlineReposMenuEvent {
+    NavigateToRepo { path: std::path::PathBuf },
+    Dismissed,
+}
+
+#[allow(dead_code)]
+struct RewindMenuView;
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum RewindMenuEvent {}
+
+#[allow(dead_code)]
+struct InlineSkillSelectorView;
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum InlineSkillSelectorEvent {}
+
+#[allow(dead_code)]
+struct UserQueryMenuView;
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum UserQueryMenuEvent {}
+
+#[allow(dead_code)]
+enum AtContextMenuDisabledReason {}
+
+// AttachmentType, AttachmentInput, AIAgentContext, etc.
+#[allow(dead_code)]
+const MAX_ATTACHMENT_SIZE_BYTES: usize = 10 * 1024 * 1024;
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum AttachmentType {
+    Image,
+    File,
+}
+
+#[allow(dead_code)]
+struct TemplatableMCPServerManager;
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+struct AttachmentFileInfo {
+    pub filename: String,
+    pub mime_type: String,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+struct AttachmentInput {
+    pub filename: String,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum AIAgentContext {
+    Block(()),
+    SelectedText(String),
+    Other,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+enum EntrypointType {
+    UserInitiated,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum PromptAlertEvent {}
+
+#[allow(dead_code)]
+struct PromptAlertView;
+
+#[allow(dead_code)]
+fn render_ai_agent_mode_icon() {}
+#[allow(dead_code)]
+fn render_ai_follow_up_icon() {}
+#[allow(dead_code)]
+fn should_collect_ai_ugc_telemetry<C>(_: &C) -> bool {
+    false
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum BlocklistAIContextEvent {}
+
+#[allow(dead_code)]
+struct BlocklistAIContextModel;
+
+#[allow(dead_code)]
+struct BlocklistAIController;
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum BlocklistAIControllerEvent {}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum BlocklistAIHistoryEvent {}
+
+#[allow(dead_code)]
+struct BlocklistAIHistoryModel;
+impl BlocklistAIHistoryModel {
+    fn handle<C>(_: &C) -> std::sync::Arc<Self> {
+        unimplemented!()
+    }
+    fn as_ref<C>(_: &C) -> &Self {
+        unimplemented!()
+    }
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum BlocklistAIInputEvent {}
+
+#[allow(dead_code)]
+struct BlocklistAIInputModel;
+impl BlocklistAIInputModel {
+    fn handle<C>(_: &C) -> std::sync::Arc<Self> {
+        unimplemented!()
+    }
+    fn as_ref<C>(_: &C) -> &Self {
+        unimplemented!()
+    }
+    fn is_ai_input_enabled(&self) -> bool {
+        false
+    }
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+struct InputConfig;
+impl InputConfig {
+    pub fn empty() -> Self {
+        Self
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+enum InputType {
+    Terminal,
+    AI,
+}
+
+lazy_static::lazy_static! {
+    static ref BLOCK_CONTEXT_ATTACHMENT_REGEX: regex::Regex = regex::Regex::new("").unwrap();
+    static ref DIFF_HUNK_ATTACHMENT_REGEX: regex::Regex = regex::Regex::new("").unwrap();
+    static ref DRIVE_OBJECT_ATTACHMENT_REGEX: regex::Regex = regex::Regex::new("").unwrap();
+}
+
+#[allow(dead_code)]
+struct LLMPreferences;
+impl LLMPreferences {
+    fn handle<C>(_: &C) -> std::sync::Arc<Self> {
+        unimplemented!()
+    }
+    fn update_preferred_agent_mode_llm<C>(&mut self, _: &(), _: warpui::EntityId, _: &mut C) {}
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum LLMPreferencesEvent {}
+
+#[allow(dead_code)]
+struct AIRequestUsageModel;
+impl AIRequestUsageModel {
+    fn as_ref<C>(_: &C) -> &Self {
+        unimplemented!()
+    }
+    fn has_any_ai_remaining<C>(&self, _: &C) -> bool {
+        false
+    }
 }
 
 #[allow(dead_code)]
