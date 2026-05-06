@@ -31,11 +31,44 @@ use warpui::{TypedActionView, ViewContext, ViewHandle};
 
 use warp_core::ui::theme::AnsiColorIdentifier;
 
-#[cfg(feature = "local_fs")]
-use crate::ai::persisted_workspace::PersistedWorkspaceEvent;
-use crate::ai::persisted_workspace::{
-    LSPEnablementResultForFile, LspRepoStatus, PersistedWorkspace,
-};
+// twarp: 2c-d — replaced crate::ai::persisted_workspace types with local stub. The real
+// PersistedWorkspace lived in the AI module and tracked LSP installation state. The stubs
+// preserve enough of the type surface for the LSP footer to compile; concrete behaviour
+// (workspace metadata, install detection, enablement) is gutted.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LspRepoStatus {
+    Ready,
+    Enabled,
+    CheckingForInstallation,
+    DisabledAndInstalled {
+        server_type: lsp::supported_servers::LSPServerType,
+    },
+    DisabledAndNotInstalled {
+        server_type: lsp::supported_servers::LSPServerType,
+    },
+    Installing {
+        server_type: lsp::supported_servers::LSPServerType,
+    },
+}
+
+impl LspRepoStatus {
+    #[cfg(feature = "local_fs")]
+    fn from_installation_status(
+        _status: &(),
+        _server_type: lsp::supported_servers::LSPServerType,
+    ) -> Self {
+        LspRepoStatus::Ready
+    }
+}
+
+#[allow(dead_code)]
+enum LSPEnablementResultForFile {
+    Enabled,
+    UnsupportedLanguage,
+    LSPNotEnabled { root_name: Option<String> },
+}
+
 use crate::settings::AISettings;
 use crate::ui_components::blended_colors;
 #[cfg(feature = "local_fs")]
@@ -378,65 +411,10 @@ impl CodeFooterView {
             })
         });
 
-        // Kick off detection via PersistedWorkspace and subscribe for updates
-        #[cfg(feature = "local_fs")]
-        let initial_status = {
-            let status = Self::detect_installation_status(&path, ctx);
-
-            // Update button label based on initial status (handles cached results)
-            if let Some(enable_button) = &enable_lsp_button {
-                if let Some(label) = Self::button_label_for_status(&status) {
-                    enable_button.update(ctx, |button, ctx| {
-                        button.set_label(label, ctx);
-                    });
-                }
-            }
-
-            // Subscribe to InstallStatusUpdate events from PersistedWorkspace
-            let persisted = PersistedWorkspace::handle(ctx);
-            ctx.subscribe_to_model(&persisted, move |me, _model_handle, event, ctx| {
-                // Only handle InstallStatusUpdate events for our server type
-                let PersistedWorkspaceEvent::InstallStatusUpdate {
-                    server_type: event_server_type,
-                    status,
-                } = event
-                else {
-                    return;
-                };
-
-                let FooterMode::SingleFile { path, .. } = &me.mode else {
-                    return;
-                };
-
-                let Some(current_server_type) =
-                    LanguageId::from_path(path).map(|id| id.server_type())
-                else {
-                    return;
-                };
-
-                // Only update if the event is for the server type we're tracking
-                if *event_server_type != current_server_type {
-                    return;
-                }
-
-                // Convert LSPInstallationStatus to LspRepoStatus
-                let new_status =
-                    LspRepoStatus::from_installation_status(status, *event_server_type);
-
-                if let FooterMode::SingleFile {
-                    lsp_repo_status, ..
-                } = &mut me.mode
-                {
-                    *lsp_repo_status = new_status;
-                }
-                me.update_enable_button_label(ctx);
-                ctx.notify();
-            });
-
-            status
-        };
-        #[cfg(not(feature = "local_fs"))]
-        let initial_status = LspRepoStatus::CheckingForInstallation;
+        // twarp: 2c-d — removed PersistedWorkspace::detect_installation_status detection and
+        // PersistedWorkspaceEvent::InstallStatusUpdate subscription. Default to Ready since the
+        // user-facing CTA flow now assumes nothing to enable.
+        let initial_status = LspRepoStatus::Ready;
 
         Self {
             mode: FooterMode::SingleFile {
@@ -481,96 +459,9 @@ impl CodeFooterView {
             },
         );
 
-        // Kick off async detection of available servers for this workspace
-        #[cfg(feature = "local_fs")]
-        {
-            let persisted = PersistedWorkspace::handle(ctx);
-            persisted.update(ctx, |model, ctx| {
-                model.detect_available_servers_for_workspaces(vec![root_path.clone()], false, ctx);
-            });
-
-            // Subscribe to AvailableServersDetected to populate per-server statuses
-            let workspace_root_for_detect = root_path.clone();
-            ctx.subscribe_to_model(&persisted, move |me, _model_handle, event, ctx| {
-                match event {
-                    PersistedWorkspaceEvent::AvailableServersDetected {
-                        workspace_path,
-                        servers,
-                    } if *workspace_path == workspace_root_for_detect => {
-                        let FooterMode::Workspace {
-                            root_path,
-                            lsp_repo_statuses,
-                            ..
-                        } = &mut me.mode
-                        else {
-                            return;
-                        };
-
-                        // For each suggested server, detect its installation status
-                        let root = root_path.clone();
-                        for &server_type in servers {
-                            let proposed =
-                                PersistedWorkspace::handle(ctx).update(ctx, |model, ctx| {
-                                    model.detect_lsp_workspace_status(
-                                        root.clone(),
-                                        server_type,
-                                        ctx,
-                                    )
-                                });
-                            lsp_repo_statuses.update_status(
-                                server_type,
-                                proposed,
-                                &me.lsp_servers,
-                                ctx,
-                            );
-                        }
-
-                        // Create enable button for all CTA-worthy servers
-                        let cta_statuses = me.mode.cta_lsp_repo_statuses();
-                        if let Some(label) = Self::button_label_for_cta_statuses(&cta_statuses) {
-                            me.enable_lsp_button = Some(ctx.add_typed_action_view(|_ctx| {
-                                ActionButton::new(label, NakedTheme)
-                                    .with_size(ButtonSize::Small)
-                                    .on_click(|ctx| {
-                                        ctx.dispatch_typed_action(CodeFooterViewAction::EnableLSP);
-                                    })
-                            }));
-                        }
-
-                        ctx.notify();
-                    }
-                    PersistedWorkspaceEvent::InstallStatusUpdate {
-                        server_type,
-                        status,
-                    } => {
-                        let FooterMode::Workspace {
-                            lsp_repo_statuses, ..
-                        } = &mut me.mode
-                        else {
-                            return;
-                        };
-
-                        // Only update if we're tracking this server type
-                        if lsp_repo_statuses.contains_key(server_type) {
-                            let proposed =
-                                LspRepoStatus::from_installation_status(status, *server_type);
-                            lsp_repo_statuses.update_status(
-                                *server_type,
-                                proposed,
-                                &me.lsp_servers,
-                                ctx,
-                            );
-                            me.update_enable_button_label(ctx);
-                            ctx.notify();
-                        }
-                    }
-                    PersistedWorkspaceEvent::AvailableServersDetected { .. }
-                    | PersistedWorkspaceEvent::InstallationSucceeded
-                    | PersistedWorkspaceEvent::InstallationFailed
-                    | PersistedWorkspaceEvent::WorkspaceAdded { .. } => {}
-                }
-            });
-        }
+        // twarp: 2c-d — removed PersistedWorkspace::detect_available_servers_for_workspaces
+        // and PersistedWorkspaceEvent subscription that populated per-server installation
+        // statuses. The workspace footer no longer auto-detects suggested servers.
 
         let mut view = Self {
             mode: FooterMode::Workspace {
@@ -685,31 +576,7 @@ impl CodeFooterView {
         }
     }
 
-    /// Detects LSP installation status for the given file path and returns the initial status.
-    /// This is shared between `new` and `clear_server_subscription`. Only used in SingleFile mode.
-    #[cfg(feature = "local_fs")]
-    fn detect_installation_status(
-        file_path: &std::path::Path,
-        ctx: &mut ViewContext<Self>,
-    ) -> LspRepoStatus {
-        let server_type = LanguageId::from_path(file_path).map(|id| id.server_type());
-        let Some(server_type) = server_type else {
-            return LspRepoStatus::CheckingForInstallation;
-        };
-
-        let repo_root = DetectedRepositories::handle(ctx)
-            .as_ref(ctx)
-            .get_root_for_path(file_path)
-            .or_else(|| file_path.parent().map(|p| p.to_path_buf()));
-
-        let Some(repo_root) = repo_root else {
-            return LspRepoStatus::CheckingForInstallation;
-        };
-
-        PersistedWorkspace::handle(ctx).update(ctx, |model, ctx| {
-            model.detect_lsp_workspace_status(repo_root, server_type, ctx)
-        })
-    }
+    // twarp: 2c-d — removed detect_installation_status (depended on PersistedWorkspace).
 
     /// Updates the enable button label based on the current CTA-worthy repo statuses.
     /// Hides the button when no CTAs remain.
@@ -776,23 +643,12 @@ impl CodeFooterView {
             button.set_disabled(true, ctx);
         });
 
-        // Set initial status and kick off installation status detection
-        #[cfg(feature = "local_fs")]
-        if let FooterMode::SingleFile {
-            path,
-            lsp_repo_status,
-            ..
-        } = &mut self.mode
-        {
-            *lsp_repo_status = Self::detect_installation_status(path, ctx);
-            self.update_enable_button_label(ctx);
-        }
-        #[cfg(not(feature = "local_fs"))]
+        // twarp: 2c-d — replaced detect_installation_status path with stub Ready (no PersistedWorkspace).
         if let FooterMode::SingleFile {
             lsp_repo_status, ..
         } = &mut self.mode
         {
-            *lsp_repo_status = LspRepoStatus::CheckingForInstallation;
+            *lsp_repo_status = LspRepoStatus::Ready;
         }
 
         ctx.notify();
@@ -954,11 +810,14 @@ impl CodeFooterView {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        let title = PersistedWorkspace::as_ref(app)
-            .root_for_workspace(self.mode.path())
-            .and_then(|path| path.file_name())
+        // twarp: 2c-d — replaced PersistedWorkspace::root_for_workspace lookup with stub.
+        let title = self
+            .mode
+            .path()
+            .file_name()
             .and_then(|directory_name| directory_name.to_str().map(|s| s.to_string()))
             .unwrap_or("unknown workspace".to_string());
+        let _ = app;
 
         let background = appearance.theme().surface_2();
 
@@ -1583,41 +1442,16 @@ impl CodeFooterView {
         match &self.mode {
             FooterMode::TabConfig { .. } => (None, false),
             FooterMode::SingleFile {
-                path,
-                lsp_repo_status,
+                path: _,
+                lsp_repo_status: _,
                 ..
-            } => match PersistedWorkspace::as_ref(app).has_enabled_lsp_server_for_file_path(path) {
-                LSPEnablementResultForFile::UnsupportedLanguage => (
-                    Some("Language support is unavailable for this file type".to_string()),
-                    false,
-                ),
-                LSPEnablementResultForFile::LSPNotEnabled { root_name } => match lsp_repo_status {
-                    LspRepoStatus::CheckingForInstallation => (
-                        Some(format!(
-                            "Language support is not currently enabled for {}",
-                            root_name.unwrap_or("this codebase".to_string())
-                        )),
-                        false,
-                    ),
-                    LspRepoStatus::Ready | LspRepoStatus::Enabled => (
-                        Some("Language server is unavailable for this codebase".to_string()),
-                        false,
-                    ),
-                    LspRepoStatus::DisabledAndNotInstalled { .. }
-                    | LspRepoStatus::DisabledAndInstalled { .. } => (
-                        Some(format!(
-                            "Language support is not currently enabled for {}",
-                            root_name.unwrap_or("this codebase".to_string())
-                        )),
-                        true,
-                    ),
-                    LspRepoStatus::Installing { server_type } => (
-                        Some(format!("Installing {}...", server_type.binary_name())),
-                        false,
-                    ),
-                },
-                LSPEnablementResultForFile::Enabled => (None, false),
-            },
+            } => {
+                // twarp: 2c-d — removed PersistedWorkspace::has_enabled_lsp_server_for_file_path
+                // and the LSPEnablementResultForFile / LspRepoStatus dispatch. With AI gone the
+                // footer no longer surfaces an enablement CTA.
+                let _ = app;
+                (None, false)
+            }
             FooterMode::Workspace {
                 root_path,
                 lsp_repo_statuses,
@@ -1940,10 +1774,8 @@ impl TypedActionView for CodeFooterView {
                         manager.remove_server(&workspace_root, server_type, ctx);
                     });
 
-                    // Disable in PersistedWorkspace
-                    PersistedWorkspace::handle(ctx).update(ctx, |workspace, _| {
-                        workspace.disable_lsp_server_for_path(&workspace_root, server_type);
-                    });
+                    // twarp: 2c-d — removed PersistedWorkspace::disable_lsp_server_for_path
+                    // (no longer have AI persisted workspace).
                 }
                 ctx.notify();
             }
