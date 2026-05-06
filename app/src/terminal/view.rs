@@ -31,19 +31,7 @@ use warpui::clipboard_utils::get_image_filepaths_from_paths;
 
 use std::ops::Deref as _;
 
-use crate::ai::blocklist::agent_view::fork_from_last_known_good_state_exchange_id;
-use crate::ai::blocklist::agent_view::{
-    agent_view_bg_fill, AgentViewController, AgentViewControllerEvent, AgentViewDisplayMode,
-    AgentViewEntryBlockParams, AgentViewEntryOrigin, AgentViewHeaderDisabledTheme,
-    AgentViewHeaderTheme, AgentViewZeroStateBlock, AgentViewZeroStateEvent, EphemeralMessageModel,
-    ExitConfirmationTrigger, InlineAgentViewHeader, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
-};
-use crate::ai::conversation_utils;
-use crate::ai::prompt_suggestions::{
-    has_pending_code_or_unit_test_prompt_suggestion,
-    is_accept_prompt_suggestion_bound_to_cmd_enter,
-    is_accept_prompt_suggestion_bound_to_ctrl_enter,
-};
+// twarp: 2c-d — all crate::ai::* imports replaced with file-local stubs at top of file
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::terminal::input::inline_menu::InlineMenuPositioner;
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
@@ -55,20 +43,7 @@ pub use crate::terminal::view::rich_content::{
 use crate::view_components::action_button::{ActionButton, ButtonSize, KeystrokeSource};
 
 use crate::app_state::CLIAgent;
-#[cfg(feature = "local_fs")]
-use crate::ai::agent::{CurrentHead, DiffBase};
-use crate::ai::agent_conversations_model::{AgentConversationsModel, AgentConversationsModelEvent};
-use crate::ai::ambient_agents::{
-    conversation_output_status_from_conversation, AmbientAgentTaskId, AmbientConversationStatus,
-};
-use crate::ai::blocklist::block::cli::{CLISubagentView, CLISubagentViewEvent};
-use crate::ai::blocklist::block::cli_controller::{
-    CLISubagentController, CLISubagentEvent, UserTakeOverReason,
-};
-use crate::ai::blocklist::block::status_bar::BlocklistAIStatusBarEvent;
-use crate::ai::blocklist::{block_context_from_terminal_model, SlashCommandRequest};
-use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentModel, AIDocumentVersion};
-use crate::ai::loading::shimmering_warp_loading_text;
+// twarp: 2c-d — crate::ai::* imports gone; stubs at top of file
 #[cfg(feature = "local_fs")]
 use crate::code_review::context::{
     convert_file_diffs_to_diffset_hunks, create_attachment_reference_and_key,
@@ -80,20 +55,7 @@ use crate::terminal::model::blocks::RemovableBlocklistItem;
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::{settings::EditorLayout, EditorSettings};
 
-use crate::ai::agent::api::ServerConversationToken;
-use crate::ai::agent::redaction::redact_secrets;
-use crate::ai::agent::todos::popup::{AgentTodosPopupEvent, AgentTodosPopupView};
-use crate::ai::agent::{
-    AIAgentPtyWriteMode, AgentReviewCommentBatch, CancellationReason, PassiveSuggestionTrigger,
-    ServerOutputId, ShellCommandCompletedTrigger,
-};
-use crate::ai::blocklist::block::{AIBlockAction, FinishReason};
-use crate::ai::blocklist::codebase_index_speedbump_banner::{
-    CodebaseIndexSpeedbumpBannerAction, CodebaseIndexSpeedbumpBannerState, VisibilityState,
-};
-use crate::ai::blocklist::model::AIBlockOutputStatus;
-#[cfg(feature = "local_fs")]
-use crate::ai::persisted_workspace::PersistedWorkspace;
+// twarp: 2c-d — crate::ai::* imports gone; stubs at top of file
 use crate::code_review::comments::{
     convert_insert_review_comments, AttachedReviewComment, PendingImportedReviewComment,
 };
@@ -108,18 +70,7 @@ use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::projects::ProjectManagementModel;
 use crate::settings::ai::FocusedTerminalInfo;
 use crate::settings_view::mcp_servers_page::MCPServersSettingsPage;
-use crate::terminal::cli_agent_sessions::event::{
-    parse_event, CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventType,
-    CLI_AGENT_NOTIFICATION_SENTINEL,
-};
-use crate::terminal::cli_agent_sessions::listener::{is_agent_supported, CLIAgentSessionListener};
-#[cfg(not(target_family = "wasm"))]
-use crate::terminal::cli_agent_sessions::plugin_manager::{plugin_manager_for, PluginModalKind};
-use crate::terminal::cli_agent_sessions::{
-    CLIAgentInputEntrypoint, CLIAgentInputState, CLIAgentRichInputCloseReason, CLIAgentSession,
-    CLIAgentSessionContext, CLIAgentSessionStatus, CLIAgentSessionsModel,
-    CLIAgentSessionsModelEvent,
-};
+// twarp: 2c-d — cli_agent_sessions deleted; stubs at top of file
 use crate::terminal::view::ssh_remote_server_choice_view::{
     SshRemoteServerChoiceView, SshRemoteServerChoiceViewEvent,
 };
@@ -380,6 +331,103 @@ impl UseAgentToolbar {
 #[allow(dead_code)]
 mod cli_agent {
     // Stubs for cli_agent module references in view.rs body code
+}
+
+// twarp: 2c-d — file-local stubs for AI types removed by 2c-d (huge block)
+#[allow(dead_code)] struct AgentViewController;
+#[allow(dead_code)] enum AgentViewControllerEvent {}
+#[allow(dead_code)] enum AgentViewDisplayMode {}
+#[allow(dead_code)] struct AgentViewEntryBlockParams;
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+enum AgentViewEntryOrigin {
+    CloudAgent,
+    InlineConversationMenu,
+    InlineHistoryMenu,
+}
+#[allow(dead_code)] enum AgentViewHeaderDisabledTheme {}
+#[allow(dead_code)] enum AgentViewHeaderTheme {}
+#[allow(dead_code)] struct AgentViewZeroStateBlock;
+#[allow(dead_code)] enum AgentViewZeroStateEvent {}
+#[allow(dead_code)] struct EphemeralMessageModel;
+#[allow(dead_code)] enum ExitConfirmationTrigger {}
+#[allow(dead_code)] struct InlineAgentViewHeader;
+#[allow(dead_code)] const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration = std::time::Duration::ZERO;
+#[allow(dead_code)] fn agent_view_bg_fill() {}
+#[allow(dead_code)] fn fork_from_last_known_good_state_exchange_id() {}
+
+#[allow(dead_code)] mod conversation_utils {}
+
+#[allow(dead_code)] fn has_pending_code_or_unit_test_prompt_suggestion<C>(_: &C) -> bool { false }
+#[allow(dead_code)] fn is_accept_prompt_suggestion_bound_to_cmd_enter<C>(_: &C) -> bool { false }
+#[allow(dead_code)] fn is_accept_prompt_suggestion_bound_to_ctrl_enter<C>(_: &C) -> bool { false }
+
+#[cfg(feature = "local_fs")]
+#[allow(dead_code)] enum CurrentHead { BranchName(String) }
+#[cfg(feature = "local_fs")]
+#[allow(dead_code)] enum DiffBase { UncommittedChanges, BranchName(String) }
+
+#[allow(dead_code)] struct AgentConversationsModel;
+#[allow(dead_code)] enum AgentConversationsModelEvent {}
+
+#[allow(dead_code)] fn conversation_output_status_from_conversation() {}
+type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
+#[allow(dead_code)] enum AmbientConversationStatus {}
+
+#[allow(dead_code)] struct CLISubagentView;
+#[allow(dead_code)] enum CLISubagentViewEvent {}
+#[allow(dead_code)] struct CLISubagentController;
+#[allow(dead_code)] enum CLISubagentEvent {}
+#[allow(dead_code)] enum UserTakeOverReason {}
+#[allow(dead_code)] enum BlocklistAIStatusBarEvent { SummarizationCancelDialogToggled { is_open: bool }, Stop }
+#[allow(dead_code)] fn block_context_from_terminal_model() {}
+#[allow(dead_code)] enum SlashCommandRequest {}
+#[allow(dead_code)] type AIDocumentId = crate::app_state::AIDocumentId;
+#[allow(dead_code)] type AIDocumentVersion = crate::app_state::AIDocumentVersion;
+#[allow(dead_code)] struct AIDocumentModel;
+#[allow(dead_code)] fn shimmering_warp_loading_text() {}
+
+#[allow(dead_code)] struct ServerConversationToken;
+#[allow(dead_code)] fn redact_secrets() {}
+#[allow(dead_code)] enum AgentTodosPopupEvent {}
+#[allow(dead_code)] struct AgentTodosPopupView;
+
+#[allow(dead_code)] enum AIAgentPtyWriteMode {}
+#[allow(dead_code)] struct AgentReviewCommentBatch;
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] enum CancellationReason { No }
+#[allow(dead_code)] enum PassiveSuggestionTrigger {}
+#[allow(dead_code)] struct ServerOutputId;
+#[allow(dead_code)] enum ShellCommandCompletedTrigger {}
+#[allow(dead_code)] enum AIBlockAction {}
+#[allow(dead_code)] enum FinishReason {}
+#[allow(dead_code)] enum CodebaseIndexSpeedbumpBannerAction {}
+#[allow(dead_code)] enum CodebaseIndexSpeedbumpBannerState {}
+#[allow(dead_code)] enum VisibilityState {}
+#[allow(dead_code)] enum AIBlockOutputStatus {}
+
+#[cfg(feature = "local_fs")]
+#[allow(dead_code)] struct PersistedWorkspace;
+
+// CLI agent sessions
+#[allow(dead_code)] fn parse_event() {}
+#[allow(dead_code)] enum CLIAgentEvent {}
+#[allow(dead_code)] enum CLIAgentEventPayload {}
+#[allow(dead_code)] enum CLIAgentEventType {}
+#[allow(dead_code)] const CLI_AGENT_NOTIFICATION_SENTINEL: &str = "";
+#[allow(dead_code)] fn is_agent_supported() -> bool { false }
+#[allow(dead_code)] struct CLIAgentSessionListener;
+#[allow(dead_code)] fn plugin_manager_for() {}
+#[allow(dead_code)] enum PluginModalKind {}
+#[allow(dead_code)] enum CLIAgentInputEntrypoint {}
+#[allow(dead_code)] struct CLIAgentInputState;
+#[allow(dead_code)] enum CLIAgentRichInputCloseReason {}
+#[allow(dead_code)] struct CLIAgentSession;
+#[allow(dead_code)] struct CLIAgentSessionContext;
+#[allow(dead_code)] enum CLIAgentSessionStatus {}
+#[allow(dead_code)] struct CLIAgentSessionsModel;
+#[allow(dead_code)] enum CLIAgentSessionsModelEvent {
+    Ended { terminal_view_id: warpui::EntityId },
 }
 
 use async_channel::{Receiver, Sender};
