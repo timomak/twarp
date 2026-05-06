@@ -52,18 +52,14 @@ use crate::settings_view::mcp_servers_page::MCPServersSettingsPage;
 use crate::terminal::enable_auto_reload_modal::{
     EnableAutoReloadModal, EnableAutoReloadModalEvent,
 };
-use crate::terminal::model::terminal_model::ConversationTranscriptViewerStatus;
+// twarp: 2c-d — removed unused ConversationTranscriptViewerStatus, RestoredAIConversation imports.
 use crate::terminal::session_settings::SessionSettings;
 use crate::terminal::view::inline_banner::ZeroStatePromptSuggestionType;
-// twarp: 2c-d — removed load_ai_conversation imports; use stub from app_state for
-// RestoredAIConversation; ConversationRestorationInNewPaneType moved to pane_group.
-use crate::app_state::RestoredAIConversation;
 use crate::pane_group::ConversationRestorationInNewPaneType;
 use crate::terminal::view::{AgentOnboardingVersion, OnboardingIntention, OnboardingVersion};
 use crate::ui_components::red_notification_dot::RedNotificationDot;
 #[cfg(feature = "local_fs")]
-use crate::util::file::external_editor::settings::OpenConversationPreference;
-// twarp: 2c-d — removed bonus_grant_notification_model import (deleted module)
+// twarp: 2c-d — removed unused OpenConversationPreference and bonus_grant_notification_model imports.
 use crate::workspace::toast_stack::ToastStack;
 use crate::workspace::view::global_search::view::GlobalSearchEntryFocus;
 use crate::workspace::view::left_panel::{
@@ -82,7 +78,6 @@ use crate::util::openable_file_type::{resolve_file_target_with_editor_choice, Ed
 
 // twarp: 2c-d — removed crate::ai::blocklist::history_model::CloudConversationData,
 // FORK_PREFIX, and cli_agent_sessions imports.
-use crate::app_state::CloudConversationData;
 use crate::workspace::header_toolbar_editor::{HeaderToolbarEditorEvent, HeaderToolbarEditorModal};
 use crate::workspace::header_toolbar_item::HeaderToolbarItemKind;
 use crate::workspace::tab_settings::TabCloseButtonPosition;
@@ -100,8 +95,8 @@ use crate::workspace::view::launch_modal::{LaunchModal, LaunchModalEvent, OzLaun
 use crate::workspace::view::openwarp_launch_modal::{
     OpenWarpLaunchModal, OpenWarpLaunchModalEvent,
 };
-use crate::workspace::{ForkFromExchange, ForkedConversationDestination};
-// twarp: 2c-d — removed BlocklistAIHistoryModel and CodebaseIndexManager imports.
+// twarp: 2c-d — removed unused ForkFromExchange/ForkedConversationDestination,
+// BlocklistAIHistoryModel and CodebaseIndexManager imports.
 #[cfg(all(target_os = "macos", feature = "crash_reporting"))]
 use sentry::protocol::{Attachment, AttachmentType};
 use serde_json;
@@ -239,8 +234,8 @@ use crate::server::ids::{ObjectUid, ServerId, SyncId};
 use crate::server::server_api::{ServerApi, ServerApiEvent, ServerApiProvider, ServerTime};
 use crate::server::telemetry::{
     AddTabWithShellSource, AnonymousUserSignupEntrypoint, CloseTarget, EnvVarTelemetryMetadata,
-    FileTreeSource, KnowledgePaneEntrypoint, LaunchConfigUiLocation,
-    MCPServerCollectionPaneEntrypoint, SharingDialogSource, TierLimitHitEvent, WarpDriveSource,
+    FileTreeSource, LaunchConfigUiLocation, MCPServerCollectionPaneEntrypoint, SharingDialogSource,
+    TierLimitHitEvent, WarpDriveSource,
 };
 use crate::session_management::{SessionNavigationData, SessionSource};
 use crate::settings::{
