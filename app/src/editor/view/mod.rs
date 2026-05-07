@@ -3129,7 +3129,7 @@ impl EditorView {
                             send_telemetry_from_ctx!(
                                 TelemetryEvent::AtMenuInteracted {
                                     action: "cancelled".to_string(),
-                                    item_count: *item_count,
+                                    item_count: Some(*item_count),
                                     query_length: Some(*query_length),
                                     is_udi_enabled,
                                     current_input_mode,
@@ -3149,7 +3149,7 @@ impl EditorView {
                             send_telemetry_from_ctx!(
                                 TelemetryEvent::AtMenuInteracted {
                                     action: "item_selected".to_string(),
-                                    item_count: *item_count,
+                                    item_count: Some(*item_count),
                                     query_length: Some(*query_length),
                                     is_udi_enabled,
                                     current_input_mode,

@@ -28,7 +28,7 @@ use warp_core::ui::Icon as WarpIcon;
 pub struct SkillDescriptor {
     // twarp: 2c-d — fields needed by callers
     pub name: String,
-    pub reference: String,
+    pub reference: ai::skills::SkillReference,
     pub provider: ai::skills::SkillProvider,
     pub description: String,
     pub icon_override: Option<warp_core::ui::Icon>,

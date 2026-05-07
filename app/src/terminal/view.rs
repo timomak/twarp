@@ -853,8 +853,8 @@ impl OnboardingAgenticSuggestionsBlock {
 // twarp: 2c-d — AskAIType stub (was crate::ai::ask_ai_type)
 #[allow(dead_code)]
 enum AskAIType {
-    FromTextSelection { text: String, location: Option<()> },
-    FromBlock { block_index: usize, query: Option<String> },
+    FromTextSelection { text: Arc<String>, location: Option<()>, populate_input_box: bool },
+    FromBlock { block_index: usize, query: Option<String>, populate_input_box: bool },
     FromBlocks { block_indices: Vec<usize> },
     FromAICommandSearch { query: String },
 }

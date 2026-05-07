@@ -981,10 +981,20 @@ pub struct Workspace {
     tab_config_action_sidecar_item: Option<SidecarItemKind>,
     tab_config_action_sidecar_mouse_states: crate::tab_configs::action_sidecar::SidecarMouseStates,
     remove_tab_config_confirmation_dialog: ViewHandle<RemoveTabConfigConfirmationDialog>,
-    // twarp: 2c-d — fields for AI-removed callers (typed as () for stub)
-    suggested_rule_modal: (),
-    suggested_agent_mode_workflow_modal: (),
-    rewind_confirmation_dialog: (),
+    // twarp: 2c-d — fields for AI-removed callers (typed as ViewHandle of unit-stub view)
+    suggested_rule_modal: warpui::ViewHandle<TwarpStubView>,
+    suggested_agent_mode_workflow_modal: warpui::ViewHandle<TwarpStubView>,
+    rewind_confirmation_dialog: warpui::ViewHandle<TwarpStubView>,
+}
+
+// twarp: 2c-d — generic stub view for several AI-removed dialog/modal handles.
+pub struct TwarpStubView;
+impl warpui::Entity for TwarpStubView { type Event = (); }
+impl warpui::View for TwarpStubView {
+    fn ui_name() -> &'static str { "TwarpStubView/twarp-stub" }
+    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+        warpui::elements::Empty::new().finish()
+    }
 }
 
 impl Workspace {
@@ -2861,9 +2871,9 @@ impl Workspace {
             remove_tab_config_confirmation_dialog:
                 Self::build_remove_tab_config_confirmation_dialog(ctx),
             // twarp: 2c-d — stub fields
-            suggested_rule_modal: (),
-            suggested_agent_mode_workflow_modal: (),
-            rewind_confirmation_dialog: (),
+            suggested_rule_modal: ctx.add_view(|_| TwarpStubView),
+            suggested_agent_mode_workflow_modal: ctx.add_view(|_| TwarpStubView),
+            rewind_confirmation_dialog: ctx.add_view(|_| TwarpStubView),
         };
 
         ws.configure_new_workspace(workspace_setting, ctx);
