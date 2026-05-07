@@ -377,6 +377,9 @@ enum SlashCommandRequest {
     CloneRepository {
         url: String,
     },
+    FetchReviewComments {
+        repo_path: std::path::PathBuf,
+    },
 }
 
 #[allow(dead_code)]
@@ -444,7 +447,10 @@ fn ai_indicator_height() -> f32 {
 
 // twarp: 2c-d — stubs for cli_agent_sessions and other AI types
 #[allow(dead_code)]
-struct CLIAgentInputState;
+enum CLIAgentInputState {
+    Open {},
+    Closed,
+}
 
 #[allow(dead_code)]
 struct CLIAgentSessionsModel;

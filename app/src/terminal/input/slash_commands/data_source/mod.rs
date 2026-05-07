@@ -27,9 +27,28 @@ use warp_core::ui::Icon as WarpIcon;
 
 pub struct SkillDescriptor;
 pub struct SkillManager;
-pub struct CLIAgentInputState;
+impl warpui::Entity for SkillManager { type Event = (); }
+impl warpui::SingletonEntity for SkillManager {}
+pub enum CLIAgentInputState {
+    Open {},
+    Closed,
+}
 pub struct CLIAgentSessionsModel;
-pub enum CLIAgentSessionsModelEvent { Other }
+impl warpui::Entity for CLIAgentSessionsModel { type Event = CLIAgentSessionsModelEvent; }
+impl warpui::SingletonEntity for CLIAgentSessionsModel {}
+#[allow(dead_code)]
+impl CLIAgentSessionsModel {
+    pub fn is_input_open(&self, _: warpui::EntityId) -> bool { false }
+    pub fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSession> { None }
+}
+pub struct CLIAgentSession {
+    pub input_state: CLIAgentInputState,
+    pub agent: crate::app_state::CLIAgent,
+}
+pub enum CLIAgentSessionsModelEvent {
+    InputSessionChanged {},
+    Other,
+}
 pub enum AgentViewControllerEvent { Other }
 pub struct CLISubagentController;
 pub enum CLISubagentEvent { Other }

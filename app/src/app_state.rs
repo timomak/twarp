@@ -88,6 +88,14 @@ impl CLIAgent {
             _ => CLIAgent::Unknown,
         }
     }
+    // twarp: 2c-d — stub: AI CLI agent prefix detection deleted.
+    pub fn command_prefix(&self) -> &'static str {
+        ""
+    }
+    // twarp: 2c-d — stub: AI skill providers deleted.
+    pub fn supported_skill_providers(&self) -> &'static [ai::skills::SkillProvider] {
+        &[]
+    }
     pub fn serialized_name(&self) -> &'static str {
         match self {
             CLIAgent::Claude => "claude",
