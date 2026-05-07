@@ -15,8 +15,14 @@ use url::Url;
 // twarp: 2c-d — AI secret redaction / usage / ai_assist / AIClient deleted; stubs.
 pub fn find_secrets_in_text(_text: &str) -> Vec<()> { Vec::new() }
 pub struct AIRequestUsageModel;
-pub enum GeneratedCommandMetadataError { Other }
-pub trait AIClient {}
+pub enum GeneratedCommandMetadataError {
+    Other,
+    RateLimited,
+}
+impl GeneratedCommandMetadataError {
+    pub fn user_facing_message(&self) -> String { String::new() }
+}
+pub trait AIClient: Send + Sync {}
 
 use crate::{
     appearance::Appearance,
@@ -331,7 +337,7 @@ pub struct WorkflowView {
     pub(super) ai_metadata_assist_state: AiAssistState,
     revision_ts: Option<Revision>,
     pub(super) auth_state: Arc<AuthState>,
-    pub(super) ai_client: Arc<dyn AIClient>,
+    // twarp: 2c-d — ai_client field removed (AI deleted)
     owner: Option<Owner>,
     initial_folder_id: Option<SyncId>,
 
@@ -426,7 +432,7 @@ impl WorkflowView {
             me.handle_content_editor_event(event, ctx);
         });
 
-        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
+        // twarp: 2c-d — get_ai_client removed (AI deleted)
 
         let enum_creation_dialog = ctx.add_typed_action_view(EnumCreationDialog::new);
         ctx.subscribe_to_view(&enum_creation_dialog, |me, _, event, ctx| {
@@ -478,7 +484,7 @@ impl WorkflowView {
             revision_ts: None,
             command_display_data: WorkflowCommandDisplayData::new_empty(),
             auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
-            ai_client,
+            // twarp: 2c-d — ai_client removed
             pending_argument_editor_row: None,
             show_enum_creation_dialog: false,
             enum_creation_dialog,
@@ -2617,7 +2623,13 @@ impl WorkflowView {
         ctx.emit(WorkflowViewEvent::ViewInWarpDrive(id));
     }
 
-    fn issue_request(&mut self, ctx: &mut ViewContext<Self>) {
+    fn issue_request(&mut self, _ctx: &mut ViewContext<Self>) {
+        // twarp: 2c-d — AI metadata generation deleted; no-op.
+    }
+
+    #[allow(dead_code)]
+    #[cfg(any())]
+    fn issue_request_disabled(&mut self, ctx: &mut ViewContext<Self>) {
         let ai_client = self.ai_client.clone();
         let command = self.content_editor.as_ref(ctx).buffer_text(ctx);
         let raw_request = command.trim().to_string();

@@ -383,6 +383,9 @@ enum AgentViewEntryOrigin {
     CloudAgent,
     InlineConversationMenu,
     InlineHistoryMenu,
+    LongRunningCommand,
+    SlashCommand { name: String },
+    OnboardingCallout,
 }
 #[allow(dead_code)] struct AgentViewHeaderDisabledTheme;
 #[allow(dead_code)] struct AgentViewHeaderTheme;
@@ -491,8 +494,21 @@ impl CLIAgentSessionsModel {
 
 // twarp: 2c-d — additional file-local stubs for view.rs body code
 #[allow(dead_code)] type AIConversationId = crate::app_state::AIConversationId;
-#[allow(dead_code)] enum AIConversation {}
-#[allow(dead_code)] enum ConversationStatus {}
+#[allow(dead_code)]
+struct AIConversation;
+#[allow(dead_code)]
+impl AIConversation {
+    fn status(&self) -> ConversationStatus { ConversationStatus }
+}
+#[allow(dead_code)]
+struct ConversationStatus;
+#[allow(dead_code)]
+impl ConversationStatus {
+    fn is_in_progress(&self) -> bool { false }
+    fn is_blocked(&self) -> bool { false }
+    fn is_error(&self) -> bool { false }
+}
+// twarp: 2c-d — ConversationStatus stub now lives above as a struct.
 #[allow(dead_code)] enum UserQueryMode {}
 #[allow(dead_code)] enum AIAgentActionType {}
 #[allow(dead_code)] enum AIAgentOutputStatus {}

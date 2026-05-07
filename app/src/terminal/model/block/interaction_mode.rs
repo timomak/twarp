@@ -6,7 +6,13 @@ use crate::app_state::AIConversationId;
 pub struct TaskId;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AIAgentActionId(pub String);
-pub enum LongRunningCommandControlState { Other }
+// twarp: 2c-d — variants kept so legacy AI takeover call-sites compile.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LongRunningCommandControlState {
+    User,
+    Agent,
+    Other,
+}
 pub enum UserTakeOverReason { Other }
 use crate::{
     terminal::{

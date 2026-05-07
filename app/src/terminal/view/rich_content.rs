@@ -49,6 +49,12 @@ macro_rules! twarp_stub_view_impl {
     };
 }
 twarp_stub_view_impl!(AIBlock);
+#[allow(dead_code)]
+impl AIBlock {
+    pub fn conversation_id(&self) -> AIConversationId { unimplemented!() }
+    pub fn server_output_id<C>(&self, _: &C) -> Option<()> { None }
+    pub fn handle_action<A, C>(&mut self, _: A, _: &mut C) {}
+}
 twarp_stub_view_impl!(TelemetryBanner);
 twarp_stub_view_impl!(AmbientAgentEntryBlock);
 twarp_stub_view_impl!(OnboardingAgenticSuggestionsBlock);

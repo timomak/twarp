@@ -317,6 +317,7 @@ struct AIAgentExchangeId(pub uuid::Uuid);
 #[allow(dead_code)]
 enum CancellationReason {
     No,
+    UserCommandExecuted,
 }
 
 #[allow(dead_code)]
@@ -334,6 +335,10 @@ enum AgentViewEntryOrigin {
     InlineConversationMenu,
     InlineHistoryMenu,
     SlashCommand { name: String },
+    Input { is_new_conversation: bool },
+    ImageAdded,
+    OnboardingCallout,
+    ProjectEntry,
 }
 
 #[allow(dead_code)]
@@ -664,6 +669,7 @@ impl BlocklistAIInputModel {
     fn set_input_config<C>(&mut self, _: InputConfig, _: bool, _: &mut C) {}
     fn set_input_type<C>(&mut self, _: InputType, _: &mut C) {}
     fn set_input_config_for_classic_mode<C>(&mut self, _: InputConfig, _: &mut C) {}
+    fn should_run_input_autodetection<C>(&self, _: &C) -> bool { false }
 }
 
 #[derive(Debug, Clone, Copy)]

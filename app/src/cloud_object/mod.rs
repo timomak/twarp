@@ -1178,8 +1178,13 @@ pub enum ServerCloudObject {
     Preference(ServerPreference),
     EnvVarCollection(ServerEnvVarCollection),
     WorkflowEnum(ServerWorkflowEnum),
-    // twarp: 2c-d — AIFact/MCPServer/AIExecutionProfile/TemplatableMCPServer/ScheduledAmbientAgent
-    // variants removed (AI cloud objects)
+    // twarp: 2c-d — AI cloud-object variants kept as unit-payload stubs so legacy
+    // call-sites compile; AI persistence/server objects deleted.
+    AIFact(()),
+    MCPServer(()),
+    AIExecutionProfile(()),
+    TemplatableMCPServer(()),
+    ScheduledAmbientAgent(()),
 }
 
 impl ServerCloudObject {
@@ -1191,7 +1196,12 @@ impl ServerCloudObject {
             ServerCloudObject::Preference(preferences) => &preferences.metadata,
             ServerCloudObject::EnvVarCollection(env_var_collection) => &env_var_collection.metadata,
             ServerCloudObject::WorkflowEnum(workflow_enum) => &workflow_enum.metadata,
-            // twarp: 2c-d — AI variants removed
+            // twarp: 2c-d — AI variants are stub units; no metadata available.
+            ServerCloudObject::AIFact(_)
+            | ServerCloudObject::MCPServer(_)
+            | ServerCloudObject::AIExecutionProfile(_)
+            | ServerCloudObject::TemplatableMCPServer(_)
+            | ServerCloudObject::ScheduledAmbientAgent(_) => unreachable!(),
         }
     }
 
@@ -1203,7 +1213,12 @@ impl ServerCloudObject {
             ServerCloudObject::Preference(preferences) => preferences.id.uid(),
             ServerCloudObject::EnvVarCollection(env_var_collection) => env_var_collection.id.uid(),
             ServerCloudObject::WorkflowEnum(workflow_enum) => workflow_enum.id.uid(),
-            // twarp: 2c-d — AI variants removed
+            // twarp: 2c-d — AI variants are stub units; no uid available.
+            ServerCloudObject::AIFact(_)
+            | ServerCloudObject::MCPServer(_)
+            | ServerCloudObject::AIExecutionProfile(_)
+            | ServerCloudObject::TemplatableMCPServer(_)
+            | ServerCloudObject::ScheduledAmbientAgent(_) => unreachable!(),
         }
     }
 }

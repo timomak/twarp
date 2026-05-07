@@ -9,6 +9,15 @@ pub mod referral;
 pub mod team;
 pub mod workspace;
 
+// twarp: 2c-d — stub AI client returned by get_ai_client; trait impls live with each
+// caller's local AIClient trait definition.
+#[allow(dead_code)]
+pub struct TwarpStubAIClient;
+#[allow(dead_code)]
+pub struct TwarpStubAIContent {
+    pub content: String,
+}
+
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::auth_state::AuthState;
 use crate::server::graphql::default_request_options;
@@ -1174,6 +1183,13 @@ impl ServerApiProvider {
     /// Prefer retrieving a specific trait object related to the methods you're calling.
     pub fn get(&self) -> Arc<ServerApi> {
         self.server_api.clone()
+    }
+
+    // twarp: 2c-d — get_ai_client returns a stub Arc<()> for now; AI client trait deleted
+    // and call sites are wrapped in disabled feature gates / shape-only stubs that never run.
+    #[allow(dead_code)]
+    pub fn get_ai_client(&self) -> std::sync::Arc<crate::server::server_api::TwarpStubAIClient> {
+        std::sync::Arc::new(crate::server::server_api::TwarpStubAIClient)
     }
 
     pub fn get_auth_client(&self) -> Arc<dyn AuthClient> {

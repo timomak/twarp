@@ -13,9 +13,28 @@ use warpui::{
 };
 
 // twarp: 2c-d — AI code review content / AIClient deleted; stubs.
-pub struct GenerateCodeReviewContentRequest;
-pub enum OutputType { Other }
-pub trait AIClient {}
+pub struct GenerateCodeReviewContentRequest {
+    pub output_type: OutputType,
+    pub diff: String,
+    pub branch_name: String,
+    pub commit_messages: Vec<String>,
+}
+pub enum OutputType {
+    PrTitle,
+    PrDescription,
+    CommitMessage,
+    Other,
+}
+pub trait AIClient {
+    fn generate_code_review_content(
+        &self,
+        _: GenerateCodeReviewContentRequest,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<crate::server::server_api::TwarpStubAIContent>> + Send>>
+    {
+        Box::pin(async { unimplemented!() })
+    }
+}
+impl AIClient for crate::server::server_api::TwarpStubAIClient {}
 use crate::{
     code_review::git_dialog::{
         interactive_path_future, render_branch_section, render_file_changes_box,
