@@ -7,7 +7,8 @@ use crate::app_state::ServerConversationToken;
 
 pub const ACCEPT_PROMPT_SUGGESTION_KEYBINDING: &str = "AcceptPromptSuggestion";
 
-pub struct BlocklistAIInputModel;
+// twarp: 2c-d — re-export from input for type unification.
+pub use crate::terminal::input::BlocklistAIInputModel;
 pub enum PromptAlertEvent {
     Other,
     // twarp: 2c-d — variants needed by handle_prompt_alert_event

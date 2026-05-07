@@ -33,7 +33,7 @@ pub mod block_list_viewport;
 pub mod blockgrid_element;
 mod blockgrid_renderer;
 mod bootstrap;
-mod buy_credits_banner;
+pub(crate) mod buy_credits_banner;
 pub mod color;
 mod command_corrections_denylist;
 pub mod dynamic_enum_suggestions;
@@ -71,7 +71,7 @@ pub mod safe_mode_settings;
 mod secret_regex_updater;
 pub mod session_settings;
 pub mod settings;
-mod share_block_modal;
+pub(crate) mod share_block_modal;
 pub mod shared_session;
 mod shell_launch_state;
 // twarp: 2c-d — universal_developer_input deleted (AI-only)

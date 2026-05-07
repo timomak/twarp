@@ -17,14 +17,8 @@ impl BlocklistAIContextModel {
     pub fn pending_context_selected_text(&self) -> Option<String> { None }
     pub fn pending_context_block_ids(&self) -> Vec<()> { Vec::new() }
 }
-pub struct BlocklistAIInputModel;
-#[allow(dead_code)]
-impl BlocklistAIInputModel {
-    // twarp: 2c-d — bulk stubs
-    pub fn is_ai_input_enabled(&self) -> bool { false }
-    pub fn is_input_type_locked(&self) -> bool { false }
-    pub fn input_type(&self) -> () { () }
-}
+// twarp: 2c-d — re-export from input for type unification.
+pub use crate::terminal::input::BlocklistAIInputModel;
 use crate::terminal::input::buffer_model::InputBufferModel;
 use crate::terminal::input::message_bar::{
     truncated_command_for_block, Message, MessageItem, MessageProvider,

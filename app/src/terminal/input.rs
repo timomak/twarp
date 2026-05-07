@@ -415,8 +415,7 @@ impl SkillManager {
     pub fn skill_by_reference<R>(&self, _: R) -> Option<()> { None }
     pub fn get_skills_for_working_directory<A>(&self, _: A) -> Vec<()> { Vec::new() }
 }
-impl warpui::Entity for SkillManager { type Event = (); }
-impl warpui::SingletonEntity for SkillManager {}
+// twarp: 2c-d — Entity/SingletonEntity for SkillManager defined later in this file.
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -848,30 +847,33 @@ impl BlocklistAIInputEvent {
 #[allow(dead_code)]
 pub struct BlocklistAIInputModel;
 impl BlocklistAIInputModel {
-    fn is_ai_input_enabled(&self) -> bool {
+    pub fn is_ai_input_enabled(&self) -> bool {
         false
     }
-    fn handle_input_buffer_submitted<C>(&mut self, _: &mut C) {}
-    fn enable_autodetection<A, C>(&mut self, _: A, _: &mut C) {}
-    fn detect_and_set_input_type<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
-    fn abort_in_progress_detection<C>(&mut self, _: &mut C) {}
-    fn clear_pending_attachments<C>(&mut self, _: &mut C) {}
-    fn clear_pending_exit_confirmation<C>(&mut self, _: &mut C) {}
-    fn close<C>(&mut self, _: &mut C) {}
-    fn input_config(&self) -> InputConfig {
+    pub fn handle_input_buffer_submitted<C>(&mut self, _: &mut C) {}
+    pub fn enable_autodetection<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn detect_and_set_input_type<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    pub fn abort_in_progress_detection<C>(&mut self, _: &mut C) {}
+    pub fn clear_pending_attachments<C>(&mut self, _: &mut C) {}
+    pub fn clear_pending_exit_confirmation<C>(&mut self, _: &mut C) {}
+    pub fn close<C>(&mut self, _: &mut C) {}
+    pub fn input_config(&self) -> InputConfig {
         InputConfig::empty()
     }
-    fn input_type(&self) -> InputType {
+    pub fn input_type(&self) -> InputType {
         InputType::Shell
     }
-    fn is_input_type_locked(&self) -> bool {
+    pub fn is_input_type_locked(&self) -> bool {
         false
     }
-    fn was_lock_set_with_empty_buffer(&self) -> bool { false }
-    fn set_input_config<C>(&mut self, _: InputConfig, _: bool, _: &mut C) {}
-    fn set_input_type<C>(&mut self, _: InputType, _: &mut C) {}
-    fn set_input_config_for_classic_mode<C>(&mut self, _: InputConfig, _: &mut C) {}
-    fn should_run_input_autodetection<C>(&self, _: &C) -> bool { false }
+    pub fn was_lock_set_with_empty_buffer(&self) -> bool { false }
+    pub fn set_input_config<C>(&mut self, _: InputConfig, _: bool, _: &mut C) {}
+    pub fn set_input_type<C>(&mut self, _: InputType, _: &mut C) {}
+    pub fn set_input_config_for_classic_mode<C>(&mut self, _: InputConfig, _: &mut C) {}
+    pub fn should_run_input_autodetection<C>(&self, _: &C) -> bool { false }
+    // twarp: 2c-d — bulk stubs needed across files
+    pub fn new<A, B, C, D>(_: A, _: B, _: C, _: &mut D) -> Self { Self }
+    pub fn is_autodetection_enabled_for_current_context<C>(&self, _: &mut C) -> bool { false }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -936,8 +938,7 @@ enum LLMPreferencesEvent {}
 
 #[allow(dead_code)]
 struct AIRequestUsageModel;
-impl warpui::Entity for AIRequestUsageModel { type Event = (); }
-impl warpui::SingletonEntity for AIRequestUsageModel {}
+// twarp: 2c-d — Entity/SingletonEntity for AIRequestUsageModel defined later in this file.
 #[allow(dead_code)]
 impl AIRequestUsageModel {
     fn has_any_ai_remaining<C>(&self, _: &C) -> bool {
@@ -1101,8 +1102,8 @@ impl HostSelector {
 #[allow(dead_code)]
 struct NakedHeaderButtonTheme;
 
-// twarp: 2c-d — re-exported from editor::view for type unification.
-use crate::editor::view::AIContextMenuSearchableAction;
+// twarp: 2c-d — re-exported from editor for type unification.
+use crate::editor::AIContextMenuSearchableAction;
 
 // twarp: 2c-d — Entity impls for file-local stub types so ModelHandle<T>::as_ref/update typecheck.
 impl Entity for ActiveAgentViewsModel {

@@ -3,21 +3,8 @@ use input_classifier::InputType;
 use warp_core::features::FeatureFlag;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
-// twarp: 2c-d — AI blocklist / skills deleted; stubs.
-pub enum BlocklistAIInputEvent { Other }
-pub struct BlocklistAIInputModel;
-impl Entity for BlocklistAIInputModel {
-    type Event = BlocklistAIInputEvent;
-}
-impl SingletonEntity for BlocklistAIInputModel {}
-#[allow(dead_code)]
-impl BlocklistAIInputModel {
-    pub fn set_input_type<T, C>(&mut self, _: T, _: &mut C) {}
-    // twarp: 2c-d — bulk stubs
-    pub fn is_ai_input_enabled(&self) -> bool { false }
-    pub fn is_input_type_locked(&self) -> bool { false }
-    pub fn input_type(&self) -> () { () }
-}
+// twarp: 2c-d — AI blocklist / skills deleted; re-export from input.
+pub use crate::terminal::input::{BlocklistAIInputEvent, BlocklistAIInputModel};
 pub struct SkillManager;
 #[allow(dead_code)]
 impl SkillManager {

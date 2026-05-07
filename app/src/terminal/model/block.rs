@@ -1,4 +1,4 @@
-mod interaction_mode;
+pub(crate) mod interaction_mode;
 mod serialized_block;
 
 pub use interaction_mode::*;

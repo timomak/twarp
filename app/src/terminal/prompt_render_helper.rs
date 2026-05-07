@@ -1,5 +1,5 @@
-// twarp: 2c-d — BlocklistAIInputModel deleted; stub.
-pub struct BlocklistAIInputModel;
+// twarp: 2c-d — BlocklistAIInputModel deleted; re-export from input for type unification.
+pub use crate::terminal::input::BlocklistAIInputModel;
 use crate::context_chips::display::PromptDisplay;
 use crate::context_chips::spacing;
 use crate::features::FeatureFlag;

@@ -1,5 +1,5 @@
-// twarp: 2c-d — AI execution profiles deleted; stubs (use workspace stubs).
-pub struct AIExecutionProfilesModel;
+// twarp: 2c-d — AI execution profiles deleted; re-export for type unification.
+pub use crate::terminal::view::AIExecutionProfilesModel;
 use crate::workspaces::workspace::{ActionPermission, WriteToPtyPermission};
 use crate::drive::settings::WarpDriveSettings;
 use crate::report_if_error;

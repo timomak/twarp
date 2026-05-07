@@ -784,24 +784,7 @@ impl BlocklistAIHistoryModel {
     fn is_entirely_passive_conversation<I>(&self, _: I) -> bool { false }
     fn can_conversation_be_shared<I>(&self, _: I) -> bool { false }
 }
-#[allow(dead_code)] enum BlocklistAIInputEvent {}
-#[allow(dead_code)]
-impl BlocklistAIInputEvent {
-    fn updated_config(&self) -> Option<InputConfig> { None }
-}
-#[allow(dead_code)] struct BlocklistAIInputModel;
-#[allow(dead_code)]
-impl BlocklistAIInputModel {
-    fn is_ai_input_enabled(&self) -> bool { false }
-    fn input_config(&self) -> InputConfig { InputConfig { input_type: InputType::Shell, is_locked: false } }
-    fn input_type(&self) -> InputType { InputType::Shell }
-    fn set_input_config<C>(&mut self, _: InputConfig, _: bool, _: &mut C) {}
-    fn set_input_type<C>(&mut self, _: InputType, _: &mut C) {}
-    fn is_input_type_locked(&self) -> bool { false }
-    // twarp: 2c-d — bulk stubs
-    fn should_run_input_autodetection(&self) -> bool { false }
-    fn enable_autodetection<A, C>(&mut self, _: A, _: &mut C) {}
-}
+// twarp: 2c-d — BlocklistAIInputModel/BlocklistAIInputEvent re-exported via use at top of file.
 // twarp: 2c-d — re-export canonical InputConfig + InputType from terminal::input
 pub use crate::terminal::input::{InputConfig, InputType};
 #[allow(dead_code)] enum PendingQueryState {}
@@ -816,7 +799,32 @@ impl ShellCommandExecutor {
 #[allow(dead_code)] struct StartAgentRequest;
 #[allow(dead_code)] const ATTACH_AS_AGENT_MODE_CONTEXT_TEXT: &str = "";
 #[allow(dead_code)] const PRE_REWIND_PREFIX: &str = "";
-#[allow(dead_code)] struct AIExecutionProfilesModel;
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct AIExecutionProfileInfo;
+#[allow(dead_code)]
+impl AIExecutionProfileInfo {
+    pub fn id(&self) -> &crate::app_state::ClientProfileId {
+        // SAFETY-equivalent: never called in stub paths (no UI displays the id);
+        // we leak a zero-default to satisfy the &-return signature.
+        Box::leak(Box::new(crate::app_state::ClientProfileId::default()))
+    }
+    pub fn sync_id(&self) -> Option<crate::server::ids::SyncId> { None }
+}
+#[allow(dead_code)] pub struct AIExecutionProfilesModel;
+#[allow(dead_code)]
+impl AIExecutionProfilesModel {
+    // twarp: 2c-d — bulk stubs for AIExecutionProfilesModel
+    pub fn handle<C>(_: &C) -> warpui::ModelHandle<AIExecutionProfilesModel> { unimplemented!() }
+    pub fn default_profile<C>(&self, _: &C) -> AIExecutionProfileInfo { AIExecutionProfileInfo }
+    pub fn as_ref<C>(_: &C) -> &Self { unimplemented!() }
+    pub fn set_base_model<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn set_apply_code_diffs<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn set_read_files<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn set_execute_commands<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn set_mcp_permissions<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn set_write_to_pty<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+}
 #[allow(dead_code)] type ClientProfileId = crate::app_state::ClientProfileId;
 #[allow(dead_code)] struct GetRelevantFilesController;
 
@@ -935,18 +943,14 @@ impl Entity for AIBlock {
 impl Entity for BlocklistAIActionModel {
     type Event = BlocklistAIActionEvent;
 }
-impl Entity for BlocklistAIContextModel {
-    type Event = BlocklistAIContextEvent;
-}
+// twarp: 2c-d — Entity for BlocklistAIContextModel defined in terminal::input.
 impl Entity for BlocklistAIController {
     type Event = BlocklistAIControllerEvent;
 }
 impl Entity for BlocklistAIHistoryModel {
     type Event = BlocklistAIHistoryEvent;
 }
-impl Entity for BlocklistAIInputModel {
-    type Event = BlocklistAIInputEvent;
-}
+// twarp: 2c-d — BlocklistAIInputModel Entity impl in terminal::input.
 impl Entity for ShellCommandExecutor {
     type Event = ShellCommandExecutorEvent;
 }
@@ -3520,9 +3524,9 @@ impl TerminalView {
 
     // twarp: 2c-d — AI agent view entry deleted; stub kept so code_review/pane_group call sites compile.
     #[allow(dead_code)]
-    pub fn enter_agent_view_for_new_conversation<A, B, C>(
+    pub fn enter_agent_view_for_new_conversation<B, C>(
         &mut self,
-        _: A,
+        _: Option<String>,
         _: B,
         _: &mut C,
     ) {

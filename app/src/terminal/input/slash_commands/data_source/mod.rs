@@ -29,7 +29,9 @@ pub struct SkillDescriptor {
     // twarp: 2c-d — fields needed by callers
     pub name: String,
     pub reference: String,
-    pub provider: (),
+    pub provider: ai::skills::SkillProvider,
+    pub description: String,
+    pub icon_override: Option<warp_core::ui::Icon>,
 }
 pub struct SkillManager;
 #[allow(dead_code)]
@@ -37,7 +39,7 @@ impl SkillManager {
     // twarp: 2c-d — bulk stubs
     pub fn get_skills_for_working_directory<A>(&self, _: A) -> Vec<()> { Vec::new() }
     pub fn skill_exists_for_any_provider<S>(&self, _: S) -> bool { false }
-    pub fn best_supported_provider<S>(&self, _: S) -> Option<()> { None }
+    pub fn best_supported_provider<S, P>(&self, _: S, _: P) -> ai::skills::SkillProvider { ai::skills::SkillProvider::Warp }
 }
 impl warpui::Entity for SkillManager { type Event = (); }
 impl warpui::SingletonEntity for SkillManager {}
