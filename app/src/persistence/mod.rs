@@ -48,6 +48,10 @@ pub struct PersistedAIInput {
     pub working_directory: Option<std::path::PathBuf>,
     pub model_id: Option<String>,
     pub output_status: Option<()>,
+    pub inputs: Vec<()>,
+    pub exchange_id: Option<String>,
+    pub conversation_id: Option<String>,
+    pub coding_model_id: Option<String>,
 }
 #[derive(Clone, Debug)]
 pub struct TemplatableMCPServerInstallation;

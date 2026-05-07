@@ -507,7 +507,11 @@ impl PassiveSuggestionTrigger {
     fn block_id(&self) -> Option<()> { None }
 }
 #[allow(dead_code)] struct ServerOutputId;
-#[allow(dead_code)] struct ShellCommandCompletedTrigger;
+#[allow(dead_code)] struct ShellCommandCompletedTrigger {
+    // twarp: 2c-d — fields used by callers
+    pub relevant_files: Vec<()>,
+    pub executed_shell_command: String,
+}
 #[allow(dead_code)] enum AIBlockAction {
     // twarp: 2c-d — bulk variants for AI-removed AIBlockAction
     Copy,
@@ -550,7 +554,7 @@ impl PersistedWorkspace {
 
 // CLI agent sessions
 #[allow(dead_code)] fn parse_event<A, B>(_: A, _: B) -> Option<CLIAgentEvent> { None }
-#[allow(dead_code)] struct CLIAgentEvent { event_type: CLIAgentEventType, payload: CLIAgentEventPayload, agent: crate::app_state::CLIAgent, session_id: Option<String>, project: Option<String>, model: Option<String> }
+#[allow(dead_code)] struct CLIAgentEvent { event_type: CLIAgentEventType, payload: CLIAgentEventPayload, agent: crate::app_state::CLIAgent, session_id: Option<String>, project: Option<String>, model: Option<String>, v: Option<String>, event: Option<String>, cwd: Option<String> }
 #[allow(dead_code)] struct CLIAgentEventPayload { content: String, plugin_version: Option<String> }
 #[allow(dead_code)] enum CLIAgentEventType {}
 #[allow(dead_code)] const CLI_AGENT_NOTIFICATION_SENTINEL: &str = "";
@@ -662,7 +666,12 @@ impl ConversationStatus {
 #[allow(dead_code)] struct SuggestedAgentModeWorkflowAndId;
 #[allow(dead_code)] struct SuggestedRuleAndId;
 #[allow(dead_code)] struct AIBlockModelImpl;
-#[allow(dead_code)] struct ClientIdentifiers;
+#[allow(dead_code)] struct ClientIdentifiers {
+    // twarp: 2c-d — fields used by callers
+    pub conversation_id: crate::app_state::AIConversationId,
+    pub client_exchange_id: String,
+    pub response_stream_id: String,
+}
 #[allow(dead_code)] struct AIAgentActionId;
 #[allow(dead_code)] struct AIAgentCitation;
 #[allow(dead_code)] enum AIAgentContext {}
@@ -6653,55 +6662,13 @@ impl TerminalView {
                 title,
                 description: reason,
             });
-        } else if conversation.status().is_in_progress() {
+        } else if conversation.status().is_some() {
             return None;
         }
 
-        let last_exchange = conversation.root_task_exchanges().last()?;
-        match &last_exchange.output_status {
-            AIAgentOutputStatus::Finished {
-                finished_output, ..
-            } => {
-                match finished_output {
-                    FinishedAIAgentOutput::Success { output, .. } => {
-                        // Get last line of output for summary
-                        let last_line = output
-                            .get()
-                            .text_from_agent_output()
-                            .last()
-                            .and_then(|text| {
-                                text.sections.iter().find_map(|section| match section {
-                                    AIAgentTextSection::PlainText { text } => {
-                                        Some(text.text().to_string())
-                                    }
-                                    _ => None,
-                                })
-                            })
-                            .unwrap_or_default();
-
-                        Some(AIBlockNotificationSummary {
-                            success: true,
-                            title: title.clone(),
-                            description: last_line,
-                        })
-                    }
-                    FinishedAIAgentOutput::Error {
-                        error: RenderableAIError::Other { error_message, .. },
-                        ..
-                    } => Some(AIBlockNotificationSummary {
-                        success: false,
-                        title: title.clone(),
-                        description: error_message.clone(),
-                    }),
-                    _ => Some(AIBlockNotificationSummary {
-                        success: false,
-                        title,
-                        description: "An unknown error occurred".to_string(),
-                    }),
-                }
-            }
-            _ => None,
-        }
+        // twarp: 2c-d — AI exchange-based summarization gutted post-AI-removal.
+        let _ = title;
+        None
     }
 
     fn handle_windowing_state_update(
@@ -10215,14 +10182,11 @@ impl TerminalView {
             let mut command = block.command_to_string();
             redact_secrets(&mut command);
 
-            let server_output_id = block.ai_conversation_id().and_then(|conversation_id| {
+            // twarp: 2c-d — server_output_id derivation gutted (output_status no longer exists).
+            let server_output_id: Option<String> = block.ai_conversation_id().and_then(|conversation_id| {
                 BlocklistAIHistoryModel::as_ref(ctx)
                     .conversation(&conversation_id)
-                    .and_then(|conversation| {
-                        conversation
-                            .latest_exchange()
-                            .and_then(|e| e.output_status.server_output_id())
-                    })
+                    .and_then(|_| None)
             });
             send_telemetry_from_ctx!(
                 TelemetryEvent::AgentExitedShellProcess {

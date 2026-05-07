@@ -26,7 +26,12 @@ use crate::{
 use super::grid_renderer::CellGlyphCache;
 use super::model::grid::RespectDisplayedOutput;
 // twarp: 2c-d — generate_block_title deleted; stub.
-pub struct GenerateBlockTitleRequest;
+#[derive(Default)]
+pub struct GenerateBlockTitleRequest {
+    // twarp: 2c-d — fields used by callers
+    pub command: String,
+    pub output: String,
+}
 use crate::editor::EditOrigin;
 use crate::settings::AISettings;
 use crate::workspaces::user_workspaces::UserWorkspaces;

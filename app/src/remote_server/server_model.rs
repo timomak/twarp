@@ -33,7 +33,12 @@ pub const GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10 
 pub type ConnectionId = uuid::Uuid;
 use super::protocol::RequestId;
 // twarp: 2c-d — AI agent / blocklist read deleted; stubs.
-pub struct FileLocations;
+#[derive(Default)]
+pub struct FileLocations {
+    // twarp: 2c-d — fields used by callers
+    pub name: String,
+    pub lines: Vec<()>,
+}
 pub fn read_local_file_context<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: E) {}
 pub enum ReadFileContextResult { Other }
 use crate::terminal::model::session::command_executor::{

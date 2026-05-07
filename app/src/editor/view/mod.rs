@@ -46,7 +46,7 @@ use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::{elements, ViewHandle};
 
 // twarp: 2c-d — AI agent / blocklist / context menu deleted; stubs.
-pub struct ImageContext { pub data: String, pub file_name: String, pub mime_type: String }
+pub struct ImageContext { pub data: String, pub file_name: String, pub mime_type: String, pub is_figma: bool }
 pub struct BlocklistAIContextModel;
 pub struct PendingAttachment;
 pub struct PendingFile { pub file_path: std::path::PathBuf, pub file_name: String, pub mime_type: String }

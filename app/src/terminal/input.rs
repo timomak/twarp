@@ -624,6 +624,14 @@ struct AttachmentInput {
     pub data: Vec<u8>,
 }
 
+// twarp: 2c-d — stub for pending_files entries
+#[derive(Default, Clone)]
+pub struct PendingFileStub {
+    pub file_path: std::path::PathBuf,
+    pub file_name: String,
+    pub mime_type: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum AIAgentContext {
@@ -681,7 +689,7 @@ impl BlocklistAIContextModel {
     pub fn pending_attachments(&self) -> Vec<()> { Vec::new() }
     pub fn pending_context_block_ids(&self) -> Vec<()> { Vec::new() }
     pub fn pending_context_selected_text(&self) -> Option<String> { None }
-    pub fn pending_files(&self) -> Vec<()> { Vec::new() }
+    pub fn pending_files(&self) -> Vec<crate::terminal::input::PendingFileStub> { Vec::new() }
     pub fn selected_conversation_status_for_hint<C>(&self, _: &C) -> Option<()> { None }
     pub fn current_pwd(&self) -> Option<std::path::PathBuf> { None }
     pub fn home_directory(&self) -> Option<std::path::PathBuf> { None }
