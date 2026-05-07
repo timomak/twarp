@@ -614,7 +614,7 @@ impl CLIAgentSessionsModel {
     Ended { terminal_view_id: warpui::EntityId },
     // twarp: 2c-d — bulk variants for AI-removed CLIAgentSessionsModelEvent
     Started { terminal_view_id: warpui::EntityId, cli_agent: crate::app_state::CLIAgent },
-    StatusChanged { terminal_view_id: warpui::EntityId, status: () },
+    StatusChanged { terminal_view_id: warpui::EntityId, status: CLIAgentSessionStatus, agent: crate::app_state::CLIAgent, session_context: CLIAgentSessionContext },
     SessionUpdated { terminal_view_id: warpui::EntityId },
     InputSessionChanged { terminal_view_id: warpui::EntityId },
 }
@@ -693,7 +693,7 @@ impl ConversationStatus {
 #[allow(dead_code)] struct AIBlockModelImpl;
 #[allow(dead_code)]
 impl AIBlockModelImpl {
-    fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H) -> Self { Self }
+    fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H) -> Result<Self, ()> { Ok(Self) }
 }
 #[allow(dead_code)] struct ClientIdentifiers {
     // twarp: 2c-d — fields used by callers
@@ -762,7 +762,7 @@ pub use crate::terminal::input::BlocklistAIHistoryEvent;
 impl BlocklistAIHistoryModel {
     fn conversation<I>(&self, _: I) -> Option<&AIConversation> { None }
     fn last_conversation_id(&self, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
-    fn active_conversation(&self, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
+    pub fn active_conversation(&self, _: warpui::EntityId) -> Option<&AIConversation> { None }
     fn all_live_conversations_for_terminal_view(&self, _: warpui::EntityId) -> Vec<crate::app_state::AIConversationId> { Vec::new() }
     fn conversation_id_for_action<A>(&self, _: A, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
     // twarp: 2c-d — bulk stubs

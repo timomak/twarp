@@ -291,7 +291,7 @@ impl TerminalView {
                 .map(|conversation| {
                     self.render_agent_indicator(
                         conversation.id(),
-                        conversation.status().clone(),
+                        conversation.status().clone().unwrap_or(crate::app_state::ConversationStatus::Failed),
                         self.is_long_running(),
                         app,
                     )
@@ -895,7 +895,7 @@ impl TerminalView {
             return None;
         }
 
-        Some(conversation.status().clone())
+        conversation.status().clone()
     }
 
     pub fn selected_conversation_is_empty(&self, ctx: &AppContext) -> bool {

@@ -831,7 +831,7 @@ pub enum BlocklistAIHistoryEvent {
 #[allow(dead_code)]
 pub struct BlocklistAIHistoryModel;
 impl BlocklistAIHistoryModel {
-    fn active_conversation(&self, _: warpui::EntityId) -> Option<AIConversationStub> { None }
+    pub fn active_conversation(&self, _: warpui::EntityId) -> Option<AIConversationStub> { None }
     fn conversation_id_for_action<I>(&self, _: I, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
     fn conversation<I>(&self, _: I) -> Option<AIConversationStub> { None }
     // twarp: 2c-d — bulk stubs

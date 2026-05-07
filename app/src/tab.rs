@@ -846,7 +846,7 @@ impl<'a> TabComponent<'a> {
             return None;
         }
 
-        let conversation_status = Some(conversation.status().clone());
+        let conversation_status = conversation.status().clone();
         Some(Indicator::Agent {
             conversation_status,
         })
