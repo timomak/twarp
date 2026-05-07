@@ -71,6 +71,12 @@ impl ConfigurableItem {
         }
     }
 
+    // twarp: 2c-d — stub: AI agent toolbar item conversion deleted.
+    #[allow(dead_code)]
+    pub fn from_toolbar_item<K, A>(_: K, _: A) -> Option<Self> {
+        None
+    }
+
     pub fn is_removable(&self) -> bool {
         match self {
             Self::ContextChip(_) => true,

@@ -12,7 +12,10 @@ pub mod requested_script {
     use warpui::elements::Empty;
     use warpui::Element;
     pub struct RequestedScriptMouseStates;
-    pub enum RequestedScriptStatus { Other }
+    pub enum RequestedScriptStatus {
+        WaitingForUser,
+        Other,
+    }
     pub struct TitledScript;
     pub fn render_requested_scripts() -> Box<dyn Element> { Empty::new().finish() }
     pub fn render_requested_script() -> Box<dyn Element> { Empty::new().finish() }

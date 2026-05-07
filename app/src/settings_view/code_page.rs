@@ -32,6 +32,7 @@ impl warpui::SingletonEntity for PersistedWorkspace {}
 #[allow(dead_code)]
 impl PersistedWorkspace {
     pub fn total_lsp_server_count(&self, _: bool) -> usize { 0 }
+    pub fn workspaces(&self) -> Vec<()> { Vec::new() }
 }
 pub enum PersistedWorkspaceEvent { InstallationSucceeded, InstallationFailed, Other }
 

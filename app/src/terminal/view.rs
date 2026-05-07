@@ -460,7 +460,16 @@ impl ServerConversationToken {
 #[allow(dead_code)] enum AIBlockAction {}
 #[allow(dead_code)] enum FinishReason {}
 #[allow(dead_code)] enum CodebaseIndexSpeedbumpBannerAction {}
-#[allow(dead_code)] enum CodebaseIndexSpeedbumpBannerState {}
+#[allow(dead_code)]
+struct CodebaseIndexSpeedbumpBannerState {
+    pub id: warpui::EntityId,
+}
+#[allow(dead_code)]
+impl CodebaseIndexSpeedbumpBannerState {
+    fn new<A, B>(_: A, _: B) -> Self {
+        unimplemented!()
+    }
+}
 #[allow(dead_code)] enum VisibilityState {}
 #[allow(dead_code)] enum AIBlockOutputStatus {}
 
@@ -487,7 +496,12 @@ struct CLIAgentSession {
     pub should_auto_toggle_input: bool,
 }
 #[allow(dead_code)] struct CLIAgentSessionContext;
-#[allow(dead_code)] enum CLIAgentSessionStatus {}
+#[allow(dead_code)] enum CLIAgentSessionStatus {
+    InProgress,
+    Blocked { message: String },
+    Success,
+    Other,
+}
 #[allow(dead_code)] struct CLIAgentSessionsModel;
 #[allow(dead_code)]
 impl CLIAgentSessionsModel {
@@ -571,6 +585,9 @@ impl BlocklistAIActionModel {
 #[allow(dead_code)]
 impl BlocklistAIContextModel {
     fn selected_conversation<C>(&self, _: &C) -> Option<()> { None }
+    fn set_pending_query_state_for_existing_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    fn set_pending_context_selected_text<C>(&mut self, _: Option<String>, _: &mut C) {}
+    fn set_pending_context_block_ids<C>(&mut self, _: Vec<()>, _: &mut C) {}
 }
 #[allow(dead_code)] struct BlocklistAIController;
 #[allow(dead_code)] enum BlocklistAIControllerEvent {}

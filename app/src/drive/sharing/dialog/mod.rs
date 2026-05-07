@@ -15,6 +15,7 @@ impl BlocklistAIHistoryModel {
 }
 pub struct ServerConversationMetadataStub {
     pub metadata: ServerObjectMetadataStub,
+    pub permissions: ServerConversationPermissionsStub,
 }
 pub struct ServerObjectMetadataStub {
     pub uid: ObjectUidStub,
@@ -22,6 +23,10 @@ pub struct ServerObjectMetadataStub {
 pub struct ObjectUidStub;
 impl ObjectUidStub {
     pub fn uid(&self) -> &str { "" }
+}
+#[derive(Default)]
+pub struct ServerConversationPermissionsStub {
+    pub space: crate::cloud_object::Space,
 }
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;

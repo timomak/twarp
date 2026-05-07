@@ -459,6 +459,12 @@ impl CLIAgentSessionsModel {
     fn is_input_open(&self, _: warpui::EntityId) -> bool {
         false
     }
+    fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSessionStub> { None }
+}
+#[allow(dead_code)]
+struct CLIAgentSessionStub {
+    pub agent: crate::app_state::CLIAgent,
+    pub input_state: CLIAgentInputState,
 }
 impl CLIAgentSessionsModel {
     fn handle<C>(_: &C) -> std::sync::Arc<Self> {
@@ -14481,12 +14487,13 @@ fn maybe_render_ai_input_indicators(
 #[cfg(feature = "integration_tests")]
 impl Input {}
 
-// twarp: 2c-d — stub for AI-only cloud mode input v2 helper.
+// twarp: 2c-d — stubs for AI-only Input helpers.
 #[allow(dead_code)]
 impl Input {
     fn is_cloud_mode_input_v2_composing<C>(&self, _: &C) -> bool {
         false
     }
+    fn update_cli_agent_editor_text_colors<C>(&mut self, _: &mut C) {}
 }
 
 #[cfg(test)]
