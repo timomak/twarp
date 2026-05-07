@@ -15,6 +15,8 @@ use crate::settings::{AISettings, AISettingsChangedEvent};
 // twarp: 2c-d — CLI agent sessions deleted; stubs.
 use crate::app_state::CLIAgent;
 pub struct CLIAgentSessionsModel;
+impl warpui::Entity for CLIAgentSessionsModel { type Event = (); }
+impl warpui::SingletonEntity for CLIAgentSessionsModel {}
 use crate::terminal::input::MenuPositioning;
 use crate::ui_components::{buttons::icon_button_with_color, icons};
 use crate::util::bindings::{keybinding_name_to_display_string, CustomAction};

@@ -15,6 +15,8 @@ use url::Url;
 // twarp: 2c-d — AI secret redaction / usage / ai_assist / AIClient deleted; stubs.
 pub fn find_secrets_in_text(_text: &str) -> Vec<()> { Vec::new() }
 pub struct AIRequestUsageModel;
+impl warpui::Entity for AIRequestUsageModel { type Event = (); }
+impl warpui::SingletonEntity for AIRequestUsageModel {}
 pub enum GeneratedCommandMetadataError {
     Other,
     RateLimited,

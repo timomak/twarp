@@ -10,6 +10,8 @@
 use crate::app_state::{AIConversationId, ConversationStatus};
 pub use crate::terminal::input::AgentViewController;
 pub struct BlocklistAIHistoryModel;
+impl warpui::Entity for BlocklistAIHistoryModel { type Event = (); }
+impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
 use crate::input_suggestions::{HistoryInputSuggestion, HistoryOrder};
 use crate::search::data_source::{Query, QueryFilter, QueryResult};
 use crate::search::mixer::DataSourceRunErrorWrapper;

@@ -742,7 +742,7 @@ impl BlocklistAIActionModel {
 pub use crate::terminal::input::BlocklistAIContextModel;
 // twarp: 2c-d — re-export canonical BlocklistAIController from terminal::input
 pub use crate::terminal::input::BlocklistAIController;
-#[allow(dead_code)] enum BlocklistAIControllerEvent {
+#[allow(dead_code)] pub enum BlocklistAIControllerEvent {
     // twarp: 2c-d — bulk variants
     ExportConversationToFile(()),
     FinishedReceivingOutput(()),
@@ -1001,7 +1001,7 @@ macro_rules! twarp_stub_view_impl {
         }
     };
 }
-twarp_stub_view_impl!(AIBlock);
+// twarp: 2c-d — AIBlock impls already defined in rich_content.rs
 twarp_stub_view_impl!(AgentTodosPopupView);
 twarp_stub_view_impl!(CLISubagentView);
 twarp_stub_view_impl!(ConversationDetailsPanel);

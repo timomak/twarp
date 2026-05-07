@@ -17,7 +17,9 @@ use warpui::{
 
 // twarp: 2c-d — persisted_workspace deleted; stubs.
 pub struct PersistedWorkspace;
-pub enum PersistedWorkspaceEvent { Other }
+impl warpui::Entity for PersistedWorkspace { type Event = PersistedWorkspaceEvent; }
+impl warpui::SingletonEntity for PersistedWorkspace {}
+pub enum PersistedWorkspaceEvent { Other, WorkspaceAdded }
 use crate::{
     appearance::Appearance,
     ui_components::icons,

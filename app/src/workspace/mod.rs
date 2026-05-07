@@ -24,6 +24,8 @@ pub mod view;
 pub const NEW_AGENT_PANE_LABEL: &str = "New agent pane";
 pub struct SkillManager;
 pub struct AIRequestUsageModel;
+impl warpui::Entity for AIRequestUsageModel { type Event = (); }
+impl warpui::SingletonEntity for AIRequestUsageModel {}
 use crate::channel::Channel;
 use crate::code;
 use crate::features::FeatureFlag;

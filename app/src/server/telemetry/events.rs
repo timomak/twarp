@@ -132,14 +132,7 @@ pub enum InputType {
     Shell,
     AI,
 }
-impl From<crate::terminal::input::InputType> for InputType {
-    fn from(t: crate::terminal::input::InputType) -> Self {
-        match t {
-            crate::terminal::input::InputType::Shell => InputType::Shell,
-            crate::terminal::input::InputType::AI => InputType::AI,
-        }
-    }
-}
+// twarp: 2c-d — terminal::input::InputType now re-exports events::InputType, so identity From is implicit
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TemplateVariable {
     pub name: String,

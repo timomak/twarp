@@ -1,5 +1,7 @@
 // twarp: 2c-d — AIRequestUsageModel deleted; stubs.
 pub struct AIRequestUsageModel;
+impl warpui::Entity for AIRequestUsageModel { type Event = AIRequestUsageModelEvent; }
+impl warpui::SingletonEntity for AIRequestUsageModel {}
 pub enum AIRequestUsageModelEvent {
     Other,
     RequestUsageUpdated,

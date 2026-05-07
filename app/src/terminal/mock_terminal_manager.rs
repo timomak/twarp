@@ -7,6 +7,8 @@ use warpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
 
 // twarp: 2c-d — AI active_agent / blocklist deleted; stubs.
 pub struct ActiveAgentViewsModel;
+impl warpui::Entity for ActiveAgentViewsModel { type Event = (); }
+impl warpui::SingletonEntity for ActiveAgentViewsModel {}
 use crate::app_state::SerializedBlockListItem;
 use crate::{
     context_chips::prompt_type::PromptType, pane_group::ConversationRestorationInNewPaneType,

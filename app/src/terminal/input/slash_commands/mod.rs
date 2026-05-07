@@ -1,4 +1,4 @@
-mod data_source;
+pub mod data_source;
 mod search_item;
 mod view;
 
@@ -22,6 +22,8 @@ impl EphemeralMessage {
 }
 pub const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration = std::time::Duration::from_secs(0);
 pub struct BlocklistAIHistoryModel;
+impl warpui::Entity for BlocklistAIHistoryModel { type Event = (); }
+impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
 pub enum SlashCommandRequest {
     FetchReviewComments {
         repo_path: std::path::PathBuf,

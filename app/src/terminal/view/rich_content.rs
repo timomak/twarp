@@ -23,6 +23,10 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AIAgentExchangeId(pub String);
 pub struct AIBlock;
+#[allow(dead_code)]
+impl AIBlock {
+    pub fn new<A, B, C, D, E, F, G, H, I, J, K, L>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: I, _: J, _: K, _: &mut L) -> Self { Self }
+}
 pub struct TelemetryBanner;
 pub struct AmbientAgentEntryBlock;
 pub struct OnboardingAgenticSuggestionsBlock;

@@ -5,6 +5,8 @@ use warpui::{AppContext, EntityId, SingletonEntity};
 
 // twarp: 2c-d — BlocklistAIHistoryModel deleted; stub.
 pub struct BlocklistAIHistoryModel;
+impl warpui::Entity for BlocklistAIHistoryModel { type Event = (); }
+impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
 use crate::app_state::InputConfig;
 use crate::input_suggestions::HistoryInputSuggestion;
 use crate::settings::AISettings;

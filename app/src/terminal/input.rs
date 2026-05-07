@@ -829,7 +829,7 @@ pub enum BlocklistAIHistoryEvent {
 }
 
 #[allow(dead_code)]
-struct BlocklistAIHistoryModel;
+pub struct BlocklistAIHistoryModel;
 impl BlocklistAIHistoryModel {
     fn active_conversation(&self, _: warpui::EntityId) -> Option<AIConversationStub> { None }
     fn conversation_id_for_action<I>(&self, _: I, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
@@ -1251,6 +1251,7 @@ impl Entity for UserQueryMenuView {
 impl Entity for TemplatableMCPServerManager {
     type Event = ();
 }
+impl warpui::SingletonEntity for TemplatableMCPServerManager {}
 impl Entity for PromptAlertView {
     type Event = PromptAlertEvent;
 }
