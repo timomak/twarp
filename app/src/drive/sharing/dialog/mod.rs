@@ -645,11 +645,10 @@ impl SharingDialog {
                     })
                     .map(Subject::User)
             }
-            ShareableObject::AIConversation(id) => {
-                // Get owner from conversation's server metadata
-                BlocklistAIHistoryModel::as_ref(app)
-                    .get_server_conversation_metadata(id)
-                    .map(|m| Subject::from_owner(m.permissions.space))
+            ShareableObject::AIConversation(_id) => {
+                // twarp: 2c-d — server conversation metadata gone post-AI removal.
+                let _ = (BlocklistAIHistoryModel::as_ref(app), Subject::from_owner);
+                None
             }
         }
     }

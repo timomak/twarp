@@ -44,15 +44,16 @@ impl TryFrom<AIQuery> for PersistedAIInput {
     type Error = anyhow::Error;
 
     fn try_from(value: AIQuery) -> Result<Self, Self::Error> {
+        // twarp: 2c-d — PersistedAIInput is fully Option-typed in the stub
         Ok(Self {
-            start_ts: Local.from_utc_datetime(&value.start_ts),
-            inputs: serde_json::from_str(&value.input)?,
-            exchange_id: value.exchange_id.try_into()?,
-            conversation_id: value.conversation_id.try_into()?,
-            output_status: serde_json::from_str(&value.output_status)?,
-            working_directory: value.working_directory,
-            model_id: value.model_id.into(),
-            coding_model_id: value.coding_model_id.into(),
+            start_ts: Some(Local.from_utc_datetime(&value.start_ts).with_timezone(&chrono::Utc)),
+            inputs: serde_json::from_str(&value.input).unwrap_or_default(),
+            exchange_id: Some(value.exchange_id),
+            conversation_id: Some(value.conversation_id),
+            output_status: serde_json::from_str(&value.output_status).unwrap_or_default(),
+            working_directory: value.working_directory.map(std::path::PathBuf::from),
+            model_id: Some(value.model_id),
+            coding_model_id: Some(value.coding_model_id),
         })
     }
 }
@@ -79,11 +80,11 @@ impl TryFrom<&PersistedAIInput> for NewAIQuery {
         Ok(Self {
             start_ts: value.start_ts.map(|t| t.naive_utc()).unwrap_or_default(),
             input: serde_json::to_string(&value.inputs)?,
-            working_directory: value.working_directory.clone().unwrap_or_default(),
+            working_directory: value.working_directory.as_ref().map(|p| p.to_string_lossy().to_string()),
             exchange_id: value.exchange_id.clone().unwrap_or_default(),
             conversation_id: value.conversation_id.clone().unwrap_or_default(),
             output_status: serde_json::to_string(&value.output_status)?,
-            model_id: value.model_id.clone().into(),
+            model_id: value.model_id.clone().unwrap_or_default(),
         })
     }
 }
