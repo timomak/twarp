@@ -387,7 +387,8 @@ impl Input {
                 ctx.emit(Event::EnterAgentView {
                     initial_prompt: prompt,
                     conversation_id: None,
-                    origin: AgentViewEntryOrigin::SlashCommand { trigger },
+                    // twarp: 2c-d — name added to AgentViewEntryOrigin::SlashCommand
+                    origin: AgentViewEntryOrigin::SlashCommand { name: command.name.to_string(), trigger: Some(()) },
                 });
             }
             cloud_agent if command.name == commands::CLOUD_AGENT.name => {
@@ -840,8 +841,10 @@ impl Input {
             self.agent_view_controller.update(ctx, |controller, ctx| {
                 let _ = controller.try_enter_agent_view(
                     None,
+                    // twarp: 2c-d — name added to AgentViewEntryOrigin::SlashCommand
                     AgentViewEntryOrigin::SlashCommand {
-                        trigger: SlashCommandTrigger::input(),
+                        name: command.name.to_string(),
+                        trigger: Some(()),
                     },
                     ctx,
                 );

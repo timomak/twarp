@@ -325,23 +325,8 @@ impl AgentShortcutViewModel {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
-enum AgentViewEntryOrigin {
-    CloudAgent,
-    InlineConversationMenu,
-    InlineHistoryMenu,
-    SlashCommand {
-        name: String,
-    },
-    Input {
-        is_new_conversation: bool,
-        was_prompt_autodetected: bool,
-    },
-    ImageAdded,
-    OnboardingCallout,
-    ProjectEntry,
-}
+// twarp: 2c-d — re-export canonical AgentViewEntryOrigin from app_state
+pub use crate::app_state::AgentViewEntryOrigin;
 
 #[allow(dead_code)]
 struct EphemeralMessageModel;
@@ -694,7 +679,29 @@ enum BlocklistAIControllerEvent {}
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum BlocklistAIHistoryEvent {}
+pub enum BlocklistAIHistoryEvent {
+    // twarp: 2c-d — bulk variants for AI-removed BlocklistAIHistoryEvent
+    AppendedExchange(()),
+    ClearedActiveConversation,
+    ClearedConversationsInTerminalView,
+    ConversationServerTokenAssigned(()),
+    CreatedSubtask(()),
+    DeletedConversation(()),
+    ReassignedExchange(()),
+    RemoveConversation(()),
+    RestoredConversations(()),
+    SetActiveConversation(()),
+    SplitConversation(()),
+    StartedNewConversation(()),
+    UpdatedAutoexecuteOverride(()),
+    UpdatedConversationArtifacts(()),
+    UpdatedConversationMetadata(()),
+    UpdatedConversationStatus(()),
+    UpdatedStreamingExchange(()),
+    UpdatedTodoList(()),
+    UpgradedTask(()),
+    Other,
+}
 
 #[allow(dead_code)]
 struct BlocklistAIHistoryModel;
@@ -851,7 +858,30 @@ impl AgentInputFooter {
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum AgentInputFooterEvent {}
+enum AgentInputFooterEvent {
+    // twarp: 2c-d — bulk variants for AI-removed AgentInputFooterEvent
+    HideRichInput,
+    InsertIntoCLIRichInput(()),
+    ModelSelectorClosed,
+    ModelSelectorOpened,
+    OpenAIDocument(()),
+    OpenCodeReview,
+    OpenPluginInstructionsPane(()),
+    OpenRichInput,
+    OpenSettings(()),
+    PluginInstalled(()),
+    PromptAlert(()),
+    SelectFile,
+    ShowContextMenu(()),
+    StartRemoteControl,
+    StopRemoteControl,
+    ToggleCodeReviewPane,
+    ToggledChipMenu(()),
+    ToggleFileExplorer,
+    ToggleInlineModelSelector,
+    TryExecuteChipCommand(()),
+    WriteToPty(()),
+}
 
 #[allow(dead_code)]
 pub struct AgentViewController;
@@ -5186,8 +5216,10 @@ impl Input {
             self.agent_view_controller.update(ctx, |controller, ctx| {
                 let _ = controller.try_enter_agent_view(
                     None,
+                    // twarp: 2c-d — name added to AgentViewEntryOrigin::SlashCommand
                     AgentViewEntryOrigin::SlashCommand {
-                        trigger: SlashCommandTrigger::input(),
+                        name: reference.to_string(),
+                        trigger: Some(()),
                     },
                     ctx,
                 );

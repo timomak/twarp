@@ -109,7 +109,23 @@ pub enum AgentViewEntryOrigin {
     CloudAgent,
     SlashCommand {
         name: String,
+        // twarp: 2c-d — extra fields for AI-removed callers (Option<()> stub)
+        trigger: Option<()>,
     },
+    // twarp: 2c-d — additional variants for AI-removed callers
+    AcceptedPromptSuggestion,
+    AgentRequestedNewConversation,
+    ClearBuffer,
+    ContinueConversationButton,
+    ConversationListView,
+    ConversationSelector,
+    CreateEnvironment,
+    DefaultSessionMode,
+    InlineCodeReview,
+    Onboarding,
+    ResumeConversationButton,
+    SlashInit,
+    ThirdPartyCloudAgent,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct RestoredAIConversation {}

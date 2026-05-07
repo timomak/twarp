@@ -377,16 +377,8 @@ use crate::terminal::model::block::AgentViewState;
 }
 #[allow(dead_code)] use crate::terminal::model::block::AgentViewDisplayMode;
 #[allow(dead_code)] struct AgentViewEntryBlockParams;
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
-enum AgentViewEntryOrigin {
-    CloudAgent,
-    InlineConversationMenu,
-    InlineHistoryMenu,
-    LongRunningCommand,
-    SlashCommand { name: String },
-    OnboardingCallout,
-}
+// twarp: 2c-d — re-export canonical AgentViewEntryOrigin from app_state
+pub use crate::app_state::AgentViewEntryOrigin;
 #[allow(dead_code)] struct AgentViewHeaderDisabledTheme;
 #[allow(dead_code)] struct AgentViewHeaderTheme;
 #[allow(dead_code)] struct AgentViewZeroStateBlock;
@@ -635,7 +627,8 @@ impl BlocklistAIController {
     fn cancel_conversation_progress<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
 }
 #[allow(dead_code)] enum BlocklistAIControllerEvent {}
-#[allow(dead_code)] enum BlocklistAIHistoryEvent {}
+// twarp: 2c-d — re-export canonical BlocklistAIHistoryEvent
+pub use crate::terminal::input::BlocklistAIHistoryEvent;
 #[allow(dead_code)] struct BlocklistAIHistoryModel;
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
