@@ -33,11 +33,11 @@ impl warpui::SingletonEntity for PersistedWorkspace {}
 #[allow(dead_code)]
 impl PersistedWorkspace {
     pub fn total_lsp_server_count(&self, _: bool) -> usize { 0 }
-    pub fn workspaces(&self) -> Vec<()> { Vec::new() }
+    pub fn workspaces(&self) -> std::iter::Empty<()> { std::iter::empty() }
     // twarp: 2c-d — bulk stubs
     pub fn detect_lsp_workspace_status<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn disable_lsp_server_for_path<A, C>(&mut self, _: A, _: &mut C) {}
-    pub fn all_lsp_servers(&self) -> Vec<()> { Vec::new() }
+    pub fn all_lsp_servers<A>(&self, _: A, _: bool) -> Option<std::iter::Empty<(LSPServerType, EnablementState)>> { None }
 }
 pub enum PersistedWorkspaceEvent { InstallationSucceeded, InstallationFailed, Other }
 

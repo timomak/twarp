@@ -10,6 +10,11 @@ pub struct AIQueryHistory {
 }
 #[derive(Clone, Debug, Default)]
 pub enum AIQueryHistoryOutputStatus { #[default] Other }
+#[allow(dead_code)]
+impl AIQueryHistoryOutputStatus {
+    pub fn icon(&self) -> warp_core::ui::Icon { warp_core::ui::Icon::Terminal }
+    pub fn display_text(&self) -> &'static str { "" }
+}
 use crate::terminal::model::session::SessionId;
 use crate::ui_components::icons::Icon as UIComponentsIcon;
 use async_channel::Sender;

@@ -14735,6 +14735,10 @@ impl Input {
         false
     }
     fn update_cli_agent_editor_text_colors<C>(&mut self, _: &mut C) {}
+    // twarp: 2c-d — bulk stubs for AI-removed Input methods (render functions)
+    fn render_cli_agent_input<C>(&self, _: &C) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
+    fn render_ambient_agent_status_footer<C>(&self, _: &C) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
+    fn render_agent_input<C>(&self, _: &C) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
 }
 
 #[cfg(test)]

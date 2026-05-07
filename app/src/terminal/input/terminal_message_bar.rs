@@ -22,6 +22,13 @@ impl BlocklistAIContextModel {
     pub fn pending_context_selected_text(&self) -> Option<String> { None }
 }
 pub struct BlocklistAIInputModel;
+impl warpui::Entity for BlocklistAIInputModel { type Event = (); }
+#[allow(dead_code)]
+impl BlocklistAIInputModel {
+    // twarp: 2c-d — bulk stubs
+    pub fn is_ai_input_enabled(&self) -> bool { false }
+    pub fn is_input_type_locked(&self) -> bool { false }
+}
 use crate::appearance::Appearance;
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::terminal::input::inline_history::{AcceptHistoryItem, HistoryTab};

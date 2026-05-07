@@ -310,6 +310,8 @@ mod ambient_agent {
         pub fn should_show_status_footer(&self) -> bool { false }
         pub fn agent_progress(&self) -> Option<()> { None }
         pub fn cancel_task<C>(&mut self, _: &mut C) {}
+        // twarp: 2c-d — bulk stubs
+        pub fn enter_viewing_existing_session<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     }
     impl Entity for AmbientAgentViewModel {
         type Event = ();
@@ -754,6 +756,10 @@ impl BlocklistAIHistoryModel {
     fn update_conversation_status<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
 }
 #[allow(dead_code)] enum BlocklistAIInputEvent {}
+#[allow(dead_code)]
+impl BlocklistAIInputEvent {
+    fn updated_config(&self) -> Option<InputConfig> { None }
+}
 #[allow(dead_code)] struct BlocklistAIInputModel;
 #[allow(dead_code)]
 impl BlocklistAIInputModel {

@@ -79,6 +79,7 @@ impl AIBlock {
     pub fn pending_unit_test_suggestion<C>(&self, _: &C) -> Option<warpui::ViewHandle<crate::workspace::view::AIFactViewStub>> { None }
     // twarp: 2c-d — bulk stubs
     pub fn is_passive_conversation<C>(&self, _: &C) -> bool { false }
+    pub fn is_finished<C>(&self, _: &C) -> bool { false }
 }
 use crate::terminal::block_list_element::GridType;
 use crate::terminal::model::blockgrid::BlockGrid;

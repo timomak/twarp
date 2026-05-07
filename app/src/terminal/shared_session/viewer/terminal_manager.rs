@@ -44,6 +44,11 @@ pub use crate::terminal::input::BlocklistAIHistoryEvent;
 pub struct LLMPreferences;
 impl warpui::Entity for LLMPreferences { type Event = LLMPreferencesEvent; }
 impl SingletonEntity for LLMPreferences {}
+#[allow(dead_code)]
+impl LLMPreferences {
+    // twarp: 2c-d — bulk stubs
+    pub fn get_active_base_model<C>(&self, _: &C) -> Option<()> { None }
+}
 pub enum LLMPreferencesEvent { Other }
 use crate::context_chips::prompt_snapshot::PromptSnapshot;
 use crate::context_chips::prompt_type::PromptType;
@@ -70,6 +75,11 @@ pub enum CLIAgentInputState {
 pub struct CLIAgentSessionsModel;
 impl warpui::Entity for CLIAgentSessionsModel { type Event = CLIAgentSessionsModelEvent; }
 impl SingletonEntity for CLIAgentSessionsModel {}
+#[allow(dead_code)]
+impl CLIAgentSessionsModel {
+    // twarp: 2c-d — bulk stubs
+    pub fn session(&self, _: warpui::EntityId) -> Option<()> { None }
+}
 pub enum CLIAgentSessionsModelEvent { Other }
 use crate::terminal::shared_session::manager::Manager;
 use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
