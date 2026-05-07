@@ -36,6 +36,19 @@ pub struct KeyboardNavigableButtons;
 impl KeyboardNavigableButtons {
     pub fn new<A>(_: A) -> Self { Self }
 }
+impl warpui::Entity for KeyboardNavigableButtons { type Event = (); }
+impl warpui::View for KeyboardNavigableButtons {
+    fn ui_name() -> &'static str { "KeyboardNavigableButtons/twarp-stub" }
+    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+        warpui::elements::Empty::new().finish()
+    }
+}
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct KeyboardNavigableButtonsAction;
+impl warpui::TypedActionView for KeyboardNavigableButtons {
+    type Action = KeyboardNavigableButtonsAction;
+}
 pub struct HeaderConfig;
 #[allow(dead_code)]
 impl HeaderConfig {

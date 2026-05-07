@@ -32,7 +32,20 @@ pub enum PromptAlertState {
 pub struct PromptAlertView;
 #[allow(dead_code)]
 impl PromptAlertView {
-    pub fn new<A, B, C, D>(_: A, _: B, _: C, _: &mut D) -> Self { Self }
+    pub fn new<A>(_: &mut A) -> Self { Self }
+}
+impl warpui::Entity for PromptAlertView { type Event = (); }
+impl warpui::View for PromptAlertView {
+    fn ui_name() -> &'static str { "PromptAlertView/twarp-stub" }
+    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+        warpui::elements::Empty::new().finish()
+    }
+}
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct PromptAlertAction;
+impl warpui::TypedActionView for PromptAlertView {
+    type Action = PromptAlertAction;
 }
 use crate::server::telemetry::InteractionSource;
 use crate::settings::InputSettings;

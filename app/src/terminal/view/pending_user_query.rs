@@ -17,6 +17,19 @@ pub struct PendingUserQueryBlock;
 impl PendingUserQueryBlock {
     pub fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
 }
+impl warpui::Entity for PendingUserQueryBlock { type Event = PendingUserQueryBlockEvent; }
+impl warpui::View for PendingUserQueryBlock {
+    fn ui_name() -> &'static str { "PendingUserQueryBlock/twarp-stub" }
+    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+        warpui::elements::Empty::new().finish()
+    }
+}
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct PendingUserQueryBlockAction;
+impl warpui::TypedActionView for PendingUserQueryBlock {
+    type Action = PendingUserQueryBlockAction;
+}
 pub enum PendingUserQueryBlockEvent { Other }
 use crate::{auth::AuthStateProvider, terminal::TerminalView};
 

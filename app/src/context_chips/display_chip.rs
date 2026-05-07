@@ -14,6 +14,23 @@ pub struct PlanAndTodoListView;
 impl PlanAndTodoListView {
     pub fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
 }
+impl warpui::Entity for PlanAndTodoListView { type Event = PlanAndTodoListEvent; }
+impl warpui::View for PlanAndTodoListView {
+    fn ui_name() -> &'static str { "PlanAndTodoListView/twarp-stub" }
+    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+        warpui::elements::Empty::new().finish()
+    }
+}
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct PlanAndTodoListAction;
+impl warpui::TypedActionView for PlanAndTodoListView {
+    type Action = PlanAndTodoListAction;
+}
+#[allow(dead_code)]
+impl PlanAndTodoListView {
+    pub fn should_render<C>(&self, _: &C) -> bool { false }
+}
 pub enum PlanAndTodoListEvent {
     OpenAIDocument { document_id: AIDocumentId, version: AIDocumentVersion },
 }
