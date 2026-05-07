@@ -95,8 +95,8 @@ impl TryFrom<&str> for AIDocumentId {
 pub struct AIDocumentVersion(pub usize);
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ClientProfileId(pub uuid::Uuid);
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct LLMId(pub String);
+// twarp: 2c-d — re-export canonical LLMId from crates/ai for type unification.
+pub use ai::LLMId;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AIConversation {}
@@ -255,11 +255,7 @@ impl std::fmt::Display for ClientProfileId {
         self.0.fmt(f)
     }
 }
-impl std::fmt::Display for LLMId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
+// twarp: 2c-d — LLMId Display impl provided by crates/ai.
 use crate::code::editor_management::CodeSource;
 use crate::drive::OpenWarpDriveObjectSettings;
 use crate::root_view::quake_mode_window_id;

@@ -106,8 +106,10 @@ impl LLMPreferences {
     pub fn refresh_available_models<C>(&mut self, _: &mut C) {}
 }
 pub enum LLMPreferencesEvent { Other }
-pub fn apply_free_tier_default_model_override<A, B, C>(_: A, _: B, _: C) {}
-pub fn build_onboarding_models<A>(_: A) -> Vec<onboarding::slides::OnboardingModelInfo> { Vec::new() }
+pub fn apply_free_tier_default_model_override<A, B, C>(_: A, default: B, _: C) -> B { default }
+pub fn build_onboarding_models<A>(_: A) -> (Vec<onboarding::slides::OnboardingModelInfo>, crate::app_state::LLMId) {
+    (Vec::new(), "".into())
+}
 pub fn current_onboarding_auth_state<C>(_: &C) -> onboarding::OnboardingAuthState {
     onboarding::OnboardingAuthState::LoggedOut
 }
