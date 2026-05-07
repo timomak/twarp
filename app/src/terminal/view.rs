@@ -306,26 +306,9 @@ use crate::pane_group::ConversationRestorationInNewPaneType;
 // twarp: 2c-d — ambient_agent module deleted; file-local stub module so view.rs body type-checks
 #[allow(dead_code)]
 mod ambient_agent {
+    // twarp: 2c-d — re-export canonical AmbientAgentViewModel from terminal::input.
+    pub use crate::terminal::input::AmbientAgentViewModel;
     use super::*;
-    pub struct AmbientAgentViewModel;
-    impl AmbientAgentViewModel {
-        // twarp: 2c-d — accept 3-arg form
-        pub fn new<A, B, C>(_: A, _: B, _: &mut C) -> Self {
-            unimplemented!()
-        }
-        pub fn is_ambient_agent(&self) -> bool { false }
-        pub fn is_in_setup(&self) -> bool { false }
-        pub fn has_parent_terminal(&self) -> bool { false }
-        pub fn task_id(&self) -> Option<crate::app_state::AmbientAgentTaskId> { None }
-        pub fn should_show_status_footer(&self) -> bool { false }
-        pub fn agent_progress(&self) -> Option<()> { None }
-        pub fn cancel_task<C>(&mut self, _: &mut C) {}
-        // twarp: 2c-d — bulk stubs
-        pub fn enter_viewing_existing_session<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
-    }
-    impl Entity for AmbientAgentViewModel {
-        type Event = ();
-    }
     pub struct FirstTimeCloudAgentSetupView;
     impl FirstTimeCloudAgentSetupView {
         pub fn new<C>(_: &mut C) -> Self {
@@ -517,7 +500,8 @@ impl PassiveSuggestionTrigger {
     CopyOutput(()),
     CopyQuery(()),
 }
-#[allow(dead_code)] enum FinishReason {}
+// twarp: 2c-d — re-export canonical FinishReason from pending_user_query.
+pub use crate::terminal::view::pending_user_query::FinishReason;
 #[derive(Debug, Clone)]
 #[allow(dead_code)] pub enum CodebaseIndexSpeedbumpBannerAction {
     // twarp: 2c-d — bulk variants for AI-removed CodebaseIndexSpeedbumpBannerAction
@@ -756,9 +740,10 @@ impl BlocklistAIHistoryModel {
     fn is_entirely_passive_conversation<I>(&self, _: I) -> bool { false }
     fn can_conversation_be_shared<I>(&self, _: I) -> bool { false }
 }
-// twarp: 2c-d — BlocklistAIInputModel/BlocklistAIInputEvent re-exported via use at top of file.
-// twarp: 2c-d — re-export canonical InputConfig + InputType from terminal::input
-pub use crate::terminal::input::{InputConfig, InputType};
+// twarp: 2c-d — re-export canonical types from terminal::input
+pub use crate::terminal::input::{
+    BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig, InputType,
+};
 #[allow(dead_code)] enum PendingQueryState {}
 #[allow(dead_code)] struct ShellCommandExecutor;
 #[allow(dead_code)]

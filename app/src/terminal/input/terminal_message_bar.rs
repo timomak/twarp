@@ -12,15 +12,8 @@ use super::message_bar::{
     common::render_terminal_message, truncated_command_for_block, Message, MessageItem,
     MessageProvider,
 };
-// twarp: 2c-d — AI blocklist deleted; stubs.
-pub enum BlocklistAIContextEvent { Other }
-pub struct BlocklistAIContextModel;
-#[allow(dead_code)]
-impl BlocklistAIContextModel {
-    pub fn pending_context_block_ids(&self) -> Vec<()> { Vec::new() }
-    // twarp: 2c-d — bulk stubs
-    pub fn pending_context_selected_text(&self) -> Option<String> { None }
-}
+// twarp: 2c-d — re-export from input for type unification.
+pub use crate::terminal::input::{BlocklistAIContextEvent, BlocklistAIContextModel};
 // twarp: 2c-d — re-export from input for type unification.
 pub use crate::terminal::input::BlocklistAIInputModel;
 use crate::appearance::Appearance;

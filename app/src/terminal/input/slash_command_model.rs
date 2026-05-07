@@ -1,5 +1,6 @@
 use ai::skills::SkillReference;
-use input_classifier::InputType;
+// twarp: 2c-d — use canonical InputType from terminal::input.
+use crate::terminal::input::InputType;
 use warp_core::features::FeatureFlag;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 

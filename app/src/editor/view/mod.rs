@@ -47,14 +47,8 @@ use warpui::{elements, ViewHandle};
 
 // twarp: 2c-d — AI agent / blocklist / context menu deleted; stubs.
 pub struct ImageContext { pub data: String, pub file_name: String, pub mime_type: String, pub is_figma: bool }
-pub struct BlocklistAIContextModel;
-impl warpui::Entity for BlocklistAIContextModel { type Event = (); }
-#[allow(dead_code)]
-impl BlocklistAIContextModel {
-    pub fn append_pending_images<A, C>(&mut self, _: A, _: &mut C) {}
-    pub fn pending_images(&self) -> Vec<()> { Vec::new() }
-    pub fn append_pending_attachments<A, C>(&mut self, _: A, _: &mut C) {}
-}
+// twarp: 2c-d — re-export from input for type unification.
+pub use crate::terminal::input::BlocklistAIContextModel;
 pub struct PendingAttachment;
 pub struct PendingFile { pub file_path: std::path::PathBuf, pub file_name: String, pub mime_type: String }
 // twarp: 2c-d — full enum with variants used by callers in terminal::input

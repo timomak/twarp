@@ -15,9 +15,8 @@ use crate::terminal::TerminalView;
 
 // twarp: 2c-d — AgentViewController re-exported from input for type unification.
 pub use crate::terminal::input::AgentViewController;
-/// Stub for the deleted `BlocklistAIContextModel` so callers can pass a model handle.
-pub struct BlocklistAIContextModel;
-impl warpui::Entity for BlocklistAIContextModel { type Event = (); }
+// twarp: 2c-d — re-export from input for type unification.
+pub use crate::terminal::input::BlocklistAIContextModel;
 /// Stub for the deleted `BlocklistAIHistoryModel`.
 pub struct BlocklistAIHistoryModel;
 impl warpui::Entity for BlocklistAIHistoryModel { type Event = (); }

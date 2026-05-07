@@ -917,6 +917,24 @@ impl InputType {
     }
 }
 
+// twarp: 2c-d — conversion to input_classifier::InputType for telemetry.
+impl From<InputType> for input_classifier::InputType {
+    fn from(t: InputType) -> Self {
+        match t {
+            InputType::Shell => input_classifier::InputType::Shell,
+            InputType::AI => input_classifier::InputType::AI,
+        }
+    }
+}
+impl From<input_classifier::InputType> for InputType {
+    fn from(t: input_classifier::InputType) -> Self {
+        match t {
+            input_classifier::InputType::Shell => InputType::Shell,
+            input_classifier::InputType::AI => InputType::AI,
+        }
+    }
+}
+
 lazy_static::lazy_static! {
     static ref BLOCK_CONTEXT_ATTACHMENT_REGEX: regex::Regex = regex::Regex::new("").unwrap();
     static ref DIFF_HUNK_ATTACHMENT_REGEX: regex::Regex = regex::Regex::new("").unwrap();
@@ -988,7 +1006,11 @@ enum UniversalDeveloperInputButtonBarEvent {
 #[allow(dead_code)]
 pub struct AmbientAgentViewModel;
 impl AmbientAgentViewModel {
-    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+    pub fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+        unimplemented!()
+    }
+    // twarp: 2c-d — also support 3-arg form used in view.rs ambient_agent module
+    pub fn new3<A, B, C>(_: A, _: B, _: &mut C) -> Self {
         unimplemented!()
     }
     pub fn task_id(&self) -> Option<crate::app_state::AmbientAgentTaskId> {
@@ -1008,6 +1030,9 @@ impl AmbientAgentViewModel {
     // twarp: 2c-d — bulk stubs
     pub fn is_agent_running(&self) -> bool { false }
     pub fn spawn_agent<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn is_in_setup(&self) -> bool { false }
+    pub fn has_parent_terminal(&self) -> bool { false }
+    pub fn enter_viewing_existing_session<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
 }
 
 #[allow(dead_code)]
@@ -12421,7 +12446,7 @@ impl Input {
             // If we're submitting an AI query, we want to send telemetry for the input type.
             if FeatureFlag::NldImprovements.is_enabled() {
                 let input_model = self.ai_input_model.as_ref(ctx);
-                let input_type = input_model.input_type();
+                let input_type: input_classifier::InputType = input_model.input_type().into();
                 let is_locked = input_model.is_input_type_locked();
                 let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
                 send_telemetry_from_ctx!(
@@ -12531,7 +12556,7 @@ impl Input {
             // If we're submitting a shell command, we want to send telemetry for the input type.
             if FeatureFlag::NldImprovements.is_enabled() {
                 let input_model = self.ai_input_model.as_ref(ctx);
-                let input_type = input_model.input_type();
+                let input_type: input_classifier::InputType = input_model.input_type().into();
                 let is_locked = input_model.is_input_type_locked();
                 let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
                 send_telemetry_from_ctx!(

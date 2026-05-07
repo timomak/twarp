@@ -9,14 +9,7 @@ pub struct AgentMessageBarMouseStates {
     // twarp: 2c-d — fields used by callers
     pub clear_attached_context: warpui::elements::MouseStateHandle,
 }
-pub use crate::terminal::input::AgentViewController;
-pub struct BlocklistAIContextModel;
-#[allow(dead_code)]
-impl BlocklistAIContextModel {
-    // twarp: 2c-d — bulk stubs
-    pub fn pending_context_selected_text(&self) -> Option<String> { None }
-    pub fn pending_context_block_ids(&self) -> Vec<()> { Vec::new() }
-}
+pub use crate::terminal::input::{AgentViewController, BlocklistAIContextModel};
 // twarp: 2c-d — re-export from input for type unification.
 pub use crate::terminal::input::BlocklistAIInputModel;
 use crate::terminal::input::buffer_model::InputBufferModel;
