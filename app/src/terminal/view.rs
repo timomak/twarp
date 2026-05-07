@@ -367,7 +367,7 @@ impl AgentViewController {
     pub fn is_fullscreen(&self) -> bool { false }
     pub fn agent_view_state(&self) -> AgentViewState { AgentViewState::Inactive }
     pub fn exit_agent_view<C>(&mut self, _: &mut C) {}
-    pub fn can_exit_agent_view<C>(&self, _: &C) -> bool { true }
+    pub fn can_exit_agent_view<C>(&self, _: &C) -> Result<(), String> { Ok(()) }
     // twarp: 2c-d — bulk stubs for AI-removed AgentViewController methods
     pub fn clear_pending_exit_confirmation<C>(&mut self, _: &mut C) {}
     pub fn exit_agent_view_with_required_confirmation<A, C>(&mut self, _: A, _: &mut C) {}
@@ -490,6 +490,8 @@ struct ServerConversationToken;
 #[allow(dead_code)]
 impl ServerConversationToken {
     fn as_str(&self) -> &str { "" }
+    fn new<S: Into<String>>(_: S) -> Self { Self }
+    fn debug_link(&self) -> String { String::new() }
 }
 #[allow(dead_code)] fn redact_secrets<C>(_: C) {}
 #[allow(dead_code)] enum AgentTodosPopupEvent {}

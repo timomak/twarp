@@ -461,6 +461,8 @@ struct InlineConversationMenuView;
 #[allow(dead_code)]
 impl InlineConversationMenuView {
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
+    fn select_up<C>(&mut self, _: &mut C) {}
+    fn select_down<C>(&mut self, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -514,6 +516,8 @@ struct InlinePlanMenuView;
 #[allow(dead_code)]
 impl InlinePlanMenuView {
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
+    fn select_up<C>(&mut self, _: &mut C) {}
+    fn select_down<C>(&mut self, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -524,6 +528,8 @@ struct InlineProfileSelectorView;
 #[allow(dead_code)]
 impl InlineProfileSelectorView {
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
+    fn select_up<C>(&mut self, _: &mut C) {}
+    fn select_down<C>(&mut self, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -534,6 +540,8 @@ struct InlinePromptsMenuView;
 #[allow(dead_code)]
 impl InlinePromptsMenuView {
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
+    fn select_up<C>(&mut self, _: &mut C) {}
+    fn select_down<C>(&mut self, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -544,6 +552,8 @@ struct InlineReposMenuView;
 #[allow(dead_code)]
 impl InlineReposMenuView {
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
+    fn select_up<C>(&mut self, _: &mut C) {}
+    fn select_down<C>(&mut self, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -557,6 +567,8 @@ struct RewindMenuView;
 #[allow(dead_code)]
 impl RewindMenuView {
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
+    fn select_up<C>(&mut self, _: &mut C) {}
+    fn select_down<C>(&mut self, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -585,6 +597,8 @@ struct UserQueryMenuView;
 #[allow(dead_code)]
 impl UserQueryMenuView {
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
+    fn select_up<C>(&mut self, _: &mut C) {}
+    fn select_down<C>(&mut self, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -732,6 +746,12 @@ impl BlocklistAIController {
 #[allow(dead_code)]
 enum BlocklistAIControllerEvent {}
 
+#[allow(dead_code)]
+impl BlocklistAIHistoryEvent {
+    // twarp: 2c-d — terminal_view_id getter for event types
+    pub fn terminal_view_id(&self) -> Option<warpui::EntityId> { None }
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum BlocklistAIHistoryEvent {
@@ -808,6 +828,7 @@ impl BlocklistAIInputModel {
     fn is_input_type_locked(&self) -> bool {
         false
     }
+    fn was_lock_set_with_empty_buffer(&self) -> bool { false }
     fn set_input_config<C>(&mut self, _: InputConfig, _: bool, _: &mut C) {}
     fn set_input_type<C>(&mut self, _: InputType, _: &mut C) {}
     fn set_input_config_for_classic_mode<C>(&mut self, _: InputConfig, _: &mut C) {}
@@ -928,6 +949,8 @@ struct AgentInputFooter;
 #[allow(dead_code)]
 impl AgentInputFooter {
     fn has_open_chip_menu<C>(&self, _: &C) -> bool { false }
+    // twarp: 2c-d — bulk stubs
+    fn is_model_selector_open<C>(&self, _: &C) -> bool { false }
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]

@@ -12,6 +12,10 @@ use warpui::{
 
 // twarp: 2c-d — AIBlock deleted; stub.
 pub struct AIBlock;
+#[allow(dead_code)]
+impl AIBlock {
+    pub fn selected_text<C>(&self, _: &C) -> Option<String> { None }
+}
 impl warpui::Entity for AIBlock { type Event = (); }
 impl warpui::View for AIBlock {
     fn ui_name() -> &'static str { "AIBlock/twarp-stub" }

@@ -1455,6 +1455,8 @@ impl UserWorkspaces {
             .unwrap_or(true);
         FeatureFlag::CreatingSharedSessions.set_enabled(is_session_sharing_enabled_via_tier_policy);
     }
+    // twarp: 2c-d — bulk stubs for AI-removed methods
+    pub fn is_aws_bedrock_credentials_enabled(&self) -> bool { false }
 }
 
 #[cfg(test)]

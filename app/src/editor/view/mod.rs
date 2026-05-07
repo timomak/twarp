@@ -64,6 +64,7 @@ impl AIContextMenu {
     pub fn set_is_in_ambient_agent<C>(&mut self, _: bool, _: &mut C) {}
     pub fn set_is_shared_session_viewer<C>(&mut self, _: bool, _: &mut C) {}
     pub fn update_search_query<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn should_render(&self) -> bool { false }
 }
 impl warpui::Entity for AIContextMenu {
     type Event = AIContextMenuEvent;

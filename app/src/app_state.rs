@@ -106,6 +106,12 @@ impl ConversationStatus {
 pub struct AgentConversationsModelEvent {}
 #[derive(Clone, Debug, PartialEq)]
 pub struct ServerConversationToken {}
+#[allow(dead_code)]
+impl ServerConversationToken {
+    // twarp: 2c-d — bulk stubs
+    pub fn new<S: Into<String>>(_: S) -> Self { Self {} }
+    pub fn debug_link(&self) -> String { String::new() }
+}
 #[derive(Clone, Debug, PartialEq)]
 pub enum AgentViewEntryOrigin {
     Input {

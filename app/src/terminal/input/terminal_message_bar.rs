@@ -18,6 +18,8 @@ pub struct BlocklistAIContextModel;
 #[allow(dead_code)]
 impl BlocklistAIContextModel {
     pub fn pending_context_block_ids(&self) -> Vec<()> { Vec::new() }
+    // twarp: 2c-d — bulk stubs
+    pub fn pending_context_selected_text(&self) -> Option<String> { None }
 }
 pub struct BlocklistAIInputModel;
 use crate::appearance::Appearance;
