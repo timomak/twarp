@@ -415,12 +415,14 @@ fn is_accept_prompt_suggestion_bound_to_ctrl_enter<C>(_: &C) -> bool {
 }
 
 #[allow(dead_code)]
-struct SkillManager;
+pub struct SkillManager;
 #[allow(dead_code)]
 impl SkillManager {
     pub fn handle<C>(_: &C) -> warpui::ModelHandle<SkillManager> { unimplemented!() }
-    pub fn skill_by_reference<R>(&self, _: R) -> Option<()> { None }
-    pub fn get_skills_for_working_directory<A>(&self, _: A) -> Vec<()> { Vec::new() }
+    pub fn skill_by_reference<R>(&self, _: R) -> Option<crate::terminal::input::slash_commands::data_source::SkillDescriptor> { None }
+    pub fn get_skills_for_working_directory<A, B>(&self, _: A, _: B) -> Vec<crate::terminal::input::slash_commands::data_source::SkillDescriptor> { Vec::new() }
+    pub fn skill_exists_for_any_provider<S, P>(&self, _: S, _: P) -> bool { false }
+    pub fn best_supported_provider<S, P>(&self, _: S, _: P) -> ai::skills::SkillProvider { ai::skills::SkillProvider::Warp }
 }
 // twarp: 2c-d — Entity/SingletonEntity for SkillManager defined later in this file.
 
@@ -740,7 +742,7 @@ impl BlocklistAIContextModel {
     pub fn home_directory(&self) -> Option<std::path::PathBuf> { None }
     pub fn pending_context<A, B>(&self, _: A, _: B) -> Option<()> { None }
     pub fn pending_query_autoexecute_override<C>(&self, _: &C) -> Option<bool> { None }
-    pub fn register_diff_hunk_attachment<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn register_diff_hunk_attachment<A, B>(&mut self, _: A, _: B) {}
     pub fn remove_pending_attachment<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn reset_context_to_default<C>(&mut self, _: &mut C) {}
     pub fn set_pending_query_state_for_new_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}

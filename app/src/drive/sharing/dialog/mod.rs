@@ -29,7 +29,13 @@ impl ObjectUidStub {
 pub struct ServerConversationPermissionsStub {
     pub space: crate::cloud_object::Space,
     // twarp: 2c-d — additional fields
-    pub guests: Vec<()>,
+    pub guests: Vec<GuestStub>,
+    pub anyone_link_sharing: Option<()>,
+}
+
+pub struct GuestStub {
+    pub subject: crate::cloud_object::ServerGuestSubject,
+    pub access_level: (),
 }
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;

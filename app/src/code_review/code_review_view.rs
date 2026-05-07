@@ -44,7 +44,23 @@ use crate::{
 // twarp: 2c-d — re-export from comments::comment to unify cross-file types.
 pub use crate::code_review::comments::comment::{CurrentHead, DiffBase};
 #[derive(Clone, Debug)]
-pub enum AIAgentAttachment { DiffHunk }
+#[allow(dead_code)]
+pub enum AIAgentAttachment {
+    DiffHunk {
+        file_path: String,
+        line_range: std::ops::Range<usize>,
+        diff_content: String,
+        lines_added: usize,
+        lines_removed: usize,
+        current: Option<String>,
+        base: Option<String>,
+    },
+    DiffSet {
+        file_diffs: std::collections::HashMap<String, Vec<DiffSetHunk>>,
+        current: Option<CurrentHead>,
+        base: DiffBase,
+    },
+}
 
 use crate::{
     code::{

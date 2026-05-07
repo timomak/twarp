@@ -683,8 +683,9 @@ use crate::terminal::view::rich_content::AIAgentExchangeId;
 #[allow(dead_code)] struct FileLocations;
 #[allow(dead_code)] enum PassiveSuggestionResultType {}
 #[allow(dead_code)] fn ai_brand_color<C>(_: C) -> warpui::color::ColorU { warpui::color::ColorU::new(0,0,0,0) }
-#[allow(dead_code)] fn get_ai_block_overflow_menu_element_position_id<C>(_: C) -> warpui::elements::ElementPositionId { warpui::elements::ElementPositionId::new("twarp-stub") }
-#[allow(dead_code)] fn get_attached_blocks_chip_element_position_id<C>(_: C) -> warpui::elements::ElementPositionId { warpui::elements::ElementPositionId::new("twarp-stub") }
+// twarp: 2c-d — ElementPositionId removed from warpui; stub returns ()
+#[allow(dead_code)] fn get_ai_block_overflow_menu_element_position_id<C>(_: C) {}
+#[allow(dead_code)] fn get_attached_blocks_chip_element_position_id<C>(_: C) {}
 #[allow(dead_code)] struct CodeDiffView;
 #[allow(dead_code)] struct SummarizationCancelDialog;
 #[allow(dead_code)] fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool { false }

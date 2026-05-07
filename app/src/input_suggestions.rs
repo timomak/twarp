@@ -7,6 +7,7 @@ pub struct AIQueryHistory {
     pub working_directory: Option<String>,
     pub query_text: String,
     pub output_status: AIQueryHistoryOutputStatus,
+    pub history_order: HistoryOrder,
 }
 #[derive(Clone, Debug, Default)]
 pub enum AIQueryHistoryOutputStatus { #[default] Other }

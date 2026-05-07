@@ -66,7 +66,7 @@ impl AgentViewState {
     // twarp: 2c-d — bulk stubs
     pub fn is_new(&self) -> bool { false }
     pub fn fullscreen_conversation_id(&self) -> Option<&AIConversationId> { None }
-    pub fn zero_state_position_id(&self) -> warpui::elements::ElementPositionId { warpui::elements::ElementPositionId::new("twarp-stub") }
+    pub fn zero_state_position_id(&self) {}
 }
 pub fn redact_secrets(_text: &str) -> String { String::new() }
 use crate::{
