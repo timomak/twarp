@@ -10,6 +10,10 @@ impl Entity for BlocklistAIInputModel {
     type Event = BlocklistAIInputEvent;
 }
 impl SingletonEntity for BlocklistAIInputModel {}
+#[allow(dead_code)]
+impl BlocklistAIInputModel {
+    pub fn set_input_type<T, C>(&mut self, _: T, _: &mut C) {}
+}
 pub struct SkillManager;
 impl Entity for SkillManager {
     type Event = ();

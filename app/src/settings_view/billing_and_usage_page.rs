@@ -33,6 +33,8 @@ use settings::Setting;
 
 // twarp: 2c-d — AI usage deleted; stub.
 pub struct AIRequestUsageModel;
+impl warpui::Entity for AIRequestUsageModel { type Event = (); }
+impl warpui::SingletonEntity for AIRequestUsageModel {}
 use crate::{
     auth::{
         auth_manager::LoginGatedFeature, auth_state::AuthState, auth_view_modal::AuthViewVariant,

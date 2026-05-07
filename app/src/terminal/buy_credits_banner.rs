@@ -26,6 +26,10 @@ impl Entity for AIRequestUsageModel {
     type Event = AIRequestUsageModelEvent;
 }
 impl SingletonEntity for AIRequestUsageModel {}
+#[allow(dead_code)]
+impl AIRequestUsageModel {
+    pub fn dismiss_buy_credits_banner<C>(&mut self, _: &mut C) {}
+}
 pub enum AIRequestUsageModelEvent { Other }
 pub enum BuyCreditsBannerDisplayState { Other }
 use crate::auth::AuthStateProvider;

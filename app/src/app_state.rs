@@ -45,7 +45,10 @@ pub struct AgentConversationsModelEvent {}
 pub struct ServerConversationToken {}
 #[derive(Clone, Debug, PartialEq)]
 pub enum AgentViewEntryOrigin {
-    Input { is_new_conversation: bool },
+    Input {
+        is_new_conversation: bool,
+        was_prompt_autodetected: bool,
+    },
     ChildAgent,
     Other,
     // twarp: 2c-d — additional variants kept so legacy call-sites compile.
@@ -57,7 +60,9 @@ pub enum AgentViewEntryOrigin {
     InlineConversationMenu,
     InlineHistoryMenu,
     CloudAgent,
-    SlashCommand { name: String },
+    SlashCommand {
+        name: String,
+    },
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct RestoredAIConversation {}

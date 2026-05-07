@@ -99,6 +99,8 @@ use warpui::windowing::WindowManager;
 
 // twarp: 2c-d — AI llms / onboarding deleted; stubs.
 pub struct LLMPreferences;
+impl warpui::Entity for LLMPreferences { type Event = LLMPreferencesEvent; }
+impl warpui::SingletonEntity for LLMPreferences {}
 pub enum LLMPreferencesEvent { Other }
 pub fn apply_free_tier_default_model_override() {}
 pub fn build_onboarding_models() {}

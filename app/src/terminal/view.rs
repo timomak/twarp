@@ -439,7 +439,9 @@ impl CLISubagentController {
 #[allow(dead_code)] struct AIDocumentModel;
 #[allow(dead_code)] fn shimmering_warp_loading_text() {}
 
-#[allow(dead_code)] struct ServerConversationToken;
+#[allow(dead_code)]
+#[derive(Clone)]
+struct ServerConversationToken;
 #[allow(dead_code)]
 impl ServerConversationToken {
     fn as_str(&self) -> &str { "" }
@@ -21977,7 +21979,6 @@ impl TerminalView {
                     ForkAIConversationParams {
                         conversation_id: *conversation_id,
                         fork_from_exchange: Some(ForkFromExchange {
-                            exchange_id: *exchange_id,
                             fork_from_exact_exchange: false,
                         }),
                         summarize_after_fork: false,
@@ -21997,7 +21998,6 @@ impl TerminalView {
                     ForkAIConversationParams {
                         conversation_id: *conversation_id,
                         fork_from_exchange: Some(ForkFromExchange {
-                            exchange_id: *exchange_id,
                             fork_from_exact_exchange: true,
                         }),
                         summarize_after_fork: false,
@@ -24192,7 +24192,6 @@ impl TypedActionView for TerminalView {
                         ctx.dispatch_typed_action(&WorkspaceAction::ForkAIConversation {
                             conversation_id,
                             fork_from_exchange: Some(ForkFromExchange {
-                                exchange_id,
                                 fork_from_exact_exchange: false,
                             }),
                             summarize_after_fork: false,

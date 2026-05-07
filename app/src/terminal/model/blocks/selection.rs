@@ -12,6 +12,13 @@ use warpui::{
 
 // twarp: 2c-d — AIBlock deleted; stub.
 pub struct AIBlock;
+impl warpui::Entity for AIBlock { type Event = (); }
+impl warpui::View for AIBlock {
+    fn ui_name() -> &'static str { "AIBlock/twarp-stub" }
+    fn render(&self, _: &AppContext) -> Box<dyn warpui::Element> {
+        warpui::elements::Empty::new().finish()
+    }
+}
 use crate::{
     env_vars::env_var_collection_block::EnvVarCollectionBlock,
     terminal::{

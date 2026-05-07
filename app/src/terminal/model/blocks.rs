@@ -64,6 +64,13 @@ use super::terminal_model::RangeInModel;
 use super::{ansi::Handler, grid::grid_handler::Link};
 // twarp: 2c-d — AIBlock deleted; stub.
 pub struct AIBlock;
+impl warpui::Entity for AIBlock { type Event = (); }
+impl warpui::View for AIBlock {
+    fn ui_name() -> &'static str { "AIBlock/twarp-stub" }
+    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+        warpui::elements::Empty::new().finish()
+    }
+}
 use crate::terminal::block_list_element::GridType;
 use crate::terminal::model::blockgrid::BlockGrid;
 use crate::terminal::model::grid::Dimensions;

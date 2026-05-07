@@ -334,8 +334,13 @@ enum AgentViewEntryOrigin {
     CloudAgent,
     InlineConversationMenu,
     InlineHistoryMenu,
-    SlashCommand { name: String },
-    Input { is_new_conversation: bool },
+    SlashCommand {
+        name: String,
+    },
+    Input {
+        is_new_conversation: bool,
+        was_prompt_autodetected: bool,
+    },
     ImageAdded,
     OnboardingCallout,
     ProjectEntry,
@@ -4725,7 +4730,6 @@ impl Input {
                 ctx.dispatch_typed_action(&WorkspaceAction::ForkAIConversation {
                     conversation_id,
                     fork_from_exchange: Some(ForkFromExchange {
-                        exchange_id: *exchange_id,
                         fork_from_exact_exchange: false,
                     }),
                     summarize_after_fork: false,
