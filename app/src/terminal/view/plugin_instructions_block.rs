@@ -38,6 +38,7 @@ pub struct PluginInstructions {
     // twarp: 2c-d — extra fields used by plugin instructions block
     pub title: String,
     pub subtitle: String,
+    pub post_install_notes: String,
 }
 pub struct PluginInstructionStep {
     pub command: String,

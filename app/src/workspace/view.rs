@@ -965,6 +965,10 @@ pub struct Workspace {
     tab_config_action_sidecar_item: Option<SidecarItemKind>,
     tab_config_action_sidecar_mouse_states: crate::tab_configs::action_sidecar::SidecarMouseStates,
     remove_tab_config_confirmation_dialog: ViewHandle<RemoveTabConfigConfirmationDialog>,
+    // twarp: 2c-d — fields for AI-removed callers (typed as () for stub)
+    suggested_rule_modal: (),
+    suggested_agent_mode_workflow_modal: (),
+    rewind_confirmation_dialog: (),
 }
 
 impl Workspace {
@@ -2840,6 +2844,10 @@ impl Workspace {
             tab_config_action_sidecar_mouse_states: Default::default(),
             remove_tab_config_confirmation_dialog:
                 Self::build_remove_tab_config_confirmation_dialog(ctx),
+            // twarp: 2c-d — stub fields
+            suggested_rule_modal: (),
+            suggested_agent_mode_workflow_modal: (),
+            rewind_confirmation_dialog: (),
         };
 
         ws.configure_new_workspace(workspace_setting, ctx);

@@ -5,6 +5,7 @@ pub struct AIQueryHistory {
     // twarp: 2c-d — fields required by callers
     pub start_time: Option<chrono::DateTime<chrono::Utc>>,
     pub working_directory: Option<std::path::PathBuf>,
+    pub query_text: String,
 }
 pub enum AIQueryHistoryOutputStatus { Other }
 use crate::terminal::model::session::SessionId;

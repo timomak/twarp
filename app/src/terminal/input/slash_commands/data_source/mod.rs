@@ -29,6 +29,7 @@ pub struct SkillDescriptor {
     // twarp: 2c-d — fields needed by callers
     pub name: String,
     pub reference: String,
+    pub provider: (),
 }
 pub struct SkillManager;
 impl warpui::Entity for SkillManager { type Event = (); }

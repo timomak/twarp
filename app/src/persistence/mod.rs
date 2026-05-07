@@ -41,8 +41,14 @@ use warp_multi_agent_api as api;
 use warpui::{AppContext, Entity, SingletonEntity};
 
 // twarp: 2c-d — PersistedAIInput / TemplatableMCPServerInstallation deleted; stub locally.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct PersistedAIInput;
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct PersistedAIInput {
+    // twarp: 2c-d — fields used by callers
+    pub start_ts: Option<chrono::DateTime<chrono::Utc>>,
+    pub working_directory: Option<std::path::PathBuf>,
+    pub model_id: Option<String>,
+    pub output_status: Option<()>,
+}
 #[derive(Clone, Debug)]
 pub struct TemplatableMCPServerInstallation;
 use crate::app_state::AppState;

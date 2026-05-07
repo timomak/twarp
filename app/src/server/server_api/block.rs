@@ -3,8 +3,11 @@ use super::ServerApi;
 // twarp: 2c-d — AI generate_block_title deleted; stubs.
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct GenerateBlockTitleRequest;
-#[derive(serde::Serialize, serde::Deserialize)]
-pub struct GenerateBlockTitleResponse;
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+pub struct GenerateBlockTitleResponse {
+    // twarp: 2c-d — fields used by callers
+    pub title: String,
+}
 use crate::server::{
     block::{Block, DisplaySetting},
     graphql::{get_request_context, get_user_facing_error_message},

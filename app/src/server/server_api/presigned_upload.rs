@@ -17,7 +17,11 @@ use futures_lite::io::AsyncReadExt as _;
 use thiserror::Error;
 
 // twarp: 2c-d — server_api::ai deleted; stub.
-pub struct FileArtifactUploadTargetInfo;
+#[derive(Default)]
+pub struct FileArtifactUploadTargetInfo {
+    // twarp: 2c-d — fields used by callers
+    pub url: String,
+}
 use super::harness_support::UploadTarget;
 
 /// Typed error for HTTP-backed operations so downstream classifiers (e.g. the agent-SDK

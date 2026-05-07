@@ -543,8 +543,8 @@ impl PersistedWorkspace {
 
 // CLI agent sessions
 #[allow(dead_code)] fn parse_event<A, B>(_: A, _: B) -> Option<CLIAgentEvent> { None }
-#[allow(dead_code)] struct CLIAgentEvent { event_type: CLIAgentEventType, payload: CLIAgentEventPayload, agent: crate::app_state::CLIAgent }
-#[allow(dead_code)] struct CLIAgentEventPayload { content: String }
+#[allow(dead_code)] struct CLIAgentEvent { event_type: CLIAgentEventType, payload: CLIAgentEventPayload, agent: crate::app_state::CLIAgent, session_id: Option<String>, project: Option<String>, model: Option<String> }
+#[allow(dead_code)] struct CLIAgentEventPayload { content: String, plugin_version: Option<String> }
 #[allow(dead_code)] enum CLIAgentEventType {}
 #[allow(dead_code)] const CLI_AGENT_NOTIFICATION_SENTINEL: &str = "";
 #[allow(dead_code)] fn is_agent_supported<C>(_: C) -> bool { false }
