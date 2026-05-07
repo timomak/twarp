@@ -342,7 +342,11 @@ struct CLISubagentController;
 #[allow(dead_code)]
 struct BlocklistAIStatusBar;
 impl BlocklistAIStatusBar {
-    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+    // twarp: 2c-d — variadic stub for new
+    fn new<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>(
+        _: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H,
+        _: I, _: J, _: K, _: L, _: M, _: N, _: O, _: &mut P,
+    ) -> Self {
         unimplemented!()
     }
 }
@@ -383,7 +387,7 @@ impl AIExecutionProfile {
 }
 
 #[allow(dead_code)]
-fn has_pending_code_or_unit_test_prompt_suggestion<C>(_: &C) -> bool {
+fn has_pending_code_or_unit_test_prompt_suggestion<A, C>(_: A, _: &C) -> bool {
     false
 }
 
@@ -677,7 +681,7 @@ impl BlocklistAIContextModel {
     pub fn selected_conversation_status_for_hint<C>(&self, _: &C) -> Option<()> { None }
     pub fn current_pwd(&self) -> Option<std::path::PathBuf> { None }
     pub fn home_directory(&self) -> Option<std::path::PathBuf> { None }
-    pub fn pending_context(&self) -> Option<()> { None }
+    pub fn pending_context<A, B>(&self, _: A, _: B) -> Option<()> { None }
     pub fn pending_query_autoexecute_override<C>(&self, _: &C) -> Option<bool> { None }
     pub fn register_diff_hunk_attachment<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn remove_pending_attachment<A, C>(&mut self, _: A, _: &mut C) {}
@@ -696,7 +700,7 @@ impl BlocklistAIController {
     pub fn send_slash_command_request<R, C>(&mut self, _: R, _: &mut C) {}
     pub fn cancel_conversation_progress<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     // twarp: 2c-d — bulk stubs for AI-removed methods on BlocklistAIController
-    pub fn clear_finished_action_results<C>(&mut self, _: &mut C) {}
+    pub fn clear_finished_action_results<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn handle_shared_session_response_event<E, C>(&mut self, _: E, _: &mut C) {}
     pub fn link_forked_conversation_token<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn mark_action_as_remotely_executing_in_shared_session<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}

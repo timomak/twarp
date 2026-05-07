@@ -297,7 +297,8 @@ mod ambient_agent {
     use super::*;
     pub struct AmbientAgentViewModel;
     impl AmbientAgentViewModel {
-        pub fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+        // twarp: 2c-d — accept 3-arg form
+        pub fn new<A, B, C>(_: A, _: B, _: &mut C) -> Self {
             unimplemented!()
         }
         pub fn is_ambient_agent(&self) -> bool { false }
@@ -696,7 +697,7 @@ impl BlocklistAIHistoryModel {
     fn active_conversation(&self, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
     // twarp: 2c-d — bulk stubs
     fn clear_conversations_in_terminal_view<A, C>(&mut self, _: A, _: &mut C) {}
-    fn fork_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    fn fork_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) -> Result<(), String> { Ok(()) }
     fn truncate_conversation_from_exchange<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     fn update_conversation_status<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
 }
@@ -15576,7 +15577,7 @@ impl TerminalView {
             })
             .map(|ai_block| {
                 ai_block
-                    .requested_commands_iter()
+                    .requested_commands_iter(ctx)
                     .map(|(action_id, _)| action_id)
                     .collect()
             })
@@ -15950,15 +15951,20 @@ impl TerminalView {
         self.ai_context_model
             .update(ctx, |context_model, ctx| match state {
                 PendingQueryState::New { .. } => {
+                    // twarp: 2c-d — pad with ()/() to satisfy 4-arg signature
                     context_model.set_pending_query_state_for_new_conversation(
                         AgentViewEntryOrigin::ConversationSelector,
+                        (),
+                        (),
                         ctx,
                     );
                 }
                 PendingQueryState::Existing { conversation_id } => {
+                    // twarp: 2c-d — pad with () to satisfy 4-arg signature
                     context_model.set_pending_query_state_for_existing_conversation(
                         conversation_id,
                         AgentViewEntryOrigin::ConversationSelector,
+                        (),
                         ctx,
                     );
                 }
@@ -18386,7 +18392,7 @@ impl TerminalView {
         ctx: &AppContext,
     ) -> bool {
         self.ai_blocks_for_current_thread(conversation_id, ctx)
-            .any(|ai_block| ai_block.has_any_imported_comments())
+            .any(|ai_block| ai_block.has_any_imported_comments(ctx))
     }
 
     fn active_ai_block(&self, ctx: &AppContext) -> Option<&ViewHandle<AIBlock>> {
@@ -18402,7 +18408,7 @@ impl TerminalView {
             let ai_metadata = rich_content.ai_block_metadata()?;
             let ai_block = ai_metadata.ai_block_handle.as_ref(ctx);
 
-            (!ai_block.is_finished()
+            (!ai_block.is_finished(ctx)
                 && !ai_block.is_hidden(ctx)
                 && !ai_block.is_passive_conversation(ctx))
             .then_some(&ai_metadata.ai_block_handle)
@@ -20280,7 +20286,8 @@ impl TerminalView {
 
         self.ai_controller.update(ctx, |controller, ctx| {
             // Send the code review request to the AI controller and return the result
-            controller.send_custom_ai_input_query(code_review_input, ctx);
+            // twarp: 2c-d — pad with ()/() for stub 4-arg signature
+            controller.send_custom_ai_input_query(code_review_input, (), (), ctx);
         });
         Ok(())
     }
@@ -22051,7 +22058,7 @@ impl TerminalView {
                             let model = self.model.lock();
                             let git_branch =
                                 ai_block
-                                    .requested_commands_iter()
+                                    .requested_commands_iter(ctx)
                                     .find_map(|(action_id, _)| {
                                         model
                                             .block_list()
@@ -22200,7 +22207,8 @@ impl TerminalView {
         // Save a backup of the conversation before truncating, so users can restore it later.
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
             if let Some(conversation) = history_model.conversation(&conversation_id).cloned() {
-                if let Err(e) = history_model.fork_conversation(&conversation, PRE_REWIND_PREFIX, ctx) {
+                // twarp: 2c-d — pad with () to satisfy 4-arg signature
+                if let Err(e) = history_model.fork_conversation(&conversation, PRE_REWIND_PREFIX, (), ctx) {
                     log::warn!("Failed to save pre-rewind backup of conversation {conversation_id}: {e}");
                 }
             } else {
@@ -23238,15 +23246,15 @@ impl TerminalView {
     fn close_cli_agent_rich_input_and_disable_auto_toggle<C>(&mut self, _: &mut C) {}
     fn detect_cli_agent_from_model<A, C>(&mut self, _: A, _: &mut C) {}
     fn enter_agent_view<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
-    fn enter_cloud_agent_view<C>(&mut self, _: &mut C) {}
+    fn enter_cloud_agent_view<A, C>(&mut self, _: A, _: &mut C) {}
     fn handle_ambient_agent_event<C, E>(&mut self, _: E, _: &mut C) {}
     fn handle_first_time_cloud_agent_setup_event<C, E>(&mut self, _: E, _: &mut C) {}
     fn insert_agent_view_entry_block<C, A, B>(&mut self, _: A, _: B, _: &mut C) {}
-    fn load_agent_mode_conversation<C, A>(&mut self, _: A, _: &mut C) {}
+    fn load_agent_mode_conversation<C>(&mut self, _: &mut C) {}
     fn maybe_auto_open_cloud_mode_details_panel<C>(&mut self, _: &mut C) {}
     fn maybe_insert_setup_command_blocks<A, C>(&mut self, _: A, _: &mut C) {}
     fn show_out_of_credits_modal<C>(&mut self, _: &mut C) {}
-    fn submit_cli_agent_rich_input<C>(&mut self, _: &mut C) {}
+    fn submit_cli_agent_rich_input<A, C>(&mut self, _: A, _: &mut C) {}
     fn tag_in_agent_for_user_long_running_command<C>(&mut self, _: &mut C) {}
     fn tag_out_agent_for_user_long_running_command<C>(&mut self, _: &mut C) {}
     fn try_enter_agent_view<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}

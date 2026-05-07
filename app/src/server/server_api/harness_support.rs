@@ -11,7 +11,7 @@ use mockall::automock;
 use super::ServerApi;
 use crate::app_state::AIConversationId;
 // twarp: 2c-d — AI agent_sdk retry / artifacts deleted; stubs.
-pub async fn with_bounded_retry<F, R>(_f: F) -> anyhow::Result<R> where F: std::future::Future<Output = anyhow::Result<R>> { Err(anyhow::anyhow!("stub")) }
+pub async fn with_bounded_retry<L, F, Fut, R>(_label: L, _f: F) -> anyhow::Result<R> where F: FnOnce() -> Fut, Fut: std::future::Future<Output = anyhow::Result<R>> { Err(anyhow::anyhow!("stub")) }
 pub struct Artifact;
 
 /// A presigned upload target returned by the server.

@@ -17188,9 +17188,9 @@ impl Workspace {
         crate::uri::web_intent_parser::open_url_on_desktop(url);
     }
     // twarp: 2c-d — bulk stubs
-    fn load_cloud_conversation_into_new_transcript_viewer<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
-    fn open_cloud_conversation_from_server_token<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
-    fn open_code_diff<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    fn load_cloud_conversation_into_new_transcript_viewer<A, C>(&mut self, _: A, _: &mut C) {}
+    fn open_cloud_conversation_from_server_token<A, C>(&mut self, _: A, _: &mut C) {}
+    fn open_code_diff<A, C>(&mut self, _: A, _: &mut C) {}
 }
 
 impl Entity for Workspace {
