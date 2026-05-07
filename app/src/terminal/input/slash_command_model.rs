@@ -5,17 +5,7 @@ use warp_core::features::FeatureFlag;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
 // twarp: 2c-d — AI blocklist / skills deleted; re-export from input.
-pub use crate::terminal::input::{BlocklistAIInputEvent, BlocklistAIInputModel};
-pub struct SkillManager;
-#[allow(dead_code)]
-impl SkillManager {
-    // twarp: 2c-d — bulk stubs
-    pub fn get_skills_for_working_directory<A>(&self, _: A) -> Vec<()> { Vec::new() }
-}
-impl Entity for SkillManager {
-    type Event = ();
-}
-impl SingletonEntity for SkillManager {}
+pub use crate::terminal::input::{BlocklistAIInputEvent, BlocklistAIInputModel, SkillManager};
 use crate::search::slash_command_menu::StaticCommand;
 use crate::settings::InputSettings;
 use crate::terminal::input::buffer_model::{InputBufferModel, InputBufferUpdateEvent};

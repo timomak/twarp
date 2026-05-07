@@ -35,6 +35,7 @@ impl std::str::FromStr for AmbientAgentTaskId {
         Ok(AmbientAgentTaskId(s.parse()?))
     }
 }
+// twarp: 2c-d — stub kept; conversions removed in favor of direct use of terminal::input::InputConfig.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct InputConfig {}
 #[allow(dead_code)]
@@ -43,6 +44,7 @@ impl InputConfig {
     pub fn new<C>(_: &C) -> Self { Self {} }
     pub fn is_ai(&self) -> bool { false }
     pub fn is_shell(&self) -> bool { true }
+    pub fn is_locked(&self) -> bool { false }
 }
 // twarp: 2c-d — From conversions to bridge app_state and terminal::input InputConfig
 impl From<crate::terminal::input::InputConfig> for InputConfig {

@@ -30,7 +30,11 @@ pub struct ServerConversationPermissionsStub {
     pub space: crate::cloud_object::Space,
     // twarp: 2c-d — additional fields
     pub guests: Vec<GuestStub>,
-    pub anyone_link_sharing: Option<()>,
+    pub anyone_link_sharing: Option<LinkSharingStub>,
+}
+
+pub struct LinkSharingStub {
+    pub access_level: warp_graphql::object_permissions::AccessLevel,
 }
 
 pub struct GuestStub {

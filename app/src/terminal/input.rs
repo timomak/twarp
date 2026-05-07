@@ -720,11 +720,17 @@ pub enum BlocklistAIContextEvent {
 }
 
 #[allow(dead_code)]
+pub struct PendingImageStub {
+    pub file_name: String,
+    pub mime_type: String,
+    pub data: String,
+}
+#[allow(dead_code)]
 pub struct BlocklistAIContextModel;
 #[allow(dead_code)]
 impl BlocklistAIContextModel {
     pub fn selected_conversation_id<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> { None }
-    pub fn pending_images(&self) -> Vec<()> { Vec::new() }
+    pub fn pending_images(&self) -> Vec<PendingImageStub> { Vec::new() }
     // twarp: 2c-d — bulk stubs for AI-removed methods on BlocklistAIContextModel
     pub fn selected_conversation<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> { None }
     pub fn set_pending_query_state_for_existing_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
@@ -852,7 +858,7 @@ pub enum BlocklistAIInputEvent {
 #[allow(dead_code)]
 impl BlocklistAIInputEvent {
     // twarp: 2c-d — bulk method stub
-    pub fn updated_config(&self) -> Option<InputConfig> { None }
+    pub fn updated_config(&self) -> InputConfig { InputConfig::empty() }
 }
 
 #[allow(dead_code)]

@@ -25,7 +25,7 @@ impl UpArrowHistoryConfig {
     /// When the input is locked to a specific type, only that type is included.
     /// When unlocked (auto-detection), both types are included.
     pub fn for_input_config(input_config: &InputConfig) -> Self {
-        if input_config.is_locked {
+        if input_config.is_locked() {
             Self {
                 include_commands: input_config.is_shell(),
                 include_prompts: input_config.is_ai(),
