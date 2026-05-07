@@ -2487,7 +2487,10 @@ impl SettingsWidget for UsageWidget {
     ) -> Box<dyn Element> {
         let ai_request_usage_model = AIRequestUsageModel::as_ref(app);
         let next_refresh_time = ai_request_usage_model.next_refresh_time();
-        let local_next_refresh_time = next_refresh_time.with_timezone(&Local);
+        // twarp: 2c-d — next_refresh_time is Option, default to now
+        let local_next_refresh_time = next_refresh_time
+            .map(|t| t.with_timezone(&Local))
+            .unwrap_or_else(|| chrono::Utc::now().with_timezone(&Local));
         let formatted_next_refresh_time = local_next_refresh_time
             .format("%b %d at %-I:%M %p")
             .to_string();

@@ -853,6 +853,11 @@ impl InputConfig {
     pub fn unlocked_if_autodetection_enabled<C>(self, _: bool, _: &C) -> Self {
         self
     }
+    // twarp: 2c-d — bulk stubs
+    pub fn with_toggled_type(self) -> Self { self }
+    pub fn with_input_type(self, _: InputType) -> Self { self }
+    pub fn locked(self) -> Self { self }
+    pub fn unlocked(self) -> Self { self }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -953,16 +958,19 @@ impl AgentInputFooter {
     fn has_open_chip_menu<C>(&self, _: &C) -> bool { false }
     // twarp: 2c-d — bulk stubs
     fn is_model_selector_open<C>(&self, _: &C) -> bool { false }
+    fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self {
+        unimplemented!()
+    }
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum AgentInputFooterEvent {
-    // twarp: 2c-d — bulk variants for AI-removed AgentInputFooterEvent
+    // twarp: 2c-d — variants reshaped to match all callers (tuple where matched as tuple, struct where matched as struct)
     HideRichInput,
     InsertIntoCLIRichInput(()),
     ModelSelectorClosed,
     ModelSelectorOpened,
-    OpenAIDocument(()),
+    OpenAIDocument { document_id: () },
     OpenCodeReview,
     OpenPluginInstructionsPane(()),
     OpenRichInput,
@@ -970,13 +978,13 @@ enum AgentInputFooterEvent {
     PluginInstalled(()),
     PromptAlert(()),
     SelectFile,
-    ShowContextMenu(()),
+    ShowContextMenu { position: () },
     StartRemoteControl,
     StopRemoteControl,
-    ToggleCodeReviewPane,
-    ToggledChipMenu(()),
-    ToggleFileExplorer,
-    ToggleInlineModelSelector,
+    ToggleCodeReviewPane(()),
+    ToggledChipMenu { open: bool },
+    ToggleFileExplorer(()),
+    ToggleInlineModelSelector { initial_tab: () },
     TryExecuteChipCommand(()),
     WriteToPty(()),
 }
@@ -1136,6 +1144,23 @@ impl Entity for AmbientAgentViewModel {
 }
 impl Entity for AgentInputFooter {
     type Event = AgentInputFooterEvent;
+}
+// twarp: 2c-d — TypedActionView stubs (View comes from twarp_stub_view_impl macro below)
+impl warpui::TypedActionView for AgentInputFooter {
+    type Action = ();
+    fn handle_action(&mut self, _: &Self::Action, _: &mut warpui::ViewContext<Self>) {}
+}
+impl warpui::TypedActionView for UniversalDeveloperInputButtonBar {
+    type Action = ();
+    fn handle_action(&mut self, _: &Self::Action, _: &mut warpui::ViewContext<Self>) {}
+}
+impl warpui::TypedActionView for HarnessSelector {
+    type Action = ();
+    fn handle_action(&mut self, _: &Self::Action, _: &mut warpui::ViewContext<Self>) {}
+}
+impl warpui::TypedActionView for HostSelector {
+    type Action = ();
+    fn handle_action(&mut self, _: &Self::Action, _: &mut warpui::ViewContext<Self>) {}
 }
 impl Entity for AgentViewController {
     type Event = AgentViewControllerEvent;

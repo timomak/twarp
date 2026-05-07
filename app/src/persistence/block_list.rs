@@ -75,12 +75,13 @@ impl TryFrom<&PersistedAIInput> for NewAIQuery {
     type Error = anyhow::Error;
 
     fn try_from(value: &PersistedAIInput) -> Result<Self, Self::Error> {
+        // twarp: 2c-d — fields are Option, unwrap or use defaults
         Ok(Self {
-            start_ts: value.start_ts.naive_utc(),
+            start_ts: value.start_ts.map(|t| t.naive_utc()).unwrap_or_default(),
             input: serde_json::to_string(&value.inputs)?,
-            working_directory: value.working_directory.clone(),
-            exchange_id: value.exchange_id.to_string(),
-            conversation_id: value.conversation_id.to_string(),
+            working_directory: value.working_directory.clone().unwrap_or_default(),
+            exchange_id: value.exchange_id.clone().unwrap_or_default(),
+            conversation_id: value.conversation_id.clone().unwrap_or_default(),
             output_status: serde_json::to_string(&value.output_status)?,
             model_id: value.model_id.clone().into(),
         })
