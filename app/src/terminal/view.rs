@@ -368,38 +368,10 @@ mod cli_agent {
     pub fn build_diff_hunk_prompt<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: E) -> String { String::new() }
 }
 
-// twarp: 2c-d — file-local stubs for AI types removed by 2c-d (huge block)
-#[allow(dead_code)] pub(crate) struct AgentViewController;
-#[allow(dead_code)]
-impl AgentViewController {
-    pub(crate) fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
-        unimplemented!()
-    }
-    pub fn is_active(&self) -> bool { false }
-    pub fn is_fullscreen(&self) -> bool { false }
-    pub fn agent_view_state(&self) -> AgentViewState { AgentViewState::Inactive }
-    pub fn exit_agent_view<C>(&mut self, _: &mut C) {}
-    pub fn can_exit_agent_view<C>(&self, _: &C) -> Result<(), String> { Ok(()) }
-    // twarp: 2c-d — bulk stubs for AI-removed AgentViewController methods
-    pub fn clear_pending_exit_confirmation<C>(&mut self, _: &mut C) {}
-    pub fn exit_agent_view_with_required_confirmation<A, C>(&mut self, _: A, _: &mut C) {}
-    pub fn is_inline(&self) -> bool { false }
-    pub fn try_enter_inline_agent_view<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> bool { false }
-}
+// twarp: 2c-d — re-export canonical AgentViewController from terminal::input.
+pub use crate::terminal::input::{AgentViewController, AgentViewControllerEvent};
 // twarp: 2c-d — re-export unified stubs from model::block.
 use crate::terminal::model::block::AgentViewState;
-#[allow(dead_code)] enum AgentViewControllerEvent {
-    EnteredAgentView {
-        display_mode: AgentViewDisplayMode,
-        conversation_id: Option<crate::app_state::AIConversationId>,
-        is_new: bool,
-        origin: AgentViewEntryOrigin,
-    },
-    ExitedAgentView {
-        conversation_id: Option<crate::app_state::AIConversationId>,
-    },
-    ExitConfirmed {},
-}
 #[allow(dead_code)] use crate::terminal::model::block::AgentViewDisplayMode;
 #[allow(dead_code)] struct AgentViewEntryBlockParams {
     // twarp: 2c-d — fields used by callers
@@ -886,9 +858,7 @@ impl ConversationDetailsPanel {
 enum ConversationDetailsPanelEvent {}
 
 // twarp: 2c-d — Entity impls for file-local stubs so ModelHandle<T>::as_ref/update typecheck.
-impl Entity for AgentViewController {
-    type Event = AgentViewControllerEvent;
-}
+// AgentViewController Entity defined in terminal::input.
 impl Entity for AgentViewZeroStateBlock {
     type Event = AgentViewZeroStateEvent;
 }

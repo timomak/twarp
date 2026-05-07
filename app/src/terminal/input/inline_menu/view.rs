@@ -33,8 +33,7 @@ use warpui::{
 
 // twarp: 2c-d — AI agent view deleted; stubs.
 pub fn agent_view_bg_color<C>(_: C) -> warpui::color::ColorU { warpui::color::ColorU::new(0, 0, 0, 0) }
-pub use crate::terminal::shared_session::shared_handlers::AgentViewController;
-pub enum AgentViewControllerEvent { Other }
+pub use crate::terminal::input::{AgentViewController, AgentViewControllerEvent};
 use crate::search::item::IconLocation;
 use crate::search::mixer::{SearchMixer, SearchMixerEvent};
 use crate::search::result_renderer::{

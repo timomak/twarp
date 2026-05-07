@@ -1070,6 +1070,12 @@ impl AgentViewController {
     // twarp: 2c-d — bulk stubs
     pub fn should_start_new_conversation_for_keybinding<C>(&mut self, _: &mut C) -> bool { false }
     pub fn agent_view_state(&self) -> crate::terminal::model::block::AgentViewState { crate::terminal::model::block::AgentViewState::Inactive }
+    pub fn exit_agent_view<C>(&mut self, _: &mut C) {}
+    pub fn can_exit_agent_view<C>(&self, _: &C) -> Result<(), String> { Ok(()) }
+    pub fn clear_pending_exit_confirmation<C>(&mut self, _: &mut C) {}
+    pub fn exit_agent_view_with_required_confirmation<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn is_inline(&self) -> bool { false }
+    pub fn try_enter_inline_agent_view<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> bool { false }
 }
 
 #[derive(Debug, Clone)]
@@ -1077,7 +1083,18 @@ impl AgentViewController {
 pub enum AgentViewControllerEvent {
     EnteredAgentView {
         origin: AgentViewEntryOrigin,
+        display_mode: crate::terminal::model::block::AgentViewDisplayMode,
+        conversation_id: Option<crate::app_state::AIConversationId>,
+        is_new: bool,
     },
+    ExitedAgentView {
+        conversation_id: Option<crate::app_state::AIConversationId>,
+        origin: AgentViewEntryOrigin,
+        original_exchange_count: usize,
+        final_exchange_count: usize,
+        was_ambient_agent: bool,
+    },
+    ExitConfirmed {},
     Other,
 }
 
