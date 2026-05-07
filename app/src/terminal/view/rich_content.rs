@@ -69,6 +69,31 @@ impl AIBlock {
     pub fn debug_link<C>(&self, _: &C) -> Option<String> { None }
     pub fn display_name<C>(&self, _: &C) -> String { String::new() }
     pub fn collect_imported_comments<C>(&self, _: &C) -> Vec<()> { Vec::new() }
+    // twarp: 2c-d — additional bulk stubs for AI-removed AIBlock methods
+    pub fn cleanup_block<C>(&mut self, _: &mut C) {}
+    pub fn dismiss_pending_suggested_prompt<C>(&mut self, _: &mut C) {}
+    pub fn finish_reason<C>(&self, _: &C) -> Option<String> { None }
+    pub fn handle_passive_code_diff_action<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn has_any_imported_comments<C>(&self, _: &C) -> bool { false }
+    pub fn has_expanded_running_commands<C>(&self, _: &C) -> bool { false }
+    pub fn hovered_rich_content_link<C>(&self, _: &C) -> Option<String> { None }
+    pub fn ignore_passive_actions<C>(&mut self, _: &mut C) {}
+    pub fn is_finished<C>(&self, _: &C) -> bool { false }
+    pub fn is_hidden<C>(&self, _: &C) -> bool { false }
+    pub fn is_restored<C>(&self, _: &C) -> bool { false }
+    pub fn num_requested_commands<C>(&self, _: &C) -> usize { 0 }
+    pub fn requested_commands_iter<C>(&self, _: &C) -> std::iter::Empty<()> { std::iter::empty() }
+    pub fn reset_conversation_id<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn revert_all_diffs<C>(&mut self, _: &mut C) {}
+    pub fn selected_text<C>(&self, _: &C) -> Option<String> { None }
+    pub fn set_secret_redaction_state<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn set_shell_launch_data<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn start_selection_at_max_point<C>(&mut self, _: &mut C) {}
+    pub fn start_selection_at_min_point<C>(&mut self, _: &mut C) {}
+    pub fn status<C>(&self, _: &C) -> Option<()> { None }
+    pub fn try_steal_focus<C>(&mut self, _: &mut C) -> bool { false }
+    pub fn update_directory_context<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn clear_all_selections<C>(&mut self, _: &mut C) {}
 }
 pub struct AIBlockOutputStatusStub;
 impl AIBlockOutputStatusStub {

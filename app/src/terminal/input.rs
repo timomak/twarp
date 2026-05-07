@@ -666,11 +666,26 @@ impl BlocklistAIContextModel {
 }
 
 #[allow(dead_code)]
-struct BlocklistAIController;
+pub struct BlocklistAIController;
 #[allow(dead_code)]
 impl BlocklistAIController {
-    fn send_slash_command_request<R, C>(&mut self, _: R, _: &mut C) {}
-    fn cancel_conversation_progress<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn send_slash_command_request<R, C>(&mut self, _: R, _: &mut C) {}
+    pub fn cancel_conversation_progress<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    // twarp: 2c-d — bulk stubs for AI-removed methods on BlocklistAIController
+    pub fn clear_finished_action_results<C>(&mut self, _: &mut C) {}
+    pub fn handle_shared_session_response_event<E, C>(&mut self, _: E, _: &mut C) {}
+    pub fn link_forked_conversation_token<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn mark_action_as_remotely_executing_in_shared_session<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn resume_conversation<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn send_custom_ai_input_query<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    pub fn send_passive_suggestion_result<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn send_user_query_in_new_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    pub fn set_current_response_initiator<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn send_queued_slash_command_request<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn send_queued_user_query_in_conversation<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn send_queued_user_query_in_new_conversation<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn send_user_query_in_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    pub fn send_zero_state_prompt_suggestion<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
 }
 
 #[derive(Debug, Clone)]

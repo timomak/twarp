@@ -55,6 +55,15 @@ pub struct AIContextMenu;
 #[allow(dead_code)]
 impl AIContextMenu {
     pub fn select_current_item<C>(&mut self, _: &mut C) {}
+    // twarp: 2c-d — bulk stubs for AI-removed methods on AIContextMenu
+    pub fn close<C>(&mut self, _: &mut C) {}
+    pub fn handle_action<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn reset_menu_state<C>(&mut self, _: &mut C) {}
+    pub fn set_input_mode<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn set_is_cli_agent_input<C>(&mut self, _: bool, _: &mut C) {}
+    pub fn set_is_in_ambient_agent<C>(&mut self, _: bool, _: &mut C) {}
+    pub fn set_is_shared_session_viewer<C>(&mut self, _: bool, _: &mut C) {}
+    pub fn update_search_query<A, C>(&mut self, _: A, _: &mut C) {}
 }
 impl warpui::Entity for AIContextMenu {
     type Event = AIContextMenuEvent;

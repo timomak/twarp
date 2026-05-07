@@ -603,14 +603,8 @@ use crate::terminal::view::rich_content::AIAgentExchangeId;
 #[allow(dead_code)] struct SummarizationCancelDialog;
 #[allow(dead_code)] fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool { false }
 #[allow(dead_code)] struct TelemetryBanner;
-#[allow(dead_code)] struct AIBlock;
-#[allow(dead_code)]
-impl AIBlock {
-    fn conversation_id(&self) -> AIConversationId { unimplemented!() }
-    fn server_output_id<C>(&self, _: &C) -> Option<()> { None }
-    fn handle_action<A, C>(&mut self, _: A, _: &mut C) {}
-    fn cleanup_block<C>(&mut self, _: &mut C) {}
-}
+// twarp: 2c-d — re-export canonical AIBlock from rich_content
+pub use crate::terminal::view::rich_content::AIBlock;
 #[allow(dead_code)] enum AIBlockEvent {}
 #[allow(dead_code)] enum BlocklistAIActionEvent {}
 #[allow(dead_code)] struct BlocklistAIActionModel;
@@ -621,11 +615,8 @@ impl BlocklistAIActionModel {
 #[allow(dead_code)] enum BlocklistAIContextEvent {}
 // twarp: 2c-d — re-export canonical BlocklistAIContextModel from terminal::input
 pub use crate::terminal::input::BlocklistAIContextModel;
-#[allow(dead_code)] struct BlocklistAIController;
-#[allow(dead_code)]
-impl BlocklistAIController {
-    fn cancel_conversation_progress<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
-}
+// twarp: 2c-d — re-export canonical BlocklistAIController from terminal::input
+pub use crate::terminal::input::BlocklistAIController;
 #[allow(dead_code)] enum BlocklistAIControllerEvent {}
 // twarp: 2c-d — re-export canonical BlocklistAIHistoryEvent
 pub use crate::terminal::input::BlocklistAIHistoryEvent;
