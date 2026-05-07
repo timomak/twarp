@@ -102,9 +102,11 @@ pub struct LLMPreferences;
 impl warpui::Entity for LLMPreferences { type Event = LLMPreferencesEvent; }
 impl warpui::SingletonEntity for LLMPreferences {}
 pub enum LLMPreferencesEvent { Other }
-pub fn apply_free_tier_default_model_override() {}
-pub fn build_onboarding_models() {}
-pub fn current_onboarding_auth_state() {}
+pub fn apply_free_tier_default_model_override<C>(_: C) {}
+pub fn build_onboarding_models<A>(_: A) -> Vec<onboarding::slides::OnboardingModelInfo> { Vec::new() }
+pub fn current_onboarding_auth_state<C>(_: &C) -> onboarding::OnboardingAuthState {
+    onboarding::OnboardingAuthState::LoggedOut
+}
 use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};
 use warp_graphql::billing::StripeSubscriptionPlan;
 

@@ -1113,16 +1113,24 @@ impl TryFrom<warp_graphql::object::CloudObject> for ServerCloudObject {
                         Ok(ServerCloudObject::WorkflowEnum(gso.try_into()?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact => {
-                        Ok(ServerCloudObject::AIFact(gso.try_into()?))
+                        // twarp: 2c-d — AI fact deleted; map to stub unit variant.
+                        let _ = gso;
+                        Ok(ServerCloudObject::AIFact(()))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer => {
-                        Ok(ServerCloudObject::MCPServer(gso.try_into()?))
+                        // twarp: 2c-d — AI MCP server deleted; map to stub unit variant.
+                        let _ = gso;
+                        Ok(ServerCloudObject::MCPServer(()))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile => {
-                        Ok(ServerCloudObject::AIExecutionProfile(gso.try_into()?))
+                        // twarp: 2c-d — AI execution profile deleted; map to stub unit variant.
+                        let _ = gso;
+                        Ok(ServerCloudObject::AIExecutionProfile(()))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer => {
-                        Ok(ServerCloudObject::TemplatableMCPServer(gso.try_into()?))
+                        // twarp: 2c-d — templatable MCP server deleted; map to stub unit variant.
+                        let _ = gso;
+                        Ok(ServerCloudObject::TemplatableMCPServer(()))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
                         Err(anyhow::anyhow!(
@@ -1130,7 +1138,9 @@ impl TryFrom<warp_graphql::object::CloudObject> for ServerCloudObject {
                         ))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
-                        Ok(ServerCloudObject::ScheduledAmbientAgent(gso.try_into()?))
+                        // twarp: 2c-d — scheduled ambient agent deleted; map to stub unit variant.
+                        let _ = gso;
+                        Ok(ServerCloudObject::ScheduledAmbientAgent(()))
                     }
                 }
             }
