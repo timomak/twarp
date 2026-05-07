@@ -387,7 +387,16 @@ impl LeftPanelView {
                     tooltip_keybinding_names,
                 }
             }
-            // twarp: 2c-d — ConversationListView arm removed
+            // twarp: 2c-d — ConversationListView arm: AI deleted, use ProjectExplorer config as fallback.
+            ToolPanelView::ConversationListView => ToolbeltButtonConfig {
+                icon: Icon::FileCopy,
+                active_icon: None,
+                tooltip_text: String::new(),
+                action: LeftPanelAction::ProjectExplorer,
+                render_with_active_state: false,
+                tooltip_keybinding: None,
+                tooltip_keybinding_names: vec![],
+            },
         }
     }
 
@@ -625,7 +634,8 @@ impl LeftPanelView {
                     view.reset_focused_index_in_warp_drive(true, ctx);
                 });
             }
-            // twarp: 2c-d — ConversationListView arm removed
+            // twarp: 2c-d — ConversationListView arm: AI deleted, no-op.
+            ToolPanelView::ConversationListView => {}
         }
     }
 
@@ -993,7 +1003,8 @@ impl View for LeftPanelView {
                     }
                 }
                 ToolPanelView::WarpDrive => ctx.focus(&self.warp_drive_view),
-                // twarp: 2c-d — ConversationListView arm removed
+                // twarp: 2c-d — ConversationListView arm: AI deleted, no-op.
+                ToolPanelView::ConversationListView => {}
             }
         }
     }
@@ -1061,7 +1072,10 @@ impl View for LeftPanelView {
                     .finish(),
             )
             .finish(),
-            // twarp: 2c-d — ConversationListView arm removed
+            // twarp: 2c-d — ConversationListView arm: AI deleted, use empty content.
+            ToolPanelView::ConversationListView => {
+                Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()
+            }
         };
 
         let panel_content = Container::new({
