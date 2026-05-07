@@ -582,7 +582,8 @@ impl ConversationStatus {
 #[allow(dead_code)] struct AIAgentActionId;
 #[allow(dead_code)] struct AIAgentCitation;
 #[allow(dead_code)] enum AIAgentContext {}
-#[allow(dead_code)] struct AIAgentExchangeId;
+// twarp: 2c-d — re-export to unify cross-file types.
+use crate::terminal::view::rich_content::AIAgentExchangeId;
 #[allow(dead_code)] enum AIAgentInput {}
 #[allow(dead_code)] struct FileLocations;
 #[allow(dead_code)] enum PassiveSuggestionResultType {}

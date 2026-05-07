@@ -31,10 +31,8 @@ use crate::{
     code_review::{comments::ReviewCommentBatch, DiffSetScope},
 };
 
-#[derive(Clone, Debug)]
-pub enum CurrentHead { BranchName(String) }
-#[derive(Clone, Debug)]
-pub enum DiffBase { UncommittedChanges, BranchName(String) }
+// twarp: 2c-d — re-export from comments::comment to unify cross-file types.
+pub use crate::code_review::comments::comment::{CurrentHead, DiffBase};
 #[derive(Clone, Debug)]
 pub enum AIAgentAttachment { DiffHunk }
 
