@@ -357,7 +357,7 @@ impl AgentViewController {
     pub fn is_fullscreen(&self) -> bool { false }
     pub fn agent_view_state(&self) -> AgentViewState { AgentViewState::Inactive }
     pub fn exit_agent_view<A, C>(&mut self, _: A, _: &mut C) {}
-    pub fn can_exit_agent_view(&self) -> bool { true }
+    pub fn can_exit_agent_view<C>(&self, _: &C) -> bool { true }
 }
 // twarp: 2c-d — re-export unified stubs from model::block.
 use crate::terminal::model::block::AgentViewState;
@@ -436,7 +436,7 @@ impl CLISubagentController {
 }
 #[allow(dead_code)]
 impl CLISubagentView {
-    fn clear_all_selections(&mut self) {}
+    fn clear_all_selections<C>(&mut self, _: &mut C) {}
 }
 #[allow(dead_code)] enum CLISubagentEvent {}
 #[allow(dead_code)] enum UserTakeOverReason {
@@ -504,7 +504,7 @@ impl PersistedWorkspace {
 }
 
 // CLI agent sessions
-#[allow(dead_code)] fn parse_event() {}
+#[allow(dead_code)] fn parse_event<A, B>(_: A, _: B) -> Option<()> { None }
 #[allow(dead_code)] struct CLIAgentEvent { event_type: CLIAgentEventType, payload: CLIAgentEventPayload }
 #[allow(dead_code)] struct CLIAgentEventPayload { content: String }
 #[allow(dead_code)] enum CLIAgentEventType {}
@@ -591,7 +591,7 @@ impl ConversationStatus {
 #[allow(dead_code)] fn get_attached_blocks_chip_element_position_id() {}
 #[allow(dead_code)] struct CodeDiffView;
 #[allow(dead_code)] struct SummarizationCancelDialog;
-#[allow(dead_code)] fn should_collect_ai_ugc_telemetry<C>(_: &C) -> bool { false }
+#[allow(dead_code)] fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool { false }
 #[allow(dead_code)] struct TelemetryBanner;
 #[allow(dead_code)] struct AIBlock;
 #[allow(dead_code)]

@@ -599,11 +599,11 @@ enum PromptAlertEvent {}
 struct PromptAlertView;
 
 #[allow(dead_code)]
-fn render_ai_agent_mode_icon() {}
+fn render_ai_agent_mode_icon<A, B>(_: A, _: B) -> Box<dyn Element> { Empty::new().finish() }
 #[allow(dead_code)]
-fn render_ai_follow_up_icon() {}
+fn render_ai_follow_up_icon<A, B>(_: A, _: B) -> Box<dyn Element> { Empty::new().finish() }
 #[allow(dead_code)]
-fn should_collect_ai_ugc_telemetry<C>(_: &C) -> bool {
+fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool {
     false
 }
 
@@ -780,7 +780,7 @@ impl AmbientAgentViewModel {
 struct AgentInputFooter;
 #[allow(dead_code)]
 impl AgentInputFooter {
-    fn has_open_chip_menu(&self) -> bool { false }
+    fn has_open_chip_menu<C>(&self, _: &C) -> bool { false }
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
