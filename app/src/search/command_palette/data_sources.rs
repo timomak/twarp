@@ -24,6 +24,15 @@ use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 // twarp: 2c-d — conversations submodule deleted; stubs.
 mod conversations {
     pub struct DataSource;
+    #[allow(dead_code)]
+    impl DataSource {
+        pub fn new() -> Self { Self }
+        pub fn historical() -> Self { Self }
+        pub fn query_result<A>(_: A) -> Vec<()> { Vec::new() }
+    }
+    impl warpui::Entity for DataSource {
+        type Event = ();
+    }
 }
 use super::warp_drive;
 
@@ -151,7 +160,8 @@ impl DataSourceStore {
                 );
             }
 
-            // Add conversation search if AI is enabled
+            // twarp: 2c-d — AI conversation data sources removed.
+            #[cfg(any())]
             if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
                 mixer.add_sync_source(
                     self.all_conversation_data_source.clone(),
@@ -257,7 +267,7 @@ impl DataSourceStore {
                 // For now, return None as projects aren't expected in the regular command palette.
                 None
             }
-            ItemSummary::Conversation { id } => conversations::DataSource::query_result(id, app),
+            ItemSummary::Conversation { .. } => None, // twarp: 2c-d — AI conversations removed
 
             ItemSummary::NewConversation => {
                 // The new conversation item should not show up in the recent command list,

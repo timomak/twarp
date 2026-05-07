@@ -13,6 +13,10 @@ pub enum FinishReason {
     CancelledDuringRequestedCommandExecution,
 }
 pub struct PendingUserQueryBlock;
+#[allow(dead_code)]
+impl PendingUserQueryBlock {
+    pub fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
+}
 pub enum PendingUserQueryBlockEvent { Other }
 use crate::{auth::AuthStateProvider, terminal::TerminalView};
 

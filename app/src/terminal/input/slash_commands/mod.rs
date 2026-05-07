@@ -16,6 +16,10 @@ use warpui::{SingletonEntity, ViewContext};
 use crate::app_state::AgentViewEntryOrigin;
 pub enum DismissalStrategy { Other }
 pub struct EphemeralMessage;
+#[allow(dead_code)]
+impl EphemeralMessage {
+    pub fn new<A, B>(_: A, _: B) -> Self { Self }
+}
 pub const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration = std::time::Duration::from_secs(0);
 pub struct BlocklistAIHistoryModel;
 pub enum SlashCommandRequest {

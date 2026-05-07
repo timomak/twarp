@@ -10,6 +10,10 @@ pub use crate::terminal::input::{
     CLIAgentSessionsModel,
 };
 pub struct PlanAndTodoListView;
+#[allow(dead_code)]
+impl PlanAndTodoListView {
+    pub fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
+}
 pub enum PlanAndTodoListEvent {
     OpenAIDocument { document_id: AIDocumentId, version: AIDocumentVersion },
 }

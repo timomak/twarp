@@ -486,6 +486,7 @@ pub use crate::terminal::view::PluginModalKind;
 struct InlineConversationMenuView;
 #[allow(dead_code)]
 impl InlineConversationMenuView {
+    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -511,6 +512,7 @@ struct ConversationNavigationData {
 struct InlineModelSelectorView;
 #[allow(dead_code)]
 impl InlineModelSelectorView {
+    fn new<A, B, C, D, E, F, G>(_: A, _: B, _: C, _: D, _: E, _: F, _: &mut G) -> Self { Self }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     // twarp: 2c-d — bulk stubs
     fn filter_results_by_input(&self) -> bool { false }
@@ -541,6 +543,7 @@ enum InlineModelSelectorTab {
 struct InlinePlanMenuView;
 #[allow(dead_code)]
 impl InlinePlanMenuView {
+    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -553,6 +556,7 @@ enum InlinePlanMenuEvent {}
 struct InlineProfileSelectorView;
 #[allow(dead_code)]
 impl InlineProfileSelectorView {
+    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -565,6 +569,7 @@ enum InlineProfileSelectorEvent {}
 struct InlinePromptsMenuView;
 #[allow(dead_code)]
 impl InlinePromptsMenuView {
+    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -577,6 +582,7 @@ enum InlinePromptsMenuEvent {}
 struct InlineReposMenuView;
 #[allow(dead_code)]
 impl InlineReposMenuView {
+    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -592,6 +598,7 @@ enum InlineReposMenuEvent {
 struct RewindMenuView;
 #[allow(dead_code)]
 impl RewindMenuView {
+    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -604,6 +611,7 @@ enum RewindMenuEvent {}
 struct InlineSkillSelectorView;
 #[allow(dead_code)]
 impl InlineSkillSelectorView {
+    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     // twarp: 2c-d — bulk stubs
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -622,6 +630,7 @@ enum InlineSkillSelectorEvent {}
 struct UserQueryMenuView;
 #[allow(dead_code)]
 impl UserQueryMenuView {
+    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -728,6 +737,7 @@ pub struct PendingImageStub {
 pub struct BlocklistAIContextModel;
 #[allow(dead_code)]
 impl BlocklistAIContextModel {
+    pub fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self { Self }
     pub fn selected_conversation_id<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> { None }
     pub fn pending_images(&self) -> Vec<PendingImageStub> { Vec::new() }
     pub fn append_pending_images<A, C>(&mut self, _: A, _: &mut C) {}
@@ -763,6 +773,7 @@ impl BlocklistAIContextModel {
 pub struct BlocklistAIController;
 #[allow(dead_code)]
 impl BlocklistAIController {
+    pub fn new<A, B, C, D, E, F, G, H, I>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: &mut I) -> Self { Self }
     pub fn send_slash_command_request<R, C>(&mut self, _: R, _: &mut C) {}
     pub fn cancel_conversation_progress<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     // twarp: 2c-d — bulk stubs for AI-removed methods on BlocklistAIController

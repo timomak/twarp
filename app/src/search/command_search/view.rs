@@ -52,6 +52,10 @@ use crate::{
 
 // twarp: 2c-d — ai_queries submodule deleted; stub.
 pub struct AIQueriesDataSource;
+#[allow(dead_code)]
+impl AIQueriesDataSource {
+    pub fn new() -> Self { Self }
+}
 use super::{
     env_var_collections::EnvVarCollectionDataSource,
     history::history_data_source_for_session,

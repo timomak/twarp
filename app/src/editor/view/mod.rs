@@ -86,6 +86,7 @@ pub enum AIContextMenuSearchableAction {
 pub struct AIContextMenu;
 #[allow(dead_code)]
 impl AIContextMenu {
+    pub fn new<A>(_: &mut A) -> Self { Self }
     pub fn select_current_item<C>(&mut self, _: &mut C) {}
     // twarp: 2c-d — bulk stubs for AI-removed methods on AIContextMenu
     pub fn close<C>(&mut self, _: &mut C) {}

@@ -5,6 +5,12 @@ use warpui::assets::asset_cache::{AssetCache, AssetState};
 
 // twarp: 2c-d — RenderableAction deleted; stub.
 pub struct RenderableAction;
+#[allow(dead_code)]
+impl RenderableAction {
+    pub fn new<A, B>(_: A, _: B) -> Self { Self }
+    pub fn with_background_color<C>(self, _: C) -> Self { self }
+    pub fn render<A>(self, _: A) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
+}
 use crate::appearance::Appearance;
 use crate::terminal::shell::ShellType;
 use crate::terminal::warpify;

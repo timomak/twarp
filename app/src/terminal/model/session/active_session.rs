@@ -3,6 +3,10 @@ use warpui::{AppContext, Entity, ModelContext, ModelHandle};
 
 // twarp: 2c-d — WarpAiExecutionContext deleted; stub.
 pub struct WarpAiExecutionContext;
+#[allow(dead_code)]
+impl WarpAiExecutionContext {
+    pub fn new<A>(_: A) -> Self { Self }
+}
 use crate::{
     terminal::{
         model::session::SessionsEvent,

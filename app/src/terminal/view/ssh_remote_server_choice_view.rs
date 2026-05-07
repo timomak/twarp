@@ -32,7 +32,17 @@ use warpui::{
 // twarp: 2c-d — AI blocklist deleted; stubs.
 pub fn rich_navigation_button<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: E) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
 pub struct KeyboardNavigableButtons;
+#[allow(dead_code)]
+impl KeyboardNavigableButtons {
+    pub fn new<A>(_: A) -> Self { Self }
+}
 pub struct HeaderConfig;
+#[allow(dead_code)]
+impl HeaderConfig {
+    pub fn new<A, B>(_: A, _: B) -> Self { Self }
+    pub fn with_corner_radius_override<C>(self, _: C) -> Self { self }
+    pub fn render_header<A, B>(self, _: A, _: B) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
+}
 pub const INLINE_ACTION_HORIZONTAL_PADDING: f32 = 12.0;
 use crate::{
     send_telemetry_from_ctx,

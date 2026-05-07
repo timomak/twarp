@@ -30,6 +30,10 @@ pub enum PromptAlertState {
     RequestLimitReached,
 }
 pub struct PromptAlertView;
+#[allow(dead_code)]
+impl PromptAlertView {
+    pub fn new<A, B, C, D>(_: A, _: B, _: C, _: &mut D) -> Self { Self }
+}
 use crate::server::telemetry::InteractionSource;
 use crate::settings::InputSettings;
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
