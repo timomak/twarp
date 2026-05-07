@@ -25,8 +25,8 @@ use crate::terminal::ssh::error::SshErrorBlockAction;
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
 use crate::terminal::view::RichContentSecretTooltipInfo;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct AIAgentExchangeId(pub String);
+// twarp: 2c-d — re-export to unify cross-file types.
+pub use crate::terminal::view::rich_content::AIAgentExchangeId;
 #[derive(Clone, Debug)]
 pub enum CodebaseIndexSpeedbumpBannerAction { Other }
 #[derive(Clone, Debug)]

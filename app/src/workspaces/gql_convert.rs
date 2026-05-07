@@ -1178,17 +1178,22 @@ impl TryFrom<CloudObjectWithDescendants> for ServerCloudObject {
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonWorkflowEnum => {
                     Ok(ServerCloudObject::WorkflowEnum(gso.try_into()?))
                 }
+                // twarp: 2c-d — AI cloud object types deleted; map to stub unit variants.
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact => {
-                    Ok(ServerCloudObject::AIFact(gso.try_into()?))
+                    let _ = gso;
+                    Ok(ServerCloudObject::AIFact(()))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer => {
-                    Ok(ServerCloudObject::MCPServer(gso.try_into()?))
+                    let _ = gso;
+                    Ok(ServerCloudObject::MCPServer(()))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile => {
-                    Ok(ServerCloudObject::AIExecutionProfile(gso.try_into()?))
+                    let _ = gso;
+                    Ok(ServerCloudObject::AIExecutionProfile(()))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer => {
-                    Ok(ServerCloudObject::TemplatableMCPServer(gso.try_into()?))
+                    let _ = gso;
+                    Ok(ServerCloudObject::TemplatableMCPServer(()))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
                     Err(anyhow::anyhow!(
@@ -1196,7 +1201,8 @@ impl TryFrom<CloudObjectWithDescendants> for ServerCloudObject {
                     ))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
-                    Ok(ServerCloudObject::ScheduledAmbientAgent(gso.try_into()?))
+                    let _ = gso;
+                    Ok(ServerCloudObject::ScheduledAmbientAgent(()))
                 }
             }
             CloudObjectWithDescendants::Notebook(notebook) => Ok(ServerCloudObject::Notebook(notebook.try_into()?)),

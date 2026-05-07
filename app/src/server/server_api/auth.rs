@@ -1,7 +1,14 @@
 use std::{result::Result as StdResult, sync::Arc};
 
 // twarp: 2c-d — AI ModelsByFeature deleted; stub.
+#[derive(Default)]
 pub struct ModelsByFeature;
+impl TryFrom<warp_graphql::workspace::FeatureModelChoice> for ModelsByFeature {
+    type Error = anyhow::Error;
+    fn try_from(_: warp_graphql::workspace::FeatureModelChoice) -> Result<Self, Self::Error> {
+        Ok(Self)
+    }
+}
 
 use anyhow::{anyhow, bail, Context as _, Result};
 use async_trait::async_trait;

@@ -1,7 +1,9 @@
 use super::auth::AuthClient;
 use super::ServerApi;
 // twarp: 2c-d — AI generate_block_title deleted; stubs.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct GenerateBlockTitleRequest;
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct GenerateBlockTitleResponse;
 use crate::server::{
     block::{Block, DisplaySetting},
