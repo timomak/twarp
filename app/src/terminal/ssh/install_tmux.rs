@@ -12,6 +12,7 @@ pub mod requested_script {
     use warpui::elements::Empty;
     use warpui::Element;
     pub struct RequestedScriptMouseStates;
+    #[derive(Clone)]
     pub enum RequestedScriptStatus {
         WaitingForUser,
         Other,

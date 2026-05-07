@@ -3615,12 +3615,8 @@ fn render_summary_pane_kind_icon_circle(
                 });
             (
                 icon_element,
-                ThemeFill::Solid(
-                    agent
-                        .brand_color()
-                        .unwrap_or(ColorU::new(100, 100, 100, 255)),
-                )
-                .into(),
+                // twarp: 2c-d — brand_color returns ColorU directly
+                ThemeFill::Solid(agent.brand_color()).into(),
             )
         }
         SummaryPaneKind::Code { title } => (

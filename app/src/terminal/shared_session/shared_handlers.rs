@@ -27,6 +27,11 @@ impl warpui::Entity for BlocklistAIContextModel { type Event = (); }
 pub struct BlocklistAIHistoryModel;
 impl warpui::Entity for BlocklistAIHistoryModel { type Event = (); }
 impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+#[allow(dead_code)]
+impl BlocklistAIHistoryModel {
+    // twarp: 2c-d — bulk stubs
+    pub fn all_live_conversations_for_terminal_view(&self, _: warpui::EntityId) -> Vec<crate::app_state::AIConversationId> { Vec::new() }
+}
 
 #[allow(dead_code)]
 pub(crate) fn apply_selected_agent_model_update(

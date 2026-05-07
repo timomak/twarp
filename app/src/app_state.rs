@@ -23,7 +23,7 @@ impl AIConversationId {
     pub fn id(&self) -> AIConversationId { *self }
     pub fn is_child_agent_conversation(&self) -> bool { false }
     pub fn is_empty(&self) -> bool { false }
-    pub fn status(&self) -> Option<()> { None }
+    pub fn status(&self) -> Option<ConversationStatus> { None }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AmbientAgentTaskId(pub uuid::Uuid);
@@ -39,6 +39,8 @@ pub struct InputConfig {}
 impl InputConfig {
     // twarp: 2c-d — stubbed; AI input config deleted.
     pub fn new<C>(_: &C) -> Self { Self {} }
+    pub fn is_ai(&self) -> bool { false }
+    pub fn is_shell(&self) -> bool { true }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SerializedBlockListItem {
@@ -82,7 +84,7 @@ pub struct AIConversation {}
 impl AIConversation {
     // twarp: 2c-d — bulk stubs for app_state::AIConversation
     pub fn is_empty(&self) -> bool { true }
-    pub fn status(&self) -> Option<()> { None }
+    pub fn status(&self) -> Option<ConversationStatus> { None }
     pub fn title(&self) -> Option<String> { None }
     pub fn to_serialized_blocklist_items(&self) -> Vec<()> { Vec::new() }
 }
@@ -101,6 +103,10 @@ impl ConversationStatus {
     pub fn status_icon_and_color<T>(&self, _: T) -> (warp_core::ui::Icon, warpui::color::ColorU) {
         (warp_core::ui::Icon::Terminal, warpui::color::ColorU::new(0, 0, 0, 0))
     }
+    // twarp: 2c-d — predicate stubs
+    pub fn is_in_progress(&self) -> bool { matches!(self, ConversationStatus::InProgress) }
+    pub fn is_blocked(&self) -> bool { false }
+    pub fn is_error(&self) -> bool { matches!(self, ConversationStatus::Failed) }
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct AgentConversationsModelEvent {}

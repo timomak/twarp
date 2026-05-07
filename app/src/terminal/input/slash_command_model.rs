@@ -19,6 +19,11 @@ impl BlocklistAIInputModel {
     pub fn input_type(&self) -> () { () }
 }
 pub struct SkillManager;
+#[allow(dead_code)]
+impl SkillManager {
+    // twarp: 2c-d — bulk stubs
+    pub fn get_skills_for_working_directory<A>(&self, _: A) -> Vec<()> { Vec::new() }
+}
 impl Entity for SkillManager {
     type Event = ();
 }

@@ -727,6 +727,8 @@ impl BlocklistAIHistoryModel {
     fn conversation<I>(&self, _: I) -> Option<&AIConversation> { None }
     fn last_conversation_id(&self, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
     fn active_conversation(&self, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
+    fn all_live_conversations_for_terminal_view(&self, _: warpui::EntityId) -> Vec<crate::app_state::AIConversationId> { Vec::new() }
+    fn conversation_id_for_action<A>(&self, _: A, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
     // twarp: 2c-d — bulk stubs
     fn clear_conversations_in_terminal_view<A, C>(&mut self, _: A, _: &mut C) {}
     fn fork_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) -> Result<(), String> { Ok(()) }
@@ -7456,7 +7458,8 @@ impl TerminalView {
             let status = conversation.status();
             // Additionally check if the conversation is empty, since the default status for a new
             // conversation is `InProgress`, but you should be able to exit an empty conversation.
-            if (status.is_in_progress() || status.is_blocked()) && !is_new_empty_conversation {
+            // twarp: 2c-d — status is Option, unwrap or false
+            if (status.as_ref().is_some_and(|s| s.is_in_progress()) || status.as_ref().is_some_and(|s| s.is_blocked())) && !is_new_empty_conversation {
                 return false;
             }
         }
@@ -7498,7 +7501,7 @@ impl TerminalView {
             self.cancel_active_conversation_via_status_bar(ctx);
         } else if BlocklistAIHistoryModel::as_ref(ctx)
             .active_conversation(self.view_id)
-            .is_some_and(|c| c.status().is_in_progress())
+            .is_some_and(|c| c.status().as_ref().is_some_and(|s| s.is_in_progress()))
         {
             // No unfinished AI block, but the conversation is still in progress.
             // This happens when a server-side subagent (e.g., conversation search)

@@ -13,6 +13,14 @@ use warp_multi_agent_api::{self as api};
 pub enum CurrentHead {
     BranchName(String),
 }
+#[allow(dead_code)]
+impl CurrentHead {
+    pub fn title(&self) -> String {
+        match self {
+            CurrentHead::BranchName(name) => name.clone(),
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DiffBase {

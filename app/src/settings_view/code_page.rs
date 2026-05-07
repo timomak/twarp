@@ -12,6 +12,7 @@ use super::{
 // twarp: 2c-d — persisted_workspace deleted; stubs.
 pub enum EnablementState { Enabled, Disabled }
 #[allow(dead_code)]
+#[derive(Clone)]
 pub enum LspRepoStatus {
     DisabledAndInstalled {},
     DisabledAndNotInstalled {},

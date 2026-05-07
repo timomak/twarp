@@ -704,7 +704,7 @@ impl BlocklistAIContextModel {
     pub fn pending_context_block_ids(&self) -> Vec<()> { Vec::new() }
     pub fn pending_context_selected_text(&self) -> Option<String> { None }
     pub fn pending_files(&self) -> Vec<crate::terminal::input::PendingFileStub> { Vec::new() }
-    pub fn selected_conversation_status_for_hint<C>(&self, _: &C) -> Option<()> { None }
+    pub fn selected_conversation_status_for_hint<C>(&self, _: &C) -> Option<crate::app_state::ConversationStatus> { None }
     pub fn current_pwd(&self) -> Option<std::path::PathBuf> { None }
     pub fn home_directory(&self) -> Option<std::path::PathBuf> { None }
     pub fn pending_context<A, B>(&self, _: A, _: B) -> Option<()> { None }
@@ -784,6 +784,8 @@ impl BlocklistAIHistoryModel {
     fn active_conversation(&self, _: warpui::EntityId) -> Option<AIConversationStub> { None }
     fn conversation_id_for_action<I>(&self, _: I, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
     fn conversation<I>(&self, _: I) -> Option<AIConversationStub> { None }
+    // twarp: 2c-d — bulk stubs
+    fn all_live_conversations_for_terminal_view(&self, _: warpui::EntityId) -> Vec<crate::app_state::AIConversationId> { Vec::new() }
 }
 
 // twarp: 2c-d — local AIConversation-like stub used by input.rs.

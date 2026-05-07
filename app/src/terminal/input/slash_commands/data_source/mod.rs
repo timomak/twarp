@@ -32,6 +32,11 @@ pub struct SkillDescriptor {
     pub provider: (),
 }
 pub struct SkillManager;
+#[allow(dead_code)]
+impl SkillManager {
+    // twarp: 2c-d — bulk stubs
+    pub fn get_skills_for_working_directory<A>(&self, _: A) -> Vec<()> { Vec::new() }
+}
 impl warpui::Entity for SkillManager { type Event = (); }
 impl warpui::SingletonEntity for SkillManager {}
 pub enum CLIAgentInputState {

@@ -91,6 +91,12 @@ use crate::workspace::ToastStack;
 // twarp: 2c-d — AI blocklist InputType deleted.
 use crate::settings::AISettings;
 pub enum InputType { Other }
+#[allow(dead_code)]
+impl InputType {
+    // twarp: 2c-d — predicate stubs
+    pub fn is_ai(&self) -> bool { false }
+    pub fn is_shell(&self) -> bool { true }
+}
 
 use crate::editor::RangeExt;
 use crate::features::FeatureFlag;
