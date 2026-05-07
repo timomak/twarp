@@ -53,6 +53,7 @@ impl warpui::Entity for BlocklistAIContextModel { type Event = (); }
 impl BlocklistAIContextModel {
     pub fn append_pending_images<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn pending_images(&self) -> Vec<()> { Vec::new() }
+    pub fn append_pending_attachments<A, C>(&mut self, _: A, _: &mut C) {}
 }
 pub struct PendingAttachment;
 pub struct PendingFile { pub file_path: std::path::PathBuf, pub file_name: String, pub mime_type: String }

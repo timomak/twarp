@@ -6,6 +6,18 @@ pub struct CloudMCPServer {
     // twarp: 2c-d — fields used by callers
     pub metadata: Option<CloudObjectMetadata>,
 }
+#[allow(dead_code)]
+impl CloudMCPServer {
+    pub fn model(&self) -> CloudMCPServerModelStub { CloudMCPServerModelStub }
+}
+#[derive(Default)]
+pub struct CloudMCPServerModelStub {
+    pub string_model: CloudMCPServerStringModelStub,
+}
+#[derive(Default)]
+pub struct CloudMCPServerStringModelStub {
+    pub name: String,
+}
 use crate::{
     appearance::Appearance,
     cloud_object::CloudObjectMetadata,

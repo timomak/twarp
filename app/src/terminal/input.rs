@@ -323,6 +323,10 @@ impl AgentShortcutViewModel {
     fn new<B, A, C>(_: B, _: A, _: &mut C) -> Self {
         unimplemented!()
     }
+    // twarp: 2c-d — bulk stubs
+    fn is_shortcut_view_open(&self) -> bool { false }
+    fn hide_shortcut_view<C>(&mut self, _: &mut C) {}
+    fn open_shortcut_view<C>(&mut self, _: &mut C) {}
 }
 
 // twarp: 2c-d — re-export canonical AgentViewEntryOrigin from app_state
@@ -334,6 +338,8 @@ impl EphemeralMessageModel {
     fn new() -> Self {
         Self
     }
+    // twarp: 2c-d — bulk stubs
+    fn show_ephemeral_message<A, C>(&mut self, _: A, _: &mut C) {}
 }
 
 #[allow(dead_code)]
@@ -376,6 +382,8 @@ impl AIExecutionProfilesModel {
     }
     fn set_base_model<P, M, C>(&mut self, _: P, _: Option<M>, _: &mut C) {}
     fn set_cli_agent_model<P, M, C>(&mut self, _: P, _: Option<M>, _: &mut C) {}
+    // twarp: 2c-d — bulk stubs
+    fn set_active_profile<A, C>(&mut self, _: A, _: &mut C) {}
 }
 
 #[allow(dead_code)]
@@ -398,6 +406,14 @@ fn is_accept_prompt_suggestion_bound_to_ctrl_enter<C>(_: &C) -> bool {
 
 #[allow(dead_code)]
 struct SkillManager;
+#[allow(dead_code)]
+impl SkillManager {
+    pub fn handle<C>(_: &C) -> warpui::ModelHandle<SkillManager> { unimplemented!() }
+    pub fn skill_by_reference<R>(&self, _: R) -> Option<()> { None }
+    pub fn get_skills_for_working_directory<A>(&self, _: A) -> Vec<()> { Vec::new() }
+}
+impl warpui::Entity for SkillManager { type Event = (); }
+impl warpui::SingletonEntity for SkillManager {}
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -800,12 +816,17 @@ impl AIConversationStub {
     fn id(&self) -> AIConversationId { unimplemented!() }
     fn title(&self) -> Option<String> { None }
     fn status(&self) -> AIConversationStatusStub { AIConversationStatusStub }
+    // twarp: 2c-d — bulk stubs
+    fn is_empty(&self) -> bool { true }
+    fn export_to_markdown(&self) -> String { String::new() }
+    fn server_conversation_token(&self) -> Option<String> { None }
 }
 #[allow(dead_code)]
 struct AIConversationStatusStub;
 #[allow(dead_code)]
 impl AIConversationStatusStub {
     fn is_in_progress(&self) -> bool { false }
+    fn is_blocked(&self) -> bool { false }
 }
 
 #[derive(Debug, Clone)]
@@ -872,6 +893,8 @@ impl InputConfig {
     pub fn with_input_type(self, _: InputType) -> Self { self }
     pub fn locked(self) -> Self { self }
     pub fn unlocked(self) -> Self { self }
+    pub fn is_ai(&self) -> bool { matches!(self.input_type, InputType::AI) }
+    pub fn is_shell(&self) -> bool { matches!(self.input_type, InputType::Shell) }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -883,6 +906,10 @@ enum InputType {
 impl InputType {
     fn is_ai(&self) -> bool {
         matches!(self, InputType::AI)
+    }
+    // twarp: 2c-d — predicate stubs
+    fn is_shell(&self) -> bool {
+        matches!(self, InputType::Shell)
     }
 }
 
@@ -897,6 +924,8 @@ struct LLMPreferences;
 impl LLMPreferences {
     fn update_preferred_agent_mode_llm<I, C>(&mut self, _: I, _: warpui::EntityId, _: &mut C) {}
     fn vision_supported<C>(&self, _: &C, _: Option<warpui::EntityId>) -> bool { false }
+    // twarp: 2c-d — bulk stubs
+    fn remove_llm_override<A, C>(&mut self, _: A, _: &mut C) {}
 }
 
 #[derive(Debug, Clone)]
@@ -905,10 +934,19 @@ enum LLMPreferencesEvent {}
 
 #[allow(dead_code)]
 struct AIRequestUsageModel;
+impl warpui::Entity for AIRequestUsageModel { type Event = (); }
+impl warpui::SingletonEntity for AIRequestUsageModel {}
+#[allow(dead_code)]
 impl AIRequestUsageModel {
     fn has_any_ai_remaining<C>(&self, _: &C) -> bool {
         false
     }
+    // twarp: 2c-d — bulk stubs
+    fn has_requests_remaining<C>(&self, _: &C) -> bool { false }
+    fn enable_buy_credits_banner<A, C>(&mut self, _: A, _: &mut C) {}
+    fn request_limit(&self) -> i64 { 0 }
+    fn last_update_time(&mut self) -> Option<chrono::DateTime<chrono::Utc>> { None }
+    fn refresh_request_usage_async<C>(&mut self, _: &mut C) {}
 }
 
 // twarp: 2c-d — stubs for universal_developer_input + ambient_agent + agent_view types
@@ -926,6 +964,7 @@ impl UniversalDeveloperInputButtonBar {
     pub fn set_udi_hovered<C>(&mut self, _: bool, _: &mut C) {}
     pub fn set_voice_is_listening<C>(&mut self, _: bool, _: &mut C) {}
     pub fn update_input_empty_state<C>(&mut self, _: bool, _: &mut C) {}
+    pub fn is_profile_model_selector_open<C>(&self, _: &C) -> bool { false }
 }
 
 #[derive(Debug, Clone)]
@@ -963,6 +1002,9 @@ impl AmbientAgentViewModel {
     }
     pub fn agent_progress(&self) -> Option<()> { None }
     pub fn cancel_task<C>(&mut self, _: &mut C) {}
+    // twarp: 2c-d — bulk stubs
+    pub fn is_agent_running(&self) -> bool { false }
+    pub fn spawn_agent<A, C>(&mut self, _: A, _: &mut C) {}
 }
 
 #[allow(dead_code)]
@@ -975,6 +1017,10 @@ impl AgentInputFooter {
     fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self {
         unimplemented!()
     }
+    fn set_voice_is_active<C>(&mut self, _: bool, _: &mut C) {}
+    fn update_session_context<A, C>(&mut self, _: A, _: &mut C) {}
+    fn set_current_repo_path<A, C>(&mut self, _: A, _: &mut C) {}
+    fn is_v2_model_selector_open<C>(&self, _: &C) -> bool { false }
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -1018,6 +1064,9 @@ impl AgentViewController {
     fn try_enter_agent_view<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> Result<(), ()> {
         Ok(())
     }
+    // twarp: 2c-d — bulk stubs
+    fn should_start_new_conversation_for_keybinding<C>(&mut self, _: &mut C) -> bool { false }
+    fn agent_view_state(&self) -> crate::terminal::model::block::AgentViewState { crate::terminal::model::block::AgentViewState::Inactive }
 }
 
 #[derive(Debug, Clone)]

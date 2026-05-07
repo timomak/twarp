@@ -36,6 +36,8 @@ pub struct SkillManager;
 impl SkillManager {
     // twarp: 2c-d — bulk stubs
     pub fn get_skills_for_working_directory<A>(&self, _: A) -> Vec<()> { Vec::new() }
+    pub fn skill_exists_for_any_provider<S>(&self, _: S) -> bool { false }
+    pub fn best_supported_provider<S>(&self, _: S) -> Option<()> { None }
 }
 impl warpui::Entity for SkillManager { type Event = (); }
 impl warpui::SingletonEntity for SkillManager {}
