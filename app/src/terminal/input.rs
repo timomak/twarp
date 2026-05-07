@@ -765,9 +765,8 @@ impl BlocklistAIController {
     pub fn send_zero_state_prompt_suggestion<A, C>(&mut self, _: A, _: &mut C) {}
 }
 
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-enum BlocklistAIControllerEvent {}
+// twarp: 2c-d — re-export rich BlocklistAIControllerEvent from view.rs
+pub use crate::terminal::view::BlocklistAIControllerEvent;
 
 #[allow(dead_code)]
 impl BlocklistAIHistoryEvent {
@@ -1187,9 +1186,7 @@ impl Entity for PromptAlertView {
 impl Entity for BlocklistAIContextModel {
     type Event = BlocklistAIContextEvent;
 }
-impl Entity for BlocklistAIController {
-    type Event = BlocklistAIControllerEvent;
-}
+// twarp: 2c-d — BlocklistAIController Entity impl moved to view.rs which has the richer event variants.
 impl Entity for BlocklistAIHistoryModel {
     type Event = BlocklistAIHistoryEvent;
 }

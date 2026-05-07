@@ -453,10 +453,10 @@ struct ExchangeStub {
 }
 #[allow(dead_code)] enum AgentConversationsModelEvent {
     // twarp: 2c-d — bulk variants for AI-removed AgentConversationsModelEvent
-    ConversationArtifactsUpdated(()),
-    ConversationUpdated(()),
-    NewTasksReceived(()),
-    TasksUpdated(()),
+    ConversationArtifactsUpdated,
+    ConversationUpdated,
+    NewTasksReceived,
+    TasksUpdated,
 }
 
 #[allow(dead_code)] fn conversation_output_status_from_conversation<C>(_: C) -> Option<()> { None }
@@ -477,12 +477,12 @@ impl CLISubagentView {
 }
 #[allow(dead_code)] enum CLISubagentEvent {
     // twarp: 2c-d — bulk variants for AI-removed CLISubagentEvent
-    ControlHandedBackAfterTransfer(()),
-    FinishedSubagent(()),
-    SpawnedSubagent(()),
-    ToggledHideResponses(()),
-    UpdatedControl(()),
-    UpdatedLastSnapshot(()),
+    ControlHandedBackAfterTransfer,
+    FinishedSubagent,
+    SpawnedSubagent,
+    ToggledHideResponses,
+    UpdatedControl,
+    UpdatedLastSnapshot,
 }
 #[allow(dead_code)] enum UserTakeOverReason {
     Manual,
@@ -6393,7 +6393,7 @@ impl TerminalView {
                     }
                 });
             }
-            BlocklistAIActionEvent::ToggleCodeReview(_) => {
+            BlocklistAIActionEvent::ToggleCodeReview => {
                 self.toggle_code_review_pane(
                     GitDeltaPreference::Always,
                     CodeReviewPaneEntrypoint::InvokedByAgent,

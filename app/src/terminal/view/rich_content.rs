@@ -48,7 +48,11 @@ macro_rules! twarp_stub_view_impl {
         }
     };
 }
-twarp_stub_view_impl!(AIBlock);
+// twarp: 2c-d — Entity for AIBlock impl in view.rs (uses AIBlockEvent); only View impl here.
+impl View for AIBlock {
+    fn ui_name() -> &'static str { "AIBlock/twarp-stub" }
+    fn render(&self, _: &AppContext) -> Box<dyn Element> { Empty::new().finish() }
+}
 #[allow(dead_code)]
 impl AIBlock {
     pub fn conversation_id(&self) -> AIConversationId { unimplemented!() }
