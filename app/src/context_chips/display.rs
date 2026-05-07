@@ -15,15 +15,10 @@ use crate::{
 
 // twarp: 2c-d — re-export shared stubs to unify across files.
 pub use crate::terminal::shared_session::shared_handlers::BlocklistAIHistoryModel;
-pub enum BlocklistAIHistoryEvent {
-    UpdatedTodoList { terminal_view_id: warpui::EntityId },
-    Other,
-}
-pub enum BlocklistAIInputEvent {
-    InputTypeChanged {},
-    LockChanged {},
-    Other,
-}
+// twarp: 2c-d — re-export canonical
+pub use crate::terminal::input::BlocklistAIHistoryEvent;
+// twarp: 2c-d — re-export canonical
+pub use crate::terminal::input::BlocklistAIInputEvent;
 use std::path::PathBuf;
 use warp_core::features::FeatureFlag;
 use warpui::{

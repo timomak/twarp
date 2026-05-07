@@ -755,26 +755,26 @@ impl BlocklistAIHistoryEvent {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum BlocklistAIHistoryEvent {
-    // twarp: 2c-d — bulk variants for AI-removed BlocklistAIHistoryEvent
-    AppendedExchange(()),
-    ClearedActiveConversation,
-    ClearedConversationsInTerminalView,
-    ConversationServerTokenAssigned(()),
-    CreatedSubtask(()),
-    DeletedConversation(()),
-    ReassignedExchange(()),
-    RemoveConversation(()),
-    RestoredConversations(()),
-    SetActiveConversation(()),
-    SplitConversation(()),
-    StartedNewConversation(()),
-    UpdatedAutoexecuteOverride(()),
-    UpdatedConversationArtifacts(()),
-    UpdatedConversationMetadata(()),
-    UpdatedConversationStatus(()),
-    UpdatedStreamingExchange(()),
-    UpdatedTodoList(()),
-    UpgradedTask(()),
+    // twarp: 2c-d — struct variants; { terminal_view_id } pattern needed by callers
+    AppendedExchange { terminal_view_id: warpui::EntityId },
+    ClearedActiveConversation { terminal_view_id: warpui::EntityId },
+    ClearedConversationsInTerminalView { terminal_view_id: warpui::EntityId },
+    ConversationServerTokenAssigned { terminal_view_id: warpui::EntityId },
+    CreatedSubtask { terminal_view_id: warpui::EntityId },
+    DeletedConversation { terminal_view_id: warpui::EntityId },
+    ReassignedExchange { terminal_view_id: warpui::EntityId },
+    RemoveConversation { terminal_view_id: warpui::EntityId },
+    RestoredConversations { terminal_view_id: warpui::EntityId },
+    SetActiveConversation { terminal_view_id: warpui::EntityId },
+    SplitConversation { terminal_view_id: warpui::EntityId },
+    StartedNewConversation { terminal_view_id: warpui::EntityId },
+    UpdatedAutoexecuteOverride { terminal_view_id: warpui::EntityId },
+    UpdatedConversationArtifacts { terminal_view_id: warpui::EntityId },
+    UpdatedConversationMetadata { terminal_view_id: warpui::EntityId },
+    UpdatedConversationStatus { terminal_view_id: warpui::EntityId },
+    UpdatedStreamingExchange { terminal_view_id: warpui::EntityId },
+    UpdatedTodoList { terminal_view_id: warpui::EntityId },
+    UpgradedTask { terminal_view_id: warpui::EntityId },
     Other,
 }
 
@@ -806,7 +806,12 @@ impl AIConversationStatusStub {
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum BlocklistAIInputEvent {}
+pub enum BlocklistAIInputEvent {
+    // twarp: 2c-d — struct variants for { .. } destructure callers
+    InputTypeChanged { },
+    LockChanged { },
+    UpdatedConfig { },
+}
 
 #[allow(dead_code)]
 pub struct BlocklistAIInputModel;

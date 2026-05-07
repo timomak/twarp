@@ -34,7 +34,8 @@ impl ActiveAgentViewsModel {
 }
 pub enum AgentViewControllerEvent { Other }
 pub enum BlocklistAIContextEvent { Other }
-pub enum BlocklistAIHistoryEvent { Other }
+// twarp: 2c-d — re-export canonical
+pub use crate::terminal::input::BlocklistAIHistoryEvent;
 pub struct LLMPreferences;
 impl warpui::Entity for LLMPreferences { type Event = LLMPreferencesEvent; }
 impl SingletonEntity for LLMPreferences {}

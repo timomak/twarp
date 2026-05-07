@@ -110,10 +110,10 @@ use crate::code_review::find_model::CodeReviewFindModel;
 #[cfg(feature = "local_fs")]
 use crate::server::telemetry::CodePanelsFileOpenEntrypoint;
 // twarp: 2c-d — terminal::cli_agent module deleted; selection prompt builders stubbed.
-fn build_selection_line_range_prompt<A, B>(_path: &Path, _start: A, _end: B) -> String {
+fn build_selection_line_range_prompt<P: ?Sized, A, B>(_path: &P, _start: A, _end: B) -> String {
     String::new()
 }
-fn build_selection_substring_prompt<A>(_path: &Path, _start: A, _selected: &str) -> String {
+fn build_selection_substring_prompt<P: ?Sized, A>(_path: &P, _start: A, _selected: &str) -> String {
     String::new()
 }
 #[cfg(feature = "local_fs")]

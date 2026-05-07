@@ -31,7 +31,8 @@ impl WarpDriveItem for WarpDriveMCPServer {
         Some(self.mcp_server.model().string_model.name.clone())
     }
     fn metadata(&self) -> Option<&CloudObjectMetadata> {
-        Some(&self.mcp_server.metadata)
+        // twarp: 2c-d — metadata is now Option<CloudObjectMetadata>
+        self.mcp_server.metadata.as_ref()
     }
 
     fn object_type(&self) -> Option<DriveObjectType> {
