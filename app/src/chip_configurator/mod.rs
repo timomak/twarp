@@ -79,7 +79,7 @@ impl ConfigurableItem {
     }
     // twarp: 2c-d — stub: AI agent toolbar item kind deleted.
     #[allow(dead_code)]
-    pub fn item_kind(&self) -> Option<()> {
+    pub fn item_kind(&self) -> Option<AgentToolbarItemKind> {
         None
     }
 

@@ -71,6 +71,17 @@ impl From<crate::persistence::model::Block> for SerializedBlockListItem {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AIDocumentId(pub uuid::Uuid);
+impl From<&str> for AIDocumentId {
+    fn from(s: &str) -> Self {
+        AIDocumentId(uuid::Uuid::parse_str(s).unwrap_or_default())
+    }
+}
+impl TryFrom<&str> for AIDocumentId {
+    type Error = uuid::Error;
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        Ok(AIDocumentId(uuid::Uuid::parse_str(s)?))
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AIDocumentVersion(pub usize);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -4,7 +4,7 @@ use std::{
 };
 
 // twarp: 2c-d — AI skills deleted; stub SkillOpenOrigin.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SkillOpenOrigin { Other }
 use ai::skills::SkillReference;
 use serde::{Deserialize, Serialize};

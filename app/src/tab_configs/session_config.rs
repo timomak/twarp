@@ -42,7 +42,7 @@ impl SessionType {
         match self {
             SessionType::Terminal => Icon::Terminal,
             SessionType::Oz => Icon::Oz,
-            SessionType::CliAgent(agent) => agent.icon().unwrap_or(Icon::Terminal),
+            SessionType::CliAgent(agent) => agent.icon(),
         }
     }
 

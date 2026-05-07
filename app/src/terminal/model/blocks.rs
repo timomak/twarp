@@ -68,6 +68,8 @@ impl warpui::Entity for AIBlock { type Event = (); }
 impl warpui::View for AIBlock {
     fn ui_name() -> &'static str { "AIBlock/twarp-stub" }
     fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+        // twarp: 2c-d — bring Element trait into scope for finish()
+        use warpui::Element as _;
         warpui::elements::Empty::new().finish()
     }
 }

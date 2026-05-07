@@ -1,9 +1,10 @@
 use super::{WarpDriveItem, WarpDriveItemId};
 // twarp: 2c-d — AI MCP CloudMCPServer deleted; stub.
-#[derive(Default)]
+// twarp: 2c-d — CloudObjectMetadata isn't Default; use Option
+#[derive(Default, Clone)]
 pub struct CloudMCPServer {
     // twarp: 2c-d — fields used by callers
-    pub metadata: CloudObjectMetadata,
+    pub metadata: Option<CloudObjectMetadata>,
 }
 use crate::{
     appearance::Appearance,
