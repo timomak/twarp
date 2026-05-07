@@ -147,6 +147,7 @@ fn ssh_bootstraps_if_blocklist_empty() {
     terminal.precmd(Default::default());
 
     let bootstrapped_value = BootstrappedValue {
+        session_id: None,
         histfile: None,
         shell: String::from("bash"),
         home_dir: None,
@@ -769,6 +770,7 @@ fn test_exit_alt_screen_on_command_finished() {
     terminal.command_finished(CommandFinishedValue {
         exit_code: ExitCode::from(0),
         next_block_id: BlockId::new(),
+        session_id: None,
     });
 
     assert!(!terminal.alt_screen_active);
@@ -783,6 +785,7 @@ fn test_unset_bracketed_paste_mode_on_command_finished() {
     terminal.command_finished(CommandFinishedValue {
         exit_code: ExitCode::from(0),
         next_block_id: BlockId::new(),
+        session_id: None,
     });
 
     assert!(!terminal.is_term_mode_set(TermMode::BRACKETED_PASTE));
