@@ -378,11 +378,8 @@ impl AgentViewZeroStateBlock {
     fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self { Self }
 }
 #[allow(dead_code)] enum AgentViewZeroStateEvent {}
-#[allow(dead_code)] struct EphemeralMessageModel;
-#[allow(dead_code)]
-impl EphemeralMessageModel {
-    fn new() -> Self { Self }
-}
+// twarp: 2c-d — unify with terminal::input::EphemeralMessageModel.
+pub use crate::terminal::input::EphemeralMessageModel;
 #[allow(dead_code)] enum ExitConfirmationTrigger {}
 #[allow(dead_code)] struct InlineAgentViewHeader;
 #[allow(dead_code)]
@@ -522,7 +519,7 @@ pub use crate::terminal::view::pending_user_query::FinishReason;
 }
 #[allow(dead_code)]
 struct CodebaseIndexSpeedbumpBannerState {
-    pub id: warpui::EntityId,
+    pub id: InlineBannerId,
     // twarp: 2c-d — extra fields used by view code
     pub repo_path: std::path::PathBuf,
     pub visibility_state: (),
@@ -642,14 +639,14 @@ impl AIConversation {
     // twarp: 2c-d — bulk stubs
     fn exchange_id_for_action(&self, _: ()) -> Option<()> { None }
     fn exchanges_reversed(&self) -> std::iter::Empty<()> { std::iter::empty() }
-    fn forked_from_server_conversation_token(&self) -> Option<String> { None }
+    fn forked_from_server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
     fn get_task<A>(&self, _: A) -> Option<TaskStub> { None }
     fn has_active_subagent(&self) -> bool { false }
     fn has_opened_code_review(&self) -> bool { false }
     fn latest_exchange(&self) -> Option<()> { None }
     fn latest_user_query(&self) -> Option<String> { None }
     fn root_task_exchanges(&self) -> std::iter::Empty<()> { std::iter::empty() }
-    fn server_conversation_token(&self) -> Option<String> { None }
+    fn server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
     fn title(&self) -> Option<String> { None }
 }
 #[allow(dead_code)]
@@ -3919,7 +3916,8 @@ impl TerminalView {
                         .agent_view_controller
                         .as_ref(ctx)
                         .agent_view_state()
-                        .active_conversation_id();
+                        .active_conversation_id()
+                        .copied();
                     let pending_user_query_conversation_id =
                         me.pending_user_query_conversation_id();
                     let should_keep_pending_user_query = active_conversation_id.is_some()
@@ -6896,6 +6894,7 @@ impl TerminalView {
             .as_ref(app)
             .agent_view_state()
             .active_conversation_id()
+            .copied()
     }
 
     pub fn ambient_agent_view_model(&self) -> &ModelHandle<ambient_agent::AmbientAgentViewModel> {
@@ -18477,7 +18476,8 @@ impl TerminalView {
                 .agent_view_controller
                 .as_ref(ctx)
                 .agent_view_state()
-                .active_conversation_id();
+                .active_conversation_id()
+                .copied();
             self.rich_content_views
                 .iter()
                 .rev()
@@ -18523,7 +18523,8 @@ impl TerminalView {
                 .agent_view_controller
                 .as_ref(ctx)
                 .agent_view_state()
-                .active_conversation_id();
+                .active_conversation_id()
+                .copied();
             let last_visible_block = self
                 .rich_content_views
                 .iter()
@@ -24329,6 +24330,7 @@ impl TypedActionView for TerminalView {
                         .as_ref(ctx)
                         .agent_view_state()
                         .active_conversation_id()
+                        .copied()
                 } else {
                     BlocklistAIHistoryModel::as_ref(ctx).last_conversation_id(self.id())
                 };

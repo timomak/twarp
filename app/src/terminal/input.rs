@@ -332,7 +332,7 @@ impl AgentShortcutViewModel {
 pub use crate::app_state::AgentViewEntryOrigin;
 
 #[allow(dead_code)]
-struct EphemeralMessageModel;
+pub struct EphemeralMessageModel;
 impl EphemeralMessageModel {
     fn new() -> Self {
         Self
@@ -695,15 +695,8 @@ enum EntrypointType {
     UserInitiated,
 }
 
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-enum PromptAlertEvent {
-    // twarp: 2c-d — bulk variants
-    OpenBillingAndUsagePage,
-    OpenBillingPortal,
-    OpenPrivacyPage,
-    SignupAnonymousUser,
-}
+// twarp: 2c-d — unify with prompt_suggestions::PromptAlertEvent
+pub use crate::terminal::view::inline_banner::prompt_suggestions::PromptAlertEvent;
 
 #[allow(dead_code)]
 struct PromptAlertView;
@@ -849,7 +842,7 @@ impl AIConversationStub {
     // twarp: 2c-d — bulk stubs
     fn is_empty(&self) -> bool { true }
     fn export_to_markdown<A>(&self, _: A) -> String { String::new() }
-    fn server_conversation_token(&self) -> Option<String> { None }
+    fn server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
 }
 #[allow(dead_code)]
 struct AIConversationStatusStub;
