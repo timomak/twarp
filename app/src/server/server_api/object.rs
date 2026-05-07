@@ -1015,58 +1015,16 @@ impl ObjectClient for ServerApi {
                                     gso.serialized_model,
                                 );
                             }
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact => {
-                                parse_server_gso::<AIFact, JsonSerializer>(
-                                    &mut updated_generic_string_objects,
-                                    GenericStringObjectFormat::Json(JsonObjectType::AIFact),
-                                    server_id,
-                                    metadata,
-                                    permissions,
-                                    gso.serialized_model,
-                                );
-                            }
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer => {
-                                parse_server_gso::<MCPServer, JsonSerializer>(
-                                    &mut updated_generic_string_objects,
-                                    GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
-                                    server_id,
-                                    metadata,
-                                    permissions,
-                                    gso.serialized_model,
-                                );
-                            }
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile => {
-                                parse_server_gso::<AIExecutionProfile, JsonSerializer>(
-                                    &mut updated_generic_string_objects,
-                                    GenericStringObjectFormat::Json(JsonObjectType::AIExecutionProfile),
-                                    server_id,
-                                    metadata,
-                                    permissions,
-                                    gso.serialized_model,
-                                );
-                            }
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer => {
-                                parse_server_gso::<TemplatableMCPServer, JsonSerializer>(
-                                    &mut updated_generic_string_objects,
-                                    GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer),
-                                    server_id,
-                                    metadata,
-                                    permissions,
-                                    gso.serialized_model,
-                                );
+                            // twarp: 2c-d — AI cloud objects deleted; ignore these variants.
+                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact
+                            | warp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer
+                            | warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile
+                            | warp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer
+                            | warp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
+                                // No-op for deleted AI cloud objects.
                             }
                             warp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
                                 // CloudEnvironment objects are no longer materialized client-side.
-                            }
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
-                                parse_server_gso::<ScheduledAmbientAgent, JsonSerializer>(
-                                    &mut updated_generic_string_objects,
-                                    GenericStringObjectFormat::Json(JsonObjectType::ScheduledAmbientAgent),
-                                    server_id,
-                                    metadata,
-                                    permissions,
-                                    gso.serialized_model,
-                                );
                             }
                         }
                     }

@@ -87,6 +87,12 @@ impl From<&str> for AIDocumentId {
         AIDocumentId(uuid::Uuid::parse_str(s).unwrap_or_default())
     }
 }
+impl TryFrom<String> for AIDocumentId {
+    type Error = uuid::Error;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        Ok(AIDocumentId(uuid::Uuid::parse_str(&s)?))
+    }
+}
 impl TryFrom<&str> for AIDocumentId {
     type Error = uuid::Error;
     fn try_from(s: &str) -> Result<Self, Self::Error> {

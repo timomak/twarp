@@ -20,10 +20,15 @@ use super::{
 };
 
 // twarp: 2c-d — AI cloud models deleted; stubs.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CloudTemplatableMCPServerModel;
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CloudScheduledAmbientAgentModel;
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CloudAIExecutionProfileModel;
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CloudAIFactModel;
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CloudMCPServerModel;
 use crate::server::cloud_objects::update_manager::InitiatedBy;
 use crate::{
@@ -746,34 +751,9 @@ impl SyncQueue {
                         ctx,
                     );
                 }
-                QueueItem::UpdateAIFact {
-                    model,
-                    id,
-                    revision,
-                } => {
-                    self.update_object(
-                        model.clone(),
-                        id,
-                        revision,
-                        object_client,
-                        dequeued_item_id,
-                        ctx,
-                    );
-                }
-                QueueItem::UpdateAIExecutionProfile {
-                    id,
-                    model,
-                    revision,
-                } => {
-                    self.update_object(
-                        model.clone(),
-                        id,
-                        revision,
-                        object_client,
-                        dequeued_item_id,
-                        ctx,
-                    );
-                }
+                // twarp: 2c-d — AI cloud objects deleted; ignore.
+                QueueItem::UpdateAIFact { .. } => {}
+                QueueItem::UpdateAIExecutionProfile { .. } => {}
                 QueueItem::UpdateWorkflowEnum {
                     model,
                     id,
@@ -788,48 +768,10 @@ impl SyncQueue {
                         ctx,
                     );
                 }
-                QueueItem::UpdateMCPServer {
-                    model,
-                    id,
-                    revision,
-                } => {
-                    self.update_object(
-                        model.clone(),
-                        id,
-                        revision,
-                        object_client,
-                        dequeued_item_id,
-                        ctx,
-                    );
-                }
-                QueueItem::UpdateTemplatableMCPServer {
-                    model,
-                    id,
-                    revision,
-                } => {
-                    self.update_object(
-                        model.clone(),
-                        id,
-                        revision,
-                        object_client,
-                        dequeued_item_id,
-                        ctx,
-                    );
-                }
-                QueueItem::UpdateScheduledAmbientAgent {
-                    model,
-                    id,
-                    revision,
-                } => {
-                    self.update_object(
-                        model.clone(),
-                        id,
-                        revision,
-                        object_client,
-                        dequeued_item_id,
-                        ctx,
-                    );
-                }
+                // twarp: 2c-d — AI cloud objects deleted; ignore.
+                QueueItem::UpdateMCPServer { .. } => {}
+                QueueItem::UpdateTemplatableMCPServer { .. } => {}
+                QueueItem::UpdateScheduledAmbientAgent { .. } => {}
                 QueueItem::CreateWorkflow {
                     object_type,
                     owner,
