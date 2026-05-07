@@ -362,6 +362,7 @@ struct AgentViewState;
 impl AgentViewState {
     fn active_conversation_id(&self) -> Option<crate::app_state::AIConversationId> { None }
     fn is_active(&self) -> bool { false }
+    fn is_fullscreen(&self) -> bool { false }
 }
 #[allow(dead_code)] enum AgentViewControllerEvent {
     EnteredAgentView {
@@ -651,6 +652,10 @@ impl ShellCommandExecutor {
 #[allow(dead_code)] enum AwsCredentialsState {}
 #[allow(dead_code)] enum BuildSource {}
 #[allow(dead_code)] struct CodebaseIndexManager;
+#[allow(dead_code)]
+impl CodebaseIndexManager {
+    fn index_directory<P, C>(&mut self, _: P, _: &mut C) {}
+}
 #[allow(dead_code)] struct OnboardingAgenticSuggestionsBlock;
 #[allow(dead_code)] enum OnboardingAgenticSuggestionsBlockEvent {}
 #[allow(dead_code)] enum OnboardingChipType {}
@@ -3338,6 +3343,10 @@ impl TerminalView {
     fn has_active_cli_agent_input_session<C>(&self, _: &C) -> bool { false }
     #[allow(dead_code)]
     fn maybe_show_use_agent_footer_in_blocklist<C>(&mut self, _: &mut C) {}
+    #[allow(dead_code)]
+    fn hide_use_agent_footer_in_blocklist<C>(&mut self, _: &mut C) {}
+    #[allow(dead_code)]
+    fn open_cli_agent_rich_input<A, C>(&mut self, _: A, _: &mut C) {}
 
     /// Create a SyncEvent for other terminals to use based on
     /// the state of this terminal. If this terminal view has an active input

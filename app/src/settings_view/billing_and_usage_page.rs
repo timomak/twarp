@@ -35,6 +35,11 @@ use settings::Setting;
 pub struct AIRequestUsageModel;
 impl warpui::Entity for AIRequestUsageModel { type Event = (); }
 impl warpui::SingletonEntity for AIRequestUsageModel {}
+#[allow(dead_code)]
+impl AIRequestUsageModel {
+    pub fn refresh_request_usage_async<C>(&mut self, _: &mut C) {}
+    pub fn refresh_duration_to_string(&self) -> String { String::new() }
+}
 use crate::{
     auth::{
         auth_manager::LoginGatedFeature, auth_state::AuthState, auth_view_modal::AuthViewVariant,

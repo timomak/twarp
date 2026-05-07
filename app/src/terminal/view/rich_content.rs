@@ -57,6 +57,7 @@ impl AIBlock {
     pub fn has_user_input<C>(&self, _: &C) -> bool { false }
     pub fn output_status<C>(&self, _: &C) -> AIBlockOutputStatusStub { AIBlockOutputStatusStub }
     pub fn is_blocked_on_user_confirmation<C>(&self, _: &C) -> bool { false }
+    pub fn is_passive_conversation<C>(&self, _: &C) -> bool { false }
 }
 pub struct AIBlockOutputStatusStub;
 impl AIBlockOutputStatusStub {

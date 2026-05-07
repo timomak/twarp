@@ -96,6 +96,10 @@ impl CLIAgent {
     pub fn supported_skill_providers(&self) -> &'static [ai::skills::SkillProvider] {
         &[]
     }
+    // twarp: 2c-d — stub: AI agent icon deleted.
+    pub fn icon(&self) -> warp_core::ui::Icon {
+        warp_core::ui::Icon::Terminal
+    }
     pub fn serialized_name(&self) -> &'static str {
         match self {
             CLIAgent::Claude => "claude",

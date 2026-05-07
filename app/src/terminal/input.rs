@@ -616,6 +616,7 @@ struct BlocklistAIContextModel;
 #[allow(dead_code)]
 impl BlocklistAIContextModel {
     fn selected_conversation_id<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> { None }
+    fn pending_images(&self) -> Vec<()> { Vec::new() }
 }
 
 #[allow(dead_code)]

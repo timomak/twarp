@@ -18,6 +18,10 @@ pub enum AgentViewState {
     },
     Inactive,
 }
+#[allow(dead_code)]
+impl AgentViewState {
+    pub fn is_fullscreen(&self) -> bool { false }
+}
 use crate::terminal::event::AfterBlockCompletedEvent;
 use crate::terminal::event_listener::ChannelEventListener;
 use crate::terminal::model::ansi;

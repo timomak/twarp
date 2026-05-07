@@ -101,6 +101,10 @@ use warpui::windowing::WindowManager;
 pub struct LLMPreferences;
 impl warpui::Entity for LLMPreferences { type Event = LLMPreferencesEvent; }
 impl warpui::SingletonEntity for LLMPreferences {}
+#[allow(dead_code)]
+impl LLMPreferences {
+    pub fn refresh_available_models<C>(&mut self, _: &mut C) {}
+}
 pub enum LLMPreferencesEvent { Other }
 pub fn apply_free_tier_default_model_override<C>(_: C) {}
 pub fn build_onboarding_models<A>(_: A) -> Vec<onboarding::slides::OnboardingModelInfo> { Vec::new() }
