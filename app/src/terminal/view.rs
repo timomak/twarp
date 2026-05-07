@@ -529,6 +529,119 @@ impl ConversationDetailsPanel {
 #[allow(dead_code)]
 enum ConversationDetailsPanelEvent {}
 
+// twarp: 2c-d — Entity impls for file-local stubs so ModelHandle<T>::as_ref/update typecheck.
+impl Entity for AgentViewController {
+    type Event = AgentViewControllerEvent;
+}
+impl Entity for AgentViewZeroStateBlock {
+    type Event = AgentViewZeroStateEvent;
+}
+impl Entity for EphemeralMessageModel {
+    type Event = ();
+}
+impl Entity for InlineAgentViewHeader {
+    type Event = ();
+}
+impl Entity for AgentConversationsModel {
+    type Event = AgentConversationsModelEvent;
+}
+impl Entity for CLISubagentView {
+    type Event = CLISubagentViewEvent;
+}
+impl Entity for CLISubagentController {
+    type Event = CLISubagentEvent;
+}
+impl Entity for AIDocumentModel {
+    type Event = ();
+}
+impl Entity for AgentTodosPopupView {
+    type Event = AgentTodosPopupEvent;
+}
+impl Entity for CLIAgentInputState {
+    type Event = ();
+}
+impl Entity for CLIAgentSession {
+    type Event = ();
+}
+impl Entity for CLIAgentSessionContext {
+    type Event = ();
+}
+impl Entity for CLIAgentSessionsModel {
+    type Event = CLIAgentSessionsModelEvent;
+}
+impl Entity for AIBlockModelImpl {
+    type Event = ();
+}
+impl Entity for CodeDiffView {
+    type Event = ();
+}
+impl Entity for SummarizationCancelDialog {
+    type Event = ();
+}
+impl Entity for TelemetryBanner {
+    type Event = ();
+}
+impl Entity for AIBlock {
+    type Event = AIBlockEvent;
+}
+impl Entity for BlocklistAIActionModel {
+    type Event = BlocklistAIActionEvent;
+}
+impl Entity for BlocklistAIContextModel {
+    type Event = BlocklistAIContextEvent;
+}
+impl Entity for BlocklistAIController {
+    type Event = BlocklistAIControllerEvent;
+}
+impl Entity for BlocklistAIHistoryModel {
+    type Event = BlocklistAIHistoryEvent;
+}
+impl Entity for BlocklistAIInputModel {
+    type Event = BlocklistAIInputEvent;
+}
+impl Entity for ShellCommandExecutor {
+    type Event = ShellCommandExecutorEvent;
+}
+impl Entity for StartAgentExecutor {
+    type Event = StartAgentExecutorEvent;
+}
+impl Entity for AIExecutionProfilesModel {
+    type Event = ();
+}
+impl Entity for GetRelevantFilesController {
+    type Event = ();
+}
+impl Entity for LLMPreferences {
+    type Event = ();
+}
+impl Entity for ApiKeyManager {
+    type Event = ();
+}
+impl Entity for CodebaseIndexManager {
+    type Event = ();
+}
+impl Entity for OnboardingAgenticSuggestionsBlock {
+    type Event = OnboardingAgenticSuggestionsBlockEvent;
+}
+impl Entity for ConversationDetailsPanel {
+    type Event = ConversationDetailsPanelEvent;
+}
+impl Entity for AIRequestUsageModel {
+    type Event = ();
+}
+impl Entity for AgentReviewCommentBatch {
+    type Event = ();
+}
+impl Entity for UseAgentToolbar {
+    type Event = ();
+}
+impl Entity for AgentModeSetupSpeedbumpBannerState {
+    type Event = ();
+}
+impl Entity for AnonymousUserAISignUpBannerState {
+    type Event = ();
+}
+
 use async_channel::{Receiver, Sender};
 use chrono::{DateTime, Local, NaiveDateTime};
 use command_corrections::rules::{Rule, RuleId as CommandCorrectionsRuleId};

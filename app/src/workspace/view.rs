@@ -1496,12 +1496,8 @@ impl Workspace {
         }
     }
 
-    fn build_workflow_modal(
-        ai_client: Arc<dyn AIClient>,
-        ctx: &mut ViewContext<Self>,
-    ) -> ViewHandle<WorkflowModal> {
-        let workflow_modal =
-            ctx.add_typed_action_view(|ctx| WorkflowModal::new(ai_client.clone(), ctx));
+    fn build_workflow_modal(ctx: &mut ViewContext<Self>) -> ViewHandle<WorkflowModal> {
+        let workflow_modal = ctx.add_typed_action_view(WorkflowModal::new);
 
         ctx.subscribe_to_view(&workflow_modal, |me, _, event, ctx| {
             me.handle_workflow_modal_event(event, ctx);

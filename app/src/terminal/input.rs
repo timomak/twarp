@@ -791,6 +791,107 @@ enum AIContextMenuSearchableAction {
     },
 }
 
+// twarp: 2c-d — Entity impls for file-local stub types so ModelHandle<T>::as_ref/update typecheck.
+impl Entity for ActiveAgentViewsModel {
+    type Event = ();
+}
+impl Entity for AgentShortcutViewModel {
+    type Event = ();
+}
+impl Entity for EphemeralMessageModel {
+    type Event = ();
+}
+impl Entity for CLISubagentController {
+    type Event = ();
+}
+impl Entity for BlocklistAIStatusBar {
+    type Event = ();
+}
+impl Entity for BlocklistAIActionModel {
+    type Event = ();
+}
+impl Entity for AIExecutionProfilesModel {
+    type Event = ();
+}
+impl Entity for SkillManager {
+    type Event = ();
+}
+impl Entity for CLIAgentInputState {
+    type Event = ();
+}
+impl Entity for CLIAgentSessionsModel {
+    type Event = CLIAgentSessionsModelEvent;
+}
+impl Entity for InlineConversationMenuView {
+    type Event = InlineConversationMenuEvent;
+}
+impl Entity for InlineModelSelectorView {
+    type Event = InlineModelSelectorEvent;
+}
+impl Entity for InlinePlanMenuView {
+    type Event = InlinePlanMenuEvent;
+}
+impl Entity for InlineProfileSelectorView {
+    type Event = InlineProfileSelectorEvent;
+}
+impl Entity for InlinePromptsMenuView {
+    type Event = InlinePromptsMenuEvent;
+}
+impl Entity for InlineReposMenuView {
+    type Event = InlineReposMenuEvent;
+}
+impl Entity for RewindMenuView {
+    type Event = RewindMenuEvent;
+}
+impl Entity for InlineSkillSelectorView {
+    type Event = InlineSkillSelectorEvent;
+}
+impl Entity for UserQueryMenuView {
+    type Event = UserQueryMenuEvent;
+}
+impl Entity for TemplatableMCPServerManager {
+    type Event = ();
+}
+impl Entity for PromptAlertView {
+    type Event = PromptAlertEvent;
+}
+impl Entity for BlocklistAIContextModel {
+    type Event = BlocklistAIContextEvent;
+}
+impl Entity for BlocklistAIController {
+    type Event = BlocklistAIControllerEvent;
+}
+impl Entity for BlocklistAIHistoryModel {
+    type Event = BlocklistAIHistoryEvent;
+}
+impl Entity for BlocklistAIInputModel {
+    type Event = BlocklistAIInputEvent;
+}
+impl Entity for LLMPreferences {
+    type Event = LLMPreferencesEvent;
+}
+impl Entity for AIRequestUsageModel {
+    type Event = ();
+}
+impl Entity for UniversalDeveloperInputButtonBar {
+    type Event = UniversalDeveloperInputButtonBarEvent;
+}
+impl Entity for AmbientAgentViewModel {
+    type Event = ();
+}
+impl Entity for AgentInputFooter {
+    type Event = AgentInputFooterEvent;
+}
+impl Entity for AgentViewController {
+    type Event = AgentViewControllerEvent;
+}
+impl Entity for HarnessSelector {
+    type Event = ();
+}
+impl Entity for HostSelector {
+    type Event = ();
+}
+
 /// Drop target data for dropping content on the [`Input`].
 #[derive(Debug, Clone)]
 pub struct InputDropTargetData {
