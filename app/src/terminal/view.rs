@@ -336,8 +336,34 @@ mod cli_agent {
 
 // twarp: 2c-d — file-local stubs for AI types removed by 2c-d (huge block)
 #[allow(dead_code)] struct AgentViewController;
-#[allow(dead_code)] enum AgentViewControllerEvent {}
-#[allow(dead_code)] enum AgentViewDisplayMode {}
+#[allow(dead_code)]
+impl AgentViewController {
+    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+        unimplemented!()
+    }
+    fn is_active(&self) -> bool { false }
+    fn is_fullscreen(&self) -> bool { false }
+    fn agent_view_state(&self) -> AgentViewState { AgentViewState }
+}
+#[allow(dead_code)]
+struct AgentViewState;
+impl AgentViewState {
+    fn active_conversation_id(&self) -> Option<crate::app_state::AIConversationId> { None }
+    fn is_active(&self) -> bool { false }
+}
+#[allow(dead_code)] enum AgentViewControllerEvent {
+    EnteredAgentView {
+        display_mode: AgentViewDisplayMode,
+        conversation_id: Option<crate::app_state::AIConversationId>,
+        is_new: bool,
+        origin: AgentViewEntryOrigin,
+    },
+    ExitedAgentView {
+        conversation_id: Option<crate::app_state::AIConversationId>,
+    },
+    ExitConfirmed {},
+}
+#[allow(dead_code)] enum AgentViewDisplayMode { Inline, FullScreen }
 #[allow(dead_code)] struct AgentViewEntryBlockParams;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -474,6 +500,12 @@ type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
 #[allow(dead_code)] enum BlocklistAIControllerEvent {}
 #[allow(dead_code)] enum BlocklistAIHistoryEvent {}
 #[allow(dead_code)] struct BlocklistAIHistoryModel;
+#[allow(dead_code)]
+impl BlocklistAIHistoryModel {
+    fn conversation<I>(&self, _: I) -> Option<&AIConversation> { None }
+    fn last_conversation_id(&self, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
+    fn active_conversation(&self, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
+}
 #[allow(dead_code)] enum BlocklistAIInputEvent {}
 #[allow(dead_code)] struct BlocklistAIInputModel;
 #[allow(dead_code)] struct InputConfig;
@@ -641,6 +673,16 @@ impl Entity for AgentModeSetupSpeedbumpBannerState {
 impl Entity for AnonymousUserAISignUpBannerState {
     type Event = ();
 }
+
+// twarp: 2c-d — SingletonEntity impls so SingletonEntity::handle/as_ref(ctx) compile.
+impl SingletonEntity for BlocklistAIHistoryModel {}
+impl SingletonEntity for BlocklistAIController {}
+impl SingletonEntity for AIExecutionProfilesModel {}
+impl SingletonEntity for AIRequestUsageModel {}
+impl SingletonEntity for LLMPreferences {}
+impl SingletonEntity for ApiKeyManager {}
+impl SingletonEntity for CodebaseIndexManager {}
+impl SingletonEntity for AgentConversationsModel {}
 
 use async_channel::{Receiver, Sender};
 use chrono::{DateTime, Local, NaiveDateTime};

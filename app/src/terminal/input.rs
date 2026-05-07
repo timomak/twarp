@@ -435,6 +435,12 @@ struct CLIAgentInputState;
 
 #[allow(dead_code)]
 struct CLIAgentSessionsModel;
+#[allow(dead_code)]
+impl CLIAgentSessionsModel {
+    fn is_input_open(&self, _: warpui::EntityId) -> bool {
+        false
+    }
+}
 impl CLIAgentSessionsModel {
     fn handle<C>(_: &C) -> std::sync::Arc<Self> {
         unimplemented!()
@@ -642,22 +648,44 @@ impl BlocklistAIInputModel {
     fn is_ai_input_enabled(&self) -> bool {
         false
     }
+    fn input_config(&self) -> InputConfig {
+        InputConfig::empty()
+    }
+    fn input_type(&self) -> InputType {
+        InputType::Shell
+    }
+    fn is_input_type_locked(&self) -> bool {
+        false
+    }
+    fn set_input_config<C>(&mut self, _: InputConfig, _: bool, _: &mut C) {}
+    fn set_input_type<C>(&mut self, _: InputType, _: &mut C) {}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
-struct InputConfig;
+struct InputConfig {
+    pub input_type: InputType,
+    pub is_locked: bool,
+}
 impl InputConfig {
     pub fn empty() -> Self {
-        Self
+        Self {
+            input_type: InputType::Shell,
+            is_locked: false,
+        }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 enum InputType {
-    Terminal,
+    Shell,
     AI,
+}
+impl InputType {
+    fn is_ai(&self) -> bool {
+        matches!(self, InputType::AI)
+    }
 }
 
 lazy_static::lazy_static! {
@@ -739,6 +767,9 @@ impl AgentViewController {
         unimplemented!()
     }
     fn is_fullscreen(&self) -> bool {
+        false
+    }
+    fn is_active(&self) -> bool {
         false
     }
 }
@@ -891,6 +922,15 @@ impl Entity for HarnessSelector {
 impl Entity for HostSelector {
     type Event = ();
 }
+
+// twarp: 2c-d — SingletonEntity impls so SingletonEntity::handle/as_ref(ctx) compile.
+impl SingletonEntity for ActiveAgentViewsModel {}
+impl SingletonEntity for AIExecutionProfilesModel {}
+impl SingletonEntity for AIRequestUsageModel {}
+impl SingletonEntity for BlocklistAIHistoryModel {}
+impl SingletonEntity for CLIAgentSessionsModel {}
+impl SingletonEntity for LLMPreferences {}
+impl SingletonEntity for SkillManager {}
 
 /// Drop target data for dropping content on the [`Input`].
 #[derive(Debug, Clone)]
