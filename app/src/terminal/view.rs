@@ -338,6 +338,10 @@ impl UseAgentToolbar {
     fn new<A, B, C, D, E, F, G>(_: A, _: B, _: C, _: D, _: E, _: F, _: &mut G) -> Self {
         unimplemented!()
     }
+    // twarp: 2c-d — bulk stubs
+    fn clear_warpify_mode<C>(&mut self, _: &mut C) {}
+    fn notify_and_notify_children<C>(&mut self, _: &mut C) {}
+    fn set_warpify_mode<A, C>(&mut self, _: A, _: &mut C) {}
 }
 
 // twarp: 2c-d — cli_agent module deleted; alias to satisfy `cli_agent::*` references
@@ -561,6 +565,11 @@ struct CLIAgentSession {
 impl CLIAgentSessionsModel {
     fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSession> { None }
     fn is_input_open(&self, _: warpui::EntityId) -> bool { false }
+    // twarp: 2c-d — bulk stubs
+    fn register_listener<A, C>(&mut self, _: A, _: &mut C) {}
+    fn remove_session<A, C>(&mut self, _: A, _: &mut C) {}
+    fn set_session<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    fn update_from_event<A, C>(&mut self, _: A, _: &mut C) {}
 }
 #[allow(dead_code)] enum CLIAgentSessionsModelEvent {
     Ended { terminal_view_id: warpui::EntityId },
@@ -679,6 +688,11 @@ impl BlocklistAIHistoryModel {
     fn conversation<I>(&self, _: I) -> Option<&AIConversation> { None }
     fn last_conversation_id(&self, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
     fn active_conversation(&self, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
+    // twarp: 2c-d — bulk stubs
+    fn clear_conversations_in_terminal_view<A, C>(&mut self, _: A, _: &mut C) {}
+    fn fork_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    fn truncate_conversation_from_exchange<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    fn update_conversation_status<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
 }
 #[allow(dead_code)] enum BlocklistAIInputEvent {}
 #[allow(dead_code)] struct BlocklistAIInputModel;

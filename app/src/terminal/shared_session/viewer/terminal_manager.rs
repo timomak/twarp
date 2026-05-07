@@ -24,6 +24,14 @@ pub use crate::terminal::shared_session::shared_handlers::{
 pub struct ActiveAgentViewsModel;
 impl warpui::Entity for ActiveAgentViewsModel { type Event = (); }
 impl SingletonEntity for ActiveAgentViewsModel {}
+#[allow(dead_code)]
+impl ActiveAgentViewsModel {
+    // twarp: 2c-d — bulk stubs
+    pub fn register_agent_view_controller<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    pub fn register_ambient_session<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn unregister_agent_view_controller<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn unregister_ambient_session<A, C>(&mut self, _: A, _: &mut C) {}
+}
 pub enum AgentViewControllerEvent { Other }
 pub enum BlocklistAIContextEvent { Other }
 pub enum BlocklistAIHistoryEvent { Other }

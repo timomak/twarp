@@ -17187,6 +17187,10 @@ impl Workspace {
         // Open the URL on desktop. This does nothing if the app isn't installed.
         crate::uri::web_intent_parser::open_url_on_desktop(url);
     }
+    // twarp: 2c-d — bulk stubs
+    fn load_cloud_conversation_into_new_transcript_viewer<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    fn open_cloud_conversation_from_server_token<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    fn open_code_diff<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
 }
 
 impl Entity for Workspace {

@@ -478,6 +478,14 @@ struct InlineModelSelectorView;
 #[allow(dead_code)]
 impl InlineModelSelectorView {
     fn accept_selected_item<C>(&mut self, _: &mut C) {}
+    // twarp: 2c-d — bulk stubs
+    fn filter_results_by_input(&self) -> bool { false }
+    fn select_down<C>(&mut self, _: &mut C) {}
+    fn select_next_tab<C>(&mut self, _: &mut C) {}
+    fn select_up<C>(&mut self, _: &mut C) {}
+    fn set_active_tab<A, C>(&mut self, _: A, _: &mut C) {}
+    fn set_filter_results_by_input<C>(&mut self, _: bool, _: &mut C) {}
+    fn set_include_bundled<C>(&mut self, _: bool, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -553,6 +561,14 @@ struct InlineSkillSelectorView;
 #[allow(dead_code)]
 impl InlineSkillSelectorView {
     fn accept_selected_item<C>(&mut self, _: &mut C) {}
+    // twarp: 2c-d — bulk stubs
+    fn select_down<C>(&mut self, _: &mut C) {}
+    fn select_up<C>(&mut self, _: &mut C) {}
+    fn select_next_tab<C>(&mut self, _: &mut C) {}
+    fn set_active_tab<A, C>(&mut self, _: A, _: &mut C) {}
+    fn set_include_bundled<C>(&mut self, _: bool, _: &mut C) {}
+    fn filter_results_by_input(&self) -> bool { false }
+    fn set_filter_results_by_input<C>(&mut self, _: bool, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
