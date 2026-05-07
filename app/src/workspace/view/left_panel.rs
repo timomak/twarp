@@ -91,7 +91,8 @@ pub enum ToolPanelView {
     ProjectExplorer,
     GlobalSearch { entry_focus: GlobalSearchEntryFocus },
     WarpDrive,
-    // twarp: 2c-d — ConversationListView removed
+    // twarp: 2c-d — variant kept so legacy call-sites compile; AI conversation list deleted.
+    ConversationListView,
 }
 
 /// Encapsulates the active view state to enforce that all mutations go through

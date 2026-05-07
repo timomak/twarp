@@ -13,8 +13,22 @@ use warp_core::settings::{
     macros::define_settings_group, RespectUserSyncSetting, SupportedPlatforms, SyncToCloud,
 };
 
-// twarp: 2c-d — AgentToolbarItemKind deleted; stub.
-pub enum AgentToolbarItemKind { Other }
+// twarp: 2c-d — AgentToolbarItemKind deleted; stub kept so settings call-sites compile.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    schemars::JsonSchema,
+    settings_value::SettingsValue,
+)]
+pub enum AgentToolbarItemKind {
+    ContextChip(crate::context_chips::ContextChipKind),
+    Other,
+}
 use crate::context_chips::prompt::PromptSelection;
 use crate::context_chips::ContextChipKind;
 

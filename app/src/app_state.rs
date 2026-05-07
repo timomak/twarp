@@ -43,6 +43,16 @@ pub enum AgentViewEntryOrigin {
     Input { is_new_conversation: bool },
     ChildAgent,
     Other,
+    // twarp: 2c-d — additional variants kept so legacy call-sites compile.
+    CodeReviewContext,
+    LongRunningCommand,
+    ImageAdded,
+    OnboardingCallout,
+    ProjectEntry,
+    InlineConversationMenu,
+    InlineHistoryMenu,
+    CloudAgent,
+    SlashCommand { name: String },
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct RestoredAIConversation {}

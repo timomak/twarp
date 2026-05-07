@@ -609,6 +609,10 @@ enum BlocklistAIContextEvent {}
 
 #[allow(dead_code)]
 struct BlocklistAIContextModel;
+#[allow(dead_code)]
+impl BlocklistAIContextModel {
+    fn selected_conversation_id<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> { None }
+}
 
 #[allow(dead_code)]
 struct BlocklistAIController;
@@ -659,6 +663,7 @@ impl BlocklistAIInputModel {
     }
     fn set_input_config<C>(&mut self, _: InputConfig, _: bool, _: &mut C) {}
     fn set_input_type<C>(&mut self, _: InputType, _: &mut C) {}
+    fn set_input_config_for_classic_mode<C>(&mut self, _: InputConfig, _: &mut C) {}
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -673,6 +678,9 @@ impl InputConfig {
             input_type: InputType::Shell,
             is_locked: false,
         }
+    }
+    pub fn unlocked_if_autodetection_enabled<C>(self, _: bool, _: &C) -> Self {
+        self
     }
 }
 
@@ -771,6 +779,9 @@ impl AgentViewController {
     }
     fn is_active(&self) -> bool {
         false
+    }
+    fn try_enter_agent_view<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> Result<(), ()> {
+        Ok(())
     }
 }
 
@@ -14424,6 +14435,14 @@ fn maybe_render_ai_input_indicators(
 
 #[cfg(feature = "integration_tests")]
 impl Input {}
+
+// twarp: 2c-d — stub for AI-only cloud mode input v2 helper.
+#[allow(dead_code)]
+impl Input {
+    fn is_cloud_mode_input_v2_composing<C>(&self, _: &C) -> bool {
+        false
+    }
+}
 
 #[cfg(test)]
 impl Input {

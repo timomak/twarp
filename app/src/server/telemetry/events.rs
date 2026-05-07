@@ -99,8 +99,13 @@ use warp_core::interval_timer::TimingDataPoint;
 pub struct AIAgentActionId(pub String);
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AIAgentExchangeId(pub String);
+// twarp: 2c-d — AIIdentifiers shape preserved for telemetry call-sites.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AIIdentifiers(pub String);
+pub struct AIIdentifiers {
+    pub server_output_id: Option<String>,
+    pub server_conversation_id: Option<String>,
+    pub client_exchange_id: Option<String>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum EntrypointType {
     Other,

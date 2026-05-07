@@ -418,8 +418,16 @@ type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
 #[allow(dead_code)] struct CLISubagentView;
 #[allow(dead_code)] enum CLISubagentViewEvent {}
 #[allow(dead_code)] struct CLISubagentController;
+#[allow(dead_code)]
+impl CLISubagentController {
+    fn switch_control_to_user<A, C>(&mut self, _: A, _: &mut C) {}
+}
 #[allow(dead_code)] enum CLISubagentEvent {}
-#[allow(dead_code)] enum UserTakeOverReason {}
+#[allow(dead_code)] enum UserTakeOverReason {
+    Manual,
+    Stop,
+    TransferFromAgent {},
+}
 #[allow(dead_code)] enum BlocklistAIStatusBarEvent { SummarizationCancelDialogToggled { is_open: bool }, Stop }
 #[allow(dead_code)] fn block_context_from_terminal_model() {}
 #[allow(dead_code)] enum SlashCommandRequest {}
@@ -463,10 +471,20 @@ type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
 #[allow(dead_code)] enum CLIAgentInputEntrypoint {}
 #[allow(dead_code)] struct CLIAgentInputState;
 #[allow(dead_code)] enum CLIAgentRichInputCloseReason {}
-#[allow(dead_code)] struct CLIAgentSession;
+#[allow(dead_code)]
+struct CLIAgentSession {
+    pub agent: CLIAgent,
+    pub listener: Option<()>,
+    pub should_auto_toggle_input: bool,
+}
 #[allow(dead_code)] struct CLIAgentSessionContext;
 #[allow(dead_code)] enum CLIAgentSessionStatus {}
 #[allow(dead_code)] struct CLIAgentSessionsModel;
+#[allow(dead_code)]
+impl CLIAgentSessionsModel {
+    fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSession> { None }
+    fn is_input_open(&self, _: warpui::EntityId) -> bool { false }
+}
 #[allow(dead_code)] enum CLIAgentSessionsModelEvent {
     Ended { terminal_view_id: warpui::EntityId },
 }
@@ -3230,6 +3248,16 @@ impl TerminalView {
     /// Returns the path to the current repository, if any.
     pub fn current_repo_path(&self) -> Option<&PathBuf> {
         self.current_repo_path.as_ref()
+    }
+
+    // twarp: 2c-d — AI agent view entry deleted; stub kept so code_review/pane_group call sites compile.
+    #[allow(dead_code)]
+    pub fn enter_agent_view_for_new_conversation<A, B, C>(
+        &mut self,
+        _: A,
+        _: B,
+        _: &mut C,
+    ) {
     }
 
     /// Create a SyncEvent for other terminals to use based on

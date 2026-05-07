@@ -52,6 +52,15 @@ pub struct PendingAttachment;
 pub struct PendingFile { pub file_path: std::path::PathBuf, pub file_name: String, pub mime_type: String }
 pub struct AIContextMenuSearchableAction;
 pub struct AIContextMenu;
+impl warpui::Entity for AIContextMenu {
+    type Event = AIContextMenuEvent;
+}
+impl warpui::View for AIContextMenu {
+    fn ui_name() -> &'static str { "AIContextMenu/twarp-stub" }
+    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+        warpui::elements::Empty::new().finish()
+    }
+}
 pub enum AIContextMenuCategory { Other }
 pub enum AIContextMenuEvent { Other }
 use crate::appearance::Appearance;
