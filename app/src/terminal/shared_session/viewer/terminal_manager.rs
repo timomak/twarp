@@ -49,8 +49,13 @@ use crate::terminal::PTY_READS_BROADCAST_CHANNEL_SIZE;
 use crate::terminal::session_settings::SessionSettings;
 
 // twarp: 2c-d — cli agent sessions deleted; stubs.
-pub struct CLIAgentInputState;
+pub enum CLIAgentInputState {
+    Open {},
+    Closed,
+}
 pub struct CLIAgentSessionsModel;
+impl warpui::Entity for CLIAgentSessionsModel { type Event = CLIAgentSessionsModelEvent; }
+impl SingletonEntity for CLIAgentSessionsModel {}
 pub enum CLIAgentSessionsModelEvent { Other }
 use crate::terminal::shared_session::manager::Manager;
 use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;

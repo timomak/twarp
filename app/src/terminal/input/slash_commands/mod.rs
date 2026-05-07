@@ -18,7 +18,12 @@ pub enum DismissalStrategy { Other }
 pub struct EphemeralMessage;
 pub const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration = std::time::Duration::from_secs(0);
 pub struct BlocklistAIHistoryModel;
-pub struct SlashCommandRequest;
+pub enum SlashCommandRequest {
+    FetchReviewComments {
+        repo_path: std::path::PathBuf,
+    },
+    Other,
+}
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::search::slash_command_menu::static_commands::commands::{self, COMMAND_REGISTRY};

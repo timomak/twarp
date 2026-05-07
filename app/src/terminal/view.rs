@@ -571,7 +571,10 @@ impl ConversationStatus {
 #[allow(dead_code)] enum AIAgentOutputStatus {}
 #[allow(dead_code)] enum AIAgentTextSection {}
 #[allow(dead_code)] enum EntrypointType {}
-#[allow(dead_code)] struct FinishedAIAgentOutput;
+#[allow(dead_code)] enum FinishedAIAgentOutput {
+    Success { output: () },
+    Error {},
+}
 #[allow(dead_code)] enum RenderableAIError {}
 #[allow(dead_code)] enum StaticQueryType {}
 #[allow(dead_code)] enum AgentToolbarItemKind {}

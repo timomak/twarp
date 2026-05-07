@@ -33,15 +33,29 @@ impl InputConfig {
     pub fn new<C>(_: &C) -> Self { Self {} }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SerializedBlockListItem {}
+pub enum SerializedBlockListItem {
+    Command { block: SerializedBlockStub },
+}
+// twarp: 2c-d — opaque stub for serialized command block.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+pub struct SerializedBlockStub {
+    pub start_ts: Option<chrono::DateTime<chrono::Local>>,
+    pub completed_ts: Option<chrono::DateTime<chrono::Local>>,
+}
 #[allow(dead_code)]
 impl SerializedBlockListItem {
-    pub fn start_ts(&self) -> Option<chrono::DateTime<chrono::Local>> { None }
+    pub fn start_ts(&self) -> Option<chrono::DateTime<chrono::Local>> {
+        match self {
+            SerializedBlockListItem::Command { block } => block.start_ts,
+        }
+    }
 }
 // twarp: 2c-d — From<persistence::model::Block> kept so persisted pane decoders compile.
 impl From<crate::persistence::model::Block> for SerializedBlockListItem {
     fn from(_: crate::persistence::model::Block) -> Self {
-        Self {}
+        Self::Command {
+            block: SerializedBlockStub::default(),
+        }
     }
 }
 
