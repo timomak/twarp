@@ -343,7 +343,14 @@ impl EphemeralMessageModel {
 }
 
 #[allow(dead_code)]
-struct CLISubagentController;
+pub struct CLISubagentController;
+#[allow(dead_code)]
+pub enum CLISubagentEvent {
+    Other,
+    SpawnedSubagent,
+    FinishedSubagent,
+    UpdatedControl,
+}
 
 #[allow(dead_code)]
 struct BlocklistAIStatusBar;
@@ -1158,7 +1165,7 @@ impl Entity for EphemeralMessageModel {
     type Event = ();
 }
 impl Entity for CLISubagentController {
-    type Event = ();
+    type Event = CLISubagentEvent;
 }
 impl Entity for BlocklistAIStatusBar {
     type Event = ();

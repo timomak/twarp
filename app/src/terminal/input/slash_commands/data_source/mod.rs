@@ -63,9 +63,7 @@ pub enum CLIAgentSessionsModelEvent {
     InputSessionChanged { terminal_view_id: warpui::EntityId },
     Other,
 }
-pub use crate::terminal::input::AgentViewControllerEvent;
-pub struct CLISubagentController;
-pub enum CLISubagentEvent { Other }
+pub use crate::terminal::input::{AgentViewControllerEvent, CLISubagentController, CLISubagentEvent};
 
 use super::AcceptSlashCommandOrSavedPrompt;
 use crate::{

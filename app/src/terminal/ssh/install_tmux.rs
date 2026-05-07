@@ -11,10 +11,12 @@ pub const ESCAPE_KEYSTROKE: Keystroke = Keystroke {
 pub mod requested_script {
     use warpui::elements::Empty;
     use warpui::Element;
+    #[derive(Default)]
     pub struct RequestedScriptMouseStates;
-    #[derive(Clone)]
+    #[derive(Clone, PartialEq, Eq)]
     pub enum RequestedScriptStatus {
         WaitingForUser,
+        Running,
         Other,
     }
     pub struct TitledScript {
@@ -291,16 +293,16 @@ impl SshInstallTmuxBlock {
             self.script_status.clone(),
             self.is_collapsed,
             self.show_tmux_install_block,
-            move |ctx, _, _| ctx.dispatch_typed_action(SshInstallTmuxBlockAction::ToggleVisibility),
-            |ctx| ctx.dispatch_typed_action(SshInstallTmuxBlockAction::InstallTmux),
-            |ctx| ctx.dispatch_typed_action(SshInstallTmuxBlockAction::Cancel),
+            move |ctx: &mut warpui::ViewContext<Self>, _: (), _: ()| ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::ToggleVisibility),
+            |ctx: &mut warpui::ViewContext<Self>| ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::InstallTmux),
+            |ctx: &mut warpui::ViewContext<Self>| ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::Cancel),
             &ENTER_KEYSTROKE,
             &ESCAPE_KEYSTROKE,
             &self.requested_script_mouse_states,
             toggle_menu_mouse_states.clone(),
             toggle_menu_state_handle.clone(),
-            Rc::new(move |ctx, _, _| {
-                ctx.dispatch_typed_action(SshInstallTmuxBlockAction::OnToggleInstallScriptChoice)
+            Rc::new(move |ctx: &mut warpui::ViewContext<Self>, _: (), _: ()| {
+                ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::OnToggleInstallScriptChoice)
             }),
             self.is_focused,
             380.,
@@ -322,9 +324,9 @@ impl SshInstallTmuxBlock {
             self.script_status.clone(),
             self.is_collapsed,
             self.show_tmux_install_block,
-            move |ctx, _, _| ctx.dispatch_typed_action(SshInstallTmuxBlockAction::ToggleVisibility),
-            |ctx| ctx.dispatch_typed_action(SshInstallTmuxBlockAction::InstallTmux),
-            |ctx| ctx.dispatch_typed_action(SshInstallTmuxBlockAction::Cancel),
+            move |ctx: &mut warpui::ViewContext<Self>, _: (), _: ()| ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::ToggleVisibility),
+            |ctx: &mut warpui::ViewContext<Self>| ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::InstallTmux),
+            |ctx: &mut warpui::ViewContext<Self>| ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::Cancel),
             &ENTER_KEYSTROKE,
             &ESCAPE_KEYSTROKE,
             &self.requested_script_mouse_states,
