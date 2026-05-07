@@ -305,6 +305,8 @@ mod ambient_agent {
         pub fn has_parent_terminal(&self) -> bool { false }
         pub fn task_id(&self) -> Option<crate::app_state::AmbientAgentTaskId> { None }
         pub fn should_show_status_footer(&self) -> bool { false }
+        pub fn agent_progress(&self) -> Option<()> { None }
+        pub fn cancel_task<C>(&mut self, _: &mut C) {}
     }
     impl Entity for AmbientAgentViewModel {
         type Event = ();
@@ -8951,7 +8953,7 @@ impl TerminalView {
         let trigger = banner_state.trigger.clone();
         let should_start_new_conversation = suggestion.should_start_new_conversation;
         let conversation_id = banner_state.conversation_id;
-        let trigger_block_id = trigger.as_ref().and_then(|t| t.block_id());
+        let trigger_block_id: Option<()> = trigger.as_ref().and_then(|t| t.block_id());
         log::debug!(
             "[passive-suggestions] accepting prompt suggestion: trigger={}, trigger_block_id={}",
             if trigger.is_some() { "Some" } else { "None" },

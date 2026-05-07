@@ -467,6 +467,10 @@ enum PluginModalKind {}
 
 #[allow(dead_code)]
 struct InlineConversationMenuView;
+#[allow(dead_code)]
+impl InlineConversationMenuView {
+    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+}
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum InlineConversationMenuEvent {
@@ -486,6 +490,10 @@ struct ConversationNavigationData {
 
 #[allow(dead_code)]
 struct InlineModelSelectorView;
+#[allow(dead_code)]
+impl InlineModelSelectorView {
+    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+}
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum InlineModelSelectorEvent {
@@ -504,24 +512,40 @@ enum InlineModelSelectorTab {
 
 #[allow(dead_code)]
 struct InlinePlanMenuView;
+#[allow(dead_code)]
+impl InlinePlanMenuView {
+    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+}
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum InlinePlanMenuEvent {}
 
 #[allow(dead_code)]
 struct InlineProfileSelectorView;
+#[allow(dead_code)]
+impl InlineProfileSelectorView {
+    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+}
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum InlineProfileSelectorEvent {}
 
 #[allow(dead_code)]
 struct InlinePromptsMenuView;
+#[allow(dead_code)]
+impl InlinePromptsMenuView {
+    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+}
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum InlinePromptsMenuEvent {}
 
 #[allow(dead_code)]
 struct InlineReposMenuView;
+#[allow(dead_code)]
+impl InlineReposMenuView {
+    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+}
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum InlineReposMenuEvent {
@@ -531,18 +555,30 @@ enum InlineReposMenuEvent {
 
 #[allow(dead_code)]
 struct RewindMenuView;
+#[allow(dead_code)]
+impl RewindMenuView {
+    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+}
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum RewindMenuEvent {}
 
 #[allow(dead_code)]
 struct InlineSkillSelectorView;
+#[allow(dead_code)]
+impl InlineSkillSelectorView {
+    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+}
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum InlineSkillSelectorEvent {}
 
 #[allow(dead_code)]
 struct UserQueryMenuView;
+#[allow(dead_code)]
+impl UserQueryMenuView {
+    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+}
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum UserQueryMenuEvent {}
@@ -774,6 +810,8 @@ impl AmbientAgentViewModel {
     pub fn is_configuring_ambient_agent(&self) -> bool {
         false
     }
+    pub fn agent_progress(&self) -> Option<()> { None }
+    pub fn cancel_task<C>(&mut self, _: &mut C) {}
 }
 
 #[allow(dead_code)]
