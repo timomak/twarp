@@ -275,7 +275,10 @@ struct AgentModeSetupSpeedbumpBannerState {
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum AgentModeSetupSpeedbumpBannerAction {}
+pub enum AgentModeSetupSpeedbumpBannerAction {
+    Close,
+    SetupAgentMode,
+}
 #[allow(dead_code)]
 fn render_agent_mode_setup_banner<A, B>(_: A, _: B) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
 
@@ -288,7 +291,10 @@ impl AnonymousUserAISignUpBannerState {
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum AnonymousUserLoginBannerAction {}
+pub enum AnonymousUserLoginBannerAction {
+    Close,
+    SignUp,
+}
 
 // twarp: 2c-d — InsertReviewComment was ai::agent::action; stub for type slot
 #[allow(dead_code)]
@@ -540,7 +546,8 @@ impl PassiveSuggestionTrigger {
     CopyQuery(()),
 }
 #[allow(dead_code)] enum FinishReason {}
-#[allow(dead_code)] enum CodebaseIndexSpeedbumpBannerAction {
+#[derive(Debug, Clone)]
+#[allow(dead_code)] pub enum CodebaseIndexSpeedbumpBannerAction {
     // twarp: 2c-d — bulk variants for AI-removed CodebaseIndexSpeedbumpBannerAction
     AllowIndexing,
     Close,

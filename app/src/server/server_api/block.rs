@@ -1,8 +1,7 @@
 use super::auth::AuthClient;
 use super::ServerApi;
-// twarp: 2c-d — AI generate_block_title deleted; stubs.
-#[derive(serde::Serialize, serde::Deserialize)]
-pub struct GenerateBlockTitleRequest;
+// twarp: 2c-d — AI generate_block_title deleted; re-export for type unification.
+pub use crate::terminal::share_block_modal::GenerateBlockTitleRequest;
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 pub struct GenerateBlockTitleResponse {
     // twarp: 2c-d — fields used by callers

@@ -8,7 +8,7 @@
 
 // twarp: 2c-d — AI conversation / agent_view / blocklist deleted; stubs.
 use crate::app_state::{AIConversationId, ConversationStatus};
-pub struct AgentViewController;
+pub use crate::terminal::input::AgentViewController;
 pub struct BlocklistAIHistoryModel;
 use crate::input_suggestions::{HistoryInputSuggestion, HistoryOrder};
 use crate::search::data_source::{Query, QueryFilter, QueryResult};

@@ -9,11 +9,7 @@ pub struct AgentMessageBarMouseStates {
     // twarp: 2c-d — fields used by callers
     pub clear_attached_context: warpui::elements::MouseStateHandle,
 }
-pub struct AgentViewController;
-#[allow(dead_code)]
-impl AgentViewController {
-    pub fn is_active(&self) -> bool { false }
-}
+pub use crate::terminal::input::AgentViewController;
 pub struct BlocklistAIContextModel;
 #[allow(dead_code)]
 impl BlocklistAIContextModel {

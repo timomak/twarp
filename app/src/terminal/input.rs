@@ -1054,29 +1054,30 @@ enum AgentInputFooterEvent {
 #[allow(dead_code)]
 pub struct AgentViewController;
 impl AgentViewController {
-    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+    pub fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
         unimplemented!()
     }
-    fn is_fullscreen(&self) -> bool {
+    pub fn is_fullscreen(&self) -> bool {
         false
     }
-    fn is_active(&self) -> bool {
+    pub fn is_active(&self) -> bool {
         false
     }
-    fn try_enter_agent_view<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> Result<(), ()> {
+    pub fn try_enter_agent_view<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> Result<(), ()> {
         Ok(())
     }
     // twarp: 2c-d — bulk stubs
-    fn should_start_new_conversation_for_keybinding<C>(&mut self, _: &mut C) -> bool { false }
-    fn agent_view_state(&self) -> crate::terminal::model::block::AgentViewState { crate::terminal::model::block::AgentViewState::Inactive }
+    pub fn should_start_new_conversation_for_keybinding<C>(&mut self, _: &mut C) -> bool { false }
+    pub fn agent_view_state(&self) -> crate::terminal::model::block::AgentViewState { crate::terminal::model::block::AgentViewState::Inactive }
 }
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum AgentViewControllerEvent {
+pub enum AgentViewControllerEvent {
     EnteredAgentView {
         origin: AgentViewEntryOrigin,
     },
+    Other,
 }
 
 #[allow(dead_code)]
@@ -1100,24 +1101,8 @@ impl HostSelector {
 #[allow(dead_code)]
 struct NakedHeaderButtonTheme;
 
-#[allow(dead_code)]
-enum AIContextMenuSearchableAction {
-    InsertText {
-        text: String,
-    },
-    InsertFilePath {
-        file_path: std::path::PathBuf,
-    },
-    InsertDriveObject {
-        // twarp: 2c-d — fields elided; AI deleted
-    },
-    InsertPlan {
-        ai_document_uid: crate::app_state::AIDocumentId,
-    },
-    InsertConversation {
-        conversation_id: crate::app_state::AIConversationId,
-    },
-}
+// twarp: 2c-d — re-exported from editor::view for type unification.
+use crate::editor::view::AIContextMenuSearchableAction;
 
 // twarp: 2c-d — Entity impls for file-local stub types so ModelHandle<T>::as_ref/update typecheck.
 impl Entity for ActiveAgentViewsModel {

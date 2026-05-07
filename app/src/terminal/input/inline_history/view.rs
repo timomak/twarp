@@ -9,9 +9,8 @@ use warpui::elements::ChildView;
 use warpui::{AppContext, Element, Entity, EntityId, ModelHandle, View, ViewContext, ViewHandle};
 
 use crate::app_state::AIConversationId;
-// twarp: 2c-d — AI agent view deleted; stubs.
-pub struct AgentViewController;
-pub enum AgentViewControllerEvent { Other }
+// twarp: 2c-d — AI agent view deleted; re-export from input.
+pub use crate::terminal::input::{AgentViewController, AgentViewControllerEvent};
 use crate::features::FeatureFlag;
 use crate::search::data_source::{Query, QueryFilter};
 use crate::search::mixer::{SearchMixer, SearchMixerEvent};

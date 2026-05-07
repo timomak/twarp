@@ -13,13 +13,8 @@ use warpui::{AppContext, ModelHandle, WeakViewHandle};
 
 use crate::terminal::TerminalView;
 
-/// Stub for the deleted `AgentViewController` so callers can pass a model handle.
-pub struct AgentViewController;
-impl warpui::Entity for AgentViewController { type Event = (); }
-#[allow(dead_code)]
-impl AgentViewController {
-    pub fn is_active(&self) -> bool { false }
-}
+// twarp: 2c-d — AgentViewController re-exported from input for type unification.
+pub use crate::terminal::input::AgentViewController;
 /// Stub for the deleted `BlocklistAIContextModel` so callers can pass a model handle.
 pub struct BlocklistAIContextModel;
 impl warpui::Entity for BlocklistAIContextModel { type Event = (); }

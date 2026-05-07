@@ -4,9 +4,8 @@ use warpui::prelude::Container;
 use warpui::scene::Border;
 use warpui::{AppContext, Entity, ModelHandle, SingletonEntity, View, ViewContext};
 
-// twarp: 2c-d — AI agent view deleted; stubs.
-pub struct AgentViewController;
-pub enum AgentViewControllerEvent { Other }
+// twarp: 2c-d — AI agent view deleted; re-export from input.
+pub use crate::terminal::input::{AgentViewController, AgentViewControllerEvent};
 use crate::terminal::input::inline_menu::model::InlineMenuModel;
 use crate::terminal::input::inline_menu::{
     InlineMenuAction, InlineMenuMessageProvider, InlineMenuPositioner,

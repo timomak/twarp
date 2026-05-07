@@ -18,8 +18,8 @@ use crate::terminal::input::{
     message_bar::common::standard_message_bar_height,
 };
 
-// twarp: 2c-d — AgentViewController deleted; stub.
-pub struct AgentViewController;
+// twarp: 2c-d — AgentViewController deleted; re-export from input.
+pub use crate::terminal::input::AgentViewController;
 use crate::{
     appearance::Appearance,
     settings::InputModeSettings,

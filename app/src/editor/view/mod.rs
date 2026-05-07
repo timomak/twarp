@@ -57,7 +57,34 @@ impl BlocklistAIContextModel {
 }
 pub struct PendingAttachment;
 pub struct PendingFile { pub file_path: std::path::PathBuf, pub file_name: String, pub mime_type: String }
-pub struct AIContextMenuSearchableAction;
+// twarp: 2c-d — full enum with variants used by callers in terminal::input
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum AIContextMenuSearchableAction {
+    InsertText {
+        text: String,
+    },
+    InsertFilePath {
+        file_path: std::path::PathBuf,
+    },
+    InsertDriveObject {
+        // twarp: 2c-d — fields elided; AI deleted
+        object_type: String,
+        object_uid: String,
+    },
+    InsertPlan {
+        ai_document_uid: crate::app_state::AIDocumentId,
+    },
+    InsertConversation {
+        conversation_id: crate::app_state::AIConversationId,
+    },
+    InsertDiffSet {
+        diff_mode: (),
+    },
+    InsertSkill {
+        name: String,
+    },
+}
 pub struct AIContextMenu;
 #[allow(dead_code)]
 impl AIContextMenu {

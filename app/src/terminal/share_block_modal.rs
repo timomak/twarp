@@ -26,7 +26,7 @@ use crate::{
 use super::grid_renderer::CellGlyphCache;
 use super::model::grid::RespectDisplayedOutput;
 // twarp: 2c-d — generate_block_title deleted; stub.
-#[derive(Default)]
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 pub struct GenerateBlockTitleRequest {
     // twarp: 2c-d — fields used by callers
     pub command: String,

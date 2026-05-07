@@ -6,8 +6,8 @@ use warpui::elements::ChildView;
 use warpui::{AppContext, Element, ViewContext};
 use warpui::{Entity, ModelHandle, View, ViewHandle};
 
-// twarp: 2c-d — AgentViewController deleted; stub.
-pub struct AgentViewController;
+// twarp: 2c-d — AgentViewController deleted; re-export from input.
+pub use crate::terminal::input::AgentViewController;
 use crate::search::data_source::{Query, QueryFilter};
 use crate::search::mixer::{AddAsyncSourceOptions, SearchMixer};
 use crate::search::slash_command_menu::SlashCommandId;
