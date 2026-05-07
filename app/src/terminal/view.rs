@@ -467,7 +467,7 @@ impl CLISubagentView {
 impl UserTakeOverReason {
     fn is_stop(&self) -> bool { matches!(self, UserTakeOverReason::Stop) }
 }
-#[allow(dead_code)] enum BlocklistAIStatusBarEvent { SummarizationCancelDialogToggled { is_open: bool }, Stop }
+#[allow(dead_code)] pub enum BlocklistAIStatusBarEvent { SummarizationCancelDialogToggled { is_open: bool }, Stop }
 #[allow(dead_code)] fn block_context_from_terminal_model<A, B, C>(_: A, _: B, _: C) -> Option<()> { None }
 #[allow(dead_code)] enum SlashCommandRequest {}
 #[allow(dead_code)] type AIDocumentId = crate::app_state::AIDocumentId;
@@ -637,6 +637,10 @@ impl AIConversation {
     fn status(&self) -> ConversationStatus { ConversationStatus::Other }
     fn is_entirely_passive(&self) -> bool { false }
     // twarp: 2c-d — bulk stubs
+    fn id(&self) -> AIConversationId { AIConversationId::default() }
+    fn is_child_agent_conversation(&self) -> bool { false }
+    fn is_empty(&self) -> bool { true }
+    fn exchange_count(&self) -> usize { 0 }
     fn exchange_id_for_action(&self, _: ()) -> Option<()> { None }
     fn exchanges_reversed(&self) -> std::iter::Empty<()> { std::iter::empty() }
     fn forked_from_server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
@@ -843,6 +847,7 @@ impl CodebaseIndexManager {
 impl OnboardingAgenticSuggestionsBlock {
     fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self { Self }
     fn interrupt_block<C>(&mut self, _: &mut C) {}
+    fn handle_key_pressed<A, C>(&mut self, _: A, _: &mut C) {}
 }
 #[allow(dead_code)] enum OnboardingAgenticSuggestionsBlockEvent {}
 #[allow(dead_code)] enum OnboardingChipType {}
@@ -7508,8 +7513,8 @@ impl TerminalView {
             let status = conversation.status();
             // Additionally check if the conversation is empty, since the default status for a new
             // conversation is `InProgress`, but you should be able to exit an empty conversation.
-            // twarp: 2c-d — status is Option, unwrap or false
-            if (status.as_ref().is_some_and(|s| s.is_in_progress()) || status.as_ref().is_some_and(|s| s.is_blocked())) && !is_new_empty_conversation {
+            // twarp: 2c-d — status is ConversationStatus directly
+            if (status.is_in_progress() || status.is_blocked()) && !is_new_empty_conversation {
                 return false;
             }
         }
@@ -7551,7 +7556,7 @@ impl TerminalView {
             self.cancel_active_conversation_via_status_bar(ctx);
         } else if BlocklistAIHistoryModel::as_ref(ctx)
             .active_conversation(self.view_id)
-            .is_some_and(|c| c.status().as_ref().is_some_and(|s| s.is_in_progress()))
+            .is_some_and(|c| c.status().is_in_progress())
         {
             // No unfinished AI block, but the conversation is still in progress.
             // This happens when a server-side subagent (e.g., conversation search)

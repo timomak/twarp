@@ -19,7 +19,7 @@ pub use crate::terminal::input::AgentViewController;
 pub use crate::terminal::input::BlocklistAIContextModel;
 /// Stub for the deleted `BlocklistAIHistoryModel`.
 pub struct BlocklistAIHistoryModel;
-impl warpui::Entity for BlocklistAIHistoryModel { type Event = (); }
+impl warpui::Entity for BlocklistAIHistoryModel { type Event = crate::terminal::input::BlocklistAIHistoryEvent; }
 impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {

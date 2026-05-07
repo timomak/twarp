@@ -48,12 +48,12 @@ pub use crate::code_review::comments::comment::{CurrentHead, DiffBase};
 pub enum AIAgentAttachment {
     DiffHunk {
         file_path: String,
-        line_range: std::ops::Range<usize>,
+        line_range: std::ops::Range<warp_editor::render::model::LineCount>,
         diff_content: String,
-        lines_added: usize,
-        lines_removed: usize,
-        current: Option<String>,
-        base: Option<String>,
+        lines_added: u32,
+        lines_removed: u32,
+        current: Option<CurrentHead>,
+        base: DiffBase,
     },
     DiffSet {
         file_diffs: std::collections::HashMap<String, Vec<DiffSetHunk>>,

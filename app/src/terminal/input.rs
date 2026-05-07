@@ -670,7 +670,7 @@ struct AttachmentInput {
     // twarp: 2c-d — extra fields used by callers
     pub mime_type: Option<String>,
     pub file_name: String,
-    pub data: Vec<u8>,
+    pub data: String,
 }
 
 // twarp: 2c-d — stub for pending_files entries
@@ -1197,7 +1197,7 @@ impl Entity for CLISubagentController {
     type Event = CLISubagentEvent;
 }
 impl Entity for BlocklistAIStatusBar {
-    type Event = ();
+    type Event = crate::terminal::view::BlocklistAIStatusBarEvent;
 }
 impl Entity for BlocklistAIActionModel {
     type Event = ();
