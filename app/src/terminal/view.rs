@@ -440,6 +440,10 @@ impl CLISubagentController {
 #[allow(dead_code)] fn shimmering_warp_loading_text() {}
 
 #[allow(dead_code)] struct ServerConversationToken;
+#[allow(dead_code)]
+impl ServerConversationToken {
+    fn as_str(&self) -> &str { "" }
+}
 #[allow(dead_code)] fn redact_secrets() {}
 #[allow(dead_code)] enum AgentTodosPopupEvent {}
 #[allow(dead_code)] struct AgentTodosPopupView;
@@ -537,11 +541,21 @@ impl ConversationStatus {
 #[allow(dead_code)] fn should_collect_ai_ugc_telemetry<C>(_: &C) -> bool { false }
 #[allow(dead_code)] struct TelemetryBanner;
 #[allow(dead_code)] struct AIBlock;
+#[allow(dead_code)]
+impl AIBlock {
+    fn conversation_id(&self) -> AIConversationId { unimplemented!() }
+    fn server_output_id<C>(&self, _: &C) -> Option<()> { None }
+    fn handle_action<A, C>(&mut self, _: A, _: &mut C) {}
+}
 #[allow(dead_code)] enum AIBlockEvent {}
 #[allow(dead_code)] enum BlocklistAIActionEvent {}
 #[allow(dead_code)] struct BlocklistAIActionModel;
 #[allow(dead_code)] enum BlocklistAIContextEvent {}
 #[allow(dead_code)] struct BlocklistAIContextModel;
+#[allow(dead_code)]
+impl BlocklistAIContextModel {
+    fn selected_conversation<C>(&self, _: &C) -> Option<()> { None }
+}
 #[allow(dead_code)] struct BlocklistAIController;
 #[allow(dead_code)] enum BlocklistAIControllerEvent {}
 #[allow(dead_code)] enum BlocklistAIHistoryEvent {}
@@ -3275,6 +3289,12 @@ impl TerminalView {
         _: &mut C,
     ) {
     }
+
+    // twarp: 2c-d — AI agent footer / CLI input session helpers deleted; stubs.
+    #[allow(dead_code)]
+    fn has_active_cli_agent_input_session<C>(&self, _: &C) -> bool { false }
+    #[allow(dead_code)]
+    fn maybe_show_use_agent_footer_in_blocklist<C>(&mut self, _: &mut C) {}
 
     /// Create a SyncEvent for other terminals to use based on
     /// the state of this terminal. If this terminal view has an active input

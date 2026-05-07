@@ -18,10 +18,14 @@ use warpui::elements::{
 use warpui::fonts::Weight;
 use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::{Coords, UiComponent as _, UiComponentStyles};
-use warpui::{AppContext, Element, Entity, SingletonEntity as _, View, ViewContext, ViewHandle};
+use warpui::{AppContext, Element, Entity, SingletonEntity, View, ViewContext, ViewHandle};
 
 // twarp: 2c-d — AI request usage deleted; stubs.
 pub struct AIRequestUsageModel;
+impl Entity for AIRequestUsageModel {
+    type Event = AIRequestUsageModelEvent;
+}
+impl SingletonEntity for AIRequestUsageModel {}
 pub enum AIRequestUsageModelEvent { Other }
 pub enum BuyCreditsBannerDisplayState { Other }
 use crate::auth::AuthStateProvider;

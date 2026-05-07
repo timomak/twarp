@@ -21,8 +21,11 @@ use crate::app_state::CLIAgent;
 
 pub fn render_code_block_plain() -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
 pub struct CodeBlockOptions;
+#[derive(Default)]
 pub struct CodeSnippetButtonHandles;
-pub struct PluginInstructions;
+pub struct PluginInstructions {
+    pub steps: Vec<()>,
+}
 use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ActionButton, ButtonSize, NakedTheme};
 use crate::view_components::DismissibleToast;

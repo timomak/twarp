@@ -6,6 +6,10 @@ use warpui::keymap::Keystroke;
 // twarp: 2c-d — AI agent view / blocklist deleted; stubs.
 pub struct AgentMessageBarMouseStates;
 pub struct AgentViewController;
+#[allow(dead_code)]
+impl AgentViewController {
+    pub fn is_active(&self) -> bool { false }
+}
 pub struct BlocklistAIContextModel;
 pub struct BlocklistAIInputModel;
 use crate::terminal::input::buffer_model::InputBufferModel;

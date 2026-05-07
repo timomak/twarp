@@ -369,6 +369,9 @@ enum SlashCommandRequest {
         skill: (),
         user_query: Option<String>,
     },
+    CloneRepository {
+        url: String,
+    },
 }
 
 #[allow(dead_code)]
@@ -621,6 +624,11 @@ impl BlocklistAIContextModel {
 
 #[allow(dead_code)]
 struct BlocklistAIController;
+#[allow(dead_code)]
+impl BlocklistAIController {
+    fn send_slash_command_request<R, C>(&mut self, _: R, _: &mut C) {}
+    fn cancel_conversation_progress<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+}
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -639,6 +647,23 @@ impl BlocklistAIHistoryModel {
     fn as_ref<C>(_: &C) -> &Self {
         unimplemented!()
     }
+    fn active_conversation(&self, _: warpui::EntityId) -> Option<AIConversationStub> { None }
+}
+
+// twarp: 2c-d — local AIConversation-like stub used by input.rs.
+#[allow(dead_code)]
+struct AIConversationStub;
+#[allow(dead_code)]
+impl AIConversationStub {
+    fn id(&self) -> AIConversationId { unimplemented!() }
+    fn title(&self) -> Option<String> { None }
+    fn status(&self) -> AIConversationStatusStub { AIConversationStatusStub }
+}
+#[allow(dead_code)]
+struct AIConversationStatusStub;
+#[allow(dead_code)]
+impl AIConversationStatusStub {
+    fn is_in_progress(&self) -> bool { false }
 }
 
 #[derive(Debug, Clone)]

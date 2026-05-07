@@ -52,6 +52,10 @@ pub struct PendingAttachment;
 pub struct PendingFile { pub file_path: std::path::PathBuf, pub file_name: String, pub mime_type: String }
 pub struct AIContextMenuSearchableAction;
 pub struct AIContextMenu;
+#[allow(dead_code)]
+impl AIContextMenu {
+    pub fn select_current_item<C>(&mut self, _: &mut C) {}
+}
 impl warpui::Entity for AIContextMenu {
     type Event = AIContextMenuEvent;
 }

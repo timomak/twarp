@@ -15,6 +15,10 @@ use super::message_bar::{
 // twarp: 2c-d — AI blocklist deleted; stubs.
 pub enum BlocklistAIContextEvent { Other }
 pub struct BlocklistAIContextModel;
+#[allow(dead_code)]
+impl BlocklistAIContextModel {
+    pub fn pending_context_block_ids(&self) -> Vec<()> { Vec::new() }
+}
 pub struct BlocklistAIInputModel;
 use crate::appearance::Appearance;
 use crate::search::slash_command_menu::static_commands::commands;

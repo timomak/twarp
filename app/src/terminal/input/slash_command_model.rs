@@ -6,7 +6,15 @@ use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 // twarp: 2c-d — AI blocklist / skills deleted; stubs.
 pub enum BlocklistAIInputEvent { Other }
 pub struct BlocklistAIInputModel;
+impl Entity for BlocklistAIInputModel {
+    type Event = BlocklistAIInputEvent;
+}
+impl SingletonEntity for BlocklistAIInputModel {}
 pub struct SkillManager;
+impl Entity for SkillManager {
+    type Event = ();
+}
+impl SingletonEntity for SkillManager {}
 use crate::search::slash_command_menu::StaticCommand;
 use crate::settings::InputSettings;
 use crate::terminal::input::buffer_model::{InputBufferModel, InputBufferUpdateEvent};
