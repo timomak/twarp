@@ -5,7 +5,12 @@ use warpui::{
 };
 
 // twarp: 2c-d — AI facts deleted; stubs.
-pub struct AIFactPage;
+#[derive(Debug, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum AIFactPage {
+    RuleEditor { sync_id: Option<crate::server::ids::SyncId> },
+    Other,
+}
 pub struct CloudAIFactModel;
 use crate::{
     cloud_object::model::{generic_string_model::GenericStringObjectId, persistence::CloudModel},

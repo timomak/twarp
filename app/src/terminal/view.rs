@@ -516,7 +516,10 @@ impl ConversationStatus {
 }
 // twarp: 2c-d — ConversationStatus stub now lives above as a struct.
 #[allow(dead_code)] enum UserQueryMode {}
-#[allow(dead_code)] enum AIAgentActionType {}
+#[allow(dead_code)] enum AIAgentActionType {
+    CreateDocuments(()),
+    EditDocuments(()),
+}
 #[allow(dead_code)] enum AIAgentOutputStatus {}
 #[allow(dead_code)] enum AIAgentTextSection {}
 #[allow(dead_code)] enum EntrypointType {}
@@ -552,6 +555,10 @@ impl AIBlock {
 #[allow(dead_code)] enum AIBlockEvent {}
 #[allow(dead_code)] enum BlocklistAIActionEvent {}
 #[allow(dead_code)] struct BlocklistAIActionModel;
+#[allow(dead_code)]
+impl BlocklistAIActionModel {
+    fn shell_command_executor<C>(&self, _: &C) -> ModelHandle<ShellCommandExecutor> { unimplemented!() }
+}
 #[allow(dead_code)] enum BlocklistAIContextEvent {}
 #[allow(dead_code)] struct BlocklistAIContextModel;
 #[allow(dead_code)]
@@ -594,6 +601,10 @@ impl InputType {
 }
 #[allow(dead_code)] enum PendingQueryState {}
 #[allow(dead_code)] struct ShellCommandExecutor;
+#[allow(dead_code)]
+impl ShellCommandExecutor {
+    fn notify_control_handed_back(&mut self) {}
+}
 #[allow(dead_code)] enum ShellCommandExecutorEvent {}
 #[allow(dead_code)] struct StartAgentExecutor;
 #[allow(dead_code)] enum StartAgentExecutorEvent {}
@@ -3606,12 +3617,8 @@ impl TerminalView {
 
                     let has_init_steps = me.has_init_steps_for_conversation(*conversation_id);
 
-                    // Exiting agent view should cancel setup flows that hide the input box.
-                    if me.has_active_init_project(ctx) && has_init_steps {
-                        if let Some(model) = me.active_init_project_model.clone() {
-                            model.update(ctx, |model, ctx| model.cancel(ctx));
-                        }
-                    }
+                    // twarp: 2c-d — init project model deleted with AI; cancel branch removed.
+                    let _ = has_init_steps;
                     for rich_content in me.rich_content_views.iter().rev() {
                         if rich_content.agent_view_conversation_id() != Some(*conversation_id) {
                             continue;
@@ -6070,41 +6077,14 @@ impl TerminalView {
         });
     }
 
-    fn update_context_blocks_and_exchanges(&mut self, ctx: &mut ViewContext<Self>) {
-        // If there is new active conversation history, update the context block
-        // and AI exchange IDs in the `ai_render_context` for the active conversations.
+    fn update_context_blocks_and_exchanges(&mut self, _ctx: &mut ViewContext<Self>) {
+        // twarp: 2c-d — body removed with AI; selected_conversation() returns Option<()> stub now.
         let mut ai_render_context = self.ai_render_context.borrow_mut();
-        let Some(conversation) = self.ai_context_model.as_ref(ctx).selected_conversation(ctx)
-        else {
-            // If we're starting a new conversation, there should be no active block or exchange IDs.
-            ai_render_context
-                .block_ids
-                .remove(&AIContextInclusionState::Active);
-            ai_render_context.exchange_ids = None;
-            ai_render_context.should_highlight_context = false;
-            return;
-        };
-        ai_render_context.should_highlight_context = true;
-        let active_conversation_historical_ai_context_block_ids = conversation
-            .get_root_task()
-            .into_iter()
-            .flat_map(|task| {
-                task.all_contexts().filter_map(|context| {
-                    if let AIAgentContext::Block(block) = context {
-                        Some(block.id.clone())
-                    } else {
-                        None
-                    }
-                })
-            })
-            .collect();
-        ai_render_context.block_ids.insert(
-            AIContextInclusionState::Active,
-            active_conversation_historical_ai_context_block_ids,
-        );
-
-        // twarp: 2c-d — blocklist_filter::exchanges_for_blocklist removed with AI.
-        let _ = (conversation, ai_render_context);
+        ai_render_context
+            .block_ids
+            .remove(&AIContextInclusionState::Active);
+        ai_render_context.exchange_ids = None;
+        ai_render_context.should_highlight_context = false;
     }
 
     fn handle_ai_input_model_event(
@@ -6325,6 +6305,17 @@ impl TerminalView {
     }
 
     fn handle_shell_command_executor_event(
+        &mut self,
+        _: ModelHandle<ShellCommandExecutor>,
+        _event: &ShellCommandExecutorEvent,
+        _ctx: &mut ViewContext<Self>,
+    ) {
+        // twarp: 2c-d — body removed; AI shell command execution flow deleted.
+    }
+
+    #[allow(dead_code)]
+    #[cfg(any())]
+    fn handle_shell_command_executor_event_disabled(
         &mut self,
         _: ModelHandle<ShellCommandExecutor>,
         event: &ShellCommandExecutorEvent,
@@ -7425,10 +7416,7 @@ impl TerminalView {
             // is running — the parent AI block is already finished but the response
             // stream is still active. Route Ctrl+C to the status bar to cancel it.
             self.cancel_active_conversation_via_status_bar(ctx);
-        } else if self.has_active_init_project(ctx) {
-            if let Some(model) = &self.active_init_project_model {
-                model.update(ctx, |m, ctx| m.cancel(ctx));
-            }
+        // twarp: 2c-d — init project flow deleted; branch removed.
         } else if let Some(active_env_var_block) = self.active_env_var_collection_block(ctx) {
             active_env_var_block.update(ctx, |env_var_block, ctx| {
                 env_var_block.handle_ctrl_c(ctx);
@@ -14350,7 +14338,7 @@ impl TerminalView {
                 {
                     fields.extend([
                         MenuItem::Separator,
-                        MenuItemFields::new(*ATTACH_AS_AGENT_MODE_CONTEXT_TEXT)
+                        MenuItemFields::new(ATTACH_AS_AGENT_MODE_CONTEXT_TEXT)
                             .with_on_select_action(TerminalAction::ContextMenu(
                                 ContextMenuAction::AskAI(AskAISource::SelectedTerminalText),
                             ))
@@ -14499,7 +14487,7 @@ impl TerminalView {
                     if self.is_input_box_visible(&model, ctx) {
                         items.extend([
                             MenuItem::Separator,
-                            MenuItemFields::new(*ATTACH_AS_AGENT_MODE_CONTEXT_TEXT)
+                            MenuItemFields::new(ATTACH_AS_AGENT_MODE_CONTEXT_TEXT)
                                 .with_on_select_action(TerminalAction::ContextMenu(
                                     ContextMenuAction::AskAI(AskAISource::SelectedBlocks),
                                 ))
@@ -15300,7 +15288,7 @@ impl TerminalView {
             {
                 menu_items.extend([
                     MenuItem::Separator,
-                    MenuItemFields::new(*ATTACH_AS_AGENT_MODE_CONTEXT_TEXT)
+                    MenuItemFields::new(ATTACH_AS_AGENT_MODE_CONTEXT_TEXT)
                         .with_on_select_action(TerminalAction::ContextMenu(
                             ContextMenuAction::AskAI(AskAISource::SelectedTerminalText),
                         ))

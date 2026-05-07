@@ -36,7 +36,10 @@ pub struct LLMId(pub String);
 #[derive(Clone, Debug, PartialEq)]
 pub struct AIConversation {}
 #[derive(Clone, Debug, PartialEq)]
-pub struct CloudConversationData {}
+pub enum CloudConversationData {
+    Oz(Box<AIConversation>),
+    CLIAgent(Box<()>),
+}
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConversationStatus { InProgress, Done, Failed }
 #[derive(Clone, Debug, PartialEq)]

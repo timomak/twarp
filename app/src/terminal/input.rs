@@ -10454,6 +10454,7 @@ impl Input {
                     // This origin is unused in this codepath, which doesn't get called when
                     // AgentView is enabled.
                     AgentViewEntryOrigin::Input {
+                        is_new_conversation: false,
                         was_prompt_autodetected: false,
                     },
                     ctx,
@@ -12679,6 +12680,7 @@ impl Input {
                 initial_prompt: Some(prompt),
                 conversation_id: None,
                 origin: AgentViewEntryOrigin::Input {
+                    is_new_conversation: false,
                     was_prompt_autodetected: !self
                         .ai_input_model
                         .as_ref(ctx)
@@ -14059,6 +14061,7 @@ impl TypedActionView for Input {
                         controller.try_enter_agent_view(
                             None,
                             AgentViewEntryOrigin::Input {
+                                is_new_conversation: false,
                                 was_prompt_autodetected: false,
                             },
                             ctx,
@@ -14072,6 +14075,7 @@ impl TypedActionView for Input {
                         ai_context_model.set_pending_query_state_for_new_conversation(
                             // This is a placeholder origin, this codepath is dead when AgentView is enabled.
                             AgentViewEntryOrigin::Input {
+                                is_new_conversation: false,
                                 was_prompt_autodetected: false,
                             },
                             ctx,

@@ -128,8 +128,25 @@ use crate::terminal::view::ssh_file_upload::FileUploadId;
 use crate::terminal::view::{
     BlockNotification, ExecuteCommandEvent, LeftPanelTargetView, SyncEvent, TerminalViewState,
 };
-// twarp: 2c-d.4 — local stub for ConversationRestorationInNewPaneType (AI-only, was in deleted load_ai_conversation)
-pub type ConversationRestorationInNewPaneType = ();
+// twarp: 2c-d — local stub for ConversationRestorationInNewPaneType (AI-only). Promoted
+// from a `()` type alias to a real enum so legacy variant constructions compile.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub enum ConversationRestorationInNewPaneType {
+    Historical {
+        conversation: crate::app_state::AIConversation,
+        should_use_live_appearance: bool,
+        ambient_agent_task_id: Option<crate::app_state::AmbientAgentTaskId>,
+    },
+    HistoricalCLIAgent {
+        conversation: (),
+        should_use_live_appearance: bool,
+    },
+}
+#[allow(dead_code)]
+impl ConversationRestorationInNewPaneType {
+    pub fn initial_working_directory(&self) -> Option<&str> { None }
+}
 use crate::terminal::{
     MockTerminalManager, ShareBlockModal, ShareBlockModalEvent, ShellLaunchData, ShellLaunchState,
 };
@@ -1290,6 +1307,7 @@ impl PaneGroup {
                             terminal_view.enter_agent_view_for_new_conversation(
                                 None,
                                 AgentViewEntryOrigin::Input {
+                                    is_new_conversation: false,
                                     was_prompt_autodetected: false,
                                 },
                                 ctx,
@@ -5696,6 +5714,7 @@ impl PaneGroup {
                     // if this is called in live codepaths beyond the create-environment deep
                     // link flow.
                     AgentViewEntryOrigin::Input {
+                        is_new_conversation: false,
                         was_prompt_autodetected: false,
                     },
                     terminal_view_ctx,
