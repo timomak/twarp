@@ -549,7 +549,7 @@ pub enum WorkspaceAction {
     },
     OpenAmbientAgentSession {
         session_id: SessionId,
-        task_id: String,
+        task_id: crate::app_state::AmbientAgentTaskId,
     },
     OpenConversationTranscriptViewer {
         conversation_id: String,

@@ -68,7 +68,7 @@ impl AIBlock {
     pub fn is_passive_conversation<C>(&self, _: &C) -> bool { false }
     pub fn get_preceding_user_query<C>(&self, _: &C) -> Option<String> { None }
     pub fn accept_pending_action<C>(&mut self, _: &mut C) {}
-    pub fn accept_pending_unit_test_suggestion<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn accept_pending_unit_test_suggestion<A, C>(&mut self, _: A, _: &mut C) -> bool { false }
     pub fn dismiss_ai_tooltips<C>(&mut self, _: &mut C) {}
     pub fn clear_message<C>(&mut self, _: &mut C) {}
     pub fn clear_finished_action_results<C>(&mut self, _: &mut C) {}
@@ -79,9 +79,9 @@ impl AIBlock {
     pub fn collect_imported_comments(&self) -> Option<Vec<()>> { None }
     // twarp: 2c-d — additional bulk stubs for AI-removed AIBlock methods
     pub fn cleanup_block<C>(&mut self, _: &mut C) {}
-    pub fn dismiss_pending_suggested_prompt<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn dismiss_pending_suggested_prompt<A, C>(&mut self, _: A, _: &mut C) -> bool { false }
     pub fn finish_reason<C>(&self, _: &C) -> Option<String> { None }
-    pub fn handle_passive_code_diff_action<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn handle_passive_code_diff_action<A, C>(&mut self, _: A, _: &mut C) -> bool { false }
     pub fn has_any_imported_comments<C>(&self, _: &C) -> bool { false }
     pub fn has_expanded_running_commands<C>(&self, _: &C) -> bool { false }
     pub fn hovered_rich_content_link<C>(&self, _: &C) -> Option<String> { None }
