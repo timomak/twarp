@@ -360,6 +360,11 @@ impl AgentViewController {
     pub fn agent_view_state(&self) -> AgentViewState { AgentViewState::Inactive }
     pub fn exit_agent_view<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn can_exit_agent_view<C>(&self, _: &C) -> bool { true }
+    // twarp: 2c-d — bulk stubs for AI-removed AgentViewController methods
+    pub fn clear_pending_exit_confirmation<C>(&mut self, _: &mut C) {}
+    pub fn exit_agent_view_with_required_confirmation<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn is_inline(&self) -> bool { false }
+    pub fn try_enter_inline_agent_view<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> bool { false }
 }
 // twarp: 2c-d — re-export unified stubs from model::block.
 use crate::terminal::model::block::AgentViewState;
@@ -414,7 +419,13 @@ struct AgentTaskDataStub;
 impl AgentTaskDataStub {
     fn is_no_longer_running(&self) -> bool { false }
 }
-#[allow(dead_code)] enum AgentConversationsModelEvent {}
+#[allow(dead_code)] enum AgentConversationsModelEvent {
+    // twarp: 2c-d — bulk variants for AI-removed AgentConversationsModelEvent
+    ConversationArtifactsUpdated(()),
+    ConversationUpdated(()),
+    NewTasksReceived(()),
+    TasksUpdated(()),
+}
 
 #[allow(dead_code)] fn conversation_output_status_from_conversation() {}
 type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
@@ -432,7 +443,15 @@ impl CLISubagentController {
 impl CLISubagentView {
     fn clear_all_selections<C>(&mut self, _: &mut C) {}
 }
-#[allow(dead_code)] enum CLISubagentEvent {}
+#[allow(dead_code)] enum CLISubagentEvent {
+    // twarp: 2c-d — bulk variants for AI-removed CLISubagentEvent
+    ControlHandedBackAfterTransfer(()),
+    FinishedSubagent(()),
+    SpawnedSubagent(()),
+    ToggledHideResponses(()),
+    UpdatedControl(()),
+    UpdatedLastSnapshot(()),
+}
 #[allow(dead_code)] enum UserTakeOverReason {
     Manual,
     Stop,
@@ -606,7 +625,16 @@ use crate::terminal::view::rich_content::AIAgentExchangeId;
 // twarp: 2c-d — re-export canonical AIBlock from rich_content
 pub use crate::terminal::view::rich_content::AIBlock;
 #[allow(dead_code)] enum AIBlockEvent {}
-#[allow(dead_code)] enum BlocklistAIActionEvent {}
+#[allow(dead_code)] enum BlocklistAIActionEvent {
+    // twarp: 2c-d — bulk variants for AI-removed BlocklistAIActionEvent
+    ActionBlockedOnUserConfirmation(()),
+    ExecutingAction(()),
+    FinishedAction(()),
+    InitProject(()),
+    InsertCodeReviewComments(()),
+    QueuedAction(()),
+    ToggleCodeReview,
+}
 #[allow(dead_code)] struct BlocklistAIActionModel;
 #[allow(dead_code)]
 impl BlocklistAIActionModel {

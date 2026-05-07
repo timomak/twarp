@@ -172,6 +172,14 @@ impl CLIAgent {
             CLIAgent::Unknown => "",
         }
     }
+    // twarp: 2c-d — additional bulk stubs for CLIAgent
+    pub fn brand_color(&self) -> warpui::color::ColorU {
+        warpui::color::ColorU::new(0, 0, 0, 0)
+    }
+    pub fn display_name(&self) -> &'static str { self.serialized_name() }
+    pub fn skill_command_prefix(&self) -> &'static str { "" }
+    pub fn supports_bash_mode(&self) -> bool { false }
+    pub fn to_serialized_name(&self) -> &'static str { self.serialized_name() }
 }
 impl std::fmt::Display for CLIAgent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -841,7 +841,18 @@ impl UniversalDeveloperInputButtonBar {
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum UniversalDeveloperInputButtonBarEvent {}
+enum UniversalDeveloperInputButtonBarEvent {
+    // twarp: 2c-d — bulk variants for AI-removed UniversalDeveloperInputButtonBarEvent
+    EnableAutoDetection,
+    InputTypeSelected(()),
+    ModelSelectorClosed,
+    ModelSelectorOpened,
+    OpenSettings(()),
+    OpenSlashCommandMenu(()),
+    PromptAlert(()),
+    SelectFile,
+    SetAIContextMenuOpen(()),
+}
 
 #[allow(dead_code)]
 pub struct AmbientAgentViewModel;

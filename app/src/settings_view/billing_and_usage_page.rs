@@ -39,6 +39,13 @@ impl warpui::SingletonEntity for AIRequestUsageModel {}
 impl AIRequestUsageModel {
     pub fn refresh_request_usage_async<C>(&mut self, _: &mut C) {}
     pub fn refresh_duration_to_string(&self) -> String { String::new() }
+    // twarp: 2c-d — bulk stubs for AI-removed methods on AIRequestUsageModel
+    pub fn ambient_only_credits_remaining(&self) -> i64 { 0 }
+    pub fn is_unlimited(&self) -> bool { false }
+    pub fn next_refresh_time(&self) -> Option<chrono::DateTime<chrono::Utc>> { None }
+    pub fn request_limit(&self) -> i64 { 0 }
+    pub fn requests_used(&self) -> i64 { 0 }
+    pub fn total_workspace_bonus_credits_remaining(&self) -> i64 { 0 }
 }
 use crate::{
     auth::{
