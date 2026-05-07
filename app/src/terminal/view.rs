@@ -550,7 +550,11 @@ impl PersistedWorkspace {
 #[allow(dead_code)] const CLI_AGENT_NOTIFICATION_SENTINEL: &str = "";
 #[allow(dead_code)] fn is_agent_supported<C>(_: C) -> bool { false }
 #[allow(dead_code)] struct CLIAgentSessionListener;
-#[allow(dead_code)] fn plugin_manager_for<C>(_: C) -> Option<crate::plugin_manager::PluginManager> { None }
+#[allow(dead_code)] struct PluginManagerStub;
+#[allow(dead_code)] impl PluginManagerStub {
+    fn minimum_plugin_version(&self) -> &'static str { "" }
+}
+#[allow(dead_code)] fn plugin_manager_for<C>(_: C) -> Option<PluginManagerStub> { None }
 #[allow(dead_code)] enum PluginModalKind {}
 #[allow(dead_code)] enum CLIAgentInputEntrypoint {}
 #[allow(dead_code)] struct CLIAgentInputState;

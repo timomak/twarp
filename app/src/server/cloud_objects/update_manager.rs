@@ -3094,6 +3094,7 @@ impl UpdateManager {
     }
 
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    #[allow(dead_code, unused_variables)]
     pub fn create_scheduled_ambient_agent_online(
         &mut self,
         scheduled_ambient_agent: ScheduledAmbientAgent,
@@ -3101,18 +3102,12 @@ impl UpdateManager {
         owner: Owner,
         ctx: &mut ModelContext<Self>,
     ) -> impl Future<Output = anyhow::Result<ServerId>> {
-        self.create_object_online(
-            CloudScheduledAmbientAgentModel::new(scheduled_ambient_agent),
-            owner,
-            client_id,
-            Default::default(),
-            false,
-            None,
-            ctx,
-        )
+        // twarp: 2c-d — AI cloud objects deleted; stub returns error.
+        async { Err(anyhow::anyhow!("AI cloud objects deleted")) }
     }
 
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    #[allow(dead_code, unused_variables)]
     pub fn update_scheduled_ambient_agent_online(
         &mut self,
         scheduled_ambient_agent: ScheduledAmbientAgent,
@@ -3120,50 +3115,30 @@ impl UpdateManager {
         revision_ts: Option<Revision>,
         ctx: &mut ModelContext<Self>,
     ) -> impl Future<Output = anyhow::Result<()>> {
-        self.update_object_online(
-            CloudScheduledAmbientAgentModel::new(scheduled_ambient_agent),
-            scheduled_ambient_agent_id,
-            revision_ts,
-            ctx,
-        )
+        // twarp: 2c-d — AI cloud objects deleted; stub returns error.
+        async { Err(anyhow::anyhow!("AI cloud objects deleted")) }
     }
 
     #[allow(dead_code)]
     pub fn create_ai_execution_profile(
         &mut self,
-        ai_execution_profile: AIExecutionProfile,
-        client_id: ClientId,
-        owner: Owner,
-        ctx: &mut ModelContext<Self>,
+        _ai_execution_profile: AIExecutionProfile,
+        _client_id: ClientId,
+        _owner: Owner,
+        _ctx: &mut ModelContext<Self>,
     ) {
-        self.create_object(
-            CloudAIExecutionProfileModel::new(ai_execution_profile),
-            owner,
-            client_id,
-            Default::default(),
-            false,
-            None,
-            // When adding the initiated_by parameter to this function call, InitiatedBy::User was set as a default value.
-            // This can be changed to InitiatedBy::System if this action was automatically kicked off by the system and we do not want a user facing toast.
-            InitiatedBy::User,
-            ctx,
-        );
+        // twarp: 2c-d — AI cloud objects deleted; stub no-op.
     }
 
     #[allow(dead_code)]
     pub fn update_ai_execution_profile(
         &mut self,
-        ai_execution_profile: AIExecutionProfile,
-        ai_execution_profile_id: SyncId,
-        revision_ts: Option<Revision>,
-        ctx: &mut ModelContext<Self>,
+        _ai_execution_profile: AIExecutionProfile,
+        _ai_execution_profile_id: SyncId,
+        _revision_ts: Option<Revision>,
+        _ctx: &mut ModelContext<Self>,
     ) {
-        self.update_object(
-            CloudAIExecutionProfileModel::new(ai_execution_profile),
-            ai_execution_profile_id,
-            revision_ts,
-            ctx,
-        );
+        // twarp: 2c-d — AI cloud objects deleted; stub no-op.
     }
 
     pub fn delete_ai_execution_profile(

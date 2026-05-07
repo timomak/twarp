@@ -6352,7 +6352,7 @@ impl Input {
             UniversalDeveloperInputButtonBarEvent::OpenSettings(section) => {
                 ctx.emit(Event::OpenSettings(*section));
             }
-            UniversalDeveloperInputButtonBarEvent::OpenSlashCommandMenu => {
+            UniversalDeveloperInputButtonBarEvent::OpenSlashCommandMenu(_) => {
                 self.focus_input_box(ctx);
                 if !FeatureFlag::AgentView.is_enabled() {
                     self.ensure_agent_mode_for_ai_features(false, ctx);

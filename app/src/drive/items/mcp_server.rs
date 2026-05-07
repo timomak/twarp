@@ -8,7 +8,7 @@ pub struct CloudMCPServer {
 }
 #[allow(dead_code)]
 impl CloudMCPServer {
-    pub fn model(&self) -> CloudMCPServerModelStub { CloudMCPServerModelStub }
+    pub fn model(&self) -> CloudMCPServerModelStub { CloudMCPServerModelStub::default() }
 }
 #[derive(Default)]
 pub struct CloudMCPServerModelStub {
@@ -76,6 +76,7 @@ impl WarpDriveItem for WarpDriveMCPServer {
     ) -> Option<Box<dyn Element>> {
         self.mcp_server
             .metadata
+            .as_ref()?
             .pending_changes_statuses
             .render_icon(sync_queue_is_dequeueing, hover_state, appearance)
     }
