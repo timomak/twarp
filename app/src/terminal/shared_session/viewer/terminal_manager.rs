@@ -69,7 +69,7 @@ use super::network::{
 };
 use crate::app_state::AmbientAgentTaskId;
 // twarp: 2c-d — ambient agent helper deleted; stub.
-fn is_cloud_agent_pre_first_exchange() -> bool { false }
+fn is_cloud_agent_pre_first_exchange<A, B, C>(_: A, _: B, _: C) -> bool { false }
 use crate::terminal::view::ExecuteCommandEvent;
 use crate::terminal::{Event as TerminalViewEvent, TerminalModel, TerminalView};
 use crate::view_components::ToastFlavor;

@@ -671,7 +671,7 @@ impl BlocklistAIInputModel {
     }
     fn handle_input_buffer_submitted<C>(&mut self, _: &mut C) {}
     fn enable_autodetection<C>(&mut self, _: &mut C) {}
-    fn detect_and_set_input_type<A, C>(&mut self, _: A, _: &mut C) {}
+    fn detect_and_set_input_type<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     fn input_config(&self) -> InputConfig {
         InputConfig::empty()
     }

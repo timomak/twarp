@@ -614,8 +614,8 @@ impl BlocklistAIActionModel {
 impl BlocklistAIContextModel {
     fn selected_conversation<C>(&self, _: &C) -> Option<()> { None }
     fn set_pending_query_state_for_existing_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
-    fn set_pending_context_selected_text<C>(&mut self, _: Option<String>, _: &mut C) {}
-    fn set_pending_context_block_ids<C>(&mut self, _: Vec<()>, _: &mut C) {}
+    fn set_pending_context_selected_text<T, C>(&mut self, _: Option<String>, _: T, _: &mut C) {}
+    fn set_pending_context_block_ids<I, T, C>(&mut self, _: I, _: T, _: &mut C) {}
 }
 #[allow(dead_code)] struct BlocklistAIController;
 #[allow(dead_code)]
@@ -3379,7 +3379,7 @@ impl TerminalView {
     #[allow(dead_code)]
     fn enter_agent_view_for_conversation<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     #[allow(dead_code)]
-    fn fetch_and_update_cloud_mode_details_panel<A, C>(&mut self, _: A, _: &mut C) {}
+    fn fetch_and_update_cloud_mode_details_panel<C>(&mut self, _: &mut C) {}
 
     /// Create a SyncEvent for other terminals to use based on
     /// the state of this terminal. If this terminal view has an active input
