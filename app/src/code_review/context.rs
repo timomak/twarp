@@ -8,12 +8,8 @@ cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
         use std::path::Path;
         use crate::code_review::code_review_view::{AIAgentAttachment, CurrentHead, DiffBase};
-        pub struct BlocklistAIContextModel;
-        impl warpui::Entity for BlocklistAIContextModel { type Event = (); }
-        #[allow(dead_code)]
-        impl BlocklistAIContextModel {
-            pub fn register_diff_hunk_attachment<K, A>(&mut self, _: K, _: A) {}
-        }
+        // twarp: 2c-d — re-export canonical BlocklistAIContextModel from terminal::input
+        pub use crate::terminal::input::BlocklistAIContextModel;
         use crate::code_review::{diff_state::DiffMode, DiffSetScope};
         use warpui::{AppContext, ModelHandle};
     }

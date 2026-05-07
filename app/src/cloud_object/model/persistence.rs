@@ -514,20 +514,13 @@ impl CloudModel {
             ServerCloudObject::WorkflowEnum(workflow_enum) => {
                 self.upsert_from_server_object(workflow_enum, ctx);
             }
-            ServerCloudObject::AIFact(aifact) => {
-                self.upsert_from_server_object(aifact, ctx);
-            }
-            ServerCloudObject::MCPServer(mcp_server) => {
-                self.upsert_from_server_object(mcp_server, ctx);
-            }
-            ServerCloudObject::AIExecutionProfile(ai_execution_profile) => {
-                self.upsert_from_server_object(ai_execution_profile, ctx);
-            }
-            ServerCloudObject::TemplatableMCPServer(templatable_mcp_server) => {
-                self.upsert_from_server_object(templatable_mcp_server, ctx);
-            }
-            ServerCloudObject::ScheduledAmbientAgent(scheduled_ambient_agent) => {
-                self.upsert_from_server_object(scheduled_ambient_agent, ctx);
+            // twarp: 2c-d — AI variants are () stubs; skip the upsert.
+            ServerCloudObject::AIFact(_)
+            | ServerCloudObject::MCPServer(_)
+            | ServerCloudObject::AIExecutionProfile(_)
+            | ServerCloudObject::TemplatableMCPServer(_)
+            | ServerCloudObject::ScheduledAmbientAgent(_) => {
+                let _ = ctx;
             }
         }
     }

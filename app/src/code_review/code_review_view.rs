@@ -17,17 +17,17 @@ use crate::{
 
 #[derive(Clone, Debug, Default)]
 pub struct AgentReviewCommentBatch {
-    // twarp: 2c-d — fields used by callers
-    pub comments: Vec<()>,
-    pub diff_set: Vec<DiffSetHunk>,
+    // twarp: 2c-d — fields used by callers (loosely typed)
+    pub comments: Vec<crate::code_review::comments::AttachedReviewComment>,
+    pub diff_set: std::collections::HashMap<String, Vec<DiffSetHunk>>,
 }
 #[derive(Clone, Debug, Default)]
 pub struct DiffSetHunk {
-    // twarp: 2c-d — fields used by callers
-    pub line_range: (),
+    // twarp: 2c-d — fields used by callers (aligned to caller types)
+    pub line_range: std::ops::Range<warp_editor::render::model::LineCount>,
     pub diff_content: String,
-    pub lines_added: i64,
-    pub lines_removed: i64,
+    pub lines_added: u32,
+    pub lines_removed: u32,
 }
 
 #[cfg(feature = "local_fs")]
@@ -110,10 +110,10 @@ use crate::code_review::find_model::CodeReviewFindModel;
 #[cfg(feature = "local_fs")]
 use crate::server::telemetry::CodePanelsFileOpenEntrypoint;
 // twarp: 2c-d — terminal::cli_agent module deleted; selection prompt builders stubbed.
-fn build_selection_line_range_prompt(_path: &Path, _start: u32, _end: u32) -> String {
+fn build_selection_line_range_prompt<A, B>(_path: &Path, _start: A, _end: B) -> String {
     String::new()
 }
-fn build_selection_substring_prompt(_path: &Path, _start: u32, _selected: &str) -> String {
+fn build_selection_substring_prompt<A>(_path: &Path, _start: A, _selected: &str) -> String {
     String::new()
 }
 #[cfg(feature = "local_fs")]
@@ -6402,8 +6402,9 @@ impl CodeReviewView {
                 terminal_view.update(ctx, |terminal_view, ctx| {
                     terminal_view
                         .ai_context_model()
-                        .update(ctx, |context_model, _| {
-                            context_model.register_diff_hunk_attachment(diff_hunk_key, attachment);
+                        .update(ctx, |context_model, ctx| {
+                            // twarp: 2c-d — stub register_diff_hunk_attachment takes 3 args
+                            context_model.register_diff_hunk_attachment((diff_hunk_key, attachment), ctx);
                         });
 
                     // Enter agent view if enabled and not already active
