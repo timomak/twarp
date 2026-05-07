@@ -378,5 +378,5 @@ fn detect_line_ranges_after_file_path(
 }
 
 #[cfg(test)]
-#[path = "link_detection_test.rs"]
+#[path = "link_detection_tests.rs"]
 mod tests;
