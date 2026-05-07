@@ -97,15 +97,8 @@ use warp_core::user_preferences::GetUserPreferences as _;
 use warpui::keymap::{EditableBinding, FixedBinding};
 use warpui::windowing::WindowManager;
 
-// twarp: 2c-d — AI llms / onboarding deleted; stubs.
-pub struct LLMPreferences;
-impl warpui::Entity for LLMPreferences { type Event = LLMPreferencesEvent; }
-impl warpui::SingletonEntity for LLMPreferences {}
-#[allow(dead_code)]
-impl LLMPreferences {
-    pub fn refresh_available_models<C>(&mut self, _: &mut C) {}
-}
-pub enum LLMPreferencesEvent { Other }
+// twarp: 2c-d — AI llms / onboarding deleted; stubs re-exported from input.
+pub use crate::terminal::input::{LLMPreferences, LLMPreferencesEvent};
 pub fn apply_free_tier_default_model_override<A, B, C>(_: A, default: B, _: C) -> B { default }
 pub fn build_onboarding_models<A>(_: A) -> (Vec<onboarding::slides::OnboardingModelInfo>, crate::app_state::LLMId) {
     (Vec::new(), "".into())

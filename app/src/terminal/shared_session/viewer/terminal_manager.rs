@@ -37,15 +37,8 @@ pub use crate::terminal::input::AgentViewControllerEvent;
 pub enum BlocklistAIContextEvent { Other }
 // twarp: 2c-d — re-export canonical
 pub use crate::terminal::input::BlocklistAIHistoryEvent;
-pub struct LLMPreferences;
-impl warpui::Entity for LLMPreferences { type Event = LLMPreferencesEvent; }
-impl SingletonEntity for LLMPreferences {}
-#[allow(dead_code)]
-impl LLMPreferences {
-    // twarp: 2c-d — bulk stubs
-    pub fn get_active_base_model<C>(&self, _: &C) -> Option<()> { None }
-}
-pub enum LLMPreferencesEvent { Other }
+// twarp: 2c-d — re-export from input for type unification.
+pub use crate::terminal::input::{LLMPreferences, LLMPreferencesEvent};
 use crate::context_chips::prompt_snapshot::PromptSnapshot;
 use crate::context_chips::prompt_type::PromptType;
 use crate::features::FeatureFlag;

@@ -20,14 +20,8 @@ use super::credentials::{Credentials, FirebaseToken, LoginToken};
 use super::user::User;
 use super::AuthStateProvider;
 use super::UserUid;
-// twarp: 2c-d — AI llms / persisted workspace / usage deleted; stubs.
-pub struct LLMPreferences;
-impl warpui::Entity for LLMPreferences { type Event = (); }
-impl warpui::SingletonEntity for LLMPreferences {}
-#[allow(dead_code)]
-impl LLMPreferences {
-    pub fn update_feature_model_choices<C, T>(&mut self, _: Result<T, ()>, _: &mut C) {}
-}
+// twarp: 2c-d — AI llms / persisted workspace / usage deleted; LLMPreferences re-exported.
+pub use crate::terminal::input::LLMPreferences;
 pub struct PersistedWorkspace;
 impl warpui::Entity for PersistedWorkspace { type Event = (); }
 impl warpui::SingletonEntity for PersistedWorkspace {}

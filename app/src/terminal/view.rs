@@ -788,11 +788,8 @@ impl AIExecutionProfilesModel {
 // LLMs/AI etc.
 #[allow(dead_code)] type LLMId = crate::app_state::LLMId;
 #[allow(dead_code)] enum LLMModelHost {}
-#[allow(dead_code)] struct LLMPreferences;
-#[allow(dead_code)]
-impl LLMPreferences {
-    fn get_llm_info<A>(&self, _: A) -> Option<()> { None }
-}
+// twarp: 2c-d — LLMPreferences re-exported from input.
+pub use crate::terminal::input::LLMPreferences;
 #[allow(dead_code)] struct ApiKeyManager;
 #[allow(dead_code)]
 impl ApiKeyManager {

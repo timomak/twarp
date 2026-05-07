@@ -712,6 +712,8 @@ fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool {
 pub enum BlocklistAIContextEvent {
     // twarp: 2c-d — bulk variants
     PendingQueryStateUpdated,
+    UpdatedPendingContext { added: Vec<()>, removed: Vec<()> },
+    QueueNextPromptToggled,
     Other,
 }
 
@@ -949,17 +951,34 @@ lazy_static::lazy_static! {
 }
 
 #[allow(dead_code)]
-struct LLMPreferences;
+pub struct LLMPreferences;
+#[allow(dead_code)]
+pub struct LLMInfoStub {
+    pub id: crate::app_state::LLMId,
+}
 impl LLMPreferences {
-    fn update_preferred_agent_mode_llm<I, C>(&mut self, _: I, _: warpui::EntityId, _: &mut C) {}
-    fn vision_supported<C>(&self, _: &C, _: Option<warpui::EntityId>) -> bool { false }
+    pub fn update_preferred_agent_mode_llm<I, C>(&mut self, _: I, _: warpui::EntityId, _: &mut C) {}
+    pub fn vision_supported<C>(&self, _: &C, _: Option<warpui::EntityId>) -> bool { false }
     // twarp: 2c-d — bulk stubs
-    fn remove_llm_override<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn remove_llm_override<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn handle<C>(_: &C) -> warpui::ModelHandle<LLMPreferences> { unimplemented!() }
+    pub fn as_ref<C>(_: &C) -> &Self { unimplemented!() }
+    pub fn refresh_available_models<C>(&mut self, _: &mut C) {}
+    pub fn get_llm_info<A>(&self, _: A) -> Option<LLMInfoStub> { None }
+    pub fn get_active_base_model<C>(&self, _: &C, _: Option<warpui::EntityId>) -> LLMInfoStub {
+        LLMInfoStub { id: "".into() }
+    }
+    pub fn supports_input_type<A, C>(&self, _: A, _: &C) -> bool { false }
+    pub fn update_feature_model_choices<C, T>(&mut self, _: Result<T, ()>, _: &mut C) {}
 }
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum LLMPreferencesEvent {}
+pub enum LLMPreferencesEvent {
+    Other,
+    UpdatedAvailableLLMs,
+    UpdatedActiveAgentModeLLM,
+}
 
 #[allow(dead_code)]
 struct AIRequestUsageModel;

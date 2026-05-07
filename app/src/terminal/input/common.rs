@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-// twarp: 2c-d — AI llms / usage / banner state deleted; stubs.
+// twarp: 2c-d — AI llms / usage / banner state deleted; LLMPreferences re-exported.
 pub fn is_using_api_key_for_provider<A, B>(_: A, _: B) -> bool { false }
-pub struct LLMPreferences;
+pub use crate::terminal::input::LLMPreferences;
 pub struct AIRequestUsageModel;
 pub enum BuyCreditsBannerDisplayState { Other }
 use crate::{
