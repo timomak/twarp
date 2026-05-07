@@ -19,9 +19,16 @@ use crate::{
 pub struct AgentReviewCommentBatch {
     // twarp: 2c-d — fields used by callers
     pub comments: Vec<()>,
+    pub diff_set: Vec<DiffSetHunk>,
 }
-#[derive(Clone, Debug)]
-pub struct DiffSetHunk;
+#[derive(Clone, Debug, Default)]
+pub struct DiffSetHunk {
+    // twarp: 2c-d — fields used by callers
+    pub line_range: (),
+    pub diff_content: String,
+    pub lines_added: i64,
+    pub lines_removed: i64,
+}
 
 #[cfg(feature = "local_fs")]
 use crate::code_review::context::{

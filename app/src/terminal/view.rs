@@ -389,7 +389,14 @@ use crate::terminal::model::block::AgentViewState;
     ExitConfirmed {},
 }
 #[allow(dead_code)] use crate::terminal::model::block::AgentViewDisplayMode;
-#[allow(dead_code)] struct AgentViewEntryBlockParams;
+#[allow(dead_code)] struct AgentViewEntryBlockParams {
+    // twarp: 2c-d — fields used by callers
+    pub origin: AgentViewEntryOrigin,
+    pub is_restored: bool,
+    pub is_new: bool,
+    pub conversation_id: crate::app_state::AIConversationId,
+    pub agent_view_controller: warpui::ModelHandle<AgentViewController>,
+}
 // twarp: 2c-d — re-export canonical AgentViewEntryOrigin from app_state
 pub use crate::app_state::AgentViewEntryOrigin;
 #[allow(dead_code)] struct AgentViewHeaderDisabledTheme;
@@ -559,6 +566,14 @@ struct CLIAgentSession {
     pub agent: CLIAgent,
     pub listener: Option<()>,
     pub should_auto_toggle_input: bool,
+    // twarp: 2c-d — fields used by callers
+    pub status: CLIAgentSessionStatus,
+    pub session_context: CLIAgentSessionContext,
+    pub remote_host: Option<String>,
+    pub plugin_version: Option<String>,
+    pub input_state: CLIAgentInputState,
+    pub draft_text: String,
+    pub custom_command_prefix: Option<String>,
 }
 #[allow(dead_code)] struct CLIAgentSessionContext;
 #[allow(dead_code)] enum CLIAgentSessionStatus {

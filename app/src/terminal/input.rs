@@ -618,6 +618,10 @@ struct AttachmentFileInfo {
 #[allow(dead_code)]
 struct AttachmentInput {
     pub filename: String,
+    // twarp: 2c-d — extra fields used by callers
+    pub mime_type: Option<String>,
+    pub file_name: String,
+    pub data: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
