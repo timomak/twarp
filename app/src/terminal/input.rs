@@ -306,9 +306,8 @@ enum ConversationOrTaskId {
     ConversationId(AIConversationId),
 }
 
-#[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
-struct AIAgentExchangeId(pub uuid::Uuid);
+// twarp: 2c-d — unify with terminal::view::AIAgentExchangeId.
+pub use crate::terminal::view::AIAgentExchangeId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -481,7 +480,7 @@ enum CLIAgentSessionsModelEvent {
 }
 
 #[allow(dead_code)]
-enum PluginModalKind {}
+pub use crate::terminal::view::PluginModalKind;
 
 #[allow(dead_code)]
 struct InlineConversationMenuView;
@@ -731,6 +730,8 @@ pub struct BlocklistAIContextModel;
 impl BlocklistAIContextModel {
     pub fn selected_conversation_id<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> { None }
     pub fn pending_images(&self) -> Vec<PendingImageStub> { Vec::new() }
+    pub fn append_pending_images<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn append_pending_attachments<A, C>(&mut self, _: A, _: &mut C) {}
     // twarp: 2c-d — bulk stubs for AI-removed methods on BlocklistAIContextModel
     pub fn selected_conversation<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> { None }
     pub fn set_pending_query_state_for_existing_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
@@ -918,12 +919,9 @@ impl InputConfig {
     pub fn is_shell(&self) -> bool { matches!(self.input_type, InputType::Shell) }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// twarp: 2c-d — unify with events::InputType.
+pub use crate::server::telemetry::events::InputType;
 #[allow(dead_code)]
-pub enum InputType {
-    Shell,
-    AI,
-}
 impl InputType {
     fn is_ai(&self) -> bool {
         matches!(self, InputType::AI)

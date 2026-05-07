@@ -21,6 +21,8 @@ use thiserror::Error;
 pub struct FileArtifactUploadTargetInfo {
     // twarp: 2c-d — fields used by callers
     pub url: String,
+    pub method: String,
+    pub headers: std::collections::HashMap<String, String>,
 }
 use super::harness_support::UploadTarget;
 

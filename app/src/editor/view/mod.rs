@@ -49,7 +49,11 @@ use warpui::{elements, ViewHandle};
 pub struct ImageContext { pub data: String, pub file_name: String, pub mime_type: String, pub is_figma: bool }
 // twarp: 2c-d — re-export from input for type unification.
 pub use crate::terminal::input::BlocklistAIContextModel;
-pub struct PendingAttachment;
+#[allow(dead_code)]
+pub enum PendingAttachment {
+    File(PendingFile),
+    Other,
+}
 pub struct PendingFile { pub file_path: std::path::PathBuf, pub file_name: String, pub mime_type: String }
 // twarp: 2c-d — full enum with variants used by callers in terminal::input
 #[derive(Debug, Clone)]
@@ -104,7 +108,12 @@ impl warpui::View for AIContextMenu {
     }
 }
 pub enum AIContextMenuCategory { Other }
-pub enum AIContextMenuEvent { Other }
+pub enum AIContextMenuEvent {
+    Other,
+    Close { item_count: usize, query_length: usize },
+    ResultAccepted { item_count: usize, query_length: usize, accepted_position: usize },
+    CategorySelected { category: AIContextMenuCategory },
+}
 use crate::appearance::Appearance;
 use crate::channel::{Channel, ChannelState};
 use crate::editor::accept_autosuggestion_keybinding_view::AcceptAutosuggestionKeybinding;
@@ -116,12 +125,14 @@ use crate::ui_components::icons;
 use crate::view_components::DismissibleToast;
 use crate::vim_registers::{RegisterContent, VimRegisters};
 use crate::workspace::ToastStack;
-// twarp: 2c-d — AI blocklist InputType deleted.
+// twarp: 2c-d — AI blocklist InputType deleted; re-export from terminal::input.
 use crate::settings::AISettings;
-pub enum InputType { Other }
+pub use crate::terminal::input::InputType;
 #[allow(dead_code)]
-impl InputType {
-    // twarp: 2c-d — predicate stubs
+struct _UnusedInputTypeStub;
+#[allow(dead_code)]
+impl _UnusedInputTypeStub {
+    // twarp: 2c-d — predicate stubs (replaced by terminal::input::InputType)
     pub fn is_ai(&self) -> bool { false }
     pub fn is_shell(&self) -> bool { true }
 }
@@ -143,9 +154,9 @@ use crate::util::clipboard::clipboard_content_with_escaped_paths;
 use crate::util::color::{ContrastingColor, MinimumAllowedContrast};
 use crate::util::image::{resize_image, MAX_IMAGE_COUNT_FOR_QUERY, MAX_IMAGE_SIZE_BYTES};
 use crate::util::merge_ranges;
-// twarp: 2c-d — BlocklistAIHistoryModel deleted; stub.
+// twarp: 2c-d — BlocklistAIHistoryModel deleted; re-export from input for type unification.
 use crate::workspace::Workspace;
-pub struct BlocklistAIHistoryModel;
+pub use crate::terminal::input::BlocklistAIHistoryModel;
 use anyhow::Result;
 use core::f32;
 use std::path::Path;
@@ -3104,10 +3115,10 @@ impl EditorView {
                 |me, _, event: &AIContextMenuEvent, ctx| {
                     let is_udi_enabled =
                         InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
-                    let current_input_mode = if me.is_ai_input {
-                        InputType::AI
+                    let current_input_mode: crate::server::telemetry::events::InputType = if me.is_ai_input {
+                        InputType::AI.into()
                     } else {
-                        InputType::Shell
+                        InputType::Shell.into()
                     };
                     match event {
                         AIContextMenuEvent::Close {

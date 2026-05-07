@@ -60,10 +60,19 @@ use crate::ui_components::icons::Icon as WarpUIIcon;
 
 // twarp: 2c-d — AI agent PassiveSuggestionTrigger/StaticQueryType deleted; stubs.
 #[derive(Clone, Debug)]
-pub enum PassiveSuggestionTrigger { Other }
+pub enum PassiveSuggestionTrigger {
+    Other,
+    ShellCommandCompleted(ShellCommandCompletedTrigger),
+}
 #[allow(dead_code)]
 impl PassiveSuggestionTrigger {
     pub fn block_id(&self) -> Option<warp_terminal::model::BlockId> { None }
+}
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct ShellCommandCompletedTrigger {
+    pub relevant_files: Vec<()>,
+    pub executed_shell_command: String,
 }
 #[derive(Clone, Debug)]
 pub enum StaticQueryType { Install, Code, Deploy, SomethingElse }

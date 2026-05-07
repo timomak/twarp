@@ -29,8 +29,8 @@ pub struct OnboardingAgenticSuggestionsBlock;
 pub struct InitStepBlock;
 #[derive(Clone, Copy, Debug)]
 pub enum InitStepKind { Other }
-#[derive(Clone, Debug)]
-pub enum AgentViewEntryOrigin { Other }
+// twarp: 2c-d — unify with app_state::AgentViewEntryOrigin.
+pub use crate::app_state::AgentViewEntryOrigin;
 
 // twarp: 2c-d — Entity+View impls for stub types
 macro_rules! twarp_stub_view_impl {

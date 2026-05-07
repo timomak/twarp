@@ -31,8 +31,8 @@ use crate::workspace::tab_settings::{TabCloseButtonPosition, TabSettings};
 use crate::workspace::{
     PaneViewLocator, TabBarDropTargetData, TabBarLocation, TabContextMenuAnchor, WorkspaceAction,
 };
-// twarp: 2c-d — BlocklistAIHistoryModel deleted; stub.
-pub struct BlocklistAIHistoryModel;
+// twarp: 2c-d — BlocklistAIHistoryModel deleted; re-exported from input for type unification.
+pub use crate::terminal::input::BlocklistAIHistoryModel;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use serde::{Deserialize, Serialize};

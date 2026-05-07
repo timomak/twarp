@@ -129,6 +129,16 @@ pub enum CommandExecutionPermissionAllowedReason {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum InputType {
     Other,
+    Shell,
+    AI,
+}
+impl From<crate::terminal::input::InputType> for InputType {
+    fn from(t: crate::terminal::input::InputType) -> Self {
+        match t {
+            crate::terminal::input::InputType::Shell => InputType::Shell,
+            crate::terminal::input::InputType::AI => InputType::AI,
+        }
+    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TemplateVariable {

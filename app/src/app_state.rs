@@ -138,7 +138,7 @@ impl ConversationStatus {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct AgentConversationsModelEvent {}
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ServerConversationToken {}
 #[allow(dead_code)]
 impl ServerConversationToken {

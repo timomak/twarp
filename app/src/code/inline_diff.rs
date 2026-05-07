@@ -2,7 +2,12 @@ use std::rc::Rc;
 
 // twarp: 2c-d — AI DiffSessionType deleted; stub.
 #[cfg(not(target_family = "wasm"))]
-pub enum DiffSessionType { Other }
+#[derive(Clone, Debug)]
+pub enum DiffSessionType {
+    Other,
+    Local,
+    Remote,
+}
 use ai::diff_validation::DiffType;
 #[cfg(not(target_family = "wasm"))]
 use warp_files::{FileModel, FileModelEvent};

@@ -296,9 +296,8 @@ pub enum AnonymousUserLoginBannerAction {
     SignUp,
 }
 
-// twarp: 2c-d — InsertReviewComment was ai::agent::action; stub for type slot
-#[allow(dead_code)]
-struct InsertReviewComment;
+// twarp: 2c-d — re-export real InsertReviewComment from crates/ai.
+pub use ai::agent::action::InsertReviewComment;
 
 // twarp: 2c-d — ConversationRestorationInNewPaneType is `pub type ... = ()` stub in pane_group
 use crate::pane_group::ConversationRestorationInNewPaneType;
@@ -386,9 +385,7 @@ pub use crate::app_state::AgentViewEntryOrigin;
 #[allow(dead_code)] fn is_accept_prompt_suggestion_bound_to_ctrl_enter<C>(_: &C) -> bool { false }
 
 #[cfg(feature = "local_fs")]
-#[allow(dead_code)] enum CurrentHead { BranchName(String) }
-#[cfg(feature = "local_fs")]
-#[allow(dead_code)] enum DiffBase { UncommittedChanges, BranchName(String) }
+pub use crate::code_review::comments::comment::{CurrentHead, DiffBase};
 
 #[allow(dead_code)] struct AgentConversationsModel;
 #[allow(dead_code)]
@@ -462,36 +459,23 @@ impl UserTakeOverReason {
 #[allow(dead_code)] struct AIDocumentModel;
 #[allow(dead_code)] fn shimmering_warp_loading_text<A, B, C, D>(_: A, _: B, _: C, _: D) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
 
-#[allow(dead_code)]
-#[derive(Clone)]
-struct ServerConversationToken;
+pub use crate::app_state::ServerConversationToken;
 #[allow(dead_code)]
 impl ServerConversationToken {
     fn as_str(&self) -> &str { "" }
-    fn new<S: Into<String>>(_: S) -> Self { Self }
-    fn debug_link(&self) -> String { String::new() }
 }
 #[allow(dead_code)] fn redact_secrets<C>(_: C) {}
 #[allow(dead_code)] enum AgentTodosPopupEvent {}
 #[allow(dead_code)] struct AgentTodosPopupView;
 
-#[allow(dead_code)] enum AIAgentPtyWriteMode {}
-#[allow(dead_code)] struct AgentReviewCommentBatch;
+pub use ai::agent::action::AIAgentPtyWriteMode;
+pub use crate::code_review::code_review_view::AgentReviewCommentBatch;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)] enum CancellationReason { No }
-#[allow(dead_code)] enum PassiveSuggestionTrigger {
-    ShellCommandCompleted(ShellCommandCompletedTrigger),
-}
-#[allow(dead_code)]
-impl PassiveSuggestionTrigger {
-    fn block_id(&self) -> Option<()> { None }
-}
+pub use crate::terminal::view::inline_banner::prompt_suggestions::{
+    PassiveSuggestionTrigger, ShellCommandCompletedTrigger,
+};
 #[allow(dead_code)] struct ServerOutputId;
-#[allow(dead_code)] struct ShellCommandCompletedTrigger {
-    // twarp: 2c-d — fields used by callers
-    pub relevant_files: Vec<()>,
-    pub executed_shell_command: String,
-}
 #[allow(dead_code)] enum AIBlockAction {
     // twarp: 2c-d — bulk variants for AI-removed AIBlockAction
     Copy,
@@ -936,9 +920,6 @@ impl Entity for ConversationDetailsPanel {
     type Event = ConversationDetailsPanelEvent;
 }
 impl Entity for AIRequestUsageModel {
-    type Event = ();
-}
-impl Entity for AgentReviewCommentBatch {
     type Event = ();
 }
 impl Entity for UseAgentToolbar {
