@@ -43,6 +43,7 @@ impl LongRunningCommandControlState {
 impl UserTakeOverReason {
     pub fn is_stop(&self) -> bool { false }
 }
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum UserTakeOverReason { Other }
 use crate::{
     terminal::{

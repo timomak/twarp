@@ -195,6 +195,16 @@ pub enum CLIAgent {
     Gemini,
     Unknown,
 }
+impl From<CLIAgent> for crate::server::telemetry::events::CLIAgentType {
+    fn from(a: CLIAgent) -> Self {
+        match a {
+            CLIAgent::Claude => crate::server::telemetry::events::CLIAgentType::Claude,
+            CLIAgent::Codex => crate::server::telemetry::events::CLIAgentType::Codex,
+            CLIAgent::Gemini => crate::server::telemetry::events::CLIAgentType::Gemini,
+            CLIAgent::Unknown => crate::server::telemetry::events::CLIAgentType::Unknown,
+        }
+    }
+}
 impl CLIAgent {
     pub fn from_serialized_name(name: &str) -> Self {
         match name {
