@@ -669,6 +669,9 @@ impl BlocklistAIInputModel {
     fn is_ai_input_enabled(&self) -> bool {
         false
     }
+    fn handle_input_buffer_submitted<C>(&mut self, _: &mut C) {}
+    fn enable_autodetection<C>(&mut self, _: &mut C) {}
+    fn detect_and_set_input_type<A, C>(&mut self, _: A, _: &mut C) {}
     fn input_config(&self) -> InputConfig {
         InputConfig::empty()
     }
@@ -772,6 +775,10 @@ impl AmbientAgentViewModel {
 
 #[allow(dead_code)]
 struct AgentInputFooter;
+#[allow(dead_code)]
+impl AgentInputFooter {
+    fn has_open_chip_menu(&self) -> bool { false }
+}
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum AgentInputFooterEvent {}

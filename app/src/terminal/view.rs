@@ -356,6 +356,7 @@ impl AgentViewController {
     pub fn is_active(&self) -> bool { false }
     pub fn is_fullscreen(&self) -> bool { false }
     pub fn agent_view_state(&self) -> AgentViewState { AgentViewState }
+    pub fn exit_agent_view<A, C>(&mut self, _: A, _: &mut C) {}
 }
 #[allow(dead_code)]
 struct AgentViewState;
@@ -425,6 +426,11 @@ type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
 #[allow(dead_code)]
 impl CLISubagentController {
     fn switch_control_to_user<A, C>(&mut self, _: A, _: &mut C) {}
+    fn handoff_active_command_control_to_agent<C>(&mut self, _: &mut C) {}
+}
+#[allow(dead_code)]
+impl CLISubagentView {
+    fn clear_all_selections(&mut self) {}
 }
 #[allow(dead_code)] enum CLISubagentEvent {}
 #[allow(dead_code)] enum UserTakeOverReason {
@@ -3347,6 +3353,12 @@ impl TerminalView {
     fn hide_use_agent_footer_in_blocklist<C>(&mut self, _: &mut C) {}
     #[allow(dead_code)]
     fn open_cli_agent_rich_input<A, C>(&mut self, _: A, _: &mut C) {}
+    #[allow(dead_code)]
+    fn close_cli_agent_rich_input<A, C>(&mut self, _: A, _: &mut C) {}
+    #[allow(dead_code)]
+    fn enter_agent_view_for_conversation<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    #[allow(dead_code)]
+    fn fetch_and_update_cloud_mode_details_panel<A, C>(&mut self, _: A, _: &mut C) {}
 
     /// Create a SyncEvent for other terminals to use based on
     /// the state of this terminal. If this terminal view has an active input
