@@ -32,7 +32,12 @@ impl ActiveAgentViewsModel {
     pub fn unregister_agent_view_controller<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn unregister_ambient_session<A, C>(&mut self, _: A, _: &mut C) {}
 }
-pub enum AgentViewControllerEvent { Other }
+pub enum AgentViewControllerEvent {
+    // twarp: 2c-d — bulk variants
+    Other,
+    EnteredAgentView { conversation_id: Option<crate::app_state::AIConversationId> },
+    ExitedAgentView { conversation_id: Option<crate::app_state::AIConversationId> },
+}
 pub enum BlocklistAIContextEvent { Other }
 // twarp: 2c-d — re-export canonical
 pub use crate::terminal::input::BlocklistAIHistoryEvent;

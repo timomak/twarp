@@ -684,7 +684,11 @@ fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool {
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum BlocklistAIContextEvent {}
+pub enum BlocklistAIContextEvent {
+    // twarp: 2c-d — bulk variants
+    PendingQueryStateUpdated,
+    Other,
+}
 
 #[allow(dead_code)]
 pub struct BlocklistAIContextModel;
@@ -693,7 +697,7 @@ impl BlocklistAIContextModel {
     pub fn selected_conversation_id<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> { None }
     pub fn pending_images(&self) -> Vec<()> { Vec::new() }
     // twarp: 2c-d — bulk stubs for AI-removed methods on BlocklistAIContextModel
-    pub fn selected_conversation<C>(&self, _: &C) -> Option<()> { None }
+    pub fn selected_conversation<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> { None }
     pub fn set_pending_query_state_for_existing_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     pub fn set_pending_context_selected_text<T, C>(&mut self, _: Option<String>, _: T, _: &mut C) {}
     pub fn set_pending_context_block_ids<I, T, C>(&mut self, _: I, _: T, _: &mut C) {}
@@ -811,6 +815,11 @@ pub enum BlocklistAIInputEvent {
     InputTypeChanged { },
     LockChanged { },
     UpdatedConfig { },
+}
+#[allow(dead_code)]
+impl BlocklistAIInputEvent {
+    // twarp: 2c-d — bulk method stub
+    pub fn updated_config(&self) -> Option<InputConfig> { None }
 }
 
 #[allow(dead_code)]

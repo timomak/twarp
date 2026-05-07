@@ -434,6 +434,17 @@ struct AgentTaskDataStub;
 impl AgentTaskDataStub {
     fn is_no_longer_running(&self) -> bool { false }
 }
+// twarp: 2c-d — stub for AI task results
+#[allow(dead_code)]
+struct TaskStub;
+#[allow(dead_code)]
+impl TaskStub {
+    fn last_exchange(&self) -> Option<ExchangeStub> { None }
+}
+#[allow(dead_code)]
+struct ExchangeStub {
+    pub id: AIAgentExchangeId,
+}
 #[allow(dead_code)] enum AgentConversationsModelEvent {
     // twarp: 2c-d — bulk variants for AI-removed AgentConversationsModelEvent
     ConversationArtifactsUpdated(()),
@@ -537,6 +548,13 @@ struct CodebaseIndexSpeedbumpBannerState {
     // twarp: 2c-d — extra fields used by view code
     pub repo_path: std::path::PathBuf,
     pub visibility_state: (),
+    pub always_allow_checked: bool,
+    pub show_indexing_banner: bool,
+}
+#[allow(dead_code)]
+impl CodebaseIndexSpeedbumpBannerState {
+    pub fn toggle_always_allow_checked(&mut self) {}
+    pub fn show_indexing_banner(&self) -> bool { false }
 }
 #[allow(dead_code)]
 impl CodebaseIndexSpeedbumpBannerState {
@@ -620,7 +638,7 @@ impl AIConversation {
     fn exchange_id_for_action(&self, _: ()) -> Option<()> { None }
     fn exchanges_reversed(&self) -> std::iter::Empty<()> { std::iter::empty() }
     fn forked_from_server_conversation_token(&self) -> Option<String> { None }
-    fn get_task(&self, _: ()) -> Option<()> { None }
+    fn get_task<A>(&self, _: A) -> Option<TaskStub> { None }
     fn has_active_subagent(&self) -> bool { false }
     fn has_opened_code_review(&self) -> bool { false }
     fn latest_exchange(&self) -> Option<()> { None }
