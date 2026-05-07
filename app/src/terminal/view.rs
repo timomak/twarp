@@ -679,7 +679,13 @@ impl BlocklistAIActionModel {
 pub use crate::terminal::input::BlocklistAIContextModel;
 // twarp: 2c-d — re-export canonical BlocklistAIController from terminal::input
 pub use crate::terminal::input::BlocklistAIController;
-#[allow(dead_code)] enum BlocklistAIControllerEvent {}
+#[allow(dead_code)] enum BlocklistAIControllerEvent {
+    // twarp: 2c-d — bulk variants
+    ExportConversationToFile(()),
+    FinishedReceivingOutput(()),
+    FreeTierLimitCheckTriggered,
+    SentRequest(()),
+}
 // twarp: 2c-d — re-export canonical BlocklistAIHistoryEvent
 pub use crate::terminal::input::BlocklistAIHistoryEvent;
 #[allow(dead_code)] struct BlocklistAIHistoryModel;

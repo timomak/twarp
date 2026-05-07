@@ -4,7 +4,14 @@ use warpui::{SingletonEntity, ViewContext};
 // twarp: 2c-d — AI agent / blocklist deleted; stubs.
 use crate::app_state::AIConversationId;
 pub enum CancellationReason { Other }
-pub enum FinishReason { Other }
+pub enum FinishReason {
+    // twarp: 2c-d — bulk variants
+    Other,
+    Complete,
+    Error,
+    Cancelled,
+    CancelledDuringRequestedCommandExecution,
+}
 pub struct PendingUserQueryBlock;
 pub enum PendingUserQueryBlockEvent { Other }
 use crate::{auth::AuthStateProvider, terminal::TerminalView};

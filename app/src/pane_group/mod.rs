@@ -5906,6 +5906,9 @@ impl PaneGroup {
             }
         }
     }
+    // twarp: 2c-d — bulk stubs
+    fn create_missing_child_agent_panes<C>(&mut self, _: &mut C) {}
+    fn register_pending_ambient_restorations<A, C>(&mut self, _: A, _: &mut C) {}
 }
 
 impl Entity for PaneGroup {

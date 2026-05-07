@@ -31,7 +31,13 @@ impl AIRequestUsageModel {
     pub fn dismiss_buy_credits_banner<C>(&mut self, _: &mut C) {}
 }
 pub enum AIRequestUsageModelEvent { Other }
-pub enum BuyCreditsBannerDisplayState { Other }
+pub enum BuyCreditsBannerDisplayState {
+    // twarp: 2c-d — bulk variants
+    Other,
+    Hidden,
+    MonthlyLimitReached,
+    OutOfCredits,
+}
 use crate::auth::AuthStateProvider;
 use crate::features::FeatureFlag;
 use crate::menu::MenuItemFields;

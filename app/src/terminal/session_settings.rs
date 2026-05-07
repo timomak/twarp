@@ -32,6 +32,15 @@ pub enum AgentToolbarItemKind {
 use crate::context_chips::prompt::PromptSelection;
 use crate::context_chips::ContextChipKind;
 
+#[allow(dead_code)]
+impl AgentToolbarItemKind {
+    // twarp: 2c-d — default toolbar item factories (return empty)
+    pub fn default_left() -> Vec<AgentToolbarItemKind> { Vec::new() }
+    pub fn default_right() -> Vec<AgentToolbarItemKind> { Vec::new() }
+    pub fn cli_default_left() -> Vec<AgentToolbarItemKind> { Vec::new() }
+    pub fn cli_default_right() -> Vec<AgentToolbarItemKind> { Vec::new() }
+}
+
 lazy_static! {
     pub static ref DEFAULT_THRESHOLD_FOR_LONG_RUNNING_NOTIFICATION: Duration =
         Duration::from_secs(30);

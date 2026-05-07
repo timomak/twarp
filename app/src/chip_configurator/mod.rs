@@ -27,7 +27,8 @@ use warpui::{Action, View, ViewContext};
 // configurator was originally generic over `AgentToolbarItemKind`; with the AI feature
 // gone, we only need the variants the non-AI consumers (header toolbar editor, prompt
 // editor) actually exercise, plus a `ContextChip` carrier for the chip path.
-#[derive(Clone, Debug)]
+// twarp: 2c-d — added PartialEq so it can be compared
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AgentToolbarItemKind {
     ContextChip(ContextChipKind),
 }

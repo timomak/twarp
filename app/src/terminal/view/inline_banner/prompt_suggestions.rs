@@ -8,12 +8,21 @@ use crate::app_state::ServerConversationToken;
 pub const ACCEPT_PROMPT_SUGGESTION_KEYBINDING: &str = "AcceptPromptSuggestion";
 
 pub struct BlocklistAIInputModel;
-pub enum PromptAlertEvent { Other }
+pub enum PromptAlertEvent {
+    Other,
+    // twarp: 2c-d — variants needed by handle_prompt_alert_event
+    SignupAnonymousUser,
+    OpenBillingAndUsagePage,
+    OpenPrivacyPage,
+    OpenBillingPortal { team_uid: ServerId },
+}
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PromptAlertState {
     None,
     NoConnection,
     AnonymousUserRequestLimitHardGate,
+    // twarp: 2c-d — extra variant referenced in match
+    AnonymousUserRequestLimitSoftGate,
     DelinquentDueToPaymentIssue,
     OveragesToggleableButNotEnabled,
     MonthlyOveragesSpendLimitReached,

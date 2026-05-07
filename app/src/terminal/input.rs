@@ -405,7 +405,9 @@ enum SkillOpenOrigin {
 #[allow(dead_code)]
 enum SkillTelemetryEvent {
     Opened {
-        name: String,
+        // twarp: 2c-d — make name optional and add reference
+        reference: String,
+        name: Option<String>,
         origin: SkillOpenOrigin,
     },
 }
@@ -630,7 +632,13 @@ enum EntrypointType {
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum PromptAlertEvent {}
+enum PromptAlertEvent {
+    // twarp: 2c-d — bulk variants
+    OpenBillingAndUsagePage,
+    OpenBillingPortal,
+    OpenPrivacyPage,
+    SignupAnonymousUser,
+}
 
 #[allow(dead_code)]
 struct PromptAlertView;
@@ -4666,14 +4674,8 @@ impl Input {
             self.focus_input_box(ctx);
         } else {
             // Open the skill file in editor (from /open-skill command)
-            send_telemetry_from_ctx!(
-                SkillTelemetryEvent::Opened {
-                    reference: skill_reference.clone(),
-                    name: Some(skill_name.clone()),
-                    origin: SkillOpenOrigin::OpenSkillCommand,
-                },
-                ctx
-            );
+            // twarp: 2c-d — SkillTelemetryEvent isn't a TelemetryEvent post-AI-removal; emission removed.
+            let _ = (&skill_reference, &skill_name, SkillOpenOrigin::OpenSkillCommand);
 
             ctx.dispatch_typed_action(&TerminalAction::OpenEditSkillPane {
                 skill_reference: skill_reference.clone(),
