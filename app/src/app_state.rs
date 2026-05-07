@@ -44,6 +44,13 @@ impl InputConfig {
     pub fn is_ai(&self) -> bool { false }
     pub fn is_shell(&self) -> bool { true }
 }
+// twarp: 2c-d — From conversions to bridge app_state and terminal::input InputConfig
+impl From<crate::terminal::input::InputConfig> for InputConfig {
+    fn from(_: crate::terminal::input::InputConfig) -> Self { Self {} }
+}
+impl From<InputConfig> for crate::terminal::input::InputConfig {
+    fn from(_: InputConfig) -> Self { crate::terminal::input::InputConfig::empty() }
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SerializedBlockListItem {
     Command { block: SerializedBlockStub },

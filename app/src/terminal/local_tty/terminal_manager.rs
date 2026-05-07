@@ -373,7 +373,8 @@ impl TerminalManager {
                 colors,
                 model_event_sender.clone(),
                 prompt_type.clone(),
-                initial_input_config,
+                // twarp: 2c-d — convert app_state::InputConfig to terminal::input::InputConfig
+                initial_input_config.into(),
                 conversation_restoration,
                 Some(inactive_pty_reads_rx.clone()),
                 ctx,

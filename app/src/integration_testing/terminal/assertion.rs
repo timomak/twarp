@@ -10,11 +10,8 @@ use warpui::{
     App, SingletonEntity, ViewHandle, WindowId,
 };
 
-// twarp: 2c-d — AgentViewState deleted; stub kept so test assertions reference it.
-pub enum AgentViewState {
-    Inactive,
-    Active,
-}
+// twarp: 2c-d — re-export canonical AgentViewState
+pub use crate::terminal::model::block::AgentViewState;
 use crate::{
     integration_testing::view_getters::{
         single_input_view_for_tab, single_terminal_view, single_terminal_view_for_tab,

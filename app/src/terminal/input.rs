@@ -874,7 +874,7 @@ impl BlocklistAIInputModel {
 
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
-struct InputConfig {
+pub struct InputConfig {
     pub input_type: InputType,
     pub is_locked: bool,
 }
@@ -899,7 +899,7 @@ impl InputConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
-enum InputType {
+pub enum InputType {
     Shell,
     AI,
 }
@@ -10918,7 +10918,8 @@ impl Input {
         &'a self,
         ctx: &'a ViewContext<Self>,
     ) -> Vec<HistoryInputSuggestion<'a>> {
-        let input_config = self.ai_input_model.as_ref(ctx).input_config();
+        // twarp: 2c-d — convert to app_state::InputConfig
+        let input_config: crate::app_state::InputConfig = self.ai_input_model.as_ref(ctx).input_config().into();
         let config = UpArrowHistoryConfig::for_input_config(&input_config);
 
         History::as_ref(ctx).up_arrow_suggestions_for_terminal_view(

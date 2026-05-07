@@ -770,19 +770,8 @@ impl BlocklistAIInputModel {
     fn set_input_type<C>(&mut self, _: InputType, _: &mut C) {}
     fn is_input_type_locked(&self) -> bool { false }
 }
-#[allow(dead_code)]
-#[derive(Clone, Copy)]
-struct InputConfig {
-    pub input_type: InputType,
-    pub is_locked: bool,
-}
-#[allow(dead_code)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum InputType { Shell, AI }
-#[allow(dead_code)]
-impl InputType {
-    fn is_ai(&self) -> bool { matches!(self, InputType::AI) }
-}
+// twarp: 2c-d — re-export canonical InputConfig + InputType from terminal::input
+pub use crate::terminal::input::{InputConfig, InputType};
 #[allow(dead_code)] enum PendingQueryState {}
 #[allow(dead_code)] struct ShellCommandExecutor;
 #[allow(dead_code)]
