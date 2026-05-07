@@ -6,8 +6,18 @@ use crate::terminal::block_filter::BlockFilterQuery;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AIAgentActionId(pub String);
-pub enum AgentViewDisplayMode { Other }
-pub struct AgentViewState;
+pub enum AgentViewDisplayMode {
+    Inline,
+    FullScreen,
+    Other,
+}
+pub enum AgentViewState {
+    Active {
+        conversation_id: crate::app_state::AIConversationId,
+        display_mode: AgentViewDisplayMode,
+    },
+    Inactive,
+}
 use crate::terminal::event::AfterBlockCompletedEvent;
 use crate::terminal::event_listener::ChannelEventListener;
 use crate::terminal::model::ansi;

@@ -10,8 +10,18 @@ impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
     pub fn can_conversation_be_shared(&self, _: &crate::app_state::AIConversationId) -> bool { false }
-    pub fn get_server_conversation_metadata(&self, _: &crate::app_state::AIConversationId) -> Option<()> { None }
+    pub fn get_server_conversation_metadata(&self, _: &crate::app_state::AIConversationId) -> Option<&ServerConversationMetadataStub> { None }
     pub fn conversation(&self, _: &crate::app_state::AIConversationId) -> Option<()> { None }
+}
+pub struct ServerConversationMetadataStub {
+    pub metadata: ServerObjectMetadataStub,
+}
+pub struct ServerObjectMetadataStub {
+    pub uid: ObjectUidStub,
+}
+pub struct ObjectUidStub;
+impl ObjectUidStub {
+    pub fn uid(&self) -> &str { "" }
 }
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;

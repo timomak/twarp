@@ -3,11 +3,17 @@ use warp_terminal::model::{grid::Dimensions, Point};
 
 // twarp: 2c-d — AI agent / blocklist deleted; stubs (use crate::app_state where present).
 use crate::app_state::AIConversationId;
-pub struct TaskId;
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct TaskId(pub String);
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct AIAgentActionId(pub String);
+impl From<String> for AIAgentActionId {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
 // twarp: 2c-d — variants kept so legacy AI takeover call-sites compile.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LongRunningCommandControlState {
     User,
     Agent,

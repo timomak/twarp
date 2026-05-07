@@ -1,13 +1,10 @@
 use std::collections::HashSet;
 
-// twarp: 2c-d — AI agent task / action / blocklist controller deleted; stubs.
+// twarp: 2c-d — AI agent task / action / blocklist controller deleted; reuse interaction_mode stubs.
 use crate::app_state::AIConversationId;
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct TaskId(pub String);
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct AIAgentActionId(pub String);
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum LongRunningCommandControlState { Other }
+pub use crate::terminal::model::block::interaction_mode::{
+    AIAgentActionId, LongRunningCommandControlState, TaskId,
+};
 use crate::terminal::model::block::{
     has_block_failed, AgentViewVisibility, Block, BlockState, PromptInfo,
     MAX_SERIALIZED_STYLIZED_OUTPUT_LINES,

@@ -1,8 +1,8 @@
-// twarp: 2c-d — AI agent / blocklist deleted; stubs.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct AIAgentActionId(pub String);
-pub enum LongRunningCommandControlState { Other }
-pub struct BlocklistAIHistoryModel;
+// twarp: 2c-d — AI agent / blocklist deleted; reuse interaction_mode + shared_handlers stubs.
+pub use crate::terminal::model::block::interaction_mode::{
+    AIAgentActionId, LongRunningCommandControlState,
+};
+pub use crate::terminal::shared_session::shared_handlers::BlocklistAIHistoryModel;
 use crate::features::FeatureFlag;
 use crate::terminal::model::block::AgentInteractionMetadata;
 use parking_lot::FairMutex;

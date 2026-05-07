@@ -24,7 +24,10 @@ pub struct CodeBlockOptions;
 #[derive(Default)]
 pub struct CodeSnippetButtonHandles;
 pub struct PluginInstructions {
-    pub steps: Vec<()>,
+    pub steps: Vec<PluginInstructionStep>,
+}
+pub struct PluginInstructionStep {
+    pub command: String,
 }
 use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ActionButton, ButtonSize, NakedTheme};
