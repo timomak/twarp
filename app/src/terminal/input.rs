@@ -651,8 +651,33 @@ enum BlocklistAIContextEvent {}
 pub struct BlocklistAIContextModel;
 #[allow(dead_code)]
 impl BlocklistAIContextModel {
-    fn selected_conversation_id<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> { None }
-    fn pending_images(&self) -> Vec<()> { Vec::new() }
+    pub fn selected_conversation_id<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> { None }
+    pub fn pending_images(&self) -> Vec<()> { Vec::new() }
+    // twarp: 2c-d — bulk stubs for AI-removed methods on BlocklistAIContextModel
+    pub fn selected_conversation<C>(&self, _: &C) -> Option<()> { None }
+    pub fn set_pending_query_state_for_existing_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    pub fn set_pending_context_selected_text<T, C>(&mut self, _: Option<String>, _: T, _: &mut C) {}
+    pub fn set_pending_context_block_ids<I, T, C>(&mut self, _: I, _: T, _: &mut C) {}
+    pub fn can_start_new_conversation(&self) -> bool { false }
+    pub fn is_queue_next_prompt_enabled(&self) -> bool { false }
+    pub fn is_targeting_existing_conversation(&self) -> bool { false }
+    pub fn pending_attachments(&self) -> Vec<()> { Vec::new() }
+    pub fn pending_context_block_ids(&self) -> Vec<()> { Vec::new() }
+    pub fn pending_context_selected_text(&self) -> Option<String> { None }
+    pub fn pending_files(&self) -> Vec<()> { Vec::new() }
+    pub fn selected_conversation_status_for_hint<C>(&self, _: &C) -> Option<()> { None }
+    pub fn current_pwd(&self) -> Option<std::path::PathBuf> { None }
+    pub fn home_directory(&self) -> Option<std::path::PathBuf> { None }
+    pub fn pending_context(&self) -> Option<()> { None }
+    pub fn pending_query_autoexecute_override(&self) -> Option<bool> { None }
+    pub fn register_diff_hunk_attachment<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn remove_pending_attachment<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn reset_context_to_default<C>(&mut self, _: &mut C) {}
+    pub fn set_pending_query_state_for_new_conversation<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn toggle_pending_query_autoexecute<C>(&mut self, _: &mut C) {}
+    pub fn toggle_queue_next_prompt<C>(&mut self, _: &mut C) {}
+    pub fn clear_pending_attachments<C>(&mut self, _: &mut C) {}
+    pub fn remove_last_pending_images<C>(&mut self, _: &mut C) {}
 }
 
 #[allow(dead_code)]

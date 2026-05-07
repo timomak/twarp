@@ -549,6 +549,18 @@ struct AIConversation;
 impl AIConversation {
     fn status(&self) -> ConversationStatus { ConversationStatus::Other }
     fn is_entirely_passive(&self) -> bool { false }
+    // twarp: 2c-d — bulk stubs
+    fn exchange_id_for_action(&self, _: ()) -> Option<()> { None }
+    fn exchanges_reversed(&self) -> std::iter::Empty<()> { std::iter::empty() }
+    fn forked_from_server_conversation_token(&self) -> Option<String> { None }
+    fn get_task(&self, _: ()) -> Option<()> { None }
+    fn has_active_subagent(&self) -> bool { false }
+    fn has_opened_code_review(&self) -> bool { false }
+    fn latest_exchange(&self) -> Option<()> { None }
+    fn latest_user_query(&self) -> Option<String> { None }
+    fn root_task_exchanges(&self) -> std::iter::Empty<()> { std::iter::empty() }
+    fn server_conversation_token(&self) -> Option<String> { None }
+    fn title(&self) -> Option<String> { None }
 }
 #[allow(dead_code)]
 enum ConversationStatus {
@@ -615,14 +627,8 @@ impl BlocklistAIActionModel {
     fn shell_command_executor<C>(&self, _: &C) -> ModelHandle<ShellCommandExecutor> { unimplemented!() }
 }
 #[allow(dead_code)] enum BlocklistAIContextEvent {}
-#[allow(dead_code)] struct BlocklistAIContextModel;
-#[allow(dead_code)]
-impl BlocklistAIContextModel {
-    fn selected_conversation<C>(&self, _: &C) -> Option<()> { None }
-    fn set_pending_query_state_for_existing_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
-    fn set_pending_context_selected_text<T, C>(&mut self, _: Option<String>, _: T, _: &mut C) {}
-    fn set_pending_context_block_ids<I, T, C>(&mut self, _: I, _: T, _: &mut C) {}
-}
+// twarp: 2c-d — re-export canonical BlocklistAIContextModel from terminal::input
+pub use crate::terminal::input::BlocklistAIContextModel;
 #[allow(dead_code)] struct BlocklistAIController;
 #[allow(dead_code)]
 impl BlocklistAIController {
@@ -23166,6 +23172,23 @@ impl TerminalView {
             ctx
         );
     }
+
+    // twarp: 2c-d — bulk stubs for AI-removed methods on TerminalView
+    fn close_cli_agent_rich_input_and_disable_auto_toggle<C>(&mut self, _: &mut C) {}
+    fn detect_cli_agent_from_model<C>(&mut self, _: &mut C) {}
+    fn enter_agent_view<C>(&mut self, _: &mut C) {}
+    fn enter_cloud_agent_view<C>(&mut self, _: &mut C) {}
+    fn handle_ambient_agent_event<C, E>(&mut self, _: E, _: &mut C) {}
+    fn handle_first_time_cloud_agent_setup_event<C, E>(&mut self, _: E, _: &mut C) {}
+    fn insert_agent_view_entry_block<C, A>(&mut self, _: A, _: &mut C) {}
+    fn load_agent_mode_conversation<C, A>(&mut self, _: A, _: &mut C) {}
+    fn maybe_auto_open_cloud_mode_details_panel<C>(&mut self, _: &mut C) {}
+    fn maybe_insert_setup_command_blocks<C>(&mut self, _: &mut C) {}
+    fn show_out_of_credits_modal<C>(&mut self, _: &mut C) {}
+    fn submit_cli_agent_rich_input<C>(&mut self, _: &mut C) {}
+    fn tag_in_agent_for_user_long_running_command<C>(&mut self, _: &mut C) {}
+    fn tag_out_agent_for_user_long_running_command<C>(&mut self, _: &mut C) {}
+    fn try_enter_agent_view<C>(&mut self, _: &mut C) {}
 }
 
 impl Entity for TerminalView {
