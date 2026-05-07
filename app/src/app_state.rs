@@ -148,6 +148,7 @@ impl ServerConversationToken {
     // twarp: 2c-d — bulk stubs
     pub fn new<S: Into<String>>(_: S) -> Self { Self {} }
     pub fn debug_link(&self) -> String { String::new() }
+    pub fn from_uuid(_: uuid::Uuid) -> Self { Self {} }
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum AgentViewEntryOrigin {

@@ -5865,9 +5865,9 @@ impl Input {
                 self.ai_controller.update(ctx, |controller, ctx| {
                     controller.send_user_query_in_new_conversation(
                         query,
-                        None,
+                        None::<()>,
                         EntrypointType::UserInitiated,
-                        None,
+                        None::<()>,
                         ctx,
                     );
                 });
@@ -12263,7 +12263,7 @@ impl Input {
         {
             self.agent_view_controller.update(ctx, |controller, ctx| {
                 let _ =
-                    controller.try_enter_agent_view(None, AgentViewEntryOrigin::ProjectEntry, ctx);
+                    controller.try_enter_agent_view(None::<()>, AgentViewEntryOrigin::ProjectEntry, ctx);
             });
         }
         self.ai_controller.update(ctx, move |controller, ctx| {
@@ -12280,7 +12280,7 @@ impl Input {
         {
             self.agent_view_controller.update(ctx, |controller, ctx| {
                 let _ =
-                    controller.try_enter_agent_view(None, AgentViewEntryOrigin::ProjectEntry, ctx);
+                    controller.try_enter_agent_view(None::<()>, AgentViewEntryOrigin::ProjectEntry, ctx);
             });
         }
         self.ai_controller.update(ctx, move |controller, ctx| {

@@ -586,7 +586,13 @@ struct CLIAgentSession {
     pub draft_text: String,
     pub custom_command_prefix: Option<String>,
 }
-#[allow(dead_code)] struct CLIAgentSessionContext;
+#[allow(dead_code)] struct CLIAgentSessionContext {
+    pub query: Option<String>,
+    pub summary: Option<String>,
+}
+impl Default for CLIAgentSessionContext {
+    fn default() -> Self { Self { query: None, summary: None } }
+}
 #[allow(dead_code)] enum CLIAgentSessionStatus {
     InProgress,
     Blocked { message: String },
@@ -6095,7 +6101,7 @@ impl TerminalView {
                 *conversation_id,
                 /*can_attempt_resume_on_error*/ true,
                 /*is_auto_resume_after_error*/ false,
-                vec![],
+                Vec::<()>::new(),
                 ctx,
             );
         });
@@ -23279,7 +23285,7 @@ impl TerminalView {
 
     // twarp: 2c-d — bulk stubs for AI-removed methods on TerminalView
     fn close_cli_agent_rich_input_and_disable_auto_toggle<C>(&mut self, _: &mut C) {}
-    fn detect_cli_agent_from_model<A, C>(&mut self, _: A, _: &mut C) {}
+    fn detect_cli_agent_from_model<A, C>(&mut self, _: A, _: &mut C) -> Option<(crate::app_state::CLIAgent, Option<String>)> { None }
     fn enter_agent_view<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     fn enter_cloud_agent_view<A, C>(&mut self, _: A, _: &mut C) {}
     fn handle_ambient_agent_event<C, E>(&mut self, _: E, _: &mut C) {}

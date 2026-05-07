@@ -200,7 +200,7 @@ impl TerminalView {
     ) {
         let terminal_driver = TerminalDriver::create_from_existing_view(terminal_view.clone(), ctx);
 
-        let spawner = terminal_driver.update(ctx, |_, ctx| ctx.spawner());
+        let spawner = terminal_driver.update(ctx, |_: &mut TerminalDriver, ctx| ctx.spawner());
         let sync_future = UpdateManager::as_ref(ctx).initial_load_complete();
         ctx.spawn(
             async move {
@@ -216,7 +216,7 @@ impl TerminalView {
 
                 // Wait for the terminal session to bootstrap.
                 let bootstrap_future = spawner
-                    .spawn(move |driver, _| driver.wait_for_session_bootstrapped())
+                    .spawn(move |driver: &mut TerminalDriver, _| driver.wait_for_session_bootstrapped())
                     .await
                     .map_err(|_| "view dropped")?;
 
