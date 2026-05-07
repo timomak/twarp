@@ -9,6 +9,11 @@ cfg_if::cfg_if! {
         use std::path::Path;
         use crate::code_review::code_review_view::{AIAgentAttachment, CurrentHead, DiffBase};
         pub struct BlocklistAIContextModel;
+        impl warpui::Entity for BlocklistAIContextModel { type Event = (); }
+        #[allow(dead_code)]
+        impl BlocklistAIContextModel {
+            pub fn register_diff_hunk_attachment<K, A>(&mut self, _: K, _: A) {}
+        }
         use crate::code_review::{diff_state::DiffMode, DiffSetScope};
         use warpui::{AppContext, ModelHandle};
     }

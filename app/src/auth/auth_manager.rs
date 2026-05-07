@@ -22,8 +22,26 @@ use super::AuthStateProvider;
 use super::UserUid;
 // twarp: 2c-d — AI llms / persisted workspace / usage deleted; stubs.
 pub struct LLMPreferences;
+impl warpui::Entity for LLMPreferences { type Event = (); }
+impl warpui::SingletonEntity for LLMPreferences {}
+#[allow(dead_code)]
+impl LLMPreferences {
+    pub fn update_feature_model_choices<C, T>(&mut self, _: Result<T, ()>, _: &mut C) {}
+}
 pub struct PersistedWorkspace;
+impl warpui::Entity for PersistedWorkspace { type Event = (); }
+impl warpui::SingletonEntity for PersistedWorkspace {}
+#[allow(dead_code)]
+impl PersistedWorkspace {
+    pub fn on_user_changed<C>(&mut self, _: &mut C) {}
+}
 pub struct AIRequestUsageModel;
+impl warpui::Entity for AIRequestUsageModel { type Event = (); }
+impl warpui::SingletonEntity for AIRequestUsageModel {}
+#[allow(dead_code)]
+impl AIRequestUsageModel {
+    pub fn refresh_request_usage_async<C>(&mut self, _: &mut C) {}
+}
 use crate::autoupdate::AutoupdateState;
 use crate::persistence::ModelEvent;
 use crate::server::cloud_objects::update_manager::UpdateManager;

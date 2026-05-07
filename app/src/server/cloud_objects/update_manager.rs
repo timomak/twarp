@@ -5,6 +5,29 @@ use crate::app_state::AIConversationId;
 pub struct CloudScheduledAmbientAgentModel;
 pub struct ScheduledAmbientAgent;
 pub struct BlocklistAIHistoryModel;
+impl warpui::Entity for BlocklistAIHistoryModel { type Event = (); }
+impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+#[allow(dead_code)]
+impl BlocklistAIHistoryModel {
+    pub fn get_server_conversation_metadata(
+        &self,
+        _: &AIConversationId,
+    ) -> Option<&ServerConversationMetadataStub> {
+        None
+    }
+    pub fn set_server_metadata_for_conversation<C>(
+        &mut self,
+        _: AIConversationId,
+        _: ServerConversationMetadataStub,
+        _: &mut C,
+    ) {
+    }
+}
+#[derive(Clone)]
+#[allow(dead_code)]
+pub struct ServerConversationMetadataStub {
+    pub permissions: crate::cloud_object::ServerPermissions,
+}
 pub struct AIExecutionProfilesModel;
 pub struct AIExecutionProfile;
 pub struct CloudAIExecutionProfileModel;
