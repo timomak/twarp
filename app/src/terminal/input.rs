@@ -295,9 +295,6 @@ enum AIContextMenuAction {
 #[allow(dead_code)]
 struct ActiveAgentViewsModel;
 impl ActiveAgentViewsModel {
-    fn as_ref<C>(_: &C) -> &Self {
-        unimplemented!()
-    }
     fn get_all_active_conversation_ids<C>(&self, _: &C) -> Vec<ConversationOrTaskId> {
         Vec::new()
     }
@@ -385,18 +382,11 @@ enum SlashCommandRequest {
 #[allow(dead_code)]
 struct AIExecutionProfilesModel;
 impl AIExecutionProfilesModel {
-    fn as_ref<C>(_: &C) -> &Self {
-        unimplemented!()
-    }
-    fn handle<C>(_: &C) -> std::sync::Arc<Self> {
-        unimplemented!()
-    }
     fn active_profile<C>(&self, _: Option<warpui::EntityId>, _: &C) -> AIExecutionProfile {
         unimplemented!()
     }
-    fn update<F, C>(&self, _: &mut C, _: F) {}
-    fn set_base_model<C, M>(&mut self, _: (), _: Option<M>, _: &mut C) {}
-    fn set_cli_agent_model<C, M>(&mut self, _: (), _: Option<M>, _: &mut C) {}
+    fn set_base_model<P, M, C>(&mut self, _: P, _: Option<M>, _: &mut C) {}
+    fn set_cli_agent_model<P, M, C>(&mut self, _: P, _: Option<M>, _: &mut C) {}
 }
 
 #[allow(dead_code)]
@@ -419,11 +409,6 @@ fn is_accept_prompt_suggestion_bound_to_ctrl_enter<C>(_: &C) -> bool {
 
 #[allow(dead_code)]
 struct SkillManager;
-impl SkillManager {
-    fn handle<C>(_: &C) -> std::sync::Arc<Self> {
-        unimplemented!()
-    }
-}
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -460,20 +445,14 @@ impl CLIAgentSessionsModel {
         false
     }
     fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSessionStub> { None }
+    fn take_draft(&mut self, _: warpui::EntityId) -> Option<String> { None }
 }
 #[allow(dead_code)]
 struct CLIAgentSessionStub {
     pub agent: crate::app_state::CLIAgent,
     pub input_state: CLIAgentInputState,
 }
-impl CLIAgentSessionsModel {
-    fn handle<C>(_: &C) -> std::sync::Arc<Self> {
-        unimplemented!()
-    }
-    fn as_ref<C>(_: &C) -> &Self {
-        unimplemented!()
-    }
-}
+// twarp: 2c-d — old shadowing handle/as_ref removed; rely on SingletonEntity trait impls.
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -658,13 +637,9 @@ enum BlocklistAIHistoryEvent {}
 #[allow(dead_code)]
 struct BlocklistAIHistoryModel;
 impl BlocklistAIHistoryModel {
-    fn handle<C>(_: &C) -> std::sync::Arc<Self> {
-        unimplemented!()
-    }
-    fn as_ref<C>(_: &C) -> &Self {
-        unimplemented!()
-    }
     fn active_conversation(&self, _: warpui::EntityId) -> Option<AIConversationStub> { None }
+    fn conversation_id_for_action<I>(&self, _: I, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
+    fn conversation<I>(&self, _: I) -> Option<AIConversationStub> { None }
 }
 
 // twarp: 2c-d — local AIConversation-like stub used by input.rs.
@@ -690,12 +665,6 @@ enum BlocklistAIInputEvent {}
 #[allow(dead_code)]
 struct BlocklistAIInputModel;
 impl BlocklistAIInputModel {
-    fn handle<C>(_: &C) -> std::sync::Arc<Self> {
-        unimplemented!()
-    }
-    fn as_ref<C>(_: &C) -> &Self {
-        unimplemented!()
-    }
     fn is_ai_input_enabled(&self) -> bool {
         false
     }
@@ -753,10 +722,8 @@ lazy_static::lazy_static! {
 #[allow(dead_code)]
 struct LLMPreferences;
 impl LLMPreferences {
-    fn handle<C>(_: &C) -> std::sync::Arc<Self> {
-        unimplemented!()
-    }
-    fn update_preferred_agent_mode_llm<C>(&mut self, _: &(), _: warpui::EntityId, _: &mut C) {}
+    fn update_preferred_agent_mode_llm<I, C>(&mut self, _: I, _: warpui::EntityId, _: &mut C) {}
+    fn vision_supported<C>(&self, _: &C, _: Option<warpui::EntityId>) -> bool { false }
 }
 
 #[derive(Debug, Clone)]
@@ -766,9 +733,6 @@ enum LLMPreferencesEvent {}
 #[allow(dead_code)]
 struct AIRequestUsageModel;
 impl AIRequestUsageModel {
-    fn as_ref<C>(_: &C) -> &Self {
-        unimplemented!()
-    }
     fn has_any_ai_remaining<C>(&self, _: &C) -> bool {
         false
     }
@@ -803,9 +767,6 @@ impl AmbientAgentViewModel {
     fn should_show_status_footer(&self) -> bool {
         false
     }
-    fn as_ref<C>(_: &C) -> &Self {
-        unimplemented!()
-    }
 }
 
 #[allow(dead_code)]
@@ -818,9 +779,6 @@ enum AgentInputFooterEvent {}
 struct AgentViewController;
 impl AgentViewController {
     fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
-        unimplemented!()
-    }
-    fn as_ref<C>(_: &C) -> &Self {
         unimplemented!()
     }
     fn is_fullscreen(&self) -> bool {
