@@ -426,7 +426,7 @@ enum SkillTelemetryEvent {
 }
 
 #[allow(dead_code)]
-fn ai_indicator_height() -> f32 {
+fn ai_indicator_height<C>(_: &C) -> f32 {
     0.0
 }
 

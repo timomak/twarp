@@ -10,7 +10,7 @@ use warpui::color::ColorU;
 use warpui::{AppContext, SingletonEntity};
 
 // twarp: 2c-d — agent_view_bg_fill deleted; stub.
-pub fn agent_view_bg_fill() {}
+pub fn agent_view_bg_fill<C>(_: C) -> warpui::color::ColorU { warpui::color::ColorU::new(0, 0, 0, 0) }
 use crate::search::result_renderer::ItemHighlightState;
 
 /// Font size used for inline menu items.

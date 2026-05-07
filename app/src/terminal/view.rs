@@ -393,7 +393,7 @@ enum AgentViewEntryOrigin {
 #[allow(dead_code)] enum ExitConfirmationTrigger {}
 #[allow(dead_code)] struct InlineAgentViewHeader;
 #[allow(dead_code)] const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration = std::time::Duration::ZERO;
-#[allow(dead_code)] fn agent_view_bg_fill() {}
+#[allow(dead_code)] fn agent_view_bg_fill<C>(_: C) -> warpui::elements::Fill { warpui::elements::Fill::None }
 #[allow(dead_code)] fn fork_from_last_known_good_state_exchange_id() {}
 
 #[allow(dead_code)] mod conversation_utils {

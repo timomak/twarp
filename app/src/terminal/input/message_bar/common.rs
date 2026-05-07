@@ -1,5 +1,5 @@
 // twarp: 2c-d — agent_view_bg_color deleted; stub.
-pub fn agent_view_bg_color() {}
+pub fn agent_view_bg_color<C>(_: C) -> warpui::color::ColorU { warpui::color::ColorU::new(0, 0, 0, 0) }
 use pathfinder_color::ColorU;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::Fill;

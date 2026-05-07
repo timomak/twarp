@@ -1,5 +1,7 @@
 // twarp: 2c-d — AI agent view / blocklist deleted; stubs.
-pub fn agent_view_bg_fill() {}
+pub fn agent_view_bg_fill<C>(_: C) -> warpui::elements::Fill {
+    warpui::elements::Fill::None
+}
 pub use crate::terminal::model::block::AgentViewState;
 pub fn ai_brand_color<T>(_: T) -> warpui::color::ColorU {
     warpui::color::ColorU::new(0, 0, 0, 0)
