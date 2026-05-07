@@ -59,6 +59,16 @@ impl AIBlock {
     pub fn is_blocked_on_user_confirmation<C>(&self, _: &C) -> bool { false }
     pub fn is_passive_conversation<C>(&self, _: &C) -> bool { false }
     pub fn get_preceding_user_query<C>(&self, _: &C) -> Option<String> { None }
+    pub fn accept_pending_action<C>(&mut self, _: &mut C) {}
+    pub fn accept_pending_unit_test_suggestion<C>(&mut self, _: &mut C) {}
+    pub fn dismiss_ai_tooltips<C>(&mut self, _: &mut C) {}
+    pub fn clear_message<C>(&mut self, _: &mut C) {}
+    pub fn clear_finished_action_results<C>(&mut self, _: &mut C) {}
+    pub fn contains_action_result<I>(&self, _: I) -> bool { false }
+    pub fn contains_ugc<C>(&self, _: &C) -> bool { false }
+    pub fn debug_link<C>(&self, _: &C) -> Option<String> { None }
+    pub fn display_name<C>(&self, _: &C) -> String { String::new() }
+    pub fn collect_imported_comments<C>(&self, _: &C) -> Vec<()> { Vec::new() }
 }
 pub struct AIBlockOutputStatusStub;
 impl AIBlockOutputStatusStub {

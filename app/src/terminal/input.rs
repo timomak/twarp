@@ -708,6 +708,10 @@ impl BlocklistAIInputModel {
     fn handle_input_buffer_submitted<C>(&mut self, _: &mut C) {}
     fn enable_autodetection<C>(&mut self, _: &mut C) {}
     fn detect_and_set_input_type<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    fn abort_in_progress_detection<C>(&mut self, _: &mut C) {}
+    fn clear_pending_attachments<C>(&mut self, _: &mut C) {}
+    fn clear_pending_exit_confirmation<C>(&mut self, _: &mut C) {}
+    fn close<C>(&mut self, _: &mut C) {}
     fn input_config(&self) -> InputConfig {
         InputConfig::empty()
     }
