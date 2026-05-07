@@ -10,10 +10,21 @@ use warpui::AppContext;
 // twarp: 2c-d.4 — local stubs for deleted AI types referenced by persisted snapshots
 // and various consumer files. These stubs keep code compiling; consumer call sites
 // using these types are no longer wired to any real AI behavior.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AIConversationId(pub uuid::Uuid);
+impl From<String> for AIConversationId {
+    fn from(s: String) -> Self {
+        AIConversationId(uuid::Uuid::parse_str(&s).unwrap_or_default())
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AmbientAgentTaskId(pub uuid::Uuid);
+impl std::str::FromStr for AmbientAgentTaskId {
+    type Err = uuid::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(AmbientAgentTaskId(s.parse()?))
+    }
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct InputConfig {}
 #[allow(dead_code)]
@@ -26,6 +37,12 @@ pub struct SerializedBlockListItem {}
 #[allow(dead_code)]
 impl SerializedBlockListItem {
     pub fn start_ts(&self) -> Option<chrono::DateTime<chrono::Local>> { None }
+}
+// twarp: 2c-d — From<persistence::model::Block> kept so persisted pane decoders compile.
+impl From<crate::persistence::model::Block> for SerializedBlockListItem {
+    fn from(_: crate::persistence::model::Block) -> Self {
+        Self {}
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

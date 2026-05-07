@@ -4534,6 +4534,20 @@ impl PaneGroup {
         unimplemented!("twarp: 2c-d — ambient agent removed")
     }
 
+    // twarp: 2c-d — terminal_pane_data was AI-deleted helper; stub returns the call-site shape.
+    #[allow(dead_code)]
+    fn terminal_pane_data<A, B, C, D, E, F, G>(
+        _: A,
+        _: B,
+        _: C,
+        _: D,
+        _: E,
+        _: F,
+        _: G,
+    ) -> (PaneData, InitialFocus) {
+        unimplemented!("twarp: 2c-d — pane data helper removed")
+    }
+
     fn create_session(
         startup_directory: Option<PathBuf>,
         env_vars: HashMap<OsString, OsString>,

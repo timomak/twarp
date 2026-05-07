@@ -4,6 +4,7 @@ use std::{
 };
 
 // twarp: 2c-d — AI skills deleted; stub SkillOpenOrigin.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SkillOpenOrigin { Other }
 use ai::skills::SkillReference;
 use serde::{Deserialize, Serialize};
@@ -11,7 +12,7 @@ use warp_util::path::LineAndColumnArg;
 use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity, ViewHandle, WindowId};
 
 // twarp: 2c-d — AI agent action id deleted; stub.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AIAgentActionId(pub String);
 use crate::{
     code_review::code_review_view::CodeReviewView,
