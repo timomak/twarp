@@ -11,7 +11,19 @@ use super::{
 };
 // twarp: 2c-d — persisted_workspace deleted; stubs.
 pub enum EnablementState { Enabled, Disabled }
-pub struct LspRepoStatus;
+#[allow(dead_code)]
+pub enum LspRepoStatus {
+    DisabledAndInstalled {},
+    DisabledAndNotInstalled {},
+    Installing {},
+    CheckingForInstallation,
+}
+#[allow(dead_code)]
+impl LspRepoStatus {
+    pub fn from_installation_status<S, T>(_: S, _: T) -> Self {
+        Self::CheckingForInstallation
+    }
+}
 pub struct PersistedWorkspace;
 impl warpui::Entity for PersistedWorkspace {
     type Event = PersistedWorkspaceEvent;

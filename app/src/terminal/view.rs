@@ -347,15 +347,15 @@ mod cli_agent {
 }
 
 // twarp: 2c-d — file-local stubs for AI types removed by 2c-d (huge block)
-#[allow(dead_code)] struct AgentViewController;
+#[allow(dead_code)] pub(crate) struct AgentViewController;
 #[allow(dead_code)]
 impl AgentViewController {
-    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+    pub(crate) fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
         unimplemented!()
     }
-    fn is_active(&self) -> bool { false }
-    fn is_fullscreen(&self) -> bool { false }
-    fn agent_view_state(&self) -> AgentViewState { AgentViewState }
+    pub fn is_active(&self) -> bool { false }
+    pub fn is_fullscreen(&self) -> bool { false }
+    pub fn agent_view_state(&self) -> AgentViewState { AgentViewState }
 }
 #[allow(dead_code)]
 struct AgentViewState;
@@ -504,15 +504,22 @@ impl CLIAgentSessionsModel {
 struct AIConversation;
 #[allow(dead_code)]
 impl AIConversation {
-    fn status(&self) -> ConversationStatus { ConversationStatus }
+    fn status(&self) -> ConversationStatus { ConversationStatus::Other }
+    fn is_entirely_passive(&self) -> bool { false }
 }
 #[allow(dead_code)]
-struct ConversationStatus;
+enum ConversationStatus {
+    Success,
+    Blocked {},
+    Error,
+    InProgress,
+    Other,
+}
 #[allow(dead_code)]
 impl ConversationStatus {
-    fn is_in_progress(&self) -> bool { false }
-    fn is_blocked(&self) -> bool { false }
-    fn is_error(&self) -> bool { false }
+    fn is_in_progress(&self) -> bool { matches!(self, ConversationStatus::InProgress) }
+    fn is_blocked(&self) -> bool { matches!(self, ConversationStatus::Blocked { .. }) }
+    fn is_error(&self) -> bool { matches!(self, ConversationStatus::Error) }
 }
 // twarp: 2c-d — ConversationStatus stub now lives above as a struct.
 #[allow(dead_code)] enum UserQueryMode {}
@@ -17901,6 +17908,18 @@ impl TerminalView {
 
     /// Handles AI block events for both live and restored AI blocks.
     fn handle_ai_block_event(
+        &mut self,
+        _block: ViewHandle<AIBlock>,
+        _is_restored: bool,
+        _event: &AIBlockEvent,
+        _ctx: &mut ViewContext<Self>,
+    ) {
+        // twarp: 2c-d — body removed; AIBlockEvent variants deleted with AI.
+    }
+
+    #[allow(dead_code)]
+    #[cfg(any())]
+    fn handle_ai_block_event_disabled(
         &mut self,
         block: ViewHandle<AIBlock>,
         is_restored: bool,
