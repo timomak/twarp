@@ -13,9 +13,17 @@ use crate::{
     terminal::input::MenuPositioningProvider,
 };
 
-pub struct BlocklistAIHistoryModel;
-pub enum BlocklistAIHistoryEvent { Other }
-pub enum BlocklistAIInputEvent { Other }
+// twarp: 2c-d — re-export shared stubs to unify across files.
+pub use crate::terminal::shared_session::shared_handlers::BlocklistAIHistoryModel;
+pub enum BlocklistAIHistoryEvent {
+    UpdatedTodoList { terminal_view_id: warpui::EntityId },
+    Other,
+}
+pub enum BlocklistAIInputEvent {
+    InputTypeChanged {},
+    LockChanged {},
+    Other,
+}
 use std::path::PathBuf;
 use warp_core::features::FeatureFlag;
 use warpui::{

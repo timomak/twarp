@@ -4,9 +4,11 @@ use std::sync::Arc;
 // twarp: 2c-d — AI agent view controller / blocklist / plan-todo / document deleted; stubs.
 use crate::app_state::{AIDocumentId, AIDocumentVersion};
 
-pub struct AgentViewController;
-pub struct BlocklistAIContextModel;
-pub struct BlocklistAIInputModel;
+// twarp: 2c-d — re-export input.rs stubs so cross-file types unify.
+pub use crate::terminal::input::{
+    AgentViewController, AmbientAgentViewModel, BlocklistAIContextModel, BlocklistAIInputModel,
+    CLIAgentSessionsModel,
+};
 pub struct PlanAndTodoListView;
 pub enum PlanAndTodoListEvent {
     OpenAIDocument { document_id: AIDocumentId, version: AIDocumentVersion },
@@ -22,8 +24,7 @@ use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChange
 use crate::terminal::input::{MenuPositioning, MenuPositioningProvider};
 use crate::terminal::model_events::ModelEventDispatcher;
 
-pub struct CLIAgentSessionsModel;
-pub struct AmbientAgentViewModel;
+// twarp: 2c-d — CLIAgentSessionsModel/AmbientAgentViewModel re-exported from input.rs above.
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
 use crate::util::bindings::keybinding_name_to_display_string;

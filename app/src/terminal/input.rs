@@ -438,7 +438,7 @@ enum CLIAgentInputState {
 }
 
 #[allow(dead_code)]
-struct CLIAgentSessionsModel;
+pub struct CLIAgentSessionsModel;
 #[allow(dead_code)]
 impl CLIAgentSessionsModel {
     fn is_input_open(&self, _: warpui::EntityId) -> bool {
@@ -612,7 +612,7 @@ fn should_collect_ai_ugc_telemetry<C>(_: &C) -> bool {
 enum BlocklistAIContextEvent {}
 
 #[allow(dead_code)]
-struct BlocklistAIContextModel;
+pub struct BlocklistAIContextModel;
 #[allow(dead_code)]
 impl BlocklistAIContextModel {
     fn selected_conversation_id<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> { None }
@@ -664,7 +664,7 @@ impl AIConversationStatusStub {
 enum BlocklistAIInputEvent {}
 
 #[allow(dead_code)]
-struct BlocklistAIInputModel;
+pub struct BlocklistAIInputModel;
 impl BlocklistAIInputModel {
     fn is_ai_input_enabled(&self) -> bool {
         false
@@ -757,7 +757,7 @@ impl UniversalDeveloperInputButtonBar {
 enum UniversalDeveloperInputButtonBarEvent {}
 
 #[allow(dead_code)]
-struct AmbientAgentViewModel;
+pub struct AmbientAgentViewModel;
 impl AmbientAgentViewModel {
     fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
         unimplemented!()
@@ -784,7 +784,7 @@ impl AgentInputFooter {
 enum AgentInputFooterEvent {}
 
 #[allow(dead_code)]
-struct AgentViewController;
+pub struct AgentViewController;
 impl AgentViewController {
     fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
         unimplemented!()
