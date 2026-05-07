@@ -776,11 +776,12 @@ impl AIRequestUsageModel {
 
 // twarp: 2c-d — stubs for universal_developer_input + ambient_agent + agent_view types
 #[allow(dead_code)]
-struct UniversalDeveloperInputButtonBar;
+pub struct UniversalDeveloperInputButtonBar;
 impl UniversalDeveloperInputButtonBar {
     fn new<A, B, C, D, E, F, G>(_: A, _: B, _: C, _: D, _: E, _: F, _: &mut G) -> Self {
         unimplemented!()
     }
+    pub fn update_segmented_control_disabled_state<C>(&mut self, _: &mut C) {}
 }
 
 #[derive(Debug, Clone)]

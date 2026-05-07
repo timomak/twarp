@@ -475,6 +475,10 @@ impl CodebaseIndexSpeedbumpBannerState {
 
 #[cfg(feature = "local_fs")]
 #[allow(dead_code)] struct PersistedWorkspace;
+#[allow(dead_code)]
+impl PersistedWorkspace {
+    fn navigated_to_path<P>(&mut self, _: P) {}
+}
 
 // CLI agent sessions
 #[allow(dead_code)] fn parse_event() {}
@@ -801,6 +805,8 @@ impl SingletonEntity for ApiKeyManager {}
 impl SingletonEntity for CodebaseIndexManager {}
 impl SingletonEntity for AgentConversationsModel {}
 impl SingletonEntity for CLIAgentSessionsModel {}
+impl Entity for PersistedWorkspace { type Event = (); }
+impl SingletonEntity for PersistedWorkspace {}
 
 // twarp: 2c-d — View impls for stub view types so ViewHandle<T>::as_ref/update/id typecheck.
 macro_rules! twarp_stub_view_impl {
@@ -5092,54 +5098,7 @@ impl TerminalView {
                 }
             }
 
-            // If the most recent action in the current interaction turn created or updated a plan
-            // document, show an "Execute this plan" prompt suggestion.
-            let mut should_show_execute_plan_suggestion = false;
-            for view in self.rich_content_views.iter().rev() {
-                if let Some(ai_metadata) = view.ai_block_metadata() {
-                    let block = ai_metadata.ai_block_handle.as_ref(ctx);
-
-                    if let Some(output) = block.output_status(ctx).output_to_render() {
-                        if let Some(most_recent_action) = output.get().actions().last() {
-                            should_show_execute_plan_suggestion = matches!(
-                                &most_recent_action.action,
-                                AIAgentActionType::CreateDocuments(_)
-                                    | AIAgentActionType::EditDocuments(_)
-                            );
-                            break;
-                        }
-                    }
-
-                    if block.has_user_input(ctx) {
-                        // We reached the start of the current interaction turn.
-                        break;
-                    }
-                }
-            }
-
-            if should_show_execute_plan_suggestion
-                && !FeatureFlag::PromptSuggestionsViaMAA.is_enabled()
-            {
-                if let Some(block) = self.last_ai_block() {
-                    let block_id = BlockId::from(block.id().to_string());
-                    let suggestion = AgentModePromptSuggestion::Success(PromptSuggestion {
-                        id: Uuid::new_v4().to_string(),
-                        label: Some("Execute this plan".to_string()),
-                        prompt: "Execute this plan".to_string(),
-                        coding_query_context: None,
-                        static_prompt_suggestion_name: Some("EXECUTE_CREATED_PLAN".to_string()),
-                        should_start_new_conversation: false,
-                    });
-
-                    self.on_legacy_prompt_suggestion_generated(
-                        suggestion,
-                        block_id,
-                        "".to_string(),
-                        0,
-                        ctx,
-                    );
-                }
-            }
+            // twarp: 2c-d — execute-plan suggestion + AI action type matching deleted with AI.
 
             self.update_input_prompt_suggestions_banner_state(ctx);
             ctx.notify();

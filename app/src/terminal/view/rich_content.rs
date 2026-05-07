@@ -54,6 +54,24 @@ impl AIBlock {
     pub fn conversation_id(&self) -> AIConversationId { unimplemented!() }
     pub fn server_output_id<C>(&self, _: &C) -> Option<()> { None }
     pub fn handle_action<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn has_user_input<C>(&self, _: &C) -> bool { false }
+    pub fn output_status<C>(&self, _: &C) -> AIBlockOutputStatusStub { AIBlockOutputStatusStub }
+    pub fn is_blocked_on_user_confirmation<C>(&self, _: &C) -> bool { false }
+}
+pub struct AIBlockOutputStatusStub;
+impl AIBlockOutputStatusStub {
+    pub fn output_to_render(&self) -> Option<AIBlockOutputRender> { None }
+}
+pub struct AIBlockOutputRender;
+impl AIBlockOutputRender {
+    pub fn get(&self) -> &AIBlockOutputData { unimplemented!() }
+}
+pub struct AIBlockOutputData;
+impl AIBlockOutputData {
+    pub fn actions(&self) -> &[AIBlockActionStub] { &[] }
+}
+pub struct AIBlockActionStub {
+    pub action: (),
 }
 twarp_stub_view_impl!(TelemetryBanner);
 twarp_stub_view_impl!(AmbientAgentEntryBlock);
