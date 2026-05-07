@@ -76,6 +76,11 @@ impl ConfigurableItem {
     pub fn from_toolbar_item<K, A>(_: K, _: A) -> Option<Self> {
         None
     }
+    // twarp: 2c-d — stub: AI agent toolbar item kind deleted.
+    #[allow(dead_code)]
+    pub fn item_kind(&self) -> Option<()> {
+        None
+    }
 
     pub fn is_removable(&self) -> bool {
         match self {

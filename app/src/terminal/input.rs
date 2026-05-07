@@ -762,13 +762,16 @@ impl AmbientAgentViewModel {
     fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
         unimplemented!()
     }
-    fn task_id(&self) -> Option<crate::app_state::AmbientAgentTaskId> {
+    pub fn task_id(&self) -> Option<crate::app_state::AmbientAgentTaskId> {
         None
     }
-    fn is_ambient_agent(&self) -> bool {
+    pub fn is_ambient_agent(&self) -> bool {
         false
     }
-    fn should_show_status_footer(&self) -> bool {
+    pub fn should_show_status_footer(&self) -> bool {
+        false
+    }
+    pub fn is_configuring_ambient_agent(&self) -> bool {
         false
     }
 }

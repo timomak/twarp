@@ -71,6 +71,11 @@ impl warpui::View for AIBlock {
         warpui::elements::Empty::new().finish()
     }
 }
+#[allow(dead_code)]
+impl AIBlock {
+    pub fn find_undismissed_code_diff<C>(&self, _: &C) -> Option<()> { None }
+    pub fn pending_unit_test_suggestion<C>(&self, _: &C) -> Option<()> { None }
+}
 use crate::terminal::block_list_element::GridType;
 use crate::terminal::model::blockgrid::BlockGrid;
 use crate::terminal::model::grid::Dimensions;

@@ -23,6 +23,10 @@ impl InputConfig {
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SerializedBlockListItem {}
+#[allow(dead_code)]
+impl SerializedBlockListItem {
+    pub fn start_ts(&self) -> Option<chrono::DateTime<chrono::Local>> { None }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AIDocumentId(pub uuid::Uuid);
@@ -42,6 +46,15 @@ pub enum CloudConversationData {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConversationStatus { InProgress, Done, Failed }
+#[allow(dead_code)]
+impl ConversationStatus {
+    pub fn render_icon<A>(&self, _: A) -> warpui::elements::Empty {
+        warpui::elements::Empty::new()
+    }
+    pub fn status_icon_and_color<T>(&self, _: T) -> (warp_core::ui::Icon, warpui::color::ColorU) {
+        (warp_core::ui::Icon::Terminal, warpui::color::ColorU::new(0, 0, 0, 0))
+    }
+}
 #[derive(Clone, Debug, PartialEq)]
 pub struct AgentConversationsModelEvent {}
 #[derive(Clone, Debug, PartialEq)]
