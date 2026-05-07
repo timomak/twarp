@@ -5517,14 +5517,9 @@ impl Input {
             return;
         };
 
-        let num_images_in_conversation = conversation
-            .get_root_task()
-            .into_iter()
-            .flat_map(|task| {
-                task.all_contexts()
-                    .filter(|context| matches!(context, AIAgentContext::Image(_)))
-            })
-            .count();
+        // twarp: 2c-d — image attachment counting gutted (AI conversation tasks gone).
+        let _ = &conversation;
+        let num_images_in_conversation: usize = 0;
 
         let excess_images = (num_images_in_conversation + num_images_attached)
             .saturating_sub(MAX_IMAGES_PER_CONVERSATION);
@@ -5558,15 +5553,9 @@ impl Input {
         let num_images_attached = self.ai_context_model.as_ref(ctx).pending_images().len();
 
         let conversation = self.ai_context_model.as_ref(ctx).selected_conversation(ctx);
-
-        let num_images_in_conversation = conversation
-            .and_then(|conversation| conversation.get_root_task())
-            .into_iter()
-            .flat_map(|task| {
-                task.all_contexts()
-                    .filter(|context| matches!(context, AIAgentContext::Image(_)))
-            })
-            .count();
+        // twarp: 2c-d — image attachment counting gutted (AI conversation tasks gone).
+        let _ = &conversation;
+        let num_images_in_conversation: usize = 0;
 
         // Image context is available whenever the feature flag is enabled and we're in AI input
         // mode, including cloud mode

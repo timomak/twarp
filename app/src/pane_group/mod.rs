@@ -5644,7 +5644,7 @@ impl PaneGroup {
     }
 
     // twarp: 2c-d.4 — code_diff_views removed (CodeDiffView was AI-only)
-    pub fn code_diff_views(&self, _ctx: &AppContext) -> Vec<()> {
+    pub fn code_diff_views(&self, _ctx: &AppContext) -> Vec<warpui::ViewHandle<crate::workspace::view::AIFactViewStub>> {
         Vec::new()
     }
 

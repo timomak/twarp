@@ -76,7 +76,7 @@ impl warpui::View for AIBlock {
 #[allow(dead_code)]
 impl AIBlock {
     pub fn find_undismissed_code_diff<C>(&self, _: &C) -> Option<()> { None }
-    pub fn pending_unit_test_suggestion<C>(&self, _: &C) -> Option<()> { None }
+    pub fn pending_unit_test_suggestion<C>(&self, _: &C) -> Option<warpui::ViewHandle<crate::workspace::view::AIFactViewStub>> { None }
     // twarp: 2c-d — bulk stubs
     pub fn is_passive_conversation<C>(&self, _: &C) -> bool { false }
 }

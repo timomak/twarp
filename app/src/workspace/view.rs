@@ -825,6 +825,22 @@ pub struct TransferredTab {
     pub is_right_panel_maximized: bool,
 }
 
+// twarp: 2c-d — stubs for AI fact view used by integration tests
+pub struct AIFactViewStub;
+impl Entity for AIFactViewStub { type Event = (); }
+impl View for AIFactViewStub {
+    fn ui_name() -> &'static str { "AIFactViewStub/twarp-stub" }
+    fn render(&self, _: &AppContext) -> Box<dyn Element> {
+        warpui::elements::Empty::new().finish()
+    }
+}
+#[allow(dead_code)]
+impl AIFactViewStub {
+    pub fn current_page(&self) -> crate::integration_testing::rules::assertion::AIFactPage { crate::integration_testing::rules::assertion::AIFactPage::Other }
+    pub fn primary_file_path<C>(&self, _: &C) -> Option<String> { None }
+    pub fn is_keybindings_hidden(&self) -> bool { false }
+}
+
 pub struct Workspace {
     window_id: WindowId,
     tabs: Vec<TabData>,
@@ -2873,6 +2889,7 @@ impl Workspace {
     }
 
     // twarp: 2c-d — removed pub fn ai_fact_view (returned ViewHandle<AIFactView>)
+    pub fn ai_fact_view(&self) -> warpui::ViewHandle<AIFactViewStub> { unimplemented!() }
 
     fn handle_task_status_reset(&mut self, pane_group_id: EntityId, ctx: &mut ViewContext<Self>) {
         // Re-render the workspace so the tab indicator picks up the new state.

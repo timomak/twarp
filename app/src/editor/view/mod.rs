@@ -48,6 +48,12 @@ use warpui::{elements, ViewHandle};
 // twarp: 2c-d — AI agent / blocklist / context menu deleted; stubs.
 pub struct ImageContext { pub data: String, pub file_name: String, pub mime_type: String, pub is_figma: bool }
 pub struct BlocklistAIContextModel;
+impl warpui::Entity for BlocklistAIContextModel { type Event = (); }
+#[allow(dead_code)]
+impl BlocklistAIContextModel {
+    pub fn append_pending_images<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn pending_images(&self) -> Vec<()> { Vec::new() }
+}
 pub struct PendingAttachment;
 pub struct PendingFile { pub file_path: std::path::PathBuf, pub file_name: String, pub mime_type: String }
 pub struct AIContextMenuSearchableAction;
@@ -4302,8 +4308,8 @@ impl EditorView {
             .and_then(|terminal_view| {
                 BlocklistAIHistoryModel::as_ref(ctx).active_conversation(terminal_view.id())
             })
-            .is_some_and(|conversation| {
-                conversation.status().is_in_progress() && conversation.exchange_count() > 0
+            .is_some_and(|conversation: crate::app_state::AIConversationId| {
+                conversation.status().as_ref().is_some_and(|s| s.is_in_progress()) && false
             });
 
         // If there is a pending passive ai block, we don't want ctrl+c to clear the buffer.
