@@ -15,8 +15,14 @@ use crate::terminal::TerminalView;
 
 /// Stub for the deleted `AgentViewController` so callers can pass a model handle.
 pub struct AgentViewController;
+impl warpui::Entity for AgentViewController { type Event = (); }
 /// Stub for the deleted `BlocklistAIContextModel` so callers can pass a model handle.
 pub struct BlocklistAIContextModel;
+impl warpui::Entity for BlocklistAIContextModel { type Event = (); }
+/// Stub for the deleted `BlocklistAIHistoryModel`.
+pub struct BlocklistAIHistoryModel;
+impl warpui::Entity for BlocklistAIHistoryModel { type Event = (); }
+impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
 
 #[allow(dead_code)]
 pub(crate) fn apply_selected_agent_model_update(

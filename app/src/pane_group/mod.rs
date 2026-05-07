@@ -4503,6 +4503,19 @@ impl PaneGroup {
     // Environment variables are merged into the default environment for the terminal process,
     // and do not completely replace it.
     #[allow(clippy::too_many_arguments, unused_variables)]
+    // twarp: 2c-d — ambient agent terminal creation deleted (was AI-only); stub returns same shape.
+    #[allow(dead_code)]
+    fn create_ambient_agent_terminal(
+        _resources: TerminalViewResources,
+        _view_size: Vector2F,
+        _ctx: &mut ViewContext<Self>,
+    ) -> (
+        ViewHandle<TerminalView>,
+        ModelHandle<Box<dyn TerminalManager>>,
+    ) {
+        unimplemented!("twarp: 2c-d — ambient agent removed")
+    }
+
     fn create_session(
         startup_directory: Option<PathBuf>,
         env_vars: HashMap<OsString, OsString>,

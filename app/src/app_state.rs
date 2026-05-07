@@ -16,6 +16,11 @@ pub struct AIConversationId(pub uuid::Uuid);
 pub struct AmbientAgentTaskId(pub uuid::Uuid);
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct InputConfig {}
+#[allow(dead_code)]
+impl InputConfig {
+    // twarp: 2c-d — stubbed; AI input config deleted.
+    pub fn new<C>(_: &C) -> Self { Self {} }
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SerializedBlockListItem {}
 

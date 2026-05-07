@@ -3,12 +3,10 @@ use std::rc::Rc;
 // twarp: 2c-d — AI blocklist inline action types deleted; stubs.
 use warpui::keymap::Keystroke;
 pub const ENTER_KEYSTROKE: Keystroke = Keystroke {
-    cmd: false, shift: false, alt: false, ctrl: false, function: false, key: String::new(),
-    primary_key: None,
+    cmd: false, shift: false, alt: false, ctrl: false, meta: false, key: String::new(),
 };
 pub const ESCAPE_KEYSTROKE: Keystroke = Keystroke {
-    cmd: false, shift: false, alt: false, ctrl: false, function: false, key: String::new(),
-    primary_key: None,
+    cmd: false, shift: false, alt: false, ctrl: false, meta: false, key: String::new(),
 };
 pub mod requested_script {
     use warpui::elements::Empty;

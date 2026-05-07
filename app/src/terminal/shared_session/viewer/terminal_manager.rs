@@ -16,16 +16,20 @@ use std::sync::Arc;
 
 use warpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WeakViewHandle, WindowId};
 
-// twarp: 2c-d — AI active/agent/blocklist/llms deleted; stubs.
+// twarp: 2c-d — AI active/agent/blocklist/llms deleted; reuse shared_handlers stubs to keep types unified.
 use crate::app_state::ConversationStatus;
+pub use crate::terminal::shared_session::shared_handlers::{
+    AgentViewController, BlocklistAIContextModel, BlocklistAIHistoryModel,
+};
 pub struct ActiveAgentViewsModel;
-pub struct AgentViewController;
+impl warpui::Entity for ActiveAgentViewsModel { type Event = (); }
+impl SingletonEntity for ActiveAgentViewsModel {}
 pub enum AgentViewControllerEvent { Other }
 pub enum BlocklistAIContextEvent { Other }
-pub struct BlocklistAIContextModel;
 pub enum BlocklistAIHistoryEvent { Other }
-pub struct BlocklistAIHistoryModel;
 pub struct LLMPreferences;
+impl warpui::Entity for LLMPreferences { type Event = LLMPreferencesEvent; }
+impl SingletonEntity for LLMPreferences {}
 pub enum LLMPreferencesEvent { Other }
 use crate::context_chips::prompt_snapshot::PromptSnapshot;
 use crate::context_chips::prompt_type::PromptType;
