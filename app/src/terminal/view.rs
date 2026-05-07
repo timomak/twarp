@@ -6690,7 +6690,7 @@ impl TerminalView {
                 title,
                 description: reason,
             });
-        } else if conversation.status().is_some() {
+        } else if conversation.status().is_in_progress() {
             return None;
         }
 
@@ -23272,6 +23272,9 @@ impl TerminalView {
     fn tag_in_agent_for_user_long_running_command<C>(&mut self, _: &mut C) {}
     fn tag_out_agent_for_user_long_running_command<C>(&mut self, _: &mut C) {}
     fn try_enter_agent_view<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    // twarp: 2c-d — additional bulk stubs
+    fn register_subscriptions_for_use_agent_footer<C>(&mut self, _: &mut C) {}
+    fn restore_conversations_on_view_creation<C>(&mut self, _: &mut C) {}
 }
 
 impl Entity for TerminalView {

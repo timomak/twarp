@@ -24,6 +24,8 @@ impl AIConversationId {
     pub fn is_child_agent_conversation(&self) -> bool { false }
     pub fn is_empty(&self) -> bool { false }
     pub fn status(&self) -> Option<ConversationStatus> { None }
+    pub fn is_entirely_passive(&self) -> bool { false }
+    pub fn title(&self) -> Option<String> { None }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AmbientAgentTaskId(pub uuid::Uuid);
@@ -105,7 +107,7 @@ pub enum CloudConversationData {
     CLIAgent(Box<()>),
 }
 #[derive(Clone, Debug, PartialEq)]
-pub enum ConversationStatus { InProgress, Done, Failed }
+pub enum ConversationStatus { InProgress, Done, Failed, Cancelled }
 #[allow(dead_code)]
 impl ConversationStatus {
     pub fn render_icon<A>(&self, _: A) -> warpui::elements::Empty {

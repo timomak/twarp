@@ -29,6 +29,7 @@ impl SingletonEntity for AIRequestUsageModel {}
 #[allow(dead_code)]
 impl AIRequestUsageModel {
     pub fn dismiss_buy_credits_banner<C>(&mut self, _: &mut C) {}
+    pub fn compute_buy_addon_credits_banner_display_state<C>(&self, _: &C) -> BuyCreditsBannerDisplayState { BuyCreditsBannerDisplayState::Hidden }
 }
 pub enum AIRequestUsageModelEvent { Other }
 pub enum BuyCreditsBannerDisplayState {

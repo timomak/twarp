@@ -1443,8 +1443,9 @@ impl TerminalManager {
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
             history_model
                 .all_live_conversations_for_terminal_view(terminal_view_id)
-                .filter(|conversation| conversation.status().is_in_progress())
-                .map(|conversation| conversation.id())
+                .into_iter()
+                .filter(|conversation: &crate::app_state::AIConversationId| conversation.status().as_ref().is_some_and(|s| s.is_in_progress()))
+                .map(|conversation: crate::app_state::AIConversationId| conversation.id())
                 .collect::<Vec<_>>()
                 .into_iter()
                 .for_each(|conversation_id| {

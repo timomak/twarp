@@ -14488,7 +14488,11 @@ impl View for Input {
 
         if BlocklistAIHistoryModel::as_ref(app)
             .all_live_conversations_for_terminal_view(self.terminal_view_id)
-            .any(|conversation| conversation.initial_user_query().is_some())
+            .iter()
+            .any(|conversation: &crate::app_state::AIConversationId| {
+                let _ = conversation;
+                false
+            })
         {
             ctx.set.insert("ActiveAIConversationHasHistory");
         }
