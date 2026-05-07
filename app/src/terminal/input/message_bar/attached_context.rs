@@ -4,7 +4,11 @@ use warp_core::features::FeatureFlag;
 use warpui::keymap::Keystroke;
 
 // twarp: 2c-d — AI agent view / blocklist deleted; stubs.
-pub struct AgentMessageBarMouseStates;
+#[derive(Default)]
+pub struct AgentMessageBarMouseStates {
+    // twarp: 2c-d — fields used by callers
+    pub clear_attached_context: warpui::elements::MouseStateHandle,
+}
 pub struct AgentViewController;
 #[allow(dead_code)]
 impl AgentViewController {

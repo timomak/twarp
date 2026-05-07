@@ -27,6 +27,8 @@ impl ObjectUidStub {
 #[derive(Default)]
 pub struct ServerConversationPermissionsStub {
     pub space: crate::cloud_object::Space,
+    // twarp: 2c-d — additional fields
+    pub guests: Vec<()>,
 }
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;

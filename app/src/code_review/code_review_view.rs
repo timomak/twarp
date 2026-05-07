@@ -15,8 +15,11 @@ use crate::{
     coding_panel_enablement_state::CodingPanelEnablementState,
 };
 
-#[derive(Clone, Debug)]
-pub struct AgentReviewCommentBatch;
+#[derive(Clone, Debug, Default)]
+pub struct AgentReviewCommentBatch {
+    // twarp: 2c-d — fields used by callers
+    pub comments: Vec<()>,
+}
 #[derive(Clone, Debug)]
 pub struct DiffSetHunk;
 

@@ -35,6 +35,9 @@ pub struct CodeBlockOptions {
 pub struct CodeSnippetButtonHandles;
 pub struct PluginInstructions {
     pub steps: Vec<PluginInstructionStep>,
+    // twarp: 2c-d — extra fields used by plugin instructions block
+    pub title: String,
+    pub subtitle: String,
 }
 pub struct PluginInstructionStep {
     pub command: String,

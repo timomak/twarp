@@ -270,7 +270,9 @@ enum AIAgentActionResultType {}
 
 // twarp: 2c-d — AgentModeSetupSpeedbumpBanner stubs (deleted from inline_banner)
 #[allow(dead_code)]
-struct AgentModeSetupSpeedbumpBannerState;
+struct AgentModeSetupSpeedbumpBannerState {
+    pub repo_path: std::path::PathBuf,
+}
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum AgentModeSetupSpeedbumpBannerAction {}
@@ -336,7 +338,8 @@ impl TerminalViewZeroStateBlock {
 #[allow(dead_code)]
 struct UseAgentToolbar;
 impl UseAgentToolbar {
-    fn new<A, B, C, D, E, F, G>(_: A, _: B, _: C, _: D, _: E, _: F, _: &mut G) -> Self {
+    // twarp: 2c-d — accept 5-arg form
+    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
         unimplemented!()
     }
     // twarp: 2c-d — bulk stubs
@@ -350,7 +353,7 @@ impl UseAgentToolbar {
 mod cli_agent {
     pub fn build_review_prompt<R>(_: R) -> String { String::new() }
     pub fn build_diff_context_prompt<R>(_: R) -> String { String::new() }
-    pub fn build_diff_hunk_prompt<R, S, T>(_: R, _: S, _: T) -> String { String::new() }
+    pub fn build_diff_hunk_prompt<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: E) -> String { String::new() }
 }
 
 // twarp: 2c-d — file-local stubs for AI types removed by 2c-d (huge block)
@@ -404,7 +407,7 @@ pub use crate::app_state::AgentViewEntryOrigin;
     pub fn remove_conversation<A, B, C, D>(_: A, _: B, _: C, _: D) {}
 }
 
-#[allow(dead_code)] fn has_pending_code_or_unit_test_prompt_suggestion<C>(_: &C) -> bool { false }
+#[allow(dead_code)] fn has_pending_code_or_unit_test_prompt_suggestion<A, C>(_: A, _: &C) -> bool { false }
 #[allow(dead_code)] fn is_accept_prompt_suggestion_bound_to_cmd_enter<C>(_: &C) -> bool { false }
 #[allow(dead_code)] fn is_accept_prompt_suggestion_bound_to_ctrl_enter<C>(_: &C) -> bool { false }
 
@@ -518,6 +521,9 @@ impl PassiveSuggestionTrigger {
 #[allow(dead_code)]
 struct CodebaseIndexSpeedbumpBannerState {
     pub id: warpui::EntityId,
+    // twarp: 2c-d — extra fields used by view code
+    pub repo_path: std::path::PathBuf,
+    pub visibility_state: (),
 }
 #[allow(dead_code)]
 impl CodebaseIndexSpeedbumpBannerState {
@@ -536,8 +542,8 @@ impl PersistedWorkspace {
 }
 
 // CLI agent sessions
-#[allow(dead_code)] fn parse_event<A, B>(_: A, _: B) -> Option<()> { None }
-#[allow(dead_code)] struct CLIAgentEvent { event_type: CLIAgentEventType, payload: CLIAgentEventPayload }
+#[allow(dead_code)] fn parse_event<A, B>(_: A, _: B) -> Option<CLIAgentEvent> { None }
+#[allow(dead_code)] struct CLIAgentEvent { event_type: CLIAgentEventType, payload: CLIAgentEventPayload, agent: crate::app_state::CLIAgent }
 #[allow(dead_code)] struct CLIAgentEventPayload { content: String }
 #[allow(dead_code)] enum CLIAgentEventType {}
 #[allow(dead_code)] const CLI_AGENT_NOTIFICATION_SENTINEL: &str = "";
