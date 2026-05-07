@@ -17,6 +17,14 @@ impl From<String> for AIConversationId {
         AIConversationId(uuid::Uuid::parse_str(&s).unwrap_or_default())
     }
 }
+#[allow(dead_code)]
+impl AIConversationId {
+    // twarp: 2c-d — bulk stubs treating bare AIConversationId as if it were the conversation
+    pub fn id(&self) -> AIConversationId { *self }
+    pub fn is_child_agent_conversation(&self) -> bool { false }
+    pub fn is_empty(&self) -> bool { false }
+    pub fn status(&self) -> Option<()> { None }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AmbientAgentTaskId(pub uuid::Uuid);
 impl std::str::FromStr for AmbientAgentTaskId {
@@ -70,6 +78,14 @@ pub struct LLMId(pub String);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AIConversation {}
+#[allow(dead_code)]
+impl AIConversation {
+    // twarp: 2c-d — bulk stubs for app_state::AIConversation
+    pub fn is_empty(&self) -> bool { true }
+    pub fn status(&self) -> Option<()> { None }
+    pub fn title(&self) -> Option<String> { None }
+    pub fn to_serialized_blocklist_items(&self) -> Vec<()> { Vec::new() }
+}
 #[derive(Clone, Debug, PartialEq)]
 pub enum CloudConversationData {
     Oz(Box<AIConversation>),

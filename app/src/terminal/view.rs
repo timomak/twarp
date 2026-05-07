@@ -493,9 +493,23 @@ impl PassiveSuggestionTrigger {
 }
 #[allow(dead_code)] struct ServerOutputId;
 #[allow(dead_code)] struct ShellCommandCompletedTrigger;
-#[allow(dead_code)] enum AIBlockAction {}
+#[allow(dead_code)] enum AIBlockAction {
+    // twarp: 2c-d — bulk variants for AI-removed AIBlockAction
+    Copy,
+    CopyCommand(()),
+    CopyConversation,
+    CopyOutput(()),
+    CopyQuery(()),
+}
 #[allow(dead_code)] enum FinishReason {}
-#[allow(dead_code)] enum CodebaseIndexSpeedbumpBannerAction {}
+#[allow(dead_code)] enum CodebaseIndexSpeedbumpBannerAction {
+    // twarp: 2c-d — bulk variants for AI-removed CodebaseIndexSpeedbumpBannerAction
+    AllowIndexing,
+    Close,
+    DismissForever,
+    ToggleAlwaysAllow,
+    ViewStatus,
+}
 #[allow(dead_code)]
 struct CodebaseIndexSpeedbumpBannerState {
     pub id: warpui::EntityId,
@@ -550,6 +564,11 @@ impl CLIAgentSessionsModel {
 }
 #[allow(dead_code)] enum CLIAgentSessionsModelEvent {
     Ended { terminal_view_id: warpui::EntityId },
+    // twarp: 2c-d — bulk variants for AI-removed CLIAgentSessionsModelEvent
+    Started { terminal_view_id: warpui::EntityId, cli_agent: crate::app_state::CLIAgent },
+    StatusChanged { terminal_view_id: warpui::EntityId, status: () },
+    SessionUpdated { terminal_view_id: warpui::EntityId },
+    InputSessionChanged { terminal_view_id: warpui::EntityId },
 }
 
 // twarp: 2c-d — additional file-local stubs for view.rs body code
@@ -592,6 +611,12 @@ impl ConversationStatus {
 #[allow(dead_code)] enum AIAgentActionType {
     CreateDocuments(()),
     EditDocuments(()),
+    // twarp: 2c-d — bulk variants for AI-removed AIAgentActionType
+    ReadFiles(()),
+    RequestCommandOutput(()),
+    RequestFileEdits(()),
+    SearchCodebase(()),
+    WriteToLongRunningShellCommand(()),
 }
 #[allow(dead_code)] enum AIAgentOutputStatus {}
 #[allow(dead_code)] enum AIAgentTextSection {}

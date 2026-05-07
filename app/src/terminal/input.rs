@@ -837,6 +837,13 @@ impl UniversalDeveloperInputButtonBar {
         unimplemented!()
     }
     pub fn update_segmented_control_disabled_state<C>(&mut self, _: &mut C) {}
+    // twarp: 2c-d — bulk stubs for AI-removed UDIButtonBar methods
+    pub fn set_at_button_disabled<C>(&mut self, _: bool, _: &mut C) {}
+    pub fn set_is_in_active_terminal<C>(&mut self, _: bool, _: &mut C) {}
+    pub fn set_slash_button_disabled<C>(&mut self, _: bool, _: &mut C) {}
+    pub fn set_udi_hovered<C>(&mut self, _: bool, _: &mut C) {}
+    pub fn set_voice_is_listening<C>(&mut self, _: bool, _: &mut C) {}
+    pub fn update_input_empty_state<C>(&mut self, _: bool, _: &mut C) {}
 }
 
 #[derive(Debug, Clone)]
