@@ -282,6 +282,10 @@ fn render_agent_mode_setup_banner<A, B>(_: A, _: B) -> Box<dyn warpui::Element> 
 // twarp: 2c-d — Anonymous user AI banner stubs (deleted from inline_banner)
 #[allow(dead_code)]
 struct AnonymousUserAISignUpBannerState;
+#[allow(dead_code)]
+impl AnonymousUserAISignUpBannerState {
+    fn render<A, B>(&self, _: A, _: B) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
+}
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum AnonymousUserLoginBannerAction {}
@@ -557,6 +561,7 @@ struct CodebaseIndexSpeedbumpBannerState {
 impl CodebaseIndexSpeedbumpBannerState {
     pub fn toggle_always_allow_checked(&mut self) {}
     pub fn show_indexing_banner(&self) -> bool { false }
+    pub fn render_codebase_index_speedbump_banner<A, B>(&self, _: A, _: B) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
 }
 #[allow(dead_code)]
 impl CodebaseIndexSpeedbumpBannerState {
@@ -626,6 +631,18 @@ impl CLIAgentSessionsModel {
     StatusChanged { terminal_view_id: warpui::EntityId, status: () },
     SessionUpdated { terminal_view_id: warpui::EntityId },
     InputSessionChanged { terminal_view_id: warpui::EntityId },
+}
+#[allow(dead_code)]
+impl CLIAgentSessionsModelEvent {
+    fn terminal_view_id(&self) -> warpui::EntityId {
+        match self {
+            Self::Ended { terminal_view_id } |
+            Self::Started { terminal_view_id, .. } |
+            Self::StatusChanged { terminal_view_id, .. } |
+            Self::SessionUpdated { terminal_view_id } |
+            Self::InputSessionChanged { terminal_view_id } => *terminal_view_id,
+        }
+    }
 }
 
 // twarp: 2c-d — additional file-local stubs for view.rs body code
@@ -774,6 +791,9 @@ impl BlocklistAIInputModel {
     fn set_input_config<C>(&mut self, _: InputConfig, _: bool, _: &mut C) {}
     fn set_input_type<C>(&mut self, _: InputType, _: &mut C) {}
     fn is_input_type_locked(&self) -> bool { false }
+    // twarp: 2c-d — bulk stubs
+    fn should_run_input_autodetection(&self) -> bool { false }
+    fn enable_autodetection<A, C>(&mut self, _: A, _: &mut C) {}
 }
 // twarp: 2c-d — re-export canonical InputConfig + InputType from terminal::input
 pub use crate::terminal::input::{InputConfig, InputType};
@@ -812,8 +832,14 @@ impl ApiKeyManager {
 #[allow(dead_code)]
 impl CodebaseIndexManager {
     fn index_directory<P, C>(&mut self, _: P, _: &mut C) {}
+    fn write_snapshot<C>(&mut self, _: &mut C) {}
+    fn handle_session_bootstrapped<A, C>(&mut self, _: A, _: &mut C) {}
 }
 #[allow(dead_code)] struct OnboardingAgenticSuggestionsBlock;
+#[allow(dead_code)]
+impl OnboardingAgenticSuggestionsBlock {
+    fn interrupt_block<C>(&mut self, _: &mut C) {}
+}
 #[allow(dead_code)] enum OnboardingAgenticSuggestionsBlockEvent {}
 #[allow(dead_code)] enum OnboardingChipType {}
 

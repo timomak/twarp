@@ -357,6 +357,7 @@ impl BlocklistAIStatusBar {
     }
     fn handle_ctrl_c<C>(&mut self, _: &mut C) {}
     fn summarization_cancel_dialog_handle(&self) -> Option<()> { None }
+    fn should_show_summarization_cancel_dialog(&self) -> bool { false }
 }
 
 #[allow(dead_code)]
