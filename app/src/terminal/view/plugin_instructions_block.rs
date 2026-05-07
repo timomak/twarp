@@ -19,8 +19,18 @@ use warpui::elements::FormattedTextElement;
 use crate::appearance::Appearance;
 use crate::app_state::CLIAgent;
 
-pub fn render_code_block_plain() -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
-pub struct CodeBlockOptions;
+pub fn render_code_block_plain<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: E) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
+#[derive(Default)]
+pub struct CodeBlockOptions {
+    // twarp: 2c-d — fields used by callers
+    pub on_open: Option<()>,
+    pub on_execute: Option<Box<dyn Fn(String, &mut warpui::EventContext)>>,
+    pub on_copy: Option<Box<dyn Fn(String, &mut warpui::EventContext)>>,
+    pub on_insert: Option<()>,
+    pub footer_element: Option<Box<dyn warpui::Element>>,
+    pub mouse_handles: Option<()>,
+    pub file_path: Option<std::path::PathBuf>,
+}
 #[derive(Default)]
 pub struct CodeSnippetButtonHandles;
 pub struct PluginInstructions {

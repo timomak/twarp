@@ -17,8 +17,9 @@ pub mod requested_script {
         Other,
     }
     pub struct TitledScript;
-    pub fn render_requested_scripts() -> Box<dyn Element> { Empty::new().finish() }
-    pub fn render_requested_script() -> Box<dyn Element> { Empty::new().finish() }
+    // twarp: 2c-d — variadic stubs for AI-removed renderers
+    pub fn render_requested_scripts<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: I, _: J, _: K, _: L, _: M, _: N, _: O, _: P, _: Q, _: R) -> Box<dyn Element> { Empty::new().finish() }
+    pub fn render_requested_script<A, B, C, D, E, F, G, H, I, J, K, L, M>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: I, _: J, _: K, _: L, _: M) -> Box<dyn Element> { Empty::new().finish() }
 }
 pub use requested_script::{RequestedScriptMouseStates, RequestedScriptStatus, TitledScript};
 use crate::appearance::Appearance;

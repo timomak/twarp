@@ -34,7 +34,7 @@ pub type ConnectionId = uuid::Uuid;
 use super::protocol::RequestId;
 // twarp: 2c-d — AI agent / blocklist read deleted; stubs.
 pub struct FileLocations;
-pub fn read_local_file_context() {}
+pub fn read_local_file_context<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: E) {}
 pub enum ReadFileContextResult { Other }
 use crate::terminal::model::session::command_executor::{
     ExecuteCommandOptions, LocalCommandExecutor,

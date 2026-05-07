@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 // twarp: 2c-d — AI agent / blocklist deleted; stubs.
 pub enum ProgrammingLanguage { Other }
-pub fn render_runnable_code_snippet() -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
+pub fn render_runnable_code_snippet<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: F) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
 pub struct CodeSnippetButtonHandles;
 use crate::appearance::Appearance;
 use crate::terminal::model::terminal_model::SubshellInitializationInfo;

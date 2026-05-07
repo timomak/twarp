@@ -14,7 +14,7 @@ use warpui::ui_components::keyboard_shortcut::keystroke_to_keys;
 use warpui::{AppContext, SingletonEntity};
 
 // twarp: 2c-d — render_keystroke_with_color_overrides deleted; stub.
-pub fn render_keystroke_with_color_overrides() -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
+pub fn render_keystroke_with_color_overrides<A, B, C, D>(_: A, _: B, _: C, _: D) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
 use crate::terminal;
 use crate::terminal::input::message_bar::{ChipHorizontalAlignment, Message, MessageItem};
 use crate::ui_components::blended_colors;

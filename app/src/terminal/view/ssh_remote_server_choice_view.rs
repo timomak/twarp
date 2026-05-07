@@ -30,7 +30,7 @@ use warpui::{
 };
 
 // twarp: 2c-d — AI blocklist deleted; stubs.
-pub fn rich_navigation_button() -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
+pub fn rich_navigation_button<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: E) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
 pub struct KeyboardNavigableButtons;
 pub struct HeaderConfig;
 pub const INLINE_ACTION_HORIZONTAL_PADDING: f32 = 12.0;

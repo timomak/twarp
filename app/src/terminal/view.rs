@@ -275,7 +275,7 @@ struct AgentModeSetupSpeedbumpBannerState;
 #[allow(dead_code)]
 enum AgentModeSetupSpeedbumpBannerAction {}
 #[allow(dead_code)]
-fn render_agent_mode_setup_banner() {}
+fn render_agent_mode_setup_banner<A, B>(_: A, _: B) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
 
 // twarp: 2c-d — Anonymous user AI banner stubs (deleted from inline_banner)
 #[allow(dead_code)]
@@ -397,7 +397,7 @@ pub use crate::app_state::AgentViewEntryOrigin;
 #[allow(dead_code)] struct InlineAgentViewHeader;
 #[allow(dead_code)] const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration = std::time::Duration::ZERO;
 #[allow(dead_code)] fn agent_view_bg_fill<C>(_: C) -> warpui::elements::Fill { warpui::elements::Fill::None }
-#[allow(dead_code)] fn fork_from_last_known_good_state_exchange_id() {}
+#[allow(dead_code)] fn fork_from_last_known_good_state_exchange_id<A, B>(_: A, _: B) -> Option<()> { None }
 
 #[allow(dead_code)] mod conversation_utils {
     pub fn remove_conversation<A, B, C, D>(_: A, _: B, _: C, _: D) {}
@@ -431,7 +431,7 @@ impl AgentTaskDataStub {
     TasksUpdated(()),
 }
 
-#[allow(dead_code)] fn conversation_output_status_from_conversation() {}
+#[allow(dead_code)] fn conversation_output_status_from_conversation<C>(_: C) -> Option<()> { None }
 type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
 #[allow(dead_code)] enum AmbientConversationStatus {}
 
@@ -466,12 +466,12 @@ impl UserTakeOverReason {
     fn is_stop(&self) -> bool { matches!(self, UserTakeOverReason::Stop) }
 }
 #[allow(dead_code)] enum BlocklistAIStatusBarEvent { SummarizationCancelDialogToggled { is_open: bool }, Stop }
-#[allow(dead_code)] fn block_context_from_terminal_model() {}
+#[allow(dead_code)] fn block_context_from_terminal_model<A, B, C>(_: A, _: B, _: C) -> Option<()> { None }
 #[allow(dead_code)] enum SlashCommandRequest {}
 #[allow(dead_code)] type AIDocumentId = crate::app_state::AIDocumentId;
 #[allow(dead_code)] type AIDocumentVersion = crate::app_state::AIDocumentVersion;
 #[allow(dead_code)] struct AIDocumentModel;
-#[allow(dead_code)] fn shimmering_warp_loading_text() {}
+#[allow(dead_code)] fn shimmering_warp_loading_text<A, B, C, D>(_: A, _: B, _: C, _: D) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
 
 #[allow(dead_code)]
 #[derive(Clone)]
@@ -480,7 +480,7 @@ struct ServerConversationToken;
 impl ServerConversationToken {
     fn as_str(&self) -> &str { "" }
 }
-#[allow(dead_code)] fn redact_secrets() {}
+#[allow(dead_code)] fn redact_secrets<C>(_: C) {}
 #[allow(dead_code)] enum AgentTodosPopupEvent {}
 #[allow(dead_code)] struct AgentTodosPopupView;
 
@@ -540,9 +540,9 @@ impl PersistedWorkspace {
 #[allow(dead_code)] struct CLIAgentEventPayload { content: String }
 #[allow(dead_code)] enum CLIAgentEventType {}
 #[allow(dead_code)] const CLI_AGENT_NOTIFICATION_SENTINEL: &str = "";
-#[allow(dead_code)] fn is_agent_supported() -> bool { false }
+#[allow(dead_code)] fn is_agent_supported<C>(_: C) -> bool { false }
 #[allow(dead_code)] struct CLIAgentSessionListener;
-#[allow(dead_code)] fn plugin_manager_for() {}
+#[allow(dead_code)] fn plugin_manager_for<C>(_: C) -> Option<crate::plugin_manager::PluginManager> { None }
 #[allow(dead_code)] enum PluginModalKind {}
 #[allow(dead_code)] enum CLIAgentInputEntrypoint {}
 #[allow(dead_code)] struct CLIAgentInputState;
@@ -649,9 +649,9 @@ use crate::terminal::view::rich_content::AIAgentExchangeId;
 #[allow(dead_code)] enum AIAgentInput {}
 #[allow(dead_code)] struct FileLocations;
 #[allow(dead_code)] enum PassiveSuggestionResultType {}
-#[allow(dead_code)] fn ai_brand_color() {}
-#[allow(dead_code)] fn get_ai_block_overflow_menu_element_position_id() {}
-#[allow(dead_code)] fn get_attached_blocks_chip_element_position_id() {}
+#[allow(dead_code)] fn ai_brand_color<C>(_: C) -> warpui::color::ColorU { warpui::color::ColorU::new(0,0,0,0) }
+#[allow(dead_code)] fn get_ai_block_overflow_menu_element_position_id<C>(_: C) -> warpui::elements::ElementPositionId { warpui::elements::ElementPositionId::new("twarp-stub") }
+#[allow(dead_code)] fn get_attached_blocks_chip_element_position_id<C>(_: C) -> warpui::elements::ElementPositionId { warpui::elements::ElementPositionId::new("twarp-stub") }
 #[allow(dead_code)] struct CodeDiffView;
 #[allow(dead_code)] struct SummarizationCancelDialog;
 #[allow(dead_code)] fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool { false }

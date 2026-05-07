@@ -7,7 +7,7 @@ use warpui::prelude::{ConstrainedBox, Container, CrossAxisAlignment, Empty, Flex
 use warpui::{AppContext, Element, SingletonEntity};
 
 // twarp: 2c-d — render_keystroke_with_color_overrides deleted; stub.
-pub fn render_keystroke_with_color_overrides() -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
+pub fn render_keystroke_with_color_overrides<A, B, C, D>(_: A, _: B, _: C, _: D) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
 use crate::search::slash_command_menu::static_commands::commands::COMMAND_REGISTRY;
 use crate::search::{ItemHighlightState, SearchItem};
 use crate::terminal::input::inline_menu::styles as inline_styles;
