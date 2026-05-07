@@ -1173,7 +1173,7 @@ impl BlockListElement {
                 } else {
                     (
                         Some(TerminalAction::AskAIAssistant { block_index }),
-                        *ATTACH_AS_AGENT_MODE_CONTEXT_TEXT,
+                        ATTACH_AS_AGENT_MODE_CONTEXT_TEXT,
                     )
                 };
 

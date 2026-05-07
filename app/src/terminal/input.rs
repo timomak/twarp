@@ -848,7 +848,7 @@ impl AIConversationStub {
     fn status(&self) -> AIConversationStatusStub { AIConversationStatusStub }
     // twarp: 2c-d — bulk stubs
     fn is_empty(&self) -> bool { true }
-    fn export_to_markdown(&self) -> String { String::new() }
+    fn export_to_markdown<A>(&self, _: A) -> String { String::new() }
     fn server_conversation_token(&self) -> Option<String> { None }
 }
 #[allow(dead_code)]
@@ -1036,7 +1036,7 @@ impl UniversalDeveloperInputButtonBar {
 enum UniversalDeveloperInputButtonBarEvent {
     // twarp: 2c-d — bulk variants for AI-removed UniversalDeveloperInputButtonBarEvent
     EnableAutoDetection,
-    InputTypeSelected(()),
+    InputTypeSelected(InputType),
     ModelSelectorClosed,
     ModelSelectorOpened,
     OpenSettings(()),

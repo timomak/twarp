@@ -250,7 +250,7 @@ impl Input {
                                 model.detect_and_set_input_type(
                                     parsed_tokens,
                                     EmptyCompletionContext::new(),
-                                    None,
+                                    None::<()>,
                                     ctx,
                                 );
                             });

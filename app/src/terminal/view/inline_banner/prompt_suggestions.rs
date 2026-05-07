@@ -34,7 +34,7 @@ pub struct PromptAlertView;
 impl PromptAlertView {
     pub fn new<A>(_: &mut A) -> Self { Self }
 }
-impl warpui::Entity for PromptAlertView { type Event = (); }
+impl warpui::Entity for PromptAlertView { type Event = PromptAlertEvent; }
 impl warpui::View for PromptAlertView {
     fn ui_name() -> &'static str { "PromptAlertView/twarp-stub" }
     fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
