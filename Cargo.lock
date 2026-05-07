@@ -13853,6 +13853,8 @@ dependencies = [
  "content_inspector",
  "dirs 6.0.0",
  "dunce",
+ "event-listener",
+ "futures-lite 1.13.0",
  "futures-util",
  "gloo",
  "hex",
