@@ -64,14 +64,14 @@ impl AIBlock {
     pub fn dismiss_ai_tooltips<C>(&mut self, _: &mut C) {}
     pub fn clear_message<C>(&mut self, _: &mut C) {}
     pub fn clear_finished_action_results<C>(&mut self, _: &mut C) {}
-    pub fn contains_action_result<I>(&self, _: I) -> bool { false }
+    pub fn contains_action_result<I, C>(&self, _: I, _: &C) -> bool { false }
     pub fn contains_ugc<C>(&self, _: &C) -> bool { false }
     pub fn debug_link<C>(&self, _: &C) -> Option<String> { None }
     pub fn display_name<C>(&self, _: &C) -> String { String::new() }
     pub fn collect_imported_comments<C>(&self, _: &C) -> Vec<()> { Vec::new() }
     // twarp: 2c-d — additional bulk stubs for AI-removed AIBlock methods
     pub fn cleanup_block<C>(&mut self, _: &mut C) {}
-    pub fn dismiss_pending_suggested_prompt<C>(&mut self, _: &mut C) {}
+    pub fn dismiss_pending_suggested_prompt<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn finish_reason<C>(&self, _: &C) -> Option<String> { None }
     pub fn handle_passive_code_diff_action<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn has_any_imported_comments<C>(&self, _: &C) -> bool { false }
@@ -83,7 +83,7 @@ impl AIBlock {
     pub fn is_restored<C>(&self, _: &C) -> bool { false }
     pub fn num_requested_commands<C>(&self, _: &C) -> usize { 0 }
     pub fn requested_commands_iter<C>(&self, _: &C) -> std::iter::Empty<()> { std::iter::empty() }
-    pub fn reset_conversation_id<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn reset_conversation_id<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn revert_all_diffs<C>(&mut self, _: &mut C) {}
     pub fn selected_text<C>(&self, _: &C) -> Option<String> { None }
     pub fn set_secret_redaction_state<A, C>(&mut self, _: A, _: &mut C) {}

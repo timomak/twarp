@@ -566,10 +566,10 @@ impl CLIAgentSessionsModel {
     fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSession> { None }
     fn is_input_open(&self, _: warpui::EntityId) -> bool { false }
     // twarp: 2c-d — bulk stubs
-    fn register_listener<A, C>(&mut self, _: A, _: &mut C) {}
+    fn register_listener<A, B, C, D, E, F, G, H, I, J>(&mut self, _: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: I, _: &mut J) {}
     fn remove_session<A, C>(&mut self, _: A, _: &mut C) {}
     fn set_session<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
-    fn update_from_event<A, C>(&mut self, _: A, _: &mut C) {}
+    fn update_from_event<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
 }
 #[allow(dead_code)] enum CLIAgentSessionsModelEvent {
     Ended { terminal_view_id: warpui::EntityId },
@@ -698,7 +698,7 @@ impl BlocklistAIHistoryModel {
     fn clear_conversations_in_terminal_view<A, C>(&mut self, _: A, _: &mut C) {}
     fn fork_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     fn truncate_conversation_from_exchange<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
-    fn update_conversation_status<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    fn update_conversation_status<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
 }
 #[allow(dead_code)] enum BlocklistAIInputEvent {}
 #[allow(dead_code)] struct BlocklistAIInputModel;
@@ -3446,7 +3446,7 @@ impl TerminalView {
     #[allow(dead_code)]
     fn close_cli_agent_rich_input<A, C>(&mut self, _: A, _: &mut C) {}
     #[allow(dead_code)]
-    fn enter_agent_view_for_conversation<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    fn enter_agent_view_for_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     #[allow(dead_code)]
     fn fetch_and_update_cloud_mode_details_panel<C>(&mut self, _: &mut C) {}
 
@@ -5191,7 +5191,7 @@ impl TerminalView {
                 }
             } else if !has_active_subagent() {
                 if let Some(last_ai_block) = self.last_ai_block() {
-                    finish_reason = last_ai_block.as_ref(ctx).finish_reason();
+                    finish_reason = last_ai_block.as_ref(ctx).finish_reason(ctx);
                 }
             }
 
@@ -5964,9 +5964,11 @@ impl TerminalView {
         } else {
             // Set pending query as follow-up in context model
             self.ai_context_model.update(ctx, |context_model, ctx| {
+                // twarp: 2c-d — pad with () to satisfy 4-arg signature
                 context_model.set_pending_query_state_for_existing_conversation(
                     *conversation_id,
                     AgentViewEntryOrigin::ContinueConversationButton,
+                    (),
                     ctx,
                 );
             });
@@ -5998,9 +6000,11 @@ impl TerminalView {
         // active for the selected conversation, so this call is redundant.
         if !FeatureFlag::AgentView.is_enabled() {
             self.ai_context_model.update(ctx, |context_model, ctx| {
+                // twarp: 2c-d — pad with () to satisfy 4-arg signature
                 context_model.set_pending_query_state_for_existing_conversation(
                     *conversation_id,
                     AgentViewEntryOrigin::ResumeConversationButton,
+                    (),
                     ctx,
                 )
             });
@@ -14323,7 +14327,7 @@ impl TerminalView {
     ) -> Option<RichContentLink> {
         self.ai_block_handle_by_view_id(rich_content_view_id)?
             .as_ref(ctx)
-            .hovered_rich_content_link()
+            .hovered_rich_content_link(ctx)
     }
 
     fn context_menu_items(
@@ -14810,7 +14814,7 @@ impl TerminalView {
 
                         // We can't revert restored blocks since we don't restore the full diff
                         if FeatureFlag::RevertToCheckpoints.is_enabled()
-                            && !ai_metadata.ai_block_handle.as_ref(ctx).is_restored()
+                            && !ai_metadata.ai_block_handle.as_ref(ctx).is_restored(ctx)
                         {
                             items.push(
                                 MenuItemFields::new("Rewind to before here")
@@ -15548,7 +15552,7 @@ impl TerminalView {
                 }
                 None
             })
-            .map_or_else(|| 0, |ai_block| ai_block.num_requested_commands());
+            .map_or_else(|| 0, |ai_block| ai_block.num_requested_commands(ctx));
 
         if num_requested_commands > 0 {
             items.push(
@@ -23232,20 +23236,20 @@ impl TerminalView {
 
     // twarp: 2c-d — bulk stubs for AI-removed methods on TerminalView
     fn close_cli_agent_rich_input_and_disable_auto_toggle<C>(&mut self, _: &mut C) {}
-    fn detect_cli_agent_from_model<C>(&mut self, _: &mut C) {}
-    fn enter_agent_view<C>(&mut self, _: &mut C) {}
+    fn detect_cli_agent_from_model<A, C>(&mut self, _: A, _: &mut C) {}
+    fn enter_agent_view<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     fn enter_cloud_agent_view<C>(&mut self, _: &mut C) {}
     fn handle_ambient_agent_event<C, E>(&mut self, _: E, _: &mut C) {}
     fn handle_first_time_cloud_agent_setup_event<C, E>(&mut self, _: E, _: &mut C) {}
     fn insert_agent_view_entry_block<C, A, B>(&mut self, _: A, _: B, _: &mut C) {}
     fn load_agent_mode_conversation<C, A>(&mut self, _: A, _: &mut C) {}
     fn maybe_auto_open_cloud_mode_details_panel<C>(&mut self, _: &mut C) {}
-    fn maybe_insert_setup_command_blocks<C>(&mut self, _: &mut C) {}
+    fn maybe_insert_setup_command_blocks<A, C>(&mut self, _: A, _: &mut C) {}
     fn show_out_of_credits_modal<C>(&mut self, _: &mut C) {}
     fn submit_cli_agent_rich_input<C>(&mut self, _: &mut C) {}
     fn tag_in_agent_for_user_long_running_command<C>(&mut self, _: &mut C) {}
     fn tag_out_agent_for_user_long_running_command<C>(&mut self, _: &mut C) {}
-    fn try_enter_agent_view<C>(&mut self, _: &mut C) {}
+    fn try_enter_agent_view<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
 }
 
 impl Entity for TerminalView {

@@ -700,9 +700,9 @@ impl BlocklistAIController {
     pub fn handle_shared_session_response_event<E, C>(&mut self, _: E, _: &mut C) {}
     pub fn link_forked_conversation_token<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn mark_action_as_remotely_executing_in_shared_session<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
-    pub fn resume_conversation<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn resume_conversation<A, B, C, D, E>(&mut self, _: A, _: B, _: C, _: D, _: &mut E) {}
     pub fn send_custom_ai_input_query<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
-    pub fn send_passive_suggestion_result<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn send_passive_suggestion_result<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     pub fn send_user_query_in_new_conversation<A, B, C, D, E>(&mut self, _: A, _: B, _: C, _: D, _: &mut E) {}
     pub fn set_current_response_initiator<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn send_queued_slash_command_request<A, C>(&mut self, _: A, _: &mut C) {}
