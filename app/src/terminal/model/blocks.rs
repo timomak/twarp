@@ -1531,9 +1531,9 @@ impl BlockList {
                 // For inline agent views, add the conversation ID to Terminal variant
                 // instead of replacing with Agent variant
                 if self.agent_view_state.is_inline() {
-                    self.active_block_mut().add_attached_conversation_id(id);
+                    self.active_block_mut().add_attached_conversation_id(*id);
                 } else {
-                    self.active_block_mut().set_conversation_id(id);
+                    self.active_block_mut().set_conversation_id(*id);
                 }
             } else {
                 // Only clear conversation ID for blocks that were created inside agent view.
@@ -2514,7 +2514,7 @@ impl BlockList {
             honor_ps1,
             self.obfuscate_secrets,
             self.is_ai_ugc_telemetry_enabled,
-            self.agent_view_state.active_conversation_id(),
+            self.agent_view_state.active_conversation_id().copied(),
         );
         if let Some(is_local) = restored_block_was_local {
             block.set_restored_block_was_local(is_local);

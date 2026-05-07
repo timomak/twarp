@@ -53,7 +53,7 @@ pub struct ForkFromExchange {
 /// Parameters for forking an AI conversation.
 /// twarp 2c-d: kept as opaque stub after AI removal.
 pub struct ForkAIConversationParams {
-    pub conversation_id: String,
+    pub conversation_id: crate::app_state::AIConversationId,
     pub fork_from_exchange: Option<ForkFromExchange>,
     pub summarize_after_fork: bool,
     pub summarization_prompt: Option<String>,

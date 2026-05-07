@@ -3809,12 +3809,13 @@ impl TerminalView {
                         );
                     }
 
-                    let has_init_steps = me.has_init_steps_for_conversation(*conversation_id);
+                    let conv_id = conversation_id.unwrap_or_default();
+                    let has_init_steps = me.has_init_steps_for_conversation(conv_id);
 
                     // twarp: 2c-d — init project model deleted with AI; cancel branch removed.
                     let _ = has_init_steps;
                     for rich_content in me.rich_content_views.iter().rev() {
-                        if rich_content.agent_view_conversation_id() != Some(*conversation_id) {
+                        if rich_content.agent_view_conversation_id() != Some(conv_id) {
                             continue;
                         }
 
@@ -3856,10 +3857,10 @@ impl TerminalView {
 
                     // LRC conversations should only have one entry point (the original LRC block).
                     let has_existing_lrc_block =
-                        me.has_existing_lrc_agent_view_block(*conversation_id);
+                        me.has_existing_lrc_agent_view_block(conv_id);
 
                     let should_insert = (!me
-                        .last_visible_item_is_agent_view_block_for_conversation(*conversation_id)
+                        .last_visible_item_is_agent_view_block_for_conversation(conv_id)
                         && (has_init_steps || was_modified)
                         && !is_exit_due_to_user_takeover_of_lrc
                         && !has_existing_lrc_block)
@@ -3869,7 +3870,7 @@ impl TerminalView {
                     if should_insert {
                         me.insert_agent_view_entry_block(
                             AgentViewEntryBlockParams {
-                                conversation_id: *conversation_id,
+                                conversation_id: conv_id,
                                 is_new: was_new,
                                 is_restored: false, /* is_restored */
                                 origin: *origin,
@@ -5383,7 +5384,7 @@ impl TerminalView {
                             .block_list_mut()
                             .associate_blocks_with_conversation(
                                 added_block_ids.into_iter(),
-                                conversation_id,
+                                *conversation_id,
                             );
 
                         // Persist the updated visibility for each block
@@ -5419,7 +5420,7 @@ impl TerminalView {
                             .block_list_mut()
                             .remove_pending_context_assocation_for_blocks(
                                 removed_block_ids.into_iter(),
-                                conversation_id,
+                                *conversation_id,
                             );
 
                         if let Some(sender) = GlobalResourceHandlesProvider::as_ref(ctx)

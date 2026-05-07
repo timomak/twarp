@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use warp_util::path::LineAndColumnArg;
 
+use crate::app_state::AIConversationId;
 use crate::auth::auth_manager::LoginGatedFeature;
 use crate::drive::items::WarpDriveItemId;
 use crate::drive::CloudObjectTypeAndId;
@@ -429,12 +430,12 @@ pub enum WorkspaceAction {
     RestoreOrNavigateToConversation {
         pane_view_locator: Option<PaneViewLocator>,
         window_id: Option<WindowId>,
-        conversation_id: String,
+        conversation_id: AIConversationId,
         terminal_view_id: Option<EntityId>,
         restore_layout: Option<RestoreConversationLayout>,
     },
     ForkAIConversation {
-        conversation_id: String,
+        conversation_id: AIConversationId,
         fork_from_exchange: Option<ForkFromExchange>,
         summarize_after_fork: bool,
         summarization_prompt: Option<String>,
@@ -443,7 +444,7 @@ pub enum WorkspaceAction {
     },
     #[cfg(not(target_family = "wasm"))]
     ContinueConversationLocally {
-        conversation_id: String,
+        conversation_id: AIConversationId,
     },
     InsertForkSlashCommand,
     SummarizeAIConversation {

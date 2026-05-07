@@ -397,7 +397,8 @@ impl TerminalView {
                 self.agent_view_controller
                     .as_ref(ctx)
                     .agent_view_state()
-                    .fullscreen_conversation_id(),
+                    .fullscreen_conversation_id()
+                    .copied(),
                 false,
             )
         } else {
@@ -405,7 +406,8 @@ impl TerminalView {
                 self.agent_view_controller
                     .as_ref(ctx)
                     .agent_view_state()
-                    .active_conversation_id(),
+                    .active_conversation_id()
+                    .copied(),
                 false,
             )
         };
