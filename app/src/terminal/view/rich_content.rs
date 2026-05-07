@@ -60,7 +60,7 @@ impl AIBlock {
     pub fn is_passive_conversation<C>(&self, _: &C) -> bool { false }
     pub fn get_preceding_user_query<C>(&self, _: &C) -> Option<String> { None }
     pub fn accept_pending_action<C>(&mut self, _: &mut C) {}
-    pub fn accept_pending_unit_test_suggestion<C>(&mut self, _: &mut C) {}
+    pub fn accept_pending_unit_test_suggestion<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn dismiss_ai_tooltips<C>(&mut self, _: &mut C) {}
     pub fn clear_message<C>(&mut self, _: &mut C) {}
     pub fn clear_finished_action_results<C>(&mut self, _: &mut C) {}

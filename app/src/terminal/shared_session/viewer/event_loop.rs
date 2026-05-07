@@ -260,8 +260,11 @@ impl EventLoop {
                                         view.ai_controller().update(ctx, |c, ctx| {
                                             // Set the participant who initiated this response
                                             if let Some(response_initiator) = response_initiator {
+                                                // twarp: 2c-d — pad with () for stub signature
                                                 c.set_current_response_initiator(
                                                     response_initiator,
+                                                    (),
+                                                    ctx,
                                                 );
                                             }
 

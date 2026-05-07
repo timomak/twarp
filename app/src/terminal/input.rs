@@ -456,7 +456,7 @@ enum PluginModalKind {}
 struct InlineConversationMenuView;
 #[allow(dead_code)]
 impl InlineConversationMenuView {
-    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+    fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -479,7 +479,7 @@ struct ConversationNavigationData {
 struct InlineModelSelectorView;
 #[allow(dead_code)]
 impl InlineModelSelectorView {
-    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+    fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     // twarp: 2c-d — bulk stubs
     fn filter_results_by_input(&self) -> bool { false }
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -509,7 +509,7 @@ enum InlineModelSelectorTab {
 struct InlinePlanMenuView;
 #[allow(dead_code)]
 impl InlinePlanMenuView {
-    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+    fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -519,7 +519,7 @@ enum InlinePlanMenuEvent {}
 struct InlineProfileSelectorView;
 #[allow(dead_code)]
 impl InlineProfileSelectorView {
-    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+    fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -529,7 +529,7 @@ enum InlineProfileSelectorEvent {}
 struct InlinePromptsMenuView;
 #[allow(dead_code)]
 impl InlinePromptsMenuView {
-    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+    fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -539,7 +539,7 @@ enum InlinePromptsMenuEvent {}
 struct InlineReposMenuView;
 #[allow(dead_code)]
 impl InlineReposMenuView {
-    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+    fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -552,7 +552,7 @@ enum InlineReposMenuEvent {
 struct RewindMenuView;
 #[allow(dead_code)]
 impl RewindMenuView {
-    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+    fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -562,7 +562,7 @@ enum RewindMenuEvent {}
 struct InlineSkillSelectorView;
 #[allow(dead_code)]
 impl InlineSkillSelectorView {
-    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+    fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     // twarp: 2c-d — bulk stubs
     fn select_down<C>(&mut self, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
@@ -580,7 +580,7 @@ enum InlineSkillSelectorEvent {}
 struct UserQueryMenuView;
 #[allow(dead_code)]
 impl UserQueryMenuView {
-    fn accept_selected_item<C>(&mut self, _: &mut C) {}
+    fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -703,13 +703,13 @@ impl BlocklistAIController {
     pub fn resume_conversation<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn send_custom_ai_input_query<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     pub fn send_passive_suggestion_result<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
-    pub fn send_user_query_in_new_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    pub fn send_user_query_in_new_conversation<A, B, C, D, E>(&mut self, _: A, _: B, _: C, _: D, _: &mut E) {}
     pub fn set_current_response_initiator<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn send_queued_slash_command_request<A, C>(&mut self, _: A, _: &mut C) {}
-    pub fn send_queued_user_query_in_conversation<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
-    pub fn send_queued_user_query_in_new_conversation<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn send_queued_user_query_in_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    pub fn send_queued_user_query_in_new_conversation<A, B, C, D, E>(&mut self, _: A, _: B, _: C, _: D, _: &mut E) {}
     pub fn send_user_query_in_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
-    pub fn send_zero_state_prompt_suggestion<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn send_zero_state_prompt_suggestion<A, C>(&mut self, _: A, _: &mut C) {}
 }
 
 #[derive(Debug, Clone)]
@@ -10582,13 +10582,14 @@ impl Input {
             .is_targeting_existing_conversation()
         {
             self.ai_context_model.update(ctx, |ai_context_model, ctx| {
+                // twarp: 2c-d — set_pending_query_state_for_new_conversation takes 4 args; pad with ()/().
                 ai_context_model.set_pending_query_state_for_new_conversation(
-                    // This origin is unused in this codepath, which doesn't get called when
-                    // AgentView is enabled.
                     AgentViewEntryOrigin::Input {
                         is_new_conversation: false,
                         was_prompt_autodetected: false,
                     },
+                    (),
+                    (),
                     ctx,
                 );
             });
@@ -12124,14 +12125,14 @@ impl Input {
             // If the prompts menu is open, Enter selects the highlighted prompt.
             if self.suggestions_mode_model.as_ref(ctx).is_prompts_menu() {
                 self.inline_prompts_menu_view
-                    .update(ctx, |view, ctx| view.accept_selected_item(ctx));
+                    .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
                 return;
             }
 
             // If the skill selector menu is open, Enter selects the highlighted skill.
             if self.suggestions_mode_model.as_ref(ctx).is_skill_menu() {
                 self.inline_skill_selector_view
-                    .update(ctx, |view, ctx| view.accept_selected_item(ctx));
+                    .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
                 return;
             }
 
@@ -12180,13 +12181,13 @@ impl Input {
             .is_profile_selector()
         {
             self.inline_profile_selector_view
-                .update(ctx, |view, ctx| view.accept_selected_item(ctx));
+                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
             return;
         }
 
         if self.suggestions_mode_model.as_ref(ctx).is_prompts_menu() {
             self.inline_prompts_menu_view
-                .update(ctx, |view, ctx| view.accept_selected_item(ctx));
+                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
             return;
         }
 
@@ -12212,11 +12213,11 @@ impl Input {
             .is_conversation_menu()
         {
             self.inline_conversation_menu_view
-                .update(ctx, |view, ctx| view.accept_selected_item(ctx));
+                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
             return;
         } else if self.suggestions_mode_model.as_ref(ctx).is_skill_menu() {
             self.inline_skill_selector_view
-                .update(ctx, |view, ctx| view.accept_selected_item(ctx));
+                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
             return;
         } else if self.suggestions_mode_model.as_ref(ctx).is_user_query_menu() {
             self.user_query_menu_view
@@ -12224,7 +12225,7 @@ impl Input {
             return;
         } else if self.suggestions_mode_model.as_ref(ctx).is_rewind_menu() {
             self.rewind_menu_view
-                .update(ctx, |view, ctx| view.accept_selected_item(ctx));
+                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
             return;
         } else if self
             .suggestions_mode_model
@@ -12261,7 +12262,7 @@ impl Input {
             return;
         } else if self.suggestions_mode_model.as_ref(ctx).is_plan_menu() {
             self.inline_plan_menu_view
-                .update(ctx, |view, ctx| view.accept_selected_item(ctx));
+                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
             return;
         } else if self.suggestions_mode_model.as_ref(ctx).is_slash_commands() {
             self.inline_slash_commands_view.update(ctx, |view, ctx| {
@@ -12464,7 +12465,7 @@ impl Input {
                 && AISettings::as_ref(ctx).is_ai_autodetection_enabled(ctx)
             {
                 self.ai_input_model.update(ctx, |input, ctx| {
-                    input.abort_in_progress_detection();
+                    input.abort_in_progress_detection(ctx);
 
                     // The default input state after executing a shell command is Shell mode with
                     // autodetection enabled.
@@ -14204,12 +14205,14 @@ impl TypedActionView for Input {
                 } else if self.should_show_universal_developer_input(ctx) {
                     // Clear follow-up state (start a fresh conversation)
                     self.ai_context_model.update(ctx, |ai_context_model, ctx| {
+                        // twarp: 2c-d — pad with ()/() to satisfy 4-arg signature
                         ai_context_model.set_pending_query_state_for_new_conversation(
-                            // This is a placeholder origin, this codepath is dead when AgentView is enabled.
                             AgentViewEntryOrigin::Input {
                                 is_new_conversation: false,
                                 was_prompt_autodetected: false,
                             },
+                            (),
+                            (),
                             ctx,
                         );
                     });
