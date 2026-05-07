@@ -58,7 +58,7 @@ pub struct CLIAgentSession {
     pub agent: crate::app_state::CLIAgent,
 }
 pub enum CLIAgentSessionsModelEvent {
-    InputSessionChanged {},
+    InputSessionChanged { terminal_view_id: warpui::EntityId },
     Other,
 }
 pub enum AgentViewControllerEvent { Other }

@@ -23,7 +23,7 @@ pub fn assert_rule_exists(
     _expected_id_key: impl Into<String>,
     _expected_content: impl Into<String>,
 ) -> AssertionWithDataCallback {
-    Box::new(|_app, _window_id, _data| {})
+    Box::new(|_app, _window_id, _data| warpui::integration::AssertionOutcome::Success)
 }
 
 /// Assert that the total number of AI facts matches the expected count

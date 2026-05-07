@@ -355,6 +355,8 @@ impl BlocklistAIStatusBar {
     ) -> Self {
         unimplemented!()
     }
+    fn handle_ctrl_c<C>(&mut self, _: &mut C) {}
+    fn summarization_cancel_dialog_handle(&self) -> Option<()> { None }
 }
 
 #[allow(dead_code)]

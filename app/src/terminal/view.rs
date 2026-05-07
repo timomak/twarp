@@ -726,6 +726,9 @@ pub use crate::terminal::view::rich_content::AIBlock;
 #[allow(dead_code)]
 impl BlocklistAIActionModel {
     fn shell_command_executor<C>(&self, _: &C) -> ModelHandle<ShellCommandExecutor> { unimplemented!() }
+    // twarp: 2c-d — bulk stubs
+    fn get_action_result<A>(&self, _: A) -> Option<()> { None }
+    fn get_pending_action<A>(&self, _: A) -> Option<()> { None }
 }
 #[allow(dead_code)] enum BlocklistAIContextEvent {}
 // twarp: 2c-d — re-export canonical BlocklistAIContextModel from terminal::input
@@ -754,6 +757,8 @@ impl BlocklistAIHistoryModel {
     fn fork_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) -> Result<(), String> { Ok(()) }
     fn truncate_conversation_from_exchange<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     fn update_conversation_status<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    fn is_entirely_passive_conversation<I>(&self, _: I) -> bool { false }
+    fn can_conversation_be_shared<I>(&self, _: I) -> bool { false }
 }
 #[allow(dead_code)] enum BlocklistAIInputEvent {}
 #[allow(dead_code)]
@@ -792,7 +797,15 @@ impl ShellCommandExecutor {
 #[allow(dead_code)] type LLMId = crate::app_state::LLMId;
 #[allow(dead_code)] enum LLMModelHost {}
 #[allow(dead_code)] struct LLMPreferences;
+#[allow(dead_code)]
+impl LLMPreferences {
+    fn get_llm_info<A>(&self, _: A) -> Option<()> { None }
+}
 #[allow(dead_code)] struct ApiKeyManager;
+#[allow(dead_code)]
+impl ApiKeyManager {
+    fn aws_credentials_state(&self) -> AwsCredentialsState { unimplemented!() }
+}
 #[allow(dead_code)] enum AwsCredentialsState {}
 #[allow(dead_code)] enum BuildSource {}
 #[allow(dead_code)] struct CodebaseIndexManager;

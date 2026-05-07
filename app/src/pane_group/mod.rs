@@ -146,6 +146,12 @@ pub enum ConversationRestorationInNewPaneType {
 #[allow(dead_code)]
 impl ConversationRestorationInNewPaneType {
     pub fn initial_working_directory(&self) -> Option<&str> { None }
+    pub fn should_use_live_appearance(&self) -> bool {
+        match self {
+            ConversationRestorationInNewPaneType::Historical { should_use_live_appearance, .. } => *should_use_live_appearance,
+            ConversationRestorationInNewPaneType::HistoricalCLIAgent { should_use_live_appearance, .. } => *should_use_live_appearance,
+        }
+    }
 }
 use crate::terminal::{
     MockTerminalManager, ShareBlockModal, ShareBlockModalEvent, ShellLaunchData, ShellLaunchState,
@@ -4657,7 +4663,9 @@ impl PaneGroup {
         ViewHandle<TerminalView>,
         ModelHandle<Box<dyn TerminalManager>>,
     ) {
-        let restored_blocks = conversation.to_serialized_blocklist_items();
+        // twarp: 2c-d — to_serialized_blocklist_items now returns Vec<()>; need typed Vec
+        let restored_blocks: Vec<crate::app_state::SerializedBlockListItem> = Vec::new();
+        let _ = conversation.to_serialized_blocklist_items();
         let terminal_manager = MockTerminalManager::create_model(
             ShellLaunchState::ShellSpawned {
                 available_shell: None,
