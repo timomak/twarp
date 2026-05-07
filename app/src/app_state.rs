@@ -55,9 +55,9 @@ impl From<InputConfig> for crate::terminal::input::InputConfig {
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SerializedBlockListItem {
-    Command { block: SerializedBlockStub },
+    Command { block: crate::terminal::model::block::SerializedBlock },
 }
-// twarp: 2c-d — opaque stub for serialized command block.
+// twarp: 2c-d — opaque stub for serialized command block (legacy alias).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct SerializedBlockStub {
     pub start_ts: Option<chrono::DateTime<chrono::Local>>,

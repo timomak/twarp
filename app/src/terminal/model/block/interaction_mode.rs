@@ -12,6 +12,11 @@ impl From<String> for AIAgentActionId {
         Self(s)
     }
 }
+impl std::fmt::Display for AIAgentActionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 // twarp: 2c-d — variants kept so legacy AI takeover call-sites compile.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LongRunningCommandControlState {

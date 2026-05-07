@@ -740,7 +740,7 @@ impl BlocklistAIContextModel {
     pub fn is_queue_next_prompt_enabled(&self) -> bool { false }
     pub fn is_targeting_existing_conversation(&self) -> bool { false }
     pub fn pending_attachments(&self) -> Vec<()> { Vec::new() }
-    pub fn pending_context_block_ids(&self) -> Vec<()> { Vec::new() }
+    pub fn pending_context_block_ids(&self) -> Vec<warp_terminal::model::BlockId> { Vec::new() }
     pub fn pending_context_selected_text(&self) -> Option<String> { None }
     pub fn pending_files(&self) -> Vec<crate::terminal::input::PendingFileStub> { Vec::new() }
     pub fn selected_conversation_status_for_hint<C>(&self, _: &C) -> Option<crate::app_state::ConversationStatus> { None }

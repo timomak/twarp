@@ -1131,45 +1131,18 @@ impl SyncQueue {
                                 )
                                 .await
                             }
-                            JsonObjectType::AIFact => {
-                                CloudAIFactModel::send_create_request(
-                                    object_client_clone,
-                                    create_request,
-                                )
-                                .await
-                            }
-                            JsonObjectType::AIExecutionProfile => {
-                                CloudAIExecutionProfileModel::send_create_request(
-                                    object_client_clone,
-                                    create_request,
-                                )
-                                .await
-                            }
-                            JsonObjectType::MCPServer => {
-                                CloudMCPServerModel::send_create_request(
-                                    object_client_clone,
-                                    create_request,
-                                )
-                                .await
-                            }
-                            JsonObjectType::TemplatableMCPServer => {
-                                CloudTemplatableMCPServerModel::send_create_request(
-                                    object_client_clone,
-                                    create_request,
-                                )
-                                .await
-                            }
+                            // twarp: 2c-d — AI cloud objects deleted; reject creation.
+                            JsonObjectType::AIFact
+                            | JsonObjectType::AIExecutionProfile
+                            | JsonObjectType::MCPServer
+                            | JsonObjectType::TemplatableMCPServer
+                            | JsonObjectType::ScheduledAmbientAgent => Err(anyhow::anyhow!(
+                                "AI cloud objects no longer supported"
+                            )),
                             // CloudEnvironment is no longer created/synced client-side.
                             JsonObjectType::CloudEnvironment => Err(anyhow::anyhow!(
                                 "CloudEnvironment creation not supported from client"
                             )),
-                            JsonObjectType::ScheduledAmbientAgent => {
-                                CloudScheduledAmbientAgentModel::send_create_request(
-                                    object_client_clone,
-                                    create_request,
-                                )
-                                .await
-                            }
                             // CloudAgentConfig is not created from the client
                             JsonObjectType::CloudAgentConfig => Err(anyhow::anyhow!(
                                 "CloudAgentConfig creation not supported from client"
