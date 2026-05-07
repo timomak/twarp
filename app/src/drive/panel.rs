@@ -10,6 +10,10 @@ use warpui::{
 // twarp: 2c-d — AI document/facts deleted; stubs.
 use crate::app_state::AIDocumentId;
 pub struct CloudAIFactModel;
+#[allow(dead_code)]
+impl CloudAIFactModel {
+    pub fn new<A>(_: A) -> Self { Self }
+}
 use crate::{
     cloud_object::{
         model::{persistence::CloudModel, view::CloudViewModel},

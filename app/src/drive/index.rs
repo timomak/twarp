@@ -16,6 +16,7 @@ pub struct WarpDriveAIFactCollection;
 #[allow(dead_code)]
 impl WarpDriveAIFactCollection {
     pub fn id(&self) -> String { String::new() }
+    pub fn new<A>(_: A) -> Self { Self }
 }
 use crate::{
     appearance::Appearance,
