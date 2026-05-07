@@ -18,10 +18,43 @@ pub use super::BlockId;
 use super::{bootstrap::BootstrapStage, find::RegexDFAs};
 use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
 
-// twarp: 2c-d — AI agent view / redaction deleted; stubs.
+// twarp: 2c-d — AI agent view / redaction deleted; stubs unified across modules.
 use crate::app_state::AIConversationId;
-pub enum AgentViewDisplayMode { Other }
-pub struct AgentViewState;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AgentViewDisplayMode {
+    Inline,
+    FullScreen,
+    Other,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AgentViewState {
+    Active {
+        conversation_id: AIConversationId,
+        display_mode: AgentViewDisplayMode,
+    },
+    Inactive,
+}
+#[allow(dead_code)]
+impl AgentViewState {
+    pub fn is_fullscreen(&self) -> bool {
+        matches!(
+            self,
+            AgentViewState::Active {
+                display_mode: AgentViewDisplayMode::FullScreen,
+                ..
+            }
+        )
+    }
+    pub fn is_active(&self) -> bool {
+        matches!(self, AgentViewState::Active { .. })
+    }
+    pub fn active_conversation_id(&self) -> Option<&AIConversationId> {
+        match self {
+            AgentViewState::Active { conversation_id, .. } => Some(conversation_id),
+            AgentViewState::Inactive => None,
+        }
+    }
+}
 pub fn redact_secrets(_text: &str) -> String { String::new() }
 use crate::{
     context_chips::prompt_snapshot::PromptSnapshot,

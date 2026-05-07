@@ -10,19 +10,8 @@ use warpui::{
     AppContext, ModelHandle,
 };
 
-// twarp: 2c-d — AI agent view deleted; stubs kept so block_list_viewport pattern matches compile.
-pub enum AgentViewDisplayMode {
-    Inline,
-    FullScreen,
-    Other,
-}
-pub enum AgentViewState {
-    Active {
-        conversation_id: crate::app_state::AIConversationId,
-        display_mode: AgentViewDisplayMode,
-    },
-    Inactive,
-}
+// twarp: 2c-d — re-export unified stubs from model::block.
+pub use crate::terminal::model::block::{AgentViewDisplayMode, AgentViewState};
 use crate::terminal::{
     input::inline_menu::InlineMenuPositioner, model::blocks::RichContentItem,
     model::index::Point as IndexPoint,

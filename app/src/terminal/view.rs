@@ -355,16 +355,11 @@ impl AgentViewController {
     }
     pub fn is_active(&self) -> bool { false }
     pub fn is_fullscreen(&self) -> bool { false }
-    pub fn agent_view_state(&self) -> AgentViewState { AgentViewState }
+    pub fn agent_view_state(&self) -> AgentViewState { AgentViewState::Inactive }
     pub fn exit_agent_view<A, C>(&mut self, _: A, _: &mut C) {}
 }
-#[allow(dead_code)]
-struct AgentViewState;
-impl AgentViewState {
-    fn active_conversation_id(&self) -> Option<crate::app_state::AIConversationId> { None }
-    fn is_active(&self) -> bool { false }
-    fn is_fullscreen(&self) -> bool { false }
-}
+// twarp: 2c-d — re-export unified stubs from model::block.
+use crate::terminal::model::block::AgentViewState;
 #[allow(dead_code)] enum AgentViewControllerEvent {
     EnteredAgentView {
         display_mode: AgentViewDisplayMode,
@@ -377,7 +372,7 @@ impl AgentViewState {
     },
     ExitConfirmed {},
 }
-#[allow(dead_code)] enum AgentViewDisplayMode { Inline, FullScreen }
+#[allow(dead_code)] use crate::terminal::model::block::AgentViewDisplayMode;
 #[allow(dead_code)] struct AgentViewEntryBlockParams;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]

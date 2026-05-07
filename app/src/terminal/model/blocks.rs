@@ -6,22 +6,8 @@ use crate::terminal::block_filter::BlockFilterQuery;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AIAgentActionId(pub String);
-pub enum AgentViewDisplayMode {
-    Inline,
-    FullScreen,
-    Other,
-}
-pub enum AgentViewState {
-    Active {
-        conversation_id: crate::app_state::AIConversationId,
-        display_mode: AgentViewDisplayMode,
-    },
-    Inactive,
-}
-#[allow(dead_code)]
-impl AgentViewState {
-    pub fn is_fullscreen(&self) -> bool { false }
-}
+// twarp: 2c-d — re-export unified stubs from model::block.
+pub use crate::terminal::model::block::{AgentViewDisplayMode, AgentViewState};
 use crate::terminal::event::AfterBlockCompletedEvent;
 use crate::terminal::event_listener::ChannelEventListener;
 use crate::terminal::model::ansi;
