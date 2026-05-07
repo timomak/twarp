@@ -54,6 +54,15 @@ impl AgentViewState {
             AgentViewState::Inactive => None,
         }
     }
+    pub fn is_inline(&self) -> bool {
+        matches!(
+            self,
+            AgentViewState::Active {
+                display_mode: AgentViewDisplayMode::Inline,
+                ..
+            }
+        )
+    }
 }
 pub fn redact_secrets(_text: &str) -> String { String::new() }
 use crate::{

@@ -19,6 +19,14 @@ pub enum LongRunningCommandControlState {
     Agent,
     Other,
 }
+#[allow(dead_code)]
+impl LongRunningCommandControlState {
+    pub fn user_take_over_reason(&self) -> Option<&UserTakeOverReason> { None }
+}
+#[allow(dead_code)]
+impl UserTakeOverReason {
+    pub fn is_stop(&self) -> bool { false }
+}
 pub enum UserTakeOverReason { Other }
 use crate::{
     terminal::{

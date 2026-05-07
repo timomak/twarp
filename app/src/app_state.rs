@@ -100,6 +100,10 @@ impl CLIAgent {
     pub fn icon(&self) -> warp_core::ui::Icon {
         warp_core::ui::Icon::Terminal
     }
+    // twarp: 2c-d — stub: AI brand colors deleted.
+    pub fn brand_icon_color(&self) -> warpui::color::ColorU {
+        warpui::color::ColorU::new(0, 0, 0, 0)
+    }
     pub fn serialized_name(&self) -> &'static str {
         match self {
             CLIAgent::Claude => "claude",

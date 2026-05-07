@@ -357,6 +357,7 @@ impl AgentViewController {
     pub fn is_fullscreen(&self) -> bool { false }
     pub fn agent_view_state(&self) -> AgentViewState { AgentViewState::Inactive }
     pub fn exit_agent_view<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn can_exit_agent_view(&self) -> bool { true }
 }
 // twarp: 2c-d — re-export unified stubs from model::block.
 use crate::terminal::model::block::AgentViewState;
@@ -409,6 +410,16 @@ enum AgentViewEntryOrigin {
 #[allow(dead_code)] enum DiffBase { UncommittedChanges, BranchName(String) }
 
 #[allow(dead_code)] struct AgentConversationsModel;
+#[allow(dead_code)]
+impl AgentConversationsModel {
+    fn get_task_data<I>(&self, _: I) -> Option<AgentTaskDataStub> { None }
+}
+#[allow(dead_code)]
+struct AgentTaskDataStub;
+#[allow(dead_code)]
+impl AgentTaskDataStub {
+    fn is_no_longer_running(&self) -> bool { false }
+}
 #[allow(dead_code)] enum AgentConversationsModelEvent {}
 
 #[allow(dead_code)] fn conversation_output_status_from_conversation() {}
@@ -433,6 +444,10 @@ impl CLISubagentView {
     Stop,
     TransferFromAgent {},
 }
+#[allow(dead_code)]
+impl UserTakeOverReason {
+    fn is_stop(&self) -> bool { matches!(self, UserTakeOverReason::Stop) }
+}
 #[allow(dead_code)] enum BlocklistAIStatusBarEvent { SummarizationCancelDialogToggled { is_open: bool }, Stop }
 #[allow(dead_code)] fn block_context_from_terminal_model() {}
 #[allow(dead_code)] enum SlashCommandRequest {}
@@ -456,7 +471,13 @@ impl ServerConversationToken {
 #[allow(dead_code)] struct AgentReviewCommentBatch;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)] enum CancellationReason { No }
-#[allow(dead_code)] enum PassiveSuggestionTrigger {}
+#[allow(dead_code)] enum PassiveSuggestionTrigger {
+    ShellCommandCompleted(ShellCommandCompletedTrigger),
+}
+#[allow(dead_code)]
+impl PassiveSuggestionTrigger {
+    fn block_id(&self) -> Option<()> { None }
+}
 #[allow(dead_code)] struct ServerOutputId;
 #[allow(dead_code)] struct ShellCommandCompletedTrigger;
 #[allow(dead_code)] enum AIBlockAction {}
@@ -578,6 +599,7 @@ impl AIBlock {
     fn conversation_id(&self) -> AIConversationId { unimplemented!() }
     fn server_output_id<C>(&self, _: &C) -> Option<()> { None }
     fn handle_action<A, C>(&mut self, _: A, _: &mut C) {}
+    fn cleanup_block<C>(&mut self, _: &mut C) {}
 }
 #[allow(dead_code)] enum AIBlockEvent {}
 #[allow(dead_code)] enum BlocklistAIActionEvent {}
@@ -596,6 +618,10 @@ impl BlocklistAIContextModel {
     fn set_pending_context_block_ids<C>(&mut self, _: Vec<()>, _: &mut C) {}
 }
 #[allow(dead_code)] struct BlocklistAIController;
+#[allow(dead_code)]
+impl BlocklistAIController {
+    fn cancel_conversation_progress<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+}
 #[allow(dead_code)] enum BlocklistAIControllerEvent {}
 #[allow(dead_code)] enum BlocklistAIHistoryEvent {}
 #[allow(dead_code)] struct BlocklistAIHistoryModel;
