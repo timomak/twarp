@@ -1,13 +1,15 @@
 // twarp: 2c-d — AI agent icon / query history deleted; stubs.
 pub fn render_ai_agent_mode_icon<A, B>(_: A, _: B) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct AIQueryHistory {
-    // twarp: 2c-d — fields required by callers
-    pub start_time: Option<chrono::DateTime<chrono::Utc>>,
-    pub working_directory: Option<std::path::PathBuf>,
+    // twarp: 2c-d — fields required by callers (loosely typed)
+    pub start_time: chrono::DateTime<chrono::Local>,
+    pub working_directory: Option<String>,
     pub query_text: String,
+    pub output_status: AIQueryHistoryOutputStatus,
 }
-pub enum AIQueryHistoryOutputStatus { Other }
+#[derive(Clone, Debug, Default)]
+pub enum AIQueryHistoryOutputStatus { #[default] Other }
 use crate::terminal::model::session::SessionId;
 use crate::ui_components::icons::Icon as UIComponentsIcon;
 use async_channel::Sender;

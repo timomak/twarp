@@ -783,7 +783,7 @@ impl SharingDialog {
                         // Convert ServerGuestSubject to Subject
                         let subject = match &guest.subject {
                             ServerGuestSubject::User { firebase_uid } => {
-                                let user_uid = crate::auth::UserUid::new(firebase_uid);
+                                let user_uid = crate::auth::UserUid::new(firebase_uid.as_str());
                                 Some(super::Subject::User(super::UserKind::Account(user_uid)))
                             }
                             ServerGuestSubject::PendingUser { email } => {

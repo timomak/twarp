@@ -1828,6 +1828,8 @@ impl WorkflowModal {
         .with_margin_right(MODAL_HORIZONTAL_MARGIN)
         .finish()
     }
+    // twarp: 2c-d — issue_request stub for AiAssist (was AI workflow generator)
+    fn issue_request<C>(&mut self, _: &mut C) {}
 }
 
 impl Entity for WorkflowModal {
