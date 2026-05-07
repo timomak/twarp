@@ -45,7 +45,7 @@ impl AIRequestUsageModel {
     pub fn next_refresh_time(&self) -> Option<chrono::DateTime<chrono::Utc>> { None }
     pub fn request_limit(&self) -> i64 { 0 }
     pub fn requests_used(&self) -> i64 { 0 }
-    pub fn total_workspace_bonus_credits_remaining(&self) -> i64 { 0 }
+    pub fn total_workspace_bonus_credits_remaining<W>(&self, _: W) -> i64 { 0 }
 }
 use crate::{
     auth::{

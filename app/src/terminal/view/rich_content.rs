@@ -92,7 +92,7 @@ impl AIBlock {
     pub fn start_selection_at_min_point<C>(&mut self, _: &mut C) {}
     pub fn status<C>(&self, _: &C) -> Option<()> { None }
     pub fn try_steal_focus<C>(&mut self, _: &mut C) -> bool { false }
-    pub fn update_directory_context<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn update_directory_context<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn clear_all_selections<C>(&mut self, _: &mut C) {}
 }
 pub struct AIBlockOutputStatusStub;

@@ -362,7 +362,7 @@ impl AgentViewController {
     pub fn is_active(&self) -> bool { false }
     pub fn is_fullscreen(&self) -> bool { false }
     pub fn agent_view_state(&self) -> AgentViewState { AgentViewState::Inactive }
-    pub fn exit_agent_view<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn exit_agent_view<C>(&mut self, _: &mut C) {}
     pub fn can_exit_agent_view<C>(&self, _: &C) -> bool { true }
     // twarp: 2c-d — bulk stubs for AI-removed AgentViewController methods
     pub fn clear_pending_exit_confirmation<C>(&mut self, _: &mut C) {}
@@ -23237,7 +23237,7 @@ impl TerminalView {
     fn enter_cloud_agent_view<C>(&mut self, _: &mut C) {}
     fn handle_ambient_agent_event<C, E>(&mut self, _: E, _: &mut C) {}
     fn handle_first_time_cloud_agent_setup_event<C, E>(&mut self, _: E, _: &mut C) {}
-    fn insert_agent_view_entry_block<C, A>(&mut self, _: A, _: &mut C) {}
+    fn insert_agent_view_entry_block<C, A, B>(&mut self, _: A, _: B, _: &mut C) {}
     fn load_agent_mode_conversation<C, A>(&mut self, _: A, _: &mut C) {}
     fn maybe_auto_open_cloud_mode_details_panel<C>(&mut self, _: &mut C) {}
     fn maybe_insert_setup_command_blocks<C>(&mut self, _: &mut C) {}

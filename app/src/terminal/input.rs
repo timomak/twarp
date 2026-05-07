@@ -678,15 +678,15 @@ impl BlocklistAIContextModel {
     pub fn current_pwd(&self) -> Option<std::path::PathBuf> { None }
     pub fn home_directory(&self) -> Option<std::path::PathBuf> { None }
     pub fn pending_context(&self) -> Option<()> { None }
-    pub fn pending_query_autoexecute_override(&self) -> Option<bool> { None }
+    pub fn pending_query_autoexecute_override<C>(&self, _: &C) -> Option<bool> { None }
     pub fn register_diff_hunk_attachment<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn remove_pending_attachment<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn reset_context_to_default<C>(&mut self, _: &mut C) {}
-    pub fn set_pending_query_state_for_new_conversation<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn set_pending_query_state_for_new_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     pub fn toggle_pending_query_autoexecute<C>(&mut self, _: &mut C) {}
     pub fn toggle_queue_next_prompt<C>(&mut self, _: &mut C) {}
     pub fn clear_pending_attachments<C>(&mut self, _: &mut C) {}
-    pub fn remove_last_pending_images<C>(&mut self, _: &mut C) {}
+    pub fn remove_last_pending_images<A, C>(&mut self, _: A, _: &mut C) {}
 }
 
 #[allow(dead_code)]
@@ -704,7 +704,7 @@ impl BlocklistAIController {
     pub fn send_custom_ai_input_query<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     pub fn send_passive_suggestion_result<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn send_user_query_in_new_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
-    pub fn set_current_response_initiator<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn set_current_response_initiator<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn send_queued_slash_command_request<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn send_queued_user_query_in_conversation<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn send_queued_user_query_in_new_conversation<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
@@ -777,7 +777,7 @@ impl BlocklistAIInputModel {
         false
     }
     fn handle_input_buffer_submitted<C>(&mut self, _: &mut C) {}
-    fn enable_autodetection<C>(&mut self, _: &mut C) {}
+    fn enable_autodetection<A, C>(&mut self, _: A, _: &mut C) {}
     fn detect_and_set_input_type<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     fn abort_in_progress_detection<C>(&mut self, _: &mut C) {}
     fn clear_pending_attachments<C>(&mut self, _: &mut C) {}
@@ -3016,7 +3016,7 @@ impl Input {
                         let has_input = !me.editor.as_ref(ctx).buffer_text(ctx).is_empty();
                         me.inline_model_selector_view.update(ctx, |v, ctx| {
                             if has_input {
-                                v.set_filter_results_by_input(false);
+                                v.set_filter_results_by_input(false, ctx);
                             }
                             v.set_active_tab(*initial_tab, ctx);
                         });
@@ -9281,8 +9281,8 @@ impl Input {
                 };
 
                 // Abort any autodetection work on the old buffer state.
-                self.ai_input_model.update(ctx, |controller, _| {
-                    controller.abort_in_progress_detection();
+                self.ai_input_model.update(ctx, |controller, ctx| {
+                    controller.abort_in_progress_detection(ctx);
                 });
 
                 if self.should_apply_decorations(ctx)
@@ -12170,7 +12170,7 @@ impl Input {
             .is_inline_model_selector()
         {
             self.inline_model_selector_view
-                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
+                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx) );
             return;
         }
 
@@ -12220,7 +12220,7 @@ impl Input {
             return;
         } else if self.suggestions_mode_model.as_ref(ctx).is_user_query_menu() {
             self.user_query_menu_view
-                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
+                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx) );
             return;
         } else if self.suggestions_mode_model.as_ref(ctx).is_rewind_menu() {
             self.rewind_menu_view
@@ -12257,7 +12257,7 @@ impl Input {
             return;
         } else if self.suggestions_mode_model.as_ref(ctx).is_repos_menu() {
             self.inline_repos_menu_view
-                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
+                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx) );
             return;
         } else if self.suggestions_mode_model.as_ref(ctx).is_plan_menu() {
             self.inline_plan_menu_view
@@ -12544,15 +12544,15 @@ impl Input {
                 if FeatureFlag::InlineMenuHeaders.is_enabled() =>
             {
                 self.inline_model_selector_view
-                    .update(ctx, |view, ctx| view.accept_selected_item(true, ctx));
+                    .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
             }
             InputSuggestionsMode::UserQueryMenu { .. } => {
                 self.user_query_menu_view
-                    .update(ctx, |view, ctx| view.accept_selected_item(true, ctx));
+                    .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
             }
             InputSuggestionsMode::IndexedReposMenu => {
                 self.inline_repos_menu_view
-                    .update(ctx, |view, ctx| view.accept_selected_item(true, ctx));
+                    .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
             }
             _ => {
                 if FeatureFlag::AgentView.is_enabled()
