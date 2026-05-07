@@ -13,6 +13,14 @@ use super::{
 pub enum EnablementState { Enabled, Disabled }
 pub struct LspRepoStatus;
 pub struct PersistedWorkspace;
+impl warpui::Entity for PersistedWorkspace {
+    type Event = PersistedWorkspaceEvent;
+}
+impl warpui::SingletonEntity for PersistedWorkspace {}
+#[allow(dead_code)]
+impl PersistedWorkspace {
+    pub fn total_lsp_server_count(&self, _: bool) -> usize { 0 }
+}
 pub enum PersistedWorkspaceEvent { InstallationSucceeded, InstallationFailed, Other }
 
 use crate::{

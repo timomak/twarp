@@ -3,6 +3,16 @@ use std::borrow::Cow;
 // twarp: 2c-d — AI blocklist deleted; stubs.
 pub enum BlocklistAIHistoryEvent { Other }
 pub struct BlocklistAIHistoryModel;
+impl warpui::Entity for BlocklistAIHistoryModel {
+    type Event = BlocklistAIHistoryEvent;
+}
+impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+#[allow(dead_code)]
+impl BlocklistAIHistoryModel {
+    pub fn can_conversation_be_shared(&self, _: &crate::app_state::AIConversationId) -> bool { false }
+    pub fn get_server_conversation_metadata(&self, _: &crate::app_state::AIConversationId) -> Option<()> { None }
+    pub fn conversation(&self, _: &crate::app_state::AIConversationId) -> Option<()> { None }
+}
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::model::persistence::CloudModelEvent;

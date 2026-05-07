@@ -1,4 +1,5 @@
-use warpui::{prelude::ChildView, Element, EntityId, View, ViewContext, ViewHandle};
+use warpui::{prelude::ChildView, AppContext, Element, Entity, EntityId, View, ViewContext, ViewHandle};
+use warpui::elements::Empty;
 
 // twarp: 2c-d — AI agent / blocklist / ambient-agent / init-step / onboarding deleted.
 use crate::app_state::AIConversationId;
@@ -30,6 +31,28 @@ pub struct InitStepBlock;
 pub enum InitStepKind { Other }
 #[derive(Clone, Debug)]
 pub enum AgentViewEntryOrigin { Other }
+
+// twarp: 2c-d — Entity+View impls for stub types
+macro_rules! twarp_stub_view_impl {
+    ($t:ty) => {
+        impl Entity for $t {
+            type Event = ();
+        }
+        impl View for $t {
+            fn ui_name() -> &'static str {
+                concat!(stringify!($t), "/twarp-stub")
+            }
+            fn render(&self, _: &AppContext) -> Box<dyn Element> {
+                Empty::new().finish()
+            }
+        }
+    };
+}
+twarp_stub_view_impl!(AIBlock);
+twarp_stub_view_impl!(TelemetryBanner);
+twarp_stub_view_impl!(AmbientAgentEntryBlock);
+twarp_stub_view_impl!(OnboardingAgenticSuggestionsBlock);
+twarp_stub_view_impl!(InitStepBlock);
 
 /// Specifies where to insert rich content in the blocklist.
 #[derive(Clone, Copy, Debug)]

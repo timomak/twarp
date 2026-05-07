@@ -41,6 +41,9 @@ pub enum ShareableObject {
         session_id: SessionId,
         started_at: DateTime<Local>,
     },
+    // twarp: 2c-d — variant kept so legacy AI-share callers compile; AI deleted.
+    #[allow(dead_code)]
+    AIConversation(crate::app_state::AIConversationId),
 }
 
 impl ShareableObject {

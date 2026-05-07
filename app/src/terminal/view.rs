@@ -294,17 +294,29 @@ use crate::pane_group::ConversationRestorationInNewPaneType;
 // twarp: 2c-d — ambient_agent module deleted; file-local stub module so view.rs body type-checks
 #[allow(dead_code)]
 mod ambient_agent {
+    use super::*;
     pub struct AmbientAgentViewModel;
     impl AmbientAgentViewModel {
         pub fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
             unimplemented!()
         }
+        pub fn is_ambient_agent(&self) -> bool { false }
+        pub fn is_in_setup(&self) -> bool { false }
+        pub fn has_parent_terminal(&self) -> bool { false }
+        pub fn task_id(&self) -> Option<crate::app_state::AmbientAgentTaskId> { None }
+        pub fn should_show_status_footer(&self) -> bool { false }
+    }
+    impl Entity for AmbientAgentViewModel {
+        type Event = ();
     }
     pub struct FirstTimeCloudAgentSetupView;
     impl FirstTimeCloudAgentSetupView {
         pub fn new<C>(_: &mut C) -> Self {
             unimplemented!()
         }
+    }
+    impl Entity for FirstTimeCloudAgentSetupView {
+        type Event = ();
     }
 }
 
@@ -508,8 +520,28 @@ impl BlocklistAIHistoryModel {
 }
 #[allow(dead_code)] enum BlocklistAIInputEvent {}
 #[allow(dead_code)] struct BlocklistAIInputModel;
-#[allow(dead_code)] struct InputConfig;
-#[allow(dead_code)] enum InputType { Terminal, AI }
+#[allow(dead_code)]
+impl BlocklistAIInputModel {
+    fn is_ai_input_enabled(&self) -> bool { false }
+    fn input_config(&self) -> InputConfig { InputConfig { input_type: InputType::Shell, is_locked: false } }
+    fn input_type(&self) -> InputType { InputType::Shell }
+    fn set_input_config<C>(&mut self, _: InputConfig, _: bool, _: &mut C) {}
+    fn set_input_type<C>(&mut self, _: InputType, _: &mut C) {}
+    fn is_input_type_locked(&self) -> bool { false }
+}
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+struct InputConfig {
+    pub input_type: InputType,
+    pub is_locked: bool,
+}
+#[allow(dead_code)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InputType { Shell, AI }
+#[allow(dead_code)]
+impl InputType {
+    fn is_ai(&self) -> bool { matches!(self, InputType::AI) }
+}
 #[allow(dead_code)] enum PendingQueryState {}
 #[allow(dead_code)] struct ShellCommandExecutor;
 #[allow(dead_code)] enum ShellCommandExecutorEvent {}
@@ -683,6 +715,34 @@ impl SingletonEntity for LLMPreferences {}
 impl SingletonEntity for ApiKeyManager {}
 impl SingletonEntity for CodebaseIndexManager {}
 impl SingletonEntity for AgentConversationsModel {}
+impl SingletonEntity for CLIAgentSessionsModel {}
+
+// twarp: 2c-d — View impls for stub view types so ViewHandle<T>::as_ref/update/id typecheck.
+macro_rules! twarp_stub_view_impl {
+    ($t:ty) => {
+        impl View for $t {
+            fn ui_name() -> &'static str {
+                concat!(stringify!($t), "/twarp-stub")
+            }
+            fn render(&self, _: &AppContext) -> Box<dyn Element> {
+                Empty::new().finish()
+            }
+        }
+    };
+}
+twarp_stub_view_impl!(AIBlock);
+twarp_stub_view_impl!(AgentTodosPopupView);
+twarp_stub_view_impl!(CLISubagentView);
+twarp_stub_view_impl!(ConversationDetailsPanel);
+twarp_stub_view_impl!(InlineAgentViewHeader);
+twarp_stub_view_impl!(SummarizationCancelDialog);
+twarp_stub_view_impl!(TerminalViewZeroStateBlock);
+twarp_stub_view_impl!(UseAgentToolbar);
+twarp_stub_view_impl!(AgentViewZeroStateBlock);
+twarp_stub_view_impl!(OnboardingAgenticSuggestionsBlock);
+twarp_stub_view_impl!(TelemetryBanner);
+twarp_stub_view_impl!(CodeDiffView);
+twarp_stub_view_impl!(ambient_agent::FirstTimeCloudAgentSetupView);
 
 use async_channel::{Receiver, Sender};
 use chrono::{DateTime, Local, NaiveDateTime};

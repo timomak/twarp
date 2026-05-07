@@ -204,7 +204,7 @@ use warpui::{
     color::ColorU,
     elements::{
         resizable_state_handle, Align, AnchorPair, ChildAnchor, Clipped, ConstrainedBox, Container,
-        CornerRadius, CrossAxisAlignment, DispatchEventResult, DropTargetData, Element,
+        CornerRadius, CrossAxisAlignment, DispatchEventResult, DropTargetData, Element, Empty,
         EventHandler, Flex, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
         OffsetType, ParentAnchor, ParentElement, PositionedElementOffsetBounds, PositioningAxis,
         Radius, ResizableStateHandle, SavePosition, SelectionHandle, Text, Wrap, XAxisAnchor,
@@ -931,6 +931,36 @@ impl SingletonEntity for BlocklistAIHistoryModel {}
 impl SingletonEntity for CLIAgentSessionsModel {}
 impl SingletonEntity for LLMPreferences {}
 impl SingletonEntity for SkillManager {}
+
+// twarp: 2c-d — View impls for stub view types so ViewHandle<T>::* typecheck.
+macro_rules! twarp_stub_view_impl {
+    ($t:ty) => {
+        impl View for $t {
+            fn ui_name() -> &'static str {
+                concat!(stringify!($t), "/twarp-stub")
+            }
+            fn render(&self, _: &AppContext) -> Box<dyn Element> {
+                Empty::new().finish()
+            }
+        }
+    };
+}
+twarp_stub_view_impl!(BlocklistAIStatusBar);
+twarp_stub_view_impl!(InlineConversationMenuView);
+twarp_stub_view_impl!(InlineModelSelectorView);
+twarp_stub_view_impl!(InlinePlanMenuView);
+twarp_stub_view_impl!(InlineProfileSelectorView);
+twarp_stub_view_impl!(InlinePromptsMenuView);
+twarp_stub_view_impl!(InlineReposMenuView);
+twarp_stub_view_impl!(InlineSkillSelectorView);
+twarp_stub_view_impl!(RewindMenuView);
+twarp_stub_view_impl!(UserQueryMenuView);
+twarp_stub_view_impl!(PromptAlertView);
+twarp_stub_view_impl!(UniversalDeveloperInputButtonBar);
+twarp_stub_view_impl!(AgentInputFooter);
+twarp_stub_view_impl!(HarnessSelector);
+twarp_stub_view_impl!(HostSelector);
+twarp_stub_view_impl!(AgentShortcutViewModel);
 
 /// Drop target data for dropping content on the [`Input`].
 #[derive(Debug, Clone)]
