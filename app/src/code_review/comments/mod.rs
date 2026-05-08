@@ -1,5 +1,5 @@
 mod batch;
-mod comment;
+pub(crate) mod comment;
 pub(crate) mod convert;
 mod diff_hunk_parser;
 mod flatten;

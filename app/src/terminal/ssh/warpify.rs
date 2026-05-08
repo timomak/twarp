@@ -3,7 +3,20 @@ use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use warp_core::ui::theme::WarpTheme;
 use warpui::assets::asset_cache::{AssetCache, AssetState};
 
-use crate::ai::blocklist::inline_action::requested_action::RenderableAction;
+// twarp: 2c-d — RenderableAction deleted; stub.
+pub struct RenderableAction;
+#[allow(dead_code)]
+impl RenderableAction {
+    pub fn new<A, B>(_: A, _: B) -> Self {
+        Self
+    }
+    pub fn with_background_color<C>(self, _: C) -> Self {
+        self
+    }
+    pub fn render<A>(self, _: A) -> warpui::elements::Empty {
+        warpui::elements::Empty::new()
+    }
+}
 use crate::appearance::Appearance;
 use crate::terminal::shell::ShellType;
 use crate::terminal::warpify;

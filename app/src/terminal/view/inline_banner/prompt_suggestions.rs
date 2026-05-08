@@ -1,13 +1,67 @@
 use serde::Serialize;
 use std::rc::Rc;
 
-use crate::ai::agent::api::ServerConversationToken;
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::blocklist::prompt::prompt_alert::{
-    PromptAlertEvent, PromptAlertState, PromptAlertView,
-};
-use crate::ai::blocklist::BlocklistAIInputModel;
-use crate::ai::prompt_suggestions::ACCEPT_PROMPT_SUGGESTION_KEYBINDING;
+// twarp: 2c-d — AI prompt-alert/blocklist input/keybinding deleted; stubs to keep types compiling.
+use crate::app_state::AIConversationId;
+use crate::app_state::ServerConversationToken;
+
+pub const ACCEPT_PROMPT_SUGGESTION_KEYBINDING: &str = "AcceptPromptSuggestion";
+
+// twarp: 2c-d — re-export from input for type unification.
+pub use crate::terminal::input::BlocklistAIInputModel;
+#[derive(Debug, Clone)]
+pub enum PromptAlertEvent {
+    Other,
+    // twarp: 2c-d — variants needed by handle_prompt_alert_event
+    SignupAnonymousUser,
+    OpenBillingAndUsagePage,
+    OpenPrivacyPage,
+    OpenBillingPortal { team_uid: ServerId },
+}
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub enum PromptAlertState {
+    None,
+    #[default]
+    NoAlert,
+    NoConnection,
+    AnonymousUserRequestLimitHardGate,
+    // twarp: 2c-d — extra variant referenced in match
+    AnonymousUserRequestLimitSoftGate,
+    DelinquentDueToPaymentIssue,
+    OveragesToggleableButNotEnabled,
+    MonthlyOveragesSpendLimitReached,
+    RequestLimitReached,
+}
+pub struct PromptAlertView;
+#[allow(dead_code)]
+impl PromptAlertView {
+    pub fn new<A>(_: &mut A) -> Self {
+        Self
+    }
+    pub fn state(&self) -> PromptAlertState {
+        PromptAlertState::default()
+    }
+    pub fn is_no_alert(&self) -> bool {
+        true
+    }
+}
+impl warpui::Entity for PromptAlertView {
+    type Event = PromptAlertEvent;
+}
+impl warpui::View for PromptAlertView {
+    fn ui_name() -> &'static str {
+        "PromptAlertView/twarp-stub"
+    }
+    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+        warpui::elements::Empty::new().finish()
+    }
+}
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct PromptAlertAction;
+impl warpui::TypedActionView for PromptAlertView {
+    type Action = PromptAlertAction;
+}
 use crate::server::telemetry::InteractionSource;
 use crate::settings::InputSettings;
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
@@ -36,7 +90,44 @@ use warp_core::ui::theme::color::internal_colors::{neutral_2, neutral_3};
 
 use crate::ui_components::icons::Icon as WarpUIIcon;
 
-use crate::ai::agent::{PassiveSuggestionTrigger, StaticQueryType};
+// twarp: 2c-d — AI agent PassiveSuggestionTrigger/StaticQueryType deleted; stubs.
+#[derive(Clone, Debug)]
+pub enum PassiveSuggestionTrigger {
+    Other,
+    ShellCommandCompleted(ShellCommandCompletedTrigger),
+}
+#[allow(dead_code)]
+impl PassiveSuggestionTrigger {
+    pub fn block_id(&self) -> Option<warp_terminal::model::BlockId> {
+        None
+    }
+}
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct ShellCommandCompletedTrigger {
+    pub relevant_files: Vec<()>,
+    pub executed_shell_command: ExecutedShellCommandStub,
+}
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct ExecutedShellCommandStub {
+    pub id: warp_terminal::model::BlockId,
+}
+impl From<String> for ExecutedShellCommandStub {
+    fn from(_: String) -> Self {
+        Self {
+            id: warp_terminal::model::BlockId::new(),
+        }
+    }
+}
+#[derive(Clone, Debug)]
+pub enum StaticQueryType {
+    Install,
+    Code,
+    Deploy,
+    SomethingElse,
+}
+
 use crate::server::ids::ServerId;
 
 const INLINE_BANNER_SPACING: f32 = 8.;
@@ -330,7 +421,7 @@ impl PromptSuggestionsView {
         ai_input_model: ModelHandle<BlocklistAIInputModel>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let prompt_alert = ctx.add_typed_action_view(PromptAlertView::new);
+        let prompt_alert = ctx.add_typed_action_view(|ctx| PromptAlertView::new(ctx));
         ctx.subscribe_to_view(&prompt_alert, |me, _, event, ctx| {
             me.handle_prompt_alert_event(event, ctx);
         });
@@ -366,6 +457,7 @@ impl PromptSuggestionsView {
                     team_uid: *team_uid,
                 });
             }
+            PromptAlertEvent::Other => {}
         }
     }
 }
@@ -420,7 +512,7 @@ impl View for PromptSuggestionsView {
                         ));
                     }),
                     debug_request_token,
-                    prompt_alert_state,
+                    &prompt_alert_state,
                     true, // should_shrink
                     appearance,
                     app,

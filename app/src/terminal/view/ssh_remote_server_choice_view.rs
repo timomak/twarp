@@ -29,11 +29,55 @@ use warpui::{
     ViewHandle,
 };
 
+// twarp: 2c-d — AI blocklist deleted; stubs.
+pub fn rich_navigation_button<A, B, C, D, E>(
+    _: A,
+    _: B,
+    _: C,
+    _: D,
+    _: E,
+) -> Box<dyn warpui::Element> {
+    warpui::elements::Empty::new().finish()
+}
+pub struct KeyboardNavigableButtons;
+#[allow(dead_code)]
+impl KeyboardNavigableButtons {
+    pub fn new<A>(_: A) -> Self {
+        Self
+    }
+}
+impl warpui::Entity for KeyboardNavigableButtons {
+    type Event = ();
+}
+impl warpui::View for KeyboardNavigableButtons {
+    fn ui_name() -> &'static str {
+        "KeyboardNavigableButtons/twarp-stub"
+    }
+    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+        warpui::elements::Empty::new().finish()
+    }
+}
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct KeyboardNavigableButtonsAction;
+impl warpui::TypedActionView for KeyboardNavigableButtons {
+    type Action = KeyboardNavigableButtonsAction;
+}
+pub struct HeaderConfig;
+#[allow(dead_code)]
+impl HeaderConfig {
+    pub fn new<A, B>(_: A, _: B) -> Self {
+        Self
+    }
+    pub fn with_corner_radius_override<C>(self, _: C) -> Self {
+        self
+    }
+    pub fn render_header<A, B>(self, _: A, _: B) -> Box<dyn warpui::Element> {
+        warpui::elements::Empty::new().finish()
+    }
+}
+pub const INLINE_ACTION_HORIZONTAL_PADDING: f32 = 12.0;
 use crate::{
-    ai::blocklist::{
-        block::keyboard_navigable_buttons::{rich_navigation_button, KeyboardNavigableButtons},
-        inline_action::inline_action_header::{HeaderConfig, INLINE_ACTION_HORIZONTAL_PADDING},
-    },
     send_telemetry_from_ctx,
     server::telemetry::TelemetryEvent,
     terminal::model::session::SessionId,
@@ -125,7 +169,7 @@ impl SshRemoteServerChoiceView {
             .with_corner_radius_override(CornerRadius::with_top(Radius::Pixels(
                 PROMPT_BORDER_RADIUS,
             )))
-            .render_header(app, None)
+            .render_header(app, None::<()>)
     }
 
     fn render_buttons(&self) -> Box<dyn Element> {

@@ -1,4 +1,14 @@
-use crate::ai::{AIRequestUsageModel, AIRequestUsageModelEvent};
+// twarp: 2c-d — AIRequestUsageModel deleted; stubs.
+pub struct AIRequestUsageModel;
+impl warpui::Entity for AIRequestUsageModel {
+    type Event = AIRequestUsageModelEvent;
+}
+impl warpui::SingletonEntity for AIRequestUsageModel {}
+pub enum AIRequestUsageModelEvent {
+    Other,
+    RequestUsageUpdated,
+    RequestBonusRefunded {},
+}
 use crate::auth::AuthStateProvider;
 use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};
 use crate::ui_components::blended_colors;
@@ -71,6 +81,7 @@ impl FreeTierLimitHitModal {
                     ctx.emit(FreeTierLimitHitModalEvent::MaybeOpen);
                 }
                 AIRequestUsageModelEvent::RequestBonusRefunded { .. } => {}
+                AIRequestUsageModelEvent::Other => {}
             },
         );
 

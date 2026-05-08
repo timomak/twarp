@@ -8,9 +8,24 @@ use std::path::PathBuf;
 
 use indexmap::IndexMap;
 
-use crate::ai::request_usage_model::RequestLimitInfo;
+// twarp: 2c-d — AI request usage / CLIAgent deleted; stubs.
+#[derive(Default)]
+pub struct RequestLimitInfo {
+    // twarp: 2c-d — fields used by callers
+    pub num_requests_used_since_refresh: i64,
+    pub next_refresh_time: Option<chrono::DateTime<chrono::Utc>>,
+}
+#[allow(dead_code)]
+impl RequestLimitInfo {
+    pub fn is_unlimited(&self) -> bool {
+        false
+    }
+    pub fn limit(&self) -> i64 {
+        0
+    }
+}
+use crate::app_state::CLIAgent;
 use crate::report_if_error;
-use crate::terminal::CLIAgent;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use cfg_if::cfg_if;
 use chrono::{DateTime, Utc};
@@ -1686,12 +1701,16 @@ impl AISettings {
         ctx: &mut ModelContext<Self>,
     ) {
         // Convert ServerTimestamp to DateTime<Utc>
-        let next_refresh_time = request_limit_info.next_refresh_time.utc();
+        // twarp: 2c-d — next_refresh_time is Option, default to now
+        let next_refresh_time = request_limit_info
+            .next_refresh_time
+            .unwrap_or_else(Utc::now);
         let now = Utc::now();
 
         // Check if request_limit_info has unlimited requests
-        let is_quota_exceeded = !request_limit_info.is_unlimited
-            && request_limit_info.num_requests_used_since_refresh >= request_limit_info.limit;
+        // twarp: 2c-d — request_limit_info field stubs
+        let is_quota_exceeded = !request_limit_info.is_unlimited()
+            && request_limit_info.num_requests_used_since_refresh >= request_limit_info.limit();
 
         let mut cycle_history = self.ai_request_quota_info.cycle_history.clone();
 
@@ -1878,7 +1897,9 @@ impl AISettings {
         if !map.contains_key(pattern) {
             return;
         }
-        let value = agent.map(|a| a.to_serialized_name()).unwrap_or_default();
+        let value = agent
+            .map(|a| a.to_serialized_name().to_string())
+            .unwrap_or_default();
         map.insert(pattern.to_string(), value);
         report_if_error!(self
             .cli_agent_footer_enabled_commands
@@ -1980,6 +2001,7 @@ impl Entity for CompiledCommandsForCodingAgentToolbar {
 
 impl SingletonEntity for CompiledCommandsForCodingAgentToolbar {}
 
-#[cfg(test)]
-#[path = "ai_tests.rs"]
-mod tests;
+// twarp: 2c-d — ai_tests.rs deleted; module removed.
+// #[cfg(test)]
+// #[path = "ai_tests.rs"]
+// mod tests;

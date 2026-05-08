@@ -1,4 +1,4 @@
-mod interaction_mode;
+pub(crate) mod interaction_mode;
 mod serialized_block;
 
 pub use interaction_mode::*;
@@ -18,10 +18,71 @@ pub use super::BlockId;
 use super::{bootstrap::BootstrapStage, find::RegexDFAs};
 use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
 
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::blocklist::agent_view::{AgentViewDisplayMode, AgentViewState};
+// twarp: 2c-d — AI agent view / redaction deleted; stubs unified across modules.
+use crate::app_state::AIConversationId;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AgentViewDisplayMode {
+    Inline,
+    FullScreen,
+    Other,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AgentViewState {
+    Active {
+        conversation_id: AIConversationId,
+        display_mode: AgentViewDisplayMode,
+        // twarp: 2c-d — extra fields kept so legacy test call-sites compile.
+        origin: crate::app_state::AgentViewEntryOrigin,
+        original_conversation_length: usize,
+    },
+    Inactive,
+}
+#[allow(dead_code)]
+impl AgentViewState {
+    pub fn is_fullscreen(&self) -> bool {
+        matches!(
+            self,
+            AgentViewState::Active {
+                display_mode: AgentViewDisplayMode::FullScreen,
+                ..
+            }
+        )
+    }
+    pub fn is_active(&self) -> bool {
+        matches!(self, AgentViewState::Active { .. })
+    }
+    pub fn active_conversation_id(&self) -> Option<&AIConversationId> {
+        match self {
+            AgentViewState::Active {
+                conversation_id, ..
+            } => Some(conversation_id),
+            AgentViewState::Inactive => None,
+        }
+    }
+    pub fn is_inline(&self) -> bool {
+        matches!(
+            self,
+            AgentViewState::Active {
+                display_mode: AgentViewDisplayMode::Inline,
+                ..
+            }
+        )
+    }
+    // twarp: 2c-d — bulk stubs
+    pub fn is_new(&self) -> bool {
+        false
+    }
+    pub fn fullscreen_conversation_id(&self) -> Option<&AIConversationId> {
+        None
+    }
+    pub fn zero_state_position_id(&self) -> Option<String> {
+        None
+    }
+}
+pub fn redact_secrets(_text: &str) -> String {
+    String::new()
+}
 use crate::{
-    ai::agent::redaction::redact_secrets,
     context_chips::prompt_snapshot::PromptSnapshot,
     server::{block::DisplaySetting, ids::SyncId},
     terminal::{
@@ -569,13 +630,13 @@ impl From<&Block> for BlockType {
                         block.prompt_and_command_grid().should_scan_for_secrets,
                         ObfuscateSecrets::No
                     ) {
-                        redact_secrets(&mut command_with_obfuscated_secrets);
+                        redact_secrets(&command_with_obfuscated_secrets);
                     }
                     if matches!(
                         block.output_grid().should_scan_for_secrets,
                         ObfuscateSecrets::No
                     ) {
-                        redact_secrets(&mut output_truncated_with_obfuscated_secrets);
+                        redact_secrets(&output_truncated_with_obfuscated_secrets);
                     }
 
                     BlockType::User(UserBlockCompleted {
@@ -1416,7 +1477,7 @@ impl Block {
                     }
                 }
                 AgentViewState::Active {
-                    display_mode: AgentViewDisplayMode::Inline,
+                    display_mode: AgentViewDisplayMode::Inline | AgentViewDisplayMode::Other,
                     ..
                 }
                 | AgentViewState::Inactive => {
@@ -1642,13 +1703,13 @@ impl Block {
             self.prompt_and_command_grid().should_scan_for_secrets(),
             ObfuscateSecrets::No
         ) {
-            redact_secrets(&mut processed_input);
+            redact_secrets(&processed_input);
         }
         if matches!(
             self.output_grid().should_scan_for_secrets(),
             ObfuscateSecrets::No
         ) {
-            redact_secrets(&mut processed_output);
+            redact_secrets(&processed_output);
         }
 
         (processed_input, processed_output)
@@ -1794,13 +1855,13 @@ impl Block {
             self.prompt_and_command_grid().should_scan_for_secrets,
             ObfuscateSecrets::No
         ) {
-            redact_secrets(&mut command);
+            redact_secrets(&command);
         }
         if matches!(
             self.output_grid().should_scan_for_secrets,
             ObfuscateSecrets::No
         ) {
-            redact_secrets(&mut output);
+            redact_secrets(&output);
         }
 
         (command, output)

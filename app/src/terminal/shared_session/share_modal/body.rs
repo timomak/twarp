@@ -1,4 +1,18 @@
-use crate::ai::blocklist::BlocklistAIHistoryModel;
+// twarp: 2c-d — BlocklistAIHistoryModel deleted; stub.
+pub struct BlocklistAIHistoryModel;
+impl warpui::Entity for BlocklistAIHistoryModel {
+    type Event = crate::terminal::input::BlocklistAIHistoryEvent;
+}
+impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+#[allow(dead_code)]
+impl BlocklistAIHistoryModel {
+    pub fn all_live_conversations_for_terminal_view(
+        &self,
+        _: warpui::EntityId,
+    ) -> std::vec::IntoIter<crate::app_state::AIConversationId> {
+        Vec::new().into_iter()
+    }
+}
 use crate::appearance::Appearance;
 
 use crate::terminal::shared_session::replay_agent_conversations::reconstruct_response_events_from_conversations;
@@ -88,7 +102,6 @@ impl Body {
         let conversations: Vec<_> = BlocklistAIHistoryModel::as_ref(ctx)
             .all_live_conversations_for_terminal_view(terminal_view_id)
             .filter(|conv| conv.exchange_count() > 0)
-            .cloned()
             .collect();
 
         let total_bytes: usize = reconstruct_response_events_from_conversations(&conversations)

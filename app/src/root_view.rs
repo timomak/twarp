@@ -1,5 +1,6 @@
-use crate::ai::agent::api::ServerConversationToken;
-use crate::ai::blocklist::SerializedBlockListItem;
+// twarp: 2c-d — AI ServerConversationToken deleted; use stub.
+use crate::app_state::SerializedBlockListItem;
+use crate::app_state::ServerConversationToken;
 use crate::appearance::Appearance;
 use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
 use crate::auth::auth_override_warning_modal::AuthOverrideWarningModalVariant;
@@ -96,10 +97,22 @@ use warp_core::user_preferences::GetUserPreferences as _;
 use warpui::keymap::{EditableBinding, FixedBinding};
 use warpui::windowing::WindowManager;
 
-use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
-use crate::ai::onboarding::{
-    apply_free_tier_default_model_override, build_onboarding_models, current_onboarding_auth_state,
-};
+// twarp: 2c-d — AI llms / onboarding deleted; stubs re-exported from input.
+pub use crate::terminal::input::{LLMPreferences, LLMPreferencesEvent};
+pub fn apply_free_tier_default_model_override<A, B, C>(_: A, default: B, _: C) -> B {
+    default
+}
+pub fn build_onboarding_models<A>(
+    _: A,
+) -> (
+    Vec<onboarding::slides::OnboardingModelInfo>,
+    crate::app_state::LLMId,
+) {
+    (Vec::new(), "".into())
+}
+pub fn current_onboarding_auth_state<C>(_: &C) -> onboarding::OnboardingAuthState {
+    onboarding::OnboardingAuthState::LoggedOut
+}
 use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};
 use warp_graphql::billing::StripeSubscriptionPlan;
 
@@ -1881,7 +1894,7 @@ impl RootView {
             let (mut models, default_model_id) =
                 build_onboarding_models(LLMPreferences::as_ref(ctx));
             let default_model_id =
-                apply_free_tier_default_model_override(&mut models, default_model_id, ctx);
+                apply_free_tier_default_model_override(&mut models, default_model_id, &mut *ctx);
 
             let workspace_enforces_autonomy = UserWorkspaces::as_ref(ctx)
                 .ai_autonomy_settings()
@@ -1926,15 +1939,19 @@ impl RootView {
                 LLMPreferencesEvent::UpdatedAvailableLLMs => {
                     let (mut models, default_model_id) =
                         build_onboarding_models(llm_preferences.as_ref(ctx));
-                    let default_model_id =
-                        apply_free_tier_default_model_override(&mut models, default_model_id, ctx);
+                    let default_model_id = apply_free_tier_default_model_override(
+                        &mut models,
+                        default_model_id,
+                        &mut *ctx,
+                    );
                     onboarding_view_clone.update(ctx, |onboarding_view, ctx| {
                         onboarding_view.set_onboarding_models(models, default_model_id, ctx);
                     })
                 }
 
                 LLMPreferencesEvent::UpdatedActiveAgentModeLLM
-                | LLMPreferencesEvent::UpdatedActiveCodingLLM => {}
+                | LLMPreferencesEvent::UpdatedActiveCodingLLM
+                | LLMPreferencesEvent::Other => {}
             },
         );
 

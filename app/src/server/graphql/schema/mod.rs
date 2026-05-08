@@ -1,12 +1,12 @@
 pub mod util;
 
+// twarp: 2c-d — AI ambient/execution_profiles/facts/mcp deleted; stubs.
+pub struct CloudScheduledAmbientAgentModel;
+pub struct CloudAIExecutionProfileModel;
+pub struct CloudAIFactModel;
+pub struct CloudTemplatableMCPServerModel;
+pub struct CloudMCPServerModel;
 use crate::{
-    ai::{
-        ambient_agents::scheduled::CloudScheduledAmbientAgentModel,
-        execution_profiles::CloudAIExecutionProfileModel,
-        facts::CloudAIFactModel,
-        mcp::{templatable::CloudTemplatableMCPServerModel, CloudMCPServerModel},
-    },
     cloud_object::{
         model::generic_string_model::GenericStringObjectId, GenericServerObject,
         RevisionAndLastEditor, ServerFolder, ServerObject, UpdateCloudObjectResult,
@@ -127,145 +127,18 @@ impl TryFrom<UpdateGenericStringObjectResult> for UpdateCloudObjectResult<Box<dy
                                 let boxed: Box<dyn ServerObject> = Box::new(gso);
                                 boxed
                             }
-                            GenericStringObjectFormat::JsonAIFact => {
-                                let gso = GenericServerObject::<
-                                    GenericStringObjectId,
-                                    CloudAIFactModel,
-                                >::try_from_graphql_fields(
-                                    ServerId::from_string_lossy(
-                                        rejected
-                                            .conflicting_generic_string_object
-                                            .metadata
-                                            .uid
-                                            .inner(),
-                                    ),
-                                    Some(
-                                        rejected.conflicting_generic_string_object.serialized_model,
-                                    ),
-                                    rejected
-                                        .conflicting_generic_string_object
-                                        .metadata
-                                        .try_into()?,
-                                    rejected
-                                        .conflicting_generic_string_object
-                                        .permissions
-                                        .try_into()?,
-                                )?;
-                                let boxed: Box<dyn ServerObject> = Box::new(gso);
-                                boxed
-                            }
-                            GenericStringObjectFormat::JsonAIExecutionProfile => {
-                                let gso = GenericServerObject::<
-                                    GenericStringObjectId,
-                                    CloudAIExecutionProfileModel,
-                                >::try_from_graphql_fields(
-                                    ServerId::from_string_lossy(
-                                        rejected
-                                            .conflicting_generic_string_object
-                                            .metadata
-                                            .uid
-                                            .inner(),
-                                    ),
-                                    Some(
-                                        rejected.conflicting_generic_string_object.serialized_model,
-                                    ),
-                                    rejected
-                                        .conflicting_generic_string_object
-                                        .metadata
-                                        .try_into()?,
-                                    rejected
-                                        .conflicting_generic_string_object
-                                        .permissions
-                                        .try_into()?,
-                                )?;
-                                let boxed: Box<dyn ServerObject> = Box::new(gso);
-                                boxed
-                            }
-                            GenericStringObjectFormat::JsonMCPServer => {
-                                let gso = GenericServerObject::<
-                                    GenericStringObjectId,
-                                    CloudMCPServerModel,
-                                >::try_from_graphql_fields(
-                                    ServerId::from_string_lossy(
-                                        rejected
-                                            .conflicting_generic_string_object
-                                            .metadata
-                                            .uid
-                                            .inner(),
-                                    ),
-                                    Some(
-                                        rejected.conflicting_generic_string_object.serialized_model,
-                                    ),
-                                    rejected
-                                        .conflicting_generic_string_object
-                                        .metadata
-                                        .try_into()?,
-                                    rejected
-                                        .conflicting_generic_string_object
-                                        .permissions
-                                        .try_into()?,
-                                )?;
-                                let boxed: Box<dyn ServerObject> = Box::new(gso);
-                                boxed
-                            }
-                            GenericStringObjectFormat::JsonTemplatableMCPServer => {
-                                let gso = GenericServerObject::<
-                                    GenericStringObjectId,
-                                    CloudTemplatableMCPServerModel,
-                                >::try_from_graphql_fields(
-                                    ServerId::from_string_lossy(
-                                        rejected
-                                            .conflicting_generic_string_object
-                                            .metadata
-                                            .uid
-                                            .inner(),
-                                    ),
-                                    Some(
-                                        rejected.conflicting_generic_string_object.serialized_model,
-                                    ),
-                                    rejected
-                                        .conflicting_generic_string_object
-                                        .metadata
-                                        .try_into()?,
-                                    rejected
-                                        .conflicting_generic_string_object
-                                        .permissions
-                                        .try_into()?,
-                                )?;
-                                let boxed: Box<dyn ServerObject> = Box::new(gso);
-                                boxed
+                            // twarp: 2c-d — AI cloud objects deleted; bail out on these variants.
+                            GenericStringObjectFormat::JsonAIFact
+                            | GenericStringObjectFormat::JsonAIExecutionProfile
+                            | GenericStringObjectFormat::JsonMCPServer
+                            | GenericStringObjectFormat::JsonTemplatableMCPServer
+                            | GenericStringObjectFormat::JsonScheduledAmbientAgent => {
+                                anyhow::bail!("AI cloud objects no longer supported client-side")
                             }
                             GenericStringObjectFormat::JsonCloudEnvironment => {
                                 anyhow::bail!(
                                     "CloudEnvironment objects are no longer supported client-side"
                                 )
-                            }
-                            GenericStringObjectFormat::JsonScheduledAmbientAgent => {
-                                let gso = GenericServerObject::<
-                                    GenericStringObjectId,
-                                    CloudScheduledAmbientAgentModel,
-                                >::try_from_graphql_fields(
-                                    ServerId::from_string_lossy(
-                                        rejected
-                                            .conflicting_generic_string_object
-                                            .metadata
-                                            .uid
-                                            .inner(),
-                                    ),
-                                    Some(
-                                        rejected.conflicting_generic_string_object.serialized_model,
-                                    ),
-                                    rejected
-                                        .conflicting_generic_string_object
-                                        .metadata
-                                        .try_into()?,
-                                    rejected
-                                        .conflicting_generic_string_object
-                                        .permissions
-                                        .try_into()?,
-                                )?;
-                                let boxed: Box<dyn ServerObject> = Box::new(gso);
-                                boxed
                             }
                         };
                         Ok(UpdateCloudObjectResult::Rejected { object: boxed })

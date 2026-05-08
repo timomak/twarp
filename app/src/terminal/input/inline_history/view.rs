@@ -8,8 +8,8 @@ use warp_core::ui::theme::Fill;
 use warpui::elements::ChildView;
 use warpui::{AppContext, Element, Entity, EntityId, ModelHandle, View, ViewContext, ViewHandle};
 
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
+use crate::app_state::AIConversationId;
+// twarp: 2c-d — AI agent view deleted; re-export from input.
 use crate::features::FeatureFlag;
 use crate::search::data_source::{Query, QueryFilter};
 use crate::search::mixer::{SearchMixer, SearchMixerEvent};
@@ -26,6 +26,7 @@ use crate::terminal::input::inline_menu::{
 use crate::terminal::input::suggestions_mode_model::{
     InputSuggestionsModeEvent, InputSuggestionsModeModel,
 };
+pub use crate::terminal::input::{AgentViewController, AgentViewControllerEvent};
 use crate::terminal::model::session::active_session::ActiveSession;
 use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ActionButton, ActionButtonTheme, ButtonSize};
@@ -339,6 +340,7 @@ impl InlineHistoryMenuView {
                     me.menu_view.update(ctx, |_, ctx| ctx.notify());
                 }
                 AgentViewControllerEvent::ExitConfirmed { .. } => {}
+                AgentViewControllerEvent::Other => {}
             },
         );
 

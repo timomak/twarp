@@ -7,8 +7,16 @@ use warpui::{
     ViewHandle,
 };
 
+// twarp: 2c-d — AI document/facts deleted; stubs.
+use crate::app_state::AIDocumentId;
+pub struct CloudAIFactModel;
+#[allow(dead_code)]
+impl CloudAIFactModel {
+    pub fn new<A>(_: A) -> Self {
+        Self
+    }
+}
 use crate::{
-    ai::{document::ai_document_model::AIDocumentId, facts::CloudAIFactModel},
     cloud_object::{
         model::{persistence::CloudModel, view::CloudViewModel},
         CloudObjectEventEntrypoint, GenericStringObjectFormat, JsonObjectType, Owner, Space,
@@ -320,32 +328,9 @@ impl DrivePanel {
                     }
                 }
             }
-            DriveIndexEvent::CreateAIFact {
-                space,
-                fact,
-                initial_folder_id,
-            } => match Self::new_object_owner(*space, initial_folder_id.as_ref(), ctx) {
-                Some(owner) => {
-                    let client_id = ClientId::default();
-                    UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
-                        update_manager.create_object(
-                            CloudAIFactModel::new(fact.clone()),
-                            owner,
-                            client_id,
-                            CloudObjectEventEntrypoint::Blocklist,
-                            true,
-                            *initial_folder_id,
-                            // When adding the initiated_by parameter to this function call, InitiatedBy::User was set as a default value.
-                            // It can be changed to InitiatedBy::System if this action was automatically kicked off and does not require toasts to notify the user of completion.
-                            InitiatedBy::User,
-                            ctx,
-                        );
-                    });
-                }
-                None => {
-                    log::error!("Cannot identify an AI rule owner from {space:?}");
-                }
-            },
+            DriveIndexEvent::CreateAIFact { .. } => {
+                // twarp: 2c-d — AI cloud objects deleted; no-op.
+            }
             DriveIndexEvent::AttachPlanAsContext(id) => {
                 ctx.emit(DrivePanelEvent::AttachPlanAsContext(*id))
             }

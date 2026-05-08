@@ -3,10 +3,14 @@ use warpui::{
     integration::{AssertionCallback, AssertionOutcome},
 };
 
+// twarp: 2c-d — AI secret redaction deleted; stubs.
+pub fn redact_secrets(_text: &str) -> String {
+    String::new()
+}
+pub fn find_secrets_in_text(_text: &str) -> Vec<()> {
+    Vec::new()
+}
 use crate::{
-    ai::{
-        agent::redaction::redact_secrets, blocklist::block::secret_redaction::find_secrets_in_text,
-    },
     integration_testing::view_getters::single_terminal_view,
     terminal::safe_mode_settings::get_secret_obfuscation_mode,
 };
@@ -49,7 +53,7 @@ pub fn assert_secrets_redacted_for_ai(
             // Test that redaction works for both modes when sending to AI
             if secret_redaction_mode.should_redact_secret() {
                 let mut redacted_text = test_text.clone();
-                redact_secrets(&mut redacted_text);
+                redact_secrets(&redacted_text);
 
                 if !redacted_text.contains(&expected_phone_redaction) {
                     return AssertionOutcome::failure(format!(

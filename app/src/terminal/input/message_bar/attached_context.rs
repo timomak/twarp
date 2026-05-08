@@ -3,12 +3,19 @@
 use warp_core::features::FeatureFlag;
 use warpui::keymap::Keystroke;
 
-use crate::ai::blocklist::agent_view::{AgentMessageBarMouseStates, AgentViewController};
-use crate::ai::blocklist::{BlocklistAIContextModel, BlocklistAIInputModel};
+// twarp: 2c-d — AI agent view / blocklist deleted; stubs.
+#[derive(Default)]
+pub struct AgentMessageBarMouseStates {
+    // twarp: 2c-d — fields used by callers
+    pub clear_attached_context: warpui::elements::MouseStateHandle,
+}
+pub use crate::terminal::input::{AgentViewController, BlocklistAIContextModel};
+// twarp: 2c-d — re-export from input for type unification.
 use crate::terminal::input::buffer_model::InputBufferModel;
 use crate::terminal::input::message_bar::{
     truncated_command_for_block, Message, MessageItem, MessageProvider,
 };
+pub use crate::terminal::input::BlocklistAIInputModel;
 use crate::terminal::input::InputAction;
 use crate::terminal::model::TerminalModel;
 

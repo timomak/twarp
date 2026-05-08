@@ -16,9 +16,34 @@ pub mod user_uid;
 #[cfg(target_family = "wasm")]
 pub mod web_handoff;
 
-use crate::ai::agent_conversations_model::AgentConversationsModel;
-use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
+// twarp: 2c-d — AI conversations / blocklist / execution profiles deleted; stubs.
+pub struct AgentConversationsModel;
+impl warpui::Entity for AgentConversationsModel {
+    type Event = ();
+}
+impl warpui::SingletonEntity for AgentConversationsModel {}
+#[allow(dead_code)]
+impl AgentConversationsModel {
+    pub fn reset(&mut self) {}
+}
+pub struct BlocklistAIHistoryModel;
+impl warpui::Entity for BlocklistAIHistoryModel {
+    type Event = crate::terminal::input::BlocklistAIHistoryEvent;
+}
+impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+#[allow(dead_code)]
+impl BlocklistAIHistoryModel {
+    pub fn reset(&mut self) {}
+}
+pub struct AIExecutionProfilesModel;
+impl warpui::Entity for AIExecutionProfilesModel {
+    type Event = ();
+}
+impl warpui::SingletonEntity for AIExecutionProfilesModel {}
+#[allow(dead_code)]
+impl AIExecutionProfilesModel {
+    pub fn reset(&mut self) {}
+}
 use crate::code::editor_management::{CodeEditorStatus, CodeEditorSummary};
 use crate::env_vars::manager::EnvVarCollectionManager;
 use crate::notebooks::manager::NotebookManager;

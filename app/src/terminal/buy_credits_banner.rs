@@ -18,11 +18,35 @@ use warpui::elements::{
 use warpui::fonts::Weight;
 use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::{Coords, UiComponent as _, UiComponentStyles};
-use warpui::{AppContext, Element, Entity, SingletonEntity as _, View, ViewContext, ViewHandle};
+use warpui::{AppContext, Element, Entity, SingletonEntity, View, ViewContext, ViewHandle};
 
-use crate::ai::request_usage_model::{
-    AIRequestUsageModel, AIRequestUsageModelEvent, BuyCreditsBannerDisplayState,
-};
+// twarp: 2c-d — AI request usage deleted; stubs.
+pub struct AIRequestUsageModel;
+impl Entity for AIRequestUsageModel {
+    type Event = AIRequestUsageModelEvent;
+}
+impl SingletonEntity for AIRequestUsageModel {}
+#[allow(dead_code)]
+impl AIRequestUsageModel {
+    pub fn dismiss_buy_credits_banner<C>(&mut self, _: &mut C) {}
+    pub fn compute_buy_addon_credits_banner_display_state<C>(
+        &self,
+        _: &C,
+    ) -> BuyCreditsBannerDisplayState {
+        BuyCreditsBannerDisplayState::Hidden
+    }
+}
+pub enum AIRequestUsageModelEvent {
+    Other,
+    RequestUsageUpdated,
+}
+pub enum BuyCreditsBannerDisplayState {
+    // twarp: 2c-d — bulk variants
+    Other,
+    Hidden,
+    MonthlyLimitReached,
+    OutOfCredits,
+}
 use crate::auth::AuthStateProvider;
 use crate::features::FeatureFlag;
 use crate::menu::MenuItemFields;
@@ -825,6 +849,9 @@ impl View for BuyCreditsBanner {
             }
             BuyCreditsBannerDisplayState::MonthlyLimitReached => {
                 self.render_auto_reload_blocked(appearance, app)
+            }
+            BuyCreditsBannerDisplayState::Other => {
+                Container::new(warpui::elements::Empty::new().finish()).finish()
             }
         }
     }

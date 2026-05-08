@@ -6,9 +6,23 @@
 //! - Commands are deduplicated, keeping the most recent occurrence
 //! - The result is that current session items appear at the bottom (closer to input)
 
-use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
-use crate::ai::blocklist::agent_view::AgentViewController;
-use crate::ai::blocklist::BlocklistAIHistoryModel;
+// twarp: 2c-d — AI conversation / agent_view / blocklist deleted; stubs.
+use crate::app_state::{AIConversationId, ConversationStatus};
+pub use crate::terminal::input::AgentViewController;
+pub struct BlocklistAIHistoryModel;
+impl warpui::Entity for BlocklistAIHistoryModel {
+    type Event = crate::terminal::input::BlocklistAIHistoryEvent;
+}
+impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+#[allow(dead_code)]
+impl BlocklistAIHistoryModel {
+    pub fn all_live_conversations_for_terminal_view(
+        &self,
+        _: warpui::EntityId,
+    ) -> Vec<crate::app_state::AIConversationId> {
+        Vec::new()
+    }
+}
 use crate::input_suggestions::{HistoryInputSuggestion, HistoryOrder};
 use crate::search::data_source::{Query, QueryFilter, QueryResult};
 use crate::search::mixer::DataSourceRunErrorWrapper;

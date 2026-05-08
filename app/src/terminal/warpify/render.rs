@@ -1,4 +1,4 @@
-use crate::ai::blocklist::inline_action::inline_action_icons;
+// twarp: 2c-d.4 — inlined green_check_icon from deleted ai::blocklist::inline_action::inline_action_icons
 use crate::ui_components::blended_colors;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use pathfinder_color::ColorU;
@@ -87,7 +87,13 @@ pub fn header_row(
 }
 
 fn green_check_icon(appearance: &Appearance, size: f32) -> Box<dyn Element> {
-    ConstrainedBox::new(inline_action_icons::green_check_icon(appearance).finish())
+    use crate::themes::theme::AnsiColorIdentifier;
+    let icon = warpui::elements::Icon::new(
+        warp_core::ui::Icon::Check.into(),
+        AnsiColorIdentifier::Green.to_ansi_color(&appearance.theme().terminal_colors().normal),
+    )
+    .finish();
+    ConstrainedBox::new(icon)
         .with_max_height(size)
         .with_max_width(size)
         .finish()

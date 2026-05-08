@@ -12,7 +12,7 @@ use warpui::{
     ViewHandle,
 };
 
-use crate::ai::blocklist::agent_view::AgentViewController;
+// twarp: 2c-d — AI agent view controller deleted; re-export from input.
 use crate::search::data_source::QueryFilter;
 use crate::terminal::input::buffer_model::InputBufferModel;
 use crate::terminal::input::inline_history::{
@@ -21,6 +21,7 @@ use crate::terminal::input::inline_history::{
 use crate::terminal::input::inline_menu::styles as inline_menu_styles;
 use crate::terminal::input::inline_menu::{InlineMenuPositioner, InlineMenuTabConfig};
 use crate::terminal::input::suggestions_mode_model::InputSuggestionsModeModel;
+pub use crate::terminal::input::AgentViewController;
 use crate::terminal::model::session::active_session::ActiveSession;
 
 const MENU_MAX_HEIGHT: f32 = 168.;

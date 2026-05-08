@@ -1,14 +1,19 @@
 use std::sync::Arc;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle};
 
-use crate::{
-    ai::execution_context::WarpAiExecutionContext,
-    terminal::{
-        model::session::SessionsEvent,
-        model_events::{ModelEvent, ModelEventDispatcher},
-        shell::ShellType,
-        ShellLaunchData,
-    },
+// twarp: 2c-d — WarpAiExecutionContext deleted; stub.
+pub struct WarpAiExecutionContext;
+#[allow(dead_code)]
+impl WarpAiExecutionContext {
+    pub fn new<A>(_: A) -> Self {
+        Self
+    }
+}
+use crate::terminal::{
+    model::session::SessionsEvent,
+    model_events::{ModelEvent, ModelEventDispatcher},
+    shell::ShellType,
+    ShellLaunchData,
 };
 
 use super::{Session, SessionType, Sessions};

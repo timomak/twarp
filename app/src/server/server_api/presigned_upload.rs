@@ -16,8 +16,14 @@ use crc::{Crc, CRC_32_ISCSI};
 use futures_lite::io::AsyncReadExt as _;
 use thiserror::Error;
 
-#[cfg(not(target_family = "wasm"))]
-use super::ai::FileArtifactUploadTargetInfo;
+// twarp: 2c-d — server_api::ai deleted; stub.
+#[derive(Default)]
+pub struct FileArtifactUploadTargetInfo {
+    // twarp: 2c-d — fields used by callers
+    pub url: String,
+    pub method: String,
+    pub headers: std::collections::HashMap<String, String>,
+}
 use super::harness_support::UploadTarget;
 
 /// Typed error for HTTP-backed operations so downstream classifiers (e.g. the agent-SDK
@@ -68,7 +74,7 @@ impl<'a> From<&'a FileArtifactUploadTargetInfo> for NormalizedUploadTarget<'a> {
             headers: target
                 .headers
                 .iter()
-                .map(|header| (header.name.as_str(), header.value.as_str()))
+                .map(|(name, value)| (name.as_str(), value.as_str()))
                 .collect(),
         }
     }

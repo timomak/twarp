@@ -11,7 +11,7 @@ use std::{io::sink, sync::Arc};
 use warp_core::command::ExitCode;
 use warpui::r#async::executor::Background;
 
-use crate::ai::blocklist::SerializedBlockListItem;
+use crate::app_state::SerializedBlockListItem;
 use crate::terminal::{
     color::{self, Colors},
     event_listener::ChannelEventListener,

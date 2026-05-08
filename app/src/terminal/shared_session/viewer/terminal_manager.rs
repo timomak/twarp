@@ -16,18 +16,35 @@ use std::sync::Arc;
 
 use warpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WeakViewHandle, WindowId};
 
-use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::agent::conversation::ConversationStatus;
-use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
-use crate::ai::blocklist::{
-    BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIHistoryEvent,
-    BlocklistAIHistoryModel,
+// twarp: 2c-d — AI active/agent/blocklist/llms deleted; reuse shared_handlers stubs to keep types unified.
+use crate::app_state::ConversationStatus;
+pub use crate::terminal::shared_session::shared_handlers::{
+    AgentViewController, BlocklistAIContextModel, BlocklistAIHistoryModel,
 };
-use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
+pub struct ActiveAgentViewsModel;
+impl warpui::Entity for ActiveAgentViewsModel {
+    type Event = ();
+}
+impl SingletonEntity for ActiveAgentViewsModel {}
+#[allow(dead_code)]
+impl ActiveAgentViewsModel {
+    // twarp: 2c-d — bulk stubs
+    pub fn register_agent_view_controller<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    pub fn register_ambient_session<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn unregister_agent_view_controller<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn unregister_ambient_session<A, C>(&mut self, _: A, _: &mut C) {}
+}
+// twarp: 2c-d — re-export canonical AgentViewControllerEvent.
+pub use crate::terminal::input::AgentViewControllerEvent;
+pub use crate::terminal::input::BlocklistAIContextEvent;
+// twarp: 2c-d — re-export canonical
+pub use crate::terminal::input::BlocklistAIHistoryEvent;
+// twarp: 2c-d — re-export from input for type unification.
 use crate::context_chips::prompt_snapshot::PromptSnapshot;
 use crate::context_chips::prompt_type::PromptType;
 use crate::features::FeatureFlag;
 use crate::pane_group::pane::DetachType;
+pub use crate::terminal::input::{LLMPreferences, LLMPreferencesEvent};
 
 use crate::network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind};
 
@@ -41,9 +58,20 @@ use crate::terminal::PTY_READS_BROADCAST_CHANNEL_SIZE;
 
 use crate::terminal::session_settings::SessionSettings;
 
-use crate::terminal::cli_agent_sessions::{
-    CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
-};
+// twarp: 2c-d — cli agent sessions deleted; stubs.
+pub use crate::terminal::view::CLIAgentInputState;
+pub struct CLIAgentSessionsModel;
+impl warpui::Entity for CLIAgentSessionsModel {
+    type Event = CLIAgentSessionsModelEvent;
+}
+impl SingletonEntity for CLIAgentSessionsModel {}
+#[allow(dead_code)]
+impl CLIAgentSessionsModel {
+    // twarp: 2c-d — bulk stubs
+    pub fn session(&self, _: warpui::EntityId) -> Option<&crate::terminal::view::CLIAgentSession> {
+        None
+    }
+}
 use crate::terminal::shared_session::manager::Manager;
 use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use crate::terminal::shared_session::shared_handlers::{
@@ -53,14 +81,18 @@ use crate::terminal::shared_session::shared_handlers::{
 };
 use crate::terminal::shared_session::SharedSessionStatus;
 use crate::terminal::terminal_manager::{compute_block_size, terminal_colors_list};
+pub use crate::terminal::view::CLIAgentSessionsModelEvent;
 
 use super::network::{
     agent_prompt_failure_reason_string, command_execution_failure_reason_string,
     control_action_failure_reason_string, session_ended_reason_string,
     viewer_removed_reason_string, write_to_pty_failure_reason_string, Network, NetworkEvent,
 };
-use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::terminal::view::ambient_agent::is_cloud_agent_pre_first_exchange;
+use crate::app_state::AmbientAgentTaskId;
+// twarp: 2c-d — ambient agent helper deleted; stub.
+fn is_cloud_agent_pre_first_exchange<A, B>(_: A, _: B, _: &warpui::AppContext) -> bool {
+    false
+}
 use crate::terminal::view::ExecuteCommandEvent;
 use crate::terminal::{Event as TerminalViewEvent, TerminalModel, TerminalView};
 use crate::view_components::ToastFlavor;
@@ -406,14 +438,15 @@ impl TerminalManager {
                 }
             }
 
-            let config = event.updated_config();
+            let _config = event.updated_config();
 
             Self::send_input_context_update(
                 &input_mode_remote_update_guard,
                 &model_clone_for_input,
                 &network_for_input_mode,
                 UniversalDeveloperInputContextUpdate {
-                    input_mode: Some((*config).into()),
+                    // twarp: 2c-d — input mode no longer derived from AI config; default.
+                    input_mode: None,
                     ..Default::default()
                 },
                 ctx,
@@ -445,6 +478,7 @@ impl TerminalManager {
                         );
                     }
                     AgentViewControllerEvent::ExitConfirmed { .. } => {}
+                    AgentViewControllerEvent::Other => {}
                 },
             );
         } else {
@@ -492,12 +526,13 @@ impl TerminalManager {
                             return;
                         };
 
+                        // twarp: 2c-d — autoexecute predicate stub; AI override types removed.
                         let auto_approve = view
                             .as_ref(ctx)
                             .ai_context_model()
                             .as_ref(ctx)
                             .pending_query_autoexecute_override(ctx)
-                            .is_autoexecute_any_action();
+                            .unwrap_or(false);
                         Self::send_input_context_update(
                             &auto_approve_remote_update_guard,
                             &model_clone_for_auto,
@@ -535,7 +570,7 @@ impl TerminalManager {
                 let sessions_model = CLIAgentSessionsModel::as_ref(ctx);
                 match sessions_model.session(view_id_for_cli) {
                     Some(session) => CLIAgentSessionState::Active {
-                        cli_agent: session.agent.to_serialized_name(),
+                        cli_agent: session.agent.to_serialized_name().to_string(),
                         is_rich_input_open: matches!(
                             new_input_state,
                             CLIAgentInputState::Open { .. }
@@ -1405,8 +1440,11 @@ impl TerminalManager {
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
             history_model
                 .all_live_conversations_for_terminal_view(terminal_view_id)
-                .filter(|conversation| conversation.status().is_in_progress())
-                .map(|conversation| conversation.id())
+                .into_iter()
+                .filter(|conversation: &crate::app_state::AIConversationId| {
+                    conversation.status().is_in_progress()
+                })
+                .map(|conversation: crate::app_state::AIConversationId| conversation.id())
                 .collect::<Vec<_>>()
                 .into_iter()
                 .for_each(|conversation_id| {

@@ -1,12 +1,11 @@
 use super::{
     team::{DiscoverableTeam, MembershipRole, Team},
     workspace::{
-        AdminEnablementSetting, CustomerType, EnterpriseSecretRegex, HostEnablementSetting,
+        AdminEnablementSetting, CustomerType, EnterpriseSecretRegex,
         UgcCollectionEnablementSetting, Workspace, WorkspaceUid,
     },
 };
 use crate::{
-    ai::llms::LLMModelHost,
     auth::{AuthStateProvider, UserUid},
     channel::ChannelState,
     cloud_object::{
@@ -477,52 +476,6 @@ impl UserWorkspaces {
         self.current_workspace()
             .map(|workspace| workspace.is_byo_api_key_enabled())
             .unwrap_or(FeatureFlag::SoloUserByok.is_enabled())
-    }
-
-    pub fn aws_bedrock_host_settings(&self) -> Option<&super::workspace::LlmHostSettings> {
-        self.current_workspace().and_then(|workspace| {
-            workspace
-                .settings
-                .llm_settings
-                .host_configs
-                .get(&LLMModelHost::AwsBedrock)
-        })
-    }
-
-    /// Did the admin enable AWS Bedrock for the current workspace?
-    pub fn is_aws_bedrock_available_from_workspace(&self) -> bool {
-        self.current_workspace().is_some_and(|workspace| {
-            workspace.settings.llm_settings.enabled
-                && self
-                    .aws_bedrock_host_settings()
-                    .is_some_and(|settings| settings.enabled)
-        })
-    }
-    pub fn aws_bedrock_host_enablement_setting(&self) -> HostEnablementSetting {
-        self.aws_bedrock_host_settings()
-            .map(|settings| settings.enablement_setting.clone())
-            .unwrap_or_default()
-    }
-
-    pub fn is_aws_bedrock_credentials_toggleable(&self) -> bool {
-        matches!(
-            self.aws_bedrock_host_enablement_setting(),
-            HostEnablementSetting::RespectUserSetting
-        )
-    }
-
-    pub fn is_aws_bedrock_credentials_enabled(&self, app: &AppContext) -> bool {
-        // i.e. did the admin go and toggle on aws bedrock in the admin panel?
-        if !self.is_aws_bedrock_available_from_workspace() {
-            return false;
-        }
-
-        match self.aws_bedrock_host_enablement_setting() {
-            HostEnablementSetting::Enforce => true,
-            HostEnablementSetting::RespectUserSetting => *AISettings::as_ref(app)
-                .aws_bedrock_credentials_enabled
-                .value(),
-        }
     }
 
     /// Returns the AI autonomy settings that are enforced by the workspace for all its members.
@@ -1501,6 +1454,10 @@ impl UserWorkspaces {
             .map(|policy| policy.is_enabled)
             .unwrap_or(true);
         FeatureFlag::CreatingSharedSessions.set_enabled(is_session_sharing_enabled_via_tier_policy);
+    }
+    // twarp: 2c-d — bulk stubs for AI-removed methods
+    pub fn is_aws_bedrock_credentials_enabled<C>(&self, _: &C) -> bool {
+        false
     }
 }
 

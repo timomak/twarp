@@ -31,8 +31,48 @@ use warpui::{
 
 use settings::Setting;
 
+// twarp: 2c-d — AI usage deleted; stub.
+pub struct AIRequestUsageModel;
+impl warpui::Entity for AIRequestUsageModel {
+    type Event = ();
+}
+impl warpui::SingletonEntity for AIRequestUsageModel {}
+#[allow(dead_code)]
+impl AIRequestUsageModel {
+    pub fn refresh_request_usage_async<C>(&mut self, _: &mut C) {}
+    pub fn refresh_duration_to_string(&self) -> String {
+        String::new()
+    }
+    // twarp: 2c-d — bulk stubs for AI-removed methods on AIRequestUsageModel
+    pub fn ambient_only_credits_remaining(&self) -> Option<i64> {
+        None
+    }
+    pub fn is_unlimited(&self) -> bool {
+        false
+    }
+    pub fn next_refresh_time(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        None
+    }
+    pub fn request_limit(&self) -> usize {
+        0
+    }
+    pub fn requests_used(&self) -> usize {
+        0
+    }
+    pub fn total_workspace_bonus_credits_remaining<W>(&self, _: W) -> i32 {
+        0
+    }
+    pub fn total_current_workspace_bonus_credits_remaining<W>(&self, _: W) -> i32 {
+        0
+    }
+    pub fn compute_buy_addon_credits_banner_display_state<W>(
+        &self,
+        _: W,
+    ) -> crate::terminal::buy_credits_banner::BuyCreditsBannerDisplayState {
+        crate::terminal::buy_credits_banner::BuyCreditsBannerDisplayState::Hidden
+    }
+}
 use crate::{
-    ai::AIRequestUsageModel,
     auth::{
         auth_manager::LoginGatedFeature, auth_state::AuthState, auth_view_modal::AuthViewVariant,
         AuthManager, AuthStateProvider, UserUid,
@@ -119,7 +159,8 @@ const ADDITIONAL_ADDON_CREDITS_DESCRIPTION_FOR_TEAM: &str =
 // Cloud agent trial widget constants.
 const AMBIENT_AGENT_TRIAL_TITLE: &str = "Cloud agent trial";
 /// The threshold below which we only show the "Buy more" button (not "New agent").
-use crate::ai::request_usage_model::AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD;
+// twarp: 2c-d — AI request usage threshold deleted; stub.
+pub const AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD: i64 = 0;
 
 pub fn create_discount_badge(discount: u32, appearance: &Appearance) -> Box<dyn Element> {
     if discount == 0 {
@@ -2471,7 +2512,10 @@ impl SettingsWidget for UsageWidget {
     ) -> Box<dyn Element> {
         let ai_request_usage_model = AIRequestUsageModel::as_ref(app);
         let next_refresh_time = ai_request_usage_model.next_refresh_time();
-        let local_next_refresh_time = next_refresh_time.with_timezone(&Local);
+        // twarp: 2c-d — next_refresh_time is Option, default to now
+        let local_next_refresh_time = next_refresh_time
+            .map(|t| t.with_timezone(&Local))
+            .unwrap_or_else(|| chrono::Utc::now().with_timezone(&Local));
         let formatted_next_refresh_time = local_next_refresh_time
             .format("%b %d at %-I:%M %p")
             .to_string();

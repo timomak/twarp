@@ -2,11 +2,9 @@
 //! business logic for integrating the terminal view with the pane infra (`crate::pane_group`).
 use super::shared_session::adapter::Kind as SharedSessionKind;
 use super::{Event, PaneConfiguration, TerminalAction, TerminalViewState, Viewer};
-use crate::ai::agent::conversation::{AIConversation, ConversationStatus};
-use crate::ai::blocklist::agent_view::agent_view_bg_fill;
-use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_navigation_card;
-use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PADDING};
+// twarp: 2c-d — AI conversation/blocklist/conversation-status UI deleted; chrome
+// rendering reduced to terminal-only.
+use crate::app_state::{AIConversation, ConversationStatus};
 use crate::appearance::Appearance;
 use crate::drive::sharing::ShareableObject;
 use crate::features::FeatureFlag;
@@ -21,7 +19,7 @@ use crate::pane_group::{pane::view, pane::view::PaneHeaderAction, BackingView, S
 use crate::settings::app_installation_detection::{
     UserAppInstallDetectionSettings, UserAppInstallStatus,
 };
-use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
+// twarp: 2c-d — CLIAgentSessionsModel deleted; CLI agent chrome dropped.
 use crate::terminal::model::terminal_model::ConversationTranscriptViewerStatus;
 use crate::terminal::shared_session::participant_avatar_view::render_participants_and_role_elements;
 use crate::terminal::shared_session::render_util::shared_session_indicator_color;
@@ -31,10 +29,8 @@ use crate::terminal::TerminalView;
 use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::icon_button_with_color;
 use crate::ui_components::icons;
-use crate::workspace::tab_settings::TabSettings;
 use settings::Setting as _;
 use warp_core::context_flag::ContextFlag;
-use warp_core::ui::Icon as WarpIcon;
 use warpui::elements::{
     ChildAnchor, ConstrainedBox, CrossAxisAlignment, Flex, MainAxisAlignment, MainAxisSize,
     OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Shrinkable, Stack,
@@ -143,44 +139,13 @@ impl TerminalView {
 
     /// Returns the shareable object for the active agent view conversation, if any.
     fn agent_view_shareable_object(&self, ctx: &ViewContext<Self>) -> Option<ShareableObject> {
-        // Only set shareable object if CloudConversations feature is enabled
-        if !FeatureFlag::CloudConversations.is_enabled() {
-            return None;
-        }
-
-        // If we're in a shared session, prioritize this to share.
-        if let Some(shared_session) = &self.shared_session {
-            return Some(ShareableObject::Session {
-                handle: ctx.handle(),
-                session_id: *shared_session.session_id(),
-                started_at: *shared_session.started_at(),
-            });
-        }
-
-        // Check if agent view is active
-        let conversation_id = self
-            .agent_view_controller
-            .as_ref(ctx)
-            .agent_view_state()
-            .active_conversation_id()?;
-
-        // Don't show share button for empty conversations
-        let conversation = BlocklistAIHistoryModel::as_ref(ctx).conversation(&conversation_id)?;
-        if conversation.is_empty() {
-            return None;
-        }
-        let exchange_count = conversation.exchange_count();
-        // If there's only one exchange, make sure it's completed (not still streaming)
-        if exchange_count == 1 {
-            if let Some(latest_exchange) = conversation.latest_exchange() {
-                if latest_exchange.output_status.is_streaming() {
-                    return None;
-                }
-            }
-        }
-
-        // Return the ShareableObject with the conversation ID
-        Some(ShareableObject::AIConversation(conversation_id))
+        // twarp: 2c-d — only shared-session sharing remains; AI conversation sharing removed.
+        let shared_session = self.shared_session.as_ref()?;
+        Some(ShareableObject::Session {
+            handle: ctx.handle(),
+            session_id: *shared_session.session_id(),
+            started_at: *shared_session.started_at(),
+        })
     }
 
     /// Updates the pane header's shareable object based on agent view state.
@@ -454,26 +419,12 @@ impl TerminalView {
         (right_row.finish(), min_width)
     }
 
-    fn render_parent_conversation_header_card(&self, app: &AppContext) -> Option<Box<dyn Element>> {
-        if !(FeatureFlag::Orchestration.is_enabled()
-            && FeatureFlag::AgentView.is_enabled()
-            && self.agent_view_controller.as_ref(app).is_fullscreen())
-        {
-            return None;
-        }
-
-        let active_conversation_id = self
-            .agent_view_controller
-            .as_ref(app)
-            .agent_view_state()
-            .active_conversation_id()?;
-        let active_conversation =
-            BlocklistAIHistoryModel::as_ref(app).conversation(&active_conversation_id)?;
-        parent_conversation_navigation_card(
-            active_conversation,
-            self.mouse_states.parent_conversation_header_link.clone(),
-            app,
-        )
+    // twarp: 2c-d — parent-conversation card requires deleted AI types; always None now.
+    fn render_parent_conversation_header_card(
+        &self,
+        _app: &AppContext,
+    ) -> Option<Box<dyn Element>> {
+        None
     }
 
     fn maybe_add_parent_navigation_card(
@@ -529,13 +480,9 @@ impl TerminalView {
         );
         let header = self.maybe_add_parent_navigation_card(header, parent_conversation_header_card);
 
-        if is_fullscreen_agent_view {
-            Container::new(header)
-                .with_background(agent_view_bg_fill(app))
-                .finish()
-        } else {
-            header
-        }
+        // twarp: 2c-d — agent view background fill removed with AI.
+        let _ = is_fullscreen_agent_view;
+        header
     }
 }
 
@@ -761,60 +708,15 @@ impl TerminalView {
             .finish()
     }
 
-    /// Render the agent indicator icon for when a conversation is selected.
+    // twarp: 2c-d — agent indicator depends on deleted AI types; renders nothing now.
     fn render_agent_indicator(
         &self,
-        conversation_id: crate::ai::agent::conversation::AIConversationId,
-        status: ConversationStatus,
-        is_long_running: bool,
-        app: &AppContext,
+        _conversation_id: crate::app_state::AIConversationId,
+        _status: ConversationStatus,
+        _is_long_running: bool,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
-        let Some(conversation) =
-            BlocklistAIHistoryModel::as_ref(app).conversation(&conversation_id)
-        else {
-            return warpui::elements::Empty::new().finish();
-        };
-
-        let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
-
-        // Check if we're configuring or waiting on an ambient agent
-        let is_ambient_agent = FeatureFlag::CloudMode.is_enabled()
-            && self.ambient_agent_view_model.as_ref(app).is_ambient_agent();
-
-        // When a long-running command is active, show InProgress
-        // instead of the conversation's actual status.
-        let status = if is_long_running {
-            ConversationStatus::InProgress
-        } else {
-            status
-        };
-
-        if FeatureFlag::AgentView.is_enabled()
-            && conversation.exchange_count() == 0
-            && !is_long_running
-        {
-            ConstrainedBox::new(
-                if is_ambient_agent {
-                    WarpIcon::OzCloud
-                } else {
-                    WarpIcon::Oz
-                }
-                .to_warpui_icon(blended_colors::text_sub(theme, theme.background()).into())
-                .finish(),
-            )
-            .with_height(appearance.ui_font_size())
-            .with_width(appearance.ui_font_size())
-            .finish()
-        } else if FeatureFlag::NewTabStyling.is_enabled() {
-            let icon_size = appearance.ui_font_size() + 2.0 - STATUS_ELEMENT_PADDING * 2.;
-            render_status_element(&status, icon_size, appearance)
-        } else {
-            ConstrainedBox::new(status.render_icon(appearance).finish())
-                .with_height(appearance.ui_font_size())
-                .with_width(appearance.ui_font_size())
-                .finish()
-        }
+        warpui::elements::Empty::new().finish()
     }
 
     /// Render the indicator for terminal mode (no conversation selected).
@@ -1035,19 +937,9 @@ impl TerminalView {
             .and_then(AIConversation::latest_user_query)
     }
 
-    fn selected_cli_agent_title_for_chrome(&self, ctx: &AppContext) -> Option<String> {
-        let session = CLIAgentSessionsModel::as_ref(ctx)
-            .session(self.view_id)
-            .filter(|session| session.listener.is_some())?;
-
-        if *TabSettings::as_ref(ctx).use_latest_user_prompt_as_conversation_title_in_tab_names {
-            session
-                .session_context
-                .latest_user_prompt()
-                .or_else(|| session.session_context.title_like_text())
-        } else {
-            session.session_context.title_like_text()
-        }
+    // twarp: 2c-d — CLI agent session title removed with AI.
+    fn selected_cli_agent_title_for_chrome(&self, _ctx: &AppContext) -> Option<String> {
+        None
     }
 }
 

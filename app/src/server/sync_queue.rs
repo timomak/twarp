@@ -19,14 +19,19 @@ use super::{
     server_api::{auth::UserAuthenticationError, object::ObjectClient},
 };
 
-use crate::ai::mcp::templatable::CloudTemplatableMCPServerModel;
+// twarp: 2c-d — AI cloud models deleted; stubs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CloudTemplatableMCPServerModel;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CloudScheduledAmbientAgentModel;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CloudAIExecutionProfileModel;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CloudAIFactModel;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CloudMCPServerModel;
 use crate::server::cloud_objects::update_manager::InitiatedBy;
 use crate::{
-    ai::{
-        ambient_agents::scheduled::CloudScheduledAmbientAgentModel,
-        execution_profiles::CloudAIExecutionProfileModel, facts::CloudAIFactModel,
-        mcp::CloudMCPServerModel,
-    },
     cloud_object::{
         model::{
             actions::{ObjectAction, ObjectActionHistory, ObjectActionSubtype, ObjectActionType},
@@ -746,34 +751,9 @@ impl SyncQueue {
                         ctx,
                     );
                 }
-                QueueItem::UpdateAIFact {
-                    model,
-                    id,
-                    revision,
-                } => {
-                    self.update_object(
-                        model.clone(),
-                        id,
-                        revision,
-                        object_client,
-                        dequeued_item_id,
-                        ctx,
-                    );
-                }
-                QueueItem::UpdateAIExecutionProfile {
-                    id,
-                    model,
-                    revision,
-                } => {
-                    self.update_object(
-                        model.clone(),
-                        id,
-                        revision,
-                        object_client,
-                        dequeued_item_id,
-                        ctx,
-                    );
-                }
+                // twarp: 2c-d — AI cloud objects deleted; ignore.
+                QueueItem::UpdateAIFact { .. } => {}
+                QueueItem::UpdateAIExecutionProfile { .. } => {}
                 QueueItem::UpdateWorkflowEnum {
                     model,
                     id,
@@ -788,48 +768,10 @@ impl SyncQueue {
                         ctx,
                     );
                 }
-                QueueItem::UpdateMCPServer {
-                    model,
-                    id,
-                    revision,
-                } => {
-                    self.update_object(
-                        model.clone(),
-                        id,
-                        revision,
-                        object_client,
-                        dequeued_item_id,
-                        ctx,
-                    );
-                }
-                QueueItem::UpdateTemplatableMCPServer {
-                    model,
-                    id,
-                    revision,
-                } => {
-                    self.update_object(
-                        model.clone(),
-                        id,
-                        revision,
-                        object_client,
-                        dequeued_item_id,
-                        ctx,
-                    );
-                }
-                QueueItem::UpdateScheduledAmbientAgent {
-                    model,
-                    id,
-                    revision,
-                } => {
-                    self.update_object(
-                        model.clone(),
-                        id,
-                        revision,
-                        object_client,
-                        dequeued_item_id,
-                        ctx,
-                    );
-                }
+                // twarp: 2c-d — AI cloud objects deleted; ignore.
+                QueueItem::UpdateMCPServer { .. } => {}
+                QueueItem::UpdateTemplatableMCPServer { .. } => {}
+                QueueItem::UpdateScheduledAmbientAgent { .. } => {}
                 QueueItem::CreateWorkflow {
                     object_type,
                     owner,
@@ -1189,45 +1131,18 @@ impl SyncQueue {
                                 )
                                 .await
                             }
-                            JsonObjectType::AIFact => {
-                                CloudAIFactModel::send_create_request(
-                                    object_client_clone,
-                                    create_request,
-                                )
-                                .await
-                            }
-                            JsonObjectType::AIExecutionProfile => {
-                                CloudAIExecutionProfileModel::send_create_request(
-                                    object_client_clone,
-                                    create_request,
-                                )
-                                .await
-                            }
-                            JsonObjectType::MCPServer => {
-                                CloudMCPServerModel::send_create_request(
-                                    object_client_clone,
-                                    create_request,
-                                )
-                                .await
-                            }
-                            JsonObjectType::TemplatableMCPServer => {
-                                CloudTemplatableMCPServerModel::send_create_request(
-                                    object_client_clone,
-                                    create_request,
-                                )
-                                .await
+                            // twarp: 2c-d — AI cloud objects deleted; reject creation.
+                            JsonObjectType::AIFact
+                            | JsonObjectType::AIExecutionProfile
+                            | JsonObjectType::MCPServer
+                            | JsonObjectType::TemplatableMCPServer
+                            | JsonObjectType::ScheduledAmbientAgent => {
+                                Err(anyhow::anyhow!("AI cloud objects no longer supported"))
                             }
                             // CloudEnvironment is no longer created/synced client-side.
                             JsonObjectType::CloudEnvironment => Err(anyhow::anyhow!(
                                 "CloudEnvironment creation not supported from client"
                             )),
-                            JsonObjectType::ScheduledAmbientAgent => {
-                                CloudScheduledAmbientAgentModel::send_create_request(
-                                    object_client_clone,
-                                    create_request,
-                                )
-                                .await
-                            }
                             // CloudAgentConfig is not created from the client
                             JsonObjectType::CloudAgentConfig => Err(anyhow::anyhow!(
                                 "CloudAgentConfig creation not supported from client"

@@ -15,8 +15,23 @@ use warpui::{
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
+// twarp: 2c-d — persisted_workspace deleted; stubs.
+pub struct PersistedWorkspace;
+impl warpui::Entity for PersistedWorkspace {
+    type Event = PersistedWorkspaceEvent;
+}
+impl warpui::SingletonEntity for PersistedWorkspace {}
+#[allow(dead_code)]
+impl PersistedWorkspace {
+    pub fn workspaces(&self) -> std::iter::Empty<ai::workspace::WorkspaceMetadata> {
+        std::iter::empty()
+    }
+}
+pub enum PersistedWorkspaceEvent {
+    Other,
+    WorkspaceAdded,
+}
 use crate::{
-    ai::persisted_workspace::{PersistedWorkspace, PersistedWorkspaceEvent},
     appearance::Appearance,
     ui_components::icons,
     view_components::action_button::{ActionButton, SecondaryTheme},

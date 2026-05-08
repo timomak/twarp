@@ -16,8 +16,7 @@ use warpui::{
     ViewContext, ViewHandle, WeakViewHandle,
 };
 
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent_conversations_model::AgentConversationsModel;
+// twarp: 2c-d — AgentConversationsModel/AIConversationId stubs no longer needed in this file.
 #[cfg(feature = "local_fs")]
 use crate::code::file_tree::FileTreeEvent;
 use crate::coding_panel_enablement_state::CodingPanelEnablementState;
@@ -33,16 +32,13 @@ use crate::util::file::external_editor::EditorSettings;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::resolve_file_target_with_editor_choice;
 use crate::util::openable_file_type::FileTarget;
-use crate::workspace::view::conversation_list::view::{
-    ConversationListView, Event as ConversationListViewEvent,
-};
+// twarp: 2c-d — conversation_list removed
 use crate::workspace::view::global_search::view::{
     Event as GlobalSearchViewEvent, GlobalSearchEntryFocus, GlobalSearchView,
 };
 use crate::workspace::view::{
-    LEFT_PANEL_AGENT_CONVERSATIONS_BINDING_NAME, LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME,
-    LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME, LEFT_PANEL_WARP_DRIVE_BINDING_NAME,
-    OPEN_GLOBAL_SEARCH_BINDING_NAME, TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME,
+    LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME, LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME,
+    LEFT_PANEL_WARP_DRIVE_BINDING_NAME, OPEN_GLOBAL_SEARCH_BINDING_NAME,
     TOGGLE_PROJECT_EXPLORER_BINDING_NAME, TOGGLE_WARP_DRIVE_BINDING_NAME,
 };
 use crate::{
@@ -66,7 +62,7 @@ struct MouseStateHandles {
     project_explorer_button: MouseStateHandle,
     global_search_button: MouseStateHandle,
     warp_drive_button: MouseStateHandle,
-    conversation_list_view_button: MouseStateHandle,
+    // twarp: 2c-d — conversation_list_view_button removed
 }
 
 #[derive(Clone, Debug)]
@@ -74,6 +70,7 @@ pub enum LeftPanelAction {
     ProjectExplorer,
     GlobalSearch { entry_focus: GlobalSearchEntryFocus },
     WarpDrive,
+    // twarp: 2c-d — kept for legacy call-sites; AI conversation list deleted.
     ConversationListView,
 }
 
@@ -87,11 +84,10 @@ pub enum LeftPanelEvent {
         target: FileTarget,
         line_col: Option<LineAndColumnArg>,
     },
+    // twarp: 2c-d — kept for legacy call-sites; AI conversation list deleted.
     NewConversationInNewTab,
     ShowDeleteConfirmationDialog {
-        conversation_id: AIConversationId,
-        conversation_title: String,
-        terminal_view_id: Option<warpui::EntityId>,
+        conversation_id: crate::app_state::AIConversationId,
     },
 }
 
@@ -100,6 +96,7 @@ pub enum ToolPanelView {
     ProjectExplorer,
     GlobalSearch { entry_focus: GlobalSearchEntryFocus },
     WarpDrive,
+    // twarp: 2c-d — variant kept so legacy call-sites compile; AI conversation list deleted.
     ConversationListView,
 }
 
@@ -126,18 +123,12 @@ mod active_view_state {
         new_view: ToolPanelView,
         ctx: &mut ViewContext<super::LeftPanelView>,
     ) {
-        let previous = left_panel.active_view.0;
+        let _previous = left_panel.active_view.0;
         left_panel.active_view.0 = new_view;
         left_panel.update_button_active_states();
         ctx.notify();
 
-        let was_conversation_list_open = previous == ToolPanelView::ConversationListView;
-        let is_conversation_list_open = new_view == ToolPanelView::ConversationListView;
-        if was_conversation_list_open && !is_conversation_list_open {
-            left_panel.on_conversation_list_view_visibility_changed(false, ctx);
-        } else if !was_conversation_list_open && is_conversation_list_open {
-            left_panel.on_conversation_list_view_visibility_changed(true, ctx);
-        }
+        // twarp: 2c-d — conversation list visibility tracking removed
 
         left_panel.update_active_file_tree_subscription_state(ctx);
     }
@@ -166,7 +157,7 @@ pub struct LeftPanelView {
     mouse_state_handles: MouseStateHandles,
     close_button_mouse_state: MouseStateHandle,
     warp_drive_view: ViewHandle<DrivePanel>,
-    conversation_list_view: ViewHandle<ConversationListView>,
+    // twarp: 2c-d — conversation_list_view removed
     active_view: active_view_state::ActiveViewState,
     toolbelt_buttons: Vec<ToolbeltButtonConfig>,
     active_pane_group: Option<WeakViewHandle<PaneGroup>>,
@@ -209,28 +200,12 @@ impl LeftPanelView {
             }
         };
         let warp_drive_view = ctx.add_typed_action_view(DrivePanel::new);
-        let conversation_list_view = ctx.add_typed_action_view(ConversationListView::new);
 
         ctx.subscribe_to_view(&warp_drive_view, |_me, _, event, ctx| {
             ctx.emit(LeftPanelEvent::WarpDrive(event.clone()));
         });
 
-        ctx.subscribe_to_view(&conversation_list_view, |_me, _, event, ctx| match event {
-            ConversationListViewEvent::NewConversationInNewTab => {
-                ctx.emit(LeftPanelEvent::NewConversationInNewTab);
-            }
-            ConversationListViewEvent::ShowDeleteConfirmationDialog {
-                conversation_id,
-                conversation_title,
-                terminal_view_id,
-            } => {
-                ctx.emit(LeftPanelEvent::ShowDeleteConfirmationDialog {
-                    conversation_id: *conversation_id,
-                    conversation_title: conversation_title.clone(),
-                    terminal_view_id: *terminal_view_id,
-                });
-            }
-        });
+        // twarp: 2c-d — conversation_list_view subscription removed
 
         let active_view = views.first().copied().unwrap_or(ToolPanelView::WarpDrive);
         let toolbelt_buttons = views
@@ -306,7 +281,7 @@ impl LeftPanelView {
             mouse_state_handles: Default::default(),
             close_button_mouse_state: Default::default(),
             warp_drive_view,
-            conversation_list_view,
+            // twarp: 2c-d — conversation_list_view removed
             active_view: active_view_state::new(active_view),
             toolbelt_buttons,
             active_pane_group: None,
@@ -417,22 +392,16 @@ impl LeftPanelView {
                     tooltip_keybinding_names,
                 }
             }
-            ToolPanelView::ConversationListView => {
-                let tooltip_keybinding_names = vec![
-                    LEFT_PANEL_AGENT_CONVERSATIONS_BINDING_NAME,
-                    TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME,
-                ];
-
-                ToolbeltButtonConfig {
-                    icon: Icon::Conversation,
-                    active_icon: Some(Icon::Conversation),
-                    tooltip_text: "Agent conversations".to_string(),
-                    action: LeftPanelAction::ConversationListView,
-                    render_with_active_state: false,
-                    tooltip_keybinding: toolbelt_tooltip_keybinding(&tooltip_keybinding_names, ctx),
-                    tooltip_keybinding_names,
-                }
-            }
+            // twarp: 2c-d — ConversationListView arm: AI deleted, use ProjectExplorer config as fallback.
+            ToolPanelView::ConversationListView => ToolbeltButtonConfig {
+                icon: Icon::FileCopy,
+                active_icon: None,
+                tooltip_text: String::new(),
+                action: LeftPanelAction::ProjectExplorer,
+                render_with_active_state: false,
+                tooltip_keybinding: None,
+                tooltip_keybinding_names: vec![],
+            },
         }
     }
 
@@ -670,11 +639,8 @@ impl LeftPanelView {
                     view.reset_focused_index_in_warp_drive(true, ctx);
                 });
             }
-            ToolPanelView::ConversationListView => {
-                self.conversation_list_view.update(ctx, |view, ctx| {
-                    view.on_left_panel_focused(ctx);
-                });
-            }
+            // twarp: 2c-d — ConversationListView arm: AI deleted, no-op.
+            ToolPanelView::ConversationListView => {}
         }
     }
 
@@ -824,9 +790,8 @@ impl LeftPanelView {
                     matches!(self.active_view.get(), ToolPanelView::GlobalSearch { .. })
                 }
                 LeftPanelAction::WarpDrive => self.active_view.get() == ToolPanelView::WarpDrive,
-                LeftPanelAction::ConversationListView => {
-                    self.active_view.get() == ToolPanelView::ConversationListView
-                }
+                // twarp: 2c-d — ConversationListView arm kept for legacy call-sites; AI deleted.
+                LeftPanelAction::ConversationListView => false,
             };
         }
     }
@@ -964,17 +929,17 @@ impl LeftPanelView {
                     );
                 }
             }
-            LeftPanelAction::ConversationListView => {
-                active_view_state::set(self, ToolPanelView::ConversationListView, ctx);
-                send_telemetry_from_ctx!(TelemetryEvent::ConversationListViewOpened, ctx);
-            }
+            // twarp: 2c-d — ConversationListView is a stub kept for legacy call-sites.
+            LeftPanelAction::ConversationListView => {}
         }
     }
 
-    pub fn on_left_panel_visibility_changed(&self, is_now_open: bool, ctx: &mut ViewContext<Self>) {
-        if ToolPanelView::ConversationListView == self.active_view.get() {
-            self.on_conversation_list_view_visibility_changed(is_now_open, ctx);
-        }
+    pub fn on_left_panel_visibility_changed(
+        &self,
+        _is_now_open: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        // twarp: 2c-d — conversation list visibility tracking removed
 
         self.update_active_file_tree_subscription_state(ctx);
     }
@@ -1018,24 +983,7 @@ impl LeftPanelView {
         }
     }
 
-    /// When the conversation list view's visibility changes,
-    /// we need to update the conversation and tasks model to reflect the new state
-    /// (this information is used to decide whether or not we should poll for new tasks).
-    fn on_conversation_list_view_visibility_changed(
-        &self,
-        is_now_open: bool,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let window_id = ctx.window_id();
-        let view_id = self.conversation_list_view.id();
-        AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
-            if is_now_open {
-                model.register_view_open(window_id, view_id, ctx);
-            } else {
-                model.register_view_closed(window_id, view_id, ctx);
-            }
-        });
-    }
+    // twarp: 2c-d — on_conversation_list_view_visibility_changed removed
 }
 
 impl TypedActionView for LeftPanelView {
@@ -1066,7 +1014,8 @@ impl View for LeftPanelView {
                     }
                 }
                 ToolPanelView::WarpDrive => ctx.focus(&self.warp_drive_view),
-                ToolPanelView::ConversationListView => ctx.focus(&self.conversation_list_view),
+                // twarp: 2c-d — ConversationListView arm: AI deleted, no-op.
+                ToolPanelView::ConversationListView => {}
             }
         }
     }
@@ -1078,9 +1027,7 @@ impl View for LeftPanelView {
             self.mouse_state_handles.project_explorer_button.clone(),
             self.mouse_state_handles.global_search_button.clone(),
             self.mouse_state_handles.warp_drive_button.clone(),
-            self.mouse_state_handles
-                .conversation_list_view_button
-                .clone(),
+            // twarp: 2c-d — conversation_list_view_button removed
         ];
 
         // If there is only one button in the toolbelt row,
@@ -1136,8 +1083,9 @@ impl View for LeftPanelView {
                     .finish(),
             )
             .finish(),
+            // twarp: 2c-d — ConversationListView arm: AI deleted, use empty content.
             ToolPanelView::ConversationListView => {
-                Shrinkable::new(1.0, ChildView::new(&self.conversation_list_view).finish()).finish()
+                Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()
             }
         };
 

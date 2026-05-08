@@ -23,15 +23,15 @@ use string_offset::CharOffset;
 use crate::util::color::coloru_with_opacity;
 use crate::workflows::WorkflowType;
 use crate::{
-    ai::blocklist::ai_brand_color, server::ids::SyncId, settings::InputModeSettings,
-    terminal::block_list_viewport::InputMode, ui_components::icons,
-    view_components::FilterableDropdownOrientation, workspace::WorkspaceAction,
-};
-use crate::{
     appearance::Appearance,
     cloud_object::{model::actions::ObjectActions, CloudObjectMetadataExt},
 };
 use crate::{cloud_object::model::actions::ObjectActionType, terminal::view::TerminalAction};
+use crate::{
+    server::ids::SyncId, settings::InputModeSettings, terminal::block_list_viewport::InputMode,
+    ui_components::icons, view_components::FilterableDropdownOrientation,
+    workspace::WorkspaceAction,
+};
 use crate::{terminal::input::InputAction, ui_components::buttons::icon_button};
 
 use warpui::color::ColorU;
@@ -923,7 +923,7 @@ impl WorkflowsMoreInfoView {
                         }
                         _ => Icon::new(
                             icons::Icon::Prompt.into(),
-                            ai_brand_color(appearance.theme()),
+                            appearance.theme().accent(), // twarp: 2c-d.4 — was ai_brand_color
                         )
                         .finish(),
                     }

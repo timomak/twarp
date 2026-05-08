@@ -20,9 +20,26 @@ use super::credentials::{Credentials, FirebaseToken, LoginToken};
 use super::user::User;
 use super::AuthStateProvider;
 use super::UserUid;
-use crate::ai::llms::LLMPreferences;
-use crate::ai::persisted_workspace::PersistedWorkspace;
-use crate::ai::AIRequestUsageModel;
+// twarp: 2c-d — AI llms / persisted workspace / usage deleted; LLMPreferences re-exported.
+pub use crate::terminal::input::LLMPreferences;
+pub struct PersistedWorkspace;
+impl warpui::Entity for PersistedWorkspace {
+    type Event = ();
+}
+impl warpui::SingletonEntity for PersistedWorkspace {}
+#[allow(dead_code)]
+impl PersistedWorkspace {
+    pub fn on_user_changed<C>(&mut self, _: &mut C) {}
+}
+pub struct AIRequestUsageModel;
+impl warpui::Entity for AIRequestUsageModel {
+    type Event = ();
+}
+impl warpui::SingletonEntity for AIRequestUsageModel {}
+#[allow(dead_code)]
+impl AIRequestUsageModel {
+    pub fn refresh_request_usage_async<C>(&mut self, _: &mut C) {}
+}
 use crate::autoupdate::AutoupdateState;
 use crate::persistence::ModelEvent;
 use crate::server::cloud_objects::update_manager::UpdateManager;

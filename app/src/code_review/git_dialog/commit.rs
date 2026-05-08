@@ -17,8 +17,9 @@ use warpui::{
     AppContext, SingletonEntity, ViewContext, ViewHandle,
 };
 
+// twarp: 2c-d — AI code review content generation deleted; reuse pr.rs stubs.
+pub use super::pr::{AIClient, GenerateCodeReviewContentRequest, OutputType};
 use crate::{
-    ai::generate_code_review_content::api::{GenerateCodeReviewContentRequest, OutputType},
     code_review::git_dialog::{
         interactive_path_future,
         pr::{create_pr_with_ai_content, show_pr_created_toast},

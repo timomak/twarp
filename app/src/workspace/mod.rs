@@ -1,10 +1,9 @@
 mod action;
 mod active_session;
-pub mod bonus_grant_notification_model;
 #[cfg(target_os = "macos")]
 mod cli_install;
 mod close_session_confirmation_dialog;
-pub mod delete_conversation_confirmation_dialog;
+// twarp: 2c-d — delete_conversation_confirmation_dialog deleted (AI conversation only)
 mod global_actions;
 pub mod header_toolbar_editor;
 pub mod header_toolbar_item;
@@ -14,16 +13,37 @@ mod lightbox_view;
 mod native_modal;
 mod one_time_modal_model;
 mod registry;
-pub mod rewind_confirmation_dialog;
+// twarp: 2c-d — rewind_confirmation_dialog deleted (AI conversation only)
 pub mod sync_inputs;
 pub mod tab_settings;
 mod toast_stack;
 pub mod util;
 pub mod view;
 
-use crate::ai::blocklist::NEW_AGENT_PANE_LABEL;
-use crate::ai::skills::SkillManager;
-use crate::ai::AIRequestUsageModel;
+// twarp: 2c-d — AI blocklist / skills / usage deleted; stubs.
+pub const NEW_AGENT_PANE_LABEL: &str = "New agent pane";
+pub struct SkillManager;
+impl warpui::Entity for SkillManager {
+    type Event = ();
+}
+impl warpui::SingletonEntity for SkillManager {}
+#[allow(dead_code)]
+impl SkillManager {
+    pub fn active_bundled_skill<C>(&self, _: &str, _: &C) -> Option<()> {
+        None
+    }
+}
+pub struct AIRequestUsageModel;
+impl warpui::Entity for AIRequestUsageModel {
+    type Event = ();
+}
+impl warpui::SingletonEntity for AIRequestUsageModel {}
+#[allow(dead_code)]
+impl AIRequestUsageModel {
+    pub fn has_any_ai_remaining<C>(&self, _: &C) -> bool {
+        false
+    }
+}
 use crate::channel::Channel;
 use crate::code;
 use crate::features::FeatureFlag;
@@ -107,8 +127,7 @@ pub fn init(app: &mut AppContext) {
     modal::init(app);
     native_modal::init(app);
     lightbox_view::init(app);
-    rewind_confirmation_dialog::init(app);
-    delete_conversation_confirmation_dialog::init(app);
+    // twarp: 2c-d — rewind_confirmation_dialog and delete_conversation_confirmation_dialog inits removed
     crate::tab_configs::remove_confirmation_dialog::init(app);
     hoa_onboarding::init(app);
     tab_configs::session_config_modal::init(app);
@@ -120,7 +139,7 @@ pub fn init(app: &mut AppContext) {
     view::global_search::view::GlobalSearchView::init(app);
     view::right_panel::RightPanelView::init(app);
     header_toolbar_editor::init(app);
-    view::conversation_list::view::register_conversation_list_view_bindings(app);
+    // twarp: 2c-d — conversation_list removed
 
     settings_view::init_actions_from_parent_view(app, &id!("Workspace"), |settings_action| {
         WorkspaceAction::DispatchToSettingsTab(settings_action)
@@ -1224,7 +1243,7 @@ pub fn init(app: &mut AppContext) {
     // `workspace:toggle_ai_assistant` key to preserve any user customizations.
     app.register_editable_bindings([EditableBinding::new(
         "workspace:toggle_ai_assistant",
-        *NEW_AGENT_PANE_LABEL,
+        NEW_AGENT_PANE_LABEL,
         WorkspaceAction::NewPaneInAgentMode {
             entrypoint: AgentModeEntrypoint::NewPaneBinding,
             zero_state_prompt_suggestion_type: None,

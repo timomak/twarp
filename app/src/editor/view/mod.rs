@@ -45,16 +45,113 @@ use warpui::ui_components::button::ButtonTooltipPosition;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::{elements, ViewHandle};
 
-use crate::ai::agent::ImageContext;
-use crate::ai::blocklist::{BlocklistAIContextModel, PendingAttachment, PendingFile};
+// twarp: 2c-d — AI agent / blocklist / context menu deleted; stubs.
+pub struct ImageContext {
+    pub data: String,
+    pub file_name: String,
+    pub mime_type: String,
+    pub is_figma: bool,
+}
+// twarp: 2c-d — re-export from input for type unification.
+pub use crate::terminal::input::BlocklistAIContextModel;
+#[allow(dead_code)]
+pub enum PendingAttachment {
+    File(PendingFile),
+    Other,
+}
+pub struct PendingFile {
+    pub file_path: std::path::PathBuf,
+    pub file_name: String,
+    pub mime_type: String,
+}
+// twarp: 2c-d — full enum with variants used by callers in terminal::input
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum AIContextMenuSearchableAction {
+    InsertText {
+        text: String,
+    },
+    InsertFilePath {
+        file_path: std::path::PathBuf,
+    },
+    InsertDriveObject {
+        // twarp: 2c-d — fields elided; AI deleted
+        object_type: String,
+        object_uid: String,
+    },
+    InsertPlan {
+        ai_document_uid: crate::app_state::AIDocumentId,
+    },
+    InsertConversation {
+        conversation_id: crate::app_state::AIConversationId,
+    },
+    InsertDiffSet {
+        diff_mode: crate::code_review::diff_state::DiffMode,
+    },
+    InsertSkill {
+        name: String,
+    },
+}
+pub struct AIContextMenu;
+#[allow(dead_code)]
+impl AIContextMenu {
+    pub fn new<A>(_: &mut A) -> Self {
+        Self
+    }
+    pub fn select_current_item<C>(&mut self, _: &mut C) {}
+    // twarp: 2c-d — bulk stubs for AI-removed methods on AIContextMenu
+    pub fn close<C>(&mut self, _: &mut C) {}
+    pub fn handle_action<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn reset_menu_state<C>(&mut self, _: &mut C) {}
+    pub fn set_input_mode<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn set_is_cli_agent_input<C>(&mut self, _: bool, _: &mut C) {}
+    pub fn set_is_in_ambient_agent<C>(&mut self, _: bool, _: &mut C) {}
+    pub fn set_is_shared_session_viewer<C>(&mut self, _: bool, _: &mut C) {}
+    pub fn update_search_query<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn should_render<C>(&self, _: &C) -> bool {
+        false
+    }
+}
+impl warpui::Entity for AIContextMenu {
+    type Event = AIContextMenuEvent;
+}
+impl warpui::View for AIContextMenu {
+    fn ui_name() -> &'static str {
+        "AIContextMenu/twarp-stub"
+    }
+    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+        warpui::elements::Empty::new().finish()
+    }
+}
+#[derive(Clone, Debug)]
+pub struct AIContextMenuAction;
+impl warpui::TypedActionView for AIContextMenu {
+    type Action = AIContextMenuAction;
+}
+#[derive(Debug, Clone, Copy)]
+pub enum AIContextMenuCategory {
+    Other,
+}
+pub enum AIContextMenuEvent {
+    Other,
+    Close {
+        item_count: usize,
+        query_length: usize,
+    },
+    ResultAccepted {
+        item_count: usize,
+        query_length: usize,
+        accepted_position: usize,
+        action: AIContextMenuSearchableAction,
+    },
+    CategorySelected {
+        category: AIContextMenuCategory,
+    },
+}
 use crate::appearance::Appearance;
 use crate::channel::{Channel, ChannelState};
 use crate::editor::accept_autosuggestion_keybinding_view::AcceptAutosuggestionKeybinding;
 use crate::editor::autosuggestion_ignore_view::{AutosuggestionIgnore, AutosuggestionIgnoreEvent};
-use crate::search::ai_context_menu::mixer::AIContextMenuSearchableAction;
-use crate::search::ai_context_menu::view::{
-    AIContextMenu, AIContextMenuCategory, AIContextMenuEvent,
-};
 use crate::server::telemetry::TelemetryEvent;
 use crate::settings_view::flags;
 use crate::ui_components::buttons::icon_button;
@@ -62,7 +159,21 @@ use crate::ui_components::icons;
 use crate::view_components::DismissibleToast;
 use crate::vim_registers::{RegisterContent, VimRegisters};
 use crate::workspace::ToastStack;
-use crate::{ai::blocklist::InputType, settings::AISettings};
+// twarp: 2c-d — AI blocklist InputType deleted; re-export from terminal::input.
+use crate::settings::AISettings;
+pub use crate::terminal::input::InputType;
+#[allow(dead_code)]
+struct _UnusedInputTypeStub;
+#[allow(dead_code)]
+impl _UnusedInputTypeStub {
+    // twarp: 2c-d — predicate stubs (replaced by terminal::input::InputType)
+    pub fn is_ai(&self) -> bool {
+        false
+    }
+    pub fn is_shell(&self) -> bool {
+        true
+    }
+}
 
 use crate::editor::RangeExt;
 use crate::features::FeatureFlag;
@@ -81,7 +192,9 @@ use crate::util::clipboard::clipboard_content_with_escaped_paths;
 use crate::util::color::{ContrastingColor, MinimumAllowedContrast};
 use crate::util::image::{resize_image, MAX_IMAGE_COUNT_FOR_QUERY, MAX_IMAGE_SIZE_BYTES};
 use crate::util::merge_ranges;
-use crate::{workspace::Workspace, BlocklistAIHistoryModel};
+// twarp: 2c-d — BlocklistAIHistoryModel deleted; re-export from input for type unification.
+pub use crate::terminal::input::BlocklistAIHistoryModel;
+use crate::workspace::Workspace;
 use anyhow::Result;
 use core::f32;
 use std::path::Path;
@@ -3034,17 +3147,18 @@ impl EditorView {
         );
 
         let ai_context_menu_state = if options.include_ai_context_menu {
-            let ai_context_menu = ctx.add_typed_action_view(AIContextMenu::new);
+            let ai_context_menu = ctx.add_typed_action_view(|ctx| AIContextMenu::new(ctx));
             ctx.subscribe_to_view(
                 &ai_context_menu,
                 |me, _, event: &AIContextMenuEvent, ctx| {
                     let is_udi_enabled =
                         InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
-                    let current_input_mode = if me.is_ai_input {
-                        InputType::AI
-                    } else {
-                        InputType::Shell
-                    };
+                    let current_input_mode: crate::server::telemetry::events::InputType =
+                        if me.is_ai_input {
+                            InputType::AI.into()
+                        } else {
+                            InputType::Shell.into()
+                        };
                     match event {
                         AIContextMenuEvent::Close {
                             item_count,
@@ -3053,7 +3167,7 @@ impl EditorView {
                             send_telemetry_from_ctx!(
                                 TelemetryEvent::AtMenuInteracted {
                                     action: "cancelled".to_string(),
-                                    item_count: *item_count,
+                                    item_count: Some(*item_count),
                                     query_length: Some(*query_length),
                                     is_udi_enabled,
                                     current_input_mode,
@@ -3069,11 +3183,12 @@ impl EditorView {
                             action,
                             item_count,
                             query_length,
+                            accepted_position: _,
                         } => {
                             send_telemetry_from_ctx!(
                                 TelemetryEvent::AtMenuInteracted {
                                     action: "item_selected".to_string(),
-                                    item_count: *item_count,
+                                    item_count: Some(*item_count),
                                     query_length: Some(*query_length),
                                     is_udi_enabled,
                                     current_input_mode,
@@ -3090,6 +3205,7 @@ impl EditorView {
                             ctx.focus_self();
                             ctx.notify();
                         }
+                        AIContextMenuEvent::Other => {}
                     }
                 },
             );
@@ -4267,7 +4383,9 @@ impl EditorView {
                 BlocklistAIHistoryModel::as_ref(ctx).active_conversation(terminal_view.id())
             })
             .is_some_and(|conversation| {
-                conversation.status().is_in_progress() && conversation.exchange_count() > 0
+                // twarp: 2c-d — conversation status checks AI fields; never true.
+                let _ = conversation.status();
+                false
             });
 
         // If there is a pending passive ai block, we don't want ctrl+c to clear the buffer.

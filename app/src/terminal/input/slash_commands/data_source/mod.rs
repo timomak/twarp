@@ -15,24 +15,56 @@ use warp_core::ui::appearance::Appearance;
 use warpui::fonts::FamilyId;
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
-use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::ai::skills::{SkillDescriptor, SkillManager};
+// twarp: 2c-d — AI history / skills / agent view / CLI subagent / cli agent sessions deleted; stubs.
+use crate::context_chips::display::BlocklistAIHistoryModel;
+use crate::context_chips::display_chip::AgentViewController;
 use crate::search::data_source::{Query, QueryResult};
 use crate::search::mixer::DataSourceRunErrorWrapper;
 use crate::search::slash_command_menu::fuzzy_match::SlashCommandFuzzyMatchResult;
 use crate::search::slash_command_menu::static_commands::Availability;
-use crate::terminal::cli_agent_sessions::{
-    CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
-};
 use crate::terminal::model::session::SessionType;
 use warp_core::ui::Icon as WarpIcon;
 
+#[derive(Clone)]
+pub struct SkillDescriptor {
+    // twarp: 2c-d — fields needed by callers
+    pub name: String,
+    pub reference: ai::skills::SkillReference,
+    pub provider: ai::skills::SkillProvider,
+    pub description: String,
+    pub icon_override: Option<warp_core::ui::Icon>,
+}
+// twarp: 2c-d — re-export SkillManager from input for type unification.
+pub use crate::terminal::input::SkillManager;
+pub use crate::terminal::view::CLIAgentInputState;
+pub struct CLIAgentSessionsModel;
+impl warpui::Entity for CLIAgentSessionsModel {
+    type Event = CLIAgentSessionsModelEvent;
+}
+impl warpui::SingletonEntity for CLIAgentSessionsModel {}
+#[allow(dead_code)]
+impl CLIAgentSessionsModel {
+    pub fn is_input_open(&self, _: warpui::EntityId) -> bool {
+        false
+    }
+    pub fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSession> {
+        None
+    }
+}
+pub struct CLIAgentSession {
+    pub input_state: CLIAgentInputState,
+    pub agent: crate::app_state::CLIAgent,
+}
+pub enum CLIAgentSessionsModelEvent {
+    InputSessionChanged { terminal_view_id: warpui::EntityId },
+    Other,
+}
+pub use crate::terminal::input::{
+    AgentViewControllerEvent, CLISubagentController, CLISubagentEvent,
+};
+
 use super::AcceptSlashCommandOrSavedPrompt;
 use crate::{
-    ai::blocklist::{
-        agent_view::{AgentViewController, AgentViewControllerEvent},
-        block::cli_controller::{CLISubagentController, CLISubagentEvent},
-    },
     search::{
         slash_command_menu::{
             static_commands::commands::{self, COMMAND_REGISTRY},

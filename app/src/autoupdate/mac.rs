@@ -34,8 +34,8 @@ use super::{release_assets_directory_url, DownloadReady};
 // Relative path to the directory containing old executables from before an autoupdate.
 //
 // TODO(vorporeal): This and relevant code should be deleted after auto-updates have been
-//      storing the old executable in the user application data directory for a couple
-//      releases.
+//     storing the old executable in the user application data directory for a couple
+//     releases.
 const OLD_EXECUTABLE_PATH: &str = "Contents/MacOS/old";
 
 // Name of the old executable file that was kept around during an autoupdate.

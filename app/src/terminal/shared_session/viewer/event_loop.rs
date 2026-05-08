@@ -1,8 +1,10 @@
-use crate::ai::agent::AIAgentActionId;
-use crate::ai::blocklist::block::cli_controller::LongRunningCommandControlState;
-use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
+// twarp: 2c-d — AI agent / blocklist deleted; reuse interaction_mode + shared_handlers stubs.
 use crate::features::FeatureFlag;
+pub use crate::terminal::model::block::interaction_mode::{
+    AIAgentActionId, LongRunningCommandControlState,
+};
 use crate::terminal::model::block::AgentInteractionMetadata;
+pub use crate::terminal::shared_session::shared_handlers::BlocklistAIHistoryModel;
 use parking_lot::FairMutex;
 use session_sharing_protocol::common::{
     OrderedTerminalEvent, OrderedTerminalEventType, Scrollback, WindowSize,
@@ -258,8 +260,11 @@ impl EventLoop {
                                         view.ai_controller().update(ctx, |c, ctx| {
                                             // Set the participant who initiated this response
                                             if let Some(response_initiator) = response_initiator {
+                                                // twarp: 2c-d — pad with () for stub signature
                                                 c.set_current_response_initiator(
                                                     response_initiator,
+                                                    (),
+                                                    ctx,
                                                 );
                                             }
 
@@ -281,8 +286,8 @@ impl EventLoop {
                                     });
                                 }
                             }
-                            Err(err) => {
-                                log::warn!("Failed to decode agent response event: {err}");
+                            Err(_err) => {
+                                log::warn!("Failed to decode agent response event");
                             }
                         }
                     }

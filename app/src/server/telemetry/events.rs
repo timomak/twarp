@@ -19,22 +19,12 @@ use warpui::keymap::Keystroke;
 use warpui::notification::{NotificationSendError, RequestPermissionsOutcome};
 use warpui::rendering::ThinStrokes;
 
-use crate::ai::agent::api::ServerConversationToken;
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::AIAgentActionId;
-use crate::ai::agent::AIAgentExchangeId;
-use crate::ai::agent::AIAgentInput as FullAIAgentInput;
-use crate::ai::agent::AIIdentifiers;
-use crate::ai::agent::EntrypointType;
-use crate::ai::agent::PassiveSuggestionTrigger;
-use crate::ai::agent::ServerOutputId;
-use crate::ai::agent::SuggestedLoggingId;
-use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
-use crate::ai::blocklist::AIBlockResponseRating;
-use crate::ai::blocklist::CommandExecutionPermissionAllowedReason;
-use crate::ai::blocklist::InputType;
-use crate::ai::mcp::TemplateVariable;
+// twarp: 2c-d — AI types from deleted modules replaced with local stubs.
+// Variant *definitions* are 2d-scope (kept). Field types referencing deleted
+// AI types are stubbed below to preserve schema shape.
+use crate::app_state::AIConversationId;
+use crate::app_state::AmbientAgentTaskId;
+use crate::app_state::ServerConversationToken;
 use crate::auth::auth_manager::LoginGatedFeature;
 use crate::channel::Channel;
 use crate::cloud_object::{
@@ -65,8 +55,7 @@ use crate::settings::AgentModeCodingPermissionsType;
 use crate::settings_view::TeamsInviteOption;
 use crate::tab::TabTelemetryAction;
 use crate::terminal::block_list_viewport::InputMode;
-use crate::terminal::cli_agent_sessions::CLIAgentInputEntrypoint;
-use crate::terminal::cli_agent_sessions::CLIAgentRichInputCloseReason;
+// twarp: 2c-d — CLIAgentInputEntrypoint/CLIAgentRichInputCloseReason stubbed below.
 use crate::terminal::input::TelemetryInputSuggestionsMode;
 use crate::terminal::model::ansi::WarpificationUnavailableReason;
 use crate::terminal::model::block::BlockId;
@@ -77,7 +66,7 @@ use crate::terminal::settings::AltScreenPaddingMode;
 use crate::terminal::shared_session::SharedSessionActionSource;
 use crate::terminal::shell::ShellType;
 use crate::terminal::ssh::ssh_detection::SshInteractiveSessionDetected;
-use crate::terminal::view::block_onboarding::onboarding_agentic_suggestions_block::OnboardingChipType;
+// twarp: 2c-d — OnboardingChipType stubbed below.
 use crate::terminal::view::inline_banner::ZeroStatePromptSuggestionTriggeredFrom;
 use crate::terminal::view::inline_banner::ZeroStatePromptSuggestionType;
 use crate::terminal::view::BlockEntity;
@@ -102,6 +91,69 @@ use crate::workspace::tab_settings::WorkspaceDecorationVisibility;
 use crate::workspace::TabMovement;
 use session_sharing_protocol::sharer::SessionSourceType;
 use warp_core::interval_timer::TimingDataPoint;
+
+// twarp: 2d — stub types replacing deleted AI types referenced by telemetry variants.
+// Variant *definitions* are 2d-scope (kept). These stubs preserve schema shape but
+// are never constructed — emission call sites are deleted.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AIAgentActionId(pub String);
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AIAgentExchangeId(pub String);
+// twarp: 2c-d — AIIdentifiers shape preserved for telemetry call-sites.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AIIdentifiers {
+    pub server_output_id: Option<String>,
+    pub server_conversation_id: Option<String>,
+    pub client_exchange_id: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum EntrypointType {
+    Other,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum PassiveSuggestionTrigger {
+    Other,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ServerOutputId(pub String);
+impl std::fmt::Display for ServerOutputId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SuggestedLoggingId(pub String);
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum AIBlockResponseRating {
+    Other,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum CommandExecutionPermissionAllowedReason {
+    Other,
+}
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum InputType {
+    Other,
+    Shell,
+    AI,
+}
+// twarp: 2c-d — terminal::input::InputType now re-exports events::InputType, so identity From is implicit
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TemplateVariable {
+    pub name: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum OnboardingChipType {
+    Other,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum CLIAgentInputEntrypoint {
+    Other,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum CLIAgentRichInputCloseReason {
+    Other,
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct BootstrappingInfo {
@@ -1032,47 +1084,7 @@ pub enum AIAgentInput {
     PassiveSuggestionResult,
 }
 
-impl From<FullAIAgentInput> for AIAgentInput {
-    fn from(input: FullAIAgentInput) -> Self {
-        match input {
-            FullAIAgentInput::UserQuery { query, .. } => Self::UserQuery { query },
-            FullAIAgentInput::AutoCodeDiffQuery { query, .. } => Self::AutoCodeDiffQuery { query },
-            FullAIAgentInput::ResumeConversation { .. } => Self::ResumeConversation,
-            FullAIAgentInput::InitProjectRules { display_query, .. } => {
-                Self::InitProjectRules { display_query }
-            }
-            FullAIAgentInput::CreateEnvironment { display_query, .. } => {
-                Self::CreateEnvironment { display_query }
-            }
-            FullAIAgentInput::TriggerPassiveSuggestion { trigger, .. } => {
-                Self::TriggerSuggestPrompt { trigger }
-            }
-            FullAIAgentInput::ActionResult { result, .. } => Self::ActionResult {
-                action_id: result.id,
-            },
-            FullAIAgentInput::CreateNewProject { query, .. } => Self::CreateNewProject { query },
-            FullAIAgentInput::CloneRepository { clone_repo_url, .. } => Self::CloneRepository {
-                url: clone_repo_url.into_url(),
-            },
-            FullAIAgentInput::CodeReview { .. } => Self::CodeReview,
-            FullAIAgentInput::FetchReviewComments { .. } => Self::FetchReviewComments,
-            FullAIAgentInput::SummarizeConversation { .. } => Self::SummarizeConversation,
-            FullAIAgentInput::InvokeSkill { skill, .. } => Self::InvokeSkill {
-                skill_name: skill.name.clone(),
-            },
-            FullAIAgentInput::StartFromAmbientRunPrompt { .. } => Self::StartFromAmbientRunPrompt,
-            FullAIAgentInput::MessagesReceivedFromAgents { messages } => {
-                Self::MessagesReceivedFromAgents {
-                    message_count: messages.len(),
-                }
-            }
-            FullAIAgentInput::EventsFromAgents { events } => Self::EventsFromAgents {
-                event_count: events.len(),
-            },
-            FullAIAgentInput::PassiveSuggestionResult { .. } => Self::PassiveSuggestionResult,
-        }
-    }
-}
+// twarp: 2c-d — From<FullAIAgentInput> impl deleted (source type removed in 2c-d).
 
 /// The origin of an agent view entry, for telemetry purposes.
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -1118,56 +1130,8 @@ pub enum TelemetryAgentViewEntryOrigin {
     ThirdPartyCloudAgent,
 }
 
-impl From<AgentViewEntryOrigin> for TelemetryAgentViewEntryOrigin {
-    fn from(origin: AgentViewEntryOrigin) -> Self {
-        match origin {
-            AgentViewEntryOrigin::Input {
-                was_prompt_autodetected,
-            } => Self::Input {
-                was_prompt_autodetected,
-            },
-            AgentViewEntryOrigin::ConversationSelector => Self::ConversationSelector,
-            AgentViewEntryOrigin::AgentModeHomepage => Self::AgentModeHomepage,
-            AgentViewEntryOrigin::AgentViewBlock => Self::AgentViewBlock,
-            AgentViewEntryOrigin::AIDocument => Self::AIDocument,
-            AgentViewEntryOrigin::AutoFollowUp => Self::AutoFollowUp,
-            AgentViewEntryOrigin::RestoreExistingConversation => Self::RestoreExistingConversation,
-            AgentViewEntryOrigin::SharedSessionSelection => Self::SharedSessionSelection,
-            AgentViewEntryOrigin::AgentRequestedNewConversation => {
-                Self::AgentRequestedNewConversation
-            }
-            AgentViewEntryOrigin::AcceptedPromptSuggestion => Self::AcceptedPromptSuggestion,
-            AgentViewEntryOrigin::AcceptedUnitTestSuggestion => Self::AcceptedUnitTestSuggestion,
-            AgentViewEntryOrigin::AcceptedPassiveCodeDiff => Self::AcceptedPassiveCodeDiff,
-            AgentViewEntryOrigin::InlineCodeReview => Self::InlineCodeReview,
-            AgentViewEntryOrigin::CloudAgent => Self::AmbientAgent,
-            AgentViewEntryOrigin::ThirdPartyCloudAgent => Self::ThirdPartyCloudAgent,
-            AgentViewEntryOrigin::Cli => Self::Cli,
-            AgentViewEntryOrigin::ImageAdded => Self::ImageAdded,
-            AgentViewEntryOrigin::SlashCommand { .. } => Self::SlashCommand,
-            AgentViewEntryOrigin::CodeReviewContext => Self::CodeReviewContext,
-            AgentViewEntryOrigin::LongRunningCommand => Self::LongRunningCommand,
-            AgentViewEntryOrigin::ContinueConversationButton => Self::ContinueConversationButton,
-            AgentViewEntryOrigin::ViewPassiveCodeDiffDetails => Self::ViewPassiveCodeDiffDetails,
-            AgentViewEntryOrigin::ResumeConversationButton => Self::ResumeConversationButton,
-            AgentViewEntryOrigin::CodexModal => Self::CodexModal,
-            AgentViewEntryOrigin::InlineHistoryMenu => Self::HistoryMenu,
-            AgentViewEntryOrigin::InlineConversationMenu => Self::InlineConversationMenu,
-            AgentViewEntryOrigin::PromptChip => Self::PromptChip,
-            AgentViewEntryOrigin::OnboardingCallout => Self::OnboardingCallout,
-            AgentViewEntryOrigin::ConversationListView => Self::ConversationListView,
-            AgentViewEntryOrigin::Onboarding => Self::Onboarding,
-            AgentViewEntryOrigin::Keybinding => Self::Keybinding,
-            AgentViewEntryOrigin::SlashInit => Self::SlashInit,
-            AgentViewEntryOrigin::CreateEnvironment => Self::CreateEnvironment,
-            AgentViewEntryOrigin::ProjectEntry => Self::ProjectEntry,
-            AgentViewEntryOrigin::ClearBuffer => Self::ClearBuffer,
-            AgentViewEntryOrigin::DefaultSessionMode => Self::DefaultSessionMode,
-            AgentViewEntryOrigin::ChildAgent => Self::ChildAgent,
-            AgentViewEntryOrigin::LinearDeepLink => Self::LinearDeepLink,
-        }
-    }
-}
+// twarp: 2c-d — From<AgentViewEntryOrigin> impl deleted (source type's full
+// variant set removed in 2c-d; stub variants don't match telemetry's variants).
 
 #[derive(Clone, Copy, Debug, Serialize)]
 pub enum SlashMenuSource {

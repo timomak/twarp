@@ -3,8 +3,22 @@ use std::collections::HashSet;
 use warp_core::features::FeatureFlag;
 use warpui::{AppContext, EntityId, SingletonEntity};
 
-use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::ai::blocklist::InputConfig;
+// twarp: 2c-d — BlocklistAIHistoryModel deleted; stub.
+pub struct BlocklistAIHistoryModel;
+impl warpui::Entity for BlocklistAIHistoryModel {
+    type Event = crate::terminal::input::BlocklistAIHistoryEvent;
+}
+impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+#[allow(dead_code)]
+impl BlocklistAIHistoryModel {
+    pub fn all_ai_queries<I>(
+        &self,
+        _: I,
+    ) -> std::iter::Empty<crate::input_suggestions::AIQueryHistory> {
+        std::iter::empty()
+    }
+}
+use crate::app_state::InputConfig;
 use crate::input_suggestions::HistoryInputSuggestion;
 use crate::settings::AISettings;
 use crate::suggestions::ignored_suggestions_model::{IgnoredSuggestionsModel, SuggestionType};
@@ -24,7 +38,7 @@ impl UpArrowHistoryConfig {
     /// When the input is locked to a specific type, only that type is included.
     /// When unlocked (auto-detection), both types are included.
     pub fn for_input_config(input_config: &InputConfig) -> Self {
-        if input_config.is_locked {
+        if input_config.is_locked() {
             Self {
                 include_commands: input_config.is_shell(),
                 include_prompts: input_config.is_ai(),

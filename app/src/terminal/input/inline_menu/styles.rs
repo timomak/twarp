@@ -9,7 +9,10 @@ use warp_core::ui::theme::{Fill, WarpTheme};
 use warpui::color::ColorU;
 use warpui::{AppContext, SingletonEntity};
 
-use crate::ai::blocklist::agent_view::agent_view_bg_fill;
+// twarp: 2c-d — agent_view_bg_fill deleted; stub.
+pub fn agent_view_bg_fill<C>(_: C) -> warpui::color::ColorU {
+    warpui::color::ColorU::new(0, 0, 0, 0)
+}
 use crate::search::result_renderer::ItemHighlightState;
 
 /// Font size used for inline menu items.
@@ -31,7 +34,11 @@ pub const HEADER_BORDER: f32 = 1.;
 pub fn menu_background_color(app: &AppContext) -> ColorU {
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
-    theme.background().blend(&agent_view_bg_fill(app)).into()
+    // twarp: 2c-d — Fill is warp_core::ui::theme::Fill; use Solid variant on theme module.
+    theme
+        .background()
+        .blend(&warp_core::ui::theme::Fill::Solid(agent_view_bg_fill(app)))
+        .into()
 }
 
 pub fn item_background(

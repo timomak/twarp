@@ -14,18 +14,23 @@ use warpui::event::ModifiersState;
 use warpui::units::Lines;
 use warpui::EntityId;
 
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::AIAgentExchangeId;
-use crate::ai::blocklist::codebase_index_speedbump_banner::CodebaseIndexSpeedbumpBannerAction;
+// twarp: 2c-d — AI agent exchange id / codebase index speedbump banner / setup banner deleted; stubs.
+use crate::app_state::AIConversationId;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::server::telemetry::{AgentModeRewindEntrypoint, PaletteSource, ToggleBlockFilterSource};
 use crate::terminal::available_shells::AvailableShell;
 use crate::terminal::model::completions::ShellCompletion;
 use crate::terminal::shared_session::SharedSessionActionSource;
 use crate::terminal::ssh::error::SshErrorBlockAction;
-use crate::terminal::view::inline_banner::AgentModeSetupSpeedbumpBannerAction;
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
 use crate::terminal::view::RichContentSecretTooltipInfo;
+
+// twarp: 2c-d — re-export to unify cross-file types.
+pub use crate::terminal::view::rich_content::AIAgentExchangeId;
+// twarp: 2c-d — re-export from view.rs to unify cross-file types.
+pub use crate::terminal::view::{
+    AgentModeSetupSpeedbumpBannerAction, CodebaseIndexSpeedbumpBannerAction,
+};
 use crate::workflows::workflow::Workflow;
 use crate::{
     server::ids::SyncId,
@@ -44,15 +49,19 @@ use crate::{
     },
 };
 
+// twarp: 2c-d — AnonymousUserLoginBannerAction (AI signup) deleted; stub locally.
 use super::inline_banner::{
-    AnonymousUserLoginBannerAction, AwsBedrockLoginBannerAction, AwsCliNotInstalledBannerAction,
-    OpenInWarpBannerAction, VimModeBannerAction,
+    AwsBedrockLoginBannerAction, AwsCliNotInstalledBannerAction, OpenInWarpBannerAction,
+    VimModeBannerAction,
 };
+
+// twarp: 2c-d — re-export from view.rs to unify cross-file types.
 use super::{
     AliasExpansionBannerAction, ContextMenuAction, GridHighlightedLink, InputContextMenuAction,
     NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction, RichContentLink,
     SSHBannerAction, TerminalEditor,
 };
+pub use crate::terminal::view::AnonymousUserLoginBannerAction;
 
 pub use onboarding::OnboardingIntention;
 

@@ -9,10 +9,70 @@ use super::{
     },
     LocalOnlyIconState, SettingsAction, SettingsSection, ToggleSettingActionPair, ToggleState,
 };
-use crate::{
-    ai::persisted_workspace::{
-        EnablementState, LspRepoStatus, PersistedWorkspace, PersistedWorkspaceEvent,
+// twarp: 2c-d — persisted_workspace deleted; stubs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EnablementState {
+    Enabled,
+    Disabled,
+    Suggested,
+    Yes,
+}
+#[allow(dead_code)]
+#[derive(Clone)]
+pub enum LspRepoStatus {
+    DisabledAndInstalled {},
+    DisabledAndNotInstalled {},
+    Installing {},
+    CheckingForInstallation,
+}
+#[allow(dead_code)]
+impl LspRepoStatus {
+    pub fn from_installation_status<S, T>(_: S, _: T) -> Self {
+        Self::CheckingForInstallation
+    }
+}
+pub struct PersistedWorkspace;
+impl warpui::Entity for PersistedWorkspace {
+    type Event = PersistedWorkspaceEvent;
+}
+impl warpui::SingletonEntity for PersistedWorkspace {}
+#[allow(dead_code)]
+impl PersistedWorkspace {
+    pub fn total_lsp_server_count(&self, _: bool) -> usize {
+        0
+    }
+    pub fn workspaces(&self) -> std::iter::Empty<ai::workspace::WorkspaceMetadata> {
+        std::iter::empty()
+    }
+    // twarp: 2c-d — bulk stubs
+    pub fn detect_lsp_workspace_status<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> LspRepoStatus {
+        LspRepoStatus::CheckingForInstallation
+    }
+    pub fn disable_lsp_server_for_path<A, B>(&mut self, _: A, _: B) {}
+    pub fn all_lsp_servers<A>(
+        &self,
+        _: A,
+        _: bool,
+    ) -> Option<std::iter::Empty<(LSPServerType, EnablementState)>> {
+        None
+    }
+}
+pub enum PersistedWorkspaceEvent {
+    InstallationSucceeded,
+    InstallationFailed,
+    Other,
+    AvailableServersDetected {
+        workspace_path: std::path::PathBuf,
+        servers: Vec<LSPServerType>,
     },
+    InstallStatusUpdate {
+        server_type: LSPServerType,
+        status: (),
+    },
+    WorkspaceAdded,
+}
+
+use crate::{
     appearance::Appearance,
     code::lsp_telemetry::{LspControlActionType, LspEnablementSource, LspTelemetryEvent},
     send_telemetry_from_ctx,
@@ -252,7 +312,8 @@ impl CodeSettingsPageView {
             }
             PersistedWorkspaceEvent::InstallationSucceeded
             | PersistedWorkspaceEvent::InstallationFailed
-            | PersistedWorkspaceEvent::WorkspaceAdded { .. } => {
+            | PersistedWorkspaceEvent::WorkspaceAdded { .. }
+            | PersistedWorkspaceEvent::Other => {
                 ctx.notify();
             }
         });
@@ -657,17 +718,8 @@ impl TypedActionView for CodeSettingsPageView {
                         },
                         ctx
                     );
-                    let workspace_path = workspace_path.clone();
-                    PersistedWorkspace::handle(ctx).update(ctx, |workspace, _ctx| {
-                        workspace.enable_lsp_server_for_path(&workspace_path, *server_type);
-                        #[cfg(feature = "local_fs")]
-                        workspace.execute_lsp_task(
-                            crate::ai::persisted_workspace::LspTask::Spawn {
-                                file_path: workspace_path,
-                            },
-                            _ctx,
-                        );
-                    });
+                    // twarp: 2c-d — PersistedWorkspace LSP enable removed (AI deleted).
+                    let _ = (workspace_path, server_type);
                 }
                 ctx.notify();
             }
@@ -758,23 +810,8 @@ impl TypedActionView for CodeSettingsPageView {
                     },
                     ctx
                 );
-                #[cfg(feature = "local_fs")]
-                {
-                    let workspace_path = workspace_path.clone();
-                    let server_type = *server_type;
-                    PersistedWorkspace::handle(ctx).update(ctx, |workspace, _ctx| {
-                        workspace.execute_lsp_task(
-                            crate::ai::persisted_workspace::LspTask::Install {
-                                file_path: workspace_path.clone(),
-                                repo_root: workspace_path,
-                                server_type,
-                            },
-                            _ctx,
-                        );
-                    });
-                }
-                #[cfg(not(feature = "local_fs"))]
-                let _ = workspace_path;
+                // twarp: 2c-d — PersistedWorkspace LSP install removed (AI deleted).
+                let _ = (workspace_path, server_type);
                 ctx.notify();
             }
             CodeSettingsPageAction::EnableSuggestedLspServer {
@@ -789,18 +826,8 @@ impl TypedActionView for CodeSettingsPageView {
                     },
                     ctx
                 );
-                let workspace_path = workspace_path.clone();
-                let server_type = *server_type;
-                PersistedWorkspace::handle(ctx).update(ctx, |workspace, _ctx| {
-                    workspace.enable_lsp_server_for_path(&workspace_path, server_type);
-                    #[cfg(feature = "local_fs")]
-                    workspace.execute_lsp_task(
-                        crate::ai::persisted_workspace::LspTask::Spawn {
-                            file_path: workspace_path,
-                        },
-                        _ctx,
-                    );
-                });
+                // twarp: 2c-d — PersistedWorkspace LSP enable removed (AI deleted).
+                let _ = (workspace_path, server_type);
                 ctx.notify();
             }
         }

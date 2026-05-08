@@ -1,4 +1,4 @@
-use crate::ai::blocklist::InputConfig;
+use crate::app_state::InputConfig;
 use crate::context_chips::prompt_type::PromptType;
 use crate::pane_group::TerminalViewResources;
 use crate::persistence::ModelEvent;
@@ -119,7 +119,8 @@ impl TerminalManager {
                 colors,
                 model_event_sender.clone(),
                 prompt_type,
-                initial_input_config,
+                // twarp: 2c-d — convert app_state::InputConfig to terminal::input::InputConfig
+                initial_input_config.map(Into::into),
                 None, // conversation_restoration - not used for remote
                 None, // inactive_pty_reads_rx
                 ctx,

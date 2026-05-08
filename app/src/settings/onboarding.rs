@@ -1,11 +1,12 @@
-use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
-use crate::ai::execution_profiles::{ActionPermission, WriteToPtyPermission};
+// twarp: 2c-d — AI execution profiles deleted; re-export for type unification.
 use crate::drive::settings::WarpDriveSettings;
 use crate::report_if_error;
 use crate::settings::ai::DefaultSessionMode;
 use crate::settings::{AISettings, CodeSettings};
+pub use crate::terminal::view::AIExecutionProfilesModel;
 use crate::workspace::tab_settings::TabSettings;
 use crate::workspaces::user_workspaces::UserWorkspaces;
+use crate::workspaces::workspace::{ActionPermission, WriteToPtyPermission};
 use onboarding::slides::{AgentAutonomy, AgentDevelopmentSettings};
 use onboarding::{SelectedSettings, SessionDefault, UICustomizationSettings};
 use settings::Setting as _;

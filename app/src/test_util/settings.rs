@@ -14,7 +14,7 @@ pub fn initialize_settings_for_tests_with_mode(
     is_sandboxed: bool,
 ) {
     use crate::{
-        ai::cloud_agent_settings::CloudAgentSettings,
+        // twarp: 2c-d — CloudAgentSettings removed with AI deletion.
         drive::settings::WarpDriveSettings,
         search::command_search::settings::CommandSearchSettings,
         settings::{
@@ -48,7 +48,7 @@ pub fn initialize_settings_for_tests_with_mode(
     AccessibilitySettings::register(app);
     app.update(AISettings::register_and_subscribe_to_events);
     AliasExpansionSettings::register(app);
-    CloudAgentSettings::register(app);
+    // twarp: 2c-d — CloudAgentSettings removed.
     AppEditorSettings::register(app);
     BlockVisibilitySettings::register(app);
     BlockListSettings::register(app);
@@ -103,8 +103,6 @@ pub fn initialize_settings_for_tests_with_mode(
     app.update(|ctx| {
         // Register a no-op secure storage provider for testing.
         warpui_extras::secure_storage::register_noop("test", ctx);
-
-        // Add settings models that are backed by secure storage, not user preferences.
-        ctx.add_singleton_model(ai::api_keys::ApiKeyManager::new);
+        // twarp: 2c-d — ai::api_keys::ApiKeyManager removed with AI deletion.
     });
 }

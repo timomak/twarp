@@ -1,14 +1,13 @@
 pub mod telemetry;
 
-use crate::ai::agent::conversation::ConversationStatus;
+// twarp: 2c-d — AI conversation status / CLI agent sessions deleted.
+use crate::app_state::CLIAgent;
+use crate::app_state::ConversationStatus;
 use crate::code::editor::{add_color, remove_color};
 use crate::code::icon_from_file_path;
 use crate::safe_triangle::SafeTriangle;
 use crate::send_telemetry_from_app_ctx;
-use crate::terminal::cli_agent_sessions::listener::agent_supports_rich_status;
-use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::view::TerminalViewState;
-use crate::terminal::CLIAgent;
 use crate::ui_components::icon_with_status::{
     render_icon_with_status, IconWithStatusSizing, IconWithStatusVariant,
 };
@@ -1247,14 +1246,7 @@ fn render_detail_kind_badge_icon(
         TypedPane::Terminal(terminal_pane) => {
             let terminal_view = terminal_pane.terminal_view(app);
             let terminal_view = terminal_view.as_ref(app);
-            let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
-            if let Some(icon) = cli_agent_session.and_then(|session| session.agent.icon()) {
-                let color = cli_agent_session
-                    .and_then(|session| session.agent.brand_color())
-                    .map(WarpThemeFill::Solid)
-                    .unwrap_or_else(|| theme.accent());
-                return icon.to_warpui_icon(color).finish();
-            }
+            // twarp: 2c-d — CLI agent session badge removed with AI.
 
             let icon = if terminal_view.is_ambient_agent_session(app) {
                 WarpIcon::OzCloud
@@ -2261,35 +2253,14 @@ fn resolve_icon_with_status_variant(
         TypedPane::Terminal(terminal_pane) => {
             let terminal_view = terminal_pane.terminal_view(app);
             let terminal_view = terminal_view.as_ref(app);
-            let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
-            let is_plugin_backed = cli_agent_session.is_some_and(|s| s.listener.is_some());
+            // twarp: 2c-d — CLI agent session telemetry/badge removed with AI.
             let is_ambient = terminal_view.is_ambient_agent_session(app);
             let has_conversation = terminal_view
                 .selected_conversation_display_title(app)
                 .is_some();
             let is_oz_agent = has_conversation || is_ambient;
 
-            if let Some(session) = cli_agent_session
-                .filter(|s| s.listener.is_some())
-                .filter(|s| !matches!(s.agent, CLIAgent::Unknown))
-            {
-                IconWithStatusVariant::CLIAgent {
-                    agent: session.agent,
-                    status: if agent_supports_rich_status(&session.agent) {
-                        Some(session.status.to_conversation_status())
-                    } else {
-                        None
-                    },
-                }
-            } else if let Some(session) = cli_agent_session
-                .filter(|_| !is_plugin_backed)
-                .filter(|s| !matches!(s.agent, CLIAgent::Unknown))
-            {
-                IconWithStatusVariant::CLIAgent {
-                    agent: session.agent,
-                    status: None,
-                }
-            } else if is_oz_agent {
+            if is_oz_agent {
                 IconWithStatusVariant::OzAgent {
                     status: terminal_view.selected_conversation_status_for_display(app),
                     is_ambient,
@@ -2484,13 +2455,7 @@ impl TypedPane<'_> {
             TypedPane::Terminal(terminal_pane) => {
                 let terminal_view = terminal_pane.terminal_view(app);
                 let terminal_view = terminal_view.as_ref(app);
-                if let Some(session) =
-                    CLIAgentSessionsModel::as_ref(app).session(terminal_view.id())
-                {
-                    return SummaryPaneKind::CLIAgent {
-                        agent: session.agent,
-                    };
-                }
+                // twarp: 2c-d — CLI agent summary kind removed with AI.
                 let is_ambient = terminal_view.is_ambient_agent_session(app);
                 if terminal_view
                     .selected_conversation_display_title(app)
@@ -3066,30 +3031,19 @@ fn preferred_agent_tab_titles(
 }
 
 fn terminal_agent_text(terminal_view: &TerminalView, app: &AppContext) -> TerminalAgentText {
-    let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
-    let is_plugin_backed = cli_agent_session.is_some_and(|session| session.listener.is_some());
+    // twarp: 2c-d — CLI agent session text removed with AI; only the OZ ambient agent path remains.
     let is_ambient_agent = terminal_view.is_ambient_agent_session(app);
 
     let mut agent_text = TerminalAgentText {
         is_oz_agent: is_ambient_agent,
-        cli_agent: cli_agent_session.map(|session| session.agent),
         ..Default::default()
     };
-
-    if cli_agent_session.is_some() && !is_plugin_backed {
-        return agent_text;
-    }
 
     agent_text.conversation_display_title = terminal_view.selected_conversation_display_title(app);
     agent_text.conversation_latest_user_prompt =
         terminal_view.selected_conversation_latest_user_prompt_for_tab_name(app);
     agent_text.is_oz_agent =
         agent_text.conversation_display_title.is_some() || agent_text.is_oz_agent;
-
-    if let Some(session) = cli_agent_session {
-        agent_text.cli_agent_title = session.session_context.title_like_text();
-        agent_text.cli_agent_latest_user_prompt = session.session_context.latest_user_prompt();
-    }
 
     agent_text
 }
@@ -3661,12 +3615,8 @@ fn render_summary_pane_kind_icon_circle(
                 });
             (
                 icon_element,
-                ThemeFill::Solid(
-                    agent
-                        .brand_color()
-                        .unwrap_or(ColorU::new(100, 100, 100, 255)),
-                )
-                .into(),
+                // twarp: 2c-d — brand_color returns ColorU directly
+                ThemeFill::Solid(agent.brand_color()).into(),
             )
         }
         SummaryPaneKind::Code { title } => (
@@ -5353,16 +5303,12 @@ fn render_terminal_detail_section(
     let text_colors = detail_sidecar_text_colors(theme);
     let working_directory = terminal_view.display_working_directory(app);
     let git_branch = terminal_view.current_git_branch(app);
-    let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
+    // twarp: 2c-d — CLI agent session detail removed with AI.
     let agent_text = terminal_agent_text(terminal_view, app);
     let (conversation_display_title, cli_agent_title) =
         preferred_agent_tab_titles(&agent_text, agent_tab_text_preference(app));
     let kind_label = terminal_kind_badge_label(agent_text.is_oz_agent, agent_text.cli_agent);
-    let status = if let Some(session) =
-        cli_agent_session.filter(|s| s.listener.is_some() && agent_supports_rich_status(&s.agent))
-    {
-        Some(session.status.to_conversation_status())
-    } else if agent_text.is_oz_agent {
+    let status = if agent_text.is_oz_agent {
         terminal_view.selected_conversation_status_for_display(app)
     } else {
         None

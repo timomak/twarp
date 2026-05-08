@@ -6,7 +6,15 @@ use warpui::fonts::{Properties, Weight};
 use warpui::prelude::{ConstrainedBox, Container, CrossAxisAlignment, Empty, Flex, Text};
 use warpui::{AppContext, Element, SingletonEntity};
 
-use crate::ai::blocklist::agent_view::shortcuts::render_keystroke_with_color_overrides;
+// twarp: 2c-d — render_keystroke_with_color_overrides deleted; stub.
+pub fn render_keystroke_with_color_overrides<A, B, C, D>(
+    _: A,
+    _: B,
+    _: C,
+    _: D,
+) -> Box<dyn warpui::Element> {
+    warpui::elements::Empty::new().finish()
+}
 use crate::search::slash_command_menu::static_commands::commands::COMMAND_REGISTRY;
 use crate::search::{ItemHighlightState, SearchItem};
 use crate::terminal::input::inline_menu::styles as inline_styles;
@@ -105,7 +113,7 @@ impl SearchItem for InlineItem {
                 .with_child(
                     Container::new(render_keystroke_with_color_overrides(
                         &keystroke,
-                        None,
+                        None::<warp_core::ui::theme::Fill>,
                         Some(theme.surface_overlay_3().into_solid()),
                         app,
                     ))

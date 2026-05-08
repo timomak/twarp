@@ -4,13 +4,14 @@ use warpui::prelude::Container;
 use warpui::scene::Border;
 use warpui::{AppContext, Entity, ModelHandle, SingletonEntity, View, ViewContext};
 
-use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
+// twarp: 2c-d — AI agent view deleted; re-export from input.
 use crate::terminal::input::inline_menu::model::InlineMenuModel;
 use crate::terminal::input::inline_menu::{
     InlineMenuAction, InlineMenuMessageProvider, InlineMenuPositioner,
 };
 use crate::terminal::input::message_bar::common::render_standard_message_bar;
 use crate::terminal::input::message_bar::{EmptyMessageProducer, MessageProvider};
+pub use crate::terminal::input::{AgentViewController, AgentViewControllerEvent};
 
 pub struct InlineMenuMessageBarArgs<A: InlineMenuAction, T: 'static + Send + Sync = ()> {
     pub inline_menu_model: ModelHandle<InlineMenuModel<A, T>>,

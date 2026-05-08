@@ -10,8 +10,28 @@ use warpui::{
     AppContext, EntityId, ViewAsRef as _,
 };
 
+// twarp: 2c-d — AIBlock deleted; stub.
+pub struct AIBlock;
+#[allow(dead_code)]
+impl AIBlock {
+    pub fn selected_text<C>(&self, _: &C) -> Option<String> {
+        None
+    }
+}
+impl warpui::Entity for AIBlock {
+    type Event = ();
+}
+impl warpui::View for AIBlock {
+    fn ui_name() -> &'static str {
+        "AIBlock/twarp-stub"
+    }
+    fn render(&self, _: &AppContext) -> Box<dyn warpui::Element> {
+        // twarp: 2c-d — bring Element trait into scope for finish()
+        use warpui::Element as _;
+        warpui::elements::Empty::new().finish()
+    }
+}
 use crate::{
-    ai::blocklist::AIBlock,
     env_vars::env_var_collection_block::EnvVarCollectionBlock,
     terminal::{
         event::Event as TerminalEvent,

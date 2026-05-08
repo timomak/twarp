@@ -1,8 +1,23 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::ai::agent::ProgrammingLanguage;
-use crate::ai::blocklist::code_block::{render_runnable_code_snippet, CodeSnippetButtonHandles};
+// twarp: 2c-d — AI agent / blocklist deleted; stubs.
+pub enum ProgrammingLanguage {
+    Other,
+    Shell(crate::terminal::shell::ShellType),
+}
+pub fn render_runnable_code_snippet<A, B, C, D, E, F>(
+    _: A,
+    _: B,
+    _: C,
+    _: D,
+    _: E,
+    _: F,
+) -> Box<dyn warpui::Element> {
+    warpui::elements::Empty::new().finish()
+}
+#[derive(Default, Clone)]
+pub struct CodeSnippetButtonHandles;
 use crate::appearance::Appearance;
 use crate::terminal::model::terminal_model::SubshellInitializationInfo;
 use crate::terminal::shell::{Shell, ShellType};
@@ -247,7 +262,7 @@ impl WarpifySuccessBlock {
                 None
             },
             Some(Box::new({
-                move |code_snippet, ctx| {
+                move |code_snippet: String, ctx: &mut warpui::EventContext| {
                     ctx.dispatch_typed_action(WorkspaceAction::RunCommand(
                         code_snippet.to_string(),
                     ));
@@ -256,7 +271,7 @@ impl WarpifySuccessBlock {
                 }
             })),
             Some(Box::new({
-                move |code_snippet, ctx| {
+                move |code_snippet: String, ctx: &mut warpui::EventContext| {
                     ctx.dispatch_typed_action(WorkspaceAction::CopyTextToClipboard(code_snippet));
                 }
             })),

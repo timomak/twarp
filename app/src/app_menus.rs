@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::fs::File;
 use std::path::PathBuf;
 
-use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::auth::AuthStateProvider;
 use crate::default_terminal::DefaultTerminal;
 use crate::features::{runtime_flags_menu_items, FeatureFlag};
@@ -18,7 +17,6 @@ use crate::util::bindings::{self, trigger_to_keystroke, CustomAction};
 use crate::util::links;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::{auth, report_if_error};
-use ai::workspace::WorkspaceMetadata;
 use csv::Writer;
 use enclose::enclose;
 use itertools::Itertools;
@@ -1090,14 +1088,9 @@ fn make_recent_repos_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
         .collect()
 }
 
-fn generate_recent_repos_for_menu(ctx: &AppContext) -> Vec<PathBuf> {
-    PersistedWorkspace::handle(ctx)
-        .as_ref(ctx)
-        .workspaces()
-        .sorted_by(WorkspaceMetadata::most_recently_navigated)
-        .take(MAX_RECENT_REPOS_IN_MENU)
-        .map(|cbm| cbm.path)
-        .collect::<Vec<_>>()
+fn generate_recent_repos_for_menu(_ctx: &AppContext) -> Vec<PathBuf> {
+    // twarp 2c-d: PersistedWorkspace was AI-only; no recent repos to surface.
+    Vec::new()
 }
 
 /// \return a callback that updates a custom action based menu item based on the

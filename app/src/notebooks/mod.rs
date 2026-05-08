@@ -19,7 +19,7 @@ use warpui::AppContext;
 
 use crate::server::cloud_objects::update_manager::InitiatedBy;
 use crate::{
-    ai::document::ai_document_model::AIDocumentId,
+    app_state::AIDocumentId,
     appearance::Appearance,
     cloud_object::{
         CloudModelType, CloudObjectEventEntrypoint, CreateCloudObjectResult, CreateObjectRequest,

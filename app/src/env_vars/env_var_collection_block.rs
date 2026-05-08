@@ -1,14 +1,9 @@
-use crate::{
-    ai::agent::icons::{yellow_running_icon, yellow_stop_icon},
-    view_components::compactible_action_button::{
-        CompactibleActionButton, RenderCompactibleActionButton, SMALL_SIZE_SWITCH_THRESHOLD,
-    },
-};
+// twarp: 2c-d — env var collection block was AI-driven (auto-permission for AI commands);
+// AI imports replaced with stubs and the header rendered as Empty.
+use crate::view_components::compactible_action_button::CompactibleActionButton;
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use settings::Setting as _;
-use std::borrow::Cow;
-use std::rc::Rc;
 use std::sync::Arc;
 use warp_core::semantic_selection::SemanticSelection;
 use warp_core::{features::FeatureFlag, ui::Icon};
@@ -24,12 +19,6 @@ use warpui::{
 };
 
 use crate::{
-    ai::blocklist::block::view_impl::{CONTENT_HORIZONTAL_PADDING, CONTENT_ITEM_VERTICAL_MARGIN},
-    ai::blocklist::inline_action::inline_action_header::INLINE_ACTION_HORIZONTAL_PADDING,
-    ai::blocklist::inline_action::inline_action_header::{
-        ExpandedConfig, HeaderConfig, InteractionMode,
-    },
-    ai::blocklist::inline_action::inline_action_icons::{self},
     appearance::Appearance,
     settings::InputModeSettings,
     terminal::{
@@ -39,6 +28,10 @@ use crate::{
     ui_components::blended_colors,
     view_components::action_button::{ButtonSize, KeystrokeSource, NakedTheme, PrimaryTheme},
 };
+
+const CONTENT_HORIZONTAL_PADDING: f32 = 12.0;
+const CONTENT_ITEM_VERTICAL_MARGIN: f32 = 4.0;
+const INLINE_ACTION_HORIZONTAL_PADDING: f32 = 12.0;
 
 /// The vertical padding applied to the env var collection block's content body.
 /// For horizontal padding, use [`INLINE_ACTION_HORIZONTAL_PADDING`] for consistency.
@@ -254,63 +247,9 @@ impl EnvVarCollectionBlock {
         self.cancel(ctx);
     }
 
-    fn render_header(&self, app: &AppContext) -> Box<dyn Element> {
-        const COMMAND_WAITING_FOR_USER_MESSAGE: &str =
-            "OK if I run this command and read the output?";
-
-        let title: Cow<'static, str> = if self.state == EnvVarCollectionState::WaitingForUser {
-            COMMAND_WAITING_FOR_USER_MESSAGE.into()
-        } else {
-            self.command.clone().into()
-        };
-
-        let appearance = Appearance::as_ref(app);
-        let icon = match self.state {
-            EnvVarCollectionState::WaitingForUser => Some(yellow_stop_icon(appearance)),
-            EnvVarCollectionState::Running => Some(yellow_running_icon(appearance)),
-            EnvVarCollectionState::Succeeded => {
-                Some(inline_action_icons::green_check_icon(appearance))
-            }
-            EnvVarCollectionState::Failed => Some(inline_action_icons::red_x_icon(appearance)),
-            EnvVarCollectionState::Cancelled => {
-                Some(inline_action_icons::cancelled_icon(appearance))
-            }
-        };
-
-        let interaction_mode = match self.state {
-            EnvVarCollectionState::WaitingForUser => {
-                let buttons: Vec<Rc<dyn RenderCompactibleActionButton>> = vec![
-                    Rc::new(self.cancel_button.clone()),
-                    Rc::new(self.accept_button.clone()),
-                ];
-                Some(InteractionMode::ActionButtons {
-                    action_buttons: buttons,
-                    size_switch_threshold: SMALL_SIZE_SWITCH_THRESHOLD,
-                })
-            }
-            EnvVarCollectionState::Failed => {
-                let expansion_config =
-                    ExpandedConfig::new(self.header_is_expanded, self.header_mouse_state.clone())
-                        .with_toggle_callback(move |ctx| {
-                            ctx.dispatch_typed_action(EnvVarCollectionBlockAction::ToggleExpanded);
-                        });
-
-                Some(InteractionMode::ManuallyExpandable(expansion_config))
-            }
-            _ => None,
-        };
-
-        let mut config = HeaderConfig::new(title, app).with_selectable_text();
-
-        if let Some(icon) = icon {
-            config = config.with_icon(icon);
-        }
-
-        if let Some(mode) = interaction_mode {
-            config = config.with_interaction_mode(mode);
-        }
-
-        config.render(app)
+    // twarp: 2c-d — env var collection header rendered as Empty (AI inline-action UI deleted).
+    fn render_header(&self, _app: &AppContext) -> Box<dyn Element> {
+        warpui::elements::Empty::new().finish()
     }
 }
 

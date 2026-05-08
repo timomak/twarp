@@ -1,14 +1,52 @@
 use warp_core::features::FeatureFlag;
 use warpui::{SingletonEntity, ViewContext};
 
-use crate::{
-    ai::{
-        agent::{conversation::AIConversationId, CancellationReason},
-        blocklist::block::{FinishReason, PendingUserQueryBlock, PendingUserQueryBlockEvent},
-    },
-    auth::AuthStateProvider,
-    terminal::TerminalView,
-};
+// twarp: 2c-d — AI agent / blocklist deleted; stubs.
+use crate::app_state::AIConversationId;
+pub enum CancellationReason {
+    Other,
+    FollowUpSubmitted { is_for_same_conversation: bool },
+}
+#[derive(Clone)]
+pub enum FinishReason {
+    // twarp: 2c-d — bulk variants
+    Other,
+    Complete,
+    Error,
+    Cancelled,
+    CancelledDuringRequestedCommandExecution,
+}
+pub struct PendingUserQueryBlock;
+#[allow(dead_code)]
+impl PendingUserQueryBlock {
+    pub fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self {
+        Self
+    }
+}
+impl warpui::Entity for PendingUserQueryBlock {
+    type Event = PendingUserQueryBlockEvent;
+}
+impl warpui::View for PendingUserQueryBlock {
+    fn ui_name() -> &'static str {
+        "PendingUserQueryBlock/twarp-stub"
+    }
+    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+        use warpui::Element as _;
+        warpui::elements::Empty::new().finish()
+    }
+}
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct PendingUserQueryBlockAction;
+impl warpui::TypedActionView for PendingUserQueryBlock {
+    type Action = PendingUserQueryBlockAction;
+}
+pub enum PendingUserQueryBlockEvent {
+    Other,
+    Dismissed,
+    SendNow { prompt: String },
+}
+use crate::{auth::AuthStateProvider, terminal::TerminalView};
 
 use super::rich_content::RichContentMetadata;
 
@@ -56,9 +94,10 @@ impl TerminalView {
                 PendingUserQueryBlockEvent::Dismissed => {
                     me.remove_pending_user_query_block(ctx);
                 }
-                PendingUserQueryBlockEvent::SendNow => {
+                PendingUserQueryBlockEvent::SendNow { .. } => {
                     me.send_queued_prompt_now(prompt_for_send_now.clone(), ctx);
                 }
+                PendingUserQueryBlockEvent::Other => {}
             });
         }
         let view_id = handle.id();
@@ -176,7 +215,8 @@ impl TerminalView {
                 }
                 FinishReason::Error
                 | FinishReason::Cancelled
-                | FinishReason::CancelledDuringRequestedCommandExecution => {
+                | FinishReason::CancelledDuringRequestedCommandExecution
+                | FinishReason::Other => {
                     // Conversation failed or was cancelled — reinsert the pending
                     // query into the input so the user doesn't lose it.
                     terminal_view.input.update(ctx, |input, ctx| {

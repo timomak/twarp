@@ -1,6 +1,57 @@
 use std::borrow::Cow;
 
-use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
+// twarp: 2c-d — AI blocklist deleted; stubs.
+// twarp: 2c-d — re-export canonical
+pub use crate::terminal::input::BlocklistAIHistoryEvent;
+pub struct BlocklistAIHistoryModel;
+impl warpui::Entity for BlocklistAIHistoryModel {
+    type Event = BlocklistAIHistoryEvent;
+}
+impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+#[allow(dead_code)]
+impl BlocklistAIHistoryModel {
+    pub fn can_conversation_be_shared(&self, _: &crate::app_state::AIConversationId) -> bool {
+        false
+    }
+    pub fn get_server_conversation_metadata(
+        &self,
+        _: &crate::app_state::AIConversationId,
+    ) -> Option<&ServerConversationMetadataStub> {
+        None
+    }
+    pub fn conversation(&self, _: &crate::app_state::AIConversationId) -> Option<()> {
+        None
+    }
+}
+pub struct ServerConversationMetadataStub {
+    pub metadata: ServerObjectMetadataStub,
+    pub permissions: ServerConversationPermissionsStub,
+}
+pub struct ServerObjectMetadataStub {
+    pub uid: ObjectUidStub,
+}
+pub struct ObjectUidStub;
+impl ObjectUidStub {
+    pub fn uid(&self) -> &str {
+        ""
+    }
+}
+#[derive(Default)]
+pub struct ServerConversationPermissionsStub {
+    pub space: crate::cloud_object::Space,
+    // twarp: 2c-d — additional fields
+    pub guests: Vec<GuestStub>,
+    pub anyone_link_sharing: Option<LinkSharingStub>,
+}
+
+pub struct LinkSharingStub {
+    pub access_level: warp_graphql::object_permissions::AccessLevel,
+}
+
+pub struct GuestStub {
+    pub subject: crate::cloud_object::ServerGuestSubject,
+    pub access_level: warp_graphql::object_permissions::AccessLevel,
+}
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::model::persistence::CloudModelEvent;
@@ -460,54 +511,15 @@ impl SharingDialog {
             Some(ShareableObject::WarpDriveObject(id)) => {
                 CloudViewModel::as_ref(app).access_level(&id.uid(), app)
             }
-            Some(ShareableObject::AIConversation(id)) => {
-                // Get access level from conversation metadata permissions
-                match BlocklistAIHistoryModel::as_ref(app).get_server_conversation_metadata(id) {
-                    Some(server_metadata) => {
-                        let permissions = &server_metadata.permissions;
-                        // Conversation has server metadata, check permissions
-                        AuthStateProvider::as_ref(app)
-                            .get()
-                            .user_id()
-                            .and_then(|user_uid| {
-                                // Check if user is owner
-                                if let Owner::User {
-                                    user_uid: owner_uid,
-                                } = permissions.space
-                                {
-                                    if owner_uid == user_uid {
-                                        return Some(SharingAccessLevel::Full);
-                                    }
-                                }
-                                // Check if user is on the owning team (for team-owned conversations)
-                                if let Owner::Team { team_uid } = permissions.space {
-                                    if UserWorkspaces::as_ref(app).current_team_uid()
-                                        == Some(team_uid)
-                                    {
-                                        return Some(SharingAccessLevel::Full);
-                                    }
-                                }
-                                // Check if user is in guests
-                                let user_firebase_uid = user_uid.to_string();
-                                permissions.guests.iter().find_map(|guest| {
-                                    if let ServerGuestSubject::User { firebase_uid } =
-                                        &guest.subject
-                                    {
-                                        if firebase_uid == &user_firebase_uid {
-                                            return Some(guest.access_level.into());
-                                        }
-                                    }
-                                    None
-                                })
-                            })
-                            .unwrap_or(SharingAccessLevel::View)
-                    }
-                    None => {
-                        // No server metadata yet - conversation hasn't been shared
-                        // The owner (logged in user) should have full access
-                        SharingAccessLevel::Full
-                    }
-                }
+            Some(ShareableObject::AIConversation(_id)) => {
+                // twarp: 2c-d — AI conversation sharing logic gutted (server metadata gone post-AI removal).
+                let _ = (
+                    app,
+                    BlocklistAIHistoryModel::as_ref(app),
+                    AuthStateProvider::as_ref(app),
+                    UserWorkspaces::as_ref(app),
+                );
+                SharingAccessLevel::Full
             }
             Some(ShareableObject::Session { ref handle, .. }) => {
                 // Sharer always has Full access.
@@ -659,11 +671,10 @@ impl SharingDialog {
                     })
                     .map(Subject::User)
             }
-            ShareableObject::AIConversation(id) => {
-                // Get owner from conversation's server metadata
-                BlocklistAIHistoryModel::as_ref(app)
-                    .get_server_conversation_metadata(id)
-                    .map(|m| Subject::from_owner(m.permissions.space))
+            ShareableObject::AIConversation(_id) => {
+                // twarp: 2c-d — server conversation metadata gone post-AI removal.
+                let _ = (BlocklistAIHistoryModel::as_ref(app), Subject::from_owner);
+                None
             }
         }
     }
@@ -798,7 +809,7 @@ impl SharingDialog {
                         // Convert ServerGuestSubject to Subject
                         let subject = match &guest.subject {
                             ServerGuestSubject::User { firebase_uid } => {
-                                let user_uid = crate::auth::UserUid::new(firebase_uid);
+                                let user_uid = crate::auth::UserUid::new(firebase_uid.as_str());
                                 Some(super::Subject::User(super::UserKind::Account(user_uid)))
                             }
                             ServerGuestSubject::PendingUser { email } => {
@@ -1189,7 +1200,7 @@ impl SharingDialog {
     fn remove_targeted_guest_for_conversation(
         &mut self,
         guest_idx: usize,
-        conversation_id: crate::ai::agent::conversation::AIConversationId,
+        conversation_id: crate::app_state::AIConversationId,
         ctx: &mut ViewContext<Self>,
     ) {
         let Some(guest) = self.guest_states.get(guest_idx) else {
@@ -1231,7 +1242,7 @@ impl SharingDialog {
         &mut self,
         guest_idx: usize,
         access_level: SharingAccessLevel,
-        conversation_id: crate::ai::agent::conversation::AIConversationId,
+        conversation_id: crate::app_state::AIConversationId,
         ctx: &mut ViewContext<Self>,
     ) {
         let guest_email = match self.guest_states.get(guest_idx) {
@@ -1273,7 +1284,7 @@ impl SharingDialog {
         &mut self,
         guest_emails: Vec<String>,
         access_level: SharingAccessLevel,
-        conversation_id: crate::ai::agent::conversation::AIConversationId,
+        conversation_id: crate::app_state::AIConversationId,
         ctx: &mut ViewContext<Self>,
     ) {
         // Get the conversation's server_id from metadata

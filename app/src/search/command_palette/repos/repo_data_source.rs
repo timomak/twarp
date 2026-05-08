@@ -4,7 +4,18 @@ use itertools::Itertools;
 use warpui::{AppContext, Entity, SingletonEntity};
 
 use super::RepoSearchItem;
-use crate::ai::persisted_workspace::PersistedWorkspace;
+// twarp: 2c-d — PersistedWorkspace deleted; stub.
+pub struct PersistedWorkspace;
+impl PersistedWorkspace {
+    pub fn as_ref(_app: &AppContext) -> &Self {
+        // SAFETY: never reached in twarp paths.
+        static EMPTY: PersistedWorkspace = PersistedWorkspace;
+        &EMPTY
+    }
+    pub fn workspaces(&self) -> std::iter::Empty<WorkspaceMetadata> {
+        std::iter::empty()
+    }
+}
 use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::data_source::{Query, QueryResult};
 use crate::search::mixer::{DataSourceRunErrorWrapper, SyncDataSource};

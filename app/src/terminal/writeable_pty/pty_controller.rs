@@ -6,7 +6,6 @@ use thiserror::Error;
 use warpui::r#async::block_on;
 use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity};
 
-use crate::ai::agent::AIAgentPtyWriteMode;
 use crate::terminal::input::CommandExecutionSource;
 use crate::terminal::model::completions::ShellCompletion;
 use crate::terminal::model::session::{
@@ -26,6 +25,7 @@ use crate::terminal::{
     SizeUpdate, TerminalModel,
 };
 use crate::SessionSettings;
+use ai::agent::action::AIAgentPtyWriteMode;
 
 use super::Message;
 

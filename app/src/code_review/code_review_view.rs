@@ -7,28 +7,62 @@ use std::{
     sync::Arc,
 };
 
+// twarp: 2c-d — AI agent review batch & view-entry types deleted.
+use crate::app_state::AgentViewEntryOrigin;
 use crate::{
-    ai::{
-        agent::{AgentReviewCommentBatch, DiffSetHunk},
-        blocklist::agent_view::AgentViewEntryOrigin,
-    },
     code::editor::comment_editor::DEFAULT_COMMENT_MAX_WIDTH,
     code_review::diff_state::InvalidationSource,
     coding_panel_enablement_state::CodingPanelEnablementState,
 };
 
+#[derive(Clone, Debug, Default)]
+pub struct AgentReviewCommentBatch {
+    // twarp: 2c-d — fields used by callers (loosely typed)
+    pub comments: Vec<crate::code_review::comments::AttachedReviewComment>,
+    pub diff_set: std::collections::HashMap<String, Vec<DiffSetHunk>>,
+}
+#[derive(Clone, Debug, Default)]
+pub struct DiffSetHunk {
+    // twarp: 2c-d — fields used by callers (aligned to caller types)
+    pub line_range: std::ops::Range<warp_editor::render::model::LineCount>,
+    pub diff_content: String,
+    pub lines_added: u32,
+    pub lines_removed: u32,
+}
+
 #[cfg(feature = "local_fs")]
 use crate::code_review::context::{
     create_attachment_reference_and_key, register_diffset_attachment,
 };
+// twarp: 2c-d — AI CurrentHead/AIAgentAttachment/DiffBase removed.
 use crate::{
-    ai::agent::CurrentHead,
     code::editor::view::CodeEditorRenderOptions,
     code::editor::{CommentEditor, CommentEditorEvent, EditorCommentsModel, EditorReviewComment},
     code_review::{comments::ReviewCommentBatch, DiffSetScope},
 };
+
+// twarp: 2c-d — re-export from comments::comment to unify cross-file types.
+pub use crate::code_review::comments::comment::{CurrentHead, DiffBase};
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub enum AIAgentAttachment {
+    DiffHunk {
+        file_path: String,
+        line_range: std::ops::Range<warp_editor::render::model::LineCount>,
+        diff_content: String,
+        lines_added: u32,
+        lines_removed: u32,
+        current: Option<CurrentHead>,
+        base: DiffBase,
+    },
+    DiffSet {
+        file_diffs: std::collections::HashMap<String, Vec<DiffSetHunk>>,
+        current: Option<CurrentHead>,
+        base: DiffBase,
+    },
+}
+
 use crate::{
-    ai::agent::{AIAgentAttachment, DiffBase},
     code::{
         editor::{
             view::{CodeEditorEvent, CodeEditorView},
@@ -75,7 +109,8 @@ use crate::{
     },
     quit_warning::UnsavedStateSummary,
     terminal::input::MenuPositioning,
-    terminal::view::{CliAgentRouting, InitProjectModel, TerminalAction, TerminalView},
+    // twarp: 2c-d — InitProjectModel deleted with AI.
+    terminal::view::{CliAgentRouting, TerminalAction, TerminalView},
     util::bindings::{custom_tag_to_keystroke, CustomAction},
     view_components::{
         action_button::{
@@ -90,9 +125,13 @@ use crate::{
 use crate::code_review::find_model::CodeReviewFindModel;
 #[cfg(feature = "local_fs")]
 use crate::server::telemetry::CodePanelsFileOpenEntrypoint;
-use crate::terminal::cli_agent::{
-    build_selection_line_range_prompt, build_selection_substring_prompt,
-};
+// twarp: 2c-d — terminal::cli_agent module deleted; selection prompt builders stubbed.
+fn build_selection_line_range_prompt<P: ?Sized, A, B>(_path: &P, _start: A, _end: B) -> String {
+    String::new()
+}
+fn build_selection_substring_prompt<P: ?Sized, A>(_path: &P, _start: A, _selected: &str) -> String {
+    String::new()
+}
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
 #[cfg(feature = "local_fs")]
@@ -841,26 +880,7 @@ impl CodeReviewView {
             ctx.subscribe_to_view(&footer, Self::handle_footer_event);
             self.code_review_footer = Some(footer);
 
-            // Subscribe to PersistedWorkspace events to refresh the footer
-            // UI after LSP installation succeeds or fails.
-            #[cfg(feature = "local_fs")]
-            {
-                use crate::ai::persisted_workspace::{PersistedWorkspace, PersistedWorkspaceEvent};
-
-                // PersistedWorkspace handles spawning the server after install;
-                // we only subscribe to refresh the footer UI.
-                ctx.subscribe_to_model(&PersistedWorkspace::handle(ctx), |me, _, event, ctx| {
-                    match event {
-                        PersistedWorkspaceEvent::InstallationSucceeded
-                        | PersistedWorkspaceEvent::InstallationFailed => {
-                            if let Some(footer) = &me.code_review_footer {
-                                footer.update(ctx, |_, ctx| ctx.notify());
-                            }
-                        }
-                        _ => {}
-                    }
-                });
-            }
+            // twarp: 2c-d — PersistedWorkspace LSP install subscription removed with AI.
         }
 
         self.diff_state_model.update(ctx, |model, ctx| {
@@ -960,90 +980,7 @@ impl CodeReviewView {
         }
     }
 
-    /// Enables an LSP server for the workspace. Uses the provided server_type if given,
-    /// otherwise derives it from the path.
-    #[cfg(feature = "local_fs")]
-    fn handle_enable_lsp(
-        path: &Path,
-        server_type: Option<lsp::supported_servers::LSPServerType>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        use crate::ai::persisted_workspace::{LspTask, PersistedWorkspace};
-
-        let server_type =
-            server_type.or_else(|| lsp::LanguageId::from_path(path).map(|id| id.server_type()));
-        let Some(server_type) = server_type else {
-            return;
-        };
-
-        let repo_root = PersistedWorkspace::as_ref(ctx)
-            .root_for_workspace(path)
-            .map(|p| p.to_path_buf())
-            .or_else(|| {
-                repo_metadata::repositories::DetectedRepositories::as_ref(ctx)
-                    .get_root_for_path(path)
-            })
-            .or_else(|| path.parent().map(|p| p.to_path_buf()));
-
-        let Some(repo_root) = repo_root else {
-            return;
-        };
-
-        PersistedWorkspace::handle(ctx).update(ctx, |workspace, _ctx| {
-            workspace.enable_lsp_server_for_path(&repo_root, server_type);
-        });
-
-        PersistedWorkspace::handle(ctx).update(ctx, |workspace, ctx| {
-            workspace.execute_lsp_task(
-                LspTask::Spawn {
-                    file_path: path.to_path_buf(),
-                },
-                ctx,
-            );
-        });
-    }
-
-    /// Installs and enables an LSP server for the workspace.
-    #[cfg(feature = "local_fs")]
-    fn handle_install_and_enable_lsp(
-        path: &Path,
-        server_type: Option<lsp::supported_servers::LSPServerType>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        use crate::ai::persisted_workspace::{LspTask, PersistedWorkspace};
-
-        let server_type =
-            server_type.or_else(|| lsp::LanguageId::from_path(path).map(|id| id.server_type()));
-        let Some(server_type) = server_type else {
-            return;
-        };
-
-        let repo_root = PersistedWorkspace::as_ref(ctx)
-            .root_for_workspace(path)
-            .map(|p| p.to_path_buf())
-            .or_else(|| {
-                repo_metadata::repositories::DetectedRepositories::as_ref(ctx)
-                    .get_root_for_path(path)
-            })
-            .or_else(|| path.parent().map(|p| p.to_path_buf()));
-
-        let Some(repo_root) = repo_root else {
-            return;
-        };
-
-        PersistedWorkspace::handle(ctx).update(ctx, |workspace, ctx| {
-            workspace.execute_lsp_task(
-                LspTask::Install {
-                    file_path: path.to_path_buf(),
-                    repo_root,
-                    server_type,
-                },
-                ctx,
-            );
-        });
-    }
-
-    #[cfg(not(feature = "local_fs"))]
+    // twarp: 2c-d — PersistedWorkspace LSP install/enable removed with AI; left as no-ops.
     fn handle_enable_lsp(
         _path: &Path,
         _server_type: Option<lsp::supported_servers::LSPServerType>,
@@ -1051,7 +988,6 @@ impl CodeReviewView {
     ) {
     }
 
-    #[cfg(not(feature = "local_fs"))]
     fn handle_install_and_enable_lsp(
         _path: &Path,
         _server_type: Option<lsp::supported_servers::LSPServerType>,
@@ -4482,19 +4418,8 @@ impl CodeReviewView {
                 .finish(),
             );
 
-        let should_show_init = self
-            .repo_path()
-            .map(|path| {
-                let has_steps = InitProjectModel::should_have_available_steps(path, app);
-                let is_terminal_in_correct_dir = self
-                    .terminal_view(app)
-                    .and_then(|view| {
-                        view.read(app, |t, _| t.pwd().map(|pwd| pwd == path.to_string_lossy()))
-                    })
-                    .unwrap_or(false);
-                has_steps && is_terminal_in_correct_dir
-            })
-            .unwrap_or(false);
+        // twarp: 2c-d — InitProjectModel deleted; init project button never shown.
+        let should_show_init = false;
 
         if should_show_init {
             zero_state_column.add_child(
@@ -6493,8 +6418,10 @@ impl CodeReviewView {
                 terminal_view.update(ctx, |terminal_view, ctx| {
                     terminal_view
                         .ai_context_model()
-                        .update(ctx, |context_model, _| {
-                            context_model.register_diff_hunk_attachment(diff_hunk_key, attachment);
+                        .update(ctx, |context_model, ctx| {
+                            // twarp: 2c-d — stub register_diff_hunk_attachment takes 3 args
+                            context_model
+                                .register_diff_hunk_attachment((diff_hunk_key, attachment), ctx);
                         });
 
                     // Enter agent view if enabled and not already active

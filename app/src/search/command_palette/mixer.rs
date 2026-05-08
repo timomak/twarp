@@ -1,4 +1,4 @@
-use crate::ai::agent::conversation::AIConversationId;
+use crate::app_state::AIConversationId;
 use crate::drive::CloudObjectTypeAndId;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::search::command_palette::new_session::{NewSessionOption, NewSessionOptionId};

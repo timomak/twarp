@@ -1,8 +1,8 @@
+use crate::app_state::CLIAgent;
 use crate::context_chips::display_chip::GitLineChanges;
 use crate::pane_group::pane::IPaneType;
 use crate::pane_group::{PaneId, TerminalPaneId};
 use crate::safe_triangle::SafeTriangle;
-use crate::terminal::CLIAgent;
 use crate::workspace::tab_settings::VerticalTabsDisplayGranularity;
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::Vector2F;

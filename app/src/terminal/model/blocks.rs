@@ -1,10 +1,10 @@
 mod selection;
 
-use crate::ai::agent::{conversation::AIConversationId, AIAgentActionId};
-use crate::ai::blocklist::SerializedBlockListItem;
+// twarp: 2c-d — AI agent / blocklist agent_view deleted; stubs.
+use crate::app_state::{AIConversationId, SerializedBlockListItem};
 use crate::terminal::block_filter::BlockFilterQuery;
 
-use crate::ai::blocklist::agent_view::{AgentViewDisplayMode, AgentViewState};
+// twarp: 2c-d — re-export unified stubs from model::block.
 use crate::terminal::event::AfterBlockCompletedEvent;
 use crate::terminal::event_listener::ChannelEventListener;
 use crate::terminal::model::ansi;
@@ -13,6 +13,7 @@ use crate::terminal::model::ansi::{
     CursorStyle, LineClearMode, Mode, PrecmdValue, PreexecValue, Processor, StandardCharset,
     TabulationClearMode,
 };
+pub use crate::terminal::model::block::{AIAgentActionId, AgentViewDisplayMode, AgentViewState};
 use crate::terminal::model::block::{AgentViewVisibility, Block, SerializedBlock};
 use crate::terminal::model::bootstrap::BootstrapStage;
 use crate::terminal::model::index::{Point, VisibleRow};
@@ -59,7 +60,40 @@ use super::{ansi::InputBufferValue, block::SerializedAIMetadata};
 use super::selection::ScrollDelta;
 use super::terminal_model::RangeInModel;
 use super::{ansi::Handler, grid::grid_handler::Link};
-use crate::ai::blocklist::AIBlock;
+// twarp: 2c-d — AIBlock deleted; stub.
+pub struct AIBlock;
+impl warpui::Entity for AIBlock {
+    type Event = ();
+}
+impl warpui::View for AIBlock {
+    fn ui_name() -> &'static str {
+        "AIBlock/twarp-stub"
+    }
+    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+        // twarp: 2c-d — bring Element trait into scope for finish()
+        use warpui::Element as _;
+        warpui::elements::Empty::new().finish()
+    }
+}
+#[allow(dead_code)]
+impl AIBlock {
+    pub fn find_undismissed_code_diff<C>(&self, _: &C) -> Option<()> {
+        None
+    }
+    pub fn pending_unit_test_suggestion<C>(
+        &self,
+        _: &C,
+    ) -> Option<warpui::ViewHandle<crate::workspace::view::AIFactViewStub>> {
+        None
+    }
+    // twarp: 2c-d — bulk stubs
+    pub fn is_passive_conversation<C>(&self, _: &C) -> bool {
+        false
+    }
+    pub fn is_finished(&self) -> bool {
+        false
+    }
+}
 use crate::terminal::block_list_element::GridType;
 use crate::terminal::model::blockgrid::BlockGrid;
 use crate::terminal::model::grid::Dimensions;
@@ -123,7 +157,7 @@ impl RichContentItem {
                 ..
             } => Some(*conversation_id) != self.agent_view_conversation_id,
             AgentViewState::Active {
-                display_mode: AgentViewDisplayMode::Inline,
+                display_mode: AgentViewDisplayMode::Inline | AgentViewDisplayMode::Other,
                 ..
             }
             | AgentViewState::Inactive => self.agent_view_conversation_id.is_some(),
@@ -1506,10 +1540,12 @@ impl BlockList {
     pub fn set_agent_view_state(&mut self, state: AgentViewState) {
         self.agent_view_state = state;
         if !self.active_block().finished() {
-            if let Some(id) = self.agent_view_state.active_conversation_id() {
+            let id_copy = self.agent_view_state.active_conversation_id().copied();
+            let is_inline = self.agent_view_state.is_inline();
+            if let Some(id) = id_copy {
                 // For inline agent views, add the conversation ID to Terminal variant
                 // instead of replacing with Agent variant
-                if self.agent_view_state.is_inline() {
+                if is_inline {
                     self.active_block_mut().add_attached_conversation_id(id);
                 } else {
                     self.active_block_mut().set_conversation_id(id);
@@ -2493,7 +2529,7 @@ impl BlockList {
             honor_ps1,
             self.obfuscate_secrets,
             self.is_ai_ugc_telemetry_enabled,
-            self.agent_view_state.active_conversation_id(),
+            self.agent_view_state.active_conversation_id().copied(),
         );
         if let Some(is_local) = restored_block_was_local {
             block.set_restored_block_was_local(is_local);
@@ -3881,5 +3917,4 @@ impl ToTotalIndex for BlockIndex {
 #[cfg(test)]
 #[path = "blocks_test.rs"]
 mod tests;
-#[cfg(test)]
-pub use self::tests::insert_block;
+// twarp: 2c-d — `pub use self::tests::insert_block;` removed since blocks_test was disabled.

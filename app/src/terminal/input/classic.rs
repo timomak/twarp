@@ -1,5 +1,6 @@
+// twarp: 2c-d — unify with events::InputType.
+pub use crate::server::telemetry::events::InputType;
 use crate::{
-    ai::blocklist::InputType,
     appearance::Appearance,
     context_chips::spacing,
     features::FeatureFlag,

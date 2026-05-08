@@ -20,8 +20,25 @@ use crate::terminal::local_tty::docker_sandbox::resolve_sbx_path_from_user_shell
 #[cfg(feature = "local_tty")]
 use crate::terminal::TerminalManager;
 
+// twarp: 2c-d — agent_sdk driver deleted; stubs.
 #[cfg(not(target_family = "wasm"))]
-use crate::ai::agent_sdk::driver::{terminal::TerminalDriver, WARP_DRIVE_SYNC_TIMEOUT};
+pub struct TerminalDriver;
+#[cfg(not(target_family = "wasm"))]
+impl warpui::Entity for TerminalDriver {
+    type Event = ();
+}
+#[cfg(not(target_family = "wasm"))]
+#[allow(dead_code)]
+impl TerminalDriver {
+    pub fn create_from_existing_view<V, C>(_: V, _: &mut C) -> warpui::ModelHandle<TerminalDriver> {
+        unimplemented!()
+    }
+    pub fn wait_for_session_bootstrapped(&mut self) -> futures::future::Ready<Result<(), ()>> {
+        futures::future::ready(Ok(()))
+    }
+}
+#[cfg(not(target_family = "wasm"))]
+pub const WARP_DRIVE_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(0);
 #[cfg(not(target_family = "wasm"))]
 use crate::server::cloud_objects::update_manager::UpdateManager;
 #[cfg(not(target_family = "wasm"))]
@@ -197,7 +214,7 @@ impl TerminalView {
     ) {
         let terminal_driver = TerminalDriver::create_from_existing_view(terminal_view.clone(), ctx);
 
-        let spawner = terminal_driver.update(ctx, |_, ctx| ctx.spawner());
+        let spawner = terminal_driver.update(ctx, |_: &mut TerminalDriver, ctx| ctx.spawner());
         let sync_future = UpdateManager::as_ref(ctx).initial_load_complete();
         ctx.spawn(
             async move {
@@ -213,12 +230,14 @@ impl TerminalView {
 
                 // Wait for the terminal session to bootstrap.
                 let bootstrap_future = spawner
-                    .spawn(move |driver, _| driver.wait_for_session_bootstrapped())
+                    .spawn(move |driver: &mut TerminalDriver, _| {
+                        driver.wait_for_session_bootstrapped()
+                    })
                     .await
                     .map_err(|_| "view dropped")?;
 
-                if let Err(e) = bootstrap_future.await {
-                    log::error!("Docker sandbox bootstrap failed: {e}");
+                if let Err(_e) = bootstrap_future.await {
+                    log::error!("Docker sandbox bootstrap failed");
                     return Err("terminal bootstrap failed");
                 }
 

@@ -1,7 +1,13 @@
 use std::rc::Rc;
 
+// twarp: 2c-d — AI DiffSessionType deleted; stub.
 #[cfg(not(target_family = "wasm"))]
-use crate::ai::blocklist::inline_action::code_diff_view::DiffSessionType;
+#[derive(Clone, Debug)]
+pub enum DiffSessionType {
+    Other,
+    Local,
+    Remote(String),
+}
 use ai::diff_validation::DiffType;
 #[cfg(not(target_family = "wasm"))]
 use warp_files::{FileModel, FileModelEvent};
@@ -139,12 +145,15 @@ impl InlineDiffView {
                 })
             }
             DiffSessionType::Remote(host_id) => {
-                let host_id = host_id.clone();
+                // twarp: 2c-d — DiffSessionType::Remote payload is now a String; wrap in HostId.
+                let host_id = warp_core::host_id::HostId::new(host_id.clone());
                 let remote_path = file_path.clone();
                 file_model.update(ctx, |file_model, _ctx| {
                     file_model.register_remote_file(host_id, remote_path)
                 })
             }
+            // twarp: 2c-d — Other variant (was AI session); skip registration.
+            DiffSessionType::Other => return,
         };
 
         self.finish_file_registration(file_id, ctx);

@@ -13,8 +13,6 @@ use super::{
     CloudObjectTypeAndId, DriveObjectType,
 };
 
-pub mod ai_fact;
-pub mod ai_fact_collection;
 pub mod env_var_collection;
 pub mod folder;
 pub mod item;

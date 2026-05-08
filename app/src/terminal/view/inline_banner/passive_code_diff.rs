@@ -1,8 +1,20 @@
 use warpui::elements::{Border, ChildView, Container};
 use warpui::{AppContext, Element, Entity, SingletonEntity, View, ViewHandle};
 
-use crate::ai::blocklist::inline_action::code_diff_view::CodeDiffView;
-use crate::ai::blocklist::inline_action::inline_action_header::INLINE_ACTION_HORIZONTAL_PADDING;
+// twarp: 2c-d — code diff view / inline action header deleted; stubs.
+pub struct CodeDiffView;
+impl Entity for CodeDiffView {
+    type Event = ();
+}
+impl View for CodeDiffView {
+    fn ui_name() -> &'static str {
+        "CodeDiffView/twarp-stub"
+    }
+    fn render(&self, _: &AppContext) -> Box<dyn Element> {
+        warpui::elements::Empty::new().finish()
+    }
+}
+pub const INLINE_ACTION_HORIZONTAL_PADDING: f32 = 12.0;
 use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
 

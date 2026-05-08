@@ -1,6 +1,26 @@
 use super::{WarpDriveItem, WarpDriveItemId};
+// twarp: 2c-d — AI MCP CloudMCPServer deleted; stub.
+// twarp: 2c-d — CloudObjectMetadata isn't Default; use Option
+#[derive(Default, Clone)]
+pub struct CloudMCPServer {
+    // twarp: 2c-d — fields used by callers
+    pub metadata: Option<CloudObjectMetadata>,
+}
+#[allow(dead_code)]
+impl CloudMCPServer {
+    pub fn model(&self) -> CloudMCPServerModelStub {
+        CloudMCPServerModelStub::default()
+    }
+}
+#[derive(Default)]
+pub struct CloudMCPServerModelStub {
+    pub string_model: CloudMCPServerStringModelStub,
+}
+#[derive(Default)]
+pub struct CloudMCPServerStringModelStub {
+    pub name: String,
+}
 use crate::{
-    ai::mcp::CloudMCPServer,
     appearance::Appearance,
     cloud_object::CloudObjectMetadata,
     drive::{index::DriveIndexAction, CloudObjectTypeAndId, DriveObjectType},
@@ -25,7 +45,8 @@ impl WarpDriveItem for WarpDriveMCPServer {
         Some(self.mcp_server.model().string_model.name.clone())
     }
     fn metadata(&self) -> Option<&CloudObjectMetadata> {
-        Some(&self.mcp_server.metadata)
+        // twarp: 2c-d — metadata is now Option<CloudObjectMetadata>
+        self.mcp_server.metadata.as_ref()
     }
 
     fn object_type(&self) -> Option<DriveObjectType> {
@@ -57,6 +78,7 @@ impl WarpDriveItem for WarpDriveMCPServer {
     ) -> Option<Box<dyn Element>> {
         self.mcp_server
             .metadata
+            .as_ref()?
             .pending_changes_statuses
             .render_icon(sync_queue_is_dequeueing, hover_state, appearance)
     }

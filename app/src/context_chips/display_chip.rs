@@ -1,12 +1,50 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::ai::blocklist::agent_view::AgentViewController;
-use crate::ai::blocklist::prompt::plan_and_todo_list::{PlanAndTodoListEvent, PlanAndTodoListView};
-use crate::ai::{
-    blocklist::{BlocklistAIContextModel, BlocklistAIInputModel},
-    document::ai_document_model::{AIDocumentId, AIDocumentVersion},
+// twarp: 2c-d — AI agent view controller / blocklist / plan-todo / document deleted; stubs.
+use crate::app_state::{AIDocumentId, AIDocumentVersion};
+
+// twarp: 2c-d — re-export input.rs stubs so cross-file types unify.
+pub use crate::terminal::input::{
+    AgentViewController, AmbientAgentViewModel, BlocklistAIContextModel, BlocklistAIInputModel,
+    CLIAgentSessionsModel,
 };
+pub struct PlanAndTodoListView;
+#[allow(dead_code)]
+impl PlanAndTodoListView {
+    pub fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+        Self
+    }
+}
+impl warpui::Entity for PlanAndTodoListView {
+    type Event = PlanAndTodoListEvent;
+}
+impl warpui::View for PlanAndTodoListView {
+    fn ui_name() -> &'static str {
+        "PlanAndTodoListView/twarp-stub"
+    }
+    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+        warpui::elements::Empty::new().finish()
+    }
+}
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct PlanAndTodoListAction;
+impl warpui::TypedActionView for PlanAndTodoListView {
+    type Action = PlanAndTodoListAction;
+}
+#[allow(dead_code)]
+impl PlanAndTodoListView {
+    pub fn should_render<C>(&self, _: &C) -> bool {
+        false
+    }
+}
+pub enum PlanAndTodoListEvent {
+    OpenAIDocument {
+        document_id: AIDocumentId,
+        version: AIDocumentVersion,
+    },
+}
 use crate::code::editor::{add_color, remove_color};
 use crate::code_review::code_review_view::CODE_REVIEW_TOOLTIP_TEXT;
 use crate::code_review::diff_state::DiffStats;
@@ -14,10 +52,11 @@ use crate::context_chips::node_version_popup::{NodeVersionPopupEvent, NodeVersio
 use crate::context_chips::spacing;
 use crate::settings::{AISettings, AISettingsChangedEvent, InputSettings};
 use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier};
-use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
+// twarp: 2c-d — CLI agent sessions / ambient agent view deleted; stubs.
 use crate::terminal::input::{MenuPositioning, MenuPositioningProvider};
 use crate::terminal::model_events::ModelEventDispatcher;
-use crate::terminal::view::ambient_agent::AmbientAgentViewModel;
+
+// twarp: 2c-d — CLIAgentSessionsModel/AmbientAgentViewModel re-exported from input.rs above.
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
 use crate::util::bindings::keybinding_name_to_display_string;
@@ -518,11 +557,11 @@ impl DisplayChip {
                 ctx.subscribe_to_view(&plan_and_todo_list, |_me, _, event, ctx| match event {
                     PlanAndTodoListEvent::OpenAIDocument {
                         document_id,
-                        document_version,
+                        version,
                     } => {
                         ctx.emit(PromptDisplayChipEvent::OpenAIDocument {
                             document_id: *document_id,
-                            document_version: *document_version,
+                            document_version: *version,
                         });
                     }
                 });

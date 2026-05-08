@@ -1,14 +1,15 @@
 use ai::skills::SkillReference;
-use input_classifier::InputType;
+// twarp: 2c-d — use canonical InputType from terminal::input.
+use crate::terminal::input::InputType;
 use warp_core::features::FeatureFlag;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
-use crate::ai::blocklist::{BlocklistAIInputEvent, BlocklistAIInputModel};
-use crate::ai::skills::SkillManager;
+// twarp: 2c-d — AI blocklist / skills deleted; re-export from input.
 use crate::search::slash_command_menu::StaticCommand;
 use crate::settings::InputSettings;
 use crate::terminal::input::buffer_model::{InputBufferModel, InputBufferUpdateEvent};
 use crate::terminal::input::slash_commands::SlashCommandDataSource;
+pub use crate::terminal::input::{BlocklistAIInputEvent, BlocklistAIInputModel, SkillManager};
 use crate::terminal::model::session::active_session::ActiveSession;
 use settings::Setting as _;
 
@@ -159,6 +160,7 @@ impl SlashCommandModel {
                         }
                     }
                 }
+                BlocklistAIInputEvent::UpdatedConfig {} => {}
             });
         }
 

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::ai::AIRequestUsageModel;
+// twarp 2c-d: AIRequestUsageModel removed; AI features always unavailable.
 use crate::code::editor::comment_editor::DEFAULT_COMMENT_MAX_WIDTH;
 use crate::code::editor::view::{CodeEditorEvent, CodeEditorView};
 use crate::code_review::comment_rendering::CommentViewCard;
@@ -281,7 +281,7 @@ impl CommentListView {
     }
 
     pub fn debug_state(&self, ctx: &AppContext) -> CommentListDebugState {
-        let ai_available = AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(ctx);
+        let ai_available = false;
         let ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
         let sendable_comments = self
             .comments_by_id
@@ -930,7 +930,7 @@ impl CommentListView {
     }
 
     fn render_send_button(&self, appearance: &Appearance, ctx: &AppContext) -> Box<dyn Element> {
-        let ai_available = AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(ctx);
+        let ai_available = false;
         let ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
         let has_sendable_comments = self.has_non_outdated_comments();
 

@@ -1,4 +1,4 @@
-mod data_source;
+pub mod data_source;
 mod search_item;
 mod view;
 
@@ -12,10 +12,42 @@ use warp_core::ui::appearance::Appearance;
 use warpui::clipboard::ClipboardContent;
 use warpui::{SingletonEntity, ViewContext};
 
-use crate::ai::blocklist::agent_view::{
-    AgentViewEntryOrigin, DismissalStrategy, EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
-};
-use crate::ai::blocklist::{BlocklistAIHistoryModel, SlashCommandRequest};
+// twarp: 2c-d — AI agent view / blocklist deleted; stubs.
+use crate::app_state::AgentViewEntryOrigin;
+pub enum DismissalStrategy {
+    Other,
+    Timer(std::time::Duration),
+}
+pub struct EphemeralMessage;
+#[allow(dead_code)]
+impl EphemeralMessage {
+    pub fn new<A, B>(_: A, _: B) -> Self {
+        Self
+    }
+}
+pub const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration =
+    std::time::Duration::from_secs(0);
+pub struct BlocklistAIHistoryModel;
+impl warpui::Entity for BlocklistAIHistoryModel {
+    type Event = crate::terminal::input::BlocklistAIHistoryEvent;
+}
+impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+#[allow(dead_code)]
+impl BlocklistAIHistoryModel {
+    pub fn conversation<I>(&self, _: I) -> Option<crate::app_state::AIConversationId> {
+        None
+    }
+    pub fn active_conversation(
+        &self,
+        _: warpui::EntityId,
+    ) -> Option<crate::app_state::AIConversationId> {
+        None
+    }
+}
+pub enum SlashCommandRequest {
+    FetchReviewComments { repo_path: std::path::PathBuf },
+    Other,
+}
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::search::slash_command_menu::static_commands::commands::{self, COMMAND_REGISTRY};
@@ -379,7 +411,11 @@ impl Input {
                 ctx.emit(Event::EnterAgentView {
                     initial_prompt: prompt,
                     conversation_id: None,
-                    origin: AgentViewEntryOrigin::SlashCommand { trigger },
+                    // twarp: 2c-d — name added to AgentViewEntryOrigin::SlashCommand
+                    origin: AgentViewEntryOrigin::SlashCommand {
+                        name: command.name.to_string(),
+                        trigger: Some(()),
+                    },
                 });
             }
             cloud_agent if command.name == commands::CLOUD_AGENT.name => {
@@ -645,7 +681,6 @@ impl Input {
                 let Some(repo_path) = self
                     .active_session_path_if_local(ctx)
                     .map(|path| path.to_path_buf())
-                    .map(|path| path.to_string_lossy().to_string())
                 else {
                     log::error!("Expected a valid working directory since /pr-comments is only available from the terminal");
                     return false;
@@ -831,9 +866,11 @@ impl Input {
         {
             self.agent_view_controller.update(ctx, |controller, ctx| {
                 let _ = controller.try_enter_agent_view(
-                    None,
+                    None::<()>,
+                    // twarp: 2c-d — name added to AgentViewEntryOrigin::SlashCommand
                     AgentViewEntryOrigin::SlashCommand {
-                        trigger: SlashCommandTrigger::input(),
+                        name: command.name.to_string(),
+                        trigger: Some(()),
                     },
                     ctx,
                 );

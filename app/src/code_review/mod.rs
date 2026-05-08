@@ -29,7 +29,9 @@ use warpui::{
 };
 
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
-use crate::terminal::{view::TerminalView, CLIAgent};
+// twarp: 2c-d — CLIAgent moved to app_state.
+use crate::app_state::CLIAgent;
+use crate::terminal::view::TerminalView;
 use crate::util::bindings::CustomAction;
 
 /// Arguments needed to open or toggle the code review panel.

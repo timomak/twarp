@@ -5,10 +5,20 @@ use parking_lot::FairMutex;
 use pathfinder_geometry::vector::Vector2F;
 use warpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
 
-use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
+// twarp: 2c-d — AI active_agent / blocklist deleted; stubs.
+pub struct ActiveAgentViewsModel;
+impl warpui::Entity for ActiveAgentViewsModel {
+    type Event = ();
+}
+impl warpui::SingletonEntity for ActiveAgentViewsModel {}
+#[allow(dead_code)]
+impl ActiveAgentViewsModel {
+    pub fn unregister_ambient_session<C>(&mut self, _: warpui::EntityId, _: &mut C) {}
+}
+use crate::app_state::SerializedBlockListItem;
 use crate::{
-    ai::blocklist::SerializedBlockListItem, context_chips::prompt_type::PromptType,
-    pane_group::TerminalViewResources, terminal::view::ConversationRestorationInNewPaneType,
+    context_chips::prompt_type::PromptType, pane_group::ConversationRestorationInNewPaneType,
+    pane_group::TerminalViewResources,
 };
 
 use super::{

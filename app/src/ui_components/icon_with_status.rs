@@ -8,8 +8,8 @@ use warpui::elements::{
     ParentElement, ParentOffsetBounds, Radius, Stack,
 };
 
-use crate::ai::agent::conversation::ConversationStatus;
-use crate::terminal::CLIAgent;
+// twarp: 2c-d — AI conversation status deleted; use stubs.
+use crate::app_state::{CLIAgent, ConversationStatus};
 use crate::themes::theme::Fill as ThemeFill;
 
 /// Sizing configuration for the icon circle and its status badge.
@@ -112,17 +112,15 @@ pub(crate) fn render_icon_with_status(
             )
         }
         IconWithStatusVariant::CLIAgent { agent, status } => {
-            let brand_color = agent
-                .brand_color()
-                .unwrap_or(ColorU::new(100, 100, 100, 255));
+            // twarp: 2c-d — brand_color returns ColorU directly, no unwrap_or needed
+            let brand_color = agent.brand_color();
             let icon_color = agent.brand_icon_color();
+            // twarp: 2c-d — agent.icon() now Option; fallback to Terminal.
             let icon_element = agent
                 .icon()
-                .map(|icon| {
-                    icon.to_warpui_icon(WarpThemeFill::Solid(icon_color))
-                        .finish()
-                })
-                .unwrap_or_else(|| WarpIcon::Terminal.to_warpui_icon(sub_text).finish());
+                .unwrap_or(warp_core::ui::Icon::Terminal)
+                .to_warpui_icon(WarpThemeFill::Solid(icon_color))
+                .finish();
             let inner = ConstrainedBox::new(icon_element)
                 .with_width(sizing.icon_size)
                 .with_height(sizing.icon_size)

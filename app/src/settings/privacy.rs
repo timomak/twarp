@@ -8,7 +8,10 @@ use warp_core::report_if_error;
 use warp_core::user_preferences::GetUserPreferences as _;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity, UpdateModel};
 
-use crate::ai::blocklist::telemetry_banner::should_collect_ai_ugc_telemetry;
+// twarp: 2c-d — AI telemetry banner deleted; stub.
+pub fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool {
+    false
+}
 use crate::auth::auth_state::AuthState;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;

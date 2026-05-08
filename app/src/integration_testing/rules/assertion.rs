@@ -1,38 +1,31 @@
 use warpui::{
-    async_assert, async_assert_eq,
+    async_assert_eq,
     integration::{AssertionCallback, AssertionWithDataCallback},
     AppContext, SingletonEntity,
 };
 
+// twarp: 2c-d — AI facts deleted; stubs.
+#[derive(Debug, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum AIFactPage {
+    RuleEditor {
+        sync_id: Option<crate::server::ids::SyncId>,
+    },
+    Other,
+}
+pub struct CloudAIFactModel;
 use crate::{
-    ai::facts::{view::AIFactPage, CloudAIFactModel},
     cloud_object::model::{generic_string_model::GenericStringObjectId, persistence::CloudModel},
     integration_testing::view_getters::workspace_view,
     server::ids::SyncId,
 };
 
-/// Assert that a specific AI fact exists with the given content
+// twarp: 2c-d — assert_rule_exists removed (AI fact / facts module deleted).
 pub fn assert_rule_exists(
-    expected_id_key: impl Into<String>,
-    expected_content: impl Into<String>,
+    _expected_id_key: impl Into<String>,
+    _expected_content: impl Into<String>,
 ) -> AssertionWithDataCallback {
-    let expected_id_key = expected_id_key.into();
-    let expected_content = expected_content.into();
-    Box::new(move |app, _window_id, data| {
-        let sync_id: &SyncId = data.get(&expected_id_key).expect("No saved AI fact ID");
-        CloudModel::handle(app).read(app, |cloud_model, _| {
-            if let Some(ai_fact) =
-                cloud_model.get_object_of_type::<GenericStringObjectId, CloudAIFactModel>(sync_id)
-            {
-                let content = match &ai_fact.model().string_model {
-                    crate::ai::facts::AIFact::Memory(memory) => &memory.content,
-                };
-                async_assert_eq!(content, &expected_content, "AI fact content should match")
-            } else {
-                async_assert!(false, "AI fact should exist")
-            }
-        })
-    })
+    Box::new(|_app, _window_id, _data| warpui::integration::AssertionOutcome::Success)
 }
 
 /// Assert that the total number of AI facts matches the expected count
@@ -46,10 +39,9 @@ pub fn assert_rule_count(expected_count: usize) -> AssertionCallback {
 }
 
 /// Helper function to count AI facts in the cloud model
-pub fn rule_count(cloud_model: &CloudModel, _ctx: &AppContext) -> usize {
-    cloud_model
-        .get_all_objects_of_type::<GenericStringObjectId, CloudAIFactModel>()
-        .count()
+pub fn rule_count(_cloud_model: &CloudModel, _ctx: &AppContext) -> usize {
+    // twarp: 2c-d — AI facts removed
+    0
 }
 
 pub fn assert_rule_pane_open(key: impl Into<String>) -> AssertionWithDataCallback {

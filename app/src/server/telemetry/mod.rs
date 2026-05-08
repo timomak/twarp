@@ -1,7 +1,7 @@
 mod collector;
 mod context;
 pub mod context_provider;
-mod events;
+pub mod events;
 mod macros;
 pub mod rudder_message;
 pub mod secret_redaction;

@@ -5,9 +5,9 @@ use std::path::PathBuf;
 #[cfg(feature = "local_fs")]
 use anyhow::Result;
 
+use crate::app_state::CLIAgent;
 use crate::app_state::{BranchSnapshot, LeafContents, LeafSnapshot, PaneNodeSnapshot};
 use crate::launch_configs::launch_config::SplitDirection;
-use crate::terminal::cli_agent::CLIAgent;
 use crate::themes::theme::AnsiColorIdentifier;
 use crate::ui_components::icons::Icon;
 
@@ -42,6 +42,7 @@ impl SessionType {
         match self {
             SessionType::Terminal => Icon::Terminal,
             SessionType::Oz => Icon::Oz,
+            // twarp: 2c-d — agent.icon() now Option; fallback to Terminal.
             SessionType::CliAgent(agent) => agent.icon().unwrap_or(Icon::Terminal),
         }
     }

@@ -105,8 +105,7 @@ pub struct WorkspaceState {
     pub is_header_toolbar_editor_open: bool,
     pub is_import_modal_open: bool,
     pub is_close_session_confirmation_dialog_open: bool,
-    pub is_rewind_confirmation_dialog_open: bool,
-    pub is_delete_conversation_confirmation_dialog_open: bool,
+    // twarp: 2c-d — is_rewind_confirmation_dialog_open/is_delete_conversation_confirmation_dialog_open removed
     pub is_native_quit_modal_open: bool,
     pub is_shared_objects_creation_denied_modal_open: bool,
     pub is_suggested_agent_mode_workflow_modal_open: bool,
@@ -122,6 +121,8 @@ pub struct WorkspaceState {
     pub is_remove_tab_config_dialog_open: bool,
     /// Whether the transcript details panel is open (WASM only, for conversation transcript viewing).
     pub is_transcript_details_panel_open: bool,
+    // twarp: 2c-d — fields for AI-removed callers
+    pub is_rewind_confirmation_dialog_open: bool,
     tab_being_renamed: Option<usize>, // The index of the tab being renamed
     pane_being_renamed: Option<PaneViewLocator>,
 }

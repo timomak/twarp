@@ -15,12 +15,45 @@ use warpui::{
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use warpui::elements::FormattedTextElement;
 
-use crate::ai::blocklist::code_block::{
-    render_code_block_plain, CodeBlockOptions, CodeSnippetButtonHandles,
-};
+// twarp: 2c-d — AI code block / plugin / cli agent deleted; stubs.
+use crate::app_state::CLIAgent;
 use crate::appearance::Appearance;
-use crate::terminal::cli_agent_sessions::plugin_manager::PluginInstructions;
-use crate::terminal::CLIAgent;
+
+pub fn render_code_block_plain<A, B, C, D, E>(
+    _: A,
+    _: B,
+    _: C,
+    _: D,
+    _: E,
+) -> Box<dyn warpui::Element> {
+    warpui::elements::Empty::new().finish()
+}
+#[derive(Default)]
+pub struct CodeBlockOptions {
+    // twarp: 2c-d — fields used by callers
+    pub on_open: Option<()>,
+    pub on_execute: Option<Box<dyn Fn(String, &mut warpui::EventContext)>>,
+    pub on_copy: Option<Box<dyn Fn(String, &mut warpui::EventContext)>>,
+    pub on_insert: Option<()>,
+    pub footer_element: Option<Box<dyn warpui::Element>>,
+    pub mouse_handles: Option<CodeSnippetButtonHandles>,
+    pub file_path: Option<std::path::PathBuf>,
+}
+#[derive(Default, Clone)]
+pub struct CodeSnippetButtonHandles;
+pub struct PluginInstructions {
+    pub steps: Vec<PluginInstructionStep>,
+    // twarp: 2c-d — extra fields used by plugin instructions block
+    pub title: String,
+    pub subtitle: String,
+    pub post_install_notes: Vec<&'static str>,
+}
+pub struct PluginInstructionStep {
+    pub command: String,
+    pub description: &'static str,
+    pub executable: bool,
+    pub link: Option<&'static str>,
+}
 use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ActionButton, ButtonSize, NakedTheme};
 use crate::view_components::DismissibleToast;
@@ -140,7 +173,7 @@ impl PluginInstructionsBlock {
         if !command.is_empty() {
             let code_block = render_code_block_plain(
                 command,
-                Box::new(iter::empty()),
+                Box::new(iter::empty::<()>()),
                 CodeBlockOptions {
                     on_open: None,
                     on_execute: if executable {
@@ -161,7 +194,7 @@ impl PluginInstructionsBlock {
                     file_path: None,
                 },
                 app,
-                None,
+                None::<()>,
             );
             column.add_child(Container::new(code_block).with_padding_left(40.).finish());
         }
@@ -226,7 +259,7 @@ impl View for PluginInstructionsBlock {
                 .resolved_commands
                 .get(step_index)
                 .map(String::as_str)
-                .unwrap_or(step.command);
+                .unwrap_or(&step.command);
             content.add_child(self.render_step(
                 step_index,
                 step.description,
@@ -238,7 +271,7 @@ impl View for PluginInstructionsBlock {
             ));
         }
 
-        for note in self.instructions.post_install_notes {
+        for note in &self.instructions.post_install_notes {
             let post_note = Text::new((*note).to_owned(), appearance.ui_font_family(), 14.)
                 .with_color(theme.nonactive_ui_text_color().into_solid())
                 .finish();

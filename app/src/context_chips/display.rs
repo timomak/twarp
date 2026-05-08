@@ -1,17 +1,24 @@
 use std::sync::Arc;
 
-use crate::ai::blocklist::agent_view::AgentViewController;
-use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
-use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
+// twarp: 2c-d — AI agent view controller / blocklist input/context/history / AI document deleted.
+use crate::app_state::{AIDocumentId, AIDocumentVersion};
 use crate::context_chips::display_chip::format_git_branch_command;
+use crate::context_chips::display_chip::{
+    AgentViewController, BlocklistAIContextModel, BlocklistAIInputModel,
+};
 use crate::settings::InputSettings;
 use crate::terminal::model_events::ModelEventDispatcher;
 use crate::{
-    ai::blocklist::{BlocklistAIContextModel, BlocklistAIInputEvent, BlocklistAIInputModel},
-    completer::SessionContext,
-    context_chips::display_chip::DisplayChipAction,
+    completer::SessionContext, context_chips::display_chip::DisplayChipAction,
     terminal::input::MenuPositioningProvider,
 };
+
+// twarp: 2c-d — re-export shared stubs to unify across files.
+pub use crate::terminal::shared_session::shared_handlers::BlocklistAIHistoryModel;
+// twarp: 2c-d — re-export canonical
+pub use crate::terminal::input::BlocklistAIHistoryEvent;
+// twarp: 2c-d — re-export canonical
+pub use crate::terminal::input::BlocklistAIInputEvent;
 use std::path::PathBuf;
 use warp_core::features::FeatureFlag;
 use warpui::{
@@ -119,7 +126,8 @@ impl PromptDisplay {
         ctx.subscribe_to_model(&ai_input_model, |_me, _model, event, ctx| {
             match event {
                 BlocklistAIInputEvent::InputTypeChanged { .. }
-                | BlocklistAIInputEvent::LockChanged { .. } => {
+                | BlocklistAIInputEvent::LockChanged { .. }
+                | BlocklistAIInputEvent::UpdatedConfig { .. } => {
                     // Trigger re-render to update chip visibility based on new input mode
                     ctx.notify();
                 }

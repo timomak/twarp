@@ -10,11 +10,12 @@ use warpui::{
     AppContext, ModelHandle,
 };
 
-use crate::{
-    ai::blocklist::agent_view::AgentViewDisplayMode,
-    terminal::{input::inline_menu::InlineMenuPositioner, model::index::Point as IndexPoint},
+// twarp: 2c-d — re-export unified stubs from model::block.
+pub use crate::terminal::model::block::{AgentViewDisplayMode, AgentViewState};
+use crate::terminal::{
+    input::inline_menu::InlineMenuPositioner, model::blocks::RichContentItem,
+    model::index::Point as IndexPoint,
 };
-use crate::{ai::blocklist::agent_view::AgentViewState, terminal::model::blocks::RichContentItem};
 
 use super::{
     block_list_element::{
@@ -2038,7 +2039,7 @@ impl Iterator for ViewportIter<'_> {
                         }
                     }
                     AgentViewState::Active {
-                        display_mode: AgentViewDisplayMode::Inline,
+                        display_mode: AgentViewDisplayMode::Inline | AgentViewDisplayMode::Other,
                         ..
                     }
                     | AgentViewState::Inactive => {

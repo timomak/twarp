@@ -1,17 +1,73 @@
 use anyhow::anyhow;
 use warp_terminal::model::{grid::Dimensions, Point};
 
-use crate::{
-    ai::{
-        agent::{conversation::AIConversationId, task::TaskId, AIAgentActionId},
-        blocklist::block::cli_controller::{LongRunningCommandControlState, UserTakeOverReason},
+// twarp: 2c-d — AI agent / blocklist deleted; stubs (use crate::app_state where present).
+use crate::app_state::AIConversationId;
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct TaskId(pub String);
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct AIAgentActionId(pub String);
+impl From<String> for AIAgentActionId {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+impl std::fmt::Display for AIAgentActionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+// twarp: 2c-d — variants kept so legacy AI takeover call-sites compile.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum LongRunningCommandControlState {
+    // twarp: 2c-d — User can take an optional reason field
+    User {
+        reason: Option<UserTakeOverReason>,
     },
-    terminal::{
-        event::Event,
-        model::{
-            grid::{grid_handler::GridHandler, RespectDisplayedOutput},
-            RespectObfuscatedSecrets,
-        },
+    Agent {
+        is_blocked: bool,
+        should_hide_responses: bool,
+    },
+    Other,
+}
+#[allow(dead_code)]
+impl LongRunningCommandControlState {
+    pub fn user_take_over_reason(&self) -> Option<&UserTakeOverReason> {
+        match self {
+            LongRunningCommandControlState::User { reason } => reason.as_ref(),
+            _ => None,
+        }
+    }
+    // twarp: 2c-d — bulk stubs for AI-removed methods
+    pub fn is_agent_in_control(&self) -> bool {
+        false
+    }
+    pub fn is_agent_blocked(&self) -> bool {
+        false
+    }
+    pub fn is_user_in_control(&self) -> bool {
+        matches!(self, LongRunningCommandControlState::User { .. })
+    }
+    pub fn should_hide_responses(&self) -> bool {
+        false
+    }
+}
+#[allow(dead_code)]
+impl UserTakeOverReason {
+    pub fn is_stop(&self) -> bool {
+        false
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum UserTakeOverReason {
+    Other,
+    Stop,
+}
+use crate::terminal::{
+    event::Event,
+    model::{
+        grid::{grid_handler::GridHandler, RespectDisplayedOutput},
+        RespectObfuscatedSecrets,
     },
 };
 
@@ -165,7 +221,7 @@ impl Block {
         }) = self.interaction_mode
         {
             *state = LongRunningCommandControlState::User {
-                reason: UserTakeOverReason::Stop,
+                reason: Some(UserTakeOverReason::Stop),
             };
         }
     }
@@ -428,7 +484,9 @@ impl InteractionMode {
             return Err(UpdateInteractionModeError::InvalidTakeOver);
         }
 
-        *long_running_control_state = Some(LongRunningCommandControlState::User { reason });
+        *long_running_control_state = Some(LongRunningCommandControlState::User {
+            reason: Some(reason),
+        });
         Ok(())
     }
 

@@ -1,6 +1,12 @@
 use super::auth::AuthClient;
 use super::ServerApi;
-use crate::ai::generate_block_title::api::{GenerateBlockTitleRequest, GenerateBlockTitleResponse};
+// twarp: 2c-d — AI generate_block_title deleted; re-export for type unification.
+pub use crate::terminal::share_block_modal::GenerateBlockTitleRequest;
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+pub struct GenerateBlockTitleResponse {
+    // twarp: 2c-d — fields used by callers
+    pub title: String,
+}
 use crate::server::{
     block::{Block, DisplaySetting},
     graphql::{get_request_context, get_user_facing_error_message},

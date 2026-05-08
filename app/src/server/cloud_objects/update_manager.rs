@@ -1,15 +1,65 @@
-#[cfg(not(target_family = "wasm"))]
-use crate::ai::mcp::templatable::{CloudTemplatableMCPServerModel, TemplatableMCPServer};
+// twarp: 2c-d — AI mcp / ambient / blocklist / execution_profiles / facts deleted; stubs.
+pub struct CloudTemplatableMCPServerModel;
+#[allow(dead_code)]
+impl CloudTemplatableMCPServerModel {
+    pub fn new<A>(_: A) -> Self {
+        Self
+    }
+}
+pub struct TemplatableMCPServer;
+use crate::app_state::AIConversationId;
+pub struct CloudScheduledAmbientAgentModel;
+#[allow(dead_code)]
+impl CloudScheduledAmbientAgentModel {
+    pub fn new<A>(_: A) -> Self {
+        Self
+    }
+}
+pub struct ScheduledAmbientAgent;
+pub struct BlocklistAIHistoryModel;
+impl warpui::Entity for BlocklistAIHistoryModel {
+    type Event = ();
+}
+impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+#[allow(dead_code)]
+impl BlocklistAIHistoryModel {
+    pub fn get_server_conversation_metadata(
+        &self,
+        _: &AIConversationId,
+    ) -> Option<&ServerConversationMetadataStub> {
+        None
+    }
+    pub fn set_server_metadata_for_conversation<C>(
+        &mut self,
+        _: AIConversationId,
+        _: ServerConversationMetadataStub,
+        _: &mut C,
+    ) {
+    }
+}
+#[derive(Clone)]
+#[allow(dead_code)]
+pub struct ServerConversationMetadataStub {
+    pub permissions: crate::cloud_object::ServerPermissions,
+}
+pub struct AIExecutionProfilesModel;
+pub struct AIExecutionProfile;
+pub struct CloudAIExecutionProfileModel;
+#[allow(dead_code)]
+impl CloudAIExecutionProfileModel {
+    pub fn new<A>(_: A) -> Self {
+        Self
+    }
+}
+pub struct AIFact;
+pub struct CloudAIFactModel;
+#[allow(dead_code)]
+impl CloudAIFactModel {
+    pub fn new<A>(_: A) -> Self {
+        Self
+    }
+}
 use crate::{
-    ai::{
-        agent::conversation::AIConversationId,
-        ambient_agents::scheduled::{CloudScheduledAmbientAgentModel, ScheduledAmbientAgent},
-        blocklist::BlocklistAIHistoryModel,
-        execution_profiles::{
-            profiles::AIExecutionProfilesModel, AIExecutionProfile, CloudAIExecutionProfileModel,
-        },
-        facts::{AIFact, CloudAIFactModel},
-    },
     auth::{auth_manager::AuthManager, AuthStateProvider},
     cloud_object::{
         model::{
@@ -413,10 +463,6 @@ impl UpdateManager {
                                         self.save_to_db([workflow_object.upsert_event()]);
                                     }
                                 });
-                        } else if cloud_model.get_ai_execution_profile(&server_id).is_some() {
-                            AIExecutionProfilesModel::handle(ctx).update(ctx, |model, _| {
-                                model.replace_client_id_with_server_id(server_id, client_id);
-                            });
                         }
                     }
                 });
@@ -916,84 +962,13 @@ impl UpdateManager {
                         ctx,
                     ));
                 }
-                GenericStringObjectFormat::Json(JsonObjectType::AIFact) => {
-                    let typed_objects = objects
-                        .iter()
-                        .filter_map(|obj| {
-                            let server_obj: Option<&ServerAIFact> = obj.into();
-                            server_obj.cloned()
-                        })
-                        .collect::<Vec<_>>();
-                    sqlite_events.push(Self::handle_object_updates(
-                        typed_objects,
-                        force_refresh,
-                        !is_first_load,
-                        ctx,
-                    ));
-                }
-                GenericStringObjectFormat::Json(JsonObjectType::MCPServer) => {
-                    let typed_objects = objects
-                        .iter()
-                        .filter_map(|obj| {
-                            let server_obj: Option<&ServerMCPServer> = obj.into();
-                            server_obj.cloned()
-                        })
-                        .collect::<Vec<_>>();
-                    sqlite_events.push(Self::handle_object_updates(
-                        typed_objects,
-                        force_refresh,
-                        !is_first_load,
-                        ctx,
-                    ));
-                }
-                GenericStringObjectFormat::Json(JsonObjectType::AIExecutionProfile) => {
-                    let typed_objects = objects
-                        .iter()
-                        .filter_map(|obj| {
-                            let server_obj: Option<&ServerAIExecutionProfile> = obj.into();
-                            server_obj.cloned()
-                        })
-                        .collect::<Vec<_>>();
-                    sqlite_events.push(Self::handle_object_updates(
-                        typed_objects,
-                        force_refresh,
-                        !is_first_load,
-                        ctx,
-                    ));
-                }
-                GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer) => {
-                    let typed_objects = objects
-                        .iter()
-                        .filter_map(|obj| {
-                            let server_obj: Option<&ServerTemplatableMCPServer> = obj.into();
-                            server_obj.cloned()
-                        })
-                        .collect::<Vec<_>>();
-                    sqlite_events.push(Self::handle_object_updates(
-                        typed_objects,
-                        force_refresh,
-                        !is_first_load,
-                        ctx,
-                    ));
-                }
-                GenericStringObjectFormat::Json(JsonObjectType::CloudEnvironment) => {
-                    // CloudEnvironment objects are no longer materialized client-side.
-                }
-                GenericStringObjectFormat::Json(JsonObjectType::ScheduledAmbientAgent) => {
-                    let typed_objects = objects
-                        .iter()
-                        .filter_map(|obj| {
-                            let server_obj: Option<&ServerScheduledAmbientAgent> = obj.into();
-                            server_obj.cloned()
-                        })
-                        .collect::<Vec<_>>();
-                    sqlite_events.push(Self::handle_object_updates(
-                        typed_objects,
-                        force_refresh,
-                        !is_first_load,
-                        ctx,
-                    ));
-                }
+                // twarp: 2c-d — AI cloud-object materializations deleted; arms are no-ops.
+                GenericStringObjectFormat::Json(JsonObjectType::AIFact)
+                | GenericStringObjectFormat::Json(JsonObjectType::MCPServer)
+                | GenericStringObjectFormat::Json(JsonObjectType::AIExecutionProfile)
+                | GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer)
+                | GenericStringObjectFormat::Json(JsonObjectType::CloudEnvironment)
+                | GenericStringObjectFormat::Json(JsonObjectType::ScheduledAmbientAgent) => {}
                 GenericStringObjectFormat::Json(JsonObjectType::CloudAgentConfig) => {
                     // CloudAgentConfig objects are no longer materialized client-side.
                 }
@@ -1809,23 +1784,9 @@ impl UpdateManager {
                     }]);
                 }
             }
-            ServerCloudObject::AIExecutionProfile(server_profile) => {
-                // Update in-memory model with the fact that it was rejected. We don't update sqlite
-                // since we don't want to wipe away the user's content.
-                CloudModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-                    if let Some(profile) = cloud_model.get_object_of_type_mut(&server_profile.id) {
-                        profile.set_conflicting_object(Arc::new(server_profile.clone()));
-
-                        // Setting the in-memory model state of the object to in conflict since all further sync
-                        // will be rejected until the conflict is cleared. Note that we don't want to clear the pending status
-                        // in the database as on the next app restart we want to fetch the up-to-date revision of the object
-                        // for refresh in initial load.
-                        profile
-                            .set_pending_content_changes_status(CloudObjectSyncStatus::InConflict);
-
-                        ctx.notify();
-                    }
-                });
+            ServerCloudObject::AIExecutionProfile(_server_profile) => {
+                // twarp: 2c-d — AIExecutionProfile is () stub post-AI removal.
+                let _ = ctx;
             }
             // folders and preferences are last-write-wins, no need to do anything here
             // TODO: Figure out how to deal with conflicts for AI rules INT-759
@@ -1866,28 +1827,23 @@ impl UpdateManager {
 
     pub fn update_ai_fact(
         &mut self,
-        ai_fact: AIFact,
-        ai_fact_id: SyncId,
-        revision_ts: Option<Revision>,
-        ctx: &mut ModelContext<Self>,
+        _ai_fact: AIFact,
+        _ai_fact_id: SyncId,
+        _revision_ts: Option<Revision>,
+        _ctx: &mut ModelContext<Self>,
     ) {
-        self.update_object(CloudAIFactModel::new(ai_fact), ai_fact_id, revision_ts, ctx);
+        // twarp: 2c-d — AI cloud object updates removed
     }
 
     #[cfg(not(target_family = "wasm"))]
     pub fn update_templatable_mcp_server(
         &mut self,
-        templatable_mcp_server: TemplatableMCPServer,
-        templatable_mcp_server_id: SyncId,
-        revision_ts: Option<Revision>,
-        ctx: &mut ModelContext<Self>,
+        _templatable_mcp_server: TemplatableMCPServer,
+        _templatable_mcp_server_id: SyncId,
+        _revision_ts: Option<Revision>,
+        _ctx: &mut ModelContext<Self>,
     ) {
-        self.update_object(
-            CloudTemplatableMCPServerModel::new(templatable_mcp_server),
-            templatable_mcp_server_id,
-            revision_ts,
-            ctx,
-        );
+        // twarp: 2c-d — AI cloud object updates removed
     }
 
     pub fn update_workflow(
@@ -3102,47 +3058,28 @@ impl UpdateManager {
 
     pub fn create_ai_fact(
         &mut self,
-        ai_fact: AIFact,
-        client_id: ClientId,
-        owner: Owner,
-        ctx: &mut ModelContext<Self>,
+        _ai_fact: AIFact,
+        _client_id: ClientId,
+        _owner: Owner,
+        _ctx: &mut ModelContext<Self>,
     ) {
-        self.create_object(
-            CloudAIFactModel::new(ai_fact),
-            owner,
-            client_id,
-            Default::default(),
-            false,
-            None,
-            // When adding the initiated_by parameter to this function call, InitiatedBy::User was set as a default value.
-            // This can be changed to InitiatedBy::System if this action was automatically kicked off by the system and we do not want a user facing toast.
-            InitiatedBy::User,
-            ctx,
-        );
+        // twarp: 2c-d — AI cloud object creation removed
     }
 
     #[cfg(not(target_family = "wasm"))]
     pub fn create_templatable_mcp_server(
         &mut self,
-        templatable_mcp_server: TemplatableMCPServer,
-        client_id: ClientId,
-        owner: Owner,
-        initiated_by: InitiatedBy,
-        ctx: &mut ModelContext<Self>,
+        _templatable_mcp_server: TemplatableMCPServer,
+        _client_id: ClientId,
+        _owner: Owner,
+        _initiated_by: InitiatedBy,
+        _ctx: &mut ModelContext<Self>,
     ) {
-        self.create_object(
-            CloudTemplatableMCPServerModel::new(templatable_mcp_server),
-            owner,
-            client_id,
-            Default::default(),
-            false,
-            None,
-            initiated_by,
-            ctx,
-        );
+        // twarp: 2c-d — AI cloud object creation removed
     }
 
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    #[allow(dead_code, unused_variables)]
     pub fn create_scheduled_ambient_agent_online(
         &mut self,
         scheduled_ambient_agent: ScheduledAmbientAgent,
@@ -3150,18 +3087,12 @@ impl UpdateManager {
         owner: Owner,
         ctx: &mut ModelContext<Self>,
     ) -> impl Future<Output = anyhow::Result<ServerId>> {
-        self.create_object_online(
-            CloudScheduledAmbientAgentModel::new(scheduled_ambient_agent),
-            owner,
-            client_id,
-            Default::default(),
-            false,
-            None,
-            ctx,
-        )
+        // twarp: 2c-d — AI cloud objects deleted; stub returns error.
+        async { Err(anyhow::anyhow!("AI cloud objects deleted")) }
     }
 
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    #[allow(dead_code, unused_variables)]
     pub fn update_scheduled_ambient_agent_online(
         &mut self,
         scheduled_ambient_agent: ScheduledAmbientAgent,
@@ -3169,50 +3100,30 @@ impl UpdateManager {
         revision_ts: Option<Revision>,
         ctx: &mut ModelContext<Self>,
     ) -> impl Future<Output = anyhow::Result<()>> {
-        self.update_object_online(
-            CloudScheduledAmbientAgentModel::new(scheduled_ambient_agent),
-            scheduled_ambient_agent_id,
-            revision_ts,
-            ctx,
-        )
+        // twarp: 2c-d — AI cloud objects deleted; stub returns error.
+        async { Err(anyhow::anyhow!("AI cloud objects deleted")) }
     }
 
     #[allow(dead_code)]
     pub fn create_ai_execution_profile(
         &mut self,
-        ai_execution_profile: AIExecutionProfile,
-        client_id: ClientId,
-        owner: Owner,
-        ctx: &mut ModelContext<Self>,
+        _ai_execution_profile: AIExecutionProfile,
+        _client_id: ClientId,
+        _owner: Owner,
+        _ctx: &mut ModelContext<Self>,
     ) {
-        self.create_object(
-            CloudAIExecutionProfileModel::new(ai_execution_profile),
-            owner,
-            client_id,
-            Default::default(),
-            false,
-            None,
-            // When adding the initiated_by parameter to this function call, InitiatedBy::User was set as a default value.
-            // This can be changed to InitiatedBy::System if this action was automatically kicked off by the system and we do not want a user facing toast.
-            InitiatedBy::User,
-            ctx,
-        );
+        // twarp: 2c-d — AI cloud objects deleted; stub no-op.
     }
 
     #[allow(dead_code)]
     pub fn update_ai_execution_profile(
         &mut self,
-        ai_execution_profile: AIExecutionProfile,
-        ai_execution_profile_id: SyncId,
-        revision_ts: Option<Revision>,
-        ctx: &mut ModelContext<Self>,
+        _ai_execution_profile: AIExecutionProfile,
+        _ai_execution_profile_id: SyncId,
+        _revision_ts: Option<Revision>,
+        _ctx: &mut ModelContext<Self>,
     ) {
-        self.update_object(
-            CloudAIExecutionProfileModel::new(ai_execution_profile),
-            ai_execution_profile_id,
-            revision_ts,
-            ctx,
-        );
+        // twarp: 2c-d — AI cloud objects deleted; stub no-op.
     }
 
     pub fn delete_ai_execution_profile(
