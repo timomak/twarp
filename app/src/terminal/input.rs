@@ -5192,7 +5192,8 @@ impl Input {
                 });
             }
             InlineProfileSelectorEvent::ManageProfiles => {
-                ctx.emit(Event::OpenSettings(SettingsSection::WarpAgent));
+                // twarp: 2d — WarpAgent settings page deleted; reroute to default.
+                ctx.emit(Event::OpenSettings(SettingsSection::default()));
             }
             InlineProfileSelectorEvent::Dismissed => {
                 if self

@@ -18802,7 +18802,8 @@ impl TerminalView {
                 // Usage footer feature removed; ignore.
             }
             AIBlockEvent::OpenSettings => {
-                ctx.emit(Event::OpenSettings(SettingsSection::WarpAgent));
+                // twarp: 2d — WarpAgent settings page deleted; reroute to default.
+                ctx.emit(Event::OpenSettings(SettingsSection::default()));
             }
             #[cfg(feature = "local_fs")]
             AIBlockEvent::OpenCodeInWarp { source, layout } => {

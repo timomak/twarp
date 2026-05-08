@@ -109,17 +109,10 @@ fn subpage_display_names_are_correct() {
 
 #[test]
 fn subpage_from_str_parses_display_names() {
-    // Both the legacy "Oz" name and the new "Warp Agent" display name still
-    // resolve to SettingsSection::WarpAgent so existing deep links and
-    // persisted telemetry strings keep parsing while the AI page is removed.
-    assert_eq!(
-        SettingsSection::from_str("Oz"),
-        Ok(SettingsSection::WarpAgent)
-    );
-    assert_eq!(
-        SettingsSection::from_str("Warp Agent"),
-        Ok(SettingsSection::WarpAgent)
-    );
+    // twarp: 2d — "Oz" / "Warp Agent" deep links no longer resolve since the
+    // settings page is gone; both keys now fail to parse.
+    assert_eq!(SettingsSection::from_str("Oz"), Err(()));
+    assert_eq!(SettingsSection::from_str("Warp Agent"), Err(()));
     assert_eq!(
         SettingsSection::from_str("Indexing and projects"),
         Ok(SettingsSection::CodeIndexing)

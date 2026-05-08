@@ -180,13 +180,6 @@ pub enum SettingsSection {
     Teams,
     WarpDrive,
     Warpify,
-    /// twarp: AI settings page is removed but this variant is retained as a
-    /// compile-time placeholder for non-AI consumers (workspace, terminal)
-    /// that still construct it as a navigation target. Navigating to it
-    /// resolves to `Account` so AI settings remain unreachable. The variant
-    /// will go away in 2c-d once `app/src/ai/` is deleted along with all
-    /// outside-of-settings_view callers.
-    WarpAgent,
     /// Internal backing-page identifier for CodeSettingsPageView. Multiple subpages
     /// (CodeIndexing, EditorAndCodeReview) share this single backing page,
     /// so this variant is needed as the key in `settings_pages`.
@@ -210,7 +203,6 @@ impl Display for SettingsSection {
             SettingsSection::SharedBlocks => write!(f, "Shared blocks"),
             SettingsSection::MCPServers => write!(f, "MCP Servers"),
             SettingsSection::WarpDrive => write!(f, "Warp Drive"),
-            SettingsSection::WarpAgent => write!(f, "Warp Agent"),
             SettingsSection::CodeIndexing => write!(f, "Indexing and projects"),
             SettingsSection::EditorAndCodeReview => write!(f, "Editor and Code Review"),
             SettingsSection::OzCloudAPIKeys => write!(f, "Oz Cloud API Keys"),
@@ -277,8 +269,6 @@ impl FromStr for SettingsSection {
             "Teams" => Ok(Self::Teams),
             "Warpify" => Ok(Self::Warpify),
             "WarpDrive" | "Warp Drive" => Ok(Self::WarpDrive),
-            // This page was called "Oz" at one point, keep for backward compatibility.
-            "Oz" | "Warp Agent" => Ok(Self::WarpAgent),
             "Indexing and projects" | "CodeIndexing" => Ok(Self::CodeIndexing),
             "Editor and Code Review" | "EditorAndCodeReview" => Ok(Self::EditorAndCodeReview),
             "Oz Cloud API Keys" | "OzCloudAPIKeys" => Ok(Self::OzCloudAPIKeys),
@@ -1099,10 +1089,8 @@ impl SettingsView {
         //
         // twarp: The "Agents" umbrella (which exposed the AI settings page
         // and its subpages) is removed from the sidebar so users cannot
-        // navigate to AI settings. 2c-c deleted `ai_page.rs` and the
-        // SettingsSection variants used only by it; `WarpAgent` is retained
-        // as a placeholder for non-AI callers and is rerouted to the default
-        // page on entry.
+        // navigate to AI settings. The `WarpAgent` SettingsSection variant
+        // was deleted in 2d.
         let mut nav_items = vec![
             SettingsNavItem::Page(SettingsSection::Account),
             SettingsNavItem::Page(SettingsSection::BillingAndUsage),
@@ -1130,11 +1118,8 @@ impl SettingsView {
         ];
 
         // Resolve the initial page: map internal backing-page sections to
-        // their default subpage. `WarpAgent` is a leftover variant kept for
-        // non-AI consumers (workspace, terminal); navigating to it falls back
-        // to the default page since the AI settings page is gone.
+        // their default subpage.
         let initial_page = match page {
-            Some(SettingsSection::WarpAgent) => SettingsSection::default(),
             Some(SettingsSection::Code) => SettingsSection::CodeIndexing,
             Some(section) if section.is_subpage() => section,
             other => other.unwrap_or_default(),
@@ -1696,11 +1681,8 @@ impl SettingsView {
         allow_steal_focus: bool,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Map internal backing-page sections to their default subpage, and
-        // reroute the legacy `WarpAgent` variant to the default page since
-        // the AI settings page is gone (see SettingsSection definition).
+        // Map internal backing-page sections to their default subpage.
         let section = match section {
-            SettingsSection::WarpAgent => SettingsSection::default(),
             SettingsSection::Code => SettingsSection::CodeIndexing,
             other => other,
         };
