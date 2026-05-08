@@ -127,9 +127,6 @@ pub enum FeatureFlag {
     /// Enable dynamic enum parameter types for workflow arguments
     DynamicWorkflowEnums,
 
-    /// Enables next action prediction within Warp, powered by AI.
-    AgentPredict,
-
     /// Enables receiving shared Warp Drive objects.
     SharedWithMe,
 
@@ -191,9 +188,6 @@ pub enum FeatureFlag {
     SshDragAndDrop,
     DragTabsToWindows,
 
-    /// Enables the overflow menu on AI blocks.
-    AIBlockOverflowMenu,
-
     /// Enables cycling through the next command suggestions with down arrow.
     CycleNextCommandSuggestion,
 
@@ -207,8 +201,6 @@ pub enum FeatureFlag {
 
     /// Enables partial next command suggestions with a prefix.
     PartialNextCommandSuggestions,
-
-    AIGeneratedOnboardingSuggestions,
 
     /// Enables iTerm image rendering
     ITermImages,
@@ -241,9 +233,6 @@ pub enum FeatureFlag {
 
     /// Enables actual collection of AI analytics data per the revised AI analytics policy.
     GlobalAIAnalyticsCollection,
-
-    /// Enables auto-generated AI memories.
-    AIMemories,
 
     /// Enables the XML output system prompt for the primary (terminal) agent in Agent Mode.
     AgentModePrimaryXML,
@@ -551,12 +540,6 @@ pub enum FeatureFlag {
 
     /// Enables the /rewind slash command.
     RewindSlashCommand,
-
-    /// Agent Management View.
-    AgentManagementView,
-
-    /// Agent Management Details View - enables new details panel on card click.
-    AgentManagementDetailsView,
 
     /// Enables scheduled ambient agents.
     ScheduledAmbientAgents,

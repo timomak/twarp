@@ -1418,16 +1418,9 @@ pub fn init(app: &mut AppContext) {
     add_open_setting_pages_as_editable_binding(app);
     add_overflow_menu_items_as_editable_binding(app);
 
-    app.register_editable_bindings([EditableBinding::new(
-        "workspace:toggle_agent_management_view",
-        "Toggle the agent management view",
-        WorkspaceAction::ToggleAgentManagementView,
-    )
-    .with_enabled(|| FeatureFlag::AgentManagementView.is_enabled())
-    .with_context_predicate(id!("Workspace") & id!(flags::IS_ANY_AI_ENABLED))
-    .with_mac_key_binding("cmd-shift-M")
-    .with_linux_or_windows_key_binding("ctrl-shift-M")
-    .with_group(bindings::BindingGroup::WarpAi.as_str())]);
+    // twarp: 2d — `workspace:toggle_agent_management_view` binding deleted with
+    // FeatureFlag::AgentManagementView; the underlying ToggleAgentManagementView
+    // action is a no-op stub left from the agent_management deletion.
 }
 
 fn add_open_setting_pages_as_editable_binding(app: &mut AppContext) {
