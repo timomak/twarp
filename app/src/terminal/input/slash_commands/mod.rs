@@ -850,7 +850,7 @@ impl Input {
         {
             self.agent_view_controller.update(ctx, |controller, ctx| {
                 let _ = controller.try_enter_agent_view(
-                    None,
+                    None::<()>,
                     // twarp: 2c-d — name added to AgentViewEntryOrigin::SlashCommand
                     AgentViewEntryOrigin::SlashCommand {
                         name: command.name.to_string(),

@@ -372,7 +372,7 @@ pub enum SlashCommandRequest {
     FetchReviewComments {
         repo_path: std::path::PathBuf,
     },
-    CreateNewProject,
+    CreateNewProject { query: String },
 }
 
 #[allow(dead_code)]
@@ -473,6 +473,7 @@ impl InlineConversationMenuView {
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
+    fn select_next_tab<C>(&mut self, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -535,7 +536,11 @@ impl InlinePlanMenuView {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum InlinePlanMenuEvent {
-    OpenPlan { ai_document_uid: crate::app_state::AIDocumentId },
+    OpenPlan {
+        ai_document_uid: crate::app_state::AIDocumentId,
+        document_id: crate::app_state::AIDocumentId,
+        document_version: crate::app_state::AIDocumentVersion,
+    },
     Dismissed,
 }
 
@@ -568,7 +573,7 @@ impl InlinePromptsMenuView {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum InlinePromptsMenuEvent {
-    SelectedPrompt { prompt: String },
+    SelectedPrompt { prompt: String, id: String },
 }
 
 #[allow(dead_code)]
@@ -621,7 +626,7 @@ impl InlineSkillSelectorView {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum InlineSkillSelectorEvent {
-    SelectedSkill { name: String },
+    SelectedSkill { name: String, skill_name: String, skill_reference: String },
 }
 
 #[allow(dead_code)]
@@ -636,8 +641,8 @@ impl UserQueryMenuView {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum UserQueryMenuEvent {
-    SelectedQuery { query: String },
-    AcceptedQuery { query: String },
+    SelectedQuery { query: String, exchange_id: crate::app_state::AIConversationId },
+    AcceptedQuery { query: String, exchange_id: crate::app_state::AIConversationId },
     Dismissed,
 }
 
@@ -661,6 +666,11 @@ enum AttachmentType {
 
 #[allow(dead_code)]
 struct TemplatableMCPServerManager;
+#[allow(dead_code)]
+impl TemplatableMCPServerManager {
+    fn install_figma_from_gallery<C>(&mut self, _: &mut C) {}
+    fn enable_figma_mcp<C>(&mut self, _: &mut C) {}
+}
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -716,6 +726,10 @@ pub use crate::terminal::view::inline_banner::prompt_suggestions::PromptAlertEve
 
 #[allow(dead_code)]
 struct PromptAlertView;
+#[allow(dead_code)]
+impl PromptAlertView {
+    fn does_alert_block_ai_requests<C>(_: &C) -> bool { false }
+}
 
 #[allow(dead_code)]
 fn render_ai_agent_mode_icon<A, B>(_: A, _: B) -> Box<dyn Element> { Empty::new().finish() }
@@ -6266,6 +6280,7 @@ impl Input {
                     user_workspaces.generate_stripe_billing_portal_link(*team_uid, ctx);
                 });
             }
+            PromptAlertEvent::Other => {}
         }
     }
 
@@ -13083,8 +13098,15 @@ impl Input {
                 const USAGE_LIMIT_UPDATE_REQUEST_RATE_LIMIT: Duration = Duration::from_secs(10);
 
                 let last_update_time = usage_model.last_update_time();
+                // twarp: 2c-d — chrono::DateTime has no .elapsed(); compute via signed_duration_since.
                 if last_update_time
-                    .is_some_and(|time| time.elapsed() >= USAGE_LIMIT_UPDATE_REQUEST_RATE_LIMIT)
+                    .is_some_and(|time| {
+                        chrono::Utc::now()
+                            .signed_duration_since(time)
+                            .to_std()
+                            .unwrap_or_default()
+                            >= USAGE_LIMIT_UPDATE_REQUEST_RATE_LIMIT
+                    })
                     || last_update_time.is_none()
                 {
                     usage_model.refresh_request_usage_async(ctx);
@@ -13196,7 +13218,8 @@ impl Input {
             // Update the input mode to remove any locks and re-enable autodetection.
             // If the buffer is empty, this returns the input mode to the default.
             let input_type = if buffer_text.is_empty() {
-                InputType::default()
+                // twarp: 2c-d — events::InputType has no Default; fallback to Shell.
+                InputType::Shell
             } else {
                 ai_input_model.input_config().input_type
             };

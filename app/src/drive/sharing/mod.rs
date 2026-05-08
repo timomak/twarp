@@ -54,6 +54,8 @@ impl ShareableObject {
                 .get_by_uid(&id.uid())
                 .and_then(|object| object.object_link()),
             ShareableObject::Session { session_id, .. } => Some(join_link(session_id)),
+            // twarp: 2c-d — AI conversation sharing removed.
+            ShareableObject::AIConversation(_) => None,
         }
     }
 }

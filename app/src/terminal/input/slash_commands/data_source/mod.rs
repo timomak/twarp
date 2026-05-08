@@ -25,6 +25,7 @@ use crate::search::slash_command_menu::static_commands::Availability;
 use crate::terminal::model::session::SessionType;
 use warp_core::ui::Icon as WarpIcon;
 
+#[derive(Clone)]
 pub struct SkillDescriptor {
     // twarp: 2c-d — fields needed by callers
     pub name: String,

@@ -483,7 +483,7 @@ impl View for PromptSuggestionsView {
                         ));
                     }),
                     debug_request_token,
-                    prompt_alert_state,
+                    &prompt_alert_state,
                     true, // should_shrink
                     appearance,
                     app,

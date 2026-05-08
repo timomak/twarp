@@ -165,7 +165,7 @@ impl PluginInstructionsBlock {
         if !command.is_empty() {
             let code_block = render_code_block_plain(
                 command,
-                Box::new(iter::empty()),
+                Box::new(iter::empty::<()>()),
                 CodeBlockOptions {
                     on_open: None,
                     on_execute: if executable {

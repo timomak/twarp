@@ -845,6 +845,9 @@ impl View for BuyCreditsBanner {
             BuyCreditsBannerDisplayState::MonthlyLimitReached => {
                 self.render_auto_reload_blocked(appearance, app)
             }
+            BuyCreditsBannerDisplayState::Other => {
+                Container::new(warpui::elements::Empty::new().finish()).finish()
+            }
         }
     }
 }

@@ -126,7 +126,8 @@ impl PromptDisplay {
         ctx.subscribe_to_model(&ai_input_model, |_me, _model, event, ctx| {
             match event {
                 BlocklistAIInputEvent::InputTypeChanged { .. }
-                | BlocklistAIInputEvent::LockChanged { .. } => {
+                | BlocklistAIInputEvent::LockChanged { .. }
+                | BlocklistAIInputEvent::UpdatedConfig { .. } => {
                     // Trigger re-render to update chip visibility based on new input mode
                     ctx.notify();
                 }
