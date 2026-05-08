@@ -724,7 +724,7 @@ pub enum Event {
     // twarp: 2c-d.4 — OpenPluginInstructionsPane removed (CLIAgent + PluginModalKind were AI-only)
     // twarp: 2c-d — bulk variants for AI-removed pane_group::Event
     OpenCodeDiff(()),
-    OpenPluginInstructionsPane(()),
+    OpenPluginInstructionsPane(crate::app_state::CLIAgent, crate::terminal::view::PluginModalKind),
     OpenSuggestedAgentModeWorkflowModal(()),
     OpenSuggestedRuleModal(()),
     ToggleCodeReviewPane,

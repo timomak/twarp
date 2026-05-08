@@ -392,7 +392,7 @@ impl AIExecutionProfilesModel {
     fn set_base_model<P, M, C>(&mut self, _: P, _: Option<M>, _: &mut C) {}
     fn set_cli_agent_model<P, M, C>(&mut self, _: P, _: Option<M>, _: &mut C) {}
     // twarp: 2c-d — bulk stubs
-    fn set_active_profile<A, C>(&mut self, _: A, _: &mut C) {}
+    fn set_active_profile<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
 }
 
 #[allow(dead_code)]
@@ -611,7 +611,7 @@ enum RewindMenuEvent {}
 struct InlineSkillSelectorView;
 #[allow(dead_code)]
 impl InlineSkillSelectorView {
-    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
+    fn new<A, B, C, D, E, F, G>(_: A, _: B, _: C, _: D, _: E, _: F, _: &mut G) -> Self { Self }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     // twarp: 2c-d — bulk stubs
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -999,8 +999,8 @@ impl AIRequestUsageModel {
         false
     }
     // twarp: 2c-d — bulk stubs
-    fn has_requests_remaining<C>(&self, _: &C) -> bool { false }
-    fn enable_buy_credits_banner<A, C>(&mut self, _: A, _: &mut C) {}
+    fn has_requests_remaining(&self) -> bool { false }
+    fn enable_buy_credits_banner<C>(&mut self, _: &mut C) {}
     fn request_limit(&self) -> i64 { 0 }
     fn last_update_time(&mut self) -> Option<chrono::DateTime<chrono::Utc>> { None }
     fn refresh_request_usage_async<C>(&mut self, _: &mut C) {}
@@ -1065,7 +1065,7 @@ impl AmbientAgentViewModel {
     pub fn cancel_task<C>(&mut self, _: &mut C) {}
     // twarp: 2c-d — bulk stubs
     pub fn is_agent_running(&self) -> bool { false }
-    pub fn spawn_agent<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn spawn_agent<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn is_in_setup(&self) -> bool { false }
     pub fn has_parent_terminal(&self) -> bool { false }
     pub fn enter_viewing_existing_session<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
@@ -1129,7 +1129,7 @@ impl AgentViewController {
         Ok(())
     }
     // twarp: 2c-d — bulk stubs
-    pub fn should_start_new_conversation_for_keybinding<C>(&mut self, _: &mut C) -> bool { false }
+    pub fn should_start_new_conversation_for_keybinding<A, C>(&mut self, _: A, _: &mut C) -> bool { false }
     pub fn agent_view_state(&self) -> crate::terminal::model::block::AgentViewState { crate::terminal::model::block::AgentViewState::Inactive }
     pub fn exit_agent_view<C>(&mut self, _: &mut C) {}
     pub fn can_exit_agent_view<C>(&self, _: &C) -> Result<(), String> { Ok(()) }
