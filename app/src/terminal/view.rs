@@ -763,7 +763,7 @@ impl TelemetryBanner {
 }
 // twarp: 2c-d — re-export canonical AIBlock from rich_content
 pub use crate::terminal::view::rich_content::AIBlock;
-#[allow(dead_code)] enum AIBlockEvent {}
+#[allow(dead_code)] pub enum AIBlockEvent {}
 #[allow(dead_code)] pub enum BlocklistAIActionEvent {
     // twarp: 2c-d — bulk variants for AI-removed BlocklistAIActionEvent
     ActionBlockedOnUserConfirmation(()),
@@ -3950,7 +3950,7 @@ impl TerminalView {
                             *conversation_id,
                             me.view_id,
                             false, // Empty new conversations were never synced to the cloud.
-                            ctx,
+                            &mut *ctx,
                         );
                     }
 
@@ -5670,7 +5670,7 @@ impl TerminalView {
                     *conversation_id,
                     false,
                     false,
-                    ctx,
+                    &mut *ctx,
                 ) {
                     Ok(ai_block_model) => ai_block_model,
                     Err(_err) => {
@@ -5775,7 +5775,7 @@ impl TerminalView {
                             *new_conversation_id,
                             false,
                             false,
-                            ctx,
+                            &mut *ctx,
                         ) {
                             Ok(new_model) => new_model,
                             Err(_err) => {
@@ -9208,6 +9208,7 @@ impl TerminalView {
                     .as_ref(ctx)
                     .agent_view_state()
                     .active_conversation_id()
+                    .copied()
             } else {
                 None
             };
@@ -10282,7 +10283,7 @@ impl TerminalView {
             ai_block.cleanup_block(ctx);
         });
         let conversation_id = passive_block.as_ref(ctx).conversation_id();
-        conversation_utils::remove_conversation(conversation_id, self.view_id, true, ctx);
+        conversation_utils::remove_conversation(conversation_id, self.view_id, true, &mut *ctx);
         self.rich_content_views.remove(rich_content_idx);
         self.model
             .lock()
@@ -10671,7 +10672,8 @@ impl TerminalView {
                                     // showing the footer, so the session drives
                                     // the footer rather than the other way around.
                                     let detection = {
-                                        let model = me.model.lock();
+                                        let model_clone = me.model.clone();
+                                        let model = model_clone.lock();
                                         me.detect_cli_agent_from_model(&model, ctx)
                                     };
                                     let view_id = me.view_id;
@@ -12913,6 +12915,8 @@ impl TerminalView {
     fn render_ambient_agent_progress<A, B>(&self, _: A, _: B) -> Box<dyn warpui::Element> {
         warpui::elements::Empty::new().finish()
     }
+    // twarp: 2c-d — stub for integration test: load_conversation_from_tasks.
+    pub fn load_conversation_from_tasks<A, C>(&mut self, _: A, _: &mut C) {}
 
     fn start_agent_onboarding_tutorial(
         &mut self,
@@ -13524,9 +13528,10 @@ impl TerminalView {
                     return;
                 }
 
+                let telemetry_enabled = PrivacySettings::as_ref(ctx).is_telemetry_enabled;
                 let (query_string, block_command) = if should_collect_ai_ugc_telemetry(
-                    ctx,
-                    PrivacySettings::as_ref(ctx).is_telemetry_enabled,
+                    &*ctx,
+                    telemetry_enabled,
                 ) {
                     (Some(suggestion.prompt.to_string()), Some(command))
                 } else {
@@ -20377,10 +20382,7 @@ impl TerminalView {
             ctx,
         );
 
-        let context = self
-            .ai_context_model
-            .as_ref(ctx)
-            .pending_context(ctx, true /* is_user_query */);
+        // twarp: 2c-d — gut pending_context (returns Option<()> stub).
 
         let code_review_input = AIAgentInput::CodeReview {
             context: (),
@@ -20391,7 +20393,7 @@ impl TerminalView {
             && !self.agent_view_controller.as_ref(ctx).is_active()
         {
             self.enter_agent_view_for_new_conversation(
-                None::<()>,
+                None::<String>,
                 AgentViewEntryOrigin::InlineCodeReview,
                 ctx,
             );

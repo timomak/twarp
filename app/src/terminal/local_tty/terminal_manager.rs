@@ -1225,7 +1225,7 @@ impl TerminalManager {
                         server_conversation_token,
                     } => {
                         // twarp: 2c-d — removed view.ai_controller().handle_shared_session_cancel_action
-                        let _ = (terminal_view, server_conversation_token);
+                        let _ = (&terminal_view, server_conversation_token);
                     }
                 }
             }
@@ -1505,7 +1505,7 @@ impl TerminalManager {
 
                 // twarp: 2c-d — removed CLI-harness PTY submit and Oz-harness AI prompt execution
                 // (depended on CLIAgentSessionsModel and view.ai_controller()).
-                let _ = (terminal_view, request, participant_id, id);
+                let _ = (&terminal_view, request, participant_id, id);
             }
             NetworkEvent::LinkAccessLevelUpdateResponse { response } => {
                 terminal_view.update(ctx, |view, ctx| match response {

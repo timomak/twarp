@@ -344,7 +344,7 @@ pub struct CLISubagentController;
 pub use crate::terminal::view::CLISubagentEvent;
 
 #[allow(dead_code)]
-struct BlocklistAIStatusBar;
+pub struct BlocklistAIStatusBar;
 impl BlocklistAIStatusBar {
     // twarp: 2c-d — variadic stub for new
     fn new<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>(
@@ -359,7 +359,7 @@ impl BlocklistAIStatusBar {
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-struct BlocklistAIStatusBarAction;
+pub struct BlocklistAIStatusBarAction;
 impl warpui::TypedActionView for BlocklistAIStatusBar { type Action = BlocklistAIStatusBarAction; }
 
 #[allow(dead_code)]
@@ -458,7 +458,7 @@ impl CLIAgentSessionsModel {
     fn take_draft(&mut self, _: warpui::EntityId) -> Option<String> { None }
 }
 #[allow(dead_code)]
-struct CLIAgentSessionStub {
+pub struct CLIAgentSessionStub {
     pub agent: crate::app_state::CLIAgent,
     pub input_state: CLIAgentInputState,
 }
@@ -905,7 +905,7 @@ impl BlocklistAIHistoryModel {
 
 // twarp: 2c-d — local AIConversation-like stub used by input.rs.
 #[allow(dead_code)]
-struct AIConversationStub;
+pub struct AIConversationStub;
 #[allow(dead_code)]
 impl AIConversationStub {
     pub fn id(&self) -> AIConversationId { unimplemented!() }
@@ -1112,7 +1112,7 @@ impl UniversalDeveloperInputButtonBar {
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum UniversalDeveloperInputButtonBarEvent {
+pub enum UniversalDeveloperInputButtonBarEvent {
     // twarp: 2c-d — bulk variants for AI-removed UniversalDeveloperInputButtonBarEvent
     EnableAutoDetection,
     InputTypeSelected(InputType),
@@ -1174,7 +1174,7 @@ impl AmbientAgentViewModel {
 }
 
 #[allow(dead_code)]
-struct AgentInputFooter;
+pub struct AgentInputFooter;
 #[allow(dead_code)]
 impl AgentInputFooter {
     fn has_open_chip_menu<C>(&self, _: &C) -> bool { false }
@@ -1190,7 +1190,7 @@ impl AgentInputFooter {
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum AgentInputFooterEvent {
+pub enum AgentInputFooterEvent {
     // twarp: 2c-d — variants reshaped to match all callers (tuple where matched as tuple, struct where matched as struct)
     HideRichInput,
     InsertIntoCLIRichInput(()),
@@ -8674,7 +8674,7 @@ impl Input {
         let input_buffer_text = self.buffer_text(ctx);
         let buffer_length = input_buffer_text.len();
         let telemetry_enabled = PrivacySettings::as_ref(ctx).is_telemetry_enabled;
-        let input = should_collect_ai_ugc_telemetry(ctx, telemetry_enabled)
+        let input = should_collect_ai_ugc_telemetry(&*ctx, telemetry_enabled)
             .then_some(input_buffer_text);
         let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
         send_telemetry_from_ctx!(

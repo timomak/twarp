@@ -836,6 +836,7 @@ impl View for AIFactViewStub {
 }
 #[allow(dead_code)]
 impl AIFactViewStub {
+    #[cfg(feature = "integration_tests")]
     pub fn current_page(&self) -> crate::integration_testing::rules::assertion::AIFactPage { crate::integration_testing::rules::assertion::AIFactPage::Other }
     pub fn primary_file_path<C>(&self, _: &C) -> Option<String> { None }
     pub fn is_keybindings_hidden(&self) -> bool { false }

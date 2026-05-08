@@ -123,6 +123,7 @@ impl AIBlock {
     pub fn start_selection_at_max_point<A, B>(&self, _: A, _: B) {}
     pub fn start_selection_at_min_point<A, B>(&self, _: A, _: B) {}
     pub fn status<C>(&self, _: &C) -> crate::terminal::view::AIBlockOutputStatus { crate::terminal::view::AIBlockOutputStatus::Failed {} }
+    pub fn selection_type(&self) -> warpui::text::SelectionType { warpui::text::SelectionType::default() }
     pub fn try_steal_focus<C>(&mut self, _: &mut C) -> bool { false }
     pub fn update_directory_context<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn clear_all_selections<C>(&mut self, _: &mut C) {}
