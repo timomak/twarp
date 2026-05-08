@@ -75,9 +75,11 @@ mod about_page;
 mod admin_actions;
 mod appearance_page;
 mod billing_and_usage;
-mod billing_and_usage_page;
-mod code_page;
-mod directory_color_add_picker;
+// twarp: 2c-d — visibility raised to pub(crate) so lib.rs can register the
+// file-local AI singleton stubs in these modules.
+pub(crate) mod billing_and_usage_page;
+pub(crate) mod code_page;
+pub(crate) mod directory_color_add_picker;
 mod features;
 mod features_page;
 pub mod keybindings;
@@ -95,7 +97,9 @@ mod settings_file_footer;
 pub(crate) mod settings_page;
 mod show_blocks_view;
 mod tab_menu;
-mod teams_page;
+// twarp: 2c-d — visibility raised to pub(crate) so lib.rs can register the
+// file-local AI singleton stub in this module.
+pub(crate) mod teams_page;
 mod transfer_ownership_confirmation_modal;
 mod warp_drive_page;
 mod warpify_page;

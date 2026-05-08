@@ -1,5 +1,7 @@
 pub mod settings;
-mod stack;
+// twarp: 2c-d — visibility raised to pub(crate) so lib.rs can register the
+// file-local AI singleton stubs in this module.
+pub(crate) mod stack;
 
 use warpui::{keymap::EditableBinding, AppContext};
 

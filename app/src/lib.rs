@@ -1456,6 +1456,102 @@ fn initialize_app(
 
     // twarp: 2c-f — voice_input + voice transcriber singletons deleted with crate.
 
+    // twarp: 2c-d — register file-local AI singleton stubs so SingletonEntity::handle/as_ref
+    // calls do not panic at runtime. Each file-local stub is a distinct type (its TypeId
+    // differs by module path), so each one needs its own registration.
+    {
+        // auth
+        ctx.add_singleton_model(|_| crate::auth::auth_manager::PersistedWorkspace);
+        ctx.add_singleton_model(|_| crate::auth::auth_manager::AIRequestUsageModel);
+        ctx.add_singleton_model(|_| crate::auth::AgentConversationsModel);
+        ctx.add_singleton_model(|_| crate::auth::BlocklistAIHistoryModel);
+        ctx.add_singleton_model(|_| crate::auth::AIExecutionProfilesModel);
+        // drive
+        ctx.add_singleton_model(|_| crate::drive::sharing::dialog::BlocklistAIHistoryModel);
+        // server cloud objects
+        ctx.add_singleton_model(|_| {
+            crate::server::cloud_objects::update_manager::BlocklistAIHistoryModel
+        });
+        // settings_view
+        ctx.add_singleton_model(|_| {
+            crate::settings_view::billing_and_usage_page::AIRequestUsageModel
+        });
+        ctx.add_singleton_model(|_| crate::settings_view::code_page::CodebaseIndexManager);
+        ctx.add_singleton_model(|_| crate::settings_view::code_page::PersistedWorkspace);
+        ctx.add_singleton_model(|_| crate::settings_view::code_page::ProjectContextModel);
+        ctx.add_singleton_model(|_| {
+            crate::settings_view::directory_color_add_picker::CodebaseIndexManager
+        });
+        ctx.add_singleton_model(|_| {
+            crate::settings_view::directory_color_add_picker::PersistedWorkspace
+        });
+        ctx.add_singleton_model(|_| crate::settings_view::teams_page::AIRequestUsageModel);
+        // tab_configs
+        ctx.add_singleton_model(|_| crate::tab_configs::repo_picker::PersistedWorkspace);
+        // terminal banners / history
+        ctx.add_singleton_model(|_| crate::terminal::buy_credits_banner::AIRequestUsageModel);
+        ctx.add_singleton_model(|_| crate::terminal::history::up_arrow::BlocklistAIHistoryModel);
+        // terminal::input — canonical singletons used throughout the input module
+        ctx.add_singleton_model(|_| crate::terminal::input::TemplatableMCPServerManager);
+        ctx.add_singleton_model(|_| crate::terminal::input::ActiveAgentViewsModel);
+        ctx.add_singleton_model(|_| crate::terminal::input::AIExecutionProfilesModel);
+        ctx.add_singleton_model(|_| crate::terminal::input::AIRequestUsageModel);
+        ctx.add_singleton_model(|_| crate::terminal::input::BlocklistAIHistoryModel);
+        ctx.add_singleton_model(|_| crate::terminal::input::CLIAgentSessionsModel);
+        ctx.add_singleton_model(|_| crate::terminal::input::LLMPreferences);
+        ctx.add_singleton_model(|_| crate::terminal::input::SkillManager);
+        // terminal::input submodules
+        ctx.add_singleton_model(|_| crate::terminal::input::common::AIRequestUsageModel);
+        ctx.add_singleton_model(|_| {
+            crate::terminal::input::inline_history::data_source::BlocklistAIHistoryModel
+        });
+        ctx.add_singleton_model(|_| {
+            crate::terminal::input::slash_commands::data_source::CLIAgentSessionsModel
+        });
+        ctx.add_singleton_model(|_| {
+            crate::terminal::input::slash_commands::BlocklistAIHistoryModel
+        });
+        // terminal manager / shared session
+        ctx.add_singleton_model(|_| crate::terminal::mock_terminal_manager::ActiveAgentViewsModel);
+        ctx.add_singleton_model(|_| {
+            crate::terminal::shared_session::share_modal::body::BlocklistAIHistoryModel
+        });
+        ctx.add_singleton_model(|_| {
+            crate::terminal::shared_session::shared_handlers::BlocklistAIHistoryModel
+        });
+        ctx.add_singleton_model(|_| {
+            crate::terminal::shared_session::viewer::terminal_manager::ActiveAgentViewsModel
+        });
+        ctx.add_singleton_model(|_| {
+            crate::terminal::shared_session::viewer::terminal_manager::CLIAgentSessionsModel
+        });
+        // terminal::view — file-local stubs used by view.rs
+        ctx.add_singleton_model(|_| crate::terminal::view::AIRequestUsageModel);
+        ctx.add_singleton_model(|_| crate::terminal::view::AgentConversationsModel);
+        ctx.add_singleton_model(|_| crate::terminal::view::AIDocumentModel);
+        ctx.add_singleton_model(|_| crate::terminal::view::PersistedWorkspace);
+        ctx.add_singleton_model(|_| crate::terminal::view::CLIAgentSessionsModel);
+        ctx.add_singleton_model(|_| crate::terminal::view::BlocklistAIHistoryModel);
+        ctx.add_singleton_model(|_| crate::terminal::view::ApiKeyManager);
+        ctx.add_singleton_model(|_| crate::terminal::view::AIExecutionProfilesModel);
+        ctx.add_singleton_model(|_| crate::terminal::view::CodebaseIndexManager);
+        // BlocklistAIController is canonical at terminal::input but the Entity/SingletonEntity
+        // impls live in terminal::view; registering by the input path covers both call sites.
+        ctx.add_singleton_model(|_| crate::terminal::input::BlocklistAIController);
+        // undo_close
+        ctx.add_singleton_model(|_| crate::undo_close::stack::ActiveAgentViewsModel);
+        ctx.add_singleton_model(|_| crate::undo_close::stack::BlocklistAIHistoryModel);
+        // workflows
+        ctx.add_singleton_model(|_| crate::workflows::workflow_view::AIRequestUsageModel);
+        // workspace
+        ctx.add_singleton_model(|_| crate::workspace::SkillManager);
+        ctx.add_singleton_model(|_| crate::workspace::AIRequestUsageModel);
+        ctx.add_singleton_model(|_| {
+            crate::workspace::view::free_tier_limit_hit_modal::AIRequestUsageModel
+        });
+        ctx.add_singleton_model(|_| crate::workspace::view::right_panel::CLIAgentSessionsModel);
+    }
+
     let notebooks = cloud_objects
         .iter()
         .filter_map(|object| {

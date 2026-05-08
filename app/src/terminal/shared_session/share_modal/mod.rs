@@ -21,7 +21,9 @@ use warpui::SingletonEntity;
 use warpui::ViewHandle;
 use warpui::{Element, Entity, TypedActionView, View, ViewContext};
 
-mod body;
+// twarp: 2c-d — visibility raised to pub(crate) so lib.rs can register the
+// file-local AI singleton stub in this module.
+pub(crate) mod body;
 mod denied_body;
 mod style;
 

@@ -2,7 +2,9 @@
 pub mod buffer_model;
 mod classic;
 mod cloud_mode_v2_history_menu;
-mod common;
+// twarp: 2c-d — visibility raised to pub(crate) so lib.rs can register the
+// file-local AI singleton stub in this module.
+pub(crate) mod common;
 pub mod decorations;
 pub mod inline_history;
 pub mod inline_menu;
@@ -297,8 +299,9 @@ enum AIContextMenuAction {
 }
 
 // twarp: 2c-d — stubs for crate::ai::* types removed at top of file
+// twarp: 2c-d — visibility raised to pub so lib.rs can register the singleton.
 #[allow(dead_code)]
-struct ActiveAgentViewsModel;
+pub struct ActiveAgentViewsModel;
 impl ActiveAgentViewsModel {
     fn get_all_active_conversation_ids<C>(&self, _: &C) -> Vec<ConversationOrTaskId> {
         Vec::new()
@@ -411,8 +414,9 @@ pub enum SlashCommandRequest {
     },
 }
 
+// twarp: 2c-d — visibility raised to pub so lib.rs can register the singleton.
 #[allow(dead_code)]
-struct AIExecutionProfilesModel;
+pub struct AIExecutionProfilesModel;
 impl AIExecutionProfilesModel {
     fn active_profile<C>(&self, _: Option<warpui::EntityId>, _: &C) -> AIExecutionProfile {
         unimplemented!()
@@ -445,9 +449,9 @@ fn is_accept_prompt_suggestion_bound_to_ctrl_enter<C>(_: &C) -> bool {
 pub struct SkillManager;
 #[allow(dead_code)]
 impl SkillManager {
-    pub fn handle<C>(_: &C) -> warpui::ModelHandle<SkillManager> {
-        unimplemented!()
-    }
+    // twarp: 2c-d — inherent `handle` removed so the trait `SingletonEntity::handle`
+    // (which uses the singleton registry) is reachable. SkillManager is registered
+    // as a no-op singleton in lib.rs so calls at runtime do not panic.
     pub fn skill_by_reference<R>(
         &self,
         _: R,
@@ -771,8 +775,9 @@ enum AttachmentType {
     File,
 }
 
+// twarp: 2c-d — visibility raised to pub so lib.rs can register the singleton.
 #[allow(dead_code)]
-struct TemplatableMCPServerManager;
+pub struct TemplatableMCPServerManager;
 #[allow(dead_code)]
 impl TemplatableMCPServerManager {
     fn install_figma_from_gallery<C>(&mut self, _: &mut C) {}
@@ -1325,12 +1330,10 @@ impl LLMPreferences {
     }
     // twarp: 2c-d — bulk stubs
     pub fn remove_llm_override<A, C>(&mut self, _: A, _: &mut C) {}
-    pub fn handle<C>(_: &C) -> warpui::ModelHandle<LLMPreferences> {
-        unimplemented!()
-    }
-    pub fn as_ref<C>(_: &C) -> &Self {
-        unimplemented!()
-    }
+    // twarp: 2c-d — inherent `handle`/`as_ref` removed so the trait
+    // `SingletonEntity::handle`/`as_ref` (which uses the singleton registry) is
+    // reachable. LLMPreferences is registered as a no-op singleton in lib.rs so
+    // calls at runtime do not panic.
     pub fn refresh_available_models<C>(&mut self, _: &mut C) {}
     pub fn get_llm_info<A>(&self, _: A) -> Option<LLMInfoStub> {
         None
@@ -1357,8 +1360,9 @@ pub enum LLMPreferencesEvent {
     UpdatedActiveCodingLLM,
 }
 
+// twarp: 2c-d — visibility raised to pub so lib.rs can register the singleton.
 #[allow(dead_code)]
-struct AIRequestUsageModel;
+pub struct AIRequestUsageModel;
 // twarp: 2c-d — Entity/SingletonEntity for AIRequestUsageModel defined later in this file.
 #[allow(dead_code)]
 impl AIRequestUsageModel {
@@ -1436,12 +1440,19 @@ impl Clone for AmbientAgentErrorSelectedTextStub {
     }
 }
 impl AmbientAgentViewModel {
+    // twarp: 2c-d — `unimplemented!()` replaced with a default-constructed stub
+    // because TerminalView::new always constructs an AmbientAgentViewModel at
+    // startup; panicking here would crash every new terminal pane.
     pub fn new<A, B, C>(_: A, _: B, _: &mut C) -> Self {
-        unimplemented!()
+        Self {
+            ui_state: AmbientAgentUiStateStub::default(),
+        }
     }
     // twarp: 2c-d — also support 5-arg form
     pub fn new5<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
-        unimplemented!()
+        Self {
+            ui_state: AmbientAgentUiStateStub::default(),
+        }
     }
     pub fn task_id(&self) -> Option<crate::app_state::AmbientAgentTaskId> {
         None
