@@ -1,4 +1,5 @@
-use ai::skills::SkillReference;
+// twarp: 2c-e — SkillReference is now a stub in `crate::app_state`.
+use crate::app_state::SkillReference;
 // twarp: 2c-d — use canonical InputType from terminal::input.
 use crate::terminal::input::InputType;
 use warp_core::features::FeatureFlag;

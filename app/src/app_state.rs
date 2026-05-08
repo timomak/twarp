@@ -146,8 +146,205 @@ impl TryFrom<String> for AIDocumentId {
 pub struct AIDocumentVersion(pub usize);
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ClientProfileId(pub uuid::Uuid);
-// twarp: 2c-d — re-export canonical LLMId from crates/ai for type unification.
-pub use ai::LLMId;
+// twarp: 2c-e — re-export canonical LLMId from `onboarding` (the only remaining
+// owner after `crates/ai` was deleted in 2c-e). Onboarding defines a local
+// `LLMId` newtype that mirrors the original type from the deleted ai crate.
+pub use onboarding::LLMId;
+
+// twarp: 2c-e — local stubs for `ai::diff_validation::{DiffType, DiffDelta}`.
+// The original types lived in the deleted `ai` workspace crate. These stubs
+// preserve the field/variant shape so call sites still type-check; the diff
+// behavior is no longer wired to AI plumbing, but the editor/code_review
+// modules still reference these types in dead-but-compiled code paths.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DiffDelta {
+    pub replacement_line_range: std::ops::Range<usize>,
+    pub insertion: String,
+}
+
+impl std::fmt::Debug for DiffDelta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DiffDelta")
+            .field("replacement_line_range", &self.replacement_line_range)
+            .field("insertion", &self.insertion)
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DiffType {
+    Create {
+        delta: DiffDelta,
+    },
+    Update {
+        deltas: Vec<DiffDelta>,
+        rename: Option<std::path::PathBuf>,
+    },
+    Delete {
+        delta: DiffDelta,
+    },
+}
+
+// twarp: 2c-e — local stubs for `ai::agent::action::{InsertReviewComment,
+// InsertedCommentLocation, InsertedCommentLine, CommentSide}`. The original
+// types lived in the deleted `ai` workspace crate. The remaining call sites
+// (PR-comment import in code_review, the dead `BlocklistAIActionEvent::Insert
+// CodeReviewComments` variant) still mention these types but no AI agent
+// emits them anymore.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct InsertReviewComment {
+    pub comment_id: String,
+    pub author: String,
+    pub last_modified_timestamp: String,
+    pub comment_body: String,
+    pub parent_comment_id: Option<String>,
+    pub comment_location: Option<InsertedCommentLocation>,
+    pub html_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct InsertedCommentLocation {
+    pub relative_file_path: String,
+    pub line: Option<InsertedCommentLine>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct InsertedCommentLine {
+    pub comment_line_range: std::ops::Range<usize>,
+    pub diff_hunk_line_range: std::ops::Range<usize>,
+    pub diff_hunk_text: String,
+    pub side: Option<CommentSide>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum CommentSide {
+    Right,
+    Left,
+}
+
+// twarp: 2c-e — local stubs for `ai::project_context::model::ProjectRulePath`
+// and `ai::workspace::WorkspaceMetadata` (alias `CodeWorkspaceMetadata`). Both
+// types lived in the deleted `ai` workspace crate but are referenced by the
+// persistence layer (e.g. `ApplicationState::project_rules`,
+// `PersistenceTransaction::UpsertProjectRules`,
+// `PersistenceTransaction::UpsertCodebaseIndexMetadata`). The variants and
+// fields are kept for shape; nothing in the persistence pipeline reads them
+// after the AI removal.
+#[derive(Debug, Default, Clone)]
+pub struct CodeWorkspaceMetadata {
+    pub path: std::path::PathBuf,
+    pub navigated_ts: Option<chrono::DateTime<chrono::Utc>>,
+    pub modified_ts: Option<chrono::DateTime<chrono::Utc>>,
+    pub queried_ts: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[allow(dead_code)]
+impl CodeWorkspaceMetadata {
+    /// Stub matching the original signature so the repo search code compiles.
+    /// twarp: 2c-e — never invoked in practice; the data source returns an empty
+    /// iterator now that the AI codebase index manager is gone.
+    pub fn most_recently_navigated(_a: &Self, _b: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
+// twarp: 2c-e — From impls bridging the stub to the persistence-crate row types.
+// These mirror the impls that lived in the deleted `crates/ai/src/workspace.rs`
+// so the existing sqlite save/load helpers in `app/src/persistence/sqlite.rs`
+// continue to compile.
+impl From<CodeWorkspaceMetadata> for persistence::model::NewWorkspaceMetadata {
+    fn from(value: CodeWorkspaceMetadata) -> Self {
+        Self {
+            repo_path: value.path.to_string_lossy().into_owned(),
+            navigated_ts: value.navigated_ts.map(|utc_dt| utc_dt.naive_utc()),
+            modified_ts: value.modified_ts.map(|utc_dt| utc_dt.naive_utc()),
+            queried_ts: value.queried_ts.map(|utc_dt| utc_dt.naive_utc()),
+        }
+    }
+}
+
+impl From<persistence::model::WorkspaceMetadata> for CodeWorkspaceMetadata {
+    fn from(value: persistence::model::WorkspaceMetadata) -> Self {
+        Self {
+            path: std::path::PathBuf::from(value.repo_path),
+            navigated_ts: value.navigated_ts.map(|naive_ts| naive_ts.and_utc()),
+            modified_ts: value.modified_ts.map(|naive_ts| naive_ts.and_utc()),
+            queried_ts: value.queried_ts.map(|naive_ts| naive_ts.and_utc()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectRulePath {
+    pub path: std::path::PathBuf,
+    pub project_root: std::path::PathBuf,
+}
+
+// twarp: 2c-e — local stubs for `ai::skills::{SkillReference, SkillProvider}`.
+// Both types lived in the deleted `ai` crate. The skill management UI was
+// disconnected in earlier 2c phases but several call sites still match on
+// these values, so we keep the variants intact.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum SkillReference {
+    Path(std::path::PathBuf),
+    BundledSkillId(String),
+}
+
+impl std::fmt::Display for SkillReference {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            SkillReference::Path(path) => path.display().fmt(f),
+            SkillReference::BundledSkillId(id) => write!(f, "@warp-skill:{id}"),
+        }
+    }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    strum_macros::Display,
+)]
+pub enum SkillProvider {
+    Warp,
+    Agents,
+    Claude,
+    Codex,
+    Cursor,
+    Gemini,
+    Copilot,
+    Droid,
+    Github,
+    OpenCode,
+}
+
+// twarp: 2c-e — local stub for `ai::agent::action::AIAgentPtyWriteMode`. The
+// canonical type lived in the deleted `ai` crate. The stub keeps the variants
+// so the (now-dead) AgentInput PTY-write path still type-checks; no AI agent
+// emits these writes any longer, so `decorate_bytes` simply returns the input.
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
+pub enum AIAgentPtyWriteMode {
+    #[default]
+    Raw,
+    Line,
+    Block,
+}
+
+#[allow(dead_code)]
+impl AIAgentPtyWriteMode {
+    pub fn decorate_bytes(
+        self,
+        bytes: impl Into<Vec<u8>>,
+        _is_bracketed_paste_enabled: bool,
+    ) -> Vec<u8> {
+        bytes.into()
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AIConversation {}
@@ -360,7 +557,8 @@ impl CLIAgent {
         ""
     }
     // twarp: 2c-d — stub: AI skill providers deleted.
-    pub fn supported_skill_providers(&self) -> &'static [ai::skills::SkillProvider] {
+    // twarp: 2c-e — `ai::skills::*` types now live as stubs in this module.
+    pub fn supported_skill_providers(&self) -> &'static [SkillProvider] {
         &[]
     }
     // twarp: 2c-d — stub: AI agent icon deleted.

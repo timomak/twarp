@@ -66,7 +66,8 @@ use crate::{
     code::{editor::EditorReviewComment, global_buffer_model::GlobalBufferModelEvent},
     code_review::comments::CommentId,
 };
-use ai::diff_validation::DiffType;
+// twarp: 2c-e — DiffType is now a stub in `crate::app_state`.
+use crate::app_state::DiffType;
 use pathfinder_color::ColorU;
 use vim::vim::{MotionType, VimMode};
 use warp_core::ui::icons::Icon;

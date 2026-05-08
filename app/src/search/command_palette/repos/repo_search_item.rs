@@ -1,4 +1,7 @@
-use ai::workspace::WorkspaceMetadata;
+// twarp: 2c-e — `ai::workspace::WorkspaceMetadata` is now a stub
+// (`CodeWorkspaceMetadata`) in `crate::app_state` after the `ai` crate was
+// deleted. Aliasing locally to keep the existing call sites unchanged.
+use crate::app_state::CodeWorkspaceMetadata as WorkspaceMetadata;
 use fuzzy_match::FuzzyMatchResult;
 use ordered_float::OrderedFloat;
 use std::path::Path;

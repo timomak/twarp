@@ -1,9 +1,30 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use ai::index::full_source_code_embedding::manager::{
-    CodebaseIndexManager, CodebaseIndexManagerEvent,
-};
+// twarp: 2c-e — `ai::index::full_source_code_embedding::manager::*` deleted with
+// the `ai` crate. File-local stubs preserve the surface area used here so the
+// settings page still compiles; the codebase index is permanently empty.
+pub struct CodebaseIndexManager;
+impl warpui::Entity for CodebaseIndexManager {
+    type Event = CodebaseIndexManagerEvent;
+}
+impl warpui::SingletonEntity for CodebaseIndexManager {}
+#[allow(dead_code)]
+impl CodebaseIndexManager {
+    pub fn get_codebase_paths(&self) -> std::iter::Empty<&std::path::PathBuf> {
+        std::iter::empty()
+    }
+}
+
+#[allow(dead_code)]
+pub enum CodebaseIndexManagerEvent {
+    NewIndexCreated,
+    SyncStateUpdated,
+    RemoveExpiredIndexMetadata,
+    IndexMetadataUpdated,
+    RetrievalRequestCompleted,
+    RetrievalRequestFailed,
+}
 use settings::Setting;
 use warp_util::path::user_friendly_path;
 use warpui::{
@@ -23,7 +44,8 @@ impl warpui::Entity for PersistedWorkspace {
 impl warpui::SingletonEntity for PersistedWorkspace {}
 #[allow(dead_code)]
 impl PersistedWorkspace {
-    pub fn workspaces(&self) -> std::iter::Empty<ai::workspace::WorkspaceMetadata> {
+    // twarp: 2c-e — `ai::workspace::WorkspaceMetadata` is now `crate::app_state::CodeWorkspaceMetadata`.
+    pub fn workspaces(&self) -> std::iter::Empty<crate::app_state::CodeWorkspaceMetadata> {
         std::iter::empty()
     }
 }

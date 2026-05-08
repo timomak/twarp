@@ -12,7 +12,7 @@ pub mod block_filtering;
 pub mod clipboard;
 pub mod cloud_object;
 pub mod code_review;
-pub mod codebase_context;
+// twarp: 2c-e — `codebase_context` deleted along with the AI codebase index.
 pub mod command_palette;
 pub mod command_search;
 pub mod context_chips;

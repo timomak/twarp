@@ -155,7 +155,8 @@ use crate::{
     AgentModeEntrypoint,
 };
 
-use ai::skills::SkillReference;
+// twarp: 2c-e — SkillReference is now a stub in `crate::app_state`.
+use crate::app_state::SkillReference;
 use base64::Engine as _;
 #[cfg(feature = "local_fs")]
 use diesel::SqliteConnection;
@@ -463,8 +464,9 @@ impl SkillManager {
     pub fn skill_exists_for_any_provider<S, P>(&self, _: S, _: P) -> bool {
         false
     }
-    pub fn best_supported_provider<S, P>(&self, _: S, _: P) -> ai::skills::SkillProvider {
-        ai::skills::SkillProvider::Warp
+    // twarp: 2c-e — `ai::skills::*` now lives as a stub in `crate::app_state`.
+    pub fn best_supported_provider<S, P>(&self, _: S, _: P) -> crate::app_state::SkillProvider {
+        crate::app_state::SkillProvider::Warp
     }
 }
 // twarp: 2c-d — Entity/SingletonEntity for SkillManager defined later in this file.
@@ -718,7 +720,8 @@ enum InlineSkillSelectorEvent {
     SelectedSkill {
         name: String,
         skill_name: String,
-        skill_reference: ai::skills::SkillReference,
+        // twarp: 2c-e — `ai::skills::*` now lives as a stub in `crate::app_state`.
+        skill_reference: crate::app_state::SkillReference,
     },
 }
 

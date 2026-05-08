@@ -1,14 +1,14 @@
 // twarp: AI is permanently disabled, so the onboarding agent slide UI
 // (`agent_slide.rs`) was deleted in 2c-a. These data types remain because
 // non-slide consumers (the onboarding state model, the post-onboarding
-// settings application, the AI-LLM bridge in `app/src/ai/onboarding.rs`)
-// still reference them. They are scheduled for removal in 2c-d (when
-// `app/src/ai/` is deleted) and 2c-e (when `crates/ai/` is deleted),
-// after which the `OnboardingStateModel::agent_settings` field, the
-// `SelectedSettings::AgentDrivenDevelopment` variant, and these types
-// themselves can all go.
+// settings application) still reference them. They are scheduled for removal
+// in a later twarp phase, after which the `OnboardingStateModel::agent_settings`
+// field, the `SelectedSettings::AgentDrivenDevelopment` variant, and these
+// types themselves can all go.
 
-use ai::LLMId;
+// twarp: 2c-e — `ai` crate deleted; use the local `LLMId` substitute defined in
+// the onboarding crate root.
+use crate::LLMId;
 use warp_core::ui::icons::Icon;
 
 /// Information about a model that was previously displayed on the onboarding

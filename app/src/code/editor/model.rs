@@ -30,7 +30,8 @@ use crate::{
     themes::theme::AnsiColorIdentifier,
 };
 
-use ai::diff_validation::DiffDelta;
+// twarp: 2c-e — DiffDelta is now a stub in `crate::app_state`.
+use crate::app_state::DiffDelta;
 use itertools::Itertools;
 use languages::{language_by_filename, language_by_name, Language};
 use line_ending::LineEnding;

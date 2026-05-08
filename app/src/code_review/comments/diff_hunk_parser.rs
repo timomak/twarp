@@ -1,6 +1,7 @@
 //! Utilities for parsing unified diff hunks and extracting specific line content.
 
-use ai::agent::action::CommentSide;
+// twarp: 2c-e — CommentSide is now a stub in `crate::app_state`.
+use crate::app_state::CommentSide;
 use num_traits::SaturatingSub;
 use warp_editor::render::model::LineCount;
 

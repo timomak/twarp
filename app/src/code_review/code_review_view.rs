@@ -139,7 +139,9 @@ use crate::util::openable_file_type::resolve_file_target_with_editor_choice;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::FileTarget;
 use crate::view_components::find::{Event as FindViewEvent, Find, FindEvent, FindWithinBlockState};
-use ai::project_context::model::ProjectContextModel;
+// twarp: 2c-e — removed `use ai::project_context::model::ProjectContextModel`;
+// the `ai` crate was deleted and the only call site was the now-removed
+// repo-rules summary in `render_zero_state`.
 #[cfg(feature = "local_fs")]
 use num_traits::SaturatingSub;
 use string_offset::CharOffset;
@@ -3150,7 +3152,8 @@ impl CodeReviewView {
     }
 
     /// Converts GitDiffData hunks to DiffDelta format for CodeEditorView.apply_diffs
-    fn convert_hunks_to_diff_deltas(hunks: &[DiffHunk]) -> Vec<ai::diff_validation::DiffDelta> {
+    // twarp: 2c-e — DiffDelta now lives in `crate::app_state`.
+    fn convert_hunks_to_diff_deltas(hunks: &[DiffHunk]) -> Vec<crate::app_state::DiffDelta> {
         let mut diff_deltas = Vec::new();
 
         for hunk in hunks {
@@ -3180,7 +3183,8 @@ impl CodeReviewView {
                         if let Some(start) = current_replacement_start.take() {
                             let end = if has_removals { old_line } else { start };
 
-                            diff_deltas.push(ai::diff_validation::DiffDelta {
+                            // twarp: 2c-e — DiffDelta now lives in `crate::app_state`.
+                            diff_deltas.push(crate::app_state::DiffDelta {
                                 replacement_line_range: start..end,
                                 insertion: current_insertion.clone(),
                             });
@@ -3197,7 +3201,8 @@ impl CodeReviewView {
 
             if let Some(start) = current_replacement_start.take() {
                 let end = if has_removals { old_line } else { start };
-                diff_deltas.push(ai::diff_validation::DiffDelta {
+                // twarp: 2c-e — DiffDelta now lives in `crate::app_state`.
+                diff_deltas.push(crate::app_state::DiffDelta {
                     replacement_line_range: start..end,
                     insertion: current_insertion,
                 });
@@ -4419,6 +4424,9 @@ impl CodeReviewView {
             );
 
         // twarp: 2c-d — InitProjectModel deleted; init project button never shown.
+        // twarp: 2c-e — `ai::project_context::model::ProjectContextModel` deleted with
+        // the `ai` crate; the repo-rules summary that depended on it is no longer
+        // rendered. The owning `should_show_init` branch is also dead.
         let should_show_init = false;
 
         if should_show_init {
@@ -4427,27 +4435,6 @@ impl CodeReviewView {
                     .with_margin_top(16.)
                     .finish(),
             );
-        } else if let Some(repo_path) = self.repo_path() {
-            // Check for initialized rules
-            if let Some(rules) = ProjectContextModel::as_ref(app).find_applicable_rules(repo_path) {
-                if let Some(first_rule) = rules.active_rules.first() {
-                    if let Some(file_name) = first_rule.path.file_name().and_then(|n| n.to_str()) {
-                        zero_state_column.add_child(
-                            Container::new(
-                                Text::new(
-                                    format!("Repo is initialized with a {file_name} file."),
-                                    appearance.ui_font_family(),
-                                    12.,
-                                )
-                                .with_color(theme.sub_text_color(theme.surface_2()).into())
-                                .finish(),
-                            )
-                            .with_margin_top(8.)
-                            .finish(),
-                        );
-                    }
-                }
-            }
         }
 
         let zero_state_content = Container::new(zero_state_column.finish()).finish();

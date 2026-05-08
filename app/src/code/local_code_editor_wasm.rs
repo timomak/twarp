@@ -12,7 +12,8 @@ use warpui::{
     ViewHandle, WindowId,
 };
 
-use ai::diff_validation::DiffType;
+// twarp: 2c-e — DiffType is now a stub in `crate::app_state`.
+use crate::app_state::DiffType;
 
 use super::editor::view::CodeEditorView;
 use super::ImmediateSaveError;

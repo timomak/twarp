@@ -8,7 +8,8 @@ use crate::slides::{
     ThirdPartySlide,
 };
 use crate::telemetry::OnboardingEvent;
-use ai::LLMId;
+// twarp: 2c-e — `ai` crate deleted; use the local `LLMId` substitute.
+use crate::LLMId;
 use instant::Instant;
 use std::time::Duration;
 use warp_core::features::FeatureFlag;

@@ -1,6 +1,7 @@
 use std::ops::Range;
 
-use ai::diff_validation::DiffDelta;
+// twarp: 2c-e — DiffDelta is now a stub in `crate::app_state`.
+use crate::app_state::DiffDelta;
 use rangemap::RangeSet;
 use warp_editor::content::text::LineCount;
 use warp_editor::render::model::LineCount as RenderLineCount;

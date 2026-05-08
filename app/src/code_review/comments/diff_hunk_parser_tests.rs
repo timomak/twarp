@@ -1,4 +1,5 @@
-use ai::agent::action::CommentSide;
+// twarp: 2c-e — CommentSide is now a stub in `crate::app_state`.
+use crate::app_state::CommentSide;
 
 use super::{parse_diff_hunk, DiffHunkParseError};
 

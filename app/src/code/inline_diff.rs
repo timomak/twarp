@@ -8,7 +8,8 @@ pub enum DiffSessionType {
     Local,
     Remote(String),
 }
-use ai::diff_validation::DiffType;
+// twarp: 2c-e — DiffType is now a stub in `crate::app_state`.
+use crate::app_state::DiffType;
 #[cfg(not(target_family = "wasm"))]
 use warp_files::{FileModel, FileModelEvent};
 use warp_util::file::FileId;

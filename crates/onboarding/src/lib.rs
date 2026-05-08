@@ -6,6 +6,44 @@ mod model;
 pub mod slides;
 pub mod telemetry;
 
+// twarp: 2c-e — local LLMId substitute. The original type lived in the deleted
+// `ai` workspace crate. Onboarding types reference it from the agent-slide
+// scaffolding (`OnboardingModelInfo`, `AgentDevelopmentSettings`); the slide
+// itself was deleted in 2c-a but the data types remain until the surrounding
+// scaffolding is removed in a later twarp phase.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct LLMId(String);
+
+impl LLMId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for LLMId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for LLMId {
+    fn from(value: &str) -> Self {
+        value.to_owned().into()
+    }
+}
+
+impl From<LLMId> for String {
+    fn from(value: LLMId) -> Self {
+        value.0
+    }
+}
+
+impl std::fmt::Display for LLMId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// The user's intention selected during onboarding slides.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OnboardingIntention {

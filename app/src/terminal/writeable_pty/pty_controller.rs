@@ -25,7 +25,8 @@ use crate::terminal::{
     SizeUpdate, TerminalModel,
 };
 use crate::SessionSettings;
-use ai::agent::action::AIAgentPtyWriteMode;
+// twarp: 2c-e — AIAgentPtyWriteMode is now a stub in `crate::app_state`.
+use crate::app_state::AIAgentPtyWriteMode;
 
 use super::Message;
 

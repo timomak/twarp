@@ -29,7 +29,8 @@ use crate::{
     settings::{AppEditorSettings, FontSettings},
     view_components::find::FindDirection,
 };
-use ai::diff_validation::DiffDelta;
+// twarp: 2c-e — DiffDelta is now a stub in `crate::app_state`.
+use crate::app_state::DiffDelta;
 use lazy_static::lazy_static;
 use num_traits::SaturatingSub;
 use pathfinder_geometry::vector::vec2f;

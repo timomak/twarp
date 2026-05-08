@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 
-use ai::LLMId;
 use anyhow::Result;
 use onboarding::slides::OnboardingModelInfo;
+// twarp: 2c-e — `ai` crate deleted; use the local `LLMId` substitute re-exported
+// from the onboarding crate root.
 use onboarding::{
-    AgentOnboardingEvent, AgentOnboardingView, MockTelemetryContextProvider, SelectedSettings,
+    AgentOnboardingEvent, AgentOnboardingView, LLMId, MockTelemetryContextProvider,
+    SelectedSettings,
 };
 use pathfinder_color::ColorU;
 use rust_embed::RustEmbed;

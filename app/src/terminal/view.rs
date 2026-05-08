@@ -316,8 +316,8 @@ pub enum AnonymousUserLoginBannerAction {
     SignUp,
 }
 
-// twarp: 2c-d — re-export real InsertReviewComment from crates/ai.
-pub use ai::agent::action::InsertReviewComment;
+// twarp: 2c-e — InsertReviewComment now lives as a stub in `crate::app_state`.
+pub use crate::app_state::InsertReviewComment;
 
 // twarp: 2c-d — ConversationRestorationInNewPaneType is `pub type ... = ()` stub in pane_group
 use crate::pane_group::ConversationRestorationInNewPaneType;
@@ -699,7 +699,8 @@ impl AgentTodosPopupView {
 }
 
 pub use crate::code_review::code_review_view::AgentReviewCommentBatch;
-pub use ai::agent::action::AIAgentPtyWriteMode;
+// twarp: 2c-e — AIAgentPtyWriteMode now lives as a stub in `crate::app_state`.
+pub use crate::app_state::AIAgentPtyWriteMode;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum CancellationReason {
