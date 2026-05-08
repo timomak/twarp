@@ -14487,7 +14487,8 @@ impl Input {
         }
 
         let welcome_tip_feature = match feature_item {
-            VoltronItem::AiCommands => Some(Tip::Action(TipAction::AiCommandSearch)),
+            // twarp: 2d — TipAction::AiCommandSearch deleted; AI commands no longer mark a tip.
+            VoltronItem::AiCommands => None,
             VoltronItem::History => Some(Tip::Action(TipAction::HistorySearch)),
             VoltronItem::Workflows => None,
         };
@@ -14556,14 +14557,7 @@ impl Input {
             });
         }
 
-        self.tips_completed.update(ctx, |tips_completed, ctx| {
-            mark_feature_used_and_write_to_user_defaults(
-                Tip::Action(TipAction::AiCommandSearch),
-                tips_completed,
-                ctx,
-            );
-            ctx.notify();
-        });
+        // twarp: 2d — TipAction::AiCommandSearch deleted; no tip marking.
 
         ctx.emit(Event::ShowCommandSearch(Default::default()));
 
