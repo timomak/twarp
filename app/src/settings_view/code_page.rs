@@ -10,6 +10,7 @@ use super::{
     LocalOnlyIconState, SettingsAction, SettingsSection, ToggleSettingActionPair, ToggleState,
 };
 // twarp: 2c-d — persisted_workspace deleted; stubs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EnablementState { Enabled, Disabled, Suggested, Yes }
 #[allow(dead_code)]
 #[derive(Clone)]

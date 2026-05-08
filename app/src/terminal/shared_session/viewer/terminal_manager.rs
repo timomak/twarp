@@ -34,7 +34,7 @@ impl ActiveAgentViewsModel {
 }
 // twarp: 2c-d — re-export canonical AgentViewControllerEvent.
 pub use crate::terminal::input::AgentViewControllerEvent;
-pub enum BlocklistAIContextEvent { Other }
+pub use crate::terminal::input::BlocklistAIContextEvent;
 // twarp: 2c-d — re-export canonical
 pub use crate::terminal::input::BlocklistAIHistoryEvent;
 // twarp: 2c-d — re-export from input for type unification.
@@ -87,7 +87,7 @@ use super::network::{
 };
 use crate::app_state::AmbientAgentTaskId;
 // twarp: 2c-d — ambient agent helper deleted; stub.
-fn is_cloud_agent_pre_first_exchange<A, B, C>(_: A, _: B, _: C) -> bool { false }
+fn is_cloud_agent_pre_first_exchange<A, B>(_: A, _: B, _: &warpui::AppContext) -> bool { false }
 use crate::terminal::view::ExecuteCommandEvent;
 use crate::terminal::{Event as TerminalViewEvent, TerminalModel, TerminalView};
 use crate::view_components::ToastFlavor;

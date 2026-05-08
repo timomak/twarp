@@ -450,11 +450,12 @@ impl CLISubagentView {
     fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self { Self }
     fn clear_all_selections<C>(&mut self, _: &mut C) {}
 }
-#[allow(dead_code)] enum CLISubagentEvent {
+#[allow(dead_code)] pub enum CLISubagentEvent {
     // twarp: 2c-d — bulk variants for AI-removed CLISubagentEvent
+    Other,
     ControlHandedBackAfterTransfer,
-    FinishedSubagent,
-    SpawnedSubagent,
+    FinishedSubagent { task_id: (), block_id: () },
+    SpawnedSubagent { task_id: (), block_id: () },
     ToggledHideResponses,
     UpdatedControl,
     UpdatedLastSnapshot,
@@ -748,7 +749,8 @@ impl BlocklistAIActionModel {
     fn get_action_result<A>(&self, _: A) -> Option<()> { None }
     fn get_pending_action<A>(&self, _: A) -> Option<()> { None }
 }
-#[allow(dead_code)] enum BlocklistAIContextEvent {}
+// twarp: 2c-d — unify with terminal::input::BlocklistAIContextEvent.
+pub use crate::terminal::input::BlocklistAIContextEvent;
 // twarp: 2c-d — re-export canonical BlocklistAIContextModel from terminal::input
 pub use crate::terminal::input::BlocklistAIContextModel;
 // twarp: 2c-d — re-export canonical BlocklistAIController from terminal::input

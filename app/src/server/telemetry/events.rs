@@ -131,7 +131,7 @@ pub enum AIBlockResponseRating {
 pub enum CommandExecutionPermissionAllowedReason {
     Other,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum InputType {
     Other,
     Shell,

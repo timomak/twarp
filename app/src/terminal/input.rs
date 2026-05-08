@@ -343,13 +343,8 @@ impl EphemeralMessageModel {
 
 #[allow(dead_code)]
 pub struct CLISubagentController;
-#[allow(dead_code)]
-pub enum CLISubagentEvent {
-    Other,
-    SpawnedSubagent,
-    FinishedSubagent,
-    UpdatedControl,
-}
+// twarp: 2c-d — unify with terminal::view::CLISubagentEvent.
+pub use crate::terminal::view::CLISubagentEvent;
 
 #[allow(dead_code)]
 struct BlocklistAIStatusBar;
@@ -748,7 +743,7 @@ impl BlocklistAIContextModel {
     pub fn is_queue_next_prompt_enabled(&self) -> bool { false }
     pub fn is_targeting_existing_conversation(&self) -> bool { false }
     pub fn pending_attachments(&self) -> Vec<()> { Vec::new() }
-    pub fn pending_context_block_ids(&self) -> Vec<warp_terminal::model::BlockId> { Vec::new() }
+    pub fn pending_context_block_ids(&self) -> std::collections::HashSet<warp_terminal::model::BlockId> { std::collections::HashSet::new() }
     pub fn pending_context_selected_text(&self) -> Option<String> { None }
     pub fn pending_files(&self) -> Vec<crate::terminal::input::PendingFileStub> { Vec::new() }
     pub fn selected_conversation_status_for_hint<C>(&self, _: &C) -> Option<crate::app_state::ConversationStatus> { None }
@@ -845,6 +840,7 @@ impl AIConversationStub {
     fn status(&self) -> AIConversationStatusStub { AIConversationStatusStub }
     // twarp: 2c-d — bulk stubs
     fn is_empty(&self) -> bool { true }
+    fn is_entirely_passive(&self) -> bool { false }
     fn export_to_markdown<A>(&self, _: A) -> String { String::new() }
     fn server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
 }
