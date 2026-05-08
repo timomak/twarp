@@ -94,7 +94,17 @@ impl PassiveSuggestionTrigger {
 #[allow(dead_code)]
 pub struct ShellCommandCompletedTrigger {
     pub relevant_files: Vec<()>,
-    pub executed_shell_command: String,
+    pub executed_shell_command: ExecutedShellCommandStub,
+}
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct ExecutedShellCommandStub {
+    pub id: warp_terminal::model::BlockId,
+}
+impl From<String> for ExecutedShellCommandStub {
+    fn from(_: String) -> Self {
+        Self { id: warp_terminal::model::BlockId::new() }
+    }
 }
 #[derive(Clone, Debug)]
 pub enum StaticQueryType { Install, Code, Deploy, SomethingElse }

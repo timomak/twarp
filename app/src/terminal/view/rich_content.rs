@@ -66,6 +66,17 @@ impl View for AIBlock {
     fn ui_name() -> &'static str { "AIBlock/twarp-stub" }
     fn render(&self, _: &AppContext) -> Box<dyn Element> { Empty::new().finish() }
 }
+// twarp: 2c-d — stub FindableRichContentView so AIBlock can register with FindModel.
+impl crate::terminal::find::FindableRichContentView for AIBlock {
+    fn run_find(
+        &mut self,
+        _options: &crate::terminal::find::model::FindOptions,
+        _ctx: &mut warpui::ViewContext<Self>,
+    ) -> Vec<crate::terminal::find::RichContentMatchId> {
+        Vec::new()
+    }
+    fn clear_matches(&mut self, _ctx: &mut warpui::ViewContext<Self>) {}
+}
 #[allow(dead_code)]
 impl AIBlock {
     pub fn conversation_id(&self) -> AIConversationId { unimplemented!() }

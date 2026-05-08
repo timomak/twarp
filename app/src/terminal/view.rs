@@ -275,10 +275,13 @@ pub enum AIAgentActionResultType {
 #[allow(dead_code)]
 struct AgentModeSetupSpeedbumpBannerState {
     pub repo_path: std::path::PathBuf,
+    pub id: warp_terminal::model::BlockId,
 }
 #[allow(dead_code)]
 impl AgentModeSetupSpeedbumpBannerState {
-    fn new<A>(_: A, repo_path: std::path::PathBuf) -> Self { Self { repo_path } }
+    fn new<A>(_: A, repo_path: std::path::PathBuf) -> Self {
+        Self { repo_path, id: warp_terminal::model::BlockId::new() }
+    }
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -291,10 +294,12 @@ fn render_agent_mode_setup_banner<A, B>(_: A, _: B) -> Box<dyn warpui::Element> 
 
 // twarp: 2c-d — Anonymous user AI banner stubs (deleted from inline_banner)
 #[allow(dead_code)]
-struct AnonymousUserAISignUpBannerState;
+struct AnonymousUserAISignUpBannerState {
+    id: warp_terminal::model::BlockId,
+}
 #[allow(dead_code)]
 impl AnonymousUserAISignUpBannerState {
-    fn new<A>(_: A) -> Self { Self }
+    fn new<A>(_: A) -> Self { Self { id: warp_terminal::model::BlockId::new() } }
     fn render<A>(&self, _: A) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
 }
 #[derive(Debug, Clone)]
@@ -375,6 +380,24 @@ use crate::terminal::model::block::AgentViewState;
 pub use crate::app_state::AgentViewEntryOrigin;
 #[allow(dead_code)] struct AgentViewHeaderDisabledTheme;
 #[allow(dead_code)] struct AgentViewHeaderTheme;
+impl crate::view_components::action_button::ActionButtonTheme for AgentViewHeaderTheme {
+    fn background(&self, _hovered: bool, _appearance: &Appearance) -> Option<warp_core::ui::theme::Fill> { None }
+    fn text_color(
+        &self,
+        _hovered: bool,
+        _background: Option<warp_core::ui::theme::Fill>,
+        _appearance: &Appearance,
+    ) -> warpui::color::ColorU { warpui::color::ColorU::new(0, 0, 0, 0) }
+}
+impl crate::view_components::action_button::ActionButtonTheme for AgentViewHeaderDisabledTheme {
+    fn background(&self, _hovered: bool, _appearance: &Appearance) -> Option<warp_core::ui::theme::Fill> { None }
+    fn text_color(
+        &self,
+        _hovered: bool,
+        _background: Option<warp_core::ui::theme::Fill>,
+        _appearance: &Appearance,
+    ) -> warpui::color::ColorU { warpui::color::ColorU::new(0, 0, 0, 0) }
+}
 #[allow(dead_code)] struct AgentViewZeroStateBlock;
 #[allow(dead_code)]
 impl AgentViewZeroStateBlock {
@@ -434,7 +457,7 @@ struct ExchangeStub {
     TasksUpdated,
 }
 
-#[allow(dead_code)] fn conversation_output_status_from_conversation<C>(_: C) -> Option<()> { None }
+#[allow(dead_code)] fn conversation_output_status_from_conversation<C>(_: C) -> Option<AmbientConversationStatus> { None }
 type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
 #[allow(dead_code)] pub enum AmbientConversationStatus { Error { error: RenderableAIError } }
 
@@ -582,6 +605,7 @@ enum CLIAgentEventType { SessionStart, Other }
 impl CLIAgentSessionListener {
     fn new<A, B, C, D>(_: A, _: B, _: C, _: &mut D) -> Self { Self }
 }
+impl Entity for CLIAgentSessionListener { type Event = (); }
 #[allow(dead_code)] struct PluginManagerStub;
 #[allow(dead_code)] impl PluginManagerStub {
     fn minimum_plugin_version(&self) -> &'static str { "" }
@@ -619,6 +643,11 @@ impl Default for CLIAgentSessionContext {
     Blocked { message: String },
     Success,
     Other,
+}
+impl CLIAgentSessionStatus {
+    pub fn to_conversation_status(&self) -> ConversationStatus {
+        ConversationStatus::Failed
+    }
 }
 #[allow(dead_code)] struct CLIAgentSessionsModel;
 #[allow(dead_code)]
@@ -703,7 +732,7 @@ pub use crate::terminal::model::block::interaction_mode::AIAgentActionId;
 pub use crate::terminal::view::rich_content::AIAgentExchangeId;
 #[allow(dead_code)] enum AIAgentInput {}
 #[allow(dead_code)] #[derive(Debug, Clone, PartialEq, Eq)] struct FileLocations;
-#[allow(dead_code)] pub enum PassiveSuggestionResultType { Prompt }
+#[allow(dead_code)] pub enum PassiveSuggestionResultType { Prompt { prompt: String } }
 #[allow(dead_code)] fn ai_brand_color<C>(_: C) -> warpui::color::ColorU { warpui::color::ColorU::new(0,0,0,0) }
 // twarp: 2c-d — ElementPositionId removed from warpui; stub returns ()
 #[allow(dead_code)] fn get_ai_block_overflow_menu_element_position_id<C>(_: C) -> String { String::new() }
@@ -5678,7 +5707,7 @@ impl TerminalView {
                     Some(RichContentType::AIBlock),
                     ai_block.clone(),
                     Some(RichContentMetadata::AIBlock(AIBlockMetadata {
-                        exchange_id: *exchange_id,
+                        exchange_id: (*exchange_id).into(),
                         conversation_id: *conversation_id,
                         ai_block_handle: ai_block,
                     })),
@@ -5707,7 +5736,7 @@ impl TerminalView {
                     self.rich_content_views.iter_mut().find(|rich_content| {
                         rich_content
                             .ai_block_metadata()
-                            .is_some_and(|ai_metadata| ai_metadata.exchange_id == *exchange_id)
+                            .is_some_and(|ai_metadata| ai_metadata.exchange_id == (*exchange_id).into())
                     })
                 {
                     if let Some(RichContentMetadata::AIBlock(AIBlockMetadata {
@@ -13491,7 +13520,7 @@ impl TerminalView {
                         return;
                     };
                     PassiveSuggestionTrigger::ShellCommandCompleted(ShellCommandCompletedTrigger {
-                        executed_shell_command: format!("{:?}", block_context),
+                        executed_shell_command: format!("{:?}", block_context).into(),
                         relevant_files: vec![],
                     })
                 };
@@ -18425,7 +18454,7 @@ impl TerminalView {
                 (ai_metadata.conversation_id == *conversation_id).then_some(ai_metadata)
             })
             .take_while_inclusive(move |ai_metadata| {
-                Some(ai_metadata.exchange_id) != thread_start_exchange_id
+                Some(ai_metadata.exchange_id.clone()) != thread_start_exchange_id
             })
     }
 
