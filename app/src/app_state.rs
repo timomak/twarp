@@ -78,7 +78,7 @@ impl SerializedBlockListItem {
 impl From<crate::persistence::model::Block> for SerializedBlockListItem {
     fn from(_: crate::persistence::model::Block) -> Self {
         Self::Command {
-            block: SerializedBlockStub::default(),
+            block: crate::terminal::model::block::SerializedBlock::default(),
         }
     }
 }

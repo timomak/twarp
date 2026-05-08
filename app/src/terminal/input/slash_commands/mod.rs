@@ -664,7 +664,6 @@ impl Input {
                 let Some(repo_path) = self
                     .active_session_path_if_local(ctx)
                     .map(|path| path.to_path_buf())
-                    .map(|path| path.to_string_lossy().to_string())
                 else {
                     log::error!("Expected a valid working directory since /pr-comments is only available from the terminal");
                     return false;

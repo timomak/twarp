@@ -1,5 +1,5 @@
-// twarp: 2c-d — AI InputType deleted; stub.
-pub enum InputType { Other, AI }
+// twarp: 2c-d — unify with events::InputType.
+pub use crate::server::telemetry::events::InputType;
 use crate::{
     appearance::Appearance,
     context_chips::spacing,

@@ -1,5 +1,5 @@
 // twarp: 2c-d — AI format_credits deleted; stub.
-pub fn format_credits(_credits: i64) -> String { String::new() }
+pub fn format_credits(_credits: f32) -> String { String::new() }
 use crate::{
     settings_view::billing_and_usage_page::BillingAndUsagePageAction,
     ui_components::{blended_colors, icons::Icon},

@@ -309,12 +309,8 @@ enum ConversationOrTaskId {
 // twarp: 2c-d — unify with terminal::view::AIAgentExchangeId.
 pub use crate::terminal::view::AIAgentExchangeId;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
-enum CancellationReason {
-    No,
-    UserCommandExecuted,
-}
+// twarp: 2c-d — unify with terminal::view::CancellationReason.
+pub use crate::terminal::view::CancellationReason;
 
 #[allow(dead_code)]
 struct AgentShortcutViewModel;
@@ -722,7 +718,7 @@ pub enum BlocklistAIContextEvent {
 #[allow(dead_code)]
 pub struct PendingImageStub {
     pub file_name: String,
-    pub mime_type: String,
+    pub mime_type: Option<String>,
     pub data: String,
 }
 #[allow(dead_code)]

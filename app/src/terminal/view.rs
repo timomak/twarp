@@ -495,7 +495,8 @@ impl AgentTodosPopupView {
 pub use ai::agent::action::AIAgentPtyWriteMode;
 pub use crate::code_review::code_review_view::AgentReviewCommentBatch;
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)] enum CancellationReason { No, ManuallyCancelled, Reverted }
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] pub enum CancellationReason { No, ManuallyCancelled, Reverted, UserCommandExecuted }
 pub use crate::terminal::view::inline_banner::prompt_suggestions::{
     PassiveSuggestionTrigger, ShellCommandCompletedTrigger,
 };
@@ -751,7 +752,7 @@ impl BlocklistAIHistoryModel {
 }
 // twarp: 2c-d — re-export canonical types from terminal::input
 pub use crate::terminal::input::{
-    BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig, InputType,
+    BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig,
 };
 #[allow(dead_code)] enum PendingQueryState {}
 #[allow(dead_code)] struct ShellCommandExecutor;
