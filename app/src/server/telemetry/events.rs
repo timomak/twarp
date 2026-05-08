@@ -92,9 +92,10 @@ use crate::workspace::TabMovement;
 use session_sharing_protocol::sharer::SessionSourceType;
 use warp_core::interval_timer::TimingDataPoint;
 
-// twarp: 2d — stub types replacing deleted AI types referenced by telemetry variants.
-// Variant *definitions* are 2d-scope (kept). These stubs preserve schema shape but
-// are never constructed — emission call sites are deleted.
+// twarp: stub types replacing deleted AI types referenced by remaining
+// telemetry variants. These preserve schema shape for variants that still
+// have live emission sites; other AI-only variants (and their helper enums)
+// were deleted in 2d.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AIAgentActionId(pub String);
 #[derive(Clone, Debug, Serialize, Deserialize)]
