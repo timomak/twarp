@@ -1295,24 +1295,9 @@ impl InputType {
     }
 }
 
-// twarp: 2c-d — conversion to input_classifier::InputType for telemetry.
-impl From<InputType> for input_classifier::InputType {
-    fn from(t: InputType) -> Self {
-        match t {
-            InputType::Shell => input_classifier::InputType::Shell,
-            InputType::AI => input_classifier::InputType::AI,
-            InputType::Other => input_classifier::InputType::Shell,
-        }
-    }
-}
-impl From<input_classifier::InputType> for InputType {
-    fn from(t: input_classifier::InputType) -> Self {
-        match t {
-            input_classifier::InputType::Shell => InputType::Shell,
-            input_classifier::InputType::AI => InputType::AI,
-        }
-    }
-}
+// twarp: 2c-f — `input_classifier::InputType` deleted with the crate; the
+// terminal `InputType` is already the same enum that telemetry consumes,
+// so the bridging From impls are no longer needed.
 
 lazy_static::lazy_static! {
     static ref BLOCK_CONTEXT_ATTACHMENT_REGEX: regex::Regex = regex::Regex::new("").unwrap();
@@ -12957,7 +12942,9 @@ impl Input {
             // If we're submitting an AI query, we want to send telemetry for the input type.
             if FeatureFlag::NldImprovements.is_enabled() {
                 let input_model = self.ai_input_model.as_ref(ctx);
-                let input_type: input_classifier::InputType = input_model.input_type().into();
+                // twarp: 2c-f — was `input_classifier::InputType`; the local
+                // `InputType` is the same enum the telemetry event takes.
+                let input_type = input_model.input_type();
                 let is_locked = input_model.is_input_type_locked();
                 let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
                 send_telemetry_from_ctx!(
@@ -13069,7 +13056,8 @@ impl Input {
             // If we're submitting a shell command, we want to send telemetry for the input type.
             if FeatureFlag::NldImprovements.is_enabled() {
                 let input_model = self.ai_input_model.as_ref(ctx);
-                let input_type: input_classifier::InputType = input_model.input_type().into();
+                // twarp: 2c-f — see twin call-site above.
+                let input_type = input_model.input_type();
                 let is_locked = input_model.is_input_type_locked();
                 let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
                 send_telemetry_from_ctx!(
