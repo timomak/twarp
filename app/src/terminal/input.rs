@@ -1089,6 +1089,7 @@ impl AmbientAgentViewModel {
     pub fn is_ambient_agent(&self) -> bool {
         false
     }
+    pub fn is_waiting_for_session(&self) -> bool { false }
     pub fn should_show_status_footer(&self) -> bool {
         false
     }

@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 // twarp: 2c-d — TextLocation deleted; stub.
+#[derive(Clone, Debug)]
 pub struct TextLocation;
 use crate::terminal::model::index::Point;
 use anyhow::anyhow;

@@ -24,6 +24,18 @@ use crate::terminal::TerminalManager;
 #[cfg(not(target_family = "wasm"))]
 pub struct TerminalDriver;
 #[cfg(not(target_family = "wasm"))]
+impl warpui::Entity for TerminalDriver { type Event = (); }
+#[cfg(not(target_family = "wasm"))]
+#[allow(dead_code)]
+impl TerminalDriver {
+    pub fn create_from_existing_view<V, C>(_: V, _: &mut C) -> warpui::ModelHandle<TerminalDriver> {
+        unimplemented!()
+    }
+    pub fn wait_for_session_bootstrapped(&mut self) -> futures::future::Ready<Result<(), ()>> {
+        futures::future::ready(Ok(()))
+    }
+}
+#[cfg(not(target_family = "wasm"))]
 pub const WARP_DRIVE_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(0);
 #[cfg(not(target_family = "wasm"))]
 use crate::server::cloud_objects::update_manager::UpdateManager;
@@ -220,8 +232,8 @@ impl TerminalView {
                     .await
                     .map_err(|_| "view dropped")?;
 
-                if let Err(e) = bootstrap_future.await {
-                    log::error!("Docker sandbox bootstrap failed: {e}");
+                if let Err(_e) = bootstrap_future.await {
+                    log::error!("Docker sandbox bootstrap failed");
                     return Err("terminal bootstrap failed");
                 }
 

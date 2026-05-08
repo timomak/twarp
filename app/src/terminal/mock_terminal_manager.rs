@@ -9,6 +9,10 @@ use warpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
 pub struct ActiveAgentViewsModel;
 impl warpui::Entity for ActiveAgentViewsModel { type Event = (); }
 impl warpui::SingletonEntity for ActiveAgentViewsModel {}
+#[allow(dead_code)]
+impl ActiveAgentViewsModel {
+    pub fn unregister_ambient_session<C>(&mut self, _: warpui::EntityId, _: &mut C) {}
+}
 use crate::app_state::SerializedBlockListItem;
 use crate::{
     context_chips::prompt_type::PromptType, pane_group::ConversationRestorationInNewPaneType,

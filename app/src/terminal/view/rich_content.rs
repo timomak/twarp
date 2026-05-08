@@ -120,7 +120,7 @@ pub struct AIBlockActionStub {
 }
 twarp_stub_view_impl!(TelemetryBanner);
 twarp_stub_view_impl!(AmbientAgentEntryBlock);
-twarp_stub_view_impl!(OnboardingAgenticSuggestionsBlock);
+// twarp: 2c-d — OnboardingAgenticSuggestionsBlock Entity+View impls live in view.rs
 twarp_stub_view_impl!(InitStepBlock);
 
 /// Specifies where to insert rich content in the blocklist.

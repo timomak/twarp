@@ -34,6 +34,13 @@ pub struct PromptAlertView;
 #[allow(dead_code)]
 impl PromptAlertView {
     pub fn new<A>(_: &mut A) -> Self { Self }
+    pub fn state(&self) -> PromptAlertState { PromptAlertState::default() }
+    pub fn is_no_alert(&self) -> bool { true }
+}
+#[derive(Clone, Default, Debug)]
+pub enum PromptAlertState {
+    #[default]
+    NoAlert,
 }
 impl warpui::Entity for PromptAlertView { type Event = PromptAlertEvent; }
 impl warpui::View for PromptAlertView {
