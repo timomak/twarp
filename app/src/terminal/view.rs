@@ -329,7 +329,7 @@ mod ambient_agent {
     pub struct FirstTimeCloudAgentSetupView;
     impl FirstTimeCloudAgentSetupView {
         pub fn new<C>(_: &mut C) -> Self {
-            unimplemented!()
+            Self
         }
     }
     impl Entity for FirstTimeCloudAgentSetupView {
@@ -342,7 +342,7 @@ mod ambient_agent {
 struct TerminalViewZeroStateBlock;
 impl TerminalViewZeroStateBlock {
     fn new<A, B, C>(_: A, _: B, _: &mut C) -> Self {
-        unimplemented!()
+        Self
     }
 }
 
@@ -352,7 +352,7 @@ struct UseAgentToolbar;
 impl UseAgentToolbar {
     // twarp: 2c-d — accept 5-arg form
     fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
-        unimplemented!()
+        Self
     }
     // twarp: 2c-d — bulk stubs
     fn clear_warpify_mode<C>(&mut self, _: &mut C) {}
@@ -739,6 +739,7 @@ pub enum CodebaseIndexSpeedbumpBannerAction {
     ViewStatus,
 }
 #[allow(dead_code)]
+#[derive(Default)]
 struct CodebaseIndexSpeedbumpBannerState {
     pub id: InlineBannerId,
     // twarp: 2c-d — extra fields used by view code
@@ -761,7 +762,7 @@ impl CodebaseIndexSpeedbumpBannerState {
 #[allow(dead_code)]
 impl CodebaseIndexSpeedbumpBannerState {
     fn new<A, B>(_: A, _: B) -> Self {
-        unimplemented!()
+        Self::default()
     }
 }
 #[allow(dead_code)]
@@ -1119,11 +1120,22 @@ pub enum BlocklistAIActionEvent {
 pub use crate::terminal::input::BlocklistAIActionModel;
 #[allow(dead_code)]
 impl BlocklistAIActionModel {
-    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self {
-        Self
+    // twarp: 2c-d — typed `new` so we can `ctx.add_model(...)` for the executor handles.
+    fn new<A, B, C, D, E>(
+        _: A,
+        _: B,
+        _: C,
+        _: D,
+        _: E,
+        ctx: &mut warpui::ModelContext<Self>,
+    ) -> Self {
+        Self {
+            shell_command_executor: ctx.add_model(|_| ShellCommandExecutor),
+            start_agent_executor: ctx.add_model(|_| StartAgentExecutor),
+        }
     }
     fn shell_command_executor<C>(&self, _: &C) -> ModelHandle<ShellCommandExecutor> {
-        unimplemented!()
+        self.shell_command_executor.clone()
     }
     // twarp: 2c-d — bulk stubs
     fn get_action_result<A>(&self, _: A) -> Option<PendingAIActionStub> {
@@ -1133,7 +1145,7 @@ impl BlocklistAIActionModel {
         None
     }
     fn start_agent_executor<C>(&self, _: &C) -> ModelHandle<StartAgentExecutor> {
-        unimplemented!()
+        self.start_agent_executor.clone()
     }
 }
 // twarp: 2c-d — stub for AIBlockActionResultModel-like pending action.
@@ -1228,15 +1240,15 @@ pub enum PendingQueryState {
     },
 }
 #[allow(dead_code)]
-struct ShellCommandExecutor;
+pub struct ShellCommandExecutor;
 #[allow(dead_code)]
 impl ShellCommandExecutor {
     fn notify_control_handed_back(&mut self) {}
 }
 #[allow(dead_code)]
-enum ShellCommandExecutorEvent {}
+pub enum ShellCommandExecutorEvent {}
 #[allow(dead_code)]
-struct StartAgentExecutor;
+pub struct StartAgentExecutor;
 #[allow(dead_code)]
 pub enum StartAgentExecutorEvent {
     CreateAgent(StartAgentRequest),
@@ -1311,12 +1323,15 @@ pub struct ApiKeyManager;
 #[allow(dead_code)]
 impl ApiKeyManager {
     fn aws_credentials_state(&self) -> AwsCredentialsState {
-        unimplemented!()
+        AwsCredentialsState::default()
     }
 }
 #[allow(dead_code)]
+#[derive(Default)]
 pub enum AwsCredentialsState {
     Loaded,
+    #[default]
+    NotLoaded,
 }
 #[allow(dead_code)]
 pub enum BuildSource {
@@ -1386,7 +1401,7 @@ enum RequestFileEditsResult {
 struct ConversationDetailsPanel;
 impl ConversationDetailsPanel {
     fn new<A, B, C, D>(_: A, _: B, _: C, _: &mut D) -> Self {
-        unimplemented!()
+        Self
     }
 }
 #[derive(Debug, Clone)]
@@ -20787,15 +20802,15 @@ impl TerminalView {
 
     /// Inserts a dummy AI block with the given query and output strings.
     /// The directory is set to ~.
-    /// twarp: 2c-d — body deleted (AI types gone).
+    /// twarp: 2c-d — body deleted (AI types gone); returns a fresh stub handle.
     #[cfg(any(test, feature = "integration_tests"))]
     pub fn insert_dummy_ai_block(
         &mut self,
         _query: String,
         _output: String,
-        _ctx: &mut ViewContext<Self>,
+        ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<AIBlock> {
-        unimplemented!()
+        ctx.add_view(|_| AIBlock)
     }
 
     pub fn last_ai_block(&self) -> Option<ViewHandle<AIBlock>> {
