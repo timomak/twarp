@@ -24,8 +24,8 @@ pub mod ai_agent {
     pub fn encode_agent_response_event<T>(_event: T) -> Vec<u8> {
         vec![]
     }
-    pub fn decode_agent_response_event<T>(_data: T) -> Option<()> {
-        None
+    pub fn decode_agent_response_event<T>(_data: T) -> Result<(), ()> {
+        Err(())
     }
 }
 pub mod replay_agent_conversations {

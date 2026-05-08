@@ -60,7 +60,7 @@ impl View for AIBlock {
 #[allow(dead_code)]
 impl AIBlock {
     pub fn conversation_id(&self) -> AIConversationId { unimplemented!() }
-    pub fn server_output_id<C>(&self, _: &C) -> Option<()> { None }
+    pub fn server_output_id<C>(&self, _: &C) -> Option<crate::server::telemetry::events::ServerOutputId> { None }
     pub fn handle_action<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn has_user_input<C>(&self, _: &C) -> bool { false }
     pub fn output_status<C>(&self, _: &C) -> AIBlockOutputStatusStub { AIBlockOutputStatusStub }

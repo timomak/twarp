@@ -45,8 +45,8 @@ impl AIRequestUsageModel {
     pub fn next_refresh_time(&self) -> Option<chrono::DateTime<chrono::Utc>> { None }
     pub fn request_limit(&self) -> usize { 0 }
     pub fn requests_used(&self) -> usize { 0 }
-    pub fn total_workspace_bonus_credits_remaining<W>(&self, _: W) -> i64 { 0 }
-    pub fn total_current_workspace_bonus_credits_remaining<W>(&self, _: W) -> i64 { 0 }
+    pub fn total_workspace_bonus_credits_remaining<W>(&self, _: W) -> i32 { 0 }
+    pub fn total_current_workspace_bonus_credits_remaining<W>(&self, _: W) -> i32 { 0 }
     pub fn compute_buy_addon_credits_banner_display_state<W>(&self, _: W) -> crate::terminal::buy_credits_banner::BuyCreditsBannerDisplayState { crate::terminal::buy_credits_banner::BuyCreditsBannerDisplayState::Hidden }
 }
 use crate::{

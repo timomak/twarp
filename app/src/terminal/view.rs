@@ -498,7 +498,8 @@ pub use crate::code_review::code_review_view::AgentReviewCommentBatch;
 pub use crate::terminal::view::inline_banner::prompt_suggestions::{
     PassiveSuggestionTrigger, ShellCommandCompletedTrigger,
 };
-#[allow(dead_code)] struct ServerOutputId;
+// twarp: 2c-d — unify with events::ServerOutputId.
+pub use crate::server::telemetry::events::ServerOutputId;
 #[allow(dead_code)] enum AIBlockAction {
     // twarp: 2c-d — bulk variants for AI-removed AIBlockAction
     Copy,
@@ -14821,10 +14822,12 @@ impl TerminalView {
                         // Add fork option for conversation management
                         if !cfg!(target_family = "wasm") {
                             let fork_label = fork_label_for_query(
-                                &ai_metadata
+                                ai_metadata
                                     .ai_block_handle
                                     .as_ref(ctx)
-                                    .get_preceding_user_query(ctx),
+                                    .get_preceding_user_query(ctx)
+                                    .as_deref()
+                                    .unwrap_or(""),
                             );
                             items.push(
                                 MenuItemFields::new(fork_label)
@@ -15744,7 +15747,7 @@ impl TerminalView {
 
         if !cfg!(target_family = "wasm") {
             let fork_label = fork_label_for_query(
-                &self
+                self
                     .rich_content_views
                     .iter()
                     .find_map(|rc| {
@@ -15755,7 +15758,9 @@ impl TerminalView {
                                 .get_preceding_user_query(ctx)
                         })
                     })
-                    .unwrap_or_default(),
+                    .flatten()
+                    .as_deref()
+                    .unwrap_or(""),
             );
             menu_items.push(
                 MenuItemFields::new(fork_label)
