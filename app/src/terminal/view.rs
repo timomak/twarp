@@ -613,7 +613,7 @@ impl CLIAgentSessionsModel {
     fn set_session<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     fn update_from_event<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
 }
-#[allow(dead_code)] enum CLIAgentSessionsModelEvent {
+#[allow(dead_code)] pub enum CLIAgentSessionsModelEvent {
     Ended { terminal_view_id: warpui::EntityId },
     // twarp: 2c-d — bulk variants for AI-removed CLIAgentSessionsModelEvent
     Started { terminal_view_id: warpui::EntityId, cli_agent: crate::app_state::CLIAgent },
@@ -704,9 +704,9 @@ pub use crate::terminal::view::rich_content::AIBlock;
     // twarp: 2c-d — bulk variants for AI-removed BlocklistAIActionEvent
     ActionBlockedOnUserConfirmation(()),
     ExecutingAction(()),
-    FinishedAction(()),
+    FinishedAction(AIAgentActionId),
     InitProject(()),
-    InsertCodeReviewComments(()),
+    InsertCodeReviewComments { comments: (), action_id: (), repo_path: std::path::PathBuf, base_branch: Option<String> },
     QueuedAction(()),
     ToggleCodeReview,
 }
@@ -728,10 +728,10 @@ pub use crate::terminal::input::BlocklistAIContextModel;
 pub use crate::terminal::input::BlocklistAIController;
 #[allow(dead_code)] pub enum BlocklistAIControllerEvent {
     // twarp: 2c-d — bulk variants
-    ExportConversationToFile(()),
+    ExportConversationToFile { filename: Option<String> },
     FinishedReceivingOutput(()),
     FreeTierLimitCheckTriggered,
-    SentRequest(()),
+    SentRequest { contains_user_query: bool, is_queued_prompt: bool, model_id: Option<()> },
 }
 // twarp: 2c-d — re-export canonical BlocklistAIHistoryEvent
 pub use crate::terminal::input::BlocklistAIHistoryEvent;
@@ -6294,7 +6294,7 @@ impl TerminalView {
                 self.redetermine_terminal_focus(ctx);
                 ctx.notify();
             }
-            BlocklistAIActionEvent::FinishedAction { action_id, .. } => {
+            BlocklistAIActionEvent::FinishedAction(action_id) => {
                 // Refresh git line changes when files are potentially updated by an action
                 let action_result = action_model
                     .as_ref(ctx)

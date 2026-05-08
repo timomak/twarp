@@ -723,7 +723,7 @@ pub enum Event {
     FreeTierLimitCheckTriggered,
     // twarp: 2c-d.4 — OpenPluginInstructionsPane removed (CLIAgent + PluginModalKind were AI-only)
     // twarp: 2c-d — bulk variants for AI-removed pane_group::Event
-    OpenCodeDiff(()),
+    OpenCodeDiff { view: warpui::ViewHandle<crate::terminal::view::CodeDiffView> },
     OpenPluginInstructionsPane(crate::app_state::CLIAgent, crate::terminal::view::PluginModalKind),
     OpenSuggestedAgentModeWorkflowModal(()),
     OpenSuggestedRuleModal(()),

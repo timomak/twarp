@@ -353,8 +353,8 @@ impl BlocklistAIStatusBar {
         unimplemented!()
     }
     fn handle_ctrl_c<C>(&mut self, _: &mut C) {}
-    fn summarization_cancel_dialog_handle(&self) -> Option<()> { None }
-    fn should_show_summarization_cancel_dialog(&self) -> bool { false }
+    pub fn summarization_cancel_dialog_handle(&self) -> Option<()> { None }
+    pub fn should_show_summarization_cancel_dialog(&self) -> bool { false }
 }
 
 #[allow(dead_code)]
@@ -462,13 +462,8 @@ struct CLIAgentSessionStub {
 }
 // twarp: 2c-d — old shadowing handle/as_ref removed; rely on SingletonEntity trait impls.
 
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-enum CLIAgentSessionsModelEvent {
-    Ended {
-        terminal_view_id: warpui::EntityId,
-    },
-}
+// twarp: 2c-d — unify with terminal::view::CLIAgentSessionsModelEvent.
+pub use crate::terminal::view::CLIAgentSessionsModelEvent;
 
 #[allow(dead_code)]
 pub use crate::terminal::view::PluginModalKind;
@@ -675,6 +670,16 @@ pub struct PendingFileStub {
     pub file_name: String,
     pub mime_type: Option<String>,
 }
+// twarp: 2c-d — stub for pending_attachments entries
+#[derive(Default, Clone)]
+pub struct PendingAttachmentStub {
+    pub file_name: String,
+}
+#[allow(dead_code)]
+impl PendingAttachmentStub {
+    pub fn file_name(&self) -> &str { &self.file_name }
+    pub fn attachment_type(&self) -> AttachmentType { AttachmentType::File }
+}
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -738,7 +743,7 @@ impl BlocklistAIContextModel {
     pub fn can_start_new_conversation(&self) -> bool { false }
     pub fn is_queue_next_prompt_enabled(&self) -> bool { false }
     pub fn is_targeting_existing_conversation(&self) -> bool { false }
-    pub fn pending_attachments(&self) -> Vec<()> { Vec::new() }
+    pub fn pending_attachments(&self) -> Vec<PendingAttachmentStub> { Vec::new() }
     pub fn pending_context_block_ids(&self) -> std::collections::HashSet<warp_terminal::model::BlockId> { std::collections::HashSet::new() }
     pub fn pending_context_selected_text(&self) -> Option<String> { None }
     pub fn pending_files(&self) -> Vec<crate::terminal::input::PendingFileStub> { Vec::new() }
