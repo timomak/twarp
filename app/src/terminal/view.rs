@@ -268,7 +268,7 @@ use crate::report_if_error;
 #[allow(dead_code)]
 pub enum AIAgentActionResultType {
     RequestCommandOutput,
-    RequestFileEdits,
+    RequestFileEdits(RequestFileEditsResult),
 }
 
 // twarp: 2c-d — AgentModeSetupSpeedbumpBanner stubs (deleted from inline_banner)
@@ -436,7 +436,7 @@ struct ExchangeStub {
 
 #[allow(dead_code)] fn conversation_output_status_from_conversation<C>(_: C) -> Option<()> { None }
 type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
-#[allow(dead_code)] pub enum AmbientConversationStatus { Error }
+#[allow(dead_code)] pub enum AmbientConversationStatus { Error { error: RenderableAIError } }
 
 #[allow(dead_code)] struct CLISubagentView;
 #[allow(dead_code)] pub enum CLISubagentViewEvent { TextSelected, CopiedEmptyText }
@@ -459,10 +459,19 @@ impl CLISubagentView {
     // twarp: 2c-d — bulk variants for AI-removed CLISubagentEvent
     Other,
     ControlHandedBackAfterTransfer,
-    FinishedSubagent { task_id: crate::app_state::AmbientAgentTaskId, block_id: warp_terminal::model::BlockId },
-    SpawnedSubagent { task_id: crate::app_state::AmbientAgentTaskId, block_id: warp_terminal::model::BlockId },
+    FinishedSubagent {
+        task_id: crate::app_state::AmbientAgentTaskId,
+        block_id: warp_terminal::model::BlockId,
+        conversation_id: crate::app_state::AIConversationId,
+    },
+    SpawnedSubagent {
+        task_id: crate::app_state::AmbientAgentTaskId,
+        block_id: warp_terminal::model::BlockId,
+        conversation_id: crate::app_state::AIConversationId,
+        initial_requested_command_action_id: Option<AIAgentActionId>,
+    },
     ToggledHideResponses,
-    UpdatedControl,
+    UpdatedControl { agent_has_control: bool },
     UpdatedLastSnapshot,
 }
 #[allow(dead_code)] enum UserTakeOverReason {
@@ -502,7 +511,6 @@ impl AgentTodosPopupView {
 
 pub use ai::agent::action::AIAgentPtyWriteMode;
 pub use crate::code_review::code_review_view::AgentReviewCommentBatch;
-#[derive(Debug, Clone, PartialEq, Eq)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)] pub enum CancellationReason { No, ManuallyCancelled, Reverted, UserCommandExecuted, FollowUpSubmitted { is_for_same_conversation: bool } }
 pub use crate::terminal::view::inline_banner::prompt_suggestions::{
@@ -639,7 +647,7 @@ impl CLIAgentSessionsModelEvent {
             Self::Started { terminal_view_id, .. } |
             Self::StatusChanged { terminal_view_id, .. } |
             Self::SessionUpdated { terminal_view_id } |
-            Self::InputSessionChanged { terminal_view_id } => *terminal_view_id,
+            Self::InputSessionChanged { terminal_view_id, new_input_state: _ } => *terminal_view_id,
         }
     }
 }
@@ -657,10 +665,10 @@ pub use crate::app_state::ConversationStatus;
     EditDocuments(()),
     // twarp: 2c-d — bulk variants for AI-removed AIAgentActionType
     ReadFiles(()),
-    RequestCommandOutput(()),
-    RequestFileEdits(()),
+    RequestCommandOutput { command: String },
+    RequestFileEdits {},
     SearchCodebase(()),
-    WriteToLongRunningShellCommand(()),
+    WriteToLongRunningShellCommand {},
 }
 #[allow(dead_code)] enum AIAgentOutputStatus {}
 #[allow(dead_code)] enum AIAgentTextSection {}
@@ -694,7 +702,7 @@ pub use crate::terminal::model::block::interaction_mode::AIAgentActionId;
 // twarp: 2c-d — re-export to unify cross-file types.
 pub use crate::terminal::view::rich_content::AIAgentExchangeId;
 #[allow(dead_code)] enum AIAgentInput {}
-#[allow(dead_code)] struct FileLocations;
+#[allow(dead_code)] #[derive(Debug, Clone, PartialEq, Eq)] struct FileLocations;
 #[allow(dead_code)] pub enum PassiveSuggestionResultType { Prompt }
 #[allow(dead_code)] fn ai_brand_color<C>(_: C) -> warpui::color::ColorU { warpui::color::ColorU::new(0,0,0,0) }
 // twarp: 2c-d — ElementPositionId removed from warpui; stub returns ()
@@ -729,8 +737,15 @@ impl BlocklistAIActionModel {
     fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
     fn shell_command_executor<C>(&self, _: &C) -> ModelHandle<ShellCommandExecutor> { unimplemented!() }
     // twarp: 2c-d — bulk stubs
-    fn get_action_result<A>(&self, _: A) -> Option<()> { None }
-    fn get_pending_action<A>(&self, _: A) -> Option<()> { None }
+    fn get_action_result<A>(&self, _: A) -> Option<PendingAIActionStub> { None }
+    fn get_pending_action<A>(&self, _: A) -> Option<PendingAIActionStub> { None }
+    fn start_agent_executor<C>(&self, _: &C) -> ModelHandle<StartAgentExecutor> { unimplemented!() }
+}
+// twarp: 2c-d — stub for AIBlockActionResultModel-like pending action.
+#[allow(dead_code)]
+pub struct PendingAIActionStub {
+    pub action: AIAgentActionType,
+    pub result: AIAgentActionResultType,
 }
 // twarp: 2c-d — unify with terminal::input::BlocklistAIContextEvent.
 pub use crate::terminal::input::BlocklistAIContextEvent;
@@ -775,7 +790,9 @@ impl ShellCommandExecutor {
 }
 #[allow(dead_code)] enum ShellCommandExecutorEvent {}
 #[allow(dead_code)] struct StartAgentExecutor;
-#[allow(dead_code)] pub enum StartAgentExecutorEvent { CreateAgent }
+#[allow(dead_code)] pub enum StartAgentExecutorEvent { CreateAgent(StartAgentRequestStub) }
+#[derive(Clone, Debug)]
+#[allow(dead_code)] pub struct StartAgentRequestStub;
 #[allow(dead_code)] struct StartAgentRequest;
 #[allow(dead_code)] const ATTACH_AS_AGENT_MODE_CONTEXT_TEXT: &str = "";
 #[allow(dead_code)] const PRE_REWIND_PREFIX: &str = "";
@@ -994,19 +1011,44 @@ macro_rules! twarp_stub_view_impl {
         }
     };
 }
+// twarp: 2c-d — TypedActionView impls for stub view types using a shared placeholder action.
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct TwarpStubAction;
+macro_rules! twarp_stub_typed_action_view_impl {
+    ($t:ty) => {
+        impl warpui::TypedActionView for $t { type Action = TwarpStubAction; }
+    };
+}
 // twarp: 2c-d — AIBlock impls already defined in rich_content.rs
 twarp_stub_view_impl!(AgentTodosPopupView);
 twarp_stub_view_impl!(CLISubagentView);
 twarp_stub_view_impl!(ConversationDetailsPanel);
 twarp_stub_view_impl!(InlineAgentViewHeader);
 twarp_stub_view_impl!(SummarizationCancelDialog);
+// twarp: 2c-d — add Entity impls for stubs without explicit Entity definition.
+impl Entity for TerminalViewZeroStateBlock { type Event = (); }
 twarp_stub_view_impl!(TerminalViewZeroStateBlock);
 twarp_stub_view_impl!(UseAgentToolbar);
 twarp_stub_view_impl!(AgentViewZeroStateBlock);
 twarp_stub_view_impl!(OnboardingAgenticSuggestionsBlock);
-twarp_stub_view_impl!(TelemetryBanner);
+// twarp: 2c-d — TelemetryBanner View impl is in rich_content.rs
 twarp_stub_view_impl!(CodeDiffView);
 twarp_stub_view_impl!(ambient_agent::FirstTimeCloudAgentSetupView);
+
+// twarp: 2c-d — TypedActionView impls so add_typed_action_view callsites compile.
+twarp_stub_typed_action_view_impl!(AgentTodosPopupView);
+twarp_stub_typed_action_view_impl!(CLISubagentView);
+twarp_stub_typed_action_view_impl!(ConversationDetailsPanel);
+twarp_stub_typed_action_view_impl!(InlineAgentViewHeader);
+twarp_stub_typed_action_view_impl!(SummarizationCancelDialog);
+twarp_stub_typed_action_view_impl!(TerminalViewZeroStateBlock);
+twarp_stub_typed_action_view_impl!(UseAgentToolbar);
+twarp_stub_typed_action_view_impl!(AgentViewZeroStateBlock);
+twarp_stub_typed_action_view_impl!(OnboardingAgenticSuggestionsBlock);
+twarp_stub_typed_action_view_impl!(CodeDiffView);
+twarp_stub_typed_action_view_impl!(ambient_agent::FirstTimeCloudAgentSetupView);
+twarp_stub_typed_action_view_impl!(rich_content::AIBlock);
 
 use async_channel::{Receiver, Sender};
 use chrono::{DateTime, Local, NaiveDateTime};
@@ -5372,13 +5414,13 @@ impl TerminalView {
                 previous_block_ids,
                 requires_block_resync,
                 requires_text_resync,
+                ..
             } => {
                 let pending_context_block_ids =
                     context_model.as_ref(ctx).pending_context_block_ids();
                 let pending_context_selected_text = context_model
                     .as_ref(ctx)
-                    .pending_context_selected_text()
-                    .cloned();
+                    .pending_context_selected_text();
 
                 self.ai_render_context.borrow_mut().block_ids.insert(
                     AIContextInclusionState::Pending,
@@ -6306,8 +6348,7 @@ impl TerminalView {
                 // Refresh git line changes when files are potentially updated by an action
                 let action_result = action_model
                     .as_ref(ctx)
-                    .get_action_result(action_id)
-                    .cloned();
+                    .get_action_result(action_id);
 
                 let maybe_modified_files = action_result
                     .as_ref()

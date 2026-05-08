@@ -753,7 +753,13 @@ fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool {
 pub enum BlocklistAIContextEvent {
     // twarp: 2c-d — bulk variants
     PendingQueryStateUpdated,
-    UpdatedPendingContext { added: Vec<()>, removed: Vec<()> },
+    UpdatedPendingContext {
+        added: Vec<()>,
+        removed: Vec<()>,
+        previous_block_ids: Vec<warp_terminal::model::BlockId>,
+        requires_block_resync: bool,
+        requires_text_resync: bool,
+    },
     QueueNextPromptToggled,
     Other,
 }
