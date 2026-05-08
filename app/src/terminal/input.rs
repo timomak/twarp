@@ -438,12 +438,8 @@ fn ai_indicator_height<C>(_: &C) -> f32 {
     0.0
 }
 
-// twarp: 2c-d — stubs for cli_agent_sessions and other AI types
-#[allow(dead_code)]
-enum CLIAgentInputState {
-    Open {},
-    Closed,
-}
+// twarp: 2c-d — unify with terminal::view::CLIAgentInputState.
+pub use crate::terminal::view::CLIAgentInputState;
 
 #[allow(dead_code)]
 pub struct CLIAgentSessionsModel;

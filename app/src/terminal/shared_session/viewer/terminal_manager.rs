@@ -57,10 +57,7 @@ use crate::terminal::PTY_READS_BROADCAST_CHANNEL_SIZE;
 use crate::terminal::session_settings::SessionSettings;
 
 // twarp: 2c-d — cli agent sessions deleted; stubs.
-pub enum CLIAgentInputState {
-    Open {},
-    Closed,
-}
+pub use crate::terminal::view::CLIAgentInputState;
 pub struct CLIAgentSessionsModel;
 impl warpui::Entity for CLIAgentSessionsModel { type Event = CLIAgentSessionsModelEvent; }
 impl SingletonEntity for CLIAgentSessionsModel {}
@@ -562,7 +559,7 @@ impl TerminalManager {
                 let sessions_model = CLIAgentSessionsModel::as_ref(ctx);
                 match sessions_model.session(view_id_for_cli) {
                     Some(session) => CLIAgentSessionState::Active {
-                        cli_agent: session.agent.to_serialized_name(),
+                        cli_agent: session.agent.to_serialized_name().to_string(),
                         is_rich_input_open: matches!(
                             new_input_state,
                             CLIAgentInputState::Open { .. }

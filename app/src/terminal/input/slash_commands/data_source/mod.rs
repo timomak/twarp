@@ -35,10 +35,7 @@ pub struct SkillDescriptor {
 }
 // twarp: 2c-d — re-export SkillManager from input for type unification.
 pub use crate::terminal::input::SkillManager;
-pub enum CLIAgentInputState {
-    Open {},
-    Closed,
-}
+pub use crate::terminal::view::CLIAgentInputState;
 pub struct CLIAgentSessionsModel;
 impl warpui::Entity for CLIAgentSessionsModel { type Event = CLIAgentSessionsModelEvent; }
 impl warpui::SingletonEntity for CLIAgentSessionsModel {}

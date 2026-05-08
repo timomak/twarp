@@ -573,7 +573,7 @@ impl CLIAgentSessionListener {
 #[allow(dead_code)] fn plugin_manager_for<C>(_: C) -> Option<PluginManagerStub> { None }
 #[allow(dead_code)] pub enum PluginModalKind {}
 #[allow(dead_code)] enum CLIAgentInputEntrypoint { AutoShow, Other }
-#[allow(dead_code)] struct CLIAgentInputState;
+#[allow(dead_code)] pub enum CLIAgentInputState { Open {}, Closed }
 #[allow(dead_code)] enum CLIAgentRichInputCloseReason { AutoToggle, Other }
 #[allow(dead_code)]
 pub struct CLIAgentSession {
