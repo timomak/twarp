@@ -28,7 +28,7 @@ impl BlocklistAIHistoryModel {
     pub fn conversation_id_for_action<A>(&self, _: A, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
     pub fn active_conversation_id(&self, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
     pub fn mark_terminal_view_as_ambient_agent_session_view<A>(&mut self, _: A) {}
-    pub fn update_conversation_status<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn update_conversation_status<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
 }
 
 #[allow(dead_code)]

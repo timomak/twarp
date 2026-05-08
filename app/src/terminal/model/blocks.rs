@@ -142,7 +142,7 @@ impl RichContentItem {
                 ..
             } => Some(*conversation_id) != self.agent_view_conversation_id,
             AgentViewState::Active {
-                display_mode: AgentViewDisplayMode::Inline,
+                display_mode: AgentViewDisplayMode::Inline | AgentViewDisplayMode::Other,
                 ..
             }
             | AgentViewState::Inactive => self.agent_view_conversation_id.is_some(),

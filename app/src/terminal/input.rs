@@ -634,7 +634,7 @@ enum UserQueryMenuEvent {}
 enum AtContextMenuDisabledReason {}
 #[allow(dead_code)]
 impl AtContextMenuDisabledReason {
-    fn get_disable_reason<A, B>(_: A, _: B) -> Option<Self> { None }
+    fn get_disable_reason<A, B, C, D>(_: A, _: B, _: C, _: D) -> Option<Self> { None }
 }
 
 // AttachmentType, AttachmentInput, AIAgentContext, etc.
@@ -1066,7 +1066,7 @@ impl AmbientAgentViewModel {
     pub fn spawn_agent<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn is_in_setup(&self) -> bool { false }
     pub fn has_parent_terminal(&self) -> bool { false }
-    pub fn enter_viewing_existing_session<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn enter_viewing_existing_session<A, C>(&mut self, _: A, _: &mut C) {}
 }
 
 #[allow(dead_code)]
@@ -12516,6 +12516,7 @@ impl Input {
                         .pending_images()
                         .iter()
                         .map(|image| AttachmentInput {
+                            filename: image.file_name.clone(),
                             file_name: image.file_name.clone(),
                             mime_type: image.mime_type.clone(),
                             data: image.data.clone(),
@@ -12531,6 +12532,7 @@ impl Input {
                                     continue;
                                 }
                                 inputs.push(AttachmentInput {
+                                    filename: file.file_name.clone(),
                                     file_name: file.file_name.clone(),
                                     mime_type: file.mime_type.clone(),
                                     data: base64::engine::general_purpose::STANDARD.encode(&bytes),
