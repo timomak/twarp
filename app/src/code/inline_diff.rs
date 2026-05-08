@@ -6,7 +6,7 @@ use std::rc::Rc;
 pub enum DiffSessionType {
     Other,
     Local,
-    Remote,
+    Remote(String),
 }
 use ai::diff_validation::DiffType;
 #[cfg(not(target_family = "wasm"))]

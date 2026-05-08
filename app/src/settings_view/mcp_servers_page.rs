@@ -89,6 +89,11 @@ impl MCPServersSettingsPageView {
     ) {
         // twarp: 2c-d — MCP autoinstall removed
     }
+
+    // twarp: 2c-d — modal content removed; stub returns None.
+    pub fn get_modal_content(&self, _app: &AppContext) -> Option<Box<dyn Element>> {
+        None
+    }
 }
 
 impl Entity for MCPServersSettingsPageView {

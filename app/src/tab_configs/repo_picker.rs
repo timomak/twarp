@@ -11,7 +11,13 @@ use warpui::{
 pub struct PersistedWorkspace;
 impl warpui::Entity for PersistedWorkspace { type Event = PersistedWorkspaceEvent; }
 impl warpui::SingletonEntity for PersistedWorkspace {}
-pub enum PersistedWorkspaceEvent { Other, WorkspaceAdded }
+#[allow(dead_code)]
+impl PersistedWorkspace {
+    pub fn workspaces(&self) -> std::iter::Empty<ai::workspace::WorkspaceMetadata> {
+        std::iter::empty()
+    }
+}
+pub enum PersistedWorkspaceEvent { Other, WorkspaceAdded { path: std::path::PathBuf } }
 use crate::{
     appearance::Appearance,
     tab_configs::PickerStyle,

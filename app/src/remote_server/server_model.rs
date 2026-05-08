@@ -39,7 +39,15 @@ pub struct FileLocations {
     pub name: String,
     pub lines: Vec<std::ops::Range<usize>>,
 }
-pub fn read_local_file_context<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: E) {}
+pub async fn read_local_file_context<A, B, C, D, E>(
+    _: A,
+    _: B,
+    _: C,
+    _: D,
+    _: E,
+) -> anyhow::Result<ReadFileContextResult> {
+    Ok(ReadFileContextResult::Other)
+}
 pub enum ReadFileContextResult { Other }
 use crate::terminal::model::session::command_executor::{
     ExecuteCommandOptions, LocalCommandExecutor,

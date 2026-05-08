@@ -56,6 +56,19 @@ pub struct AIQueriesDataSource;
 impl AIQueriesDataSource {
     pub fn new() -> Self { Self }
 }
+impl crate::search::mixer::SyncDataSource for AIQueriesDataSource {
+    type Action = crate::search::command_search::searcher::CommandSearchItemAction;
+    fn run_query(
+        &self,
+        _query: &crate::search::data_source::Query,
+        _app: &warpui::AppContext,
+    ) -> Result<
+        Vec<crate::search::data_source::QueryResult<Self::Action>>,
+        crate::search::mixer::DataSourceRunErrorWrapper,
+    > {
+        Ok(vec![])
+    }
+}
 use super::{
     env_var_collections::EnvVarCollectionDataSource,
     history::history_data_source_for_session,

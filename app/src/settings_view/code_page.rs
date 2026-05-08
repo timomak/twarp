@@ -40,7 +40,14 @@ impl PersistedWorkspace {
     pub fn disable_lsp_server_for_path<A, B>(&mut self, _: A, _: B) {}
     pub fn all_lsp_servers<A>(&self, _: A, _: bool) -> Option<std::iter::Empty<(LSPServerType, EnablementState)>> { None }
 }
-pub enum PersistedWorkspaceEvent { InstallationSucceeded, InstallationFailed, Other, AvailableServersDetected, InstallStatusUpdate, WorkspaceAdded }
+pub enum PersistedWorkspaceEvent {
+    InstallationSucceeded,
+    InstallationFailed,
+    Other,
+    AvailableServersDetected { workspace_path: std::path::PathBuf, servers: Vec<LSPServerType> },
+    InstallStatusUpdate { server_type: LSPServerType, status: () },
+    WorkspaceAdded,
+}
 
 use crate::{
     appearance::Appearance,
