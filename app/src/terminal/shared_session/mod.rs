@@ -21,8 +21,8 @@ pub mod manager;
 pub mod ai_agent {
     #[derive(Clone, Debug, Default, PartialEq)]
     pub struct AIAgentSharing {}
-    pub fn encode_agent_response_event<T>(_event: T) -> Vec<u8> {
-        vec![]
+    pub fn encode_agent_response_event<T>(_event: T) -> String {
+        String::new()
     }
     pub fn decode_agent_response_event<T>(_data: T) -> Result<(), ()> {
         Err(())

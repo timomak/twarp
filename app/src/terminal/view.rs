@@ -582,7 +582,7 @@ struct CLIAgentSession {
     pub remote_host: Option<String>,
     pub plugin_version: Option<String>,
     pub input_state: CLIAgentInputState,
-    pub draft_text: String,
+    pub draft_text: Option<String>,
     pub custom_command_prefix: Option<String>,
 }
 #[allow(dead_code)] struct CLIAgentSessionContext {
@@ -773,7 +773,7 @@ impl BlocklistAIHistoryModel {
     // twarp: 2c-d — bulk stubs
     fn clear_conversations_in_terminal_view<A, C>(&mut self, _: A, _: &mut C) {}
     fn fork_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) -> Result<(), String> { Ok(()) }
-    fn truncate_conversation_from_exchange<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    fn truncate_conversation_from_exchange<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> Result<Vec<crate::app_state::AIConversationId>, ()> { Err(()) }
     fn update_conversation_status<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     fn is_entirely_passive_conversation<I>(&self, _: I) -> bool { false }
     fn can_conversation_be_shared<I>(&self, _: I) -> bool { false }
@@ -13462,7 +13462,7 @@ impl TerminalView {
                         return;
                     };
                     PassiveSuggestionTrigger::ShellCommandCompleted(ShellCommandCompletedTrigger {
-                        executed_shell_command: Box::new(block_context),
+                        executed_shell_command: format!("{:?}", block_context),
                         relevant_files: vec![],
                     })
                 };
@@ -22168,7 +22168,7 @@ impl TerminalView {
                                 .as_ref(ctx)
                                 .get_preceding_user_query(ctx);
                             ctx.emit(Event::OpenAddPromptPane {
-                                initial_content: Some(prompt_text),
+                                initial_content: prompt_text,
                             });
                             break;
                         }
@@ -23304,7 +23304,7 @@ impl TerminalView {
     fn submit_cli_agent_rich_input<A, C>(&mut self, _: A, _: &mut C) {}
     fn tag_in_agent_for_user_long_running_command<C>(&mut self, _: &mut C) {}
     fn tag_out_agent_for_user_long_running_command<C>(&mut self, _: &mut C) {}
-    fn try_enter_agent_view<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    fn try_enter_agent_view<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) -> Result<crate::app_state::AIConversationId, ()> { Err(()) }
     // twarp: 2c-d — additional bulk stubs
     fn register_subscriptions_for_use_agent_footer<C>(&mut self, _: &mut C) {}
     fn restore_conversations_on_view_creation<C>(&mut self, _: &mut C) {}

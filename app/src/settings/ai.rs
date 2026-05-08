@@ -1891,7 +1891,7 @@ impl AISettings {
         if !map.contains_key(pattern) {
             return;
         }
-        let value = agent.map(|a| a.to_serialized_name()).unwrap_or_default();
+        let value = agent.map(|a| a.to_serialized_name().to_string()).unwrap_or_default();
         map.insert(pattern.to_string(), value);
         report_if_error!(self
             .cli_agent_footer_enabled_commands

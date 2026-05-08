@@ -1110,7 +1110,7 @@ enum AgentInputFooterEvent {
     ToggledChipMenu { open: bool },
     ToggleFileExplorer(()),
     ToggleInlineModelSelector { initial_tab: () },
-    TryExecuteChipCommand(()),
+    TryExecuteChipCommand(String),
     WriteToPty(()),
 }
 

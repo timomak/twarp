@@ -535,8 +535,8 @@ pub enum WorkspaceAction {
     },
     ShowRewindConfirmationDialog {
         ai_block_view_id: EntityId,
-        exchange_id: String,
-        conversation_id: String,
+        exchange_id: crate::terminal::view::AIAgentExchangeId,
+        conversation_id: crate::app_state::AIConversationId,
     },
     ExecuteRewindAIConversation {
         ai_block_view_id: EntityId,
