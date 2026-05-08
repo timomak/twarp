@@ -16,7 +16,7 @@ twarp removes Warp's AI features — the agentic mode, cloud-agent surfaces, in-
 
 In practice this means ripping out the agent UI, the cloud-mode codepaths, the AI command palette, and any LLM-backed completion. Telemetry that exists solely to support those features goes with them.
 
-Build progress for all four sections below is tracked in [`roadmap/ROADMAP.md`](roadmap/ROADMAP.md).
+Build progress for all five sections below is tracked in [`roadmap/ROADMAP.md`](roadmap/ROADMAP.md).
 
 ### 2. Tab color shortcuts
 
@@ -38,7 +38,11 @@ Tentative defaults (configurable):
 
 Upstream is already exploring per-tab color indication on `oz-agent/APP-4321-active-tab-color-indication` — twarp will likely build on top of that work rather than re-invent it.
 
-### 3. Custom command shortcuts
+### 3. Tab rename shortcut
+
+`⌘⌥R` triggers the same rename flow that double-clicking a tab title invokes — focus the active tab's title, enter inline edit mode, commit on Enter / cancel on Escape. The rename interaction already exists; this just adds a keyboard path into it so you don't have to reach for the trackpad to rename a tab.
+
+### 4. Custom command shortcuts
 
 A declarative way to bind a keyboard shortcut to a sequence of terminal actions: open a new tab, type text, press keys, wait, type more. Lets you turn frequent multi-step workflows into one keystroke.
 
@@ -69,7 +73,7 @@ shortcuts:
 
 The intent is for the shortcut system to be powerful enough that "open Claude in a fresh tab and feed it a slash command" is one keystroke, and small enough that the config stays readable.
 
-### 4. Open Changes panel (VS Code-style git review)
+### 5. Open Changes panel (VS Code-style git review)
 
 A built-in side panel for reviewing the current repo's changes — modeled directly on **VS Code's Source Control view**, behavior-for-behavior where it makes sense.
 

@@ -13,7 +13,8 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 03 | [Render markdown by default](03-md-rendered/STATUS.md) | not-started | — | — |
 | 04 | [Custom command shortcuts](04-command-shortcuts/STATUS.md) | not-started | — | — |
 | 05 | [Open Changes panel](05-open-changes/STATUS.md) | not-started | — | — |
-| 06 | [Rebrand to twarp](06-rebrand/STATUS.md) | not-started | — | — |
+| 06 | [Tab rename shortcut](06-tab-rename/STATUS.md) | not-started | — | — |
+| 07 | [Rebrand to twarp](07-rebrand/STATUS.md) | not-started | — | — |
 
 ## Phases
 
@@ -28,7 +29,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 
 - Only one feature is active at a time.
 - A feature advances from `spec-in-review` → `impl-pending` only after the spec PR is **merged to master**.
-- Features 02, 05, and 06 are sub-phased; their STATUS.md tracks individual sub-PRs and the feature only reaches `merged` after every sub-PR ships.
+- Features 02, 05, and 07 are sub-phased; their STATUS.md tracks individual sub-PRs and the feature only reaches `merged` after every sub-PR ships.
 - The next feature only starts after the current one reaches `merged`.
 - Git is the source of truth. If STATUS.md and `gh pr view` disagree, trust git and update STATUS.md.
 
@@ -39,7 +40,8 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 3. **Render markdown by default third** — small default flip on whatever surface(s) twarp uses to display `.md` files. After AI removal so the markdown render path isn't entangled with the deleted assistant transcript renderer.
 4. **Command shortcuts fourth** — independent subsystem, no dependency on 01–03.
 5. **Open Changes panel fifth** — largest user-facing scope, sub-phased into panel scaffold → diffs → staging → commit/push → file timeline.
-6. **Rebrand last** — file/crate renames are the worst case for git merges, so push them as late as possible to keep upstream cherry-picks clean. By feature 06, AI code is gone, so the brand surface to rename is smaller.
+6. **Tab rename shortcut sixth** — small, isolated keyboard binding that hooks into the existing rename interaction. Sequenced here only because 03–05 were already queued; nothing about its scope blocks earlier placement, and it stays before rebrand so the rename keybinding lands in `twarp_*` crates rather than churning during 7b.
+7. **Rebrand last** — file/crate renames are the worst case for git merges, so push them as late as possible to keep upstream cherry-picks clean. By feature 07, AI code is gone, so the brand surface to rename is smaller.
 
 ## Out of scope for `/twarp-next`
 
