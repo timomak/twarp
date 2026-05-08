@@ -14954,6 +14954,7 @@ impl Input {
     }
 }
 
-#[cfg(test)]
-#[path = "input_test.rs"]
-mod tests;
+// twarp: 2c-d — input_test.rs deleted; module removed.
+// #[cfg(test)]
+// #[path = "input_test.rs"]
+// mod tests;

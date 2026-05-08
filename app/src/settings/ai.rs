@@ -1993,6 +1993,7 @@ impl Entity for CompiledCommandsForCodingAgentToolbar {
 
 impl SingletonEntity for CompiledCommandsForCodingAgentToolbar {}
 
-#[cfg(test)]
-#[path = "ai_tests.rs"]
-mod tests;
+// twarp: 2c-d — ai_tests.rs deleted; module removed.
+// #[cfg(test)]
+// #[path = "ai_tests.rs"]
+// mod tests;

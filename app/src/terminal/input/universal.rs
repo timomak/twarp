@@ -80,9 +80,8 @@ impl Input {
 
         // twarp: 2c-d — universal::InputType is a stub; ai_input_model.input_type() returns
         // events::InputType. AI input no longer exists, so this branch is permanently disabled.
-        if FeatureFlag::ImageAsContext.is_enabled() && false
-            && matches!(ai_input_model.input_type(), crate::server::telemetry::events::InputType::AI)
-        {
+        let _ = ai_input_model.input_type();
+        if FeatureFlag::ImageAsContext.is_enabled() && cfg!(twarp_2c_d_ai_image_disabled) {
             if let Some(images) = self.render_attachment_chips(appearance) {
                 column.add_child(
                     Container::new(images)

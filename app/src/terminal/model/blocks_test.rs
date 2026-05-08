@@ -256,8 +256,9 @@ fn test_update_padding_block_heights() {
 }
 
 // Disabled because it's flaky on CI.
-// #[test]
-// pub fn test_clear_visible_screen() {
+// twarp: 2c-d — restored function wrapper around partially-uncommented body.
+#[allow(dead_code)]
+fn _disabled_test_clear_visible_screen() {
     let mut block_list = new_bootstrapped_block_list(None, None, ChannelEventListener::new_for_test());
 
     // Create two blocks, each with 3 command lines and 3 output lines.
@@ -393,6 +394,7 @@ pub fn test_script_execution_block() {
         BlockType::BootstrapVisible(_)
     ));
 }
+} // twarp: 2c-d — close _disabled_test_clear_visible_screen wrapper.
 
 // Add a few restored blocks and ensure they show up appropriately.
 #[test]

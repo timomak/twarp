@@ -25853,6 +25853,7 @@ fn is_rich_input_chip_in_cli_toolbar(app: &AppContext) -> bool {
         .any(|item| matches!(item, AgentToolbarItemKind::RichInput))
 }
 
-#[cfg(test)]
-#[path = "view_test.rs"]
-mod tests;
+// twarp: 2c-d — view_test.rs deleted; module removed.
+// #[cfg(test)]
+// #[path = "view_test.rs"]
+// mod tests;
