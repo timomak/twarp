@@ -1,6 +1,6 @@
 // twarp: 2c-d — AI agent icon / query history deleted; stubs.
 pub fn render_ai_agent_mode_icon<A, B>(_: A, _: B) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AIQueryHistory {
     // twarp: 2c-d — fields required by callers (loosely typed)
     pub start_time: chrono::DateTime<chrono::Local>,
@@ -9,7 +9,7 @@ pub struct AIQueryHistory {
     pub output_status: AIQueryHistoryOutputStatus,
     pub history_order: HistoryOrder,
 }
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum AIQueryHistoryOutputStatus { #[default] Other }
 #[allow(dead_code)]
 impl AIQueryHistoryOutputStatus {

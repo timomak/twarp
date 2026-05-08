@@ -444,6 +444,8 @@ impl CLISubagentController {
     fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
     fn switch_control_to_user<A, C>(&mut self, _: A, _: &mut C) {}
     fn handoff_active_command_control_to_agent<C>(&mut self, _: &mut C) {}
+    pub fn is_agent_in_control(&self) -> bool { false }
+    pub fn toggle_hide_responses<C>(&mut self, _: &mut C) {}
 }
 #[allow(dead_code)]
 impl CLISubagentView {

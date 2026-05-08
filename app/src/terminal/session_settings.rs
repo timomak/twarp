@@ -15,7 +15,6 @@ use warp_core::settings::{
 
 // twarp: 2c-d — AgentToolbarItemKind deleted; stub kept so settings call-sites compile.
 #[derive(
-    Copy,
     Clone,
     Debug,
     Serialize,

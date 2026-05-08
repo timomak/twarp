@@ -14,7 +14,7 @@ use warpui::{SingletonEntity, ViewContext};
 
 // twarp: 2c-d — AI agent view / blocklist deleted; stubs.
 use crate::app_state::AgentViewEntryOrigin;
-pub enum DismissalStrategy { Other }
+pub enum DismissalStrategy { Other, Timer(std::time::Duration) }
 pub struct EphemeralMessage;
 #[allow(dead_code)]
 impl EphemeralMessage {

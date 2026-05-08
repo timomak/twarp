@@ -7,6 +7,12 @@ use warpui::{AppContext, EntityId, SingletonEntity};
 pub struct BlocklistAIHistoryModel;
 impl warpui::Entity for BlocklistAIHistoryModel { type Event = crate::terminal::input::BlocklistAIHistoryEvent; }
 impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+#[allow(dead_code)]
+impl BlocklistAIHistoryModel {
+    pub fn all_ai_queries<I>(&self, _: I) -> std::iter::Empty<crate::input_suggestions::AIQueryHistory> {
+        std::iter::empty()
+    }
+}
 use crate::app_state::InputConfig;
 use crate::input_suggestions::HistoryInputSuggestion;
 use crate::settings::AISettings;

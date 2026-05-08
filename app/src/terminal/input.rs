@@ -795,22 +795,49 @@ impl BlocklistAIHistoryEvent {
 #[allow(dead_code)]
 pub enum BlocklistAIHistoryEvent {
     // twarp: 2c-d — struct variants; { terminal_view_id } pattern needed by callers
-    AppendedExchange { terminal_view_id: warpui::EntityId },
-    ClearedActiveConversation { terminal_view_id: warpui::EntityId },
-    ClearedConversationsInTerminalView { terminal_view_id: warpui::EntityId },
+    AppendedExchange {
+        terminal_view_id: warpui::EntityId,
+        exchange_id: crate::app_state::AIConversationId,
+        task_id: crate::app_state::AmbientAgentTaskId,
+        conversation_id: crate::app_state::AIConversationId,
+        is_hidden: bool,
+        response_stream_id: crate::app_state::AIConversationId,
+    },
+    ClearedActiveConversation {
+        terminal_view_id: warpui::EntityId,
+        conversation_id: crate::app_state::AIConversationId,
+    },
+    ClearedConversationsInTerminalView {
+        terminal_view_id: warpui::EntityId,
+        active_conversation_id: crate::app_state::AIConversationId,
+    },
     ConversationServerTokenAssigned { terminal_view_id: warpui::EntityId },
     CreatedSubtask { terminal_view_id: warpui::EntityId },
     DeletedConversation { terminal_view_id: warpui::EntityId },
-    ReassignedExchange { terminal_view_id: warpui::EntityId },
+    ReassignedExchange {
+        terminal_view_id: warpui::EntityId,
+        exchange_id: crate::app_state::AIConversationId,
+        new_conversation_id: crate::app_state::AIConversationId,
+    },
     RemoveConversation { terminal_view_id: warpui::EntityId },
     RestoredConversations { terminal_view_id: warpui::EntityId },
     SetActiveConversation { terminal_view_id: warpui::EntityId },
     SplitConversation { terminal_view_id: warpui::EntityId },
-    StartedNewConversation { terminal_view_id: warpui::EntityId },
+    StartedNewConversation {
+        terminal_view_id: warpui::EntityId,
+        new_conversation_id: crate::app_state::AIConversationId,
+    },
     UpdatedAutoexecuteOverride { terminal_view_id: warpui::EntityId },
     UpdatedConversationArtifacts { terminal_view_id: warpui::EntityId },
-    UpdatedConversationMetadata { terminal_view_id: warpui::EntityId },
-    UpdatedConversationStatus { terminal_view_id: warpui::EntityId },
+    UpdatedConversationMetadata {
+        terminal_view_id: warpui::EntityId,
+        conversation_id: crate::app_state::AIConversationId,
+    },
+    UpdatedConversationStatus {
+        terminal_view_id: warpui::EntityId,
+        conversation_id: crate::app_state::AIConversationId,
+        is_restored: bool,
+    },
     UpdatedStreamingExchange { terminal_view_id: warpui::EntityId },
     UpdatedTodoList { terminal_view_id: warpui::EntityId },
     UpgradedTask { terminal_view_id: warpui::EntityId },
@@ -834,7 +861,7 @@ struct AIConversationStub;
 impl AIConversationStub {
     pub fn id(&self) -> AIConversationId { unimplemented!() }
     pub fn title(&self) -> Option<String> { None }
-    pub fn status(&self) -> AIConversationStatusStub { AIConversationStatusStub }
+    pub fn status(&self) -> crate::app_state::ConversationStatus { crate::app_state::ConversationStatus::Failed }
     // twarp: 2c-d — bulk stubs
     pub fn is_empty(&self) -> bool { true }
     pub fn is_entirely_passive(&self) -> bool { false }
@@ -842,11 +869,12 @@ impl AIConversationStub {
     pub fn server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
 }
 #[allow(dead_code)]
-struct AIConversationStatusStub;
+#[derive(Clone)]
+pub struct AIConversationStatusStub;
 #[allow(dead_code)]
 impl AIConversationStatusStub {
-    fn is_in_progress(&self) -> bool { false }
-    fn is_blocked(&self) -> bool { false }
+    pub fn is_in_progress(&self) -> bool { false }
+    pub fn is_blocked(&self) -> bool { false }
 }
 
 #[derive(Debug, Clone)]
@@ -963,6 +991,8 @@ pub struct LLMPreferences;
 #[allow(dead_code)]
 pub struct LLMInfoStub {
     pub id: crate::app_state::LLMId,
+    pub provider: String,
+    pub host_configs: Vec<()>,
 }
 impl LLMPreferences {
     pub fn update_preferred_agent_mode_llm<I, C>(&mut self, _: I, _: warpui::EntityId, _: &mut C) {}
@@ -974,7 +1004,7 @@ impl LLMPreferences {
     pub fn refresh_available_models<C>(&mut self, _: &mut C) {}
     pub fn get_llm_info<A>(&self, _: A) -> Option<LLMInfoStub> { None }
     pub fn get_active_base_model<C>(&self, _: &C, _: Option<warpui::EntityId>) -> LLMInfoStub {
-        LLMInfoStub { id: "".into() }
+        LLMInfoStub { id: "".into(), provider: String::new(), host_configs: Vec::new() }
     }
     pub fn supports_input_type<A, C>(&self, _: A, _: &C) -> bool { false }
     pub fn update_feature_model_choices<C, T>(&mut self, _: Result<T, ()>, _: &mut C) {}

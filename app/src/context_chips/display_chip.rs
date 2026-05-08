@@ -546,11 +546,11 @@ impl DisplayChip {
                 ctx.subscribe_to_view(&plan_and_todo_list, |_me, _, event, ctx| match event {
                     PlanAndTodoListEvent::OpenAIDocument {
                         document_id,
-                        document_version,
+                        version,
                     } => {
                         ctx.emit(PromptDisplayChipEvent::OpenAIDocument {
                             document_id: *document_id,
-                            document_version: *document_version,
+                            document_version: *version,
                         });
                     }
                 });

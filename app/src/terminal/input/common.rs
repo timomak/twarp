@@ -4,6 +4,14 @@ use std::sync::Arc;
 pub fn is_using_api_key_for_provider<A, B>(_: A, _: B) -> bool { false }
 pub use crate::terminal::input::LLMPreferences;
 pub struct AIRequestUsageModel;
+impl warpui::Entity for AIRequestUsageModel { type Event = (); }
+impl warpui::SingletonEntity for AIRequestUsageModel {}
+#[allow(dead_code)]
+impl AIRequestUsageModel {
+    pub fn compute_buy_addon_credits_banner_display_state(&self, _: &warpui::AppContext) -> BuyCreditsBannerDisplayState {
+        BuyCreditsBannerDisplayState::Hidden
+    }
+}
 pub enum BuyCreditsBannerDisplayState { Other, Hidden }
 use crate::{
     appearance::Appearance,

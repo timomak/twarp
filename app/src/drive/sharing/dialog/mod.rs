@@ -39,7 +39,7 @@ pub struct LinkSharingStub {
 
 pub struct GuestStub {
     pub subject: crate::cloud_object::ServerGuestSubject,
-    pub access_level: (),
+    pub access_level: warp_graphql::object_permissions::AccessLevel,
 }
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;
