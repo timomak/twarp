@@ -895,7 +895,7 @@ impl TerminalView {
             return None;
         }
 
-        conversation.status().clone()
+        Some(conversation.status().clone())
     }
 
     pub fn selected_conversation_is_empty(&self, ctx: &AppContext) -> bool {

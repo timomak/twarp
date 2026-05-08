@@ -454,8 +454,8 @@ impl CLISubagentView {
     // twarp: 2c-d — bulk variants for AI-removed CLISubagentEvent
     Other,
     ControlHandedBackAfterTransfer,
-    FinishedSubagent { task_id: (), block_id: () },
-    SpawnedSubagent { task_id: (), block_id: () },
+    FinishedSubagent { task_id: crate::app_state::AmbientAgentTaskId, block_id: warp_terminal::model::BlockId },
+    SpawnedSubagent { task_id: crate::app_state::AmbientAgentTaskId, block_id: warp_terminal::model::BlockId },
     ToggledHideResponses,
     UpdatedControl,
     UpdatedLastSnapshot,
@@ -553,9 +553,11 @@ impl PersistedWorkspace {
 
 // CLI agent sessions
 #[allow(dead_code)] fn parse_event<A, B>(_: A, _: B) -> Option<CLIAgentEvent> { None }
-#[allow(dead_code)] struct CLIAgentEvent { event_type: CLIAgentEventType, payload: CLIAgentEventPayload, agent: crate::app_state::CLIAgent, session_id: Option<String>, project: Option<String>, model: Option<String>, v: Option<String>, event: Option<String>, cwd: Option<String> }
+#[allow(dead_code)] struct CLIAgentEvent { event_type: CLIAgentEventType, payload: CLIAgentEventPayload, agent: crate::app_state::CLIAgent, session_id: Option<String>, project: Option<String>, model: Option<String>, v: Option<String>, event: CLIAgentEventType, cwd: Option<String> }
 #[allow(dead_code)] struct CLIAgentEventPayload { content: String, plugin_version: Option<String> }
-#[allow(dead_code)] enum CLIAgentEventType { SessionStart, Other }
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CLIAgentEventType { SessionStart, Other }
 #[allow(dead_code)] const CLI_AGENT_NOTIFICATION_SENTINEL: &str = "";
 #[allow(dead_code)] fn is_agent_supported<C>(_: C) -> bool { false }
 #[allow(dead_code)] struct CLIAgentSessionListener;
@@ -633,43 +635,10 @@ impl CLIAgentSessionsModelEvent {
 
 // twarp: 2c-d — additional file-local stubs for view.rs body code
 #[allow(dead_code)] type AIConversationId = crate::app_state::AIConversationId;
-#[allow(dead_code)]
-struct AIConversation;
-#[allow(dead_code)]
-impl AIConversation {
-    fn status(&self) -> ConversationStatus { ConversationStatus::Other }
-    fn is_entirely_passive(&self) -> bool { false }
-    // twarp: 2c-d — bulk stubs
-    fn id(&self) -> AIConversationId { AIConversationId::default() }
-    fn is_child_agent_conversation(&self) -> bool { false }
-    fn is_empty(&self) -> bool { true }
-    fn exchange_count(&self) -> usize { 0 }
-    fn exchange_id_for_action(&self, _: ()) -> Option<()> { None }
-    fn exchanges_reversed(&self) -> std::iter::Empty<()> { std::iter::empty() }
-    fn forked_from_server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
-    fn get_task<A>(&self, _: A) -> Option<TaskStub> { None }
-    fn has_active_subagent(&self) -> bool { false }
-    fn has_opened_code_review(&self) -> bool { false }
-    fn latest_exchange(&self) -> Option<()> { None }
-    fn latest_user_query(&self) -> Option<String> { None }
-    fn root_task_exchanges(&self) -> std::iter::Empty<()> { std::iter::empty() }
-    fn server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
-    fn title(&self) -> Option<String> { None }
-}
-#[allow(dead_code)]
-enum ConversationStatus {
-    Success,
-    Blocked {},
-    Error,
-    InProgress,
-    Other,
-}
-#[allow(dead_code)]
-impl ConversationStatus {
-    fn is_in_progress(&self) -> bool { matches!(self, ConversationStatus::InProgress) }
-    fn is_blocked(&self) -> bool { matches!(self, ConversationStatus::Blocked { .. }) }
-    fn is_error(&self) -> bool { matches!(self, ConversationStatus::Error) }
-}
+// twarp: 2c-d — unify with app_state::AIConversation.
+pub use crate::app_state::AIConversation;
+// twarp: 2c-d — unify with app_state::ConversationStatus.
+pub use crate::app_state::ConversationStatus;
 // twarp: 2c-d — ConversationStatus stub now lives above as a struct.
 #[allow(dead_code)] enum UserQueryMode {}
 #[allow(dead_code)] enum AIAgentActionType {
@@ -9067,7 +9036,7 @@ impl TerminalView {
         let trigger = banner_state.trigger.clone();
         let should_start_new_conversation = suggestion.should_start_new_conversation;
         let conversation_id = banner_state.conversation_id;
-        let trigger_block_id: Option<()> = trigger.as_ref().and_then(|t| t.block_id());
+        let trigger_block_id: Option<warp_terminal::model::BlockId> = trigger.as_ref().and_then(|t| t.block_id());
         log::debug!(
             "[passive-suggestions] accepting prompt suggestion: trigger={}, trigger_block_id={}",
             if trigger.is_some() { "Some" } else { "None" },

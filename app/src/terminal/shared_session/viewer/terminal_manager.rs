@@ -1433,7 +1433,7 @@ impl TerminalManager {
             history_model
                 .all_live_conversations_for_terminal_view(terminal_view_id)
                 .into_iter()
-                .filter(|conversation: &crate::app_state::AIConversationId| conversation.status().as_ref().is_some_and(|s| s.is_in_progress()))
+                .filter(|conversation: &crate::app_state::AIConversationId| conversation.status().is_in_progress())
                 .map(|conversation: crate::app_state::AIConversationId| conversation.id())
                 .collect::<Vec<_>>()
                 .into_iter()

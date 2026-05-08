@@ -735,7 +735,7 @@ impl BlocklistAIContextModel {
     pub fn append_pending_images<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn append_pending_attachments<A, C>(&mut self, _: A, _: &mut C) {}
     // twarp: 2c-d — bulk stubs for AI-removed methods on BlocklistAIContextModel
-    pub fn selected_conversation<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> { None }
+    pub fn selected_conversation<'a, C>(&self, _: &'a C) -> Option<&'a crate::terminal::view::AIConversation> { None }
     pub fn set_pending_query_state_for_existing_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     pub fn set_pending_context_selected_text<T, C>(&mut self, _: Option<String>, _: T, _: &mut C) {}
     pub fn set_pending_context_block_ids<I, T, C>(&mut self, _: I, _: T, _: &mut C) {}

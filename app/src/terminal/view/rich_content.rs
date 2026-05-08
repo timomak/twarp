@@ -80,11 +80,11 @@ impl AIBlock {
     // twarp: 2c-d — additional bulk stubs for AI-removed AIBlock methods
     pub fn cleanup_block<C>(&mut self, _: &mut C) {}
     pub fn dismiss_pending_suggested_prompt<A, C>(&mut self, _: A, _: &mut C) -> bool { false }
-    pub fn finish_reason<C>(&self, _: &C) -> Option<String> { None }
+    pub fn finish_reason<C>(&self, _: &C) -> Option<crate::terminal::view::pending_user_query::FinishReason> { None }
     pub fn handle_passive_code_diff_action<A, C>(&mut self, _: A, _: &mut C) -> bool { false }
     pub fn has_any_imported_comments<C>(&self, _: &C) -> bool { false }
     pub fn has_expanded_running_commands<C>(&self, _: &C) -> bool { false }
-    pub fn hovered_rich_content_link<C>(&self, _: &C) -> Option<String> { None }
+    pub fn hovered_rich_content_link<C>(&self, _: &C) -> Option<crate::terminal::view::link_detection::RichContentLink> { None }
     pub fn ignore_passive_actions<C>(&mut self, _: &mut C) {}
     pub fn is_finished<C>(&self, _: &C) -> bool { false }
     pub fn is_hidden<C>(&self, _: &C) -> bool { false }

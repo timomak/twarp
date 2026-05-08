@@ -4343,7 +4343,7 @@ impl EditorView {
                 BlocklistAIHistoryModel::as_ref(ctx).active_conversation(terminal_view.id())
             })
             .is_some_and(|conversation: crate::app_state::AIConversationId| {
-                conversation.status().as_ref().is_some_and(|s| s.is_in_progress()) && false
+                conversation.status().is_in_progress() && false
             });
 
         // If there is a pending passive ai block, we don't want ctrl+c to clear the buffer.

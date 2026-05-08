@@ -23,7 +23,7 @@ impl AIConversationId {
     pub fn id(&self) -> AIConversationId { *self }
     pub fn is_child_agent_conversation(&self) -> bool { false }
     pub fn is_empty(&self) -> bool { false }
-    pub fn status(&self) -> Option<ConversationStatus> { None }
+    pub fn status(&self) -> ConversationStatus { ConversationStatus::Failed }
     pub fn is_entirely_passive(&self) -> bool { false }
     pub fn title(&self) -> Option<String> { None }
     // twarp: 2c-d — additional stubs called on conversations
@@ -115,9 +115,23 @@ pub struct AIConversation {}
 impl AIConversation {
     // twarp: 2c-d — bulk stubs for app_state::AIConversation
     pub fn is_empty(&self) -> bool { true }
-    pub fn status(&self) -> Option<ConversationStatus> { None }
+    pub fn status(&self) -> ConversationStatus { ConversationStatus::Failed }
     pub fn title(&self) -> Option<String> { None }
     pub fn to_serialized_blocklist_items(&self) -> Vec<()> { Vec::new() }
+    pub fn is_entirely_passive(&self) -> bool { false }
+    pub fn id(&self) -> AIConversationId { AIConversationId::default() }
+    pub fn is_child_agent_conversation(&self) -> bool { false }
+    pub fn exchange_count(&self) -> usize { 0 }
+    pub fn exchange_id_for_action(&self, _: ()) -> Option<()> { None }
+    pub fn exchanges_reversed(&self) -> std::iter::Empty<()> { std::iter::empty() }
+    pub fn forked_from_server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
+    pub fn has_active_subagent(&self) -> bool { false }
+    pub fn has_opened_code_review(&self) -> bool { false }
+    pub fn latest_exchange(&self) -> Option<()> { None }
+    pub fn latest_user_query(&self) -> Option<String> { None }
+    pub fn root_task_exchanges(&self) -> std::iter::Empty<()> { std::iter::empty() }
+    pub fn server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
+    pub fn last_modified_at(&self) -> Option<chrono::DateTime<chrono::Local>> { None }
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum CloudConversationData {
@@ -125,7 +139,7 @@ pub enum CloudConversationData {
     CLIAgent(Box<()>),
 }
 #[derive(Clone, Debug, PartialEq)]
-pub enum ConversationStatus { InProgress, Done, Failed, Cancelled }
+pub enum ConversationStatus { InProgress, Done, Failed, Cancelled, Success, Blocked {}, Error, Other }
 #[allow(dead_code)]
 impl ConversationStatus {
     pub fn render_icon<A>(&self, _: A) -> warpui::elements::Empty {
