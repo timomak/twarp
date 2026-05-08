@@ -1,7 +1,8 @@
 mod saved_prompts;
 mod zero_state;
 
-use ai::skills::SkillProvider;
+// twarp: 2c-e — SkillProvider is now a stub in `crate::app_state`.
+use crate::app_state::SkillProvider;
 pub(crate) use saved_prompts::*;
 use warp_core::features::FeatureFlag;
 pub use zero_state::*;
@@ -29,8 +30,9 @@ use warp_core::ui::Icon as WarpIcon;
 pub struct SkillDescriptor {
     // twarp: 2c-d — fields needed by callers
     pub name: String,
-    pub reference: ai::skills::SkillReference,
-    pub provider: ai::skills::SkillProvider,
+    // twarp: 2c-e — `ai::skills::*` types now live as stubs in `crate::app_state`.
+    pub reference: crate::app_state::SkillReference,
+    pub provider: crate::app_state::SkillProvider,
     pub description: String,
     pub icon_override: Option<warp_core::ui::Icon>,
 }
@@ -297,7 +299,8 @@ impl SlashCommandDataSource {
     pub fn active_cli_agent_providers(
         &self,
         ctx: &AppContext,
-    ) -> Option<&'static [ai::skills::SkillProvider]> {
+        // twarp: 2c-e — `ai::skills::*` now lives as a stub in `crate::app_state`.
+    ) -> Option<&'static [crate::app_state::SkillProvider]> {
         CLIAgentSessionsModel::as_ref(ctx)
             .session(self.terminal_view_id)
             .filter(|s| matches!(s.input_state, CLIAgentInputState::Open { .. }))

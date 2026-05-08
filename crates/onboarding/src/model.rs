@@ -1,7 +1,8 @@
 use crate::slides::{AgentDevelopmentSettings, OnboardingModelInfo, ProjectOnboardingSettings};
 use crate::telemetry::OnboardingEvent;
 use crate::OnboardingIntention;
-use ai::LLMId;
+// twarp: 2c-e — `ai` crate deleted; use the local `LLMId` substitute.
+use crate::LLMId;
 use warp_core::send_telemetry_from_ctx;
 use warpui::{Entity, ModelContext};
 

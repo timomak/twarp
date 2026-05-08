@@ -36,7 +36,8 @@ impl PersistedWorkspace {
         static EMPTY: PersistedWorkspace = PersistedWorkspace;
         &EMPTY
     }
-    pub fn workspaces(&self) -> std::iter::Empty<ai::workspace::WorkspaceMetadata> {
+    // twarp: 2c-e — `ai::workspace::WorkspaceMetadata` is now `crate::app_state::CodeWorkspaceMetadata`.
+    pub fn workspaces(&self) -> std::iter::Empty<crate::app_state::CodeWorkspaceMetadata> {
         std::iter::empty()
     }
 }

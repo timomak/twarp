@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
-use ai::skills::SkillReference;
+// twarp: 2c-e — SkillReference is now a stub in `crate::app_state`.
+use crate::app_state::SkillReference;
 use lazy_static::lazy_static;
 use warpui::elements::ChildView;
 use warpui::{AppContext, Element, ViewContext};

@@ -1,6 +1,7 @@
 use std::ops::Range;
 
-use ai::diff_validation::DiffType;
+// twarp: 2c-e — DiffType is now a stub in `crate::app_state`.
+use crate::app_state::DiffType;
 use warp_editor::render::element::VerticalExpansionBehavior;
 use warpui::elements::new_scrollable::ScrollableAppearance;
 use warpui::elements::ScrollbarWidth;

@@ -15,7 +15,8 @@ impl warpui::Entity for PersistedWorkspace {
 impl warpui::SingletonEntity for PersistedWorkspace {}
 #[allow(dead_code)]
 impl PersistedWorkspace {
-    pub fn workspaces(&self) -> std::iter::Empty<ai::workspace::WorkspaceMetadata> {
+    // twarp: 2c-e — `ai::workspace::WorkspaceMetadata` is now `crate::app_state::CodeWorkspaceMetadata`.
+    pub fn workspaces(&self) -> std::iter::Empty<crate::app_state::CodeWorkspaceMetadata> {
         std::iter::empty()
     }
 }

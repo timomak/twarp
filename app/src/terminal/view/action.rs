@@ -3,7 +3,8 @@ use std::fmt;
 use std::ops::Range;
 use std::path::PathBuf;
 
-use ai::skills::SkillReference;
+// twarp: 2c-e — SkillReference is now a stub in `crate::app_state`.
+use crate::app_state::SkillReference;
 use command_corrections::Correction;
 use pathfinder_geometry::vector::Vector2F;
 use session_sharing_protocol::common::Role;

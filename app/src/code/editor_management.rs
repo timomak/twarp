@@ -8,7 +8,8 @@ use std::{
 pub enum SkillOpenOrigin {
     Other,
 }
-use ai::skills::SkillReference;
+// twarp: 2c-e — SkillReference is now a stub in `crate::app_state`.
+use crate::app_state::SkillReference;
 use serde::{Deserialize, Serialize};
 use warp_util::path::LineAndColumnArg;
 use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity, ViewHandle, WindowId};

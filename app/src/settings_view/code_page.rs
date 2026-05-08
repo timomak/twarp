@@ -41,7 +41,8 @@ impl PersistedWorkspace {
     pub fn total_lsp_server_count(&self, _: bool) -> usize {
         0
     }
-    pub fn workspaces(&self) -> std::iter::Empty<ai::workspace::WorkspaceMetadata> {
+    // twarp: 2c-e — `ai::workspace::WorkspaceMetadata` is now `crate::app_state::CodeWorkspaceMetadata`.
+    pub fn workspaces(&self) -> std::iter::Empty<crate::app_state::CodeWorkspaceMetadata> {
         std::iter::empty()
     }
     // twarp: 2c-d — bulk stubs
@@ -95,13 +96,129 @@ use crate::{
     },
     TelemetryEvent,
 };
-use ai::index::full_source_code_embedding::manager::{
-    CodebaseIndexFinishedStatus, CodebaseIndexManager, CodebaseIndexManagerEvent,
-    CodebaseIndexStatus, CodebaseIndexingError,
-};
-use ai::index::full_source_code_embedding::SyncProgress;
-use ai::project_context::model::{ProjectContextModel, ProjectContextModelEvent};
-use ai::workspace::WorkspaceMetadata;
+// twarp: 2c-e — `ai::*` deleted; file-local stubs below mirror the small surface
+// area used by this settings page. The codebase indexing UI is dead in twarp
+// (the index manager always reports zero codebases), but the page still needs
+// to type-check against these names.
+#[allow(dead_code)]
+pub struct CodebaseIndexManager;
+impl warpui::Entity for CodebaseIndexManager {
+    type Event = CodebaseIndexManagerEvent;
+}
+impl warpui::SingletonEntity for CodebaseIndexManager {}
+#[allow(dead_code)]
+impl CodebaseIndexManager {
+    pub fn get_codebase_index_statuses(
+        &self,
+        _ctx: &warpui::AppContext,
+    ) -> std::iter::Empty<(std::path::PathBuf, CodebaseIndexStatus)> {
+        std::iter::empty()
+    }
+    pub fn can_create_new_indices(&self) -> bool {
+        false
+    }
+    pub fn get_codebase_paths(&self) -> std::iter::Empty<&std::path::PathBuf> {
+        std::iter::empty()
+    }
+    pub fn get_codebase_index_status_for_path<P, C>(
+        &self,
+        _: P,
+        _: &C,
+    ) -> Option<CodebaseIndexStatus> {
+        None
+    }
+    pub fn index_directory<P, C>(&mut self, _: P, _: C) {}
+    pub fn delete_codebase_index<P, C>(&mut self, _: P, _: C) {}
+    pub fn manually_resync_codebase_index<P, C>(&mut self, _: P, _: C) {}
+    pub fn try_manual_resync_codebase<P, C>(&mut self, _: P, _: C) {}
+    pub fn drop_index<P, C>(&mut self, _: P, _: C) {}
+}
+
+#[allow(dead_code)]
+pub enum CodebaseIndexManagerEvent {
+    NewIndexCreated,
+    SyncStateUpdated,
+    RemoveExpiredIndexMetadata,
+    IndexMetadataUpdated,
+    RetrievalRequestCompleted,
+    RetrievalRequestFailed,
+}
+
+#[allow(dead_code)]
+pub enum CodebaseIndexFinishedStatus {
+    Completed,
+    Failed(CodebaseIndexingError),
+}
+
+#[allow(dead_code)]
+pub enum CodebaseIndexingError {
+    BuildTreeError,
+    ExceededMaxFileLimit,
+    MaxDepthExceeded,
+    Other,
+}
+
+#[allow(dead_code)]
+pub struct CodebaseIndexStatus {
+    pub has_pending: bool,
+    pub has_synced_version: bool,
+    pub last_sync_successful: Option<CodebaseIndexFinishedStatus>,
+    pub sync_progress: Option<SyncProgress>,
+}
+
+#[allow(dead_code)]
+impl CodebaseIndexStatus {
+    pub fn has_synced_version(&self) -> bool {
+        self.has_synced_version
+    }
+    pub fn last_sync_successful(&self) -> Option<bool> {
+        None
+    }
+    pub fn has_pending(&self) -> bool {
+        self.has_pending
+    }
+    pub fn sync_progress(&self) -> Option<&SyncProgress> {
+        self.sync_progress.as_ref()
+    }
+    pub fn last_sync_result(&self) -> Option<&CodebaseIndexFinishedStatus> {
+        self.last_sync_successful.as_ref()
+    }
+}
+
+#[allow(dead_code)]
+pub enum SyncProgress {
+    Discovering {
+        total_nodes: usize,
+    },
+    Syncing {
+        completed_nodes: usize,
+        total_nodes: usize,
+    },
+}
+
+#[allow(dead_code)]
+pub struct ProjectContextModel;
+impl warpui::Entity for ProjectContextModel {
+    type Event = ProjectContextModelEvent;
+}
+impl warpui::SingletonEntity for ProjectContextModel {}
+#[allow(dead_code)]
+impl ProjectContextModel {
+    pub fn rules_for_workspace<P>(&self, _path: P) -> Vec<std::path::PathBuf> {
+        Vec::new()
+    }
+    pub fn find_applicable_rules<P>(&self, _path: P) -> Option<()> {
+        None
+    }
+}
+
+#[allow(dead_code)]
+pub enum ProjectContextModelEvent {
+    KnownRulesChanged(()),
+}
+
+// twarp: 2c-e — `ai::workspace::WorkspaceMetadata` is now `crate::app_state::CodeWorkspaceMetadata`.
+use crate::app_state::CodeWorkspaceMetadata as WorkspaceMetadata;
 use lsp::supported_servers::LSPServerType;
 use lsp::{LspManagerModel, LspManagerModelEvent, LspServerModel, LspState};
 use pathfinder_color::ColorU;

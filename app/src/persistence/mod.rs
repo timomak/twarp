@@ -24,7 +24,8 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 
 // twarp: 2c-d — AI persisted_workspace::EnablementState was deleted; stub locally.
-use ai::project_context::model::ProjectRulePath;
+// twarp: 2c-e — ProjectRulePath is now a stub in `crate::app_state`.
+use crate::app_state::ProjectRulePath;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum EnablementState {
@@ -73,7 +74,8 @@ use crate::terminal::model::session::SessionId;
 use crate::workflows::CloudWorkflow;
 use crate::workspaces::user_profiles::UserProfileWithUID;
 use crate::workspaces::workspace::{Workspace as WorkspaceMetadata, WorkspaceUid};
-use ai::workspace::WorkspaceMetadata as CodeWorkspaceMetadata;
+// twarp: 2c-e — CodeWorkspaceMetadata is now a stub in `crate::app_state`.
+use crate::app_state::CodeWorkspaceMetadata;
 
 use self::model::{AgentConversation, AgentConversationData, Project};
 

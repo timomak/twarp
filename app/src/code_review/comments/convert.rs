@@ -1,4 +1,5 @@
-use ai::agent::action::InsertReviewComment;
+// twarp: 2c-e — InsertReviewComment is now a stub in `crate::app_state`.
+use crate::app_state::InsertReviewComment;
 use chrono::{DateTime, Local};
 use std::path::PathBuf;
 

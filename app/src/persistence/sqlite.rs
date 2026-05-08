@@ -13,7 +13,8 @@ use std::{
     thread,
 };
 
-use ai::project_context::model::ProjectRulePath;
+// twarp: 2c-e — ProjectRulePath is now a stub in `crate::app_state`.
+use crate::app_state::ProjectRulePath;
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{DateTime, Utc};
 use diesel::{
@@ -1339,7 +1340,9 @@ fn decode_path(bytes: Vec<u8>) -> PathBuf {
 
 fn save_codebase_index_metadata(
     conn: &mut SqliteConnection,
-    index_metadata: ai::workspace::WorkspaceMetadata,
+    // twarp: 2c-e — `ai::workspace::WorkspaceMetadata` is now the
+    // `CodeWorkspaceMetadata` stub in `crate::app_state`.
+    index_metadata: crate::app_state::CodeWorkspaceMetadata,
 ) -> Result<()> {
     use schema::workspace_metadata::dsl::*;
 
@@ -1357,12 +1360,14 @@ fn save_codebase_index_metadata(
 
 fn get_all_codebase_index_metadata(
     conn: &mut SqliteConnection,
-) -> Result<Vec<ai::workspace::WorkspaceMetadata>, diesel::result::Error> {
+    // twarp: 2c-e — `ai::workspace::WorkspaceMetadata` is now the
+    // `CodeWorkspaceMetadata` stub in `crate::app_state`.
+) -> Result<Vec<crate::app_state::CodeWorkspaceMetadata>, diesel::result::Error> {
     use schema::workspace_metadata::dsl::*;
 
     Ok(workspace_metadata
         .load_iter::<WorkspaceMetadataModel, DefaultLoadingMode>(conn)?
-        .filter_map(|item| item.ok().map(ai::workspace::WorkspaceMetadata::from))
+        .filter_map(|item| item.ok().map(crate::app_state::CodeWorkspaceMetadata::from))
         .collect_vec())
 }
 

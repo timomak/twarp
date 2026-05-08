@@ -50,7 +50,7 @@ test = false
 
 [dependencies]
 addr = "0.15.6"
-ai.workspace = true
+# twarp: 2c-e — `ai` workspace crate deleted.
 anyhow.workspace = true
 arrayvec.workspace = true
 asset_cache.workspace = true
@@ -381,7 +381,7 @@ windows-result = { workspace = true }
 winreg.workspace = true
 
 [dev-dependencies]
-ai = { workspace = true, features = ["test-util"] }
+# twarp: 2c-e — `ai` workspace crate deleted.
 async-process.workspace = true
 jsonschema = { workspace = true, default-features = false }
 async-executor = "1.5.1"
@@ -451,7 +451,7 @@ crash_reporting = [
     "dep:minidumper",
     "dep:crash-handler",
     "warp_logging/crash_reporting",
-    "ai/crash_reporting",
+    # twarp: 2c-e — `ai` crate deleted; removed `ai/crash_reporting` propagation.
 ]
 creating_shared_sessions = []
 cross_repo_context = []
@@ -681,7 +681,8 @@ inline_slash_commands = ["agent_view"]
 heap_usage_tracking = ["jemalloc_pprof", "crash_reporting"]
 image_as_context = []
 in_band_generators_ssh = []
-jemalloc = ["dep:tikv-jemallocator", "ai/jemalloc"]
+# twarp: 2c-e — `ai` crate deleted; removed `ai/jemalloc` propagation.
+jemalloc = ["dep:tikv-jemallocator"]
 jemalloc_with_profiling = ["jemalloc", "tikv-jemallocator/profiling"]
 jemalloc_auto_heap_profiling = ["jemalloc_with_profiling"]
 jemalloc_pprof = ["jemalloc_with_profiling", "dep:jemalloc_pprof"]
@@ -703,7 +704,7 @@ local_computer_use = []
 # conditionally include dependencies that should only exist in such
 # environments.
 local_fs = [
-    "ai/local_fs",
+    # twarp: 2c-e — `ai` crate deleted; removed `ai/local_fs` propagation.
     "lsp/local_fs",
     "persistence/local_fs",
     "repo_metadata/local_fs",

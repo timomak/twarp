@@ -15,7 +15,7 @@ required-features = ["bin"]
 bin = ["warpui/log_named_telemetry_events"]
 
 [dependencies]
-ai.workspace = true
+# twarp: 2c-e — `ai` workspace crate deleted.
 anyhow.workspace = true
 cfg-if.workspace = true
 instant.workspace = true

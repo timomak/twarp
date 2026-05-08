@@ -12,7 +12,8 @@ use crate::pane_group::{
     pane::view::{HeaderContent, HeaderRenderContext},
     BackingView, CodePane, PaneConfiguration, PaneEvent,
 };
-use ai::diff_validation::DiffDelta;
+// twarp: 2c-e — DiffDelta is now a stub in `crate::app_state`.
+use crate::app_state::DiffDelta;
 
 // Keybinding constants - exported so AI document view can reuse
 pub const SAVE_FILE_BINDING_NAME: &str = "code_view:save";

@@ -50,7 +50,9 @@ use crate::notebooks::manager::NotebookManager;
 use crate::terminal::general_settings::GeneralSettings;
 use crate::workflows::manager::WorkflowManager;
 use ::settings::{Setting, SettingsManager, ToggleableSetting};
-use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
+// twarp: 2c-e — removed `use ai::index::full_source_code_embedding::manager::
+// CodebaseIndexManager`; the AI codebase index manager and its logout-time
+// `reset_codebase_indexing` call are gone with the `ai` crate.
 pub use auth_manager::AuthManager;
 pub use auth_state::AuthStateProvider;
 use itertools::Itertools;
@@ -235,9 +237,8 @@ pub fn maybe_log_out(app: &mut AppContext) {
 pub fn log_out(app: &mut AppContext) {
     send_telemetry_sync_from_app_ctx!(TelemetryEvent::LogOut, app);
 
-    CodebaseIndexManager::handle(app).update(app, |index_manager, ctx| {
-        index_manager.reset_codebase_indexing(ctx);
-    });
+    // twarp: 2c-e — removed CodebaseIndexManager::reset_codebase_indexing on
+    // logout (the AI codebase index manager is gone with the `ai` crate).
 
     let global_resource_handles = GlobalResourceHandlesProvider::as_ref(app).get();
 
