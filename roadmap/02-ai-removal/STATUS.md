@@ -1,8 +1,8 @@
 # 02 — AI removal
 
-**Phase:** impl-pending
+**Phase:** merged
 **Spec PR:** https://github.com/timomak/twarp/pull/4
-**Impl PRs:** 2a [#6](https://github.com/timomak/twarp/pull/6), 2b [#7](https://github.com/timomak/twarp/pull/7), 2c-a [#9](https://github.com/timomak/twarp/pull/9), 2c-b [#10](https://github.com/timomak/twarp/pull/10), 2c-c [#11](https://github.com/timomak/twarp/pull/11) — all merged. 2c-d in flight (split further into 2c-d.1 … 2c-d.6 — see sub-phase notes).
+**Impl PRs:** 2a [#6](https://github.com/timomak/twarp/pull/6), 2b [#7](https://github.com/timomak/twarp/pull/7), 2c-a [#9](https://github.com/timomak/twarp/pull/9), 2c-b [#10](https://github.com/timomak/twarp/pull/10), 2c-c [#11](https://github.com/timomak/twarp/pull/11), 2c-d.1 [#12](https://github.com/timomak/twarp/pull/12), 2c-d.2 [#13](https://github.com/timomak/twarp/pull/13), 2c-d.3 [#14](https://github.com/timomak/twarp/pull/14), 2c-d (collapsed .4/.5/.6) [#15](https://github.com/timomak/twarp/pull/15), 2c-e [#16](https://github.com/timomak/twarp/pull/16), 2c-f [#17](https://github.com/timomak/twarp/pull/17), 2d [#18](https://github.com/timomak/twarp/pull/18) — all merged.
 
 ## Scope
 
@@ -22,19 +22,17 @@ Smaller diff than auditing AI files one-by-one, and upstream cherry-picks touchi
 
 - [x] **2a — Locate the gate.**
 - [x] **2b — Default AI off + remove the enable path.**
-- [ ] **2c — Delete dead AI code.** Originally one PR; split into focused per-module sub-PRs. After attempting 2c-d as a single PR a sub-agent surfaced ~3000 cargo errors after import-only cleanup and recommended further sub-splitting `app/src/ai/` (391 files) into 2c-d.1 … 2c-d.6.
+- [x] **2c — Delete dead AI code.** Originally one PR; split into focused per-module sub-PRs after the single-PR attempt produced ~3000 cargo errors. Final sequence:
     - [x] **2c-a — Onboarding agent slide.**
     - [x] **2c-b — `app/src/ai_assistant/`.**
     - [x] **2c-c — Settings AI page.**
-    - [ ] **2c-d.1 — `app/src/ai/predict/` + `voice/` + `aws_credentials*`.** Smallest leaves; few consumers (server_api/predict callers).
-    - [ ] **2c-d.2 — `app/src/ai/blocklist/inline_action/` + `blocklist/usage/`.** Medium leaves.
-    - [ ] **2c-d.3 — `app/src/ai/agent_management/` + `agent_events/` + `cloud_*`.** Medium leaves; consumers in workspace + notifications.
-    - [ ] **2c-d.4 — `app/src/ai/blocklist/agent_view/` + `blocklist/block/` + `blocklist/controller/`.** Large; deeply coupled to terminal.
-    - [ ] **2c-d.5 — `app/src/ai/agent/` + `ambient_agents/` + `agent_sdk/`.** Large; coupled to CLI runner & terminal.
-    - [ ] **2c-d.6 — Remaining `app/src/ai/` modules** (`mcp/`, `llms*`, `skills/`, `document/`, `execution_profiles/`, `facts/`, `onboarding.rs`, `active_agent_views_model*`, `restored_conversations.rs`, `persisted_workspace.rs`, etc.) plus the final `mod ai;` removal in `lib.rs` and the AI-only files outside the tree (`app/src/integration_testing/agent_mode/`, `app/src/terminal/cli_agent_sessions/`, `app/src/search/ai_context_menu/`, `app/src/search/ai_queries/`, `app/src/search/command_search/ai_queries/`, `app/src/terminal/view/ambient_agent/`, `app/src/terminal/view/use_agent_footer/`, `app/src/pane_group/pane/ai_document_pane.rs`, `app/src/terminal/view/load_ai_conversation.rs`, `app/src/server/server_api/ai.rs`, etc. — sub-agent inventory found ~50 such files).
-    - [ ] **2c-e — `crates/ai/` workspace crate.**
-    - [ ] **2c-f — `crates/natural_language_detection/`.** Audit `crates/input_classifier/` — likely AI-only.
-- [ ] **2d — Final sweep.** AI-only telemetry events (`OpenedWarpAI`, `AskWarpAI`, `AIBlocklist`, `AICommandSearch`, `AgentManagementPopup`, `AgentManagementView`, `AIQueryTimeout`, `AICommandSearchOpened`, `InputAICommandSearch`, `InputAskWarpAI`, `WarpAIAction`, `ToggleWarpAI`); `TipAction::WarpAI` / `AiCommandSearch`; `CommandSearchItemAction::{OpenWarpAI, TranslateUsingWarpAI}`; `SettingsSection::WarpAgent`; AI-only `FeatureFlag` variants; `agents` settings group; `WARP.md` AI references.
+    - [x] **2c-d.1 — `app/src/ai/predict/` + `voice/` + `aws_credentials*`.**
+    - [x] **2c-d.2 — `app/src/ai/blocklist/inline_action/` + `blocklist/usage/`.**
+    - [x] **2c-d.3 — `app/src/ai/agent_management/` + `agent_events/` + `cloud_*`.**
+    - [x] **2c-d (collapsed .4/.5/.6) — Rest of `app/src/ai/` + outside-tree AI files + `pub mod ai;` removal.** Sub-agent attempted 2c-d.4 alone and reported the four blocklist subdirs were architecturally inseparable from sibling AI modules; collapsed into one PR (#15, 742 files, +8052/-250963, 18 sub-agent rounds).
+    - [x] **2c-e — `crates/ai/` workspace crate.**
+    - [x] **2c-f — `crates/natural_language_detection/` + `input_classifier/` + `voice_input/` deletion.** All three were AI-only; voice_input cargo feature also removed.
+- [x] **2d — Final sweep.** AI-only telemetry events, `TipAction::{WarpAI,AiCommandSearch}`, `CommandSearchItemAction::{OpenWarpAI,TranslateUsingWarpAI}`, `SettingsSection::WarpAgent`, AI-only `FeatureFlag` variants, `WARP.md` AI references all removed. The `agents` settings group is kept (its `is_any_ai_enabled` reader hard-codes `false`, and ~100 callers gate themselves on the reader rather than the schema field directly — full schema removal would cascade extensively without changing user-visible behavior).
 
 ## Notes
 
