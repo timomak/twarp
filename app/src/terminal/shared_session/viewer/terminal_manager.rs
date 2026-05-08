@@ -470,6 +470,7 @@ impl TerminalManager {
                         );
                     }
                     AgentViewControllerEvent::ExitConfirmed { .. } => {}
+                    AgentViewControllerEvent::Other => {}
                 },
             );
         } else {

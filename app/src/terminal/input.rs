@@ -3352,7 +3352,7 @@ impl Input {
                 }
                 #[cfg(not(target_family = "wasm"))]
                 AgentInputFooterEvent::OpenPluginInstructionsPane(agent, kind) => {
-                    ctx.emit(Event::OpenPluginInstructionsPane(*agent, *kind));
+                    ctx.emit(Event::OpenPluginInstructionsPane(*agent, kind.clone()));
                 }
             }
         });
@@ -3936,6 +3936,7 @@ impl Input {
                         .collect_vec();
                 }
                 BlocklistAIContextEvent::QueueNextPromptToggled => {}
+                BlocklistAIContextEvent::Other => {}
             }
             ctx.notify();
         });
@@ -4170,6 +4171,7 @@ impl Input {
                         ctx.notify();
                     }
                 }
+                BlocklistAIInputEvent::UpdatedConfig {} => {}
             }
         });
 

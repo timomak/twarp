@@ -275,12 +275,12 @@ pub enum AIAgentActionResultType {
 #[allow(dead_code)]
 struct AgentModeSetupSpeedbumpBannerState {
     pub repo_path: std::path::PathBuf,
-    pub id: warp_terminal::model::BlockId,
+    pub id: usize,
 }
 #[allow(dead_code)]
 impl AgentModeSetupSpeedbumpBannerState {
     fn new<A>(_: A, repo_path: std::path::PathBuf) -> Self {
-        Self { repo_path, id: warp_terminal::model::BlockId::new() }
+        Self { repo_path, id: 0 }
     }
 }
 #[derive(Debug, Clone)]
@@ -295,11 +295,11 @@ fn render_agent_mode_setup_banner<A, B>(_: A, _: B) -> Box<dyn warpui::Element> 
 // twarp: 2c-d — Anonymous user AI banner stubs (deleted from inline_banner)
 #[allow(dead_code)]
 struct AnonymousUserAISignUpBannerState {
-    id: warp_terminal::model::BlockId,
+    id: usize,
 }
 #[allow(dead_code)]
 impl AnonymousUserAISignUpBannerState {
-    fn new<A>(_: A) -> Self { Self { id: warp_terminal::model::BlockId::new() } }
+    fn new<A>(_: A) -> Self { Self { id: 0 } }
     fn render<A>(&self, _: A) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
 }
 #[derive(Debug, Clone)]
@@ -478,7 +478,7 @@ impl CLISubagentController {
 impl CLISubagentView {
     fn new<A, B, C, D, E, F, G, H, I>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: &mut I) -> Self { Self }
     fn clear_all_selections<C>(&mut self, _: &mut C) {}
-    fn selected_text(&self) -> Option<String> { None }
+    fn selected_text<C>(&self, _: &C) -> Option<String> { None }
 }
 #[allow(dead_code)] pub enum CLISubagentEvent {
     // twarp: 2c-d — bulk variants for AI-removed CLISubagentEvent
@@ -521,7 +521,11 @@ impl SingletonEntity for AIDocumentModel {}
 #[allow(dead_code)]
 impl AIDocumentModel {
     pub fn is_document_visible_by_conversation_in_pane_group<A, B>(&self, _: A, _: B) -> bool { false }
-    pub fn get_all_documents_for_conversation<A>(&self, _: A) -> std::iter::Empty<()> { std::iter::empty() }
+    pub fn get_all_documents_for_conversation<A>(&self, _: A) -> Vec<(crate::app_state::AIDocumentId, AIDocumentEntryStub)> { Vec::new() }
+}
+#[allow(dead_code)]
+pub struct AIDocumentEntryStub {
+    pub version: crate::app_state::AIDocumentVersion,
 }
 #[allow(dead_code)] fn shimmering_warp_loading_text<A, B, C, D>(_: A, _: B, _: C, _: D) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
 
@@ -590,7 +594,7 @@ impl CodebaseIndexSpeedbumpBannerState {
     }
 }
 #[allow(dead_code)] #[derive(PartialEq, Eq, Default)] pub enum VisibilityState { #[default] Other, Speedbump }
-#[allow(dead_code)] pub enum AIBlockOutputStatus { Failed }
+#[allow(dead_code)] pub enum AIBlockOutputStatus { Failed {} }
 
 #[cfg(feature = "local_fs")]
 #[allow(dead_code)] struct PersistedWorkspace;
@@ -740,7 +744,7 @@ pub use crate::terminal::model::block::interaction_mode::AIAgentActionId;
 // twarp: 2c-d — re-export to unify cross-file types.
 pub use crate::terminal::view::rich_content::AIAgentExchangeId;
 #[allow(dead_code)] enum AIAgentInput {
-    CodeReview { context: (), review_comments: Vec<()> },
+    CodeReview { context: (), review_comments: crate::code_review::code_review_view::AgentReviewCommentBatch },
 }
 #[allow(dead_code)] #[derive(Debug, Clone, PartialEq, Eq)] struct FileLocations;
 #[allow(dead_code)] pub enum PassiveSuggestionResultType { Prompt { prompt: String } }
@@ -880,14 +884,14 @@ impl ApiKeyManager {
     fn aws_credentials_state(&self) -> AwsCredentialsState { unimplemented!() }
 }
 #[allow(dead_code)] pub enum AwsCredentialsState { Loaded }
-#[allow(dead_code)] pub enum BuildSource { FromPath { path: std::path::PathBuf } }
+#[allow(dead_code)] pub enum BuildSource { FromPath(std::path::PathBuf) }
 #[allow(dead_code)] pub struct CodebaseIndexManager;
 #[allow(dead_code)]
 impl CodebaseIndexManager {
     fn index_directory<P, C>(&mut self, _: P, _: &mut C) {}
-    fn write_snapshot<C>(&mut self, _: &mut C) {}
+    fn write_snapshot<P, C>(&mut self, _: P, _: &mut C) {}
     fn handle_session_bootstrapped<A>(&mut self, _: A) {}
-    pub fn build_and_sync_codebase_index<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn build_and_sync_codebase_index<A, C>(&mut self, _: A, _: &mut C) {}
 }
 // twarp: 2c-d — unify with rich_content::OnboardingAgenticSuggestionsBlock.
 pub use crate::terminal::view::rich_content::OnboardingAgenticSuggestionsBlock;
@@ -3802,7 +3806,7 @@ impl TerminalView {
                                 let agent_view_zero_state = ctx.add_typed_action_view(|ctx| {
                                     AgentViewZeroStateBlock::new(
                                         *conversation_id,
-                                        *origin,
+                                        origin.clone(),
                                         me.agent_view_controller.clone(),
                                         &me.sessions,
                                         &me.ambient_agent_view_model,
@@ -3857,6 +3861,7 @@ impl TerminalView {
                             me.update_agent_view_back_button_state(ctx);
                             ctx.notify();
                         }
+                        AgentViewDisplayMode::Other => {}
                     }
                 }
                 AgentViewControllerEvent::ExitedAgentView {
@@ -4007,6 +4012,7 @@ impl TerminalView {
                     ctx.notify();
                 }
                 AgentViewControllerEvent::ExitConfirmed { .. } => {}
+                AgentViewControllerEvent::Other => {}
             }
             // Entering or exiting agent view changes whether we need git
             // status updates.
@@ -23323,7 +23329,7 @@ impl TerminalView {
 
         CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
             manager.build_and_sync_codebase_index(
-                BuildSource::FromPath(active_session_path.as_path()),
+                BuildSource::FromPath(active_session_path.to_path_buf()),
                 ctx,
             );
         });

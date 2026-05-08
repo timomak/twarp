@@ -263,7 +263,7 @@ impl View for PluginInstructionsBlock {
             ));
         }
 
-        for note in self.instructions.post_install_notes {
+        for note in &self.instructions.post_install_notes {
             let post_note = Text::new((*note).to_owned(), appearance.ui_font_family(), 14.)
                 .with_color(theme.nonactive_ui_text_color().into_solid())
                 .finish();

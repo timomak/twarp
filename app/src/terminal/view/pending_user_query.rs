@@ -83,6 +83,7 @@ impl TerminalView {
                 PendingUserQueryBlockEvent::SendNow { .. } => {
                     me.send_queued_prompt_now(prompt_for_send_now.clone(), ctx);
                 }
+                PendingUserQueryBlockEvent::Other => {}
             });
         }
         let view_id = handle.id();
@@ -200,7 +201,8 @@ impl TerminalView {
                 }
                 FinishReason::Error
                 | FinishReason::Cancelled
-                | FinishReason::CancelledDuringRequestedCommandExecution => {
+                | FinishReason::CancelledDuringRequestedCommandExecution
+                | FinishReason::Other => {
                     // Conversation failed or was cancelled — reinsert the pending
                     // query into the input so the user doesn't lose it.
                     terminal_view.input.update(ctx, |input, ctx| {

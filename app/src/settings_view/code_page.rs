@@ -289,7 +289,8 @@ impl CodeSettingsPageView {
             }
             PersistedWorkspaceEvent::InstallationSucceeded
             | PersistedWorkspaceEvent::InstallationFailed
-            | PersistedWorkspaceEvent::WorkspaceAdded { .. } => {
+            | PersistedWorkspaceEvent::WorkspaceAdded { .. }
+            | PersistedWorkspaceEvent::Other => {
                 ctx.notify();
             }
         });

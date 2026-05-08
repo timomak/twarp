@@ -160,6 +160,7 @@ impl SlashCommandModel {
                         }
                     }
                 }
+                BlocklistAIInputEvent::UpdatedConfig {} => {}
             });
         }
 
