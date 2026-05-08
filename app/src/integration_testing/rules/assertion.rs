@@ -37,10 +37,9 @@ pub fn assert_rule_count(expected_count: usize) -> AssertionCallback {
 }
 
 /// Helper function to count AI facts in the cloud model
-pub fn rule_count(cloud_model: &CloudModel, _ctx: &AppContext) -> usize {
-    cloud_model
-        .get_all_objects_of_type::<GenericStringObjectId, CloudAIFactModel>()
-        .count()
+pub fn rule_count(_cloud_model: &CloudModel, _ctx: &AppContext) -> usize {
+    // twarp: 2c-d — AI facts removed
+    0
 }
 
 pub fn assert_rule_pane_open(key: impl Into<String>) -> AssertionWithDataCallback {

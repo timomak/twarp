@@ -1817,28 +1817,23 @@ impl UpdateManager {
 
     pub fn update_ai_fact(
         &mut self,
-        ai_fact: AIFact,
-        ai_fact_id: SyncId,
-        revision_ts: Option<Revision>,
-        ctx: &mut ModelContext<Self>,
+        _ai_fact: AIFact,
+        _ai_fact_id: SyncId,
+        _revision_ts: Option<Revision>,
+        _ctx: &mut ModelContext<Self>,
     ) {
-        self.update_object(CloudAIFactModel::new(ai_fact), ai_fact_id, revision_ts, ctx);
+        // twarp: 2c-d — AI cloud object updates removed
     }
 
     #[cfg(not(target_family = "wasm"))]
     pub fn update_templatable_mcp_server(
         &mut self,
-        templatable_mcp_server: TemplatableMCPServer,
-        templatable_mcp_server_id: SyncId,
-        revision_ts: Option<Revision>,
-        ctx: &mut ModelContext<Self>,
+        _templatable_mcp_server: TemplatableMCPServer,
+        _templatable_mcp_server_id: SyncId,
+        _revision_ts: Option<Revision>,
+        _ctx: &mut ModelContext<Self>,
     ) {
-        self.update_object(
-            CloudTemplatableMCPServerModel::new(templatable_mcp_server),
-            templatable_mcp_server_id,
-            revision_ts,
-            ctx,
-        );
+        // twarp: 2c-d — AI cloud object updates removed
     }
 
     pub fn update_workflow(
@@ -3053,44 +3048,24 @@ impl UpdateManager {
 
     pub fn create_ai_fact(
         &mut self,
-        ai_fact: AIFact,
-        client_id: ClientId,
-        owner: Owner,
-        ctx: &mut ModelContext<Self>,
+        _ai_fact: AIFact,
+        _client_id: ClientId,
+        _owner: Owner,
+        _ctx: &mut ModelContext<Self>,
     ) {
-        self.create_object(
-            CloudAIFactModel::new(ai_fact),
-            owner,
-            client_id,
-            Default::default(),
-            false,
-            None,
-            // When adding the initiated_by parameter to this function call, InitiatedBy::User was set as a default value.
-            // This can be changed to InitiatedBy::System if this action was automatically kicked off by the system and we do not want a user facing toast.
-            InitiatedBy::User,
-            ctx,
-        );
+        // twarp: 2c-d — AI cloud object creation removed
     }
 
     #[cfg(not(target_family = "wasm"))]
     pub fn create_templatable_mcp_server(
         &mut self,
-        templatable_mcp_server: TemplatableMCPServer,
-        client_id: ClientId,
-        owner: Owner,
-        initiated_by: InitiatedBy,
-        ctx: &mut ModelContext<Self>,
+        _templatable_mcp_server: TemplatableMCPServer,
+        _client_id: ClientId,
+        _owner: Owner,
+        _initiated_by: InitiatedBy,
+        _ctx: &mut ModelContext<Self>,
     ) {
-        self.create_object(
-            CloudTemplatableMCPServerModel::new(templatable_mcp_server),
-            owner,
-            client_id,
-            Default::default(),
-            false,
-            None,
-            initiated_by,
-            ctx,
-        );
+        // twarp: 2c-d — AI cloud object creation removed
     }
 
     #[cfg_attr(target_family = "wasm", allow(dead_code))]

@@ -41,6 +41,11 @@ impl std::str::FromStr for AmbientAgentTaskId {
 // twarp: 2c-d — stub kept; conversions removed in favor of direct use of terminal::input::InputConfig.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct InputConfig {}
+impl From<InputConfig> for crate::terminal::input::InputConfig {
+    fn from(_: InputConfig) -> Self {
+        crate::terminal::input::InputConfig::empty()
+    }
+}
 #[allow(dead_code)]
 impl InputConfig {
     // twarp: 2c-d — stubbed; AI input config deleted.

@@ -120,7 +120,7 @@ impl TerminalManager {
                 model_event_sender.clone(),
                 prompt_type,
                 // twarp: 2c-d — convert app_state::InputConfig to terminal::input::InputConfig
-                initial_input_config.into(),
+                initial_input_config.map(Into::into),
                 None, // conversation_restoration - not used for remote
                 None, // inactive_pty_reads_rx
                 ctx,

@@ -374,7 +374,7 @@ impl TerminalManager {
                 model_event_sender.clone(),
                 prompt_type.clone(),
                 // twarp: 2c-d — convert app_state::InputConfig to terminal::input::InputConfig
-                initial_input_config.into(),
+                initial_input_config.map(Into::into),
                 conversation_restoration,
                 Some(inactive_pty_reads_rx.clone()),
                 ctx,
