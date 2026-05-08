@@ -8101,8 +8101,7 @@ impl EditorView {
     /// If the editor should show any controls, render them.
     /// Otherwise, return the child element.
     fn render_controls(&self, ctx: &AppContext) -> Option<Box<dyn Element>> {
-        // twarp: 2c-f — voice_input controls deleted with crate.
-        let should_show_voice = false;
+        // twarp: 2c-f — voice_input controls deleted with crate; only image + at-menu remain.
         let input_settings = InputSettings::as_ref(ctx);
         let is_universal_input_enabled = input_settings.is_universal_developer_input_enabled(ctx);
         let is_any_ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
@@ -8132,7 +8131,7 @@ impl EditorView {
                 }
             };
 
-        if !should_show_voice && !should_show_image && !should_show_at_context_menu {
+        if !should_show_image && !should_show_at_context_menu {
             return None;
         }
 
