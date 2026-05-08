@@ -109,9 +109,9 @@ use crate::{
         ids::SyncId,
         server_api::ServerApi,
         telemetry::{
-            AICommandSearchEntrypoint, AgentModeAutoDetectionFalsePositivePayload,
-            AgentModeAutoDetectionSettingOrigin, AnonymousUserSignupEntrypoint, CommandXRayTrigger,
-            EnvVarTelemetryMetadata, TelemetryEvent, WorkflowTelemetryMetadata,
+            AgentModeAutoDetectionFalsePositivePayload, AgentModeAutoDetectionSettingOrigin,
+            AnonymousUserSignupEntrypoint, CommandXRayTrigger, EnvVarTelemetryMetadata,
+            TelemetryEvent, WorkflowTelemetryMetadata,
         },
     },
     session_management::SessionNavigationPromptElements,

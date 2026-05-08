@@ -659,36 +659,9 @@ pub enum PtySpawnMode {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum OpenedWarpAISource {
-    GlobalEntryButton,
-    HelpWithBlock,
-    HelpWithTextSelection,
-    FromAICommandSearch,
-    WarmWelcome,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum WarpAIRequestResult {
-    Succeeded { latency_ms: i64, truncated: bool },
-    OutOfRequests,
-    Failed,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum WarpAIActionType {
-    CopyTranscript,
-    Restart,
-    CopyAnswer,
-    CopyCode,
-    InsertIntoInput,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum SaveAsWorkflowModalSource {
     Block,
     Input,
-    WarpAIWorkflowCard,
-    WarpAIPanel,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -697,12 +670,6 @@ pub enum LaunchConfigUiLocation {
     AppMenu,
     TabMenu,
     Uri,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum AICommandSearchEntrypoint {
-    ShortHandTrigger,
-    Keybinding,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -761,9 +728,6 @@ pub enum KnowledgePaneEntrypoint {
     #[serde(rename = "warp_drive")]
     WarpDrive,
 
-    #[serde(rename = "ai_blocklist")]
-    AIBlocklist,
-
     #[serde(rename = "slash_command")]
     SlashCommand,
 }
@@ -814,10 +778,6 @@ pub enum AgentModeEntrypoint {
     #[serde(rename = "block_toolbelt")]
     BlockToolbelt,
 
-    /// The "Ask Agent Mode" option from AI command search.
-    #[serde(rename = "ai_command_search")]
-    AICommandSearch,
-
     /// Context menu item(s) that attach a blocklist selection as context to an Agent Mode query.
     #[serde(rename = "context_menu")]
     ContextMenu {
@@ -828,18 +788,9 @@ pub enum AgentModeEntrypoint {
     #[serde(rename = "prompt_chip")]
     PromptChip,
 
-    /// The Agent Management popup, where you can see all the most recent tasks for each terminal
-    /// pane across all windows/tabs/panes.
-    #[serde(rename = "agent_management_popup")]
-    AgentManagementPopup,
-
     /// User manually switched between terminal and AI input modes in UDI interface
     #[serde(rename = "udi_terminal_input_switcher")]
     UDITerminalInputSwitcher,
-
-    /// The agent management view, where you can see both local interactive and ambient agent tasks
-    #[serde(rename = "agent_management_view")]
-    AgentManagementView,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -907,9 +858,6 @@ pub enum PromptSuggestionFallbackReason {
     /// No read files permission.
     #[serde(rename = "no_read_files_permission")]
     NoReadFilesPermission,
-    /// AI query timeout.
-    #[serde(rename = "ai_query_timeout")]
-    AIQueryTimeout,
     /// Failed to send AI request.
     #[serde(rename = "failed_to_send_ai_request")]
     FailedToSendAIRequest,
@@ -1504,9 +1452,6 @@ pub enum TelemetryEvent {
     },
     GlobalSearchOpened,
     GlobalSearchQueryStarted,
-    AICommandSearchOpened {
-        entrypoint: AICommandSearchEntrypoint,
-    },
     OpenNotebook(NotebookTelemetryMetadata),
     EditNotebook {
         metadata: NotebookTelemetryMetadata,
@@ -1553,33 +1498,15 @@ pub enum TelemetryEvent {
     InitialWorkingDirectoryConfigurationChanged {
         advanced_mode_enabled: bool,
     },
-    /// Opened legacy Warp AI.
-    OpenedWarpAI {
-        source: OpenedWarpAISource,
-    },
-    /// Issued legacy Warp AI request.
-    WarpAIRequestIssued {
-        result: WarpAIRequestResult,
-    },
-    WarpAIAction {
-        action_type: WarpAIActionType,
-    },
-    /// This is purely for static prompts! Do not send user-written prompts with this event.
-    UsedWarpAIPreparedPrompt {
-        prompt: &'static str,
-    },
     ToggleFocusPaneOnHover {
         enabled: bool,
     },
-    WarpAICharacterLimitExceeded,
     OpenInputContextMenu,
     InputCutSelectedText,
     InputCopySelectedText,
     InputSelectAll,
     InputPaste,
     InputCommandSearch,
-    InputAICommandSearch,
-    InputAskWarpAI,
     SaveAsWorkflowModal {
         source: SaveAsWorkflowModalSource,
     },
@@ -1688,10 +1615,6 @@ pub enum TelemetryEvent {
     WarpDriveOpened {
         source: WarpDriveSource,
         is_code_mode_v2: bool,
-    },
-    // Toggled the legacy Warp AI side panel.
-    ToggleWarpAI {
-        opened: bool,
     },
     ToggleSecretRedaction {
         enabled: bool,
@@ -2113,11 +2036,6 @@ pub enum TelemetryEvent {
         is_git_operations_autogen_enabled: bool,
     },
 
-    /// Emitted when the user toggles the "Voice Input" setting in the AI settings page.
-    ToggleVoiceInputSetting {
-        is_voice_input_enabled: bool,
-    },
-
     /// Emitted when the user toggles the "Show Agent Tips" setting in the AI settings page.
     ToggleShowAgentTips {
         is_enabled: bool,
@@ -2391,16 +2309,6 @@ pub enum TelemetryEvent {
         /// Whether or not Universal Developer Input mode is enabled
         is_udi_enabled: bool,
     },
-    /// User used voice input functionality
-    VoiceInputUsed {
-        action: String, // "start", "stop", "cancel"
-        /// Duration of voice session in milliseconds (for stop action)
-        session_duration_ms: Option<u64>,
-        /// Whether or not Universal Developer Input mode is enabled
-        is_udi_enabled: bool,
-        /// Current input mode when voice was used
-        current_input_mode: InputType,
-    },
     /// User interacted with @-menu for context attachment
     AtMenuInteracted {
         /// Length of the query string
@@ -2570,14 +2478,6 @@ pub enum TelemetryEvent {
         block_id: BlockId,
         user_took_over: bool,
     },
-    /// Emitted when the user toggles the Agent Management View.
-    AgentManagementViewToggled {
-        is_open: bool,
-    },
-    /// Emitted when the user opens a session from the Agent Management View.
-    AgentManagementViewOpenedSession,
-    /// Emitted when the user copies a session link from the Agent Management View.
-    AgentManagementViewCopiedSessionLink,
     /// Detected that Warp is running in an isolated sandbox.
     DetectedIsolationPlatform {
         platform: warp_isolation_platform::IsolationPlatformType,
@@ -2594,11 +2494,6 @@ pub enum TelemetryEvent {
     AgentExitedShellProcess {
         command: String,
         server_output_id: Option<ServerOutputId>,
-    },
-    /// Emitted when the user uses voice input from the CLI agent footer.
-    CLIAgentToolbarVoiceInputUsed {
-        /// The CLI agent being used.
-        cli_agent: CLIAgentType,
     },
     /// Emitted when the user attaches an image from the CLI agent footer.
     CLIAgentToolbarImageAttached {
@@ -3074,9 +2969,6 @@ impl TelemetryEvent {
                 filters,
                 error_payload,
             } => Some(json!({ "filter": filters, "error": error_payload })),
-            TelemetryEvent::AICommandSearchOpened { entrypoint } => {
-                Some(json!({ "entrypoint": entrypoint }))
-            }
             TelemetryEvent::OpenNotebook(metadata) => Some(json!(metadata)),
             TelemetryEvent::EditNotebook {
                 metadata,
@@ -3118,11 +3010,6 @@ impl TelemetryEvent {
             TelemetryEvent::InitialWorkingDirectoryConfigurationChanged {
                 advanced_mode_enabled,
             } => Some(json!({ "advanced_mode_enabled": advanced_mode_enabled })),
-            TelemetryEvent::OpenedWarpAI { source } => Some(json!({ "source": source })),
-            TelemetryEvent::WarpAIRequestIssued { result } => Some(json!({ "result": result })),
-            TelemetryEvent::WarpAIAction { action_type } => {
-                Some(json!({ "action_type": action_type }))
-            }
             TelemetryEvent::MCPServerCollectionPaneOpened { entrypoint } => {
                 Some(json!({ "entrypoint": entrypoint }))
             }
@@ -3204,9 +3091,6 @@ impl TelemetryEvent {
             TelemetryEvent::AISuggestedRuleContentChanged { rule_id, is_saved } => {
                 Some(json!({ "rule_id": rule_id, "is_saved": is_saved }))
             }
-            TelemetryEvent::UsedWarpAIPreparedPrompt { prompt } => {
-                Some(json!({ "prompt": prompt }))
-            }
             TelemetryEvent::ExperimentTriggered {
                 experiment,
                 layer,
@@ -3244,7 +3128,6 @@ impl TelemetryEvent {
             } => Some(
                 json!({ "ui_location": ui_location, "open_in_active_window": open_in_active_window }),
             ),
-            TelemetryEvent::ToggleWarpAI { opened } => Some(json!({ "opened": opened })),
             TelemetryEvent::ToggleSecretRedaction { enabled } => {
                 Some(json!({ "enabled": enabled }))
             }
@@ -3446,9 +3329,6 @@ impl TelemetryEvent {
             } => Some(
                 json!({"is_git_operations_autogen_enabled": is_git_operations_autogen_enabled}),
             ),
-            TelemetryEvent::ToggleVoiceInputSetting {
-                is_voice_input_enabled,
-            } => Some(json!({"is_voice_input_enabled": is_voice_input_enabled})),
             TelemetryEvent::AgentModePotentialAutoDetectionFalsePositive(
                 AgentModeAutoDetectionFalsePositivePayload::InternalDogfoodUsers { input_text },
             ) => Some(json!({"input_text": input_text})),
@@ -3921,17 +3801,6 @@ impl TelemetryEvent {
                 "action": action,
                 "is_udi_enabled": is_udi_enabled,
             })),
-            TelemetryEvent::VoiceInputUsed {
-                action,
-                session_duration_ms,
-                is_udi_enabled,
-                current_input_mode,
-            } => Some(json!({
-                "action": action,
-                "session_duration_ms": session_duration_ms,
-                "is_udi_enabled": is_udi_enabled,
-                "current_input_mode": current_input_mode,
-            })),
             TelemetryEvent::AtMenuInteracted {
                 action,
                 query_length,
@@ -4006,15 +3875,12 @@ impl TelemetryEvent {
             | TelemetryEvent::QuitModalDisabled
             | TelemetryEvent::UserInitiatedLogOut
             | TelemetryEvent::LogOutModalShown
-            | TelemetryEvent::WarpAICharacterLimitExceeded
             | TelemetryEvent::OpenInputContextMenu
             | TelemetryEvent::InputCutSelectedText
             | TelemetryEvent::InputCopySelectedText
             | TelemetryEvent::InputSelectAll
             | TelemetryEvent::InputPaste
             | TelemetryEvent::InputCommandSearch
-            | TelemetryEvent::InputAICommandSearch
-            | TelemetryEvent::InputAskWarpAI
             | TelemetryEvent::SetNewWindowsAtCustomSize
             | TelemetryEvent::DisableInputSync
             | TelemetryEvent::ShowSubshellBanner
@@ -4348,11 +4214,6 @@ impl TelemetryEvent {
                 "block_id": block_id,
                 "user_took_over": user_took_over,
             })),
-            TelemetryEvent::AgentManagementViewToggled { is_open } => Some(json!({
-                "is_open": is_open,
-            })),
-            TelemetryEvent::AgentManagementViewOpenedSession => None,
-            TelemetryEvent::AgentManagementViewCopiedSessionLink => None,
             TelemetryEvent::DetectedIsolationPlatform { platform } => Some(json!({
                 "platform": platform,
             })),
@@ -4362,9 +4223,6 @@ impl TelemetryEvent {
             } => Some(json!({
                 "command": command,
                 "server_output_id": server_output_id,
-            })),
-            TelemetryEvent::CLIAgentToolbarVoiceInputUsed { cli_agent } => Some(json!({
-                "agent_name": cli_agent,
             })),
             TelemetryEvent::CLIAgentToolbarImageAttached { cli_agent } => Some(json!({
                 "agent_name": cli_agent,
@@ -4651,7 +4509,6 @@ impl TelemetryEvent {
             | TelemetryEvent::CommandSearchResultAccepted { .. }
             | TelemetryEvent::CommandSearchFilterChanged { .. }
             | TelemetryEvent::CommandSearchAsyncQueryCompleted { .. }
-            | TelemetryEvent::AICommandSearchOpened { .. }
             | TelemetryEvent::OpenNotebook(_)
             | TelemetryEvent::EditNotebook { .. }
             | TelemetryEvent::NotebookAction(_)
@@ -4669,20 +4526,13 @@ impl TelemetryEvent {
             | TelemetryEvent::InputModeChanged { .. }
             | TelemetryEvent::PtySpawned { .. }
             | TelemetryEvent::InitialWorkingDirectoryConfigurationChanged { .. }
-            | TelemetryEvent::OpenedWarpAI { .. }
-            | TelemetryEvent::WarpAIRequestIssued { .. }
-            | TelemetryEvent::WarpAIAction { .. }
-            | TelemetryEvent::UsedWarpAIPreparedPrompt { .. }
             | TelemetryEvent::ToggleFocusPaneOnHover { .. }
-            | TelemetryEvent::WarpAICharacterLimitExceeded
             | TelemetryEvent::OpenInputContextMenu
             | TelemetryEvent::InputCutSelectedText
             | TelemetryEvent::InputCopySelectedText
             | TelemetryEvent::InputSelectAll
             | TelemetryEvent::InputPaste
             | TelemetryEvent::InputCommandSearch
-            | TelemetryEvent::InputAICommandSearch
-            | TelemetryEvent::InputAskWarpAI
             | TelemetryEvent::SaveAsWorkflowModal { .. }
             | TelemetryEvent::ExperimentTriggered { .. }
             | TelemetryEvent::ToggleSyncAllPanesInAllTabs { .. }
@@ -4730,7 +4580,6 @@ impl TelemetryEvent {
             | TelemetryEvent::AnonymousUserHitCloudObjectLimit
             | TelemetryEvent::NeedsReauth
             | TelemetryEvent::WarpDriveOpened { .. }
-            | TelemetryEvent::ToggleWarpAI { .. }
             | TelemetryEvent::ToggleSecretRedaction { .. }
             | TelemetryEvent::CustomSecretRegexAdded
             | TelemetryEvent::ToggleObfuscateSecret { .. }
@@ -4793,7 +4642,6 @@ impl TelemetryEvent {
             | TelemetryEvent::ToggleActiveAI { .. }
             | TelemetryEvent::TogglePromptSuggestionsSetting { .. }
             | TelemetryEvent::ToggleCodeSuggestionsSetting { .. }
-            | TelemetryEvent::ToggleVoiceInputSetting { .. }
             | TelemetryEvent::TierLimitHit(_)
             | TelemetryEvent::SharedObjectLimitHitBannerViewPlansButtonClicked
             | TelemetryEvent::ResourceUsageStats { .. }
@@ -4861,7 +4709,6 @@ impl TelemetryEvent {
             | TelemetryEvent::SearchCodebaseRepoUnavailable { .. }
             | TelemetryEvent::InputUXModeChanged { .. }
             | TelemetryEvent::ContextChipInteracted { .. }
-            | TelemetryEvent::VoiceInputUsed { .. }
             | TelemetryEvent::AtMenuInteracted { .. }
             | TelemetryEvent::UserMenuUpgradeClicked
             | TelemetryEvent::ActiveIndexedReposChanged { .. }
@@ -4907,14 +4754,10 @@ impl TelemetryEvent {
             | TelemetryEvent::CLISubagentInputDismissed { .. }
             | TelemetryEvent::CLISubagentActionExecuted { .. }
             | TelemetryEvent::CLISubagentActionRejected { .. }
-            | TelemetryEvent::AgentManagementViewToggled { .. }
-            | TelemetryEvent::AgentManagementViewOpenedSession
-            | TelemetryEvent::AgentManagementViewCopiedSessionLink
             | TelemetryEvent::DetectedIsolationPlatform { .. }
             | TelemetryEvent::AgentTipShown { .. }
             | TelemetryEvent::AgentTipClicked { .. }
             | TelemetryEvent::ToggleShowAgentTips { .. }
-            | TelemetryEvent::CLIAgentToolbarVoiceInputUsed { .. }
             | TelemetryEvent::CLIAgentToolbarImageAttached { .. }
             | TelemetryEvent::CLIAgentToolbarShown { .. }
             | TelemetryEvent::CLIAgentPluginChipClicked { .. }
@@ -5205,7 +5048,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::CommandSearchResultAccepted => EnablementState::Always,
             Self::CommandSearchFilterChanged => EnablementState::Always,
             Self::CommandSearchAsyncQueryCompleted => EnablementState::Always,
-            Self::AICommandSearchOpened => EnablementState::Always,
             Self::OpenedAltScreenFind => EnablementState::Always,
             Self::UserInitiatedClose => EnablementState::Always,
             Self::QuitModalShown => EnablementState::Always,
@@ -5220,19 +5062,12 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::InputModeChanged => EnablementState::Always,
             Self::PtySpawned => EnablementState::Always,
             Self::InitialWorkingDirectoryConfigurationChanged => EnablementState::Always,
-            Self::OpenedWarpAI => EnablementState::Always,
-            Self::WarpAIRequestIssued => EnablementState::Always,
-            Self::WarpAIAction => EnablementState::Always,
-            Self::UsedWarpAIPreparedPrompt => EnablementState::Always,
-            Self::WarpAICharacterLimitExceeded => EnablementState::Always,
             Self::OpenInputContextMenu => EnablementState::Always,
             Self::InputCutSelectedText => EnablementState::Always,
             Self::InputCopySelectedText => EnablementState::Always,
             Self::InputSelectAll => EnablementState::Always,
             Self::InputPaste => EnablementState::Always,
             Self::InputCommandSearch => EnablementState::Always,
-            Self::InputAICommandSearch => EnablementState::Always,
-            Self::InputAskWarpAI => EnablementState::Always,
             Self::SaveAsWorkflowModal => EnablementState::Always,
             Self::ExperimentTriggered => EnablementState::Always,
             Self::ToggleSyncAllPanesInAllTabs => EnablementState::Always,
@@ -5278,7 +5113,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::InitiateReauth => EnablementState::Always,
             Self::NeedsReauth => EnablementState::Always,
             Self::WarpDriveOpened => EnablementState::Always,
-            Self::ToggleWarpAI => EnablementState::Always,
             Self::ToggleSecretRedaction => EnablementState::Always,
             Self::CustomSecretRegexAdded => EnablementState::Always,
             Self::ToggleObfuscateSecret => EnablementState::Always,
@@ -5367,7 +5201,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 EnablementState::Flag(FeatureFlag::GitOperationsInCodeReview)
             }
             Self::ZeroStatePromptSuggestionUsed => EnablementState::Always,
-            Self::ToggleVoiceInputSetting => EnablementState::Always,
             Self::AgentModeCodeSuggestionEditedByUser
             | Self::AgentModeCodeFilesNavigated
             | Self::AgentModeCodeDiffHunksNavigated => EnablementState::Always,
@@ -5419,7 +5252,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ShellTerminatedPrematurely { .. } => EnablementState::Always,
             Self::InputUXModeChanged { .. } => EnablementState::Always,
             Self::ContextChipInteracted { .. } => EnablementState::Always,
-            Self::VoiceInputUsed { .. } => EnablementState::Always,
             Self::AtMenuInteracted { .. } => EnablementState::Always,
             Self::ActiveIndexedReposChanged { .. } => {
                 EnablementState::Flag(FeatureFlag::FullSourceCodeEmbedding)
@@ -5463,14 +5295,8 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::CLISubagentInputDismissed { .. }
             | Self::CLISubagentActionExecuted { .. }
             | Self::CLISubagentActionRejected { .. } => EnablementState::Always,
-            Self::AgentManagementViewToggled { .. }
-            | Self::AgentManagementViewOpenedSession
-            | Self::AgentManagementViewCopiedSessionLink => {
-                EnablementState::Flag(FeatureFlag::AgentManagementView)
-            }
             Self::DetectedIsolationPlatform { .. } => EnablementState::Always,
             Self::AgentExitedShellProcess { .. } => EnablementState::Always,
-            Self::CLIAgentToolbarVoiceInputUsed { .. } => EnablementState::Always,
             Self::CLIAgentToolbarImageAttached { .. } => EnablementState::Always,
             Self::CLIAgentToolbarShown { .. } => EnablementState::Always,
             Self::CLIAgentPluginChipClicked { .. }
@@ -5698,7 +5524,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::CommandSearchResultAccepted => "Command Search Result Accepted",
             Self::CommandSearchFilterChanged => "Command Search Filter Changed",
             Self::CommandSearchAsyncQueryCompleted => "Command Search Async Query Completed",
-            Self::AICommandSearchOpened => "AI Command Search opened",
             Self::OpenNotebook => "Notebook Opened",
             Self::EditNotebook => "Notebook Edited",
             Self::NotebookAction => "Notebook Action",
@@ -5720,19 +5545,12 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 "InitialWorkingDirectoryConfigurationChanged"
             }
             Self::InputModeChanged => "Input Mode Changed",
-            Self::OpenedWarpAI => "Opened Warp AI",
-            Self::WarpAIRequestIssued => "Warp AI Request Issued",
-            Self::WarpAIAction => "Warp AI Action",
-            Self::UsedWarpAIPreparedPrompt => "Used Warp AI Prepared Prompt",
-            Self::WarpAICharacterLimitExceeded => "Warp AI Character Limit Exceeded",
             Self::OpenInputContextMenu => "OpenInputBoxContextMenu",
             Self::InputCutSelectedText => "InputBoxCutSelectedText",
             Self::InputCopySelectedText => "InputBoxCutSelectedText",
             Self::InputSelectAll => "InputBoxSelectAll",
             Self::InputPaste => "InputBoxPaste",
             Self::InputCommandSearch => "InputBoxCommandSearch",
-            Self::InputAICommandSearch => "InputBoxAICommandSearch",
-            Self::InputAskWarpAI => "InputBoxAskWarpAI",
             Self::SaveAsWorkflowModal => "Opened Save As Workflow Modal",
             Self::ExperimentTriggered => "experiments.client.enroll_client",
             Self::ToggleSyncAllPanesInAllTabs => "Toggle Sync Inputs Across All Panes in All Tabs",
@@ -5775,7 +5593,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::InitiateReauth => "Initiate Reauth",
             Self::NeedsReauth => "Needs Reauth",
             Self::WarpDriveOpened => "Warp Drive Opened",
-            Self::ToggleWarpAI => "Toggle Warp AI",
             Self::ToggleSecretRedaction => "Toggle Secret Redaction",
             Self::CustomSecretRegexAdded => "Custom Secret Regex Added",
             Self::ToggleObfuscateSecret => "Toggle Obfuscate Secret",
@@ -5874,7 +5691,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ToggleIntelligentAutosuggestionsSetting => {
                 "Toggle Intelligent Autosuggestions Setting"
             }
-            Self::ToggleVoiceInputSetting => "Toggle Voice Input Setting",
             Self::EnvVarCollectionInvoked => "Invoked Environment Variables",
             Self::EnvVarWorkflowParameterization => {
                 "Parameterized Workflow With Environment Variables"
@@ -5963,7 +5779,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             }
             Self::InputUXModeChanged { .. } => "Input.InputUXModeChanged",
             Self::ContextChipInteracted { .. } => "Input.ContextChipInteracted",
-            Self::VoiceInputUsed { .. } => "Input.VoiceInputUsed",
             Self::AtMenuInteracted { .. } => "Input.AtMenuInteracted",
             Self::UserMenuUpgradeClicked => "User Menu Upgrade Clicked",
             Self::TabCloseButtonPositionUpdated { .. } => "Update Tab Close Button Position",
@@ -6013,17 +5828,11 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::CLISubagentInputDismissed { .. } => "CLI Subagent Input Dismissed",
             Self::CLISubagentActionExecuted { .. } => "CLI Subagent Action Executed",
             Self::CLISubagentActionRejected { .. } => "CLI Subagent Action Rejected",
-            Self::AgentManagementViewToggled { .. } => "Agent Management View Toggled",
-            Self::AgentManagementViewOpenedSession => "Agent Management View Opened Session",
-            Self::AgentManagementViewCopiedSessionLink => {
-                "Agent Management View Copied Session Link"
-            }
             Self::DetectedIsolationPlatform { .. } => "Isolation.DetectedIsolationPlatform",
             Self::AgentTipShown => "AgentTip Shown",
             Self::AgentTipClicked => "AgentTip Clicked",
             Self::ToggleShowAgentTips => "Toggle Show Agent Tips",
             Self::AgentExitedShellProcess => "AgentMode.ExitedShellProcess",
-            Self::CLIAgentToolbarVoiceInputUsed { .. } => "CLIAgentFooter.VoiceInputUsed",
             Self::CLIAgentToolbarImageAttached { .. } => "CLIAgentFooter.ImageAttached",
             Self::CLIAgentToolbarShown { .. } => "CLIAgentFooter.Shown",
             Self::CLIAgentPluginChipClicked { .. } => "CLIAgentPlugin.ChipClicked",
@@ -6320,9 +6129,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::CommandSearchAsyncQueryCompleted => {
                 "Finished searching for a command in the background"
             }
-            Self::AICommandSearchOpened => {
-                "Opened the modal for AI Command Search, where you can use natural language to search for commands"
-            }
             Self::OpenNotebook => "Opened a notebook",
             Self::EditNotebook => "Edited a notebook",
             Self::NotebookAction => {
@@ -6360,15 +6166,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::InitialWorkingDirectoryConfigurationChanged => {
                 "Replaced the default working directory with a different path"
             }
-            Self::OpenedWarpAI => "Activated Warp AI",
-            Self::WarpAIRequestIssued => "Issued a question to Warp AI",
-            Self::WarpAIAction => "Executed a Warp AI action: Restart, Copy, Insert into terminal",
-            Self::UsedWarpAIPreparedPrompt => {
-                "Used one of the Warp-provided prompts, like \"Show examples\""
-            }
-            Self::WarpAICharacterLimitExceeded => {
-                "Attempted to ask a question longer than 1k chars to Warp AI"
-            }
             Self::OpenInputContextMenu => "Opened the Input Editor's context menu",
             Self::InputCutSelectedText => {
                 "Cut the highlighted text via the Input Editor's context menu (right clicking the buffer)"
@@ -6383,10 +6180,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::InputCommandSearch => {
                 "Opened Command Search via the Input Editor's context menu (right clicking the buffer)"
             }
-            Self::InputAICommandSearch => {
-                "Opened AI Command Search via the Input Editor's context menu (right clicking the buffer)"
-            }
-            Self::InputAskWarpAI => "Clicked \"Ask Warp AI\" from the Input Editor's context menu",
             Self::SaveAsWorkflowModal => {
                 "Opened the modal to create a new workflow using a Block's context--command, etc."
             }
@@ -6492,9 +6285,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::InitiateReauth => "Started the flow to re-authenticate the client",
             Self::NeedsReauth => "User needs to re-authenticate",
             Self::WarpDriveOpened => "Opened Warp Drive panel",
-            Self::ToggleWarpAI => {
-                "Toggled Warp AI--an AI assistant to help you debug errors, look up forgotten commands and more"
-            }
             Self::ToggleSecretRedaction => {
                 "Toggled on/off the setting for Secret Redaction - attempts to redact secrets and sensitive information"
             }
@@ -6612,7 +6402,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ToggleGitOperationsAutogenSetting => {
                 "Toggled on/off the git operations autogen setting"
             }
-            Self::ToggleVoiceInputSetting => "Toggled on/off the voice input setting",
             Self::UnitTestSuggestionShown { .. } => "Suggested prompt shown",
             Self::UnitTestSuggestionAccepted { .. } => "Suggested prompt accepted",
             Self::UnitTestSuggestionCancelled { .. } => "Suggested prompt cancelled",
@@ -6779,7 +6568,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             }
             Self::InputUXModeChanged { .. } => "Changed the input UX mode",
             Self::ContextChipInteracted { .. } => "Interacted with a context chip",
-            Self::VoiceInputUsed { .. } => "Used voice input",
             Self::AtMenuInteracted { .. } => "Interacted with the @ menu",
             Self::UserMenuUpgradeClicked => "Clicked the 'Upgrade' menu item in the user menu",
             Self::TabCloseButtonPositionUpdated { .. } => "Updated the tab close button position",
@@ -6849,15 +6637,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::CLISubagentActionRejected { .. } => {
                 "User rejected a blocked action from the CLI subagent"
             }
-            Self::AgentManagementViewToggled { .. } => {
-                "User toggled the Agent Management View open or closed"
-            }
-            Self::AgentManagementViewOpenedSession => {
-                "User opened a session from the Agent Management View"
-            }
-            Self::AgentManagementViewCopiedSessionLink => {
-                "User copied a session link from the Agent Management View"
-            }
             Self::DetectedIsolationPlatform { .. } => {
                 "Detected that Warp is running in an isolated sandbox"
             }
@@ -6865,9 +6644,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::AgentTipClicked => "User clicked a link or action in an Agent Tip",
             Self::AgentExitedShellProcess => {
                 "An agent-requested command caused the shell process to exit"
-            }
-            Self::CLIAgentToolbarVoiceInputUsed { .. } => {
-                "User used voice input from the CLI agent footer"
             }
             Self::CLIAgentToolbarImageAttached { .. } => {
                 "User attached an image from the CLI agent footer"

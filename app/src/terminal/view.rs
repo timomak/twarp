@@ -15918,9 +15918,10 @@ impl TerminalView {
     ) {
         ctx.emit(Event::OpenWorkflowModalWithTemporary(Box::new(workflow)));
 
+        // twarp: 2d — WarpAIWorkflowCard / WarpAIPanel telemetry sources deleted with AI removal.
         send_telemetry_from_ctx!(
             TelemetryEvent::SaveAsWorkflowModal {
-                source: SaveAsWorkflowModalSource::WarpAIWorkflowCard,
+                source: SaveAsWorkflowModalSource::Block,
             },
             ctx
         );
