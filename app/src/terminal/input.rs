@@ -7455,9 +7455,8 @@ impl Input {
             BlocklistAIHistoryModel::as_ref(ctx).active_conversation(self.terminal_view_id);
 
         if self.model.lock().shared_session_status().is_viewer() {
-            let server_conversation_token: Option<ServerConversationToken> = active_conversation
-                .and_then(|conversation| conversation.server_conversation_token())
-                .and_then(|_t| None);
+            // twarp: 2c-d — collapsed AI conversation token; always None.
+            let server_conversation_token: Option<ServerConversationToken> = None;
 
             if let Some(server_conversation_token) = server_conversation_token {
                 ctx.emit(Event::CancelSharedSessionConversation {
