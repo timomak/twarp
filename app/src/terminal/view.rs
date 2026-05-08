@@ -478,6 +478,7 @@ impl CLISubagentController {
 impl CLISubagentView {
     fn new<A, B, C, D, E, F, G, H, I>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: &mut I) -> Self { Self }
     fn clear_all_selections<C>(&mut self, _: &mut C) {}
+    fn selected_text(&self) -> Option<String> { None }
 }
 #[allow(dead_code)] pub enum CLISubagentEvent {
     // twarp: 2c-d — bulk variants for AI-removed CLISubagentEvent
@@ -510,12 +511,13 @@ impl UserTakeOverReason {
 #[allow(dead_code)] pub enum BlocklistAIStatusBarEvent { SummarizationCancelDialogToggled { is_open: bool }, Stop }
 #[allow(dead_code)] fn block_context_from_terminal_model<A, B, C>(_: A, _: B, _: C) -> Option<()> { None }
 #[allow(dead_code)] pub enum SlashCommandRequest {
-    Summarize,
+    Summarize { prompt: Option<String> },
     InitProjectRules,
 }
 #[allow(dead_code)] type AIDocumentId = crate::app_state::AIDocumentId;
 #[allow(dead_code)] type AIDocumentVersion = crate::app_state::AIDocumentVersion;
 #[allow(dead_code)] struct AIDocumentModel;
+impl SingletonEntity for AIDocumentModel {}
 #[allow(dead_code)] fn shimmering_warp_loading_text<A, B, C, D>(_: A, _: B, _: C, _: D) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
 
 pub use crate::app_state::ServerConversationToken;
@@ -702,7 +704,7 @@ pub use crate::app_state::ConversationStatus;
 }
 #[allow(dead_code)] enum AIAgentOutputStatus {}
 #[allow(dead_code)] enum AIAgentTextSection {}
-#[allow(dead_code)] pub enum EntrypointType { Onboarding }
+#[allow(dead_code)] pub enum EntrypointType { Onboarding { chip_type: OnboardingChipType } }
 #[allow(dead_code)] enum FinishedAIAgentOutput {
     Success { output: () },
     Error {},
@@ -728,10 +730,12 @@ impl<T> AIBlockModelImpl<T> {
 // twarp: 2c-d — unify with block::interaction_mode::AIAgentActionId.
 pub use crate::terminal::model::block::interaction_mode::AIAgentActionId;
 #[allow(dead_code)] struct AIAgentCitation;
-#[allow(dead_code)] pub enum AIAgentContext { Block }
+#[allow(dead_code)] pub enum AIAgentContext { Block(Box<()>) }
 // twarp: 2c-d — re-export to unify cross-file types.
 pub use crate::terminal::view::rich_content::AIAgentExchangeId;
-#[allow(dead_code)] enum AIAgentInput {}
+#[allow(dead_code)] enum AIAgentInput {
+    CodeReview { context: (), review_comments: Vec<()> },
+}
 #[allow(dead_code)] #[derive(Debug, Clone, PartialEq, Eq)] struct FileLocations;
 #[allow(dead_code)] pub enum PassiveSuggestionResultType { Prompt { prompt: String } }
 #[allow(dead_code)] fn ai_brand_color<C>(_: C) -> warpui::color::ColorU { warpui::color::ColorU::new(0,0,0,0) }
@@ -812,7 +816,7 @@ impl BlocklistAIHistoryModel {
 pub use crate::terminal::input::{
     BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig,
 };
-#[allow(dead_code)] pub enum PendingQueryState { New, Existing }
+#[allow(dead_code)] pub enum PendingQueryState { New, Existing { conversation_id: crate::app_state::AIConversationId } }
 #[allow(dead_code)] struct ShellCommandExecutor;
 #[allow(dead_code)]
 impl ShellCommandExecutor {
@@ -861,7 +865,7 @@ impl GetRelevantFilesController {
 
 // LLMs/AI etc.
 #[allow(dead_code)] type LLMId = crate::app_state::LLMId;
-#[allow(dead_code)] pub enum LLMModelHost { AwsBedrock }
+#[allow(dead_code)] #[derive(Hash, PartialEq, Eq)] pub enum LLMModelHost { AwsBedrock }
 // twarp: 2c-d — LLMPreferences re-exported from input.
 pub use crate::terminal::input::LLMPreferences;
 #[allow(dead_code)] struct ApiKeyManager;
@@ -870,13 +874,14 @@ impl ApiKeyManager {
     fn aws_credentials_state(&self) -> AwsCredentialsState { unimplemented!() }
 }
 #[allow(dead_code)] pub enum AwsCredentialsState { Loaded }
-#[allow(dead_code)] enum BuildSource {}
-#[allow(dead_code)] struct CodebaseIndexManager;
+#[allow(dead_code)] pub enum BuildSource { FromPath { path: std::path::PathBuf } }
+#[allow(dead_code)] pub struct CodebaseIndexManager;
 #[allow(dead_code)]
 impl CodebaseIndexManager {
     fn index_directory<P, C>(&mut self, _: P, _: &mut C) {}
     fn write_snapshot<C>(&mut self, _: &mut C) {}
     fn handle_session_bootstrapped<A>(&mut self, _: A) {}
+    pub fn build_and_sync_codebase_index<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
 }
 // twarp: 2c-d — unify with rich_content::OnboardingAgenticSuggestionsBlock.
 pub use crate::terminal::view::rich_content::OnboardingAgenticSuggestionsBlock;
@@ -887,7 +892,8 @@ impl OnboardingAgenticSuggestionsBlock {
     fn handle_key_pressed<A, C>(&mut self, _: A, _: &mut C) {}
 }
 #[allow(dead_code)] pub enum OnboardingAgenticSuggestionsBlockEvent { RunAgentModeCommand { prompt: String, chip_type: OnboardingChipType } }
-#[allow(dead_code)] pub enum OnboardingChipType { Other }
+// twarp: 2c-d — unify with events::OnboardingChipType.
+pub use crate::server::telemetry::events::OnboardingChipType;
 
 // twarp: 2c-d — AskAIType stub (was crate::ai::ask_ai_type)
 #[allow(dead_code)]
@@ -5502,10 +5508,12 @@ impl TerminalView {
                         }
                     }
 
-                    // Dissociate removed blocks from the conversation
-                    let removed_block_ids = previous_block_ids
-                        .difference(pending_context_block_ids)
-                        .collect_vec();
+                    // twarp: 2c-d — Vec.difference doesn't exist; manual filter against HashSet.
+                    let removed_block_ids: Vec<_> = previous_block_ids
+                        .iter()
+                        .filter(|id| !pending_context_block_ids.contains(id))
+                        .cloned()
+                        .collect();
 
                     if !removed_block_ids.is_empty() {
                         let dissociated_blocks = self
@@ -12056,7 +12064,7 @@ impl TerminalView {
             .unwrap_or(agent.command_prefix())
             .to_owned();
         let description = if let CLIAgentSessionStatus::Blocked { message } = status {
-            message.clone().unwrap_or_default()
+            message.clone()
         } else {
             session_context.response.clone().unwrap_or_default()
         };
@@ -14801,12 +14809,9 @@ impl TerminalView {
                                 BlocklistAIHistoryModel::as_ref(ctx)
                                     .conversation(conversation_id)
                                     .and_then(|convo| convo.exchange_id_for_action(action_id))
-                            } else if let Some(subagent_task_id) = metadata.subagent_task_id() {
-                                BlocklistAIHistoryModel::as_ref(ctx)
-                                    .conversation(conversation_id)
-                                    .and_then(|convo| convo.get_task(subagent_task_id))
-                                    .and_then(|task| task.last_exchange())
-                                    .map(|exchange| exchange.id)
+                            } else if let Some(_subagent_task_id) = metadata.subagent_task_id() {
+                                // twarp: 2c-d — task/exchange types stubbed; skip lookup.
+                                None::<()>
                             } else {
                                 None
                             };
@@ -18426,9 +18431,9 @@ impl TerminalView {
         BlocklistAIHistoryModel::as_ref(ctx)
             .conversation(conversation_id)
             .and_then(|conv| {
-                conv.exchanges_reversed()
-                    .find(|exchange| exchange.has_user_query())
-                    .map(|exchange| exchange.id)
+                // twarp: 2c-d — exchange types stubbed.
+                let _ = conv.exchanges_reversed();
+                None::<AIAgentExchangeId>
             })
     }
 
@@ -18479,12 +18484,8 @@ impl TerminalView {
         let mut all_comments = Vec::new();
         let mut base_branch = None;
         for ai_block in self.ai_blocks_for_current_thread(conversation_id, ctx) {
-            if let Some(imported) = ai_block.collect_imported_comments() {
-                all_comments.extend(imported.comments);
-                if base_branch.is_none() {
-                    base_branch = imported.base_branch;
-                }
-            }
+            // twarp: 2c-d — collect_imported_comments returns Option<Vec<()>>; gut.
+            let _ = ai_block.collect_imported_comments();
         }
         // The iterator yields blocks newest-first; reverse to get chronological order.
         all_comments.reverse();
@@ -18523,10 +18524,9 @@ impl TerminalView {
     }
 
     /// Check if there's an active (non-completed, non-cancelled) /init in progress
-    fn has_active_init_project(&self, ctx: &AppContext) -> bool {
-        self.active_init_project_model
-            .as_ref()
-            .is_some_and(|model| model.as_ref(ctx).is_active())
+    fn has_active_init_project(&self, _ctx: &AppContext) -> bool {
+        // twarp: 2c-d — active_init_project_model stubbed; assume no active init.
+        false
     }
 
     /// Check if there are any init step blocks for the given conversation
@@ -19212,6 +19212,7 @@ impl TerminalView {
             }
             InputEvent::ExitCloudModeAndStartLocalAgent { initial_prompt } => {
                 let origin = AgentViewEntryOrigin::Input {
+                    is_new_conversation: false,
                     was_prompt_autodetected: false,
                 };
                 let initial_prompt = initial_prompt.clone();

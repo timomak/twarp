@@ -40,6 +40,10 @@ pub struct TelemetryBanner;
 pub struct AmbientAgentEntryBlock;
 pub struct OnboardingAgenticSuggestionsBlock;
 pub struct InitStepBlock;
+#[allow(dead_code)]
+impl InitStepBlock {
+    pub fn try_steal_focus<C>(&mut self, _: &mut C) -> bool { false }
+}
 #[derive(Clone, Copy, Debug)]
 pub enum InitStepKind { Other }
 // twarp: 2c-d — unify with app_state::AgentViewEntryOrigin.
