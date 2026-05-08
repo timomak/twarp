@@ -1043,7 +1043,12 @@ enum UniversalDeveloperInputButtonBarEvent {
 }
 
 #[allow(dead_code)]
-pub struct AmbientAgentViewModel;
+pub struct AmbientAgentViewModel {
+    pub ui_state: AmbientAgentUiStateStub,
+}
+#[allow(dead_code)]
+#[derive(Default)]
+pub struct AmbientAgentUiStateStub;
 impl AmbientAgentViewModel {
     pub fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
         unimplemented!()

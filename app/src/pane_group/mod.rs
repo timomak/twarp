@@ -725,8 +725,8 @@ pub enum Event {
     // twarp: 2c-d — bulk variants for AI-removed pane_group::Event
     OpenCodeDiff { view: warpui::ViewHandle<crate::terminal::view::CodeDiffView> },
     OpenPluginInstructionsPane(crate::app_state::CLIAgent, crate::terminal::view::PluginModalKind),
-    OpenSuggestedAgentModeWorkflowModal(()),
-    OpenSuggestedRuleModal(()),
+    OpenSuggestedAgentModeWorkflowModal { workflow_and_id: crate::terminal::view::SuggestedAgentModeWorkflowAndId },
+    OpenSuggestedRuleModal { rule_and_id: crate::terminal::view::SuggestedRuleAndId },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

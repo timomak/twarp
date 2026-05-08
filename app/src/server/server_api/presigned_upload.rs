@@ -74,7 +74,7 @@ impl<'a> From<&'a FileArtifactUploadTargetInfo> for NormalizedUploadTarget<'a> {
             headers: target
                 .headers
                 .iter()
-                .map(|header| (header.name.as_str(), header.value.as_str()))
+                .map(|(name, value)| (name.as_str(), value.as_str()))
                 .collect(),
         }
     }

@@ -576,7 +576,7 @@ impl CLIAgentSessionListener {
 #[allow(dead_code)] struct CLIAgentInputState;
 #[allow(dead_code)] enum CLIAgentRichInputCloseReason { AutoToggle, Other }
 #[allow(dead_code)]
-struct CLIAgentSession {
+pub struct CLIAgentSession {
     pub agent: CLIAgent,
     pub listener: Option<()>,
     pub should_auto_toggle_input: bool,
@@ -592,9 +592,10 @@ struct CLIAgentSession {
 #[allow(dead_code)] struct CLIAgentSessionContext {
     pub query: Option<String>,
     pub summary: Option<String>,
+    pub response: Option<String>,
 }
 impl Default for CLIAgentSessionContext {
-    fn default() -> Self { Self { query: None, summary: None } }
+    fn default() -> Self { Self { query: None, summary: None, response: None } }
 }
 #[allow(dead_code)] enum CLIAgentSessionStatus {
     InProgress,
@@ -619,7 +620,7 @@ impl CLIAgentSessionsModel {
     Started { terminal_view_id: warpui::EntityId, cli_agent: crate::app_state::CLIAgent },
     StatusChanged { terminal_view_id: warpui::EntityId, status: CLIAgentSessionStatus, agent: crate::app_state::CLIAgent, session_context: CLIAgentSessionContext },
     SessionUpdated { terminal_view_id: warpui::EntityId },
-    InputSessionChanged { terminal_view_id: warpui::EntityId },
+    InputSessionChanged { terminal_view_id: warpui::EntityId, new_input_state: CLIAgentInputState },
 }
 #[allow(dead_code)]
 impl CLIAgentSessionsModelEvent {
@@ -662,8 +663,8 @@ pub use crate::app_state::ConversationStatus;
 #[allow(dead_code)] enum RenderableAIError {}
 #[allow(dead_code)] enum StaticQueryType {}
 #[allow(dead_code)] enum AgentToolbarItemKind {}
-#[allow(dead_code)] struct SuggestedAgentModeWorkflowAndId;
-#[allow(dead_code)] struct SuggestedRuleAndId;
+#[allow(dead_code)] #[derive(Clone)] pub struct SuggestedAgentModeWorkflowAndId;
+#[allow(dead_code)] #[derive(Clone)] pub struct SuggestedRuleAndId;
 #[allow(dead_code)] struct AIBlockModelImpl;
 #[allow(dead_code)]
 impl AIBlockModelImpl {

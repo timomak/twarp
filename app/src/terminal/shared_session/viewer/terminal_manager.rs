@@ -67,9 +67,9 @@ impl SingletonEntity for CLIAgentSessionsModel {}
 #[allow(dead_code)]
 impl CLIAgentSessionsModel {
     // twarp: 2c-d — bulk stubs
-    pub fn session(&self, _: warpui::EntityId) -> Option<()> { None }
+    pub fn session(&self, _: warpui::EntityId) -> Option<&crate::terminal::view::CLIAgentSession> { None }
 }
-pub enum CLIAgentSessionsModelEvent { Other }
+pub use crate::terminal::view::CLIAgentSessionsModelEvent;
 use crate::terminal::shared_session::manager::Manager;
 use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use crate::terminal::shared_session::shared_handlers::{
