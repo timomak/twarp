@@ -790,7 +790,8 @@ impl LeftPanelView {
                     matches!(self.active_view.get(), ToolPanelView::GlobalSearch { .. })
                 }
                 LeftPanelAction::WarpDrive => self.active_view.get() == ToolPanelView::WarpDrive,
-                // twarp: 2c-d — ConversationListView arm removed
+                // twarp: 2c-d — ConversationListView arm kept for legacy call-sites; AI deleted.
+                LeftPanelAction::ConversationListView => false,
             };
         }
     }

@@ -42,7 +42,8 @@ impl SessionType {
         match self {
             SessionType::Terminal => Icon::Terminal,
             SessionType::Oz => Icon::Oz,
-            SessionType::CliAgent(agent) => agent.icon(),
+            // twarp: 2c-d — agent.icon() now Option; fallback to Terminal.
+            SessionType::CliAgent(agent) => agent.icon().unwrap_or(Icon::Terminal),
         }
     }
 

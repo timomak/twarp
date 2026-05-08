@@ -32,7 +32,8 @@ pub const HEADER_BORDER: f32 = 1.;
 pub fn menu_background_color(app: &AppContext) -> ColorU {
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
-    theme.background().blend(&warpui::elements::Fill::Solid(agent_view_bg_fill(app))).into()
+    // twarp: 2c-d — Fill is warp_core::ui::theme::Fill; use Solid variant on theme module.
+    theme.background().blend(&warp_core::ui::theme::Fill::Solid(agent_view_bg_fill(app))).into()
 }
 
 pub fn item_background(

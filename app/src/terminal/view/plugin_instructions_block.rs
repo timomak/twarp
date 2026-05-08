@@ -31,17 +31,20 @@ pub struct CodeBlockOptions {
     pub mouse_handles: Option<CodeSnippetButtonHandles>,
     pub file_path: Option<std::path::PathBuf>,
 }
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CodeSnippetButtonHandles;
 pub struct PluginInstructions {
     pub steps: Vec<PluginInstructionStep>,
     // twarp: 2c-d — extra fields used by plugin instructions block
     pub title: String,
     pub subtitle: String,
-    pub post_install_notes: String,
+    pub post_install_notes: Vec<&'static str>,
 }
 pub struct PluginInstructionStep {
     pub command: String,
+    pub description: &'static str,
+    pub executable: bool,
+    pub link: Option<&'static str>,
 }
 use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ActionButton, ButtonSize, NakedTheme};

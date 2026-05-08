@@ -108,11 +108,17 @@ impl warpui::View for AIContextMenu {
         warpui::elements::Empty::new().finish()
     }
 }
+#[derive(Clone, Debug)]
+pub struct AIContextMenuAction;
+impl warpui::TypedActionView for AIContextMenu {
+    type Action = AIContextMenuAction;
+}
+#[derive(Debug)]
 pub enum AIContextMenuCategory { Other }
 pub enum AIContextMenuEvent {
     Other,
     Close { item_count: usize, query_length: usize },
-    ResultAccepted { item_count: usize, query_length: usize, accepted_position: usize },
+    ResultAccepted { item_count: usize, query_length: usize, accepted_position: usize, action: AIContextMenuSearchableAction },
     CategorySelected { category: AIContextMenuCategory },
 }
 use crate::appearance::Appearance;
@@ -3145,6 +3151,7 @@ impl EditorView {
                             action,
                             item_count,
                             query_length,
+                            accepted_position: _,
                         } => {
                             send_telemetry_from_ctx!(
                                 TelemetryEvent::AtMenuInteracted {
@@ -4342,7 +4349,7 @@ impl EditorView {
             .and_then(|terminal_view| {
                 BlocklistAIHistoryModel::as_ref(ctx).active_conversation(terminal_view.id())
             })
-            .is_some_and(|conversation: crate::app_state::AIConversationId| {
+            .is_some_and(|conversation| {
                 conversation.status().is_in_progress() && false
             });
 

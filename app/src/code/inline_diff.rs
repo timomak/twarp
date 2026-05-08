@@ -145,7 +145,8 @@ impl InlineDiffView {
                 })
             }
             DiffSessionType::Remote(host_id) => {
-                let host_id = host_id.clone();
+                // twarp: 2c-d — DiffSessionType::Remote payload is now a String; wrap in HostId.
+                let host_id = warp_core::host_id::HostId::new(host_id.clone());
                 let remote_path = file_path.clone();
                 file_model.update(ctx, |file_model, _ctx| {
                     file_model.register_remote_file(host_id, remote_path)

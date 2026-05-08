@@ -115,8 +115,12 @@ pub(crate) fn render_icon_with_status(
             // twarp: 2c-d — brand_color returns ColorU directly, no unwrap_or needed
             let brand_color = agent.brand_color();
             let icon_color = agent.brand_icon_color();
-            // twarp: 2c-d — agent.icon() returns Icon directly
-            let icon_element = agent.icon().to_warpui_icon(WarpThemeFill::Solid(icon_color)).finish();
+            // twarp: 2c-d — agent.icon() now Option; fallback to Terminal.
+            let icon_element = agent
+                .icon()
+                .unwrap_or(warp_core::ui::Icon::Terminal)
+                .to_warpui_icon(WarpThemeFill::Solid(icon_color))
+                .finish();
             let inner = ConstrainedBox::new(icon_element)
                 .with_width(sizing.icon_size)
                 .with_height(sizing.icon_size)

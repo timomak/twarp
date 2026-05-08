@@ -205,7 +205,7 @@ impl Block {
         }) = self.interaction_mode
         {
             *state = LongRunningCommandControlState::User {
-                reason: UserTakeOverReason::Stop,
+                reason: Some(UserTakeOverReason::Stop),
             };
         }
     }

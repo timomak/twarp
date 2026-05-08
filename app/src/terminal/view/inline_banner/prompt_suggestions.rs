@@ -18,9 +18,11 @@ pub enum PromptAlertEvent {
     OpenPrivacyPage,
     OpenBillingPortal { team_uid: ServerId },
 }
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub enum PromptAlertState {
     None,
+    #[default]
+    NoAlert,
     NoConnection,
     AnonymousUserRequestLimitHardGate,
     // twarp: 2c-d — extra variant referenced in match
@@ -36,11 +38,6 @@ impl PromptAlertView {
     pub fn new<A>(_: &mut A) -> Self { Self }
     pub fn state(&self) -> PromptAlertState { PromptAlertState::default() }
     pub fn is_no_alert(&self) -> bool { true }
-}
-#[derive(Clone, Default, Debug)]
-pub enum PromptAlertState {
-    #[default]
-    NoAlert,
 }
 impl warpui::Entity for PromptAlertView { type Event = PromptAlertEvent; }
 impl warpui::View for PromptAlertView {

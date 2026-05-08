@@ -78,8 +78,10 @@ impl Input {
 
         let ai_input_model = self.ai_input_model.as_ref(app);
 
-        if FeatureFlag::ImageAsContext.is_enabled()
-            && matches!(ai_input_model.input_type(), InputType::AI)
+        // twarp: 2c-d — universal::InputType is a stub; ai_input_model.input_type() returns
+        // events::InputType. AI input no longer exists, so this branch is permanently disabled.
+        if FeatureFlag::ImageAsContext.is_enabled() && false
+            && matches!(ai_input_model.input_type(), crate::server::telemetry::events::InputType::AI)
         {
             if let Some(images) = self.render_attachment_chips(appearance) {
                 column.add_child(
