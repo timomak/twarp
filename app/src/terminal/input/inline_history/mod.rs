@@ -2,7 +2,9 @@
 //!
 //! Shows both live conversations for the terminal view and command history in the terminal
 //! view, and prompts and command history in the agent view.
-mod data_source;
+// twarp: 2c-d — visibility raised to pub(crate) so lib.rs can register the
+// file-local AI singleton stub in this module.
+pub(crate) mod data_source;
 mod search_item;
 mod view;
 

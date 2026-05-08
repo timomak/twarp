@@ -251,13 +251,11 @@ use crate::workspace::{CommandSearchOptions, OneTimeModalModel, ToastStack, Work
 use crate::workspace::{ForkAIConversationParams, ForkFromExchange, ForkedConversationDestination};
 use crate::workspaces::{user_workspaces::UserWorkspaces, workspace::CustomerType};
 // twarp: 2c-d — AIRequestUsageModel was at crate root via ai re-export; stub locally.
+// Visibility raised to pub so lib.rs can register the singleton; inherent
+// `as_ref` removed so the trait `SingletonEntity::as_ref` is reachable.
 #[allow(dead_code)]
-struct AIRequestUsageModel;
+pub struct AIRequestUsageModel;
 impl AIRequestUsageModel {
-    fn as_ref<C>(_: &C) -> &Self {
-        // twarp: 2c-d — stubbed: AI deleted, so this code path is unreachable.
-        unimplemented!()
-    }
     fn has_any_ai_remaining<C>(&self, _: &C) -> bool {
         false
     }
@@ -509,8 +507,9 @@ fn is_accept_prompt_suggestion_bound_to_ctrl_enter<C>(_: &C) -> bool {
 #[cfg(feature = "local_fs")]
 pub use crate::code_review::comments::comment::{CurrentHead, DiffBase};
 
+// twarp: 2c-d — visibility raised to pub so lib.rs can register the singleton.
 #[allow(dead_code)]
-struct AgentConversationsModel;
+pub struct AgentConversationsModel;
 #[allow(dead_code)]
 impl AgentConversationsModel {
     fn get_task_data<I>(&self, _: I) -> Option<AgentTaskDataStub> {
@@ -538,8 +537,10 @@ impl TaskStub {
 struct ExchangeStub {
     pub id: AIAgentExchangeId,
 }
+// twarp: 2c-d — visibility raised to pub so AgentConversationsModel's `Entity::Event`
+// public alias does not leak a private type.
 #[allow(dead_code)]
-enum AgentConversationsModelEvent {
+pub enum AgentConversationsModelEvent {
     // twarp: 2c-d — bulk variants for AI-removed AgentConversationsModelEvent
     ConversationArtifactsUpdated,
     ConversationUpdated,
@@ -650,8 +651,9 @@ pub enum SlashCommandRequest {
 type AIDocumentId = crate::app_state::AIDocumentId;
 #[allow(dead_code)]
 type AIDocumentVersion = crate::app_state::AIDocumentVersion;
+// twarp: 2c-d — visibility raised to pub so lib.rs can register the singleton.
 #[allow(dead_code)]
-struct AIDocumentModel;
+pub struct AIDocumentModel;
 impl SingletonEntity for AIDocumentModel {}
 #[allow(dead_code)]
 impl AIDocumentModel {
@@ -776,7 +778,8 @@ pub enum AIBlockOutputStatus {
 
 #[cfg(feature = "local_fs")]
 #[allow(dead_code)]
-struct PersistedWorkspace;
+// twarp: 2c-d — visibility raised to pub so lib.rs can register the singleton.
+pub struct PersistedWorkspace;
 #[allow(dead_code)]
 impl PersistedWorkspace {
     fn navigated_to_path<P>(&mut self, _: P) {}
@@ -900,8 +903,9 @@ impl CLIAgentSessionStatus {
         ConversationStatus::Failed
     }
 }
+// twarp: 2c-d — visibility raised to pub so lib.rs can register the singleton.
 #[allow(dead_code)]
-struct CLIAgentSessionsModel;
+pub struct CLIAgentSessionsModel;
 #[allow(dead_code)]
 impl CLIAgentSessionsModel {
     fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSession> {
@@ -1164,7 +1168,8 @@ pub enum BlocklistAIControllerEvent {
 // twarp: 2c-d — re-export canonical BlocklistAIHistoryEvent
 pub use crate::terminal::input::BlocklistAIHistoryEvent;
 #[allow(dead_code)]
-struct BlocklistAIHistoryModel;
+// twarp: 2c-d — visibility raised to pub so lib.rs can register the singleton.
+pub struct BlocklistAIHistoryModel;
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
     fn conversation<I>(&self, _: I) -> Option<&AIConversation> {
@@ -1263,15 +1268,15 @@ pub struct AIExecutionProfilesModel;
 #[allow(dead_code)]
 impl AIExecutionProfilesModel {
     // twarp: 2c-d — bulk stubs for AIExecutionProfilesModel
-    pub fn handle<C>(_: &C) -> warpui::ModelHandle<AIExecutionProfilesModel> {
-        unimplemented!()
-    }
+    // twarp: 2c-d — inherent `handle` removed so the trait
+    // `SingletonEntity::handle` (which uses the singleton registry) is reachable.
+    // AIExecutionProfilesModel is registered as a no-op singleton in lib.rs so
+    // calls at runtime do not panic.
     pub fn default_profile<C>(&self, _: &C) -> AIExecutionProfileInfo {
         AIExecutionProfileInfo
     }
-    pub fn as_ref<C>(_: &C) -> &Self {
-        unimplemented!()
-    }
+    // twarp: 2c-d — inherent `as_ref` removed; trait `SingletonEntity::as_ref`
+    // resolves to the registered no-op singleton.
     pub fn set_base_model<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn set_apply_code_diffs<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn set_read_files<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
@@ -1301,7 +1306,8 @@ pub enum LLMModelHost {
 // twarp: 2c-d — LLMPreferences re-exported from input.
 pub use crate::terminal::input::LLMPreferences;
 #[allow(dead_code)]
-struct ApiKeyManager;
+// twarp: 2c-d — visibility raised to pub so lib.rs can register the singleton.
+pub struct ApiKeyManager;
 #[allow(dead_code)]
 impl ApiKeyManager {
     fn aws_credentials_state(&self) -> AwsCredentialsState {

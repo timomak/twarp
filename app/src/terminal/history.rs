@@ -27,7 +27,9 @@ use crate::{
     },
 };
 
-mod up_arrow;
+// twarp: 2c-d — visibility raised to pub(crate) so lib.rs can register the
+// file-local AI singleton stub in this module.
+pub(crate) mod up_arrow;
 pub(crate) use up_arrow::UpArrowHistoryConfig;
 
 /// Data model for a history command persisted to sqlite, used as an intermediate representation
