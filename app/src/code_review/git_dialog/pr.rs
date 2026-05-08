@@ -36,7 +36,13 @@ pub trait AIClient: Send + Sync {
                 > + Send,
         >,
     > {
-        Box::pin(async { unimplemented!() })
+        // twarp: 2c-d — AI client deleted; stub returns an empty content payload
+        // instead of panicking when callers actually await the future.
+        Box::pin(async {
+            Ok(crate::server::server_api::TwarpStubAIContent {
+                content: String::new(),
+            })
+        })
     }
 }
 impl AIClient for crate::server::server_api::TwarpStubAIClient {}

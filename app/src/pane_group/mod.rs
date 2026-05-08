@@ -4537,32 +4537,45 @@ impl PaneGroup {
     // session path here needs to be a valid os path otherwise the app will crash.
     // Environment variables are merged into the default environment for the terminal process,
     // and do not completely replace it.
-    #[allow(clippy::too_many_arguments, unused_variables)]
-    // twarp: 2c-d — ambient agent terminal creation deleted (was AI-only); stub returns same shape.
-    #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
+    // twarp: 2c-d — ambient agent terminal creation deleted (was AI-only); stub
+    // delegates to the loading-terminal helper so callers (PaneMode::Cloud,
+    // add_ambient_agent_pane) get a real, non-panicking pair if reached.
     fn create_ambient_agent_terminal(
-        _resources: TerminalViewResources,
-        _view_size: Vector2F,
-        _ctx: &mut ViewContext<Self>,
+        resources: TerminalViewResources,
+        view_size: Vector2F,
+        ctx: &mut ViewContext<Self>,
     ) -> (
         ViewHandle<TerminalView>,
         ModelHandle<Box<dyn TerminalManager>>,
     ) {
-        unimplemented!("twarp: 2c-d — ambient agent removed")
+        let window_id = ctx.window_id();
+        Self::create_loading_terminal_manager_and_view(resources, view_size, window_id, ctx)
     }
 
-    // twarp: 2c-d — terminal_pane_data was AI-deleted helper; stub returns the call-site shape.
-    #[allow(dead_code)]
-    fn terminal_pane_data<A, B, C, D, E, F, G>(
-        _: A,
-        _: B,
-        _: C,
-        _: D,
-        _: E,
-        _: F,
-        _: G,
+    // twarp: 2c-d — terminal_pane_data was AI-deleted helper; restored as a
+    // thin wrapper around `TerminalPane::new` so callers like
+    // `new_for_shared_session_viewer` and the conversation-transcript-viewer
+    // entrypoints don't panic if reached.
+    fn terminal_pane_data(
+        uuid: Vec<u8>,
+        view: ViewHandle<TerminalView>,
+        terminal_manager: ModelHandle<Box<dyn TerminalManager>>,
+        model_event_sender: Option<SyncSender<ModelEvent>>,
+        pane_contents: &mut HashMap<PaneId, Box<dyn AnyPaneContent>>,
+        pane_history: &mut Vec<PaneId>,
+        ctx: &mut ViewContext<Self>,
     ) -> (PaneData, InitialFocus) {
-        unimplemented!("twarp: 2c-d — pane data helper removed")
+        let pane_data = TerminalPane::new(uuid, terminal_manager, view, model_event_sender, ctx);
+        let terminal_pane_id = pane_data.terminal_pane_id();
+        let pane_id = terminal_pane_id.into();
+        pane_contents.insert(pane_id, Box::new(pane_data));
+        pane_history.push(pane_id);
+        let focus = InitialFocus {
+            focused_pane: Some(pane_id),
+            active_session: Some(terminal_pane_id),
+        };
+        (PaneData::new(pane_id), focus)
     }
 
     fn create_session(

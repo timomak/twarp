@@ -995,6 +995,7 @@ pub struct Workspace {
     suggested_rule_modal: warpui::ViewHandle<TwarpStubView>,
     suggested_agent_mode_workflow_modal: warpui::ViewHandle<TwarpStubView>,
     rewind_confirmation_dialog: warpui::ViewHandle<TwarpStubView>,
+    ai_fact_view: warpui::ViewHandle<AIFactViewStub>,
 }
 
 // twarp: 2c-d — generic stub view for several AI-removed dialog/modal handles.
@@ -2888,6 +2889,7 @@ impl Workspace {
             suggested_rule_modal: ctx.add_view(|_| TwarpStubView),
             suggested_agent_mode_workflow_modal: ctx.add_view(|_| TwarpStubView),
             rewind_confirmation_dialog: ctx.add_view(|_| TwarpStubView),
+            ai_fact_view: ctx.add_view(|_| AIFactViewStub),
         };
 
         ws.configure_new_workspace(workspace_setting, ctx);
@@ -2912,9 +2914,10 @@ impl Workspace {
         self.palette.clone()
     }
 
-    // twarp: 2c-d — removed pub fn ai_fact_view (returned ViewHandle<AIFactView>)
+    // twarp: 2c-d — removed pub fn ai_fact_view (returned ViewHandle<AIFactView>);
+    // returns a stub handle so integration tests can call .read() without panic.
     pub fn ai_fact_view(&self) -> warpui::ViewHandle<AIFactViewStub> {
-        unimplemented!()
+        self.ai_fact_view.clone()
     }
 
     fn handle_task_status_reset(&mut self, pane_group_id: EntityId, ctx: &mut ViewContext<Self>) {

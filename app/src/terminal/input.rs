@@ -324,7 +324,7 @@ pub use crate::terminal::view::CancellationReason;
 struct AgentShortcutViewModel;
 impl AgentShortcutViewModel {
     fn new<B, A, C>(_: B, _: A, _: &mut C) -> Self {
-        unimplemented!()
+        Self
     }
     // twarp: 2c-d — bulk stubs
     fn is_shortcut_view_open(&self) -> bool {
@@ -375,9 +375,12 @@ impl BlocklistAIStatusBar {
         _: O,
         _: &mut P,
     ) -> Self {
-        unimplemented!()
+        Self
     }
     pub fn handle_ctrl_c<C>(&mut self, _: &mut C) {}
+    // twarp: 2c-d — never invoked (should_show_summarization_cancel_dialog returns false).
+    // Kept as unimplemented! to flag accidental call sites.
+    #[allow(dead_code)]
     pub fn summarization_cancel_dialog_handle(
         &self,
     ) -> warpui::ViewHandle<crate::terminal::view::SummarizationCancelDialog> {
@@ -394,8 +397,13 @@ impl warpui::TypedActionView for BlocklistAIStatusBar {
     type Action = BlocklistAIStatusBarAction;
 }
 
+// twarp: 2c-d — holds stub ModelHandles so callers in TerminalView::new can
+// `subscribe_to_model` on the executor handles without panicking.
 #[allow(dead_code)]
-pub struct BlocklistAIActionModel;
+pub struct BlocklistAIActionModel {
+    pub shell_command_executor: warpui::ModelHandle<crate::terminal::view::ShellCommandExecutor>,
+    pub start_agent_executor: warpui::ModelHandle<crate::terminal::view::StartAgentExecutor>,
+}
 
 #[allow(dead_code)]
 pub enum SlashCommandRequest {
@@ -419,7 +427,7 @@ pub enum SlashCommandRequest {
 pub struct AIExecutionProfilesModel;
 impl AIExecutionProfilesModel {
     fn active_profile<C>(&self, _: Option<warpui::EntityId>, _: &C) -> AIExecutionProfile {
-        unimplemented!()
+        AIExecutionProfile
     }
     fn set_base_model<P, M, C>(&mut self, _: P, _: Option<M>, _: &mut C) {}
     fn set_cli_agent_model<P, M, C>(&mut self, _: P, _: Option<M>, _: &mut C) {}
@@ -1159,7 +1167,7 @@ pub struct AIConversationStub;
 #[allow(dead_code)]
 impl AIConversationStub {
     pub fn id(&self) -> AIConversationId {
-        unimplemented!()
+        AIConversationId::default()
     }
     pub fn title(&self) -> Option<String> {
         None
@@ -1388,7 +1396,7 @@ impl AIRequestUsageModel {
 pub struct UniversalDeveloperInputButtonBar;
 impl UniversalDeveloperInputButtonBar {
     fn new<A, B, C, D, E, F, G>(_: A, _: B, _: C, _: D, _: E, _: F, _: &mut G) -> Self {
-        unimplemented!()
+        Self
     }
     pub fn update_segmented_control_disabled_state<C>(&mut self, _: &mut C) {}
     // twarp: 2c-d — bulk stubs for AI-removed UDIButtonBar methods
@@ -1499,7 +1507,7 @@ impl AgentInputFooter {
         false
     }
     fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self {
-        unimplemented!()
+        Self
     }
     fn set_voice_is_active<C>(&mut self, _: bool, _: &mut C) {}
     fn update_session_context<A, C>(&mut self, _: A, _: &mut C) {}
@@ -1550,8 +1558,9 @@ pub enum AgentInputFooterEvent {
 #[allow(dead_code)]
 pub struct AgentViewController;
 impl AgentViewController {
+    // twarp: 2c-d — constructed for every terminal view at startup; default-stub
     pub fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
-        unimplemented!()
+        Self
     }
     pub fn is_fullscreen(&self) -> bool {
         false
@@ -1615,7 +1624,7 @@ pub enum AgentViewControllerEvent {
 struct HarnessSelector;
 impl HarnessSelector {
     fn new<A, B, C>(_: A, _: B, _: &mut C) -> Self {
-        unimplemented!()
+        Self
     }
     fn update<F, C>(&self, _: &mut C, _: F) {}
 }
@@ -1626,7 +1635,7 @@ impl HarnessSelector {
 struct HostSelector;
 impl HostSelector {
     fn new<A, B>(_: A, _: &mut B) -> Self {
-        unimplemented!()
+        Self
     }
 }
 #[allow(dead_code)]

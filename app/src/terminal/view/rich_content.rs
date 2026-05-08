@@ -112,7 +112,7 @@ impl crate::terminal::find::FindableRichContentView for AIBlock {
 #[allow(dead_code)]
 impl AIBlock {
     pub fn conversation_id(&self) -> AIConversationId {
-        unimplemented!()
+        AIConversationId::default()
     }
     pub fn server_output_id<C>(
         &self,
@@ -230,10 +230,12 @@ impl AIBlockOutputStatusStub {
         None
     }
 }
-pub struct AIBlockOutputRender;
+pub struct AIBlockOutputRender {
+    data: AIBlockOutputData,
+}
 impl AIBlockOutputRender {
     pub fn get(&self) -> &AIBlockOutputData {
-        unimplemented!()
+        &self.data
     }
 }
 pub struct AIBlockOutputData;

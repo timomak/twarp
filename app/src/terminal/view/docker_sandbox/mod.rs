@@ -30,8 +30,11 @@ impl warpui::Entity for TerminalDriver {
 #[cfg(not(target_family = "wasm"))]
 #[allow(dead_code)]
 impl TerminalDriver {
-    pub fn create_from_existing_view<V, C>(_: V, _: &mut C) -> warpui::ModelHandle<TerminalDriver> {
-        unimplemented!()
+    pub fn create_from_existing_view<P: warpui::View>(
+        _: warpui::ViewHandle<TerminalView>,
+        ctx: &mut warpui::ViewContext<P>,
+    ) -> warpui::ModelHandle<TerminalDriver> {
+        ctx.add_model(|_| TerminalDriver)
     }
     pub fn wait_for_session_bootstrapped(&mut self) -> futures::future::Ready<Result<(), ()>> {
         futures::future::ready(Ok(()))
