@@ -437,7 +437,7 @@ impl TerminalManager {
                 &model_clone_for_input,
                 &network_for_input_mode,
                 UniversalDeveloperInputContextUpdate {
-                    input_mode: Some((*config).into()),
+                    input_mode: Some(config.into()),
                     ..Default::default()
                 },
                 ctx,

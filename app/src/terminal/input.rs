@@ -330,11 +330,11 @@ pub use crate::app_state::AgentViewEntryOrigin;
 #[allow(dead_code)]
 pub struct EphemeralMessageModel;
 impl EphemeralMessageModel {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self
     }
     // twarp: 2c-d — bulk stubs
-    fn show_ephemeral_message<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn show_ephemeral_message<A, C>(&mut self, _: A, _: &mut C) {}
 }
 
 #[allow(dead_code)]
