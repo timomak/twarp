@@ -1042,9 +1042,10 @@ impl TypedActionView for BillingAndUsagePageView {
                 ctx.notify();
             }
             BillingAndUsagePageAction::NavigateToByokSettings => {
+                // twarp: 2d — WarpAgent settings page deleted; reroute to default.
                 ctx.dispatch_typed_action_deferred(WorkspaceAction::ShowSettingsPageWithSearch {
                     search_query: "api".to_string(),
-                    section: Some(SettingsSection::WarpAgent),
+                    section: Some(SettingsSection::default()),
                 });
             }
         }

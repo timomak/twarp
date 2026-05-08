@@ -13073,16 +13073,6 @@ impl Workspace {
                             ctx.notify();
                         });
                     }
-                    TranslateUsingWarpAI => {
-                        active_input_handle.update(ctx, |input, ctx| {
-                            let content = format!("# {query}");
-                            input.focus_input_box(ctx);
-                            // Mimic the user replacing the editor text, as the replacement
-                            // is done in response to an explicit user action.
-                            input.user_replace_editor_text(content.as_str(), ctx);
-                            ctx.notify();
-                        });
-                    }
                     AcceptNotebook(sync_id) => {
                         self.open_notebook(
                             &NotebookSource::Existing(*sync_id),
@@ -13098,9 +13088,9 @@ impl Workspace {
                             ctx,
                         );
                     }
-                    // twarp: 2c-d — removed OpenWarpAI / AcceptAIQuery / RunAIQuery handlers
-                    // (depended on AskAIType, ask_blocklist_ai, set_ai_input_mode_with_query).
-                    OpenWarpAI | AcceptAIQuery(_) | RunAIQuery(_) => {}
+                    // twarp: 2d — OpenWarpAI / TranslateUsingWarpAI variants deleted.
+                    // 2c-d removed AcceptAIQuery / RunAIQuery handlers.
+                    AcceptAIQuery(_) | RunAIQuery(_) => {}
                 }
             }
             Resize => {

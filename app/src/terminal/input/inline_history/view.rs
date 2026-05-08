@@ -266,9 +266,10 @@ impl InlineHistoryMenuView {
                     .with_icon(Icon::Settings)
                     .with_size(ButtonSize::Small)
                     .on_click(|ctx| {
+                        // twarp: 2d — WarpAgent settings page deleted; reroute to default.
                         ctx.dispatch_typed_action(WorkspaceAction::ShowSettingsPageWithSearch {
                             search_query: "commands history".into(),
-                            section: Some(SettingsSection::WarpAgent),
+                            section: Some(SettingsSection::default()),
                         });
                     })
             });
