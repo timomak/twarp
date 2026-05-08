@@ -929,7 +929,8 @@ impl LeftPanelView {
                     );
                 }
             }
-            // twarp: 2c-d — ConversationListView arm removed
+            // twarp: 2c-d — ConversationListView is a stub kept for legacy call-sites.
+            LeftPanelAction::ConversationListView => {}
         }
     }
 

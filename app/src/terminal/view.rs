@@ -4053,7 +4053,7 @@ impl TerminalView {
             model
         });
 
-        let get_relevant_files_controller = ctx.add_model(GetRelevantFilesController::new);
+        let get_relevant_files_controller = ctx.add_model(|ctx| GetRelevantFilesController::new(ctx));
         let ai_action_model = ctx.add_model(|ctx| {
             BlocklistAIActionModel::new(
                 model.clone(),
@@ -4643,7 +4643,7 @@ impl TerminalView {
         });
 
         let first_time_cloud_agent_setup_view =
-            ctx.add_typed_action_view(ambient_agent::FirstTimeCloudAgentSetupView::new);
+            ctx.add_typed_action_view(|ctx| ambient_agent::FirstTimeCloudAgentSetupView::new(ctx));
 
         ctx.subscribe_to_view(&first_time_cloud_agent_setup_view, |me, _, event, ctx| {
             me.handle_first_time_cloud_agent_setup_event(event, ctx);
@@ -12061,6 +12061,7 @@ impl TerminalView {
                             self.open_cli_agent_rich_input(CLIAgentInputEntrypoint::AutoShow, ctx);
                         }
                     }
+                    CLIAgentSessionStatus::Other => {}
                 }
             }
         }
@@ -14912,7 +14913,7 @@ impl TerminalView {
                                     .with_on_select_action(TerminalAction::ContextMenu(
                                         ContextMenuAction::ForkAIConversationFromBlock {
                                             ai_block_view_id: *rich_content_view_id,
-                                            exchange_id: ai_metadata.exchange_id,
+                                            exchange_id: ai_metadata.exchange_id.clone(),
                                             conversation_id: ai_metadata.conversation_id,
                                         },
                                     ))
@@ -14925,7 +14926,7 @@ impl TerminalView {
                                         .with_on_select_action(TerminalAction::ContextMenu(
                                             ContextMenuAction::ForkAIConversationFromExactExchange {
                                                 ai_block_view_id: *rich_content_view_id,
-                                                exchange_id: ai_metadata.exchange_id,
+                                                exchange_id: ai_metadata.exchange_id.clone(),
                                                 conversation_id: ai_metadata.conversation_id,
                                             },
                                         ))
@@ -14942,7 +14943,7 @@ impl TerminalView {
                                 MenuItemFields::new("Rewind to before here")
                                     .with_on_select_action(TerminalAction::RewindAIConversation {
                                         ai_block_view_id: *rich_content_view_id,
-                                        exchange_id: ai_metadata.exchange_id,
+                                        exchange_id: ai_metadata.exchange_id.clone(),
                                         conversation_id: ai_metadata.conversation_id,
                                         entrypoint: AgentModeRewindEntrypoint::ContextMenu,
                                     })
@@ -14951,7 +14952,7 @@ impl TerminalView {
                         }
 
                         let debugging_items = self.create_copy_debugging_menu_item(
-                            ai_metadata.exchange_id,
+                            ai_metadata.exchange_id.clone(),
                             ai_metadata.conversation_id,
                             ctx,
                         );
@@ -15845,7 +15846,7 @@ impl TerminalView {
                     .with_on_select_action(TerminalAction::ContextMenu(
                         ContextMenuAction::ForkAIConversationFromBlock {
                             ai_block_view_id,
-                            exchange_id: ai_exchange_id,
+                            exchange_id: ai_exchange_id.clone(),
                             conversation_id: ai_conversation_id,
                         },
                     ))
@@ -19505,14 +19506,14 @@ impl TerminalView {
                 });
             }
             InputEvent::ScrollToExchange { exchange_id } => {
-                self.scroll_to_exchange(*exchange_id, ctx);
+                self.scroll_to_exchange(exchange_id.clone(), ctx);
             }
             InputEvent::RegisterPluginListener(agent) => {
                 self.register_cli_agent_listener_without_session_start_event(*agent, ctx);
             }
             #[cfg(not(target_family = "wasm"))]
             InputEvent::OpenPluginInstructionsPane(agent, kind) => {
-                ctx.emit(Event::OpenPluginInstructionsPane(*agent, *kind));
+                ctx.emit(Event::OpenPluginInstructionsPane(*agent, kind.clone()));
             }
             InputEvent::OpenShareSessionModal => {
                 self.open_share_session_modal(SharedSessionActionSource::FooterChip, ctx);
@@ -23795,7 +23796,7 @@ impl TypedActionView for TerminalView {
                 ai_block_view_id,
             } => self.open_ai_block_attached_context_menu(
                 *ai_block_view_id,
-                *exchange_id,
+                exchange_id.clone(),
                 *ai_conversation_id,
                 ctx,
             ),
@@ -23806,7 +23807,7 @@ impl TypedActionView for TerminalView {
                 is_restored,
             } => self.open_ai_block_overflow_context_menu(
                 *ai_block_view_id,
-                *exchange_id,
+                exchange_id.clone(),
                 *ai_conversation_id,
                 *is_restored,
                 ctx,
@@ -23819,7 +23820,7 @@ impl TypedActionView for TerminalView {
             } => {
                 self.show_rewind_confirmation_dialog(
                     *ai_block_view_id,
-                    *exchange_id,
+                    exchange_id.clone(),
                     *conversation_id,
                     *entrypoint,
                     ctx,
@@ -23830,7 +23831,7 @@ impl TypedActionView for TerminalView {
                 exchange_id,
                 conversation_id,
             } => {
-                self.rewind_ai_conversation(*ai_block_view_id, *exchange_id, *conversation_id, ctx)
+                self.rewind_ai_conversation(*ai_block_view_id, exchange_id.clone(), *conversation_id, ctx)
             }
             ExecuteRewindFromInlineMenu {
                 exchange_id,
@@ -23852,7 +23853,7 @@ impl TypedActionView for TerminalView {
                 if let Some(ai_block_view_id) = ai_block_view_id {
                     self.show_rewind_confirmation_dialog(
                         ai_block_view_id,
-                        *exchange_id,
+                        exchange_id.clone(),
                         *conversation_id,
                         AgentModeRewindEntrypoint::SlashCommand,
                         ctx,
@@ -24398,13 +24399,13 @@ impl TypedActionView for TerminalView {
                 ctx.notify();
             }
             CodebaseIndexSpeedbumpBanner(action) => {
-                self.codebase_index_speedbump_banner_action(*action, ctx);
+                self.codebase_index_speedbump_banner_action(action.clone(), ctx);
             }
             AgentModeSetupSpeedbumpBanner(action) => {
-                self.agent_mode_setup_speedbump_banner_action(*action, ctx)
+                self.agent_mode_setup_speedbump_banner_action(action.clone(), ctx)
             }
             AnonymousUserAISignUpBanner(action) => {
-                self.anonymous_user_ai_sign_up_banner_action(*action, ctx);
+                self.anonymous_user_ai_sign_up_banner_action(action.clone(), ctx);
             }
             ResumeConversation => {
                 // With Agent View, we want to resume the conversation the user is currently viewing,
