@@ -8673,9 +8673,9 @@ impl Input {
     ) {
         let input_buffer_text = self.buffer_text(ctx);
         let buffer_length = input_buffer_text.len();
-        let input =
-            should_collect_ai_ugc_telemetry(ctx, PrivacySettings::as_ref(ctx).is_telemetry_enabled)
-                .then_some(input_buffer_text);
+        let telemetry_enabled = PrivacySettings::as_ref(ctx).is_telemetry_enabled;
+        let input = should_collect_ai_ugc_telemetry(ctx, telemetry_enabled)
+            .then_some(input_buffer_text);
         let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
         send_telemetry_from_ctx!(
             TelemetryEvent::AgentModeChangedInputType {

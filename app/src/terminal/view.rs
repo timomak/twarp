@@ -3981,7 +3981,7 @@ impl TerminalView {
                                 conversation_id: conv_id,
                                 is_new: was_new,
                                 is_restored: false, /* is_restored */
-                                origin: *origin,
+                                origin: origin.clone(),
                                 agent_view_controller: me.agent_view_controller.clone(),
                             },
                             RichContentInsertionPosition::Append {
@@ -5366,7 +5366,7 @@ impl TerminalView {
                     .drain(..)
                     .collect_vec();
                 for callback in callbacks {
-                    callback(self, reason, ctx);
+                    callback(self, reason.clone(), ctx);
                 }
                 if let Some(callback) = queued_prompt {
                     callback(self, reason, ctx);
@@ -5609,6 +5609,7 @@ impl TerminalView {
             BlocklistAIContextEvent::QueueNextPromptToggled => {
                 ctx.notify();
             }
+            BlocklistAIContextEvent::Other => {}
         }
     }
 
@@ -5957,7 +5958,8 @@ impl TerminalView {
             | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
             | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
             | BlocklistAIHistoryEvent::DeletedConversation { .. }
-            | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. } => {}
+            | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
+            | BlocklistAIHistoryEvent::Other => {}
         }
         ctx.notify();
     }
@@ -6110,6 +6112,7 @@ impl TerminalView {
                         executor.notify_control_handed_back();
                     });
             }
+            CLISubagentEvent::Other => {}
         }
     }
 
@@ -6367,6 +6370,7 @@ impl TerminalView {
                 ctx.notify();
             }
             BlocklistAIInputEvent::LockChanged { .. } => {}
+            BlocklistAIInputEvent::UpdatedConfig {} => {}
         }
     }
 
@@ -10108,7 +10112,7 @@ impl TerminalView {
         if let Some(conversation_id) = conversation_id_to_resume {
             // Include the context of the block that just completed in the resume context.
             // This is so that we correctly exit from LRC subagents attached to completed commands.
-            let resume_context = {
+            let resume_context: Vec<AIAgentContext> = {
                 let terminal_model = self.model.lock();
                 block_context_from_terminal_model(&terminal_model, block_id, false)
                     .map(Box::new)
@@ -12549,16 +12553,16 @@ impl TerminalView {
                         prompt.clone(),
                         static_query_type,
                         EntrypointType::Onboarding {
-                            chip_type: *chip_type,
+                            chip_type: chip_type.clone(),
                         },
-                        None,
+                        None::<()>,
                         ctx,
                     )
                 });
 
                 send_telemetry_from_ctx!(
                     TelemetryEvent::AgenticOnboardingBlockSelected {
-                        block_type: *chip_type,
+                        block_type: chip_type.clone(),
                     },
                     ctx
                 );
@@ -14822,19 +14826,11 @@ impl TerminalView {
                     if let Some(metadata) = tail_block.agent_interaction_metadata() {
                         let conversation_id = metadata.conversation_id();
 
-                        // Try to find the exchange ID using the requested command action ID if available,
-                        // otherwise use the subagent task ID to get the latest exchange from that task
-                        let exchange_id =
-                            if let Some(action_id) = metadata.requested_command_action_id() {
-                                BlocklistAIHistoryModel::as_ref(ctx)
-                                    .conversation(conversation_id)
-                                    .and_then(|convo| convo.exchange_id_for_action(action_id))
-                            } else if let Some(_subagent_task_id) = metadata.subagent_task_id() {
-                                // twarp: 2c-d — task/exchange types stubbed; skip lookup.
-                                None::<()>
-                            } else {
-                                None
-                            };
+                        // twarp: 2c-d — exchange_id_for_action returns Option<()>; copy debugging
+                        // menu item is unreachable in twarp builds. Gut the lookup.
+                        let _ = metadata.requested_command_action_id();
+                        let _ = metadata.subagent_task_id();
+                        let exchange_id: Option<AIAgentExchangeId> = None;
 
                         if let Some(exchange_id) = exchange_id {
                             let debugging_items = self.create_copy_debugging_menu_item(
@@ -19207,7 +19203,7 @@ impl TerminalView {
                 Some(id) => {
                     self.enter_agent_view_for_conversation(
                         initial_prompt.clone(),
-                        *origin,
+                        origin.clone(),
                         *id,
                         ctx,
                     );
@@ -19215,7 +19211,7 @@ impl TerminalView {
                 None => {
                     self.enter_agent_view_for_new_conversation(
                         initial_prompt.clone(),
-                        *origin,
+                        origin.clone(),
                         ctx,
                     );
                 }
@@ -20386,7 +20382,7 @@ impl TerminalView {
             .pending_context(ctx, true /* is_user_query */);
 
         let code_review_input = AIAgentInput::CodeReview {
-            context: context.into(),
+            context: (),
             review_comments,
         };
 
@@ -20394,7 +20390,7 @@ impl TerminalView {
             && !self.agent_view_controller.as_ref(ctx).is_active()
         {
             self.enter_agent_view_for_new_conversation(
-                None,
+                None::<()>,
                 AgentViewEntryOrigin::InlineCodeReview,
                 ctx,
             );
@@ -22357,8 +22353,8 @@ impl TerminalView {
             Ok(removed_ids) => {
                 self.remove_ai_blocks_for_exchanges(&conversation_id, &removed_ids, ctx);
             }
-            Err(e) => {
-                log::warn!("Failed to truncate conversation: {e}");
+            Err(_e) => {
+                log::warn!("Failed to truncate conversation");
             }
         }
 
@@ -24232,13 +24228,13 @@ impl TypedActionView for TerminalView {
                     if FeatureFlag::AgentView.is_enabled() {
                         self.agent_view_controller.update(ctx, |controller, ctx| {
                             if !controller.is_inline() {
-                                if let Err(e) = controller.try_enter_inline_agent_view(
-                                    None,
+                                if let Err(_e) = controller.try_enter_inline_agent_view(
+                                    None::<()>,
                                     AgentViewEntryOrigin::LongRunningCommand,
                                     ctx,
                                 ) {
                                     log::error!(
-                                        "Failed to enter inline agent view for tag-in: {e}"
+                                        "Failed to enter inline agent view for tag-in"
                                     );
                                 }
                             }

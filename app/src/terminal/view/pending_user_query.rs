@@ -4,6 +4,7 @@ use warpui::{SingletonEntity, ViewContext};
 // twarp: 2c-d — AI agent / blocklist deleted; stubs.
 use crate::app_state::AIConversationId;
 pub enum CancellationReason { Other, FollowUpSubmitted { is_for_same_conversation: bool } }
+#[derive(Clone)]
 pub enum FinishReason {
     // twarp: 2c-d — bulk variants
     Other,
