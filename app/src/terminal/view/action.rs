@@ -348,7 +348,6 @@ pub enum TerminalAction {
     /// Sets the input mode to Terminal Mode
     SetInputModeTerminal,
     // twarp: 2c-f — ToggleCLIAgentVoiceInput action deleted with voice_input crate.
-
     HyperlinkClick(HyperlinkUrl),
     AttemptLoginGatedFeature,
     StartFileDropTarget,

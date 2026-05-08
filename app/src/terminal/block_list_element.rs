@@ -750,7 +750,6 @@ pub struct BlockListElement {
     cursor_hint_text_element: Option<Box<dyn Element>>,
 
     // twarp: 2c-f — voice_input_toggle_key_code field deleted with crate.
-
     inline_menu_positioner: ModelHandle<InlineMenuPositioner>,
 }
 

@@ -86,7 +86,6 @@ pub struct AltScreenElement {
     cursor_hint_text: Option<Box<dyn Element>>,
 
     cli_subagent_view: Option<Box<dyn Element>>,
-
     // twarp: 2c-f — voice_input_toggle_key_code field deleted with crate.
 }
 

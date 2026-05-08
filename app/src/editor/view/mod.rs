@@ -1712,27 +1712,7 @@ pub fn default_cursor_colors(ctx: &AppContext) -> CursorColors {
     }
 }
 
-#[derive(Debug)]
-pub enum VoiceTranscriptionOptions {
-    /// Voice transcription is enabled, possibly showing a microphone button.
-    Enabled { show_button: bool },
-
-    /// Voice transcription is disabled.
-    Disabled,
-}
-
-impl VoiceTranscriptionOptions {
-    pub fn is_enabled(&self) -> bool {
-        matches!(self, VoiceTranscriptionOptions::Enabled { .. })
-    }
-
-    pub fn should_show_button(&self) -> bool {
-        matches!(
-            self,
-            VoiceTranscriptionOptions::Enabled { show_button: true }
-        )
-    }
-}
+// twarp: 2c-f — VoiceTranscriptionOptions deleted with voice_input crate.
 
 #[derive(Debug)]
 pub enum ImageContextOptions {
