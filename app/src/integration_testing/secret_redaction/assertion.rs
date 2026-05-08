@@ -53,7 +53,7 @@ pub fn assert_secrets_redacted_for_ai(
             // Test that redaction works for both modes when sending to AI
             if secret_redaction_mode.should_redact_secret() {
                 let mut redacted_text = test_text.clone();
-                redact_secrets(&mut redacted_text);
+                redact_secrets(&redacted_text);
 
                 if !redacted_text.contains(&expected_phone_redaction) {
                     return AssertionOutcome::failure(format!(

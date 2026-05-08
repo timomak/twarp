@@ -630,13 +630,13 @@ impl From<&Block> for BlockType {
                         block.prompt_and_command_grid().should_scan_for_secrets,
                         ObfuscateSecrets::No
                     ) {
-                        redact_secrets(&mut command_with_obfuscated_secrets);
+                        redact_secrets(&command_with_obfuscated_secrets);
                     }
                     if matches!(
                         block.output_grid().should_scan_for_secrets,
                         ObfuscateSecrets::No
                     ) {
-                        redact_secrets(&mut output_truncated_with_obfuscated_secrets);
+                        redact_secrets(&output_truncated_with_obfuscated_secrets);
                     }
 
                     BlockType::User(UserBlockCompleted {
@@ -1703,13 +1703,13 @@ impl Block {
             self.prompt_and_command_grid().should_scan_for_secrets(),
             ObfuscateSecrets::No
         ) {
-            redact_secrets(&mut processed_input);
+            redact_secrets(&processed_input);
         }
         if matches!(
             self.output_grid().should_scan_for_secrets(),
             ObfuscateSecrets::No
         ) {
-            redact_secrets(&mut processed_output);
+            redact_secrets(&processed_output);
         }
 
         (processed_input, processed_output)
@@ -1855,13 +1855,13 @@ impl Block {
             self.prompt_and_command_grid().should_scan_for_secrets,
             ObfuscateSecrets::No
         ) {
-            redact_secrets(&mut command);
+            redact_secrets(&command);
         }
         if matches!(
             self.output_grid().should_scan_for_secrets,
             ObfuscateSecrets::No
         ) {
-            redact_secrets(&mut output);
+            redact_secrets(&output);
         }
 
         (command, output)
