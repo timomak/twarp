@@ -152,6 +152,8 @@ impl InlineDiffView {
                     file_model.register_remote_file(host_id, remote_path)
                 })
             }
+            // twarp: 2c-d — Other variant (was AI session); skip registration.
+            DiffSessionType::Other => return,
         };
 
         self.finish_file_registration(file_id, ctx);

@@ -1940,7 +1940,8 @@ impl RootView {
                 }
 
                 LLMPreferencesEvent::UpdatedActiveAgentModeLLM
-                | LLMPreferencesEvent::UpdatedActiveCodingLLM => {}
+                | LLMPreferencesEvent::UpdatedActiveCodingLLM
+                | LLMPreferencesEvent::Other => {}
             },
         );
 

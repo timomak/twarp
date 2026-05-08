@@ -11,8 +11,11 @@ pub mod workspace;
 
 // twarp: 2c-d — stub AI client returned by get_ai_client; trait impls live with each
 // caller's local AIClient trait definition.
+// twarp: 2c-d — must be Send+Sync since it's wrapped in Arc and crossed across .await.
 #[allow(dead_code)]
 pub struct TwarpStubAIClient;
+unsafe impl Send for TwarpStubAIClient {}
+unsafe impl Sync for TwarpStubAIClient {}
 #[allow(dead_code)]
 pub struct TwarpStubAIContent {
     pub content: String,

@@ -518,6 +518,11 @@ impl UserTakeOverReason {
 #[allow(dead_code)] type AIDocumentVersion = crate::app_state::AIDocumentVersion;
 #[allow(dead_code)] struct AIDocumentModel;
 impl SingletonEntity for AIDocumentModel {}
+#[allow(dead_code)]
+impl AIDocumentModel {
+    pub fn is_document_visible_by_conversation_in_pane_group<A, B>(&self, _: A, _: B) -> bool { false }
+    pub fn get_all_documents_for_conversation<A>(&self, _: A) -> std::iter::Empty<()> { std::iter::empty() }
+}
 #[allow(dead_code)] fn shimmering_warp_loading_text<A, B, C, D>(_: A, _: B, _: C, _: D) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
 
 pub use crate::app_state::ServerConversationToken;
@@ -616,7 +621,7 @@ impl Entity for CLIAgentSessionListener { type Event = (); }
 #[allow(dead_code)] fn plugin_manager_for<C>(_: C) -> Option<PluginManagerStub> { None }
 #[derive(Debug, Clone)]
 #[allow(dead_code)] pub enum PluginModalKind {}
-#[allow(dead_code)] enum CLIAgentInputEntrypoint { AutoShow, Other }
+#[allow(dead_code)] enum CLIAgentInputEntrypoint { AutoShow, Other, CtrlG }
 #[allow(dead_code)] pub enum CLIAgentInputState { Open {}, Closed }
 #[allow(dead_code)] enum CLIAgentRichInputCloseReason { AutoToggle, Other }
 #[allow(dead_code)]
@@ -711,7 +716,8 @@ pub use crate::app_state::ConversationStatus;
 }
 #[allow(dead_code)] pub enum RenderableAIError { QuotaLimit }
 #[allow(dead_code)] pub enum StaticQueryType { CustomOnboardingRequest }
-#[allow(dead_code)] enum AgentToolbarItemKind {}
+// twarp: 2c-d — re-export from session_settings to unify variants used here.
+pub use crate::terminal::session_settings::AgentToolbarItemKind;
 #[allow(dead_code)] #[derive(Clone)] pub struct SuggestedAgentModeWorkflowAndId;
 #[allow(dead_code)] #[derive(Clone)] pub struct SuggestedRuleAndId;
 #[allow(dead_code)] struct AIBlockModelImpl<T>(std::marker::PhantomData<T>);
@@ -5521,7 +5527,7 @@ impl TerminalView {
                             .lock()
                             .block_list_mut()
                             .remove_pending_context_assocation_for_blocks(
-                                removed_block_ids.into_iter(),
+                                removed_block_ids.iter(),
                                 *conversation_id,
                             );
 
@@ -12889,6 +12895,14 @@ fn fork_label_for_query(query: &str) -> String {
 }
 
 impl TerminalView {
+    // twarp: 2c-d — stubs for AI footer/ambient progress rendering.
+    #[allow(dead_code)]
+    fn should_render_use_agent_footer<A, B>(&self, _: A, _: B) -> bool { false }
+    #[allow(dead_code)]
+    fn render_ambient_agent_progress<A, B>(&self, _: A, _: B) -> Box<dyn warpui::Element> {
+        warpui::elements::Empty::new().finish()
+    }
+
     fn start_agent_onboarding_tutorial(
         &mut self,
         version: AgentOnboardingVersion,

@@ -1239,6 +1239,7 @@ impl AgentViewController {
     pub fn exit_agent_view_with_required_confirmation<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn is_inline(&self) -> bool { false }
     pub fn try_enter_inline_agent_view<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> Result<(), ()> { Err(()) }
+    pub fn pane_group_id(&self) -> Option<warpui::EntityId> { None }
 }
 
 #[derive(Debug, Clone)]

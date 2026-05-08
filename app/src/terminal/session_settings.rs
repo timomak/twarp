@@ -27,6 +27,7 @@ use warp_core::settings::{
 pub enum AgentToolbarItemKind {
     ContextChip(crate::context_chips::ContextChipKind),
     Other,
+    RichInput,
 }
 use crate::context_chips::prompt::PromptSelection;
 use crate::context_chips::ContextChipKind;

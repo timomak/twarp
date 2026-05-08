@@ -541,7 +541,7 @@ fn handle_terminal_view_event(
             }
             #[cfg(not(target_family = "wasm"))]
             Event::OpenPluginInstructionsPane(agent, kind) => {
-                ctx.emit(pane_group::Event::OpenPluginInstructionsPane(*agent, *kind));
+                ctx.emit(pane_group::Event::OpenPluginInstructionsPane(*agent, kind.clone()));
             }
             Event::SyncInput(sync_event) => {
                 if SyncedInputState::as_ref(ctx)

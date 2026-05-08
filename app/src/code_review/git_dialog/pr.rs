@@ -25,7 +25,7 @@ pub enum OutputType {
     CommitMessage,
     Other,
 }
-pub trait AIClient {
+pub trait AIClient: Send + Sync {
     fn generate_code_review_content(
         &self,
         _: GenerateCodeReviewContentRequest,

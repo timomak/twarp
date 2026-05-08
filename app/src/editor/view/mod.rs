@@ -113,7 +113,7 @@ pub struct AIContextMenuAction;
 impl warpui::TypedActionView for AIContextMenu {
     type Action = AIContextMenuAction;
 }
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum AIContextMenuCategory { Other }
 pub enum AIContextMenuEvent {
     Other,
@@ -3116,7 +3116,7 @@ impl EditorView {
         );
 
         let ai_context_menu_state = if options.include_ai_context_menu {
-            let ai_context_menu = ctx.add_typed_action_view(AIContextMenu::new);
+            let ai_context_menu = ctx.add_typed_action_view(|ctx| AIContextMenu::new(ctx));
             ctx.subscribe_to_view(
                 &ai_context_menu,
                 |me, _, event: &AIContextMenuEvent, ctx| {
@@ -3173,6 +3173,7 @@ impl EditorView {
                             ctx.focus_self();
                             ctx.notify();
                         }
+                        AIContextMenuEvent::Other => {}
                     }
                 },
             );
