@@ -437,7 +437,8 @@ type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
 
 #[allow(dead_code)] struct CLISubagentView;
 #[allow(dead_code)] enum CLISubagentViewEvent {}
-#[allow(dead_code)] struct CLISubagentController;
+// twarp: 2c-d — unify with terminal::input::CLISubagentController.
+pub use crate::terminal::input::CLISubagentController;
 #[allow(dead_code)]
 impl CLISubagentController {
     fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
@@ -717,7 +718,8 @@ pub use crate::terminal::view::rich_content::AIAgentExchangeId;
 #[allow(dead_code)] struct CodeDiffView;
 #[allow(dead_code)] struct SummarizationCancelDialog;
 #[allow(dead_code)] fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool { false }
-#[allow(dead_code)] struct TelemetryBanner;
+// twarp: 2c-d — unify with rich_content::TelemetryBanner.
+pub use crate::terminal::view::rich_content::TelemetryBanner;
 #[allow(dead_code)]
 impl TelemetryBanner {
     fn new<A, B>(_: A, _: &mut B) -> Self { Self }
@@ -725,7 +727,7 @@ impl TelemetryBanner {
 // twarp: 2c-d — re-export canonical AIBlock from rich_content
 pub use crate::terminal::view::rich_content::AIBlock;
 #[allow(dead_code)] enum AIBlockEvent {}
-#[allow(dead_code)] enum BlocklistAIActionEvent {
+#[allow(dead_code)] pub enum BlocklistAIActionEvent {
     // twarp: 2c-d — bulk variants for AI-removed BlocklistAIActionEvent
     ActionBlockedOnUserConfirmation(()),
     ExecutingAction(()),
@@ -735,7 +737,8 @@ pub use crate::terminal::view::rich_content::AIBlock;
     QueuedAction(()),
     ToggleCodeReview,
 }
-#[allow(dead_code)] struct BlocklistAIActionModel;
+// twarp: 2c-d — unify with terminal::input::BlocklistAIActionModel.
+pub use crate::terminal::input::BlocklistAIActionModel;
 #[allow(dead_code)]
 impl BlocklistAIActionModel {
     fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
@@ -884,9 +887,7 @@ enum ConversationDetailsPanelEvent {}
 impl Entity for AgentViewZeroStateBlock {
     type Event = AgentViewZeroStateEvent;
 }
-impl Entity for EphemeralMessageModel {
-    type Event = ();
-}
+// twarp: 2c-d — EphemeralMessageModel Entity in terminal::input.
 impl Entity for InlineAgentViewHeader {
     type Event = ();
 }
@@ -896,9 +897,7 @@ impl Entity for AgentConversationsModel {
 impl Entity for CLISubagentView {
     type Event = CLISubagentViewEvent;
 }
-impl Entity for CLISubagentController {
-    type Event = CLISubagentEvent;
-}
+// twarp: 2c-d — CLISubagentController Entity in terminal::input.
 impl Entity for AIDocumentModel {
     type Event = ();
 }
@@ -926,15 +925,11 @@ impl Entity for CodeDiffView {
 impl Entity for SummarizationCancelDialog {
     type Event = ();
 }
-impl Entity for TelemetryBanner {
-    type Event = ();
-}
+// twarp: 2c-d — TelemetryBanner Entity in rich_content.
 impl Entity for AIBlock {
     type Event = AIBlockEvent;
 }
-impl Entity for BlocklistAIActionModel {
-    type Event = BlocklistAIActionEvent;
-}
+// twarp: 2c-d — BlocklistAIActionModel Entity in terminal::input.
 // twarp: 2c-d — Entity for BlocklistAIContextModel defined in terminal::input.
 impl Entity for BlocklistAIController {
     type Event = BlocklistAIControllerEvent;

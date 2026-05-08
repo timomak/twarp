@@ -367,7 +367,7 @@ impl BlocklistAIStatusBar {
 }
 
 #[allow(dead_code)]
-struct BlocklistAIActionModel;
+pub struct BlocklistAIActionModel;
 
 #[allow(dead_code)]
 enum SlashCommandRequest {
@@ -1200,7 +1200,7 @@ impl Entity for BlocklistAIStatusBar {
     type Event = crate::terminal::view::BlocklistAIStatusBarEvent;
 }
 impl Entity for BlocklistAIActionModel {
-    type Event = ();
+    type Event = crate::terminal::view::BlocklistAIActionEvent;
 }
 impl Entity for AIExecutionProfilesModel {
     type Event = ();
