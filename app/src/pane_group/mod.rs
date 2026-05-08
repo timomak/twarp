@@ -727,7 +727,6 @@ pub enum Event {
     OpenPluginInstructionsPane(crate::app_state::CLIAgent, crate::terminal::view::PluginModalKind),
     OpenSuggestedAgentModeWorkflowModal(()),
     OpenSuggestedRuleModal(()),
-    ToggleCodeReviewPane,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1547,7 +1546,7 @@ impl PaneGroup {
                     .filter(|path| path.is_dir());
 
                 // twarp: 2c-d.4 — conversation restoration removed (AI-only)
-                let conversation_restoration: Option<()> = None;
+                let conversation_restoration: Option<ConversationRestorationInNewPaneType> = None;
                 let (terminal_view, terminal_manager) = PaneGroup::create_session(
                     startup_directory,
                     HashMap::new(),

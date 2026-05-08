@@ -387,7 +387,7 @@ impl InlineAgentViewHeader {
     fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self { Self }
 }
 #[allow(dead_code)] const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration = std::time::Duration::ZERO;
-#[allow(dead_code)] fn agent_view_bg_fill<C>(_: C) -> warpui::elements::Fill { warpui::elements::Fill::None }
+#[allow(dead_code)] pub fn agent_view_bg_fill<C>(_: C) -> warpui::color::ColorU { warpui::color::ColorU::new(0, 0, 0, 0) }
 #[allow(dead_code)] fn fork_from_last_known_good_state_exchange_id<A, B>(_: A, _: B) -> Option<()> { None }
 
 #[allow(dead_code)] mod conversation_utils {
@@ -832,8 +832,15 @@ impl OnboardingAgenticSuggestionsBlock {
 #[allow(dead_code)]
 enum AskAIType {
     FromTextSelection { text: Arc<String>, location: Option<()>, populate_input_box: bool },
-    FromBlock { block_index: usize, query: Option<String>, populate_input_box: bool },
-    FromBlocks { block_indices: Vec<usize> },
+    FromBlock {
+        block_index: warp_terminal::model::BlockIndex,
+        query: Option<String>,
+        populate_input_box: bool,
+        input: Arc<String>,
+        output: Arc<String>,
+        exit_code: Option<i32>,
+    },
+    FromBlocks { block_indices: std::collections::HashSet<warp_terminal::model::BlockIndex> },
     FromAICommandSearch { query: String },
 }
 
@@ -17259,6 +17266,7 @@ impl TerminalView {
 
                 AskAIType::FromTextSelection {
                     text: Arc::new(selection_string),
+                    location: None,
                     // In the block list terminal view, selected text is attached directly as Agent Mode context.
                     // In this case, we don't want to re-surface the selected text by rendering "Explain the following..."
                     // However, we want to keep this prompt for long-running commands and the alt-screen view.
@@ -17293,8 +17301,10 @@ impl TerminalView {
                 AskAIType::FromBlock {
                     input: Arc::new(input),
                     output: Arc::new(output),
-                    exit_code: block.exit_code(),
+                    exit_code: Some(block.exit_code().value()),
                     block_index: block.index(),
+                    query: None,
+                    populate_input_box: false,
                 }
             }
             (AskAISource::SelectedInputText, _) | (AskAISource::SelectedTerminalText, None) => {
@@ -17311,6 +17321,7 @@ impl TerminalView {
                 send_telemetry_from_ctx!(TelemetryEvent::InputAskWarpAI, ctx);
                 AskAIType::FromTextSelection {
                     text: Arc::new(selected_input_text),
+                    location: None,
                     populate_input_box: true,
                 }
             }
@@ -17363,6 +17374,7 @@ impl TerminalView {
             AskAIType::FromTextSelection {
                 text,
                 populate_input_box,
+                location: _,
             } => {
                 if *populate_input_box {
                     let query_prefix = "Explain the following:\n";

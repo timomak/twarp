@@ -117,7 +117,7 @@ impl AIConversation {
     pub fn is_empty(&self) -> bool { true }
     pub fn status(&self) -> ConversationStatus { ConversationStatus::Failed }
     pub fn title(&self) -> Option<String> { None }
-    pub fn to_serialized_blocklist_items(&self) -> Vec<()> { Vec::new() }
+    pub fn to_serialized_blocklist_items(&self) -> Vec<crate::app_state::SerializedBlockListItem> { Vec::new() }
     pub fn is_entirely_passive(&self) -> bool { false }
     pub fn id(&self) -> AIConversationId { AIConversationId::default() }
     pub fn is_child_agent_conversation(&self) -> bool { false }

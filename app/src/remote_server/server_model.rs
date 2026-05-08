@@ -37,7 +37,7 @@ use super::protocol::RequestId;
 pub struct FileLocations {
     // twarp: 2c-d — fields used by callers
     pub name: String,
-    pub lines: Vec<()>,
+    pub lines: Vec<std::ops::Range<usize>>,
 }
 pub fn read_local_file_context<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: E) {}
 pub enum ReadFileContextResult { Other }
