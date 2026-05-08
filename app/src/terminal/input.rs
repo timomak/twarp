@@ -759,7 +759,7 @@ impl BlocklistAIContextModel {
     pub fn toggle_pending_query_autoexecute<C>(&mut self, _: &mut C) {}
     pub fn toggle_queue_next_prompt<C>(&mut self, _: &mut C) {}
     pub fn clear_pending_attachments<C>(&mut self, _: &mut C) {}
-    pub fn remove_last_pending_images<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn remove_last_pending_images<A, C>(&mut self, _: A, _: &mut C) -> usize { 0 }
 }
 
 #[allow(dead_code)]
@@ -942,6 +942,7 @@ impl From<InputType> for input_classifier::InputType {
         match t {
             InputType::Shell => input_classifier::InputType::Shell,
             InputType::AI => input_classifier::InputType::AI,
+            InputType::Other => input_classifier::InputType::Shell,
         }
     }
 }

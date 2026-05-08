@@ -286,8 +286,8 @@ impl EventLoop {
                                     });
                                 }
                             }
-                            Err(err) => {
-                                log::warn!("Failed to decode agent response event: {err}");
+                            Err(_err) => {
+                                log::warn!("Failed to decode agent response event");
                             }
                         }
                     }

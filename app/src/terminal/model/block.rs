@@ -1464,7 +1464,7 @@ impl Block {
                     }
                 }
                 AgentViewState::Active {
-                    display_mode: AgentViewDisplayMode::Inline,
+                    display_mode: AgentViewDisplayMode::Inline | AgentViewDisplayMode::Other,
                     ..
                 }
                 | AgentViewState::Inactive => {

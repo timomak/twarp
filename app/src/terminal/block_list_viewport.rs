@@ -2039,7 +2039,7 @@ impl Iterator for ViewportIter<'_> {
                         }
                     }
                     AgentViewState::Active {
-                        display_mode: AgentViewDisplayMode::Inline,
+                        display_mode: AgentViewDisplayMode::Inline | AgentViewDisplayMode::Other,
                         ..
                     }
                     | AgentViewState::Inactive => {

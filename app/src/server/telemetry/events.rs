@@ -116,6 +116,11 @@ pub enum PassiveSuggestionTrigger {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ServerOutputId(pub String);
+impl std::fmt::Display for ServerOutputId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SuggestedLoggingId(pub String);
 #[derive(Clone, Debug, Serialize, Deserialize)]

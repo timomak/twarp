@@ -5589,9 +5589,9 @@ impl TerminalView {
                     ctx,
                 ) {
                     Ok(ai_block_model) => ai_block_model,
-                    Err(err) => {
+                    Err(_err) => {
                         log::warn!(
-                            "Failed to create model for AI block on AppendedExchange. {err}"
+                            "Failed to create model for AI block on AppendedExchange."
                         );
                         return;
                     }
@@ -5694,9 +5694,9 @@ impl TerminalView {
                             ctx,
                         ) {
                             Ok(new_model) => new_model,
-                            Err(err) => {
+                            Err(_err) => {
                                 log::warn!(
-                                    "Failed to create model for AI block on ReassignedExchange. {err}"
+                                    "Failed to create model for AI block on ReassignedExchange."
                                 );
                                 return;
                             }
