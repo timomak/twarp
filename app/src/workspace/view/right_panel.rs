@@ -1,6 +1,6 @@
 // twarp: 2c-d — AI agent review batch deleted; reuse stub from code_review_view.
-use crate::code_review::code_review_view::AgentReviewCommentBatch;
 use crate::code_review::code_review_header::HEADER_BUTTON_PADDING;
+use crate::code_review::code_review_view::AgentReviewCommentBatch;
 #[cfg(feature = "local_fs")]
 use crate::code_review::code_review_view::CodeReviewAction;
 use crate::code_review::code_review_view::{
@@ -15,7 +15,9 @@ use crate::settings::{AISettings, AISettingsChangedEvent};
 // twarp: 2c-d — CLI agent sessions deleted; stubs.
 use crate::app_state::CLIAgent;
 pub struct CLIAgentSessionsModel;
-impl warpui::Entity for CLIAgentSessionsModel { type Event = (); }
+impl warpui::Entity for CLIAgentSessionsModel {
+    type Event = ();
+}
 impl warpui::SingletonEntity for CLIAgentSessionsModel {}
 use crate::terminal::input::MenuPositioning;
 use crate::ui_components::{buttons::icon_button_with_color, icons};

@@ -12,11 +12,17 @@ pub use crate::terminal::input::{
 pub struct PlanAndTodoListView;
 #[allow(dead_code)]
 impl PlanAndTodoListView {
-    pub fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
+    pub fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+        Self
+    }
 }
-impl warpui::Entity for PlanAndTodoListView { type Event = PlanAndTodoListEvent; }
+impl warpui::Entity for PlanAndTodoListView {
+    type Event = PlanAndTodoListEvent;
+}
 impl warpui::View for PlanAndTodoListView {
-    fn ui_name() -> &'static str { "PlanAndTodoListView/twarp-stub" }
+    fn ui_name() -> &'static str {
+        "PlanAndTodoListView/twarp-stub"
+    }
     fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
         warpui::elements::Empty::new().finish()
     }
@@ -29,10 +35,15 @@ impl warpui::TypedActionView for PlanAndTodoListView {
 }
 #[allow(dead_code)]
 impl PlanAndTodoListView {
-    pub fn should_render<C>(&self, _: &C) -> bool { false }
+    pub fn should_render<C>(&self, _: &C) -> bool {
+        false
+    }
 }
 pub enum PlanAndTodoListEvent {
-    OpenAIDocument { document_id: AIDocumentId, version: AIDocumentVersion },
+    OpenAIDocument {
+        document_id: AIDocumentId,
+        version: AIDocumentVersion,
+    },
 }
 use crate::code::editor::{add_color, remove_color};
 use crate::code_review::code_review_view::CODE_REVIEW_TOOLTIP_TEXT;

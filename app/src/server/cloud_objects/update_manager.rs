@@ -2,18 +2,24 @@
 pub struct CloudTemplatableMCPServerModel;
 #[allow(dead_code)]
 impl CloudTemplatableMCPServerModel {
-    pub fn new<A>(_: A) -> Self { Self }
+    pub fn new<A>(_: A) -> Self {
+        Self
+    }
 }
 pub struct TemplatableMCPServer;
 use crate::app_state::AIConversationId;
 pub struct CloudScheduledAmbientAgentModel;
 #[allow(dead_code)]
 impl CloudScheduledAmbientAgentModel {
-    pub fn new<A>(_: A) -> Self { Self }
+    pub fn new<A>(_: A) -> Self {
+        Self
+    }
 }
 pub struct ScheduledAmbientAgent;
 pub struct BlocklistAIHistoryModel;
-impl warpui::Entity for BlocklistAIHistoryModel { type Event = (); }
+impl warpui::Entity for BlocklistAIHistoryModel {
+    type Event = ();
+}
 impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
@@ -41,13 +47,17 @@ pub struct AIExecutionProfile;
 pub struct CloudAIExecutionProfileModel;
 #[allow(dead_code)]
 impl CloudAIExecutionProfileModel {
-    pub fn new<A>(_: A) -> Self { Self }
+    pub fn new<A>(_: A) -> Self {
+        Self
+    }
 }
 pub struct AIFact;
 pub struct CloudAIFactModel;
 #[allow(dead_code)]
 impl CloudAIFactModel {
-    pub fn new<A>(_: A) -> Self { Self }
+    pub fn new<A>(_: A) -> Self {
+        Self
+    }
 }
 use crate::{
     auth::{auth_manager::AuthManager, AuthStateProvider},

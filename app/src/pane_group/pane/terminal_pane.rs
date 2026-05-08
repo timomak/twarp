@@ -31,11 +31,11 @@ use crate::{
     workspace::{sync_inputs::SyncedInputState, PaneViewLocator},
 };
 
-use warp_core::execution_mode::AppExecutionMode;
 use super::{
     DetachType, PaneConfiguration, PaneContent, PaneId, PaneStackEvent, PaneView, ShareableLink,
     ShareableLinkError, TerminalPaneId,
 };
+use warp_core::execution_mode::AppExecutionMode;
 
 pub type TerminalPaneView = PaneView<TerminalView>;
 
@@ -319,7 +319,10 @@ impl PaneContent for TerminalPane {
                 is_read_only: view.model.lock().is_read_only(),
                 shell_launch_data: view.shell_launch_data_if_local(app),
                 // twarp: 2c-d — terminal::input::InputConfig isn't app_state::InputConfig; use default
-                input_config: { let _ = current_input_config; Some(Default::default()) },
+                input_config: {
+                    let _ = current_input_config;
+                    Some(Default::default())
+                },
                 llm_model_override: None,
                 active_profile_id: None,
                 conversation_ids_to_restore: vec![],
@@ -541,7 +544,10 @@ fn handle_terminal_view_event(
             }
             #[cfg(not(target_family = "wasm"))]
             Event::OpenPluginInstructionsPane(agent, kind) => {
-                ctx.emit(pane_group::Event::OpenPluginInstructionsPane(*agent, kind.clone()));
+                ctx.emit(pane_group::Event::OpenPluginInstructionsPane(
+                    *agent,
+                    kind.clone(),
+                ));
             }
             Event::SyncInput(sync_event) => {
                 if SyncedInputState::as_ref(ctx)

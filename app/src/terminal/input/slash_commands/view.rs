@@ -7,7 +7,6 @@ use warpui::{AppContext, Element, ViewContext};
 use warpui::{Entity, ModelHandle, View, ViewHandle};
 
 // twarp: 2c-d — AgentViewController deleted; re-export from input.
-pub use crate::terminal::input::AgentViewController;
 use crate::search::data_source::{Query, QueryFilter};
 use crate::search::mixer::{AddAsyncSourceOptions, SearchMixer};
 use crate::search::slash_command_menu::SlashCommandId;
@@ -23,6 +22,7 @@ use crate::terminal::input::slash_commands::{
 use crate::terminal::input::suggestions_mode_model::{
     InputSuggestionsModeEvent, InputSuggestionsModeModel,
 };
+pub use crate::terminal::input::AgentViewController;
 
 lazy_static! {
     static ref SLASH_COMMAND_FILTERS: HashSet<QueryFilter> =

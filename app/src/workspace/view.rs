@@ -53,9 +53,9 @@ use crate::terminal::enable_auto_reload_modal::{
     EnableAutoReloadModal, EnableAutoReloadModalEvent,
 };
 // twarp: 2c-d — removed unused ConversationTranscriptViewerStatus, RestoredAIConversation imports.
+use crate::pane_group::ConversationRestorationInNewPaneType;
 use crate::terminal::session_settings::SessionSettings;
 use crate::terminal::view::inline_banner::ZeroStatePromptSuggestionType;
-use crate::pane_group::ConversationRestorationInNewPaneType;
 use crate::terminal::view::{AgentOnboardingVersion, OnboardingIntention, OnboardingVersion};
 use crate::ui_components::red_notification_dot::RedNotificationDot;
 #[cfg(feature = "local_fs")]
@@ -827,9 +827,13 @@ pub struct TransferredTab {
 
 // twarp: 2c-d — stubs for AI fact view used by integration tests
 pub struct AIFactViewStub;
-impl Entity for AIFactViewStub { type Event = (); }
+impl Entity for AIFactViewStub {
+    type Event = ();
+}
 impl View for AIFactViewStub {
-    fn ui_name() -> &'static str { "AIFactViewStub/twarp-stub" }
+    fn ui_name() -> &'static str {
+        "AIFactViewStub/twarp-stub"
+    }
     fn render(&self, _: &AppContext) -> Box<dyn Element> {
         warpui::elements::Empty::new().finish()
     }
@@ -837,9 +841,15 @@ impl View for AIFactViewStub {
 #[allow(dead_code)]
 impl AIFactViewStub {
     #[cfg(feature = "integration_tests")]
-    pub fn current_page(&self) -> crate::integration_testing::rules::assertion::AIFactPage { crate::integration_testing::rules::assertion::AIFactPage::Other }
-    pub fn primary_file_path<C>(&self, _: &C) -> Option<String> { None }
-    pub fn is_keybindings_hidden(&self) -> bool { false }
+    pub fn current_page(&self) -> crate::integration_testing::rules::assertion::AIFactPage {
+        crate::integration_testing::rules::assertion::AIFactPage::Other
+    }
+    pub fn primary_file_path<C>(&self, _: &C) -> Option<String> {
+        None
+    }
+    pub fn is_keybindings_hidden(&self) -> bool {
+        false
+    }
 }
 
 pub struct Workspace {
@@ -952,7 +962,6 @@ pub struct Workspace {
     #[cfg(target_family = "wasm")]
     transcript_info_button: ViewHandle<ActionButton>,
     // twarp: 2c-d — removed transcript_details_panel (wasm only) & ai_fact_view
-
     file_upload_sessions: FileUploadSessions,
     left_panel_open: bool,
     vertical_tabs_panel_open: bool,
@@ -990,9 +999,13 @@ pub struct Workspace {
 
 // twarp: 2c-d — generic stub view for several AI-removed dialog/modal handles.
 pub struct TwarpStubView;
-impl warpui::Entity for TwarpStubView { type Event = (); }
+impl warpui::Entity for TwarpStubView {
+    type Event = ();
+}
 impl warpui::View for TwarpStubView {
-    fn ui_name() -> &'static str { "TwarpStubView/twarp-stub" }
+    fn ui_name() -> &'static str {
+        "TwarpStubView/twarp-stub"
+    }
     fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
         warpui::elements::Empty::new().finish()
     }
@@ -2900,7 +2913,9 @@ impl Workspace {
     }
 
     // twarp: 2c-d — removed pub fn ai_fact_view (returned ViewHandle<AIFactView>)
-    pub fn ai_fact_view(&self) -> warpui::ViewHandle<AIFactViewStub> { unimplemented!() }
+    pub fn ai_fact_view(&self) -> warpui::ViewHandle<AIFactViewStub> {
+        unimplemented!()
+    }
 
     fn handle_task_status_reset(&mut self, pane_group_id: EntityId, ctx: &mut ViewContext<Self>) {
         // Re-render the workspace so the tab indicator picks up the new state.
@@ -12689,7 +12704,11 @@ impl Workspace {
         }
     }
 
-    fn attach_plan_as_context(&mut self, id: crate::app_state::AIDocumentId, ctx: &mut ViewContext<Self>) {
+    fn attach_plan_as_context(
+        &mut self,
+        id: crate::app_state::AIDocumentId,
+        ctx: &mut ViewContext<Self>,
+    ) {
         let Some(view) = self.active_session_view(ctx) else {
             let window_id = ctx.window_id();
             WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
@@ -17503,7 +17522,9 @@ impl TypedActionView for Workspace {
             OpenNetworkLogPane => {
                 self.open_network_log_pane(ctx);
             }
-            FixSettingsWithOz { error_description: _ } => {
+            FixSettingsWithOz {
+                error_description: _,
+            } => {
                 // twarp: 2c-d — FixSettingsWithOz handler removed (depended on AI SkillManager + agent mode).
             }
             OpenWorktreeInRepo { repo_path } => {

@@ -23,14 +23,18 @@ use super::UserUid;
 // twarp: 2c-d — AI llms / persisted workspace / usage deleted; LLMPreferences re-exported.
 pub use crate::terminal::input::LLMPreferences;
 pub struct PersistedWorkspace;
-impl warpui::Entity for PersistedWorkspace { type Event = (); }
+impl warpui::Entity for PersistedWorkspace {
+    type Event = ();
+}
 impl warpui::SingletonEntity for PersistedWorkspace {}
 #[allow(dead_code)]
 impl PersistedWorkspace {
     pub fn on_user_changed<C>(&mut self, _: &mut C) {}
 }
 pub struct AIRequestUsageModel;
-impl warpui::Entity for AIRequestUsageModel { type Event = (); }
+impl warpui::Entity for AIRequestUsageModel {
+    type Event = ();
+}
 impl warpui::SingletonEntity for AIRequestUsageModel {}
 #[allow(dead_code)]
 impl AIRequestUsageModel {

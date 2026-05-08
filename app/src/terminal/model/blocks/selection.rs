@@ -14,11 +14,17 @@ use warpui::{
 pub struct AIBlock;
 #[allow(dead_code)]
 impl AIBlock {
-    pub fn selected_text<C>(&self, _: &C) -> Option<String> { None }
+    pub fn selected_text<C>(&self, _: &C) -> Option<String> {
+        None
+    }
 }
-impl warpui::Entity for AIBlock { type Event = (); }
+impl warpui::Entity for AIBlock {
+    type Event = ();
+}
 impl warpui::View for AIBlock {
-    fn ui_name() -> &'static str { "AIBlock/twarp-stub" }
+    fn ui_name() -> &'static str {
+        "AIBlock/twarp-stub"
+    }
     fn render(&self, _: &AppContext) -> Box<dyn warpui::Element> {
         // twarp: 2c-d — bring Element trait into scope for finish()
         use warpui::Element as _;

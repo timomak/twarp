@@ -46,7 +46,11 @@ impl TryFrom<AIQuery> for PersistedAIInput {
     fn try_from(value: AIQuery) -> Result<Self, Self::Error> {
         // twarp: 2c-d — PersistedAIInput is fully Option-typed in the stub
         Ok(Self {
-            start_ts: Some(Local.from_utc_datetime(&value.start_ts).with_timezone(&chrono::Utc)),
+            start_ts: Some(
+                Local
+                    .from_utc_datetime(&value.start_ts)
+                    .with_timezone(&chrono::Utc),
+            ),
             inputs: serde_json::from_str(&value.input).unwrap_or_default(),
             exchange_id: Some(value.exchange_id),
             conversation_id: Some(value.conversation_id),
@@ -80,7 +84,10 @@ impl TryFrom<&PersistedAIInput> for NewAIQuery {
         Ok(Self {
             start_ts: value.start_ts.map(|t| t.naive_utc()).unwrap_or_default(),
             input: serde_json::to_string(&value.inputs)?,
-            working_directory: value.working_directory.as_ref().map(|p| p.to_string_lossy().to_string()),
+            working_directory: value
+                .working_directory
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string()),
             exchange_id: value.exchange_id.clone().unwrap_or_default(),
             conversation_id: value.conversation_id.clone().unwrap_or_default(),
             output_status: serde_json::to_string(&value.output_status)?,

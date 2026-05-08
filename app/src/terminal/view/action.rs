@@ -28,7 +28,9 @@ use crate::terminal::view::RichContentSecretTooltipInfo;
 // twarp: 2c-d — re-export to unify cross-file types.
 pub use crate::terminal::view::rich_content::AIAgentExchangeId;
 // twarp: 2c-d — re-export from view.rs to unify cross-file types.
-pub use crate::terminal::view::{AgentModeSetupSpeedbumpBannerAction, CodebaseIndexSpeedbumpBannerAction};
+pub use crate::terminal::view::{
+    AgentModeSetupSpeedbumpBannerAction, CodebaseIndexSpeedbumpBannerAction,
+};
 use crate::workflows::workflow::Workflow;
 use crate::{
     server::ids::SyncId,
@@ -54,12 +56,12 @@ use super::inline_banner::{
 };
 
 // twarp: 2c-d — re-export from view.rs to unify cross-file types.
-pub use crate::terminal::view::AnonymousUserLoginBannerAction;
 use super::{
     AliasExpansionBannerAction, ContextMenuAction, GridHighlightedLink, InputContextMenuAction,
     NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction, RichContentLink,
     SSHBannerAction, TerminalEditor,
 };
+pub use crate::terminal::view::AnonymousUserLoginBannerAction;
 
 pub use onboarding::OnboardingIntention;
 

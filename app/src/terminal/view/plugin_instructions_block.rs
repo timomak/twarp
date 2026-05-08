@@ -16,10 +16,18 @@ use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use warpui::elements::FormattedTextElement;
 
 // twarp: 2c-d — AI code block / plugin / cli agent deleted; stubs.
-use crate::appearance::Appearance;
 use crate::app_state::CLIAgent;
+use crate::appearance::Appearance;
 
-pub fn render_code_block_plain<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: E) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
+pub fn render_code_block_plain<A, B, C, D, E>(
+    _: A,
+    _: B,
+    _: C,
+    _: D,
+    _: E,
+) -> Box<dyn warpui::Element> {
+    warpui::elements::Empty::new().finish()
+}
 #[derive(Default)]
 pub struct CodeBlockOptions {
     // twarp: 2c-d — fields used by callers

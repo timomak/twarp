@@ -1,5 +1,7 @@
-use warpui::{prelude::ChildView, AppContext, Element, Entity, EntityId, View, ViewContext, ViewHandle};
 use warpui::elements::Empty;
+use warpui::{
+    prelude::ChildView, AppContext, Element, Entity, EntityId, View, ViewContext, ViewHandle,
+};
 
 // twarp: 2c-d — AI agent / blocklist / ambient-agent / init-step / onboarding deleted.
 use crate::app_state::AIConversationId;
@@ -32,9 +34,27 @@ pub struct AIBlock;
 #[allow(dead_code)]
 impl AIBlock {
     pub fn new<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>(
-        _: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: I,
-        _: J, _: K, _: L, _: M, _: N, _: O, _: P, _: Q, _: &mut R,
-    ) -> Self { Self }
+        _: A,
+        _: B,
+        _: C,
+        _: D,
+        _: E,
+        _: F,
+        _: G,
+        _: H,
+        _: I,
+        _: J,
+        _: K,
+        _: L,
+        _: M,
+        _: N,
+        _: O,
+        _: P,
+        _: Q,
+        _: &mut R,
+    ) -> Self {
+        Self
+    }
 }
 pub struct TelemetryBanner;
 pub struct AmbientAgentEntryBlock;
@@ -42,10 +62,14 @@ pub struct OnboardingAgenticSuggestionsBlock;
 pub struct InitStepBlock;
 #[allow(dead_code)]
 impl InitStepBlock {
-    pub fn try_steal_focus<C>(&mut self, _: &mut C) -> bool { false }
+    pub fn try_steal_focus<C>(&mut self, _: &mut C) -> bool {
+        false
+    }
 }
 #[derive(Clone, Copy, Debug)]
-pub enum InitStepKind { Other }
+pub enum InitStepKind {
+    Other,
+}
 // twarp: 2c-d — unify with app_state::AgentViewEntryOrigin.
 pub use crate::app_state::AgentViewEntryOrigin;
 
@@ -67,8 +91,12 @@ macro_rules! twarp_stub_view_impl {
 }
 // twarp: 2c-d — Entity for AIBlock impl in view.rs (uses AIBlockEvent); only View impl here.
 impl View for AIBlock {
-    fn ui_name() -> &'static str { "AIBlock/twarp-stub" }
-    fn render(&self, _: &AppContext) -> Box<dyn Element> { Empty::new().finish() }
+    fn ui_name() -> &'static str {
+        "AIBlock/twarp-stub"
+    }
+    fn render(&self, _: &AppContext) -> Box<dyn Element> {
+        Empty::new().finish()
+    }
 }
 // twarp: 2c-d — stub FindableRichContentView so AIBlock can register with FindModel.
 impl crate::terminal::find::FindableRichContentView for AIBlock {
@@ -83,62 +111,136 @@ impl crate::terminal::find::FindableRichContentView for AIBlock {
 }
 #[allow(dead_code)]
 impl AIBlock {
-    pub fn conversation_id(&self) -> AIConversationId { unimplemented!() }
-    pub fn server_output_id<C>(&self, _: &C) -> Option<crate::server::telemetry::events::ServerOutputId> { None }
+    pub fn conversation_id(&self) -> AIConversationId {
+        unimplemented!()
+    }
+    pub fn server_output_id<C>(
+        &self,
+        _: &C,
+    ) -> Option<crate::server::telemetry::events::ServerOutputId> {
+        None
+    }
     pub fn handle_action<A, C>(&mut self, _: A, _: &mut C) {}
-    pub fn has_user_input<C>(&self, _: &C) -> bool { false }
-    pub fn output_status<C>(&self, _: &C) -> AIBlockOutputStatusStub { AIBlockOutputStatusStub }
-    pub fn is_blocked_on_user_confirmation<C>(&self, _: &C) -> bool { false }
-    pub fn is_passive_conversation<C>(&self, _: &C) -> bool { false }
-    pub fn get_preceding_user_query<C>(&self, _: &C) -> Option<String> { None }
+    pub fn has_user_input<C>(&self, _: &C) -> bool {
+        false
+    }
+    pub fn output_status<C>(&self, _: &C) -> AIBlockOutputStatusStub {
+        AIBlockOutputStatusStub
+    }
+    pub fn is_blocked_on_user_confirmation<C>(&self, _: &C) -> bool {
+        false
+    }
+    pub fn is_passive_conversation<C>(&self, _: &C) -> bool {
+        false
+    }
+    pub fn get_preceding_user_query<C>(&self, _: &C) -> Option<String> {
+        None
+    }
     pub fn accept_pending_action<C>(&mut self, _: &mut C) {}
-    pub fn accept_pending_unit_test_suggestion<A, C>(&mut self, _: A, _: &mut C) -> bool { false }
+    pub fn accept_pending_unit_test_suggestion<A, C>(&mut self, _: A, _: &mut C) -> bool {
+        false
+    }
     pub fn dismiss_ai_tooltips<C>(&mut self, _: &mut C) {}
     pub fn clear_message<C>(&mut self, _: &mut C) {}
     pub fn clear_finished_action_results<C>(&mut self, _: &mut C) {}
-    pub fn contains_action_result<I, C>(&self, _: I, _: &C) -> bool { false }
-    pub fn contains_ugc<C>(&self, _: &C) -> bool { false }
-    pub fn debug_link<C>(&self, _: &C) -> Option<String> { None }
-    pub fn display_name<C>(&self, _: &C) -> String { String::new() }
-    pub fn collect_imported_comments(&self) -> Option<Vec<()>> { None }
+    pub fn contains_action_result<I, C>(&self, _: I, _: &C) -> bool {
+        false
+    }
+    pub fn contains_ugc<C>(&self, _: &C) -> bool {
+        false
+    }
+    pub fn debug_link<C>(&self, _: &C) -> Option<String> {
+        None
+    }
+    pub fn display_name<C>(&self, _: &C) -> String {
+        String::new()
+    }
+    pub fn collect_imported_comments(&self) -> Option<Vec<()>> {
+        None
+    }
     // twarp: 2c-d — additional bulk stubs for AI-removed AIBlock methods
     pub fn cleanup_block<C>(&mut self, _: &mut C) {}
-    pub fn dismiss_pending_suggested_prompt<A, C>(&mut self, _: A, _: &mut C) -> bool { false }
-    pub fn finish_reason<C>(&self, _: &C) -> Option<crate::terminal::view::pending_user_query::FinishReason> { None }
-    pub fn handle_passive_code_diff_action<A, C>(&mut self, _: A, _: &mut C) -> bool { false }
-    pub fn has_any_imported_comments<C>(&self, _: &C) -> bool { false }
-    pub fn has_expanded_running_commands<C>(&self, _: &C) -> bool { false }
-    pub fn hovered_rich_content_link<C>(&self, _: &C) -> Option<crate::terminal::view::link_detection::RichContentLink> { None }
+    pub fn dismiss_pending_suggested_prompt<A, C>(&mut self, _: A, _: &mut C) -> bool {
+        false
+    }
+    pub fn finish_reason<C>(
+        &self,
+        _: &C,
+    ) -> Option<crate::terminal::view::pending_user_query::FinishReason> {
+        None
+    }
+    pub fn handle_passive_code_diff_action<A, C>(&mut self, _: A, _: &mut C) -> bool {
+        false
+    }
+    pub fn has_any_imported_comments<C>(&self, _: &C) -> bool {
+        false
+    }
+    pub fn has_expanded_running_commands<C>(&self, _: &C) -> bool {
+        false
+    }
+    pub fn hovered_rich_content_link<C>(
+        &self,
+        _: &C,
+    ) -> Option<crate::terminal::view::link_detection::RichContentLink> {
+        None
+    }
     pub fn ignore_passive_actions<C>(&mut self, _: &mut C) {}
-    pub fn is_finished<C>(&self, _: &C) -> bool { false }
-    pub fn is_hidden<C>(&self, _: &C) -> bool { false }
-    pub fn is_restored<C>(&self, _: &C) -> bool { false }
-    pub fn num_requested_commands<C>(&self, _: &C) -> usize { 0 }
-    pub fn requested_commands_iter<C>(&self, _: &C) -> std::iter::Empty<(crate::terminal::view::AIAgentActionId, ())> { std::iter::empty() }
+    pub fn is_finished<C>(&self, _: &C) -> bool {
+        false
+    }
+    pub fn is_hidden<C>(&self, _: &C) -> bool {
+        false
+    }
+    pub fn is_restored<C>(&self, _: &C) -> bool {
+        false
+    }
+    pub fn num_requested_commands<C>(&self, _: &C) -> usize {
+        0
+    }
+    pub fn requested_commands_iter<C>(
+        &self,
+        _: &C,
+    ) -> std::iter::Empty<(crate::terminal::view::AIAgentActionId, ())> {
+        std::iter::empty()
+    }
     pub fn reset_conversation_id<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn revert_all_diffs<C>(&mut self, _: &mut C) {}
-    pub fn selected_text<C>(&self, _: &C) -> Option<String> { None }
+    pub fn selected_text<C>(&self, _: &C) -> Option<String> {
+        None
+    }
     pub fn set_secret_redaction_state<A, B>(&mut self, _: A, _: B, _: bool) {}
     pub fn set_shell_launch_data<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn start_selection_at_max_point<A, B>(&self, _: A, _: B) {}
     pub fn start_selection_at_min_point<A, B>(&self, _: A, _: B) {}
-    pub fn status<C>(&self, _: &C) -> crate::terminal::view::AIBlockOutputStatus { crate::terminal::view::AIBlockOutputStatus::Failed {} }
-    pub fn selection_type(&self) -> warpui::text::SelectionType { warpui::text::SelectionType::default() }
-    pub fn try_steal_focus<C>(&mut self, _: &mut C) -> bool { false }
+    pub fn status<C>(&self, _: &C) -> crate::terminal::view::AIBlockOutputStatus {
+        crate::terminal::view::AIBlockOutputStatus::Failed {}
+    }
+    pub fn selection_type(&self) -> warpui::text::SelectionType {
+        warpui::text::SelectionType::default()
+    }
+    pub fn try_steal_focus<C>(&mut self, _: &mut C) -> bool {
+        false
+    }
     pub fn update_directory_context<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn clear_all_selections<C>(&mut self, _: &mut C) {}
 }
 pub struct AIBlockOutputStatusStub;
 impl AIBlockOutputStatusStub {
-    pub fn output_to_render(&self) -> Option<AIBlockOutputRender> { None }
+    pub fn output_to_render(&self) -> Option<AIBlockOutputRender> {
+        None
+    }
 }
 pub struct AIBlockOutputRender;
 impl AIBlockOutputRender {
-    pub fn get(&self) -> &AIBlockOutputData { unimplemented!() }
+    pub fn get(&self) -> &AIBlockOutputData {
+        unimplemented!()
+    }
 }
 pub struct AIBlockOutputData;
 impl AIBlockOutputData {
-    pub fn actions(&self) -> &[AIBlockActionStub] { &[] }
+    pub fn actions(&self) -> &[AIBlockActionStub] {
+        &[]
+    }
 }
 pub struct AIBlockActionStub {
     pub action: (),

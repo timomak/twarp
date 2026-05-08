@@ -11,7 +11,12 @@ use super::{
 };
 // twarp: 2c-d — persisted_workspace deleted; stubs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EnablementState { Enabled, Disabled, Suggested, Yes }
+pub enum EnablementState {
+    Enabled,
+    Disabled,
+    Suggested,
+    Yes,
+}
 #[allow(dead_code)]
 #[derive(Clone)]
 pub enum LspRepoStatus {
@@ -33,19 +38,37 @@ impl warpui::Entity for PersistedWorkspace {
 impl warpui::SingletonEntity for PersistedWorkspace {}
 #[allow(dead_code)]
 impl PersistedWorkspace {
-    pub fn total_lsp_server_count(&self, _: bool) -> usize { 0 }
-    pub fn workspaces(&self) -> std::iter::Empty<ai::workspace::WorkspaceMetadata> { std::iter::empty() }
+    pub fn total_lsp_server_count(&self, _: bool) -> usize {
+        0
+    }
+    pub fn workspaces(&self) -> std::iter::Empty<ai::workspace::WorkspaceMetadata> {
+        std::iter::empty()
+    }
     // twarp: 2c-d — bulk stubs
-    pub fn detect_lsp_workspace_status<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> LspRepoStatus { LspRepoStatus::CheckingForInstallation }
+    pub fn detect_lsp_workspace_status<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> LspRepoStatus {
+        LspRepoStatus::CheckingForInstallation
+    }
     pub fn disable_lsp_server_for_path<A, B>(&mut self, _: A, _: B) {}
-    pub fn all_lsp_servers<A>(&self, _: A, _: bool) -> Option<std::iter::Empty<(LSPServerType, EnablementState)>> { None }
+    pub fn all_lsp_servers<A>(
+        &self,
+        _: A,
+        _: bool,
+    ) -> Option<std::iter::Empty<(LSPServerType, EnablementState)>> {
+        None
+    }
 }
 pub enum PersistedWorkspaceEvent {
     InstallationSucceeded,
     InstallationFailed,
     Other,
-    AvailableServersDetected { workspace_path: std::path::PathBuf, servers: Vec<LSPServerType> },
-    InstallStatusUpdate { server_type: LSPServerType, status: () },
+    AvailableServersDetected {
+        workspace_path: std::path::PathBuf,
+        servers: Vec<LSPServerType>,
+    },
+    InstallStatusUpdate {
+        server_type: LSPServerType,
+        status: (),
+    },
     WorkspaceAdded,
 }
 

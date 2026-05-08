@@ -152,13 +152,27 @@ pub enum ConversationRestorationInNewPaneType {
 }
 #[allow(dead_code)]
 impl ConversationRestorationInNewPaneType {
-    pub fn initial_working_directory(&self) -> Option<&str> { None }
+    pub fn initial_working_directory(&self) -> Option<&str> {
+        None
+    }
     pub fn should_use_live_appearance(&self) -> bool {
         match self {
-            ConversationRestorationInNewPaneType::Historical { should_use_live_appearance, .. } => *should_use_live_appearance,
-            ConversationRestorationInNewPaneType::HistoricalCLIAgent { should_use_live_appearance, .. } => *should_use_live_appearance,
-            ConversationRestorationInNewPaneType::Forked { should_use_live_appearance, .. } => *should_use_live_appearance,
-            ConversationRestorationInNewPaneType::Startup { should_use_live_appearance, .. } => *should_use_live_appearance,
+            ConversationRestorationInNewPaneType::Historical {
+                should_use_live_appearance,
+                ..
+            } => *should_use_live_appearance,
+            ConversationRestorationInNewPaneType::HistoricalCLIAgent {
+                should_use_live_appearance,
+                ..
+            } => *should_use_live_appearance,
+            ConversationRestorationInNewPaneType::Forked {
+                should_use_live_appearance,
+                ..
+            } => *should_use_live_appearance,
+            ConversationRestorationInNewPaneType::Startup {
+                should_use_live_appearance,
+                ..
+            } => *should_use_live_appearance,
         }
     }
 }
@@ -732,10 +746,19 @@ pub enum Event {
     FreeTierLimitCheckTriggered,
     // twarp: 2c-d.4 — OpenPluginInstructionsPane removed (CLIAgent + PluginModalKind were AI-only)
     // twarp: 2c-d — bulk variants for AI-removed pane_group::Event
-    OpenCodeDiff { view: warpui::ViewHandle<crate::terminal::view::CodeDiffView> },
-    OpenPluginInstructionsPane(crate::app_state::CLIAgent, crate::terminal::view::PluginModalKind),
-    OpenSuggestedAgentModeWorkflowModal { workflow_and_id: crate::terminal::view::SuggestedAgentModeWorkflowAndId },
-    OpenSuggestedRuleModal { rule_and_id: crate::terminal::view::SuggestedRuleAndId },
+    OpenCodeDiff {
+        view: warpui::ViewHandle<crate::terminal::view::CodeDiffView>,
+    },
+    OpenPluginInstructionsPane(
+        crate::app_state::CLIAgent,
+        crate::terminal::view::PluginModalKind,
+    ),
+    OpenSuggestedAgentModeWorkflowModal {
+        workflow_and_id: crate::terminal::view::SuggestedAgentModeWorkflowAndId,
+    },
+    OpenSuggestedRuleModal {
+        rule_and_id: crate::terminal::view::SuggestedRuleAndId,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1586,7 +1609,10 @@ impl PaneGroup {
                 pane_contents.insert(pane_id, Box::new(pane_data));
 
                 // twarp: 2c-d.4 — LLM override / AIExecutionProfilesModel restoration removed (AI-only)
-                let _ = (&terminal_snapshot.llm_model_override, &terminal_snapshot.active_profile_id);
+                let _ = (
+                    &terminal_snapshot.llm_model_override,
+                    &terminal_snapshot.active_profile_id,
+                );
 
                 let focus = InitialFocus {
                     focused_pane: leaf.is_focused.then_some(pane_id),
@@ -5632,7 +5658,10 @@ impl PaneGroup {
     }
 
     // twarp: 2c-d.4 — code_diff_views removed (CodeDiffView was AI-only)
-    pub fn code_diff_views(&self, _ctx: &AppContext) -> Vec<warpui::ViewHandle<crate::workspace::view::AIFactViewStub>> {
+    pub fn code_diff_views(
+        &self,
+        _ctx: &AppContext,
+    ) -> Vec<warpui::ViewHandle<crate::workspace::view::AIFactViewStub>> {
         Vec::new()
     }
 

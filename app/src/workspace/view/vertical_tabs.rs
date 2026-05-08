@@ -1,8 +1,8 @@
 pub mod telemetry;
 
 // twarp: 2c-d — AI conversation status / CLI agent sessions deleted.
-use crate::app_state::ConversationStatus;
 use crate::app_state::CLIAgent;
+use crate::app_state::ConversationStatus;
 use crate::code::editor::{add_color, remove_color};
 use crate::code::icon_from_file_path;
 use crate::safe_triangle::SafeTriangle;

@@ -1,12 +1,28 @@
 // twarp: 2c-d — execution_profiles permission types & LLMModelHost deleted; stubbed here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum ActionPermission { AgentDecides, AlwaysAllow, AlwaysAsk }
+pub enum ActionPermission {
+    AgentDecides,
+    AlwaysAllow,
+    AlwaysAsk,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum WriteToPtyPermission { AlwaysAllow, AlwaysAsk, AskOnFirstWrite }
+pub enum WriteToPtyPermission {
+    AlwaysAllow,
+    AlwaysAsk,
+    AskOnFirstWrite,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum ComputerUsePermission { Never, AlwaysAsk, AlwaysAllow }
+pub enum ComputerUsePermission {
+    Never,
+    AlwaysAsk,
+    AlwaysAllow,
+}
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum LLMModelHost { DirectApi, AwsBedrock, Unknown }
+pub enum LLMModelHost {
+    DirectApi,
+    AwsBedrock,
+    Unknown,
+}
 
 use crate::{auth::UserUid, server::ids::ServerId, settings::AgentModeCommandExecutionPredicate};
 use chrono::Utc;

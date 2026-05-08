@@ -46,7 +46,12 @@ use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::{elements, ViewHandle};
 
 // twarp: 2c-d — AI agent / blocklist / context menu deleted; stubs.
-pub struct ImageContext { pub data: String, pub file_name: String, pub mime_type: String, pub is_figma: bool }
+pub struct ImageContext {
+    pub data: String,
+    pub file_name: String,
+    pub mime_type: String,
+    pub is_figma: bool,
+}
 // twarp: 2c-d — re-export from input for type unification.
 pub use crate::terminal::input::BlocklistAIContextModel;
 #[allow(dead_code)]
@@ -54,7 +59,11 @@ pub enum PendingAttachment {
     File(PendingFile),
     Other,
 }
-pub struct PendingFile { pub file_path: std::path::PathBuf, pub file_name: String, pub mime_type: String }
+pub struct PendingFile {
+    pub file_path: std::path::PathBuf,
+    pub file_name: String,
+    pub mime_type: String,
+}
 // twarp: 2c-d — full enum with variants used by callers in terminal::input
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -86,7 +95,9 @@ pub enum AIContextMenuSearchableAction {
 pub struct AIContextMenu;
 #[allow(dead_code)]
 impl AIContextMenu {
-    pub fn new<A>(_: &mut A) -> Self { Self }
+    pub fn new<A>(_: &mut A) -> Self {
+        Self
+    }
     pub fn select_current_item<C>(&mut self, _: &mut C) {}
     // twarp: 2c-d — bulk stubs for AI-removed methods on AIContextMenu
     pub fn close<C>(&mut self, _: &mut C) {}
@@ -97,13 +108,17 @@ impl AIContextMenu {
     pub fn set_is_in_ambient_agent<C>(&mut self, _: bool, _: &mut C) {}
     pub fn set_is_shared_session_viewer<C>(&mut self, _: bool, _: &mut C) {}
     pub fn update_search_query<A, C>(&mut self, _: A, _: &mut C) {}
-    pub fn should_render<C>(&self, _: &C) -> bool { false }
+    pub fn should_render<C>(&self, _: &C) -> bool {
+        false
+    }
 }
 impl warpui::Entity for AIContextMenu {
     type Event = AIContextMenuEvent;
 }
 impl warpui::View for AIContextMenu {
-    fn ui_name() -> &'static str { "AIContextMenu/twarp-stub" }
+    fn ui_name() -> &'static str {
+        "AIContextMenu/twarp-stub"
+    }
     fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
         warpui::elements::Empty::new().finish()
     }
@@ -114,12 +129,24 @@ impl warpui::TypedActionView for AIContextMenu {
     type Action = AIContextMenuAction;
 }
 #[derive(Debug, Clone, Copy)]
-pub enum AIContextMenuCategory { Other }
+pub enum AIContextMenuCategory {
+    Other,
+}
 pub enum AIContextMenuEvent {
     Other,
-    Close { item_count: usize, query_length: usize },
-    ResultAccepted { item_count: usize, query_length: usize, accepted_position: usize, action: AIContextMenuSearchableAction },
-    CategorySelected { category: AIContextMenuCategory },
+    Close {
+        item_count: usize,
+        query_length: usize,
+    },
+    ResultAccepted {
+        item_count: usize,
+        query_length: usize,
+        accepted_position: usize,
+        action: AIContextMenuSearchableAction,
+    },
+    CategorySelected {
+        category: AIContextMenuCategory,
+    },
 }
 use crate::appearance::Appearance;
 use crate::channel::{Channel, ChannelState};
@@ -140,8 +167,12 @@ struct _UnusedInputTypeStub;
 #[allow(dead_code)]
 impl _UnusedInputTypeStub {
     // twarp: 2c-d — predicate stubs (replaced by terminal::input::InputType)
-    pub fn is_ai(&self) -> bool { false }
-    pub fn is_shell(&self) -> bool { true }
+    pub fn is_ai(&self) -> bool {
+        false
+    }
+    pub fn is_shell(&self) -> bool {
+        true
+    }
 }
 
 use crate::editor::RangeExt;
@@ -162,8 +193,8 @@ use crate::util::color::{ContrastingColor, MinimumAllowedContrast};
 use crate::util::image::{resize_image, MAX_IMAGE_COUNT_FOR_QUERY, MAX_IMAGE_SIZE_BYTES};
 use crate::util::merge_ranges;
 // twarp: 2c-d — BlocklistAIHistoryModel deleted; re-export from input for type unification.
-use crate::workspace::Workspace;
 pub use crate::terminal::input::BlocklistAIHistoryModel;
+use crate::workspace::Workspace;
 use anyhow::Result;
 use core::f32;
 use std::path::Path;
@@ -3122,11 +3153,12 @@ impl EditorView {
                 |me, _, event: &AIContextMenuEvent, ctx| {
                     let is_udi_enabled =
                         InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
-                    let current_input_mode: crate::server::telemetry::events::InputType = if me.is_ai_input {
-                        InputType::AI.into()
-                    } else {
-                        InputType::Shell.into()
-                    };
+                    let current_input_mode: crate::server::telemetry::events::InputType =
+                        if me.is_ai_input {
+                            InputType::AI.into()
+                        } else {
+                            InputType::Shell.into()
+                        };
                     match event {
                         AIContextMenuEvent::Close {
                             item_count,

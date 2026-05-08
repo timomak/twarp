@@ -18,21 +18,27 @@ pub mod web_handoff;
 
 // twarp: 2c-d — AI conversations / blocklist / execution profiles deleted; stubs.
 pub struct AgentConversationsModel;
-impl warpui::Entity for AgentConversationsModel { type Event = (); }
+impl warpui::Entity for AgentConversationsModel {
+    type Event = ();
+}
 impl warpui::SingletonEntity for AgentConversationsModel {}
 #[allow(dead_code)]
 impl AgentConversationsModel {
     pub fn reset(&mut self) {}
 }
 pub struct BlocklistAIHistoryModel;
-impl warpui::Entity for BlocklistAIHistoryModel { type Event = crate::terminal::input::BlocklistAIHistoryEvent; }
+impl warpui::Entity for BlocklistAIHistoryModel {
+    type Event = crate::terminal::input::BlocklistAIHistoryEvent;
+}
 impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
     pub fn reset(&mut self) {}
 }
 pub struct AIExecutionProfilesModel;
-impl warpui::Entity for AIExecutionProfilesModel { type Event = (); }
+impl warpui::Entity for AIExecutionProfilesModel {
+    type Event = ();
+}
 impl warpui::SingletonEntity for AIExecutionProfilesModel {}
 #[allow(dead_code)]
 impl AIExecutionProfilesModel {

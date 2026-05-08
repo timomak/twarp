@@ -6420,7 +6420,8 @@ impl CodeReviewView {
                         .ai_context_model()
                         .update(ctx, |context_model, ctx| {
                             // twarp: 2c-d — stub register_diff_hunk_attachment takes 3 args
-                            context_model.register_diff_hunk_attachment((diff_hunk_key, attachment), ctx);
+                            context_model
+                                .register_diff_hunk_attachment((diff_hunk_key, attachment), ctx);
                         });
 
                     // Enter agent view if enabled and not already active

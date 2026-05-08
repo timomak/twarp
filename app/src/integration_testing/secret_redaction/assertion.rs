@@ -4,8 +4,12 @@ use warpui::{
 };
 
 // twarp: 2c-d — AI secret redaction deleted; stubs.
-pub fn redact_secrets(_text: &str) -> String { String::new() }
-pub fn find_secrets_in_text(_text: &str) -> Vec<()> { Vec::new() }
+pub fn redact_secrets(_text: &str) -> String {
+    String::new()
+}
+pub fn find_secrets_in_text(_text: &str) -> Vec<()> {
+    Vec::new()
+}
 use crate::{
     integration_testing::view_getters::single_terminal_view,
     terminal::safe_mode_settings::get_secret_obfuscation_mode,

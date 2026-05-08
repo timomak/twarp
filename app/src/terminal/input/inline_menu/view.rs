@@ -32,8 +32,9 @@ use warpui::{
 };
 
 // twarp: 2c-d — AI agent view deleted; stubs.
-pub fn agent_view_bg_color<C>(_: C) -> warpui::color::ColorU { warpui::color::ColorU::new(0, 0, 0, 0) }
-pub use crate::terminal::input::{AgentViewController, AgentViewControllerEvent};
+pub fn agent_view_bg_color<C>(_: C) -> warpui::color::ColorU {
+    warpui::color::ColorU::new(0, 0, 0, 0)
+}
 use crate::search::item::IconLocation;
 use crate::search::mixer::{SearchMixer, SearchMixerEvent};
 use crate::search::result_renderer::{
@@ -52,6 +53,7 @@ use crate::terminal::input::message_bar::Message;
 use crate::terminal::input::suggestions_mode_model::{
     InputSuggestionsModeEvent, InputSuggestionsModeModel,
 };
+pub use crate::terminal::input::{AgentViewController, AgentViewControllerEvent};
 use crate::terminal::{self, input};
 
 /// Events emitted by InlineMenuView.

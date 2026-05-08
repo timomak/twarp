@@ -5,7 +5,9 @@ use std::{
 
 // twarp: 2c-d — AI skills deleted; stub SkillOpenOrigin.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SkillOpenOrigin { Other }
+pub enum SkillOpenOrigin {
+    Other,
+}
 use ai::skills::SkillReference;
 use serde::{Deserialize, Serialize};
 use warp_util::path::LineAndColumnArg;

@@ -5,11 +5,16 @@ use warpui::{AppContext, EntityId, SingletonEntity};
 
 // twarp: 2c-d — BlocklistAIHistoryModel deleted; stub.
 pub struct BlocklistAIHistoryModel;
-impl warpui::Entity for BlocklistAIHistoryModel { type Event = crate::terminal::input::BlocklistAIHistoryEvent; }
+impl warpui::Entity for BlocklistAIHistoryModel {
+    type Event = crate::terminal::input::BlocklistAIHistoryEvent;
+}
 impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
-    pub fn all_ai_queries<I>(&self, _: I) -> std::iter::Empty<crate::input_suggestions::AIQueryHistory> {
+    pub fn all_ai_queries<I>(
+        &self,
+        _: I,
+    ) -> std::iter::Empty<crate::input_suggestions::AIQueryHistory> {
         std::iter::empty()
     }
 }

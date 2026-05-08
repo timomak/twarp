@@ -6,14 +6,18 @@ use warpui::{
 
 // twarp: 2c-d — AI active agent views / blocklist history deleted; stubs.
 pub struct ActiveAgentViewsModel;
-impl Entity for ActiveAgentViewsModel { type Event = (); }
+impl Entity for ActiveAgentViewsModel {
+    type Event = ();
+}
 impl SingletonEntity for ActiveAgentViewsModel {}
 #[allow(dead_code)]
 impl ActiveAgentViewsModel {
     pub fn remove_focused_state_for_window<C>(&mut self, _: WindowId, _: &mut C) {}
 }
 pub struct BlocklistAIHistoryModel;
-impl Entity for BlocklistAIHistoryModel { type Event = (); }
+impl Entity for BlocklistAIHistoryModel {
+    type Event = ();
+}
 impl SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {

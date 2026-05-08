@@ -420,7 +420,10 @@ impl TerminalView {
     }
 
     // twarp: 2c-d — parent-conversation card requires deleted AI types; always None now.
-    fn render_parent_conversation_header_card(&self, _app: &AppContext) -> Option<Box<dyn Element>> {
+    fn render_parent_conversation_header_card(
+        &self,
+        _app: &AppContext,
+    ) -> Option<Box<dyn Element>> {
         None
     }
 

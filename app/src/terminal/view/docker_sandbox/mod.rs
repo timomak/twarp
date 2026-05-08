@@ -24,7 +24,9 @@ use crate::terminal::TerminalManager;
 #[cfg(not(target_family = "wasm"))]
 pub struct TerminalDriver;
 #[cfg(not(target_family = "wasm"))]
-impl warpui::Entity for TerminalDriver { type Event = (); }
+impl warpui::Entity for TerminalDriver {
+    type Event = ();
+}
 #[cfg(not(target_family = "wasm"))]
 #[allow(dead_code)]
 impl TerminalDriver {
@@ -228,7 +230,9 @@ impl TerminalView {
 
                 // Wait for the terminal session to bootstrap.
                 let bootstrap_future = spawner
-                    .spawn(move |driver: &mut TerminalDriver, _| driver.wait_for_session_bootstrapped())
+                    .spawn(move |driver: &mut TerminalDriver, _| {
+                        driver.wait_for_session_bootstrapped()
+                    })
                     .await
                     .map_err(|_| "view dropped")?;
 

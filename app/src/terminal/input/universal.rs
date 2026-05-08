@@ -1,6 +1,9 @@
 // twarp: 2c-d — AI InputType deleted; stub.
 #[derive(PartialEq, Eq)]
-pub enum InputType { Other, AI }
+pub enum InputType {
+    Other,
+    AI,
+}
 use crate::{
     appearance::Appearance,
     context_chips::spacing,

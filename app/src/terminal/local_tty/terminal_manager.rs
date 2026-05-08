@@ -37,9 +37,8 @@ use pathfinder_geometry::vector::Vector2F;
 
 // twarp: 2c-d — removed cli_agent_sessions imports (CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent)
 use session_sharing_protocol::common::{
-    ActivePrompt, AgentPromptFailureReason, CommandExecutionFailureReason,
-    ControlAction, ControlActionFailureReason,
-    UniversalDeveloperInputContextUpdate, WriteToPtyFailureReason,
+    ActivePrompt, AgentPromptFailureReason, CommandExecutionFailureReason, ControlAction,
+    ControlActionFailureReason, UniversalDeveloperInputContextUpdate, WriteToPtyFailureReason,
 };
 #[cfg(not(any(test, feature = "integration_tests")))]
 use session_sharing_protocol::common::{
@@ -1887,7 +1886,11 @@ impl TerminalManager {
 
         // twarp: 2c-d — removed CLIAgentSessionsModel subscription that broadcast CLI agent
         // session lifecycle events to viewers (depended on CLIAgentSessionsModel & CLIAgentInputState).
-        let _ = (shared_session_model, sharer_remote_update_guard_for_cli, terminal_view);
+        let _ = (
+            shared_session_model,
+            sharer_remote_update_guard_for_cli,
+            terminal_view,
+        );
     }
 
     fn handle_network_status_events(

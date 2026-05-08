@@ -6,9 +6,7 @@
 // `MCPServersSettingsPageEvent`, and `InstallOrigin` so external imports keep
 // resolving; their behavior is now a no-op until MCP is reintroduced.
 use uuid::Uuid;
-use warpui::{
-    elements::Empty, AppContext, Element, Entity, TypedActionView, View, ViewContext,
-};
+use warpui::{elements::Empty, AppContext, Element, Entity, TypedActionView, View, ViewContext};
 
 use crate::{
     appearance::Appearance,

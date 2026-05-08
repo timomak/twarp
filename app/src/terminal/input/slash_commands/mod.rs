@@ -14,25 +14,38 @@ use warpui::{SingletonEntity, ViewContext};
 
 // twarp: 2c-d — AI agent view / blocklist deleted; stubs.
 use crate::app_state::AgentViewEntryOrigin;
-pub enum DismissalStrategy { Other, Timer(std::time::Duration) }
+pub enum DismissalStrategy {
+    Other,
+    Timer(std::time::Duration),
+}
 pub struct EphemeralMessage;
 #[allow(dead_code)]
 impl EphemeralMessage {
-    pub fn new<A, B>(_: A, _: B) -> Self { Self }
+    pub fn new<A, B>(_: A, _: B) -> Self {
+        Self
+    }
 }
-pub const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration = std::time::Duration::from_secs(0);
+pub const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration =
+    std::time::Duration::from_secs(0);
 pub struct BlocklistAIHistoryModel;
-impl warpui::Entity for BlocklistAIHistoryModel { type Event = crate::terminal::input::BlocklistAIHistoryEvent; }
+impl warpui::Entity for BlocklistAIHistoryModel {
+    type Event = crate::terminal::input::BlocklistAIHistoryEvent;
+}
 impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
-    pub fn conversation<I>(&self, _: I) -> Option<crate::app_state::AIConversationId> { None }
-    pub fn active_conversation(&self, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
+    pub fn conversation<I>(&self, _: I) -> Option<crate::app_state::AIConversationId> {
+        None
+    }
+    pub fn active_conversation(
+        &self,
+        _: warpui::EntityId,
+    ) -> Option<crate::app_state::AIConversationId> {
+        None
+    }
 }
 pub enum SlashCommandRequest {
-    FetchReviewComments {
-        repo_path: std::path::PathBuf,
-    },
+    FetchReviewComments { repo_path: std::path::PathBuf },
     Other,
 }
 use crate::cloud_object::model::persistence::CloudModel;
@@ -399,7 +412,10 @@ impl Input {
                     initial_prompt: prompt,
                     conversation_id: None,
                     // twarp: 2c-d — name added to AgentViewEntryOrigin::SlashCommand
-                    origin: AgentViewEntryOrigin::SlashCommand { name: command.name.to_string(), trigger: Some(()) },
+                    origin: AgentViewEntryOrigin::SlashCommand {
+                        name: command.name.to_string(),
+                        trigger: Some(()),
+                    },
                 });
             }
             cloud_agent if command.name == commands::CLOUD_AGENT.name => {

@@ -26,9 +26,15 @@ mod conversations {
     pub struct DataSource;
     #[allow(dead_code)]
     impl DataSource {
-        pub fn new() -> Self { Self }
-        pub fn historical() -> Self { Self }
-        pub fn query_result<A>(_: A) -> Vec<()> { Vec::new() }
+        pub fn new() -> Self {
+            Self
+        }
+        pub fn historical() -> Self {
+            Self
+        }
+        pub fn query_result<A>(_: A) -> Vec<()> {
+            Vec::new()
+        }
     }
     impl warpui::Entity for DataSource {
         type Event = ();

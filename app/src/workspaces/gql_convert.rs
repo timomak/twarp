@@ -45,9 +45,9 @@ use warp_graphql::workspace::AddonCreditsSettings as GqlAddonCreditsSettings;
 use warp_graphql::{
     billing::{
         AiAutonomyPolicy as GqlAiAutonomyPolicy, AmbientAgentsPolicy as GqlAmbientAgentsPolicy,
-        BillingMetadata as GqlBillingMetadata,
-        ByoApiKeyPolicy as GqlByoApiKeyPolicy, CodebaseContextPolicy as GqlCodebaseContextPolicy,
-        CustomerType as GqlCustomerType, DelinquencyStatus as GqlDelinquencyStatus,
+        BillingMetadata as GqlBillingMetadata, ByoApiKeyPolicy as GqlByoApiKeyPolicy,
+        CodebaseContextPolicy as GqlCodebaseContextPolicy, CustomerType as GqlCustomerType,
+        DelinquencyStatus as GqlDelinquencyStatus,
         EnterpriseCreditsAutoReloadPolicy as GqlEnterpriseCreditsAutoReloadPolicy,
         EnterprisePayAsYouGoPolicy as GqlEnterprisePayAsYouGoPolicy,
         InstanceShape as GqlInstanceShape, MultiAdminPolicy as GqlMultiAdminPolicy,
@@ -1095,9 +1095,9 @@ impl TryFrom<warp_graphql::object::CloudObject> for ServerCloudObject {
 
     fn try_from(value: warp_graphql::object::CloudObject) -> Result<Self, Self::Error> {
         match value {
-            warp_graphql::object::CloudObject::AIConversation(_) => {
-                Err(anyhow::anyhow!("AIConversation is not a supported object type for this operation"))
-            }
+            warp_graphql::object::CloudObject::AIConversation(_) => Err(anyhow::anyhow!(
+                "AIConversation is not a supported object type for this operation"
+            )),
             warp_graphql::object::CloudObject::Folder(folder) => {
                 Ok(ServerCloudObject::Folder(folder.try_into()?))
             }

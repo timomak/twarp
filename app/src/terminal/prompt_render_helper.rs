@@ -1,10 +1,10 @@
 // twarp: 2c-d — BlocklistAIInputModel deleted; re-export from input for type unification.
-pub use crate::terminal::input::BlocklistAIInputModel;
 use crate::context_chips::display::PromptDisplay;
 use crate::context_chips::spacing;
 use crate::features::FeatureFlag;
 use crate::settings::InputSettings;
 use crate::terminal::grid_size_util::grid_compute_baseline_position_fn;
+pub use crate::terminal::input::BlocklistAIInputModel;
 use crate::terminal::ligature_settings::should_use_ligature_rendering;
 use crate::terminal::view::TerminalAction;
 use crate::themes::theme::PromptColors;

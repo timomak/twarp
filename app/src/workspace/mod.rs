@@ -23,18 +23,26 @@ pub mod view;
 // twarp: 2c-d — AI blocklist / skills / usage deleted; stubs.
 pub const NEW_AGENT_PANE_LABEL: &str = "New agent pane";
 pub struct SkillManager;
-impl warpui::Entity for SkillManager { type Event = (); }
+impl warpui::Entity for SkillManager {
+    type Event = ();
+}
 impl warpui::SingletonEntity for SkillManager {}
 #[allow(dead_code)]
 impl SkillManager {
-    pub fn active_bundled_skill<C>(&self, _: &str, _: &C) -> Option<()> { None }
+    pub fn active_bundled_skill<C>(&self, _: &str, _: &C) -> Option<()> {
+        None
+    }
 }
 pub struct AIRequestUsageModel;
-impl warpui::Entity for AIRequestUsageModel { type Event = (); }
+impl warpui::Entity for AIRequestUsageModel {
+    type Event = ();
+}
 impl warpui::SingletonEntity for AIRequestUsageModel {}
 #[allow(dead_code)]
 impl AIRequestUsageModel {
-    pub fn has_any_ai_remaining<C>(&self, _: &C) -> bool { false }
+    pub fn has_any_ai_remaining<C>(&self, _: &C) -> bool {
+        false
+    }
 }
 use crate::channel::Channel;
 use crate::code;

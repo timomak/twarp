@@ -10,9 +10,18 @@ impl warpui::Entity for BlocklistAIHistoryModel {
 impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
-    pub fn can_conversation_be_shared(&self, _: &crate::app_state::AIConversationId) -> bool { false }
-    pub fn get_server_conversation_metadata(&self, _: &crate::app_state::AIConversationId) -> Option<&ServerConversationMetadataStub> { None }
-    pub fn conversation(&self, _: &crate::app_state::AIConversationId) -> Option<()> { None }
+    pub fn can_conversation_be_shared(&self, _: &crate::app_state::AIConversationId) -> bool {
+        false
+    }
+    pub fn get_server_conversation_metadata(
+        &self,
+        _: &crate::app_state::AIConversationId,
+    ) -> Option<&ServerConversationMetadataStub> {
+        None
+    }
+    pub fn conversation(&self, _: &crate::app_state::AIConversationId) -> Option<()> {
+        None
+    }
 }
 pub struct ServerConversationMetadataStub {
     pub metadata: ServerObjectMetadataStub,
@@ -23,7 +32,9 @@ pub struct ServerObjectMetadataStub {
 }
 pub struct ObjectUidStub;
 impl ObjectUidStub {
-    pub fn uid(&self) -> &str { "" }
+    pub fn uid(&self) -> &str {
+        ""
+    }
 }
 #[derive(Default)]
 pub struct ServerConversationPermissionsStub {
@@ -502,7 +513,12 @@ impl SharingDialog {
             }
             Some(ShareableObject::AIConversation(_id)) => {
                 // twarp: 2c-d — AI conversation sharing logic gutted (server metadata gone post-AI removal).
-                let _ = (app, BlocklistAIHistoryModel::as_ref(app), AuthStateProvider::as_ref(app), UserWorkspaces::as_ref(app));
+                let _ = (
+                    app,
+                    BlocklistAIHistoryModel::as_ref(app),
+                    AuthStateProvider::as_ref(app),
+                    UserWorkspaces::as_ref(app),
+                );
                 SharingAccessLevel::Full
             }
             Some(ShareableObject::Session { ref handle, .. }) => {

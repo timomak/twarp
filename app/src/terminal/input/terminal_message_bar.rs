@@ -15,7 +15,6 @@ use super::message_bar::{
 // twarp: 2c-d — re-export from input for type unification.
 pub use crate::terminal::input::{BlocklistAIContextEvent, BlocklistAIContextModel};
 // twarp: 2c-d — re-export from input for type unification.
-pub use crate::terminal::input::BlocklistAIInputModel;
 use crate::appearance::Appearance;
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::terminal::input::inline_history::{AcceptHistoryItem, HistoryTab};
@@ -24,6 +23,7 @@ use crate::terminal::input::message_bar::MessageTransformer;
 use crate::terminal::input::suggestions_mode_model::{
     InputSuggestionsModeEvent, InputSuggestionsModeModel,
 };
+pub use crate::terminal::input::BlocklistAIInputModel;
 use crate::terminal::input::SET_INPUT_MODE_TERMINAL_ACTION_NAME;
 use crate::terminal::model::TerminalModel;
 use crate::terminal::view::init::SELECT_PREVIOUS_BLOCK_ACTION_NAME;

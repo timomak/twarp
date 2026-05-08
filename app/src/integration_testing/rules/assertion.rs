@@ -8,7 +8,9 @@ use warpui::{
 #[derive(Debug, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum AIFactPage {
-    RuleEditor { sync_id: Option<crate::server::ids::SyncId> },
+    RuleEditor {
+        sync_id: Option<crate::server::ids::SyncId>,
+    },
     Other,
 }
 pub struct CloudAIFactModel;

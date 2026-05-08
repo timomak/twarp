@@ -12,7 +12,9 @@ use crate::app_state::AIDocumentId;
 pub struct CloudAIFactModel;
 #[allow(dead_code)]
 impl CloudAIFactModel {
-    pub fn new<A>(_: A) -> Self { Self }
+    pub fn new<A>(_: A) -> Self {
+        Self
+    }
 }
 use crate::{
     cloud_object::{

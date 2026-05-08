@@ -10,7 +10,6 @@ use warpui::{AppContext, Element, Entity, EntityId, ModelHandle, View, ViewConte
 
 use crate::app_state::AIConversationId;
 // twarp: 2c-d — AI agent view deleted; re-export from input.
-pub use crate::terminal::input::{AgentViewController, AgentViewControllerEvent};
 use crate::features::FeatureFlag;
 use crate::search::data_source::{Query, QueryFilter};
 use crate::search::mixer::{SearchMixer, SearchMixerEvent};
@@ -27,6 +26,7 @@ use crate::terminal::input::inline_menu::{
 use crate::terminal::input::suggestions_mode_model::{
     InputSuggestionsModeEvent, InputSuggestionsModeModel,
 };
+pub use crate::terminal::input::{AgentViewController, AgentViewControllerEvent};
 use crate::terminal::model::session::active_session::ActiveSession;
 use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ActionButton, ActionButtonTheme, ButtonSize};

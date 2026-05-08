@@ -5,9 +5,9 @@ use std::path::PathBuf;
 #[cfg(feature = "local_fs")]
 use anyhow::Result;
 
+use crate::app_state::CLIAgent;
 use crate::app_state::{BranchSnapshot, LeafContents, LeafSnapshot, PaneNodeSnapshot};
 use crate::launch_configs::launch_config::SplitDirection;
-use crate::app_state::CLIAgent;
 use crate::themes::theme::AnsiColorIdentifier;
 use crate::ui_components::icons::Icon;
 

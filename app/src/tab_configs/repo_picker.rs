@@ -9,7 +9,9 @@ use warpui::{
 
 // twarp: 2c-d — persisted_workspace deleted; stubs.
 pub struct PersistedWorkspace;
-impl warpui::Entity for PersistedWorkspace { type Event = PersistedWorkspaceEvent; }
+impl warpui::Entity for PersistedWorkspace {
+    type Event = PersistedWorkspaceEvent;
+}
 impl warpui::SingletonEntity for PersistedWorkspace {}
 #[allow(dead_code)]
 impl PersistedWorkspace {
@@ -17,7 +19,10 @@ impl PersistedWorkspace {
         std::iter::empty()
     }
 }
-pub enum PersistedWorkspaceEvent { Other, WorkspaceAdded { path: std::path::PathBuf } }
+pub enum PersistedWorkspaceEvent {
+    Other,
+    WorkspaceAdded { path: std::path::PathBuf },
+}
 use crate::{
     appearance::Appearance,
     tab_configs::PickerStyle,

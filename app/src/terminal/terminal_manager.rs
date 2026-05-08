@@ -6,7 +6,9 @@ use warpui::{AppContext, SingletonEntity, ViewHandle};
 
 use crate::PrivacySettings;
 // twarp: 2c-d — AI telemetry banner / blocklist deleted; stubs.
-pub fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool { false }
+pub fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool {
+    false
+}
 use crate::app_state::SerializedBlockListItem;
 use crate::{
     appearance::Appearance,

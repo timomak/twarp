@@ -1110,10 +1110,7 @@ pub struct ServerApiProvider {
 
 impl ServerApiProvider {
     /// Constructs a new ServerApiProvider.
-    pub fn new(
-        auth_state: Arc<AuthState>,
-        ctx: &mut ModelContext<Self>,
-    ) -> Self {
+    pub fn new(auth_state: Arc<AuthState>, ctx: &mut ModelContext<Self>) -> Self {
         let (event_sender, event_receiver) = async_channel::bounded(10);
         let mut server_api = ServerApi::new(auth_state.clone(), event_sender);
 

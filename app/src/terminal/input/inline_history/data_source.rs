@@ -10,11 +10,18 @@
 use crate::app_state::{AIConversationId, ConversationStatus};
 pub use crate::terminal::input::AgentViewController;
 pub struct BlocklistAIHistoryModel;
-impl warpui::Entity for BlocklistAIHistoryModel { type Event = crate::terminal::input::BlocklistAIHistoryEvent; }
+impl warpui::Entity for BlocklistAIHistoryModel {
+    type Event = crate::terminal::input::BlocklistAIHistoryEvent;
+}
 impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
-    pub fn all_live_conversations_for_terminal_view(&self, _: warpui::EntityId) -> Vec<crate::app_state::AIConversationId> { Vec::new() }
+    pub fn all_live_conversations_for_terminal_view(
+        &self,
+        _: warpui::EntityId,
+    ) -> Vec<crate::app_state::AIConversationId> {
+        Vec::new()
+    }
 }
 use crate::input_suggestions::{HistoryInputSuggestion, HistoryOrder};
 use crate::search::data_source::{Query, QueryFilter, QueryResult};

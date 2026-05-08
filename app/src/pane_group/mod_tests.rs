@@ -287,9 +287,9 @@ impl pane::PaneContent for PreAttachReturnsFalsePane {
 }
 
 // TODO: This test is commented out for now until we can fix it. It is flaky and sometimes hangs, causing the CI to cancel.
-// #[test]
-// #[allow(clippy::clone_on_copy)]
-// fn test_pane_history() {
+// twarp: pre-existing — body parked in block comment to keep `cargo fmt` parsing while leaving the test disabled.
+/*
+fn _disabled_test_pane_history() {
     App::test((), |mut app| async move {
         let pane_group = mock_pane_group(&mut app, platform);
 
@@ -313,7 +313,8 @@ impl pane::PaneContent for PreAttachReturnsFalsePane {
             assert!(panes.prev_session_id(third_entity_id).unwrap() == second_entity_id);
         })
     });
-// }
+}
+*/
 
 #[test]
 #[allow(clippy::clone_on_copy)]

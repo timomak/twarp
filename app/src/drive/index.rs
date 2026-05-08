@@ -2,7 +2,10 @@
 use crate::uri::web_intent_parser::open_url_on_desktop;
 // twarp: 2c-d — AI document/facts/fact_collection deleted; stubs.
 use crate::app_state::AIDocumentId;
-pub enum AIFact { Memory(AIMemory), Other }
+pub enum AIFact {
+    Memory(AIMemory),
+    Other,
+}
 #[derive(Default)]
 pub struct AIMemory {
     // twarp: 2c-d — fields used by callers (Option for nullable text)
@@ -15,23 +18,39 @@ pub struct AIMemory {
 pub struct WarpDriveAIFactCollection;
 #[allow(dead_code)]
 impl WarpDriveAIFactCollection {
-    pub fn id(&self) -> String { String::new() }
-    pub fn new<A>(_: A) -> Self { Self }
+    pub fn id(&self) -> String {
+        String::new()
+    }
+    pub fn new<A>(_: A) -> Self {
+        Self
+    }
 }
 // twarp: 2c-d — stub WarpDriveItem impl for AI fact collection (unreachable in twarp).
 impl crate::drive::items::WarpDriveItem for WarpDriveAIFactCollection {
-    fn display_name(&self) -> Option<String> { None }
-    fn metadata(&self) -> Option<&crate::cloud_object::CloudObjectMetadata> { None }
-    fn object_type(&self) -> Option<crate::drive::DriveObjectType> { None }
+    fn display_name(&self) -> Option<String> {
+        None
+    }
+    fn metadata(&self) -> Option<&crate::cloud_object::CloudObjectMetadata> {
+        None
+    }
+    fn object_type(&self) -> Option<crate::drive::DriveObjectType> {
+        None
+    }
     fn secondary_icon(
         &self,
         _color: Option<warp_core::ui::theme::Fill>,
-    ) -> Option<Box<dyn warpui::elements::Element>> { None }
-    fn click_action(&self) -> Option<crate::drive::index::DriveIndexAction> { None }
+    ) -> Option<Box<dyn warpui::elements::Element>> {
+        None
+    }
+    fn click_action(&self) -> Option<crate::drive::index::DriveIndexAction> {
+        None
+    }
     fn preview(
         &self,
         _appearance: &crate::appearance::Appearance,
-    ) -> Option<Box<dyn warpui::elements::Element>> { None }
+    ) -> Option<Box<dyn warpui::elements::Element>> {
+        None
+    }
     fn warp_drive_id(&self) -> crate::drive::items::WarpDriveItemId {
         crate::drive::items::WarpDriveItemId::AIFactCollection
     }
@@ -40,8 +59,12 @@ impl crate::drive::items::WarpDriveItem for WarpDriveAIFactCollection {
         _sync_queue_is_dequeueing: bool,
         _hover_state: warpui::elements::MouseStateHandle,
         _appearance: &crate::appearance::Appearance,
-    ) -> Option<Box<dyn warpui::elements::Element>> { None }
-    fn action_summary(&self, _app: &warpui::AppContext) -> Option<String> { None }
+    ) -> Option<Box<dyn warpui::elements::Element>> {
+        None
+    }
+    fn action_summary(&self, _app: &warpui::AppContext) -> Option<String> {
+        None
+    }
     fn clone_box(&self) -> Box<dyn crate::drive::items::WarpDriveItem> {
         Box::new(self.clone())
     }
@@ -113,7 +136,9 @@ use super::{
         dialog::{SharingDialog, SharingDialogEvent},
         ContentEditability, ShareableObject,
     },
-    CloudObjectTypeAndId, DriveObjectType, DriveSortOrder,
+    CloudObjectTypeAndId,
+    DriveObjectType,
+    DriveSortOrder,
 };
 use crate::drive::panel::DrivePanelAction;
 use crate::server::cloud_objects::update_manager::InitiatedBy;

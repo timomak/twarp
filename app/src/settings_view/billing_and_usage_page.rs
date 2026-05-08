@@ -33,21 +33,44 @@ use settings::Setting;
 
 // twarp: 2c-d — AI usage deleted; stub.
 pub struct AIRequestUsageModel;
-impl warpui::Entity for AIRequestUsageModel { type Event = (); }
+impl warpui::Entity for AIRequestUsageModel {
+    type Event = ();
+}
 impl warpui::SingletonEntity for AIRequestUsageModel {}
 #[allow(dead_code)]
 impl AIRequestUsageModel {
     pub fn refresh_request_usage_async<C>(&mut self, _: &mut C) {}
-    pub fn refresh_duration_to_string(&self) -> String { String::new() }
+    pub fn refresh_duration_to_string(&self) -> String {
+        String::new()
+    }
     // twarp: 2c-d — bulk stubs for AI-removed methods on AIRequestUsageModel
-    pub fn ambient_only_credits_remaining(&self) -> Option<i64> { None }
-    pub fn is_unlimited(&self) -> bool { false }
-    pub fn next_refresh_time(&self) -> Option<chrono::DateTime<chrono::Utc>> { None }
-    pub fn request_limit(&self) -> usize { 0 }
-    pub fn requests_used(&self) -> usize { 0 }
-    pub fn total_workspace_bonus_credits_remaining<W>(&self, _: W) -> i32 { 0 }
-    pub fn total_current_workspace_bonus_credits_remaining<W>(&self, _: W) -> i32 { 0 }
-    pub fn compute_buy_addon_credits_banner_display_state<W>(&self, _: W) -> crate::terminal::buy_credits_banner::BuyCreditsBannerDisplayState { crate::terminal::buy_credits_banner::BuyCreditsBannerDisplayState::Hidden }
+    pub fn ambient_only_credits_remaining(&self) -> Option<i64> {
+        None
+    }
+    pub fn is_unlimited(&self) -> bool {
+        false
+    }
+    pub fn next_refresh_time(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        None
+    }
+    pub fn request_limit(&self) -> usize {
+        0
+    }
+    pub fn requests_used(&self) -> usize {
+        0
+    }
+    pub fn total_workspace_bonus_credits_remaining<W>(&self, _: W) -> i32 {
+        0
+    }
+    pub fn total_current_workspace_bonus_credits_remaining<W>(&self, _: W) -> i32 {
+        0
+    }
+    pub fn compute_buy_addon_credits_banner_display_state<W>(
+        &self,
+        _: W,
+    ) -> crate::terminal::buy_credits_banner::BuyCreditsBannerDisplayState {
+        crate::terminal::buy_credits_banner::BuyCreditsBannerDisplayState::Hidden
+    }
 }
 use crate::{
     auth::{

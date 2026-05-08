@@ -20,17 +20,37 @@ impl From<String> for AIConversationId {
 #[allow(dead_code)]
 impl AIConversationId {
     // twarp: 2c-d — bulk stubs treating bare AIConversationId as if it were the conversation
-    pub fn id(&self) -> AIConversationId { *self }
-    pub fn is_child_agent_conversation(&self) -> bool { false }
-    pub fn is_empty(&self) -> bool { false }
-    pub fn status(&self) -> ConversationStatus { ConversationStatus::Failed }
-    pub fn is_entirely_passive(&self) -> bool { false }
-    pub fn title(&self) -> Option<String> { None }
+    pub fn id(&self) -> AIConversationId {
+        *self
+    }
+    pub fn is_child_agent_conversation(&self) -> bool {
+        false
+    }
+    pub fn is_empty(&self) -> bool {
+        false
+    }
+    pub fn status(&self) -> ConversationStatus {
+        ConversationStatus::Failed
+    }
+    pub fn is_entirely_passive(&self) -> bool {
+        false
+    }
+    pub fn title(&self) -> Option<String> {
+        None
+    }
     // twarp: 2c-d — additional stubs called on conversations
-    pub fn exchange_count(&self) -> usize { 0 }
-    pub fn last_modified_at(&self) -> Option<chrono::DateTime<chrono::Local>> { None }
-    pub fn export_to_markdown<A>(&self, _: A) -> String { String::new() }
-    pub fn get_task<A>(&self, _: A) -> Option<()> { None }
+    pub fn exchange_count(&self) -> usize {
+        0
+    }
+    pub fn last_modified_at(&self) -> Option<chrono::DateTime<chrono::Local>> {
+        None
+    }
+    pub fn export_to_markdown<A>(&self, _: A) -> String {
+        String::new()
+    }
+    pub fn get_task<A>(&self, _: A) -> Option<()> {
+        None
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AmbientAgentTaskId(pub uuid::Uuid);
@@ -51,18 +71,30 @@ impl From<InputConfig> for crate::terminal::input::InputConfig {
 #[allow(dead_code)]
 impl InputConfig {
     // twarp: 2c-d — stubbed; AI input config deleted.
-    pub fn new<C>(_: &C) -> Self { Self {} }
-    pub fn is_ai(&self) -> bool { false }
-    pub fn is_shell(&self) -> bool { true }
-    pub fn is_locked(&self) -> bool { false }
+    pub fn new<C>(_: &C) -> Self {
+        Self {}
+    }
+    pub fn is_ai(&self) -> bool {
+        false
+    }
+    pub fn is_shell(&self) -> bool {
+        true
+    }
+    pub fn is_locked(&self) -> bool {
+        false
+    }
 }
 // twarp: 2c-d — From conversion to bridge terminal::input::InputConfig back to app_state
 impl From<crate::terminal::input::InputConfig> for InputConfig {
-    fn from(_: crate::terminal::input::InputConfig) -> Self { Self {} }
+    fn from(_: crate::terminal::input::InputConfig) -> Self {
+        Self {}
+    }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SerializedBlockListItem {
-    Command { block: crate::terminal::model::block::SerializedBlock },
+    Command {
+        block: crate::terminal::model::block::SerializedBlock,
+    },
 }
 // twarp: 2c-d — opaque stub for serialized command block (legacy alias).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
@@ -113,25 +145,65 @@ pub struct AIConversation {}
 #[allow(dead_code)]
 impl AIConversation {
     // twarp: 2c-d — bulk stubs for app_state::AIConversation
-    pub fn is_empty(&self) -> bool { true }
-    pub fn status(&self) -> ConversationStatus { ConversationStatus::Failed }
-    pub fn title(&self) -> Option<String> { None }
-    pub fn to_serialized_blocklist_items(&self) -> Vec<crate::app_state::SerializedBlockListItem> { Vec::new() }
-    pub fn is_entirely_passive(&self) -> bool { false }
-    pub fn id(&self) -> AIConversationId { AIConversationId::default() }
-    pub fn is_child_agent_conversation(&self) -> bool { false }
-    pub fn exchange_count(&self) -> usize { 0 }
-    pub fn exchange_id_for_action(&self, _: &crate::terminal::view::AIAgentActionId) -> Option<()> { None }
-    pub fn exchanges_reversed(&self) -> std::iter::Empty<()> { std::iter::empty() }
-    pub fn forked_from_server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
-    pub fn has_active_subagent(&self) -> bool { false }
-    pub fn has_opened_code_review(&self) -> bool { false }
-    pub fn latest_exchange(&self) -> Option<()> { None }
-    pub fn latest_user_query(&self) -> Option<String> { None }
-    pub fn root_task_exchanges(&self) -> std::iter::Empty<()> { std::iter::empty() }
-    pub fn server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
-    pub fn last_modified_at(&self) -> Option<chrono::DateTime<chrono::Local>> { None }
-    pub fn get_task<I>(&self, _: I) -> Option<()> { None }
+    pub fn is_empty(&self) -> bool {
+        true
+    }
+    pub fn status(&self) -> ConversationStatus {
+        ConversationStatus::Failed
+    }
+    pub fn title(&self) -> Option<String> {
+        None
+    }
+    pub fn to_serialized_blocklist_items(&self) -> Vec<crate::app_state::SerializedBlockListItem> {
+        Vec::new()
+    }
+    pub fn is_entirely_passive(&self) -> bool {
+        false
+    }
+    pub fn id(&self) -> AIConversationId {
+        AIConversationId::default()
+    }
+    pub fn is_child_agent_conversation(&self) -> bool {
+        false
+    }
+    pub fn exchange_count(&self) -> usize {
+        0
+    }
+    pub fn exchange_id_for_action(&self, _: &crate::terminal::view::AIAgentActionId) -> Option<()> {
+        None
+    }
+    pub fn exchanges_reversed(&self) -> std::iter::Empty<()> {
+        std::iter::empty()
+    }
+    pub fn forked_from_server_conversation_token(
+        &self,
+    ) -> Option<crate::app_state::ServerConversationToken> {
+        None
+    }
+    pub fn has_active_subagent(&self) -> bool {
+        false
+    }
+    pub fn has_opened_code_review(&self) -> bool {
+        false
+    }
+    pub fn latest_exchange(&self) -> Option<()> {
+        None
+    }
+    pub fn latest_user_query(&self) -> Option<String> {
+        None
+    }
+    pub fn root_task_exchanges(&self) -> std::iter::Empty<()> {
+        std::iter::empty()
+    }
+    pub fn server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> {
+        None
+    }
+    pub fn last_modified_at(&self) -> Option<chrono::DateTime<chrono::Local>> {
+        None
+    }
+    pub fn get_task<I>(&self, _: I) -> Option<()> {
+        None
+    }
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum CloudConversationData {
@@ -139,7 +211,16 @@ pub enum CloudConversationData {
     CLIAgent(Box<()>),
 }
 #[derive(Clone, Debug, PartialEq)]
-pub enum ConversationStatus { InProgress, Done, Failed, Cancelled, Success, Blocked {}, Error, Other }
+pub enum ConversationStatus {
+    InProgress,
+    Done,
+    Failed,
+    Cancelled,
+    Success,
+    Blocked {},
+    Error,
+    Other,
+}
 impl std::fmt::Display for ConversationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
@@ -161,12 +242,21 @@ impl ConversationStatus {
         warpui::elements::Empty::new()
     }
     pub fn status_icon_and_color<T>(&self, _: T) -> (warp_core::ui::Icon, warpui::color::ColorU) {
-        (warp_core::ui::Icon::Terminal, warpui::color::ColorU::new(0, 0, 0, 0))
+        (
+            warp_core::ui::Icon::Terminal,
+            warpui::color::ColorU::new(0, 0, 0, 0),
+        )
     }
     // twarp: 2c-d — predicate stubs
-    pub fn is_in_progress(&self) -> bool { matches!(self, ConversationStatus::InProgress) }
-    pub fn is_blocked(&self) -> bool { false }
-    pub fn is_error(&self) -> bool { matches!(self, ConversationStatus::Failed) }
+    pub fn is_in_progress(&self) -> bool {
+        matches!(self, ConversationStatus::InProgress)
+    }
+    pub fn is_blocked(&self) -> bool {
+        false
+    }
+    pub fn is_error(&self) -> bool {
+        matches!(self, ConversationStatus::Failed)
+    }
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct AgentConversationsModelEvent {}
@@ -175,9 +265,15 @@ pub struct ServerConversationToken {}
 #[allow(dead_code)]
 impl ServerConversationToken {
     // twarp: 2c-d — bulk stubs
-    pub fn new<S: Into<String>>(_: S) -> Self { Self {} }
-    pub fn debug_link(&self) -> String { String::new() }
-    pub fn from_uuid(_: uuid::Uuid) -> Self { Self {} }
+    pub fn new<S: Into<String>>(_: S) -> Self {
+        Self {}
+    }
+    pub fn debug_link(&self) -> String {
+        String::new()
+    }
+    pub fn from_uuid(_: uuid::Uuid) -> Self {
+        Self {}
+    }
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum AgentViewEntryOrigin {
@@ -218,7 +314,11 @@ pub enum AgentViewEntryOrigin {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct RestoredAIConversation {}
-impl RestoredAIConversation { pub fn new(_c: AIConversation) -> Self { Self {} } }
+impl RestoredAIConversation {
+    pub fn new(_c: AIConversation) -> Self {
+        Self {}
+    }
+}
 
 // twarp: 2c-d — CLIAgent stub (was crate::terminal::CLIAgent, deleted)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -275,10 +375,18 @@ impl CLIAgent {
     pub fn brand_color(&self) -> warpui::color::ColorU {
         warpui::color::ColorU::new(0, 0, 0, 0)
     }
-    pub fn display_name(&self) -> &'static str { self.serialized_name() }
-    pub fn skill_command_prefix(&self) -> &'static str { "" }
-    pub fn supports_bash_mode(&self) -> bool { false }
-    pub fn to_serialized_name(&self) -> &'static str { self.serialized_name() }
+    pub fn display_name(&self) -> &'static str {
+        self.serialized_name()
+    }
+    pub fn skill_command_prefix(&self) -> &'static str {
+        ""
+    }
+    pub fn supports_bash_mode(&self) -> bool {
+        false
+    }
+    pub fn to_serialized_name(&self) -> &'static str {
+        self.serialized_name()
+    }
 }
 impl std::fmt::Display for CLIAgent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

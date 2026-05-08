@@ -262,8 +262,8 @@ impl AIRequestUsageModel {
         false
     }
 }
-use crate::ActiveSession as WindowActiveSession;
 use crate::report_if_error;
+use crate::ActiveSession as WindowActiveSession;
 // twarp: 2c-d — AIAgentActionResultType deleted; stub locally for type slot.
 #[allow(dead_code)]
 pub enum AIAgentActionResultType {
@@ -290,7 +290,9 @@ pub enum AgentModeSetupSpeedbumpBannerAction {
     SetupAgentMode,
 }
 #[allow(dead_code)]
-fn render_agent_mode_setup_banner<A, B>(_: A, _: B) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
+fn render_agent_mode_setup_banner<A, B>(_: A, _: B) -> Box<dyn warpui::Element> {
+    warpui::elements::Empty::new().finish()
+}
 
 // twarp: 2c-d — Anonymous user AI banner stubs (deleted from inline_banner)
 #[allow(dead_code)]
@@ -299,8 +301,13 @@ struct AnonymousUserAISignUpBannerState {
 }
 #[allow(dead_code)]
 impl AnonymousUserAISignUpBannerState {
-    fn new<A>(_: A) -> Self { Self { id: 0 } }
-    fn render<A>(&self, _: A) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
+    fn new<A>(_: A) -> Self {
+        Self { id: 0 }
+    }
+    fn render<A>(&self, _: A) -> Box<dyn warpui::Element> {
+        use warpui::Element as _;
+        warpui::elements::Empty::new().finish()
+    }
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -319,8 +326,8 @@ use crate::pane_group::ConversationRestorationInNewPaneType;
 #[allow(dead_code)]
 mod ambient_agent {
     // twarp: 2c-d — re-export canonical AmbientAgentViewModel from terminal::input.
-    pub use crate::terminal::input::AmbientAgentViewModel;
     use super::*;
+    pub use crate::terminal::input::AmbientAgentViewModel;
     pub struct FirstTimeCloudAgentSetupView;
     impl FirstTimeCloudAgentSetupView {
         pub fn new<C>(_: &mut C) -> Self {
@@ -353,23 +360,36 @@ impl UseAgentToolbar {
     fn clear_warpify_mode<C>(&mut self, _: &mut C) {}
     fn notify_and_notify_children<C>(&mut self, _: &mut C) {}
     fn set_warpify_mode<A, C>(&mut self, _: A, _: &mut C) {}
-    fn warpify_mode<C>(&self, _: &C) -> Option<crate::terminal::view::block_banner::WarpificationMode> { None }
+    fn warpify_mode<C>(
+        &self,
+        _: &C,
+    ) -> Option<crate::terminal::view::block_banner::WarpificationMode> {
+        None
+    }
 }
 
 // twarp: 2c-d — cli_agent module deleted; alias to satisfy `cli_agent::*` references
 #[allow(dead_code)]
 mod cli_agent {
-    pub fn build_review_prompt<R>(_: R) -> String { String::new() }
-    pub fn build_diff_context_prompt<R>(_: R) -> String { String::new() }
-    pub fn build_diff_hunk_prompt<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: E) -> String { String::new() }
+    pub fn build_review_prompt<R>(_: R) -> String {
+        String::new()
+    }
+    pub fn build_diff_context_prompt<R>(_: R) -> String {
+        String::new()
+    }
+    pub fn build_diff_hunk_prompt<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: E) -> String {
+        String::new()
+    }
 }
 
 // twarp: 2c-d — re-export canonical AgentViewController from terminal::input.
 pub use crate::terminal::input::{AgentViewController, AgentViewControllerEvent};
 // twarp: 2c-d — re-export unified stubs from model::block.
+#[allow(dead_code)]
+use crate::terminal::model::block::AgentViewDisplayMode;
 use crate::terminal::model::block::AgentViewState;
-#[allow(dead_code)] use crate::terminal::model::block::AgentViewDisplayMode;
-#[allow(dead_code)] struct AgentViewEntryBlockParams {
+#[allow(dead_code)]
+struct AgentViewEntryBlockParams {
     // twarp: 2c-d — fields used by callers
     pub origin: AgentViewEntryOrigin,
     pub is_restored: bool,
@@ -379,78 +399,147 @@ use crate::terminal::model::block::AgentViewState;
 }
 // twarp: 2c-d — re-export canonical AgentViewEntryOrigin from app_state
 pub use crate::app_state::AgentViewEntryOrigin;
-#[allow(dead_code)] struct AgentViewHeaderDisabledTheme;
-#[allow(dead_code)] struct AgentViewHeaderTheme;
+#[allow(dead_code)]
+struct AgentViewHeaderDisabledTheme;
+#[allow(dead_code)]
+struct AgentViewHeaderTheme;
 impl crate::view_components::action_button::ActionButtonTheme for AgentViewHeaderTheme {
-    fn background(&self, _hovered: bool, _appearance: &Appearance) -> Option<warp_core::ui::theme::Fill> { None }
+    fn background(
+        &self,
+        _hovered: bool,
+        _appearance: &Appearance,
+    ) -> Option<warp_core::ui::theme::Fill> {
+        None
+    }
     fn text_color(
         &self,
         _hovered: bool,
         _background: Option<warp_core::ui::theme::Fill>,
         _appearance: &Appearance,
-    ) -> warpui::color::ColorU { warpui::color::ColorU::new(0, 0, 0, 0) }
+    ) -> warpui::color::ColorU {
+        warpui::color::ColorU::new(0, 0, 0, 0)
+    }
 }
 impl crate::view_components::action_button::ActionButtonTheme for AgentViewHeaderDisabledTheme {
-    fn background(&self, _hovered: bool, _appearance: &Appearance) -> Option<warp_core::ui::theme::Fill> { None }
+    fn background(
+        &self,
+        _hovered: bool,
+        _appearance: &Appearance,
+    ) -> Option<warp_core::ui::theme::Fill> {
+        None
+    }
     fn text_color(
         &self,
         _hovered: bool,
         _background: Option<warp_core::ui::theme::Fill>,
         _appearance: &Appearance,
-    ) -> warpui::color::ColorU { warpui::color::ColorU::new(0, 0, 0, 0) }
+    ) -> warpui::color::ColorU {
+        warpui::color::ColorU::new(0, 0, 0, 0)
+    }
 }
-#[allow(dead_code)] struct AgentViewZeroStateBlock;
+#[allow(dead_code)]
+struct AgentViewZeroStateBlock;
 #[allow(dead_code)]
 impl AgentViewZeroStateBlock {
-    fn new<A, B, C, D, E, F, G, H, I>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: &mut I) -> Self { Self }
+    fn new<A, B, C, D, E, F, G, H, I>(
+        _: A,
+        _: B,
+        _: C,
+        _: D,
+        _: E,
+        _: F,
+        _: G,
+        _: H,
+        _: &mut I,
+    ) -> Self {
+        Self
+    }
 }
-#[allow(dead_code)] pub enum AgentViewZeroStateEvent { ClickedInitCallout, OpenConversation { conversation_id: crate::app_state::AIConversationId } }
+#[allow(dead_code)]
+pub enum AgentViewZeroStateEvent {
+    ClickedInitCallout,
+    OpenConversation {
+        conversation_id: crate::app_state::AIConversationId,
+    },
+}
 // twarp: 2c-d — unify with terminal::input::EphemeralMessageModel.
 pub use crate::terminal::input::EphemeralMessageModel;
-#[allow(dead_code)] pub enum ExitConfirmationTrigger { CtrlC, Escape }
-#[allow(dead_code)] struct InlineAgentViewHeader;
+#[allow(dead_code)]
+pub enum ExitConfirmationTrigger {
+    CtrlC,
+    Escape,
+}
+#[allow(dead_code)]
+struct InlineAgentViewHeader;
 #[allow(dead_code)]
 impl InlineAgentViewHeader {
-    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
+    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+        Self
+    }
 }
-#[allow(dead_code)] const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration = std::time::Duration::ZERO;
-#[allow(dead_code)] pub fn agent_view_bg_fill<C>(_: C) -> warpui::color::ColorU { warpui::color::ColorU::new(0, 0, 0, 0) }
-#[allow(dead_code)] fn fork_from_last_known_good_state_exchange_id<A, B>(_: A, _: B) -> Option<()> { None }
+#[allow(dead_code)]
+const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration = std::time::Duration::ZERO;
+#[allow(dead_code)]
+pub fn agent_view_bg_fill<C>(_: C) -> warpui::color::ColorU {
+    warpui::color::ColorU::new(0, 0, 0, 0)
+}
+#[allow(dead_code)]
+fn fork_from_last_known_good_state_exchange_id<A, B>(_: A, _: B) -> Option<()> {
+    None
+}
 
-#[allow(dead_code)] mod conversation_utils {
+#[allow(dead_code)]
+mod conversation_utils {
     pub fn remove_conversation<A, B, C, D>(_: A, _: B, _: C, _: D) {}
 }
 
-#[allow(dead_code)] fn has_pending_code_or_unit_test_prompt_suggestion<A, C>(_: A, _: &C) -> bool { false }
-#[allow(dead_code)] fn is_accept_prompt_suggestion_bound_to_cmd_enter<C>(_: &C) -> bool { false }
-#[allow(dead_code)] fn is_accept_prompt_suggestion_bound_to_ctrl_enter<C>(_: &C) -> bool { false }
+#[allow(dead_code)]
+fn has_pending_code_or_unit_test_prompt_suggestion<A, C>(_: A, _: &C) -> bool {
+    false
+}
+#[allow(dead_code)]
+fn is_accept_prompt_suggestion_bound_to_cmd_enter<C>(_: &C) -> bool {
+    false
+}
+#[allow(dead_code)]
+fn is_accept_prompt_suggestion_bound_to_ctrl_enter<C>(_: &C) -> bool {
+    false
+}
 
 #[cfg(feature = "local_fs")]
 pub use crate::code_review::comments::comment::{CurrentHead, DiffBase};
 
-#[allow(dead_code)] struct AgentConversationsModel;
+#[allow(dead_code)]
+struct AgentConversationsModel;
 #[allow(dead_code)]
 impl AgentConversationsModel {
-    fn get_task_data<I>(&self, _: I) -> Option<AgentTaskDataStub> { None }
+    fn get_task_data<I>(&self, _: I) -> Option<AgentTaskDataStub> {
+        None
+    }
 }
 #[allow(dead_code)]
 struct AgentTaskDataStub;
 #[allow(dead_code)]
 impl AgentTaskDataStub {
-    fn is_no_longer_running(&self) -> bool { false }
+    fn is_no_longer_running(&self) -> bool {
+        false
+    }
 }
 // twarp: 2c-d — stub for AI task results
 #[allow(dead_code)]
 struct TaskStub;
 #[allow(dead_code)]
 impl TaskStub {
-    fn last_exchange(&self) -> Option<ExchangeStub> { None }
+    fn last_exchange(&self) -> Option<ExchangeStub> {
+        None
+    }
 }
 #[allow(dead_code)]
 struct ExchangeStub {
     pub id: AIAgentExchangeId,
 }
-#[allow(dead_code)] enum AgentConversationsModelEvent {
+#[allow(dead_code)]
+enum AgentConversationsModelEvent {
     // twarp: 2c-d — bulk variants for AI-removed AgentConversationsModelEvent
     ConversationArtifactsUpdated,
     ConversationUpdated,
@@ -458,29 +547,59 @@ struct ExchangeStub {
     TasksUpdated,
 }
 
-#[allow(dead_code)] fn conversation_output_status_from_conversation<C>(_: C) -> Option<AmbientConversationStatus> { None }
+#[allow(dead_code)]
+fn conversation_output_status_from_conversation<C>(_: C) -> Option<AmbientConversationStatus> {
+    None
+}
 type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
-#[allow(dead_code)] pub enum AmbientConversationStatus { Error { error: RenderableAIError } }
+#[allow(dead_code)]
+pub enum AmbientConversationStatus {
+    Error { error: RenderableAIError },
+}
 
-#[allow(dead_code)] struct CLISubagentView;
-#[allow(dead_code)] pub enum CLISubagentViewEvent { TextSelected, CopiedEmptyText }
+#[allow(dead_code)]
+struct CLISubagentView;
+#[allow(dead_code)]
+pub enum CLISubagentViewEvent {
+    TextSelected,
+    CopiedEmptyText,
+}
 // twarp: 2c-d — unify with terminal::input::CLISubagentController.
 pub use crate::terminal::input::CLISubagentController;
 #[allow(dead_code)]
 impl CLISubagentController {
-    fn new<A, B, C, D, E, F, G>(_: A, _: B, _: C, _: D, _: E, _: F, _: &mut G) -> Self { Self }
+    fn new<A, B, C, D, E, F, G>(_: A, _: B, _: C, _: D, _: E, _: F, _: &mut G) -> Self {
+        Self
+    }
     fn switch_control_to_user<A, C>(&mut self, _: A, _: &mut C) {}
     fn handoff_active_command_control_to_agent<C>(&mut self, _: &mut C) {}
-    pub fn is_agent_in_control(&self) -> bool { false }
+    pub fn is_agent_in_control(&self) -> bool {
+        false
+    }
     pub fn toggle_hide_responses<C>(&mut self, _: &mut C) {}
 }
 #[allow(dead_code)]
 impl CLISubagentView {
-    fn new<A, B, C, D, E, F, G, H, I>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: &mut I) -> Self { Self }
+    fn new<A, B, C, D, E, F, G, H, I>(
+        _: A,
+        _: B,
+        _: C,
+        _: D,
+        _: E,
+        _: F,
+        _: G,
+        _: H,
+        _: &mut I,
+    ) -> Self {
+        Self
+    }
     fn clear_all_selections<C>(&mut self, _: &mut C) {}
-    fn selected_text<C>(&self, _: &C) -> Option<String> { None }
+    fn selected_text<C>(&self, _: &C) -> Option<String> {
+        None
+    }
 }
-#[allow(dead_code)] pub enum CLISubagentEvent {
+#[allow(dead_code)]
+pub enum CLISubagentEvent {
     // twarp: 2c-d — bulk variants for AI-removed CLISubagentEvent
     Other,
     ControlHandedBackAfterTransfer,
@@ -496,64 +615,107 @@ impl CLISubagentView {
         initial_requested_command_action_id: Option<AIAgentActionId>,
     },
     ToggledHideResponses,
-    UpdatedControl { agent_has_control: bool },
+    UpdatedControl {
+        agent_has_control: bool,
+    },
     UpdatedLastSnapshot,
 }
-#[allow(dead_code)] enum UserTakeOverReason {
+#[allow(dead_code)]
+enum UserTakeOverReason {
     Manual,
     Stop,
     TransferFromAgent {},
 }
 #[allow(dead_code)]
 impl UserTakeOverReason {
-    fn is_stop(&self) -> bool { matches!(self, UserTakeOverReason::Stop) }
+    fn is_stop(&self) -> bool {
+        matches!(self, UserTakeOverReason::Stop)
+    }
 }
-#[allow(dead_code)] pub enum BlocklistAIStatusBarEvent { SummarizationCancelDialogToggled { is_open: bool }, Stop }
-#[allow(dead_code)] fn block_context_from_terminal_model<A, B, C>(_: A, _: B, _: C) -> Option<()> { None }
-#[allow(dead_code)] pub enum SlashCommandRequest {
+#[allow(dead_code)]
+pub enum BlocklistAIStatusBarEvent {
+    SummarizationCancelDialogToggled { is_open: bool },
+    Stop,
+}
+#[allow(dead_code)]
+fn block_context_from_terminal_model<A, B, C>(_: A, _: B, _: C) -> Option<()> {
+    None
+}
+#[allow(dead_code)]
+pub enum SlashCommandRequest {
     Summarize { prompt: Option<String> },
     InitProjectRules,
 }
-#[allow(dead_code)] type AIDocumentId = crate::app_state::AIDocumentId;
-#[allow(dead_code)] type AIDocumentVersion = crate::app_state::AIDocumentVersion;
-#[allow(dead_code)] struct AIDocumentModel;
+#[allow(dead_code)]
+type AIDocumentId = crate::app_state::AIDocumentId;
+#[allow(dead_code)]
+type AIDocumentVersion = crate::app_state::AIDocumentVersion;
+#[allow(dead_code)]
+struct AIDocumentModel;
 impl SingletonEntity for AIDocumentModel {}
 #[allow(dead_code)]
 impl AIDocumentModel {
-    pub fn is_document_visible_by_conversation_in_pane_group<A, B>(&self, _: A, _: B) -> bool { false }
-    pub fn get_all_documents_for_conversation<A>(&self, _: A) -> Vec<(crate::app_state::AIDocumentId, AIDocumentEntryStub)> { Vec::new() }
+    pub fn is_document_visible_by_conversation_in_pane_group<A, B>(&self, _: A, _: B) -> bool {
+        false
+    }
+    pub fn get_all_documents_for_conversation<A>(
+        &self,
+        _: A,
+    ) -> Vec<(crate::app_state::AIDocumentId, AIDocumentEntryStub)> {
+        Vec::new()
+    }
 }
 #[allow(dead_code)]
 pub struct AIDocumentEntryStub {
     pub version: crate::app_state::AIDocumentVersion,
 }
-#[allow(dead_code)] fn shimmering_warp_loading_text<A, B, C, D>(_: A, _: B, _: C, _: D) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
+#[allow(dead_code)]
+fn shimmering_warp_loading_text<A, B, C, D>(_: A, _: B, _: C, _: D) -> Box<dyn warpui::Element> {
+    warpui::elements::Empty::new().finish()
+}
 
 pub use crate::app_state::ServerConversationToken;
 // twarp: 2c-d — InputType for callers expecting terminal::view::InputType.
 pub use crate::server::telemetry::events::InputType;
 #[allow(dead_code)]
 impl ServerConversationToken {
-    fn as_str(&self) -> &str { "" }
+    fn as_str(&self) -> &str {
+        ""
+    }
 }
-#[allow(dead_code)] fn redact_secrets<C>(_: C) {}
-#[allow(dead_code)] pub enum AgentTodosPopupEvent { Close }
-#[allow(dead_code)] struct AgentTodosPopupView;
+#[allow(dead_code)]
+fn redact_secrets<C>(_: C) {}
+#[allow(dead_code)]
+pub enum AgentTodosPopupEvent {
+    Close,
+}
+#[allow(dead_code)]
+struct AgentTodosPopupView;
 #[allow(dead_code)]
 impl AgentTodosPopupView {
-    fn new<A, B, C>(_: A, _: B, _: &mut C) -> Self { Self }
+    fn new<A, B, C>(_: A, _: B, _: &mut C) -> Self {
+        Self
+    }
 }
 
-pub use ai::agent::action::AIAgentPtyWriteMode;
 pub use crate::code_review::code_review_view::AgentReviewCommentBatch;
+pub use ai::agent::action::AIAgentPtyWriteMode;
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)] pub enum CancellationReason { No, ManuallyCancelled, Reverted, UserCommandExecuted, FollowUpSubmitted { is_for_same_conversation: bool } }
+#[allow(dead_code)]
+pub enum CancellationReason {
+    No,
+    ManuallyCancelled,
+    Reverted,
+    UserCommandExecuted,
+    FollowUpSubmitted { is_for_same_conversation: bool },
+}
 pub use crate::terminal::view::inline_banner::prompt_suggestions::{
     PassiveSuggestionTrigger, ShellCommandCompletedTrigger,
 };
 // twarp: 2c-d — unify with events::ServerOutputId.
 pub use crate::server::telemetry::events::ServerOutputId;
-#[allow(dead_code)] enum AIBlockAction {
+#[allow(dead_code)]
+enum AIBlockAction {
     // twarp: 2c-d — bulk variants for AI-removed AIBlockAction
     Copy,
     CopyCommand(()),
@@ -564,7 +726,8 @@ pub use crate::server::telemetry::events::ServerOutputId;
 // twarp: 2c-d — re-export canonical FinishReason from pending_user_query.
 pub use crate::terminal::view::pending_user_query::FinishReason;
 #[derive(Debug, Clone)]
-#[allow(dead_code)] pub enum CodebaseIndexSpeedbumpBannerAction {
+#[allow(dead_code)]
+pub enum CodebaseIndexSpeedbumpBannerAction {
     // twarp: 2c-d — bulk variants for AI-removed CodebaseIndexSpeedbumpBannerAction
     AllowIndexing,
     Close,
@@ -584,8 +747,13 @@ struct CodebaseIndexSpeedbumpBannerState {
 #[allow(dead_code)]
 impl CodebaseIndexSpeedbumpBannerState {
     pub fn toggle_always_allow_checked(&mut self) {}
-    pub fn show_indexing_banner(&self) -> bool { false }
-    pub fn render_codebase_index_speedbump_banner<A>(&self, _: A) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
+    pub fn show_indexing_banner(&self) -> bool {
+        false
+    }
+    pub fn render_codebase_index_speedbump_banner<A>(&self, _: A) -> Box<dyn warpui::Element> {
+        use warpui::Element as _;
+        warpui::elements::Empty::new().finish()
+    }
 }
 #[allow(dead_code)]
 impl CodebaseIndexSpeedbumpBannerState {
@@ -593,41 +761,103 @@ impl CodebaseIndexSpeedbumpBannerState {
         unimplemented!()
     }
 }
-#[allow(dead_code)] #[derive(PartialEq, Eq, Default)] pub enum VisibilityState { #[default] Other, Speedbump }
-#[allow(dead_code)] pub enum AIBlockOutputStatus { Failed {} }
+#[allow(dead_code)]
+#[derive(PartialEq, Eq, Default)]
+pub enum VisibilityState {
+    #[default]
+    Other,
+    Speedbump,
+}
+#[allow(dead_code)]
+pub enum AIBlockOutputStatus {
+    Failed {},
+}
 
 #[cfg(feature = "local_fs")]
-#[allow(dead_code)] struct PersistedWorkspace;
+#[allow(dead_code)]
+struct PersistedWorkspace;
 #[allow(dead_code)]
 impl PersistedWorkspace {
     fn navigated_to_path<P>(&mut self, _: P) {}
 }
 
 // CLI agent sessions
-#[allow(dead_code)] fn parse_event<A, B>(_: A, _: B) -> Option<CLIAgentEvent> { None }
-#[allow(dead_code)] struct CLIAgentEvent { event_type: CLIAgentEventType, payload: CLIAgentEventPayload, agent: crate::app_state::CLIAgent, session_id: Option<String>, project: Option<String>, model: Option<String>, v: Option<String>, event: CLIAgentEventType, cwd: Option<String> }
-#[allow(dead_code)] #[derive(Default)] struct CLIAgentEventPayload { content: String, plugin_version: Option<String> }
+#[allow(dead_code)]
+fn parse_event<A, B>(_: A, _: B) -> Option<CLIAgentEvent> {
+    None
+}
+#[allow(dead_code)]
+struct CLIAgentEvent {
+    event_type: CLIAgentEventType,
+    payload: CLIAgentEventPayload,
+    agent: crate::app_state::CLIAgent,
+    session_id: Option<String>,
+    project: Option<String>,
+    model: Option<String>,
+    v: Option<String>,
+    event: CLIAgentEventType,
+    cwd: Option<String>,
+}
+#[allow(dead_code)]
+#[derive(Default)]
+struct CLIAgentEventPayload {
+    content: String,
+    plugin_version: Option<String>,
+}
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum CLIAgentEventType { SessionStart, Other }
-#[allow(dead_code)] const CLI_AGENT_NOTIFICATION_SENTINEL: &str = "";
-#[allow(dead_code)] fn is_agent_supported<C>(_: C) -> bool { false }
-#[allow(dead_code)] struct CLIAgentSessionListener;
+enum CLIAgentEventType {
+    SessionStart,
+    Other,
+}
+#[allow(dead_code)]
+const CLI_AGENT_NOTIFICATION_SENTINEL: &str = "";
+#[allow(dead_code)]
+fn is_agent_supported<C>(_: C) -> bool {
+    false
+}
+#[allow(dead_code)]
+struct CLIAgentSessionListener;
 #[allow(dead_code)]
 impl CLIAgentSessionListener {
-    fn new<A, B, C, D>(_: A, _: B, _: C, _: &mut D) -> Self { Self }
+    fn new<A, B, C, D>(_: A, _: B, _: C, _: &mut D) -> Self {
+        Self
+    }
 }
-impl Entity for CLIAgentSessionListener { type Event = (); }
-#[allow(dead_code)] struct PluginManagerStub;
-#[allow(dead_code)] impl PluginManagerStub {
-    fn minimum_plugin_version(&self) -> &'static str { "" }
+impl Entity for CLIAgentSessionListener {
+    type Event = ();
 }
-#[allow(dead_code)] fn plugin_manager_for<C>(_: C) -> Option<PluginManagerStub> { None }
+#[allow(dead_code)]
+struct PluginManagerStub;
+#[allow(dead_code)]
+impl PluginManagerStub {
+    fn minimum_plugin_version(&self) -> &'static str {
+        ""
+    }
+}
+#[allow(dead_code)]
+fn plugin_manager_for<C>(_: C) -> Option<PluginManagerStub> {
+    None
+}
 #[derive(Debug, Clone)]
-#[allow(dead_code)] pub enum PluginModalKind {}
-#[allow(dead_code)] enum CLIAgentInputEntrypoint { AutoShow, Other, CtrlG }
-#[allow(dead_code)] pub enum CLIAgentInputState { Open {}, Closed }
-#[allow(dead_code)] enum CLIAgentRichInputCloseReason { AutoToggle, Other }
+#[allow(dead_code)]
+pub enum PluginModalKind {}
+#[allow(dead_code)]
+enum CLIAgentInputEntrypoint {
+    AutoShow,
+    Other,
+    CtrlG,
+}
+#[allow(dead_code)]
+pub enum CLIAgentInputState {
+    Open {},
+    Closed,
+}
+#[allow(dead_code)]
+enum CLIAgentRichInputCloseReason {
+    AutoToggle,
+    Other,
+}
 #[allow(dead_code)]
 pub struct CLIAgentSession {
     pub agent: CLIAgent,
@@ -642,15 +872,23 @@ pub struct CLIAgentSession {
     pub draft_text: Option<String>,
     pub custom_command_prefix: Option<String>,
 }
-#[allow(dead_code)] struct CLIAgentSessionContext {
+#[allow(dead_code)]
+struct CLIAgentSessionContext {
     pub query: Option<String>,
     pub summary: Option<String>,
     pub response: Option<String>,
 }
 impl Default for CLIAgentSessionContext {
-    fn default() -> Self { Self { query: None, summary: None, response: None } }
+    fn default() -> Self {
+        Self {
+            query: None,
+            summary: None,
+            response: None,
+        }
+    }
 }
-#[allow(dead_code)] enum CLIAgentSessionStatus {
+#[allow(dead_code)]
+enum CLIAgentSessionStatus {
     InProgress,
     Blocked { message: String },
     Success,
@@ -661,47 +899,91 @@ impl CLIAgentSessionStatus {
         ConversationStatus::Failed
     }
 }
-#[allow(dead_code)] struct CLIAgentSessionsModel;
+#[allow(dead_code)]
+struct CLIAgentSessionsModel;
 #[allow(dead_code)]
 impl CLIAgentSessionsModel {
-    fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSession> { None }
-    fn is_input_open(&self, _: warpui::EntityId) -> bool { false }
+    fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSession> {
+        None
+    }
+    fn is_input_open(&self, _: warpui::EntityId) -> bool {
+        false
+    }
     // twarp: 2c-d — bulk stubs
-    fn register_listener<A, B, C, D, E, F, G, H, I, J>(&mut self, _: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: I, _: &mut J) {}
+    fn register_listener<A, B, C, D, E, F, G, H, I, J>(
+        &mut self,
+        _: A,
+        _: B,
+        _: C,
+        _: D,
+        _: E,
+        _: F,
+        _: G,
+        _: H,
+        _: I,
+        _: &mut J,
+    ) {
+    }
     fn remove_session<A, C>(&mut self, _: A, _: &mut C) {}
     fn set_session<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     fn update_from_event<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
 }
-#[allow(dead_code)] pub enum CLIAgentSessionsModelEvent {
-    Ended { terminal_view_id: warpui::EntityId },
+#[allow(dead_code)]
+pub enum CLIAgentSessionsModelEvent {
+    Ended {
+        terminal_view_id: warpui::EntityId,
+    },
     // twarp: 2c-d — bulk variants for AI-removed CLIAgentSessionsModelEvent
-    Started { terminal_view_id: warpui::EntityId, cli_agent: crate::app_state::CLIAgent },
-    StatusChanged { terminal_view_id: warpui::EntityId, status: CLIAgentSessionStatus, agent: crate::app_state::CLIAgent, session_context: CLIAgentSessionContext },
-    SessionUpdated { terminal_view_id: warpui::EntityId },
-    InputSessionChanged { terminal_view_id: warpui::EntityId, new_input_state: CLIAgentInputState },
+    Started {
+        terminal_view_id: warpui::EntityId,
+        cli_agent: crate::app_state::CLIAgent,
+    },
+    StatusChanged {
+        terminal_view_id: warpui::EntityId,
+        status: CLIAgentSessionStatus,
+        agent: crate::app_state::CLIAgent,
+        session_context: CLIAgentSessionContext,
+    },
+    SessionUpdated {
+        terminal_view_id: warpui::EntityId,
+    },
+    InputSessionChanged {
+        terminal_view_id: warpui::EntityId,
+        new_input_state: CLIAgentInputState,
+    },
 }
 #[allow(dead_code)]
 impl CLIAgentSessionsModelEvent {
     fn terminal_view_id(&self) -> warpui::EntityId {
         match self {
-            Self::Ended { terminal_view_id } |
-            Self::Started { terminal_view_id, .. } |
-            Self::StatusChanged { terminal_view_id, .. } |
-            Self::SessionUpdated { terminal_view_id } |
-            Self::InputSessionChanged { terminal_view_id, new_input_state: _ } => *terminal_view_id,
+            Self::Ended { terminal_view_id }
+            | Self::Started {
+                terminal_view_id, ..
+            }
+            | Self::StatusChanged {
+                terminal_view_id, ..
+            }
+            | Self::SessionUpdated { terminal_view_id }
+            | Self::InputSessionChanged {
+                terminal_view_id,
+                new_input_state: _,
+            } => *terminal_view_id,
         }
     }
 }
 
 // twarp: 2c-d — additional file-local stubs for view.rs body code
-#[allow(dead_code)] type AIConversationId = crate::app_state::AIConversationId;
+#[allow(dead_code)]
+type AIConversationId = crate::app_state::AIConversationId;
 // twarp: 2c-d — unify with app_state::AIConversation.
 pub use crate::app_state::AIConversation;
 // twarp: 2c-d — unify with app_state::ConversationStatus.
 pub use crate::app_state::ConversationStatus;
 // twarp: 2c-d — ConversationStatus stub now lives above as a struct.
-#[allow(dead_code)] enum UserQueryMode {}
-#[allow(dead_code)] enum AIAgentActionType {
+#[allow(dead_code)]
+enum UserQueryMode {}
+#[allow(dead_code)]
+enum AIAgentActionType {
     CreateDocuments(()),
     EditDocuments(()),
     // twarp: 2c-d — bulk variants for AI-removed AIAgentActionType
@@ -711,27 +993,45 @@ pub use crate::app_state::ConversationStatus;
     SearchCodebase(()),
     WriteToLongRunningShellCommand {},
 }
-#[allow(dead_code)] enum AIAgentOutputStatus {}
-#[allow(dead_code)] enum AIAgentTextSection {}
-#[allow(dead_code)] pub enum EntrypointType { Onboarding { chip_type: OnboardingChipType } }
-#[allow(dead_code)] enum FinishedAIAgentOutput {
+#[allow(dead_code)]
+enum AIAgentOutputStatus {}
+#[allow(dead_code)]
+enum AIAgentTextSection {}
+#[allow(dead_code)]
+pub enum EntrypointType {
+    Onboarding { chip_type: OnboardingChipType },
+}
+#[allow(dead_code)]
+enum FinishedAIAgentOutput {
     Success { output: () },
     Error {},
 }
-#[allow(dead_code)] pub enum RenderableAIError { QuotaLimit }
-#[allow(dead_code)] pub enum StaticQueryType { CustomOnboardingRequest }
+#[allow(dead_code)]
+pub enum RenderableAIError {
+    QuotaLimit,
+}
+#[allow(dead_code)]
+pub enum StaticQueryType {
+    CustomOnboardingRequest,
+}
 // twarp: 2c-d — re-export from session_settings to unify variants used here.
 pub use crate::terminal::session_settings::AgentToolbarItemKind;
-#[allow(dead_code)] #[derive(Clone)] pub struct SuggestedAgentModeWorkflowAndId;
-#[allow(dead_code)] #[derive(Clone)] pub struct SuggestedRuleAndId;
-#[allow(dead_code)] struct AIBlockModelImpl<T>(std::marker::PhantomData<T>);
+#[allow(dead_code)]
+#[derive(Clone)]
+pub struct SuggestedAgentModeWorkflowAndId;
+#[allow(dead_code)]
+#[derive(Clone)]
+pub struct SuggestedRuleAndId;
+#[allow(dead_code)]
+struct AIBlockModelImpl<T>(std::marker::PhantomData<T>);
 #[allow(dead_code)]
 impl<T> AIBlockModelImpl<T> {
     fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: E) -> Result<Self, ()> {
         Ok(Self(std::marker::PhantomData))
     }
 }
-#[allow(dead_code)] struct ClientIdentifiers {
+#[allow(dead_code)]
+struct ClientIdentifiers {
     // twarp: 2c-d — fields used by callers
     pub conversation_id: crate::app_state::AIConversationId,
     pub client_exchange_id: String,
@@ -739,38 +1039,74 @@ impl<T> AIBlockModelImpl<T> {
 }
 // twarp: 2c-d — unify with block::interaction_mode::AIAgentActionId.
 pub use crate::terminal::model::block::interaction_mode::AIAgentActionId;
-#[allow(dead_code)] struct AIAgentCitation;
-#[allow(dead_code)] pub enum AIAgentContext { Block(Box<()>) }
+#[allow(dead_code)]
+struct AIAgentCitation;
+#[allow(dead_code)]
+pub enum AIAgentContext {
+    Block(Box<()>),
+}
 // twarp: 2c-d — re-export to unify cross-file types.
 pub use crate::terminal::view::rich_content::AIAgentExchangeId;
-#[allow(dead_code)] enum AIAgentInput {
-    CodeReview { context: (), review_comments: crate::code_review::code_review_view::AgentReviewCommentBatch },
+#[allow(dead_code)]
+enum AIAgentInput {
+    CodeReview {
+        context: (),
+        review_comments: crate::code_review::code_review_view::AgentReviewCommentBatch,
+    },
 }
-#[allow(dead_code)] #[derive(Debug, Clone, PartialEq, Eq)] struct FileLocations;
-#[allow(dead_code)] pub enum PassiveSuggestionResultType { Prompt { prompt: String } }
-#[allow(dead_code)] fn ai_brand_color<C>(_: C) -> warpui::color::ColorU { warpui::color::ColorU::new(0,0,0,0) }
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FileLocations;
+#[allow(dead_code)]
+pub enum PassiveSuggestionResultType {
+    Prompt { prompt: String },
+}
+#[allow(dead_code)]
+fn ai_brand_color<C>(_: C) -> warpui::color::ColorU {
+    warpui::color::ColorU::new(0, 0, 0, 0)
+}
 // twarp: 2c-d — ElementPositionId removed from warpui; stub returns ()
-#[allow(dead_code)] fn get_ai_block_overflow_menu_element_position_id<C>(_: C) -> String { String::new() }
-#[allow(dead_code)] fn get_attached_blocks_chip_element_position_id<C>(_: C) -> String { String::new() }
-#[allow(dead_code)] pub struct CodeDiffView;
-#[allow(dead_code)] pub struct SummarizationCancelDialog;
-#[allow(dead_code)] fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool { false }
+#[allow(dead_code)]
+fn get_ai_block_overflow_menu_element_position_id<C>(_: C) -> String {
+    String::new()
+}
+#[allow(dead_code)]
+fn get_attached_blocks_chip_element_position_id<C>(_: C) -> String {
+    String::new()
+}
+#[allow(dead_code)]
+pub struct CodeDiffView;
+#[allow(dead_code)]
+pub struct SummarizationCancelDialog;
+#[allow(dead_code)]
+fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool {
+    false
+}
 // twarp: 2c-d — unify with rich_content::TelemetryBanner.
 pub use crate::terminal::view::rich_content::TelemetryBanner;
 #[allow(dead_code)]
 impl TelemetryBanner {
-    fn new<A, B>(_: A, _: &mut B) -> Self { Self }
+    fn new<A, B>(_: A, _: &mut B) -> Self {
+        Self
+    }
 }
 // twarp: 2c-d — re-export canonical AIBlock from rich_content
 pub use crate::terminal::view::rich_content::AIBlock;
-#[allow(dead_code)] pub enum AIBlockEvent {}
-#[allow(dead_code)] pub enum BlocklistAIActionEvent {
+#[allow(dead_code)]
+pub enum AIBlockEvent {}
+#[allow(dead_code)]
+pub enum BlocklistAIActionEvent {
     // twarp: 2c-d — bulk variants for AI-removed BlocklistAIActionEvent
     ActionBlockedOnUserConfirmation(()),
     ExecutingAction(()),
     FinishedAction(AIAgentActionId),
     InitProject(()),
-    InsertCodeReviewComments { comments: Vec<InsertReviewComment>, action_id: AIAgentActionId, repo_path: std::path::PathBuf, base_branch: Option<String> },
+    InsertCodeReviewComments {
+        comments: Vec<InsertReviewComment>,
+        action_id: AIAgentActionId,
+        repo_path: std::path::PathBuf,
+        base_branch: Option<String>,
+    },
     QueuedAction(()),
     ToggleCodeReview,
 }
@@ -778,12 +1114,22 @@ pub use crate::terminal::view::rich_content::AIBlock;
 pub use crate::terminal::input::BlocklistAIActionModel;
 #[allow(dead_code)]
 impl BlocklistAIActionModel {
-    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
-    fn shell_command_executor<C>(&self, _: &C) -> ModelHandle<ShellCommandExecutor> { unimplemented!() }
+    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self {
+        Self
+    }
+    fn shell_command_executor<C>(&self, _: &C) -> ModelHandle<ShellCommandExecutor> {
+        unimplemented!()
+    }
     // twarp: 2c-d — bulk stubs
-    fn get_action_result<A>(&self, _: A) -> Option<PendingAIActionStub> { None }
-    fn get_pending_action<A>(&self, _: A) -> Option<PendingAIActionStub> { None }
-    fn start_agent_executor<C>(&self, _: &C) -> ModelHandle<StartAgentExecutor> { unimplemented!() }
+    fn get_action_result<A>(&self, _: A) -> Option<PendingAIActionStub> {
+        None
+    }
+    fn get_pending_action<A>(&self, _: A) -> Option<PendingAIActionStub> {
+        None
+    }
+    fn start_agent_executor<C>(&self, _: &C) -> ModelHandle<StartAgentExecutor> {
+        unimplemented!()
+    }
 }
 // twarp: 2c-d — stub for AIBlockActionResultModel-like pending action.
 #[allow(dead_code)]
@@ -797,49 +1143,106 @@ pub use crate::terminal::input::BlocklistAIContextEvent;
 pub use crate::terminal::input::BlocklistAIContextModel;
 // twarp: 2c-d — re-export canonical BlocklistAIController from terminal::input
 pub use crate::terminal::input::BlocklistAIController;
-#[allow(dead_code)] pub enum BlocklistAIControllerEvent {
+#[allow(dead_code)]
+pub enum BlocklistAIControllerEvent {
     // twarp: 2c-d — bulk variants
-    ExportConversationToFile { filename: Option<String> },
-    FinishedReceivingOutput { conversation_id: AIConversationId, finish_reason: Option<crate::terminal::view::pending_user_query::FinishReason> },
+    ExportConversationToFile {
+        filename: Option<String>,
+    },
+    FinishedReceivingOutput {
+        conversation_id: AIConversationId,
+        finish_reason: Option<crate::terminal::view::pending_user_query::FinishReason>,
+    },
     FreeTierLimitCheckTriggered,
-    SentRequest { contains_user_query: bool, is_queued_prompt: bool, model_id: LLMId },
+    SentRequest {
+        contains_user_query: bool,
+        is_queued_prompt: bool,
+        model_id: LLMId,
+    },
 }
 // twarp: 2c-d — re-export canonical BlocklistAIHistoryEvent
 pub use crate::terminal::input::BlocklistAIHistoryEvent;
-#[allow(dead_code)] struct BlocklistAIHistoryModel;
+#[allow(dead_code)]
+struct BlocklistAIHistoryModel;
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
-    fn conversation<I>(&self, _: I) -> Option<&AIConversation> { None }
-    fn last_conversation_id(&self, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
-    pub fn active_conversation(&self, _: warpui::EntityId) -> Option<&AIConversation> { None }
-    fn all_live_conversations_for_terminal_view(&self, _: warpui::EntityId) -> Vec<crate::app_state::AIConversationId> { Vec::new() }
-    fn conversation_id_for_action<A>(&self, _: A, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
+    fn conversation<I>(&self, _: I) -> Option<&AIConversation> {
+        None
+    }
+    fn last_conversation_id(
+        &self,
+        _: warpui::EntityId,
+    ) -> Option<crate::app_state::AIConversationId> {
+        None
+    }
+    pub fn active_conversation(&self, _: warpui::EntityId) -> Option<&AIConversation> {
+        None
+    }
+    fn all_live_conversations_for_terminal_view(
+        &self,
+        _: warpui::EntityId,
+    ) -> Vec<crate::app_state::AIConversationId> {
+        Vec::new()
+    }
+    fn conversation_id_for_action<A>(
+        &self,
+        _: A,
+        _: warpui::EntityId,
+    ) -> Option<crate::app_state::AIConversationId> {
+        None
+    }
     // twarp: 2c-d — bulk stubs
     fn clear_conversations_in_terminal_view<A, C>(&mut self, _: A, _: &mut C) {}
-    fn fork_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) -> Result<(), String> { Ok(()) }
-    fn truncate_conversation_from_exchange<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> Result<std::collections::HashSet<AIAgentExchangeId>, ()> { Err(()) }
+    fn fork_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) -> Result<(), String> {
+        Ok(())
+    }
+    fn truncate_conversation_from_exchange<A, B, C>(
+        &mut self,
+        _: A,
+        _: B,
+        _: &mut C,
+    ) -> Result<std::collections::HashSet<AIAgentExchangeId>, ()> {
+        Err(())
+    }
     fn update_conversation_status<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
-    fn is_entirely_passive_conversation<I>(&self, _: I) -> bool { false }
-    fn can_conversation_be_shared<I>(&self, _: I) -> bool { false }
+    fn is_entirely_passive_conversation<I>(&self, _: I) -> bool {
+        false
+    }
+    fn can_conversation_be_shared<I>(&self, _: I) -> bool {
+        false
+    }
 }
 // twarp: 2c-d — re-export canonical types from terminal::input
-pub use crate::terminal::input::{
-    BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig,
-};
-#[allow(dead_code)] pub enum PendingQueryState { New, Existing { conversation_id: crate::app_state::AIConversationId } }
-#[allow(dead_code)] struct ShellCommandExecutor;
+pub use crate::terminal::input::{BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig};
+#[allow(dead_code)]
+pub enum PendingQueryState {
+    New,
+    Existing {
+        conversation_id: crate::app_state::AIConversationId,
+    },
+}
+#[allow(dead_code)]
+struct ShellCommandExecutor;
 #[allow(dead_code)]
 impl ShellCommandExecutor {
     fn notify_control_handed_back(&mut self) {}
 }
-#[allow(dead_code)] enum ShellCommandExecutorEvent {}
-#[allow(dead_code)] struct StartAgentExecutor;
-#[allow(dead_code)] pub enum StartAgentExecutorEvent { CreateAgent(StartAgentRequest) }
+#[allow(dead_code)]
+enum ShellCommandExecutorEvent {}
+#[allow(dead_code)]
+struct StartAgentExecutor;
+#[allow(dead_code)]
+pub enum StartAgentExecutorEvent {
+    CreateAgent(StartAgentRequest),
+}
 // twarp: 2c-d — alias used by Event variant.
 #[derive(Clone, Debug)]
-#[allow(dead_code)] pub struct StartAgentRequest;
-#[allow(dead_code)] const ATTACH_AS_AGENT_MODE_CONTEXT_TEXT: &str = "";
-#[allow(dead_code)] const PRE_REWIND_PREFIX: &str = "";
+#[allow(dead_code)]
+pub struct StartAgentRequest;
+#[allow(dead_code)]
+const ATTACH_AS_AGENT_MODE_CONTEXT_TEXT: &str = "";
+#[allow(dead_code)]
+const PRE_REWIND_PREFIX: &str = "";
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct AIExecutionProfileInfo;
@@ -850,15 +1253,24 @@ impl AIExecutionProfileInfo {
         // we leak a zero-default to satisfy the &-return signature.
         Box::leak(Box::new(crate::app_state::ClientProfileId::default()))
     }
-    pub fn sync_id(&self) -> Option<crate::server::ids::SyncId> { None }
+    pub fn sync_id(&self) -> Option<crate::server::ids::SyncId> {
+        None
+    }
 }
-#[allow(dead_code)] pub struct AIExecutionProfilesModel;
+#[allow(dead_code)]
+pub struct AIExecutionProfilesModel;
 #[allow(dead_code)]
 impl AIExecutionProfilesModel {
     // twarp: 2c-d — bulk stubs for AIExecutionProfilesModel
-    pub fn handle<C>(_: &C) -> warpui::ModelHandle<AIExecutionProfilesModel> { unimplemented!() }
-    pub fn default_profile<C>(&self, _: &C) -> AIExecutionProfileInfo { AIExecutionProfileInfo }
-    pub fn as_ref<C>(_: &C) -> &Self { unimplemented!() }
+    pub fn handle<C>(_: &C) -> warpui::ModelHandle<AIExecutionProfilesModel> {
+        unimplemented!()
+    }
+    pub fn default_profile<C>(&self, _: &C) -> AIExecutionProfileInfo {
+        AIExecutionProfileInfo
+    }
+    pub fn as_ref<C>(_: &C) -> &Self {
+        unimplemented!()
+    }
     pub fn set_base_model<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn set_apply_code_diffs<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn set_read_files<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
@@ -866,26 +1278,45 @@ impl AIExecutionProfilesModel {
     pub fn set_mcp_permissions<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn set_write_to_pty<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
 }
-#[allow(dead_code)] type ClientProfileId = crate::app_state::ClientProfileId;
-#[allow(dead_code)] struct GetRelevantFilesController;
+#[allow(dead_code)]
+type ClientProfileId = crate::app_state::ClientProfileId;
+#[allow(dead_code)]
+struct GetRelevantFilesController;
 #[allow(dead_code)]
 impl GetRelevantFilesController {
-    fn new<A>(_: &mut A) -> Self { Self }
+    fn new<A>(_: &mut A) -> Self {
+        Self
+    }
 }
 
 // LLMs/AI etc.
-#[allow(dead_code)] type LLMId = crate::app_state::LLMId;
-#[allow(dead_code)] #[derive(Hash, PartialEq, Eq)] pub enum LLMModelHost { AwsBedrock }
+#[allow(dead_code)]
+type LLMId = crate::app_state::LLMId;
+#[allow(dead_code)]
+#[derive(Hash, PartialEq, Eq)]
+pub enum LLMModelHost {
+    AwsBedrock,
+}
 // twarp: 2c-d — LLMPreferences re-exported from input.
 pub use crate::terminal::input::LLMPreferences;
-#[allow(dead_code)] struct ApiKeyManager;
+#[allow(dead_code)]
+struct ApiKeyManager;
 #[allow(dead_code)]
 impl ApiKeyManager {
-    fn aws_credentials_state(&self) -> AwsCredentialsState { unimplemented!() }
+    fn aws_credentials_state(&self) -> AwsCredentialsState {
+        unimplemented!()
+    }
 }
-#[allow(dead_code)] pub enum AwsCredentialsState { Loaded }
-#[allow(dead_code)] pub enum BuildSource { FromPath(std::path::PathBuf) }
-#[allow(dead_code)] pub struct CodebaseIndexManager;
+#[allow(dead_code)]
+pub enum AwsCredentialsState {
+    Loaded,
+}
+#[allow(dead_code)]
+pub enum BuildSource {
+    FromPath(std::path::PathBuf),
+}
+#[allow(dead_code)]
+pub struct CodebaseIndexManager;
 #[allow(dead_code)]
 impl CodebaseIndexManager {
     fn index_directory<P, C>(&mut self, _: P, _: &mut C) {}
@@ -897,18 +1328,30 @@ impl CodebaseIndexManager {
 pub use crate::terminal::view::rich_content::OnboardingAgenticSuggestionsBlock;
 #[allow(dead_code)]
 impl OnboardingAgenticSuggestionsBlock {
-    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
+    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self {
+        Self
+    }
     fn interrupt_block<C>(&mut self, _: &mut C) {}
     fn handle_key_pressed<A, C>(&mut self, _: A, _: &mut C) {}
 }
-#[allow(dead_code)] pub enum OnboardingAgenticSuggestionsBlockEvent { RunAgentModeCommand { prompt: String, chip_type: OnboardingChipType } }
+#[allow(dead_code)]
+pub enum OnboardingAgenticSuggestionsBlockEvent {
+    RunAgentModeCommand {
+        prompt: String,
+        chip_type: OnboardingChipType,
+    },
+}
 // twarp: 2c-d — unify with events::OnboardingChipType.
 pub use crate::server::telemetry::events::OnboardingChipType;
 
 // twarp: 2c-d — AskAIType stub (was crate::ai::ask_ai_type)
 #[allow(dead_code)]
 enum AskAIType {
-    FromTextSelection { text: Arc<String>, location: Option<()>, populate_input_box: bool },
+    FromTextSelection {
+        text: Arc<String>,
+        location: Option<()>,
+        populate_input_box: bool,
+    },
     FromBlock {
         block_index: warp_terminal::model::BlockIndex,
         query: Option<String>,
@@ -917,8 +1360,12 @@ enum AskAIType {
         output: Arc<String>,
         exit_code: Option<i32>,
     },
-    FromBlocks { block_indices: std::collections::HashSet<warp_terminal::model::BlockIndex> },
-    FromAICommandSearch { query: String },
+    FromBlocks {
+        block_indices: std::collections::HashSet<warp_terminal::model::BlockIndex>,
+    },
+    FromAICommandSearch {
+        query: String,
+    },
 }
 
 // twarp: 2c-d — RequestFileEditsResult stub (was crate::ai::agent)
@@ -1041,7 +1488,9 @@ impl SingletonEntity for ApiKeyManager {}
 impl SingletonEntity for CodebaseIndexManager {}
 impl SingletonEntity for AgentConversationsModel {}
 impl SingletonEntity for CLIAgentSessionsModel {}
-impl Entity for PersistedWorkspace { type Event = (); }
+impl Entity for PersistedWorkspace {
+    type Event = ();
+}
 impl SingletonEntity for PersistedWorkspace {}
 
 // twarp: 2c-d — View impls for stub view types so ViewHandle<T>::as_ref/update/id typecheck.
@@ -1063,7 +1512,9 @@ macro_rules! twarp_stub_view_impl {
 pub struct TwarpStubAction;
 macro_rules! twarp_stub_typed_action_view_impl {
     ($t:ty) => {
-        impl warpui::TypedActionView for $t { type Action = TwarpStubAction; }
+        impl warpui::TypedActionView for $t {
+            type Action = TwarpStubAction;
+        }
     };
 }
 // twarp: 2c-d — AIBlock impls already defined in rich_content.rs
@@ -1073,7 +1524,9 @@ twarp_stub_view_impl!(ConversationDetailsPanel);
 twarp_stub_view_impl!(InlineAgentViewHeader);
 twarp_stub_view_impl!(SummarizationCancelDialog);
 // twarp: 2c-d — add Entity impls for stubs without explicit Entity definition.
-impl Entity for TerminalViewZeroStateBlock { type Event = (); }
+impl Entity for TerminalViewZeroStateBlock {
+    type Event = ();
+}
 twarp_stub_view_impl!(TerminalViewZeroStateBlock);
 twarp_stub_view_impl!(UseAgentToolbar);
 twarp_stub_view_impl!(AgentViewZeroStateBlock);
@@ -1328,10 +1781,10 @@ use inline_banner::{
     render_inline_notifications_error_banner, render_inline_shared_session_ended_banner,
     render_inline_shared_session_started_banner, render_inline_ssh_wrapper_banner,
     render_open_in_warp_banner, render_shell_process_terminated_banner, render_vim_mode_banner,
-    AliasExpansionBanner, AliasExpansionBannerAction,
-    AwsBedrockLoginBannerAction, AwsBedrockLoginBannerState,
-    AwsCliNotInstalledBannerAction, AwsCliNotInstalledBannerState, ByoLlmAuthBannerSessionState,
-    OpenInWarpBannerState, SSHBannerAction, SSHBannerState, VimModeBannerAction,
+    AliasExpansionBanner, AliasExpansionBannerAction, AwsBedrockLoginBannerAction,
+    AwsBedrockLoginBannerState, AwsCliNotInstalledBannerAction, AwsCliNotInstalledBannerState,
+    ByoLlmAuthBannerSessionState, OpenInWarpBannerState, SSHBannerAction, SSHBannerState,
+    VimModeBannerAction,
 };
 use warp_core::command::ExitCode;
 
@@ -3596,7 +4049,9 @@ impl TerminalView {
 
     // twarp: 2c-d — AI agent footer / CLI input session helpers deleted; stubs.
     #[allow(dead_code)]
-    fn has_active_cli_agent_input_session<C>(&self, _: &C) -> bool { false }
+    fn has_active_cli_agent_input_session<C>(&self, _: &C) -> bool {
+        false
+    }
     #[allow(dead_code)]
     fn maybe_show_use_agent_footer_in_blocklist<C>(&mut self, _: &mut C) {}
     #[allow(dead_code)]
@@ -3964,8 +4419,7 @@ impl TerminalView {
                         };
 
                     // LRC conversations should only have one entry point (the original LRC block).
-                    let has_existing_lrc_block =
-                        me.has_existing_lrc_agent_view_block(conv_id);
+                    let has_existing_lrc_block = me.has_existing_lrc_agent_view_block(conv_id);
 
                     let should_insert = (!me
                         .last_visible_item_is_agent_view_block_for_conversation(conv_id)
@@ -4053,7 +4507,8 @@ impl TerminalView {
             model
         });
 
-        let get_relevant_files_controller = ctx.add_model(|ctx| GetRelevantFilesController::new(ctx));
+        let get_relevant_files_controller =
+            ctx.add_model(|ctx| GetRelevantFilesController::new(ctx));
         let ai_action_model = ctx.add_model(|ctx| {
             BlocklistAIActionModel::new(
                 model.clone(),
@@ -4712,12 +5167,14 @@ impl TerminalView {
         });
 
         // Cloud mode conversation details panel
-        let cloud_mode_details_panel = ctx.add_typed_action_view(|ctx| {
-            ConversationDetailsPanel::new(false, 320.0, (), ctx)
-        });
-        ctx.subscribe_to_view(&cloud_mode_details_panel, |_me, _, _event: &ConversationDetailsPanelEvent, _ctx| {
-            // twarp: 2c-d — ConversationDetailsPanelEvent stub has no variants; deleted body
-        });
+        let cloud_mode_details_panel =
+            ctx.add_typed_action_view(|ctx| ConversationDetailsPanel::new(false, 320.0, (), ctx));
+        ctx.subscribe_to_view(
+            &cloud_mode_details_panel,
+            |_me, _, _event: &ConversationDetailsPanelEvent, _ctx| {
+                // twarp: 2c-d — ConversationDetailsPanelEvent stub has no variants; deleted body
+            },
+        );
 
         let window_id = ctx.window_id();
         let mut terminal_view = Self {
@@ -5466,9 +5923,8 @@ impl TerminalView {
             } => {
                 let pending_context_block_ids =
                     context_model.as_ref(ctx).pending_context_block_ids();
-                let pending_context_selected_text = context_model
-                    .as_ref(ctx)
-                    .pending_context_selected_text();
+                let pending_context_selected_text =
+                    context_model.as_ref(ctx).pending_context_selected_text();
 
                 self.ai_render_context.borrow_mut().block_ids.insert(
                     AIContextInclusionState::Pending,
@@ -5674,9 +6130,7 @@ impl TerminalView {
                 ) {
                     Ok(ai_block_model) => ai_block_model,
                     Err(_err) => {
-                        log::warn!(
-                            "Failed to create model for AI block on AppendedExchange."
-                        );
+                        log::warn!("Failed to create model for AI block on AppendedExchange.");
                         return;
                     }
                 };
@@ -5758,9 +6212,9 @@ impl TerminalView {
             } => {
                 if let Some(ai_block_rich_content) =
                     self.rich_content_views.iter_mut().find(|rich_content| {
-                        rich_content
-                            .ai_block_metadata()
-                            .is_some_and(|ai_metadata| ai_metadata.exchange_id == (*exchange_id).into())
+                        rich_content.ai_block_metadata().is_some_and(|ai_metadata| {
+                            ai_metadata.exchange_id == (*exchange_id).into()
+                        })
                     })
                 {
                     if let Some(RichContentMetadata::AIBlock(AIBlockMetadata {
@@ -6398,9 +6852,7 @@ impl TerminalView {
             }
             BlocklistAIActionEvent::FinishedAction(action_id) => {
                 // Refresh git line changes when files are potentially updated by an action
-                let action_result = action_model
-                    .as_ref(ctx)
-                    .get_action_result(action_id);
+                let action_result = action_model.as_ref(ctx).get_action_result(action_id);
 
                 let maybe_modified_files = action_result
                     .as_ref()
@@ -9147,7 +9599,8 @@ impl TerminalView {
         let trigger = banner_state.trigger.clone();
         let should_start_new_conversation = suggestion.should_start_new_conversation;
         let conversation_id = banner_state.conversation_id;
-        let trigger_block_id: Option<warp_terminal::model::BlockId> = trigger.as_ref().and_then(|t| t.block_id());
+        let trigger_block_id: Option<warp_terminal::model::BlockId> =
+            trigger.as_ref().and_then(|t| t.block_id());
         log::debug!(
             "[passive-suggestions] accepting prompt suggestion: trigger={}, trigger_block_id={}",
             if trigger.is_some() { "Some" } else { "None" },
@@ -12760,7 +13213,14 @@ impl TerminalView {
         // 5) Session is not remote
         // 6) There are available steps to show
         // twarp: 2c-d — InitProjectModel availability check removed with AI.
-        let _ = (already_shown, is_any_ai_enabled, is_repo, is_remote_session, directory, ctx);
+        let _ = (
+            already_shown,
+            is_any_ai_enabled,
+            is_repo,
+            is_remote_session,
+            directory,
+            ctx,
+        );
         false
     }
 
@@ -12910,7 +13370,9 @@ fn fork_label_for_query(query: &str) -> String {
 impl TerminalView {
     // twarp: 2c-d — stubs for AI footer/ambient progress rendering.
     #[allow(dead_code)]
-    fn should_render_use_agent_footer<A, B>(&self, _: A, _: B) -> bool { false }
+    fn should_render_use_agent_footer<A, B>(&self, _: A, _: B) -> bool {
+        false
+    }
     #[allow(dead_code)]
     fn render_ambient_agent_progress<A, B>(&self, _: A, _: B) -> Box<dyn warpui::Element> {
         warpui::elements::Empty::new().finish()
@@ -13529,14 +13991,12 @@ impl TerminalView {
                 }
 
                 let telemetry_enabled = PrivacySettings::as_ref(ctx).is_telemetry_enabled;
-                let (query_string, block_command) = if should_collect_ai_ugc_telemetry(
-                    &*ctx,
-                    telemetry_enabled,
-                ) {
-                    (Some(suggestion.prompt.to_string()), Some(command))
-                } else {
-                    (None, None)
-                };
+                let (query_string, block_command) =
+                    if should_collect_ai_ugc_telemetry(&*ctx, telemetry_enabled) {
+                        (Some(suggestion.prompt.to_string()), Some(command))
+                    } else {
+                        (None, None)
+                    };
 
                 let banner_id = self.inline_banners_state.next_banner_id();
 
@@ -15831,8 +16291,7 @@ impl TerminalView {
 
         if !cfg!(target_family = "wasm") {
             let fork_label = fork_label_for_query(
-                self
-                    .rich_content_views
+                self.rich_content_views
                     .iter()
                     .find_map(|rc| {
                         let meta = rc.ai_block_metadata()?;
@@ -20483,7 +20942,10 @@ impl TerminalView {
     #[cfg(feature = "local_fs")]
     pub fn send_diff_context_to_cli_agent_or_rich_input(
         &mut self,
-        file_diffs: &std::collections::HashMap<String, Vec<crate::code_review::code_review_view::DiffSetHunk>>,
+        file_diffs: &std::collections::HashMap<
+            String,
+            Vec<crate::code_review::code_review_view::DiffSetHunk>,
+        >,
         ctx: &mut ViewContext<Self>,
     ) -> Option<CliAgentRouting> {
         let text = cli_agent::build_diff_context_prompt(file_diffs);
@@ -23373,7 +23835,13 @@ impl TerminalView {
 
     // twarp: 2c-d — bulk stubs for AI-removed methods on TerminalView
     fn close_cli_agent_rich_input_and_disable_auto_toggle<C>(&mut self, _: &mut C) {}
-    fn detect_cli_agent_from_model<A, C>(&mut self, _: A, _: &mut C) -> Option<(crate::app_state::CLIAgent, Option<String>)> { None }
+    fn detect_cli_agent_from_model<A, C>(
+        &mut self,
+        _: A,
+        _: &mut C,
+    ) -> Option<(crate::app_state::CLIAgent, Option<String>)> {
+        None
+    }
     fn enter_agent_view<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     fn enter_cloud_agent_view<A, C>(&mut self, _: A, _: &mut C) {}
     fn handle_ambient_agent_event<C, E>(&mut self, _: E, _: &mut C) {}
@@ -23386,7 +23854,15 @@ impl TerminalView {
     fn submit_cli_agent_rich_input<A, C>(&mut self, _: A, _: &mut C) {}
     fn tag_in_agent_for_user_long_running_command<C>(&mut self, _: &mut C) {}
     fn tag_out_agent_for_user_long_running_command<C>(&mut self, _: &mut C) {}
-    fn try_enter_agent_view<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) -> Result<crate::app_state::AIConversationId, ()> { Err(()) }
+    fn try_enter_agent_view<A, B, C, D>(
+        &mut self,
+        _: A,
+        _: B,
+        _: C,
+        _: &mut D,
+    ) -> Result<crate::app_state::AIConversationId, ()> {
+        Err(())
+    }
     // twarp: 2c-d — additional bulk stubs
     fn register_subscriptions_for_use_agent_footer<C>(&mut self, _: &mut C) {}
     fn restore_conversations_on_view_creation<A, C>(&mut self, _: A, _: &mut C) {}
@@ -23832,9 +24308,12 @@ impl TypedActionView for TerminalView {
                 ai_block_view_id,
                 exchange_id,
                 conversation_id,
-            } => {
-                self.rewind_ai_conversation(*ai_block_view_id, exchange_id.clone(), *conversation_id, ctx)
-            }
+            } => self.rewind_ai_conversation(
+                *ai_block_view_id,
+                exchange_id.clone(),
+                *conversation_id,
+                ctx,
+            ),
             ExecuteRewindFromInlineMenu {
                 exchange_id,
                 conversation_id,
@@ -24236,9 +24715,7 @@ impl TypedActionView for TerminalView {
                                     AgentViewEntryOrigin::LongRunningCommand,
                                     ctx,
                                 ) {
-                                    log::error!(
-                                        "Failed to enter inline agent view for tag-in"
-                                    );
+                                    log::error!("Failed to enter inline agent view for tag-in");
                                 }
                             }
                         });

@@ -3,10 +3,20 @@ use std::rc::Rc;
 // twarp: 2c-d — AI blocklist inline action types deleted; stubs.
 use warpui::keymap::Keystroke;
 pub const ENTER_KEYSTROKE: Keystroke = Keystroke {
-    cmd: false, shift: false, alt: false, ctrl: false, meta: false, key: String::new(),
+    cmd: false,
+    shift: false,
+    alt: false,
+    ctrl: false,
+    meta: false,
+    key: String::new(),
 };
 pub const ESCAPE_KEYSTROKE: Keystroke = Keystroke {
-    cmd: false, shift: false, alt: false, ctrl: false, meta: false, key: String::new(),
+    cmd: false,
+    shift: false,
+    alt: false,
+    ctrl: false,
+    meta: false,
+    key: String::new(),
 };
 pub mod requested_script {
     use warpui::elements::Empty;
@@ -24,10 +34,46 @@ pub mod requested_script {
         pub content: String,
     }
     // twarp: 2c-d — variadic stubs for AI-removed renderers
-    pub fn render_requested_scripts<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: I, _: J, _: K, _: L, _: M, _: N, _: O, _: P, _: Q, _: R) -> Box<dyn Element> { Empty::new().finish() }
-    pub fn render_requested_script<A, B, C, D, E, F, G, H, I, J, K, L, M>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: I, _: J, _: K, _: L, _: M) -> Box<dyn Element> { Empty::new().finish() }
+    pub fn render_requested_scripts<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>(
+        _: A,
+        _: B,
+        _: C,
+        _: D,
+        _: E,
+        _: F,
+        _: G,
+        _: H,
+        _: I,
+        _: J,
+        _: K,
+        _: L,
+        _: M,
+        _: N,
+        _: O,
+        _: P,
+        _: Q,
+        _: R,
+    ) -> Box<dyn Element> {
+        Empty::new().finish()
+    }
+    pub fn render_requested_script<A, B, C, D, E, F, G, H, I, J, K, L, M>(
+        _: A,
+        _: B,
+        _: C,
+        _: D,
+        _: E,
+        _: F,
+        _: G,
+        _: H,
+        _: I,
+        _: J,
+        _: K,
+        _: L,
+        _: M,
+    ) -> Box<dyn Element> {
+        Empty::new().finish()
+    }
 }
-pub use requested_script::{RequestedScriptMouseStates, RequestedScriptStatus, TitledScript};
 use crate::appearance::Appearance;
 use crate::terminal::model::ansi::SystemDetails;
 use crate::terminal::model::escape_sequences;
@@ -36,6 +82,7 @@ use crate::terminal::warpify::settings::WarpifySettings;
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon as UiIcon;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
+pub use requested_script::{RequestedScriptMouseStates, RequestedScriptStatus, TitledScript};
 use warp_core::ui::theme::WarpTheme;
 use warpui::elements::{
     FormattedTextElement, HighlightedHyperlink, Hoverable, Icon, MainAxisAlignment, MainAxisSize,
@@ -293,9 +340,15 @@ impl SshInstallTmuxBlock {
             self.script_status.clone(),
             self.is_collapsed,
             self.show_tmux_install_block,
-            move |ctx: &mut warpui::ViewContext<Self>, _: (), _: ()| ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::ToggleVisibility),
-            |ctx: &mut warpui::ViewContext<Self>| ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::InstallTmux),
-            |ctx: &mut warpui::ViewContext<Self>| ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::Cancel),
+            move |ctx: &mut warpui::ViewContext<Self>, _: (), _: ()| {
+                ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::ToggleVisibility)
+            },
+            |ctx: &mut warpui::ViewContext<Self>| {
+                ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::InstallTmux)
+            },
+            |ctx: &mut warpui::ViewContext<Self>| {
+                ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::Cancel)
+            },
             &ENTER_KEYSTROKE,
             &ESCAPE_KEYSTROKE,
             &self.requested_script_mouse_states,
@@ -324,9 +377,15 @@ impl SshInstallTmuxBlock {
             self.script_status.clone(),
             self.is_collapsed,
             self.show_tmux_install_block,
-            move |ctx: &mut warpui::ViewContext<Self>, _: (), _: ()| ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::ToggleVisibility),
-            |ctx: &mut warpui::ViewContext<Self>| ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::InstallTmux),
-            |ctx: &mut warpui::ViewContext<Self>| ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::Cancel),
+            move |ctx: &mut warpui::ViewContext<Self>, _: (), _: ()| {
+                ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::ToggleVisibility)
+            },
+            |ctx: &mut warpui::ViewContext<Self>| {
+                ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::InstallTmux)
+            },
+            |ctx: &mut warpui::ViewContext<Self>| {
+                ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::Cancel)
+            },
             &ENTER_KEYSTROKE,
             &ESCAPE_KEYSTROKE,
             &self.requested_script_mouse_states,

@@ -55,11 +55,10 @@ use super::{
     WriterHandles,
 };
 use crate::app_state::AIConversationId;
-use crate::app_state::AmbientAgentTaskId;
 use crate::app_state::AIDocumentId;
+use crate::app_state::AmbientAgentTaskId;
 // twarp: 2c-d — Cloud{ScheduledAmbientAgent,AIExecutionProfile,AIFact,...} types deleted;
 // related restoration call sites in this file are removed below.
-use crate::persistence::{EnablementState, TemplatableMCPServerInstallation};
 use crate::app_state::{
     AIFactPaneSnapshot, AmbientAgentPaneSnapshot, CodeReviewPaneSnapshot,
     EnvVarCollectionPaneSnapshot, LeftPanelSnapshot, RightPanelSnapshot, SettingsPaneSnapshot,
@@ -80,6 +79,7 @@ use crate::drive::OpenWarpDriveObjectSettings;
 use crate::env_vars::{CloudEnvVarCollection, CloudEnvVarCollectionModel};
 use crate::features::FeatureFlag;
 use crate::notebooks::{CloudNotebook, NotebookId};
+use crate::persistence::{EnablementState, TemplatableMCPServerInstallation};
 // twarp: 2c-d — read_agent_conversations deleted with rest of AI persistence.
 use crate::persistence::block_list::{get_all_restored_blocks, read_ai_queries};
 use crate::persistence::model::{

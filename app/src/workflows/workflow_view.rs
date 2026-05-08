@@ -13,16 +13,22 @@ use syntax_highlightable::SyntaxHighlightable;
 use url::Url;
 
 // twarp: 2c-d — AI secret redaction / usage / ai_assist / AIClient deleted; stubs.
-pub fn find_secrets_in_text(_text: &str) -> Vec<()> { Vec::new() }
+pub fn find_secrets_in_text(_text: &str) -> Vec<()> {
+    Vec::new()
+}
 pub struct AIRequestUsageModel;
-impl warpui::Entity for AIRequestUsageModel { type Event = (); }
+impl warpui::Entity for AIRequestUsageModel {
+    type Event = ();
+}
 impl warpui::SingletonEntity for AIRequestUsageModel {}
 pub enum GeneratedCommandMetadataError {
     Other,
     RateLimited,
 }
 impl GeneratedCommandMetadataError {
-    pub fn user_facing_message(&self) -> String { String::new() }
+    pub fn user_facing_message(&self) -> String {
+        String::new()
+    }
 }
 pub trait AIClient: Send + Sync {}
 
@@ -49,7 +55,9 @@ use crate::{
             workflow_arg_selector::{WorkflowArgSelector, WorkflowArgSelectorEvent},
             workflow_arg_type_helpers::{self, ArgumentEditorRowIndex},
         },
-        CloudObjectTypeAndId, DriveObjectType, OpenWarpDriveObjectSettings,
+        CloudObjectTypeAndId,
+        DriveObjectType,
+        OpenWarpDriveObjectSettings,
     },
     editor::{
         EditorOptions, EditorView, EnterAction, EnterSettings, Event as EditorEvent,

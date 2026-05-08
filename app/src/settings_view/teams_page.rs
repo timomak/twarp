@@ -13,11 +13,15 @@ use super::{
 
 // twarp: 2c-d — AIRequestUsageModel deleted; stub.
 pub struct AIRequestUsageModel;
-impl warpui::Entity for AIRequestUsageModel { type Event = (); }
+impl warpui::Entity for AIRequestUsageModel {
+    type Event = ();
+}
 impl warpui::SingletonEntity for AIRequestUsageModel {}
 #[allow(dead_code)]
 impl AIRequestUsageModel {
-    pub fn total_current_workspace_bonus_credits_remaining<W>(&self, _: W) -> i32 { 0 }
+    pub fn total_current_workspace_bonus_credits_remaining<W>(&self, _: W) -> i32 {
+        0
+    }
     pub fn refresh_request_usage_async<C>(&mut self, _: &mut C) {}
 }
 use crate::auth::auth_manager::{AuthManager, LoginGatedFeature};

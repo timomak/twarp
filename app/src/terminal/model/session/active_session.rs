@@ -5,15 +5,15 @@ use warpui::{AppContext, Entity, ModelContext, ModelHandle};
 pub struct WarpAiExecutionContext;
 #[allow(dead_code)]
 impl WarpAiExecutionContext {
-    pub fn new<A>(_: A) -> Self { Self }
+    pub fn new<A>(_: A) -> Self {
+        Self
+    }
 }
-use crate::{
-    terminal::{
-        model::session::SessionsEvent,
-        model_events::{ModelEvent, ModelEventDispatcher},
-        shell::ShellType,
-        ShellLaunchData,
-    },
+use crate::terminal::{
+    model::session::SessionsEvent,
+    model_events::{ModelEvent, ModelEventDispatcher},
+    shell::ShellType,
+    ShellLaunchData,
 };
 
 use super::{Session, SessionType, Sessions};

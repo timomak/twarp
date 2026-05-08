@@ -50,8 +50,8 @@ use crate::terminal::model::session::active_session::ActiveSession;
 use crate::terminal::package_installers::command_at_cursor_has_common_package_installer_prefix;
 use crate::terminal::prompt_render_helper::should_render_ps1_prompt;
 // twarp: 2c-d — universal_developer_input deleted; stub at file bottom
-use crate::terminal::view::CodeDiffAction;
 use crate::app_state::CLIAgent;
+use crate::terminal::view::CodeDiffAction;
 use crate::util::bindings::keybinding_name_to_normalized_string;
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor;
@@ -266,7 +266,11 @@ use super::{
         PADDING_LEFT as TERMINAL_VIEW_PADDING_LEFT,
     },
     warpify::SubshellSource,
-    History, HistoryEntry, SizeInfo, TerminalModel, UpArrowHistoryConfig,
+    History,
+    HistoryEntry,
+    SizeInfo,
+    TerminalModel,
+    UpArrowHistoryConfig,
 };
 // twarp: 2c-d — agent_view + ambient_agent deleted; stubs at file bottom
 use async_channel::Sender;
@@ -319,7 +323,9 @@ impl AgentShortcutViewModel {
         unimplemented!()
     }
     // twarp: 2c-d — bulk stubs
-    fn is_shortcut_view_open(&self) -> bool { false }
+    fn is_shortcut_view_open(&self) -> bool {
+        false
+    }
     fn hide_shortcut_view<C>(&mut self, _: &mut C) {}
     fn open_shortcut_view<C>(&mut self, _: &mut C) {}
 }
@@ -348,19 +354,41 @@ pub struct BlocklistAIStatusBar;
 impl BlocklistAIStatusBar {
     // twarp: 2c-d — variadic stub for new
     fn new<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>(
-        _: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H,
-        _: I, _: J, _: K, _: L, _: M, _: N, _: O, _: &mut P,
+        _: A,
+        _: B,
+        _: C,
+        _: D,
+        _: E,
+        _: F,
+        _: G,
+        _: H,
+        _: I,
+        _: J,
+        _: K,
+        _: L,
+        _: M,
+        _: N,
+        _: O,
+        _: &mut P,
     ) -> Self {
         unimplemented!()
     }
     pub fn handle_ctrl_c<C>(&mut self, _: &mut C) {}
-    pub fn summarization_cancel_dialog_handle(&self) -> warpui::ViewHandle<crate::terminal::view::SummarizationCancelDialog> { unimplemented!("twarp: 2c-d - SummarizationCancelDialog removed") }
-    pub fn should_show_summarization_cancel_dialog<C>(&self, _: &C) -> bool { false }
+    pub fn summarization_cancel_dialog_handle(
+        &self,
+    ) -> warpui::ViewHandle<crate::terminal::view::SummarizationCancelDialog> {
+        unimplemented!("twarp: 2c-d - SummarizationCancelDialog removed")
+    }
+    pub fn should_show_summarization_cancel_dialog<C>(&self, _: &C) -> bool {
+        false
+    }
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct BlocklistAIStatusBarAction;
-impl warpui::TypedActionView for BlocklistAIStatusBar { type Action = BlocklistAIStatusBarAction; }
+impl warpui::TypedActionView for BlocklistAIStatusBar {
+    type Action = BlocklistAIStatusBarAction;
+}
 
 #[allow(dead_code)]
 pub struct BlocklistAIActionModel;
@@ -377,7 +405,9 @@ pub enum SlashCommandRequest {
     FetchReviewComments {
         repo_path: std::path::PathBuf,
     },
-    CreateNewProject { query: String },
+    CreateNewProject {
+        query: String,
+    },
 }
 
 #[allow(dead_code)]
@@ -414,11 +444,28 @@ fn is_accept_prompt_suggestion_bound_to_ctrl_enter<C>(_: &C) -> bool {
 pub struct SkillManager;
 #[allow(dead_code)]
 impl SkillManager {
-    pub fn handle<C>(_: &C) -> warpui::ModelHandle<SkillManager> { unimplemented!() }
-    pub fn skill_by_reference<R>(&self, _: R) -> Option<crate::terminal::input::slash_commands::data_source::SkillDescriptor> { None }
-    pub fn get_skills_for_working_directory<A, B>(&self, _: A, _: B) -> Vec<crate::terminal::input::slash_commands::data_source::SkillDescriptor> { Vec::new() }
-    pub fn skill_exists_for_any_provider<S, P>(&self, _: S, _: P) -> bool { false }
-    pub fn best_supported_provider<S, P>(&self, _: S, _: P) -> ai::skills::SkillProvider { ai::skills::SkillProvider::Warp }
+    pub fn handle<C>(_: &C) -> warpui::ModelHandle<SkillManager> {
+        unimplemented!()
+    }
+    pub fn skill_by_reference<R>(
+        &self,
+        _: R,
+    ) -> Option<crate::terminal::input::slash_commands::data_source::SkillDescriptor> {
+        None
+    }
+    pub fn get_skills_for_working_directory<A, B>(
+        &self,
+        _: A,
+        _: B,
+    ) -> Vec<crate::terminal::input::slash_commands::data_source::SkillDescriptor> {
+        Vec::new()
+    }
+    pub fn skill_exists_for_any_provider<S, P>(&self, _: S, _: P) -> bool {
+        false
+    }
+    pub fn best_supported_provider<S, P>(&self, _: S, _: P) -> ai::skills::SkillProvider {
+        ai::skills::SkillProvider::Warp
+    }
 }
 // twarp: 2c-d — Entity/SingletonEntity for SkillManager defined later in this file.
 
@@ -454,8 +501,12 @@ impl CLIAgentSessionsModel {
     fn is_input_open(&self, _: warpui::EntityId) -> bool {
         false
     }
-    pub fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSessionStub> { None }
-    fn take_draft(&mut self, _: warpui::EntityId) -> Option<String> { None }
+    pub fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSessionStub> {
+        None
+    }
+    fn take_draft(&mut self, _: warpui::EntityId) -> Option<String> {
+        None
+    }
 }
 #[allow(dead_code)]
 pub struct CLIAgentSessionStub {
@@ -474,11 +525,15 @@ pub use crate::terminal::view::PluginModalKind;
 struct InlineConversationMenuView;
 #[allow(dead_code)]
 impl InlineConversationMenuView {
-    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
+    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self {
+        Self
+    }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
-    fn select_next_tab<C>(&mut self, _: &mut C) -> bool { false }
+    fn select_next_tab<C>(&mut self, _: &mut C) -> bool {
+        false
+    }
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -501,12 +556,18 @@ struct ConversationNavigationData {
 struct InlineModelSelectorView;
 #[allow(dead_code)]
 impl InlineModelSelectorView {
-    fn new<A, B, C, D, E, F, G>(_: A, _: B, _: C, _: D, _: E, _: F, _: &mut G) -> Self { Self }
+    fn new<A, B, C, D, E, F, G>(_: A, _: B, _: C, _: D, _: E, _: F, _: &mut G) -> Self {
+        Self
+    }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     // twarp: 2c-d — bulk stubs
-    fn filter_results_by_input(&self) -> bool { false }
+    fn filter_results_by_input(&self) -> bool {
+        false
+    }
     fn select_down<C>(&mut self, _: &mut C) {}
-    fn select_next_tab<C>(&mut self, _: &mut C) -> bool { false }
+    fn select_next_tab<C>(&mut self, _: &mut C) -> bool {
+        false
+    }
     fn select_up<C>(&mut self, _: &mut C) {}
     fn set_active_tab<A, C>(&mut self, _: A, _: &mut C) {}
     fn set_filter_results_by_input<C>(&mut self, _: bool, _: &mut C) {}
@@ -533,7 +594,9 @@ enum InlineModelSelectorTab {
 struct InlinePlanMenuView;
 #[allow(dead_code)]
 impl InlinePlanMenuView {
-    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
+    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self {
+        Self
+    }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -553,7 +616,9 @@ enum InlinePlanMenuEvent {
 struct InlineProfileSelectorView;
 #[allow(dead_code)]
 impl InlineProfileSelectorView {
-    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
+    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self {
+        Self
+    }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -561,7 +626,9 @@ impl InlineProfileSelectorView {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum InlineProfileSelectorEvent {
-    SelectedProfile { profile_id: crate::app_state::ClientProfileId },
+    SelectedProfile {
+        profile_id: crate::app_state::ClientProfileId,
+    },
     ManageProfiles,
     Dismissed,
 }
@@ -570,7 +637,9 @@ enum InlineProfileSelectorEvent {
 struct InlinePromptsMenuView;
 #[allow(dead_code)]
 impl InlinePromptsMenuView {
-    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
+    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+        Self
+    }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -578,14 +647,19 @@ impl InlinePromptsMenuView {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum InlinePromptsMenuEvent {
-    SelectedPrompt { prompt: String, id: warp_server_client::ids::SyncId },
+    SelectedPrompt {
+        prompt: String,
+        id: warp_server_client::ids::SyncId,
+    },
 }
 
 #[allow(dead_code)]
 struct InlineReposMenuView;
 #[allow(dead_code)]
 impl InlineReposMenuView {
-    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
+    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+        Self
+    }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -601,7 +675,9 @@ enum InlineReposMenuEvent {
 struct RewindMenuView;
 #[allow(dead_code)]
 impl RewindMenuView {
-    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
+    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self {
+        Self
+    }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -609,7 +685,9 @@ impl RewindMenuView {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum RewindMenuEvent {
-    AcceptedRewindPoint { exchange_id: Option<crate::app_state::AIConversationId> },
+    AcceptedRewindPoint {
+        exchange_id: Option<crate::app_state::AIConversationId>,
+    },
     Dismissed,
 }
 
@@ -617,28 +695,40 @@ enum RewindMenuEvent {
 struct InlineSkillSelectorView;
 #[allow(dead_code)]
 impl InlineSkillSelectorView {
-    fn new<A, B, C, D, E, F, G>(_: A, _: B, _: C, _: D, _: E, _: F, _: &mut G) -> Self { Self }
+    fn new<A, B, C, D, E, F, G>(_: A, _: B, _: C, _: D, _: E, _: F, _: &mut G) -> Self {
+        Self
+    }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     // twarp: 2c-d — bulk stubs
     fn select_down<C>(&mut self, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
-    fn select_next_tab<C>(&mut self, _: &mut C) -> bool { false }
+    fn select_next_tab<C>(&mut self, _: &mut C) -> bool {
+        false
+    }
     fn set_active_tab<A, C>(&mut self, _: A, _: &mut C) {}
     fn set_include_bundled<C>(&mut self, _: bool, _: &mut C) {}
-    fn filter_results_by_input(&self) -> bool { false }
+    fn filter_results_by_input(&self) -> bool {
+        false
+    }
     fn set_filter_results_by_input<C>(&mut self, _: bool, _: &mut C) {}
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum InlineSkillSelectorEvent {
-    SelectedSkill { name: String, skill_name: String, skill_reference: ai::skills::SkillReference },
+    SelectedSkill {
+        name: String,
+        skill_name: String,
+        skill_reference: ai::skills::SkillReference,
+    },
 }
 
 #[allow(dead_code)]
 struct UserQueryMenuView;
 #[allow(dead_code)]
 impl UserQueryMenuView {
-    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
+    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self {
+        Self
+    }
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
@@ -646,7 +736,10 @@ impl UserQueryMenuView {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum UserQueryMenuEvent {
-    SelectedQuery { query: String, exchange_id: crate::app_state::AIConversationId },
+    SelectedQuery {
+        query: String,
+        exchange_id: crate::app_state::AIConversationId,
+    },
     AcceptedQuery {
         query: String,
         exchange_id: crate::app_state::AIConversationId,
@@ -659,7 +752,9 @@ enum UserQueryMenuEvent {
 enum AtContextMenuDisabledReason {}
 #[allow(dead_code)]
 impl AtContextMenuDisabledReason {
-    fn get_disable_reason<A, B, C, D>(_: A, _: B, _: C, _: D) -> Option<Self> { None }
+    fn get_disable_reason<A, B, C, D>(_: A, _: B, _: C, _: D) -> Option<Self> {
+        None
+    }
 }
 
 // AttachmentType, AttachmentInput, AIAgentContext, etc.
@@ -712,8 +807,12 @@ pub struct PendingAttachmentStub {
 }
 #[allow(dead_code)]
 impl PendingAttachmentStub {
-    pub fn file_name(&self) -> &str { &self.file_name }
-    pub fn attachment_type(&self) -> AttachmentType { AttachmentType::File }
+    pub fn file_name(&self) -> &str {
+        &self.file_name
+    }
+    pub fn attachment_type(&self) -> AttachmentType {
+        AttachmentType::File
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -737,13 +836,19 @@ pub use crate::terminal::view::inline_banner::prompt_suggestions::PromptAlertEve
 struct PromptAlertView;
 #[allow(dead_code)]
 impl PromptAlertView {
-    fn does_alert_block_ai_requests<C>(_: &C) -> bool { false }
+    fn does_alert_block_ai_requests<C>(_: &C) -> bool {
+        false
+    }
 }
 
 #[allow(dead_code)]
-fn render_ai_agent_mode_icon<A, B>(_: A, _: B) -> Box<dyn Element> { Empty::new().finish() }
+fn render_ai_agent_mode_icon<A, B>(_: A, _: B) -> Box<dyn Element> {
+    Empty::new().finish()
+}
 #[allow(dead_code)]
-fn render_ai_follow_up_icon<A, B>(_: A, _: B) -> Box<dyn Element> { Empty::new().finish() }
+fn render_ai_follow_up_icon<A, B>(_: A, _: B) -> Box<dyn Element> {
+    Empty::new().finish()
+}
 #[allow(dead_code)]
 fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool {
     false
@@ -775,58 +880,154 @@ pub struct PendingImageStub {
 pub struct BlocklistAIContextModel;
 #[allow(dead_code)]
 impl BlocklistAIContextModel {
-    pub fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
-    pub fn selected_conversation_id<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> { None }
-    pub fn pending_images(&self) -> Vec<PendingImageStub> { Vec::new() }
+    pub fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self {
+        Self
+    }
+    pub fn selected_conversation_id<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> {
+        None
+    }
+    pub fn pending_images(&self) -> Vec<PendingImageStub> {
+        Vec::new()
+    }
     pub fn append_pending_images<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn append_pending_attachments<A, C>(&mut self, _: A, _: &mut C) {}
     // twarp: 2c-d — bulk stubs for AI-removed methods on BlocklistAIContextModel
-    pub fn selected_conversation<'a, C>(&self, _: &'a C) -> Option<&'a crate::terminal::view::AIConversation> { None }
-    pub fn set_pending_query_state_for_existing_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    pub fn selected_conversation<'a, C>(
+        &self,
+        _: &'a C,
+    ) -> Option<&'a crate::terminal::view::AIConversation> {
+        None
+    }
+    pub fn set_pending_query_state_for_existing_conversation<A, B, C, D>(
+        &mut self,
+        _: A,
+        _: B,
+        _: C,
+        _: &mut D,
+    ) {
+    }
     pub fn set_pending_context_selected_text<T, C>(&mut self, _: Option<String>, _: T, _: &mut C) {}
     pub fn set_pending_context_block_ids<I, T, C>(&mut self, _: I, _: T, _: &mut C) {}
-    pub fn can_start_new_conversation(&self) -> bool { false }
-    pub fn is_queue_next_prompt_enabled(&self) -> bool { false }
-    pub fn is_targeting_existing_conversation(&self) -> bool { false }
-    pub fn pending_attachments(&self) -> Vec<PendingAttachmentStub> { Vec::new() }
-    pub fn pending_context_block_ids(&self) -> std::collections::HashSet<warp_terminal::model::BlockId> { std::collections::HashSet::new() }
-    pub fn pending_context_selected_text(&self) -> Option<String> { None }
-    pub fn pending_files(&self) -> Vec<crate::terminal::input::PendingFileStub> { Vec::new() }
-    pub fn selected_conversation_status_for_hint<C>(&self, _: &C) -> Option<crate::app_state::ConversationStatus> { None }
-    pub fn current_pwd(&self) -> Option<std::path::PathBuf> { None }
-    pub fn home_directory(&self) -> Option<std::path::PathBuf> { None }
-    pub fn pending_context<A, B>(&self, _: A, _: B) -> Option<()> { None }
-    pub fn pending_query_autoexecute_override<C>(&self, _: &C) -> Option<bool> { None }
+    pub fn can_start_new_conversation(&self) -> bool {
+        false
+    }
+    pub fn is_queue_next_prompt_enabled(&self) -> bool {
+        false
+    }
+    pub fn is_targeting_existing_conversation(&self) -> bool {
+        false
+    }
+    pub fn pending_attachments(&self) -> Vec<PendingAttachmentStub> {
+        Vec::new()
+    }
+    pub fn pending_context_block_ids(
+        &self,
+    ) -> std::collections::HashSet<warp_terminal::model::BlockId> {
+        std::collections::HashSet::new()
+    }
+    pub fn pending_context_selected_text(&self) -> Option<String> {
+        None
+    }
+    pub fn pending_files(&self) -> Vec<crate::terminal::input::PendingFileStub> {
+        Vec::new()
+    }
+    pub fn selected_conversation_status_for_hint<C>(
+        &self,
+        _: &C,
+    ) -> Option<crate::app_state::ConversationStatus> {
+        None
+    }
+    pub fn current_pwd(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+    pub fn home_directory(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+    pub fn pending_context<A, B>(&self, _: A, _: B) -> Option<()> {
+        None
+    }
+    pub fn pending_query_autoexecute_override<C>(&self, _: &C) -> Option<bool> {
+        None
+    }
     pub fn register_diff_hunk_attachment<A, B>(&mut self, _: A, _: B) {}
     pub fn remove_pending_attachment<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn reset_context_to_default<C>(&mut self, _: &mut C) {}
-    pub fn set_pending_query_state_for_new_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
+    pub fn set_pending_query_state_for_new_conversation<A, B, C, D>(
+        &mut self,
+        _: A,
+        _: B,
+        _: C,
+        _: &mut D,
+    ) {
+    }
     pub fn toggle_pending_query_autoexecute<C>(&mut self, _: &mut C) {}
     pub fn toggle_queue_next_prompt<C>(&mut self, _: &mut C) {}
     pub fn clear_pending_attachments<C>(&mut self, _: &mut C) {}
-    pub fn remove_last_pending_images<A, C>(&mut self, _: A, _: &mut C) -> usize { 0 }
+    pub fn remove_last_pending_images<A, C>(&mut self, _: A, _: &mut C) -> usize {
+        0
+    }
 }
 
 #[allow(dead_code)]
 pub struct BlocklistAIController;
 #[allow(dead_code)]
 impl BlocklistAIController {
-    pub fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self { Self }
+    pub fn new<A, B, C, D, E, F, G, H>(
+        _: A,
+        _: B,
+        _: C,
+        _: D,
+        _: E,
+        _: F,
+        _: G,
+        _: &mut H,
+    ) -> Self {
+        Self
+    }
     pub fn send_slash_command_request<R, C>(&mut self, _: R, _: &mut C) {}
     pub fn cancel_conversation_progress<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     // twarp: 2c-d — bulk stubs for AI-removed methods on BlocklistAIController
     pub fn clear_finished_action_results<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn handle_shared_session_response_event<E, C>(&mut self, _: E, _: &mut C) {}
     pub fn link_forked_conversation_token<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
-    pub fn mark_action_as_remotely_executing_in_shared_session<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn mark_action_as_remotely_executing_in_shared_session<A, B, C>(
+        &mut self,
+        _: A,
+        _: B,
+        _: &mut C,
+    ) {
+    }
     pub fn resume_conversation<A, B, C, D, E>(&mut self, _: A, _: B, _: C, _: D, _: &mut E) {}
     pub fn send_custom_ai_input_query<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     pub fn send_passive_suggestion_result<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
-    pub fn send_user_query_in_new_conversation<A, B, C, D, E>(&mut self, _: A, _: B, _: C, _: D, _: &mut E) {}
+    pub fn send_user_query_in_new_conversation<A, B, C, D, E>(
+        &mut self,
+        _: A,
+        _: B,
+        _: C,
+        _: D,
+        _: &mut E,
+    ) {
+    }
     pub fn set_current_response_initiator<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn send_queued_slash_command_request<A, C>(&mut self, _: A, _: &mut C) {}
-    pub fn send_queued_user_query_in_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
-    pub fn send_queued_user_query_in_new_conversation<A, B, C, D, E>(&mut self, _: A, _: B, _: C, _: D, _: &mut E) {}
+    pub fn send_queued_user_query_in_conversation<A, B, C, D>(
+        &mut self,
+        _: A,
+        _: B,
+        _: C,
+        _: &mut D,
+    ) {
+    }
+    pub fn send_queued_user_query_in_new_conversation<A, B, C, D, E>(
+        &mut self,
+        _: A,
+        _: B,
+        _: C,
+        _: D,
+        _: &mut E,
+    ) {
+    }
     pub fn send_user_query_in_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     pub fn send_zero_state_prompt_suggestion<A, C>(&mut self, _: A, _: &mut C) {}
 }
@@ -837,7 +1038,9 @@ pub use crate::terminal::view::BlocklistAIControllerEvent;
 #[allow(dead_code)]
 impl BlocklistAIHistoryEvent {
     // twarp: 2c-d — terminal_view_id getter for event types
-    pub fn terminal_view_id(&self) -> Option<warpui::EntityId> { None }
+    pub fn terminal_view_id(&self) -> Option<warpui::EntityId> {
+        None
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -860,24 +1063,42 @@ pub enum BlocklistAIHistoryEvent {
         terminal_view_id: warpui::EntityId,
         active_conversation_id: crate::app_state::AIConversationId,
     },
-    ConversationServerTokenAssigned { terminal_view_id: warpui::EntityId },
-    CreatedSubtask { terminal_view_id: warpui::EntityId },
-    DeletedConversation { terminal_view_id: warpui::EntityId },
+    ConversationServerTokenAssigned {
+        terminal_view_id: warpui::EntityId,
+    },
+    CreatedSubtask {
+        terminal_view_id: warpui::EntityId,
+    },
+    DeletedConversation {
+        terminal_view_id: warpui::EntityId,
+    },
     ReassignedExchange {
         terminal_view_id: warpui::EntityId,
         exchange_id: crate::app_state::AIConversationId,
         new_conversation_id: crate::app_state::AIConversationId,
     },
-    RemoveConversation { terminal_view_id: warpui::EntityId },
-    RestoredConversations { terminal_view_id: warpui::EntityId },
-    SetActiveConversation { terminal_view_id: warpui::EntityId },
-    SplitConversation { terminal_view_id: warpui::EntityId },
+    RemoveConversation {
+        terminal_view_id: warpui::EntityId,
+    },
+    RestoredConversations {
+        terminal_view_id: warpui::EntityId,
+    },
+    SetActiveConversation {
+        terminal_view_id: warpui::EntityId,
+    },
+    SplitConversation {
+        terminal_view_id: warpui::EntityId,
+    },
     StartedNewConversation {
         terminal_view_id: warpui::EntityId,
         new_conversation_id: crate::app_state::AIConversationId,
     },
-    UpdatedAutoexecuteOverride { terminal_view_id: warpui::EntityId },
-    UpdatedConversationArtifacts { terminal_view_id: warpui::EntityId },
+    UpdatedAutoexecuteOverride {
+        terminal_view_id: warpui::EntityId,
+    },
+    UpdatedConversationArtifacts {
+        terminal_view_id: warpui::EntityId,
+    },
     UpdatedConversationMetadata {
         terminal_view_id: warpui::EntityId,
         conversation_id: crate::app_state::AIConversationId,
@@ -887,20 +1108,41 @@ pub enum BlocklistAIHistoryEvent {
         conversation_id: crate::app_state::AIConversationId,
         is_restored: bool,
     },
-    UpdatedStreamingExchange { terminal_view_id: warpui::EntityId },
-    UpdatedTodoList { terminal_view_id: warpui::EntityId },
-    UpgradedTask { terminal_view_id: warpui::EntityId },
+    UpdatedStreamingExchange {
+        terminal_view_id: warpui::EntityId,
+    },
+    UpdatedTodoList {
+        terminal_view_id: warpui::EntityId,
+    },
+    UpgradedTask {
+        terminal_view_id: warpui::EntityId,
+    },
     Other,
 }
 
 #[allow(dead_code)]
 pub struct BlocklistAIHistoryModel;
 impl BlocklistAIHistoryModel {
-    pub fn active_conversation(&self, _: warpui::EntityId) -> Option<AIConversationStub> { None }
-    fn conversation_id_for_action<I>(&self, _: I, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
-    fn conversation<I>(&self, _: I) -> Option<AIConversationStub> { None }
+    pub fn active_conversation(&self, _: warpui::EntityId) -> Option<AIConversationStub> {
+        None
+    }
+    fn conversation_id_for_action<I>(
+        &self,
+        _: I,
+        _: warpui::EntityId,
+    ) -> Option<crate::app_state::AIConversationId> {
+        None
+    }
+    fn conversation<I>(&self, _: I) -> Option<AIConversationStub> {
+        None
+    }
     // twarp: 2c-d — bulk stubs
-    fn all_live_conversations_for_terminal_view(&self, _: warpui::EntityId) -> Vec<crate::app_state::AIConversationId> { Vec::new() }
+    fn all_live_conversations_for_terminal_view(
+        &self,
+        _: warpui::EntityId,
+    ) -> Vec<crate::app_state::AIConversationId> {
+        Vec::new()
+    }
 }
 
 // twarp: 2c-d — local AIConversation-like stub used by input.rs.
@@ -908,22 +1150,40 @@ impl BlocklistAIHistoryModel {
 pub struct AIConversationStub;
 #[allow(dead_code)]
 impl AIConversationStub {
-    pub fn id(&self) -> AIConversationId { unimplemented!() }
-    pub fn title(&self) -> Option<String> { None }
-    pub fn status(&self) -> crate::app_state::ConversationStatus { crate::app_state::ConversationStatus::Failed }
+    pub fn id(&self) -> AIConversationId {
+        unimplemented!()
+    }
+    pub fn title(&self) -> Option<String> {
+        None
+    }
+    pub fn status(&self) -> crate::app_state::ConversationStatus {
+        crate::app_state::ConversationStatus::Failed
+    }
     // twarp: 2c-d — bulk stubs
-    pub fn is_empty(&self) -> bool { true }
-    pub fn is_entirely_passive(&self) -> bool { false }
-    pub fn export_to_markdown<A>(&self, _: A) -> String { String::new() }
-    pub fn server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
+    pub fn is_empty(&self) -> bool {
+        true
+    }
+    pub fn is_entirely_passive(&self) -> bool {
+        false
+    }
+    pub fn export_to_markdown<A>(&self, _: A) -> String {
+        String::new()
+    }
+    pub fn server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> {
+        None
+    }
 }
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct AIConversationStatusStub;
 #[allow(dead_code)]
 impl AIConversationStatusStub {
-    pub fn is_in_progress(&self) -> bool { false }
-    pub fn is_blocked(&self) -> bool { false }
+    pub fn is_in_progress(&self) -> bool {
+        false
+    }
+    pub fn is_blocked(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -932,12 +1192,14 @@ pub enum BlocklistAIInputEvent {
     // twarp: 2c-d — struct variants for { .. } destructure callers
     InputTypeChanged { config: InputConfig },
     LockChanged { config: InputConfig },
-    UpdatedConfig { },
+    UpdatedConfig {},
 }
 #[allow(dead_code)]
 impl BlocklistAIInputEvent {
     // twarp: 2c-d — bulk method stub
-    pub fn updated_config(&self) -> InputConfig { InputConfig::empty() }
+    pub fn updated_config(&self) -> InputConfig {
+        InputConfig::empty()
+    }
 }
 
 #[allow(dead_code)]
@@ -962,14 +1224,22 @@ impl BlocklistAIInputModel {
     pub fn is_input_type_locked(&self) -> bool {
         false
     }
-    pub fn was_lock_set_with_empty_buffer(&self) -> bool { false }
+    pub fn was_lock_set_with_empty_buffer(&self) -> bool {
+        false
+    }
     pub fn set_input_config<C>(&mut self, _: InputConfig, _: bool, _: &mut C) {}
     pub fn set_input_type<C>(&mut self, _: InputType, _: &mut C) {}
     pub fn set_input_config_for_classic_mode<C>(&mut self, _: InputConfig, _: &mut C) {}
-    pub fn should_run_input_autodetection<C>(&self, _: &C) -> bool { false }
+    pub fn should_run_input_autodetection<C>(&self, _: &C) -> bool {
+        false
+    }
     // twarp: 2c-d — bulk stubs needed across files
-    pub fn new<A, B, C, D>(_: A, _: B, _: C, _: &mut D) -> Self { Self }
-    pub fn is_autodetection_enabled_for_current_context<C>(&self, _: &mut C) -> bool { false }
+    pub fn new<A, B, C, D>(_: A, _: B, _: C, _: &mut D) -> Self {
+        Self
+    }
+    pub fn is_autodetection_enabled_for_current_context<C>(&self, _: &mut C) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -989,12 +1259,24 @@ impl InputConfig {
         self
     }
     // twarp: 2c-d — bulk stubs
-    pub fn with_toggled_type(self) -> Self { self }
-    pub fn with_input_type(self, _: InputType) -> Self { self }
-    pub fn locked(self) -> Self { self }
-    pub fn unlocked(self) -> Self { self }
-    pub fn is_ai(&self) -> bool { matches!(self.input_type, InputType::AI) }
-    pub fn is_shell(&self) -> bool { matches!(self.input_type, InputType::Shell) }
+    pub fn with_toggled_type(self) -> Self {
+        self
+    }
+    pub fn with_input_type(self, _: InputType) -> Self {
+        self
+    }
+    pub fn locked(self) -> Self {
+        self
+    }
+    pub fn unlocked(self) -> Self {
+        self
+    }
+    pub fn is_ai(&self) -> bool {
+        matches!(self.input_type, InputType::AI)
+    }
+    pub fn is_shell(&self) -> bool {
+        matches!(self.input_type, InputType::Shell)
+    }
 }
 
 // twarp: 2c-d — unify with events::InputType.
@@ -1041,7 +1323,8 @@ pub struct LLMPreferences;
 pub struct LLMInfoStub {
     pub id: crate::app_state::LLMId,
     pub provider: String,
-    pub host_configs: std::collections::HashMap<crate::terminal::view::LLMModelHost, LLMHostConfigStub>,
+    pub host_configs:
+        std::collections::HashMap<crate::terminal::view::LLMModelHost, LLMHostConfigStub>,
 }
 #[allow(dead_code)]
 pub struct LLMHostConfigStub {
@@ -1049,13 +1332,21 @@ pub struct LLMHostConfigStub {
 }
 impl LLMPreferences {
     pub fn update_preferred_agent_mode_llm<I, C>(&mut self, _: I, _: warpui::EntityId, _: &mut C) {}
-    pub fn vision_supported<C>(&self, _: &C, _: Option<warpui::EntityId>) -> bool { false }
+    pub fn vision_supported<C>(&self, _: &C, _: Option<warpui::EntityId>) -> bool {
+        false
+    }
     // twarp: 2c-d — bulk stubs
     pub fn remove_llm_override<A, C>(&mut self, _: A, _: &mut C) {}
-    pub fn handle<C>(_: &C) -> warpui::ModelHandle<LLMPreferences> { unimplemented!() }
-    pub fn as_ref<C>(_: &C) -> &Self { unimplemented!() }
+    pub fn handle<C>(_: &C) -> warpui::ModelHandle<LLMPreferences> {
+        unimplemented!()
+    }
+    pub fn as_ref<C>(_: &C) -> &Self {
+        unimplemented!()
+    }
     pub fn refresh_available_models<C>(&mut self, _: &mut C) {}
-    pub fn get_llm_info<A>(&self, _: A) -> Option<LLMInfoStub> { None }
+    pub fn get_llm_info<A>(&self, _: A) -> Option<LLMInfoStub> {
+        None
+    }
     pub fn get_active_base_model<C>(&self, _: &C, _: Option<warpui::EntityId>) -> LLMInfoStub {
         LLMInfoStub {
             id: "".into(),
@@ -1063,7 +1354,9 @@ impl LLMPreferences {
             host_configs: std::collections::HashMap::new(),
         }
     }
-    pub fn supports_input_type<A, C>(&self, _: A, _: &C) -> bool { false }
+    pub fn supports_input_type<A, C>(&self, _: A, _: &C) -> bool {
+        false
+    }
     pub fn update_feature_model_choices<C, T>(&mut self, _: Result<T, ()>, _: &mut C) {}
 }
 
@@ -1085,10 +1378,16 @@ impl AIRequestUsageModel {
         false
     }
     // twarp: 2c-d — bulk stubs
-    fn has_requests_remaining(&self) -> bool { false }
+    fn has_requests_remaining(&self) -> bool {
+        false
+    }
     fn enable_buy_credits_banner<C>(&mut self, _: &mut C) {}
-    fn request_limit(&self) -> usize { 0 }
-    fn last_update_time(&mut self) -> Option<chrono::DateTime<chrono::Utc>> { None }
+    fn request_limit(&self) -> usize {
+        0
+    }
+    fn last_update_time(&mut self) -> Option<chrono::DateTime<chrono::Utc>> {
+        None
+    }
     fn refresh_request_usage_async<C>(&mut self, _: &mut C) {}
 }
 
@@ -1107,7 +1406,9 @@ impl UniversalDeveloperInputButtonBar {
     pub fn set_udi_hovered<C>(&mut self, _: bool, _: &mut C) {}
     pub fn set_voice_is_listening<C>(&mut self, _: bool, _: &mut C) {}
     pub fn update_input_empty_state<C>(&mut self, _: bool, _: &mut C) {}
-    pub fn is_profile_model_selector_open<C>(&self, _: &C) -> bool { false }
+    pub fn is_profile_model_selector_open<C>(&self, _: &C) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1137,10 +1438,14 @@ pub struct AmbientAgentUiStateStub {
 #[derive(Default)]
 pub struct AmbientAgentErrorSelectedTextStub;
 impl AmbientAgentErrorSelectedTextStub {
-    pub fn read(&self) -> Option<String> { None }
+    pub fn read(&self) -> Option<String> {
+        None
+    }
 }
 impl Clone for AmbientAgentErrorSelectedTextStub {
-    fn clone(&self) -> Self { Self }
+    fn clone(&self) -> Self {
+        Self
+    }
 }
 impl AmbientAgentViewModel {
     pub fn new<A, B, C>(_: A, _: B, _: &mut C) -> Self {
@@ -1156,20 +1461,30 @@ impl AmbientAgentViewModel {
     pub fn is_ambient_agent(&self) -> bool {
         false
     }
-    pub fn is_waiting_for_session(&self) -> bool { false }
+    pub fn is_waiting_for_session(&self) -> bool {
+        false
+    }
     pub fn should_show_status_footer(&self) -> bool {
         false
     }
     pub fn is_configuring_ambient_agent(&self) -> bool {
         false
     }
-    pub fn agent_progress(&self) -> Option<()> { None }
+    pub fn agent_progress(&self) -> Option<()> {
+        None
+    }
     pub fn cancel_task<C>(&mut self, _: &mut C) {}
     // twarp: 2c-d — bulk stubs
-    pub fn is_agent_running(&self) -> bool { false }
+    pub fn is_agent_running(&self) -> bool {
+        false
+    }
     pub fn spawn_agent<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
-    pub fn is_in_setup(&self) -> bool { false }
-    pub fn has_parent_terminal(&self) -> bool { false }
+    pub fn is_in_setup(&self) -> bool {
+        false
+    }
+    pub fn has_parent_terminal(&self) -> bool {
+        false
+    }
     pub fn enter_viewing_existing_session<A, C>(&mut self, _: A, _: &mut C) {}
 }
 
@@ -1177,16 +1492,22 @@ impl AmbientAgentViewModel {
 pub struct AgentInputFooter;
 #[allow(dead_code)]
 impl AgentInputFooter {
-    fn has_open_chip_menu<C>(&self, _: &C) -> bool { false }
+    fn has_open_chip_menu<C>(&self, _: &C) -> bool {
+        false
+    }
     // twarp: 2c-d — bulk stubs
-    fn is_model_selector_open<C>(&self, _: &C) -> bool { false }
+    fn is_model_selector_open<C>(&self, _: &C) -> bool {
+        false
+    }
     fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self {
         unimplemented!()
     }
     fn set_voice_is_active<C>(&mut self, _: bool, _: &mut C) {}
     fn update_session_context<A, C>(&mut self, _: A, _: &mut C) {}
     fn set_current_repo_path<A, C>(&mut self, _: A, _: &mut C) {}
-    fn is_v2_model_selector_open<C>(&self, _: &C) -> bool { false }
+    fn is_v2_model_selector_open<C>(&self, _: &C) -> bool {
+        false
+    }
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -1196,21 +1517,33 @@ pub enum AgentInputFooterEvent {
     InsertIntoCLIRichInput(()),
     ModelSelectorClosed,
     ModelSelectorOpened,
-    OpenAIDocument { document_id: crate::app_state::AIDocumentId, document_version: crate::app_state::AIDocumentVersion },
+    OpenAIDocument {
+        document_id: crate::app_state::AIDocumentId,
+        document_version: crate::app_state::AIDocumentVersion,
+    },
     OpenCodeReview,
-    OpenPluginInstructionsPane(crate::app_state::CLIAgent, crate::terminal::view::PluginModalKind),
+    OpenPluginInstructionsPane(
+        crate::app_state::CLIAgent,
+        crate::terminal::view::PluginModalKind,
+    ),
     OpenRichInput,
     OpenSettings(SettingsSection),
     PluginInstalled(crate::app_state::CLIAgent),
     PromptAlert(crate::terminal::view::inline_banner::prompt_suggestions::PromptAlertEvent),
     SelectFile,
-    ShowContextMenu { position: pathfinder_geometry::vector::Vector2F },
+    ShowContextMenu {
+        position: pathfinder_geometry::vector::Vector2F,
+    },
     StartRemoteControl,
     StopRemoteControl,
     ToggleCodeReviewPane(()),
-    ToggledChipMenu { open: bool },
+    ToggledChipMenu {
+        open: bool,
+    },
     ToggleFileExplorer(()),
-    ToggleInlineModelSelector { initial_tab: () },
+    ToggleInlineModelSelector {
+        initial_tab: (),
+    },
     TryExecuteChipCommand(String),
     WriteToPty(()),
 }
@@ -1231,15 +1564,32 @@ impl AgentViewController {
         Ok(())
     }
     // twarp: 2c-d — bulk stubs
-    pub fn should_start_new_conversation_for_keybinding<A, C>(&mut self, _: A, _: &mut C) -> bool { false }
-    pub fn agent_view_state(&self) -> crate::terminal::model::block::AgentViewState { crate::terminal::model::block::AgentViewState::Inactive }
+    pub fn should_start_new_conversation_for_keybinding<A, C>(&mut self, _: A, _: &mut C) -> bool {
+        false
+    }
+    pub fn agent_view_state(&self) -> crate::terminal::model::block::AgentViewState {
+        crate::terminal::model::block::AgentViewState::Inactive
+    }
     pub fn exit_agent_view<C>(&mut self, _: &mut C) {}
-    pub fn can_exit_agent_view<C>(&self, _: &C) -> Result<(), String> { Ok(()) }
+    pub fn can_exit_agent_view<C>(&self, _: &C) -> Result<(), String> {
+        Ok(())
+    }
     pub fn clear_pending_exit_confirmation<C>(&mut self, _: &mut C) {}
     pub fn exit_agent_view_with_required_confirmation<A, C>(&mut self, _: A, _: &mut C) {}
-    pub fn is_inline(&self) -> bool { false }
-    pub fn try_enter_inline_agent_view<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> Result<(), ()> { Err(()) }
-    pub fn pane_group_id(&self) -> Option<warpui::EntityId> { None }
+    pub fn is_inline(&self) -> bool {
+        false
+    }
+    pub fn try_enter_inline_agent_view<A, B, C>(
+        &mut self,
+        _: A,
+        _: B,
+        _: &mut C,
+    ) -> Result<(), ()> {
+        Err(())
+    }
+    pub fn pane_group_id(&self) -> Option<warpui::EntityId> {
+        None
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -4977,7 +5327,11 @@ impl Input {
         } else {
             // Open the skill file in editor (from /open-skill command)
             // twarp: 2c-d — SkillTelemetryEvent isn't a TelemetryEvent post-AI-removal; emission removed.
-            let _ = (&skill_reference, &skill_name, SkillOpenOrigin::OpenSkillCommand);
+            let _ = (
+                &skill_reference,
+                &skill_name,
+                SkillOpenOrigin::OpenSkillCommand,
+            );
 
             ctx.dispatch_typed_action(&TerminalAction::OpenEditSkillPane {
                 skill_reference: skill_reference.clone(),
@@ -5137,7 +5491,10 @@ impl Input {
         }
 
         match event {
-            UserQueryMenuEvent::SelectedQuery { exchange_id, query: _ } => {
+            UserQueryMenuEvent::SelectedQuery {
+                exchange_id,
+                query: _,
+            } => {
                 ctx.emit(Event::ScrollToExchange {
                     exchange_id: (*exchange_id).into(),
                 });
@@ -8674,8 +9031,8 @@ impl Input {
         let input_buffer_text = self.buffer_text(ctx);
         let buffer_length = input_buffer_text.len();
         let telemetry_enabled = PrivacySettings::as_ref(ctx).is_telemetry_enabled;
-        let input = should_collect_ai_ugc_telemetry(&*ctx, telemetry_enabled)
-            .then_some(input_buffer_text);
+        let input =
+            should_collect_ai_ugc_telemetry(&*ctx, telemetry_enabled).then_some(input_buffer_text);
         let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
         send_telemetry_from_ctx!(
             TelemetryEvent::AgentModeChangedInputType {
@@ -11093,7 +11450,8 @@ impl Input {
         ctx: &'a ViewContext<Self>,
     ) -> Vec<HistoryInputSuggestion<'a>> {
         // twarp: 2c-d — convert to app_state::InputConfig
-        let input_config: crate::app_state::InputConfig = self.ai_input_model.as_ref(ctx).input_config().into();
+        let input_config: crate::app_state::InputConfig =
+            self.ai_input_model.as_ref(ctx).input_config().into();
         let config = UpArrowHistoryConfig::for_input_config(&input_config);
 
         History::as_ref(ctx).up_arrow_suggestions_for_terminal_view(
@@ -12364,8 +12722,11 @@ impl Input {
             && !self.agent_view_controller.as_ref(ctx).is_active()
         {
             self.agent_view_controller.update(ctx, |controller, ctx| {
-                let _ =
-                    controller.try_enter_agent_view(None::<()>, AgentViewEntryOrigin::ProjectEntry, ctx);
+                let _ = controller.try_enter_agent_view(
+                    None::<()>,
+                    AgentViewEntryOrigin::ProjectEntry,
+                    ctx,
+                );
             });
         }
         self.ai_controller.update(ctx, move |controller, ctx| {
@@ -12381,8 +12742,11 @@ impl Input {
             && !self.agent_view_controller.as_ref(ctx).is_active()
         {
             self.agent_view_controller.update(ctx, |controller, ctx| {
-                let _ =
-                    controller.try_enter_agent_view(None::<()>, AgentViewEntryOrigin::ProjectEntry, ctx);
+                let _ = controller.try_enter_agent_view(
+                    None::<()>,
+                    AgentViewEntryOrigin::ProjectEntry,
+                    ctx,
+                );
             });
         }
         self.ai_controller.update(ctx, move |controller, ctx| {
@@ -12464,7 +12828,7 @@ impl Input {
             .is_inline_model_selector()
         {
             self.inline_model_selector_view
-                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx) );
+                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
             return;
         }
 
@@ -12514,7 +12878,7 @@ impl Input {
             return;
         } else if self.suggestions_mode_model.as_ref(ctx).is_user_query_menu() {
             self.user_query_menu_view
-                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx) );
+                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
             return;
         } else if self.suggestions_mode_model.as_ref(ctx).is_rewind_menu() {
             self.rewind_menu_view
@@ -12551,7 +12915,7 @@ impl Input {
             return;
         } else if self.suggestions_mode_model.as_ref(ctx).is_repos_menu() {
             self.inline_repos_menu_view
-                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx) );
+                .update(ctx, |view, ctx| view.accept_selected_item(false, ctx));
             return;
         } else if self.suggestions_mode_model.as_ref(ctx).is_plan_menu() {
             self.inline_plan_menu_view
@@ -13144,15 +13508,13 @@ impl Input {
 
                 let last_update_time = usage_model.last_update_time();
                 // twarp: 2c-d — chrono::DateTime has no .elapsed(); compute via signed_duration_since.
-                if last_update_time
-                    .is_some_and(|time| {
-                        chrono::Utc::now()
-                            .signed_duration_since(time)
-                            .to_std()
-                            .unwrap_or_default()
-                            >= USAGE_LIMIT_UPDATE_REQUEST_RATE_LIMIT
-                    })
-                    || last_update_time.is_none()
+                if last_update_time.is_some_and(|time| {
+                    chrono::Utc::now()
+                        .signed_duration_since(time)
+                        .to_std()
+                        .unwrap_or_default()
+                        >= USAGE_LIMIT_UPDATE_REQUEST_RATE_LIMIT
+                }) || last_update_time.is_none()
                 {
                     usage_model.refresh_request_usage_async(ctx);
                 }
@@ -13190,7 +13552,12 @@ impl Input {
             .selected_conversation_id(ctx)
         {
             self.ai_controller.update(ctx, move |controller, ctx| {
-                controller.send_user_query_in_conversation(ai_query, conversation_id, None::<()>, ctx)
+                controller.send_user_query_in_conversation(
+                    ai_query,
+                    conversation_id,
+                    None::<()>,
+                    ctx,
+                )
             });
         } else {
             self.ai_controller.update(ctx, move |controller, ctx| {
@@ -13227,7 +13594,6 @@ impl Input {
             }
         }
     }
-
 
     /// Returns true if toggling the input mode is disabled.
     fn is_input_mode_toggle_disabled(&self) -> bool {
@@ -14925,9 +15291,18 @@ impl Input {
     }
     fn update_cli_agent_editor_text_colors<C>(&mut self, _: &mut C) {}
     // twarp: 2c-d — bulk stubs for AI-removed Input methods (render functions)
-    fn render_cli_agent_input<C>(&self, _: &C) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
-    fn render_ambient_agent_status_footer<C>(&self, _: &C) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
-    fn render_agent_input<C>(&self, _: &C) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
+    fn render_cli_agent_input<C>(&self, _: &C) -> Box<dyn warpui::Element> {
+        use warpui::Element as _;
+        warpui::elements::Empty::new().finish()
+    }
+    fn render_ambient_agent_status_footer<C>(&self, _: &C) -> Box<dyn warpui::Element> {
+        use warpui::Element as _;
+        warpui::elements::Empty::new().finish()
+    }
+    fn render_agent_input<C>(&self, _: &C) -> Box<dyn warpui::Element> {
+        use warpui::Element as _;
+        warpui::elements::Empty::new().finish()
+    }
 }
 
 #[cfg(test)]

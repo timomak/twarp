@@ -50,7 +50,9 @@ impl AgentViewState {
     }
     pub fn active_conversation_id(&self) -> Option<&AIConversationId> {
         match self {
-            AgentViewState::Active { conversation_id, .. } => Some(conversation_id),
+            AgentViewState::Active {
+                conversation_id, ..
+            } => Some(conversation_id),
             AgentViewState::Inactive => None,
         }
     }
@@ -64,11 +66,19 @@ impl AgentViewState {
         )
     }
     // twarp: 2c-d — bulk stubs
-    pub fn is_new(&self) -> bool { false }
-    pub fn fullscreen_conversation_id(&self) -> Option<&AIConversationId> { None }
-    pub fn zero_state_position_id(&self) -> Option<String> { None }
+    pub fn is_new(&self) -> bool {
+        false
+    }
+    pub fn fullscreen_conversation_id(&self) -> Option<&AIConversationId> {
+        None
+    }
+    pub fn zero_state_position_id(&self) -> Option<String> {
+        None
+    }
 }
-pub fn redact_secrets(_text: &str) -> String { String::new() }
+pub fn redact_secrets(_text: &str) -> String {
+    String::new()
+}
 use crate::{
     context_chips::prompt_snapshot::PromptSnapshot,
     server::{block::DisplaySetting, ids::SyncId},

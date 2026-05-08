@@ -38,12 +38,18 @@ pub struct SkillDescriptor {
 pub use crate::terminal::input::SkillManager;
 pub use crate::terminal::view::CLIAgentInputState;
 pub struct CLIAgentSessionsModel;
-impl warpui::Entity for CLIAgentSessionsModel { type Event = CLIAgentSessionsModelEvent; }
+impl warpui::Entity for CLIAgentSessionsModel {
+    type Event = CLIAgentSessionsModelEvent;
+}
 impl warpui::SingletonEntity for CLIAgentSessionsModel {}
 #[allow(dead_code)]
 impl CLIAgentSessionsModel {
-    pub fn is_input_open(&self, _: warpui::EntityId) -> bool { false }
-    pub fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSession> { None }
+    pub fn is_input_open(&self, _: warpui::EntityId) -> bool {
+        false
+    }
+    pub fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSession> {
+        None
+    }
 }
 pub struct CLIAgentSession {
     pub input_state: CLIAgentInputState,
@@ -53,7 +59,9 @@ pub enum CLIAgentSessionsModelEvent {
     InputSessionChanged { terminal_view_id: warpui::EntityId },
     Other,
 }
-pub use crate::terminal::input::{AgentViewControllerEvent, CLISubagentController, CLISubagentEvent};
+pub use crate::terminal::input::{
+    AgentViewControllerEvent, CLISubagentController, CLISubagentEvent,
+};
 
 use super::AcceptSlashCommandOrSavedPrompt;
 use crate::{

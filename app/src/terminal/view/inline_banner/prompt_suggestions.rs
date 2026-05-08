@@ -35,13 +35,23 @@ pub enum PromptAlertState {
 pub struct PromptAlertView;
 #[allow(dead_code)]
 impl PromptAlertView {
-    pub fn new<A>(_: &mut A) -> Self { Self }
-    pub fn state(&self) -> PromptAlertState { PromptAlertState::default() }
-    pub fn is_no_alert(&self) -> bool { true }
+    pub fn new<A>(_: &mut A) -> Self {
+        Self
+    }
+    pub fn state(&self) -> PromptAlertState {
+        PromptAlertState::default()
+    }
+    pub fn is_no_alert(&self) -> bool {
+        true
+    }
 }
-impl warpui::Entity for PromptAlertView { type Event = PromptAlertEvent; }
+impl warpui::Entity for PromptAlertView {
+    type Event = PromptAlertEvent;
+}
 impl warpui::View for PromptAlertView {
-    fn ui_name() -> &'static str { "PromptAlertView/twarp-stub" }
+    fn ui_name() -> &'static str {
+        "PromptAlertView/twarp-stub"
+    }
     fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
         warpui::elements::Empty::new().finish()
     }
@@ -88,7 +98,9 @@ pub enum PassiveSuggestionTrigger {
 }
 #[allow(dead_code)]
 impl PassiveSuggestionTrigger {
-    pub fn block_id(&self) -> Option<warp_terminal::model::BlockId> { None }
+    pub fn block_id(&self) -> Option<warp_terminal::model::BlockId> {
+        None
+    }
 }
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
@@ -103,11 +115,18 @@ pub struct ExecutedShellCommandStub {
 }
 impl From<String> for ExecutedShellCommandStub {
     fn from(_: String) -> Self {
-        Self { id: warp_terminal::model::BlockId::new() }
+        Self {
+            id: warp_terminal::model::BlockId::new(),
+        }
     }
 }
 #[derive(Clone, Debug)]
-pub enum StaticQueryType { Install, Code, Deploy, SomethingElse }
+pub enum StaticQueryType {
+    Install,
+    Code,
+    Deploy,
+    SomethingElse,
+}
 
 use crate::server::ids::ServerId;
 

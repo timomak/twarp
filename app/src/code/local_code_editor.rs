@@ -75,7 +75,10 @@ use warp_core::ui::icons::Icon;
 use crate::workspace::WorkspaceAction;
 
 #[allow(dead_code)]
-pub enum PersistedWorkspaceEvent { InstallationSucceeded, InstallationFailed }
+pub enum PersistedWorkspaceEvent {
+    InstallationSucceeded,
+    InstallationFailed,
+}
 
 const DROP_SHADOW_COLOR: ColorU = ColorU {
     r: 0,

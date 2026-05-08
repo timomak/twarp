@@ -1136,9 +1136,9 @@ impl SyncQueue {
                             | JsonObjectType::AIExecutionProfile
                             | JsonObjectType::MCPServer
                             | JsonObjectType::TemplatableMCPServer
-                            | JsonObjectType::ScheduledAmbientAgent => Err(anyhow::anyhow!(
-                                "AI cloud objects no longer supported"
-                            )),
+                            | JsonObjectType::ScheduledAmbientAgent => {
+                                Err(anyhow::anyhow!("AI cloud objects no longer supported"))
+                            }
                             // CloudEnvironment is no longer created/synced client-side.
                             JsonObjectType::CloudEnvironment => Err(anyhow::anyhow!(
                                 "CloudEnvironment creation not supported from client"

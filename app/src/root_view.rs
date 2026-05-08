@@ -1,6 +1,6 @@
 // twarp: 2c-d — AI ServerConversationToken deleted; use stub.
-use crate::app_state::ServerConversationToken;
 use crate::app_state::SerializedBlockListItem;
+use crate::app_state::ServerConversationToken;
 use crate::appearance::Appearance;
 use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
 use crate::auth::auth_override_warning_modal::AuthOverrideWarningModalVariant;
@@ -99,8 +99,15 @@ use warpui::windowing::WindowManager;
 
 // twarp: 2c-d — AI llms / onboarding deleted; stubs re-exported from input.
 pub use crate::terminal::input::{LLMPreferences, LLMPreferencesEvent};
-pub fn apply_free_tier_default_model_override<A, B, C>(_: A, default: B, _: C) -> B { default }
-pub fn build_onboarding_models<A>(_: A) -> (Vec<onboarding::slides::OnboardingModelInfo>, crate::app_state::LLMId) {
+pub fn apply_free_tier_default_model_override<A, B, C>(_: A, default: B, _: C) -> B {
+    default
+}
+pub fn build_onboarding_models<A>(
+    _: A,
+) -> (
+    Vec<onboarding::slides::OnboardingModelInfo>,
+    crate::app_state::LLMId,
+) {
     (Vec::new(), "".into())
 }
 pub fn current_onboarding_auth_state<C>(_: &C) -> onboarding::OnboardingAuthState {
@@ -1932,8 +1939,11 @@ impl RootView {
                 LLMPreferencesEvent::UpdatedAvailableLLMs => {
                     let (mut models, default_model_id) =
                         build_onboarding_models(llm_preferences.as_ref(ctx));
-                    let default_model_id =
-                        apply_free_tier_default_model_override(&mut models, default_model_id, &mut *ctx);
+                    let default_model_id = apply_free_tier_default_model_override(
+                        &mut models,
+                        default_model_id,
+                        &mut *ctx,
+                    );
                     onboarding_view_clone.update(ctx, |onboarding_view, ctx| {
                         onboarding_view.set_onboarding_models(models, default_model_id, ctx);
                     })

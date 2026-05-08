@@ -259,7 +259,8 @@ fn test_update_padding_block_heights() {
 // twarp: 2c-d — restored function wrapper around partially-uncommented body.
 #[allow(dead_code)]
 fn _disabled_test_clear_visible_screen() {
-    let mut block_list = new_bootstrapped_block_list(None, None, ChannelEventListener::new_for_test());
+    let mut block_list =
+        new_bootstrapped_block_list(None, None, ChannelEventListener::new_for_test());
 
     // Create two blocks, each with 3 command lines and 3 output lines.
     for _ in 0..2 {
@@ -321,79 +322,79 @@ fn _disabled_test_clear_visible_screen() {
 
     assert_lines_approx_eq!(block_list.block_heights.summary().height, 44.0);
     assert!(block_list.active_gap.is_none());
-// }
+    // }
 
-#[test]
-pub fn test_script_execution_block() {
-    let (events_tx, events_rx) = async_channel::unbounded();
-    let channel_event_proxy = ChannelEventListener::builder_for_test()
-        .with_terminal_events_tx(events_tx)
-        .build();
+    #[test]
+    pub fn test_script_execution_block() {
+        let (events_tx, events_rx) = async_channel::unbounded();
+        let channel_event_proxy = ChannelEventListener::builder_for_test()
+            .with_terminal_events_tx(events_tx)
+            .build();
 
-    let mut block_list = TestBlockListBuilder::new()
-        .with_channel_event_proxy(channel_event_proxy.clone())
-        .build();
-    advance_to_script_execution(&mut block_list);
+        let mut block_list = TestBlockListBuilder::new()
+            .with_channel_event_proxy(channel_event_proxy.clone())
+            .build();
+        advance_to_script_execution(&mut block_list);
 
-    // We have the `WarpInput` block and the current script execution block.
-    assert_eq!(block_list.blocks.len(), 2);
-    // Ensure that script execution block has a height of 0 if nothing was added to it.
-    assert!(block_list
-        .active_block()
-        .is_empty(&AgentViewState::Inactive));
+        // We have the `WarpInput` block and the current script execution block.
+        assert_eq!(block_list.blocks.len(), 2);
+        // Ensure that script execution block has a height of 0 if nothing was added to it.
+        assert!(block_list
+            .active_block()
+            .is_empty(&AgentViewState::Inactive));
 
-    advance_to_bootstrapped(&mut block_list, Default::default());
+        advance_to_bootstrapped(&mut block_list, Default::default());
 
-    // We should have three blocks after the last `block_finished`.
-    assert_eq!(block_list.blocks.len(), 3);
+        // We should have three blocks after the last `block_finished`.
+        assert_eq!(block_list.blocks.len(), 3);
 
-    let mut block_list = TestBlockListBuilder::new()
-        .with_channel_event_proxy(channel_event_proxy)
-        .build();
-    advance_to_script_execution(&mut block_list);
+        let mut block_list = TestBlockListBuilder::new()
+            .with_channel_event_proxy(channel_event_proxy)
+            .build();
+        advance_to_script_execution(&mut block_list);
 
-    assert_eq!(block_list.blocks.len(), 2);
-    assert!(block_list
-        .active_block()
-        .is_empty(&AgentViewState::Inactive));
+        assert_eq!(block_list.blocks.len(), 2);
+        assert!(block_list
+            .active_block()
+            .is_empty(&AgentViewState::Inactive));
 
-    // Add characters to script execution block.
-    block_list.input('c');
+        // Add characters to script execution block.
+        block_list.input('c');
 
-    assert_eq!(block_list.blocks.len(), 2);
-    assert!(!block_list
-        .active_block()
-        .is_empty(&AgentViewState::Inactive));
+        assert_eq!(block_list.blocks.len(), 2);
+        assert!(!block_list
+            .active_block()
+            .is_empty(&AgentViewState::Inactive));
 
-    advance_to_bootstrapped(&mut block_list, Default::default());
+        advance_to_bootstrapped(&mut block_list, Default::default());
 
-    // Ensure default block was not deleted since characters were added to it.
-    assert_eq!(block_list.blocks.len(), 3);
+        // Ensure default block was not deleted since characters were added to it.
+        assert_eq!(block_list.blocks.len(), 3);
 
-    let mut block_completed_events = Vec::new();
-    while let Ok(event) = events_rx.try_recv() {
-        if let Event::AfterBlockCompleted(block_completed_type) = event {
-            block_completed_events.push(block_completed_type)
+        let mut block_completed_events = Vec::new();
+        while let Ok(event) = events_rx.try_recv() {
+            if let Event::AfterBlockCompleted(block_completed_type) = event {
+                block_completed_events.push(block_completed_type)
+            }
         }
+        assert_eq!(block_completed_events.len(), 4);
+        assert!(matches!(
+            block_completed_events[0].block_type,
+            BlockType::BootstrapHidden,
+        ));
+        assert!(matches!(
+            block_completed_events[1].block_type,
+            BlockType::BootstrapHidden,
+        ));
+        assert!(matches!(
+            block_completed_events[2].block_type,
+            BlockType::BootstrapHidden,
+        ));
+        assert!(matches!(
+            block_completed_events[3].block_type,
+            BlockType::BootstrapVisible(_)
+        ));
     }
-    assert_eq!(block_completed_events.len(), 4);
-    assert!(matches!(
-        block_completed_events[0].block_type,
-        BlockType::BootstrapHidden,
-    ));
-    assert!(matches!(
-        block_completed_events[1].block_type,
-        BlockType::BootstrapHidden,
-    ));
-    assert!(matches!(
-        block_completed_events[2].block_type,
-        BlockType::BootstrapHidden,
-    ));
-    assert!(matches!(
-        block_completed_events[3].block_type,
-        BlockType::BootstrapVisible(_)
-    ));
-}
 } // twarp: 2c-d — close _disabled_test_clear_visible_screen wrapper.
 
 // Add a few restored blocks and ensure they show up appropriately.

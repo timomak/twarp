@@ -934,7 +934,11 @@ impl LeftPanelView {
         }
     }
 
-    pub fn on_left_panel_visibility_changed(&self, _is_now_open: bool, ctx: &mut ViewContext<Self>) {
+    pub fn on_left_panel_visibility_changed(
+        &self,
+        _is_now_open: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
         // twarp: 2c-d — conversation list visibility tracking removed
 
         self.update_active_file_tree_subscription_state(ctx);

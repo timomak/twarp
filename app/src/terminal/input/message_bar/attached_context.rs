@@ -11,11 +11,11 @@ pub struct AgentMessageBarMouseStates {
 }
 pub use crate::terminal::input::{AgentViewController, BlocklistAIContextModel};
 // twarp: 2c-d — re-export from input for type unification.
-pub use crate::terminal::input::BlocklistAIInputModel;
 use crate::terminal::input::buffer_model::InputBufferModel;
 use crate::terminal::input::message_bar::{
     truncated_command_for_block, Message, MessageItem, MessageProvider,
 };
+pub use crate::terminal::input::BlocklistAIInputModel;
 use crate::terminal::input::InputAction;
 use crate::terminal::model::TerminalModel;
 

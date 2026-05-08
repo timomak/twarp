@@ -3,7 +3,10 @@ use warpui::{SingletonEntity, ViewContext};
 
 // twarp: 2c-d — AI agent / blocklist deleted; stubs.
 use crate::app_state::AIConversationId;
-pub enum CancellationReason { Other, FollowUpSubmitted { is_for_same_conversation: bool } }
+pub enum CancellationReason {
+    Other,
+    FollowUpSubmitted { is_for_same_conversation: bool },
+}
 #[derive(Clone)]
 pub enum FinishReason {
     // twarp: 2c-d — bulk variants
@@ -16,11 +19,17 @@ pub enum FinishReason {
 pub struct PendingUserQueryBlock;
 #[allow(dead_code)]
 impl PendingUserQueryBlock {
-    pub fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
+    pub fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self {
+        Self
+    }
 }
-impl warpui::Entity for PendingUserQueryBlock { type Event = PendingUserQueryBlockEvent; }
+impl warpui::Entity for PendingUserQueryBlock {
+    type Event = PendingUserQueryBlockEvent;
+}
 impl warpui::View for PendingUserQueryBlock {
-    fn ui_name() -> &'static str { "PendingUserQueryBlock/twarp-stub" }
+    fn ui_name() -> &'static str {
+        "PendingUserQueryBlock/twarp-stub"
+    }
     fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
         use warpui::Element as _;
         warpui::elements::Empty::new().finish()
@@ -32,7 +41,11 @@ pub struct PendingUserQueryBlockAction;
 impl warpui::TypedActionView for PendingUserQueryBlock {
     type Action = PendingUserQueryBlockAction;
 }
-pub enum PendingUserQueryBlockEvent { Other, Dismissed, SendNow { prompt: String } }
+pub enum PendingUserQueryBlockEvent {
+    Other,
+    Dismissed,
+    SendNow { prompt: String },
+}
 use crate::{auth::AuthStateProvider, terminal::TerminalView};
 
 use super::rich_content::RichContentMetadata;

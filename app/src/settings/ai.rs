@@ -17,8 +17,12 @@ pub struct RequestLimitInfo {
 }
 #[allow(dead_code)]
 impl RequestLimitInfo {
-    pub fn is_unlimited(&self) -> bool { false }
-    pub fn limit(&self) -> i64 { 0 }
+    pub fn is_unlimited(&self) -> bool {
+        false
+    }
+    pub fn limit(&self) -> i64 {
+        0
+    }
 }
 use crate::app_state::CLIAgent;
 use crate::report_if_error;
@@ -1698,7 +1702,9 @@ impl AISettings {
     ) {
         // Convert ServerTimestamp to DateTime<Utc>
         // twarp: 2c-d — next_refresh_time is Option, default to now
-        let next_refresh_time = request_limit_info.next_refresh_time.unwrap_or_else(Utc::now);
+        let next_refresh_time = request_limit_info
+            .next_refresh_time
+            .unwrap_or_else(Utc::now);
         let now = Utc::now();
 
         // Check if request_limit_info has unlimited requests
@@ -1891,7 +1897,9 @@ impl AISettings {
         if !map.contains_key(pattern) {
             return;
         }
-        let value = agent.map(|a| a.to_serialized_name().to_string()).unwrap_or_default();
+        let value = agent
+            .map(|a| a.to_serialized_name().to_string())
+            .unwrap_or_default();
         map.insert(pattern.to_string(), value);
         report_if_error!(self
             .cli_agent_footer_enabled_commands

@@ -1,10 +1,10 @@
 // twarp: 2c-d — AI agent / blocklist deleted; reuse interaction_mode + shared_handlers stubs.
+use crate::features::FeatureFlag;
 pub use crate::terminal::model::block::interaction_mode::{
     AIAgentActionId, LongRunningCommandControlState,
 };
-pub use crate::terminal::shared_session::shared_handlers::BlocklistAIHistoryModel;
-use crate::features::FeatureFlag;
 use crate::terminal::model::block::AgentInteractionMetadata;
+pub use crate::terminal::shared_session::shared_handlers::BlocklistAIHistoryModel;
 use parking_lot::FairMutex;
 use session_sharing_protocol::common::{
     OrderedTerminalEvent, OrderedTerminalEventType, Scrollback, WindowSize,

@@ -54,7 +54,9 @@ use crate::{
 pub struct AIQueriesDataSource;
 #[allow(dead_code)]
 impl AIQueriesDataSource {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 impl crate::search::mixer::SyncDataSource for AIQueriesDataSource {
     type Action = crate::search::command_search::searcher::CommandSearchItemAction;

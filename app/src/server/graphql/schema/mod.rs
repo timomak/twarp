@@ -133,9 +133,7 @@ impl TryFrom<UpdateGenericStringObjectResult> for UpdateCloudObjectResult<Box<dy
                             | GenericStringObjectFormat::JsonMCPServer
                             | GenericStringObjectFormat::JsonTemplatableMCPServer
                             | GenericStringObjectFormat::JsonScheduledAmbientAgent => {
-                                anyhow::bail!(
-                                    "AI cloud objects no longer supported client-side"
-                                )
+                                anyhow::bail!("AI cloud objects no longer supported client-side")
                             }
                             GenericStringObjectFormat::JsonCloudEnvironment => {
                                 anyhow::bail!(

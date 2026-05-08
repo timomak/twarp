@@ -21,8 +21,13 @@ impl std::fmt::Display for AIAgentActionId {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LongRunningCommandControlState {
     // twarp: 2c-d — User can take an optional reason field
-    User { reason: Option<UserTakeOverReason> },
-    Agent { is_blocked: bool, should_hide_responses: bool },
+    User {
+        reason: Option<UserTakeOverReason>,
+    },
+    Agent {
+        is_blocked: bool,
+        should_hide_responses: bool,
+    },
     Other,
 }
 #[allow(dead_code)]
@@ -34,24 +39,35 @@ impl LongRunningCommandControlState {
         }
     }
     // twarp: 2c-d — bulk stubs for AI-removed methods
-    pub fn is_agent_in_control(&self) -> bool { false }
-    pub fn is_agent_blocked(&self) -> bool { false }
-    pub fn is_user_in_control(&self) -> bool { matches!(self, LongRunningCommandControlState::User { .. }) }
-    pub fn should_hide_responses(&self) -> bool { false }
+    pub fn is_agent_in_control(&self) -> bool {
+        false
+    }
+    pub fn is_agent_blocked(&self) -> bool {
+        false
+    }
+    pub fn is_user_in_control(&self) -> bool {
+        matches!(self, LongRunningCommandControlState::User { .. })
+    }
+    pub fn should_hide_responses(&self) -> bool {
+        false
+    }
 }
 #[allow(dead_code)]
 impl UserTakeOverReason {
-    pub fn is_stop(&self) -> bool { false }
+    pub fn is_stop(&self) -> bool {
+        false
+    }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum UserTakeOverReason { Other, Stop }
-use crate::{
-    terminal::{
-        event::Event,
-        model::{
-            grid::{grid_handler::GridHandler, RespectDisplayedOutput},
-            RespectObfuscatedSecrets,
-        },
+pub enum UserTakeOverReason {
+    Other,
+    Stop,
+}
+use crate::terminal::{
+    event::Event,
+    model::{
+        grid::{grid_handler::GridHandler, RespectDisplayedOutput},
+        RespectObfuscatedSecrets,
     },
 };
 
@@ -468,7 +484,9 @@ impl InteractionMode {
             return Err(UpdateInteractionModeError::InvalidTakeOver);
         }
 
-        *long_running_control_state = Some(LongRunningCommandControlState::User { reason: Some(reason) });
+        *long_running_control_state = Some(LongRunningCommandControlState::User {
+            reason: Some(reason),
+        });
         Ok(())
     }
 

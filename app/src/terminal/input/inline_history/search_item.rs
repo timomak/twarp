@@ -1,6 +1,8 @@
 // twarp: 2c-d — AI conversation / status UI deleted; stubs.
 use crate::app_state::{AIConversationId, ConversationStatus};
-pub fn render_status_element<A, B, C>(_: A, _: B, _: C) -> Box<dyn warpui::Element> { warpui::elements::Empty::new().finish() }
+pub fn render_status_element<A, B, C>(_: A, _: B, _: C) -> Box<dyn warpui::Element> {
+    warpui::elements::Empty::new().finish()
+}
 pub const STATUS_ELEMENT_PADDING: f32 = 0.0;
 use crate::appearance::Appearance;
 use crate::search::{ItemHighlightState, SearchItem};

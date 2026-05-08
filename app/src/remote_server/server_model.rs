@@ -19,11 +19,11 @@ use warp_util::file::FileId;
 use super::proto::{
     client_message, delete_file_response, run_command_response, server_message,
     write_file_response, Abort, Authenticate, ClientMessage, DeleteFile, DeleteFileResponse,
-    DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead,
-    FileOperationError, Initialize, InitializeResponse, NavigatedToDirectory,
-    NavigatedToDirectoryResponse, ReadFileContextResponse, RunCommandError, RunCommandErrorCode,
-    RunCommandRequest, RunCommandResponse, RunCommandSuccess, ServerMessage, SessionBootstrapped,
-    WriteFile, WriteFileResponse, WriteFileSuccess,
+    DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead, FileOperationError, Initialize,
+    InitializeResponse, NavigatedToDirectory, NavigatedToDirectoryResponse,
+    ReadFileContextResponse, RunCommandError, RunCommandErrorCode, RunCommandRequest,
+    RunCommandResponse, RunCommandSuccess, ServerMessage, SessionBootstrapped, WriteFile,
+    WriteFileResponse, WriteFileSuccess,
 };
 
 /// How long the daemon waits with no connections before exiting.
@@ -48,7 +48,9 @@ pub async fn read_local_file_context<A, B, C, D, E>(
 ) -> anyhow::Result<ReadFileContextResult> {
     Ok(ReadFileContextResult::Other)
 }
-pub enum ReadFileContextResult { Other }
+pub enum ReadFileContextResult {
+    Other,
+}
 use crate::terminal::model::session::command_executor::{
     ExecuteCommandOptions, LocalCommandExecutor,
 };

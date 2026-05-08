@@ -5,7 +5,6 @@ use crate::app_state::{AIConversationId, SerializedBlockListItem};
 use crate::terminal::block_filter::BlockFilterQuery;
 
 // twarp: 2c-d — re-export unified stubs from model::block.
-pub use crate::terminal::model::block::{AIAgentActionId, AgentViewDisplayMode, AgentViewState};
 use crate::terminal::event::AfterBlockCompletedEvent;
 use crate::terminal::event_listener::ChannelEventListener;
 use crate::terminal::model::ansi;
@@ -14,6 +13,7 @@ use crate::terminal::model::ansi::{
     CursorStyle, LineClearMode, Mode, PrecmdValue, PreexecValue, Processor, StandardCharset,
     TabulationClearMode,
 };
+pub use crate::terminal::model::block::{AIAgentActionId, AgentViewDisplayMode, AgentViewState};
 use crate::terminal::model::block::{AgentViewVisibility, Block, SerializedBlock};
 use crate::terminal::model::bootstrap::BootstrapStage;
 use crate::terminal::model::index::{Point, VisibleRow};
@@ -62,9 +62,13 @@ use super::terminal_model::RangeInModel;
 use super::{ansi::Handler, grid::grid_handler::Link};
 // twarp: 2c-d — AIBlock deleted; stub.
 pub struct AIBlock;
-impl warpui::Entity for AIBlock { type Event = (); }
+impl warpui::Entity for AIBlock {
+    type Event = ();
+}
 impl warpui::View for AIBlock {
-    fn ui_name() -> &'static str { "AIBlock/twarp-stub" }
+    fn ui_name() -> &'static str {
+        "AIBlock/twarp-stub"
+    }
     fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
         // twarp: 2c-d — bring Element trait into scope for finish()
         use warpui::Element as _;
@@ -73,11 +77,22 @@ impl warpui::View for AIBlock {
 }
 #[allow(dead_code)]
 impl AIBlock {
-    pub fn find_undismissed_code_diff<C>(&self, _: &C) -> Option<()> { None }
-    pub fn pending_unit_test_suggestion<C>(&self, _: &C) -> Option<warpui::ViewHandle<crate::workspace::view::AIFactViewStub>> { None }
+    pub fn find_undismissed_code_diff<C>(&self, _: &C) -> Option<()> {
+        None
+    }
+    pub fn pending_unit_test_suggestion<C>(
+        &self,
+        _: &C,
+    ) -> Option<warpui::ViewHandle<crate::workspace::view::AIFactViewStub>> {
+        None
+    }
     // twarp: 2c-d — bulk stubs
-    pub fn is_passive_conversation<C>(&self, _: &C) -> bool { false }
-    pub fn is_finished(&self) -> bool { false }
+    pub fn is_passive_conversation<C>(&self, _: &C) -> bool {
+        false
+    }
+    pub fn is_finished(&self) -> bool {
+        false
+    }
 }
 use crate::terminal::block_list_element::GridType;
 use crate::terminal::model::blockgrid::BlockGrid;

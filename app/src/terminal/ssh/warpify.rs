@@ -7,9 +7,15 @@ use warpui::assets::asset_cache::{AssetCache, AssetState};
 pub struct RenderableAction;
 #[allow(dead_code)]
 impl RenderableAction {
-    pub fn new<A, B>(_: A, _: B) -> Self { Self }
-    pub fn with_background_color<C>(self, _: C) -> Self { self }
-    pub fn render<A>(self, _: A) -> warpui::elements::Empty { warpui::elements::Empty::new() }
+    pub fn new<A, B>(_: A, _: B) -> Self {
+        Self
+    }
+    pub fn with_background_color<C>(self, _: C) -> Self {
+        self
+    }
+    pub fn render<A>(self, _: A) -> warpui::elements::Empty {
+        warpui::elements::Empty::new()
+    }
 }
 use crate::appearance::Appearance;
 use crate::terminal::shell::ShellType;

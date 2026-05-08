@@ -29,8 +29,13 @@ pub trait AIClient: Send + Sync {
     fn generate_code_review_content(
         &self,
         _: GenerateCodeReviewContentRequest,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<crate::server::server_api::TwarpStubAIContent>> + Send>>
-    {
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = anyhow::Result<crate::server::server_api::TwarpStubAIContent>,
+                > + Send,
+        >,
+    > {
         Box::pin(async { unimplemented!() })
     }
 }

@@ -8,7 +8,9 @@ pub struct CloudMCPServer {
 }
 #[allow(dead_code)]
 impl CloudMCPServer {
-    pub fn model(&self) -> CloudMCPServerModelStub { CloudMCPServerModelStub::default() }
+    pub fn model(&self) -> CloudMCPServerModelStub {
+        CloudMCPServerModelStub::default()
+    }
 }
 #[derive(Default)]
 pub struct CloudMCPServerModelStub {
