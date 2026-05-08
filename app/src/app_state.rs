@@ -56,12 +56,9 @@ impl InputConfig {
     pub fn is_shell(&self) -> bool { true }
     pub fn is_locked(&self) -> bool { false }
 }
-// twarp: 2c-d — From conversions to bridge app_state and terminal::input InputConfig
+// twarp: 2c-d — From conversion to bridge terminal::input::InputConfig back to app_state
 impl From<crate::terminal::input::InputConfig> for InputConfig {
     fn from(_: crate::terminal::input::InputConfig) -> Self { Self {} }
-}
-impl From<InputConfig> for crate::terminal::input::InputConfig {
-    fn from(_: InputConfig) -> Self { crate::terminal::input::InputConfig::empty() }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SerializedBlockListItem {
@@ -103,12 +100,7 @@ impl TryFrom<String> for AIDocumentId {
         Ok(AIDocumentId(uuid::Uuid::parse_str(&s)?))
     }
 }
-impl TryFrom<&str> for AIDocumentId {
-    type Error = uuid::Error;
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
-        Ok(AIDocumentId(uuid::Uuid::parse_str(s)?))
-    }
-}
+// twarp: 2c-d — From<&str> for AIDocumentId already gives a TryFrom<&str> via blanket impl.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AIDocumentVersion(pub usize);
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -139,6 +131,7 @@ impl AIConversation {
     pub fn root_task_exchanges(&self) -> std::iter::Empty<()> { std::iter::empty() }
     pub fn server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
     pub fn last_modified_at(&self) -> Option<chrono::DateTime<chrono::Local>> { None }
+    pub fn get_task<I>(&self, _: I) -> Option<()> { None }
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum CloudConversationData {
@@ -147,6 +140,21 @@ pub enum CloudConversationData {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConversationStatus { InProgress, Done, Failed, Cancelled, Success, Blocked {}, Error, Other }
+impl std::fmt::Display for ConversationStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            ConversationStatus::InProgress => "in progress",
+            ConversationStatus::Done => "done",
+            ConversationStatus::Failed => "failed",
+            ConversationStatus::Cancelled => "cancelled",
+            ConversationStatus::Success => "success",
+            ConversationStatus::Blocked {} => "blocked",
+            ConversationStatus::Error => "error",
+            ConversationStatus::Other => "other",
+        };
+        f.write_str(s)
+    }
+}
 #[allow(dead_code)]
 impl ConversationStatus {
     pub fn render_icon<A>(&self, _: A) -> warpui::elements::Empty {
@@ -248,8 +256,8 @@ impl CLIAgent {
         &[]
     }
     // twarp: 2c-d — stub: AI agent icon deleted.
-    pub fn icon(&self) -> warp_core::ui::Icon {
-        warp_core::ui::Icon::Terminal
+    pub fn icon(&self) -> Option<warp_core::ui::Icon> {
+        None
     }
     // twarp: 2c-d — stub: AI brand colors deleted.
     pub fn brand_icon_color(&self) -> warpui::color::ColorU {

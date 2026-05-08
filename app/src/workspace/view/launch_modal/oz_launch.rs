@@ -1,7 +1,7 @@
 use super::{CTAButton, CheckboxConfig, LaunchModalEvent, Slide};
 // twarp: 2c-d — AI ambient agent telemetry deleted; stubs.
-pub enum CloudAgentTelemetryEvent { Other }
-pub enum CloudModeEntryPoint { Other }
+pub enum CloudAgentTelemetryEvent { Other, EnteredCloudMode { entry_point: CloudModeEntryPoint } }
+pub enum CloudModeEntryPoint { Other, OzLaunchModal }
 use crate::terminal::view::OnboardingIntention;
 use crate::ui_components::icons::Icon;
 use crate::workspace::action::WorkspaceAction;
@@ -145,12 +145,10 @@ impl Slide for OzLaunchSlide {
                 CTAButton::next_slide(next, format!("Next: {}", next.short_label()))
             }
             OzLaunchSlide::LaunchCredits => CTAButton::custom("Try it out", |ctx| {
-                send_telemetry_from_ctx!(
-                    CloudAgentTelemetryEvent::EnteredCloudMode {
-                        entry_point: CloudModeEntryPoint::OzLaunchModal,
-                    },
-                    ctx
-                );
+                // twarp: 2c-d — CloudAgentTelemetryEvent stubbed out; telemetry call removed.
+                let _ = CloudAgentTelemetryEvent::EnteredCloudMode {
+                    entry_point: CloudModeEntryPoint::OzLaunchModal,
+                };
                 ctx.emit(LaunchModalEvent::Close);
                 ctx.dispatch_typed_action(&WorkspaceAction::StartAgentOnboardingTutorial(
                     OnboardingTutorial::NoProject {

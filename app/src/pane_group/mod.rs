@@ -142,6 +142,13 @@ pub enum ConversationRestorationInNewPaneType {
         conversation: (),
         should_use_live_appearance: bool,
     },
+    Forked {
+        conversation: crate::app_state::AIConversation,
+        should_use_live_appearance: bool,
+    },
+    Startup {
+        should_use_live_appearance: bool,
+    },
 }
 #[allow(dead_code)]
 impl ConversationRestorationInNewPaneType {

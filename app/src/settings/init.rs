@@ -5,6 +5,9 @@ use warpui_extras::user_preferences;
 
 // twarp: 2c-d — AI cloud_agent_settings deleted; stub.
 pub struct CloudAgentSettings;
+impl CloudAgentSettings {
+    pub fn register(_: &mut warpui::AppContext) {}
+}
 use crate::{
     appearance,
     banner::BannerState,

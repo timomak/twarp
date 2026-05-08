@@ -5,6 +5,7 @@ impl warpui::SingletonEntity for AIRequestUsageModel {}
 pub enum AIRequestUsageModelEvent {
     Other,
     RequestUsageUpdated,
+    RequestBonusRefunded {},
 }
 use crate::auth::AuthStateProvider;
 use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};

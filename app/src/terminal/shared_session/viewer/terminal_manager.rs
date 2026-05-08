@@ -430,14 +430,15 @@ impl TerminalManager {
                 }
             }
 
-            let config = event.updated_config();
+            let _config = event.updated_config();
 
             Self::send_input_context_update(
                 &input_mode_remote_update_guard,
                 &model_clone_for_input,
                 &network_for_input_mode,
                 UniversalDeveloperInputContextUpdate {
-                    input_mode: Some(config.into()),
+                    // twarp: 2c-d — input mode no longer derived from AI config; default.
+                    input_mode: None,
                     ..Default::default()
                 },
                 ctx,
@@ -516,12 +517,13 @@ impl TerminalManager {
                             return;
                         };
 
+                        // twarp: 2c-d — autoexecute predicate stub; AI override types removed.
                         let auto_approve = view
                             .as_ref(ctx)
                             .ai_context_model()
                             .as_ref(ctx)
                             .pending_query_autoexecute_override(ctx)
-                            .is_autoexecute_any_action();
+                            .unwrap_or(false);
                         Self::send_input_context_update(
                             &auto_approve_remote_update_guard,
                             &model_clone_for_auto,

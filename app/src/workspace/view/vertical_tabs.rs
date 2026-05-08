@@ -3681,7 +3681,7 @@ fn summary_pane_kind_icon(
             main_text,
         ),
         SummaryPaneKind::CLIAgent { agent } => (
-            agent.icon(),
+            agent.icon().unwrap_or(WarpIcon::Terminal),
             WarpThemeFill::Solid(agent.brand_icon_color()),
         ),
         SummaryPaneKind::Code { .. } => (WarpIcon::Code2, sub_text),
