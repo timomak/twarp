@@ -149,7 +149,7 @@ impl SshRemoteServerChoiceView {
             .with_corner_radius_override(CornerRadius::with_top(Radius::Pixels(
                 PROMPT_BORDER_RADIUS,
             )))
-            .render_header(app, None)
+            .render_header(app, None::<()>)
     }
 
     fn render_buttons(&self) -> Box<dyn Element> {

@@ -27,6 +27,7 @@ impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
     pub fn conversation<I>(&self, _: I) -> Option<crate::app_state::AIConversationId> { None }
+    pub fn active_conversation(&self, _: warpui::EntityId) -> Option<crate::app_state::AIConversationId> { None }
 }
 pub enum SlashCommandRequest {
     FetchReviewComments {

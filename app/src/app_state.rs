@@ -29,6 +29,8 @@ impl AIConversationId {
     // twarp: 2c-d — additional stubs called on conversations
     pub fn exchange_count(&self) -> usize { 0 }
     pub fn last_modified_at(&self) -> Option<chrono::DateTime<chrono::Local>> { None }
+    pub fn export_to_markdown<A>(&self, _: A) -> String { String::new() }
+    pub fn get_task<A>(&self, _: A) -> Option<()> { None }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AmbientAgentTaskId(pub uuid::Uuid);

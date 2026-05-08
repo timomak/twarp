@@ -249,7 +249,7 @@ impl WarpifySuccessBlock {
                 None
             },
             Some(Box::new({
-                move |code_snippet, ctx| {
+                move |code_snippet: String, ctx: &mut warpui::EventContext| {
                     ctx.dispatch_typed_action(WorkspaceAction::RunCommand(
                         code_snippet.to_string(),
                     ));
@@ -258,7 +258,7 @@ impl WarpifySuccessBlock {
                 }
             })),
             Some(Box::new({
-                move |code_snippet, ctx| {
+                move |code_snippet: String, ctx: &mut warpui::EventContext| {
                     ctx.dispatch_typed_action(WorkspaceAction::CopyTextToClipboard(code_snippet));
                 }
             })),

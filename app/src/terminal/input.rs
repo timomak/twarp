@@ -6986,15 +6986,8 @@ impl Input {
             BlocklistAIHistoryModel::as_ref(ctx).active_conversation(self.terminal_view_id);
 
         if self.model.lock().shared_session_status().is_viewer() {
-            let server_conversation_token = active_conversation
-                .and_then(|conversation| conversation.server_conversation_token().cloned())
-                .and_then(|server_token| {
-                    server_token
-                        .as_str()
-                        .parse()
-                        .ok()
-                        .map(ServerConversationToken::from_uuid)
-                });
+            let server_conversation_token: Option<ServerConversationToken> = active_conversation
+                .and_then(|conversation| conversation.server_conversation_token());
 
             if let Some(server_conversation_token) = server_conversation_token {
                 ctx.emit(Event::CancelSharedSessionConversation {
