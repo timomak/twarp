@@ -88,8 +88,7 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
-    #[cfg(feature = "voice_input")]
-    app.add_singleton_model(voice_input::VoiceInput::new);
+    // twarp: 2c-f — voice_input::VoiceInput singleton deleted with crate.
 }
 
 /// Container so that [`NotebookView`] can be registered as a typed action view.

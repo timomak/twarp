@@ -63,8 +63,7 @@ fn init_app(app: &mut App) {
             ctx,
         )
     });
-    #[cfg(feature = "voice_input")]
-    app.add_singleton_model(voice_input::VoiceInput::new);
+    // twarp: 2c-f — voice_input::VoiceInput singleton deleted with crate.
 }
 
 #[test]

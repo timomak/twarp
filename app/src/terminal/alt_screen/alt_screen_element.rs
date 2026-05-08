@@ -87,9 +87,7 @@ pub struct AltScreenElement {
 
     cli_subagent_view: Option<Box<dyn Element>>,
 
-    /// Voice input toggle key code for CLI agent footer integration.
-    #[cfg_attr(not(feature = "voice_input"), allow(unused))]
-    voice_input_toggle_key_code: Option<KeyCode>,
+    // twarp: 2c-f — voice_input_toggle_key_code field deleted with crate.
 }
 
 impl AltScreenElement {
@@ -158,7 +156,7 @@ impl AltScreenElement {
             max_scroll_top: None,
             cursor_hint_text,
             cli_subagent_view,
-            voice_input_toggle_key_code: None,
+            // twarp: 2c-f — voice_input_toggle_key_code init deleted with crate.
         }
     }
 
@@ -180,12 +178,7 @@ impl AltScreenElement {
         self
     }
 
-    /// Sets the voice input toggle key code for CLI agent footer integration.
-    #[cfg(feature = "voice_input")]
-    pub fn with_voice_input_toggle_key(mut self, key_code: Option<KeyCode>) -> Self {
-        self.voice_input_toggle_key_code = key_code;
-        self
-    }
+    // twarp: 2c-f — with_voice_input_toggle_key deleted with voice_input crate.
 
     fn key_down(&mut self, chars: &str, ctx: &mut EventContext) -> bool {
         if self.is_terminal_focused && !chars.is_empty() && chars.chars().all(|c| c.is_control()) {
@@ -610,33 +603,7 @@ impl AltScreenElement {
         self.grid_render_params.size_info.cell_height_px()
     }
 
-    #[cfg(feature = "voice_input")]
-    fn maybe_handle_voice_toggle(
-        &self,
-        key_code: &KeyCode,
-        state: &KeyState,
-        ctx: &mut EventContext,
-    ) -> bool {
-        if let Some(voice_input_toggle_key_code) = self.voice_input_toggle_key_code {
-            if *key_code == voice_input_toggle_key_code {
-                ctx.dispatch_typed_action(TerminalAction::ToggleCLIAgentVoiceInput(
-                    voice_input::VoiceInputToggledFrom::Key { state: *state },
-                ));
-                return true;
-            }
-        }
-        false
-    }
-
-    #[cfg(not(feature = "voice_input"))]
-    fn maybe_handle_voice_toggle(
-        &self,
-        _key_code: &KeyCode,
-        _state: &KeyState,
-        _ctx: &mut EventContext,
-    ) -> bool {
-        false
-    }
+    // twarp: 2c-f — maybe_handle_voice_toggle deleted with voice_input crate.
 }
 
 impl Element for AltScreenElement {
@@ -982,7 +949,9 @@ impl Element for AltScreenElement {
                         ctx.dispatch_typed_action(TerminalAction::ControlSequence(escape_sequence));
                         return true;
                     }
-                    self.maybe_handle_voice_toggle(key_code, state, ctx)
+                    // twarp: 2c-f — maybe_handle_voice_toggle call deleted with crate.
+                    let _ = (key_code, state);
+                    false
                 } else {
                     false
                 }
