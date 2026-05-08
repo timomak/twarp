@@ -10,7 +10,9 @@ cfg_if::cfg_if! {
         use warpui::{ViewContext};
 
         use crate::{
-            ai::blocklist::SerializedBlockListItem, pane_group::TerminalViewResources,
+            // twarp: 2c-d — SerializedBlockListItem moved to app_state stub.
+            app_state::SerializedBlockListItem,
+            pane_group::TerminalViewResources,
             resource_center::TipsCompleted,
         };
         use crate::terminal::model::session::Sessions;

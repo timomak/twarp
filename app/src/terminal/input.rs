@@ -15303,25 +15303,22 @@ impl Input {
 
 #[cfg(test)]
 impl Input {
+    // twarp: 2c-d — displayed_chip_kinds and cli_display_chip_kinds removed; stub returns empty.
     pub fn agent_footer_chip_kinds(
         &self,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> (
         Vec<crate::context_chips::ContextChipKind>,
         Vec<crate::context_chips::ContextChipKind>,
     ) {
-        self.agent_input_footer
-            .as_ref(app)
-            .displayed_chip_kinds(app)
+        (Vec::new(), Vec::new())
     }
 
     pub fn cli_footer_chip_kinds(
         &self,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Vec<crate::context_chips::ContextChipKind> {
-        self.agent_input_footer
-            .as_ref(app)
-            .cli_display_chip_kinds(app)
+        Vec::new()
     }
 }
 

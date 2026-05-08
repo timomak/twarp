@@ -44,8 +44,9 @@ fn initialize_app(app: &mut App) {
 fn create_modal(app: &mut App) -> ViewHandle<WorkflowModal> {
     initialize_app(app);
     let (_, modal_view) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
-        let server_api = ServerApiProvider::as_ref(ctx).get();
-        WorkflowModal::new(server_api.clone(), ctx)
+        // twarp: 2c-d — server_api param removed from WorkflowModal::new
+        let _server_api = ServerApiProvider::as_ref(ctx).get();
+        WorkflowModal::new(ctx)
     });
 
     modal_view
@@ -499,7 +500,9 @@ fn test_pasting_command_same_number_of_arguments() {
     });
 }
 
+// twarp: 2c-d — populate_missing_field_with_suggestion was AI suggestion-only; method removed.
 #[test]
+#[ignore]
 fn test_populating_missing_fields_with_suggestion() {
     App::test((), |mut app| async move {
         let modal_view = create_modal(&mut app);
@@ -531,7 +534,8 @@ fn test_populating_missing_fields_with_suggestion() {
                 shells: vec![],
                 environment_variables: None,
             };
-            view.populate_missing_field_with_suggestion(workflow, ctx)
+            // twarp: 2c-d — fall back to populate (deleted method).
+            view.populate(workflow, ctx)
         });
 
         modal_view.read(&app, |view, app| {

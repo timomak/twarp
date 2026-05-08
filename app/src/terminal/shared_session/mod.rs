@@ -46,8 +46,10 @@ pub(crate) mod shared_handlers;
 pub mod sharer;
 pub mod viewer;
 
+// twarp: 2c-d — MAX_BYTES_SHAREABLE was previously re-exported from mod_test;
+// stubbed inline since the test module was disabled.
 #[cfg(test)]
-pub use tests::MAX_BYTES_SHAREABLE;
+pub const MAX_BYTES_SHAREABLE: usize = 100 * 1024 * 1024;
 
 /// The toast copy when copying a shared session link.
 pub const COPY_LINK_TEXT: &str = "Sharing link copied";

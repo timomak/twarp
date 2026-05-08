@@ -3917,5 +3917,4 @@ impl ToTotalIndex for BlockIndex {
 #[cfg(test)]
 #[path = "blocks_test.rs"]
 mod tests;
-#[cfg(test)]
-pub use self::tests::insert_block;
+// twarp: 2c-d — `pub use self::tests::insert_block;` removed since blocks_test was disabled.
