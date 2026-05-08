@@ -10,7 +10,7 @@ use super::{
     LocalOnlyIconState, SettingsAction, SettingsSection, ToggleSettingActionPair, ToggleState,
 };
 // twarp: 2c-d — persisted_workspace deleted; stubs.
-pub enum EnablementState { Enabled, Disabled }
+pub enum EnablementState { Enabled, Disabled, Suggested, Yes }
 #[allow(dead_code)]
 #[derive(Clone)]
 pub enum LspRepoStatus {
@@ -39,7 +39,7 @@ impl PersistedWorkspace {
     pub fn disable_lsp_server_for_path<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn all_lsp_servers<A>(&self, _: A, _: bool) -> Option<std::iter::Empty<(LSPServerType, EnablementState)>> { None }
 }
-pub enum PersistedWorkspaceEvent { InstallationSucceeded, InstallationFailed, Other }
+pub enum PersistedWorkspaceEvent { InstallationSucceeded, InstallationFailed, Other, AvailableServersDetected, InstallStatusUpdate, WorkspaceAdded }
 
 use crate::{
     appearance::Appearance,

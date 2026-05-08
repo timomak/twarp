@@ -4,7 +4,7 @@ use std::sync::Arc;
 pub fn is_using_api_key_for_provider<A, B>(_: A, _: B) -> bool { false }
 pub use crate::terminal::input::LLMPreferences;
 pub struct AIRequestUsageModel;
-pub enum BuyCreditsBannerDisplayState { Other }
+pub enum BuyCreditsBannerDisplayState { Other, Hidden }
 use crate::{
     appearance::Appearance,
     settings::{AISettings, InputSettings},

@@ -494,7 +494,7 @@ impl AgentTodosPopupView {
 pub use ai::agent::action::AIAgentPtyWriteMode;
 pub use crate::code_review::code_review_view::AgentReviewCommentBatch;
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)] enum CancellationReason { No }
+#[allow(dead_code)] enum CancellationReason { No, ManuallyCancelled, Reverted }
 pub use crate::terminal::view::inline_banner::prompt_suggestions::{
     PassiveSuggestionTrigger, ShellCommandCompletedTrigger,
 };
@@ -554,7 +554,7 @@ impl PersistedWorkspace {
 #[allow(dead_code)] fn parse_event<A, B>(_: A, _: B) -> Option<CLIAgentEvent> { None }
 #[allow(dead_code)] struct CLIAgentEvent { event_type: CLIAgentEventType, payload: CLIAgentEventPayload, agent: crate::app_state::CLIAgent, session_id: Option<String>, project: Option<String>, model: Option<String>, v: Option<String>, event: Option<String>, cwd: Option<String> }
 #[allow(dead_code)] struct CLIAgentEventPayload { content: String, plugin_version: Option<String> }
-#[allow(dead_code)] enum CLIAgentEventType {}
+#[allow(dead_code)] enum CLIAgentEventType { SessionStart, Other }
 #[allow(dead_code)] const CLI_AGENT_NOTIFICATION_SENTINEL: &str = "";
 #[allow(dead_code)] fn is_agent_supported<C>(_: C) -> bool { false }
 #[allow(dead_code)] struct CLIAgentSessionListener;
@@ -568,9 +568,9 @@ impl CLIAgentSessionListener {
 }
 #[allow(dead_code)] fn plugin_manager_for<C>(_: C) -> Option<PluginManagerStub> { None }
 #[allow(dead_code)] pub enum PluginModalKind {}
-#[allow(dead_code)] enum CLIAgentInputEntrypoint {}
+#[allow(dead_code)] enum CLIAgentInputEntrypoint { AutoShow, Other }
 #[allow(dead_code)] struct CLIAgentInputState;
-#[allow(dead_code)] enum CLIAgentRichInputCloseReason {}
+#[allow(dead_code)] enum CLIAgentRichInputCloseReason { AutoToggle, Other }
 #[allow(dead_code)]
 struct CLIAgentSession {
     pub agent: CLIAgent,
@@ -15780,7 +15780,7 @@ impl TerminalView {
                         .with_on_select_action(TerminalAction::ContextMenu(
                             ContextMenuAction::ForkAIConversationFromExactExchange {
                                 ai_block_view_id,
-                                exchange_id: ai_exchange_id,
+                                exchange_id: ai_exchange_id.clone(),
                                 conversation_id: ai_conversation_id,
                             },
                         ))
@@ -15795,7 +15795,7 @@ impl TerminalView {
                 MenuItemFields::new("Rewind to before here")
                     .with_on_select_action(TerminalAction::RewindAIConversation {
                         ai_block_view_id,
-                        exchange_id: ai_exchange_id,
+                        exchange_id: ai_exchange_id.clone(),
                         conversation_id: ai_conversation_id,
                         entrypoint: AgentModeRewindEntrypoint::ContextMenu,
                     })

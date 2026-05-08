@@ -641,6 +641,10 @@ enum UserQueryMenuEvent {}
 
 #[allow(dead_code)]
 enum AtContextMenuDisabledReason {}
+#[allow(dead_code)]
+impl AtContextMenuDisabledReason {
+    fn get_disable_reason<A, B>(_: A, _: B) -> Option<Self> { None }
+}
 
 // AttachmentType, AttachmentInput, AIAgentContext, etc.
 #[allow(dead_code)]
@@ -927,11 +931,11 @@ impl InputConfig {
 pub use crate::server::telemetry::events::InputType;
 #[allow(dead_code)]
 impl InputType {
-    fn is_ai(&self) -> bool {
+    pub fn is_ai(&self) -> bool {
         matches!(self, InputType::AI)
     }
     // twarp: 2c-d — predicate stubs
-    fn is_shell(&self) -> bool {
+    pub fn is_shell(&self) -> bool {
         matches!(self, InputType::Shell)
     }
 }
@@ -989,6 +993,7 @@ pub enum LLMPreferencesEvent {
     Other,
     UpdatedAvailableLLMs,
     UpdatedActiveAgentModeLLM,
+    UpdatedActiveCodingLLM,
 }
 
 #[allow(dead_code)]
@@ -10299,7 +10304,7 @@ impl Input {
                         // Handle file/directory path insertion
                         let is_ai_mode = self.ai_input_model.as_ref(ctx).is_ai_input_enabled();
                         let file_path = if is_ai_mode {
-                            file_path.to_string()
+                            file_path.display().to_string()
                         } else {
                             #[cfg(feature = "local_fs")]
                             {
@@ -10338,11 +10343,11 @@ impl Input {
                                         }
                                     });
 
-                                processed_path.unwrap_or_else(|| file_path.to_string())
+                                processed_path.unwrap_or_else(|| file_path.display().to_string())
                             }
 
                             #[cfg(not(feature = "local_fs"))]
-                            file_path.to_string()
+                            file_path.display().to_string()
                         };
                         self.replace_at_symbol_with_text(&file_path, ctx);
                     }
