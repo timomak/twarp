@@ -725,7 +725,7 @@ pub struct PendingImageStub {
 pub struct BlocklistAIContextModel;
 #[allow(dead_code)]
 impl BlocklistAIContextModel {
-    pub fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self { Self }
+    pub fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
     pub fn selected_conversation_id<C>(&self, _: &C) -> Option<crate::app_state::AIConversationId> { None }
     pub fn pending_images(&self) -> Vec<PendingImageStub> { Vec::new() }
     pub fn append_pending_images<A, C>(&mut self, _: A, _: &mut C) {}
@@ -852,8 +852,8 @@ impl AIConversationStatusStub {
 #[allow(dead_code)]
 pub enum BlocklistAIInputEvent {
     // twarp: 2c-d — struct variants for { .. } destructure callers
-    InputTypeChanged { },
-    LockChanged { },
+    InputTypeChanged { config: InputConfig },
+    LockChanged { config: InputConfig },
     UpdatedConfig { },
 }
 #[allow(dead_code)]

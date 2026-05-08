@@ -292,7 +292,7 @@ struct AnonymousUserAISignUpBannerState;
 #[allow(dead_code)]
 impl AnonymousUserAISignUpBannerState {
     fn new<A>(_: A) -> Self { Self }
-    fn render<A, B>(&self, _: A, _: B) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
+    fn render<A>(&self, _: A) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -375,7 +375,7 @@ pub use crate::app_state::AgentViewEntryOrigin;
 #[allow(dead_code)] struct AgentViewZeroStateBlock;
 #[allow(dead_code)]
 impl AgentViewZeroStateBlock {
-    fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self { Self }
+    fn new<A, B, C, D, E, F, G, H, I>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: &mut I) -> Self { Self }
 }
 #[allow(dead_code)] enum AgentViewZeroStateEvent {}
 // twarp: 2c-d — unify with terminal::input::EphemeralMessageModel.
@@ -384,7 +384,7 @@ pub use crate::terminal::input::EphemeralMessageModel;
 #[allow(dead_code)] struct InlineAgentViewHeader;
 #[allow(dead_code)]
 impl InlineAgentViewHeader {
-    fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self { Self }
+    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
 }
 #[allow(dead_code)] const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration = std::time::Duration::ZERO;
 #[allow(dead_code)] pub fn agent_view_bg_fill<C>(_: C) -> warpui::color::ColorU { warpui::color::ColorU::new(0, 0, 0, 0) }
@@ -534,7 +534,7 @@ struct CodebaseIndexSpeedbumpBannerState {
 impl CodebaseIndexSpeedbumpBannerState {
     pub fn toggle_always_allow_checked(&mut self) {}
     pub fn show_indexing_banner(&self) -> bool { false }
-    pub fn render_codebase_index_speedbump_banner<A, B>(&self, _: A, _: B) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
+    pub fn render_codebase_index_speedbump_banner<A>(&self, _: A) -> Box<dyn warpui::Element> { use warpui::Element as _; warpui::elements::Empty::new().finish() }
 }
 #[allow(dead_code)]
 impl CodebaseIndexSpeedbumpBannerState {
@@ -817,7 +817,7 @@ impl ApiKeyManager {
 impl CodebaseIndexManager {
     fn index_directory<P, C>(&mut self, _: P, _: &mut C) {}
     fn write_snapshot<C>(&mut self, _: &mut C) {}
-    fn handle_session_bootstrapped<A, C>(&mut self, _: A, _: &mut C) {}
+    fn handle_session_bootstrapped<A>(&mut self, _: A) {}
 }
 // twarp: 2c-d — unify with rich_content::OnboardingAgenticSuggestionsBlock.
 pub use crate::terminal::view::rich_content::OnboardingAgenticSuggestionsBlock;
@@ -23292,7 +23292,7 @@ impl TerminalView {
     fn try_enter_agent_view<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) -> Result<crate::app_state::AIConversationId, ()> { Err(()) }
     // twarp: 2c-d — additional bulk stubs
     fn register_subscriptions_for_use_agent_footer<C>(&mut self, _: &mut C) {}
-    fn restore_conversations_on_view_creation<C>(&mut self, _: &mut C) {}
+    fn restore_conversations_on_view_creation<A, C>(&mut self, _: A, _: &mut C) {}
 }
 
 impl Entity for TerminalView {
