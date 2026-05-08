@@ -361,7 +361,7 @@ impl BlocklistAIStatusBar {
 pub struct BlocklistAIActionModel;
 
 #[allow(dead_code)]
-enum SlashCommandRequest {
+pub enum SlashCommandRequest {
     InvokeSkill {
         skill: (),
         user_query: Option<String>,
@@ -372,6 +372,7 @@ enum SlashCommandRequest {
     FetchReviewComments {
         repo_path: std::path::PathBuf,
     },
+    CreateNewProject,
 }
 
 #[allow(dead_code)]
@@ -513,6 +514,7 @@ enum InlineModelSelectorEvent {
         selected_tab: InlineModelSelectorTab,
         set_as_default: bool,
     },
+    Dismissed,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -532,7 +534,10 @@ impl InlinePlanMenuView {
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum InlinePlanMenuEvent {}
+enum InlinePlanMenuEvent {
+    OpenPlan { ai_document_uid: crate::app_state::AIDocumentId },
+    Dismissed,
+}
 
 #[allow(dead_code)]
 struct InlineProfileSelectorView;
@@ -545,7 +550,11 @@ impl InlineProfileSelectorView {
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum InlineProfileSelectorEvent {}
+enum InlineProfileSelectorEvent {
+    SelectedProfile { profile_id: crate::app_state::ClientProfileId },
+    ManageProfiles,
+    Dismissed,
+}
 
 #[allow(dead_code)]
 struct InlinePromptsMenuView;
@@ -558,7 +567,9 @@ impl InlinePromptsMenuView {
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum InlinePromptsMenuEvent {}
+enum InlinePromptsMenuEvent {
+    SelectedPrompt { prompt: String },
+}
 
 #[allow(dead_code)]
 struct InlineReposMenuView;
@@ -587,7 +598,10 @@ impl RewindMenuView {
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum RewindMenuEvent {}
+enum RewindMenuEvent {
+    AcceptedRewindPoint { exchange_id: crate::app_state::AIConversationId },
+    Dismissed,
+}
 
 #[allow(dead_code)]
 struct InlineSkillSelectorView;
@@ -606,7 +620,9 @@ impl InlineSkillSelectorView {
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum InlineSkillSelectorEvent {}
+enum InlineSkillSelectorEvent {
+    SelectedSkill { name: String },
+}
 
 #[allow(dead_code)]
 struct UserQueryMenuView;
@@ -619,7 +635,11 @@ impl UserQueryMenuView {
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum UserQueryMenuEvent {}
+enum UserQueryMenuEvent {
+    SelectedQuery { query: String },
+    AcceptedQuery { query: String },
+    Dismissed,
+}
 
 #[allow(dead_code)]
 enum AtContextMenuDisabledReason {}
@@ -923,7 +943,7 @@ impl BlocklistAIInputModel {
     pub fn is_autodetection_enabled_for_current_context<C>(&self, _: &mut C) -> bool { false }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 pub struct InputConfig {
     pub input_type: InputType,
