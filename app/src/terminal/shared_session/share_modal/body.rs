@@ -95,7 +95,6 @@ impl Body {
         let conversations: Vec<_> = BlocklistAIHistoryModel::as_ref(ctx)
             .all_live_conversations_for_terminal_view(terminal_view_id)
             .filter(|conv| conv.exchange_count() > 0)
-            .cloned()
             .collect();
 
         let total_bytes: usize = reconstruct_response_events_from_conversations(&conversations)

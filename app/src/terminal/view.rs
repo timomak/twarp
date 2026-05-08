@@ -555,7 +555,7 @@ impl PersistedWorkspace {
 // CLI agent sessions
 #[allow(dead_code)] fn parse_event<A, B>(_: A, _: B) -> Option<CLIAgentEvent> { None }
 #[allow(dead_code)] struct CLIAgentEvent { event_type: CLIAgentEventType, payload: CLIAgentEventPayload, agent: crate::app_state::CLIAgent, session_id: Option<String>, project: Option<String>, model: Option<String>, v: Option<String>, event: CLIAgentEventType, cwd: Option<String> }
-#[allow(dead_code)] struct CLIAgentEventPayload { content: String, plugin_version: Option<String> }
+#[allow(dead_code)] #[derive(Default)] struct CLIAgentEventPayload { content: String, plugin_version: Option<String> }
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum CLIAgentEventType { SessionStart, Other }
@@ -10218,11 +10218,7 @@ impl TerminalView {
             redact_secrets(&mut command);
 
             // twarp: 2c-d — server_output_id derivation gutted (output_status no longer exists).
-            let server_output_id: Option<String> = block.ai_conversation_id().and_then(|conversation_id| {
-                BlocklistAIHistoryModel::as_ref(ctx)
-                    .conversation(&conversation_id)
-                    .and_then(|_| None)
-            });
+            let server_output_id: Option<ServerOutputId> = None;
             send_telemetry_from_ctx!(
                 TelemetryEvent::AgentExitedShellProcess {
                     command,
@@ -11815,12 +11811,14 @@ impl TerminalView {
         #[cfg(target_family = "wasm")]
         let plugin_version = None;
         let notification = CLIAgentEvent {
-            v: 1,
+            v: Some("1".to_string()),
             agent,
+            event_type: CLIAgentEventType::SessionStart,
             event: CLIAgentEventType::SessionStart,
             session_id: None,
             cwd: None,
             project: None,
+            model: None,
             payload: CLIAgentEventPayload {
                 plugin_version,
                 ..Default::default()

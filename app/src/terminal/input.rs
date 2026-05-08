@@ -495,7 +495,7 @@ enum InlineConversationMenuEvent {
 struct ConversationNavigationData {
     pub id: AIConversationId,
     pub window_id: Option<warpui::WindowId>,
-    pub pane_view_locator: Option<()>,
+    pub pane_view_locator: Option<crate::workspace::util::PaneViewLocator>,
     pub terminal_view_id: Option<warpui::EntityId>,
 }
 
@@ -999,7 +999,7 @@ impl AIRequestUsageModel {
     // twarp: 2c-d — bulk stubs
     fn has_requests_remaining(&self) -> bool { false }
     fn enable_buy_credits_banner<C>(&mut self, _: &mut C) {}
-    fn request_limit(&self) -> i64 { 0 }
+    fn request_limit(&self) -> usize { 0 }
     fn last_update_time(&mut self) -> Option<chrono::DateTime<chrono::Utc>> { None }
     fn refresh_request_usage_async<C>(&mut self, _: &mut C) {}
 }
@@ -1013,7 +1013,7 @@ impl UniversalDeveloperInputButtonBar {
     }
     pub fn update_segmented_control_disabled_state<C>(&mut self, _: &mut C) {}
     // twarp: 2c-d — bulk stubs for AI-removed UDIButtonBar methods
-    pub fn set_at_button_disabled<C>(&mut self, _: bool, _: &mut C) {}
+    pub fn set_at_button_disabled<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn set_is_in_active_terminal<C>(&mut self, _: bool, _: &mut C) {}
     pub fn set_slash_button_disabled<C>(&mut self, _: bool, _: &mut C) {}
     pub fn set_udi_hovered<C>(&mut self, _: bool, _: &mut C) {}
@@ -1092,7 +1092,7 @@ enum AgentInputFooterEvent {
     InsertIntoCLIRichInput(()),
     ModelSelectorClosed,
     ModelSelectorOpened,
-    OpenAIDocument { document_id: () },
+    OpenAIDocument { document_id: crate::app_state::AIDocumentId, document_version: crate::app_state::AIDocumentVersion },
     OpenCodeReview,
     OpenPluginInstructionsPane(crate::app_state::CLIAgent, crate::terminal::view::PluginModalKind),
     OpenRichInput,

@@ -28,7 +28,7 @@ pub struct CodeBlockOptions {
     pub on_copy: Option<Box<dyn Fn(String, &mut warpui::EventContext)>>,
     pub on_insert: Option<()>,
     pub footer_element: Option<Box<dyn warpui::Element>>,
-    pub mouse_handles: Option<()>,
+    pub mouse_handles: Option<CodeSnippetButtonHandles>,
     pub file_path: Option<std::path::PathBuf>,
 }
 #[derive(Default)]
@@ -248,7 +248,7 @@ impl View for PluginInstructionsBlock {
                 .resolved_commands
                 .get(step_index)
                 .map(String::as_str)
-                .unwrap_or(step.command);
+                .unwrap_or(&step.command);
             content.add_child(self.render_step(
                 step_index,
                 step.description,

@@ -32,7 +32,7 @@ pub const HEADER_BORDER: f32 = 1.;
 pub fn menu_background_color(app: &AppContext) -> ColorU {
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
-    theme.background().blend(&agent_view_bg_fill(app)).into()
+    theme.background().blend(&warpui::elements::Fill::Color(agent_view_bg_fill(app))).into()
 }
 
 pub fn item_background(

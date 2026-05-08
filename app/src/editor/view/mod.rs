@@ -77,7 +77,7 @@ pub enum AIContextMenuSearchableAction {
         conversation_id: crate::app_state::AIConversationId,
     },
     InsertDiffSet {
-        diff_mode: (),
+        diff_mode: crate::code_review::diff_state::DiffMode,
     },
     InsertSkill {
         name: String,
