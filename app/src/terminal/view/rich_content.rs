@@ -90,11 +90,11 @@ impl AIBlock {
     pub fn is_hidden<C>(&self, _: &C) -> bool { false }
     pub fn is_restored<C>(&self, _: &C) -> bool { false }
     pub fn num_requested_commands<C>(&self, _: &C) -> usize { 0 }
-    pub fn requested_commands_iter<C>(&self, _: &C) -> std::iter::Empty<((), ())> { std::iter::empty() }
+    pub fn requested_commands_iter<C>(&self, _: &C) -> std::iter::Empty<(crate::terminal::view::AIAgentActionId, ())> { std::iter::empty() }
     pub fn reset_conversation_id<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     pub fn revert_all_diffs<C>(&mut self, _: &mut C) {}
     pub fn selected_text<C>(&self, _: &C) -> Option<String> { None }
-    pub fn set_secret_redaction_state<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
+    pub fn set_secret_redaction_state<A, B>(&mut self, _: A, _: B, _: bool) {}
     pub fn set_shell_launch_data<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn start_selection_at_max_point<A, B>(&self, _: A, _: B) {}
     pub fn start_selection_at_min_point<A, B>(&self, _: A, _: B) {}

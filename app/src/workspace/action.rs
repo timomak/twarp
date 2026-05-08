@@ -552,8 +552,8 @@ pub enum WorkspaceAction {
         task_id: crate::app_state::AmbientAgentTaskId,
     },
     OpenConversationTranscriptViewer {
-        conversation_id: String,
-        ambient_agent_task_id: Option<String>,
+        conversation_id: crate::app_state::AIConversationId,
+        ambient_agent_task_id: Option<crate::app_state::AmbientAgentTaskId>,
     },
     /// Toggle the conversation transcript details panel (WASM-only).
     #[cfg(target_family = "wasm")]

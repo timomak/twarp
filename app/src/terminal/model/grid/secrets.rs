@@ -3,7 +3,7 @@ use std::{collections::HashSet, ops::RangeInclusive};
 use itertools::Itertools as _;
 
 // twarp: 2c-d — AI secret redaction deleted; stub.
-pub fn find_secrets_in_text_with_levels(_text: &str) -> Vec<()> { Vec::new() }
+pub fn find_secrets_in_text_with_levels(_text: &str) -> Vec<((), crate::terminal::model::secrets::SecretLevel)> { Vec::new() }
 use crate::terminal::model::grid::{grapheme_cursor, Dimensions as _};
 use crate::terminal::model::terminal_model::RangeInModel;
 use crate::terminal::model::{

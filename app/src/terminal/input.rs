@@ -1134,7 +1134,7 @@ impl AgentViewController {
     pub fn clear_pending_exit_confirmation<C>(&mut self, _: &mut C) {}
     pub fn exit_agent_view_with_required_confirmation<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn is_inline(&self) -> bool { false }
-    pub fn try_enter_inline_agent_view<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> bool { false }
+    pub fn try_enter_inline_agent_view<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> Result<(), ()> { Err(()) }
 }
 
 #[derive(Debug, Clone)]

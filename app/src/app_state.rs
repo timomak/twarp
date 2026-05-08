@@ -122,7 +122,7 @@ impl AIConversation {
     pub fn id(&self) -> AIConversationId { AIConversationId::default() }
     pub fn is_child_agent_conversation(&self) -> bool { false }
     pub fn exchange_count(&self) -> usize { 0 }
-    pub fn exchange_id_for_action(&self, _: ()) -> Option<()> { None }
+    pub fn exchange_id_for_action(&self, _: &crate::terminal::view::AIAgentActionId) -> Option<()> { None }
     pub fn exchanges_reversed(&self) -> std::iter::Empty<()> { std::iter::empty() }
     pub fn forked_from_server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
     pub fn has_active_subagent(&self) -> bool { false }

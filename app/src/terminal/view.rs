@@ -675,7 +675,8 @@ impl AIBlockModelImpl {
     pub client_exchange_id: String,
     pub response_stream_id: String,
 }
-#[allow(dead_code)] struct AIAgentActionId;
+// twarp: 2c-d — unify with block::interaction_mode::AIAgentActionId.
+pub use crate::terminal::model::block::interaction_mode::AIAgentActionId;
 #[allow(dead_code)] struct AIAgentCitation;
 #[allow(dead_code)] enum AIAgentContext {}
 // twarp: 2c-d — re-export to unify cross-file types.
@@ -745,7 +746,7 @@ impl BlocklistAIHistoryModel {
     // twarp: 2c-d — bulk stubs
     fn clear_conversations_in_terminal_view<A, C>(&mut self, _: A, _: &mut C) {}
     fn fork_conversation<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) -> Result<(), String> { Ok(()) }
-    fn truncate_conversation_from_exchange<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> Result<Vec<crate::app_state::AIConversationId>, ()> { Err(()) }
+    fn truncate_conversation_from_exchange<A, B, C>(&mut self, _: A, _: B, _: &mut C) -> Result<std::collections::HashSet<AIAgentExchangeId>, ()> { Err(()) }
     fn update_conversation_status<A, B, C, D>(&mut self, _: A, _: B, _: C, _: &mut D) {}
     fn is_entirely_passive_conversation<I>(&self, _: I) -> bool { false }
     fn can_conversation_be_shared<I>(&self, _: I) -> bool { false }
@@ -818,7 +819,8 @@ impl CodebaseIndexManager {
     fn write_snapshot<C>(&mut self, _: &mut C) {}
     fn handle_session_bootstrapped<A, C>(&mut self, _: A, _: &mut C) {}
 }
-#[allow(dead_code)] struct OnboardingAgenticSuggestionsBlock;
+// twarp: 2c-d — unify with rich_content::OnboardingAgenticSuggestionsBlock.
+pub use crate::terminal::view::rich_content::OnboardingAgenticSuggestionsBlock;
 #[allow(dead_code)]
 impl OnboardingAgenticSuggestionsBlock {
     fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self { Self }
@@ -22091,7 +22093,7 @@ impl TerminalView {
                                     .find_map(|(action_id, _)| {
                                         model
                                             .block_list()
-                                            .block_for_ai_action_id(action_id)
+                                            .block_for_ai_action_id(&action_id)
                                             .and_then(|block| block.git_branch().cloned())
                                     });
 
