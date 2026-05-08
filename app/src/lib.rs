@@ -76,7 +76,7 @@ mod external_secrets;
 mod font_fallback;
 mod global_resource_handles;
 mod gpu_state;
-mod input_classifier;
+// twarp: 2c-f — `input_classifier` module deleted along with the crate.
 mod interval_timer;
 mod linear;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -124,7 +124,7 @@ mod user_config;
 pub mod util;
 mod view_components;
 mod vim_registers;
-mod voice;
+// twarp: 2c-f — `voice` module deleted along with the `voice_input` crate.
 mod voltron;
 mod warp_managed_paths_watcher;
 #[cfg(target_family = "wasm")]
@@ -1454,9 +1454,7 @@ fn initialize_app(
     #[cfg(feature = "local_fs")]
     ctx.add_singleton_model(|_| LanguageServerShutdownManager::new());
 
-    #[cfg(feature = "voice_input")]
-    ctx.add_singleton_model(voice_input::VoiceInput::new);
-    ctx.add_singleton_model(|_| voice::transcriber::VoiceTranscriber::disabled());
+    // twarp: 2c-f — voice_input + voice transcriber singletons deleted with crate.
 
     let notebooks = cloud_objects
         .iter()
@@ -1615,7 +1613,7 @@ fn initialize_app(
     let _ = persisted_project_rules;
     ctx.add_singleton_model(move |_| persistence_writer);
 
-    ctx.add_singleton_model(input_classifier::InputClassifierModel::new);
+    // twarp: 2c-f — InputClassifierModel singleton deleted along with `input_classifier` crate.
 
     ctx.add_singleton_model(move |_| IgnoredSuggestionsModel::new(persisted_ignored_suggestions));
 
@@ -1682,21 +1680,7 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
             let active_window_id = ctx.windows().active_window();
             let update_quake_mode_arg = UpdateQuakeModeEventArg { active_window_id };
 
-            #[cfg(feature = "voice_input")]
-            {
-                if let voice_input::VoiceInputState::Listening { enabled_from, .. } =
-                    voice_input::VoiceInput::as_ref(ctx).state()
-                {
-                    // Abort the voice input if it's toggled from a key press, as we cannot listen to key events
-                    // if the user is focused on a different app - we could miss the release of the key.
-                    if matches!(
-                        *enabled_from,
-                        voice_input::VoiceInputToggledFrom::Key { .. }
-                    ) {
-                        ctx.dispatch_global_action("root_view:abort_voice_input", &());
-                    }
-                }
-            }
+            // twarp: 2c-f — voice_input abort-on-resign block deleted with crate.
             ctx.dispatch_global_action("root_view:update_quake_mode_state", &update_quake_mode_arg);
 
             let auth_state = AuthStateProvider::as_ref(ctx).get();

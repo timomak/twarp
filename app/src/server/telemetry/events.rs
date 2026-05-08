@@ -2478,7 +2478,9 @@ pub enum TelemetryEvent {
         action: AgentModeSetupCreateEnvironmentActionType,
     },
     InputBufferSubmitted {
-        input_type: input_classifier::InputType,
+        // twarp: 2c-f — `input_classifier::InputType` deleted with the crate; use the
+        // local stub `InputType` (already covers the same `Shell`/`AI`/`Other` variants).
+        input_type: InputType,
         is_locked: bool,
         was_lock_set_with_empty_buffer: bool,
     },

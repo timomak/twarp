@@ -48,8 +48,7 @@ fn initialize_code_editor_app(app: &mut App) {
     app.add_singleton_model(|_| SyncedInputState::mock());
     app.add_singleton_model(|_| VimRegisters::new());
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
-    #[cfg(feature = "voice_input")]
-    app.add_singleton_model(voice_input::VoiceInput::new);
+    // twarp: 2c-f — voice_input::VoiceInput singleton deleted with crate.
 
     // Add mocks required by rich text editor (used in the CommentEditor)
     app.add_singleton_model(CloudModel::mock);

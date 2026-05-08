@@ -1295,24 +1295,9 @@ impl InputType {
     }
 }
 
-// twarp: 2c-d — conversion to input_classifier::InputType for telemetry.
-impl From<InputType> for input_classifier::InputType {
-    fn from(t: InputType) -> Self {
-        match t {
-            InputType::Shell => input_classifier::InputType::Shell,
-            InputType::AI => input_classifier::InputType::AI,
-            InputType::Other => input_classifier::InputType::Shell,
-        }
-    }
-}
-impl From<input_classifier::InputType> for InputType {
-    fn from(t: input_classifier::InputType) -> Self {
-        match t {
-            input_classifier::InputType::Shell => InputType::Shell,
-            input_classifier::InputType::AI => InputType::AI,
-        }
-    }
-}
+// twarp: 2c-f — `input_classifier::InputType` deleted with the crate; the
+// terminal `InputType` is already the same enum that telemetry consumes,
+// so the bridging From impls are no longer needed.
 
 lazy_static::lazy_static! {
     static ref BLOCK_CONTEXT_ATTACHMENT_REGEX: regex::Regex = regex::Regex::new("").unwrap();
@@ -3612,10 +3597,7 @@ impl Input {
 
         ctx.subscribe_to_view(&agent_input_footer, |me, _, event, ctx| {
             match event {
-                #[cfg(feature = "voice_input")]
-                AgentInputFooterEvent::ToggleVoiceInput(from) => {
-                    me.toggle_voice_input(from, ctx);
-                }
+                // twarp: 2c-f — ToggleVoiceInput arm deleted with voice_input crate.
                 AgentInputFooterEvent::SelectFile => {
                     me.select_image(ctx);
                 }
@@ -3786,8 +3768,7 @@ impl Input {
             let ai_input_model = ai_input_model.clone();
 
             ctx.subscribe_to_model(&ai_input_model, |me, _, _, ctx| {
-                #[cfg(feature = "voice_input")]
-                me.update_voice_transcription_options(ctx);
+                // twarp: 2c-f — update_voice_transcription_options call deleted with crate.
                 me.update_image_context_options(ctx);
                 me.update_ai_context_menu(ctx);
                 me.check_slash_menu_disabled_state(ctx);
@@ -4686,38 +4667,13 @@ impl Input {
             input.set_zero_state_hint_text(ctx);
         }
 
-        #[cfg(feature = "voice_input")]
-        input.update_voice_transcription_options(ctx);
+        // twarp: 2c-f — update_voice_transcription_options call deleted with crate.
         input.update_image_context_options(ctx);
         input.update_ai_context_menu(ctx);
         input
     }
 
-    #[cfg(feature = "voice_input")]
-    fn update_voice_transcription_options(&mut self, ctx: &mut ViewContext<Self>) {
-        let ai_input_model = self.ai_input_model.as_ref(ctx);
-        let ai_settings = AISettings::as_ref(ctx);
-
-        let voice_transcription_options = match (
-            ai_input_model.input_type(),
-            ai_settings.is_voice_input_enabled(ctx),
-        ) {
-            (InputType::AI, true) => crate::editor::VoiceTranscriptionOptions::Enabled {
-                // If UDI is enabled, we show the button below the text input
-                show_button: !self.should_show_universal_developer_input(ctx)
-                    && !FeatureFlag::AgentView.is_enabled(),
-            },
-            (InputType::Shell, true) => {
-                crate::editor::VoiceTranscriptionOptions::Enabled { show_button: false }
-            }
-            (_, false) => crate::editor::VoiceTranscriptionOptions::Disabled,
-        };
-
-        self.editor.update(ctx, move |editor, ctx| {
-            editor.update_voice_transcription_options(voice_transcription_options, ctx);
-            ctx.notify();
-        });
-    }
+    // twarp: 2c-f — update_voice_transcription_options method deleted with voice_input crate.
 
     fn update_ai_context_menu(&mut self, ctx: &mut ViewContext<Self>) {
         let ai_input_model = self.ai_input_model.as_ref(ctx);
@@ -6624,20 +6580,7 @@ impl Input {
         }
     }
 
-    #[cfg(feature = "voice_input")]
-    pub(super) fn toggle_voice_input(
-        &mut self,
-        from: &voice_input::VoiceInputToggledFrom,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.enter_ai_mode(ctx);
-        let did_start_listening = self
-            .editor
-            .update(ctx, |editor, ctx| editor.toggle_voice_input(from, ctx));
-        if did_start_listening {
-            self.focus_input_box(ctx);
-        }
-    }
+    // twarp: 2c-f — toggle_voice_input method deleted with voice_input crate.
 
     fn select_image(&mut self, ctx: &mut ViewContext<Self>) {
         self.focus_input_box(ctx);
@@ -6761,10 +6704,7 @@ impl Input {
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            #[cfg(feature = "voice_input")]
-            UniversalDeveloperInputButtonBarEvent::ToggleVoiceInput(from) => {
-                self.toggle_voice_input(from, ctx);
-            }
+            // twarp: 2c-f — UniversalDeveloperInputButtonBarEvent::ToggleVoiceInput arm deleted with crate.
             UniversalDeveloperInputButtonBarEvent::InputTypeSelected(input_type) => {
                 if self.is_input_mode_toggle_disabled() {
                     return;
@@ -7054,10 +6994,7 @@ impl Input {
                     );
                 }
             }
-            #[cfg(feature = "voice_input")]
-            AISettingsChangedEvent::VoiceInputEnabled { .. } => {
-                self.update_voice_transcription_options(ctx);
-            }
+            // twarp: 2c-f — VoiceInputEnabled handler deleted with voice_input crate.
             _ => {}
         }
     }
@@ -12957,7 +12894,9 @@ impl Input {
             // If we're submitting an AI query, we want to send telemetry for the input type.
             if FeatureFlag::NldImprovements.is_enabled() {
                 let input_model = self.ai_input_model.as_ref(ctx);
-                let input_type: input_classifier::InputType = input_model.input_type().into();
+                // twarp: 2c-f — was `input_classifier::InputType`; the local
+                // `InputType` is the same enum the telemetry event takes.
+                let input_type = input_model.input_type();
                 let is_locked = input_model.is_input_type_locked();
                 let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
                 send_telemetry_from_ctx!(
@@ -13069,7 +13008,8 @@ impl Input {
             // If we're submitting a shell command, we want to send telemetry for the input type.
             if FeatureFlag::NldImprovements.is_enabled() {
                 let input_model = self.ai_input_model.as_ref(ctx);
-                let input_type: input_classifier::InputType = input_model.input_type().into();
+                // twarp: 2c-f — see twin call-site above.
+                let input_type = input_model.input_type();
                 let is_locked = input_model.is_input_type_locked();
                 let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
                 send_telemetry_from_ctx!(
