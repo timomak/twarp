@@ -291,7 +291,7 @@ impl TerminalView {
                 .map(|conversation| {
                     self.render_agent_indicator(
                         conversation.id(),
-                        conversation.status().clone().unwrap_or(crate::app_state::ConversationStatus::Failed),
+                        conversation.status().clone(),
                         self.is_long_running(),
                         app,
                     )

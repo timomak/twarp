@@ -1525,13 +1525,15 @@ impl BlockList {
     pub fn set_agent_view_state(&mut self, state: AgentViewState) {
         self.agent_view_state = state;
         if !self.active_block().finished() {
-            if let Some(id) = self.agent_view_state.active_conversation_id() {
+            let id_copy = self.agent_view_state.active_conversation_id().copied();
+            let is_inline = self.agent_view_state.is_inline();
+            if let Some(id) = id_copy {
                 // For inline agent views, add the conversation ID to Terminal variant
                 // instead of replacing with Agent variant
-                if self.agent_view_state.is_inline() {
-                    self.active_block_mut().add_attached_conversation_id(*id);
+                if is_inline {
+                    self.active_block_mut().add_attached_conversation_id(id);
                 } else {
-                    self.active_block_mut().set_conversation_id(*id);
+                    self.active_block_mut().set_conversation_id(id);
                 }
             } else {
                 // Only clear conversation ID for blocks that were created inside agent view.

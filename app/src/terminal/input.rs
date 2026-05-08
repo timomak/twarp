@@ -835,14 +835,14 @@ impl BlocklistAIHistoryModel {
 struct AIConversationStub;
 #[allow(dead_code)]
 impl AIConversationStub {
-    fn id(&self) -> AIConversationId { unimplemented!() }
-    fn title(&self) -> Option<String> { None }
-    fn status(&self) -> AIConversationStatusStub { AIConversationStatusStub }
+    pub fn id(&self) -> AIConversationId { unimplemented!() }
+    pub fn title(&self) -> Option<String> { None }
+    pub fn status(&self) -> AIConversationStatusStub { AIConversationStatusStub }
     // twarp: 2c-d — bulk stubs
-    fn is_empty(&self) -> bool { true }
-    fn is_entirely_passive(&self) -> bool { false }
-    fn export_to_markdown<A>(&self, _: A) -> String { String::new() }
-    fn server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
+    pub fn is_empty(&self) -> bool { true }
+    pub fn is_entirely_passive(&self) -> bool { false }
+    pub fn export_to_markdown<A>(&self, _: A) -> String { String::new() }
+    pub fn server_conversation_token(&self) -> Option<crate::app_state::ServerConversationToken> { None }
 }
 #[allow(dead_code)]
 struct AIConversationStatusStub;

@@ -190,7 +190,7 @@ impl InlineHistoryMenuDataSource {
                 item: MenuItem::Conversation {
                     conversation_id: conversation.id(),
                     title,
-                    status: conversation.status().clone().unwrap_or(crate::app_state::ConversationStatus::Failed),
+                    status: conversation.status().clone(),
                     match_result,
                     display_timestamp: timestamp,
                 },
