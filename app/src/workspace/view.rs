@@ -17224,7 +17224,7 @@ impl Workspace {
     }
     // twarp: 2c-d — bulk stubs
     fn load_cloud_conversation_into_new_transcript_viewer<A, C>(&mut self, _: A, _: &mut C) {}
-    fn open_cloud_conversation_from_server_token<A, C>(&mut self, _: A, _: &mut C) {}
+    pub fn open_cloud_conversation_from_server_token<A, C>(&mut self, _: A, _: &mut C) {}
     fn open_code_diff<A, C>(&mut self, _: A, _: &mut C) {}
 }
 

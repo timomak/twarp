@@ -689,7 +689,7 @@ pub use crate::terminal::view::rich_content::AIAgentExchangeId;
 #[allow(dead_code)] fn get_ai_block_overflow_menu_element_position_id<C>(_: C) -> String { String::new() }
 #[allow(dead_code)] fn get_attached_blocks_chip_element_position_id<C>(_: C) -> String { String::new() }
 #[allow(dead_code)] struct CodeDiffView;
-#[allow(dead_code)] struct SummarizationCancelDialog;
+#[allow(dead_code)] pub struct SummarizationCancelDialog;
 #[allow(dead_code)] fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool { false }
 // twarp: 2c-d — unify with rich_content::TelemetryBanner.
 pub use crate::terminal::view::rich_content::TelemetryBanner;
@@ -706,7 +706,7 @@ pub use crate::terminal::view::rich_content::AIBlock;
     ExecutingAction(()),
     FinishedAction(AIAgentActionId),
     InitProject(()),
-    InsertCodeReviewComments { comments: (), action_id: (), repo_path: std::path::PathBuf, base_branch: Option<String> },
+    InsertCodeReviewComments { comments: Vec<InsertReviewComment>, action_id: AIAgentActionId, repo_path: std::path::PathBuf, base_branch: Option<String> },
     QueuedAction(()),
     ToggleCodeReview,
 }
@@ -729,9 +729,9 @@ pub use crate::terminal::input::BlocklistAIController;
 #[allow(dead_code)] pub enum BlocklistAIControllerEvent {
     // twarp: 2c-d — bulk variants
     ExportConversationToFile { filename: Option<String> },
-    FinishedReceivingOutput(()),
+    FinishedReceivingOutput { conversation_id: AIConversationId, finish_reason: Option<crate::terminal::view::pending_user_query::FinishReason> },
     FreeTierLimitCheckTriggered,
-    SentRequest { contains_user_query: bool, is_queued_prompt: bool, model_id: Option<()> },
+    SentRequest { contains_user_query: bool, is_queued_prompt: bool, model_id: LLMId },
 }
 // twarp: 2c-d — re-export canonical BlocklistAIHistoryEvent
 pub use crate::terminal::input::BlocklistAIHistoryEvent;

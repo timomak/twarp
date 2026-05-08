@@ -352,9 +352,9 @@ impl BlocklistAIStatusBar {
     ) -> Self {
         unimplemented!()
     }
-    fn handle_ctrl_c<C>(&mut self, _: &mut C) {}
-    pub fn summarization_cancel_dialog_handle(&self) -> Option<()> { None }
-    pub fn should_show_summarization_cancel_dialog(&self) -> bool { false }
+    pub fn handle_ctrl_c<C>(&mut self, _: &mut C) {}
+    pub fn summarization_cancel_dialog_handle(&self) -> warpui::ViewHandle<crate::terminal::view::SummarizationCancelDialog> { unimplemented!("twarp: 2c-d - SummarizationCancelDialog removed") }
+    pub fn should_show_summarization_cancel_dialog<C>(&self, _: &C) -> bool { false }
 }
 
 #[allow(dead_code)]
@@ -452,7 +452,7 @@ impl CLIAgentSessionsModel {
     fn is_input_open(&self, _: warpui::EntityId) -> bool {
         false
     }
-    fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSessionStub> { None }
+    pub fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSessionStub> { None }
     fn take_draft(&mut self, _: warpui::EntityId) -> Option<String> { None }
 }
 #[allow(dead_code)]
@@ -6987,7 +6987,8 @@ impl Input {
 
         if self.model.lock().shared_session_status().is_viewer() {
             let server_conversation_token: Option<ServerConversationToken> = active_conversation
-                .and_then(|conversation| conversation.server_conversation_token());
+                .and_then(|conversation| conversation.server_conversation_token())
+                .and_then(|_t| None);
 
             if let Some(server_conversation_token) = server_conversation_token {
                 ctx.emit(Event::CancelSharedSessionConversation {
@@ -14799,7 +14800,7 @@ impl Input {}
 // twarp: 2c-d — stubs for AI-only Input helpers.
 #[allow(dead_code)]
 impl Input {
-    fn is_cloud_mode_input_v2_composing<C>(&self, _: &C) -> bool {
+    pub fn is_cloud_mode_input_v2_composing<C>(&self, _: &C) -> bool {
         false
     }
     fn update_cli_agent_editor_text_colors<C>(&mut self, _: &mut C) {}
