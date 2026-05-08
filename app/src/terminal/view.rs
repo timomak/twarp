@@ -11318,7 +11318,6 @@ impl TerminalView {
                         self.enter_agent_view_for_new_conversation(
                             None,
                             AgentViewEntryOrigin::Input {
-                                is_new_conversation: false,
                                 was_prompt_autodetected: false,
                             },
                             ctx,
@@ -19693,7 +19692,6 @@ impl TerminalView {
             }
             InputEvent::ExitCloudModeAndStartLocalAgent { initial_prompt } => {
                 let origin = AgentViewEntryOrigin::Input {
-                    is_new_conversation: false,
                     was_prompt_autodetected: false,
                 };
                 let initial_prompt = initial_prompt.clone();

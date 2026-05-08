@@ -31,6 +31,9 @@ pub enum AgentViewState {
     Active {
         conversation_id: AIConversationId,
         display_mode: AgentViewDisplayMode,
+        // twarp: 2c-d — extra fields kept so legacy test call-sites compile.
+        origin: crate::app_state::AgentViewEntryOrigin,
+        original_conversation_length: usize,
     },
     Inactive,
 }

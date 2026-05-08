@@ -1350,7 +1350,6 @@ impl PaneGroup {
                             terminal_view.enter_agent_view_for_new_conversation(
                                 None,
                                 AgentViewEntryOrigin::Input {
-                                    is_new_conversation: false,
                                     was_prompt_autodetected: false,
                                 },
                                 ctx,
@@ -5751,7 +5750,6 @@ impl PaneGroup {
                     // if this is called in live codepaths beyond the create-environment deep
                     // link flow.
                     AgentViewEntryOrigin::Input {
-                        is_new_conversation: false,
                         was_prompt_autodetected: false,
                     },
                     terminal_view_ctx,

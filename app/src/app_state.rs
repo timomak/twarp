@@ -20,6 +20,9 @@ impl From<String> for AIConversationId {
 #[allow(dead_code)]
 impl AIConversationId {
     // twarp: 2c-d — bulk stubs treating bare AIConversationId as if it were the conversation
+    pub fn new() -> Self {
+        AIConversationId(uuid::Uuid::new_v4())
+    }
     pub fn id(&self) -> AIConversationId {
         *self
     }
@@ -108,6 +111,12 @@ impl SerializedBlockListItem {
         match self {
             SerializedBlockListItem::Command { block } => block.start_ts,
         }
+    }
+}
+// twarp: 2c-d — From<SerializedBlock> kept so legacy test call-sites compile.
+impl From<crate::terminal::model::block::SerializedBlock> for SerializedBlockListItem {
+    fn from(block: crate::terminal::model::block::SerializedBlock) -> Self {
+        Self::Command { block }
     }
 }
 // twarp: 2c-d — From<persistence::model::Block> kept so persisted pane decoders compile.
@@ -275,10 +284,9 @@ impl ServerConversationToken {
         Self {}
     }
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AgentViewEntryOrigin {
     Input {
-        is_new_conversation: bool,
         was_prompt_autodetected: bool,
     },
     ChildAgent,

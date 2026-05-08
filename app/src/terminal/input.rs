@@ -11234,7 +11234,6 @@ impl Input {
                 // twarp: 2c-d — set_pending_query_state_for_new_conversation takes 4 args; pad with ()/().
                 ai_context_model.set_pending_query_state_for_new_conversation(
                     AgentViewEntryOrigin::Input {
-                        is_new_conversation: false,
                         was_prompt_autodetected: false,
                     },
                     (),
@@ -13472,7 +13471,6 @@ impl Input {
                 initial_prompt: Some(prompt),
                 conversation_id: None,
                 origin: AgentViewEntryOrigin::Input {
-                    is_new_conversation: false,
                     was_prompt_autodetected: !self
                         .ai_input_model
                         .as_ref(ctx)
@@ -14863,7 +14861,6 @@ impl TypedActionView for Input {
                         controller.try_enter_agent_view(
                             None::<()>,
                             AgentViewEntryOrigin::Input {
-                                is_new_conversation: false,
                                 was_prompt_autodetected: false,
                             },
                             ctx,
@@ -14877,7 +14874,6 @@ impl TypedActionView for Input {
                         // twarp: 2c-d — pad with ()/() to satisfy 4-arg signature
                         ai_context_model.set_pending_query_state_for_new_conversation(
                             AgentViewEntryOrigin::Input {
-                                is_new_conversation: false,
                                 was_prompt_autodetected: false,
                             },
                             (),
