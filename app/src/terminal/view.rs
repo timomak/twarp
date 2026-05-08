@@ -17664,7 +17664,7 @@ impl TerminalView {
         self.input.update(ctx, |input, ctx| {
             input.handle_action(&InputAction::ShowAiCommandSearch, ctx)
         });
-        send_telemetry_from_ctx!(TelemetryEvent::InputAICommandSearch, ctx);
+        // twarp: 2d — InputAICommandSearch telemetry deleted with AI removal.
     }
 
     fn save_as_workflow_from_input(&mut self, ctx: &mut ViewContext<Self>) {
@@ -17868,7 +17868,7 @@ impl TerminalView {
                     return;
                 }
 
-                send_telemetry_from_ctx!(TelemetryEvent::InputAskWarpAI, ctx);
+                // twarp: 2d — InputAskWarpAI telemetry deleted with AI removal.
                 AskAIType::FromTextSelection {
                     text: Arc::new(selected_input_text),
                     location: None,

@@ -14566,12 +14566,8 @@ impl Input {
 
         ctx.emit(Event::ShowCommandSearch(Default::default()));
 
-        let entrypoint = if buffer_starts_with_trigger {
-            AICommandSearchEntrypoint::ShortHandTrigger
-        } else {
-            AICommandSearchEntrypoint::Keybinding
-        };
-        send_telemetry_from_ctx!(TelemetryEvent::AICommandSearchOpened { entrypoint }, ctx);
+        // twarp: 2d — AICommandSearchOpened telemetry deleted with AI removal.
+        let _ = buffer_starts_with_trigger;
         ctx.notify();
     }
 
