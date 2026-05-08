@@ -216,7 +216,6 @@ pub struct EditorElement {
     editor_decorator_elements: EditorDecoratorElements,
     local_selection_data: LocalDrawableSelectionData,
     remote_selections_data: HashMap<ReplicaId, RemoteDrawableSelectionData>,
-
     // twarp: 2c-f — voice_input_cursor_icon / voice_input_toggle_key_code fields deleted with crate.
 }
 

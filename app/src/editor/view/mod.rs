@@ -1964,7 +1964,6 @@ pub struct EditorView {
     // twarp: 2c-f — voice_input editor fields removed (voice_input_state,
     // interaction_state_before_voice, voice_transcription_options,
     // voice_transcription_button_mouse_handle, voice_new_feature_popup).
-
     context_model: Option<ModelHandle<BlocklistAIContextModel>>,
 
     /// Options for attaching image context.
@@ -2975,7 +2974,6 @@ impl EditorView {
             baseline_position_computation_method: self.baseline_position_computation_method.clone(),
 
             // twarp: 2c-f — voice_input snapshot field deleted.
-
             editor_height_shrink_delay: self.editor_height_shrink_delay.clone(),
         }
     }
