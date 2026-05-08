@@ -353,6 +353,7 @@ impl UseAgentToolbar {
     fn clear_warpify_mode<C>(&mut self, _: &mut C) {}
     fn notify_and_notify_children<C>(&mut self, _: &mut C) {}
     fn set_warpify_mode<A, C>(&mut self, _: A, _: &mut C) {}
+    fn warpify_mode<C>(&self, _: &C) -> Option<crate::terminal::view::block_banner::WarpificationMode> { None }
 }
 
 // twarp: 2c-d — cli_agent module deleted; alias to satisfy `cli_agent::*` references
@@ -565,7 +566,7 @@ struct CodebaseIndexSpeedbumpBannerState {
     pub id: InlineBannerId,
     // twarp: 2c-d — extra fields used by view code
     pub repo_path: std::path::PathBuf,
-    pub visibility_state: (),
+    pub visibility_state: VisibilityState,
     pub always_allow_checked: bool,
     pub show_indexing_banner: bool,
 }
@@ -581,7 +582,7 @@ impl CodebaseIndexSpeedbumpBannerState {
         unimplemented!()
     }
 }
-#[allow(dead_code)] pub enum VisibilityState { Speedbump }
+#[allow(dead_code)] #[derive(PartialEq, Eq, Default)] pub enum VisibilityState { #[default] Other, Speedbump }
 #[allow(dead_code)] pub enum AIBlockOutputStatus { Failed }
 
 #[cfg(feature = "local_fs")]
@@ -819,10 +820,10 @@ impl ShellCommandExecutor {
 }
 #[allow(dead_code)] enum ShellCommandExecutorEvent {}
 #[allow(dead_code)] struct StartAgentExecutor;
-#[allow(dead_code)] pub enum StartAgentExecutorEvent { CreateAgent(StartAgentRequestStub) }
+#[allow(dead_code)] pub enum StartAgentExecutorEvent { CreateAgent(StartAgentRequest) }
+// twarp: 2c-d — alias used by Event variant.
 #[derive(Clone, Debug)]
-#[allow(dead_code)] pub struct StartAgentRequestStub;
-#[allow(dead_code)] struct StartAgentRequest;
+#[allow(dead_code)] pub struct StartAgentRequest;
 #[allow(dead_code)] const ATTACH_AS_AGENT_MODE_CONTEXT_TEXT: &str = "";
 #[allow(dead_code)] const PRE_REWIND_PREFIX: &str = "";
 #[allow(dead_code)]
@@ -3814,7 +3815,7 @@ impl TerminalView {
                                             conversation_id,
                                         } => {
                                             me.enter_agent_view_for_conversation(
-                                                None,
+                                                None::<()>,
                                                 AgentViewEntryOrigin::ConversationListView,
                                                 *conversation_id,
                                                 ctx,
@@ -5464,9 +5465,11 @@ impl TerminalView {
                     .agent_view_state()
                     .active_conversation_id()
                 {
-                    // Associate newly added blocks with the conversation
+                    // twarp: 2c-d — convert previous_block_ids Vec to HashSet for difference.
+                    let prev_set: std::collections::HashSet<_> =
+                        previous_block_ids.iter().cloned().collect();
                     let added_block_ids = pending_context_block_ids
-                        .difference(previous_block_ids)
+                        .difference(&prev_set)
                         .collect_vec();
                     if !added_block_ids.is_empty() {
                         let associated_blocks = self
@@ -5662,8 +5665,8 @@ impl TerminalView {
                         self.model.clone(),
                         ClientIdentifiers {
                             conversation_id: *conversation_id,
-                            client_exchange_id: *exchange_id,
-                            response_stream_id: response_stream_id.clone(),
+                            client_exchange_id: (*exchange_id).to_string(),
+                            response_stream_id: response_stream_id.to_string(),
                         },
                         self.ai_controller.clone(),
                         self.get_relevant_files_controller.clone(),
@@ -5910,7 +5913,7 @@ impl TerminalView {
                 active_conversation_id,
                 ..
             } => {
-                if let Some(active_conversation_id) = active_conversation_id {
+                {
                     self.ai_controller.update(ctx, |controller, ctx| {
                         controller.cancel_conversation_progress(
                             *active_conversation_id,
@@ -6048,10 +6051,6 @@ impl TerminalView {
                 self.cli_subagent_views.remove(block_id);
 
                 if FeatureFlag::AgentView.is_enabled() {
-                    let Some(conversation_id) = conversation_id else {
-                        return;
-                    };
-
                     if self.has_existing_lrc_agent_view_block(*conversation_id)
                         || self
                             .agent_view_controller
@@ -6101,7 +6100,7 @@ impl TerminalView {
     ) {
         if FeatureFlag::AgentView.is_enabled() {
             self.enter_agent_view_for_conversation(
-                None,
+                None::<()>,
                 AgentViewEntryOrigin::ContinueConversationButton,
                 *conversation_id,
                 ctx,
@@ -9140,9 +9139,9 @@ impl TerminalView {
                 conversation_id
             } else {
                 match self.try_enter_agent_view(
-                    None,
+                    None::<()>,
                     AgentViewEntryOrigin::AcceptedPromptSuggestion,
-                    None,
+                    None::<()>,
                     ctx,
                 ) {
                     Ok(conversation_id) => {
@@ -25389,10 +25388,9 @@ impl View for TerminalView {
         // Set CanResumeConversation flag if the latest exchange (across all tasks,
         // including subtasks) was manually cancelled or finished with an error.
         if FeatureFlag::AIResumeButton.is_enabled() {
-            let latest_exchange = active_conversation.and_then(|c| c.latest_exchange());
-            let was_manually_cancelled = latest_exchange
-                .and_then(|e| e.output_status.cancel_reason())
-                .is_some_and(|reason| reason.is_manually_cancelled());
+            // twarp: 2c-d — exchange types deleted; resume button cannot fire.
+            let _latest_exchange = active_conversation.and_then(|c| c.latest_exchange());
+            let was_manually_cancelled = false;
             let has_error = active_conversation.is_some_and(|c| c.status().is_error());
             if was_manually_cancelled || has_error {
                 context.set.insert(init::CAN_RESUME_CONVERSATION_KEY);

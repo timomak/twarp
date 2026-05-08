@@ -1122,7 +1122,17 @@ pub struct AmbientAgentViewModel {
 }
 #[allow(dead_code)]
 #[derive(Default)]
-pub struct AmbientAgentUiStateStub;
+pub struct AmbientAgentUiStateStub {
+    pub error_selected_text: AmbientAgentErrorSelectedTextStub,
+}
+#[derive(Default)]
+pub struct AmbientAgentErrorSelectedTextStub;
+impl AmbientAgentErrorSelectedTextStub {
+    pub fn read(&self) -> Option<String> { None }
+}
+impl Clone for AmbientAgentErrorSelectedTextStub {
+    fn clone(&self) -> Self { Self }
+}
 impl AmbientAgentViewModel {
     pub fn new<A, B, C>(_: A, _: B, _: &mut C) -> Self {
         unimplemented!()
@@ -5548,7 +5558,7 @@ impl Input {
         {
             self.agent_view_controller.update(ctx, |controller, ctx| {
                 let _ = controller.try_enter_agent_view(
-                    None,
+                    None::<()>,
                     // twarp: 2c-d — name added to AgentViewEntryOrigin::SlashCommand
                     AgentViewEntryOrigin::SlashCommand {
                         name: reference.to_string(),
@@ -13168,15 +13178,15 @@ impl Input {
             .selected_conversation_id(ctx)
         {
             self.ai_controller.update(ctx, move |controller, ctx| {
-                controller.send_user_query_in_conversation(ai_query, conversation_id, None, ctx)
+                controller.send_user_query_in_conversation(ai_query, conversation_id, None::<()>, ctx)
             });
         } else {
             self.ai_controller.update(ctx, move |controller, ctx| {
                 controller.send_user_query_in_new_conversation(
                     ai_query,
-                    None,
+                    None::<()>,
                     EntrypointType::UserInitiated,
-                    None,
+                    None::<()>,
                     ctx,
                 );
             });
@@ -14473,7 +14483,7 @@ impl TypedActionView for Input {
                 if FeatureFlag::AgentView.is_enabled() {
                     if let Err(e) = self.agent_view_controller.update(ctx, |controller, ctx| {
                         controller.try_enter_agent_view(
-                            None,
+                            None::<()>,
                             AgentViewEntryOrigin::Input {
                                 is_new_conversation: false,
                                 was_prompt_autodetected: false,

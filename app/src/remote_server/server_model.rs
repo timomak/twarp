@@ -1040,8 +1040,8 @@ impl ServerModel {
             async move {
                 read_local_file_context(
                     &file_locations,
-                    None,
-                    None,
+                    None::<()>,
+                    None::<()>,
                     max_file_bytes,
                     max_batch_bytes,
                 )

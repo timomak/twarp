@@ -186,7 +186,7 @@ impl PluginInstructionsBlock {
                     file_path: None,
                 },
                 app,
-                None,
+                None::<()>,
             );
             column.add_child(Container::new(code_block).with_padding_left(40.).finish());
         }

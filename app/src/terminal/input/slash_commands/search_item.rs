@@ -106,7 +106,7 @@ impl SearchItem for InlineItem {
                 .with_child(
                     Container::new(render_keystroke_with_color_overrides(
                         &keystroke,
-                        None,
+                        None::<warp_core::ui::theme::Fill>,
                         Some(theme.surface_overlay_3().into_solid()),
                         app,
                     ))
