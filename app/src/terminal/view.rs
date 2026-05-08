@@ -444,7 +444,7 @@ type AmbientAgentTaskId = crate::app_state::AmbientAgentTaskId;
 pub use crate::terminal::input::CLISubagentController;
 #[allow(dead_code)]
 impl CLISubagentController {
-    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
+    fn new<A, B, C, D, E, F, G>(_: A, _: B, _: C, _: D, _: E, _: F, _: &mut G) -> Self { Self }
     fn switch_control_to_user<A, C>(&mut self, _: A, _: &mut C) {}
     fn handoff_active_command_control_to_agent<C>(&mut self, _: &mut C) {}
     pub fn is_agent_in_control(&self) -> bool { false }
@@ -452,7 +452,7 @@ impl CLISubagentController {
 }
 #[allow(dead_code)]
 impl CLISubagentView {
-    fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self { Self }
+    fn new<A, B, C, D, E, F, G, H, I>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: &mut I) -> Self { Self }
     fn clear_all_selections<C>(&mut self, _: &mut C) {}
 }
 #[allow(dead_code)] pub enum CLISubagentEvent {
@@ -674,10 +674,12 @@ pub use crate::app_state::ConversationStatus;
 #[allow(dead_code)] enum AgentToolbarItemKind {}
 #[allow(dead_code)] #[derive(Clone)] pub struct SuggestedAgentModeWorkflowAndId;
 #[allow(dead_code)] #[derive(Clone)] pub struct SuggestedRuleAndId;
-#[allow(dead_code)] struct AIBlockModelImpl;
+#[allow(dead_code)] struct AIBlockModelImpl<T>(std::marker::PhantomData<T>);
 #[allow(dead_code)]
-impl AIBlockModelImpl {
-    fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H) -> Result<Self, ()> { Ok(Self) }
+impl<T> AIBlockModelImpl<T> {
+    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: E) -> Result<Self, ()> {
+        Ok(Self(std::marker::PhantomData))
+    }
 }
 #[allow(dead_code)] struct ClientIdentifiers {
     // twarp: 2c-d — fields used by callers
@@ -724,7 +726,7 @@ pub use crate::terminal::view::rich_content::AIBlock;
 pub use crate::terminal::input::BlocklistAIActionModel;
 #[allow(dead_code)]
 impl BlocklistAIActionModel {
-    fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self { Self }
+    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
     fn shell_command_executor<C>(&self, _: &C) -> ModelHandle<ShellCommandExecutor> { unimplemented!() }
     // twarp: 2c-d — bulk stubs
     fn get_action_result<A>(&self, _: A) -> Option<()> { None }
@@ -833,7 +835,7 @@ impl CodebaseIndexManager {
 pub use crate::terminal::view::rich_content::OnboardingAgenticSuggestionsBlock;
 #[allow(dead_code)]
 impl OnboardingAgenticSuggestionsBlock {
-    fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self { Self }
+    fn new<A, B, C, D, E, F>(_: A, _: B, _: C, _: D, _: E, _: &mut F) -> Self { Self }
     fn interrupt_block<C>(&mut self, _: &mut C) {}
     fn handle_key_pressed<A, C>(&mut self, _: A, _: &mut C) {}
 }
@@ -906,7 +908,7 @@ impl Entity for CLIAgentSessionContext {
 impl Entity for CLIAgentSessionsModel {
     type Event = CLIAgentSessionsModelEvent;
 }
-impl Entity for AIBlockModelImpl {
+impl<T: 'static> Entity for AIBlockModelImpl<T> {
     type Event = ();
 }
 impl Entity for CodeDiffView {

@@ -22,10 +22,19 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AIAgentExchangeId(pub String);
+impl From<crate::app_state::AIConversationId> for AIAgentExchangeId {
+    fn from(id: crate::app_state::AIConversationId) -> Self {
+        // twarp: 2c-d — opaque conversion bridge.
+        Self(id.0.to_string())
+    }
+}
 pub struct AIBlock;
 #[allow(dead_code)]
 impl AIBlock {
-    pub fn new<A, B, C, D, E, F, G, H, I, J, K, L>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: I, _: J, _: K, _: &mut L) -> Self { Self }
+    pub fn new<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>(
+        _: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: I,
+        _: J, _: K, _: L, _: M, _: N, _: O, _: P, _: Q, _: &mut R,
+    ) -> Self { Self }
 }
 pub struct TelemetryBanner;
 pub struct AmbientAgentEntryBlock;

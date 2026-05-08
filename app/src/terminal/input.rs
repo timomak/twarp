@@ -356,6 +356,10 @@ impl BlocklistAIStatusBar {
     pub fn summarization_cancel_dialog_handle(&self) -> warpui::ViewHandle<crate::terminal::view::SummarizationCancelDialog> { unimplemented!("twarp: 2c-d - SummarizationCancelDialog removed") }
     pub fn should_show_summarization_cancel_dialog<C>(&self, _: &C) -> bool { false }
 }
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+struct BlocklistAIStatusBarAction;
+impl warpui::TypedActionView for BlocklistAIStatusBar { type Action = BlocklistAIStatusBarAction; }
 
 #[allow(dead_code)]
 pub struct BlocklistAIActionModel;
@@ -363,7 +367,7 @@ pub struct BlocklistAIActionModel;
 #[allow(dead_code)]
 pub enum SlashCommandRequest {
     InvokeSkill {
-        skill: (),
+        skill: crate::terminal::input::slash_commands::data_source::SkillDescriptor,
         user_query: Option<String>,
     },
     CloneRepository {
@@ -473,7 +477,7 @@ impl InlineConversationMenuView {
     fn accept_selected_item<C>(&mut self, _: bool, _: &mut C) {}
     fn select_up<C>(&mut self, _: &mut C) {}
     fn select_down<C>(&mut self, _: &mut C) {}
-    fn select_next_tab<C>(&mut self, _: &mut C) {}
+    fn select_next_tab<C>(&mut self, _: &mut C) -> bool { false }
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -573,7 +577,7 @@ impl InlinePromptsMenuView {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum InlinePromptsMenuEvent {
-    SelectedPrompt { prompt: String, id: String },
+    SelectedPrompt { prompt: String, id: warp_server_client::ids::SyncId },
 }
 
 #[allow(dead_code)]
@@ -604,7 +608,7 @@ impl RewindMenuView {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum RewindMenuEvent {
-    AcceptedRewindPoint { exchange_id: crate::app_state::AIConversationId },
+    AcceptedRewindPoint { exchange_id: Option<crate::app_state::AIConversationId> },
     Dismissed,
 }
 
@@ -626,7 +630,7 @@ impl InlineSkillSelectorView {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 enum InlineSkillSelectorEvent {
-    SelectedSkill { name: String, skill_name: String, skill_reference: String },
+    SelectedSkill { name: String, skill_name: String, skill_reference: ai::skills::SkillReference },
 }
 
 #[allow(dead_code)]
@@ -642,7 +646,11 @@ impl UserQueryMenuView {
 #[allow(dead_code)]
 enum UserQueryMenuEvent {
     SelectedQuery { query: String, exchange_id: crate::app_state::AIConversationId },
-    AcceptedQuery { query: String, exchange_id: crate::app_state::AIConversationId },
+    AcceptedQuery {
+        query: String,
+        exchange_id: crate::app_state::AIConversationId,
+        cmd_enter: bool,
+    },
     Dismissed,
 }
 
@@ -796,7 +804,7 @@ impl BlocklistAIContextModel {
 pub struct BlocklistAIController;
 #[allow(dead_code)]
 impl BlocklistAIController {
-    pub fn new<A, B, C, D, E, F, G, H, I>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: H, _: &mut I) -> Self { Self }
+    pub fn new<A, B, C, D, E, F, G, H>(_: A, _: B, _: C, _: D, _: E, _: F, _: G, _: &mut H) -> Self { Self }
     pub fn send_slash_command_request<R, C>(&mut self, _: R, _: &mut C) {}
     pub fn cancel_conversation_progress<A, B, C>(&mut self, _: A, _: B, _: &mut C) {}
     // twarp: 2c-d — bulk stubs for AI-removed methods on BlocklistAIController
@@ -1110,11 +1118,11 @@ pub struct AmbientAgentViewModel {
 #[derive(Default)]
 pub struct AmbientAgentUiStateStub;
 impl AmbientAgentViewModel {
-    pub fn new<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
+    pub fn new<A, B, C>(_: A, _: B, _: &mut C) -> Self {
         unimplemented!()
     }
-    // twarp: 2c-d — also support 3-arg form used in view.rs ambient_agent module
-    pub fn new3<A, B, C>(_: A, _: B, _: &mut C) -> Self {
+    // twarp: 2c-d — also support 5-arg form
+    pub fn new5<A, B, C, D, E>(_: A, _: B, _: C, _: D, _: &mut E) -> Self {
         unimplemented!()
     }
     pub fn task_id(&self) -> Option<crate::app_state::AmbientAgentTaskId> {
@@ -1171,7 +1179,7 @@ enum AgentInputFooterEvent {
     PluginInstalled(crate::app_state::CLIAgent),
     PromptAlert(crate::terminal::view::inline_banner::prompt_suggestions::PromptAlertEvent),
     SelectFile,
-    ShowContextMenu { position: () },
+    ShowContextMenu { position: pathfinder_geometry::vector::Vector2F },
     StartRemoteControl,
     StopRemoteControl,
     ToggleCodeReviewPane(()),
@@ -4350,11 +4358,13 @@ impl Input {
 
     /// Update the at button's disabled state based on whether AI context menu should render
     pub fn check_and_update_ai_context_menu_disabled_state(&mut self, ctx: &mut ViewContext<Self>) {
+        let input_config = self.ai_input_model.as_ref(ctx).input_config();
+        // twarp: 2c-d — AtContextMenuDisabledReason::get_disable_reason now ignores ctx (stub).
         let disable_reason = AtContextMenuDisabledReason::get_disable_reason(
             self.active_block_metadata.as_ref(),
-            self.sessions.as_ref(ctx),
-            &self.ai_input_model.as_ref(ctx).input_config(),
-            ctx,
+            (),
+            &input_config,
+            (),
         );
 
         self.universal_developer_input_button_bar
@@ -4881,7 +4891,7 @@ impl Input {
         event: &InlinePromptsMenuEvent,
         ctx: &mut ViewContext<Self>,
     ) {
-        let InlinePromptsMenuEvent::SelectedPrompt { id } = event;
+        let InlinePromptsMenuEvent::SelectedPrompt { id, prompt: _ } = event;
 
         let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(id).cloned() else {
             log::warn!("Tried to open saved prompt for id {id:?} but it does not exist");
@@ -4914,6 +4924,7 @@ impl Input {
         let InlineSkillSelectorEvent::SelectedSkill {
             skill_name,
             skill_reference,
+            name: _,
         } = event;
 
         if self.skill_selector_should_invoke {
@@ -5032,6 +5043,7 @@ impl Input {
             InlinePlanMenuEvent::OpenPlan {
                 document_id,
                 document_version,
+                ai_document_uid: _,
             } => {
                 ctx.emit(Event::OpenAIDocumentPane {
                     document_id: *document_id,
@@ -5097,14 +5109,15 @@ impl Input {
         }
 
         match event {
-            UserQueryMenuEvent::SelectedQuery { exchange_id } => {
+            UserQueryMenuEvent::SelectedQuery { exchange_id, query: _ } => {
                 ctx.emit(Event::ScrollToExchange {
-                    exchange_id: *exchange_id,
+                    exchange_id: (*exchange_id).into(),
                 });
             }
             UserQueryMenuEvent::AcceptedQuery {
                 exchange_id,
                 cmd_enter,
+                query: _,
             } => {
                 let Some(conversation_id) = self
                     .suggestions_mode_model
@@ -5418,7 +5431,7 @@ impl Input {
 
                 ctx.dispatch_typed_action(&TerminalAction::ExecuteRewindFromInlineMenu {
                     conversation_id,
-                    exchange_id: *exchange_id,
+                    exchange_id: (*exchange_id).into(),
                 });
 
                 let is_in_agent_view = FeatureFlag::AgentView.is_enabled()
@@ -6158,6 +6171,10 @@ impl Input {
                         get_stable_agent_mode_hint_text(&mut self.cached_agent_mode_hint_text)
                     }
                 }
+            }
+            // twarp: 2c-d — InputType::Other catch-all.
+            (InputType::Other, _) => {
+                get_stable_agent_mode_hint_text(&mut self.cached_agent_mode_hint_text)
             }
         }
     }
@@ -10722,7 +10739,7 @@ impl Input {
         }
 
         if let Err(e) = self.agent_view_controller.update(ctx, |controller, ctx| {
-            controller.try_enter_agent_view(None, AgentViewEntryOrigin::ImageAdded, ctx)
+            controller.try_enter_agent_view(None::<()>, AgentViewEntryOrigin::ImageAdded, ctx)
         }) {
             log::error!("Failed to enter agent view when adding images: {e:?}");
         }
@@ -12915,7 +12932,7 @@ impl Input {
                 controller.send_queued_user_query_in_conversation(
                     prompt,
                     conversation_id,
-                    None,
+                    None::<()>,
                     ctx,
                 );
             });
@@ -12923,9 +12940,9 @@ impl Input {
             self.ai_controller.update(ctx, move |controller, ctx| {
                 controller.send_queued_user_query_in_new_conversation(
                     prompt,
-                    None,
+                    None::<()>,
                     EntrypointType::UserInitiated,
-                    None,
+                    None::<()>,
                     ctx,
                 );
             });
