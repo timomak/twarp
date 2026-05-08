@@ -691,7 +691,7 @@ pub use crate::terminal::view::rich_content::AIAgentExchangeId;
 // twarp: 2c-d — ElementPositionId removed from warpui; stub returns ()
 #[allow(dead_code)] fn get_ai_block_overflow_menu_element_position_id<C>(_: C) -> String { String::new() }
 #[allow(dead_code)] fn get_attached_blocks_chip_element_position_id<C>(_: C) -> String { String::new() }
-#[allow(dead_code)] struct CodeDiffView;
+#[allow(dead_code)] pub struct CodeDiffView;
 #[allow(dead_code)] pub struct SummarizationCancelDialog;
 #[allow(dead_code)] fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool { false }
 // twarp: 2c-d — unify with rich_content::TelemetryBanner.

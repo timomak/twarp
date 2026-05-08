@@ -70,7 +70,8 @@ pub enum LeftPanelAction {
     ProjectExplorer,
     GlobalSearch { entry_focus: GlobalSearchEntryFocus },
     WarpDrive,
-    // twarp: 2c-d — ConversationListView removed
+    // twarp: 2c-d — kept for legacy call-sites; AI conversation list deleted.
+    ConversationListView,
 }
 
 pub enum LeftPanelEvent {
@@ -83,7 +84,11 @@ pub enum LeftPanelEvent {
         target: FileTarget,
         line_col: Option<LineAndColumnArg>,
     },
-    // twarp: 2c-d — NewConversationInNewTab, ShowDeleteConfirmationDialog removed
+    // twarp: 2c-d — kept for legacy call-sites; AI conversation list deleted.
+    NewConversationInNewTab,
+    ShowDeleteConfirmationDialog {
+        conversation_id: crate::app_state::AIConversationId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

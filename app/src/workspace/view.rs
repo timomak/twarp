@@ -19665,10 +19665,9 @@ impl View for Workspace {
             stack.add_child(ChildView::new(&self.prompt_editor_modal).finish());
         }
 
-        if FeatureFlag::AgentToolbarEditor.is_enabled()
-            && self.current_workspace_state.is_agent_toolbar_editor_open
-        {
-            stack.add_child(ChildView::new(&self.agent_toolbar_editor_modal).finish());
+        // twarp: 2c-d — agent_toolbar_editor_modal field deleted; branch gutted.
+        if false {
+            // unreachable; AI agent toolbar editor removed
         }
 
         if self.current_workspace_state.is_header_toolbar_editor_open {
@@ -19879,12 +19878,10 @@ impl View for Workspace {
             );
         }
 
-        if self
-            .current_workspace_state
-            .is_delete_conversation_confirmation_dialog_open
-        {
+        // twarp: 2c-d — delete_conversation_confirmation_dialog field deleted; branch gutted.
+        if false {
             stack.add_positioned_overlay_child(
-                ChildView::new(&self.delete_conversation_confirmation_dialog).finish(),
+                warpui::elements::Empty::new().finish(),
                 OffsetPositioning::offset_from_parent(
                     Vector2F::zero(),
                     ParentOffsetBounds::WindowByPosition,
@@ -19977,13 +19974,7 @@ impl View for Workspace {
             self.global_toast_positioning(),
         );
 
-        // twarp 2c-d.3: notifications toast stack is gone.
-        if !self.current_workspace_state.is_agent_management_popup_open {
-            stack.add_positioned_overlay_child(
-                ChildView::new(&self.agent_toast_stack).finish(),
-                self.agent_toast_positioning(),
-            );
-        }
+        // twarp 2c-d.3: notifications toast stack is gone; agent_toast_stack field deleted.
 
         if let Some(input_position_id) = input_position_id {
             if FeatureFlag::AvatarInTabBar.is_enabled() && self.is_input_box_visible(app) {

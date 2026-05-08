@@ -157,6 +157,8 @@ impl ConversationRestorationInNewPaneType {
         match self {
             ConversationRestorationInNewPaneType::Historical { should_use_live_appearance, .. } => *should_use_live_appearance,
             ConversationRestorationInNewPaneType::HistoricalCLIAgent { should_use_live_appearance, .. } => *should_use_live_appearance,
+            ConversationRestorationInNewPaneType::Forked { should_use_live_appearance, .. } => *should_use_live_appearance,
+            ConversationRestorationInNewPaneType::Startup { should_use_live_appearance, .. } => *should_use_live_appearance,
         }
     }
 }
@@ -2783,8 +2785,11 @@ impl PaneGroup {
                     pane_history,
                     ctx,
                 ),
-                PanesLayout::AmbientAgent => Self::initial_ambient_agent_pane(
+                // twarp: 2c-d — initial_ambient_agent_pane removed; fall back to a single terminal pane.
+                PanesLayout::AmbientAgent => Self::initial_single_terminal_pane(
+                    NewTerminalOptions::default(),
                     resources,
+                    unsupported_banner_model_handle,
                     view_bounds,
                     model_event_sender_clone,
                     pane_contents,
@@ -3114,45 +3119,14 @@ impl PaneGroup {
         new_pane_id
     }
 
-    /// Creates a cloud-mode pane that is immediately hidden as a child agent pane.
-    /// Unlike `create_ambient_agent_pane`, this leaves the new terminal view
-    /// uninitialized so callers can create and select the child conversation
-    /// explicitly before the deferred shared-session viewer binds to it.
+    // twarp: 2c-d — insert_ambient_agent_pane_hidden_for_child_agent gutted; AI ambient agents removed.
+    #[allow(dead_code)]
     fn insert_ambient_agent_pane_hidden_for_child_agent(
         &mut self,
-        base_pane_id: PaneId,
-        ctx: &mut ViewContext<Self>,
+        _base_pane_id: PaneId,
+        _ctx: &mut ViewContext<Self>,
     ) -> TerminalPaneId {
-        let uuid = Uuid::new_v4();
-        let resources = TerminalViewResources {
-            tips_completed: self.tips_completed.clone(),
-            server_api: self.server_api.clone(),
-            model_event_sender: self.model_event_sender.clone(),
-        };
-        let view_bounds = Self::estimated_view_bounds(ctx);
-        let (view, terminal_manager) =
-            Self::create_cloud_mode_terminal(resources, view_bounds.size(), ctx);
-        let pane_data = TerminalPane::new(
-            uuid.as_bytes().to_vec(),
-            terminal_manager,
-            view,
-            self.model_event_sender.clone(),
-            ctx,
-        );
-        let new_pane_id = pane_data.terminal_pane_id();
-        let _ = self.add_pane_with_options(
-            Box::new(pane_data),
-            AddPaneOptions {
-                direction: Direction::Right,
-                base_pane_id: Some(base_pane_id),
-                focus_new_pane: false,
-                visibility: NewPaneVisibility::HiddenForChildAgent,
-                emit_app_state_changed: false,
-            },
-            ctx,
-        );
-
-        new_pane_id
+        unimplemented!("insert_ambient_agent_pane_hidden_for_child_agent removed in twarp")
     }
 
     /// Get the [`PaneView<TerminalView>`] for the pane at `pane_index`, if that pane is:

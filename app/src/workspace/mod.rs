@@ -23,9 +23,19 @@ pub mod view;
 // twarp: 2c-d — AI blocklist / skills / usage deleted; stubs.
 pub const NEW_AGENT_PANE_LABEL: &str = "New agent pane";
 pub struct SkillManager;
+impl warpui::Entity for SkillManager { type Event = (); }
+impl warpui::SingletonEntity for SkillManager {}
+#[allow(dead_code)]
+impl SkillManager {
+    pub fn active_bundled_skill<C>(&self, _: &str, _: &C) -> Option<()> { None }
+}
 pub struct AIRequestUsageModel;
 impl warpui::Entity for AIRequestUsageModel { type Event = (); }
 impl warpui::SingletonEntity for AIRequestUsageModel {}
+#[allow(dead_code)]
+impl AIRequestUsageModel {
+    pub fn has_any_ai_remaining<C>(&self, _: &C) -> bool { false }
+}
 use crate::channel::Channel;
 use crate::code;
 use crate::features::FeatureFlag;
@@ -1225,7 +1235,7 @@ pub fn init(app: &mut AppContext) {
     // `workspace:toggle_ai_assistant` key to preserve any user customizations.
     app.register_editable_bindings([EditableBinding::new(
         "workspace:toggle_ai_assistant",
-        *NEW_AGENT_PANE_LABEL,
+        NEW_AGENT_PANE_LABEL,
         WorkspaceAction::NewPaneInAgentMode {
             entrypoint: AgentModeEntrypoint::NewPaneBinding,
             zero_state_prompt_suggestion_type: None,
