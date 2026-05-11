@@ -1,6 +1,6 @@
 # 04 — Custom command shortcuts
 
-**Phase:** not-started
+**Phase:** spec-in-review
 **Spec PR:** —
 **Impl PR:** —
 
