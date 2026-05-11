@@ -1,6 +1,6 @@
 # 03 — Render markdown by default
 
-**Phase:** not-started
+**Phase:** spec-pending
 **Spec PR:** —
 **Impl PR:** —
 
