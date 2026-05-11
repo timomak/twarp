@@ -28,7 +28,7 @@ A declarative way to bind a keyboard shortcut to a sequence of terminal actions:
 - Reading terminal output, conditioning behavior on prompt state, or any form of "wait until prompt is ready". v1 only knows wall-clock time.
 - Modifier keys inside `press` (e.g. `press: ctrl-c`). v1 `press` is a named key only. Sending control characters is a follow-up.
 - Shortcuts that trigger other twarp keybindings. `type` and `press` write to the active pane's PTY only — they do not dispatch through twarp's own keybinding handler.
-- Built-in / bundled shortcut presets. v1 ships empty; the user authors every shortcut.
+- Shortcut presets beyond the two driving examples. v1's default `shortcuts.yaml` writes those two entries on first launch (§1); larger bundled or themed shortcut packs are not part of v1.
 - Preserving comments / hand-formatting in `shortcuts.yaml` when the GUI rewrites it. Hand-edits round-tripped through the GUI lose comments and may be reformatted.
 - Drag-to-reorder in the GUI's action editor. v1 reorders via up/down buttons.
 - Multi-keystroke chord sequences (e.g. `cmd-k cmd-s`). v1 is single-chord only.
@@ -64,7 +64,7 @@ Note: `⌘⇧D` is the default chord for twarp's built-in **Split pane right** a
 
 ### Config
 
-1. **Config file.** Custom shortcuts are declared in `shortcuts.yaml`, located in the same directory as twarp's existing `keybindings.yaml` and `settings.toml` (twarp's per-user config directory). If the file does not exist, no shortcuts are loaded and no error is surfaced — an absent config is the default state for a fresh install.
+1. **Config file.** Custom shortcuts are declared in `shortcuts.yaml`, located in the same directory as twarp's existing `keybindings.yaml` and `settings.toml` (twarp's per-user config directory). **If the file does not exist at startup, twarp writes a default `shortcuts.yaml` containing the two driving examples (see §Driving examples) and loads it.** Subsequent launches find the file and load it without rewriting; any user edits are preserved. If the bootstrap write fails (read-only filesystem, permission denied), a single warning is logged and no shortcuts are loaded — twarp still launches normally.
 
 2. **Top-level shape.** `shortcuts.yaml` is a YAML map with a single top-level key, `shortcuts:`, whose value is a list of shortcut entries (see §Driving examples for the canonical shape). An empty `shortcuts:` list (or a totally empty file) loads zero shortcuts with no error. Any other top-level shape (top-level list, top-level scalar, an unexpected top-level key) is a config error (§20).
 
@@ -147,7 +147,7 @@ Note: `⌘⇧D` is the default chord for twarp's built-in **Split pane right** a
 
 21. **YAML parse errors.** If `shortcuts.yaml` cannot be parsed at all (unterminated string, invalid indentation, etc.), no shortcuts are loaded and a single error is recorded: `shortcuts.yaml: failed to parse: <yaml error message, with line:column when available>`. This is the only case where one bad token disables the whole file.
 
-22. **Empty / missing file.** A missing `shortcuts.yaml`, a zero-byte `shortcuts.yaml`, and a `shortcuts.yaml` whose content is `shortcuts: []` all load zero shortcuts with no error and no toast.
+22. **Empty file.** A zero-byte `shortcuts.yaml` or one whose content is `shortcuts: []` loads zero shortcuts with no error and no toast. (A missing file at startup is bootstrapped with the default per §1, so the "missing" case is normally transient.)
 
 23. **No effect when twarp lacks focus.** A custom shortcut only fires when twarp has keyboard focus, like any other twarp keybinding. The chord does not "leak" to twarp when another app is focused.
 
@@ -207,9 +207,9 @@ Note: `⌘⇧D` is the default chord for twarp's built-in **Split pane right** a
 
 Run against a freshly built twarp binary. Chord names below are macOS; substitute Ctrl for ⌘ on Linux/Windows.
 
-1. With twarp closed, locate twarp's config directory (the directory containing `keybindings.yaml` / `settings.toml`) and create `shortcuts.yaml` there containing **exactly the two driving examples** from §Driving examples.
+1. With twarp closed, verify `shortcuts.yaml` does **not** exist in twarp's config directory (the directory containing `keybindings.yaml` / `settings.toml`). If it does, delete it for this test.
 
-2. Launch twarp. No error toast appears.
+2. Launch twarp. No error toast appears. Quit twarp and confirm a new `shortcuts.yaml` was written in the config directory containing the two driving examples from §Driving examples. Re-launch twarp.
 
 3. Focus any tab with a shell prompt and a single pane. Press `⌘⇧D`. A new pane opens to the right; `claude` is typed and submitted in the new pane. (If `claude` is not installed, the shell reports "command not found" — that is still proof the sequence ran.)
 
