@@ -1,10 +1,10 @@
 # 04 — Custom command shortcuts
 
-**Phase:** impl-pending
+**Phase:** impl-in-review
 **Spec PR:** [#51](https://github.com/timomak/twarp/pull/51)
 **Impl PR(s):**
 - 4a — runtime: [#52](https://github.com/timomak/twarp/pull/52) (merged)
-- 4b — hot reload + GUI data layer: —
+- 4b — hot reload + GUI data layer: [#53](https://github.com/timomak/twarp/pull/53)
 - 4c — side-panel GUI view: —
 
 ## Scope
