@@ -38,6 +38,7 @@ use crate::app_state::{
     PaneNodeSnapshot, PaneUuid, RightPanelSnapshot, SettingsPaneSnapshot, TabSnapshot,
     TerminalPaneSnapshot, WindowSnapshot, WorkflowPaneSnapshot,
 };
+use crate::code::buffer_location::BufferLocation;
 use crate::code_review::diff_state::DiffStateModel;
 #[cfg(feature = "local_fs")]
 use crate::code_review::CodeReviewTelemetryEvent;
@@ -7031,10 +7032,6 @@ impl Workspace {
         context: Option<&CodeReviewPaneContext>,
         ctx: &mut ViewContext<Self>,
     ) {
-        if !*TabSettings::as_ref(ctx).show_code_review_button {
-            return;
-        }
-
         // If context is provided, use it directly. Otherwise, derive from active pane group.
         let context_data: Option<(
             Option<PathBuf>,
@@ -7060,7 +7057,10 @@ impl Workspace {
                 |(repo_path, terminal_view): (Option<PathBuf>, WeakViewHandle<TerminalView>)| {
                     let diff_state_model = repo_path.as_ref().and_then(|rp: &PathBuf| {
                         self.working_directories_model.update(ctx, |model, ctx| {
-                            model.get_or_create_diff_state_model(rp.clone(), ctx)
+                            model.get_or_create_diff_state_model(
+                                BufferLocation::Local(rp.clone()),
+                                ctx,
+                            )
                         })
                     })?;
                     Some((repo_path, diff_state_model, terminal_view))
@@ -7105,7 +7105,7 @@ impl Workspace {
         let repo_path = panel_context.repo_path.clone();
         let diff_state_model = repo_path.as_ref().and_then(|rp| {
             self.working_directories_model.update(ctx, |model, ctx| {
-                model.get_or_create_diff_state_model(rp.clone(), ctx)
+                model.get_or_create_diff_state_model(BufferLocation::Local(rp.clone()), ctx)
             })
         });
         let Some(diff_state_model) = diff_state_model else {
@@ -7215,7 +7215,7 @@ impl Workspace {
             |(repo_path, terminal_view): (Option<PathBuf>, WeakViewHandle<TerminalView>)| {
                 let diff_state_model = repo_path.as_ref().and_then(|rp: &PathBuf| {
                     self.working_directories_model.update(ctx, |model, ctx| {
-                        model.get_or_create_diff_state_model(rp.clone(), ctx)
+                        model.get_or_create_diff_state_model(BufferLocation::Local(rp.clone()), ctx)
                     })
                 })?;
                 Some(CodeReviewPaneContext {
@@ -15844,6 +15844,18 @@ impl Workspace {
                     self.render_config_panel_maximized(pane_group, &config, app),
                     app,
                 );
+            } else if !config.contains_item(&HeaderToolbarItemKind::CodeReview) {
+                Self::add_panel_with_separator(
+                    &mut main_content,
+                    &mut prev_panel_added,
+                    self.render_config_panel(
+                        &HeaderToolbarItemKind::CodeReview,
+                        pane_group,
+                        &config,
+                        app,
+                    ),
+                    app,
+                );
             }
         } else if !is_right_maximized {
             main_content = main_content.with_child(Shrinkable::new(1.0, terminal_content).finish());
@@ -16490,6 +16502,18 @@ impl Workspace {
                     self.render_config_panel_maximized(pane_group, &config, app),
                     app,
                 );
+            } else if !config.contains_item(&HeaderToolbarItemKind::CodeReview) {
+                Self::add_panel_with_separator(
+                    &mut panels_view,
+                    &mut prev_panel_added,
+                    self.render_config_panel(
+                        &HeaderToolbarItemKind::CodeReview,
+                        pane_group,
+                        &config,
+                        app,
+                    ),
+                    app,
+                );
             }
         }
 
@@ -16536,7 +16560,7 @@ impl Workspace {
     }
 
     /// Renders a configurable panel for the given toolbar item, if it is open.
-    /// Returns `None` if the panel should not be rendered (item not available,
+    /// Returns `None` if the panel should not be rendered (item not supported,
     /// panel not open, or item is not a panel type).
     fn render_config_panel(
         &self,
@@ -16545,7 +16569,7 @@ impl Workspace {
         config: &HeaderToolbarChipSelection,
         app: &AppContext,
     ) -> Option<Box<dyn Element>> {
-        if !item.is_available(app) || !item.is_panel() {
+        if !item.is_supported(app) || !item.is_panel() {
             return None;
         }
         match item {
@@ -16589,7 +16613,7 @@ impl Workspace {
         if !pane_group.right_panel_open || !pane_group.is_right_panel_maximized {
             return None;
         }
-        if !HeaderToolbarItemKind::CodeReview.is_available(app) {
+        if !HeaderToolbarItemKind::CodeReview.is_supported(app) {
             return None;
         }
         Some(Shrinkable::new(1.0, ChildView::new(&self.right_panel_view).finish()).finish())
@@ -17876,7 +17900,10 @@ impl TypedActionView for Workspace {
                     if let Some((repo_path, terminal_view)) = read_result {
                         let diff_state_model = repo_path.as_ref().and_then(|rp| {
                             self.working_directories_model.update(ctx, |model, ctx| {
-                                model.get_or_create_diff_state_model(rp.clone(), ctx)
+                                model.get_or_create_diff_state_model(
+                                    BufferLocation::Local(rp.clone()),
+                                    ctx,
+                                )
                             })
                         });
                         if let Some(diff_state_model) = diff_state_model {
