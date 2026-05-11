@@ -13625,7 +13625,6 @@ dependencies = [
  "shellexpand",
  "string-offset",
  "strum",
- "strum_macros",
  "sysinfo",
  "tempfile",
  "thiserror 2.0.17",
