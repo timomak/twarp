@@ -356,5 +356,5 @@ impl Entity for DataSourceStore {
 }
 
 #[cfg(test)]
-#[path = "data_sources_test.rs"]
+#[path = "data_sources_tests.rs"]
 mod tests;

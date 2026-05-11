@@ -62,5 +62,5 @@ pub enum CommandSearchItemAction {
 }
 
 #[cfg(test)]
-#[path = "searcher_test.rs"]
+#[path = "searcher_tests.rs"]
 mod tests;
