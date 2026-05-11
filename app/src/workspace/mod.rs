@@ -1643,3 +1643,58 @@ impl DropTargetData for VerticalTabsPaneDropTargetData {
         self
     }
 }
+
+/// Register editable bindings for every shortcut parsed from
+/// `shortcuts.yaml`, plus the flag-gated Escape-cancel binding. Called once
+/// at startup from `launch()` after `shortcuts::load`.
+///
+/// Custom bindings are registered after the built-in workspace bindings so
+/// they take precedence on a chord collision (PRODUCT §16, see
+/// `crates/warpui_core/src/keymap.rs:439-440`).
+///
+/// Names are leaked to `&'static str` because `EditableBinding::new` stores
+/// the name by reference and the binding lives for the app's lifetime.
+pub fn register_shortcut_bindings(app: &mut AppContext) {
+    use warpui::keymap::macros::*;
+
+    let registry: Vec<(usize, String, String)> = {
+        let model_handle = crate::shortcuts::ShortcutsModel::handle(app);
+        let model = model_handle.as_ref(app);
+        model
+            .registry
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (i, s.binding_name.clone(), s.keys.normalized()))
+            .collect()
+    };
+
+    let mut bindings: Vec<EditableBinding> = Vec::with_capacity(registry.len() + 1);
+    for (i, binding_name, chord) in registry {
+        let name_static: &'static str = Box::leak(binding_name.into_boxed_str());
+        bindings.push(
+            EditableBinding::new(
+                name_static,
+                format!("Custom shortcut: {chord}"),
+                WorkspaceAction::RunCustomShortcut {
+                    id: i as crate::shortcuts::ShortcutId,
+                },
+            )
+            .with_context_predicate(id!("Workspace"))
+            .with_group("Custom shortcuts")
+            .with_key_binding(chord.as_str()),
+        );
+    }
+
+    bindings.push(
+        EditableBinding::new(
+            "shortcuts:cancel_running",
+            "Cancel running custom shortcut",
+            WorkspaceAction::CancelRunningShortcut,
+        )
+        .with_context_predicate(id!("Workspace") & id!(flags::SHORTCUT_RUNNING))
+        .with_group("Custom shortcuts")
+        .with_key_binding("escape"),
+    );
+
+    app.register_editable_bindings(bindings);
+}

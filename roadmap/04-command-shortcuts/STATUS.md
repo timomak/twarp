@@ -1,6 +1,6 @@
 # 04 — Custom command shortcuts
 
-**Phase:** spec-in-review
+**Phase:** impl-in-review
 **Spec PR:** [#51](https://github.com/timomak/twarp/pull/51)
 **Impl PR(s):**
 - 4a — runtime: —
@@ -14,7 +14,7 @@ Declarative keybindings → action sequence (`new_tab`, `new_pane`, `type`, `pre
 
 Confirmed split into two sub-PRs (TECH §"Sub-phase split"):
 
-- [ ] **4a — Runtime.** Parser + executor + bindings + Escape-cancel + startup toast. Hand-edit `shortcuts.yaml`, restart to apply. Covers PRODUCT §§1–23, §25.
+- [x] **4a — Runtime.** Parser + executor + bindings + Escape-cancel + startup toast. Hand-edit `shortcuts.yaml`, restart to apply. Covers PRODUCT §§1–23, §25.
 - [ ] **4b — GUI + hot reload.** `ToolPanelView::Shortcuts` view (list + detail editor + keystroke capture + validation + conflict warnings) + file-watch reload. Covers PRODUCT §24 and §§26–38.
 
 The feature reaches `merged` only when both sub-PRs ship.

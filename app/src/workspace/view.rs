@@ -997,6 +997,11 @@ pub struct Workspace {
     suggested_agent_mode_workflow_modal: warpui::ViewHandle<TwarpStubView>,
     rewind_confirmation_dialog: warpui::ViewHandle<TwarpStubView>,
     ai_fact_view: warpui::ViewHandle<AIFactViewStub>,
+    /// State for the currently in-flight custom-shortcut sequence on this
+    /// workspace. `None` when nothing is running; gates the
+    /// `flags::SHORTCUT_RUNNING` context flag (Escape cancel) and PRODUCT
+    /// §13's single-in-flight rule.
+    shortcut_runner: Option<crate::shortcuts::executor::ShortcutRunner>,
 }
 
 // twarp: 2c-d — generic stub view for several AI-removed dialog/modal handles.
@@ -2897,6 +2902,7 @@ impl Workspace {
             suggested_agent_mode_workflow_modal: ctx.add_view(|_| TwarpStubView),
             rewind_confirmation_dialog: ctx.add_view(|_| TwarpStubView),
             ai_fact_view: ctx.add_view(|_| AIFactViewStub),
+            shortcut_runner: None,
         };
 
         ws.configure_new_workspace(workspace_setting, ctx);
@@ -2907,6 +2913,7 @@ impl Workspace {
         // any) read from `GlobalResourceHandles`. Subsequent updates are
         // pushed by `subscribe_to_settings_errors` and `dismiss_workspace_banner`.
         ws.sync_settings_error_state_into_settings_pane(ctx);
+        ws.maybe_surface_shortcut_load_errors(ctx);
 
         let weak_handle = ctx.handle();
         WorkspaceRegistry::handle(ctx).update(ctx, |registry, _| {
@@ -4541,6 +4548,197 @@ impl Workspace {
             return;
         }
         self.reset_tab_color(index, ctx);
+    }
+
+    /// Dispatch entry for `WorkspaceAction::RunCustomShortcut`.
+    ///
+    /// PRODUCT §12 (trigger), §13 (single in-flight). Reads the action list
+    /// from `ShortcutsModel` and starts the executor; if another runner is
+    /// already alive on this workspace, drops the trigger with a log line.
+    pub fn run_custom_shortcut(
+        &mut self,
+        id: crate::shortcuts::ShortcutId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.shortcut_runner.is_some() {
+            log::info!(
+                "shortcuts: ignoring trigger for shortcut #{id}; another sequence is in flight"
+            );
+            return;
+        }
+        let actions = crate::shortcuts::ShortcutsModel::handle(ctx)
+            .as_ref(ctx)
+            .registry
+            .get(id as usize)
+            .map(|s| s.actions.clone());
+        let Some(actions) = actions else {
+            log::warn!("shortcuts: RunCustomShortcut #{id} but no entry in registry; dropping");
+            return;
+        };
+        if actions.is_empty() {
+            return;
+        }
+        let target_tab = self.active_tab_index();
+        if self.tabs.get(target_tab).is_none() {
+            return;
+        }
+        self.shortcut_runner = Some(crate::shortcuts::executor::ShortcutRunner::new(
+            id, actions, target_tab,
+        ));
+        ctx.notify();
+        self.execute_next_shortcut_action(ctx);
+    }
+
+    /// Dispatch entry for `WorkspaceAction::CancelRunningShortcut`.
+    ///
+    /// PRODUCT §14. The flag-gated Escape binding only fires this when a
+    /// runner is alive, but defensively check anyway.
+    pub fn cancel_running_shortcut(&mut self, ctx: &mut ViewContext<Self>) {
+        if let Some(runner) = self.shortcut_runner.as_mut() {
+            runner.cancel();
+        }
+        self.finish_shortcut_runner(ctx);
+    }
+
+    /// Drives the runner one action forward. After running each non-`wait`
+    /// action, recursively dispatches the next; for `wait`, spawns a timer
+    /// continuation. Re-entrant on `wait` completion.
+    fn execute_next_shortcut_action(&mut self, ctx: &mut ViewContext<Self>) {
+        use crate::shortcuts::action::Action;
+
+        loop {
+            let Some(runner) = self.shortcut_runner.as_ref() else {
+                return;
+            };
+            if runner.is_done() {
+                self.finish_shortcut_runner(ctx);
+                return;
+            }
+            let action = runner.next_action().cloned();
+            let Some(action) = action else {
+                self.finish_shortcut_runner(ctx);
+                return;
+            };
+
+            // Advance before executing — even if a step fails to apply, the
+            // sequence proceeds to the next action.
+            if let Some(runner) = self.shortcut_runner.as_mut() {
+                runner.advance();
+            }
+
+            match action {
+                Action::NewTab => {
+                    self.add_terminal_tab(false, ctx);
+                    let new_target = self.active_tab_index();
+                    if let Some(runner) = self.shortcut_runner.as_mut() {
+                        runner.target_tab = new_target;
+                    }
+                }
+                Action::NewPane(direction) => {
+                    let Some(runner) = self.shortcut_runner.as_ref() else {
+                        return;
+                    };
+                    let target = runner.target_tab;
+                    let pane_group = match self.get_pane_group_view(target) {
+                        Some(view) => view.clone(),
+                        None => {
+                            self.finish_shortcut_runner(ctx);
+                            return;
+                        }
+                    };
+                    pane_group.update(ctx, |pane_group, ctx| {
+                        let chosen_shell = pane_group
+                            .active_session_terminal_model(ctx)
+                            .and_then(|model| model.lock().shell_launch_state().available_shell());
+                        pane_group.add_terminal_pane(direction, chosen_shell, ctx);
+                    });
+                }
+                Action::Type(text) => {
+                    let Some(runner) = self.shortcut_runner.as_ref() else {
+                        return;
+                    };
+                    let target = runner.target_tab;
+                    if self
+                        .write_to_target_pty(target, text.into_bytes(), ctx)
+                        .is_err()
+                    {
+                        self.finish_shortcut_runner(ctx);
+                        return;
+                    }
+                }
+                Action::Press(key) => {
+                    let Some(runner) = self.shortcut_runner.as_ref() else {
+                        return;
+                    };
+                    let target = runner.target_tab;
+                    let bytes = crate::shortcuts::key_to_bytes::bytes_for(key).to_vec();
+                    if self.write_to_target_pty(target, bytes, ctx).is_err() {
+                        self.finish_shortcut_runner(ctx);
+                        return;
+                    }
+                }
+                Action::Wait(duration) => {
+                    let timer = warpui::r#async::Timer::after(duration);
+                    ctx.spawn(timer, move |me, _, ctx| {
+                        if me.shortcut_runner.as_ref().is_some_and(|r| !r.cancelled) {
+                            me.execute_next_shortcut_action(ctx);
+                        } else {
+                            me.finish_shortcut_runner(ctx);
+                        }
+                    });
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Cleans up runner state, drops the `flags::SHORTCUT_RUNNING` flag on
+    /// the next keymap-context build, and notifies. Safe to call when no
+    /// runner is alive (idempotent).
+    fn finish_shortcut_runner(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.shortcut_runner.is_some() {
+            self.shortcut_runner = None;
+            ctx.notify();
+        }
+    }
+
+    /// Writes `bytes` to the active pane of the tab at `target_tab`, mirroring
+    /// the active-terminal-view resolution at `read_from_active_terminal_view`.
+    /// Returns `Err(())` when the tab or its active pane is gone (PRODUCT §17).
+    fn write_to_target_pty(
+        &self,
+        target_tab: usize,
+        bytes: Vec<u8>,
+        ctx: &mut ViewContext<Self>,
+    ) -> Result<(), ()> {
+        let pane_group = self.get_pane_group_view(target_tab).ok_or(())?.clone();
+        let session_view = pane_group.as_ref(ctx).active_session_view(ctx).ok_or(())?;
+        session_view.update(ctx, |terminal_view: &mut TerminalView, ctx| {
+            terminal_view.write_to_pty(bytes, ctx);
+        });
+        Ok(())
+    }
+
+    /// Called once on Workspace construction. If `ShortcutsModel` has
+    /// errors_pending_toast set, emit a single non-modal toast (PRODUCT §19)
+    /// and clear the flag so subsequent windows don't re-surface it.
+    pub fn maybe_surface_shortcut_load_errors(&mut self, ctx: &mut ViewContext<Self>) {
+        let (count, pending) = {
+            let model_handle = crate::shortcuts::ShortcutsModel::handle(ctx);
+            let model = model_handle.as_ref(ctx);
+            (model.errors.len(), model.errors_pending_toast)
+        };
+        if !pending || count == 0 {
+            return;
+        }
+        let message =
+            format!("shortcuts.yaml has {count} error(s) — see logs or open Custom shortcuts");
+        self.toast_stack.update(ctx, |stack, ctx| {
+            stack.add_persistent_toast(DismissibleToast::default(message), ctx);
+        });
+        crate::shortcuts::ShortcutsModel::handle(ctx).update(ctx, |model, _| {
+            model.errors_pending_toast = false;
+        });
     }
 
     /// Syncs the tab color for the given tab based on the active terminal's CWD.
@@ -17701,6 +17899,8 @@ impl TypedActionView for Workspace {
             ToggleTabColor { color, tab_index } => self.toggle_tab_color(*tab_index, *color, ctx),
             SetActiveTabColor { color } => self.set_active_tab_color(*color, ctx),
             ResetActiveTabColor => self.reset_active_tab_color(ctx),
+            RunCustomShortcut { id } => self.run_custom_shortcut(*id, ctx),
+            CancelRunningShortcut => self.cancel_running_shortcut(ctx),
             DispatchToSettingsTab(action) => {
                 let window_id = ctx.window_id();
                 ctx.dispatch_typed_action_for_view(window_id, self.settings_pane.id(), action)
@@ -19080,6 +19280,9 @@ impl View for Workspace {
         }
         if *CodeSettings::as_ref(app).show_global_search {
             context.set.insert(flags::SHOW_GLOBAL_SEARCH);
+        }
+        if self.shortcut_runner.is_some() {
+            context.set.insert(flags::SHORTCUT_RUNNING);
         }
 
         if self.team_uid(app).is_some() {
