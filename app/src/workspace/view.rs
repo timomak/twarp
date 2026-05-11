@@ -38,7 +38,6 @@ use crate::app_state::{
     PaneNodeSnapshot, PaneUuid, RightPanelSnapshot, SettingsPaneSnapshot, TabSnapshot,
     TerminalPaneSnapshot, WindowSnapshot, WorkflowPaneSnapshot,
 };
-use crate::code::buffer_location::BufferLocation;
 use crate::code_review::diff_state::DiffStateModel;
 #[cfg(feature = "local_fs")]
 use crate::code_review::CodeReviewTelemetryEvent;
@@ -4217,6 +4216,20 @@ impl Workspace {
         ctx.notify();
     }
 
+    pub(crate) fn activate_tab_by_pane_group_id(
+        &mut self,
+        pane_group_id: EntityId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if let Some(index) = self
+            .tabs
+            .iter()
+            .position(|t| t.pane_group.id() == pane_group_id)
+        {
+            self.activate_tab(index, ctx);
+        }
+    }
+
     /// This function is meant to be used by other actions to perform the logic to update the
     /// view's state. It's not meant to be invoked directly by an action.
     pub fn activate_tab_internal(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
@@ -4416,41 +4429,6 @@ impl Workspace {
         ctx.notify();
     }
 
-    /// Programmatically sets the manual color override for a tab.
-    ///
-    /// - `Color(_)` applies that color.
-    /// - `Cleared` explicitly clears the color (also suppresses any directory default).
-    /// - `Unset` removes the manual override, letting the directory default apply.
-    pub fn set_tab_color(
-        &mut self,
-        index: usize,
-        color: SelectedTabColor,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if self.tabs.get(index).is_none() {
-            log::warn!(
-                "Not setting tab color: index was {index} but len is {}",
-                self.tabs.len()
-            );
-            return;
-        }
-        if self.tabs[index].selected_color == color {
-            return;
-        }
-        self.tabs[index].selected_color = color;
-        send_telemetry_from_ctx!(
-            TelemetryEvent::TabOperations {
-                action: if matches!(color, SelectedTabColor::Color(_)) {
-                    TabTelemetryAction::SetColor
-                } else {
-                    TabTelemetryAction::ResetColor
-                },
-            },
-            ctx
-        );
-        ctx.notify();
-    }
-
     pub fn toggle_tab_color(
         &mut self,
         index: usize,
@@ -4464,16 +4442,29 @@ impl Workspace {
             );
             return;
         }
-        let next = if self.tabs[index].color() == Some(color) {
+        let is_same = self.tabs[index].color() == Some(color);
+        self.tabs[index].selected_color = if is_same {
+            send_telemetry_from_ctx!(
+                TelemetryEvent::TabOperations {
+                    action: TabTelemetryAction::ResetColor,
+                },
+                ctx
+            );
             if FeatureFlag::DirectoryTabColors.is_enabled() {
                 SelectedTabColor::Cleared
             } else {
                 SelectedTabColor::Unset
             }
         } else {
+            send_telemetry_from_ctx!(
+                TelemetryEvent::TabOperations {
+                    action: TabTelemetryAction::SetColor,
+                },
+                ctx
+            );
             SelectedTabColor::Color(color)
         };
-        self.set_tab_color(index, next, ctx);
+        ctx.notify();
     }
 
     pub fn set_tab_color(
@@ -7120,10 +7111,7 @@ impl Workspace {
                 |(repo_path, terminal_view): (Option<PathBuf>, WeakViewHandle<TerminalView>)| {
                     let diff_state_model = repo_path.as_ref().and_then(|rp: &PathBuf| {
                         self.working_directories_model.update(ctx, |model, ctx| {
-                            model.get_or_create_diff_state_model(
-                                BufferLocation::Local(rp.clone()),
-                                ctx,
-                            )
+                            model.get_or_create_diff_state_model(rp.clone(), ctx)
                         })
                     })?;
                     Some((repo_path, diff_state_model, terminal_view))
@@ -7168,7 +7156,7 @@ impl Workspace {
         let repo_path = panel_context.repo_path.clone();
         let diff_state_model = repo_path.as_ref().and_then(|rp| {
             self.working_directories_model.update(ctx, |model, ctx| {
-                model.get_or_create_diff_state_model(BufferLocation::Local(rp.clone()), ctx)
+                model.get_or_create_diff_state_model(rp.clone(), ctx)
             })
         });
         let Some(diff_state_model) = diff_state_model else {
@@ -7278,7 +7266,7 @@ impl Workspace {
             |(repo_path, terminal_view): (Option<PathBuf>, WeakViewHandle<TerminalView>)| {
                 let diff_state_model = repo_path.as_ref().and_then(|rp: &PathBuf| {
                     self.working_directories_model.update(ctx, |model, ctx| {
-                        model.get_or_create_diff_state_model(BufferLocation::Local(rp.clone()), ctx)
+                        model.get_or_create_diff_state_model(rp.clone(), ctx)
                     })
                 })?;
                 Some(CodeReviewPaneContext {
@@ -9045,7 +9033,7 @@ impl Workspace {
                     self.activate_prev_tab(ctx);
                 }
             },
-            CtrlTabBehavior::CycleMostRecentSession => {
+            CtrlTabBehavior::CycleMostRecentSession | CtrlTabBehavior::CycleMostRecentTab => {
                 self.current_workspace_state.is_palette_open = false;
                 if !self.current_workspace_state.is_ctrl_tab_palette_open {
                     self.open_palette_action(
@@ -17412,7 +17400,6 @@ impl TypedActionView for Workspace {
                 );
             }
             SetActiveTabName(name) => self.set_active_tab_name(name, ctx),
-            SetActiveTabColor(color) => self.set_tab_color(self.active_tab_index, *color, ctx),
             ToggleTabRightClickMenu { tab_index, anchor } => {
                 self.toggle_tab_right_click_menu(*tab_index, *anchor, ctx)
             }
@@ -17960,10 +17947,7 @@ impl TypedActionView for Workspace {
                     if let Some((repo_path, terminal_view)) = read_result {
                         let diff_state_model = repo_path.as_ref().and_then(|rp| {
                             self.working_directories_model.update(ctx, |model, ctx| {
-                                model.get_or_create_diff_state_model(
-                                    BufferLocation::Local(rp.clone()),
-                                    ctx,
-                                )
+                                model.get_or_create_diff_state_model(rp.clone(), ctx)
                             })
                         });
                         if let Some(diff_state_model) = diff_state_model {

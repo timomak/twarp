@@ -124,8 +124,7 @@ use warpui::{id, AddWindowOptions, DisplayId, EntityId, SingletonEntity};
 use warpui::{
     platform::{WindowBounds, WindowStyle},
     presenter::ChildView,
-    AppContext, Element, Entity, EntityId, TypedActionView, View, ViewContext, ViewHandle,
-    WindowId,
+    AppContext, Element, Entity, TypedActionView, View, ViewContext, ViewHandle, WindowId,
 };
 use warpui::{FocusContext, NextNewWindowsHasThisWindowsBoundsUponClose};
 
