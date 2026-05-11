@@ -28,7 +28,7 @@ A declarative way to bind a keyboard shortcut to a sequence of terminal actions:
 - Reading terminal output, conditioning behavior on prompt state, or any form of "wait until prompt is ready". v1 only knows wall-clock time.
 - Modifier keys inside `press` (e.g. `press: ctrl-c`). v1 `press` is a named key only. Sending control characters is a follow-up.
 - Shortcuts that trigger other twarp keybindings. `type` and `press` write to the active pane's PTY only — they do not dispatch through twarp's own keybinding handler.
-- Built-in / bundled shortcut presets. v1 ships empty; the user authors every shortcut.
+- Shortcut presets beyond the two driving examples. v1's default `shortcuts.yaml` writes those two entries on first launch (§1); larger bundled or themed shortcut packs are not part of v1.
 - Preserving comments / hand-formatting in `shortcuts.yaml` when the GUI rewrites it. Hand-edits round-tripped through the GUI lose comments and may be reformatted.
 - Drag-to-reorder in the GUI's action editor. v1 reorders via up/down buttons.
 - Multi-keystroke chord sequences (e.g. `cmd-k cmd-s`). v1 is single-chord only.
@@ -42,12 +42,14 @@ shortcuts:
   - keys: cmdorctrl-shift-D
     actions:
       - new_pane: right
+      - wait: 1500ms
       - type: "claude"
       - press: enter
 
   - keys: cmdorctrl-shift-A
     actions:
       - new_pane: right
+      - wait: 1500ms
       - type: "claude"
       - press: enter
       - wait: 3s
@@ -58,13 +60,15 @@ shortcuts:
 - `⌘⇧D` (macOS) / `Ctrl+Shift+D` (Linux/Windows) opens a new pane to the right of the active pane, types `claude`, submits.
 - `⌘⇧A` / `Ctrl+Shift+A` does the same, then waits three seconds, types `/address-code-review-comments`, submits.
 
+The `1500ms` wait between `new_pane` and `type` gives the new pane's shell time to finish bootstrapping. Warp's shell-bootstrap script typically completes ~900ms–1s after spawn; the 1500ms default leaves headroom on slower machines. Without the wait, the typed input arrives before bootstrap completes, the shell's prompt-state detection misses the bootstrap signal, and a "Bootstrapping slow" toast appears. Tune the value per machine if you want a snappier sequence.
+
 Note: `⌘⇧D` is the default chord for twarp's built-in **Split pane right** action. Custom shortcuts shadow built-ins (§16), so this binding overrides the built-in while reproducing its split as the first action of the sequence. Users who want to keep the built-in unchanged should pick a different chord.
 
 ## Behavior
 
 ### Config
 
-1. **Config file.** Custom shortcuts are declared in `shortcuts.yaml`, located in the same directory as twarp's existing `keybindings.yaml` and `settings.toml` (twarp's per-user config directory). If the file does not exist, no shortcuts are loaded and no error is surfaced — an absent config is the default state for a fresh install.
+1. **Config file.** Custom shortcuts are declared in `shortcuts.yaml`, located in the same directory as twarp's existing `keybindings.yaml` and `settings.toml` (twarp's per-user config directory). **If the file does not exist at startup, twarp writes a default `shortcuts.yaml` containing the two driving examples (see §Driving examples) and loads it.** Subsequent launches find the file and load it without rewriting; any user edits are preserved. If the bootstrap write fails (read-only filesystem, permission denied), a single warning is logged and no shortcuts are loaded — twarp still launches normally.
 
 2. **Top-level shape.** `shortcuts.yaml` is a YAML map with a single top-level key, `shortcuts:`, whose value is a list of shortcut entries (see §Driving examples for the canonical shape). An empty `shortcuts:` list (or a totally empty file) loads zero shortcuts with no error. Any other top-level shape (top-level list, top-level scalar, an unexpected top-level key) is a config error (§20).
 
@@ -112,7 +116,9 @@ Note: `⌘⇧D` is the default chord for twarp's built-in **Split pane right** a
 
 15. **No abort on focus loss or other input.** Alt-tabbing away, clicking another tab, scrolling, or typing normal keys (anything other than bare Escape) does not abort a running sequence. The sequence keeps delivering actions to its sticky target tab (§8) and the active pane inside it.
 
-16. **Built-in binding conflict.** If a custom shortcut's `keys` matches a chord already bound to a built-in twarp action, the custom shortcut wins — the built-in is shadowed for as long as the custom shortcut is loaded. The driving example `cmdorctrl-shift-D` is an intentional demonstration: it overrides the built-in "Split pane right" while reproducing the same split as the first action of the sequence. The user remains free to rebind the built-in elsewhere via twarp's standard keybindings settings page. Shadowing a built-in is not a config error; it is a supported use of the feature.
+16. **Built-in binding conflict.** If a custom shortcut's `keys` matches a chord already bound to a built-in twarp action, the custom shortcut wins — the built-in is shadowed for as long as the custom shortcut is loaded. The driving example `cmdorctrl-shift-D` is an intentional demonstration: it overrides the built-in "Split pane down" while reproducing a (right-side) split as the first action of the sequence. The user remains free to rebind the built-in elsewhere via twarp's standard keybindings settings page. Shadowing a built-in is not a config error; it is a supported use of the feature.
+
+    On macOS, several built-in actions are exposed as NSMenu items with key equivalents (e.g. `cmd-shift-D` for "Split Pane Down"). Without intervention, the OS-level menu intercepts the chord before the app's keymap matcher sees it. When a custom shortcut claims a chord that matches a menu item's key equivalent, twarp removes that key equivalent at startup — the menu entry remains and is still clickable, but its keyboard shortcut belongs to the custom shortcut. Adding or removing a custom shortcut takes effect on menu items at the next twarp restart (in 4a). Once 4b ships hot reload, the menu also refreshes on save.
 
 17. **Target lost.** If the sequence's target tab is closed mid-sequence (by the user, by an OS event, or by another twarp action), the sequence aborts at that point with no error notification. If the target pane within the target tab is closed mid-sequence, the sequence aborts (the executor does not "fall back" to a sibling pane). If the focused twarp window is closed mid-sequence and no twarp window remains, the sequence aborts.
 
@@ -147,7 +153,7 @@ Note: `⌘⇧D` is the default chord for twarp's built-in **Split pane right** a
 
 21. **YAML parse errors.** If `shortcuts.yaml` cannot be parsed at all (unterminated string, invalid indentation, etc.), no shortcuts are loaded and a single error is recorded: `shortcuts.yaml: failed to parse: <yaml error message, with line:column when available>`. This is the only case where one bad token disables the whole file.
 
-22. **Empty / missing file.** A missing `shortcuts.yaml`, a zero-byte `shortcuts.yaml`, and a `shortcuts.yaml` whose content is `shortcuts: []` all load zero shortcuts with no error and no toast.
+22. **Empty file.** A zero-byte `shortcuts.yaml` or one whose content is `shortcuts: []` loads zero shortcuts with no error and no toast. (A missing file at startup is bootstrapped with the default per §1, so the "missing" case is normally transient.)
 
 23. **No effect when twarp lacks focus.** A custom shortcut only fires when twarp has keyboard focus, like any other twarp keybinding. The chord does not "leak" to twarp when another app is focused.
 
@@ -207,9 +213,9 @@ Note: `⌘⇧D` is the default chord for twarp's built-in **Split pane right** a
 
 Run against a freshly built twarp binary. Chord names below are macOS; substitute Ctrl for ⌘ on Linux/Windows.
 
-1. With twarp closed, locate twarp's config directory (the directory containing `keybindings.yaml` / `settings.toml`) and create `shortcuts.yaml` there containing **exactly the two driving examples** from §Driving examples.
+1. With twarp closed, verify `shortcuts.yaml` does **not** exist in twarp's config directory (the directory containing `keybindings.yaml` / `settings.toml`). If it does, delete it for this test.
 
-2. Launch twarp. No error toast appears.
+2. Launch twarp. No error toast appears. Quit twarp and confirm a new `shortcuts.yaml` was written in the config directory containing the two driving examples from §Driving examples. Re-launch twarp.
 
 3. Focus any tab with a shell prompt and a single pane. Press `⌘⇧D`. A new pane opens to the right; `claude` is typed and submitted in the new pane. (If `claude` is not installed, the shell reports "command not found" — that is still proof the sequence ran.)
 

@@ -89,8 +89,31 @@ pub fn dock_menu() -> Menu {
     )
 }
 
-fn custom_shortcut(action: CustomAction) -> Option<Keystroke> {
-    trigger_to_keystroke(&Trigger::Custom(action.into()))
+fn custom_shortcut(action: CustomAction, ctx: &AppContext) -> Option<Keystroke> {
+    chord_for_menu_item(Trigger::Custom(action.into()), ctx)
+}
+
+/// Drops the menu's key equivalent if a user-declared shortcut in
+/// `shortcuts.yaml` already claims the chord. Otherwise the macOS NSMenu
+/// intercepts the chord before the keymap matcher sees it and the user's
+/// custom shortcut never fires (see PRODUCT §16). Used both at menu-build
+/// time (`custom_shortcut`) and on every menu validation
+/// (`custom_action_updater`) — both paths must agree, since AppKit
+/// re-evaluates `validateMenuItem:` on each keystroke for shortcut matching
+/// and an out-of-sync updater would re-attach the suppressed key equivalent.
+fn chord_for_menu_item(trigger: Trigger, ctx: &AppContext) -> Option<Keystroke> {
+    let chord = trigger_to_keystroke(&trigger)?;
+    let chord_normalized = chord.normalized();
+    let claimed = crate::shortcuts::ShortcutsModel::handle(ctx)
+        .as_ref(ctx)
+        .registry
+        .iter()
+        .any(|s| s.keys.normalized() == chord_normalized);
+    if claimed {
+        None
+    } else {
+        Some(chord)
+    }
 }
 
 fn default_name(action: CustomAction, ctx: &AppContext) -> String {
@@ -106,7 +129,7 @@ fn non_updateable_custom_item(action: CustomAction, ctx: &AppContext) -> MenuIte
         &default_name(action, ctx),
         custom_action_dispatcher(action),
         no_updates,
-        custom_shortcut(action),
+        custom_shortcut(action, ctx),
     ))
 }
 
@@ -122,7 +145,7 @@ fn updateable_custom_item_with_checkmark(
         &default_name(action, ctx),
         custom_action_dispatcher(action),
         custom_action_updater(action, should_be_checked),
-        custom_shortcut(action),
+        custom_shortcut(action, ctx),
     ))
 }
 
@@ -959,7 +982,7 @@ fn make_launch_config_menu_items(ctx: &mut AppContext) -> Vec<MenuItem> {
         "Save New...",
         custom_action_dispatcher(CustomAction::SaveCurrentConfig),
         no_updates,
-        custom_shortcut(CustomAction::SaveCurrentConfig),
+        custom_shortcut(CustomAction::SaveCurrentConfig, ctx),
     )));
 
     launch_config_menu_items
@@ -1122,7 +1145,12 @@ fn custom_action_updater(
                             .into_owned(),
                     );
                 }
-                changes.keystroke = Some(bindings::trigger_to_keystroke(binding.trigger));
+                // Route through `chord_for_menu_item` so user-declared
+                // shortcuts in shortcuts.yaml suppress the menu's key
+                // equivalent. AppKit re-runs this updater per-validation —
+                // a plain `trigger_to_keystroke` here would re-attach the
+                // chord every keystroke, defeating the build-time suppression.
+                changes.keystroke = Some(chord_for_menu_item(binding.trigger.clone(), ctx));
             }
         });
 

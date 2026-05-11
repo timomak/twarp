@@ -216,6 +216,17 @@ pub enum WorkspaceAction {
         color: AnsiColorIdentifier,
     },
     ResetActiveTabColor,
+    /// Run a user-declared custom shortcut sequence (see `app/src/shortcuts`).
+    /// Dispatched by the keymap when the user presses a chord bound in
+    /// `shortcuts.yaml`. The handler in `workspace/view.rs` looks the action
+    /// list up in `ShortcutsModel` and drives the executor.
+    RunCustomShortcut {
+        id: crate::shortcuts::ShortcutId,
+    },
+    /// Abort the in-flight custom shortcut sequence on this workspace.
+    /// Bound to `escape` while `flags::SHORTCUT_RUNNING` is set. No-op when
+    /// no sequence is running.
+    CancelRunningShortcut,
     OpenLaunchConfigSaveModal,
     SelectTabConfig(TabConfig),
     DispatchToSettingsTab(SettingsTabAction),
@@ -890,6 +901,8 @@ impl WorkspaceAction {
             | TabConfigSidecarRemoveConfig { .. }
             | OpenSettingsFile
             | FixSettingsWithOz { .. }
+            | RunCustomShortcut { .. }
+            | CancelRunningShortcut
             | OpenNetworkLogPane => false,
             #[cfg(debug_assertions)]
             ShowHoaOnboardingFlow => false,

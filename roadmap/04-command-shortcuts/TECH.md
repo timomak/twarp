@@ -139,8 +139,22 @@ At startup, after `keyboard::load_custom_keybindings(ctx)`, call `shortcuts::loa
 
 ```rust
 pub fn load(app: &mut AppContext) {
-    let text = match std::fs::read_to_string(shortcuts_file_path()) {
+    let path = shortcuts_file_path();
+    let text = match std::fs::read_to_string(&path) {
         Ok(t) => t,
+        // PRODUCT §1: bootstrap a default file on first launch so the
+        // driving examples work out of the box. `create_dir_all` first
+        // because the parent may not exist for a fresh install.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(write_err) = std::fs::write(&path, DEFAULT_SHORTCUTS_YAML) {
+                log::warn!("shortcuts: failed to write default shortcuts.yaml: {write_err}");
+                return;
+            }
+            DEFAULT_SHORTCUTS_YAML.to_owned()
+        }
         Err(_) => return,
     };
     let ParseResult { shortcuts, errors } = parse_shortcuts_yaml(&text);
@@ -157,7 +171,11 @@ pub fn load(app: &mut AppContext) {
 }
 ```
 
-Built-in conflict precedence (PRODUCT §16) is automatic: per `keymap.rs:439-440`, registration order determines precedence (later wins). Built-ins are registered earlier; custom shortcuts register after. No special override flag.
+`DEFAULT_SHORTCUTS_YAML` is a `const &str` in `shortcuts/mod.rs` holding the literal YAML for the two driving examples (PRODUCT §Driving examples). A unit test parses it round-trip to keep the default in sync with the parser's accepted shape.
+
+Built-in conflict precedence (PRODUCT §16) for **EditableBinding-routed** chords is automatic: per `keymap.rs:439-440`, registration order determines precedence (later wins). Built-ins register earlier; custom shortcuts register after. No special override flag.
+
+**Menu-routed chords on macOS need explicit suppression.** Several built-in `CustomAction`s (e.g. `SplitPaneRight`, `SplitPaneDown`, `NewTab`) are exposed as `NSMenuItem`s with key equivalents in `app/src/app_menus.rs`. macOS NSMenu intercepts those chords before the app's keymap matcher runs. To make custom shortcuts override them, `custom_shortcut(action, ctx)` in `app_menus.rs` consults `ShortcutsModel::handle(ctx)` at menu-build time and returns `None` (no key equivalent on the menu item) when the chord is claimed by a custom shortcut. The menu entry remains and is clickable; only its keyboard shortcut is suppressed. Order requirement: `shortcuts::load` (in `launch()`'s init_fn) runs before `menu_bar_builder` (in `warp_app_will_finish_launching`) on macOS, so the registry is populated when `menu_bar` runs.
 
 ### 6. Action implementations (`executor.rs`)
 

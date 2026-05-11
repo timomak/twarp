@@ -160,6 +160,7 @@ pub mod root_view;
 pub mod search;
 pub mod settings;
 pub mod settings_view;
+pub mod shortcuts;
 pub mod tab_configs;
 pub mod terminal;
 pub mod themes;
@@ -1450,6 +1451,7 @@ fn initialize_app(
     ctx.add_singleton_model(|_| VimRegisters::new());
     ctx.add_singleton_model(UndoCloseStack::new);
     ctx.add_singleton_model(|_| ToastStack);
+    ctx.add_singleton_model(|_| shortcuts::ShortcutsModel::new());
     ctx.add_singleton_model(|_| GlobalCodeReviewModel);
     ctx.add_singleton_model(workspace::OneTimeModalModel::new);
     // twarp: 2c-d.4 — BonusGrantNotificationModel singleton removed (AI usage)
@@ -2165,6 +2167,8 @@ fn launch(ctx: &mut warpui::AppContext, app_state: Option<AppState>, launch_mode
     });
 
     keyboard::load_custom_keybindings(ctx);
+    shortcuts::load(ctx);
+    workspace::register_shortcut_bindings(ctx);
 
     IntervalTimer::handle(ctx).update(ctx, |timer, _ctx| {
         timer.mark_interval_end("KEYBINDINGS_LOADED");

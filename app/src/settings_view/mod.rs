@@ -419,6 +419,10 @@ pub mod flags {
     pub const SHOW_CONVERSATION_HISTORY: &str = "ShowConversationHistory";
     pub const SHOW_PROJECT_EXPLORER: &str = "ShowProjectExplorer";
     pub const SHOW_GLOBAL_SEARCH: &str = "ShowGlobalSearch";
+    /// Set on the Workspace's keymap context while a custom-shortcut sequence
+    /// is in flight. Used to gate the Escape-cancel binding so it only
+    /// intercepts Escape when there's something to cancel.
+    pub const SHORTCUT_RUNNING: &str = "ShortcutRunning";
 }
 
 pub fn init_actions_from_parent_view<T: Action + Clone>(
