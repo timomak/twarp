@@ -1,7 +1,6 @@
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::Arc;
 
 use warp_core::sync_queue::{IsTransientError, SyncQueueTaskTrait};
 
@@ -26,7 +25,7 @@ pub struct FileInvalidationTask {
 
 impl SyncQueueTaskTrait for FileInvalidationTask {
     type Error = FileInvalidationError;
-    type Result = (PathBuf, Option<Arc<FileDiffAndContent>>);
+    type Result = (PathBuf, Option<FileDiffAndContent>);
     #[cfg(not(target_arch = "wasm32"))]
     type Fut = Pin<Box<dyn Future<Output = Result<Self::Result, Self::Error>> + Send>>;
     #[cfg(target_arch = "wasm32")]
