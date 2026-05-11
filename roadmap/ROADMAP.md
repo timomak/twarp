@@ -11,7 +11,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 01 | [Tab color shortcuts](01-tab-colors/STATUS.md) | merged | [#2](https://github.com/timomak/twarp/pull/2) | [#3](https://github.com/timomak/twarp/pull/3) |
 | 02 | [AI removal](02-ai-removal/STATUS.md) | merged | [#4](https://github.com/timomak/twarp/pull/4) | [#6](https://github.com/timomak/twarp/pull/6), [#7](https://github.com/timomak/twarp/pull/7), [#9](https://github.com/timomak/twarp/pull/9), [#10](https://github.com/timomak/twarp/pull/10), [#11](https://github.com/timomak/twarp/pull/11), [#12](https://github.com/timomak/twarp/pull/12), [#13](https://github.com/timomak/twarp/pull/13), [#14](https://github.com/timomak/twarp/pull/14), [#15](https://github.com/timomak/twarp/pull/15), [#16](https://github.com/timomak/twarp/pull/16), [#17](https://github.com/timomak/twarp/pull/17), [#18](https://github.com/timomak/twarp/pull/18) |
 | 03 | [Render markdown by default](03-md-rendered/STATUS.md) | merged | [#49](https://github.com/timomak/twarp/pull/49) | [#50](https://github.com/timomak/twarp/pull/50) |
-| 04 | [Custom command shortcuts](04-command-shortcuts/STATUS.md) | spec-in-review | — | — |
+| 04 | [Custom command shortcuts](04-command-shortcuts/STATUS.md) | spec-in-review | [#51](https://github.com/timomak/twarp/pull/51) | — |
 | 05 | [Open Changes panel](05-open-changes/STATUS.md) | not-started | — | — |
 | 06 | [Tab rename shortcut](06-tab-rename/STATUS.md) | not-started | — | — |
 | 07 | [Rebrand to twarp](07-rebrand/STATUS.md) | not-started | — | — |

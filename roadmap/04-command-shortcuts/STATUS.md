@@ -1,7 +1,7 @@
 # 04 — Custom command shortcuts
 
 **Phase:** spec-in-review
-**Spec PR:** —
+**Spec PR:** [#51](https://github.com/timomak/twarp/pull/51)
 **Impl PR:** —
 
 ## Scope
