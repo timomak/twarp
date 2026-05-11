@@ -1,7 +1,7 @@
 # 03 — Render markdown by default
 
-**Phase:** not-started
-**Spec PR:** —
+**Phase:** spec-in-review
+**Spec PR:** [#49](https://github.com/timomak/twarp/pull/49)
 **Impl PR:** —
 
 ## Scope
