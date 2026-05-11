@@ -96,12 +96,19 @@ fn custom_shortcut(action: CustomAction, ctx: &AppContext) -> Option<Keystroke> 
     // intercepts the chord before our keymap matcher sees it, and the
     // user's custom shortcut never fires (see PRODUCT §16 and the
     // 04-command-shortcuts spec).
-    if crate::shortcuts::ShortcutsModel::handle(ctx)
+    let model = crate::shortcuts::ShortcutsModel::handle(ctx);
+    let chord_normalized = chord.normalized();
+    let registry_len = model.as_ref(ctx).registry.len();
+    let claimed = model
         .as_ref(ctx)
         .registry
         .iter()
-        .any(|s| s.keys.normalized() == chord.normalized())
-    {
+        .any(|s| s.keys.normalized() == chord_normalized);
+    log::info!(
+        "shortcuts: menu key-equivalent check for {action:?} ({chord_normalized}): \
+         registry has {registry_len} entries, claimed={claimed}"
+    );
+    if claimed {
         return None;
     }
     Some(chord)
