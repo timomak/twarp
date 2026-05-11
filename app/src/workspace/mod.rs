@@ -1668,9 +1668,24 @@ pub fn register_shortcut_bindings(app: &mut AppContext) {
             .collect()
     };
 
+    log::info!(
+        "shortcuts: registering {n} keybinding(s) + escape-cancel",
+        n = registry.len()
+    );
+
     let mut bindings: Vec<EditableBinding> = Vec::with_capacity(registry.len() + 1);
     for (i, binding_name, chord) in registry {
+        log::info!(
+            "shortcuts: register binding '{binding_name}' -> RunCustomShortcut({i}) on chord '{chord}'"
+        );
         let name_static: &'static str = Box::leak(binding_name.into_boxed_str());
+        // No context predicate (default ContextPredicate::Just(true)). The
+        // dispatch loop walks the responder chain leaf-to-root: if we
+        // restricted to `id!("Workspace")` we'd lose to terminal-pane-scoped
+        // FixedBindings (e.g. `cmd-shift-D` -> `TerminalAction::SplitDown` in
+        // `terminal/view/init.rs`) because Terminal context evaluates first
+        // and our predicate would fail there. User-declared chords already
+        // require modifiers; matching unconditionally is the correct scope.
         bindings.push(
             EditableBinding::new(
                 name_static,
@@ -1679,19 +1694,23 @@ pub fn register_shortcut_bindings(app: &mut AppContext) {
                     id: i as crate::shortcuts::ShortcutId,
                 },
             )
-            .with_context_predicate(id!("Workspace"))
             .with_group("Custom shortcuts")
             .with_key_binding(chord.as_str()),
         );
     }
 
+    // Escape-cancel: gated only by the SHORTCUT_RUNNING flag, which is
+    // inserted into the Workspace's keymap_context while a runner is alive.
+    // Dropping the Workspace-context predicate isn't strictly needed (the
+    // flag is only set in Workspace context anyway) but keeps the gating
+    // story consistent with the per-shortcut bindings above.
     bindings.push(
         EditableBinding::new(
             "shortcuts:cancel_running",
             "Cancel running custom shortcut",
             WorkspaceAction::CancelRunningShortcut,
         )
-        .with_context_predicate(id!("Workspace") & id!(flags::SHORTCUT_RUNNING))
+        .with_context_predicate(id!(flags::SHORTCUT_RUNNING))
         .with_group("Custom shortcuts")
         .with_key_binding("escape"),
     );

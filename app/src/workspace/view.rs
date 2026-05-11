@@ -4560,6 +4560,7 @@ impl Workspace {
         id: crate::shortcuts::ShortcutId,
         ctx: &mut ViewContext<Self>,
     ) {
+        log::info!("shortcuts: run_custom_shortcut id={id} (chord fired)");
         if self.shortcut_runner.is_some() {
             log::info!(
                 "shortcuts: ignoring trigger for shortcut #{id}; another sequence is in flight"
