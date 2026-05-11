@@ -1,0 +1,651 @@
+# Upstream catch-up triage — 2026-05-08
+
+Phase 1 triage of the 303 commits between `origin/master` (twarp) and `upstream/master` (warpdotdev/warp). **No cherry-picks have been applied yet.** This file is the input to Phase 2.
+
+## Summary
+
+| Category | Count |
+| --- | --- |
+| Pick-clean | 157 |
+| Pick-with-edits | 13 |
+| Drop (AI-only purpose) | 88 |
+| Drop (only modifies deleted paths) | 45 |
+| Needs-judgment | 0 |
+| **Total** | **303** |
+
+## Method
+
+Per-commit classification used three signals:
+
+1. The exact set of files deleted on twarp vs upstream (`git diff --diff-filter=D upstream/master..origin/master`, 851 files), used to detect modify-targets that no longer exist on twarp.
+2. Per-file status (A/M/D) so commits that *add* new files into deleted directories aren't mis-classified as conflicting.
+3. Subject-line keywords (orchestrat, harness, ambient, claude, codex, NLD, MCP, oz, agent view, …) plus a non-AI override list (typo, README, IME, Cargo, dependabot, …).
+
+A commit is dropped as **drop-ai-only** when ≥50% of its modified files live in twarp's deleted (AI) paths *or* the subject reads as an AI-purpose change. Manual overrides applied for ~17 commits where heuristics produced false positives or false negatives — these are noted by the phrase `OVERRIDE:` in the reason column.
+
+## Pick-clean (157)
+
+Should apply with no surgery; bundle into thematic batches.
+
+- `87dae23b` — Pin Ubuntu LTS used for the internal dev image (#10458)
+  - no blocked files, no AI subject
+- `c2565f50` — Fix: validate pacman signing key before allowing update (#9706)
+  - no blocked files, no AI subject
+- `be5d0cfc` — Reduce duplicated dependencies on some HTTP-/TLS-related crates. (#10417)
+  - no blocked files, no AI subject
+- `10e2bae9` — Add "Reveal in Finder" to code pane overflow menu (#10334)
+  - no blocked files, no AI subject
+- `48a648b1` — Add `DiffStateModel` local and remote wrapper (#10404)
+  - no blocked files, no AI subject
+- `59e802ea` — Fix linked-worktree branch checkout (#9905)
+  - no blocked files, no AI subject
+- `844dc2ce` — remote_server: fix bash-3.2 tilde expansion in install script (#10317)
+  - no blocked files, no AI subject
+- `1fa2fc30` — docs: standardize bullet style to hyphens (GH9742) (#9937)
+  - no blocked files, no AI subject
+- `0510ea89` — Add required Parallelization section to write-tech-spec skill (#10400)
+  - OVERRIDE: .agents/skills/write-tech-spec/SKILL.md kept on twarp
+- `564c70ee` — load files for the command palette async so it opens faster (#10332)
+  - no blocked files, no AI subject
+- `eb0b51f3` — collect taskkill exit code from failure log message in inno setup logs (#10330)
+  - no blocked files, no AI subject
+- `606e1653` — Fix Markdown ToC anchor navigation in notebooks (#10143)
+  - no blocked files, no AI subject
+- `09a35b58` — Decouple `DiffStateModel` and `CodeReviewView` (#10314)
+  - no blocked files, no AI subject
+- `35e3a6f5` — Don't check server for new versions on wasm or during onboarding (#10315)
+  - no blocked files, no AI subject
+- `1edc9cd8` — Stop re-firing gh pr view on every fs event in Code Review (#10361)
+  - no blocked files, no AI subject
+- `4dbf8758` — fix: detect tree output filenames as file links (#10004)
+  - no blocked files, no AI subject
+- `543d54ec` — Enable IME on Linux/Wayland (#9602)
+  - no blocked files, no AI subject
+- `28c9c7d0` — Mark focused-pane notifications as read when the warp window is re-focused (#10082)
+  - no blocked files, no AI subject
+- `916ca128` — Add 'Cross-platform' option to OS selection (#9956)
+  - no blocked files, no AI subject
+- `1244ffbe` — fix(deb): avoid duplicate apt source entries when .sources exists (#10011) (#10019)
+  - no blocked files, no AI subject
+- `04069a29` — Reference README badges from brand assets (#10281)
+  - no blocked files, no AI subject
+- `0b728175` — Update contributing.md and pr template to include manual testing instructions (#10286)
+  - no blocked files, no AI subject
+- `37274bfe` — Implement revised summary mode (#10067)
+  - no blocked files, no AI subject
+- `b00d068e` — Simplify `DiffStateModel` to have one repo (#10283)
+  - no blocked files, no AI subject
+- `9c162bca` — Add SCP install fallback for remote servers without curl/wget (#10215)
+  - no blocked files, no AI subject
+- `1175e82f` — Fix race condition in git branch/diff-stats chip initialization (#10265)
+  - no blocked files, no AI subject
+- `9d9972cb` — fix: update diesel to resolve GHSA-h5x4-m2qf-r4f2 (#10263)
+  - no blocked files, no AI subject
+- `782058ab` — Promote DirectoryTabColors to Stable (#10284)
+  - no blocked files, no AI subject
+- `0320c792` — feat(tabs): add CycleMostRecentTab as third Ctrl+Tab behavior option (#9658)
+  - no blocked files, no AI subject
+- `0b3311fa` — Add vim to STAKEHOLDERS. (#10276)
+  - no blocked files, no AI subject
+- `a8ec49e4` — Improve badge formatting in README.md (#10260)
+  - no blocked files, no AI subject
+- `fc1157e0` — fix(macos/ime): skip key-equivalent priority path while IME is composing (#9709) (#9711)
+  - no blocked files, no AI subject
+- `d2f26ae9` — feat: register Rename Active Pane as a keyboard-bindable action (#9351) (#9712)
+  - no blocked files, no AI subject
+- `27f4933b` — feat(uri): add warposs://pane/{uuid} deep link for pane focus (#9655)
+  - no blocked files, no AI subject
+- `d7206a5d` — Resolve Warp version via helper script in /feedback skill (#10219)
+  - no blocked files, no AI subject
+- `69638b8f` — Fix find focus drifting when output streams into active block (#10057)
+  - no blocked files, no AI subject
+- `9696bc03` — Assign feedback skill stakeholder (#10220)
+  - OVERRIDE: feedback skill kept on twarp; STAKEHOLDERS line is fine
+- `27c838b1` — docs: add README badges (#10204)
+  - no blocked files, no AI subject
+- `69b63431` — Add tab context metadata copy actions (#10120)
+  - no blocked files, no AI subject
+- `4be9ec10` — Update mermaid_to_svg dependency (#10199)
+  - no blocked files, no AI subject
+- `e6df31bb` — APP-4263 Fix git ops flicker bug (#9452)
+  - no blocked files, no AI subject
+- `3ff78d29` — fix(macos/ime): don't submit form when Enter confirms Japanese IME conversion (#9730)
+  - no blocked files, no AI subject
+- `0f28bcb3` — Avoid parallel precheck execution (#10188)
+  - no blocked files, no AI subject
+- `1d1c06db` — Fix file picker truncating paths within available width (#9885)
+  - no blocked files, no AI subject
+- `bd7202f3` — Fix file tree refresh logic (#10184)
+  - no blocked files, no AI subject
+- `ce3296aa` — Fix feature flag cleanup API key (#10154)
+  - no blocked files, no AI subject
+- `ce9f2c50` — Enrich SSH control master with remote server enablement (#10163)
+  - no blocked files, no AI subject
+- `b7dd0ef8` — Fix terminal text selection not auto-scrolling when dragging beyond bounds (#9448)
+  - no blocked files, no AI subject
+- `3417e7d2` — Update STAKEHOLDERS: add Andy to bootstrap, add command-signatures-v2 (#10161)
+  - no blocked files, no AI subject
+- `10b2540c` — fix(bootstrap): detect Xcode installs with non-default app names on macOS (#10130)
+  - no blocked files, no AI subject
+- `716603a0` — docs: replace warp-external with warp in local agent skills (#9990)
+  - no blocked files, no AI subject
+- `957783b6` — Drop unneeded fetch-depth: 0 from two workflows (#9489)
+  - no blocked files, no AI subject
+- `e7ff8afd` — remove file path on path conversion error messages (#9511)
+  - no blocked files, no AI subject
+- `5d8507e4` — [Fix] Don't get a freshly cloned repo stuck in a loading state in project explorer (#9998)
+  - no blocked files, no AI subject
+- `a057a109` — Fix diff button when Show code review button toggle is off (#9600)
+  - no blocked files, no AI subject
+- `16578b12` — Update remote server logs (#10098)
+  - no blocked files, no AI subject
+- `39ff0d25` — Skip reconnect for unrecoverable transport disconnects (#10096)
+  - no blocked files, no AI subject
+- `b1cb96f9` — Use feature flag in settings crate (#9507)
+  - no blocked files, no AI subject
+- `ce89a98b` — fix(bootstrap): warn before sudo and document install steps (#9501)
+  - no blocked files, no AI subject
+- `59c6a48e` — docs: attribute two more Alacritty-derived files (#9522) (#9707)
+  - no blocked files, no AI subject
+- `a548a9ae` — Use a PAT for pushing new release branches and tags. (#10081)
+  - no blocked files, no AI subject
+- `6ea1a52a` — Fix new-session "+" dropdown alignment when Tabs Panel is on the right (#9492)
+  - no blocked files, no AI subject
+- `eb613001` — Gate remote server experiment enablement on windows (#10079)
+  - no blocked files, no AI subject
+- `24a39aac` — Remove ready-to-implement from bug report template (#10064)
+  - no blocked files, no AI subject
+- `5fe27354` — Fix copy keybinding to prioritize input text over selected blocks (APP-4330) (#9491)
+  - no blocked files, no AI subject
+- `64a0dfbe` — fix: update rand to 0.9.4 to resolve GHSA-cq8v-f236-94qc (#10060)
+  - no blocked files, no AI subject
+- `c65ae255` — make sure Windows quake mode window is correctly sized and receives focus (#9891)
+  - no blocked files, no AI subject
+- `14e7216c` — add `RedirectionGuard=no` to windows-installer.iss (#9863)
+  - no blocked files, no AI subject
+- `a9a5b6af` — fix: disable reset grid checks for restored blocks on Windows (#9987)
+  - no blocked files, no AI subject
+- `c68b9775` — fix: update actix-http to 3.12.1 to resolve GHSA-xhj4-vrgc-hr34 (#9981)
+  - no blocked files, no AI subject
+- `71edcac8` — fix(terminal): scroll output with Page Up/Down from prompt (#9008) (#9624)
+  - no blocked files, no AI subject
+- `7f484a26` — Fix cloud status badge using themed background instead of white (#9976)
+  - OVERRIDE: cloud status badge code path kept on twarp
+- `3ce4239d` — Remove blocklist markdown images from preview flags (#9993)
+  - no blocked files, no AI subject
+- `d7c45cab` — enable tab dragging between windows for internal warp users (#9991)
+  - no blocked files, no AI subject
+- `525dfb68` — Spec: per-tab theme overrides driven by directory and launch configurations (GH478) (#9910)
+  - OVERRIDE: GH478 spec; deletion not enforced for non-AI specs
+- `cabd3292` — docs: replace Becoming a Collaborator with Code Review section (#9982)
+  - no blocked files, no AI subject
+- `03ef4d05` — Fix chord shortcuts on Windows non-Latin keyboard layouts (#9476)
+  - no blocked files, no AI subject
+- `a5fde8f1` — Rename "Fork from here" to "Fork from here (dev only)" (#9941)
+  - no blocked files, no AI subject
+- `75bddcc3` — Add active_cursor_position to CodeEditorView for IME positioning (#9555)
+  - no blocked files, no AI subject
+- `3984e67f` — add support for cross-window tab drag (#9275)
+  - no blocked files, no AI subject
+- `239c86b8` — Fix /open-file WSL path joining (#9322)
+  - no blocked files, no AI subject
+- `e51bce9e` — re-enable AppMutex setting in Inno Setup (#9871)
+  - no blocked files, no AI subject
+- `c1917ac9` — Remove alt-screen sampling (#9852)
+  - no blocked files, no AI subject
+- `e53d3749` — bump rand version to fix dependabot alert (#9845)
+  - no blocked files, no AI subject
+- `aee05701` — add Microsoft.VisualStudio.2022.BuildTools installation (#9541)
+  - no blocked files, no AI subject
+- `1c5e3433` — consolidate powershell history loading errors (#9499)
+  - no blocked files, no AI subject
+- `77844282` — Remove stray backticks from Windows installer README code blocks (#9691)
+  - no blocked files, no AI subject
+- `88930cf4` — Cache settings schema between Linux builds (#9743)
+  - no blocked files, no AI subject
+- `fc1d2ff0` — docs(skills): require screenshots or videos for UI-impacting PRs (#9701)
+  - OVERRIDE: .agents/skills/review-pr-local/SKILL.md kept on twarp
+- `e75b3155` — remote_server: gate install on glibc preinstall check + tolerate cleanup races (#9681)
+  - no blocked files, no AI subject
+- `8e029120` — Recognize .command files as shell scripts (#9345)
+  - no blocked files, no AI subject
+- `38f8d5b9` — fix(context_chips): stop GitDiffStats flicker from shell fallback (#9244)
+  - no blocked files, no AI subject
+- `0964e697` — Open "Default App" files in the running Warp channel (#9285)
+  - no blocked files, no AI subject
+- `0fca61d7` — ci: label external-contributor PRs (#9641)
+  - 1 new files; no conflicts expected
+- `91dee6df` — Fix settings popup items (View as / Density) being unclickable (#9540)
+  - no blocked files, no AI subject
+- `73074bad` — remove @moirahuang from context chips from stakeholders (#9654)
+  - no blocked files, no AI subject
+- `f696f5b8` — Revert "Fix schema generator binary recompilation during release bundling." (#9676)
+  - no blocked files, no AI subject
+- `2f84587a` — Bump core-text version to fix font descriptor leak (#9665)
+  - no blocked files, no AI subject
+- `f61ef1dc` — Fix schema generator binary recompilation during release bundling. (#9632)
+  - no blocked files, no AI subject
+- `99f80df4` — Fix bad merge for remote server (#9652)
+  - no blocked files, no AI subject
+- `805b3e2a` — Increase timeout for linux builds (#9645)
+  - no blocked files, no AI subject
+- `e5dbdb4a` — Fix git operations button alignment in code review header (#9480)
+  - no blocked files, no AI subject
+- `edac6515` — Run executable shell scripts in the terminal instead of opening in the editor (#9503)
+  - no blocked files, no AI subject
+- `a7279b36` — fix session restoration for maximized and fullscreen windows (#9536)
+  - no blocked files, no AI subject
+- `182c1ac6` — chore: assign / route to @warpdotdev/oss-maintainers in STAKEHOLDERS (#9635)
+  - no blocked files, no AI subject
+- `ed0cdaef` — docs: attribute Alacritty/vte derivative code in two more files (#9522) (#9563)
+  - no blocked files, no AI subject
+- `2113a0a3` — Replace deprecated apt-key with gpg --dearmor for gcloud install (#9538)
+  - no blocked files, no AI subject
+- `a54ba456` — ci: bump actions/setup-node from v3.9.1 to v6.4.0 (#9589)
+  - no blocked files, no AI subject
+- `e91b5a21` — Add libclang-dev and clang-format to Linux bootstrap deps (#9527)
+  - no blocked files, no AI subject
+- `fb3cb0e9` — Fix meta+enter/tab/escape sending literal key names in legacy encoding (#9514)
+  - no blocked files, no AI subject
+- `6eefa4bb` — fix: align OSS .desktop Exec with packaged binary name (#9381) (#9558)
+  - no blocked files, no AI subject
+- `a12d9e46` — Add more UI framework stakeholders. (#9622)
+  - no blocked files, no AI subject
+- `6b675992` — Cap word length and separator count in filepath detection (#9617)
+  - no blocked files, no AI subject
+- `5906dd3b` — Recognize .htm files as HTML (#9360)
+  - no blocked files, no AI subject
+- `aa2ac330` — Skip onboarding UIs in SDK/headless mode (#9590)
+  - no blocked files, no AI subject
+- `b19866a4` — APP-3805: Auto-update SSH remote-server binary on version skew (#9328)
+  - OVERRIDE: SSH remote-server feature kept on twarp
+- `6898ac27` — docs: surface #oss-contributors Slack channel in README, CONTRIBUTING, and FAQ (#9473)
+  - no blocked files, no AI subject
+- `799e13fe` — docs: simplify PR template for public contributors (#9270)
+  - no blocked files, no AI subject
+- `150df7e9` — Fix typo in markdown_parser doc comment (#9341)
+  - no blocked files, no AI subject
+- `b740b82f` — Update persistence README paths to crates/persistence (#9405)
+  - no blocked files, no AI subject
+- `33c48601` — Update env_vars README to match current file layout (#9407)
+  - no blocked files, no AI subject
+- `e05c5d23` — Fix typos and example reference in crate READMEs (#9408)
+  - no blocked files, no AI subject
+- `e9ff9324` — Rename `delimeter` -> `delimiter` in env_vars and external_secrets (#9409)
+  - no blocked files, no AI subject
+- `bb5edc01` — Drop warp-internal references from docker/linux-dev README (#9410)
+  - no blocked files, no AI subject
+- `3d17fc08` — Add .claude/worktrees/ to gitignore (#9481)
+  - no blocked files, no AI subject
+- `c4f8464a` — Pipe version through to CLI (#9252)
+  - no blocked files, no AI subject
+- `6188ed17` — Fix broken Markdown link in languages/grammars README (#9343)
+  - no blocked files, no AI subject
+- `c61ad5b8` — Include .yml and .markdown in Drive import file picker (#9400)
+  - no blocked files, no AI subject
+- `a8f57a84` — Clarify `alacritty_terminal` origins for some terminal model code. (#9513)
+  - no blocked files, no AI subject
+- `9eaee8f6` — Add experiment setup for SSH (#9449)
+  - no blocked files, no AI subject
+- `54712e5d` — Fix file tree loading flicker (#9320)
+  - no blocked files, no AI subject
+- `e0851f35` — Fix scroll-to-selected-block keybinding when editor input is focused (#9332)
+  - no blocked files, no AI subject
+- `f4367608` — fix(windows): exclude error-codes.md filenames from autoupdate error detection (#9498)
+  - no blocked files, no AI subject
+- `f89d50aa` — Fix terminal background darkening in horizontal tabs mode (APP-4328) (#9474)
+  - no blocked files, no AI subject
+- `f7f24805` — Reduce RAM requirements for release builds. (#9494)
+  - no blocked files, no AI subject
+- `404bfbeb` — ci: remove GitHub Actions workflows now served by Vercel webhook (#9466)
+  - no blocked files, no AI subject
+- `d1601f54` — add vertical tabs, tab configs, worktree, notifications, and rich input stakeholders (#9487)
+  - no blocked files, no AI subject
+- `16933d3c` — Add 'Show in Finder' option to detected file link tooltip [APP-3346] (#9475)
+  - no blocked files, no AI subject
+- `52f63699` — Add header icon to Git dialog and dialog component (#9464)
+  - no blocked files, no AI subject
+- `874a2576` — Add stakeholders for `lsp` and `languages` crates. (#9442)
+  - no blocked files, no AI subject
+- `53290670` — Fix vertical tabs panel not opening when tab bar set to Always (#9283)
+  - no blocked files, no AI subject
+- `29394232` — Surface Reopen Closed Session in the new-session menu on Linux and Windows (#9347)
+  - no blocked files, no AI subject
+- `1d2775ac` — [WAR-7378] Fix: Use fork point for PR diffs and commit message retrieval and remove parent branch logic (#9238)
+  - no blocked files, no AI subject
+- `18497952` — Point stable-skill instructions at resources/bundled/skills/ (#9406)
+  - no blocked files, no AI subject
+- `acb2fc69` — Add telemetry events for git button clicks and dialog completion (#9441)
+  - no blocked files, no AI subject
+- `a9b886a6` — Fix remote server banner issues (#9333)
+  - no blocked files, no AI subject
+- `ee133f47` — Add /set-tab-color slash command (#9305)
+  - no blocked files, no AI subject
+- `b7c64bc0` — Add Build Status section linking to build.warp.dev (#9339)
+  - no blocked files, no AI subject
+- `165c771e` — Fix typo: teh -> the in stack positioning test comment (#9348)
+  - no blocked files, no AI subject
+- `c85b6f29` — Also recognize .h++ as a C++ header extension (#9346)
+  - no blocked files, no AI subject
+- `31807b73` — Fix stale path references in WARP.md (#9336)
+  - no blocked files, no AI subject
+- `79df5822` — Initialize privacy settings from `WarpDrivePrivacySettings` (#9438)
+  - no blocked files, no AI subject
+- `938ad844` — Fix typo in cloud_object doc comment (#9337)
+  - no blocked files, no AI subject
+- `3476f193` — Fix doubled-word typos in crates/ comments (#9338)
+  - no blocked files, no AI subject
+- `a19bf168` — Migrate SSH install setting to standard macros (#9335)
+  - no blocked files, no AI subject
+- `b7b32751` — Fix ui jitter during remote server initialization (#9342)
+  - no blocked files, no AI subject
+- `3f0ac51b` — fix: highlight C++ header extensions (#9388)
+  - no blocked files, no AI subject
+
+## Pick-with-edits (13)
+
+Mixed; the non-AI hunks are worth picking but conflicts will need to be resolved by hand. One commit per PR per the workflow.
+
+- `68f6062d` — Detect file paths preceded by Unicode/CJK punctuation (#10250)
+  - 1 blocked + 5 kept (+0 new) files
+- `80b5d1a0` — Fix tombstone regression. (#10407)
+  - 1 blocked + 2 kept (+0 new) files
+- `38ead212` — Add remote backed global buffer (#10300)
+  - 1 blocked + 19 kept (+6 new) files
+- `b5c64ff4` — Consistently use _tests.rs for test file names. (#10373)
+  - 32 blocked + 345 kept (+186 new) files
+- `689cbce0` — Support waiting on initial sync of a repository (#10350)
+  - 1 blocked + 17 kept (+2 new) files
+- `a7923408` — Fix proper sentry initialization (#10116)
+  - 1 blocked + 16 kept (+2 new) files
+- `25652d73` — Fix typos (#9318)
+  - 12 blocked + 108 kept (+0 new) files
+- `e6098a8a` — Get warp compiling on FreeBSD (#9362)
+  - 3 blocked + 67 kept (+0 new) files
+- `5fa22831` — Fix read_files with out-of-bounds line ranges producing empty result (#9326)
+  - 1 blocked + 2 kept (+1 new) files
+- `51c85737` — Fix common spelling errors in app/src comments (#9403)
+  - 1 blocked + 4 kept (+0 new) files
+- `a6b49853` — Fix typos in code comments (#9363)
+  - 3 blocked + 12 kept (+0 new) files
+- `ca42aacc` — Add support for swapping underlying session sharing connection in terminal view and friends. (#9311)
+  - 3 blocked + 10 kept (+1 new) files
+- `f694b72f` — Refactor app initialization path to make sure remote server is initialized with the right setup (#9246)
+  - 1 blocked + 3 kept (+0 new) files
+
+## Drop (AI-only purpose) (88)
+
+Feature is part of AI/agent/cloud-mode/orchestration. Skip.
+
+- `42af6f6c` — Add context field to third party harnesses (#10447)
+  - 5/6 files in deleted (AI) paths; shared-file edits are integration points
+- `756586ff` — add & entrypoint for local -> cloud handoff (#10271)
+  - 13/18 files in deleted (AI) paths; shared-file edits are integration points
+- `65418859` — [REMOTE-1544] Apply slash command enablement checks on execution (#10466)
+  - AI subject + 2 deleted-path files; 4 shared-file edits are integration points
+- `7f5a6893` — REMOTE-1601 Add named agent API key support behind FeatureFlag::NamedAgents (#10390)
+  - OVERRIDE: 'named agent API key support' = AI feature
+- `e75bf809` — Update orchestration message transcript UI (#10285)
+  - 20/25 files in deleted (AI) paths; shared-file edits are integration points
+- `84f9584c` — In-app auth secret creation flow. (#10420)
+  - 8/13 files in deleted (AI) paths; shared-file edits are integration points
+- `9d2296d1` — Add agent CLI flag for cloud runs (#9935)
+  - 7/10 files in deleted (AI) paths; shared-file edits are integration points
+- `044d6ebb` — Enable Oz OIDC on stable (#10468)
+  - AI-purpose subject; all files modify kept paths
+- `c3df6eb6` — Fix cloud mode for 3rd party harnesses (#10422)
+  - 5/6 files in deleted (AI) paths; shared-file edits are integration points
+- `9c1df06d` — Support third party harness model selection. (#9832)
+  - 13/15 files in deleted (AI) paths; shared-file edits are integration points
+- `e7736435` — Add change-keybinding bundled skill for Agent Mode (#9415)
+  - 2/3 files in deleted (AI) paths; shared-file edits are integration points
+- `9eaa55f7` — remove block attachment in has_locking_attachment (#10416)
+  - 3/4 files in deleted (AI) paths; shared-file edits are integration points
+- `8a005e5b` — feat: gate git credential refresh behind GitCredentialRefresh flag (dogfood only) (#10397)
+  - OVERRIDE: GitCredentialRefresh flag for AI agent_sdk git creds
+- `afc8b55d` — Refactor orchestration pill bar swap to use replace_pane (#10327)
+  - AI subject + 5 deleted-path files; 7 shared-file edits are integration points
+- `131e9e8b` — Disable CLI auto-indexing outside agent run REMOTE-664 (#10201)
+  - 4/5 files in deleted (AI) paths; shared-file edits are integration points
+- `92cb3d15` — Fix restoring cloud conversation transcripts (#10385)
+  - AI-purpose subject; all files modify kept paths
+- `7ec0ec37` — Promote ConfigurableContextWindow to Stable (#10386)
+  - OVERRIDE: ConfigurableContextWindow flag deleted on twarp
+- `55ca9786` — Add platform credits counting to client (#10310)
+  - 2/4 files in deleted (AI) paths; shared-file edits are integration points
+- `aea652ad` — Fix bug where showing/hiding the cli footer would exit the agent view (#10303)
+  - AI-purpose subject; all files modify kept paths
+- `2e5272dd` — [APP-3792] handshake for codebase indexing for remote envs (#10196)
+  - OVERRIDE: codebase indexing handshake is AI agent feature
+- `c28fdddb` — Fix `RowIterator` crashes for third-party agents. (#10305)
+  - OVERRIDE: follow-up to 361c267a (FullGridClearBehavior)
+- `a639d761` — Fix deadlock in terminal view rendering. (#10308)
+  - 3/6 files in deleted (AI) paths; shared-file edits are integration points
+- `94f63ce2` — Clean up ConversationOrTask. (#10195)
+  - 6/8 files in deleted (AI) paths; shared-file edits are integration points
+- `5ae13bd8` — Fix 429 rate limiting in run-cloud CLI polling (#10275)
+  - 4/5 files in deleted (AI) paths; shared-file edits are integration points
+- `8b57ae4a` — Add Oz for OSS README section (#10277)
+  - OVERRIDE: README Oz section, doesn't apply to twarp
+- `74672609` — Fix race condition causing requested commands to be auto-cancelled. (#10241)
+  - 2/3 files in deleted (AI) paths; shared-file edits are integration points
+- `fe5a2ede` — Add verify-ui-change-in-cloud and test-warp-ui bundled skills (dogfood-gated) (#10203)
+  - AI-purpose subject; all files modify kept paths
+- `fc1fb22b` — Keep empty child agent pills visible after exiting agent view (#10206)
+  - AI-purpose subject; all files modify kept paths
+- `fd0a9d10` — Add Codex local child harness support (#10176)
+  - 5/9 files in deleted (AI) paths; shared-file edits are integration points
+- `71fd2143` — Disable harness selector for local -> cloud handoff (#10183)
+  - 3/4 files in deleted (AI) paths; shared-file edits are integration points
+- `ba40a024` — Update Git Operations AI client billing policy (#9840)
+  - AI subject + 2 deleted-path files; 8 shared-file edits are integration points
+- `4e600af4` — open local->cloud mode conversation in the same pane (#9988)
+  - AI subject + 1 deleted-path files; 3 shared-file edits are integration points
+- `c1b1d4bf` — Fork conversation into local->cloud pane on-pane-creation (#9653)
+  - 16/26 files in deleted (AI) paths; shared-file edits are integration points
+- `b9e21940` — Fix editor panic from overlapping V4A diff deltas (WARP-CLIENT-DEV-NYY) (#10186)
+  - OVERRIDE: V4A diff validation lives in crates/ai (deleted)
+- `f95364ac` — Add harness availability model to the client. (#10135)
+  - AI subject + 8 deleted-path files; 10 shared-file edits are integration points
+- `8be721d4` — [REMOTE-1370] Phase 2a: taskGitCredentials schema, query, and AIClient (#10152)
+  - AI subject + 1 deleted-path files; 3 shared-file edits are integration points
+- `74bdbd1d` — implement basic local cloud handoff UI (#9455)
+  - 12/21 files in deleted (AI) paths; shared-file edits are integration points
+- `34d311df` — use correct cloud agent icons for 3p conversation transcripts (#10148)
+  - 4/5 files in deleted (AI) paths; shared-file edits are integration points
+- `8e837a0f` — [QUALITY-569] Stage 2 Client: OrchestrationConfig on Plan Card + Auto-Launch + Disabled Card (#9927)
+  - 25/28 files in deleted (AI) paths; shared-file edits are integration points
+- `814245a9` — docs: restore Slack #oss-contributors references and add Oz credits sentence (#10138)
+  - AI-purpose subject; all files modify kept paths
+- `3d7e074e` — [REMOTE-1486] Add cloud handoff snapshot upload (#10102)
+  - 8/10 files in deleted (AI) paths; shared-file edits are integration points
+- `dcc4cbac` — Orchestration pill bar updates: same-pane pills, 3-dot menu, hover card, breadcrumbs (#9680)
+  - 8/16 files in deleted (AI) paths; shared-file edits are integration points
+- `13b756f6` — Fix: close CLI agent rich input with ctrl-g from editor (#10030)
+  - AI-purpose subject; all files modify kept paths
+- `d09a90ea` — Add editable keybinding for toggling the conversation details panel. (#9837)
+  - OVERRIDE: keybinding for AI conversation details panel
+- `eed7e64a` — `Input::maybe_backspace_ai_icon` no longer resets convesation on backspace in the agent view (#10114)
+  - AI-purpose subject; all files modify kept paths
+- `a171b170` — Use queued query UI instead of pending user query (#10113)
+  - 9/16 files in deleted (AI) paths; shared-file edits are integration points
+- `564ea2ae` — APP-3595: Show conversation details panel for local conversations (#9493)
+  - OVERRIDE: conversation details panel is AI
+- `361c267a` — Implement full-frame clear for active block for CLI Agents. (#9877)
+  - OVERRIDE: FullGridClearBehavior is for CLI Agent TUI rendering
+- `693cd58d` — Add server conversation ID to computer use telemetry events. (#10084)
+  - 2/3 files in deleted (AI) paths; shared-file edits are integration points
+- `2258cd36` — Handle agent management view updates based on event type (#9866)
+  - 3/4 files in deleted (AI) paths; shared-file edits are integration points
+- `888c3027` — [QUALITY-569] Stage 1: orchestrate tool (client) (#9628)
+  - 28/36 files in deleted (AI) paths; shared-file edits are integration points
+- `9d65653e` — docs: mention Oz OSS credits form in README (#9580)
+  - OVERRIDE: README Oz credits, doesn't apply to twarp
+- `c1ebde1f` — Distinguish between agent conversation model update types (#9864)
+  - 10/12 files in deleted (AI) paths; shared-file edits are integration points
+- `30237218` — Respect Markdown Viewer setting for .md links in AI rules/facts panel (#9699)
+  - OVERRIDE: depends on removed handle_ai_fact_view_event
+- `34f3adc2` — Attach image drops in CLI-agent sessions instead of typing the path (drag-and-drop) (#9553)
+  - OVERRIDE: CLI-agent sessions image drag-and-drop
+- `caf534a6` — Make Oz cloud agent icon glyph black for consistency with web app (#9952)
+  - AI-purpose subject; all files modify kept paths
+- `23eedf45` — Add 'continue' (in cloud) button to cloud agent conversation tombstone. (#9315)
+  - 12/22 files in deleted (AI) paths; shared-file edits are integration points
+- `de1ac841` — feat: recognize Mistral Vibe as a CLI agent (#9607) (#9667)
+  - 5/6 files in deleted (AI) paths; shared-file edits are integration points
+- `1148ae3e` — Wake up remote Claude Code agents on new events (#9399)
+  - 32/45 files in deleted (AI) paths; shared-file edits are integration points
+- `73406f53` — fix: clarify MCP slash command labels (#9887)
+  - AI-purpose subject; all files modify kept paths
+- `59fc1a94` — use multi-harness cloud agent icons + status (#9263)
+  - 10/18 files in deleted (AI) paths; shared-file edits are integration points
+- `159a0bf5` — ci: remove broken oz-for-oss adapter workflows superseded by webhook (#9843)
+  - AI-purpose subject; all files modify kept paths
+- `6184f4e6` — Refactor AmbientAgentViewModel to handle follow-up run executions. (#9316)
+  - 5/6 files in deleted (AI) paths; shared-file edits are integration points
+- `13148192` — [REMOTE-1318] Merge org and user command denylists with per-row editability (#9683)
+  - 5/8 files in deleted (AI) paths; shared-file edits are integration points
+- `de6d7dc2` — QUALITY-544: Lock NLD for block/image/file-attached agent-view entry (#9366)
+  - AI subject + 2 deleted-path files; 3 shared-file edits are integration points
+- `ac493e69` — Auto-open rich input for non-Oz harness cloud agent sessions (#9668)
+  - AI-purpose subject; all files modify kept paths
+- `10ec3d13` — Hide host selector menu if no default host is present. (#9523)
+  - OVERRIDE: host selector menu is ambient_agent UI
+- `85ebd33b` — Fix issue on dev with agent history menu not working. (#9656)
+  - OVERRIDE: agent history menu = AI
+- `0ac090cc` — [REMOTE-1326] Link shared sessions to local interactive Oz runs (#9516)
+  - AI-purpose subject; all files modify kept paths
+- `33c48850` — Add vkodithala as co-owner of skills, MCP, and long-running commands (#9612)
+  - AI-purpose subject; all files modify kept paths
+- `fd8e0fbf` — [APP-3106] Client: preserve user query modes in CloudMode (#9528)
+  - 10/12 files in deleted (AI) paths; shared-file edits are integration points
+- `967a9485` — Recognize Block's `goose` as a CLI agent (#9497)
+  - 5/7 files in deleted (AI) paths; shared-file edits are integration points
+- `4dddda60` — Preseed auth and trust settings for codex CLI. (#9376)
+  - AI subject + 1 deleted-path files; 2 shared-file edits are integration points
+- `157f3586` — Introduce `/harness`, `/host` and `/environment` slash commands to new cloud mode input. (#9482)
+  - AI subject + 4 deleted-path files; 7 shared-file edits are integration points
+- `9b3a9908` — Enabled cloud mode input v2 on dogfood. (#9364)
+  - AI-purpose subject; all files modify kept paths
+- `199cd948` — Slash command menu sidecar. (#9359)
+  - OVERRIDE: cloud_mode_v2 slash command menu
+- `95518310` — Initial codex CLI harness setup (#9370)
+  - 11/16 files in deleted (AI) paths; shared-file edits are integration points
+- `e058136c` — Slash command menu working. (#9358)
+  - OVERRIDE: cloud_mode_v2 slash command menu
+- `b59e3519` — add /continue-locally slash command (#9500)
+  - OVERRIDE: /continue-locally is cloud->local handoff
+- `899d966c` — Show all personal runs in the conversation list (#9274)
+  - 6/8 files in deleted (AI) paths; shared-file edits are integration points
+- `5762baaf` — Add feature flag, API binding scaffolding for cloud->cloud handoff. (#9313)
+  - 6/11 files in deleted (AI) paths; shared-file edits are integration points
+- `af5eed14` — Enhance programming language support in syntax highlighting by adding aliases and new languages (#9471)
+  - 1/2 files in deleted (AI) paths; shared-file edits are integration points
+- `0ab9e719` — Orchestration pills bar in Agent View (1/N) (#9334)
+  - AI subject + 2 deleted-path files; 7 shared-file edits are integration points
+- `80663f31` — Make code blocks in thinking text unselectable (#9443)
+  - 3/4 files in deleted (AI) paths; shared-file edits are integration points
+- `71054d65` — Remove `NotAmbientAgent` state from AmbientAgentViewModel. (#9310)
+  - 15/28 files in deleted (AI) paths; shared-file edits are integration points
+- `a4fc5b3e` — Add configurable per-profile context window setting (#9352)
+  - OVERRIDE: configurable per-profile context window for AI agents
+- `8c055374` — Open Profiles settings from Manage Profiles button (#9312)
+  - 1/2 files in deleted (AI) paths; shared-file edits are integration points
+- `a6d1ece1` — Remove orchestration_event_push feature flag; rename poller to streamer (#9265)
+  - AI subject + 4 deleted-path files; 5 shared-file edits are integration points
+
+## Drop (only modifies deleted paths) (45)
+
+Every modified file is gone on twarp. Skip.
+
+- `f85d69aa` — Add support for choosing a model with Codex. (#9859)
+  - all 7 files removed on twarp
+- `434b50db` — fix: clear permission-scoped state when leaving the permission flow (#9525) (#9671)
+  - all 2 files removed on twarp
+- `898336e3` — Support MCP servers for third-party harnesses. (#10341)
+  - all 9 modified files removed on twarp; 1 new files only useful with the deleted code
+- `36db2396` — Top align slash command menu sidecar with selected item in CloudModeV2. (#10427)
+  - all 1 files removed on twarp
+- `be225e93` — Scope upward menu positioning to confirmation card only (#10418)
+  - all 2 files removed on twarp
+- `8fb2e397` — Fix orchestration confirmation block UI bugs (#10399)
+  - all 5 files removed on twarp
+- `ec1788fa` — [QUALITY-598] Exclude child agent initial prompt from history completions (#10304)
+  - all 1 files removed on twarp
+- `a7dbccab` — fix(ui): reduce excess indentation on spawned agents status card (QUALITY-626) (#10306)
+  - all 1 files removed on twarp
+- `3019671e` — Re-index project rules on startup. (#10377)
+  - all 1 files removed on twarp
+- `50003a85` — Fix infinite SSE retry on stale agent runs (#10383)
+  - all 5 files removed on twarp
+- `0ba2ad39` — [REMOTE-1370] Phase 2b: driver credential writes and refresh loop (#10153)
+  - all 2 modified files removed on twarp; 1 new files only useful with the deleted code
+- `f8b93fa2` — Add a background to harness icons in conversation details panel. (#10338)
+  - all 3 files removed on twarp
+- `b08e5782` — Add "Accept w/o orchestration" split button to orchestration card (#10251)
+  - all 1 files removed on twarp
+- `e3514ff5` — fix: use fixed font sizes for orchestration pill bar avatars and labels (#10312)
+  - all 1 files removed on twarp
+- `1f72e823` — Don't auto-open the conversation details panel after starting a cloud agent. (#10309)
+  - all 1 files removed on twarp
+- `bc81fdc4` — In-app notifications for child agents (#10111)
+  - all 1 files removed on twarp
+- `e109bf0c` — Fix secret precedence in Oz CLI. (#10157)
+  - all 9 files removed on twarp
+- `9e76f633` — Hide notification chip in ambient sessions (#10299)
+  - all 1 files removed on twarp
+- `5146a5bf` — Fix race condition causing permanent loss of active rule files (#10238)
+  - all 2 files removed on twarp
+- `f1ae6f35` — Send context (skills, env) with /compact summarization requests (#10274)
+  - all 4 files removed on twarp
+- `560efc3c` — Migrate agent management view to use new AgentConversationEntry abstraction. (#10194)
+  - all 7 files removed on twarp
+- `3c43a6af` — Hide orchestration hover card as soon as cursor leaves the pill (#10221)
+  - all 1 files removed on twarp
+- `143ec080` — Migrate conversation list to AgentConversationEntry (#10197)
+  - all 9 files removed on twarp
+- `27d8ef67` — Add AgentConversationEntry and friends. (#10167)
+  - all 2 modified files removed on twarp; 6 new files only useful with the deleted code
+- `6a3da8b9` — [APP-4359] Fix remote-control chip text weight (#10172)
+  - all 1 files removed on twarp
+- `71d61c7f` — Add touched-workspace discovery for cloud handoff (#10101)
+  - all 3 modified files removed on twarp; 4 new files only useful with the deleted code
+- `d19f72d6` — [APP-3792] specs for remote codebase indexing (#9508)
+  - OVERRIDE: specs/APP-3792 dir is deleted on twarp
+- `3abc48b7` — Select new default when a model is disabled (#10085)
+  - all 2 files removed on twarp
+- `2f3b0a99` — Fix hoverable state when there are multiple 'Open Skill' buttons. (#9437)
+  - all 2 files removed on twarp
+- `e089051b` — fix: point OSS desktop entry at package launcher (#9424)
+  - OVERRIDE: empty no-op merge
+- `9cfe80eb` — fix: auto-spawn Warp-managed global MCP servers (#9886)
+  - all 2 files removed on twarp
+- `429dbf2e` — Fix computer use rejections (#9872)
+  - all 1 files removed on twarp
+- `5c899484` — add hook for file editing (#9324)
+  - all 3 modified files removed on twarp; 2 new files only useful with the deleted code
+- `70c725ff` — Conversation resuming for codex (#9700)
+  - all 8 modified files removed on twarp; 1 new files only useful with the deleted code
+- `2bdbb61c` — Save and upload codex conversation transcript (#9697)
+  - all 2 modified files removed on twarp; 3 new files only useful with the deleted code
+- `ca8c5922` — Format context window configuration numbers with thousands separators (#9649)
+  - all 2 files removed on twarp
+- `76cccd24` — Clip warping-indicator chips so they don't overflow narrow panes (#9297)
+  - all 1 files removed on twarp
+- `709fdc2b` — Sync blocklist image extensions with is_binary_file (#9397)
+  - all 2 files removed on twarp
+- `6d7a01cc` — fix: route CLIAgent::Pi to the default session listener (#9663) (#9670)
+  - all 2 files removed on twarp
+- `99b287ff` — ci: simplify external contributor check to fork-only (#9703)
+  - all 1 files removed on twarp
+- `69950058` — Scope orchestration SSE subscriptions to active parent/child roles (#9273)
+  - all 8 modified files removed on twarp; 1 new files only useful with the deleted code
+- `e0f91026` — Recognize the image/jpg MIME alias when downloading artifacts (#9603)
+  - all 1 files removed on twarp
+- `cca43463` — dont log tool call result errors as error level (#9495)
+  - all 1 files removed on twarp
+- `4ac73783` — Rename Warp Agent to Warp. (#9506)
+  - all 1 files removed on twarp
+- `67b929c6` — Add @harryalbert as CLI agent stakeholder (#9504)
+  - OVERRIDE: CLI agent stakeholder paths gone on twarp
+
