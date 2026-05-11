@@ -62,14 +62,19 @@ struct MouseStateHandles {
     project_explorer_button: MouseStateHandle,
     global_search_button: MouseStateHandle,
     warp_drive_button: MouseStateHandle,
+    shortcuts_button: MouseStateHandle,
     // twarp: 2c-d — conversation_list_view_button removed
 }
 
 #[derive(Clone, Debug)]
 pub enum LeftPanelAction {
     ProjectExplorer,
-    GlobalSearch { entry_focus: GlobalSearchEntryFocus },
+    GlobalSearch {
+        entry_focus: GlobalSearchEntryFocus,
+    },
     WarpDrive,
+    /// Custom command shortcuts panel (PRODUCT 04 §26).
+    Shortcuts,
     // twarp: 2c-d — kept for legacy call-sites; AI conversation list deleted.
     ConversationListView,
 }
@@ -94,8 +99,14 @@ pub enum LeftPanelEvent {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToolPanelView {
     ProjectExplorer,
-    GlobalSearch { entry_focus: GlobalSearchEntryFocus },
+    GlobalSearch {
+        entry_focus: GlobalSearchEntryFocus,
+    },
     WarpDrive,
+    /// Custom command shortcuts panel (PRODUCT 04 §26). The full GUI lives
+    /// in a future sub-phase; 4c renders the tab plus a placeholder so the
+    /// integration lights up.
+    Shortcuts,
     // twarp: 2c-d — variant kept so legacy call-sites compile; AI conversation list deleted.
     ConversationListView,
 }
@@ -392,6 +403,15 @@ impl LeftPanelView {
                     tooltip_keybinding_names,
                 }
             }
+            ToolPanelView::Shortcuts => ToolbeltButtonConfig {
+                icon: Icon::Keyboard,
+                active_icon: None,
+                tooltip_text: "Custom shortcuts".to_owned(),
+                action: LeftPanelAction::Shortcuts,
+                render_with_active_state: false,
+                tooltip_keybinding: None,
+                tooltip_keybinding_names: vec![],
+            },
             // twarp: 2c-d — ConversationListView arm: AI deleted, use ProjectExplorer config as fallback.
             ToolPanelView::ConversationListView => ToolbeltButtonConfig {
                 icon: Icon::FileCopy,
@@ -639,6 +659,9 @@ impl LeftPanelView {
                     view.reset_focused_index_in_warp_drive(true, ctx);
                 });
             }
+            // 4c stub: Shortcuts panel has no internal child view to focus
+            // yet. Full GUI (list, detail editor) lands in a follow-up.
+            ToolPanelView::Shortcuts => {}
             // twarp: 2c-d — ConversationListView arm: AI deleted, no-op.
             ToolPanelView::ConversationListView => {}
         }
@@ -790,6 +813,7 @@ impl LeftPanelView {
                     matches!(self.active_view.get(), ToolPanelView::GlobalSearch { .. })
                 }
                 LeftPanelAction::WarpDrive => self.active_view.get() == ToolPanelView::WarpDrive,
+                LeftPanelAction::Shortcuts => self.active_view.get() == ToolPanelView::Shortcuts,
                 // twarp: 2c-d — ConversationListView arm kept for legacy call-sites; AI deleted.
                 LeftPanelAction::ConversationListView => false,
             };
@@ -929,6 +953,9 @@ impl LeftPanelView {
                     );
                 }
             }
+            LeftPanelAction::Shortcuts => {
+                active_view_state::set(self, ToolPanelView::Shortcuts, ctx);
+            }
             // twarp: 2c-d — ConversationListView is a stub kept for legacy call-sites.
             LeftPanelAction::ConversationListView => {}
         }
@@ -1014,6 +1041,8 @@ impl View for LeftPanelView {
                     }
                 }
                 ToolPanelView::WarpDrive => ctx.focus(&self.warp_drive_view),
+                // 4c stub: no internal view to focus yet.
+                ToolPanelView::Shortcuts => {}
                 // twarp: 2c-d — ConversationListView arm: AI deleted, no-op.
                 ToolPanelView::ConversationListView => {}
             }
@@ -1027,6 +1056,7 @@ impl View for LeftPanelView {
             self.mouse_state_handles.project_explorer_button.clone(),
             self.mouse_state_handles.global_search_button.clone(),
             self.mouse_state_handles.warp_drive_button.clone(),
+            self.mouse_state_handles.shortcuts_button.clone(),
             // twarp: 2c-d — conversation_list_view_button removed
         ];
 
@@ -1083,6 +1113,12 @@ impl View for LeftPanelView {
                     .finish(),
             )
             .finish(),
+            // 4c stub: panel content is empty for now. The list/edit GUI
+            // arrives in a follow-up; 4b's hot reload already makes
+            // hand-editing `shortcuts.yaml` viable.
+            ToolPanelView::Shortcuts => {
+                Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()
+            }
             // twarp: 2c-d — ConversationListView arm: AI deleted, use empty content.
             ToolPanelView::ConversationListView => {
                 Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()

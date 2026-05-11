@@ -890,6 +890,7 @@ pub enum LeftPanelDisplayedTab {
     FileTree,
     GlobalSearch,
     WarpDrive,
+    Shortcuts,
     ConversationListView,
 }
 
@@ -899,6 +900,7 @@ impl From<ToolPanelView> for LeftPanelDisplayedTab {
             ToolPanelView::ProjectExplorer => LeftPanelDisplayedTab::FileTree,
             ToolPanelView::GlobalSearch { .. } => LeftPanelDisplayedTab::GlobalSearch,
             ToolPanelView::WarpDrive => LeftPanelDisplayedTab::WarpDrive,
+            ToolPanelView::Shortcuts => LeftPanelDisplayedTab::Shortcuts,
             ToolPanelView::ConversationListView => LeftPanelDisplayedTab::ConversationListView,
         }
     }
