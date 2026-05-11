@@ -5,7 +5,7 @@
 **Impl PR(s):**
 - 4a — runtime: [#52](https://github.com/timomak/twarp/pull/52) (merged)
 - 4b — hot reload + GUI data layer: [#53](https://github.com/timomak/twarp/pull/53)
-- 4c — side-panel tab + stub view: —
+- 4c — side-panel tab + stub view: [#54](https://github.com/timomak/twarp/pull/54)
 - 4d — inline GUI features: —
 
 ## Scope
