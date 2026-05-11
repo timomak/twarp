@@ -80,7 +80,7 @@ const FALLBACK_PLACEHOLDER_TEXT: &str = "Type a commit message";
 const LOADING_LABEL: &str = "Committing\u{2026}";
 
 pub struct CommitState {
-    intent: CommitIntent,
+    pub(super) intent: CommitIntent,
     include_unstaged: bool,
     file_changes: Vec<FileChangeEntry>,
     changes_expanded: bool,
