@@ -9,86 +9,97 @@ Companion to [PRODUCT.md](PRODUCT.md). Section numbers below refer to PRODUCT.md
 
 ## Context
 
-This feature adds a new user-facing config file (`shortcuts.yaml`) and a runtime executor that interprets sequences of four primitive actions (`new_tab`, `type`, `press`, `wait`) bound to keyboard chords. None of the moving parts exist yet — there is no precedent in the codebase for "one keystroke fires an async sequence of terminal actions". The closest precedent is the existing keybindings system, which dispatches a single synchronous action per chord.
-
-The implementation reuses existing infrastructure for chord parsing, keymap registration, PTY writes, and toast surfacing; the new code is the YAML schema, the action executor, and the cancellation glue.
+This feature has two halves: a runtime that interprets sequences of five primitive actions bound to keyboard chords, and a side-panel GUI for CRUD-ing those shortcuts. The runtime reuses existing infrastructure for chord parsing, keymap registration, PTY writes, pane splits, and toast surfacing. The GUI plugs into the existing left-panel tool-view system. Almost nothing in either half is novel architecture; the work is wiring.
 
 Relevant files on master:
 
 - `app/src/keyboard.rs:34` — `KEYBINDINGS_FILE_NAME = "keybindings.yaml"`. The new `shortcuts.yaml` follows the same naming pattern in the same directory.
-- `app/src/keyboard.rs:38` — `load_custom_keybindings(app: &mut AppContext)` startup hook. Sister entry point is the natural home for `load_custom_shortcuts(app)`.
+- `app/src/keyboard.rs:38` — `load_custom_keybindings(app: &mut AppContext)` startup hook. Sister entry point is the natural home for `shortcuts::load(app)`.
 - `app/src/keyboard.rs:97` — `keybinding_file_path()` → `config_local_dir().join(KEYBINDINGS_FILE_NAME)`. Mirror for `shortcuts_file_path()`.
 - `app/src/lib.rs:2167` — startup call to `keyboard::load_custom_keybindings(ctx)`. The new `shortcuts::load(ctx)` call goes right next to it.
-- `crates/warpui_core/src/keymap.rs:897` — `Keystroke::parse` — the exact chord parser we delegate to (PRODUCT §4). Accepts `cmdorctrl-shift-D` style. Errors are `anyhow::Error` with human-readable messages we can surface to users.
-- `crates/warpui_core/src/keymap.rs:794` — `VALID_SPECIAL_KEYS` — canonical list of named keys (PRODUCT §9 cross-checked).
+- `crates/warpui_core/src/keymap.rs:897` — `Keystroke::parse` — the exact chord parser we delegate to (PRODUCT §4). Accepts `cmdorctrl-shift-D` style.
+- `crates/warpui_core/src/keymap.rs:794` — `VALID_SPECIAL_KEYS` — canonical list of named keys cross-checked against PRODUCT §10.
 - `crates/warpui_core/src/keymap.rs:405` — `register_editable_bindings(...)`.
-- `crates/warpui_core/src/keymap.rs:439-440` — *"the most recently registered editable binding will have the highest precedence"*. Means registering custom shortcuts **after** the built-ins is the entire mechanism for PRODUCT §15 (custom wins).
-- `app/src/workspace/mod.rs:492-563` — `EditableBinding::new(...).with_context_predicate(id!("Workspace")).with_group(...).with_key_binding("cmdorctrl-1")` — exact registration shape for the new shortcut bindings.
-- `app/src/workspace/action.rs:94` — `pub enum WorkspaceAction { ... }`. Two new variants live here: `RunCustomShortcut { id }` and `CancelRunningShortcut`.
-- `app/src/workspace/view.rs:4093` — `active_tab_index(&self) -> usize`. Used by the executor to capture the initial target tab when a sequence starts.
-- `app/src/workspace/view.rs:9538` — `Workspace::add_terminal_tab(hide_homepage: bool, ctx)`. The implementation of the `new_tab` action.
-- `app/src/workspace/view.rs:5884` — `read_from_active_terminal_view(...)` — pattern for accessing the active terminal view of a given tab. Adapt to a `with_active_terminal_view_for_tab(tab_index, ...)` variant for the executor.
-- `app/src/workspace/view.rs:8417` — `Workspace::write_to_pty(data, ctx)`. **Not directly callable from the executor** — it operates on `self` (the workspace's own pane). The executor instead targets a tab → pane group → active session view → terminal view → `write_to_pty` chain (model below).
-- `app/src/workspace/view.rs:17424` — `AddDefaultTab => …` precedent for a `WorkspaceAction` arm that opens a new tab.
-- `app/src/workspace/toast_stack.rs:36` — `ToastStack::add_persistent_toast(toast, window_id, ctx)`. Backbone of PRODUCT §18.
-- `app/src/view_components/dismissible_toast.rs:346` — `DismissibleToast::default(main_text: String) -> Self`. Constructor.
-- `app/src/terminal/view.rs:8417` — `TerminalView::write_to_pty<B: Into<Cow<'static, [u8]>>>(data, ctx)` — final write surface for both `type` and `press`.
-- `app/src/terminal/view.rs:8444` — `clear_line_editor_and_write_to_pty_with_mac_workaround_hack` — a precedent for chunked PTY writes with a 10ms inter-chunk delay. Relevant if `type` strings ever grow past the 1 KB PTY chunk limit (PRODUCT does not require us to handle that, but the workaround is the safe default if we use the existing helper).
-- `app/src/terminal/escape_sequences.rs` (referenced from `terminal/view.rs:8454`) — `C0` constants for control bytes. Source of truth for the `press` → bytes table.
+- `crates/warpui_core/src/keymap.rs:439-440` — *"the most recently registered editable binding will have the highest precedence"*. Means registering custom shortcuts **after** the built-ins is the mechanism for PRODUCT §16 (custom wins).
+- `app/src/workspace/mod.rs:492-563` — `EditableBinding::new(...).with_context_predicate(id!("Workspace")).with_group(...).with_key_binding("cmdorctrl-1")` — registration shape for the new shortcut bindings.
+- `app/src/workspace/action.rs:94` — `pub enum WorkspaceAction { ... }`. Two new variants here: `RunCustomShortcut { id }` and `CancelRunningShortcut`.
+- `app/src/workspace/view.rs:4093` — `active_tab_index(&self) -> usize`. Used by the executor to capture the initial target tab.
+- `app/src/workspace/view.rs:9538` — `Workspace::add_terminal_tab(hide_homepage: bool, ctx)`. Implementation of `new_tab`.
+- `app/src/pane_group/mod.rs:459-475` — `EditableBinding::new("pane_group:add_right", ..., PaneGroupAction::Add(Direction::Right))` and the analogous `add_down`. **Implementation of `new_pane`** dispatches `PaneGroupAction::Add(Direction::Right|Down)` on the target tab's pane group.
+- `app/src/util/bindings.rs:299` — `CustomAction::SplitPaneRight => Keystroke::parse(cmd_or_ctrl_shift("d")).ok()`. Confirms `cmdorctrl-shift-D` is the built-in's default — PRODUCT §16 / Driving examples already calls this out.
+- `app/src/workspace/view.rs:5884` — `read_from_active_terminal_view(...)` — pattern for accessing the active terminal view; adapt for tab-indexed access from the executor.
+- `app/src/terminal/view.rs:8417` — `TerminalView::write_to_pty<B: Into<Cow<'static, [u8]>>>(data, ctx)` — final write surface for `type` and `press`.
+- `app/src/workspace/toast_stack.rs:36` — `ToastStack::add_persistent_toast(toast, window_id, ctx)`. Backbone of PRODUCT §19.
+- `app/src/view_components/dismissible_toast.rs:346` — `DismissibleToast::default(main_text: String) -> Self`.
+- `app/src/app_state.rs:889` — `LeftPanelDisplayedTab` enum. A new `Shortcuts` variant lives here.
+- `app/src/workspace/view/left_panel.rs` — `ToolPanelView` enum + view dispatch. New `ToolPanelView::Shortcuts` variant.
+- `app/src/workspace/view.rs:17257` — `compute_left_panel_views(ctx)` builds the ordered list of `ToolPanelView`s shown in the panel switcher. Insert `Shortcuts` immediately after `GlobalSearch` (PRODUCT §26).
+- `app/src/warp_managed_paths_watcher.rs:7` — `notify_debouncer_full::notify` is already a dependency; reuse for the `shortcuts.yaml` file watcher (PRODUCT §24).
 
-## Proposed changes
+## Sub-phase split
 
-### 1. Sub-phase split
+**Recommendation: split into 4a and 4b.** Total scope is large enough — runtime plus GUI — that a single PR would be reviewer-hostile, and each half delivers user value on its own.
 
-**Recommendation: single PR.** The four primitives are tightly coupled — the parser without an executor ships dead code that can't be smoke-tested, and the executor without registration into the keymap can't be reached from a user. Splitting also doubles the spec-PR overhead. Reserve a 2-PR split as a fallback if the executor or the cancellation handling grows controversial during review; the natural cut line if forced is "config + parser (loaded but does nothing)" vs. "executor + bindings + cancel".
+- **4a — Runtime.** Parser + executor + bindings + cancel + toast. Hand-edit `shortcuts.yaml`, restart twarp to apply. Covers PRODUCT §§1–23, §25.
+- **4b — Side-panel GUI + hot reload.** Adds the `ToolPanelView::Shortcuts` view (list + detail editor + keystroke capture + validation surfacing + conflict warnings), plus file-watch reload that the GUI relies on for its save → live-update flow. Covers PRODUCT §24 (hot reload) and §§26–38 (GUI).
 
-### 2. New module `app/src/shortcuts/`
+This split is durable: 4a's public API (`ShortcutsModel`, `Registry`, `parse_shortcuts_yaml`, error message vocabulary) is exactly what 4b consumes. No interface churn at the boundary; 4b is layering, not retrofitting.
+
+The fallback if 4b grows: split it further into "hot reload only" and "GUI only" — but they share so much (the GUI assumes hot reload so its save reflects live) that a single 4b PR is the default plan.
+
+## Proposed changes — 4a (Runtime)
+
+### 1. New module `app/src/shortcuts/`
 
 ```
 app/src/shortcuts/
-├── mod.rs          // public API: load(ctx), Registry, ShortcutId
-├── config.rs       // parse_shortcuts_yaml(text) -> ParseResult
-├── action.rs       // Action enum, KeyName enum
-├── executor.rs     // Runner state machine
-├── key_to_bytes.rs // KeyName → PTY byte sequence
+├── mod.rs           // public API: load(ctx), ShortcutsModel, ShortcutId
+├── config.rs        // parse_shortcuts_yaml(text) -> ParseResult, serialize_shortcuts(...)
+├── action.rs        // Action, Direction, KeyName enums
+├── executor.rs      // Runner state machine
+├── key_to_bytes.rs  // KeyName → PTY byte sequence
 └── shortcuts_tests.rs
 ```
 
-Wired into `app/src/lib.rs` next to the existing `keyboard` module.
+`serialize_shortcuts` lives in `config.rs` from 4a even though only 4b uses it — having parse and serialize in one module keeps round-trip tests trivially local.
 
-### 3. Types
+### 2. Types
 
 ```rust
-// shortcuts/action.rs
+// action.rs
 pub enum Action {
     NewTab,
+    NewPane(Direction),
     Type(String),
     Press(KeyName),
     Wait(Duration),
 }
 
+pub enum Direction { Right, Down }
+
 pub enum KeyName { Enter, Tab, Escape, Backspace, Space, Up, Down, Left, Right,
                    Home, End, PageUp, PageDown, Delete, Insert, NumpadEnter,
                    F(u8) /* 1..=12 */ }
 
-// shortcuts/mod.rs
+// mod.rs
 pub struct Shortcut {
     pub keys: Keystroke,        // parsed via warpui_core::keymap::Keystroke::parse
     pub actions: Vec<Action>,
-    pub source_line: usize,     // for error / log messages
     pub binding_name: String,   // "shortcuts:user_<index>"
 }
 
 pub type ShortcutId = u32;
 
-pub struct Registry {
-    by_id: Vec<Shortcut>,
+pub struct ShortcutsModel {
+    pub registry: Vec<Shortcut>,
+    pub errors: Vec<String>,
+    pub current_runner: Option<Runner>,
 }
 ```
 
-`Registry` is owned by a singleton model (`ShortcutsModel`), accessed via `ShortcutsModel::handle(ctx).read(...)`.
+`ShortcutsModel` is a singleton model, same shape as `ToastStack` (`workspace/toast_stack.rs`).
 
-### 4. Config parsing (`shortcuts/config.rs`)
+### 3. Config parsing (`shortcuts/config.rs`)
 
 ```rust
 pub struct ParseResult {
@@ -97,24 +108,22 @@ pub struct ParseResult {
 }
 
 pub fn parse_shortcuts_yaml(text: &str) -> ParseResult;
+pub fn serialize_shortcuts(shortcuts: &[Shortcut]) -> String;  // used by 4b
 ```
 
 Implementation notes:
 
-- Parse into `serde_yaml::Value` first (not a `#[derive(Deserialize)]` struct) so we can produce custom messages per PRODUCT §19. `serde_yaml::Value` preserves line/column info via `serde_yaml::with::singleton_map` features; if that proves fiddly, fall back to a hand-walked YAML tree and identify entries by 1-based list index (PRODUCT §19's messages use index, not line).
-- A single parse failure at the root → return `errors: vec![format!("shortcuts.yaml: failed to parse: {e}")]` (PRODUCT §20) and `shortcuts: vec![]`.
-- For each entry that validates, build a `Shortcut` and append. For each entry that fails, append a message to `errors` and continue (PRODUCT §17).
-- Chord parsing delegates to `warpui_core::keymap::Keystroke::parse(keys_str)`. On `Err`, emit the "invalid key chord" message (PRODUCT §19); the inner `anyhow` chain is dropped to keep the message tight.
-- Casing fix-up for the `shift-<letter>` debug-panic: pre-normalize lowercase letters in the chord string to uppercase when `shift` is in the modifier set (e.g. `cmd-shift-d` → `cmd-shift-D`) before handing to `Keystroke::parse`. Documented in PRODUCT §4.
-- Duplicate detection: after parsing, dedup by `Keystroke::normalized()` (PRODUCT §19 last row). Earlier entries are dropped; the surviving entry is the last in source order.
-- Empty `actions:` list → error (PRODUCT §19 row 4). Empty file or `shortcuts: []` → empty `ParseResult` with no errors (PRODUCT §21).
-- The `type` action's value is checked for newlines (PRODUCT §19, "Newline in type" row). Tabs are allowed.
-- `wait` durations parse via a small parser accepting `\d+(ms|s|m)`. Out-of-range (`< 1ms` or `> 60s`) → error. `humantime` is overkill; a 10-line parser is fine.
-- `press` values normalize to `KeyName`; anything outside `VALID_SPECIAL_KEYS` (filtered to v1's allowed subset — PRODUCT §9) → error. Modifier presence (`-` in the value) → "Modifier in press" error.
+- Parse into `serde_yaml::Value` first (not a `#[derive(Deserialize)]` struct) so we can produce PRODUCT §20's exact messages. Identify entries by 1-based list index.
+- A single parse failure at the root → return `errors: vec![format!("shortcuts.yaml: failed to parse: {e}")]` (PRODUCT §21) and `shortcuts: vec![]`.
+- For each entry that validates, build a `Shortcut`. For each that fails, append to `errors` and continue (PRODUCT §18).
+- Chord parsing: pre-normalize `shift-<lowercase>` to `shift-<UPPERCASE>` (PRODUCT §4), then delegate to `Keystroke::parse`. On error → §20 row "Malformed key chord".
+- Duplicate detection: dedup by `Keystroke::normalized()` (§20 row "Duplicate keys"). Last in source order survives.
+- `wait` durations parse via a ~10-line parser accepting `\d+(ms|s|m)` clamped to `[1ms, 60s]`. `humantime` is overkill.
+- `new_pane` direction parses to `Direction::Right` / `Direction::Down`. Missing / invalid → §20 rows.
+- `type` value: must be a string; reject newlines (§9, §20).
+- `press` value: must be in the v1 subset (PRODUCT §10) and must not contain modifiers.
 
-### 5. Action model
-
-PRODUCT distinguishes four primitives, but they share a runtime: `WorkspaceAction` should not carry the heavy payload (the whole action list) of every shortcut binding. Use the **executor model**:
+### 4. Action model
 
 ```rust
 // app/src/workspace/action.rs (additions near line 210)
@@ -122,11 +131,9 @@ RunCustomShortcut { id: ShortcutId },
 CancelRunningShortcut,
 ```
 
-`RunCustomShortcut { id }` is dispatched by the keymap when the user presses a custom chord. The handler fetches the action list from `Registry` and starts a runner. `CancelRunningShortcut` is dispatched by the conditional Escape binding (§7).
+Why not one variant per action: `WorkspaceAction` is the action-palette / keybinding surface; the five primitives are private to the executor and have no user-bindable shape on their own. Keep them out of the enum.
 
-Why not one variant per action: the actions never appear in user-bindable form on their own — there is no `WorkspaceAction::CustomType { text }` worth exposing in the command palette. Keeping them out of the enum keeps the enum small and prevents accidental coupling.
-
-### 6. Registration into the keymap
+### 5. Registration
 
 At startup, after `keyboard::load_custom_keybindings(ctx)`, call `shortcuts::load(ctx)`:
 
@@ -134,57 +141,35 @@ At startup, after `keyboard::load_custom_keybindings(ctx)`, call `shortcuts::loa
 pub fn load(app: &mut AppContext) {
     let text = match std::fs::read_to_string(shortcuts_file_path()) {
         Ok(t) => t,
-        Err(_) => return,  // missing/unreadable file → no shortcuts (PRODUCT §21)
+        Err(_) => return,
     };
     let ParseResult { shortcuts, errors } = parse_shortcuts_yaml(&text);
 
-    let mut bindings = Vec::with_capacity(shortcuts.len());
-    for (id, sc) in shortcuts.iter().enumerate() {
-        bindings.push(
-            EditableBinding::new(
-                sc.binding_name.as_str(),                    // "shortcuts:user_0", ...
-                format!("Custom shortcut: {}", sc.keys.normalized()),
-                WorkspaceAction::RunCustomShortcut { id: id as ShortcutId },
-            )
-            .with_context_predicate(id!("Workspace"))
-            .with_group("Custom shortcuts")
-            .with_key_binding(sc.keys.normalized().as_str()),
-        );
-    }
-    app.register_editable_bindings(bindings);
+    register_shortcut_bindings(app, &shortcuts);
+    register_escape_cancel_binding(app);  // §7
 
     ShortcutsModel::handle(app).update(app, |model, _| {
-        model.registry = Registry { by_id: shortcuts };
+        model.registry = shortcuts;
         model.errors = errors;
     });
+
+    surface_errors(app);  // §11
 }
 ```
 
-Built-in shortcut override (PRODUCT §15) is automatic: per `crates/warpui_core/src/keymap.rs:439-440`, registration order determines precedence (later wins). Built-ins are registered earlier in startup; custom shortcuts register after. No special override flag needed.
+Built-in conflict precedence (PRODUCT §16) is automatic: per `keymap.rs:439-440`, registration order determines precedence (later wins). Built-ins are registered earlier; custom shortcuts register after. No special override flag.
 
-### 7. Escape cancellation (PRODUCT §13)
+### 6. Action implementations (`executor.rs`)
 
-The Escape key is already routed by the keymap when no surface consumes it. We want bare `escape` to dispatch `WorkspaceAction::CancelRunningShortcut` **only when a runner is active**, and to be inert (fall through to the active pane) otherwise.
+Each primitive maps to one existing API:
 
-Approach: a single `EditableBinding` registered alongside the custom shortcuts:
+- **`NewTab`** → `Workspace::add_terminal_tab(false, ctx)`. The newly added tab becomes active per its existing contract.
+- **`NewPane(direction)`** → on the target tab's pane group, dispatch `PaneGroupAction::Add(direction)`. Reuses `app/src/pane_group/mod.rs:459-475`. The pane group's existing handler creates the new pane and focuses it; the executor relies on that focus shift to make subsequent `type`/`press` actions land in the new pane (PRODUCT §8 last sentence).
+- **`Type(text)`** → resolve the target tab's active terminal view (see §9), call `terminal_view.write_to_pty(text.as_bytes().to_vec(), ctx)`. Long strings route through `terminal/view.rs:8444`'s chunked-write helper to avoid the macOS PTY 1 KB bug.
+- **`Press(key)`** → look up bytes via `key_to_bytes::bytes_for(key)`; same write path as `Type`.
+- **`Wait(dur)`** → `ctx.spawn(Timer::after(dur), move |runner_handle, _, ctx| runner_handle.continue_after_wait(ctx))`. Pattern matches `app/src/throttle.rs:41` and `app/src/debounce.rs:107`.
 
-```rust
-EditableBinding::new(
-    "shortcuts:cancel_running",
-    "Cancel running custom shortcut",
-    WorkspaceAction::CancelRunningShortcut,
-)
-.with_context_predicate(id!("Workspace") & id!(flags::SHORTCUT_RUNNING))
-.with_key_binding("escape")
-```
-
-`flags::SHORTCUT_RUNNING` is a new context flag (alongside the existing `flags::SHOW_PROJECT_EXPLORER` at `workspace/mod.rs:488`). The `ShortcutsModel` toggles it on when a runner starts and off when the runner finishes/aborts.
-
-Because the binding is gated on the flag, normal Escape behavior (closing a modal, the terminal pane consuming Escape, etc.) is unaffected when no sequence is in flight. When a sequence is in flight, the gated binding takes precedence (registered late → highest precedence) and consumes the Escape press (PRODUCT §13's "not also passed through").
-
-If during impl `id!(flags::FOO)` flag predicates turn out to be set/queried only via a specific pathway (not arbitrary bool toggles), fall back to wrapping the executor in a `View` whose context predicate is active iff the runner is alive — same effect via a different surface.
-
-### 8. Executor (`shortcuts/executor.rs`)
+`Runner` state:
 
 ```rust
 pub struct Runner {
@@ -196,28 +181,33 @@ pub struct Runner {
 }
 ```
 
-A single runner lives in `ShortcutsModel`; only one in flight at a time (PRODUCT §12). Starting a new run while one is active → log + drop the trigger.
+Only one runner in flight (PRODUCT §13). A new trigger while alive → log + drop.
 
-Execution loop (driven from the `WorkspaceAction::RunCustomShortcut` handler in `workspace/view.rs`):
+### 7. Escape cancellation (PRODUCT §14)
 
-1. Resolve the `Workspace` for the current window; capture `active_tab_index` as `target_tab` and `window_id` as `target_window`.
-2. Set `flags::SHORTCUT_RUNNING` to true on this workspace's context.
-3. Step through actions:
-   - `Action::NewTab` → `self.add_terminal_tab(false, ctx)`; then `self.target_tab = self.active_tab_index` (newly created tab becomes active per `add_terminal_tab`'s contract).
-   - `Action::Type(text)` → resolve the target tab's active terminal view (see §9 below); call `terminal_view.write_to_pty(text.as_bytes().to_vec(), ctx)`. If the target tab/pane no longer exists (PRODUCT §16), abort.
-   - `Action::Press(key)` → look up the byte sequence in `key_to_bytes::bytes_for(key)`; same write path as `Type`.
-   - `Action::Wait(dur)` → `ctx.spawn(Timer::after(dur), move |runner, _, ctx| runner.continue_after_wait(ctx))`. The `Timer::after` pattern is already used in `app/src/throttle.rs:41` and `app/src/debounce.rs:107`. Inside the continuation, check `cancelled`; if true, finalize without continuing.
-4. On the last action's completion (or abort), set `flags::SHORTCUT_RUNNING` to false. Drop the `Runner`.
+Register a flag-gated binding alongside the custom shortcuts:
 
-Cancel path (`CancelRunningShortcut` handler): set `runner.cancelled = true`. A `wait` in flight checks the flag on its continuation and bails. A `type`/`press` already in progress writes its byte chunk and then bails on the next step. PRODUCT §13's "type that has already started writing is not rolled back" matches this directly.
+```rust
+EditableBinding::new(
+    "shortcuts:cancel_running",
+    "Cancel running custom shortcut",
+    WorkspaceAction::CancelRunningShortcut,
+)
+.with_context_predicate(id!("Workspace") & id!(flags::SHORTCUT_RUNNING))
+.with_key_binding("escape")
+```
 
-### 9. PTY write path for a target tab
+`flags::SHORTCUT_RUNNING` is a new context flag (sibling of `flags::SHOW_PROJECT_EXPLORER` in `workspace/mod.rs:488`), toggled on/off by `Runner` lifecycle. When no runner is alive the binding does not intercept Escape — terminal/modal Escape behavior is untouched. Registration order (custom-after-built-in) means this binding takes precedence when active and consumes the Escape press (PRODUCT §14's "not also passed through").
 
-`Workspace::write_to_pty` (line 8417) writes to *the workspace's pane group*, not a specific tab. The executor instead resolves the terminal view by tab index:
+If `id!(flags::FOO)` flags turn out not to support imperative toggling, fall back to wrapping the runner in a View whose context predicate is alive iff the runner exists (same effect, different surface).
+
+### 8. PTY write path for a target tab
+
+`Workspace::write_to_pty` (line 8417) writes to the workspace's own pane, not a specific tab. The executor resolves the terminal view by tab index:
 
 ```rust
 fn write_to_target_pty(
-    &self,                         // &Workspace
+    &self,
     target_tab: usize,
     bytes: Vec<u8>,
     ctx: &mut ViewContext<Workspace>,
@@ -232,18 +222,16 @@ fn write_to_target_pty(
 }
 ```
 
-Modelled after `read_from_active_terminal_view` (line 5884) but parameterized by tab index. Returns `TargetLost` when the tab or its active pane has vanished mid-sequence; the executor catches it and aborts (PRODUCT §16).
+Modelled after `read_from_active_terminal_view` (line 5884), parameterized by tab index. `TargetLost` triggers PRODUCT §17.
 
-For very long `type` strings (>1 KB), reuse the chunked-write helper at `terminal/view.rs:8444`. The PRODUCT spec does not impose a max `type` length, but the existing mac PTY workaround already covers the realistic upper bound; route `type` through the chunked variant unconditionally to avoid surprise.
+### 9. `press` → bytes (`key_to_bytes.rs`)
 
-### 10. `press` → bytes (`shortcuts/key_to_bytes.rs`)
-
-A small const table:
+Const table:
 
 | KeyName     | Bytes                  |
 |-------------|------------------------|
 | Enter       | `\r` (0x0D)            |
-| NumpadEnter | `\r` (0x0D)            |
+| NumpadEnter | `\r`                   |
 | Tab         | `\t` (0x09)            |
 | Escape      | `\x1b`                 |
 | Backspace   | `\x7f`                 |
@@ -258,99 +246,217 @@ A small const table:
 | PageDown    | `\x1b[6~`              |
 | Insert      | `\x1b[2~`              |
 | Delete      | `\x1b[3~`              |
-| F1–F4       | `\x1bOP` / `OQ` / `OR` / `OS` |
+| F1–F4       | `\x1bOP`/`OQ`/`OR`/`OS`|
 | F5–F12      | `\x1b[15~`..`\x1b[24~` |
 
-Source: VT100/ANSI escape sequences (the same sequences a terminal emulator emits when the corresponding physical key is pressed in default mode). Prefer pulling constants from `app/src/terminal/escape_sequences.rs` where they already exist (the `C0` module has `ESC`, `CR`, `HT`); for CSI sequences not already in that module, define them in `key_to_bytes.rs` rather than expanding the existing module — keeps the change self-contained.
+Source: VT100/ANSI. Pull `ESC`, `CR`, `HT` from `terminal/escape_sequences.rs::C0`; define CSI sequences inline rather than expanding that module.
 
-This intentionally does not implement Application Cursor Keys mode (`DECCKM`) — terminals in cursor-key mode emit `\x1bOA` for Up. For v1 the assumption is the running program receives the default sequence; if real usage shows that a `press: up` does the wrong thing in a `vim`/`less` context, the executor can query the terminal's mode before encoding. Track as a follow-up.
+DECCKM (Application Cursor Keys) mode is **not** v1-aware: arrow keys always emit the default `\x1b[?` form. Track as follow-up if `press: up` in `vim` proves wrong.
 
-### 11. Toast surfacing (PRODUCT §18)
-
-After `shortcuts::load(ctx)` returns and the `ShortcutsModel` holds any errors:
+### 10. Toast surfacing (PRODUCT §19)
 
 ```rust
-if !errors.is_empty() {
-    let msg = format!("shortcuts.yaml has {} error(s) — see logs", errors.len());
+fn surface_errors(ctx: &mut AppContext) {
+    let model = ShortcutsModel::handle(ctx);
+    let errors = model.read(ctx, |m, _| m.errors.clone());
+    if errors.is_empty() { return; }
+    let msg = format!("shortcuts.yaml has {} error(s) — see logs or open Custom shortcuts", errors.len());
     for e in &errors { log::warn!("{e}"); }
     ToastStack::handle(ctx).update(ctx, |stack, ctx| {
         stack.add_persistent_toast(
             DismissibleToast::default(msg),
-            current_window_id,
+            current_window_id(ctx),
             ctx,
         );
     });
 }
 ```
 
-`current_window_id` is the workspace's window at startup — at the moment `load` runs, there is exactly one window. (If startup ever changes to create multiple windows up front, use `WindowId::default()` or surface the toast to each workspace as it spawns; not a v1 concern.)
+4b adds the "open Custom shortcuts" link to the toast (intent: clicking the toast opens the panel). 4a's toast is plain text.
 
-### 12. Module ownership boundaries
+## Proposed changes — 4b (Side panel GUI + hot reload)
 
-- `shortcuts::config` is pure (no `ctx`, no I/O beyond the input string). All tests live in `shortcuts_tests.rs` and run without harness.
-- `shortcuts::executor` owns the action loop and the cancel flag; takes `&mut Workspace` + `ctx` from the action handler.
-- `ShortcutsModel` is the single source of truth for the registry + error list + currently running `Runner`. Singleton model, same shape as `ToastStack`.
-- The `WorkspaceAction` handler in `workspace/view.rs` is the only place that touches both `Workspace` mutation and `ShortcutsModel` — keeps the executor's bridging code in one file.
+### 11. File watcher → registry reload (PRODUCT §24)
+
+Reuse `notify_debouncer_full::notify` (already a dependency, see `warp_managed_paths_watcher.rs:7`). A new `shortcuts/watcher.rs` registers a 200ms-debounced watch on `shortcuts_file_path()`. On any modify/create/remove event:
+
+1. Re-read the file.
+2. Call `parse_shortcuts_yaml` to produce a fresh `ParseResult`.
+3. Update `ShortcutsModel.registry` and `ShortcutsModel.errors`.
+4. Re-register editable bindings: remove the previous shortcut bindings, register new ones.
+5. Re-surface toast if errors changed since last load.
+6. In-flight runner (if any) is **not** interrupted (PRODUCT §24 last sentence) — it completes with its captured action list (`Runner` holds the action list it started with, not a registry index — see §6 above; verify during impl and adjust `Runner` shape if it currently dereferences the registry mid-flight).
+
+The runtime registry refresh and the binding re-registration happen on the AppContext thread, gated by an internal mutex to serialize against in-flight saves from the GUI.
+
+### 12. `ToolPanelView::Shortcuts`
+
+Add the new variant in `app/src/workspace/view/left_panel.rs` and the matching `LeftPanelDisplayedTab::Shortcuts` in `app/src/app_state.rs:889`. Update `From<ToolPanelView> for LeftPanelDisplayedTab` (line 896) and the reverse mapping in `workspace/view.rs:3380-3385`.
+
+In `compute_left_panel_views` (`workspace/view.rs:17257`), append `ToolPanelView::Shortcuts` immediately after `ToolPanelView::GlobalSearch` (PRODUCT §26).
+
+The view itself lives at `app/src/shortcuts/view/`:
+
+```
+shortcuts/view/
+├── mod.rs              // ShortcutsPanelView, the top-level View
+├── list.rs             // ShortcutsList: row rendering + delete/edit dispatch
+├── detail_editor.rs    // ShortcutsDetailEditor: form for one shortcut
+├── keystroke_capture.rs // KeystrokeCaptureField: chord-capture widget
+└── action_row.rs       // ActionRow: one row in the action editor
+```
+
+`ShortcutsPanelView` is a `View` with `ViewContext<Self>`; subscribes to `ShortcutsModel` changes to re-render on registry refresh.
+
+### 13. Keystroke capture widget (PRODUCT §32)
+
+`KeystrokeCaptureField` holds two states: `Display { chord: Option<Keystroke> }` and `Capturing { previous: Option<Keystroke> }`. In Capturing mode, the widget intercepts the next keystroke at the global key-event level (via the existing keystroke routing surface — investigate `app.subscribe_to_keystroke` or equivalent during impl; same hook the keymap uses to deliver `EditableBinding` dispatches). Escape during capture reverts to `Display { chord: previous }`.
+
+Captured chord is platform-specific (cmd vs ctrl); PRODUCT §32 documents this and says portable `cmdorctrl-` requires hand-editing.
+
+### 14. Action editor (PRODUCT §33)
+
+`ShortcutsDetailEditor` holds an `EditingShortcut`:
+
+```rust
+struct EditingShortcut {
+    keys: Option<Keystroke>,
+    actions: Vec<EditingAction>,
+    edit_target: EditTarget,  // CreateNew or Index(usize)
+}
+
+enum EditingAction {
+    NewTab,
+    NewPane { direction: Direction, parameter_error: Option<String> },
+    Type { text: String, error: Option<String> },
+    Press { key: Option<KeyName>, error: Option<String> },
+    Wait { raw: String, parsed: Option<Duration>, error: Option<String> },
+}
+```
+
+Inline validation reuses `config.rs`'s validators (PRODUCT §34). The Save button is disabled while any field has an error. On Save:
+
+1. Build a `Shortcut` from `EditingShortcut`. Surface any final errors.
+2. If `edit_target == CreateNew`, append; otherwise replace at the index.
+3. Call `save_to_disk` (next section).
+
+### 15. Save semantics (PRODUCT §36)
+
+`shortcuts/save.rs`:
+
+```rust
+pub fn save_to_disk(shortcuts: &[Shortcut]) -> Result<(), SaveError> {
+    let yaml = serialize_shortcuts(shortcuts);
+    let path = shortcuts_file_path();
+    let tmp = path.with_extension("yaml.tmp");
+    std::fs::write(&tmp, yaml)?;
+    std::fs::rename(&tmp, &path)?;
+    Ok(())
+}
+```
+
+Atomic via temp-file + rename. After successful save, the file watcher (§11) picks up the change and refreshes the in-memory registry. The save path also calls the refresh directly so platforms where file-watching is unavailable still update the in-memory registry (PRODUCT §24).
+
+Disk write failures surface inline in the editor (PRODUCT §36 last sentence) and roll back the in-memory state to match disk.
+
+### 16. Conflict warnings (PRODUCT §38)
+
+`shortcuts/conflict.rs::detect_conflicts(chord, current_registry, editing_index) -> Vec<Conflict>` returns up to two conflicts:
+
+```rust
+enum Conflict {
+    BuiltIn { binding_name: String },
+    Custom { entry_index: usize, keys: Keystroke },
+}
+```
+
+Built-in detection: walk `app.editable_bindings()` looking for `EditableBinding`s with `binding.trigger() == chord` whose `name` does not start with `"shortcuts:"`. Custom detection: linear scan of `current_registry`, skipping `editing_index`. Both warnings render below the keystroke field; neither disables Save.
+
+### 17. Errors banner (PRODUCT §35)
+
+The panel's top-level view checks `ShortcutsModel.errors` on every render. If non-empty, renders a collapsible banner (similar shape to the existing left-panel banners — locate a precedent during impl). Click expands; each error message is rendered verbatim.
+
+The invariant-by-invariant test plan (below) verifies that errors stick around until the underlying entries are fixed and that the banner clears on the next successful reload.
 
 ## Testing and validation
 
-| PRODUCT § | Verification |
-|-----------|--------------|
-| §1 (config file path) | Unit test: `shortcuts_file_path()` joins `config_local_dir()` with `"shortcuts.yaml"`. Smoke step 1 places the file there and step 2 reads it. |
-| §2 (top-level shape) | Parser unit tests in `shortcuts_tests.rs`: top-level list → error message exactly per §19 row 2; top-level scalar → same; missing `shortcuts:` key → error row 1; empty file → 0 shortcuts, 0 errors. |
-| §3 (entry shape) | Parser unit tests: missing `keys` → row 3; missing/empty `actions` → row 4; unknown field → row 5. |
-| §4 (chord normalization) | Parser unit tests: `cmd-shift-d` normalizes to `cmd-shift-D`; `Cmd-Shift-D` accepted; `cmdorctrl-1` parses; `cmd-k cmd-s` rejected (single chord only). Delegates to `Keystroke::parse` so its own coverage backstops us. |
-| §5 (action vocabulary) | Parser unit tests: each of `new_tab`/`type`/`press`/`wait` parses to the corresponding `Action`; unknown token → row 7; multi-key map → row 6. |
-| §6 (new_tab) | Workspace unit test: after `WorkspaceAction::RunCustomShortcut` whose sequence is `[NewTab]`, `active_tab_index` advanced; `target_tab` in the runner equals new index. Smoke step 4. |
-| §7 (sticky target) | Workspace unit test: start runner with `[NewTab, Wait(50ms), Type("x")]`; mid-wait change `active_tab_index` to a different tab; verify the `Type` lands in the originally captured tab (poll the tab's PTY buffer). Smoke step 5. |
-| §8 (type semantics) | Executor unit test: `Type("hello")` writes `b"hello"` to target PTY; no shell expansion, no twarp keybinding dispatched. Smoke step 3. |
-| §8 (newline in type) | Parser unit test: `type: "a\nb"` → row 11. |
-| §9 (press keys) | `key_to_bytes_tests.rs`: every supported `KeyName` returns its byte sequence; `bytes_for(Enter)` == b"\r". Smoke step 3 indirectly. |
-| §9 (unknown press / modifier in press) | Parser unit tests: `press: zzz` → row 10; `press: ctrl-c` → row 11. |
-| §10 (wait parsing + bounds) | Parser unit tests: `500ms`, `2s`, `1m` parse; `0ms`, `61s`, `1h`, `2x` → row 13. |
-| §10 (wait does not block input) | Smoke step 5 (user types into another tab during the wait); confirm no impact on the sequence. |
-| §11 (trigger) | Smoke steps 3 and 4. Plus: keymap unit test that registering a `Shortcut` results in a binding lookup for the normalized chord returning `RunCustomShortcut { id: 0 }`. |
-| §12 (single in-flight) | Smoke step 7. Plus: executor unit test: starting a runner while one is in flight is a no-op (registry's `current_runner` unchanged). |
-| §13 (cancellation) | Smoke step 6. Plus: executor unit test: setting `cancelled` mid-wait short-circuits the post-wait continuation; the consumed Escape does not produce a `\x1b` write on the target PTY. |
-| §14 (no abort on focus loss) | Manual: alt-tab away during a `wait`, return — verify sequence completed. Not a numbered smoke step since it's hard to script. |
-| §15 (built-in conflict) | Smoke step 11. Plus: keymap test asserting that after registration order (built-ins, then custom), the lookup for `cmdorctrl-t` returns the custom action. |
-| §16 (target lost) | Executor unit test: with `[NewTab, Wait(50ms), Type("x")]`, close the created tab during the wait; assert the runner aborts and `flags::SHORTCUT_RUNNING` is cleared. |
-| §17 / §18 (skipped invalid, toast) | Smoke step 8 / 9. Plus: parser unit test that one bad entry yields one error message and the remaining valid entries load. |
-| §19 (exact error messages) | Parser unit tests assert each row's message verbatim against a manufactured malformed YAML. |
-| §20 (unparseable yaml) | Parser unit test: indented-incorrectly YAML → single error containing `"failed to parse"`. |
-| §21 (empty/missing) | Smoke step 10. Plus: parser unit tests for empty string, `shortcuts:\n` (null), `shortcuts: []`. |
-| §22 (no leak when unfocused) | Manual only — relies on OS keystroke routing. Inherits behavior from existing keybindings. |
-| §23 (reload) | Manual: edit `shortcuts.yaml` with twarp running, verify no reload; quit and relaunch, verify edits take effect. Smoke steps 8 and 10 indirectly. |
-| §24 (telemetry) | Manual: spot-check that firing a custom shortcut emits the existing user-keybinding event (no per-action breakdown, no `type` payload in the event body). |
+| PRODUCT § | Verification | Phase |
+|-----------|--------------|-------|
+| §1 (config file path) | Unit: `shortcuts_file_path()` joins `config_local_dir()` with `"shortcuts.yaml"`. Smoke step 1. | 4a |
+| §2–§3 (top-level, entry shape) | Parser unit tests in `shortcuts_tests.rs`: top-level list / scalar / missing key → exact §20 message; missing `keys`/`actions`/empty actions → §20 rows. | 4a |
+| §4 (chord normalization) | Parser unit: `cmd-shift-d` auto-normalizes to `cmd-shift-D`; `Cmd-Shift-D` accepted; `cmdorctrl-1` parses; `cmd-k cmd-s` rejected. Delegates to `Keystroke::parse`. | 4a |
+| §5 (action vocabulary) | Parser unit: each of `new_tab`/`new_pane`/`type`/`press`/`wait` parses; unknown token → §20; multi-key map → §20. | 4a |
+| §6 (new_tab) | Workspace unit: `RunCustomShortcut` with sequence `[NewTab]` advances `active_tab_index`; runner's `target_tab` equals new index. Smoke step 3 indirectly (the driving examples use `new_pane`, not `new_tab`; covered explicitly by smoke step 15 with the `cmdorctrl-t` override). | 4a |
+| §7 (new_pane) | Pane-group unit: `RunCustomShortcut` with `[NewPane(Right)]` triggers `PaneGroupAction::Add(Direction::Right)`; new pane is active. Parser unit: missing direction → §20; invalid direction → §20. Smoke steps 3, 4. | 4a |
+| §8 (sticky target — tab and pane) | Workspace unit: start runner with `[NewPane(Right), Wait(50ms), Type("x")]`; mid-wait click back to original pane; verify `Type` lands in the newly-created pane. Smoke step 5. | 4a |
+| §9 (type semantics) | Executor unit: `Type("hello")` writes `b"hello"` to target PTY; no shell expansion, no twarp keybinding dispatched. Smoke step 3. | 4a |
+| §9 (newline in type) | Parser unit: `type: "a\nb"` → §20. | 4a |
+| §10 (press keys + bytes) | `key_to_bytes_tests.rs`: every supported `KeyName` returns the documented bytes; `bytes_for(Enter)` == `b"\r"`. | 4a |
+| §10 (unknown press / modifier in press) | Parser unit: `press: zzz` → §20; `press: ctrl-c` → §20. | 4a |
+| §11 (wait parsing + bounds) | Parser unit: `500ms`, `2s`, `1m` parse; `0ms`, `61s`, `1h`, `2x` → §20. | 4a |
+| §11 (wait does not block input) | Manual: type into another pane during wait. | 4a |
+| §12 (trigger) | Keymap unit: registering a Shortcut + chord lookup → `RunCustomShortcut { id }`. Smoke steps 3, 4. | 4a |
+| §13 (single in-flight) | Smoke step 7. Executor unit: second start while in flight is a no-op. | 4a |
+| §14 (cancellation) | Smoke step 6. Executor unit: `cancelled` mid-wait short-circuits; consumed Escape produces no `\x1b` on target PTY. | 4a |
+| §15 (no abort on focus loss / non-Escape input) | Manual: alt-tab away during a wait, return — sequence completes. | 4a |
+| §16 (built-in conflict) | Smoke step 15. Keymap unit: after built-in + custom registration, lookup for `cmdorctrl-t` returns the custom action. The driving-example `cmdorctrl-shift-D` shadowing of `SplitPaneRight` is exercised by smoke step 3. | 4a |
+| §17 (target lost) | Executor unit: `[NewPane(Right), Wait(50ms), Type("x")]`, close the created pane during the wait; assert abort + `flags::SHORTCUT_RUNNING` cleared. | 4a |
+| §18 / §19 (skipped invalid, toast) | Smoke step 12. Parser unit: one bad entry yields one error message; valid entries load. | 4a / 4b |
+| §20 (exact error messages) | Parser unit asserts each row's message verbatim against manufactured malformed YAML. Includes `new_pane` direction errors. | 4a |
+| §21 (unparseable yaml) | Parser unit: indented-incorrectly YAML → single error containing `"failed to parse"`. | 4a |
+| §22 (empty/missing) | Smoke step 14. Parser units for empty string, `shortcuts:\n` (null), `shortcuts: []`. | 4a / 4b |
+| §23 (no leak when unfocused) | Manual — inherits behavior from existing keybindings. | 4a |
+| §24 (hot reload) | Smoke step 13. Watcher unit: file-modify event triggers parse + registry refresh; in-flight runner continues with its captured actions. | 4b |
+| §25 (telemetry) | Manual spot-check: existing user-keybinding event fires; no per-action breakdown, no `type` payload. | 4a |
+| §26 (panel location) | Smoke step 8. View test: `compute_left_panel_views` returns `[..., GlobalSearch, Shortcuts, ...]`. | 4b |
+| §27 (list view) | Smoke step 8. View unit: registry with 2 entries renders 2 rows in source order with arrow-form summary. | 4b |
+| §28 (empty state) | Smoke step 14. View unit: registry empty → empty-state widget rendered, no rows. | 4b |
+| §29 (create) | Smoke step 10. View unit: "+ New shortcut" opens detail editor with empty fields; Save appends to registry; cancel discards. | 4b |
+| §30 (edit) | Smoke step 9. View unit: row click pre-fills detail editor; Save replaces in place. | 4b |
+| §31 (delete) | Smoke step 11. View unit: delete removes from registry and disk; no confirmation. | 4b |
+| §32 (keystroke capture) | Smoke step 10 (capture flow). Widget unit: capture mode intercepts next keystroke; Escape reverts. | 4b |
+| §33 (action editor) | Smoke step 10. View unit: each action type has the right parameter widget; up/down reordering swaps adjacent rows. | 4b |
+| §34 (inline validation) | View unit: malformed `wait` value disables Save; valid value enables. | 4b |
+| §35 (errors banner) | Smoke step 12. View unit: non-empty `ShortcutsModel.errors` renders banner with verbatim messages. | 4b |
+| §36 (save semantics) | View unit: Save writes YAML to disk + triggers registry refresh; disk write failure shows inline error + rolls back. | 4b |
+| §37 (yaml formatting) | Round-trip unit: parse → serialize → parse produces equivalent in-memory state; comments dropped. | 4b |
+| §38 (conflict warnings) | Smoke step 15. View unit: chord matching a built-in shows the built-in warning; chord matching an existing custom shows the custom warning. | 4b |
 
 New test files:
 
-- `app/src/shortcuts/shortcuts_tests.rs` — parser table-tests, key-to-bytes table-tests, executor unit tests with a stubbed `Workspace`.
-- `app/src/workspace/view_test.rs` — integration-shaped test for `RunCustomShortcut` dispatch + target-lost abort, alongside the existing tab-color tests.
+- 4a: `app/src/shortcuts/shortcuts_tests.rs` (parser table-tests, key-to-bytes, executor unit tests with stubbed `Workspace`), additions to `app/src/workspace/view_test.rs` for `RunCustomShortcut` dispatch + target-lost.
+- 4b: `app/src/shortcuts/view/view_tests.rs` (panel rendering, detail editor flow, keystroke capture, conflict detection), watcher unit test in `shortcuts/watcher_tests.rs`.
 
-No new integration test (in `crates/integration`) is required for v1 — the four primitives are covered by unit tests plus the manual smoke test. Add an integration test in a follow-up if regressions appear.
+No new integration test for v1 — manual smoke test (PRODUCT §Smoke test) is the canonical pre-merge check. Add an integration test in a follow-up if regressions accumulate.
 
-Run `./script/presubmit` until green before opening the impl PR.
+`./script/presubmit` must be green before opening either impl PR.
 
 ## Risks and mitigations
 
-- **Risk: `id!(flags::FOO)` flags can't be toggled imperatively, so the Escape-cancel gate doesn't work as drawn.** Mitigation: research the flag mechanism during impl; fall back to a view-scoped predicate (executor view's context predicate is active iff the runner exists) if the flag approach won't take.
-- **Risk: custom shortcut registration after built-ins is not actually the precedence rule in practice (e.g. a separate per-name dedup wins).** Mitigation: small keymap-level test asserting `cmdorctrl-t` resolves to the custom action after both registrations. Run early in impl; if precedence is per-name and built-ins win, switch to overriding the built-in via `set_custom_trigger` (PRODUCT §15 still satisfied).
-- **Risk: `press: up` (etc.) sends the wrong escape sequence in `vim`-like apps that expect Application Cursor Keys mode.** Mitigation: documented as a known v1 limitation; track DECCKM-aware encoding as a follow-up.
-- **Risk: a runaway sequence with many `wait`s plus user inputs creates a confusing UX (the sequence keeps targeting a tab the user has clearly moved on from).** Mitigation: PRODUCT §13's Escape cancel is the user's escape hatch. Documented in §7 of PRODUCT.md.
-- **Risk: large `type` strings hit the mac PTY 1 KB chunk bug.** Mitigation: route `type` through the existing chunked-write helper (`terminal/view.rs:8444`).
-- **Risk: error messages drift between the spec and implementation as messages get edited.** Mitigation: tests assert message text verbatim (table-test pattern). PRODUCT §19 is the source of truth.
+- **Risk: `id!(flags::FOO)` flags can't be toggled imperatively; the Escape-cancel gate doesn't work.** Mitigation: research the flag mechanism in 4a; fall back to a view-scoped predicate if necessary.
+- **Risk: custom registration after built-ins isn't actually the precedence rule in practice.** Mitigation: small keymap-level test asserting `cmdorctrl-t` resolves to the custom action after both registrations, run early in 4a. If precedence is per-name and built-ins win, switch to `set_custom_trigger`-based override.
+- **Risk: `press: up` (etc.) sends the wrong escape sequence in `vim`-like apps that expect Application Cursor Keys mode.** Mitigation: documented v1 limitation; DECCKM-aware encoding is a follow-up.
+- **Risk: `new_pane` on a context that suppresses the built-in split (e.g. flagged-off `ContextFlag::CreateNewSession`) becomes a silent no-op.** Mitigation: dispatch `PaneGroupAction::Add` directly to the target tab's pane group rather than through the keymap, so context flags don't gate it. PRODUCT §7 codifies this.
+- **Risk: File-watch fires during a save and double-reloads.** Mitigation: 200ms debounce on `notify_debouncer_full`, and the GUI save path takes a lock that suppresses watcher-triggered reloads while a save is in flight.
+- **Risk: GUI save rewrites a config file that the user is also hand-editing concurrently.** Mitigation: atomic temp-file + rename keeps the file consistent on disk; we accept that the user's in-flight edit is overwritten (the GUI Save is explicit user intent). Document this trade-off in the GUI as a follow-up.
+- **Risk: Toast spam during rapid file edits.** Mitigation: debounce already covers it; surface the toast at most once per debounced reload event.
+- **Risk: Error messages drift between spec and implementation.** Mitigation: parser tests assert message text verbatim. PRODUCT §20 is the source of truth, reused by both 4a (parser path) and 4b (GUI inline validation path).
+- **Risk: `Runner` dereferences the live registry mid-flight and a 4b reload mutates it underfoot.** Mitigation: `Runner` captures its `Vec<Action>` at start (not just a `ShortcutId` into the registry). Verify during 4a impl; adjust the `Runner` shape if necessary.
 
 ## Follow-ups
 
-- **Hot reload** of `shortcuts.yaml` — read on file change instead of only at startup.
-- **Modifier-in-press** support (`press: ctrl-c`, `press: alt-f`) — generates the corresponding control bytes / Meta sequences.
-- **Application Cursor Keys** mode awareness for arrow keys in `press`.
-- **GUI editor** in the settings page (`Custom shortcuts` group, surface the YAML editor + validation panel).
-- **More actions:** `new_window`, `focus_tab: <index>`, `close_tab`, `split_pane`, `run: <command>` (high-level `type` + `enter`).
-- **A dedicated settings-page surface** for `shortcuts.yaml` errors instead of just the toast + log line.
-- **Sequence interleaving / queuing** if user demand emerges (PRODUCT §12 currently drops, doesn't queue).
+- **DECCKM-aware** arrow-key encoding for `press`.
+- **Modifier-in-press** (`press: ctrl-c`, `press: alt-f`).
+- **More actions**: `new_window`, `focus_tab: <index>`, `close_pane`, `run: <command>` (high-level `type` + `enter`).
+- **Drag-to-reorder** in the action editor.
+- **Undo** for GUI delete.
+- **Comment-preserving YAML round-trip** (would require a richer YAML round-tripper than `serde_yaml`).
+- **Settings-page surface** for `shortcuts.yaml` errors in addition to the panel banner.
+- **Sequence queuing** if user demand emerges (PRODUCT §13 currently drops, doesn't queue).
+- **Portable chord normalization** in the keystroke-capture widget (detect cmd-on-mac / ctrl-on-others → normalize to `cmdorctrl-`).
 
 ## Parallelization
 
-Skipped — single PR, single sequential implementation. The four primitives, parser, executor, and registration are all tightly coupled and live in the same module; splitting across agents creates merge-burden without wall-clock win. The smoke test plus presubmit are the validation cycle.
+The two sub-phases ship as two sequential PRs (4a, then 4b) and are not parallelizable: 4b depends on 4a's parser and registry as its public API. Within each sub-phase, the work is sequential enough — small file count, tight coupling between executor and action types — that splitting across agents would just create merge churn.
+
+If a follow-up adds many independent actions (e.g. `new_window`, `focus_tab`, `close_pane` all at once), parallelizing on a per-action basis becomes worthwhile; flag at that point.
