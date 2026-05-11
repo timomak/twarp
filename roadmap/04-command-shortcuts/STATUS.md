@@ -3,7 +3,7 @@
 **Phase:** impl-in-review
 **Spec PR:** [#51](https://github.com/timomak/twarp/pull/51)
 **Impl PR(s):**
-- 4a — runtime: —
+- 4a — runtime: [#52](https://github.com/timomak/twarp/pull/52)
 - 4b — side-panel GUI + hot reload: —
 
 ## Scope
