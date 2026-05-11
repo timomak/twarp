@@ -42,12 +42,14 @@ shortcuts:
   - keys: cmdorctrl-shift-D
     actions:
       - new_pane: right
+      - wait: 500ms
       - type: "claude"
       - press: enter
 
   - keys: cmdorctrl-shift-A
     actions:
       - new_pane: right
+      - wait: 500ms
       - type: "claude"
       - press: enter
       - wait: 3s
@@ -57,6 +59,8 @@ shortcuts:
 
 - `⌘⇧D` (macOS) / `Ctrl+Shift+D` (Linux/Windows) opens a new pane to the right of the active pane, types `claude`, submits.
 - `⌘⇧A` / `Ctrl+Shift+A` does the same, then waits three seconds, types `/address-code-review-comments`, submits.
+
+The `500ms` wait between `new_pane` and `type` gives the new pane's shell time to finish bootstrapping. Without it, the typed input can race the shell's startup and either get swallowed or destabilize warp's prompt-state detection (which surfaces a "Bootstrapping slow" toast). Tune the value per machine; 500ms is the conservative default.
 
 Note: `⌘⇧D` is the default chord for twarp's built-in **Split pane right** action. Custom shortcuts shadow built-ins (§16), so this binding overrides the built-in while reproducing its split as the first action of the sequence. Users who want to keep the built-in unchanged should pick a different chord.
 

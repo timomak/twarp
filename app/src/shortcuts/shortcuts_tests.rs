@@ -334,23 +334,27 @@ fn default_shortcuts_yaml_parses_to_the_two_driving_examples() {
     let result = parse_shortcuts_yaml(crate::shortcuts::DEFAULT_SHORTCUTS_YAML);
     assert!(result.errors.is_empty(), "errors: {:#?}", result.errors);
     assert_eq!(result.shortcuts.len(), 2);
-    // First entry is cmd-shift-D running `claude`.
+    // First entry is cmd-shift-D running `claude` after a small wait.
     assert!(matches!(
         result.shortcuts[0].actions[0],
         Action::NewPane(Direction::Right)
     ));
     assert!(matches!(
         result.shortcuts[0].actions[1],
+        Action::Wait(d) if d == Duration::from_millis(500)
+    ));
+    assert!(matches!(
+        result.shortcuts[0].actions[2],
         Action::Type(ref t) if t == "claude"
     ));
-    // Second entry has the 3s wait + slash command.
-    assert_eq!(result.shortcuts[1].actions.len(), 6);
+    // Second entry has the post-claude 3s wait + slash command.
+    assert_eq!(result.shortcuts[1].actions.len(), 7);
     assert!(matches!(
-        result.shortcuts[1].actions[3],
+        result.shortcuts[1].actions[4],
         Action::Wait(d) if d == Duration::from_secs(3)
     ));
     assert!(matches!(
-        result.shortcuts[1].actions[4],
+        result.shortcuts[1].actions[5],
         Action::Type(ref t) if t == "/address-code-review-comments"
     ));
 }

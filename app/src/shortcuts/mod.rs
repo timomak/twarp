@@ -38,17 +38,23 @@ pub const DEFAULT_SHORTCUTS_YAML: &str = r#"# Custom command shortcuts for twarp
 #   press: enter       - press a named key (enter, tab, escape, up, down, ...)
 #   wait: 2s           - pause before the next action (e.g. 500ms, 2s, 1m)
 #
+# Tip: after `new_tab` or `new_pane`, the new shell takes a moment to
+# bootstrap. Insert a short `wait` (e.g. `500ms`) before `type` so the
+# input lands at a real prompt instead of mid-startup.
+#
 # Edit this file to add your own. Restart twarp for changes to apply.
 shortcuts:
   - keys: cmdorctrl-shift-D
     actions:
       - new_pane: right
+      - wait: 500ms
       - type: "claude"
       - press: enter
 
   - keys: cmdorctrl-shift-A
     actions:
       - new_pane: right
+      - wait: 500ms
       - type: "claude"
       - press: enter
       - wait: 3s
