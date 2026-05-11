@@ -289,6 +289,12 @@ impl CodeView {
         }
 
         if self.markdown_mode_segmented_control.is_none() {
+            // twarp 03 — Raw is the deliberate default in CodePane: this pane
+            // is only reached via explicit code-view intent ("Open as Code" or
+            // prefer_markdown_viewer = false). Picking "Rendered" via this
+            // toggle swaps the pane to MarkdownViewer (see
+            // CodeViewAction::RenderMarkdown). See twarp 03 spec
+            // (roadmap/03-md-rendered/PRODUCT.md invariant 5).
             let handle = ctx.add_typed_action_view(|ctx| {
                 MarkdownToggleView::new(MarkdownDisplayMode::Raw, ctx)
             });

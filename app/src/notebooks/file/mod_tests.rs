@@ -30,7 +30,7 @@ use crate::{
 
 use crate::notebooks::context_menu::MenuSource;
 
-use super::{FileNotebookView, FileState};
+use super::{FileNotebookView, FileState, MarkdownDisplayMode};
 
 fn init_app(app: &mut App) {
     initialize_settings_for_tests(app);
@@ -207,6 +207,21 @@ fn test_markdown_file_detection() {
     assert!(!is_markdown_file("README.txt"));
     assert!(!is_markdown_file("main.rs"));
     assert!(!is_markdown_file("notes"));
+}
+
+// twarp 03 — PRODUCT invariant 2: FileNotebookView (the MarkdownViewer pane)
+// initialises to Rendered, so the default-open path lands in rendered mode
+// without any user toggle.
+#[test]
+fn test_file_notebook_defaults_to_rendered_markdown() {
+    App::test((), |mut app| async move {
+        init_app(&mut app);
+        let (_, handle) = app.add_window(WindowStyle::NotStealFocus, FileNotebookView::new);
+
+        handle.read(&app, |view, _| {
+            assert_eq!(view.markdown_display_mode, MarkdownDisplayMode::Rendered);
+        });
+    });
 }
 
 #[test]
