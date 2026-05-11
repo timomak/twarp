@@ -272,6 +272,61 @@ mod tests {
         assert_eq!(target, FileTarget::MarkdownViewer(EditorLayout::SplitPane));
     }
 
+    // twarp 03 — PRODUCT invariant 2: every recognised markdown path routes to
+    // MarkdownViewer when prefer_markdown_viewer is true (the default).
+    #[test]
+    #[cfg(feature = "local_fs")]
+    fn test_resolve_file_target_markdown_viewer_covers_all_markdown_paths() {
+        for path in [
+            "README.md",
+            "notes.markdown",
+            "README.MD",
+            "Doc.Markdown",
+            "README",
+            "readme",
+            "CHANGELOG",
+            "LICENSE",
+        ] {
+            let target = resolve_file_target_with_editor_choice(
+                Path::new(path),
+                EditorChoice::Warp,
+                true, /* prefer_markdown_viewer */
+                EditorLayout::SplitPane,
+                None,
+            );
+            assert_eq!(
+                target,
+                FileTarget::MarkdownViewer(EditorLayout::SplitPane),
+                "expected MarkdownViewer routing for {path}",
+            );
+        }
+    }
+
+    // twarp 03 — PRODUCT invariant 5: explicit opt-out via
+    // prefer_markdown_viewer=false sends markdown files to the code editor.
+    #[test]
+    #[cfg(feature = "local_fs")]
+    fn test_resolve_file_target_code_editor_when_markdown_viewer_disabled() {
+        let target = resolve_file_target_with_editor_choice(
+            Path::new("README.md"),
+            EditorChoice::Warp,
+            false, /* prefer_markdown_viewer */
+            EditorLayout::SplitPane,
+            None,
+        );
+
+        assert_eq!(target, FileTarget::CodeEditor(EditorLayout::SplitPane));
+    }
+
+    // twarp 03 — PRODUCT invariant 3: the routing default is "render."
+    #[test]
+    #[cfg(feature = "local_fs")]
+    fn test_prefer_markdown_viewer_default_is_true() {
+        use crate::util::file::external_editor::settings::PreferMarkdownViewer;
+
+        assert!(PreferMarkdownViewer::default_value());
+    }
+
     #[test]
     #[cfg(feature = "local_fs")]
     fn test_resolve_file_target_warp_uses_default_layout() {
@@ -313,6 +368,8 @@ mod tests {
         assert_eq!(target, FileTarget::EnvEditor);
     }
 
+    // twarp 03 — PRODUCT invariant 1: path-based markdown detection is
+    // case-insensitive across extensions and the no-extension filename list.
     #[test]
     fn test_markdown_files() {
         assert_eq!(
@@ -329,6 +386,23 @@ mod tests {
         );
         assert_eq!(
             is_file_openable_in_warp(Path::new("CHANGELOG")),
+            Some(OpenableFileType::Markdown)
+        );
+        // Case variants and LICENSE (twarp 03).
+        assert_eq!(
+            is_file_openable_in_warp(Path::new("README.MD")),
+            Some(OpenableFileType::Markdown)
+        );
+        assert_eq!(
+            is_file_openable_in_warp(Path::new("notes.Markdown")),
+            Some(OpenableFileType::Markdown)
+        );
+        assert_eq!(
+            is_file_openable_in_warp(Path::new("readme")),
+            Some(OpenableFileType::Markdown)
+        );
+        assert_eq!(
+            is_file_openable_in_warp(Path::new("LICENSE")),
             Some(OpenableFileType::Markdown)
         );
     }
