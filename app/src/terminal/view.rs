@@ -14982,6 +14982,21 @@ impl TerminalView {
             }
             return;
         }
+
+        // Prioritize selected text in the input over selected blocks (APP-4330):
+        // it's possible to have both a block and input text selected at the same
+        // time, and in that case the user almost always means to copy the input.
+        let selected_input_text = self.input.read(ctx, |input, ctx| {
+            input
+                .editor()
+                .read(ctx, |editor, ctx| editor.selected_text(ctx))
+        });
+        if !selected_input_text.is_empty() {
+            ctx.clipboard()
+                .write(ClipboardContent::plain_text(selected_input_text));
+            return;
+        }
+
         if !self.selected_blocks.is_empty() {
             self.copy_blocks(BlockEntity::CommandAndOutput, ctx);
         }
@@ -15471,7 +15486,7 @@ impl TerminalView {
 
                             if ChannelState::channel().is_dogfood() {
                                 items.push(
-                                    MenuItemFields::new("Fork from here")
+                                    MenuItemFields::new("Fork from here (dev only)")
                                         .with_on_select_action(TerminalAction::ContextMenu(
                                             ContextMenuAction::ForkAIConversationFromExactExchange {
                                                 ai_block_view_id: *rich_content_view_id,
@@ -16404,7 +16419,7 @@ impl TerminalView {
 
             if ChannelState::channel().is_dogfood() {
                 menu_items.push(
-                    MenuItemFields::new("Fork from here")
+                    MenuItemFields::new("Fork from here (dev only)")
                         .with_on_select_action(TerminalAction::ContextMenu(
                             ContextMenuAction::ForkAIConversationFromExactExchange {
                                 ai_block_view_id,
