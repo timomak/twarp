@@ -63,6 +63,7 @@ struct MouseStateHandles {
     global_search_button: MouseStateHandle,
     warp_drive_button: MouseStateHandle,
     shortcuts_button: MouseStateHandle,
+    add_new_shortcut_button: MouseStateHandle,
     // twarp: 2c-d — conversation_list_view_button removed
 }
 
@@ -75,6 +76,12 @@ pub enum LeftPanelAction {
     WarpDrive,
     /// Custom command shortcuts panel (PRODUCT 04 §26).
     Shortcuts,
+    /// Append a placeholder custom shortcut and persist
+    /// (PRODUCT 04 §29). The placeholder is bound to the first unused
+    /// chord from a hardcoded candidate list and has a single
+    /// `new_tab` action. Users edit `shortcuts.yaml` to customize;
+    /// 4b's hot reload picks up the edits without restart.
+    ShortcutsAddNew,
     // twarp: 2c-d — kept for legacy call-sites; AI conversation list deleted.
     ConversationListView,
 }
@@ -814,10 +821,87 @@ impl LeftPanelView {
                 }
                 LeftPanelAction::WarpDrive => self.active_view.get() == ToolPanelView::WarpDrive,
                 LeftPanelAction::Shortcuts => self.active_view.get() == ToolPanelView::Shortcuts,
+                LeftPanelAction::ShortcutsAddNew => false,
                 // twarp: 2c-d — ConversationListView arm kept for legacy call-sites; AI deleted.
                 LeftPanelAction::ConversationListView => false,
             };
         }
+    }
+
+    /// Renders the Custom shortcuts panel content: header with
+    /// "+ New shortcut" link + a row per registered shortcut showing
+    /// chord + arrow-form summary, OR an empty-state hint if the
+    /// registry is empty. PRODUCT 04 §§27-29.
+    fn render_shortcuts_panel(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let registry: Vec<(String, String)> = crate::shortcuts::ShortcutsModel::handle(app)
+            .as_ref(app)
+            .registry
+            .iter()
+            .map(|s| {
+                (
+                    s.keys.displayed(),
+                    crate::shortcuts::summary::summarize_actions(&s.actions),
+                )
+            })
+            .collect();
+
+        let add_new_link = appearance
+            .ui_builder()
+            .link(
+                "+ New shortcut".to_owned(),
+                None,
+                Some(Box::new(|ctx| {
+                    ctx.dispatch_typed_action(LeftPanelAction::ShortcutsAddNew);
+                })),
+                self.mouse_state_handles.add_new_shortcut_button.clone(),
+            )
+            .build()
+            .finish();
+
+        let body: Box<dyn Element> = if registry.is_empty() {
+            appearance
+                .ui_builder()
+                .span(
+                    "Custom shortcuts run a sequence of terminal actions when you press a chord. \
+                     Click \"+ New shortcut\" to add one, then edit `shortcuts.yaml` to customize.",
+                )
+                .with_soft_wrap()
+                .build()
+                .finish()
+        } else {
+            let rows = registry.into_iter().map(|(chord, summary)| {
+                appearance
+                    .ui_builder()
+                    .span(format!("{chord}   {summary}"))
+                    .build()
+                    .finish()
+            });
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(6.0)
+                .with_children(rows)
+                .finish()
+        };
+
+        let column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_spacing(10.0)
+            .with_child(add_new_link)
+            .with_child(Shrinkable::new(1.0, body).finish())
+            .finish();
+
+        Shrinkable::new(
+            1.0,
+            Container::new(column)
+                .with_padding_left(10.)
+                .with_padding_right(10.)
+                .with_padding_top(8.)
+                .finish(),
+        )
+        .finish()
     }
 
     fn render_button(
@@ -956,8 +1040,91 @@ impl LeftPanelView {
             LeftPanelAction::Shortcuts => {
                 active_view_state::set(self, ToolPanelView::Shortcuts, ctx);
             }
+            LeftPanelAction::ShortcutsAddNew => {
+                Self::append_placeholder_shortcut(ctx);
+            }
             // twarp: 2c-d — ConversationListView is a stub kept for legacy call-sites.
             LeftPanelAction::ConversationListView => {}
+        }
+    }
+
+    /// PRODUCT 04 §29 (create). Appends a new shortcut bound to the first
+    /// unused chord from `J..Z`+`0..9` (with cmdorctrl-shift modifiers) and
+    /// a single `new_tab` action. Users edit `shortcuts.yaml` to customize
+    /// — 4b's hot reload picks up the change.
+    fn append_placeholder_shortcut(ctx: &mut ViewContext<Self>) {
+        use crate::shortcuts::action::Action;
+        use crate::shortcuts::config::Shortcut;
+        use warpui::keymap::Keystroke;
+
+        let candidates = [
+            "cmdorctrl-shift-J",
+            "cmdorctrl-shift-K",
+            "cmdorctrl-shift-L",
+            "cmdorctrl-shift-M",
+            "cmdorctrl-shift-N",
+            "cmdorctrl-shift-O",
+            "cmdorctrl-shift-P",
+            "cmdorctrl-shift-Q",
+            "cmdorctrl-shift-R",
+            "cmdorctrl-shift-S",
+            "cmdorctrl-shift-T",
+            "cmdorctrl-shift-U",
+            "cmdorctrl-shift-V",
+            "cmdorctrl-shift-W",
+            "cmdorctrl-shift-X",
+            "cmdorctrl-shift-Y",
+            "cmdorctrl-shift-Z",
+        ];
+
+        let existing: Vec<String> = crate::shortcuts::ShortcutsModel::handle(ctx)
+            .as_ref(ctx)
+            .registry
+            .iter()
+            .map(|s| s.keys.normalized())
+            .collect();
+
+        let new_chord = candidates
+            .iter()
+            .find_map(|cand| {
+                let k = Keystroke::parse(cand).ok()?;
+                let normalized = k.normalized();
+                if existing.iter().any(|e| e == &normalized) {
+                    None
+                } else {
+                    Some(k)
+                }
+            })
+            .unwrap_or_else(|| {
+                // Defensive fallback: every candidate already in use.
+                // Use the first candidate; the parser will mark it as a
+                // duplicate-keys error so the user notices.
+                Keystroke::parse(candidates[0]).expect("candidate parses")
+            });
+
+        let new_shortcut = Shortcut {
+            keys: new_chord,
+            actions: vec![Action::NewTab],
+            binding_name: String::new(),
+        };
+
+        let mut snapshot: Vec<Shortcut> = crate::shortcuts::ShortcutsModel::handle(ctx)
+            .as_ref(ctx)
+            .registry
+            .clone();
+        snapshot.push(new_shortcut);
+
+        match crate::shortcuts::save::save_to_disk(&snapshot) {
+            Ok(path) => {
+                log::info!(
+                    "shortcuts: appended placeholder shortcut, saved to {:?}",
+                    path
+                );
+                crate::shortcuts::reload(ctx);
+            }
+            Err(err) => {
+                log::warn!("shortcuts: failed to save new placeholder shortcut: {err}");
+            }
         }
     }
 
@@ -1113,12 +1280,12 @@ impl View for LeftPanelView {
                     .finish(),
             )
             .finish(),
-            // 4c stub: panel content is empty for now. The list/edit GUI
-            // arrives in a follow-up; 4b's hot reload already makes
-            // hand-editing `shortcuts.yaml` viable.
-            ToolPanelView::Shortcuts => {
-                Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()
-            }
+            // PRODUCT 04 §§27-29: read-only list of shortcuts + "+ New
+            // shortcut" link. Inline editing (keystroke capture, action
+            // editor, validation) is deferred to 4d; users hand-edit
+            // `shortcuts.yaml` for now, and 4b's hot reload keeps that
+            // loop tight.
+            ToolPanelView::Shortcuts => self.render_shortcuts_panel(app),
             // twarp: 2c-d — ConversationListView arm: AI deleted, use empty content.
             ToolPanelView::ConversationListView => {
                 Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()
