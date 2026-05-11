@@ -1668,16 +1668,8 @@ pub fn register_shortcut_bindings(app: &mut AppContext) {
             .collect()
     };
 
-    log::info!(
-        "shortcuts: registering {n} keybinding(s) + escape-cancel",
-        n = registry.len()
-    );
-
     let mut bindings: Vec<EditableBinding> = Vec::with_capacity(registry.len() + 1);
     for (i, binding_name, chord) in registry {
-        log::info!(
-            "shortcuts: register binding '{binding_name}' -> RunCustomShortcut({i}) on chord '{chord}'"
-        );
         let name_static: &'static str = Box::leak(binding_name.into_boxed_str());
         // No context predicate (default ContextPredicate::Just(true)). The
         // dispatch loop walks the responder chain leaf-to-root: if we
