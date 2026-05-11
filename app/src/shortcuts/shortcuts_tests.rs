@@ -341,7 +341,7 @@ fn default_shortcuts_yaml_parses_to_the_two_driving_examples() {
     ));
     assert!(matches!(
         result.shortcuts[0].actions[1],
-        Action::Wait(d) if d == Duration::from_millis(500)
+        Action::Wait(d) if d == Duration::from_millis(1500)
     ));
     assert!(matches!(
         result.shortcuts[0].actions[2],

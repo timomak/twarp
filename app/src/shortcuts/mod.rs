@@ -47,14 +47,14 @@ shortcuts:
   - keys: cmdorctrl-shift-D
     actions:
       - new_pane: right
-      - wait: 500ms
+      - wait: 1500ms
       - type: "claude"
       - press: enter
 
   - keys: cmdorctrl-shift-A
     actions:
       - new_pane: right
-      - wait: 500ms
+      - wait: 1500ms
       - type: "claude"
       - press: enter
       - wait: 3s
