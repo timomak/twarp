@@ -89,8 +89,22 @@ pub fn dock_menu() -> Menu {
     )
 }
 
-fn custom_shortcut(action: CustomAction) -> Option<Keystroke> {
-    trigger_to_keystroke(&Trigger::Custom(action.into()))
+fn custom_shortcut(action: CustomAction, ctx: &AppContext) -> Option<Keystroke> {
+    let chord = trigger_to_keystroke(&Trigger::Custom(action.into()))?;
+    // If a user-declared shortcut in shortcuts.yaml already claims this
+    // chord, drop the menu's key equivalent. Otherwise the macOS NSMenu
+    // intercepts the chord before our keymap matcher sees it, and the
+    // user's custom shortcut never fires (see PRODUCT §16 and the
+    // 04-command-shortcuts spec).
+    if crate::shortcuts::ShortcutsModel::handle(ctx)
+        .as_ref(ctx)
+        .registry
+        .iter()
+        .any(|s| s.keys.normalized() == chord.normalized())
+    {
+        return None;
+    }
+    Some(chord)
 }
 
 fn default_name(action: CustomAction, ctx: &AppContext) -> String {
@@ -106,7 +120,7 @@ fn non_updateable_custom_item(action: CustomAction, ctx: &AppContext) -> MenuIte
         &default_name(action, ctx),
         custom_action_dispatcher(action),
         no_updates,
-        custom_shortcut(action),
+        custom_shortcut(action, ctx),
     ))
 }
 
@@ -122,7 +136,7 @@ fn updateable_custom_item_with_checkmark(
         &default_name(action, ctx),
         custom_action_dispatcher(action),
         custom_action_updater(action, should_be_checked),
-        custom_shortcut(action),
+        custom_shortcut(action, ctx),
     ))
 }
 
@@ -959,7 +973,7 @@ fn make_launch_config_menu_items(ctx: &mut AppContext) -> Vec<MenuItem> {
         "Save New...",
         custom_action_dispatcher(CustomAction::SaveCurrentConfig),
         no_updates,
-        custom_shortcut(CustomAction::SaveCurrentConfig),
+        custom_shortcut(CustomAction::SaveCurrentConfig, ctx),
     )));
 
     launch_config_menu_items
