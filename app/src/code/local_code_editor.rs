@@ -29,7 +29,6 @@ use warp_util::{
     content_version::ContentVersion,
     file::{FileId, FileLoadError, FileSaveError},
     path::to_relative_path,
-    sync::Condition,
 };
 use warpui::{
     elements::{
@@ -61,6 +60,7 @@ use crate::{
     debounce::debounce,
     settings::AISettings,
     terminal::TerminalView,
+    util::sync::Condition,
 };
 use crate::{
     code::{editor::EditorReviewComment, global_buffer_model::GlobalBufferModelEvent},
