@@ -1452,6 +1452,7 @@ fn initialize_app(
     ctx.add_singleton_model(UndoCloseStack::new);
     ctx.add_singleton_model(|_| ToastStack);
     ctx.add_singleton_model(|_| shortcuts::ShortcutsModel::new());
+    ctx.add_singleton_model(shortcuts::watcher::ShortcutsWatcher::new);
     ctx.add_singleton_model(|_| GlobalCodeReviewModel);
     ctx.add_singleton_model(workspace::OneTimeModalModel::new);
     // twarp: 2c-d.4 — BonusGrantNotificationModel singleton removed (AI usage)

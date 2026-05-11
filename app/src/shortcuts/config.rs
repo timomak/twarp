@@ -385,6 +385,103 @@ fn normalize_chord_casing(chord: &str) -> String {
     out.join("-")
 }
 
+/// Serialize a list of shortcuts back to YAML, in the canonical shape the
+/// parser accepts (PRODUCT §37). Comments and hand-formatting are dropped;
+/// within each entry, `keys` precedes `actions`; within each action item,
+/// single-key maps are compact (`type: claude`, not multi-line). The
+/// parse(serialize(x)) round-trip is asserted by the
+/// `serialize_round_trips_through_parser` test.
+pub fn serialize_shortcuts(shortcuts: &[Shortcut]) -> String {
+    if shortcuts.is_empty() {
+        return "shortcuts: []\n".to_owned();
+    }
+    let mut out = String::from("shortcuts:\n");
+    for sc in shortcuts {
+        out.push_str(&format!("  - keys: {}\n", sc.keys.normalized()));
+        out.push_str("    actions:\n");
+        for action in &sc.actions {
+            match action {
+                Action::NewTab => out.push_str("      - new_tab\n"),
+                Action::NewPane(direction) => {
+                    let name = direction_name(*direction);
+                    out.push_str(&format!("      - new_pane: {name}\n"));
+                }
+                Action::Type(text) => {
+                    out.push_str(&format!("      - type: {}\n", yaml_escape_string(text)));
+                }
+                Action::Press(key) => {
+                    out.push_str(&format!("      - press: {}\n", key_name_to_yaml(*key)));
+                }
+                Action::Wait(duration) => {
+                    out.push_str(&format!("      - wait: {}\n", duration_to_yaml(*duration)));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn direction_name(d: Direction) -> &'static str {
+    match d {
+        Direction::Right => "right",
+        Direction::Down => "down",
+        // v1 only emits right/down; left/up shouldn't appear in a serialized
+        // entry since the parser doesn't accept them.
+        _ => "right",
+    }
+}
+
+fn key_name_to_yaml(key: KeyName) -> String {
+    match key {
+        KeyName::Enter => "enter".to_owned(),
+        KeyName::Tab => "tab".to_owned(),
+        KeyName::Escape => "escape".to_owned(),
+        KeyName::Backspace => "backspace".to_owned(),
+        KeyName::Space => "space".to_owned(),
+        KeyName::Up => "up".to_owned(),
+        KeyName::Down => "down".to_owned(),
+        KeyName::Left => "left".to_owned(),
+        KeyName::Right => "right".to_owned(),
+        KeyName::Home => "home".to_owned(),
+        KeyName::End => "end".to_owned(),
+        KeyName::PageUp => "pageup".to_owned(),
+        KeyName::PageDown => "pagedown".to_owned(),
+        KeyName::Delete => "delete".to_owned(),
+        KeyName::Insert => "insert".to_owned(),
+        KeyName::NumpadEnter => "numpadenter".to_owned(),
+        KeyName::F(n) => format!("f{n}"),
+    }
+}
+
+fn duration_to_yaml(d: Duration) -> String {
+    let total_ms = d.as_millis();
+    if total_ms.is_multiple_of(60_000) {
+        format!("{}m", total_ms / 60_000)
+    } else if total_ms.is_multiple_of(1000) {
+        format!("{}s", total_ms / 1000)
+    } else {
+        format!("{total_ms}ms")
+    }
+}
+
+fn yaml_escape_string(s: &str) -> String {
+    // PRODUCT §9 already rejects newlines in `type`. We still wrap in double
+    // quotes for clarity and to handle special characters; serde_yaml-style
+    // escapes are sufficient since type values are user text without
+    // line breaks.
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            _ => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
+}
+
 fn yaml_type_name(v: &Value) -> &'static str {
     match v {
         Value::Null => "null",

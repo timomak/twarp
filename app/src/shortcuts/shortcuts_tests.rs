@@ -13,8 +13,9 @@ use std::time::Duration;
 
 use crate::pane_group::Direction;
 use crate::shortcuts::action::{Action, KeyName};
-use crate::shortcuts::config::parse_shortcuts_yaml;
+use crate::shortcuts::config::{parse_shortcuts_yaml, serialize_shortcuts, Shortcut};
 use crate::shortcuts::key_to_bytes::bytes_for;
+use warpui::keymap::Keystroke;
 
 #[track_caller]
 fn assert_error(yaml: &str, expected: &str) {
@@ -441,6 +442,42 @@ shortcuts:
     let result = parse_shortcuts_yaml(yaml);
     assert_eq!(result.shortcuts.len(), 2);
     assert_eq!(result.errors.len(), 1);
+}
+
+// --- serialize round-trip (PRODUCT §37, 4b) ---
+
+#[test]
+fn serialize_round_trips_through_parser() {
+    let original = vec![
+        Shortcut {
+            keys: Keystroke::parse("cmd-shift-D").unwrap(),
+            actions: vec![
+                Action::NewPane(Direction::Right),
+                Action::Wait(Duration::from_millis(1500)),
+                Action::Type("claude".to_owned()),
+                Action::Press(KeyName::Enter),
+            ],
+            binding_name: String::new(),
+        },
+        Shortcut {
+            keys: Keystroke::parse("cmd-shift-9").unwrap(),
+            actions: vec![Action::NewTab, Action::Type("echo hi".to_owned())],
+            binding_name: String::new(),
+        },
+    ];
+    let yaml = serialize_shortcuts(&original);
+    let parsed = parse_shortcuts_yaml(&yaml);
+    assert!(parsed.errors.is_empty(), "errors: {:#?}", parsed.errors);
+    assert_eq!(parsed.shortcuts.len(), original.len());
+    for (a, b) in original.iter().zip(parsed.shortcuts.iter()) {
+        assert_eq!(a.keys.normalized(), b.keys.normalized());
+        assert_eq!(a.actions.len(), b.actions.len());
+    }
+}
+
+#[test]
+fn serialize_empty_list_emits_empty_shortcuts() {
+    assert_eq!(serialize_shortcuts(&[]), "shortcuts: []\n");
 }
 
 // --- key_to_bytes table coverage (PRODUCT §10) ---
