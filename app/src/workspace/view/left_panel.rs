@@ -54,7 +54,7 @@ use crate::{
         icons,
     },
     util::bindings::keybinding_name_to_display_string,
-    view_components::{ClickableTextInput, ClickableTextInputEvent},
+    view_components::{ClickableTextInput, ClickableTextInputAction, ClickableTextInputEvent},
     workspace::WorkspaceAction,
     TelemetryEvent,
 };
@@ -2268,24 +2268,48 @@ impl LeftPanelView {
         ctx.subscribe_to_view(&handle, move |me, _, event, ctx| {
             let ClickableTextInputEvent::Submit(text) = event;
             // Resolve which slot this submit came from by comparing
-            // ViewHandle identity inside the current editor state.
+            // ViewHandle identity inside the current editor state, then
+            // push the new text back into the input's `text` field so
+            // its display-mode label shows the saved value. Without
+            // this UpdateText round-trip the input would emit Submit,
+            // flip back to display mode, and render the empty `text`
+            // it was created with — values appear to vanish even
+            // though they did make it into our state and onto disk.
             if let Some(state) = me.editing_shortcut.as_mut() {
                 if let Some(other) = weak.upgrade(ctx) {
                     if state.name_text_input == other {
                         state.name_text = text.clone();
                         state.validation_error = None;
+                        let new_text = text.clone();
+                        state.name_text_input.update(ctx, |input, ctx| {
+                            input.handle_action(
+                                &ClickableTextInputAction::UpdateText(new_text),
+                                ctx,
+                            );
+                        });
                         ctx.notify();
                         return;
                     }
-                    for row in state.actions.iter_mut() {
-                        if let Some(input) = &row.param_text_input {
-                            if *input == other {
-                                row.param_text = text.clone();
-                                state.validation_error = None;
-                                ctx.notify();
-                                return;
-                            }
-                        }
+                    let updated_param: Option<(ViewHandle<ClickableTextInput>, String)> =
+                        state.actions.iter_mut().find_map(|row| {
+                            row.param_text_input.as_ref().and_then(|input| {
+                                if *input == other {
+                                    row.param_text = text.clone();
+                                    Some((input.clone(), text.clone()))
+                                } else {
+                                    None
+                                }
+                            })
+                        });
+                    if let Some((input, new_text)) = updated_param {
+                        state.validation_error = None;
+                        input.update(ctx, |input_view, ctx| {
+                            input_view.handle_action(
+                                &ClickableTextInputAction::UpdateText(new_text),
+                                ctx,
+                            );
+                        });
+                        ctx.notify();
                     }
                 }
             }
