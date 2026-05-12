@@ -1,7 +1,7 @@
 # 05 — Open Changes panel
 
-**Phase:** spec-pending
-**Spec PR:** —
+**Phase:** spec-in-review
+**Spec PR:** [#56](https://github.com/timomak/twarp/pull/56)
 **Impl PRs:** —
 
 ## Scope
