@@ -38,14 +38,13 @@ Relevant files on master:
 
 ## Sub-phase split
 
-**Recommendation: split into 4a and 4b.** Total scope is large enough — runtime plus GUI — that a single PR would be reviewer-hostile, and each half delivers user value on its own.
+The fallback we anticipated in the original spec ("if 4b grows, split it further") fired: warpui View integration for a fully-featured side panel proved too large to ship as one PR alongside file-watch hot reload. The realized split is three sub-PRs:
 
-- **4a — Runtime.** Parser + executor + bindings + cancel + toast. Hand-edit `shortcuts.yaml`, restart twarp to apply. Covers PRODUCT §§1–23, §25.
-- **4b — Side-panel GUI + hot reload.** Adds the `ToolPanelView::Shortcuts` view (list + detail editor + keystroke capture + validation surfacing + conflict warnings), plus file-watch reload that the GUI relies on for its save → live-update flow. Covers PRODUCT §24 (hot reload) and §§26–38 (GUI).
+- **4a — Runtime.** Parser + executor + bindings + cancel + toast. Hand-edit `shortcuts.yaml`, restart twarp to apply. Covers PRODUCT §§1–23, §25. **Shipped.**
+- **4b — Hot reload + GUI data layer.** File watcher → registry reload (PRODUCT §24), `serialize_shortcuts` + atomic `save_to_disk` (PRODUCT §§36-37), `detect_custom_conflict` (PRODUCT §38), `summarize_actions` helper for the eventual list view (PRODUCT §27). No new UI surface; users hand-edit `shortcuts.yaml` and edits take effect immediately without restart.
+- **4c — Side-panel GUI view.** `ToolPanelView::Shortcuts` registered next to Global Search, with list view + empty state + create/edit/delete + keystroke-capture widget + action editor + inline validation + errors banner + conflict warnings. Covers PRODUCT §§26-38. Consumes 4b's scaffolding directly.
 
-This split is durable: 4a's public API (`ShortcutsModel`, `Registry`, `parse_shortcuts_yaml`, error message vocabulary) is exactly what 4b consumes. No interface churn at the boundary; 4b is layering, not retrofitting.
-
-The fallback if 4b grows: split it further into "hot reload only" and "GUI only" — but they share so much (the GUI assumes hot reload so its save reflects live) that a single 4b PR is the default plan.
+This split is durable: 4a's public API (`ShortcutsModel`, `Registry`, `parse_shortcuts_yaml`, error message vocabulary) is exactly what 4b consumes, and 4b's public API (`serialize_shortcuts`, `save::save_to_disk`, `conflict::detect_custom_conflict`, `summary::summarize_actions`, `reload`) is exactly what 4c consumes. No interface churn between increments — each is purely layering.
 
 ## Proposed changes — 4a (Runtime)
 

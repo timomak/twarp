@@ -72,7 +72,7 @@ Note: `⌘⇧D` is the default chord for twarp's built-in **Split pane right** a
 
 2. **Top-level shape.** `shortcuts.yaml` is a YAML map with a single top-level key, `shortcuts:`, whose value is a list of shortcut entries (see §Driving examples for the canonical shape). An empty `shortcuts:` list (or a totally empty file) loads zero shortcuts with no error. Any other top-level shape (top-level list, top-level scalar, an unexpected top-level key) is a config error (§20).
 
-3. **Shortcut entry shape.** Each entry is a map with two required fields: `keys` (the chord string) and `actions` (a non-empty list of actions). Unknown fields on an entry are an error (§20). Either required field being absent or empty is an error.
+3. **Shortcut entry shape.** Each entry is a map with two required fields — `keys` (the chord string) and `actions` (a non-empty list of actions) — and one optional field: `name` (a human-readable label used by the side-panel list view, §27). Unknown fields on an entry are an error (§20). Either required field being absent or empty is an error. A missing, null, or whitespace-only `name` is treated as "no name" (the panel falls back to an arrow-form summary of the action sequence).
 
 4. **Key chord normalization.** The `keys` value is a single chord string: zero or more modifier names joined by `-`, followed by `-<key>` — the same syntax twarp's built-in `keybindings.yaml` already uses, and the exact syntax accepted by `Keystroke::parse`. Recognized modifiers: `cmd`, `ctrl`, `cmdorctrl` (resolves to ⌘ on macOS, Ctrl on Linux/Windows — matches the convention used by built-in twarp bindings), `alt`, `shift`, `meta`. The key portion is a single printable character (`0`–`9`, `a`–`z` / `A`–`Z`, common punctuation) or one of the named keys listed in §10. Order of modifiers does not matter (`shift-cmd-D` and `cmd-shift-D` parse to the same chord). When `shift` is in the modifier set together with a letter, the letter must be uppercase (`cmd-shift-D`, not `cmd-shift-d`); this matches the existing `Keystroke::parse` rule. The YAML loader auto-uppercases `shift-<lowercase-letter>` so users can spell either way. Multi-stroke chords (e.g. `cmd-k cmd-s`) are **not** supported in v1.
 
@@ -95,6 +95,8 @@ Note: `⌘⇧D` is the default chord for twarp's built-in **Split pane right** a
 7. **`new_pane`.** Splits the target tab's currently active pane and focuses the new pane. The `direction` value is one of:
     - `right` — split horizontally; new pane to the right of the existing one.
     - `down` — split vertically; new pane below the existing one.
+    - `left` — split horizontally; new pane to the left of the existing one.
+    - `up` — split vertically; new pane above the existing one.
 
     Any other value (or omission) is a config error (§20). The new pane becomes the target tab's active pane for subsequent `type` and `press` actions. `new_pane` does not change the target tab — only the active pane within it. If the target tab has been closed before `new_pane` runs, the sequence aborts (§17). `new_pane` operates regardless of any feature-flag gates that the built-in "Split pane" UI carries: a custom shortcut authored by the user is treated as user intent to split, even in contexts where the built-in split is suppressed.
 
@@ -136,12 +138,12 @@ Note: `⌘⇧D` is the default chord for twarp's built-in **Split pane right** a
     | `shortcuts:` value is not a list | `'shortcuts:' must be a list, got <YAML type>` |
     | Entry missing `keys` | `entry #<n>: missing required field 'keys'` |
     | Entry missing or empty `actions` | `entry #<n> ('<keys>'): missing required field 'actions' (must have at least one action)` |
-    | Unknown field on entry | `entry #<n> ('<keys>'): unknown field '<field>'; expected 'keys' and 'actions'` |
+    | Unknown field on entry | `entry #<n> ('<keys>'): unknown field '<field>'; expected 'keys', 'actions', and optionally 'name'` |
     | Malformed key chord | `entry #<n>: invalid key chord '<chord>'; expected modifiers (cmdorctrl/cmd/ctrl/alt/shift/meta) joined by '-' with a key, e.g. 'cmdorctrl-shift-D'` |
     | Action is not a string or single-key map | `entry #<n> ('<keys>'), action #<m>: expected a bare action name or a single-key map` |
     | Unknown action token | `entry #<n> ('<keys>'), action #<m>: unknown action '<token>'; expected one of new_tab, new_pane, type, press, wait` |
-    | Missing `new_pane` direction | `entry #<n> ('<keys>'), action #<m>: 'new_pane' requires a direction; expected 'right' or 'down'` |
-    | Invalid `new_pane` direction | `entry #<n> ('<keys>'), action #<m>: invalid 'new_pane' direction '<value>'; expected 'right' or 'down'` |
+    | Missing `new_pane` direction | `entry #<n> ('<keys>'), action #<m>: 'new_pane' requires a direction; expected 'right', 'down', 'left', or 'up'` |
+    | Invalid `new_pane` direction | `entry #<n> ('<keys>'), action #<m>: invalid 'new_pane' direction '<value>'; expected 'right', 'down', 'left', or 'up'` |
     | `type` value is not a string | `entry #<n> ('<keys>'), action #<m>: 'type' expects a string value` |
     | Newline in `type` | `entry #<n> ('<keys>'), action #<m>: 'type' value contains a newline; use 'press: enter' to submit input` |
     | Unknown press key | `entry #<n> ('<keys>'), action #<m>: unknown key '<key>' in 'press'; expected one of enter, tab, escape, backspace, space, up, down, left, right, home, end, pageup, pagedown, delete, insert, numpadenter, f1-f12` |
@@ -165,18 +167,13 @@ Note: `⌘⇧D` is the default chord for twarp's built-in **Split pane right** a
 
 26. **Where it lives.** The GUI is a new tool-panel view, "Custom shortcuts", added to the left side panel **next to (immediately right of in the panel switcher) "Global search"**. Opening the left panel and switching to "Custom shortcuts" shows the view; the panel is dismissed and switched by the same gestures that govern any other left-panel view (no new top-level UI). The view is reachable via the same keyboard / menu / mouse paths as the existing tool-panel views.
 
-27. **List view.** When `shortcuts.yaml` has at least one valid entry, the panel shows one row per entry in source order. Each row contains:
-    - The chord in display form (e.g. `⌘⇧D`, `Ctrl+Shift+A`).
-    - A compressed single-line summary of the action sequence, in arrow form: e.g. `new pane right → type "claude" → enter`. Long sequences truncate with `…`.
-    - An [edit] affordance and a [delete] affordance.
-
-    Clicking a row (or its [edit] icon) opens the detail editor (§30). Rows are read-only outside the editor.
+27. **List view.** When `shortcuts.yaml` has at least one valid entry, the panel shows one row per entry in source order. Each row has the shortcut's **name on the left** (the entry's `name:` field, or an arrow-form action summary as fallback when `name` is unset) and the **chord on the right**, rendered as a styled pill with one bordered box per modifier and key (e.g. `⌘` `⇧` `D` as separate visual chips, matching the keybinding-display style used elsewhere in twarp). Names longer than the available row width truncate with `…`. Left-clicking the row opens `shortcuts.yaml` in a new twarp tab (§30). Right-clicking the row reveals a delete affordance (§31).
 
 28. **Empty state.** When `shortcuts.yaml` has zero valid entries, the panel shows a "+ New shortcut" button and a one-line helper hint ("Custom shortcuts run a sequence of terminal actions when you press a chord."). No list rows are rendered.
 
 29. **Create.** A "+ New shortcut" button is always pinned at the top of the panel. Clicking it opens the detail editor with empty fields and an empty action list. Saving appends the entry to `shortcuts.yaml`. Cancelling discards.
 
-30. **Edit.** Clicking a row's [edit] (or the row itself) opens the detail editor pre-filled with that entry's `keys` and `actions`. Saving rewrites that entry in place. Cancelling discards.
+30. **Edit.** Left-clicking a row opens `shortcuts.yaml` in a new twarp tab (via `WorkspaceAction::OpenFileInNewTab`, which uses twarp's built-in code-editor pane — the user stays inside the terminal rather than handing off to an external editor). Edits saved in that tab are picked up by the file watcher (§24) and the panel re-renders. A spec-true inline detail editor (keystroke-capture widget, action editor with type dropdowns and per-row reorder) is a later increment; the open-in-tab path is the v1 way to edit a shortcut beyond the [+ New shortcut] + delete affordances.
 
 31. **Delete.** Clicking a row's [delete] removes the entry from `shortcuts.yaml`. No confirmation dialog — the operation is cheap to undo by recreating the entry, and a destructive-confirmation modal for a config-editor surface would be heavyweight. If undo proves necessary post-ship, it is a follow-up.
 

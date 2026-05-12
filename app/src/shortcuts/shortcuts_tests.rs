@@ -13,8 +13,9 @@ use std::time::Duration;
 
 use crate::pane_group::Direction;
 use crate::shortcuts::action::{Action, KeyName};
-use crate::shortcuts::config::parse_shortcuts_yaml;
+use crate::shortcuts::config::{parse_shortcuts_yaml, serialize_shortcuts, Shortcut};
 use crate::shortcuts::key_to_bytes::bytes_for;
+use warpui::keymap::Keystroke;
 
 #[track_caller]
 fn assert_error(yaml: &str, expected: &str) {
@@ -154,7 +155,7 @@ fn entry_unknown_field_is_error() {
     // round-trips unchanged so the test is platform-agnostic.
     assert_error(
         "shortcuts:\n  - keys: cmd-1\n    actions: [new_tab]\n    surprise: yes\n",
-        "shortcuts.yaml: entry #1 ('cmd-1'): unknown field 'surprise'; expected 'keys' and 'actions'",
+        "shortcuts.yaml: entry #1 ('cmd-1'): unknown field 'surprise'; expected 'keys', 'actions', and optionally 'name'",
     );
 }
 
@@ -212,7 +213,7 @@ fn new_pane_missing_direction_is_error() {
     // Bare `new_pane` (no value) — same error as null value.
     assert_error(
         "shortcuts:\n  - keys: cmdorctrl-1\n    actions:\n      - new_pane\n",
-        "shortcuts.yaml: entry #1 ('cmd-1'), action #1: 'new_pane' requires a direction; expected 'right' or 'down'",
+        "shortcuts.yaml: entry #1 ('cmd-1'), action #1: 'new_pane' requires a direction; expected 'right', 'down', 'left', or 'up'",
     );
 }
 
@@ -220,7 +221,7 @@ fn new_pane_missing_direction_is_error() {
 fn new_pane_null_direction_is_error() {
     assert_error(
         "shortcuts:\n  - keys: cmdorctrl-1\n    actions:\n      - new_pane:\n",
-        "shortcuts.yaml: entry #1 ('cmd-1'), action #1: 'new_pane' requires a direction; expected 'right' or 'down'",
+        "shortcuts.yaml: entry #1 ('cmd-1'), action #1: 'new_pane' requires a direction; expected 'right', 'down', 'left', or 'up'",
     );
 }
 
@@ -230,8 +231,39 @@ fn new_pane_null_direction_is_error() {
 fn new_pane_invalid_direction_is_error() {
     assert_error(
         "shortcuts:\n  - keys: cmdorctrl-1\n    actions:\n      - new_pane: sideways\n",
-        "shortcuts.yaml: entry #1 ('cmd-1'), action #1: invalid 'new_pane' direction 'sideways'; expected 'right' or 'down'",
+        "shortcuts.yaml: entry #1 ('cmd-1'), action #1: invalid 'new_pane' direction 'sideways'; expected 'right', 'down', 'left', or 'up'",
     );
+}
+
+#[test]
+fn new_pane_accepts_all_four_directions() {
+    for dir in ["right", "down", "left", "up"] {
+        let yaml =
+            format!("shortcuts:\n  - keys: cmdorctrl-1\n    actions:\n      - new_pane: {dir}\n");
+        let result = parse_shortcuts_yaml(&yaml);
+        assert!(
+            result.errors.is_empty(),
+            "expected '{dir}' to parse, got errors: {:?}",
+            result.errors
+        );
+        assert_eq!(result.shortcuts.len(), 1);
+        let action = &result.shortcuts[0].actions[0];
+        let parsed_dir = match action {
+            Action::NewPane(d) => d,
+            other => panic!("expected NewPane, got {other:?}"),
+        };
+        let expected = match dir {
+            "right" => Direction::Right,
+            "down" => Direction::Down,
+            "left" => Direction::Left,
+            "up" => Direction::Up,
+            _ => unreachable!(),
+        };
+        assert!(
+            std::mem::discriminant(parsed_dir) == std::mem::discriminant(&expected),
+            "direction '{dir}' parsed to {parsed_dir:?}, expected {expected:?}"
+        );
+    }
 }
 
 // --- §20 row "`type` value is not a string" ---
@@ -357,6 +389,10 @@ fn default_shortcuts_yaml_parses_to_the_two_driving_examples() {
         result.shortcuts[1].actions[5],
         Action::Type(ref t) if t == "/address-code-review-comments"
     ));
+    // Both shipped defaults carry a human-readable name for the
+    // side-panel list view.
+    assert!(result.shortcuts[0].name.is_some());
+    assert!(result.shortcuts[1].name.is_some());
 }
 
 // --- Driving examples (PRODUCT §Driving examples) ---
@@ -441,6 +477,85 @@ shortcuts:
     let result = parse_shortcuts_yaml(yaml);
     assert_eq!(result.shortcuts.len(), 2);
     assert_eq!(result.errors.len(), 1);
+}
+
+// --- serialize round-trip (PRODUCT §37, 4b) ---
+
+#[test]
+fn serialize_round_trips_through_parser() {
+    let original = vec![
+        Shortcut {
+            keys: Keystroke::parse("cmd-shift-D").unwrap(),
+            actions: vec![
+                Action::NewPane(Direction::Right),
+                Action::Wait(Duration::from_millis(1500)),
+                Action::Type("claude".to_owned()),
+                Action::Press(KeyName::Enter),
+            ],
+            binding_name: String::new(),
+            name: Some("Open Claude".to_owned()),
+        },
+        Shortcut {
+            keys: Keystroke::parse("cmd-shift-9").unwrap(),
+            actions: vec![Action::NewTab, Action::Type("echo hi".to_owned())],
+            binding_name: String::new(),
+            name: None,
+        },
+    ];
+    let yaml = serialize_shortcuts(&original);
+    let parsed = parse_shortcuts_yaml(&yaml);
+    assert!(parsed.errors.is_empty(), "errors: {:#?}", parsed.errors);
+    assert_eq!(parsed.shortcuts.len(), original.len());
+    for (a, b) in original.iter().zip(parsed.shortcuts.iter()) {
+        assert_eq!(a.keys.normalized(), b.keys.normalized());
+        assert_eq!(a.actions.len(), b.actions.len());
+        assert_eq!(a.name, b.name);
+    }
+}
+
+#[test]
+fn shortcut_with_name_parses_round_trip() {
+    let yaml = r#"shortcuts:
+  - keys: cmdorctrl-shift-D
+    name: "Open Claude"
+    actions:
+      - new_tab
+"#;
+    let result = parse_shortcuts_yaml(yaml);
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+    assert_eq!(result.shortcuts.len(), 1);
+    assert_eq!(result.shortcuts[0].name.as_deref(), Some("Open Claude"));
+}
+
+#[test]
+fn shortcut_without_name_has_none() {
+    let yaml = r#"shortcuts:
+  - keys: cmdorctrl-shift-D
+    actions:
+      - new_tab
+"#;
+    let result = parse_shortcuts_yaml(yaml);
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+    assert_eq!(result.shortcuts.len(), 1);
+    assert_eq!(result.shortcuts[0].name, None);
+}
+
+#[test]
+fn empty_name_string_is_treated_as_none() {
+    let yaml = r#"shortcuts:
+  - keys: cmdorctrl-shift-D
+    name: "   "
+    actions:
+      - new_tab
+"#;
+    let result = parse_shortcuts_yaml(yaml);
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+    assert_eq!(result.shortcuts[0].name, None);
+}
+
+#[test]
+fn serialize_empty_list_emits_empty_shortcuts() {
+    assert_eq!(serialize_shortcuts(&[]), "shortcuts: []\n");
 }
 
 // --- key_to_bytes table coverage (PRODUCT §10) ---

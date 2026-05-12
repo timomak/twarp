@@ -7,8 +7,12 @@
 
 pub mod action;
 pub mod config;
+pub mod conflict;
 pub mod executor;
 pub mod key_to_bytes;
+pub mod save;
+pub mod summary;
+pub mod watcher;
 
 #[cfg(test)]
 #[path = "shortcuts_tests.rs"]
@@ -38,13 +42,19 @@ pub const DEFAULT_SHORTCUTS_YAML: &str = r#"# Custom command shortcuts for twarp
 #   press: enter       - press a named key (enter, tab, escape, up, down, ...)
 #   wait: 2s           - pause before the next action (e.g. 500ms, 2s, 1m)
 #
+# Each entry can optionally have a `name:` field — a human-readable
+# label for the Custom shortcuts side panel. If omitted, the panel
+# falls back to a summary of the action sequence.
+#
 # Tip: after `new_tab` or `new_pane`, the new shell takes a moment to
 # bootstrap. Insert a short `wait` (e.g. `500ms`) before `type` so the
 # input lands at a real prompt instead of mid-startup.
 #
-# Edit this file to add your own. Restart twarp for changes to apply.
+# Edit this file to add your own. twarp watches this file and reloads
+# on save — no restart needed.
 shortcuts:
   - keys: cmdorctrl-shift-D
+    name: "Open Claude in a new pane"
     actions:
       - new_pane: right
       - wait: 1500ms
@@ -52,6 +62,7 @@ shortcuts:
       - press: enter
 
   - keys: cmdorctrl-shift-A
+    name: "Open Claude and review code review comments"
     actions:
       - new_pane: right
       - wait: 1500ms
@@ -102,6 +113,29 @@ pub fn shortcuts_file_path() -> PathBuf {
 /// the same startup site.
 #[cfg(feature = "local_fs")]
 pub fn load(app: &mut AppContext) {
+    read_parse_and_store(app);
+}
+
+#[cfg(not(feature = "local_fs"))]
+pub fn load(_app: &mut AppContext) {}
+
+/// Re-read `shortcuts.yaml` and re-register editable bindings (PRODUCT §24).
+/// Called by the file watcher after a 200ms-debounced event, and by the
+/// GUI's save path after writing the file. Safe to call repeatedly.
+///
+/// An in-flight `ShortcutRunner` is unaffected because 4a's runner captures
+/// its `Vec<Action>` by value at start.
+#[cfg(feature = "local_fs")]
+pub fn reload(app: &mut AppContext) {
+    read_parse_and_store(app);
+    crate::workspace::register_shortcut_bindings(app);
+}
+
+#[cfg(not(feature = "local_fs"))]
+pub fn reload(_app: &mut AppContext) {}
+
+#[cfg(feature = "local_fs")]
+fn read_parse_and_store(app: &mut AppContext) {
     let path = shortcuts_file_path();
     let text = match std::fs::read_to_string(&path) {
         Ok(t) => t,
@@ -143,6 +177,3 @@ pub fn load(app: &mut AppContext) {
         model.errors_pending_toast = has_errors;
     });
 }
-
-#[cfg(not(feature = "local_fs"))]
-pub fn load(_app: &mut AppContext) {}

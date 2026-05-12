@@ -11,6 +11,10 @@ pub struct Shortcut {
     pub keys: Keystroke,
     pub actions: Vec<Action>,
     pub binding_name: String,
+    /// Optional human-readable label for the side-panel list view
+    /// (PRODUCT 04 §27). When `None`, the GUI falls back to an
+    /// arrow-form action summary. Round-trips through serialize/parse.
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -130,6 +134,7 @@ fn parse_entry(entry: &Value, entry_idx: usize) -> Result<Shortcut, String> {
 
     let mut keys_raw: Option<String> = None;
     let mut actions_value: Option<&Value> = None;
+    let mut name: Option<String> = None;
 
     for (k, v) in mapping {
         let key = match k.as_str() {
@@ -145,10 +150,25 @@ fn parse_entry(entry: &Value, entry_idx: usize) -> Result<Shortcut, String> {
             "actions" => {
                 actions_value = Some(v);
             }
+            "name" => {
+                // PRODUCT §3: optional `name` field for the GUI list
+                // view (4c). Null or empty string is treated as
+                // unset; non-string values are silently ignored
+                // rather than erroring, so existing files without a
+                // name keep working unchanged.
+                name = v.as_str().and_then(|s| {
+                    let trimmed = s.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_owned())
+                    }
+                });
+            }
             other => {
                 let keys_display = keys_raw.clone().unwrap_or_default();
                 return Err(format!(
-                    "entry #{entry_idx} ('{keys_display}'): unknown field '{other}'; expected 'keys' and 'actions'"
+                    "entry #{entry_idx} ('{keys_display}'): unknown field '{other}'; expected 'keys', 'actions', and optionally 'name'"
                 ));
             }
         }
@@ -191,6 +211,7 @@ fn parse_entry(entry: &Value, entry_idx: usize) -> Result<Shortcut, String> {
         keys,
         actions,
         binding_name: String::new(),
+        name,
     })
 }
 
@@ -206,7 +227,7 @@ fn parse_action(
         return match name {
             "new_tab" => Ok(Action::NewTab),
             "new_pane" => Err(format!(
-                "{prefix}: 'new_pane' requires a direction; expected 'right' or 'down'"
+                "{prefix}: 'new_pane' requires a direction; expected 'right', 'down', 'left', or 'up'"
             )),
             other if is_known_action_with_value(other) => Err(format!(
                 "{prefix}: expected a bare action name or a single-key map"
@@ -261,22 +282,24 @@ fn parse_new_pane(value: &Value, prefix: &str) -> Result<Action, String> {
         Value::String(s) => s.as_str(),
         Value::Null => {
             return Err(format!(
-                "{prefix}: 'new_pane' requires a direction; expected 'right' or 'down'"
+                "{prefix}: 'new_pane' requires a direction; expected 'right', 'down', 'left', or 'up'"
             ));
         }
         _ => {
             let raw = serde_yaml::to_string(value).unwrap_or_default();
             let raw = raw.trim().trim_end_matches('\n').to_owned();
             return Err(format!(
-                "{prefix}: invalid 'new_pane' direction '{raw}'; expected 'right' or 'down'"
+                "{prefix}: invalid 'new_pane' direction '{raw}'; expected 'right', 'down', 'left', or 'up'"
             ));
         }
     };
     match raw {
         "right" => Ok(Action::NewPane(Direction::Right)),
         "down" => Ok(Action::NewPane(Direction::Down)),
+        "left" => Ok(Action::NewPane(Direction::Left)),
+        "up" => Ok(Action::NewPane(Direction::Up)),
         other => Err(format!(
-            "{prefix}: invalid 'new_pane' direction '{other}'; expected 'right' or 'down'"
+            "{prefix}: invalid 'new_pane' direction '{other}'; expected 'right', 'down', 'left', or 'up'"
         )),
     }
 }
@@ -383,6 +406,105 @@ fn normalize_chord_casing(chord: &str) -> String {
         out.push((*part).to_owned());
     }
     out.join("-")
+}
+
+/// Serialize a list of shortcuts back to YAML, in the canonical shape the
+/// parser accepts (PRODUCT §37). Comments and hand-formatting are dropped;
+/// within each entry, `keys` precedes `actions`; within each action item,
+/// single-key maps are compact (`type: claude`, not multi-line). The
+/// parse(serialize(x)) round-trip is asserted by the
+/// `serialize_round_trips_through_parser` test.
+pub fn serialize_shortcuts(shortcuts: &[Shortcut]) -> String {
+    if shortcuts.is_empty() {
+        return "shortcuts: []\n".to_owned();
+    }
+    let mut out = String::from("shortcuts:\n");
+    for sc in shortcuts {
+        out.push_str(&format!("  - keys: {}\n", sc.keys.normalized()));
+        if let Some(name) = &sc.name {
+            out.push_str(&format!("    name: {}\n", yaml_escape_string(name)));
+        }
+        out.push_str("    actions:\n");
+        for action in &sc.actions {
+            match action {
+                Action::NewTab => out.push_str("      - new_tab\n"),
+                Action::NewPane(direction) => {
+                    let name = direction_name(*direction);
+                    out.push_str(&format!("      - new_pane: {name}\n"));
+                }
+                Action::Type(text) => {
+                    out.push_str(&format!("      - type: {}\n", yaml_escape_string(text)));
+                }
+                Action::Press(key) => {
+                    out.push_str(&format!("      - press: {}\n", key_name_to_yaml(*key)));
+                }
+                Action::Wait(duration) => {
+                    out.push_str(&format!("      - wait: {}\n", duration_to_yaml(*duration)));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn direction_name(d: Direction) -> &'static str {
+    match d {
+        Direction::Right => "right",
+        Direction::Down => "down",
+        Direction::Left => "left",
+        Direction::Up => "up",
+    }
+}
+
+fn key_name_to_yaml(key: KeyName) -> String {
+    match key {
+        KeyName::Enter => "enter".to_owned(),
+        KeyName::Tab => "tab".to_owned(),
+        KeyName::Escape => "escape".to_owned(),
+        KeyName::Backspace => "backspace".to_owned(),
+        KeyName::Space => "space".to_owned(),
+        KeyName::Up => "up".to_owned(),
+        KeyName::Down => "down".to_owned(),
+        KeyName::Left => "left".to_owned(),
+        KeyName::Right => "right".to_owned(),
+        KeyName::Home => "home".to_owned(),
+        KeyName::End => "end".to_owned(),
+        KeyName::PageUp => "pageup".to_owned(),
+        KeyName::PageDown => "pagedown".to_owned(),
+        KeyName::Delete => "delete".to_owned(),
+        KeyName::Insert => "insert".to_owned(),
+        KeyName::NumpadEnter => "numpadenter".to_owned(),
+        KeyName::F(n) => format!("f{n}"),
+    }
+}
+
+fn duration_to_yaml(d: Duration) -> String {
+    let total_ms = d.as_millis();
+    if total_ms.is_multiple_of(60_000) {
+        format!("{}m", total_ms / 60_000)
+    } else if total_ms.is_multiple_of(1000) {
+        format!("{}s", total_ms / 1000)
+    } else {
+        format!("{total_ms}ms")
+    }
+}
+
+fn yaml_escape_string(s: &str) -> String {
+    // PRODUCT §9 already rejects newlines in `type`. We still wrap in double
+    // quotes for clarity and to handle special characters; serde_yaml-style
+    // escapes are sufficient since type values are user text without
+    // line breaks.
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            _ => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
 }
 
 fn yaml_type_name(v: &Value) -> &'static str {

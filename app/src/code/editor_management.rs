@@ -271,6 +271,17 @@ impl CodeManager {
             .map(|(_, data)| data.locator)
     }
 
+    /// Returns the locator for any code pane (in any tab) that already has
+    /// `path` open. Used by surfaces like the Custom shortcuts panel where
+    /// "open this file" should activate the existing tab/pane rather than
+    /// open a duplicate.
+    pub fn get_locator_for_path_anywhere(&self, path: &Path) -> Option<PaneViewLocator> {
+        self.source_to_pane_data
+            .iter()
+            .find(|(source, _)| source.path().is_some_and(|p| p.as_path() == path))
+            .map(|(_, data)| data.locator)
+    }
+
     // Allow dead_code here for wasm compilation
     #[allow(dead_code)]
     pub fn complete_pending_diffs(&mut self, source: CodeSource, ctx: &mut ModelContext<Self>) {

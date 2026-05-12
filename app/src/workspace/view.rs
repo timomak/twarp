@@ -3389,6 +3389,7 @@ impl Workspace {
                     entry_focus: GlobalSearchEntryFocus::Results,
                 },
                 LeftPanelDisplayedTab::WarpDrive => ToolPanelView::WarpDrive,
+                LeftPanelDisplayedTab::Shortcuts => ToolPanelView::Shortcuts,
                 LeftPanelDisplayedTab::ConversationListView => ToolPanelView::ConversationListView,
             };
             lp.restore_active_view_from_snapshot(active_view, ctx);
@@ -14636,6 +14637,7 @@ impl Workspace {
                         ToolPanelView::ProjectExplorer => "Project explorer",
                         ToolPanelView::GlobalSearch { .. } => "Global search",
                         ToolPanelView::WarpDrive => "Warp Drive",
+                        ToolPanelView::Shortcuts => "Custom shortcuts",
                         ToolPanelView::ConversationListView => "Agent conversations",
                     }
                 } else {
@@ -14690,6 +14692,7 @@ impl Workspace {
                 ToolPanelView::ProjectExplorer => "Project explorer",
                 ToolPanelView::GlobalSearch { .. } => "Global search",
                 ToolPanelView::WarpDrive => "Warp Drive",
+                ToolPanelView::Shortcuts => "Custom shortcuts",
                 ToolPanelView::ConversationListView => "Agent conversations",
             }
         } else {
@@ -17472,6 +17475,9 @@ impl Workspace {
                 entry_focus: GlobalSearchEntryFocus::Results,
             });
         }
+        // Custom command shortcuts panel (twarp feature 04, PRODUCT §26).
+        // Sits immediately after Global Search in the toolbelt.
+        views.push(ToolPanelView::Shortcuts);
         if WarpDriveSettings::is_warp_drive_enabled(ctx) {
             views.push(ToolPanelView::WarpDrive);
         }
