@@ -1184,7 +1184,13 @@ impl LeftPanelView {
                 self.shortcut_context_menu_target = None;
                 let full_path = crate::shortcuts::shortcuts_file_path();
                 log::info!("shortcuts: opening {full_path:?} in a new twarp tab");
-                ctx.dispatch_typed_action(&WorkspaceAction::OpenFileInNewTab {
+                // Defer the workspace-action dispatch — we're currently
+                // inside our own handle_action, and dispatching another
+                // typed action synchronously re-enters the view update
+                // machinery and panics ("Circular view update"). The
+                // deferred path queues the action onto `pending_effects`
+                // so it fires after this handler returns.
+                ctx.dispatch_typed_action_deferred(WorkspaceAction::OpenFileInNewTab {
                     full_path,
                     line_and_column: None,
                 });
