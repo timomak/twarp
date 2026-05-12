@@ -1,6 +1,6 @@
 # 05 — Open Changes panel
 
-**Phase:** not-started
+**Phase:** spec-pending
 **Spec PR:** —
 **Impl PRs:** —
 

@@ -1,12 +1,12 @@
 # 04 — Custom command shortcuts
 
-**Phase:** impl-in-review
+**Phase:** merged
 **Spec PR:** [#51](https://github.com/timomak/twarp/pull/51)
 **Impl PR(s):**
 - 4a — runtime: [#52](https://github.com/timomak/twarp/pull/52) (merged)
 - 4b — hot reload + GUI data layer: [#53](https://github.com/timomak/twarp/pull/53) (closed; content shipped via #54's squash)
 - 4c — side-panel tab + stub view: [#54](https://github.com/timomak/twarp/pull/54) (merged, includes 4b)
-- 4d — inline detail editor + keymap unregister API: see PR (open)
+- 4d — inline detail editor + keymap unregister API: [#55](https://github.com/timomak/twarp/pull/55) (merged)
 
 ## Scope
 
