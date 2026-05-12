@@ -238,6 +238,72 @@ fn test_keymap_bindings_list() {
 }
 
 #[test]
+fn test_unregister_editable_bindings_with_name_prefix() {
+    #[derive(Debug)]
+    enum TypedAction {
+        FirstShortcut,
+        SecondShortcut,
+        OtherAction,
+    }
+
+    let mut map = Keymap::default();
+    map.register_editable_bindings([
+        EditableBinding::new("shortcuts:user_0", "Shortcut 0", TypedAction::FirstShortcut)
+            .with_key_binding("cmd-shift-J"),
+        EditableBinding::new(
+            "shortcuts:user_1",
+            "Shortcut 1",
+            TypedAction::SecondShortcut,
+        )
+        .with_key_binding("cmd-shift-K"),
+        EditableBinding::new("other:action", "Other action", TypedAction::OtherAction)
+            .with_key_binding("cmd-o"),
+    ]);
+
+    assert_eq!(map.bindings().count(), 3);
+    assert!(map
+        .editable_bindings_by_name
+        .contains_key("shortcuts:user_0"));
+    assert!(map
+        .editable_bindings_by_name
+        .contains_key("shortcuts:user_1"));
+    assert!(map.editable_bindings_by_name.contains_key("other:action"));
+
+    map.unregister_editable_bindings_with_name_prefix("shortcuts:");
+
+    let remaining: Vec<&str> = map.bindings().map(|b| b.name).collect();
+    assert_eq!(remaining, vec!["other:action"]);
+    assert!(!map
+        .editable_bindings_by_name
+        .contains_key("shortcuts:user_0"));
+    assert!(!map
+        .editable_bindings_by_name
+        .contains_key("shortcuts:user_1"));
+    assert!(map.editable_bindings_by_name.contains_key("other:action"));
+    // By-name indices must point to the surviving slots after retain.
+    let indices = map
+        .editable_bindings_by_name
+        .get("other:action")
+        .expect("other:action survives the unregister");
+    assert_eq!(indices.len(), 1);
+    let idx = indices[0];
+    assert_eq!(map.editable_bindings[idx].name, "other:action");
+
+    // Registering a new generation under the same prefix doesn't resurrect
+    // the dropped bindings or duplicate the survivor.
+    map.register_editable_bindings([EditableBinding::new(
+        "shortcuts:user_0",
+        "Shortcut 0 v2",
+        TypedAction::FirstShortcut,
+    )
+    .with_key_binding("cmd-shift-L")]);
+    let names: Vec<&str> = map.bindings().map(|b| b.name).collect();
+    assert_eq!(names.len(), 2);
+    assert!(names.contains(&"shortcuts:user_0"));
+    assert!(names.contains(&"other:action"));
+}
+
+#[test]
 fn test_binding_description_preserves_case() {
     let desc = BindingDescription::new_preserve_case("/add-mcp");
     assert_eq!(desc.in_context(DescriptionContext::Default), "/add-mcp");

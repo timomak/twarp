@@ -1614,6 +1614,17 @@ impl AppContext {
         self.keystroke_matcher.register_editable_bindings(actions);
     }
 
+    /// Remove all editable bindings whose `name` starts with `prefix`.
+    ///
+    /// Intended for callers that register a batch of bindings under a shared
+    /// namespace (e.g. `shortcuts:`) and need to drop the previous generation
+    /// before registering a new one. Without this, repeated registration just
+    /// appends new bindings on top of stale ones.
+    pub fn unregister_editable_bindings_with_name_prefix(&mut self, prefix: &str) {
+        self.keystroke_matcher
+            .unregister_editable_bindings_with_name_prefix(prefix);
+    }
+
     /// Set a custom trigger for a given editable binding name
     ///
     /// This will override the default trigger for that action

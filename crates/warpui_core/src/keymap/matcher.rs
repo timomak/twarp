@@ -127,6 +127,17 @@ impl Matcher {
         self.keymap.register_editable_bindings(actions.into_iter());
     }
 
+    /// Remove all editable bindings whose `name` starts with `prefix`.
+    ///
+    /// Clears `pending` like `register_editable_bindings` does so the
+    /// matcher's in-flight keystroke buffer can't retain bindings that
+    /// have just been dropped.
+    pub fn unregister_editable_bindings_with_name_prefix(&mut self, prefix: &str) {
+        self.pending.clear();
+        self.keymap
+            .unregister_editable_bindings_with_name_prefix(prefix);
+    }
+
     /// Set a custom trigger for a given editable binding name.
     ///
     /// This will override the default trigger for that action.
