@@ -3,7 +3,7 @@
 **Phase:** impl-in-review
 **Spec PR:** [#56](https://github.com/timomak/twarp/pull/56)
 **Impl PRs:**
-- 5a — panel scaffold + working/staged file lists: open
+- 5a — panel scaffold + working/staged file lists: [#57](https://github.com/timomak/twarp/pull/57)
 
 ## Scope
 
