@@ -1,8 +1,9 @@
 # 05 — Open Changes panel
 
-**Phase:** spec-in-review
+**Phase:** impl-in-review
 **Spec PR:** [#56](https://github.com/timomak/twarp/pull/56)
-**Impl PRs:** —
+**Impl PRs:**
+- 5a — panel scaffold + working/staged file lists: open
 
 ## Scope
 
@@ -10,7 +11,7 @@ VS Code Source Control–style side panel: working/staged file separation, inlin
 
 ## Sub-phases
 
-- [ ] **5a — Panel scaffold + working/staged file lists** (read-only, no diff yet).
+- [x] **5a — Panel scaffold + working/staged file lists** (read-only, no diff yet).
 - [ ] **5b — Inline diff view** for the focused file.
 - [ ] **5c — Stage / unstage / discard** at file and hunk granularity.
 - [ ] **5d — Commit message input + commit / push / pull** controls.

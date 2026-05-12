@@ -66,6 +66,7 @@ struct MouseStateHandles {
     global_search_button: MouseStateHandle,
     warp_drive_button: MouseStateHandle,
     shortcuts_button: MouseStateHandle,
+    open_changes_button: MouseStateHandle,
     add_new_shortcut_button: MouseStateHandle,
     // twarp: 2c-d — conversation_list_view_button removed
 }
@@ -139,6 +140,8 @@ pub enum LeftPanelAction {
     /// Reorder: move the action row at the given index down by one slot.
     /// No-op when already last.
     ShortcutsEditActionMoveDown(usize),
+    /// Open Changes side panel (twarp feature 05, PRODUCT §1).
+    OpenChanges,
     // twarp: 2c-d — kept for legacy call-sites; AI conversation list deleted.
     ConversationListView,
 }
@@ -171,6 +174,11 @@ pub enum ToolPanelView {
     /// in a future sub-phase; 4c renders the tab plus a placeholder so the
     /// integration lights up.
     Shortcuts,
+    /// Open Changes panel: VS Code Source Control-style git review surface
+    /// (twarp feature 05, PRODUCT §1). 5a scaffolds the panel + working/staged
+    /// file lists; diff view, staging actions, commit, and Timeline ship in
+    /// 5b–5e.
+    OpenChanges,
     // twarp: 2c-d — variant kept so legacy call-sites compile; AI conversation list deleted.
     ConversationListView,
 }
@@ -870,6 +878,15 @@ impl LeftPanelView {
                 tooltip_keybinding: None,
                 tooltip_keybinding_names: vec![],
             },
+            ToolPanelView::OpenChanges => ToolbeltButtonConfig {
+                icon: Icon::GitBranch,
+                active_icon: None,
+                tooltip_text: "Open Changes".to_owned(),
+                action: LeftPanelAction::OpenChanges,
+                render_with_active_state: false,
+                tooltip_keybinding: None,
+                tooltip_keybinding_names: vec![],
+            },
             // twarp: 2c-d — ConversationListView arm: AI deleted, use ProjectExplorer config as fallback.
             ToolPanelView::ConversationListView => ToolbeltButtonConfig {
                 icon: Icon::FileCopy,
@@ -1062,7 +1079,58 @@ impl LeftPanelView {
 
         self.on_left_panel_visibility_changed(left_panel_open, ctx);
 
+        // PRODUCT 05 §2: when the focused pane group changes, the panel
+        // repo may change too. Refresh the Open Changes model + restart
+        // the watcher against the new repo. The model's no-repo path is
+        // taken automatically when the new pane group isn't in a git repo.
+        let first_cwd = active_directories.first().map(|d| d.path.clone());
+        self.refresh_open_changes(first_cwd, ctx);
+
         ctx.notify();
+    }
+
+    /// PRODUCT 05 §2 / §7: kick a refresh of the Open Changes model for
+    /// `pane_cwd` and start the watcher against the inferred repo root.
+    /// Called on pane-group focus changes and on first panel open.
+    #[cfg(feature = "local_fs")]
+    fn refresh_open_changes(&self, pane_cwd: Option<PathBuf>, ctx: &mut ViewContext<Self>) {
+        use crate::open_changes::{repo::find_repo_root, OpenChangesModel};
+        let repo_root = pane_cwd.as_deref().and_then(find_repo_root);
+
+        // Schedule the status refresh (no-op when no repo).
+        OpenChangesModel::handle(ctx).update(ctx, |model, model_ctx| {
+            crate::open_changes::refresh::schedule(model, pane_cwd, model_ctx);
+        });
+
+        // Start or stop the watcher to match the new repo root.
+        let watcher = crate::open_changes::watcher::OpenChangesWatcher::handle(ctx);
+        match repo_root {
+            Some(root) => watcher.update(ctx, |w, wctx| w.watch_repo(root, wctx)),
+            None => watcher.update(ctx, |w, wctx| w.unwatch(wctx)),
+        }
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    fn refresh_open_changes(&self, _pane_cwd: Option<PathBuf>, _ctx: &mut ViewContext<Self>) {}
+
+    /// Convenience: refresh Open Changes using the active pane group's
+    /// most-recent working directory. Used when the user opens the panel
+    /// — at that point we may not have hit `set_active_pane_group` since
+    /// the last cwd change.
+    fn refresh_open_changes_for_active_pane_group(&self, ctx: &mut ViewContext<Self>) {
+        let Some(active_pane_group) = self.active_pane_group.as_ref().and_then(|p| p.upgrade(ctx))
+        else {
+            self.refresh_open_changes(None, ctx);
+            return;
+        };
+        let pane_group_id = active_pane_group.id();
+        let cwd: Option<PathBuf> = self.working_directories_model.read(ctx, |model, _| {
+            model
+                .most_recent_directories_for_pane_group(pane_group_id)
+                .and_then(|mut dirs| dirs.next())
+                .map(|d| d.path)
+        });
+        self.refresh_open_changes(cwd, ctx);
     }
 
     pub fn update_coding_panel_enablement(
@@ -1120,6 +1188,10 @@ impl LeftPanelView {
             // 4c stub: Shortcuts panel has no internal child view to focus
             // yet. Full GUI (list, detail editor) lands in a follow-up.
             ToolPanelView::Shortcuts => {}
+            // 5a stub: panel renders via the singleton model; no internal
+            // child view to focus. Diff view + commit input add focusable
+            // surfaces in 5b–5d.
+            ToolPanelView::OpenChanges => {}
             // twarp: 2c-d — ConversationListView arm: AI deleted, no-op.
             ToolPanelView::ConversationListView => {}
         }
@@ -1289,6 +1361,9 @@ impl LeftPanelView {
                 | LeftPanelAction::ShortcutsEditActionRemove(_)
                 | LeftPanelAction::ShortcutsEditActionMoveUp(_)
                 | LeftPanelAction::ShortcutsEditActionMoveDown(_) => false,
+                LeftPanelAction::OpenChanges => {
+                    self.active_view.get() == ToolPanelView::OpenChanges
+                }
                 // twarp: 2c-d — ConversationListView arm kept for legacy call-sites; AI deleted.
                 LeftPanelAction::ConversationListView => false,
             };
@@ -2185,6 +2260,13 @@ impl LeftPanelView {
                 self.shortcut_context_menu_target = None;
                 Self::delete_shortcut_at_index(index, ctx);
             }
+            LeftPanelAction::OpenChanges => {
+                active_view_state::set(self, ToolPanelView::OpenChanges, ctx);
+                // PRODUCT §1 / §2: refresh state and start watching as soon
+                // as the panel is opened so the user sees real data without
+                // a separate "Refresh" click.
+                self.refresh_open_changes_for_active_pane_group(ctx);
+            }
             // twarp: 2c-d — ConversationListView is a stub kept for legacy call-sites.
             LeftPanelAction::ConversationListView => {}
         }
@@ -2538,6 +2620,8 @@ impl View for LeftPanelView {
                 ToolPanelView::WarpDrive => ctx.focus(&self.warp_drive_view),
                 // 4c stub: no internal view to focus yet.
                 ToolPanelView::Shortcuts => {}
+                // 5a stub: no focusable child view.
+                ToolPanelView::OpenChanges => {}
                 // twarp: 2c-d — ConversationListView arm: AI deleted, no-op.
                 ToolPanelView::ConversationListView => {}
             }
@@ -2552,6 +2636,7 @@ impl View for LeftPanelView {
             self.mouse_state_handles.global_search_button.clone(),
             self.mouse_state_handles.warp_drive_button.clone(),
             self.mouse_state_handles.shortcuts_button.clone(),
+            self.mouse_state_handles.open_changes_button.clone(),
             // twarp: 2c-d — conversation_list_view_button removed
         ];
 
@@ -2614,6 +2699,9 @@ impl View for LeftPanelView {
             // `shortcuts.yaml` for now, and 4b's hot reload keeps that
             // loop tight.
             ToolPanelView::Shortcuts => self.render_shortcuts_panel(app),
+            // PRODUCT 05 §§1–11, §§38–40: read-only scaffold + working/staged
+            // file lists. Diff view, staging, commit, Timeline are 5b–5e.
+            ToolPanelView::OpenChanges => crate::open_changes::view::render(app),
             // twarp: 2c-d — ConversationListView arm: AI deleted, use empty content.
             ToolPanelView::ConversationListView => {
                 Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()

@@ -891,6 +891,7 @@ pub enum LeftPanelDisplayedTab {
     GlobalSearch,
     WarpDrive,
     Shortcuts,
+    OpenChanges,
     ConversationListView,
 }
 
@@ -901,6 +902,7 @@ impl From<ToolPanelView> for LeftPanelDisplayedTab {
             ToolPanelView::GlobalSearch { .. } => LeftPanelDisplayedTab::GlobalSearch,
             ToolPanelView::WarpDrive => LeftPanelDisplayedTab::WarpDrive,
             ToolPanelView::Shortcuts => LeftPanelDisplayedTab::Shortcuts,
+            ToolPanelView::OpenChanges => LeftPanelDisplayedTab::OpenChanges,
             ToolPanelView::ConversationListView => LeftPanelDisplayedTab::ConversationListView,
         }
     }

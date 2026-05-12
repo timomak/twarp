@@ -3390,6 +3390,7 @@ impl Workspace {
                 },
                 LeftPanelDisplayedTab::WarpDrive => ToolPanelView::WarpDrive,
                 LeftPanelDisplayedTab::Shortcuts => ToolPanelView::Shortcuts,
+                LeftPanelDisplayedTab::OpenChanges => ToolPanelView::OpenChanges,
                 LeftPanelDisplayedTab::ConversationListView => ToolPanelView::ConversationListView,
             };
             lp.restore_active_view_from_snapshot(active_view, ctx);
@@ -14638,6 +14639,7 @@ impl Workspace {
                         ToolPanelView::GlobalSearch { .. } => "Global search",
                         ToolPanelView::WarpDrive => "Warp Drive",
                         ToolPanelView::Shortcuts => "Custom shortcuts",
+                        ToolPanelView::OpenChanges => "Open Changes",
                         ToolPanelView::ConversationListView => "Agent conversations",
                     }
                 } else {
@@ -14693,6 +14695,7 @@ impl Workspace {
                 ToolPanelView::GlobalSearch { .. } => "Global search",
                 ToolPanelView::WarpDrive => "Warp Drive",
                 ToolPanelView::Shortcuts => "Custom shortcuts",
+                ToolPanelView::OpenChanges => "Open Changes",
                 ToolPanelView::ConversationListView => "Agent conversations",
             }
         } else {
@@ -17478,6 +17481,11 @@ impl Workspace {
         // Custom command shortcuts panel (twarp feature 04, PRODUCT §26).
         // Sits immediately after Global Search in the toolbelt.
         views.push(ToolPanelView::Shortcuts);
+        // Open Changes panel (twarp feature 05, PRODUCT §1). Sits
+        // immediately after Custom shortcuts in the toolbelt.
+        if cfg!(feature = "local_fs") {
+            views.push(ToolPanelView::OpenChanges);
+        }
         if WarpDriveSettings::is_warp_drive_enabled(ctx) {
             views.push(ToolPanelView::WarpDrive);
         }

@@ -154,6 +154,7 @@ pub mod input_suggestions;
 pub mod integration_testing;
 pub mod keyboard;
 pub mod launch_configs;
+pub mod open_changes;
 pub mod pane_group;
 pub mod resource_center;
 pub mod root_view;
@@ -1453,6 +1454,8 @@ fn initialize_app(
     ctx.add_singleton_model(|_| ToastStack);
     ctx.add_singleton_model(|_| shortcuts::ShortcutsModel::new());
     ctx.add_singleton_model(shortcuts::watcher::ShortcutsWatcher::new);
+    ctx.add_singleton_model(|_| open_changes::OpenChangesModel::new());
+    ctx.add_singleton_model(open_changes::watcher::OpenChangesWatcher::new);
     ctx.add_singleton_model(|_| GlobalCodeReviewModel);
     ctx.add_singleton_model(workspace::OneTimeModalModel::new);
     // twarp: 2c-d.4 — BonusGrantNotificationModel singleton removed (AI usage)
@@ -2169,6 +2172,7 @@ fn launch(ctx: &mut warpui::AppContext, app_state: Option<AppState>, launch_mode
 
     keyboard::load_custom_keybindings(ctx);
     shortcuts::load(ctx);
+    open_changes::load(ctx);
     workspace::register_shortcut_bindings(ctx);
 
     IntervalTimer::handle(ctx).update(ctx, |timer, _ctx| {
