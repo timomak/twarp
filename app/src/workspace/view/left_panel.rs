@@ -196,15 +196,31 @@ pub struct LeftPanelView {
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     working_directories_model: ModelHandle<WorkingDirectoriesModel>,
     panel_position: super::PanelPosition,
-    /// Index of the row whose inline Rename / Delete buttons are
-    /// currently shown. Set by right-clicking a row, cleared by any
-    /// subsequent click or by Rename / Delete completing.
+    /// Index of the row whose inline Delete button is currently
+    /// shown. Set by right-clicking a row, cleared by any subsequent
+    /// click or by Delete completing.
     shortcut_context_menu_target: Option<usize>,
-    /// Mouse states for the inline Rename / Delete buttons that appear
-    /// when `shortcut_context_menu_target` is set. One pair total since
+    /// Mouse state for the inline Delete button. One state total since
     /// only one row's menu is open at a time.
-    shortcut_rename_mouse_state: MouseStateHandle,
     shortcut_delete_mouse_state: MouseStateHandle,
+}
+
+/// Maximum display length for a shortcut name in the side-panel list
+/// row. Names longer than this are truncated with `…`. Character-based
+/// rather than pixel-based so it works without a layout pass.
+const ROW_NAME_MAX_CHARS: usize = 28;
+
+/// Truncate `name` to at most `max_chars` characters, appending `…` if
+/// truncated. Char-count-based so multi-byte UTF-8 sequences are handled
+/// correctly.
+fn truncate_display_name(name: &str, max_chars: usize) -> String {
+    let count = name.chars().count();
+    if count <= max_chars {
+        return name.to_owned();
+    }
+    let mut s: String = name.chars().take(max_chars.saturating_sub(1)).collect();
+    s.push('…');
+    s
 }
 
 fn toolbelt_tooltip_keybinding(binding_names: &[&'static str], app: &AppContext) -> Option<String> {
@@ -329,7 +345,6 @@ impl LeftPanelView {
             working_directories_model,
             panel_position: super::PanelPosition::Left,
             shortcut_context_menu_target: None,
-            shortcut_rename_mouse_state: MouseStateHandle::default(),
             shortcut_delete_mouse_state: MouseStateHandle::default(),
         };
         view.update_button_active_states();
@@ -861,47 +876,54 @@ impl LeftPanelView {
     /// One row in the Custom shortcuts list. Hoverable + clickable.
     /// PRODUCT 04 §§27, 30, 31.
     ///
-    /// - Left click on the row body → open `shortcuts.yaml` in the OS
-    ///   default editor (PRODUCT §30 simplified; the inline detail
-    ///   editor with keystroke capture is 4d).
-    /// - Right click → toggle the inline Rename / Delete menu.
+    /// Layout: name on the left (truncated with `…` if too long for the
+    /// panel width), styled chord pill on the right (separate boxed
+    /// glyphs per modifier + key via `appearance.ui_builder().keyboard_shortcut(...)`).
+    /// When `shortcut.name` is `None`, falls back to an arrow-form summary
+    /// of the action sequence.
     ///
-    /// When `menu_target == Some(idx)`, the row renders the menu beneath
-    /// its label: Rename (currently routes to "open in editor" since
-    /// real chord-capture is 4d) and Delete (immediate, no confirmation
-    /// per PRODUCT §31).
+    /// - Left click on the row body → dispatch
+    ///   `LeftPanelAction::ShortcutsOpenInEditor`, which opens
+    ///   `shortcuts.yaml` in a new twarp tab (not the OS app) so users
+    ///   stay inside the terminal.
+    /// - Right click → toggle the inline Delete menu. Rename moved to
+    ///   "left-click row" — the inline keystroke-capture editor is 4d.
     fn render_shortcut_row(
         &self,
         idx: usize,
-        chord: String,
-        summary: String,
+        shortcut: &crate::shortcuts::config::Shortcut,
         menu_target: Option<usize>,
-        rename_state: MouseStateHandle,
         delete_state: MouseStateHandle,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        let label_text = format!("{chord}   {summary}");
-        let label = appearance.ui_builder().span(label_text).build().finish();
+        let label_text = shortcut
+            .name
+            .clone()
+            .unwrap_or_else(|| crate::shortcuts::summary::summarize_actions(&shortcut.actions));
+        let truncated = truncate_display_name(&label_text, ROW_NAME_MAX_CHARS);
+        let name_span = appearance.ui_builder().span(truncated).build().finish();
+        let chord_pill = appearance
+            .ui_builder()
+            .keyboard_shortcut(&shortcut.keys)
+            .with_space_between_keys(2.)
+            .build()
+            .finish();
+
+        let header_row = Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(Shrinkable::new(1.0, name_span).finish())
+            .with_child(chord_pill)
+            .finish();
 
         let mut row_column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(4.0)
-            .with_child(label);
+            .with_child(header_row);
 
         if menu_target == Some(idx) {
-            let rename_link = appearance
-                .ui_builder()
-                .link(
-                    "Rename (edit chord in YAML)".to_owned(),
-                    None,
-                    Some(Box::new(|ctx| {
-                        ctx.dispatch_typed_action(LeftPanelAction::ShortcutsOpenInEditor);
-                    })),
-                    rename_state,
-                )
-                .build()
-                .finish();
             let delete_link = appearance
                 .ui_builder()
                 .link(
@@ -914,18 +936,12 @@ impl LeftPanelView {
                 )
                 .build()
                 .finish();
-            let menu_row = Flex::row()
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_spacing(12.0)
-                .with_child(rename_link)
-                .with_child(delete_link)
-                .finish();
-            row_column = row_column.with_child(menu_row);
+            row_column = row_column.with_child(delete_link);
         }
 
         let body: Box<dyn Element> = Container::new(row_column.finish())
-            .with_padding_top(4.0)
-            .with_padding_bottom(4.0)
+            .with_padding_top(6.0)
+            .with_padding_bottom(6.0)
             .finish();
 
         Hoverable::new(MouseStateHandle::default(), move |_state| body)
@@ -944,17 +960,11 @@ impl LeftPanelView {
     /// registry is empty. PRODUCT 04 §§27-29.
     fn render_shortcuts_panel(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let registry: Vec<(String, String)> = crate::shortcuts::ShortcutsModel::handle(app)
-            .as_ref(app)
-            .registry
-            .iter()
-            .map(|s| {
-                (
-                    s.keys.displayed(),
-                    crate::shortcuts::summary::summarize_actions(&s.actions),
-                )
-            })
-            .collect();
+        let registry: Vec<crate::shortcuts::config::Shortcut> =
+            crate::shortcuts::ShortcutsModel::handle(app)
+                .as_ref(app)
+                .registry
+                .clone();
 
         let add_new_link = appearance
             .ui_builder()
@@ -981,22 +991,10 @@ impl LeftPanelView {
                 .finish()
         } else {
             let menu_target = self.shortcut_context_menu_target;
-            let rename_state = self.shortcut_rename_mouse_state.clone();
             let delete_state = self.shortcut_delete_mouse_state.clone();
-            let rows = registry
-                .into_iter()
-                .enumerate()
-                .map(|(idx, (chord, summary))| {
-                    self.render_shortcut_row(
-                        idx,
-                        chord,
-                        summary,
-                        menu_target,
-                        rename_state.clone(),
-                        delete_state.clone(),
-                        appearance,
-                    )
-                });
+            let rows = registry.iter().enumerate().map(|(idx, sc)| {
+                self.render_shortcut_row(idx, sc, menu_target, delete_state.clone(), appearance)
+            });
             Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_main_axis_size(MainAxisSize::Min)
@@ -1165,10 +1163,12 @@ impl LeftPanelView {
             }
             LeftPanelAction::ShortcutsOpenInEditor => {
                 self.shortcut_context_menu_target = None;
-                let path = crate::shortcuts::shortcuts_file_path();
-                let url = format!("file://{}", path.display());
-                log::info!("shortcuts: opening {url} in OS default editor");
-                ctx.open_url(&url);
+                let full_path = crate::shortcuts::shortcuts_file_path();
+                log::info!("shortcuts: opening {full_path:?} in a new twarp tab");
+                ctx.dispatch_typed_action(&WorkspaceAction::OpenFileInNewTab {
+                    full_path,
+                    line_and_column: None,
+                });
                 ctx.notify();
             }
             LeftPanelAction::ShortcutsToggleRowMenu(index) => {
@@ -1287,6 +1287,7 @@ impl LeftPanelView {
             keys: new_chord,
             actions: vec![Action::NewTab],
             binding_name: String::new(),
+            name: Some("New shortcut".to_owned()),
         };
 
         let mut snapshot: Vec<Shortcut> = crate::shortcuts::ShortcutsModel::handle(ctx)

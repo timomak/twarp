@@ -11,6 +11,10 @@ pub struct Shortcut {
     pub keys: Keystroke,
     pub actions: Vec<Action>,
     pub binding_name: String,
+    /// Optional human-readable label for the side-panel list view
+    /// (PRODUCT 04 §27). When `None`, the GUI falls back to an
+    /// arrow-form action summary. Round-trips through serialize/parse.
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -130,6 +134,7 @@ fn parse_entry(entry: &Value, entry_idx: usize) -> Result<Shortcut, String> {
 
     let mut keys_raw: Option<String> = None;
     let mut actions_value: Option<&Value> = None;
+    let mut name: Option<String> = None;
 
     for (k, v) in mapping {
         let key = match k.as_str() {
@@ -145,10 +150,25 @@ fn parse_entry(entry: &Value, entry_idx: usize) -> Result<Shortcut, String> {
             "actions" => {
                 actions_value = Some(v);
             }
+            "name" => {
+                // PRODUCT §3: optional `name` field for the GUI list
+                // view (4c). Null or empty string is treated as
+                // unset; non-string values are silently ignored
+                // rather than erroring, so existing files without a
+                // name keep working unchanged.
+                name = v.as_str().and_then(|s| {
+                    let trimmed = s.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_owned())
+                    }
+                });
+            }
             other => {
                 let keys_display = keys_raw.clone().unwrap_or_default();
                 return Err(format!(
-                    "entry #{entry_idx} ('{keys_display}'): unknown field '{other}'; expected 'keys' and 'actions'"
+                    "entry #{entry_idx} ('{keys_display}'): unknown field '{other}'; expected 'keys', 'actions', and optionally 'name'"
                 ));
             }
         }
@@ -191,6 +211,7 @@ fn parse_entry(entry: &Value, entry_idx: usize) -> Result<Shortcut, String> {
         keys,
         actions,
         binding_name: String::new(),
+        name,
     })
 }
 
@@ -398,6 +419,9 @@ pub fn serialize_shortcuts(shortcuts: &[Shortcut]) -> String {
     let mut out = String::from("shortcuts:\n");
     for sc in shortcuts {
         out.push_str(&format!("  - keys: {}\n", sc.keys.normalized()));
+        if let Some(name) = &sc.name {
+            out.push_str(&format!("    name: {}\n", yaml_escape_string(name)));
+        }
         out.push_str("    actions:\n");
         for action in &sc.actions {
             match action {

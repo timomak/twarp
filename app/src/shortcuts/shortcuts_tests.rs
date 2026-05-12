@@ -155,7 +155,7 @@ fn entry_unknown_field_is_error() {
     // round-trips unchanged so the test is platform-agnostic.
     assert_error(
         "shortcuts:\n  - keys: cmd-1\n    actions: [new_tab]\n    surprise: yes\n",
-        "shortcuts.yaml: entry #1 ('cmd-1'): unknown field 'surprise'; expected 'keys' and 'actions'",
+        "shortcuts.yaml: entry #1 ('cmd-1'): unknown field 'surprise'; expected 'keys', 'actions', and optionally 'name'",
     );
 }
 
@@ -358,6 +358,10 @@ fn default_shortcuts_yaml_parses_to_the_two_driving_examples() {
         result.shortcuts[1].actions[5],
         Action::Type(ref t) if t == "/address-code-review-comments"
     ));
+    // Both shipped defaults carry a human-readable name for the
+    // side-panel list view.
+    assert!(result.shortcuts[0].name.is_some());
+    assert!(result.shortcuts[1].name.is_some());
 }
 
 // --- Driving examples (PRODUCT §Driving examples) ---
@@ -458,11 +462,13 @@ fn serialize_round_trips_through_parser() {
                 Action::Press(KeyName::Enter),
             ],
             binding_name: String::new(),
+            name: Some("Open Claude".to_owned()),
         },
         Shortcut {
             keys: Keystroke::parse("cmd-shift-9").unwrap(),
             actions: vec![Action::NewTab, Action::Type("echo hi".to_owned())],
             binding_name: String::new(),
+            name: None,
         },
     ];
     let yaml = serialize_shortcuts(&original);
@@ -472,7 +478,48 @@ fn serialize_round_trips_through_parser() {
     for (a, b) in original.iter().zip(parsed.shortcuts.iter()) {
         assert_eq!(a.keys.normalized(), b.keys.normalized());
         assert_eq!(a.actions.len(), b.actions.len());
+        assert_eq!(a.name, b.name);
     }
+}
+
+#[test]
+fn shortcut_with_name_parses_round_trip() {
+    let yaml = r#"shortcuts:
+  - keys: cmdorctrl-shift-D
+    name: "Open Claude"
+    actions:
+      - new_tab
+"#;
+    let result = parse_shortcuts_yaml(yaml);
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+    assert_eq!(result.shortcuts.len(), 1);
+    assert_eq!(result.shortcuts[0].name.as_deref(), Some("Open Claude"));
+}
+
+#[test]
+fn shortcut_without_name_has_none() {
+    let yaml = r#"shortcuts:
+  - keys: cmdorctrl-shift-D
+    actions:
+      - new_tab
+"#;
+    let result = parse_shortcuts_yaml(yaml);
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+    assert_eq!(result.shortcuts.len(), 1);
+    assert_eq!(result.shortcuts[0].name, None);
+}
+
+#[test]
+fn empty_name_string_is_treated_as_none() {
+    let yaml = r#"shortcuts:
+  - keys: cmdorctrl-shift-D
+    name: "   "
+    actions:
+      - new_tab
+"#;
+    let result = parse_shortcuts_yaml(yaml);
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+    assert_eq!(result.shortcuts[0].name, None);
 }
 
 #[test]

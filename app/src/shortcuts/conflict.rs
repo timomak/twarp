@@ -54,6 +54,7 @@ mod tests {
             keys: Keystroke::parse(keys).unwrap(),
             actions: vec![Action::Wait(_Duration::from_millis(1))],
             binding_name: name.to_owned(),
+            name: None,
         }
     }
 
