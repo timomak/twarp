@@ -203,6 +203,15 @@ pub struct LeftPanelView {
     /// Mouse state for the inline Delete button. One state total since
     /// only one row's menu is open at a time.
     shortcut_delete_mouse_state: MouseStateHandle,
+    /// Persistent mouse states for the shortcut list rows. Grown on
+    /// demand in `render_shortcut_row` to match the registry length.
+    /// `Hoverable::on_click` only fires when the mouse-down and
+    /// mouse-up events see the *same* `MouseStateHandle` — a fresh
+    /// inline state per render breaks click detection silently, so
+    /// these need to be stable across renders. Behind a `RefCell` so
+    /// the `&self` render path can extend the vec when a new shortcut
+    /// is added.
+    shortcut_row_mouse_states: std::cell::RefCell<Vec<MouseStateHandle>>,
 }
 
 /// Maximum display length for a shortcut name in the side-panel list
@@ -346,6 +355,7 @@ impl LeftPanelView {
             panel_position: super::PanelPosition::Left,
             shortcut_context_menu_target: None,
             shortcut_delete_mouse_state: MouseStateHandle::default(),
+            shortcut_row_mouse_states: std::cell::RefCell::new(Vec::new()),
         };
         view.update_button_active_states();
 
@@ -944,13 +954,22 @@ impl LeftPanelView {
             .with_padding_bottom(6.0)
             .finish();
 
-        Hoverable::new(MouseStateHandle::default(), move |_state| body)
+        let row_mouse_state = {
+            let mut states = self.shortcut_row_mouse_states.borrow_mut();
+            while states.len() <= idx {
+                states.push(MouseStateHandle::default());
+            }
+            states[idx].clone()
+        };
+
+        Hoverable::new(row_mouse_state, move |_state| body)
             .on_click(move |ctx, _, _| {
                 ctx.dispatch_typed_action(LeftPanelAction::ShortcutsOpenInEditor);
             })
             .on_right_click(move |ctx, _, _| {
                 ctx.dispatch_typed_action(LeftPanelAction::ShortcutsToggleRowMenu(idx));
             })
+            .with_cursor(Cursor::PointingHand)
             .finish()
     }
 
