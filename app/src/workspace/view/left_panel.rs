@@ -979,11 +979,11 @@ impl LeftPanelView {
     /// registry is empty. PRODUCT 04 §§27-29.
     fn render_shortcuts_panel(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let registry: Vec<crate::shortcuts::config::Shortcut> =
-            crate::shortcuts::ShortcutsModel::handle(app)
-                .as_ref(app)
-                .registry
-                .clone();
+        let (registry, errors) = {
+            let model = crate::shortcuts::ShortcutsModel::handle(app);
+            let m = model.as_ref(app);
+            (m.registry.clone(), m.errors.clone())
+        };
 
         let add_new_link = appearance
             .ui_builder()
@@ -997,6 +997,43 @@ impl LeftPanelView {
             )
             .build()
             .finish();
+
+        // Errors banner: PRODUCT 04 §35. Shown whenever parsing produced
+        // any errors so users see that some entries in `shortcuts.yaml`
+        // were dropped, with the offending message inline. Without this
+        // the panel just silently misses entries (which is what the user
+        // saw with `new_pane: left`).
+        let errors_banner: Option<Box<dyn Element>> = if errors.is_empty() {
+            None
+        } else {
+            let mut col = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(4.0);
+            col = col.with_child(
+                appearance
+                    .ui_builder()
+                    .span(format!("shortcuts.yaml has {} error(s):", errors.len()))
+                    .build()
+                    .finish(),
+            );
+            for err in &errors {
+                col = col.with_child(
+                    appearance
+                        .ui_builder()
+                        .span(err.clone())
+                        .with_soft_wrap()
+                        .build()
+                        .finish(),
+                );
+            }
+            Some(
+                Container::new(col.finish())
+                    .with_padding_top(6.0)
+                    .with_padding_bottom(6.0)
+                    .finish(),
+            )
+        };
 
         let body: Box<dyn Element> = if registry.is_empty() {
             appearance
@@ -1022,11 +1059,15 @@ impl LeftPanelView {
                 .finish()
         };
 
-        let column = Flex::column()
+        let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Max)
             .with_spacing(10.0)
-            .with_child(add_new_link)
+            .with_child(add_new_link);
+        if let Some(banner) = errors_banner {
+            column = column.with_child(banner);
+        }
+        let column = column
             .with_child(Shrinkable::new(1.0, body).finish())
             .finish();
 
@@ -1183,17 +1224,32 @@ impl LeftPanelView {
             LeftPanelAction::ShortcutsOpenInEditor => {
                 self.shortcut_context_menu_target = None;
                 let full_path = crate::shortcuts::shortcuts_file_path();
-                log::info!("shortcuts: opening {full_path:?} in a new twarp tab");
-                // Defer the workspace-action dispatch — we're currently
-                // inside our own handle_action, and dispatching another
-                // typed action synchronously re-enters the view update
-                // machinery and panics ("Circular view update"). The
-                // deferred path queues the action onto `pending_effects`
-                // so it fires after this handler returns.
-                ctx.dispatch_typed_action_deferred(WorkspaceAction::OpenFileInNewTab {
-                    full_path,
-                    line_and_column: None,
-                });
+                // If `shortcuts.yaml` already has an open code pane in
+                // some tab, activate that tab instead of creating a
+                // duplicate (user request). Falls back to
+                // `OpenFileInNewTab` when no existing pane is found.
+                let existing = crate::code::editor_management::CodeManager::handle(ctx)
+                    .read(ctx, |manager, _ctx| {
+                        manager.get_locator_for_path_anywhere(&full_path)
+                    });
+                if let Some(locator) = existing {
+                    log::info!(
+                        "shortcuts: shortcuts.yaml already open at locator {locator:?}; activating tab"
+                    );
+                    ctx.dispatch_typed_action_deferred(WorkspaceAction::FocusPane(locator));
+                } else {
+                    log::info!("shortcuts: opening {full_path:?} in a new twarp tab");
+                    // Defer the workspace-action dispatch — we're currently
+                    // inside our own handle_action, and dispatching another
+                    // typed action synchronously re-enters the view update
+                    // machinery and panics ("Circular view update"). The
+                    // deferred path queues the action onto `pending_effects`
+                    // so it fires after this handler returns.
+                    ctx.dispatch_typed_action_deferred(WorkspaceAction::OpenFileInNewTab {
+                        full_path,
+                        line_and_column: None,
+                    });
+                }
                 ctx.notify();
             }
             LeftPanelAction::ShortcutsToggleRowMenu(index) => {

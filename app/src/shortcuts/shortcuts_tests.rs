@@ -213,7 +213,7 @@ fn new_pane_missing_direction_is_error() {
     // Bare `new_pane` (no value) — same error as null value.
     assert_error(
         "shortcuts:\n  - keys: cmdorctrl-1\n    actions:\n      - new_pane\n",
-        "shortcuts.yaml: entry #1 ('cmd-1'), action #1: 'new_pane' requires a direction; expected 'right' or 'down'",
+        "shortcuts.yaml: entry #1 ('cmd-1'), action #1: 'new_pane' requires a direction; expected 'right', 'down', 'left', or 'up'",
     );
 }
 
@@ -221,7 +221,7 @@ fn new_pane_missing_direction_is_error() {
 fn new_pane_null_direction_is_error() {
     assert_error(
         "shortcuts:\n  - keys: cmdorctrl-1\n    actions:\n      - new_pane:\n",
-        "shortcuts.yaml: entry #1 ('cmd-1'), action #1: 'new_pane' requires a direction; expected 'right' or 'down'",
+        "shortcuts.yaml: entry #1 ('cmd-1'), action #1: 'new_pane' requires a direction; expected 'right', 'down', 'left', or 'up'",
     );
 }
 
@@ -231,8 +231,39 @@ fn new_pane_null_direction_is_error() {
 fn new_pane_invalid_direction_is_error() {
     assert_error(
         "shortcuts:\n  - keys: cmdorctrl-1\n    actions:\n      - new_pane: sideways\n",
-        "shortcuts.yaml: entry #1 ('cmd-1'), action #1: invalid 'new_pane' direction 'sideways'; expected 'right' or 'down'",
+        "shortcuts.yaml: entry #1 ('cmd-1'), action #1: invalid 'new_pane' direction 'sideways'; expected 'right', 'down', 'left', or 'up'",
     );
+}
+
+#[test]
+fn new_pane_accepts_all_four_directions() {
+    for dir in ["right", "down", "left", "up"] {
+        let yaml =
+            format!("shortcuts:\n  - keys: cmdorctrl-1\n    actions:\n      - new_pane: {dir}\n");
+        let result = parse_shortcuts_yaml(&yaml);
+        assert!(
+            result.errors.is_empty(),
+            "expected '{dir}' to parse, got errors: {:?}",
+            result.errors
+        );
+        assert_eq!(result.shortcuts.len(), 1);
+        let action = &result.shortcuts[0].actions[0];
+        let parsed_dir = match action {
+            Action::NewPane(d) => d,
+            other => panic!("expected NewPane, got {other:?}"),
+        };
+        let expected = match dir {
+            "right" => Direction::Right,
+            "down" => Direction::Down,
+            "left" => Direction::Left,
+            "up" => Direction::Up,
+            _ => unreachable!(),
+        };
+        assert!(
+            std::mem::discriminant(parsed_dir) == std::mem::discriminant(&expected),
+            "direction '{dir}' parsed to {parsed_dir:?}, expected {expected:?}"
+        );
+    }
 }
 
 // --- §20 row "`type` value is not a string" ---

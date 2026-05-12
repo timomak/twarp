@@ -29,7 +29,8 @@ fn format_action(action: &Action) -> String {
             let name = match dir {
                 Right => "right",
                 Down => "down",
-                _ => "?",
+                Left => "left",
+                Up => "up",
             };
             format!("new pane {name}")
         }

@@ -95,6 +95,8 @@ Note: `⌘⇧D` is the default chord for twarp's built-in **Split pane right** a
 7. **`new_pane`.** Splits the target tab's currently active pane and focuses the new pane. The `direction` value is one of:
     - `right` — split horizontally; new pane to the right of the existing one.
     - `down` — split vertically; new pane below the existing one.
+    - `left` — split horizontally; new pane to the left of the existing one.
+    - `up` — split vertically; new pane above the existing one.
 
     Any other value (or omission) is a config error (§20). The new pane becomes the target tab's active pane for subsequent `type` and `press` actions. `new_pane` does not change the target tab — only the active pane within it. If the target tab has been closed before `new_pane` runs, the sequence aborts (§17). `new_pane` operates regardless of any feature-flag gates that the built-in "Split pane" UI carries: a custom shortcut authored by the user is treated as user intent to split, even in contexts where the built-in split is suppressed.
 
@@ -140,8 +142,8 @@ Note: `⌘⇧D` is the default chord for twarp's built-in **Split pane right** a
     | Malformed key chord | `entry #<n>: invalid key chord '<chord>'; expected modifiers (cmdorctrl/cmd/ctrl/alt/shift/meta) joined by '-' with a key, e.g. 'cmdorctrl-shift-D'` |
     | Action is not a string or single-key map | `entry #<n> ('<keys>'), action #<m>: expected a bare action name or a single-key map` |
     | Unknown action token | `entry #<n> ('<keys>'), action #<m>: unknown action '<token>'; expected one of new_tab, new_pane, type, press, wait` |
-    | Missing `new_pane` direction | `entry #<n> ('<keys>'), action #<m>: 'new_pane' requires a direction; expected 'right' or 'down'` |
-    | Invalid `new_pane` direction | `entry #<n> ('<keys>'), action #<m>: invalid 'new_pane' direction '<value>'; expected 'right' or 'down'` |
+    | Missing `new_pane` direction | `entry #<n> ('<keys>'), action #<m>: 'new_pane' requires a direction; expected 'right', 'down', 'left', or 'up'` |
+    | Invalid `new_pane` direction | `entry #<n> ('<keys>'), action #<m>: invalid 'new_pane' direction '<value>'; expected 'right', 'down', 'left', or 'up'` |
     | `type` value is not a string | `entry #<n> ('<keys>'), action #<m>: 'type' expects a string value` |
     | Newline in `type` | `entry #<n> ('<keys>'), action #<m>: 'type' value contains a newline; use 'press: enter' to submit input` |
     | Unknown press key | `entry #<n> ('<keys>'), action #<m>: unknown key '<key>' in 'press'; expected one of enter, tab, escape, backspace, space, up, down, left, right, home, end, pageup, pagedown, delete, insert, numpadenter, f1-f12` |

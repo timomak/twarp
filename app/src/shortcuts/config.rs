@@ -227,7 +227,7 @@ fn parse_action(
         return match name {
             "new_tab" => Ok(Action::NewTab),
             "new_pane" => Err(format!(
-                "{prefix}: 'new_pane' requires a direction; expected 'right' or 'down'"
+                "{prefix}: 'new_pane' requires a direction; expected 'right', 'down', 'left', or 'up'"
             )),
             other if is_known_action_with_value(other) => Err(format!(
                 "{prefix}: expected a bare action name or a single-key map"
@@ -282,22 +282,24 @@ fn parse_new_pane(value: &Value, prefix: &str) -> Result<Action, String> {
         Value::String(s) => s.as_str(),
         Value::Null => {
             return Err(format!(
-                "{prefix}: 'new_pane' requires a direction; expected 'right' or 'down'"
+                "{prefix}: 'new_pane' requires a direction; expected 'right', 'down', 'left', or 'up'"
             ));
         }
         _ => {
             let raw = serde_yaml::to_string(value).unwrap_or_default();
             let raw = raw.trim().trim_end_matches('\n').to_owned();
             return Err(format!(
-                "{prefix}: invalid 'new_pane' direction '{raw}'; expected 'right' or 'down'"
+                "{prefix}: invalid 'new_pane' direction '{raw}'; expected 'right', 'down', 'left', or 'up'"
             ));
         }
     };
     match raw {
         "right" => Ok(Action::NewPane(Direction::Right)),
         "down" => Ok(Action::NewPane(Direction::Down)),
+        "left" => Ok(Action::NewPane(Direction::Left)),
+        "up" => Ok(Action::NewPane(Direction::Up)),
         other => Err(format!(
-            "{prefix}: invalid 'new_pane' direction '{other}'; expected 'right' or 'down'"
+            "{prefix}: invalid 'new_pane' direction '{other}'; expected 'right', 'down', 'left', or 'up'"
         )),
     }
 }
@@ -449,9 +451,8 @@ fn direction_name(d: Direction) -> &'static str {
     match d {
         Direction::Right => "right",
         Direction::Down => "down",
-        // v1 only emits right/down; left/up shouldn't appear in a serialized
-        // entry since the parser doesn't accept them.
-        _ => "right",
+        Direction::Left => "left",
+        Direction::Up => "up",
     }
 }
 
