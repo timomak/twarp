@@ -1707,5 +1707,11 @@ pub fn register_shortcut_bindings(app: &mut AppContext) {
         .with_key_binding("escape"),
     );
 
+    // Drop the previous generation of shortcut bindings before adding the
+    // new one. Without this, every hot reload would append on top of the
+    // stale set; the matcher's reverse-iteration would still pick the
+    // newest entry but the keymap's binding Vec would grow by ~N per
+    // reload (4b limitation, now fixed).
+    app.unregister_editable_bindings_with_name_prefix("shortcuts:");
     app.register_editable_bindings(bindings);
 }

@@ -418,6 +418,28 @@ impl Keymap {
         }
     }
 
+    /// Remove all editable bindings whose `name` starts with `prefix`.
+    ///
+    /// Both `editable_bindings` and the custom-action mirror are filtered,
+    /// and the by-name index is rebuilt because `Vec::retain` shifts indices.
+    ///
+    /// Used by twarp's `register_shortcut_bindings` on hot reload to drop the
+    /// previous generation of `shortcuts:*` bindings before registering the
+    /// new generation, so reloads don't accumulate duplicate entries.
+    fn unregister_editable_bindings_with_name_prefix(&mut self, prefix: &str) {
+        self.editable_bindings
+            .retain(|b| !b.name.starts_with(prefix));
+        self.editable_custom_action_bindings
+            .retain(|b| !b.name.starts_with(prefix));
+        self.editable_bindings_by_name.clear();
+        for (idx, binding) in self.editable_bindings.iter().enumerate() {
+            self.editable_bindings_by_name
+                .entry(binding.name)
+                .or_default()
+                .push(idx);
+        }
+    }
+
     /// Updates the custom trigger for a given editable binding.
     fn update_custom_trigger(&mut self, name: &str, trigger: Option<Trigger>) {
         for binding in self
