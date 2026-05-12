@@ -7,8 +7,8 @@ use warp_util::path::LineAndColumnArg;
 use warpui::{
     elements::{
         resizable_state_handle, ChildView, ConstrainedBox, Container, CrossAxisAlignment,
-        DragBarSide, Element, Empty, Flex, MainAxisAlignment, MainAxisSize, MouseStateHandle,
-        ParentElement, Resizable, ResizableStateHandle, Shrinkable,
+        DragBarSide, Element, Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize,
+        MouseStateHandle, ParentElement, Resizable, ResizableStateHandle, Shrinkable,
     },
     platform::Cursor,
     ui_components::components::{Coords, UiComponent, UiComponentStyles},
@@ -82,6 +82,20 @@ pub enum LeftPanelAction {
     /// `new_tab` action. Users edit `shortcuts.yaml` to customize;
     /// 4b's hot reload picks up the edits without restart.
     ShortcutsAddNew,
+    /// Open `shortcuts.yaml` in the OS default editor so the user can
+    /// hand-edit a shortcut's chord, actions, or both. Used both as
+    /// the row-click action (PRODUCT §30 simplified) and as the
+    /// "Rename" context-menu item — inline keystroke capture is 4d.
+    ShortcutsOpenInEditor,
+    /// Toggle the inline Rename / Delete menu for a specific row
+    /// (PRODUCT §§30, 31). Set by right-clicking a row; cleared by a
+    /// subsequent click or by a menu item firing.
+    ShortcutsToggleRowMenu(usize),
+    /// Close any open per-row inline menu (e.g. clicking outside).
+    ShortcutsCloseRowMenu,
+    /// Remove the shortcut at the given index from the registry,
+    /// persist via 4b's `save_to_disk`, and reload. (PRODUCT §31.)
+    ShortcutsDelete(usize),
     // twarp: 2c-d — kept for legacy call-sites; AI conversation list deleted.
     ConversationListView,
 }
@@ -182,6 +196,15 @@ pub struct LeftPanelView {
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     working_directories_model: ModelHandle<WorkingDirectoriesModel>,
     panel_position: super::PanelPosition,
+    /// Index of the row whose inline Rename / Delete buttons are
+    /// currently shown. Set by right-clicking a row, cleared by any
+    /// subsequent click or by Rename / Delete completing.
+    shortcut_context_menu_target: Option<usize>,
+    /// Mouse states for the inline Rename / Delete buttons that appear
+    /// when `shortcut_context_menu_target` is set. One pair total since
+    /// only one row's menu is open at a time.
+    shortcut_rename_mouse_state: MouseStateHandle,
+    shortcut_delete_mouse_state: MouseStateHandle,
 }
 
 fn toolbelt_tooltip_keybinding(binding_names: &[&'static str], app: &AppContext) -> Option<String> {
@@ -305,6 +328,9 @@ impl LeftPanelView {
             active_pane_group: None,
             working_directories_model,
             panel_position: super::PanelPosition::Left,
+            shortcut_context_menu_target: None,
+            shortcut_rename_mouse_state: MouseStateHandle::default(),
+            shortcut_delete_mouse_state: MouseStateHandle::default(),
         };
         view.update_button_active_states();
 
@@ -821,11 +847,95 @@ impl LeftPanelView {
                 }
                 LeftPanelAction::WarpDrive => self.active_view.get() == ToolPanelView::WarpDrive,
                 LeftPanelAction::Shortcuts => self.active_view.get() == ToolPanelView::Shortcuts,
-                LeftPanelAction::ShortcutsAddNew => false,
+                LeftPanelAction::ShortcutsAddNew
+                | LeftPanelAction::ShortcutsOpenInEditor
+                | LeftPanelAction::ShortcutsToggleRowMenu(_)
+                | LeftPanelAction::ShortcutsCloseRowMenu
+                | LeftPanelAction::ShortcutsDelete(_) => false,
                 // twarp: 2c-d — ConversationListView arm kept for legacy call-sites; AI deleted.
                 LeftPanelAction::ConversationListView => false,
             };
         }
+    }
+
+    /// One row in the Custom shortcuts list. Hoverable + clickable.
+    /// PRODUCT 04 §§27, 30, 31.
+    ///
+    /// - Left click on the row body → open `shortcuts.yaml` in the OS
+    ///   default editor (PRODUCT §30 simplified; the inline detail
+    ///   editor with keystroke capture is 4d).
+    /// - Right click → toggle the inline Rename / Delete menu.
+    ///
+    /// When `menu_target == Some(idx)`, the row renders the menu beneath
+    /// its label: Rename (currently routes to "open in editor" since
+    /// real chord-capture is 4d) and Delete (immediate, no confirmation
+    /// per PRODUCT §31).
+    fn render_shortcut_row(
+        &self,
+        idx: usize,
+        chord: String,
+        summary: String,
+        menu_target: Option<usize>,
+        rename_state: MouseStateHandle,
+        delete_state: MouseStateHandle,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let label_text = format!("{chord}   {summary}");
+        let label = appearance.ui_builder().span(label_text).build().finish();
+
+        let mut row_column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(4.0)
+            .with_child(label);
+
+        if menu_target == Some(idx) {
+            let rename_link = appearance
+                .ui_builder()
+                .link(
+                    "Rename (edit chord in YAML)".to_owned(),
+                    None,
+                    Some(Box::new(|ctx| {
+                        ctx.dispatch_typed_action(LeftPanelAction::ShortcutsOpenInEditor);
+                    })),
+                    rename_state,
+                )
+                .build()
+                .finish();
+            let delete_link = appearance
+                .ui_builder()
+                .link(
+                    "Delete".to_owned(),
+                    None,
+                    Some(Box::new(move |ctx| {
+                        ctx.dispatch_typed_action(LeftPanelAction::ShortcutsDelete(idx));
+                    })),
+                    delete_state,
+                )
+                .build()
+                .finish();
+            let menu_row = Flex::row()
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(12.0)
+                .with_child(rename_link)
+                .with_child(delete_link)
+                .finish();
+            row_column = row_column.with_child(menu_row);
+        }
+
+        let body: Box<dyn Element> = Container::new(row_column.finish())
+            .with_padding_top(4.0)
+            .with_padding_bottom(4.0)
+            .finish();
+
+        Hoverable::new(MouseStateHandle::default(), move |_state| body)
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(LeftPanelAction::ShortcutsOpenInEditor);
+            })
+            .on_right_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(LeftPanelAction::ShortcutsToggleRowMenu(idx));
+            })
+            .finish()
     }
 
     /// Renders the Custom shortcuts panel content: header with
@@ -870,13 +980,23 @@ impl LeftPanelView {
                 .build()
                 .finish()
         } else {
-            let rows = registry.into_iter().map(|(chord, summary)| {
-                appearance
-                    .ui_builder()
-                    .span(format!("{chord}   {summary}"))
-                    .build()
-                    .finish()
-            });
+            let menu_target = self.shortcut_context_menu_target;
+            let rename_state = self.shortcut_rename_mouse_state.clone();
+            let delete_state = self.shortcut_delete_mouse_state.clone();
+            let rows = registry
+                .into_iter()
+                .enumerate()
+                .map(|(idx, (chord, summary))| {
+                    self.render_shortcut_row(
+                        idx,
+                        chord,
+                        summary,
+                        menu_target,
+                        rename_state.clone(),
+                        delete_state.clone(),
+                        appearance,
+                    )
+                });
             Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_main_axis_size(MainAxisSize::Min)
@@ -1043,8 +1163,69 @@ impl LeftPanelView {
             LeftPanelAction::ShortcutsAddNew => {
                 Self::append_placeholder_shortcut(ctx);
             }
+            LeftPanelAction::ShortcutsOpenInEditor => {
+                self.shortcut_context_menu_target = None;
+                let path = crate::shortcuts::shortcuts_file_path();
+                let url = format!("file://{}", path.display());
+                log::info!("shortcuts: opening {url} in OS default editor");
+                ctx.open_url(&url);
+                ctx.notify();
+            }
+            LeftPanelAction::ShortcutsToggleRowMenu(index) => {
+                self.shortcut_context_menu_target =
+                    if self.shortcut_context_menu_target == Some(*index) {
+                        None
+                    } else {
+                        Some(*index)
+                    };
+                ctx.notify();
+            }
+            LeftPanelAction::ShortcutsCloseRowMenu => {
+                if self.shortcut_context_menu_target.is_some() {
+                    self.shortcut_context_menu_target = None;
+                    ctx.notify();
+                }
+            }
+            LeftPanelAction::ShortcutsDelete(index) => {
+                let index = *index;
+                self.shortcut_context_menu_target = None;
+                Self::delete_shortcut_at_index(index, ctx);
+            }
             // twarp: 2c-d — ConversationListView is a stub kept for legacy call-sites.
             LeftPanelAction::ConversationListView => {}
+        }
+    }
+
+    /// PRODUCT 04 §31 (delete). Removes the shortcut at `index` from the
+    /// in-memory registry snapshot, writes the result via 4b's
+    /// `save_to_disk`, and triggers a reload so the keymap drops the
+    /// binding immediately. Out-of-range indices are a no-op.
+    fn delete_shortcut_at_index(index: usize, ctx: &mut ViewContext<Self>) {
+        let mut snapshot: Vec<crate::shortcuts::config::Shortcut> =
+            crate::shortcuts::ShortcutsModel::handle(ctx)
+                .as_ref(ctx)
+                .registry
+                .clone();
+        if index >= snapshot.len() {
+            log::warn!(
+                "shortcuts: delete requested for out-of-range index {index} (registry has {len})",
+                len = snapshot.len()
+            );
+            return;
+        }
+        let removed = snapshot.remove(index);
+        match crate::shortcuts::save::save_to_disk(&snapshot) {
+            Ok(path) => {
+                log::info!(
+                    "shortcuts: deleted shortcut #{index} ({chord}) and saved to {:?}",
+                    path,
+                    chord = removed.keys.normalized()
+                );
+                crate::shortcuts::reload(ctx);
+            }
+            Err(err) => {
+                log::warn!("shortcuts: failed to save after delete: {err}");
+            }
         }
     }
 
