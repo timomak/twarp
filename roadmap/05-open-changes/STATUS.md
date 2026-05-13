@@ -1,8 +1,8 @@
 # 05 — Open Changes panel
 
-**Phase:** spec-in-review (respec)
-**Spec PR:** [#58](https://github.com/timomak/twarp/pull/58) (respec — supersedes [#56](https://github.com/timomak/twarp/pull/56))
-**Impl PRs:** — (PR [#57](https://github.com/timomak/twarp/pull/57) closed; left-panel approach scrapped)
+**Phase:** impl-in-review (5a)
+**Spec PRs:** [#56](https://github.com/timomak/twarp/pull/56) (initial), [#58](https://github.com/timomak/twarp/pull/58) (respec — supersedes #56), both merged
+**Impl PRs:** 5a in review — (PR [#57](https://github.com/timomak/twarp/pull/57) closed; left-panel approach scrapped)
 
 ## Scope
 
@@ -14,7 +14,7 @@ See README §5 and [PRODUCT.md](PRODUCT.md) / [TECH.md](TECH.md) for the full re
 
 The original 5a–5e split assumed a from-scratch build. With the rework framing, the gap collapses to four sub-PRs:
 
-- [ ] **5a — Sidebar split.** Two sections (Staged Changes / Changes) with status glyphs, populated from `git status --porcelain=v2`. Click → existing inline diff expansion (unchanged). Covers PRODUCT §§1–9, §§24–25, §§27, §§29–30 (verify).
+- [x] **5a — Sidebar split.** Two sections (Staged Changes / Changes) with status glyphs, populated from `git status --porcelain=v2`. Click → existing inline diff expansion (unchanged). Covers PRODUCT §§1–9, §§24–25, §§27, §§29–30 (verify).
 - [ ] **5b — Hunk-level staging affordances.** Hover-revealed `[+]` / `[−]` / `[↺]` on hunk headers inside the inline diff. Patch synthesis + `git apply --cached` / `--reverse`. Covers PRODUCT §12.
 - [ ] **5c — In-progress op banner + file-level discard/unstage polish.** `InProgressOp` detection (`MERGE_HEAD` / `rebase-merge` / `CHERRY_PICK_HEAD` / `BISECT_LOG`), banner, conflict-row `[Resolve…]`, commit-button label gating, file-level hover affordances. Covers PRODUCT §§10–11, §§13–14.
 - [ ] **5d — File Timeline.** New per-file commit-history section below the inline diff. Paged `git log --follow`. Click → commit-diff replaces inline diff; `[Back to working diff]` restores. Rename badge + `↑` local-only marker. Covers PRODUCT §§18–23.

@@ -225,6 +225,7 @@ use super::{
     diff_size_limits::DiffSize,
     file_invalidation_queue::FileInvalidationTask,
     git_dialog::{GitDialog, GitDialogEvent, GitDialogKind},
+    porcelain_v2::{FileEntry as PorcelainEntry, InProgressOp},
     GlobalCodeReviewEvent, GlobalCodeReviewModel,
 };
 use crate::code::ShowCommentEditorProvider;
@@ -410,6 +411,10 @@ pub enum CodeReviewAction {
     OpenHeaderMenu,
     SetDiffMode(DiffMode),
     ToggleFileSidebar,
+    /// Collapse/expand the Staged Changes section in the sidebar (PRODUCT §4).
+    ToggleStagedSection,
+    /// Collapse/expand the Changes section in the sidebar (PRODUCT §4).
+    ToggleChangesSection,
     FileSelected(usize),
     ToggleMaximize,
     SaveAllUnsavedFiles,
@@ -458,6 +463,15 @@ pub(crate) struct LoadedState {
     pub(crate) total_additions: usize,
     pub(crate) total_deletions: usize,
     pub(crate) files_changed: usize,
+    /// Sidebar's Staged Changes section, derived from porcelain-v2 (PRODUCT §4).
+    /// Empty in `DiffMode::MainBranch` / `OtherBranch`; populated only against HEAD.
+    pub(crate) staged: Vec<PorcelainEntry>,
+    /// Sidebar's Changes section, derived from porcelain-v2 (PRODUCT §4).
+    /// Empty in `DiffMode::MainBranch` / `OtherBranch`; populated only against HEAD.
+    pub(crate) changes: Vec<PorcelainEntry>,
+    /// In-progress git op (PRODUCT §13). 5a populates; 5c renders the banner.
+    #[allow(dead_code)]
+    pub(crate) in_progress_op: Option<InProgressOp>,
 }
 
 impl LoadedState {
@@ -760,6 +774,10 @@ pub struct CodeReviewView {
     file_sidebar_expanded: bool,
     /// The file sidebar state from before a code review panel is maximized.
     file_sidebar_expanded_before_maximize: Option<bool>,
+    /// Whether the Staged Changes section in the sidebar is expanded (PRODUCT §4).
+    staged_section_expanded: bool,
+    /// Whether the Changes section in the sidebar is expanded (PRODUCT §4).
+    changes_section_expanded: bool,
     scroll_state: ScrollStateHandle,
     viewported_list_state: ListState<RelocatableScrollContext>,
 
@@ -1361,6 +1379,8 @@ impl CodeReviewView {
             git_operations_menu_open: false,
             file_sidebar_expanded: false,
             file_sidebar_expanded_before_maximize: None,
+            staged_section_expanded: true,
+            changes_section_expanded: true,
             position_id_prefix: random_str,
             viewported_list_state: list_state,
             scroll_state: ScrollStateHandle::default(),
@@ -2723,6 +2743,9 @@ impl CodeReviewView {
                 total_additions: diff_data.total_additions,
                 total_deletions: diff_data.total_deletions,
                 files_changed: diff_data.files_changed,
+                staged: diff_data.staged.clone(),
+                changes: diff_data.changes.clone(),
+                in_progress_op: diff_data.in_progress_op.clone(),
             });
         }
 
@@ -4717,7 +4740,12 @@ impl CodeReviewView {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        if state.file_states.is_empty() {
+        // Pre-5a: a fully clean repo short-circuited to the
+        // `No open changes` hero. After 5a (PRODUCT §4) the sidebar
+        // sections must render even when empty whenever the user has
+        // the sidebar open — so we only short-circuit when the sidebar
+        // is collapsed.
+        if state.file_states.is_empty() && !self.file_sidebar_expanded {
             return self.render_no_changes_state(appearance, app);
         }
 
@@ -4727,7 +4755,7 @@ impl CodeReviewView {
         let sidebar_on_right = FeatureFlag::GitOperationsInCodeReview.is_enabled();
 
         // When the flag is off, sidebar goes on the left (legacy).
-        if !sidebar_on_right && self.file_sidebar_expanded && !state.file_states.is_empty() {
+        if !sidebar_on_right && self.file_sidebar_expanded {
             sidebar_and_diffs_row
                 .add_child(Container::new(self.render_file_sidebar(state, appearance)).finish());
 
@@ -4742,40 +4770,43 @@ impl CodeReviewView {
             sidebar_and_diffs_row.add_child(vertical_separator);
         }
 
-        let axis_config = SingleAxisConfig::Manual {
-            handle: self.scroll_state.clone(),
-            child: NewScrollableElement::finish_scrollable(List::new(
-                self.viewported_list_state.clone(),
-            )),
+        let diffs_pane: Box<dyn Element> = if state.file_states.is_empty() {
+            self.render_no_changes_state(appearance, app)
+        } else {
+            let axis_config = SingleAxisConfig::Manual {
+                handle: self.scroll_state.clone(),
+                child: NewScrollableElement::finish_scrollable(List::new(
+                    self.viewported_list_state.clone(),
+                )),
+            };
+            let scrollable_diffs = NewScrollable::vertical(
+                axis_config,
+                appearance.theme().nonactive_ui_detail().into(),
+                appearance.theme().active_ui_detail().into(),
+                warpui::elements::Fill::None,
+            )
+            .with_vertical_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Auto, false))
+            .with_propagate_mousewheel_if_not_handled(true)
+            .with_always_handle_events_first(false)
+            .finish();
+            SavePosition::new(scrollable_diffs, &self.code_review_list_position_id).finish()
         };
-        let scrollable_diffs = NewScrollable::vertical(
-            axis_config,
-            appearance.theme().nonactive_ui_detail().into(),
-            appearance.theme().active_ui_detail().into(),
-            warpui::elements::Fill::None,
-        )
-        .with_vertical_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Auto, false))
-        .with_propagate_mousewheel_if_not_handled(true)
-        .with_always_handle_events_first(false)
-        .finish();
-        let scrollable_diffs =
-            SavePosition::new(scrollable_diffs, &self.code_review_list_position_id).finish();
 
         let diffs_container = if self.file_sidebar_expanded && !state.file_states.is_empty() {
             let margin = if sidebar_on_right {
-                Container::new(scrollable_diffs).with_margin_right(15.)
+                Container::new(diffs_pane).with_margin_right(15.)
             } else {
-                Container::new(scrollable_diffs).with_margin_left(15.)
+                Container::new(diffs_pane).with_margin_left(15.)
             };
             margin.finish()
         } else {
-            scrollable_diffs
+            diffs_pane
         };
 
         sidebar_and_diffs_row.add_child(Shrinkable::new(1., diffs_container).finish());
 
         // When the flag is on, sidebar goes on the right (new layout).
-        if sidebar_on_right && self.file_sidebar_expanded && !state.file_states.is_empty() {
+        if sidebar_on_right && self.file_sidebar_expanded {
             let vertical_separator = ConstrainedBox::new(
                 Rect::new()
                     .with_background(appearance.theme().outline())
@@ -4801,29 +4832,26 @@ impl CodeReviewView {
             .with_main_axis_alignment(MainAxisAlignment::Start)
             .with_cross_axis_alignment(CrossAxisAlignment::Start);
 
-        for (file_index, file_state) in state.file_states.values().enumerate() {
-            let file_row = self.render_file_sidebar_row(file_state, appearance);
-            column.add_child(
-                Hoverable::new(file_state.sidebar_mouse_state.clone(), |mouse_state| {
-                    let mut container = Container::new(Shrinkable::new(1., file_row).finish())
-                        .with_vertical_padding(5.)
-                        .with_horizontal_padding(8.)
-                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
-
-                    if mouse_state.is_hovered() {
-                        container = container.with_background(warp_core::ui::theme::Fill::Solid(
-                            internal_colors::neutral_3(appearance.theme()),
-                        ))
-                    }
-                    container.finish()
-                })
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(CodeReviewAction::FileSelected(file_index));
-                })
-                .with_cursor(Cursor::PointingHand)
-                .finish(),
-            );
-        }
+        // Sidebar split (PRODUCT §4): render Staged Changes and Changes
+        // as two independent sections. Section bodies render only when
+        // the section is expanded; headers always render so the user
+        // can see "·  0" on a clean repo.
+        column.add_child(self.render_sidebar_section(
+            "Staged Changes",
+            &state.staged,
+            state,
+            self.staged_section_expanded,
+            CodeReviewAction::ToggleStagedSection,
+            appearance,
+        ));
+        column.add_child(self.render_sidebar_section(
+            "Changes",
+            &state.changes,
+            state,
+            self.changes_section_expanded,
+            CodeReviewAction::ToggleChangesSection,
+            appearance,
+        ));
 
         let scrollable_content = NewScrollable::vertical(
             SingleAxisConfig::Clipped {
@@ -4868,25 +4896,131 @@ impl CodeReviewView {
         (FILE_SIDEBAR_MIN_WIDTH, FILE_SIDEBAR_MAX_WIDTH)
     }
 
-    fn render_file_sidebar_row(
+    /// Render one of the two sidebar sections (Staged Changes / Changes).
+    /// Header always renders with `· N` count; rows render only when
+    /// `expanded` is true. PRODUCT §4.
+    fn render_sidebar_section(
         &self,
-        file_state: &FileState,
+        label: &str,
+        entries: &[PorcelainEntry],
+        state: &LoadedState,
+        expanded: bool,
+        toggle_action: CodeReviewAction,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        let file_name = file_state
-            .file_diff
-            .file_path
+        let theme = appearance.theme();
+        let mut section = Flex::column()
+            .with_main_axis_alignment(MainAxisAlignment::Start)
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+
+        let chevron_char = if expanded { '▾' } else { '▸' };
+        let header_label = format!("{chevron_char} {label}  ·  {}", entries.len());
+        let header_text_color = theme.sub_text_color(theme.surface_2());
+        let header_text = Text::new(
+            header_label,
+            appearance.ui_font_family(),
+            appearance.ui_font_size(),
+        )
+        .with_color(header_text_color.into())
+        .soft_wrap(false)
+        .finish();
+        let header_neutral = internal_colors::neutral_3(appearance.theme());
+        let header_element = Hoverable::new(MouseStateHandle::default(), |mouse_state| {
+            let mut container = Container::new(header_text)
+                .with_vertical_padding(6.)
+                .with_horizontal_padding(8.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
+            if mouse_state.is_hovered() {
+                container =
+                    container.with_background(warp_core::ui::theme::Fill::Solid(header_neutral));
+            }
+            container.finish()
+        })
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(toggle_action.clone());
+        })
+        .with_cursor(Cursor::PointingHand)
+        .finish();
+
+        section.add_child(header_element);
+
+        if expanded {
+            for entry in entries {
+                let path = entry.path.clone();
+                let file_state = state.file_states.get(&path);
+                let file_index = state.file_states.get_index_of(&path);
+                let glyph = entry.status.glyph();
+
+                let row = self.render_file_sidebar_row(
+                    file_state,
+                    Some(entry.path.as_path()),
+                    Some(glyph),
+                    appearance,
+                );
+
+                let mouse_state_handle = file_state
+                    .map(|fs| fs.sidebar_mouse_state.clone())
+                    .unwrap_or_default();
+                let row_neutral = internal_colors::neutral_3(appearance.theme());
+                let mut hoverable = Hoverable::new(mouse_state_handle, |mouse_state| {
+                    let mut container = Container::new(Shrinkable::new(1., row).finish())
+                        .with_vertical_padding(5.)
+                        .with_horizontal_padding(8.)
+                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
+                    if mouse_state.is_hovered() {
+                        container = container
+                            .with_background(warp_core::ui::theme::Fill::Solid(row_neutral));
+                    }
+                    container.finish()
+                });
+
+                if let Some(file_index) = file_index {
+                    hoverable = hoverable
+                        .on_click(move |ctx, _, _| {
+                            ctx.dispatch_typed_action(CodeReviewAction::FileSelected(file_index));
+                        })
+                        .with_cursor(Cursor::PointingHand);
+                }
+
+                section.add_child(hoverable.finish());
+            }
+        }
+
+        section.finish()
+    }
+
+    /// Render a single sidebar row.
+    ///
+    /// `glyph` is the per-section status character (PRODUCT §5) — `None`
+    /// preserves the pre-5a flat-list look and is currently unused by
+    /// the 5a sidebar; kept on the signature so non-section callers can
+    /// still use this helper.
+    ///
+    /// `path_override` lets the Staged / Changes sections pass the
+    /// porcelain-v2 entry's path through when `file_state` is absent
+    /// (e.g. an untracked file that hasn't been folded into
+    /// `file_states` yet).
+    fn render_file_sidebar_row(
+        &self,
+        file_state: Option<&FileState>,
+        path_override: Option<&Path>,
+        glyph: Option<char>,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let file_path = file_state
+            .map(|fs| fs.file_diff.file_path.as_path())
+            .or(path_override)
+            .unwrap_or_else(|| Path::new(""));
+        let file_name = file_path
             .file_name()
             .and_then(|file_name| file_name.to_str())
             .unwrap_or_default();
-        let dir_path = file_state
-            .file_diff
-            .file_path
+        let dir_path = file_path
             .parent()
             .and_then(|parent| parent.to_str())
             .unwrap_or_default();
-        let additions = file_state.file_diff.additions();
-        let deletions = file_state.file_diff.deletions();
+        let additions = file_state.map(|fs| fs.file_diff.additions()).unwrap_or(0);
+        let deletions = file_state.map(|fs| fs.file_diff.deletions()).unwrap_or(0);
 
         // Create the main row for the file entry
         let mut file_row = Flex::row()
@@ -4896,6 +5030,28 @@ impl CodeReviewView {
         let mut file_and_directory = Flex::row();
 
         const SMALLER_TEXT_RATIO: f32 = 0.9;
+
+        if let Some(glyph_char) = glyph {
+            file_and_directory.add_child(
+                Container::new(
+                    Text::new(
+                        glyph_char.to_string(),
+                        appearance.ui_font_family(),
+                        appearance.ui_font_size(),
+                    )
+                    .with_color(
+                        appearance
+                            .theme()
+                            .sub_text_color(appearance.theme().surface_2())
+                            .into(),
+                    )
+                    .soft_wrap(false)
+                    .finish(),
+                )
+                .with_margin_right(6.)
+                .finish(),
+            );
+        }
 
         // File name (prominent)
         file_and_directory.add_child(
@@ -7312,6 +7468,14 @@ impl TypedActionView for CodeReviewView {
                     self.open_file_sidebar(ctx);
                 }
                 self.update_file_nav_button_tooltip(ctx);
+                ctx.notify();
+            }
+            CodeReviewAction::ToggleStagedSection => {
+                self.staged_section_expanded = !self.staged_section_expanded;
+                ctx.notify();
+            }
+            CodeReviewAction::ToggleChangesSection => {
+                self.changes_section_expanded = !self.changes_section_expanded;
                 ctx.notify();
             }
             CodeReviewAction::FileSelected(file_index) => {
