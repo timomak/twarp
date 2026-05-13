@@ -428,6 +428,14 @@ pub enum CodeReviewAction {
     OpenConflictResolve {
         path: PathBuf,
     },
+    /// 5e (PRODUCT §8 revised): show this file's diff in the panel,
+    /// replacing the sidebar view. A `← Files` header returns to the
+    /// sidebar via [`Self::ExitDiffView`].
+    SelectFileForDiff {
+        path: PathBuf,
+    },
+    /// 5e: return from the single-file diff view to the sidebar.
+    ExitDiffView,
     FileSelected(usize),
     ToggleMaximize,
     SaveAllUnsavedFiles,
@@ -494,6 +502,11 @@ pub struct FileState {
     /// 5c (PRODUCT §10, Conflict row): sidebar hover-cluster button.
     /// `[Resolve…]` opens the conflicted file in a new tab.
     resolve_button: ViewHandle<ActionButton>,
+    /// 5e (PRODUCT §8 revised): the file's HEAD content, cached so that
+    /// `OpenFileDiffInNewTab` can push the diff base into the new tab's
+    /// editor. `None` for binary / deleted / created files where the
+    /// inline diff representation doesn't apply.
+    content_at_head: Option<String>,
 }
 
 pub(crate) struct LoadedState {
@@ -825,6 +838,10 @@ pub struct CodeReviewView {
     staged_section_expanded: bool,
     /// Whether the Changes section in the sidebar is expanded (PRODUCT §4).
     changes_section_expanded: bool,
+    /// 5e (PRODUCT §8 revised): when `Some(path)`, the panel renders the
+    /// diff for that file instead of the sidebar. A header with a
+    /// `← Files` link returns to the sidebar.
+    selected_file_for_diff: Option<PathBuf>,
     scroll_state: ScrollStateHandle,
     viewported_list_state: ListState<RelocatableScrollContext>,
 
@@ -1431,6 +1448,7 @@ impl CodeReviewView {
             file_sidebar_expanded_before_maximize: None,
             staged_section_expanded: true,
             changes_section_expanded: true,
+            selected_file_for_diff: None,
             position_id_prefix: random_str,
             viewported_list_state: list_state,
             scroll_state: ScrollStateHandle::default(),
@@ -3026,6 +3044,7 @@ impl CodeReviewView {
                 stage_button,
                 unstage_button,
                 resolve_button,
+                content_at_head: file.content_at_head.clone(),
                 sidebar_mouse_state_staged: MouseStateHandle::default(),
                 sidebar_mouse_state_changes: MouseStateHandle::default(),
                 header_mouse_state: MouseStateHandle::default(),
@@ -4922,24 +4941,126 @@ impl CodeReviewView {
         counts_row.finish()
     }
 
-    /// Renders the content area: just the sidebar (Staged Changes /
-    /// Changes sections).
+    /// Renders the content area. Two modes (PRODUCT §4 + §8 revised):
     ///
-    /// PRODUCT §4 / feedback iteration: the legacy in-panel inline-diff
-    /// list is removed. Clicking a sidebar row opens the file in a new
-    /// tab in the main editor area (see `OpenInNewTab` action), matching
-    /// the VS Code Source Control flow. A dedicated side-by-side /
-    /// inline-on-narrow diff viewer is its own follow-up surface; for
-    /// now the file opens with whatever the workspace's
-    /// `resolve_file_target_with_editor_choice` chooses, which already
-    /// has gutter-level diff highlighting.
+    /// - **Sidebar mode** (default): Staged Changes / Changes sections.
+    ///   Click a row to switch to diff mode.
+    /// - **Diff mode** (when `selected_file_for_diff.is_some()`): the
+    ///   selected file's diff fills the panel, with a `← Files` header
+    ///   to return to the sidebar.
     fn render_content(
         &self,
         state: &LoadedState,
         appearance: &Appearance,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> Box<dyn Element> {
+        if let Some(path) = self.selected_file_for_diff.as_ref() {
+            if let Some((file_index, file)) = state
+                .file_states
+                .iter()
+                .enumerate()
+                .find_map(|(idx, (p, fs))| (p == path).then_some((idx, fs)))
+            {
+                return self.render_single_file_diff_view(file, file_index, appearance, app);
+            }
+            // Selected file vanished from the diff (refresh dropped it);
+            // fall back to sidebar.
+        }
         Shrinkable::new(1., self.render_file_sidebar(state, appearance)).finish()
+    }
+
+    /// 5e: render the single-file diff view that replaces the sidebar
+    /// when the user clicks a row. The view stacks:
+    /// 1. A header row with `← Files` + the file basename.
+    /// 2. The file's inline diff (delegates to `render_file_diff`).
+    fn render_single_file_diff_view(
+        &self,
+        file: &FileState,
+        file_index: usize,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let file_name = file
+            .file_diff
+            .file_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+
+        let back_text = Text::new(
+            "← Files",
+            appearance.ui_font_family(),
+            appearance.ui_font_size(),
+        )
+        .with_color(theme.main_text_color(theme.surface_2()).into())
+        .soft_wrap(false)
+        .finish();
+        let back_neutral = internal_colors::neutral_3(theme);
+        let back_button = Hoverable::new(MouseStateHandle::default(), |mouse_state| {
+            let mut c = Container::new(back_text)
+                .with_vertical_padding(4.)
+                .with_horizontal_padding(8.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
+            if mouse_state.is_hovered() {
+                c = c.with_background(warp_core::ui::theme::Fill::Solid(back_neutral));
+            }
+            c.finish()
+        })
+        .on_click(|ctx, _, _| ctx.dispatch_typed_action(CodeReviewAction::ExitDiffView))
+        .with_cursor(Cursor::PointingHand)
+        .finish();
+
+        let title = Text::new(
+            file_name,
+            appearance.ui_font_family(),
+            appearance.ui_font_size(),
+        )
+        .with_color(theme.sub_text_color(theme.surface_2()).into())
+        .soft_wrap(false)
+        .finish();
+
+        let header = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(back_button)
+            .with_child(Container::new(title).with_margin_left(8.).finish())
+            .finish();
+
+        let header_container = Container::new(header)
+            .with_vertical_padding(6.)
+            .with_horizontal_padding(8.)
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .finish();
+
+        let scroll_offset = self.scroll_offset_from_top();
+        let diff = self.render_file_diff(file, file_index, scroll_offset, appearance, app);
+
+        let scrollable = NewScrollable::vertical(
+            SingleAxisConfig::Clipped {
+                handle: self.ui_state_handles.sidebar_scroll_state.clone(),
+                child: diff,
+            },
+            theme.nonactive_ui_detail().into(),
+            theme.active_ui_detail().into(),
+            warpui::elements::Fill::None,
+        )
+        .with_vertical_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Auto, false))
+        .finish();
+
+        Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_child(header_container)
+            .with_child(Shrinkable::new(1., scrollable).finish())
+            .finish()
+    }
+
+    /// Best-effort scroll position used by single-file diff render. The
+    /// upstream diff renderer wants a `ScrollOffset` describing where
+    /// in the viewport list we are; in diff mode we only render one
+    /// file so a zero offset is correct.
+    fn scroll_offset_from_top(&self) -> ScrollOffset {
+        ScrollOffset::default()
     }
 
     fn render_file_sidebar(
@@ -5177,9 +5298,11 @@ impl CodeReviewView {
                     container.finish()
                 })
                 .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(CodeReviewAction::OpenInNewTab {
+                    // 5e: clicking a row shows that file's diff inside
+                    // the panel (the panel switches from sidebar to
+                    // single-file diff view).
+                    ctx.dispatch_typed_action(CodeReviewAction::SelectFileForDiff {
                         path: row_path.clone(),
-                        line_and_column: None,
                     });
                 })
                 .with_cursor(Cursor::PointingHand);
@@ -7722,6 +7845,27 @@ impl TypedActionView for CodeReviewView {
                     path: full_path,
                     line_and_column: None,
                 });
+            }
+            CodeReviewAction::SelectFileForDiff { path } => {
+                // 5e: switch panel content from sidebar to single-file
+                // diff view. The FileState already owns a diff-configured
+                // editor (via apply_diff_to_code_editor), so rendering is
+                // a matter of routing.
+                self.selected_file_for_diff = Some(path.clone());
+                // Mark the file as expanded so its diff editor's content
+                // is rendered (existing code paths gate on `is_expanded`).
+                if let Some(repo) = self.active_repo.as_mut() {
+                    if let CodeReviewViewState::Loaded(state) = &mut repo.state {
+                        if let Some(file) = state.file_states.get_mut(path) {
+                            file.is_expanded = true;
+                        }
+                    }
+                }
+                ctx.notify();
+            }
+            CodeReviewAction::ExitDiffView => {
+                self.selected_file_for_diff = None;
+                ctx.notify();
             }
             CodeReviewAction::FileSelected(file_index) => {
                 // Early-return when repo/state/file is missing to avoid calling
