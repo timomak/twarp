@@ -1,7 +1,7 @@
 # 05 — Open Changes panel
 
 **Phase:** spec-in-review (respec)
-**Spec PR:** respec (this branch) supersedes [#56](https://github.com/timomak/twarp/pull/56)
+**Spec PR:** [#58](https://github.com/timomak/twarp/pull/58) (respec — supersedes [#56](https://github.com/timomak/twarp/pull/56))
 **Impl PRs:** — (PR [#57](https://github.com/timomak/twarp/pull/57) closed; left-panel approach scrapped)
 
 ## Scope
