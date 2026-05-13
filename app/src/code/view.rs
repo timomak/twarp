@@ -904,6 +904,7 @@ impl CodeView {
             pane_config.set_title(title, ctx);
             pane_config.set_title_secondary(secondary, ctx);
             ctx.emit(PaneConfigurationEvent::TitleUpdated);
+            ctx.emit(PaneConfigurationEvent::HeaderContentChanged);
         });
     }
 
@@ -1974,6 +1975,9 @@ impl CodeView {
         let tab = self.tab_group.first();
         let tab_handle = tab.map(|tab| tab.mouse_state_handles.tab_handle.clone());
 
+        // Check unsaved changes for the active tab.
+        let has_unsaved = tab.is_some_and(|tab| Self::has_unsaved_changes(tab, app));
+
         // Build the center title element, with a hover tooltip showing the full path.
         // 5d (PRODUCT §21): when this CodeView is read-only (commit-
         // diff pane from a Timeline click), prepend a lock icon to
@@ -2007,8 +2011,24 @@ impl CodeView {
                 } else {
                     title_text
                 };
+
+                let mut title_row = Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_main_axis_size(MainAxisSize::Min);
+                if has_unsaved {
+                    let dot_color = appearance
+                        .theme()
+                        .sub_text_color(appearance.theme().background());
+                    title_row.add_child(
+                        Container::new(render_unsaved_changes_icon(dot_color.into()))
+                            .with_margin_right(4.)
+                            .finish(),
+                    );
+                }
+                title_row.add_child(centered_title);
+
                 let mut stack = Stack::new();
-                stack.add_child(centered_title);
+                stack.add_child(title_row.finish());
                 if hover_state.is_hovered() {
                     let tooltip_relative_path = tab
                         .and_then(|tab| tab.path.clone())
@@ -2033,7 +2053,27 @@ impl CodeView {
                 stack.finish()
             })
             .finish(),
-            None => render_pane_header_title_text(title, appearance, ClipConfig::start()),
+            None => {
+                let title_text =
+                    render_pane_header_title_text(title, appearance, ClipConfig::start());
+                if has_unsaved {
+                    let dot_color = appearance
+                        .theme()
+                        .sub_text_color(appearance.theme().background());
+                    let mut row = Flex::row()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_main_axis_size(MainAxisSize::Min);
+                    row.add_child(
+                        Container::new(render_unsaved_changes_icon(dot_color.into()))
+                            .with_margin_right(4.)
+                            .finish(),
+                    );
+                    row.add_child(title_text);
+                    row.finish()
+                } else {
+                    title_text
+                }
+            }
         };
 
         render_three_column_header(
