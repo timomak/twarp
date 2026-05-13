@@ -5048,11 +5048,20 @@ impl CodeReviewView {
         .with_vertical_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Auto, false))
         .finish();
 
-        Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_child(header_container)
-            .with_child(Shrinkable::new(1., scrollable).finish())
-            .finish()
+        // Outer Shrinkable mirrors the sidebar mode's wrapper. Without
+        // it, the inner `Shrinkable<scrollable>` sees an infinite
+        // vertical constraint and panics in flex layout
+        // ("flex contains flexible children but has an infinite
+        // constraint along the flex axis").
+        Shrinkable::new(
+            1.,
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_child(header_container)
+                .with_child(Shrinkable::new(1., scrollable).finish())
+                .finish(),
+        )
+        .finish()
     }
 
     /// Best-effort scroll position used by single-file diff render. The
