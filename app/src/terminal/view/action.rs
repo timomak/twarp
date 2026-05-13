@@ -431,6 +431,9 @@ pub enum TerminalAction {
     /// twarp 07 (7i, PRODUCT §40): the raw Claude CLI's floating overlay was
     /// clicked — return to the rendered Claude Code pane.
     ReturnToClaudePane,
+
+    /// Allow the blocked clipboard operation by adjusting the OSC 52 clipboard access setting.
+    Osc52AllowBlockedClipboardOperation,
 }
 
 // Manually implementing Debug to avoid leaking sensitive information in logs
@@ -700,6 +703,9 @@ impl fmt::Debug for TerminalAction {
             ToggleSessionRecording => write!(f, "ToggleSessionRecording"),
             OpenCLIAgentRichInput => write!(f, "OpenCLIAgentRichInput"),
             ReturnToClaudePane => write!(f, "ReturnToClaudePane"),
+            Osc52AllowBlockedClipboardOperation => {
+                write!(f, "Osc52AllowBlockedClipboardOperation")
+            }
         }
     }
 }
