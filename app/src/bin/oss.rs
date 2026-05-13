@@ -5,8 +5,16 @@
 use anyhow::Result;
 use warp_core::{
     channel::{Channel, ChannelConfig, ChannelState, OzConfig, WarpServerConfig},
+    features::FeatureFlag,
     AppId,
 };
+
+// twarp: feature 05 (Open Changes rework) builds on top of the right-side
+// Code Review panel layout that upstream gates behind a Preview flag. The
+// rework IS the canonical layout for twarp, so enable the flag in OSS by
+// default — otherwise `cargo run` (which defaults to warp-oss) hides the
+// reworked sidebar entirely.
+const TWARP_OSS_FLAGS: &[FeatureFlag] = &[FeatureFlag::GitOperationsInCodeReview];
 
 // Simple wrapper around warp::run() for Warp OSS builds.
 fn main() -> Result<()> {
@@ -26,6 +34,7 @@ fn main() -> Result<()> {
     if cfg!(debug_assertions) {
         state = state.with_additional_features(warp_core::features::DEBUG_FLAGS);
     }
+    state = state.with_additional_features(TWARP_OSS_FLAGS);
     ChannelState::set(state);
 
     warp::run()

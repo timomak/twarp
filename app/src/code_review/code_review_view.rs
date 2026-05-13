@@ -1377,7 +1377,10 @@ impl CodeReviewView {
             git_operations_chevron,
             git_operations_menu,
             git_operations_menu_open: false,
-            file_sidebar_expanded: false,
+            // Sidebar opens by default (PRODUCT §4 smoke step 1: opening
+            // the panel on a clean repo must show the Staged Changes /
+            // Changes section headers, even with no rows).
+            file_sidebar_expanded: true,
             file_sidebar_expanded_before_maximize: None,
             staged_section_expanded: true,
             changes_section_expanded: true,
@@ -4463,9 +4466,11 @@ impl CodeReviewView {
             diff_state_model: self.diff_state_model.clone(),
             header_dropdown_button: self.header_dropdown_button.clone(),
             has_header_menu_items,
-            file_nav_button: if FeatureFlag::GitOperationsInCodeReview.is_enabled()
-                && self.has_file_states()
-            {
+            // PRODUCT §4: the sidebar always carries the Staged Changes /
+            // Changes sections (even with zero rows), so the file-nav
+            // toggle must be reachable on a clean repo too. Pre-5a this
+            // also gated on `has_file_states()`; that gate is dropped.
+            file_nav_button: if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
                 Some(self.file_nav_button.clone())
             } else {
                 None
