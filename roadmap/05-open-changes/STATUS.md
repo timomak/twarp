@@ -28,6 +28,18 @@ Commit / push / pull / fetch (former 5e in the prior split) is **dropped** as a 
 - 5d (Timeline) is the most likely scope-cut candidate if the surface gets unwieldy — feature can ship as `merged` after 5c if 5a–5c are solid.
 - Backed by the existing `Repository` watcher + `DiffStateModel` invalidation channel. No new file watcher.
 
+## Spec deviations adopted during 5a impl review (PR #59)
+
+Owner feedback during 5a review reframed the panel's interaction model:
+
+- **Click → new tab, not inline expansion.** PRODUCT §8 (`[inherits]`: click → expand inline below the row) is **superseded**. Clicking a sidebar row now dispatches `CodeReviewAction::OpenInNewTab`, which opens the file in a tab in the main editor area. The legacy inline-diff list inside the Code Review panel is removed; the panel becomes sidebar-only.
+- **Sidebar always visible.** `file_sidebar_expanded` defaults to `true`; the file-nav toggle button is removed from the panel header. Section-level collapse/expand on the `Staged Changes` / `Changes` headers replaces the per-sidebar toggle.
+- **`warp-oss` enables `GitOperationsInCodeReview`.** Upstream gates the right-side panel layout behind a Preview flag, but the rework is twarp's canonical Code Review surface. Enabled unconditionally in `app/src/bin/oss.rs` so `cargo run` shows it.
+
+## Follow-up: dedicated diff viewer (post-5a)
+
+The owner's review also asked for a VS Code-style diff viewer with width-aware side-by-side / inline-on-narrow switching. The 5a PR routes clicks to `WorkspaceAction::OpenFileInNewTab` via the existing `open_code_review_file` helper, which opens the file with whatever target the workspace chooses — typically the code editor with gutter diff markers. That's the minimum-viable diff destination; a bespoke side-by-side viewer is **not** part of 5a. Treat as its own scoped work item once 5b/5c/5d are stable.
+
 ## Why this is feature 05 (last user-facing scope)
 
 Largest surface area; most UI; benefits the most from a stable foundation (post-AI-removal). Slotted just before the rebrand so it ships onto a tree that already reflects the fork's identity. The small markdown-render-default change at 03 is a default flip, not a structural feature, so it doesn't displace this one as the last big user-visible build.
