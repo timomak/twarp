@@ -1,8 +1,8 @@
 # 05 — Open Changes panel
 
-**Phase:** impl-pending (5a merged; 5b/5c/5d/5e remain)
+**Phase:** impl-in-review (5c)
 **Spec PRs:** [#56](https://github.com/timomak/twarp/pull/56) (initial), [#58](https://github.com/timomak/twarp/pull/58) (respec — supersedes #56), both merged
-**Impl PRs:** 5a [#59](https://github.com/timomak/twarp/pull/59) merged — (PR [#57](https://github.com/timomak/twarp/pull/57) closed; left-panel approach scrapped)
+**Impl PRs:** 5a [#59](https://github.com/timomak/twarp/pull/59) merged; 5c in review — (PR [#57](https://github.com/timomak/twarp/pull/57) closed; left-panel approach scrapped)
 
 ## Scope
 
@@ -16,7 +16,7 @@ The original 5a–5e split assumed a from-scratch build. With the rework framing
 
 - [x] **5a — Sidebar split.** Two sections (Staged Changes / Changes) with status glyphs, populated from `git status --porcelain=v2`. Click → opens the file in a new tab (placeholder; real diff view ships in 5e). Covers PRODUCT §§1–9, §§24–25, §§27, §§29–30 (verify).
 - [ ] **5b — Hunk-level staging affordances.** Hover-revealed `[+]` / `[−]` / `[↺]` on hunk headers inside the diff. Patch synthesis + `git apply --cached` / `--reverse`. Covers PRODUCT §12. **Dependency:** lands after 5e since the hunk overlays live inside the diff pane.
-- [ ] **5c — In-progress op banner + file-level discard/unstage polish.** `InProgressOp` detection (`MERGE_HEAD` / `rebase-merge` / `CHERRY_PICK_HEAD` / `BISECT_LOG`), banner, conflict-row `[Resolve…]`, commit-button label gating, file-level hover affordances. Covers PRODUCT §§10–11, §§13–14. Independent of 5e.
+- [x] **5c — In-progress op banner + file-level discard/unstage polish.** `InProgressOp` detection (`MERGE_HEAD` / `rebase-merge` / `CHERRY_PICK_HEAD` / `BISECT_LOG`), banner, conflict-row `[Resolve…]`, commit-button label gating, file-level hover affordances. Covers PRODUCT §§10–11, §§13–14. Independent of 5e. **5c polish carve-out:** the PRODUCT §11 inline `Discard changes to <basename>?` confirmation and the untracked-file 10-second undo toast are deferred to a `5c.2` follow-up — 5c ships the banner, commit-label gating, stage/unstage/resolve hover cluster, and reuses the existing modal discard dialog.
 - [ ] **5d — File Timeline.** Per-file commit-history section inside the diff pane. Paged `git log --follow`. Click → commit-diff replaces working diff; `[Back to working diff]` restores. Rename badge + `↑` local-only marker. Covers PRODUCT §§18–23. **Dependency:** lands after 5e (Timeline lives inside the diff pane).
 - [ ] **5e — Diff viewer pane (new).** Dedicated diff view that clicking a sidebar row opens in a new tab in the main editor area. Initial scope: unified inline diff (red/green decorations in a single editor) — `LocalCodeEditorView` with `set_base()` from the file's HEAD content, hosted in a fresh `CodePane`. Carries `content_at_head` from the panel through a new action/event chain (`CodeReviewAction::OpenFileDiffInNewTab` → `CodeReviewViewEvent` → `RightPanelEvent` → workspace handler that calls `set_base` on the new editor). Width-aware side-by-side / inline-on-narrow is **explicitly out of scope** for 5e — it's a separate diff-editor component (the upstream `CodeDiffView` was removed in feature 02 per `workspace/view.rs:6877`; rebuilding it cleanly is a multi-day chunk). 5e respec PRODUCT §8 — current `[inherits]` (inline expansion in panel) is dead. Replaces it with `[new]` (open-in-new-tab via dedicated action).
 

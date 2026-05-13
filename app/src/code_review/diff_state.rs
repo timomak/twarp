@@ -1049,6 +1049,75 @@ impl DiffStateModel {
         // Noop on WASM builds.
     }
 
+    /// Stage a single file (`git add -- <path>`). Refreshes the diff after
+    /// the command completes. Errors are logged but not surfaced — see
+    /// PRODUCT §14 (idempotent / race-tolerant). PRODUCT §11.
+    #[cfg(feature = "local_fs")]
+    pub fn stage_file(&mut self, relative_path: PathBuf, ctx: &mut ModelContext<Self>) {
+        let Some(current_repository) = &self.repository else {
+            return;
+        };
+        let repo_path = current_repository
+            .as_ref(ctx)
+            .root_dir()
+            .to_local_path_lossy();
+        let rel_str = relative_path.to_string_lossy().to_string();
+        ctx.spawn(
+            async move {
+                log::debug!("[GIT OPERATION] diff_state.rs stage_file git add -- {rel_str}");
+                run_git_command(&repo_path, &["add", "--", &rel_str]).await
+            },
+            |me, result, ctx| match result {
+                Ok(_) => {
+                    me.load_diffs_for_current_repo(false, ctx);
+                    me.refresh_diff_metadata_for_current_repo(
+                        InvalidationBehavior::PromptRefresh,
+                        ctx,
+                    );
+                }
+                Err(err) => log::error!("Failed to stage file: {err}"),
+            },
+        );
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    pub fn stage_file(&mut self, _relative_path: PathBuf, _ctx: &mut ModelContext<Self>) {}
+
+    /// Unstage a single file (`git restore --staged -- <path>`). Refreshes
+    /// the diff after the command completes. PRODUCT §11.
+    #[cfg(feature = "local_fs")]
+    pub fn unstage_file(&mut self, relative_path: PathBuf, ctx: &mut ModelContext<Self>) {
+        let Some(current_repository) = &self.repository else {
+            return;
+        };
+        let repo_path = current_repository
+            .as_ref(ctx)
+            .root_dir()
+            .to_local_path_lossy();
+        let rel_str = relative_path.to_string_lossy().to_string();
+        ctx.spawn(
+            async move {
+                log::debug!(
+                    "[GIT OPERATION] diff_state.rs unstage_file git restore --staged -- {rel_str}"
+                );
+                run_git_command(&repo_path, &["restore", "--staged", "--", &rel_str]).await
+            },
+            |me, result, ctx| match result {
+                Ok(_) => {
+                    me.load_diffs_for_current_repo(false, ctx);
+                    me.refresh_diff_metadata_for_current_repo(
+                        InvalidationBehavior::PromptRefresh,
+                        ctx,
+                    );
+                }
+                Err(err) => log::error!("Failed to unstage file: {err}"),
+            },
+        );
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    pub fn unstage_file(&mut self, _relative_path: PathBuf, _ctx: &mut ModelContext<Self>) {}
+
     /// Sets whether the code review pane needs diff metadata.
     /// When transitioning from disabled to enabled, triggers an
     /// immediate refresh to catch up on changes that occurred while disabled.

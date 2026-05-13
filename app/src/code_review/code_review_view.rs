@@ -415,6 +415,19 @@ pub enum CodeReviewAction {
     ToggleStagedSection,
     /// Collapse/expand the Changes section in the sidebar (PRODUCT §4).
     ToggleChangesSection,
+    /// Stage a file (PRODUCT §11). Runs `git add -- <path>`.
+    StageFile {
+        path: PathBuf,
+    },
+    /// Unstage a file (PRODUCT §11). Runs `git restore --staged -- <path>`.
+    UnstageFile {
+        path: PathBuf,
+    },
+    /// Open a conflicted file in a new tab so the user can resolve it
+    /// (PRODUCT §10, Conflict row).
+    OpenConflictResolve {
+        path: PathBuf,
+    },
     FileSelected(usize),
     ToggleMaximize,
     SaveAllUnsavedFiles,
@@ -472,6 +485,15 @@ pub struct FileState {
     discard_button: ViewHandle<ActionButton>,
     add_context_button: ViewHandle<ActionButton>,
     copy_path_button: ViewHandle<ActionButton>,
+    /// 5c (PRODUCT §10): sidebar hover-cluster button. `[+]` on a
+    /// Changes-section row → stages the file.
+    stage_button: ViewHandle<ActionButton>,
+    /// 5c (PRODUCT §10): sidebar hover-cluster button. `[−]` on a
+    /// Staged-section row → unstages the file.
+    unstage_button: ViewHandle<ActionButton>,
+    /// 5c (PRODUCT §10, Conflict row): sidebar hover-cluster button.
+    /// `[Resolve…]` opens the conflicted file in a new tab.
+    resolve_button: ViewHandle<ActionButton>,
 }
 
 pub(crate) struct LoadedState {
@@ -2928,6 +2950,46 @@ impl CodeReviewView {
                 button
             });
 
+            // 5c: per-file Stage / Unstage / Resolve buttons surfaced in
+            // the sidebar row's hover cluster (PRODUCT §10).
+            let stage_path = file.file_diff.file_path.clone();
+            let stage_button = ctx.add_typed_action_view(move |_ctx| {
+                ActionButton::new("", NakedTheme)
+                    .with_icon(Icon::Plus)
+                    .with_size(ButtonSize::InlineActionHeader)
+                    .with_tooltip("Stage file")
+                    .on_click(move |ctx| {
+                        ctx.dispatch_typed_action(CodeReviewAction::StageFile {
+                            path: stage_path.clone(),
+                        })
+                    })
+            });
+
+            let unstage_path = file.file_diff.file_path.clone();
+            let unstage_button = ctx.add_typed_action_view(move |_ctx| {
+                ActionButton::new("", NakedTheme)
+                    .with_icon(Icon::Minus)
+                    .with_size(ButtonSize::InlineActionHeader)
+                    .with_tooltip("Unstage file")
+                    .on_click(move |ctx| {
+                        ctx.dispatch_typed_action(CodeReviewAction::UnstageFile {
+                            path: unstage_path.clone(),
+                        })
+                    })
+            });
+
+            let resolve_path = file.file_diff.file_path.clone();
+            let resolve_button = ctx.add_typed_action_view(move |_ctx| {
+                ActionButton::new("Resolve…", NakedTheme)
+                    .with_size(ButtonSize::InlineActionHeader)
+                    .with_tooltip("Open conflicted file in new tab")
+                    .on_click(move |ctx| {
+                        ctx.dispatch_typed_action(CodeReviewAction::OpenConflictResolve {
+                            path: resolve_path.clone(),
+                        })
+                    })
+            });
+
             let context_path = file.file_diff.file_path.clone();
             let add_context_button = ctx.add_typed_action_view(move |_ctx| {
                 ActionButton::new("", NakedTheme)
@@ -2961,6 +3023,9 @@ impl CodeReviewView {
                 discard_button,
                 add_context_button,
                 copy_path_button,
+                stage_button,
+                unstage_button,
+                resolve_button,
                 sidebar_mouse_state_staged: MouseStateHandle::default(),
                 sidebar_mouse_state_changes: MouseStateHandle::default(),
                 header_mouse_state: MouseStateHandle::default(),
@@ -4886,6 +4951,13 @@ impl CodeReviewView {
             .with_main_axis_alignment(MainAxisAlignment::Start)
             .with_cross_axis_alignment(CrossAxisAlignment::Start);
 
+        // PRODUCT §13: when a merge / rebase / cherry-pick / bisect is in
+        // progress, the panel renders a banner above the sections with the
+        // op name and the abort command.
+        if let Some(op) = state.in_progress_op.as_ref() {
+            column.add_child(self.render_in_progress_banner(op, appearance));
+        }
+
         // Sidebar split (PRODUCT §4): render Staged Changes and Changes
         // as two independent sections. Section bodies render only when
         // the section is expanded; headers always render so the user
@@ -4947,6 +5019,41 @@ impl CodeReviewView {
     /// (a partial-stage file has separate handles per section), and is
     /// used by the click handler to pick the right hover state. The
     /// header's hover state lives on `UiStateHandles` and is passed in.
+    /// Render the in-progress-op banner above the sidebar sections
+    /// (PRODUCT §13). Banner reads: `<Op> in progress — resolve conflicts
+    /// then commit, or run `<abort-cmd>` in the terminal.` Themed via
+    /// the active theme's outline / sub-text colors; no hardcoded colors.
+    fn render_in_progress_banner(
+        &self,
+        op: &InProgressOp,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let label = op.label();
+        let abort = op.abort_command();
+        let banner_text = format!(
+            "{label} in progress — resolve conflicts then commit, or run `{abort}` in the terminal."
+        );
+        let text = Text::new(
+            banner_text,
+            appearance.ui_font_family(),
+            appearance.ui_font_size(),
+        )
+        .with_color(theme.main_text_color(theme.surface_2()).into())
+        .soft_wrap(true)
+        .finish();
+        Container::new(text)
+            .with_vertical_padding(8.)
+            .with_horizontal_padding(10.)
+            .with_margin_bottom(6.)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+            .with_background(warp_core::ui::theme::Fill::Solid(
+                internal_colors::neutral_2(theme),
+            ))
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .finish()
+    }
+
     fn render_sidebar_section(
         &self,
         label: &str,
@@ -4999,6 +5106,8 @@ impl CodeReviewView {
                 let path = entry.path.clone();
                 let file_state = state.file_states.get(&path);
                 let glyph = entry.status.glyph();
+                let is_conflict =
+                    entry.status == crate::code_review::porcelain_v2::FileStatus::Unmerged;
 
                 let row = self.render_file_sidebar_row(
                     file_state,
@@ -5006,6 +5115,22 @@ impl CodeReviewView {
                     Some(glyph),
                     appearance,
                 );
+
+                // 5c (PRODUCT §10): build the hover-revealed action
+                // cluster for this row, picking buttons by section + status.
+                // Conflict (U) rows show only `[Resolve…]` regardless of
+                // section.
+                let cluster_buttons: Vec<ViewHandle<ActionButton>> = match (is_conflict, section) {
+                    (true, _) => file_state
+                        .map(|fs| vec![fs.resolve_button.clone()])
+                        .unwrap_or_default(),
+                    (false, SidebarSection::Staged) => file_state
+                        .map(|fs| vec![fs.unstage_button.clone()])
+                        .unwrap_or_default(),
+                    (false, SidebarSection::Changes) => file_state
+                        .map(|fs| vec![fs.stage_button.clone(), fs.discard_button.clone()])
+                        .unwrap_or_default(),
+                };
 
                 // PRODUCT §4: partial-stage files appear in both sections
                 // and must have independent hover state. Fall back to a
@@ -5019,8 +5144,29 @@ impl CodeReviewView {
                     .unwrap_or_default();
                 let row_neutral = internal_colors::neutral_3(appearance.theme());
                 let row_path = entry.path.clone();
-                let hoverable = Hoverable::new(mouse_state_handle, |mouse_state| {
-                    let mut container = Container::new(Shrinkable::new(1., row).finish())
+                let hoverable = Hoverable::new(mouse_state_handle, move |mouse_state| {
+                    let mut content_row = Flex::row()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_child(Shrinkable::new(1., row).finish());
+
+                    if mouse_state.is_hovered() && !cluster_buttons.is_empty() {
+                        let mut cluster =
+                            Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+                        for button in cluster_buttons {
+                            cluster.add_child(
+                                Container::new(ChildView::new(&button).finish())
+                                    .with_margin_left(4.)
+                                    .finish(),
+                            );
+                        }
+                        content_row.add_child(
+                            Container::new(cluster.finish())
+                                .with_margin_left(4.)
+                                .finish(),
+                        );
+                    }
+
+                    let mut container = Container::new(content_row.finish())
                         .with_vertical_padding(5.)
                         .with_horizontal_padding(8.)
                         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
@@ -6854,6 +7000,19 @@ impl CodeReviewView {
     }
 
     /// Computes the current primary git action from diff stats and the diff state model.
+    /// Return the in-progress op's preferred label for the panel's primary
+    /// action button (PRODUCT §13), if any. `None` when no op is in
+    /// progress, or for bisect (which has no commit-style continuation).
+    fn in_progress_op_primary_label(&self) -> Option<&'static str> {
+        match self.state() {
+            CodeReviewViewState::Loaded(state) => state
+                .in_progress_op
+                .as_ref()
+                .and_then(InProgressOp::primary_action_label),
+            _ => None,
+        }
+    }
+
     fn primary_git_action_mode(&self, app: &AppContext) -> PrimaryGitActionMode {
         let diff_state = self.diff_state_model.as_ref(app);
         let has_uncommitted_changes = self.has_uncommitted_changes(app);
@@ -6892,8 +7051,13 @@ impl CodeReviewView {
         match mode {
             PrimaryGitActionMode::Commit => {
                 let disabled = !self.has_uncommitted_changes(ctx);
+                // PRODUCT §13: while a merge / rebase / cherry-pick is in
+                // progress, override the Commit label so the user knows
+                // the next commit concludes the op.
+                let label_override = self.in_progress_op_primary_label();
+                let label = label_override.unwrap_or("Commit");
                 self.git_primary_action_button.update(ctx, |button, ctx| {
-                    button.set_label("Commit", ctx);
+                    button.set_label(label, ctx);
                     button.set_icon(Some(Icon::GitCommit), ctx);
                     button.set_disabled(disabled, ctx);
                     button.set_tooltip(disabled.then_some("No changes to commit"), ctx);
@@ -7533,6 +7697,31 @@ impl TypedActionView for CodeReviewView {
             CodeReviewAction::ToggleChangesSection => {
                 self.changes_section_expanded = !self.changes_section_expanded;
                 ctx.notify();
+            }
+            CodeReviewAction::StageFile { path } => {
+                let path = path.clone();
+                self.diff_state_model.update(ctx, |model, ctx| {
+                    model.stage_file(path, ctx);
+                });
+            }
+            CodeReviewAction::UnstageFile { path } => {
+                let path = path.clone();
+                self.diff_state_model.update(ctx, |model, ctx| {
+                    model.unstage_file(path, ctx);
+                });
+            }
+            CodeReviewAction::OpenConflictResolve { path } => {
+                // PRODUCT §10 (Conflict row): clicking [Resolve…] opens
+                // the conflicted file in a new tab so the user can edit
+                // conflict markers directly.
+                let Some(repo_path) = self.repo_path() else {
+                    return;
+                };
+                let full_path = repo_path.join(path);
+                ctx.emit(CodeReviewViewEvent::OpenFileInNewTab {
+                    path: full_path,
+                    line_and_column: None,
+                });
             }
             CodeReviewAction::FileSelected(file_index) => {
                 // Early-return when repo/state/file is missing to avoid calling
