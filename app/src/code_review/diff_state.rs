@@ -28,6 +28,9 @@ use warpui::AppContext;
 use warpui::{r#async::SpawnedFutureHandle, ModelContext};
 
 use crate::code_review::diff_size_limits::DiffSize;
+use crate::code_review::porcelain_v2::{
+    parse_porcelain_v2, FileEntry as PorcelainEntry, InProgressOp,
+};
 use crate::features::FeatureFlag;
 #[cfg(feature = "local_fs")]
 use crate::util::git::get_pr_for_branch;
@@ -214,6 +217,17 @@ pub struct GitDiffWithBaseContent {
     pub total_additions: usize,
     pub total_deletions: usize,
     pub files_changed: usize,
+    /// Files with staged-side changes (porcelain-v2 X column). Only populated
+    /// in `DiffMode::Head`; base-branch and other-branch modes leave this
+    /// empty because the sidebar split only makes sense against HEAD.
+    pub staged: Vec<PorcelainEntry>,
+    /// Files with working-tree-side changes (porcelain-v2 Y column) plus
+    /// untracked files. Same `DiffMode::Head`-only constraint as `staged`.
+    pub changes: Vec<PorcelainEntry>,
+    /// In-progress merge / rebase / cherry-pick / bisect (PRODUCT §13).
+    /// Set by sniffing `.git/`-sentinel files. Used by 5c's banner; 5a
+    /// only populates it.
+    pub in_progress_op: Option<InProgressOp>,
 }
 
 impl From<GitDiffWithBaseContent> for GitDiffData {
@@ -223,6 +237,9 @@ impl From<GitDiffWithBaseContent> for GitDiffData {
             total_additions: value.total_additions,
             total_deletions: value.total_deletions,
             files_changed: value.files_changed,
+            staged: value.staged,
+            changes: value.changes,
+            in_progress_op: value.in_progress_op,
         }
     }
 }
@@ -238,6 +255,9 @@ impl From<&GitDiffWithBaseContent> for GitDiffData {
             total_additions: value.total_additions,
             total_deletions: value.total_deletions,
             files_changed: value.files_changed,
+            staged: value.staged.clone(),
+            changes: value.changes.clone(),
+            in_progress_op: value.in_progress_op.clone(),
         }
     }
 }
@@ -249,6 +269,14 @@ pub struct GitDiffData {
     pub total_additions: usize,
     pub total_deletions: usize,
     pub files_changed: usize,
+    /// Per-file rows for the sidebar's Staged Changes section (PRODUCT §4).
+    /// Only populated against `DiffMode::Head`; empty in other modes.
+    pub staged: Vec<PorcelainEntry>,
+    /// Per-file rows for the sidebar's Changes section (PRODUCT §4).
+    /// Only populated against `DiffMode::Head`; empty in other modes.
+    pub changes: Vec<PorcelainEntry>,
+    /// In-progress git op (PRODUCT §13). 5a only populates it; 5c renders.
+    pub in_progress_op: Option<InProgressOp>,
 }
 
 impl GitDiffData {
@@ -1626,6 +1654,15 @@ impl DiffStateModel {
     async fn diff_state_against_head(repo_path: &Path) -> Result<GitDiffWithBaseContent> {
         let changed_files = Self::file_statuses_against_head(repo_path).await?;
 
+        // Sidebar split (PRODUCT §4): run an additional newline-form
+        // `git status --porcelain=2` so the v2 parser can distinguish
+        // staged-only / unstaged-only / partial-stage entries. The
+        // existing call above uses `-z` for safety; we keep both rather
+        // than reshape the existing pipeline. Cost: one extra git call
+        // per refresh.
+        let (staged, changes) = Self::fetch_sidebar_split(repo_path).await;
+        let in_progress_op = InProgressOp::detect(&repo_path.join(".git"));
+
         // Get binary file information using git diff --numstat
         let binary_files = Self::get_binary_files(repo_path).await?;
 
@@ -1658,7 +1695,43 @@ impl DiffStateModel {
             files,
             total_additions,
             total_deletions,
+            staged,
+            changes,
+            in_progress_op,
         })
+    }
+
+    /// Fetch `git status --porcelain=2` in newline form and split into
+    /// staged / changes vectors for the Code Review panel sidebar
+    /// (PRODUCT §4). Errors are swallowed and reported as empty rows —
+    /// the existing `file_statuses_against_head` call carries the
+    /// hard-error signal for this same repo state.
+    async fn fetch_sidebar_split(repo_path: &Path) -> (Vec<PorcelainEntry>, Vec<PorcelainEntry>) {
+        log::debug!(
+            "[GIT OPERATION] diff_state.rs fetch_sidebar_split git --no-optional-locks status --branch --untracked-files=all --renames --porcelain=2"
+        );
+        let output = run_git_command(
+            repo_path,
+            &[
+                "--no-optional-locks",
+                "status",
+                "--branch",
+                "--untracked-files=all",
+                "--renames",
+                "--porcelain=2",
+            ],
+        )
+        .await;
+        match output {
+            Ok(text) => {
+                let parsed = parse_porcelain_v2(&text);
+                (parsed.staged, parsed.changes)
+            }
+            Err(err) => {
+                log::warn!("Sidebar-split status fetch failed: {err:?}");
+                (Vec::new(), Vec::new())
+            }
+        }
     }
 
     async fn diff_state_against_base_branch(
@@ -1914,6 +1987,9 @@ impl DiffStateModel {
                     files: Vec::new(),
                     total_additions: 0,
                     total_deletions: 0,
+                    staged: Vec::new(),
+                    changes: Vec::new(),
+                    in_progress_op: None,
                 });
             }
         };
@@ -1927,6 +2003,9 @@ impl DiffStateModel {
                 files: Vec::new(),
                 total_additions: 0,
                 total_deletions: 0,
+                staged: Vec::new(),
+                changes: Vec::new(),
+                in_progress_op: None,
             });
         }
 
@@ -1962,6 +2041,9 @@ impl DiffStateModel {
             files,
             total_additions,
             total_deletions,
+            staged: Vec::new(),
+            changes: Vec::new(),
+            in_progress_op: None,
         })
     }
 
