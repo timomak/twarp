@@ -2,7 +2,7 @@
 
 **Phase:** impl-in-review (5a)
 **Spec PRs:** [#56](https://github.com/timomak/twarp/pull/56) (initial), [#58](https://github.com/timomak/twarp/pull/58) (respec — supersedes #56), both merged
-**Impl PRs:** 5a in review — (PR [#57](https://github.com/timomak/twarp/pull/57) closed; left-panel approach scrapped)
+**Impl PRs:** 5a [#59](https://github.com/timomak/twarp/pull/59) — (PR [#57](https://github.com/timomak/twarp/pull/57) closed; left-panel approach scrapped)
 
 ## Scope
 
