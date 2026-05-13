@@ -12,12 +12,13 @@ See README §5 and [PRODUCT.md](PRODUCT.md) / [TECH.md](TECH.md) for the full re
 
 ## Sub-phases (revised)
 
-The original 5a–5e split assumed a from-scratch build. With the rework framing, the gap collapses to four sub-PRs:
+The original 5a–5e split assumed a from-scratch build. With the rework framing — and after the click→tab pivot during 5a review — the work now lays out as five sub-PRs:
 
-- [x] **5a — Sidebar split.** Two sections (Staged Changes / Changes) with status glyphs, populated from `git status --porcelain=v2`. Click → existing inline diff expansion (unchanged). Covers PRODUCT §§1–9, §§24–25, §§27, §§29–30 (verify).
-- [ ] **5b — Hunk-level staging affordances.** Hover-revealed `[+]` / `[−]` / `[↺]` on hunk headers inside the inline diff. Patch synthesis + `git apply --cached` / `--reverse`. Covers PRODUCT §12.
-- [ ] **5c — In-progress op banner + file-level discard/unstage polish.** `InProgressOp` detection (`MERGE_HEAD` / `rebase-merge` / `CHERRY_PICK_HEAD` / `BISECT_LOG`), banner, conflict-row `[Resolve…]`, commit-button label gating, file-level hover affordances. Covers PRODUCT §§10–11, §§13–14.
-- [ ] **5d — File Timeline.** New per-file commit-history section below the inline diff. Paged `git log --follow`. Click → commit-diff replaces inline diff; `[Back to working diff]` restores. Rename badge + `↑` local-only marker. Covers PRODUCT §§18–23.
+- [x] **5a — Sidebar split.** Two sections (Staged Changes / Changes) with status glyphs, populated from `git status --porcelain=v2`. Click → opens the file in a new tab (placeholder; real diff view ships in 5e). Covers PRODUCT §§1–9, §§24–25, §§27, §§29–30 (verify).
+- [ ] **5b — Hunk-level staging affordances.** Hover-revealed `[+]` / `[−]` / `[↺]` on hunk headers inside the diff. Patch synthesis + `git apply --cached` / `--reverse`. Covers PRODUCT §12. **Dependency:** lands after 5e since the hunk overlays live inside the diff pane.
+- [ ] **5c — In-progress op banner + file-level discard/unstage polish.** `InProgressOp` detection (`MERGE_HEAD` / `rebase-merge` / `CHERRY_PICK_HEAD` / `BISECT_LOG`), banner, conflict-row `[Resolve…]`, commit-button label gating, file-level hover affordances. Covers PRODUCT §§10–11, §§13–14. Independent of 5e.
+- [ ] **5d — File Timeline.** Per-file commit-history section inside the diff pane. Paged `git log --follow`. Click → commit-diff replaces working diff; `[Back to working diff]` restores. Rename badge + `↑` local-only marker. Covers PRODUCT §§18–23. **Dependency:** lands after 5e (Timeline lives inside the diff pane).
+- [ ] **5e — Diff viewer pane (new).** Dedicated diff view that clicking a sidebar row opens in a new tab in the main editor area. Initial scope: unified inline diff (red/green decorations in a single editor) — `LocalCodeEditorView` with `set_base()` from the file's HEAD content, hosted in a fresh `CodePane`. Carries `content_at_head` from the panel through a new action/event chain (`CodeReviewAction::OpenFileDiffInNewTab` → `CodeReviewViewEvent` → `RightPanelEvent` → workspace handler that calls `set_base` on the new editor). Width-aware side-by-side / inline-on-narrow is **explicitly out of scope** for 5e — it's a separate diff-editor component (the upstream `CodeDiffView` was removed in feature 02 per `workspace/view.rs:6877`; rebuilding it cleanly is a multi-day chunk). 5e respec PRODUCT §8 — current `[inherits]` (inline expansion in panel) is dead. Replaces it with `[new]` (open-in-new-tab via dedicated action).
 
 Commit / push / pull / fetch (former 5e in the prior split) is **dropped** as a dedicated sub-phase: PRODUCT §§15–17 inherit the existing implementation behind `FeatureFlag::GitOperationsInCodeReview`. Gaps surfaced during verification become follow-ups, not impl PRs.
 
@@ -36,9 +37,13 @@ Owner feedback during 5a review reframed the panel's interaction model:
 - **Sidebar always visible.** `file_sidebar_expanded` defaults to `true`; the file-nav toggle button is removed from the panel header. Section-level collapse/expand on the `Staged Changes` / `Changes` headers replaces the per-sidebar toggle.
 - **`warp-oss` enables `GitOperationsInCodeReview`.** Upstream gates the right-side panel layout behind a Preview flag, but the rework is twarp's canonical Code Review surface. Enabled unconditionally in `app/src/bin/oss.rs` so `cargo run` shows it.
 
-## Follow-up: dedicated diff viewer (post-5a)
+## Follow-up: dedicated diff viewer (5e)
 
-The owner's review also asked for a VS Code-style diff viewer with width-aware side-by-side / inline-on-narrow switching. The 5a PR routes clicks to `WorkspaceAction::OpenFileInNewTab` via the existing `open_code_review_file` helper, which opens the file with whatever target the workspace chooses — typically the code editor with gutter diff markers. That's the minimum-viable diff destination; a bespoke side-by-side viewer is **not** part of 5a. Treat as its own scoped work item once 5b/5c/5d are stable.
+The owner's review asked for a VS Code-style diff viewer that opens in a new tab on click. In 5a the row click dispatches `CodeReviewAction::OpenInNewTab` via the existing `open_code_review_file` helper, which opens the file as a regular code-editor tab — **no diff base is set on that editor**, so the user sees the file contents without red/green decorations. That's the documented gap; 5e closes it.
+
+5e split into two pieces if appetite dictates:
+- **5e.1 (unified)** — port `content_at_head` through a dedicated action/event chain and call `set_base()` on the new tab's editor. Inline unified diff only.
+- **5e.2 (side-by-side)** — new two-editor `DiffPane` with synced scroll + width-aware switching to unified on narrow widths. The upstream `CodeDiffView` was removed in feature 02; rebuilding it cleanly is its own design surface.
 
 ## Why this is feature 05 (last user-facing scope)
 
