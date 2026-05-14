@@ -301,6 +301,12 @@ pub struct LocalCodeEditorView {
     /// `set_pending_scroll` is called before the file content has finished loading
     /// (e.g., in the GlobalBuffer path where content loads asynchronously).
     pending_scroll_on_load: Option<ScrollPosition>,
+    /// twarp 5e: HEAD content queued to become the editor's diff base
+    /// once the buffer finishes loading. Set by
+    /// [`Self::set_pending_diff_base_on_load`] when the caller wants the
+    /// editor to render a diff (red/green decorations) but the buffer
+    /// is still loading. The `BufferLoaded` handler consumes it.
+    pending_diff_base_on_load: Option<String>,
     /// Cached processed diagnostics. Updated when diagnostics change.
     /// Used as source of truth for both decorations and hover display.
     pub(super) processed_diagnostics: Vec<ProcessedDiagnostic>,
@@ -497,6 +503,7 @@ impl LocalCodeEditorView {
             hover_debounce_tx,
             lsp_hover_state: LspHoverState::None,
             pending_scroll_on_load: None,
+            pending_diff_base_on_load: None,
             processed_diagnostics: Vec::new(),
             diagnostic_decorations: Vec::new(),
             find_references_view: None,
@@ -1218,6 +1225,20 @@ impl LocalCodeEditorView {
         }
     }
 
+    /// twarp 5e: set the editor's diff base content (`base`) so the
+    /// editor renders red/green decorations against it. If the file
+    /// hasn't finished loading yet (e.g. the tab was just created), the
+    /// base is queued and applied when `BufferLoaded` fires; otherwise
+    /// it's applied immediately and the diff is recomputed.
+    pub fn set_pending_diff_base_on_load(&mut self, base: String, ctx: &mut ViewContext<Self>) {
+        if self.file_loaded(ctx) {
+            self.editor
+                .update(ctx, |editor, ctx| editor.set_base(&base, true, ctx));
+        } else {
+            self.pending_diff_base_on_load = Some(base);
+        }
+    }
+
     fn on_file_loaded(&mut self, ctx: &mut ViewContext<Self>) {
         self.apply_diffs_if_any(ctx);
         self.file_loaded.set();
@@ -1388,6 +1409,13 @@ impl LocalCodeEditorView {
                     me.subscribe_to_lsp_manager_updates(ctx);
                     me.try_connect_lsp_server(ctx);
                     me.on_file_loaded(ctx);
+                    // twarp 5e: a diff base queued before the buffer
+                    // finished loading takes effect now that the
+                    // content is in place.
+                    if let Some(base) = me.pending_diff_base_on_load.take() {
+                        me.editor
+                            .update(ctx, |editor, ctx| editor.set_base(&base, true, ctx));
+                    }
                     ctx.emit(LocalCodeEditorEvent::FileLoaded);
                 }
                 GlobalBufferModelEvent::FailedToLoad { error, .. } => {

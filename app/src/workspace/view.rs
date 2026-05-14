@@ -5371,6 +5371,9 @@ impl Workspace {
             } => {
                 self.add_tab_for_code_file(path, line_and_column, ctx);
             }
+            RightPanelEvent::OpenFileDiffInNewTab { path, base_content } => {
+                self.open_file_diff_in_new_tab(path, base_content, ctx);
+            }
             #[cfg(not(target_family = "wasm"))]
             RightPanelEvent::OpenLspLogs { log_path } => {
                 self.open_lsp_logs(&log_path, ctx);
@@ -10205,6 +10208,41 @@ impl Workspace {
             NewTabPlacement::AfterCurrentTab => self.active_tab_index + 1,
         };
         self.add_tab_from_existing_pane(Box::new(pane), new_idx, ctx);
+    }
+
+    /// twarp 5e: open the file's diff in a new tab in the main editor
+    /// area, or focus the existing tab if the file is already open.
+    /// After the tab exists, apply `base_content` as the editor's diff
+    /// base so the editor renders red/green decorations against it.
+    ///
+    /// The open-or-focus behavior is inherited from `CodePane.pre_attach`
+    /// (it focuses an existing pane for the same path and discards the
+    /// new pane). Either way, when we look up the editor for `path`
+    /// after `add_tab_for_code_file` returns, we find the one tied to
+    /// this file and apply the base to it.
+    pub fn open_file_diff_in_new_tab(
+        &mut self,
+        path: PathBuf,
+        base_content: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.add_tab_for_code_file(path.clone(), None, ctx);
+
+        let Some(base) = base_content else {
+            return;
+        };
+
+        let editor_handle = self
+            .active_tab_pane_group()
+            .as_ref(ctx)
+            .code_panes(ctx)
+            .find_map(|(_, code_view)| code_view.as_ref(ctx).editor_view_for_path(&path).cloned());
+
+        if let Some(editor) = editor_handle {
+            editor.update(ctx, |editor, ctx| {
+                editor.set_pending_diff_base_on_load(base, ctx);
+            });
+        }
     }
 
     pub fn add_tab_for_new_code_file(&mut self, ctx: &mut ViewContext<Self>) {

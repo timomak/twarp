@@ -326,6 +326,13 @@ pub enum RightPanelEvent {
         path: PathBuf,
         line_and_column: Option<LineAndColumnArg>,
     },
+    /// twarp 5e: open this file's diff in a new tab in the main editor
+    /// area (or focus the existing tab), then set `base_content` as the
+    /// editor's diff base so it renders with red/green decorations.
+    OpenFileDiffInNewTab {
+        path: PathBuf,
+        base_content: Option<String>,
+    },
     #[cfg(not(target_family = "wasm"))]
     OpenLspLogs {
         log_path: PathBuf,
@@ -1174,6 +1181,12 @@ impl RightPanelView {
                     ctx.emit(RightPanelEvent::OpenFileInNewTab {
                         path: path.clone(),
                         line_and_column: *line_and_column,
+                    });
+                }
+                CodeReviewViewEvent::OpenFileDiffInNewTab { path, base_content } => {
+                    ctx.emit(RightPanelEvent::OpenFileDiffInNewTab {
+                        path: path.clone(),
+                        base_content: base_content.clone(),
                     });
                 }
                 #[cfg(not(target_family = "wasm"))]
