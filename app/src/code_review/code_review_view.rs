@@ -2692,6 +2692,16 @@ impl CodeReviewView {
                     (None, None) => {}
                 }
 
+                // PRODUCT §4: the staged / changes sections were
+                // populated by the last full `fetch_sidebar_split` call,
+                // but this single-file path skipped that fetch — so a
+                // newly-untracked file would update `file_states` (and
+                // the stats chip) without ever appearing in the
+                // `Changes` section. Re-derive both vectors from
+                // `file_states` so the sections stay in sync until the
+                // next full refresh.
+                Self::rederive_sidebar_split_from_file_states(&mut diff_data);
+
                 if let Some(repo) = self.active_repo.as_mut() {
                     repo.state = CodeReviewViewState::Loaded(diff_data);
                 }
@@ -2882,6 +2892,75 @@ impl CodeReviewView {
     }
 
     /// Builds view state for the given file diffs, returning the list of newly created file states.
+    /// Re-derive `staged` / `changes` from the loaded `file_states` so
+    /// the sidebar sections stay in sync with the file list after the
+    /// single-file invalidation path runs (which doesn't re-run
+    /// `fetch_sidebar_split`). The mapping is approximate — it can't
+    /// recover partial-stage info that porcelain-v2 carries (a single
+    /// file that has both staged AND unstaged hunks shows up only on the
+    /// side its `GitFileStatus` lands on) — but it's good enough until
+    /// the next full refresh from `invalidate_all` reconciles via the
+    /// porcelain parser. PRODUCT §4.
+    fn rederive_sidebar_split_from_file_states(state: &mut LoadedState) {
+        let mut staged = Vec::new();
+        let mut changes = Vec::new();
+        for (path, file_state) in state.file_states.iter() {
+            let path = path.clone();
+            match &file_state.file_diff.status {
+                GitFileStatus::Untracked => changes.push(PorcelainEntry {
+                    path,
+                    status: crate::code_review::porcelain_v2::FileStatus::Untracked,
+                    from_path: None,
+                    is_submodule: false,
+                }),
+                GitFileStatus::New => staged.push(PorcelainEntry {
+                    path,
+                    status: crate::code_review::porcelain_v2::FileStatus::Added,
+                    from_path: None,
+                    is_submodule: false,
+                }),
+                GitFileStatus::Modified => changes.push(PorcelainEntry {
+                    path,
+                    status: crate::code_review::porcelain_v2::FileStatus::Modified,
+                    from_path: None,
+                    is_submodule: false,
+                }),
+                GitFileStatus::Deleted => changes.push(PorcelainEntry {
+                    path,
+                    status: crate::code_review::porcelain_v2::FileStatus::Deleted,
+                    from_path: None,
+                    is_submodule: false,
+                }),
+                GitFileStatus::Renamed { old_path } => staged.push(PorcelainEntry {
+                    path,
+                    status: crate::code_review::porcelain_v2::FileStatus::Renamed,
+                    from_path: Some(PathBuf::from(old_path)),
+                    is_submodule: false,
+                }),
+                GitFileStatus::Copied { old_path } => staged.push(PorcelainEntry {
+                    path,
+                    status: crate::code_review::porcelain_v2::FileStatus::Copied,
+                    from_path: Some(PathBuf::from(old_path)),
+                    is_submodule: false,
+                }),
+                GitFileStatus::Conflicted => {
+                    let entry = PorcelainEntry {
+                        path: path.clone(),
+                        status: crate::code_review::porcelain_v2::FileStatus::Unmerged,
+                        from_path: None,
+                        is_submodule: false,
+                    };
+                    staged.push(entry.clone());
+                    changes.push(entry);
+                }
+            }
+        }
+        staged.sort_by_cached_key(|f| f.path.to_string_lossy().to_lowercase());
+        changes.sort_by_cached_key(|f| f.path.to_string_lossy().to_lowercase());
+        state.staged = staged;
+        state.changes = changes;
+    }
+
     fn build_view_state_for_file_diffs(
         &self,
         files: &[FileDiffAndContent],
