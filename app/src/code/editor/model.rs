@@ -637,17 +637,27 @@ impl CodeEditorModel {
     }
 
     pub fn nav_diff_up(&mut self, ctx: &mut ModelContext<Self>) {
-        let selected_index = match self.diff_navigation_state {
-            DiffNavigationState::Focused(index) => index,
-            _ => return,
-        };
         let total = self.diff().as_ref(ctx).diff_hunk_count();
+        if total == 0 {
+            return;
+        }
 
-        // Cycle down to the end if navigating up at index 0.
-        let new_index = if selected_index == 0 {
-            total.saturating_sub(1)
-        } else {
-            selected_index - 1
+        let new_index = match self.diff_navigation_state {
+            // Cycle down to the end if navigating up at index 0.
+            DiffNavigationState::Focused(index) => {
+                if index == 0 {
+                    total.saturating_sub(1)
+                } else {
+                    index - 1
+                }
+            }
+            // twarp 05e: from Expanded (all hunks shown, none focused),
+            // the first Previous click selects the last hunk. Without
+            // this arm, the NavBar's Previous/Next buttons no-op when
+            // the editor was opened via `expand_diffs` (the diff-pane
+            // path).
+            DiffNavigationState::Expanded => total.saturating_sub(1),
+            DiffNavigationState::Collapsed => return,
         };
 
         self.diff_navigation_state = DiffNavigationState::Focused(new_index);
@@ -655,17 +665,24 @@ impl CodeEditorModel {
     }
 
     pub fn nav_diff_down(&mut self, ctx: &mut ModelContext<Self>) {
-        let selected_index = match self.diff_navigation_state {
-            DiffNavigationState::Focused(index) => index,
-            _ => return,
-        };
         let total = self.diff().as_ref(ctx).diff_hunk_count();
+        if total == 0 {
+            return;
+        }
 
-        // Cycle down to the end if navigating up at index 0.
-        let new_index = if selected_index == total.saturating_sub(1) {
-            0
-        } else {
-            selected_index + 1
+        let new_index = match self.diff_navigation_state {
+            // Cycle to the beginning if navigating down past the end.
+            DiffNavigationState::Focused(index) => {
+                if index == total.saturating_sub(1) {
+                    0
+                } else {
+                    index + 1
+                }
+            }
+            // twarp 05e: from Expanded, the first Next click selects
+            // the first hunk. See `nav_diff_up` for context.
+            DiffNavigationState::Expanded => 0,
+            DiffNavigationState::Collapsed => return,
         };
 
         self.diff_navigation_state = DiffNavigationState::Focused(new_index);

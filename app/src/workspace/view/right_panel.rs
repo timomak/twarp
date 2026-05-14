@@ -333,6 +333,13 @@ pub enum RightPanelEvent {
         path: PathBuf,
         base_content: Option<String>,
     },
+    /// twarp 5e: files were discarded — close any code-pane tabs for
+    /// these paths so the user isn't left looking at a diff for content
+    /// that no longer exists (untracked-file delete) or that's been
+    /// reset to HEAD (modified-file revert).
+    FilesDiscarded {
+        paths: Vec<PathBuf>,
+    },
     #[cfg(not(target_family = "wasm"))]
     OpenLspLogs {
         log_path: PathBuf,
@@ -1187,6 +1194,11 @@ impl RightPanelView {
                     ctx.emit(RightPanelEvent::OpenFileDiffInNewTab {
                         path: path.clone(),
                         base_content: base_content.clone(),
+                    });
+                }
+                CodeReviewViewEvent::FilesDiscarded { paths } => {
+                    ctx.emit(RightPanelEvent::FilesDiscarded {
+                        paths: paths.clone(),
                     });
                 }
                 #[cfg(not(target_family = "wasm"))]

@@ -405,8 +405,12 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
             Keystroke::parse("ctrl-shift-space").ok()
         }
         CustomAction::ToggleProjectExplorer => {
+            // twarp 05e: match VS Code (cmd+B / ctrl+B). Mac `cmd-b`
+            // was previously free; `cmd-shift-b` stays bound to
+            // ToggleBookmarkBlock. Linux/Windows keep the existing
+            // ctrl-shift-2 to avoid disrupting muscle memory.
             if OperatingSystem::get().is_mac() {
-                Keystroke::parse("ctrl-2").ok()
+                Keystroke::parse("cmd-b").ok()
             } else {
                 Keystroke::parse("ctrl-shift-2").ok()
             }

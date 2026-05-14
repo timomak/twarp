@@ -119,6 +119,7 @@ use crate::auth::auth_view_modal::{AuthRedirectPayload, AuthView, AuthViewEvent,
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeManager;
 use crate::code::editor_management::CodeSource;
+use crate::code::view::CodeView;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::drive::export::ExportManager;
 use crate::drive::settings::WarpDriveSettings;
@@ -5390,6 +5391,9 @@ impl Workspace {
             RightPanelEvent::OpenFileDiffInNewTab { path, base_content } => {
                 self.open_file_diff_in_new_pane(path, base_content, ctx);
             }
+            RightPanelEvent::FilesDiscarded { paths } => {
+                self.close_code_pane_tabs_for_paths(&paths, ctx);
+            }
             #[cfg(not(target_family = "wasm"))]
             RightPanelEvent::OpenLspLogs { log_path } => {
                 self.open_lsp_logs(&log_path, ctx);
@@ -10246,6 +10250,39 @@ impl Workspace {
             NewTabPlacement::AfterCurrentTab => self.active_tab_index + 1,
         };
         self.add_tab_from_existing_pane(Box::new(pane), new_idx, ctx);
+    }
+
+    /// twarp 5e: close any code-pane tab(s) for the discarded paths
+    /// (typically untracked / newly-added files that no longer exist
+    /// on disk). If a pane ends up with no tabs, close the pane and
+    /// clear the diff-pane tracker.
+    fn close_code_pane_tabs_for_paths(&mut self, paths: &[PathBuf], ctx: &mut ViewContext<Self>) {
+        let pane_group_handle = self.active_tab_pane_group().clone();
+        let pane_views: Vec<(PaneId, ViewHandle<CodeView>)> =
+            pane_group_handle.as_ref(ctx).code_panes(ctx).collect();
+
+        let mut empty_pane_ids: Vec<PaneId> = Vec::new();
+        for (pane_id, code_view) in &pane_views {
+            code_view.update(ctx, |cv, ctx| {
+                for path in paths {
+                    cv.close_tabs_with_path(path, ctx);
+                }
+            });
+            if code_view.as_ref(ctx).tab_count() == 0 {
+                empty_pane_ids.push(*pane_id);
+            }
+        }
+
+        if !empty_pane_ids.is_empty() {
+            pane_group_handle.update(ctx, |pg, ctx| {
+                for pane_id in empty_pane_ids {
+                    if pg.diff_pane_id == Some(pane_id) {
+                        pg.diff_pane_id = None;
+                    }
+                    pg.close_pane(pane_id, ctx);
+                }
+            });
+        }
     }
 
     /// twarp 5e: open the file's diff in a split pane next to the

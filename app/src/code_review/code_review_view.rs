@@ -650,6 +650,13 @@ pub enum CodeReviewViewEvent {
         path: PathBuf,
         base_content: Option<String>,
     },
+    /// 5e: discard fired for the given paths. The workspace handler
+    /// closes any code-pane tabs holding these paths so the user
+    /// doesn't keep staring at a diff for content that no longer
+    /// exists. Emitted from `discard_file` and `discard_multiple_files`.
+    FilesDiscarded {
+        paths: Vec<PathBuf>,
+    },
     /// Request to open LSP logs for the given log file path.
     #[cfg(not(target_family = "wasm"))]
     OpenLspLogs {
@@ -5166,7 +5173,9 @@ impl CodeReviewView {
 
         let chevron_char = if expanded { '▾' } else { '▸' };
         let header_label = format!("{chevron_char} {label}  ·  {}", entries.len());
-        let header_text_color = theme.sub_text_color(theme.surface_2());
+        // twarp 05e: section header uses the main text color so it
+        // visually stands apart from the muted sub-text on file rows.
+        let header_text_color = theme.main_text_color(theme.surface_2());
         let header_text = Text::new(
             header_label,
             appearance.ui_font_family(),
@@ -5194,6 +5203,23 @@ impl CodeReviewView {
         .finish();
 
         column.add_child(header_element);
+
+        // twarp 05e: thin horizontal divider under each section header,
+        // for visual separation between Staged Changes / Changes and
+        // their file rows.
+        column.add_child(
+            Container::new(
+                ConstrainedBox::new(
+                    Container::new(Empty::new().finish())
+                        .with_background(theme.outline())
+                        .finish(),
+                )
+                .with_height(1.)
+                .finish(),
+            )
+            .with_margin_bottom(4.)
+            .finish(),
+        );
 
         if expanded {
             for entry in entries {
@@ -6254,6 +6280,14 @@ impl CodeReviewView {
 
     fn discard_file(&mut self, path: &Path, should_stash: bool, ctx: &mut ViewContext<Self>) {
         let file_info = self.create_file_status_info(path.to_path_buf());
+        // twarp 5e: only untracked / newly-added files actually leave
+        // disk after discard; modified / deleted / renamed files
+        // remain (or come back) and shouldn't have their open panes
+        // yanked away.
+        let file_disappears_on_disk = matches!(
+            file_info.status,
+            GitFileStatus::Untracked | GitFileStatus::New
+        );
 
         let branch_name = match &self.discard_dialog_state.operation_type {
             DiscardOperationType::FileChangesAgainstBranch(None) => {
@@ -6267,6 +6301,11 @@ impl CodeReviewView {
         self.diff_state_model.update(ctx, |model, ctx| {
             model.discard_files(vec![file_info], should_stash, branch_name.flatten(), ctx);
         });
+        if file_disappears_on_disk {
+            ctx.emit(CodeReviewViewEvent::FilesDiscarded {
+                paths: vec![path.to_path_buf()],
+            });
+        }
         self.discard_dialog_state.stash_changes_enabled = false;
     }
 
@@ -6290,9 +6329,23 @@ impl CodeReviewView {
             }
             _ => None,
         };
+        // twarp 5e: collect the subset of paths whose discard will
+        // remove the file from disk (untracked + newly-added). Only
+        // those should signal the workspace to close their open
+        // code-pane tabs.
+        let disappearing_paths: Vec<PathBuf> = file_infos
+            .iter()
+            .filter(|fi| matches!(fi.status, GitFileStatus::Untracked | GitFileStatus::New))
+            .map(|fi| fi.path.clone())
+            .collect();
         self.diff_state_model.update(ctx, |model, ctx| {
             model.discard_files(file_infos, should_stash, branch_name.flatten(), ctx);
         });
+        if !disappearing_paths.is_empty() {
+            ctx.emit(CodeReviewViewEvent::FilesDiscarded {
+                paths: disappearing_paths,
+            });
+        }
         self.discard_dialog_state.stash_changes_enabled = false;
     }
 

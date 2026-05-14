@@ -385,6 +385,14 @@ impl FileTreeView {
             if !existing_remote_ids.is_empty() {
                 self.insert_or_update_remote_roots(&existing_remote_ids, false, ctx);
             }
+
+            // twarp 05e: when the project explorer activates (e.g. via
+            // cmd+B), the current active file may already have been set
+            // before we subscribed — no `ActiveFileChanged` event will
+            // fire to scroll us to it. Manually scroll once on activate
+            // so the user opens the panel already focused on the file
+            // they were editing.
+            self.scroll_to_current_active_file(ctx);
         } else {
             ctx.unsubscribe_to_model(&self.repository_metadata_model);
             self.unsubscribe_from_active_file_model(ctx);
@@ -641,6 +649,33 @@ impl FileTreeView {
     }
 
     #[cfg(feature = "local_fs")]
+    /// twarp 05e: read the model's current active file (if any) and
+    /// scroll the tree to it. Used at activate time, since
+    /// `ActiveFileChanged` only fires when the path actually changes
+    /// and the model may already hold the right path when we
+    /// subscribe.
+    fn scroll_to_current_active_file(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(active_file_model) = self.active_file_model.as_ref() else {
+            return;
+        };
+        let Some(file_path) = active_file_model.as_ref(ctx).active_file().cloned() else {
+            return;
+        };
+        let Ok(file_std) = StandardizedPath::try_from_local(&file_path) else {
+            return;
+        };
+        let repository_root = self
+            .selected_item
+            .as_ref()
+            .filter(|id| file_std.starts_with(&id.root))
+            .map(|id| id.root.clone())
+            .or_else(|| self.find_deepest_root_for_file(&file_std));
+        let Some(repository_root) = repository_root else {
+            return;
+        };
+        self.scroll_to_file(&repository_root, &file_std, ctx);
+    }
+
     fn unsubscribe_from_active_file_model(&self, ctx: &mut ViewContext<Self>) {
         let Some(active_file_model) = self.active_file_model.as_ref() else {
             return;

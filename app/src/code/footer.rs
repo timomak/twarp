@@ -1575,8 +1575,10 @@ impl View for CodeFooterView {
                 );
             }
         } else {
-            footer_content.add_child(self.render_lsp_icon(appearance, app));
-
+            // twarp 05e: the LSP "lightning" status button was non-discoverable
+            // and its functionality is partial in twarp — removed from the
+            // footer. LSP status text and the Enable button below still
+            // appear; this just hides the icon-only entry point.
             let (status_message, should_show_enable_button) = self.compute_status_message(app);
 
             if let Some(status_message) = status_message {
