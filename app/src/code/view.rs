@@ -645,6 +645,25 @@ impl CodeView {
             .map(|tab| tab.editor_view())
     }
 
+    /// twarp 5e: replace this CodeView's tab(s) with a single tab for
+    /// `path`. If `path` is already the active tab, this is a no-op;
+    /// otherwise all existing tabs are cleared and a fresh tab for
+    /// `path` is opened. Used by the diff-pane reuse flow so a row
+    /// click in the Code Review panel swaps the diff pane's content
+    /// instead of accumulating tabs.
+    pub fn replace_with_single_path(&mut self, path: PathBuf, ctx: &mut ViewContext<Self>) {
+        if self
+            .tab_at(self.active_tab_index)
+            .and_then(|tab| tab.path.as_ref())
+            == Some(&path)
+        {
+            return;
+        }
+        self.cleanup_all_tabs(ctx);
+        self.active_tab_index = 0;
+        self.open_or_focus_existing(Some(path), None, ctx);
+    }
+
     pub fn source(&self) -> &CodeSource {
         &self.source
     }

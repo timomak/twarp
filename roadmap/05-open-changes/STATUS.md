@@ -37,12 +37,20 @@ Owner feedback during 5a review reframed the panel's interaction model:
 - **Sidebar always visible.** `file_sidebar_expanded` defaults to `true`; the file-nav toggle button is removed from the panel header. Section-level collapse/expand on the `Staged Changes` / `Changes` headers replaces the per-sidebar toggle.
 - **`warp-oss` enables `GitOperationsInCodeReview`.** Upstream gates the right-side panel layout behind a Preview flag, but the rework is twarp's canonical Code Review surface. Enabled unconditionally in `app/src/bin/oss.rs` so `cargo run` shows it.
 
+## Spec deviations adopted during 5c+5e impl review (PR #60)
+
+Owner feedback during the first 5e review redirected the row-click target surface:
+
+- **Click → split pane, not new tab.** The earlier 5e cut opened a new workspace tab via `WorkspaceView::add_tab_for_code_file`. Owner asked for a split pane inside the current tab so the terminal stays visible next to the diff. `WorkspaceView::open_file_diff_in_new_pane` now constructs a `CodePane` and attaches it via `pane_group.add_pane_with_direction(Direction::Right, …)`. The `OpenFileDiffInNewTab` event/action names are left as-is to limit churn — their handler is the renamed `open_file_diff_in_new_pane`.
+- **Reuse the existing diff pane on subsequent clicks.** A row click checks `PaneGroup::diff_pane_id` for an existing diff pane in the active tab. If present (and not hidden-for-undo-close), `CodeView::replace_with_single_path` strict-swaps its contents to the new path (closing other tabs in that pane). If absent, a fresh split pane is created and its `PaneId` is recorded. Stale IDs are tolerated — the lookup verifies the pane still exists via `code_pane_by_id`.
+- **Right Code Review panel is workspace-level, not per-tab.** PRODUCT §1 says the panel toggles via `WorkspaceAction::ToggleRightPanel`, with no per-tab scoping called out. The original implementation stored `right_panel_open` / `is_right_panel_maximized` on each `PaneGroup`, so the panel disappeared when switching tabs. These now live on `WorkspaceState` (`is_code_review_panel_open` / `is_code_review_panel_maximized`); per-`PaneGroup` fields remain as mirrors kept in sync via `WorkspaceView::sync_code_review_panel_state_to_pane_groups`. The sync runs on every toggle, maximize, restore-from-snapshot, transferred-tab arrival, and `set_active_tab_index`. Panel **content** still scopes to the active tab's pane group (current behavior — each tab can have its own repo).
+- **`expand_diffs` after `set_base`.** `LocalCodeEditorView::set_pending_diff_base_on_load` and its deferred-on-load handler now call `editor.expand_diffs(ctx)` after `set_base`, matching `CodeReviewView::apply_diff_to_code_editor`. Without it, removed lines never render and the user sees the working-tree content with no red decorations.
+
 ## Follow-up: dedicated diff viewer (5e)
 
-The owner's review asked for a VS Code-style diff viewer that opens in a new tab on click. In 5a the row click dispatches `CodeReviewAction::OpenInNewTab` via the existing `open_code_review_file` helper, which opens the file as a regular code-editor tab — **no diff base is set on that editor**, so the user sees the file contents without red/green decorations. That's the documented gap; 5e closes it.
+5e closes the gap surfaced by 5a: clicking a row opened a regular code-editor tab with no diff base, so the user saw raw file contents with no red/green decorations. PR #60 lands the unified-inline form (5e.1) in a split pane inside the current tab; the side-by-side form (5e.2) remains a follow-up.
 
-5e split into two pieces if appetite dictates:
-- **5e.1 (unified)** — port `content_at_head` through a dedicated action/event chain and call `set_base()` on the new tab's editor. Inline unified diff only.
+- **5e.1 (unified, in PR #60)** — `content_at_head` flows from `CodeReviewView` through `CodeReviewAction::OpenFileDiffInNewTab` and `RightPanelEvent::OpenFileDiffInNewTab` to `WorkspaceView::open_file_diff_in_new_pane`, which constructs a `CodePane` split, applies `set_pending_diff_base_on_load` on the resulting editor, and calls `expand_diffs` so hunks render inline. Subsequent row clicks reuse the existing diff pane (strict swap) via `PaneGroup::diff_pane_id`.
 - **5e.2 (side-by-side)** — new two-editor `DiffPane` with synced scroll + width-aware switching to unified on narrow widths. The upstream `CodeDiffView` was removed in feature 02; rebuilding it cleanly is its own design surface.
 
 ## Why this is feature 05 (last user-facing scope)

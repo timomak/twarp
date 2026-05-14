@@ -202,7 +202,8 @@ use crate::notebooks::manager::{NotebookManager, NotebookSource};
 #[cfg(feature = "local_fs")]
 use crate::pane_group::FilePane;
 use crate::pane_group::{
-    self, AnyPaneContent, CodePane, Direction, NewTerminalOptions, PanesLayout, TabBarHoverIndex,
+    self, AnyPaneContent, CodePane, Direction, NewTerminalOptions, PaneContent, PanesLayout,
+    TabBarHoverIndex,
 };
 use crate::remote_server::manager::RemoteServerManager;
 #[cfg(feature = "local_fs")]
@@ -3271,6 +3272,11 @@ impl Workspace {
                     self.left_panel_open = left_panel_open;
                 }
                 if right_panel_open {
+                    // twarp 5e: panel state is workspace-level.
+                    self.current_workspace_state.is_code_review_panel_open = true;
+                    self.current_workspace_state.is_code_review_panel_maximized =
+                        is_right_panel_maximized;
+                    self.sync_code_review_panel_state_to_pane_groups(ctx);
                     self.right_panel_view.update(ctx, |rp, ctx| {
                         rp.set_maximized(is_right_panel_maximized, ctx);
                     });
@@ -3405,10 +3411,14 @@ impl Workspace {
         right_panel_snapshot: &RightPanelSnapshot,
         ctx: &mut ViewContext<Self>,
     ) {
-        pane_group.update(ctx, |pg, _| {
-            pg.right_panel_open = true;
-            pg.is_right_panel_maximized = right_panel_snapshot.is_maximized;
-        });
+        // twarp 5e: panel open/maximized are workspace-level. Any tab
+        // restoring with the panel open lifts the workspace into the
+        // panel-open state and shares the maximize value. Sync mirrors
+        // to all current tabs so render checks remain consistent.
+        self.current_workspace_state.is_code_review_panel_open = true;
+        self.current_workspace_state.is_code_review_panel_maximized =
+            right_panel_snapshot.is_maximized;
+        self.sync_code_review_panel_state_to_pane_groups(ctx);
 
         let resizable = ResizableData::handle(ctx);
         if let Some(modal_sizes) = resizable.as_ref(ctx).get_all_handles(self.window_id) {
@@ -4315,6 +4325,12 @@ impl Workspace {
         if self.left_panel_visibility_across_tabs_enabled(ctx) {
             self.reconcile_left_panel_open_for_active_tab(ctx);
         }
+
+        // twarp 5e: mirror workspace-level Code Review panel state to
+        // all pane groups before notifying the panels — newly-added
+        // tabs default `right_panel_open` to false and need the
+        // workspace state copied in so the panel renders for them.
+        self.sync_code_review_panel_state_to_pane_groups(ctx);
 
         let left_active_pane_group = self.active_tab_pane_group().clone();
         let right_active_pane_group = self.active_tab_pane_group().clone();
@@ -5372,7 +5388,7 @@ impl Workspace {
                 self.add_tab_for_code_file(path, line_and_column, ctx);
             }
             RightPanelEvent::OpenFileDiffInNewTab { path, base_content } => {
-                self.open_file_diff_in_new_tab(path, base_content, ctx);
+                self.open_file_diff_in_new_pane(path, base_content, ctx);
             }
             #[cfg(not(target_family = "wasm"))]
             RightPanelEvent::OpenLspLogs { log_path } => {
@@ -7344,7 +7360,8 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         // Skip the full panel setup when the panel is already open for the target repo.
-        let panel_already_showing_repo = pane_group.as_ref(ctx).right_panel_open
+        // twarp 5e: panel open-state is workspace-level.
+        let panel_already_showing_repo = self.current_workspace_state.is_code_review_panel_open
             && panel_context
                 .repo_path
                 .as_ref()
@@ -7383,6 +7400,24 @@ impl Workspace {
         let _ = &panel_context;
     }
 
+    /// twarp 5e: propagate the workspace-level Code Review panel
+    /// open/maximized state to every tab's `PaneGroup` so the panel
+    /// stays visible (and at the same maximize state) across tab
+    /// switches. The canonical state lives in
+    /// `current_workspace_state.is_code_review_panel_open` /
+    /// `is_code_review_panel_maximized`; per-`PaneGroup` fields are
+    /// mirrors kept in sync via this helper.
+    fn sync_code_review_panel_state_to_pane_groups(&self, ctx: &mut AppContext) {
+        let open = self.current_workspace_state.is_code_review_panel_open;
+        let max = self.current_workspace_state.is_code_review_panel_maximized;
+        for tab in self.tabs.iter() {
+            tab.pane_group.update(ctx, |pg, _| {
+                pg.right_panel_open = open;
+                pg.is_right_panel_maximized = max;
+            });
+        }
+    }
+
     fn update_right_panel_open_state(
         &mut self,
         #[cfg_attr(target_family = "wasm", allow(unused_variables))]
@@ -7392,10 +7427,11 @@ impl Workspace {
         let should_open = panel_update_params.target_open_state;
         let should_close = !panel_update_params.target_open_state;
 
-        let new_is_maximized = panel_update_params.pane_group.update(ctx, |pane_group, _| {
-            pane_group.right_panel_open = should_open;
-            pane_group.is_right_panel_maximized
-        });
+        // twarp 5e: workspace state is the source of truth; pane
+        // groups mirror via `sync_code_review_panel_state_to_pane_groups`.
+        self.current_workspace_state.is_code_review_panel_open = should_open;
+        let new_is_maximized = self.current_workspace_state.is_code_review_panel_maximized;
+        self.sync_code_review_panel_state_to_pane_groups(ctx);
 
         self.right_panel_view.update(ctx, |view, ctx| {
             view.set_maximized(new_is_maximized, ctx);
@@ -7453,8 +7489,8 @@ impl Workspace {
         pane_group_handle: &ViewHandle<PaneGroup>,
         ctx: &mut ViewContext<Self>,
     ) {
-        let target_open_state =
-            pane_group_handle.read(ctx, |pane_group, _| !pane_group.right_panel_open);
+        // twarp 5e: workspace-level state is the source of truth.
+        let target_open_state = !self.current_workspace_state.is_code_review_panel_open;
 
         // Read repo_path and terminal_view from pane group (immutable context).
         let read_result = pane_group_handle.read(ctx, |pane_group, ctx| {
@@ -7500,7 +7536,8 @@ impl Workspace {
         cli_agent: Option<crate::app_state::CLIAgent>,
         ctx: &mut ViewContext<Self>,
     ) {
-        if pane_group_handle.as_ref(ctx).right_panel_open {
+        // twarp 5e: panel open-state is workspace-level.
+        if self.current_workspace_state.is_code_review_panel_open {
             if let Some(repo_path) = &context.repo_path {
                 self.right_panel_view.update(ctx, |right_panel, ctx| {
                     right_panel.update_selected_repo(repo_path.clone(), ctx);
@@ -7556,11 +7593,12 @@ impl Workspace {
 
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     fn toggle_right_panel_maximized(&mut self, ctx: &mut ViewContext<Self>) {
-        let pane_group = self.active_tab_pane_group().clone();
-        let is_maximized = pane_group.update(ctx, |pane_group, _| {
-            pane_group.is_right_panel_maximized = !pane_group.is_right_panel_maximized;
-            pane_group.is_right_panel_maximized
-        });
+        // twarp 5e: maximize state is workspace-level; mirror to all
+        // pane groups via the sync helper.
+        self.current_workspace_state.is_code_review_panel_maximized =
+            !self.current_workspace_state.is_code_review_panel_maximized;
+        let is_maximized = self.current_workspace_state.is_code_review_panel_maximized;
+        self.sync_code_review_panel_state_to_pane_groups(ctx);
 
         self.right_panel_view.update(ctx, |view, ctx| {
             view.set_maximized(is_maximized, ctx);
@@ -10210,30 +10248,64 @@ impl Workspace {
         self.add_tab_from_existing_pane(Box::new(pane), new_idx, ctx);
     }
 
-    /// twarp 5e: open the file's diff in a new tab in the main editor
-    /// area, or focus the existing tab if the file is already open.
-    /// After the tab exists, apply `base_content` as the editor's diff
-    /// base so the editor renders red/green decorations against it.
-    ///
-    /// The open-or-focus behavior is inherited from `CodePane.pre_attach`
-    /// (it focuses an existing pane for the same path and discards the
-    /// new pane). Either way, when we look up the editor for `path`
-    /// after `add_tab_for_code_file` returns, we find the one tied to
-    /// this file and apply the base to it.
-    pub fn open_file_diff_in_new_tab(
+    /// twarp 5e: open the file's diff in a split pane next to the
+    /// current terminal pane. Subsequent clicks reuse the existing
+    /// diff pane (strict-swap to the new file). After the pane / tab
+    /// exists, apply `base_content` as the editor's diff base so the
+    /// editor renders red/green decorations against it.
+    pub fn open_file_diff_in_new_pane(
         &mut self,
         path: PathBuf,
         base_content: Option<String>,
         ctx: &mut ViewContext<Self>,
     ) {
-        self.add_tab_for_code_file(path.clone(), None, ctx);
+        let pane_group_handle = self.active_tab_pane_group().clone();
+
+        // Reuse the existing diff pane if it still exists and isn't
+        // hidden for undo-close. We tolerate stale `diff_pane_id`s by
+        // checking presence via `code_pane_by_id`.
+        let existing_diff_pane_id = pane_group_handle.read(ctx, |pg, _| {
+            let id = pg.diff_pane_id?;
+            if pg.is_pane_hidden_for_close(id) {
+                return None;
+            }
+            pg.code_pane_by_id(id).map(|_| id)
+        });
+
+        if let Some(diff_pane_id) = existing_diff_pane_id {
+            pane_group_handle.update(ctx, |pg, ctx| {
+                if let Some(code_pane) = pg.code_pane_by_id(diff_pane_id) {
+                    let code_view = code_pane.file_view(ctx);
+                    code_view.update(ctx, |code_view, ctx| {
+                        code_view.replace_with_single_path(path.clone(), ctx);
+                    });
+                }
+                pg.focus_pane(diff_pane_id, true, ctx);
+            });
+        } else {
+            let source = CodeSource::Link {
+                path: path.clone(),
+                range_start: None,
+                range_end: None,
+            };
+            let pane = CodePane::new(source, None, ctx);
+            let new_pane_id = pane.id();
+            pane_group_handle.update(ctx, |pane_group, ctx| {
+                pane_group.add_pane_with_direction(
+                    Direction::Right,
+                    pane,
+                    true, /* focus_new_pane */
+                    ctx,
+                );
+                pane_group.diff_pane_id = Some(new_pane_id);
+            });
+        }
 
         let Some(base) = base_content else {
             return;
         };
 
-        let editor_handle = self
-            .active_tab_pane_group()
+        let editor_handle = pane_group_handle
             .as_ref(ctx)
             .code_panes(ctx)
             .find_map(|(_, code_view)| code_view.as_ref(ctx).editor_view_for_path(&path).cloned());

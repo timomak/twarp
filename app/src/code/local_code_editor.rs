@@ -1229,11 +1229,14 @@ impl LocalCodeEditorView {
     /// editor renders red/green decorations against it. If the file
     /// hasn't finished loading yet (e.g. the tab was just created), the
     /// base is queued and applied when `BufferLoaded` fires; otherwise
-    /// it's applied immediately and the diff is recomputed.
+    /// it's applied immediately, the diff is recomputed, and hunks are
+    /// expanded so removed lines render inline.
     pub fn set_pending_diff_base_on_load(&mut self, base: String, ctx: &mut ViewContext<Self>) {
         if self.file_loaded(ctx) {
-            self.editor
-                .update(ctx, |editor, ctx| editor.set_base(&base, true, ctx));
+            self.editor.update(ctx, |editor, ctx| {
+                editor.set_base(&base, true, ctx);
+                editor.expand_diffs(ctx);
+            });
         } else {
             self.pending_diff_base_on_load = Some(base);
         }
@@ -1411,10 +1414,13 @@ impl LocalCodeEditorView {
                     me.on_file_loaded(ctx);
                     // twarp 5e: a diff base queued before the buffer
                     // finished loading takes effect now that the
-                    // content is in place.
+                    // content is in place. Expand hunks so removed
+                    // lines render inline.
                     if let Some(base) = me.pending_diff_base_on_load.take() {
-                        me.editor
-                            .update(ctx, |editor, ctx| editor.set_base(&base, true, ctx));
+                        me.editor.update(ctx, |editor, ctx| {
+                            editor.set_base(&base, true, ctx);
+                            editor.expand_diffs(ctx);
+                        });
                     }
                     ctx.emit(LocalCodeEditorEvent::FileLoaded);
                 }
