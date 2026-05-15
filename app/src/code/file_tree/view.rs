@@ -51,11 +51,11 @@ use crate::terminal::view::{TerminalDropTargetData, TerminalView};
 use crate::ui_components::item_highlight::{ImageOrIcon, ItemHighlightState};
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
-use crate::util::openable_file_type::{is_file_content_binary, EditorLayout, FileTarget};
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::{
-    resolve_file_target_to_open_in_warp, resolve_file_target_with_editor_choice,
+    is_binary_file, resolve_file_target_to_open_in_warp, resolve_file_target_with_editor_choice,
 };
+use crate::util::openable_file_type::{is_file_content_binary, EditorLayout, FileTarget};
 use crate::{
     appearance::Appearance,
     menu::{Menu, MenuItem, MenuItemFields},
@@ -2265,7 +2265,16 @@ impl FileTreeView {
         ctx: &mut ViewContext<Self>,
     ) {
         let settings = EditorSettings::as_ref(ctx);
-        let target = if editor_layout.is_some() {
+        // twarp 05e: `resolve_file_target_to_open_in_warp` is the
+        // "force open in Warp" path used by the context-menu actions
+        // (Open in New Pane / Open in New Tab). For binary files
+        // (PNG, WEBP, PDF, archives, …) Warp would just render
+        // garbage, so fall through to the editor-choice resolver
+        // even when a layout was passed — it routes binaries to
+        // `FileTarget::SystemGeneric`, which the workspace handler
+        // opens via NSWorkspace (macOS Preview / Quick Look / etc.).
+        let force_warp = editor_layout.is_some() && !is_binary_file(path);
+        let target = if force_warp {
             resolve_file_target_to_open_in_warp(path, settings, editor_layout)
         } else {
             resolve_file_target_with_editor_choice(

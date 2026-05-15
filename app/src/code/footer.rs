@@ -1553,6 +1553,13 @@ impl View for CodeFooterView {
             .with_main_axis_alignment(MainAxisAlignment::Start)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max);
+        // twarp 05e: track whether any child was added so we can skip
+        // rendering the footer (FOOTER_HEIGHT bar + border) when it
+        // would otherwise be an empty strip. The LSP lightning icon
+        // used to occupy this row unconditionally; removing it leaves
+        // SingleFile/Workspace modes with no content when there's no
+        // LSP status text and no Enable LSP CTA.
+        let mut has_content = false;
 
         if self.is_tab_config_footer() {
             footer_content.add_child(Self::render_tab_config_info_icon(theme));
@@ -1567,6 +1574,7 @@ impl View for CodeFooterView {
                 )
                 .finish(),
             );
+            has_content = true;
             if let Some(tab_config_skill_button) = &self.tab_config_skill_button {
                 footer_content.add_child(
                     Container::new(ChildView::new(tab_config_skill_button).finish())
@@ -1575,10 +1583,6 @@ impl View for CodeFooterView {
                 );
             }
         } else {
-            // twarp 05e: the LSP "lightning" status button was non-discoverable
-            // and its functionality is partial in twarp — removed from the
-            // footer. LSP status text and the Enable button below still
-            // appear; this just hides the icon-only entry point.
             let (status_message, should_show_enable_button) = self.compute_status_message(app);
 
             if let Some(status_message) = status_message {
@@ -1589,6 +1593,7 @@ impl View for CodeFooterView {
                     )
                     .finish(),
                 );
+                has_content = true;
             }
 
             if should_show_enable_button {
@@ -1600,8 +1605,13 @@ impl View for CodeFooterView {
                             .with_margin_left(ICON_MARGIN)
                             .finish(),
                     );
+                    has_content = true;
                 }
             }
+        }
+
+        if !has_content {
+            return Empty::new().finish();
         }
 
         let mut container = Container::new(
