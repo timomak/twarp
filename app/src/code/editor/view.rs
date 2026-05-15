@@ -762,6 +762,15 @@ impl CodeEditorView {
         });
     }
 
+    /// twarp 05e: opt this editor's NavBar into rendering a "Stage"
+    /// button. Used by the diff pane so the button sits next to
+    /// Previous / Next / Reject.
+    pub fn set_show_nav_bar_stage_button(&self, show: bool, ctx: &mut ViewContext<Self>) {
+        self.nav_bar.update(ctx, |nav_bar, ctx| {
+            nav_bar.set_show_stage_button(show, ctx);
+        });
+    }
+
     pub fn set_show_current_line_highlights(
         &self,
         show_current_line_highlights: bool,

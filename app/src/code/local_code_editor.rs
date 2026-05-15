@@ -1242,6 +1242,15 @@ impl LocalCodeEditorView {
         }
     }
 
+    /// twarp 05e: opt this editor's NavBar into rendering a Stage
+    /// button alongside Previous / Next / Reject. Used by the twarp
+    /// diff pane so file-level staging is one click away.
+    pub fn set_show_nav_bar_stage_button(&self, show: bool, ctx: &mut ViewContext<Self>) {
+        self.editor.update(ctx, |editor, ctx| {
+            editor.set_show_nav_bar_stage_button(show, ctx);
+        });
+    }
+
     fn on_file_loaded(&mut self, ctx: &mut ViewContext<Self>) {
         self.apply_diffs_if_any(ctx);
         self.file_loaded.set();

@@ -52,6 +52,9 @@ pub enum NavBarAction {
 struct MouseStateHandles {
     close_mouse_state: MouseStateHandle,
     revert_mouse_state: MouseStateHandle,
+    /// twarp 05e: hover state for the "Stage" button. See
+    /// [`NavBar::show_stage_button`].
+    stage_mouse_state: MouseStateHandle,
 }
 
 pub enum NavBarBehavior {
@@ -65,6 +68,13 @@ pub struct NavBar {
     mouse_state_handles: MouseStateHandles,
     up_label_button: ViewHandle<ActionButton>,
     down_label_button: ViewHandle<ActionButton>,
+    /// twarp 05e: when true, render a "Stage" button alongside Reject
+    /// that dispatches `WorkspaceAction::StageActiveDiffPaneFile`.
+    /// Set via [`Self::set_show_stage_button`] from the twarp diff
+    /// pane's editor configuration so the button only appears for
+    /// that specific surface — not in regular code editing or the
+    /// Code Review panel's inline diffs.
+    show_stage_button: bool,
 }
 
 impl NavBar {
@@ -95,7 +105,17 @@ impl NavBar {
             mouse_state_handles: Default::default(),
             up_label_button,
             down_label_button,
+            show_stage_button: false,
         }
+    }
+
+    /// twarp 05e: opt this NavBar into rendering the "Stage" button.
+    pub fn set_show_stage_button(&mut self, show: bool, ctx: &mut ViewContext<Self>) {
+        if self.show_stage_button == show {
+            return;
+        }
+        self.show_stage_button = show;
+        ctx.notify();
     }
 
     pub fn set_behavior(&mut self, behavior: NavBarBehavior) {
@@ -214,6 +234,31 @@ impl NavBar {
         .finish()
     }
 
+    /// twarp 05e: render the "Stage" button. Click dispatches
+    /// `WorkspaceAction::StageActiveDiffPaneFile`, which the workspace
+    /// resolves to the active tab's diff pane and stages that file.
+    fn render_stage_button(&self, appearance: &Appearance) -> Box<dyn Element> {
+        Container::new(
+            appearance
+                .ui_builder()
+                .button(
+                    ButtonVariant::Outlined,
+                    self.mouse_state_handles.stage_mouse_state.clone(),
+                )
+                .with_text_label("Stage".to_string())
+                .build()
+                .on_click(|ctx, _, _| {
+                    ctx.dispatch_typed_action(
+                        crate::workspace::WorkspaceAction::StageActiveDiffPaneFile,
+                    )
+                })
+                .finish(),
+        )
+        .with_padding_left(NAV_BAR_SEPARATOR_PADDING)
+        .with_padding_right(NAV_BAR_SEPARATOR_PADDING)
+        .finish()
+    }
+
     fn render_close_button(&self, appearance: &Appearance) -> Box<dyn Element> {
         Container::new(
             appearance
@@ -293,6 +338,14 @@ impl View for NavBar {
             )
             .with_child(self.render_nav_label(true))
             .with_child(self.render_nav_label(false));
+
+        // twarp 05e: render the Stage button to the left of Reject so
+        // the additive action sits before the destructive one. Gated
+        // by the explicit `show_stage_button` opt-in so it only
+        // appears in the twarp diff pane.
+        if self.show_stage_button && editable && total > 0 {
+            row.add_child(self.render_stage_button(appearance));
+        }
 
         // Do not render the revert button if there is nothing to revert or the editor is
         // not in an editable interaction state.
