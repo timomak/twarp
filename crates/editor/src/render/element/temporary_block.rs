@@ -70,9 +70,13 @@ impl RenderableBlock for RenderableTemporaryBlock {
         // (set by clicking on it), overlay the editor's selection fill
         // across the full content area of every paragraph. Matched by
         // height anchor — see `RenderState::temp_block_at_viewport_position`.
+        // The painter's `self.viewport_item.height()` returns
+        // `content_offset + 0.1` (a fudge to dodge fp errors at block
+        // edges); the hit-test stores `start_y_offset` straight, so we
+        // compare with an epsilon.
         let is_temp_block_selected = model
             .temp_block_selection()
-            .is_some_and(|sel| sel.anchor.height == self.viewport_item.height());
+            .is_some_and(|sel| (sel.anchor.height - self.viewport_item.height()).abs() < 0.5);
         let selection_fill = model.styles().selection_fill;
         let mut decoration_index = 0;
         for paragraph in paragraph_block.paragraphs() {
