@@ -74,7 +74,9 @@ use crate::util::file::external_editor::Editor;
 use crate::util::file::external_editor::EditorSettings;
 use crate::util::openable_file_type::FileTarget;
 #[cfg(feature = "local_fs")]
-use crate::util::openable_file_type::{resolve_file_target_with_editor_choice, EditorLayout};
+use crate::util::openable_file_type::{
+    is_binary_file, resolve_file_target_with_editor_choice, EditorLayout,
+};
 
 // twarp: 2c-d — removed crate::ai::blocklist::history_model::CloudConversationData,
 // FORK_PREFIX, and cli_agent_sessions imports.
@@ -10290,12 +10292,23 @@ impl Workspace {
     /// diff pane (strict-swap to the new file). After the pane / tab
     /// exists, apply `base_content` as the editor's diff base so the
     /// editor renders red/green decorations against it.
+    ///
+    /// For binary files (images, PDFs, archives, …), Warp's editor
+    /// would render garbage and the GlobalBufferModel load fails with
+    /// "Failed to load file." Hand off to the system default app
+    /// (Preview on macOS) instead — matching how the Project Explorer
+    /// already routes binary clicks.
     pub fn open_file_diff_in_new_pane(
         &mut self,
         path: PathBuf,
         base_content: Option<String>,
         ctx: &mut ViewContext<Self>,
     ) {
+        if is_binary_file(&path) {
+            ctx.open_file_path(&path);
+            return;
+        }
+
         let pane_group_handle = self.active_tab_pane_group().clone();
 
         // Reuse the existing diff pane if it still exists and isn't
