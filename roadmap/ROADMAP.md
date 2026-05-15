@@ -16,6 +16,9 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 06 | [Tab rename shortcut](06-tab-rename/STATUS.md) | not-started | — | — |
 | 07 | [Claude Code panel](07-claude-code-panel/STATUS.md) | not-started | — | — |
 | 08 | [Rebrand to twarp](08-rebrand/STATUS.md) | not-started | — | — |
+| 09 | [File editor with go-to-definition](09-file-editor/STATUS.md) | not-started | — | — |
+| 10 | [Git blame](10-git-blame/STATUS.md) | not-started | — | — |
+| 11 | [Project search & replace](11-project-search-replace/STATUS.md) | not-started | — | — |
 
 ## Phases
 
@@ -30,7 +33,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 
 - Only one feature is active at a time.
 - A feature advances from `spec-in-review` → `impl-pending` only after the spec PR is **merged to master**.
-- Features 02, 05, 07, and 08 are sub-phased; their STATUS.md tracks individual sub-PRs and the feature only reaches `merged` after every sub-PR ships.
+- Features 02, 05, 07, 08, 09, 10, and 11 are sub-phased; their STATUS.md tracks individual sub-PRs and the feature only reaches `merged` after every sub-PR ships.
 - The next feature only starts after the current one reaches `merged`.
 - Git is the source of truth. If STATUS.md and `gh pr view` disagree, trust git and update STATUS.md.
 
@@ -43,7 +46,10 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 5. **Open Changes panel fifth** — largest user-facing scope, sub-phased into panel scaffold → diffs → staging → commit/push → file timeline.
 6. **Tab rename shortcut sixth** — small, isolated keyboard binding that hooks into the existing rename interaction. Sequenced here only because 03–05 were already queued; nothing about its scope blocks earlier placement, and it stays before rebrand so the rename keybinding lands in `twarp_*` crates rather than churning during 8b.
 7. **Claude Code panel seventh** — large user-facing scope, sub-phased. Re-introduces Warp Agent Mode's rendering layer (removed in feature 02) as a host for the local `claude` subprocess running on the user's Claude Max subscription. No LLM client, no billing, no cloud sync — only the renderer comes back. Slotted before the rebrand because cherry-picks from upstream agent crates are much harder once every `warp_*` / `warpui*` crate has been renamed.
-8. **Rebrand last** — file/crate renames are the worst case for git merges, so push them as late as possible to keep upstream cherry-picks clean. By feature 08, AI code is gone and the agent renderer is wired up, so the brand surface to rename is smaller.
+8. **Rebrand last among the upstream-sensitive features** — file/crate renames are the worst case for git merges, so push them as late as possible to keep upstream cherry-picks clean. By feature 08, AI code is gone and the agent renderer is wired up, so the brand surface to rename is smaller.
+9. **File editor surface ninth** — pivots twarp from "terminal" to "terminal + IDE" by exposing the existing `crates/editor/` + `crates/lsp/` infrastructure as a first-class file-editing workflow. Headline gesture is cmd+click → LSP definition (already callable from `app/src/code/local_code_editor.rs`, just not wired to a workflow where you can open arbitrary files). Placed after rebrand because wiring across `app/src/code/`, `crates/editor/`, and `crates/lsp/` would otherwise be churned during the rename pass.
+10. **Git blame tenth** — depends on 09 (no blame without a file-editing surface). Genuinely net-new code: `git blame --porcelain` parser, gutter rendering, commit-detail popover. No upstream cherry-pick risk because blame is new.
+11. **Project search & replace eleventh** — wires the existing `warp_ripgrep` crate into a project-wide search UI plus a replace-all flow. Independent of 09 in principle; sequenced after for result-click → open-file.
 
 ## Out of scope for `/twarp-next`
 
