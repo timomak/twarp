@@ -51,11 +51,11 @@ use crate::terminal::view::{TerminalDropTargetData, TerminalView};
 use crate::ui_components::item_highlight::{ImageOrIcon, ItemHighlightState};
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
-use crate::util::openable_file_type::{is_file_content_binary, EditorLayout, FileTarget};
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::{
-    resolve_file_target_to_open_in_warp, resolve_file_target_with_editor_choice,
+    is_binary_file, resolve_file_target_to_open_in_warp, resolve_file_target_with_editor_choice,
 };
+use crate::util::openable_file_type::{is_file_content_binary, EditorLayout, FileTarget};
 use crate::{
     appearance::Appearance,
     menu::{Menu, MenuItem, MenuItemFields},
@@ -385,6 +385,14 @@ impl FileTreeView {
             if !existing_remote_ids.is_empty() {
                 self.insert_or_update_remote_roots(&existing_remote_ids, false, ctx);
             }
+
+            // twarp 05e: when the project explorer activates (e.g. via
+            // cmd+B), the current active file may already have been set
+            // before we subscribed — no `ActiveFileChanged` event will
+            // fire to scroll us to it. Manually scroll once on activate
+            // so the user opens the panel already focused on the file
+            // they were editing.
+            self.scroll_to_current_active_file(ctx);
         } else {
             ctx.unsubscribe_to_model(&self.repository_metadata_model);
             self.unsubscribe_from_active_file_model(ctx);
@@ -641,6 +649,33 @@ impl FileTreeView {
     }
 
     #[cfg(feature = "local_fs")]
+    /// twarp 05e: read the model's current active file (if any) and
+    /// scroll the tree to it. Used at activate time, since
+    /// `ActiveFileChanged` only fires when the path actually changes
+    /// and the model may already hold the right path when we
+    /// subscribe.
+    fn scroll_to_current_active_file(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(active_file_model) = self.active_file_model.as_ref() else {
+            return;
+        };
+        let Some(file_path) = active_file_model.as_ref(ctx).active_file().cloned() else {
+            return;
+        };
+        let Ok(file_std) = StandardizedPath::try_from_local(&file_path) else {
+            return;
+        };
+        let repository_root = self
+            .selected_item
+            .as_ref()
+            .filter(|id| file_std.starts_with(&id.root))
+            .map(|id| id.root.clone())
+            .or_else(|| self.find_deepest_root_for_file(&file_std));
+        let Some(repository_root) = repository_root else {
+            return;
+        };
+        self.scroll_to_file(&repository_root, &file_std, ctx);
+    }
+
     fn unsubscribe_from_active_file_model(&self, ctx: &mut ViewContext<Self>) {
         let Some(active_file_model) = self.active_file_model.as_ref() else {
             return;
@@ -2230,7 +2265,16 @@ impl FileTreeView {
         ctx: &mut ViewContext<Self>,
     ) {
         let settings = EditorSettings::as_ref(ctx);
-        let target = if editor_layout.is_some() {
+        // twarp 05e: `resolve_file_target_to_open_in_warp` is the
+        // "force open in Warp" path used by the context-menu actions
+        // (Open in New Pane / Open in New Tab). For binary files
+        // (PNG, WEBP, PDF, archives, …) Warp would just render
+        // garbage, so fall through to the editor-choice resolver
+        // even when a layout was passed — it routes binaries to
+        // `FileTarget::SystemGeneric`, which the workspace handler
+        // opens via NSWorkspace (macOS Preview / Quick Look / etc.).
+        let force_warp = editor_layout.is_some() && !is_binary_file(path);
+        let target = if force_warp {
             resolve_file_target_to_open_in_warp(path, settings, editor_layout)
         } else {
             resolve_file_target_with_editor_choice(

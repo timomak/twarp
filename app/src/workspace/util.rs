@@ -119,6 +119,18 @@ pub struct WorkspaceState {
     pub is_session_config_modal_open: bool,
     pub is_new_worktree_modal_open: bool,
     pub is_remove_tab_config_dialog_open: bool,
+    /// twarp 5e: workspace-level visibility of the right-side Code
+    /// Review panel. Lifted from per-`PaneGroup` so the panel stays
+    /// visible when switching between workspace tabs. The
+    /// per-`PaneGroup` field on `PaneGroup` is kept in sync via the
+    /// workspace's `sync_code_review_panel_state_to_pane_groups`
+    /// helper so existing render checks continue to work without
+    /// changing their data source.
+    pub is_code_review_panel_open: bool,
+    /// twarp 5e: workspace-level maximize state of the right-side
+    /// Code Review panel. Same rationale as
+    /// `is_code_review_panel_open`.
+    pub is_code_review_panel_maximized: bool,
     /// Whether the transcript details panel is open (WASM only, for conversation transcript viewing).
     pub is_transcript_details_panel_open: bool,
     // twarp: 2c-d — fields for AI-removed callers

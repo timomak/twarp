@@ -225,6 +225,13 @@ impl TabData {
     pub fn path(&self) -> Option<PathBuf> {
         self.path.clone()
     }
+
+    /// twarp 5e: expose the underlying editor so callers (the workspace
+    /// handler for `OpenFileDiffInNewTab`) can apply a diff base after
+    /// the tab is created.
+    pub fn editor_view(&self) -> &ViewHandle<LocalCodeEditorView> {
+        &self.editor_view
+    }
 }
 
 pub struct CodeView {
@@ -617,6 +624,44 @@ impl CodeView {
 
     pub fn active_tab_index(&self) -> usize {
         self.active_tab_index
+    }
+
+    /// twarp 5e: hand back the active tab's editor for callers that need
+    /// to apply a diff base on the resulting editor after opening a tab
+    /// (workspace's `OpenFileDiffInNewTab` handler).
+    pub fn active_editor_view(&self) -> Option<&ViewHandle<LocalCodeEditorView>> {
+        self.tab_group
+            .get(self.active_tab_index)
+            .map(|tab| tab.editor_view())
+    }
+
+    /// twarp 5e: find a tab's editor by path, used by the workspace
+    /// handler to apply a diff base whether the tab was just created or
+    /// already existed (focus-existing path).
+    pub fn editor_view_for_path(&self, path: &Path) -> Option<&ViewHandle<LocalCodeEditorView>> {
+        self.tab_group
+            .iter()
+            .find(|tab| tab.path.as_deref() == Some(path))
+            .map(|tab| tab.editor_view())
+    }
+
+    /// twarp 5e: replace this CodeView's tab(s) with a single tab for
+    /// `path`. If `path` is already the active tab, this is a no-op;
+    /// otherwise all existing tabs are cleared and a fresh tab for
+    /// `path` is opened. Used by the diff-pane reuse flow so a row
+    /// click in the Code Review panel swaps the diff pane's content
+    /// instead of accumulating tabs.
+    pub fn replace_with_single_path(&mut self, path: PathBuf, ctx: &mut ViewContext<Self>) {
+        if self
+            .tab_at(self.active_tab_index)
+            .and_then(|tab| tab.path.as_ref())
+            == Some(&path)
+        {
+            return;
+        }
+        self.cleanup_all_tabs(ctx);
+        self.active_tab_index = 0;
+        self.open_or_focus_existing(Some(path), None, ctx);
     }
 
     pub fn source(&self) -> &CodeSource {

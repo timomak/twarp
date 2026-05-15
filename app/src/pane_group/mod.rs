@@ -904,6 +904,13 @@ pub struct PaneGroup {
     /// If the right panel is maximized
     pub is_right_panel_maximized: bool,
 
+    /// twarp 5e: pane ID of the diff viewer pane created by clicking a
+    /// row in the Code Review panel. Subsequent row clicks reuse this
+    /// pane (replacing its contents) instead of creating another
+    /// split. Stale IDs are tolerated — the workspace handler checks
+    /// existence via `code_pane_by_id` before reusing.
+    pub diff_pane_id: Option<PaneId>,
+
     /// Ambient agent panes whose task data was not yet cached at restoration time.
     /// Entries are removed as each task's data arrives and the pane is replaced.
     pending_ambient_agent_conversation_restorations: HashMap<AmbientAgentTaskId, PaneId>,
@@ -2669,6 +2676,7 @@ impl PaneGroup {
             right_panel_open: false,
             left_panel_open: false,
             is_right_panel_maximized: false,
+            diff_pane_id: None,
             pending_ambient_agent_conversation_restorations: HashMap::new(),
             child_agent_panes: HashMap::new(),
             custom_title: None,

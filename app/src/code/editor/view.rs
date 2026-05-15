@@ -13,7 +13,7 @@ use crate::code::editor::{
     goto_line::view::{Event as GoToLineEvent, GoToLineView},
     line::EditorLineLocation,
     model::{CodeEditorModel, CodeEditorModelEvent, HoverableLink, LineBound, StableEditorLine},
-    nav_bar::{NavBar, NavBarBehavior, NavBarEvent},
+    nav_bar::{NavBar, NavBarBehavior, NavBarEvent, NavBarStageButtonState},
     scroll::{ScrollPosition, ScrollTrigger, ScrollWheelBehavior},
 };
 use crate::code::{
@@ -759,6 +759,19 @@ impl CodeEditorView {
     pub fn set_nav_bar_behavior(&self, behavior: NavBarBehavior, ctx: &mut ViewContext<Self>) {
         self.nav_bar.update(ctx, |nav_bar, _ctx| {
             nav_bar.set_behavior(behavior);
+        });
+    }
+
+    /// twarp 05e: set the NavBar's Stage / Unstage button state. The
+    /// workspace recomputes this from `DiffStateModel` whenever the
+    /// file's staging state changes.
+    pub fn set_nav_bar_stage_button_state(
+        &self,
+        state: NavBarStageButtonState,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.nav_bar.update(ctx, |nav_bar, ctx| {
+            nav_bar.set_stage_button_state(state, ctx);
         });
     }
 

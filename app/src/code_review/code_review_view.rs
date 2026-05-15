@@ -415,6 +415,26 @@ pub enum CodeReviewAction {
     ToggleStagedSection,
     /// Collapse/expand the Changes section in the sidebar (PRODUCT §4).
     ToggleChangesSection,
+    /// Stage a file (PRODUCT §11). Runs `git add -- <path>`.
+    StageFile {
+        path: PathBuf,
+    },
+    /// Unstage a file (PRODUCT §11). Runs `git restore --staged -- <path>`.
+    UnstageFile {
+        path: PathBuf,
+    },
+    /// Open a conflicted file in a new tab so the user can resolve it
+    /// (PRODUCT §10, Conflict row).
+    OpenConflictResolve {
+        path: PathBuf,
+    },
+    /// 5e (PRODUCT §8 revised): open this file's diff in a new tab in
+    /// the main editor area (or focus the existing tab if already
+    /// open). Carries the file's path; the handler looks up the cached
+    /// HEAD content from `FileState` and forwards both to the workspace.
+    OpenFileDiffInNewTab {
+        path: PathBuf,
+    },
     FileSelected(usize),
     ToggleMaximize,
     SaveAllUnsavedFiles,
@@ -472,6 +492,20 @@ pub struct FileState {
     discard_button: ViewHandle<ActionButton>,
     add_context_button: ViewHandle<ActionButton>,
     copy_path_button: ViewHandle<ActionButton>,
+    /// 5c (PRODUCT §10): sidebar hover-cluster button. `[+]` on a
+    /// Changes-section row → stages the file.
+    stage_button: ViewHandle<ActionButton>,
+    /// 5c (PRODUCT §10): sidebar hover-cluster button. `[−]` on a
+    /// Staged-section row → unstages the file.
+    unstage_button: ViewHandle<ActionButton>,
+    /// 5c (PRODUCT §10, Conflict row): sidebar hover-cluster button.
+    /// `[Resolve…]` opens the conflicted file in a new tab.
+    resolve_button: ViewHandle<ActionButton>,
+    /// 5e (PRODUCT §8 revised): the file's HEAD content, cached so that
+    /// `OpenFileDiffInNewTab` can push the diff base into the new tab's
+    /// editor. `None` for binary / deleted / created files where the
+    /// inline diff representation doesn't apply.
+    content_at_head: Option<String>,
 }
 
 pub(crate) struct LoadedState {
@@ -607,6 +641,21 @@ pub enum CodeReviewViewEvent {
     OpenFileInNewTab {
         path: PathBuf,
         line_and_column: Option<LineAndColumnArg>,
+    },
+    /// 5e (PRODUCT §8 revised): request to open the file's diff in a new
+    /// tab in the main editor area. The workspace handler opens or
+    /// focuses the tab, then applies `base_content` as the editor's
+    /// diff base so the file renders with red/green decorations.
+    OpenFileDiffInNewTab {
+        path: PathBuf,
+        base_content: Option<String>,
+    },
+    /// 5e: discard fired for the given paths. The workspace handler
+    /// closes any code-pane tabs holding these paths so the user
+    /// doesn't keep staring at a diff for content that no longer
+    /// exists. Emitted from `discard_file` and `discard_multiple_files`.
+    FilesDiscarded {
+        paths: Vec<PathBuf>,
     },
     /// Request to open LSP logs for the given log file path.
     #[cfg(not(target_family = "wasm"))]
@@ -2652,6 +2701,16 @@ impl CodeReviewView {
                     (None, None) => {}
                 }
 
+                // PRODUCT §4: the staged / changes sections were
+                // populated by the last full `fetch_sidebar_split` call,
+                // but this single-file path skipped that fetch — so a
+                // newly-untracked file would update `file_states` (and
+                // the stats chip) without ever appearing in the
+                // `Changes` section. Re-derive both vectors from
+                // `file_states` so the sections stay in sync until the
+                // next full refresh.
+                Self::rederive_sidebar_split_from_file_states(&mut diff_data);
+
                 if let Some(repo) = self.active_repo.as_mut() {
                     repo.state = CodeReviewViewState::Loaded(diff_data);
                 }
@@ -2842,6 +2901,75 @@ impl CodeReviewView {
     }
 
     /// Builds view state for the given file diffs, returning the list of newly created file states.
+    /// Re-derive `staged` / `changes` from the loaded `file_states` so
+    /// the sidebar sections stay in sync with the file list after the
+    /// single-file invalidation path runs (which doesn't re-run
+    /// `fetch_sidebar_split`). The mapping is approximate — it can't
+    /// recover partial-stage info that porcelain-v2 carries (a single
+    /// file that has both staged AND unstaged hunks shows up only on the
+    /// side its `GitFileStatus` lands on) — but it's good enough until
+    /// the next full refresh from `invalidate_all` reconciles via the
+    /// porcelain parser. PRODUCT §4.
+    fn rederive_sidebar_split_from_file_states(state: &mut LoadedState) {
+        let mut staged = Vec::new();
+        let mut changes = Vec::new();
+        for (path, file_state) in state.file_states.iter() {
+            let path = path.clone();
+            match &file_state.file_diff.status {
+                GitFileStatus::Untracked => changes.push(PorcelainEntry {
+                    path,
+                    status: crate::code_review::porcelain_v2::FileStatus::Untracked,
+                    from_path: None,
+                    is_submodule: false,
+                }),
+                GitFileStatus::New => staged.push(PorcelainEntry {
+                    path,
+                    status: crate::code_review::porcelain_v2::FileStatus::Added,
+                    from_path: None,
+                    is_submodule: false,
+                }),
+                GitFileStatus::Modified => changes.push(PorcelainEntry {
+                    path,
+                    status: crate::code_review::porcelain_v2::FileStatus::Modified,
+                    from_path: None,
+                    is_submodule: false,
+                }),
+                GitFileStatus::Deleted => changes.push(PorcelainEntry {
+                    path,
+                    status: crate::code_review::porcelain_v2::FileStatus::Deleted,
+                    from_path: None,
+                    is_submodule: false,
+                }),
+                GitFileStatus::Renamed { old_path } => staged.push(PorcelainEntry {
+                    path,
+                    status: crate::code_review::porcelain_v2::FileStatus::Renamed,
+                    from_path: Some(PathBuf::from(old_path)),
+                    is_submodule: false,
+                }),
+                GitFileStatus::Copied { old_path } => staged.push(PorcelainEntry {
+                    path,
+                    status: crate::code_review::porcelain_v2::FileStatus::Copied,
+                    from_path: Some(PathBuf::from(old_path)),
+                    is_submodule: false,
+                }),
+                GitFileStatus::Conflicted => {
+                    let entry = PorcelainEntry {
+                        path: path.clone(),
+                        status: crate::code_review::porcelain_v2::FileStatus::Unmerged,
+                        from_path: None,
+                        is_submodule: false,
+                    };
+                    staged.push(entry.clone());
+                    changes.push(entry);
+                }
+            }
+        }
+        staged.sort_by_cached_key(|f| f.path.to_string_lossy().to_lowercase());
+        changes.sort_by_cached_key(|f| f.path.to_string_lossy().to_lowercase());
+        state.staged = staged;
+        state.changes = changes;
+    }
+
     fn build_view_state_for_file_diffs(
         &self,
         files: &[FileDiffAndContent],
@@ -2928,6 +3056,46 @@ impl CodeReviewView {
                 button
             });
 
+            // 5c: per-file Stage / Unstage / Resolve buttons surfaced in
+            // the sidebar row's hover cluster (PRODUCT §10).
+            let stage_path = file.file_diff.file_path.clone();
+            let stage_button = ctx.add_typed_action_view(move |_ctx| {
+                ActionButton::new("", NakedTheme)
+                    .with_icon(Icon::Plus)
+                    .with_size(ButtonSize::InlineActionHeader)
+                    .with_tooltip("Stage file")
+                    .on_click(move |ctx| {
+                        ctx.dispatch_typed_action(CodeReviewAction::StageFile {
+                            path: stage_path.clone(),
+                        })
+                    })
+            });
+
+            let unstage_path = file.file_diff.file_path.clone();
+            let unstage_button = ctx.add_typed_action_view(move |_ctx| {
+                ActionButton::new("", NakedTheme)
+                    .with_icon(Icon::Minus)
+                    .with_size(ButtonSize::InlineActionHeader)
+                    .with_tooltip("Unstage file")
+                    .on_click(move |ctx| {
+                        ctx.dispatch_typed_action(CodeReviewAction::UnstageFile {
+                            path: unstage_path.clone(),
+                        })
+                    })
+            });
+
+            let resolve_path = file.file_diff.file_path.clone();
+            let resolve_button = ctx.add_typed_action_view(move |_ctx| {
+                ActionButton::new("Resolve…", NakedTheme)
+                    .with_size(ButtonSize::InlineActionHeader)
+                    .with_tooltip("Open conflicted file in new tab")
+                    .on_click(move |ctx| {
+                        ctx.dispatch_typed_action(CodeReviewAction::OpenConflictResolve {
+                            path: resolve_path.clone(),
+                        })
+                    })
+            });
+
             let context_path = file.file_diff.file_path.clone();
             let add_context_button = ctx.add_typed_action_view(move |_ctx| {
                 ActionButton::new("", NakedTheme)
@@ -2961,6 +3129,10 @@ impl CodeReviewView {
                 discard_button,
                 add_context_button,
                 copy_path_button,
+                stage_button,
+                unstage_button,
+                resolve_button,
+                content_at_head: file.content_at_head.clone(),
                 sidebar_mouse_state_staged: MouseStateHandle::default(),
                 sidebar_mouse_state_changes: MouseStateHandle::default(),
                 header_mouse_state: MouseStateHandle::default(),
@@ -4857,17 +5029,11 @@ impl CodeReviewView {
         counts_row.finish()
     }
 
-    /// Renders the content area: just the sidebar (Staged Changes /
-    /// Changes sections).
-    ///
-    /// PRODUCT §4 / feedback iteration: the legacy in-panel inline-diff
-    /// list is removed. Clicking a sidebar row opens the file in a new
-    /// tab in the main editor area (see `OpenInNewTab` action), matching
-    /// the VS Code Source Control flow. A dedicated side-by-side /
-    /// inline-on-narrow diff viewer is its own follow-up surface; for
-    /// now the file opens with whatever the workspace's
-    /// `resolve_file_target_with_editor_choice` chooses, which already
-    /// has gutter-level diff highlighting.
+    /// Renders the content area: the sidebar (Staged Changes / Changes
+    /// sections) full-width. The panel surface is static — clicking a
+    /// row dispatches `OpenFileDiffInNewTab` which opens the file's
+    /// diff in a new tab in the main editor area (or focuses the
+    /// already-open tab). PRODUCT §4 + §8 revised.
     fn render_content(
         &self,
         state: &LoadedState,
@@ -4885,6 +5051,13 @@ impl CodeReviewView {
         let mut column = Flex::column()
             .with_main_axis_alignment(MainAxisAlignment::Start)
             .with_cross_axis_alignment(CrossAxisAlignment::Start);
+
+        // PRODUCT §13: when a merge / rebase / cherry-pick / bisect is in
+        // progress, the panel renders a banner above the sections with the
+        // op name and the abort command.
+        if let Some(op) = state.in_progress_op.as_ref() {
+            column.add_child(self.render_in_progress_banner(op, appearance));
+        }
 
         // Sidebar split (PRODUCT §4): render Staged Changes and Changes
         // as two independent sections. Section bodies render only when
@@ -4947,6 +5120,41 @@ impl CodeReviewView {
     /// (a partial-stage file has separate handles per section), and is
     /// used by the click handler to pick the right hover state. The
     /// header's hover state lives on `UiStateHandles` and is passed in.
+    /// Render the in-progress-op banner above the sidebar sections
+    /// (PRODUCT §13). Banner reads: `<Op> in progress — resolve conflicts
+    /// then commit, or run `<abort-cmd>` in the terminal.` Themed via
+    /// the active theme's outline / sub-text colors; no hardcoded colors.
+    fn render_in_progress_banner(
+        &self,
+        op: &InProgressOp,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let label = op.label();
+        let abort = op.abort_command();
+        let banner_text = format!(
+            "{label} in progress — resolve conflicts then commit, or run `{abort}` in the terminal."
+        );
+        let text = Text::new(
+            banner_text,
+            appearance.ui_font_family(),
+            appearance.ui_font_size(),
+        )
+        .with_color(theme.main_text_color(theme.surface_2()).into())
+        .soft_wrap(true)
+        .finish();
+        Container::new(text)
+            .with_vertical_padding(8.)
+            .with_horizontal_padding(10.)
+            .with_margin_bottom(6.)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+            .with_background(warp_core::ui::theme::Fill::Solid(
+                internal_colors::neutral_2(theme),
+            ))
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .finish()
+    }
+
     fn render_sidebar_section(
         &self,
         label: &str,
@@ -4965,7 +5173,9 @@ impl CodeReviewView {
 
         let chevron_char = if expanded { '▾' } else { '▸' };
         let header_label = format!("{chevron_char} {label}  ·  {}", entries.len());
-        let header_text_color = theme.sub_text_color(theme.surface_2());
+        // twarp 05e: section header uses the main text color so it
+        // visually stands apart from the muted sub-text on file rows.
+        let header_text_color = theme.main_text_color(theme.surface_2());
         let header_text = Text::new(
             header_label,
             appearance.ui_font_family(),
@@ -4994,11 +5204,30 @@ impl CodeReviewView {
 
         column.add_child(header_element);
 
+        // twarp 05e: thin horizontal divider under each section header,
+        // for visual separation between Staged Changes / Changes and
+        // their file rows.
+        column.add_child(
+            Container::new(
+                ConstrainedBox::new(
+                    Container::new(Empty::new().finish())
+                        .with_background(theme.outline())
+                        .finish(),
+                )
+                .with_height(1.)
+                .finish(),
+            )
+            .with_margin_bottom(4.)
+            .finish(),
+        );
+
         if expanded {
             for entry in entries {
                 let path = entry.path.clone();
                 let file_state = state.file_states.get(&path);
                 let glyph = entry.status.glyph();
+                let is_conflict =
+                    entry.status == crate::code_review::porcelain_v2::FileStatus::Unmerged;
 
                 let row = self.render_file_sidebar_row(
                     file_state,
@@ -5006,6 +5235,22 @@ impl CodeReviewView {
                     Some(glyph),
                     appearance,
                 );
+
+                // 5c (PRODUCT §10): build the hover-revealed action
+                // cluster for this row, picking buttons by section + status.
+                // Conflict (U) rows show only `[Resolve…]` regardless of
+                // section.
+                let cluster_buttons: Vec<ViewHandle<ActionButton>> = match (is_conflict, section) {
+                    (true, _) => file_state
+                        .map(|fs| vec![fs.resolve_button.clone()])
+                        .unwrap_or_default(),
+                    (false, SidebarSection::Staged) => file_state
+                        .map(|fs| vec![fs.unstage_button.clone()])
+                        .unwrap_or_default(),
+                    (false, SidebarSection::Changes) => file_state
+                        .map(|fs| vec![fs.stage_button.clone(), fs.discard_button.clone()])
+                        .unwrap_or_default(),
+                };
 
                 // PRODUCT §4: partial-stage files appear in both sections
                 // and must have independent hover state. Fall back to a
@@ -5019,8 +5264,29 @@ impl CodeReviewView {
                     .unwrap_or_default();
                 let row_neutral = internal_colors::neutral_3(appearance.theme());
                 let row_path = entry.path.clone();
-                let hoverable = Hoverable::new(mouse_state_handle, |mouse_state| {
-                    let mut container = Container::new(Shrinkable::new(1., row).finish())
+                let hoverable = Hoverable::new(mouse_state_handle, move |mouse_state| {
+                    let mut content_row = Flex::row()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_child(Shrinkable::new(1., row).finish());
+
+                    if mouse_state.is_hovered() && !cluster_buttons.is_empty() {
+                        let mut cluster =
+                            Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+                        for button in cluster_buttons {
+                            cluster.add_child(
+                                Container::new(ChildView::new(&button).finish())
+                                    .with_margin_left(4.)
+                                    .finish(),
+                            );
+                        }
+                        content_row.add_child(
+                            Container::new(cluster.finish())
+                                .with_margin_left(4.)
+                                .finish(),
+                        );
+                    }
+
+                    let mut container = Container::new(content_row.finish())
                         .with_vertical_padding(5.)
                         .with_horizontal_padding(8.)
                         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
@@ -5031,9 +5297,11 @@ impl CodeReviewView {
                     container.finish()
                 })
                 .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(CodeReviewAction::OpenInNewTab {
+                    // 5e: opens the file's diff in a new tab in the main
+                    // editor area, or focuses the existing tab if it's
+                    // already open. The panel stays on the sidebar.
+                    ctx.dispatch_typed_action(CodeReviewAction::OpenFileDiffInNewTab {
                         path: row_path.clone(),
-                        line_and_column: None,
                     });
                 })
                 .with_cursor(Cursor::PointingHand);
@@ -6012,6 +6280,14 @@ impl CodeReviewView {
 
     fn discard_file(&mut self, path: &Path, should_stash: bool, ctx: &mut ViewContext<Self>) {
         let file_info = self.create_file_status_info(path.to_path_buf());
+        // twarp 5e: only untracked / newly-added files actually leave
+        // disk after discard; modified / deleted / renamed files
+        // remain (or come back) and shouldn't have their open panes
+        // yanked away.
+        let file_disappears_on_disk = matches!(
+            file_info.status,
+            GitFileStatus::Untracked | GitFileStatus::New
+        );
 
         let branch_name = match &self.discard_dialog_state.operation_type {
             DiscardOperationType::FileChangesAgainstBranch(None) => {
@@ -6025,6 +6301,11 @@ impl CodeReviewView {
         self.diff_state_model.update(ctx, |model, ctx| {
             model.discard_files(vec![file_info], should_stash, branch_name.flatten(), ctx);
         });
+        if file_disappears_on_disk {
+            ctx.emit(CodeReviewViewEvent::FilesDiscarded {
+                paths: vec![path.to_path_buf()],
+            });
+        }
         self.discard_dialog_state.stash_changes_enabled = false;
     }
 
@@ -6048,9 +6329,23 @@ impl CodeReviewView {
             }
             _ => None,
         };
+        // twarp 5e: collect the subset of paths whose discard will
+        // remove the file from disk (untracked + newly-added). Only
+        // those should signal the workspace to close their open
+        // code-pane tabs.
+        let disappearing_paths: Vec<PathBuf> = file_infos
+            .iter()
+            .filter(|fi| matches!(fi.status, GitFileStatus::Untracked | GitFileStatus::New))
+            .map(|fi| fi.path.clone())
+            .collect();
         self.diff_state_model.update(ctx, |model, ctx| {
             model.discard_files(file_infos, should_stash, branch_name.flatten(), ctx);
         });
+        if !disappearing_paths.is_empty() {
+            ctx.emit(CodeReviewViewEvent::FilesDiscarded {
+                paths: disappearing_paths,
+            });
+        }
         self.discard_dialog_state.stash_changes_enabled = false;
     }
 
@@ -6854,6 +7149,19 @@ impl CodeReviewView {
     }
 
     /// Computes the current primary git action from diff stats and the diff state model.
+    /// Return the in-progress op's preferred label for the panel's primary
+    /// action button (PRODUCT §13), if any. `None` when no op is in
+    /// progress, or for bisect (which has no commit-style continuation).
+    fn in_progress_op_primary_label(&self) -> Option<&'static str> {
+        match self.state() {
+            CodeReviewViewState::Loaded(state) => state
+                .in_progress_op
+                .as_ref()
+                .and_then(InProgressOp::primary_action_label),
+            _ => None,
+        }
+    }
+
     fn primary_git_action_mode(&self, app: &AppContext) -> PrimaryGitActionMode {
         let diff_state = self.diff_state_model.as_ref(app);
         let has_uncommitted_changes = self.has_uncommitted_changes(app);
@@ -6892,8 +7200,13 @@ impl CodeReviewView {
         match mode {
             PrimaryGitActionMode::Commit => {
                 let disabled = !self.has_uncommitted_changes(ctx);
+                // PRODUCT §13: while a merge / rebase / cherry-pick is in
+                // progress, override the Commit label so the user knows
+                // the next commit concludes the op.
+                let label_override = self.in_progress_op_primary_label();
+                let label = label_override.unwrap_or("Commit");
                 self.git_primary_action_button.update(ctx, |button, ctx| {
-                    button.set_label("Commit", ctx);
+                    button.set_label(label, ctx);
                     button.set_icon(Some(Icon::GitCommit), ctx);
                     button.set_disabled(disabled, ctx);
                     button.set_tooltip(disabled.then_some("No changes to commit"), ctx);
@@ -7533,6 +7846,55 @@ impl TypedActionView for CodeReviewView {
             CodeReviewAction::ToggleChangesSection => {
                 self.changes_section_expanded = !self.changes_section_expanded;
                 ctx.notify();
+            }
+            CodeReviewAction::StageFile { path } => {
+                let path = path.clone();
+                self.diff_state_model.update(ctx, |model, ctx| {
+                    model.stage_file(path, ctx);
+                });
+            }
+            CodeReviewAction::UnstageFile { path } => {
+                let path = path.clone();
+                self.diff_state_model.update(ctx, |model, ctx| {
+                    model.unstage_file(path, ctx);
+                });
+            }
+            CodeReviewAction::OpenConflictResolve { path } => {
+                // PRODUCT §10 (Conflict row): clicking [Resolve…] opens
+                // the conflicted file in a new tab so the user can edit
+                // conflict markers directly.
+                let Some(repo_path) = self.repo_path() else {
+                    return;
+                };
+                let full_path = repo_path.join(path);
+                ctx.emit(CodeReviewViewEvent::OpenFileInNewTab {
+                    path: full_path,
+                    line_and_column: None,
+                });
+            }
+            CodeReviewAction::OpenFileDiffInNewTab { path } => {
+                // 5e: clicking a sidebar row opens the file's diff as a
+                // new tab in the main editor area (or focuses the
+                // already-open tab). The workspace handler runs the
+                // open-or-focus flow and applies the diff base via
+                // `LocalCodeEditorView::set_pending_diff_base_on_load`.
+                let Some(repo_path) = self.repo_path() else {
+                    return;
+                };
+                let full_path = repo_path.join(path);
+                let base_content = {
+                    let state_opt = match self.state() {
+                        CodeReviewViewState::Loaded(state) => Some(state),
+                        _ => None,
+                    };
+                    state_opt
+                        .and_then(|state| state.file_states.get(path))
+                        .and_then(|fs| fs.content_at_head.clone())
+                };
+                ctx.emit(CodeReviewViewEvent::OpenFileDiffInNewTab {
+                    path: full_path,
+                    base_content,
+                });
             }
             CodeReviewAction::FileSelected(file_index) => {
                 // Early-return when repo/state/file is missing to avoid calling

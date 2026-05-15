@@ -505,6 +505,14 @@ pub enum WorkspaceAction {
     },
     /// Open a new blank code file in the current tab
     NewCodeFile,
+    /// twarp 05e: stage the file currently shown in the active tab's
+    /// diff pane (the split pane created by clicking a row in the Code
+    /// Review panel). Dispatched by the NavBar's Stage button.
+    StageActiveDiffPaneFile,
+    /// twarp 05e: counterpart to `StageActiveDiffPaneFile`. Dispatched
+    /// by the NavBar's Stage button when the file is already staged
+    /// (the button's label flips to "Unstage").
+    UnstageActiveDiffPaneFile,
     NavigatePrevPaneOrPanel,
     NavigateNextPaneOrPanel,
     ToggleProjectExplorer,
@@ -882,6 +890,8 @@ impl WorkspaceAction {
             | FocusTerminalViewInWorkspace { .. }
             | FocusPane(..)
             | UndoRevertInCodeReviewPane { .. }
+            | StageActiveDiffPaneFile
+            | UnstageActiveDiffPaneFile
             | NavigatePrevPaneOrPanel
             | NavigateNextPaneOrPanel
             | ToggleProjectExplorer

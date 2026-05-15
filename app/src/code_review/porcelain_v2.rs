@@ -64,6 +64,38 @@ impl InProgressOp {
             None
         }
     }
+
+    /// Human-readable verb for the in-progress-op banner.
+    pub fn label(&self) -> &'static str {
+        match self {
+            InProgressOp::Merging => "Merge",
+            InProgressOp::Rebasing => "Rebase",
+            InProgressOp::CherryPicking => "Cherry-pick",
+            InProgressOp::Bisecting => "Bisect",
+        }
+    }
+
+    /// Shell command the user can paste to abort the op.
+    pub fn abort_command(&self) -> &'static str {
+        match self {
+            InProgressOp::Merging => "git merge --abort",
+            InProgressOp::Rebasing => "git rebase --abort",
+            InProgressOp::CherryPicking => "git cherry-pick --abort",
+            InProgressOp::Bisecting => "git bisect reset",
+        }
+    }
+
+    /// Label for the panel's primary action button while the op is in
+    /// progress (PRODUCT §13). Bisect has no natural "commit to continue"
+    /// action, so the existing Commit label stays.
+    pub fn primary_action_label(&self) -> Option<&'static str> {
+        match self {
+            InProgressOp::Merging => Some("Conclude merge"),
+            InProgressOp::Rebasing => Some("Continue rebase"),
+            InProgressOp::CherryPicking => Some("Continue cherry-pick"),
+            InProgressOp::Bisecting => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

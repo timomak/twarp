@@ -74,7 +74,9 @@ use crate::util::file::external_editor::Editor;
 use crate::util::file::external_editor::EditorSettings;
 use crate::util::openable_file_type::FileTarget;
 #[cfg(feature = "local_fs")]
-use crate::util::openable_file_type::{resolve_file_target_with_editor_choice, EditorLayout};
+use crate::util::openable_file_type::{
+    is_binary_file, resolve_file_target_with_editor_choice, EditorLayout,
+};
 
 // twarp: 2c-d — removed crate::ai::blocklist::history_model::CloudConversationData,
 // FORK_PREFIX, and cli_agent_sessions imports.
@@ -119,6 +121,7 @@ use crate::auth::auth_view_modal::{AuthRedirectPayload, AuthView, AuthViewEvent,
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeManager;
 use crate::code::editor_management::CodeSource;
+use crate::code::view::CodeView;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::drive::export::ExportManager;
 use crate::drive::settings::WarpDriveSettings;
@@ -202,7 +205,8 @@ use crate::notebooks::manager::{NotebookManager, NotebookSource};
 #[cfg(feature = "local_fs")]
 use crate::pane_group::FilePane;
 use crate::pane_group::{
-    self, AnyPaneContent, CodePane, Direction, NewTerminalOptions, PanesLayout, TabBarHoverIndex,
+    self, AnyPaneContent, CodePane, Direction, NewTerminalOptions, PaneContent, PanesLayout,
+    TabBarHoverIndex,
 };
 use crate::remote_server::manager::RemoteServerManager;
 #[cfg(feature = "local_fs")]
@@ -3271,6 +3275,11 @@ impl Workspace {
                     self.left_panel_open = left_panel_open;
                 }
                 if right_panel_open {
+                    // twarp 5e: panel state is workspace-level.
+                    self.current_workspace_state.is_code_review_panel_open = true;
+                    self.current_workspace_state.is_code_review_panel_maximized =
+                        is_right_panel_maximized;
+                    self.sync_code_review_panel_state_to_pane_groups(ctx);
                     self.right_panel_view.update(ctx, |rp, ctx| {
                         rp.set_maximized(is_right_panel_maximized, ctx);
                     });
@@ -3405,10 +3414,14 @@ impl Workspace {
         right_panel_snapshot: &RightPanelSnapshot,
         ctx: &mut ViewContext<Self>,
     ) {
-        pane_group.update(ctx, |pg, _| {
-            pg.right_panel_open = true;
-            pg.is_right_panel_maximized = right_panel_snapshot.is_maximized;
-        });
+        // twarp 5e: panel open/maximized are workspace-level. Any tab
+        // restoring with the panel open lifts the workspace into the
+        // panel-open state and shares the maximize value. Sync mirrors
+        // to all current tabs so render checks remain consistent.
+        self.current_workspace_state.is_code_review_panel_open = true;
+        self.current_workspace_state.is_code_review_panel_maximized =
+            right_panel_snapshot.is_maximized;
+        self.sync_code_review_panel_state_to_pane_groups(ctx);
 
         let resizable = ResizableData::handle(ctx);
         if let Some(modal_sizes) = resizable.as_ref(ctx).get_all_handles(self.window_id) {
@@ -4315,6 +4328,12 @@ impl Workspace {
         if self.left_panel_visibility_across_tabs_enabled(ctx) {
             self.reconcile_left_panel_open_for_active_tab(ctx);
         }
+
+        // twarp 5e: mirror workspace-level Code Review panel state to
+        // all pane groups before notifying the panels — newly-added
+        // tabs default `right_panel_open` to false and need the
+        // workspace state copied in so the panel renders for them.
+        self.sync_code_review_panel_state_to_pane_groups(ctx);
 
         let left_active_pane_group = self.active_tab_pane_group().clone();
         let right_active_pane_group = self.active_tab_pane_group().clone();
@@ -5370,6 +5389,12 @@ impl Workspace {
                 line_and_column,
             } => {
                 self.add_tab_for_code_file(path, line_and_column, ctx);
+            }
+            RightPanelEvent::OpenFileDiffInNewTab { path, base_content } => {
+                self.open_file_diff_in_new_pane(path, base_content, ctx);
+            }
+            RightPanelEvent::FilesDiscarded { paths } => {
+                self.close_code_pane_tabs_for_paths(&paths, ctx);
             }
             #[cfg(not(target_family = "wasm"))]
             RightPanelEvent::OpenLspLogs { log_path } => {
@@ -7341,7 +7366,8 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         // Skip the full panel setup when the panel is already open for the target repo.
-        let panel_already_showing_repo = pane_group.as_ref(ctx).right_panel_open
+        // twarp 5e: panel open-state is workspace-level.
+        let panel_already_showing_repo = self.current_workspace_state.is_code_review_panel_open
             && panel_context
                 .repo_path
                 .as_ref()
@@ -7380,6 +7406,24 @@ impl Workspace {
         let _ = &panel_context;
     }
 
+    /// twarp 5e: propagate the workspace-level Code Review panel
+    /// open/maximized state to every tab's `PaneGroup` so the panel
+    /// stays visible (and at the same maximize state) across tab
+    /// switches. The canonical state lives in
+    /// `current_workspace_state.is_code_review_panel_open` /
+    /// `is_code_review_panel_maximized`; per-`PaneGroup` fields are
+    /// mirrors kept in sync via this helper.
+    fn sync_code_review_panel_state_to_pane_groups(&self, ctx: &mut AppContext) {
+        let open = self.current_workspace_state.is_code_review_panel_open;
+        let max = self.current_workspace_state.is_code_review_panel_maximized;
+        for tab in self.tabs.iter() {
+            tab.pane_group.update(ctx, |pg, _| {
+                pg.right_panel_open = open;
+                pg.is_right_panel_maximized = max;
+            });
+        }
+    }
+
     fn update_right_panel_open_state(
         &mut self,
         #[cfg_attr(target_family = "wasm", allow(unused_variables))]
@@ -7389,10 +7433,11 @@ impl Workspace {
         let should_open = panel_update_params.target_open_state;
         let should_close = !panel_update_params.target_open_state;
 
-        let new_is_maximized = panel_update_params.pane_group.update(ctx, |pane_group, _| {
-            pane_group.right_panel_open = should_open;
-            pane_group.is_right_panel_maximized
-        });
+        // twarp 5e: workspace state is the source of truth; pane
+        // groups mirror via `sync_code_review_panel_state_to_pane_groups`.
+        self.current_workspace_state.is_code_review_panel_open = should_open;
+        let new_is_maximized = self.current_workspace_state.is_code_review_panel_maximized;
+        self.sync_code_review_panel_state_to_pane_groups(ctx);
 
         self.right_panel_view.update(ctx, |view, ctx| {
             view.set_maximized(new_is_maximized, ctx);
@@ -7450,8 +7495,8 @@ impl Workspace {
         pane_group_handle: &ViewHandle<PaneGroup>,
         ctx: &mut ViewContext<Self>,
     ) {
-        let target_open_state =
-            pane_group_handle.read(ctx, |pane_group, _| !pane_group.right_panel_open);
+        // twarp 5e: workspace-level state is the source of truth.
+        let target_open_state = !self.current_workspace_state.is_code_review_panel_open;
 
         // Read repo_path and terminal_view from pane group (immutable context).
         let read_result = pane_group_handle.read(ctx, |pane_group, ctx| {
@@ -7497,7 +7542,8 @@ impl Workspace {
         cli_agent: Option<crate::app_state::CLIAgent>,
         ctx: &mut ViewContext<Self>,
     ) {
-        if pane_group_handle.as_ref(ctx).right_panel_open {
+        // twarp 5e: panel open-state is workspace-level.
+        if self.current_workspace_state.is_code_review_panel_open {
             if let Some(repo_path) = &context.repo_path {
                 self.right_panel_view.update(ctx, |right_panel, ctx| {
                     right_panel.update_selected_repo(repo_path.clone(), ctx);
@@ -7553,11 +7599,12 @@ impl Workspace {
 
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     fn toggle_right_panel_maximized(&mut self, ctx: &mut ViewContext<Self>) {
-        let pane_group = self.active_tab_pane_group().clone();
-        let is_maximized = pane_group.update(ctx, |pane_group, _| {
-            pane_group.is_right_panel_maximized = !pane_group.is_right_panel_maximized;
-            pane_group.is_right_panel_maximized
-        });
+        // twarp 5e: maximize state is workspace-level; mirror to all
+        // pane groups via the sync helper.
+        self.current_workspace_state.is_code_review_panel_maximized =
+            !self.current_workspace_state.is_code_review_panel_maximized;
+        let is_maximized = self.current_workspace_state.is_code_review_panel_maximized;
+        self.sync_code_review_panel_state_to_pane_groups(ctx);
 
         self.right_panel_view.update(ctx, |view, ctx| {
             view.set_maximized(is_maximized, ctx);
@@ -10205,6 +10252,244 @@ impl Workspace {
             NewTabPlacement::AfterCurrentTab => self.active_tab_index + 1,
         };
         self.add_tab_from_existing_pane(Box::new(pane), new_idx, ctx);
+    }
+
+    /// twarp 5e: resolve the active diff pane to (absolute path,
+    /// repo root, relative path, `DiffStateModel`) — the tuple every
+    /// per-file diff-pane git op needs. Returns `None` if there's no
+    /// diff pane, no active file, or the file isn't in a known repo.
+    #[cfg(feature = "local_fs")]
+    fn resolve_active_diff_pane_target(
+        &mut self,
+        ctx: &mut ViewContext<Self>,
+    ) -> Option<(PathBuf, PathBuf, PathBuf, ModelHandle<DiffStateModel>)> {
+        let pane_group_handle = self.active_tab_pane_group().clone();
+        let diff_pane_id = pane_group_handle.read(ctx, |pg, _| pg.diff_pane_id)?;
+        let absolute_path = pane_group_handle
+            .as_ref(ctx)
+            .code_pane_by_id(diff_pane_id)
+            .and_then(|code_pane| {
+                let code_view = code_pane.file_view(ctx);
+                code_view.as_ref(ctx).local_path(ctx)
+            })?;
+        let repo_root = DetectedRepositories::as_ref(ctx).get_root_for_path(&absolute_path)?;
+        let relative_path = absolute_path.strip_prefix(&repo_root).ok()?.to_path_buf();
+        let diff_state_model = self.working_directories_model.update(ctx, |model, ctx| {
+            model.get_or_create_diff_state_model(repo_root.clone(), ctx)
+        })?;
+        Some((absolute_path, repo_root, relative_path, diff_state_model))
+    }
+
+    /// twarp 5e: stage the file currently shown in the active tab's
+    /// diff pane. Dispatched by the NavBar's Stage button.
+    #[cfg(feature = "local_fs")]
+    fn stage_active_diff_pane_file(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some((_, _, relative_path, diff_state_model)) =
+            self.resolve_active_diff_pane_target(ctx)
+        else {
+            return;
+        };
+        diff_state_model.update(ctx, |model, ctx| {
+            model.stage_file(relative_path, ctx);
+        });
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    fn stage_active_diff_pane_file(&mut self, _ctx: &mut ViewContext<Self>) {}
+
+    /// twarp 5e: counterpart to `stage_active_diff_pane_file`. The
+    /// NavBar Stage button flips to "Unstage" when the file is
+    /// already staged; that variant dispatches
+    /// `WorkspaceAction::UnstageActiveDiffPaneFile` instead.
+    #[cfg(feature = "local_fs")]
+    fn unstage_active_diff_pane_file(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some((_, _, relative_path, diff_state_model)) =
+            self.resolve_active_diff_pane_target(ctx)
+        else {
+            return;
+        };
+        diff_state_model.update(ctx, |model, ctx| {
+            model.unstage_file(relative_path, ctx);
+        });
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    fn unstage_active_diff_pane_file(&mut self, _ctx: &mut ViewContext<Self>) {}
+
+    /// twarp 5e: read the active diff pane's staging state and push
+    /// the matching `NavBarStageButtonState` down to the editor's
+    /// NavBar so the button label (Stage vs Unstage) tracks reality.
+    /// Run on diff-pane open and on every `DiffStateModelEvent`.
+    #[cfg(feature = "local_fs")]
+    fn refresh_diff_pane_nav_bar_stage_state(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some((absolute_path, _repo_root, relative_path, diff_state_model)) =
+            self.resolve_active_diff_pane_target(ctx)
+        else {
+            return;
+        };
+        let pane_group_handle = self.active_tab_pane_group().clone();
+        let Some(editor) =
+            pane_group_handle
+                .as_ref(ctx)
+                .code_panes(ctx)
+                .find_map(|(_, code_view)| {
+                    code_view
+                        .as_ref(ctx)
+                        .editor_view_for_path(&absolute_path)
+                        .cloned()
+                })
+        else {
+            return;
+        };
+        let is_staged = match diff_state_model.as_ref(ctx).get() {
+            crate::code_review::diff_state::DiffState::Loaded(data) => {
+                data.staged.iter().any(|entry| entry.path == relative_path)
+            }
+            _ => false,
+        };
+        let state = if is_staged {
+            crate::code::editor::NavBarStageButtonState::ShowUnstage
+        } else {
+            crate::code::editor::NavBarStageButtonState::ShowStage
+        };
+        editor.update(ctx, |editor, ctx| {
+            editor.set_nav_bar_stage_button_state(state, ctx);
+        });
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    fn refresh_diff_pane_nav_bar_stage_state(&mut self, _ctx: &mut ViewContext<Self>) {}
+
+    /// twarp 5e: close any code-pane tab(s) for the discarded paths
+    /// (typically untracked / newly-added files that no longer exist
+    /// on disk). If a pane ends up with no tabs, close the pane and
+    /// clear the diff-pane tracker.
+    fn close_code_pane_tabs_for_paths(&mut self, paths: &[PathBuf], ctx: &mut ViewContext<Self>) {
+        let pane_group_handle = self.active_tab_pane_group().clone();
+        let pane_views: Vec<(PaneId, ViewHandle<CodeView>)> =
+            pane_group_handle.as_ref(ctx).code_panes(ctx).collect();
+
+        let mut empty_pane_ids: Vec<PaneId> = Vec::new();
+        for (pane_id, code_view) in &pane_views {
+            code_view.update(ctx, |cv, ctx| {
+                for path in paths {
+                    cv.close_tabs_with_path(path, ctx);
+                }
+            });
+            if code_view.as_ref(ctx).tab_count() == 0 {
+                empty_pane_ids.push(*pane_id);
+            }
+        }
+
+        if !empty_pane_ids.is_empty() {
+            pane_group_handle.update(ctx, |pg, ctx| {
+                for pane_id in empty_pane_ids {
+                    if pg.diff_pane_id == Some(pane_id) {
+                        pg.diff_pane_id = None;
+                    }
+                    pg.close_pane(pane_id, ctx);
+                }
+            });
+        }
+    }
+
+    /// twarp 5e: open the file's diff in a split pane next to the
+    /// current terminal pane. Subsequent clicks reuse the existing
+    /// diff pane (strict-swap to the new file). After the pane / tab
+    /// exists, apply `base_content` as the editor's diff base so the
+    /// editor renders red/green decorations against it.
+    ///
+    /// For binary files (images, PDFs, archives, …), Warp's editor
+    /// would render garbage and the GlobalBufferModel load fails with
+    /// "Failed to load file." Hand off to the system default app
+    /// (Preview on macOS) instead — matching how the Project Explorer
+    /// already routes binary clicks.
+    pub fn open_file_diff_in_new_pane(
+        &mut self,
+        path: PathBuf,
+        base_content: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if is_binary_file(&path) {
+            ctx.open_file_path(&path);
+            return;
+        }
+
+        let pane_group_handle = self.active_tab_pane_group().clone();
+
+        // Reuse the existing diff pane if it still exists and isn't
+        // hidden for undo-close. We tolerate stale `diff_pane_id`s by
+        // checking presence via `code_pane_by_id`.
+        let existing_diff_pane_id = pane_group_handle.read(ctx, |pg, _| {
+            let id = pg.diff_pane_id?;
+            if pg.is_pane_hidden_for_close(id) {
+                return None;
+            }
+            pg.code_pane_by_id(id).map(|_| id)
+        });
+
+        if let Some(diff_pane_id) = existing_diff_pane_id {
+            pane_group_handle.update(ctx, |pg, ctx| {
+                if let Some(code_pane) = pg.code_pane_by_id(diff_pane_id) {
+                    let code_view = code_pane.file_view(ctx);
+                    code_view.update(ctx, |code_view, ctx| {
+                        code_view.replace_with_single_path(path.clone(), ctx);
+                    });
+                }
+                pg.focus_pane(diff_pane_id, true, ctx);
+            });
+        } else {
+            let source = CodeSource::Link {
+                path: path.clone(),
+                range_start: None,
+                range_end: None,
+            };
+            let pane = CodePane::new(source, None, ctx);
+            let new_pane_id = pane.id();
+            pane_group_handle.update(ctx, |pane_group, ctx| {
+                pane_group.add_pane_with_direction(
+                    Direction::Right,
+                    pane,
+                    true, /* focus_new_pane */
+                    ctx,
+                );
+                pane_group.diff_pane_id = Some(new_pane_id);
+            });
+        }
+
+        // twarp 05e: subscribe to this repo's DiffStateModel and
+        // compute the initial Stage/Unstage label so the NavBar button
+        // tracks staging state (including external `git add` /
+        // `git restore --staged` from terminals). Independent of
+        // `base_content` — works even for added/deleted files where
+        // `content_at_head` is None.
+        if let Some(repo_root) = DetectedRepositories::as_ref(ctx).get_root_for_path(&path) {
+            if let Some(diff_state_model) =
+                self.working_directories_model.update(ctx, |model, ctx| {
+                    model.get_or_create_diff_state_model(repo_root.clone(), ctx)
+                })
+            {
+                ctx.subscribe_to_model(&diff_state_model, |me, _, _, ctx| {
+                    me.refresh_diff_pane_nav_bar_stage_state(ctx);
+                });
+            }
+        }
+        self.refresh_diff_pane_nav_bar_stage_state(ctx);
+
+        let Some(base) = base_content else {
+            return;
+        };
+
+        let editor_handle = pane_group_handle
+            .as_ref(ctx)
+            .code_panes(ctx)
+            .find_map(|(_, code_view)| code_view.as_ref(ctx).editor_view_for_path(&path).cloned());
+
+        if let Some(editor) = editor_handle {
+            editor.update(ctx, |editor, ctx| {
+                editor.set_pending_diff_base_on_load(base, ctx);
+            });
+        }
     }
 
     pub fn add_tab_for_new_code_file(&mut self, ctx: &mut ViewContext<Self>) {
@@ -19053,6 +19338,12 @@ impl TypedActionView for Workspace {
                         == ToolPanelView::ProjectExplorer;
                     self.toggle_left_panel_view(&LeftPanelAction::ProjectExplorer, is_showing, ctx);
                 }
+            }
+            StageActiveDiffPaneFile => {
+                self.stage_active_diff_pane_file(ctx);
+            }
+            UnstageActiveDiffPaneFile => {
+                self.unstage_active_diff_pane_file(ctx);
             }
             ToggleWarpDrive => {
                 if WarpDriveSettings::is_warp_drive_enabled(ctx) {
