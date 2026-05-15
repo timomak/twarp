@@ -1392,6 +1392,15 @@ impl CodeEditorView {
             }
         }
 
+        // twarp 05: a regular text click clears any active temp-block
+        // selection, so the user doesn't see two highlights at once.
+        self.model.update(ctx, |model, ctx| {
+            let render_state = model.render_state().clone();
+            render_state.update(ctx, |render_state, _| {
+                render_state.set_temp_block_selection(None);
+            });
+        });
+
         let multiselect = modifiers.alt && FeatureFlag::RichTextMultiselect.is_enabled();
         self.model.update(ctx, |model, ctx| {
             model.select_at(offset, multiselect, ctx);

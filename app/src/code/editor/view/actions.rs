@@ -691,6 +691,15 @@ pub enum CodeEditorViewAction {
     Paste,
     Cut,
     Copy,
+    /// twarp 05: the user clicked on a deleted-line overlay
+    /// (`BlockItem::TemporaryBlock`) in a diff. Stores the block's
+    /// text + height anchor on `RenderState`'s
+    /// `temp_block_selection`, which the painter consults to draw a
+    /// highlight and which cmd+C reads.
+    TempBlockClicked {
+        text: String,
+        block_height: f64,
+    },
     #[cfg(windows)]
     WindowsCtrlC,
     Undo,
@@ -789,7 +798,8 @@ impl CodeEditorViewAction {
             | Self::RequestOpenSavedComment { .. }
             | Self::MouseHovered { .. }
             | Self::MaybeClickOnHoveredLink(_)
-            | Self::RightMouseDown { .. } => true,
+            | Self::RightMouseDown { .. }
+            | Self::TempBlockClicked { .. } => true,
         }
     }
 }
@@ -981,6 +991,23 @@ impl TypedActionView for CodeEditorView {
             // The owner of the editor can also perform a copy by accessing the selected text and copying it to the clipboard.
             // This is the case when the code block is owned by an AIBlock and unfocused.
             Copy => {
+                // twarp 05: if there's an active temp-block selection
+                // (the user clicked on a deleted-line overlay in a
+                // diff), copy that text instead of the empty buffer
+                // selection. Temp blocks live outside the buffer, so
+                // `model.copy(ctx)` would no-op.
+                let temp_block_text = self
+                    .model
+                    .as_ref(ctx)
+                    .render_state()
+                    .as_ref(ctx)
+                    .temp_block_selection()
+                    .map(|sel| sel.text);
+                if let Some(text) = temp_block_text {
+                    ctx.clipboard()
+                        .write(warpui::clipboard::ClipboardContent::plain_text(text));
+                    return;
+                }
                 self.model.update(ctx, |model, ctx| {
                     model.copy(ctx);
                 });
@@ -1104,6 +1131,29 @@ impl TypedActionView for CodeEditorView {
                 self.model.update(ctx, |model, ctx| {
                     model.maybe_click_on_hovered_link(offset, ctx)
                 });
+            }
+            TempBlockClicked { text, block_height } => {
+                // twarp 05: set the parallel temp-block selection on
+                // the render state. The painter reads it to draw the
+                // highlight, and the workspace reads it on cmd+C.
+                // Also clear any active buffer selection so the user
+                // doesn't see two highlights at once.
+                let text = text.clone();
+                let block_height = *block_height;
+                self.model.update(ctx, |model, ctx| {
+                    let render_state = model.render_state().clone();
+                    render_state.update(ctx, |render_state, _| {
+                        render_state.set_temp_block_selection(Some(
+                            warp_editor::render::model::TempBlockSelection {
+                                anchor: warp_editor::render::model::TempBlockAnchor {
+                                    height: block_height,
+                                },
+                                text,
+                            },
+                        ));
+                    });
+                });
+                ctx.notify();
             }
         }
     }
@@ -1307,5 +1357,15 @@ impl RichTextAction<CodeEditorView> for CodeEditorViewAction {
             }),
             _ => None,
         }
+    }
+
+    fn temp_block_clicked(
+        text: String,
+        block_height: f64,
+        _modifiers: ModifiersState,
+        _parent_view: &WeakViewHandle<CodeEditorView>,
+        _ctx: &AppContext,
+    ) -> Option<Self> {
+        Some(CodeEditorViewAction::TempBlockClicked { text, block_height })
     }
 }

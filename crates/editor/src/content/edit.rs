@@ -803,14 +803,21 @@ impl LayoutTask {
                 content,
                 line_decoration,
                 decoration,
-            } => Ok((
-                BlockItem::TemporaryBlock {
-                    paragraph_block: layout_temporary_block(content, layout),
-                    text_decoration: decoration,
-                    decoration: line_decoration,
-                },
-                true,
-            )),
+            } => {
+                // twarp 05: keep the original text for click-to-copy
+                // on deleted-line overlays. Cheap clone (one allocation
+                // per temp block, ~one hunk per diff in practice).
+                let text = content.clone();
+                Ok((
+                    BlockItem::TemporaryBlock {
+                        paragraph_block: layout_temporary_block(content, layout),
+                        text_decoration: decoration,
+                        decoration: line_decoration,
+                        text,
+                    },
+                    true,
+                ))
+            }
         }
     }
 }

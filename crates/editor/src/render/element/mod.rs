@@ -383,6 +383,26 @@ pub trait RichTextAction<V>: Sized {
     ) -> Option<Self> {
         None
     }
+
+    /// twarp 05: the user clicked on a deleted-line overlay
+    /// (`BlockItem::TemporaryBlock`) in a diff. Temporary blocks live
+    /// outside the buffer's [`CharOffset`] space, so the normal
+    /// `left_mouse_down(Location, ...)` path can't represent a
+    /// selection inside one — it would just clamp to the block's
+    /// start offset. This event lets the parent view set a parallel
+    /// "temp-block selection" on the render model so the user can
+    /// highlight and copy red text. Default returns `None`; the
+    /// editor element's `handle_left_mouse_down` falls through to
+    /// the regular `left_mouse_down` if so.
+    fn temp_block_clicked(
+        _text: String,
+        _block_height: f64,
+        _modifiers: ModifiersState,
+        _parent_view: &WeakViewHandle<V>,
+        _ctx: &AppContext,
+    ) -> Option<Self> {
+        None
+    }
 }
 
 /// Whether mouse events should be clamped to within the element bound.
@@ -600,6 +620,34 @@ impl<V: EditorView> RichTextElement<V> {
         // On mobile WASM, request the soft keyboard when tapping on an editable text input.
         if self.display_options.editable && self.is_in_bounds(position, ctx) {
             ctx.request_soft_keyboard();
+        }
+
+        // twarp 05: if the click landed on a deleted-line overlay
+        // (`BlockItem::TemporaryBlock`), dispatch the temp-block
+        // event so the parent view can set a parallel selection.
+        // Falls through to the regular `Location`-based dispatch when
+        // the parent view doesn't override `temp_block_clicked` or the
+        // hit isn't on a temp block.
+        if self.is_in_bounds(position, ctx)
+            && let Some(viewport_origin) = self.viewport_origin()
+        {
+            let relative = position - viewport_origin;
+            let temp_block = self.model.as_ref(app).temp_block_at_viewport_position(
+                relative.x().max(0.0).into_pixels(),
+                relative.y().max(0.0).into_pixels(),
+            );
+            if let Some(temp_block) = temp_block
+                && let Some(action) = V::Action::temp_block_clicked(
+                    temp_block.text.clone(),
+                    temp_block.anchor.height,
+                    modifiers,
+                    &self.parent_view,
+                    app,
+                )
+            {
+                ctx.dispatch_typed_action(action);
+                return true;
+            }
         }
 
         if let HitTestResult::Hit(location) = self.position_to_location(
