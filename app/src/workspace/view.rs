@@ -10254,38 +10254,39 @@ impl Workspace {
         self.add_tab_from_existing_pane(Box::new(pane), new_idx, ctx);
     }
 
-    /// twarp 5e: stage the file currently shown in the active tab's
-    /// diff pane. Dispatched by the NavBar's Stage button via
-    /// `WorkspaceAction::StageActiveDiffPaneFile`. No-op when there's
-    /// no diff pane, when the diff pane doesn't have an active file,
-    /// or when the file isn't inside a known repo.
+    /// twarp 5e: resolve the active diff pane to (absolute path,
+    /// repo root, relative path, `DiffStateModel`) — the tuple every
+    /// per-file diff-pane git op needs. Returns `None` if there's no
+    /// diff pane, no active file, or the file isn't in a known repo.
     #[cfg(feature = "local_fs")]
-    fn stage_active_diff_pane_file(&mut self, ctx: &mut ViewContext<Self>) {
+    fn resolve_active_diff_pane_target(
+        &mut self,
+        ctx: &mut ViewContext<Self>,
+    ) -> Option<(PathBuf, PathBuf, PathBuf, ModelHandle<DiffStateModel>)> {
         let pane_group_handle = self.active_tab_pane_group().clone();
-        let Some(diff_pane_id) = pane_group_handle.read(ctx, |pg, _| pg.diff_pane_id) else {
-            return;
-        };
-        let path = pane_group_handle
+        let diff_pane_id = pane_group_handle.read(ctx, |pg, _| pg.diff_pane_id)?;
+        let absolute_path = pane_group_handle
             .as_ref(ctx)
             .code_pane_by_id(diff_pane_id)
             .and_then(|code_pane| {
                 let code_view = code_pane.file_view(ctx);
                 code_view.as_ref(ctx).local_path(ctx)
-            });
-        let Some(absolute_path) = path else {
-            return;
-        };
-        let Some(repo_root) = DetectedRepositories::as_ref(ctx).get_root_for_path(&absolute_path)
+            })?;
+        let repo_root = DetectedRepositories::as_ref(ctx).get_root_for_path(&absolute_path)?;
+        let relative_path = absolute_path.strip_prefix(&repo_root).ok()?.to_path_buf();
+        let diff_state_model = self.working_directories_model.update(ctx, |model, ctx| {
+            model.get_or_create_diff_state_model(repo_root.clone(), ctx)
+        })?;
+        Some((absolute_path, repo_root, relative_path, diff_state_model))
+    }
+
+    /// twarp 5e: stage the file currently shown in the active tab's
+    /// diff pane. Dispatched by the NavBar's Stage button.
+    #[cfg(feature = "local_fs")]
+    fn stage_active_diff_pane_file(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some((_, _, relative_path, diff_state_model)) =
+            self.resolve_active_diff_pane_target(ctx)
         else {
-            return;
-        };
-        let Ok(relative_path) = absolute_path.strip_prefix(&repo_root) else {
-            return;
-        };
-        let relative_path = relative_path.to_path_buf();
-        let Some(diff_state_model) = self.working_directories_model.update(ctx, |model, ctx| {
-            model.get_or_create_diff_state_model(repo_root, ctx)
-        }) else {
             return;
         };
         diff_state_model.update(ctx, |model, ctx| {
@@ -10295,6 +10296,69 @@ impl Workspace {
 
     #[cfg(not(feature = "local_fs"))]
     fn stage_active_diff_pane_file(&mut self, _ctx: &mut ViewContext<Self>) {}
+
+    /// twarp 5e: counterpart to `stage_active_diff_pane_file`. The
+    /// NavBar Stage button flips to "Unstage" when the file is
+    /// already staged; that variant dispatches
+    /// `WorkspaceAction::UnstageActiveDiffPaneFile` instead.
+    #[cfg(feature = "local_fs")]
+    fn unstage_active_diff_pane_file(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some((_, _, relative_path, diff_state_model)) =
+            self.resolve_active_diff_pane_target(ctx)
+        else {
+            return;
+        };
+        diff_state_model.update(ctx, |model, ctx| {
+            model.unstage_file(relative_path, ctx);
+        });
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    fn unstage_active_diff_pane_file(&mut self, _ctx: &mut ViewContext<Self>) {}
+
+    /// twarp 5e: read the active diff pane's staging state and push
+    /// the matching `NavBarStageButtonState` down to the editor's
+    /// NavBar so the button label (Stage vs Unstage) tracks reality.
+    /// Run on diff-pane open and on every `DiffStateModelEvent`.
+    #[cfg(feature = "local_fs")]
+    fn refresh_diff_pane_nav_bar_stage_state(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some((absolute_path, _repo_root, relative_path, diff_state_model)) =
+            self.resolve_active_diff_pane_target(ctx)
+        else {
+            return;
+        };
+        let pane_group_handle = self.active_tab_pane_group().clone();
+        let Some(editor) =
+            pane_group_handle
+                .as_ref(ctx)
+                .code_panes(ctx)
+                .find_map(|(_, code_view)| {
+                    code_view
+                        .as_ref(ctx)
+                        .editor_view_for_path(&absolute_path)
+                        .cloned()
+                })
+        else {
+            return;
+        };
+        let is_staged = match diff_state_model.as_ref(ctx).get() {
+            crate::code_review::diff_state::DiffState::Loaded(data) => {
+                data.staged.iter().any(|entry| entry.path == relative_path)
+            }
+            _ => false,
+        };
+        let state = if is_staged {
+            crate::code::editor::NavBarStageButtonState::ShowUnstage
+        } else {
+            crate::code::editor::NavBarStageButtonState::ShowStage
+        };
+        editor.update(ctx, |editor, ctx| {
+            editor.set_nav_bar_stage_button_state(state, ctx);
+        });
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    fn refresh_diff_pane_nav_bar_stage_state(&mut self, _ctx: &mut ViewContext<Self>) {}
 
     /// twarp 5e: close any code-pane tab(s) for the discarded paths
     /// (typically untracked / newly-added files that no longer exist
@@ -10393,24 +10457,33 @@ impl Workspace {
             });
         }
 
-        // twarp 05e: enable the NavBar Stage button on this file's
-        // editor so the user can stage the whole file from the diff
-        // pane. Independent of `base_content` — works even when the
-        // file is added/deleted (no `content_at_head`).
-        let editor_handle = pane_group_handle
-            .as_ref(ctx)
-            .code_panes(ctx)
-            .find_map(|(_, code_view)| code_view.as_ref(ctx).editor_view_for_path(&path).cloned());
-
-        if let Some(editor) = editor_handle.as_ref() {
-            editor.update(ctx, |editor, ctx| {
-                editor.set_show_nav_bar_stage_button(true, ctx);
-            });
+        // twarp 05e: subscribe to this repo's DiffStateModel and
+        // compute the initial Stage/Unstage label so the NavBar button
+        // tracks staging state (including external `git add` /
+        // `git restore --staged` from terminals). Independent of
+        // `base_content` — works even for added/deleted files where
+        // `content_at_head` is None.
+        if let Some(repo_root) = DetectedRepositories::as_ref(ctx).get_root_for_path(&path) {
+            if let Some(diff_state_model) =
+                self.working_directories_model.update(ctx, |model, ctx| {
+                    model.get_or_create_diff_state_model(repo_root.clone(), ctx)
+                })
+            {
+                ctx.subscribe_to_model(&diff_state_model, |me, _, _, ctx| {
+                    me.refresh_diff_pane_nav_bar_stage_state(ctx);
+                });
+            }
         }
+        self.refresh_diff_pane_nav_bar_stage_state(ctx);
 
         let Some(base) = base_content else {
             return;
         };
+
+        let editor_handle = pane_group_handle
+            .as_ref(ctx)
+            .code_panes(ctx)
+            .find_map(|(_, code_view)| code_view.as_ref(ctx).editor_view_for_path(&path).cloned());
 
         if let Some(editor) = editor_handle {
             editor.update(ctx, |editor, ctx| {
@@ -19268,6 +19341,9 @@ impl TypedActionView for Workspace {
             }
             StageActiveDiffPaneFile => {
                 self.stage_active_diff_pane_file(ctx);
+            }
+            UnstageActiveDiffPaneFile => {
+                self.unstage_active_diff_pane_file(ctx);
             }
             ToggleWarpDrive => {
                 if WarpDriveSettings::is_warp_drive_enabled(ctx) {

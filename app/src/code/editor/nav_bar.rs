@@ -52,8 +52,8 @@ pub enum NavBarAction {
 struct MouseStateHandles {
     close_mouse_state: MouseStateHandle,
     revert_mouse_state: MouseStateHandle,
-    /// twarp 05e: hover state for the "Stage" button. See
-    /// [`NavBar::show_stage_button`].
+    /// twarp 05e: hover state for the Stage / Unstage button. See
+    /// [`NavBar::stage_button_state`].
     stage_mouse_state: MouseStateHandle,
 }
 
@@ -62,19 +62,32 @@ pub enum NavBarBehavior {
     NotClosable,
 }
 
+/// twarp 05e: which form (if any) of the stage button to render in
+/// the NavBar. Pushed down from the workspace, which subscribes to
+/// `DiffStateModel` and recomputes it whenever the file's staging
+/// state changes.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum NavBarStageButtonState {
+    /// Default — no Stage button in the NavBar.
+    #[default]
+    Hidden,
+    /// Render "Stage" — clicking stages the file.
+    ShowStage,
+    /// Render "Unstage" — clicking unstages the file.
+    ShowUnstage,
+}
+
 pub struct NavBar {
     model: ModelHandle<CodeEditorModel>,
     behavior: NavBarBehavior,
     mouse_state_handles: MouseStateHandles,
     up_label_button: ViewHandle<ActionButton>,
     down_label_button: ViewHandle<ActionButton>,
-    /// twarp 05e: when true, render a "Stage" button alongside Reject
-    /// that dispatches `WorkspaceAction::StageActiveDiffPaneFile`.
-    /// Set via [`Self::set_show_stage_button`] from the twarp diff
-    /// pane's editor configuration so the button only appears for
-    /// that specific surface — not in regular code editing or the
-    /// Code Review panel's inline diffs.
-    show_stage_button: bool,
+    /// twarp 05e: which (if any) stage/unstage button to render. Set
+    /// via [`Self::set_stage_button_state`] from the workspace as
+    /// `DiffStateModel` changes. Hidden in regular code editing and
+    /// in the Code Review panel's inline diffs.
+    stage_button_state: NavBarStageButtonState,
 }
 
 impl NavBar {
@@ -105,16 +118,22 @@ impl NavBar {
             mouse_state_handles: Default::default(),
             up_label_button,
             down_label_button,
-            show_stage_button: false,
+            stage_button_state: NavBarStageButtonState::Hidden,
         }
     }
 
-    /// twarp 05e: opt this NavBar into rendering the "Stage" button.
-    pub fn set_show_stage_button(&mut self, show: bool, ctx: &mut ViewContext<Self>) {
-        if self.show_stage_button == show {
+    /// twarp 05e: configure which (if any) stage/unstage button to
+    /// render. Workspace pushes this down based on `DiffStateModel`
+    /// state.
+    pub fn set_stage_button_state(
+        &mut self,
+        state: NavBarStageButtonState,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.stage_button_state == state {
             return;
         }
-        self.show_stage_button = show;
+        self.stage_button_state = state;
         ctx.notify();
     }
 
@@ -234,10 +253,13 @@ impl NavBar {
         .finish()
     }
 
-    /// twarp 05e: render the "Stage" button. Click dispatches
-    /// `WorkspaceAction::StageActiveDiffPaneFile`, which the workspace
-    /// resolves to the active tab's diff pane and stages that file.
+    /// twarp 05e: render either the "Stage" or "Unstage" button based
+    /// on the current state. Click dispatches the matching
+    /// `WorkspaceAction`, which the workspace resolves to the active
+    /// tab's diff pane and runs the corresponding git op.
     fn render_stage_button(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let is_staged = matches!(self.stage_button_state, NavBarStageButtonState::ShowUnstage);
+        let label = if is_staged { "Unstage" } else { "Stage" };
         Container::new(
             appearance
                 .ui_builder()
@@ -245,12 +267,18 @@ impl NavBar {
                     ButtonVariant::Outlined,
                     self.mouse_state_handles.stage_mouse_state.clone(),
                 )
-                .with_text_label("Stage".to_string())
+                .with_text_label(label.to_string())
                 .build()
-                .on_click(|ctx, _, _| {
-                    ctx.dispatch_typed_action(
-                        crate::workspace::WorkspaceAction::StageActiveDiffPaneFile,
-                    )
+                .on_click(move |ctx, _, _| {
+                    if is_staged {
+                        ctx.dispatch_typed_action(
+                            crate::workspace::WorkspaceAction::UnstageActiveDiffPaneFile,
+                        );
+                    } else {
+                        ctx.dispatch_typed_action(
+                            crate::workspace::WorkspaceAction::StageActiveDiffPaneFile,
+                        );
+                    }
                 })
                 .finish(),
         )
@@ -339,11 +367,14 @@ impl View for NavBar {
             .with_child(self.render_nav_label(true))
             .with_child(self.render_nav_label(false));
 
-        // twarp 05e: render the Stage button to the left of Reject so
-        // the additive action sits before the destructive one. Gated
-        // by the explicit `show_stage_button` opt-in so it only
-        // appears in the twarp diff pane.
-        if self.show_stage_button && editable && total > 0 {
+        // twarp 05e: render the Stage / Unstage button to the left of
+        // Reject so the additive action sits before the destructive
+        // one. Gated by `stage_button_state` so it only appears where
+        // workspace has opted in (the twarp diff pane).
+        if !matches!(self.stage_button_state, NavBarStageButtonState::Hidden)
+            && editable
+            && total > 0
+        {
             row.add_child(self.render_stage_button(appearance));
         }
 

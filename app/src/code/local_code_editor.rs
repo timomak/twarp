@@ -1242,12 +1242,16 @@ impl LocalCodeEditorView {
         }
     }
 
-    /// twarp 05e: opt this editor's NavBar into rendering a Stage
-    /// button alongside Previous / Next / Reject. Used by the twarp
-    /// diff pane so file-level staging is one click away.
-    pub fn set_show_nav_bar_stage_button(&self, show: bool, ctx: &mut ViewContext<Self>) {
+    /// twarp 05e: set the NavBar's Stage / Unstage button state.
+    /// Used by the workspace, which recomputes it from
+    /// `DiffStateModel` whenever staging state changes.
+    pub fn set_nav_bar_stage_button_state(
+        &self,
+        state: crate::code::editor::NavBarStageButtonState,
+        ctx: &mut ViewContext<Self>,
+    ) {
         self.editor.update(ctx, |editor, ctx| {
-            editor.set_show_nav_bar_stage_button(show, ctx);
+            editor.set_nav_bar_stage_button_state(state, ctx);
         });
     }
 
