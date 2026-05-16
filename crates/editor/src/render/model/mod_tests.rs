@@ -1006,6 +1006,7 @@ fn test_dedupe_hidden_ranges_logged_tree_is_unchanged() {
         paragraph_block: ParagraphBlock::new(vec1![temporary_paragraph]),
         text_decoration: Vec::new(),
         decoration: None,
+        text: "\n".to_string(),
     };
     tree.push(temporary_block.clone());
     tree.push(temporary_block);

@@ -66,6 +66,18 @@ impl RenderableBlock for RenderableTemporaryBlock {
 
         let start = paragraph_block.start_char_offset;
         let paragraph_styles = &model.styles().base_text;
+        // twarp 05: if this temp block is the user's current
+        // selection, paint the selection range. The selection lives
+        // in content-space `CharOffset`s; for each paragraph, we
+        // intersect with the paragraph's range and call
+        // `paragraph.draw_highlight` with the overlap. Anchor match
+        // uses an epsilon to absorb the `+0.1` fudge in
+        // `ViewportItem::height()`.
+        let active_selection = model
+            .temp_block_selection()
+            .filter(|sel| (sel.anchor.height - self.viewport_item.height()).abs() < 0.5);
+        let selection_range = active_selection.as_ref().map(|sel| sel.min_max());
+        let selection_fill = model.styles().selection_fill;
         let mut decoration_index = 0;
         for paragraph in paragraph_block.paragraphs() {
             // We could draw text directly since temporary paragraph should have its own decoration and selection state.
@@ -75,6 +87,16 @@ impl RenderableBlock for RenderableTemporaryBlock {
                 paragraph.item.frame(),
                 paragraph_styles,
             );
+
+            if let Some((sel_lo, sel_hi)) = selection_range {
+                let para_start = paragraph.start_char_offset;
+                let para_end = paragraph.end_char_offset();
+                let lo = sel_lo.max(para_start);
+                let hi = sel_hi.min(para_end);
+                if lo < hi {
+                    paragraph.draw_highlight(lo, hi, selection_fill, ctx, model.max_line());
+                }
+            }
 
             let paragraph_end = paragraph.end_char_offset();
             for (idx, decoration) in self.text_decoration[decoration_index..].iter().enumerate() {

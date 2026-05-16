@@ -383,6 +383,37 @@ pub trait RichTextAction<V>: Sized {
     ) -> Option<Self> {
         None
     }
+
+    /// twarp 05: the user clicked on a deleted-line overlay
+    /// (`BlockItem::TemporaryBlock`) in a diff. Temporary blocks live
+    /// outside the buffer's [`CharOffset`] space, so the normal
+    /// `left_mouse_down(Location, ...)` path can't represent a
+    /// selection inside one — it would just clamp to the block's
+    /// start offset. This event lets the parent view set a parallel
+    /// "temp-block selection" on the render model so the user can
+    /// highlight and copy red text. Default returns `None`; the
+    /// editor element's `handle_left_mouse_down` falls through to
+    /// the regular `left_mouse_down` if so.
+    fn temp_block_clicked(
+        _hit: super::model::TempBlockHit,
+        _modifiers: ModifiersState,
+        _parent_view: &WeakViewHandle<V>,
+        _ctx: &AppContext,
+    ) -> Option<Self> {
+        None
+    }
+
+    /// twarp 05: a mouse drag landed inside a temporary block. Called
+    /// only when `temp_block_clicked` previously returned `Some`. Use
+    /// the hit's `char_offset` to extend the selection's end.
+    fn temp_block_dragged(
+        _hit: super::model::TempBlockHit,
+        _modifiers: ModifiersState,
+        _parent_view: &WeakViewHandle<V>,
+        _ctx: &AppContext,
+    ) -> Option<Self> {
+        None
+    }
 }
 
 /// Whether mouse events should be clamped to within the element bound.
@@ -602,6 +633,20 @@ impl<V: EditorView> RichTextElement<V> {
             ctx.request_soft_keyboard();
         }
 
+        // twarp 05: if the click landed on a deleted-line overlay
+        // (`BlockItem::TemporaryBlock`), dispatch the temp-block
+        // event so the parent view can set a parallel selection.
+        // Falls through to the regular `Location`-based dispatch when
+        // the parent view doesn't override `temp_block_clicked` or the
+        // hit isn't on a temp block.
+        if let Some(hit) = self.temp_block_hit_at(position, app, ctx)
+            && let Some(action) =
+                V::Action::temp_block_clicked(hit, modifiers, &self.parent_view, app)
+        {
+            ctx.dispatch_typed_action(action);
+            return true;
+        }
+
         if let HitTestResult::Hit(location) = self.position_to_location(
             position,
             ClampBehavior::NoneIfOutBound,
@@ -622,6 +667,26 @@ impl<V: EditorView> RichTextElement<V> {
         false
     }
 
+    /// twarp 05: shared helper — convert a window-space position
+    /// into a temp-block hit, or `None` when the position isn't on
+    /// any temporary block.
+    fn temp_block_hit_at(
+        &self,
+        position: Vector2F,
+        app: &AppContext,
+        ctx: &EventContext,
+    ) -> Option<super::model::TempBlockHit> {
+        if !self.is_in_bounds(position, ctx) {
+            return None;
+        }
+        let viewport_origin = self.viewport_origin()?;
+        let relative = position - viewport_origin;
+        self.model.as_ref(app).temp_block_hit_at_viewport_position(
+            relative.x().max(0.0).into_pixels(),
+            relative.y().max(0.0).into_pixels(),
+        )
+    }
+
     /// Performs hit-testing and dispatches mouse-drag events to the parent view.
     fn handle_left_mouse_dragged(
         &mut self,
@@ -633,6 +698,25 @@ impl<V: EditorView> RichTextElement<V> {
     ) -> bool {
         if self.is_content_covered(position, ctx) {
             return false;
+        }
+
+        // twarp 05: if the drag landed inside a temp block, dispatch
+        // the temp-block drag event first. The parent view returns
+        // `Some` only when there's an active temp-block selection;
+        // otherwise we fall through to the regular `Location`-based
+        // drag handler.
+        if let Some(hit) = self.temp_block_hit_at(position, app, ctx) {
+            let modifiers = ModifiersState {
+                cmd,
+                shift,
+                ..Default::default()
+            };
+            if let Some(action) =
+                V::Action::temp_block_dragged(hit, modifiers, &self.parent_view, app)
+            {
+                ctx.dispatch_typed_action(action);
+                return true;
+            }
         }
 
         if let HitTestResult::Hit(location) = self.position_to_location(
