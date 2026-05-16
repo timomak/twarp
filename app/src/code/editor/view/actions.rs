@@ -692,14 +692,24 @@ pub enum CodeEditorViewAction {
     Cut,
     Copy,
     /// twarp 05: the user clicked on a deleted-line overlay
-    /// (`BlockItem::TemporaryBlock`) in a diff. Stores the block's
-    /// text + height anchor on `RenderState`'s
-    /// `temp_block_selection`, which the painter consults to draw a
-    /// highlight and which cmd+C reads.
+    /// (`BlockItem::TemporaryBlock`) in a diff. Sets the temp-block
+    /// selection to the clicked line (the "click selects line"
+    /// default), records the click anchor so drags can extend from
+    /// it, and marks the editor as "selecting in a temp block" so
+    /// subsequent drags are routed here.
     TempBlockClicked {
-        text: String,
-        block_height: f64,
+        hit: warp_editor::render::model::TempBlockHit,
     },
+    /// twarp 05: drag inside a temp block while a click anchor is
+    /// active. Updates the selection's end to the drag position
+    /// (anchor stays at the original click offset).
+    TempBlockDragged {
+        hit: warp_editor::render::model::TempBlockHit,
+    },
+    /// twarp 05: mouse-up clears the "selecting in a temp block"
+    /// flag so the next click can start a fresh temp-block selection
+    /// or begin a regular text selection.
+    TempBlockSelectionEnd,
     #[cfg(windows)]
     WindowsCtrlC,
     Undo,
@@ -799,7 +809,9 @@ impl CodeEditorViewAction {
             | Self::MouseHovered { .. }
             | Self::MaybeClickOnHoveredLink(_)
             | Self::RightMouseDown { .. }
-            | Self::TempBlockClicked { .. } => true,
+            | Self::TempBlockClicked { .. }
+            | Self::TempBlockDragged { .. }
+            | Self::TempBlockSelectionEnd => true,
         }
     }
 }
@@ -993,20 +1005,22 @@ impl TypedActionView for CodeEditorView {
             Copy => {
                 // twarp 05: if there's an active temp-block selection
                 // (the user clicked on a deleted-line overlay in a
-                // diff), copy that text instead of the empty buffer
-                // selection. Temp blocks live outside the buffer, so
-                // `model.copy(ctx)` would no-op.
+                // diff), copy the selected substring instead of the
+                // empty buffer selection. Temp blocks live outside
+                // the buffer, so `model.copy(ctx)` would no-op.
                 let temp_block_text = self
                     .model
                     .as_ref(ctx)
                     .render_state()
                     .as_ref(ctx)
                     .temp_block_selection()
-                    .map(|sel| sel.text);
+                    .map(|sel| sel.selected_text());
                 if let Some(text) = temp_block_text {
-                    ctx.clipboard()
-                        .write(warpui::clipboard::ClipboardContent::plain_text(text));
-                    return;
+                    if !text.is_empty() {
+                        ctx.clipboard()
+                            .write(warpui::clipboard::ClipboardContent::plain_text(text));
+                        return;
+                    }
                 }
                 self.model.update(ctx, |model, ctx| {
                     model.copy(ctx);
@@ -1132,28 +1146,58 @@ impl TypedActionView for CodeEditorView {
                     model.maybe_click_on_hovered_link(offset, ctx)
                 });
             }
-            TempBlockClicked { text, block_height } => {
-                // twarp 05: set the parallel temp-block selection on
-                // the render state. The painter reads it to draw the
-                // highlight, and the workspace reads it on cmd+C.
-                // Also clear any active buffer selection so the user
-                // doesn't see two highlights at once.
-                let text = text.clone();
-                let block_height = *block_height;
+            TempBlockClicked { hit } => {
+                // twarp 05: click selects the whole line by default —
+                // the existing useful UX. Record the click position
+                // as the drag anchor; a subsequent mouse-drag inside
+                // the same block will replace this selection with
+                // (anchor, drag-position) to allow finer-grained
+                // selection.
+                let hit = hit.clone();
+                self.is_selecting_temp_block = true;
+                self.temp_block_click_anchor = Some(hit.char_offset);
+                let selection = warp_editor::render::model::TempBlockSelection {
+                    anchor: hit.anchor,
+                    text: hit.text,
+                    block_content_start: hit.block_content_start,
+                    start: hit.line_start,
+                    end: hit.line_end,
+                };
                 self.model.update(ctx, |model, ctx| {
                     let render_state = model.render_state().clone();
                     render_state.update(ctx, |render_state, _| {
-                        render_state.set_temp_block_selection(Some(
-                            warp_editor::render::model::TempBlockSelection {
-                                anchor: warp_editor::render::model::TempBlockAnchor {
-                                    height: block_height,
-                                },
-                                text,
-                            },
-                        ));
+                        render_state.set_temp_block_selection(Some(selection));
                     });
                 });
                 ctx.notify();
+            }
+            TempBlockDragged { hit } => {
+                // twarp 05: extend the existing selection from the
+                // click anchor to the current drag position. Only
+                // fires when the anchor still points at the same
+                // temp block (caller checks `is_selecting_temp_block`).
+                let hit = hit.clone();
+                let Some(anchor) = self.temp_block_click_anchor else {
+                    return;
+                };
+                let selection = warp_editor::render::model::TempBlockSelection {
+                    anchor: hit.anchor,
+                    text: hit.text,
+                    block_content_start: hit.block_content_start,
+                    start: anchor,
+                    end: hit.char_offset,
+                };
+                self.model.update(ctx, |model, ctx| {
+                    let render_state = model.render_state().clone();
+                    render_state.update(ctx, |render_state, _| {
+                        render_state.set_temp_block_selection(Some(selection));
+                    });
+                });
+                ctx.notify();
+            }
+            TempBlockSelectionEnd => {
+                self.is_selecting_temp_block = false;
+                self.temp_block_click_anchor = None;
             }
         }
     }
@@ -1294,13 +1338,19 @@ impl RichTextAction<CodeEditorView> for CodeEditorViewAction {
             return actions_to_dispatch;
         };
 
-        if view.as_ref(ctx).is_selecting {
+        let view_ref = view.as_ref(ctx);
+        if view_ref.is_selecting {
             actions_to_dispatch.push(CodeEditorViewAction::SelectionEnd);
         } else if cmd {
             if let Location::Text { char_offset, .. } = location {
                 actions_to_dispatch
                     .push(CodeEditorViewAction::MaybeClickOnHoveredLink(char_offset));
             }
+        }
+        // twarp 05: end any in-progress temp-block selection so the
+        // next click can start a fresh one.
+        if view_ref.is_selecting_temp_block {
+            actions_to_dispatch.push(CodeEditorViewAction::TempBlockSelectionEnd);
         }
         actions_to_dispatch
     }
@@ -1360,12 +1410,27 @@ impl RichTextAction<CodeEditorView> for CodeEditorViewAction {
     }
 
     fn temp_block_clicked(
-        text: String,
-        block_height: f64,
+        hit: warp_editor::render::model::TempBlockHit,
         _modifiers: ModifiersState,
         _parent_view: &WeakViewHandle<CodeEditorView>,
         _ctx: &AppContext,
     ) -> Option<Self> {
-        Some(CodeEditorViewAction::TempBlockClicked { text, block_height })
+        Some(CodeEditorViewAction::TempBlockClicked { hit })
+    }
+
+    fn temp_block_dragged(
+        hit: warp_editor::render::model::TempBlockHit,
+        _modifiers: ModifiersState,
+        parent_view: &WeakViewHandle<CodeEditorView>,
+        ctx: &AppContext,
+    ) -> Option<Self> {
+        // Only respond if the view is currently in a temp-block
+        // drag (set by a prior `TempBlockClicked`). Otherwise let
+        // the regular Location-based drag path handle it.
+        let view = parent_view.upgrade(ctx)?;
+        if !view.as_ref(ctx).is_selecting_temp_block {
+            return None;
+        }
+        Some(CodeEditorViewAction::TempBlockDragged { hit })
     }
 }

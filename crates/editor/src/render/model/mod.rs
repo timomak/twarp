@@ -408,22 +408,75 @@ pub struct TempBlockAnchor {
     pub height: f64,
 }
 
-/// twarp 05: a "selected" temporary block (deleted-line overlay in a
-/// diff). Temporary blocks render outside the buffer's [`CharOffset`]
-/// space, so the buffer-level `RenderedSelectionSet` cannot represent
-/// a selection within one. This is a parallel selection model that
-/// the
+/// twarp 05: a selection inside a deleted-line overlay
+/// (`BlockItem::TemporaryBlock`) in a diff. Temporary blocks render
+/// outside the buffer's [`CharOffset`] space, so the buffer-level
+/// `RenderedSelectionSet` cannot represent a selection within one.
+/// This is a parallel selection model that the
 /// [`super::element::temporary_block::RenderableTemporaryBlock`]
 /// painter consults to draw a highlight overlay, and that the
-/// workspace reads on cmd+C. First cut: granularity is one whole
-/// temporary block. Character / line granularity is a follow-up.
+/// workspace reads on cmd+C.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TempBlockSelection {
     pub anchor: TempBlockAnchor,
-    /// The deleted-line text the selection covers. Cached on the
-    /// selection so cmd+C can read it without re-walking the
-    /// content tree.
+    /// Full text of the temp block (joined lines, no trailing
+    /// newline). Cached so cmd+C can read the selected substring
+    /// without re-walking the content tree.
     pub text: String,
+    /// The temp block's content-space start offset. The temp
+    /// block's paragraphs each have their own `start_char_offset`
+    /// that runs from `block_content_start` upwards; selection
+    /// `start`/`end` are also in this content space, so the painter
+    /// can pass them straight to `paragraph.draw_highlight`.
+    pub block_content_start: CharOffset,
+    /// Selection start in content space. May be greater than `end`
+    /// if the user dragged backwards.
+    pub start: CharOffset,
+    pub end: CharOffset,
+}
+
+impl TempBlockSelection {
+    /// Min/max content-space offsets, regardless of drag direction.
+    pub fn min_max(&self) -> (CharOffset, CharOffset) {
+        if self.start <= self.end {
+            (self.start, self.end)
+        } else {
+            (self.end, self.start)
+        }
+    }
+
+    /// The currently-selected substring of `text`. Uses char (not
+    /// byte) indexing because the underlying offsets are
+    /// `CharOffset` (counts characters, not bytes).
+    pub fn selected_text(&self) -> String {
+        let (lo, hi) = self.min_max();
+        let start_char = lo.saturating_sub(&self.block_content_start).as_usize();
+        let end_char = hi.saturating_sub(&self.block_content_start).as_usize();
+        if start_char >= end_char {
+            return String::new();
+        }
+        self.text
+            .chars()
+            .skip(start_char)
+            .take(end_char - start_char)
+            .collect()
+    }
+}
+
+/// twarp 05: a temp-block hit-test result. The workspace turns this
+/// into a [`TempBlockSelection`] on click (selecting the whole line)
+/// or extends an existing selection on drag (cursor at `char_offset`).
+#[derive(Debug, Clone)]
+pub struct TempBlockHit {
+    pub anchor: TempBlockAnchor,
+    pub text: String,
+    pub block_content_start: CharOffset,
+    /// Cursor position at the hit, in content space.
+    pub char_offset: CharOffset,
+    /// Start/end of the hit paragraph (line). Used by click-handlers
+    /// that want "click selects line".
+    pub line_start: CharOffset,
+    pub line_end: CharOffset,
 }
 
 pub struct RenderState {
@@ -2140,24 +2193,58 @@ impl RenderState {
     /// position isn't on a temporary block. Used by the workspace's
     /// click handler to populate [`TempBlockSelection`] when the user
     /// clicks on deleted lines in a diff.
-    pub fn temp_block_at_viewport_position(
+    /// twarp 05: hit-test against a temporary block. Returns the
+    /// clicked temp block's metadata plus the cursor position at the
+    /// hit and the bounds of the hit line — all in content-space
+    /// `CharOffset`s. The workspace turns this into either a
+    /// "selects-whole-line" click selection or a drag end-point
+    /// update, depending on the event.
+    pub fn temp_block_hit_at_viewport_position(
         &self,
         x_viewport: Pixels,
         y_viewport: Pixels,
-    ) -> Option<TempBlockSelection> {
-        let _ = x_viewport;
+    ) -> Option<TempBlockHit> {
+        let content_x = (x_viewport + self.viewport.scroll_left()).max(Pixels::zero());
         let content_y = (y_viewport + self.viewport.scroll_top()).max(Pixels::zero());
         let content = self.content();
         let block = content.block_at_height(content_y.as_f32() as f64)?;
-        match block.item {
-            BlockItem::TemporaryBlock { text, .. } => Some(TempBlockSelection {
-                anchor: TempBlockAnchor {
-                    height: block.start_y_offset.as_f32() as f64,
-                },
-                text: text.clone(),
-            }),
-            _ => None,
+        let BlockItem::TemporaryBlock {
+            paragraph_block,
+            text,
+            ..
+        } = block.item
+        else {
+            return None;
+        };
+        let positioned_block = block.temporary_block(paragraph_block);
+        let block_start = positioned_block.start_char_offset;
+        // Find the paragraph at content_y (or the last paragraph if
+        // the click is below the final line). Use its
+        // `coordinate_to_location` to map x into a `CharOffset`.
+        let mut paragraphs_iter = positioned_block.paragraphs().peekable();
+        let mut hit_paragraph: Option<_> = None;
+        while let Some(paragraph) = paragraphs_iter.next() {
+            if paragraph.end_y_offset() > content_y || paragraphs_iter.peek().is_none() {
+                hit_paragraph = Some(paragraph);
+                break;
+            }
         }
+        let paragraph = hit_paragraph?;
+        let location = paragraph.coordinate_to_location(content_x, content_y);
+        let char_offset = match location {
+            Location::Text { char_offset, .. } => char_offset,
+            Location::Block { start_offset, .. } => start_offset,
+        };
+        Some(TempBlockHit {
+            anchor: TempBlockAnchor {
+                height: block.start_y_offset.as_f32() as f64,
+            },
+            text: text.clone(),
+            block_content_start: block_start,
+            char_offset,
+            line_start: paragraph.start_char_offset,
+            line_end: paragraph.end_char_offset(),
+        })
     }
 
     /// Return the character offset ranges of items in the viewport. Note that the start / end offset

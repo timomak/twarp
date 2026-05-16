@@ -266,6 +266,19 @@ pub struct CodeEditorView {
     nav_bar: ViewHandle<NavBar>,
     display_states: DisplayHandles,
     is_selecting: bool,
+    /// twarp 05: true while the user is dragging inside a
+    /// deleted-line overlay (`BlockItem::TemporaryBlock`). Set by
+    /// the `TempBlockClicked` action, cleared by
+    /// `TempBlockSelectionEnd` (dispatched on mouse-up). When set,
+    /// `RichTextAction::temp_block_dragged` returns the drag-extend
+    /// action; when clear, drags fall through to the regular text
+    /// selection path.
+    pub(super) is_selecting_temp_block: bool,
+    /// twarp 05: the click anchor (cursor position at mouse-down) of
+    /// the in-progress temp-block selection. Drag updates compute
+    /// the new selection range as `(anchor, drag_position)`, so the
+    /// selection grows from this point as the user moves.
+    pub(super) temp_block_click_anchor: Option<string_offset::CharOffset>,
     self_handle: WeakViewHandle<Self>,
     display_options: CodeEditorViewDisplayOptions,
     pending_scroll: Option<ScrollTrigger>,
@@ -384,6 +397,8 @@ impl CodeEditorView {
             model,
             display_states: Default::default(),
             is_selecting: false,
+            is_selecting_temp_block: false,
+            temp_block_click_anchor: None,
             self_handle: ctx.handle(),
             nav_bar,
             comment_locations: Vec::new(),

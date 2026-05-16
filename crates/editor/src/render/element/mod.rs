@@ -395,8 +395,19 @@ pub trait RichTextAction<V>: Sized {
     /// editor element's `handle_left_mouse_down` falls through to
     /// the regular `left_mouse_down` if so.
     fn temp_block_clicked(
-        _text: String,
-        _block_height: f64,
+        _hit: super::model::TempBlockHit,
+        _modifiers: ModifiersState,
+        _parent_view: &WeakViewHandle<V>,
+        _ctx: &AppContext,
+    ) -> Option<Self> {
+        None
+    }
+
+    /// twarp 05: a mouse drag landed inside a temporary block. Called
+    /// only when `temp_block_clicked` previously returned `Some`. Use
+    /// the hit's `char_offset` to extend the selection's end.
+    fn temp_block_dragged(
+        _hit: super::model::TempBlockHit,
         _modifiers: ModifiersState,
         _parent_view: &WeakViewHandle<V>,
         _ctx: &AppContext,
@@ -628,26 +639,12 @@ impl<V: EditorView> RichTextElement<V> {
         // Falls through to the regular `Location`-based dispatch when
         // the parent view doesn't override `temp_block_clicked` or the
         // hit isn't on a temp block.
-        if self.is_in_bounds(position, ctx)
-            && let Some(viewport_origin) = self.viewport_origin()
+        if let Some(hit) = self.temp_block_hit_at(position, app, ctx)
+            && let Some(action) =
+                V::Action::temp_block_clicked(hit, modifiers, &self.parent_view, app)
         {
-            let relative = position - viewport_origin;
-            let temp_block = self.model.as_ref(app).temp_block_at_viewport_position(
-                relative.x().max(0.0).into_pixels(),
-                relative.y().max(0.0).into_pixels(),
-            );
-            if let Some(temp_block) = temp_block
-                && let Some(action) = V::Action::temp_block_clicked(
-                    temp_block.text.clone(),
-                    temp_block.anchor.height,
-                    modifiers,
-                    &self.parent_view,
-                    app,
-                )
-            {
-                ctx.dispatch_typed_action(action);
-                return true;
-            }
+            ctx.dispatch_typed_action(action);
+            return true;
         }
 
         if let HitTestResult::Hit(location) = self.position_to_location(
@@ -670,6 +667,26 @@ impl<V: EditorView> RichTextElement<V> {
         false
     }
 
+    /// twarp 05: shared helper — convert a window-space position
+    /// into a temp-block hit, or `None` when the position isn't on
+    /// any temporary block.
+    fn temp_block_hit_at(
+        &self,
+        position: Vector2F,
+        app: &AppContext,
+        ctx: &EventContext,
+    ) -> Option<super::model::TempBlockHit> {
+        if !self.is_in_bounds(position, ctx) {
+            return None;
+        }
+        let viewport_origin = self.viewport_origin()?;
+        let relative = position - viewport_origin;
+        self.model.as_ref(app).temp_block_hit_at_viewport_position(
+            relative.x().max(0.0).into_pixels(),
+            relative.y().max(0.0).into_pixels(),
+        )
+    }
+
     /// Performs hit-testing and dispatches mouse-drag events to the parent view.
     fn handle_left_mouse_dragged(
         &mut self,
@@ -681,6 +698,25 @@ impl<V: EditorView> RichTextElement<V> {
     ) -> bool {
         if self.is_content_covered(position, ctx) {
             return false;
+        }
+
+        // twarp 05: if the drag landed inside a temp block, dispatch
+        // the temp-block drag event first. The parent view returns
+        // `Some` only when there's an active temp-block selection;
+        // otherwise we fall through to the regular `Location`-based
+        // drag handler.
+        if let Some(hit) = self.temp_block_hit_at(position, app, ctx) {
+            let modifiers = ModifiersState {
+                cmd,
+                shift,
+                ..Default::default()
+            };
+            if let Some(action) =
+                V::Action::temp_block_dragged(hit, modifiers, &self.parent_view, app)
+            {
+                ctx.dispatch_typed_action(action);
+                return true;
+            }
         }
 
         if let HitTestResult::Hit(location) = self.position_to_location(
