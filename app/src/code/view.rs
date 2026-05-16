@@ -604,6 +604,13 @@ impl CodeView {
                 });
             }
             LocalCodeEditorEvent::DelayedRenderingFlushed => (),
+            // twarp 5b: stage/unstage events bubble through here.
+            // The workspace subscribes to the diff pane's editor
+            // directly in `open_file_diff_in_new_pane`, so CodeView
+            // doesn't need to act on them — the subscription set up
+            // there resolves the repo's `DiffStateModel`.
+            LocalCodeEditorEvent::StageHunkRequested { .. }
+            | LocalCodeEditorEvent::UnstageHunkRequested { .. } => (),
         });
 
         TabData {

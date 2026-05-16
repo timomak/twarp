@@ -1,5 +1,7 @@
 mod gutter_button;
-pub use gutter_button::{AddAsContextButton, CommentButton, RevertHunkButton};
+pub use gutter_button::{
+    AddAsContextButton, CommentButton, RevertHunkButton, StageHunkButton, UnstageHunkButton,
+};
 
 use std::{
     ops::Range,
@@ -302,6 +304,10 @@ pub struct EditorWrapperState {
     add_as_context_mouse_state: MouseStateHandle,
     /// Mouse state handle for the revert button.
     revert_mouse_state: MouseStateHandle,
+    /// twarp 5b: mouse state handle for the stage-hunk button.
+    stage_mouse_state: MouseStateHandle,
+    /// twarp 5b: mouse state handle for the unstage-hunk button.
+    unstage_mouse_state: MouseStateHandle,
     /// Mouse state handle for the comment button.
     comment_mouse_state: MouseStateHandle,
     /// Tracks the line range where the add context button was last clicked,
@@ -402,6 +408,12 @@ pub struct EditorWrapper<V: EditorView> {
     add_hunk_as_context_button: Option<AddAsContextButton>,
     /// Display state of the "revert" button shown next to diff hunks.
     revert_hunk_button: Option<RevertHunkButton>,
+    /// twarp 5b: stage-hunk button shown next to diff hunks on the
+    /// Changes side of the Code Review panel.
+    stage_hunk_button: Option<StageHunkButton>,
+    /// twarp 5b: unstage-hunk button shown next to diff hunks on the
+    /// Staged side of the Code Review panel.
+    unstage_hunk_button: Option<UnstageHunkButton>,
     /// Display state of the "comment" button shown next to diff hunks.
     comment_button: Option<CommentButton>,
     // Todo: kc combine all comment related fields into a struct.
@@ -506,6 +518,8 @@ impl<V: EditorView> EditorWrapper<V> {
         focused_diff_line_range: Option<Range<LineCount>>,
         add_diff_as_context_button: Option<AddAsContextButton>,
         revert_hunk_button: Option<RevertHunkButton>,
+        stage_hunk_button: Option<StageHunkButton>,
+        unstage_hunk_button: Option<UnstageHunkButton>,
         comment_button: Option<CommentButton>,
         saved_comments: Vec<SavedComment>,
         expand_diff_indicator_width_on_hover: bool,
@@ -529,6 +543,8 @@ impl<V: EditorView> EditorWrapper<V> {
             child_max_z_index: None,
             add_hunk_as_context_button: add_diff_as_context_button,
             revert_hunk_button,
+            stage_hunk_button,
+            unstage_hunk_button,
             comment_button,
             expand_diff_indicator_width_on_hover,
             gutter_element_hover_target,
@@ -1066,6 +1082,53 @@ impl<V: EditorView> EditorWrapper<V> {
         )
     }
 
+    /// twarp 5b: renders the `[+]` stage-hunk button. Dispatches
+    /// `CodeEditorViewAction::StageDiffHunk`; the editor's action
+    /// handler emits `CodeEditorEvent::StageHunkRequested` for the
+    /// parent (`LocalCodeEditorView` → `WorkspaceView`) to apply.
+    fn render_stage_button(
+        &self,
+        stage_hunk_button: &StageHunkButton,
+        gutter_element_height: f32,
+        diff_line_range: &Range<LineCount>,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let on_click_action = Some(CodeEditorViewAction::StageDiffHunk {
+            line_range: diff_line_range.to_owned(),
+        });
+
+        self.render_gutter_button(
+            self.state_handle.stage_mouse_state.clone(),
+            gutter_element_height,
+            on_click_action,
+            appearance,
+            stage_hunk_button,
+        )
+    }
+
+    /// twarp 5b: renders the `[−]` unstage-hunk button. Mirrors
+    /// [`Self::render_stage_button`]; dispatches
+    /// `CodeEditorViewAction::UnstageDiffHunk`.
+    fn render_unstage_button(
+        &self,
+        unstage_hunk_button: &UnstageHunkButton,
+        gutter_element_height: f32,
+        diff_line_range: &Range<LineCount>,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let on_click_action = Some(CodeEditorViewAction::UnstageDiffHunk {
+            line_range: diff_line_range.to_owned(),
+        });
+
+        self.render_gutter_button(
+            self.state_handle.unstage_mouse_state.clone(),
+            gutter_element_height,
+            on_click_action,
+            appearance,
+            unstage_hunk_button,
+        )
+    }
+
     /// Renders the comment button for adding comments to diff hunks.
     fn render_comment_button(
         &self,
@@ -1167,6 +1230,14 @@ impl<V: EditorView> EditorWrapper<V> {
         let show_add_as_context_button = self.add_hunk_as_context_button.is_some();
         let show_revert_diff_hunk =
             FeatureFlag::RevertDiffHunk.is_enabled() && self.revert_hunk_button.is_some();
+        // twarp 5b: stage/unstage buttons piggy-back on the same
+        // `RevertDiffHunk` feature flag — they're shown together in
+        // the Code Review hunk cluster and one without the others
+        // would be a half-finished feature surface.
+        let show_stage_diff_hunk =
+            FeatureFlag::RevertDiffHunk.is_enabled() && self.stage_hunk_button.is_some();
+        let show_unstage_diff_hunk =
+            FeatureFlag::RevertDiffHunk.is_enabled() && self.unstage_hunk_button.is_some();
 
         // Show comment button independently of diff hunk state when requested
         let show_comment_button = FeatureFlag::InlineCodeReview.is_enabled()
@@ -1188,6 +1259,32 @@ impl<V: EditorView> EditorWrapper<V> {
             }
 
             if should_show_diff_hunk_icons {
+                if let Some(stage_hunk_button) = self
+                    .stage_hunk_button
+                    .as_ref()
+                    .filter(|_| show_stage_diff_hunk)
+                {
+                    buttons.add_child(self.render_stage_button(
+                        stage_hunk_button,
+                        line_height,
+                        line.line_range(),
+                        appearance,
+                    ));
+                }
+
+                if let Some(unstage_hunk_button) = self
+                    .unstage_hunk_button
+                    .as_ref()
+                    .filter(|_| show_unstage_diff_hunk)
+                {
+                    buttons.add_child(self.render_unstage_button(
+                        unstage_hunk_button,
+                        line_height,
+                        line.line_range(),
+                        appearance,
+                    ));
+                }
+
                 if let Some(revert_hunk_button) = self
                     .revert_hunk_button
                     .as_ref()

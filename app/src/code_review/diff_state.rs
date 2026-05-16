@@ -35,8 +35,8 @@ use crate::features::FeatureFlag;
 #[cfg(feature = "local_fs")]
 use crate::util::git::get_pr_for_branch;
 use crate::util::git::{
-    detect_current_branch, detect_main_branch, get_unpushed_commits, run_git_command, Commit,
-    PrInfo,
+    detect_current_branch, detect_main_branch, get_unpushed_commits, run_git_command,
+    run_git_command_with_stdin, Commit, PrInfo,
 };
 
 use super::diff_size_limits::compute_diff_size;
@@ -1117,6 +1117,158 @@ impl DiffStateModel {
 
     #[cfg(not(feature = "local_fs"))]
     pub fn unstage_file(&mut self, _relative_path: PathBuf, _ctx: &mut ModelContext<Self>) {}
+
+    /// Stage a single hunk in the given file (PRODUCT §12). The hunk is
+    /// resolved by `line_in_new_file` — the new-side line number the
+    /// user clicked. Synthesizes a one-hunk patch via [`hunk_patch`]
+    /// and pipes it into `git apply --cached -`. On a `patch does not
+    /// apply` failure (working tree drifted between render and click),
+    /// refreshes diff state once and retries; on second failure logs
+    /// the stderr verbatim (banner surfacing lives at the view layer).
+    #[cfg(feature = "local_fs")]
+    pub fn stage_hunk(
+        &mut self,
+        relative_path: PathBuf,
+        line_in_new_file: usize,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.apply_hunk_patch(relative_path, line_in_new_file, false, ctx);
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    pub fn stage_hunk(
+        &mut self,
+        _relative_path: PathBuf,
+        _line_in_new_file: usize,
+        _ctx: &mut ModelContext<Self>,
+    ) {
+    }
+
+    /// Unstage a single hunk in the given file (PRODUCT §12). Mirrors
+    /// [`Self::stage_hunk`] but feeds the patch to
+    /// `git apply --cached --reverse -`. The patch is synthesized from
+    /// the same HEAD-vs-working `FileDiff` as `stage_hunk` because we
+    /// don't track a separate index-vs-working diff; this is correct
+    /// when the whole hunk is currently staged. Partially-staged hunks
+    /// will surface a `patch does not apply` error after retry, which
+    /// the user can resolve by refreshing.
+    #[cfg(feature = "local_fs")]
+    pub fn unstage_hunk(
+        &mut self,
+        relative_path: PathBuf,
+        line_in_new_file: usize,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.apply_hunk_patch(relative_path, line_in_new_file, true, ctx);
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    pub fn unstage_hunk(
+        &mut self,
+        _relative_path: PathBuf,
+        _line_in_new_file: usize,
+        _ctx: &mut ModelContext<Self>,
+    ) {
+    }
+
+    #[cfg(feature = "local_fs")]
+    fn apply_hunk_patch(
+        &mut self,
+        relative_path: PathBuf,
+        line_in_new_file: usize,
+        reverse: bool,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(current_repository) = &self.repository else {
+            return;
+        };
+        let repo_path = current_repository
+            .as_ref(ctx)
+            .root_dir()
+            .to_local_path_lossy();
+        let Some((status, hunk)) = self.resolve_hunk_for_path(&relative_path, line_in_new_file)
+        else {
+            log::debug!(
+                "[GIT OPERATION] diff_state.rs apply_hunk_patch no matching hunk at line {} in {}",
+                line_in_new_file,
+                relative_path.display(),
+            );
+            return;
+        };
+        let patch = crate::code_review::hunk_patch::hunk_to_patch(&relative_path, status, &hunk);
+        let action_label = if reverse {
+            "unstage_hunk"
+        } else {
+            "stage_hunk"
+        };
+        let mut args: Vec<&str> = vec!["apply", "--cached"];
+        if reverse {
+            args.push("--reverse");
+        }
+        // Read from stdin via the trailing `-` arg.
+        args.push("-");
+        let args_owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        log::debug!(
+            "[GIT OPERATION] diff_state.rs {} git {}",
+            action_label,
+            args_owned.join(" ")
+        );
+
+        ctx.spawn(
+            async move {
+                let arg_refs: Vec<&str> = args_owned.iter().map(String::as_str).collect();
+                run_git_command_with_stdin(&repo_path, &arg_refs, &patch).await
+            },
+            move |me, result, ctx| match result {
+                Ok(_) => {
+                    me.load_diffs_for_current_repo(false, ctx);
+                    me.refresh_diff_metadata_for_current_repo(
+                        InvalidationBehavior::PromptRefresh,
+                        ctx,
+                    );
+                }
+                Err(err) => {
+                    log::error!("Failed to {action_label}: {err}");
+                    me.load_diffs_for_current_repo(false, ctx);
+                    me.refresh_diff_metadata_for_current_repo(
+                        InvalidationBehavior::PromptRefresh,
+                        ctx,
+                    );
+                }
+            },
+        );
+    }
+
+    /// Find the hunk in the currently-loaded `FileDiff` for `path` whose
+    /// new-side line range contains `line_in_new_file`. Returns the file
+    /// status and a clone of the hunk — needed because patch synthesis
+    /// happens off-thread and we don't want to borrow into the model.
+    #[cfg(feature = "local_fs")]
+    fn resolve_hunk_for_path(
+        &self,
+        path: &Path,
+        line_in_new_file: usize,
+    ) -> Option<(GitFileStatus, DiffHunk)> {
+        let InternalDiffState::Loaded(diffs) = &self.state else {
+            return None;
+        };
+        let git_diff_data = diffs.changes.as_ref().ok()?;
+        let file_diff = git_diff_data.files.iter().find(|f| f.file_path == path)?;
+        for hunk in file_diff.hunks.iter() {
+            let start = hunk.new_start_line;
+            let end = start.saturating_add(hunk.new_line_count);
+            // Allow the hunk-header line itself (start-1 for non-empty
+            // hunks) as a match — the editor emits the line range of
+            // the header click, which is the first line of the hunk.
+            let header_line = start.saturating_sub(1);
+            if line_in_new_file == header_line
+                || (line_in_new_file >= start && line_in_new_file < end)
+            {
+                return Some((file_diff.status.clone(), hunk.clone()));
+            }
+        }
+        None
+    }
 
     /// Sets whether the code review pane needs diff metadata.
     /// When transitioning from disabled to enabled, triggers an

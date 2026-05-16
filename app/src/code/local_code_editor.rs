@@ -136,6 +136,20 @@ pub enum LocalCodeEditorEvent {
         /// Literal text content of the selection.
         selected_text: String,
     },
+    /// twarp 5b: user clicked the `[+]` stage-hunk button in this
+    /// editor's diff. The path is the editor's [`Self::file_path`] at
+    /// click time; the line range is the hunk header line range so the
+    /// parent can resolve the matching hunk in the repo's
+    /// `DiffStateModel`.
+    StageHunkRequested {
+        path: PathBuf,
+        line_range: Range<LineCount>,
+    },
+    /// twarp 5b: user clicked the `[−]` unstage-hunk button.
+    UnstageHunkRequested {
+        path: PathBuf,
+        line_range: Range<LineCount>,
+    },
     DiscardUnsavedChanges {
         path: PathBuf,
     },
@@ -364,6 +378,22 @@ impl LocalCodeEditorView {
             }
             CodeEditorEvent::DiffUpdated => {
                 ctx.emit(LocalCodeEditorEvent::DiffStatusUpdated);
+            }
+            CodeEditorEvent::StageHunkRequested { line_range } => {
+                if let Some(path) = me.file_path().map(Path::to_path_buf) {
+                    ctx.emit(LocalCodeEditorEvent::StageHunkRequested {
+                        path,
+                        line_range: line_range.clone(),
+                    });
+                }
+            }
+            CodeEditorEvent::UnstageHunkRequested { line_range } => {
+                if let Some(path) = me.file_path().map(Path::to_path_buf) {
+                    ctx.emit(LocalCodeEditorEvent::UnstageHunkRequested {
+                        path,
+                        line_range: line_range.clone(),
+                    });
+                }
             }
             CodeEditorEvent::SelectionEnd => {
                 ctx.notify();

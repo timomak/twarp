@@ -111,6 +111,64 @@ impl GutterButton for RevertHunkButton {
     }
 }
 
+/// twarp 5b: gutter button shown on a hunk header in the Changes side
+/// of the Code Review panel. Clicking stages just this hunk by feeding
+/// a synthesized one-hunk patch to `git apply --cached`. Lives next to
+/// [`RevertHunkButton`] in the gutter; both are hover-revealed.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct StageHunkButton {
+    is_enabled: bool,
+}
+
+impl StageHunkButton {
+    pub fn new(is_enabled: bool) -> Self {
+        Self { is_enabled }
+    }
+}
+
+impl GutterButton for StageHunkButton {
+    fn is_enabled(&self) -> bool {
+        self.is_enabled
+    }
+
+    fn tooltip_text(&self) -> Option<&'static str> {
+        Some("Stage hunk")
+    }
+
+    fn icon(&self) -> Icon {
+        Icon::Plus
+    }
+}
+
+/// twarp 5b: gutter button shown on a hunk header in the Staged side
+/// of the Code Review panel. Clicking unstages just this hunk via
+/// `git apply --cached --reverse`. Paired with [`StageHunkButton`];
+/// only one of the two is shown per hunk depending on the surface.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct UnstageHunkButton {
+    is_enabled: bool,
+}
+
+impl UnstageHunkButton {
+    pub fn new(is_enabled: bool) -> Self {
+        Self { is_enabled }
+    }
+}
+
+impl GutterButton for UnstageHunkButton {
+    fn is_enabled(&self) -> bool {
+        self.is_enabled
+    }
+
+    fn tooltip_text(&self) -> Option<&'static str> {
+        Some("Unstage hunk")
+    }
+
+    fn icon(&self) -> Icon {
+        Icon::Minus
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 #[allow(dead_code)]
 pub enum CommentButton {
