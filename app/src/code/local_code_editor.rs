@@ -1266,6 +1266,11 @@ impl LocalCodeEditorView {
             self.editor.update(ctx, |editor, ctx| {
                 editor.set_base(&base, true, ctx);
                 editor.expand_diffs(ctx);
+                // twarp 5b: opening a file from the Code Review panel — land
+                // the viewport on the first hunk so the user sees what
+                // changed without scrolling. Brand-new files have no hunks
+                // (no base) and this is a no-op.
+                editor.scroll_to_first_hunk(ctx);
             });
         } else {
             self.pending_diff_base_on_load = Some(base);
@@ -1463,6 +1468,9 @@ impl LocalCodeEditorView {
                         me.editor.update(ctx, |editor, ctx| {
                             editor.set_base(&base, true, ctx);
                             editor.expand_diffs(ctx);
+                            // twarp 5b: same scroll-to-first-hunk as the
+                            // immediate branch above — see comment there.
+                            editor.scroll_to_first_hunk(ctx);
                         });
                     }
                     ctx.emit(LocalCodeEditorEvent::FileLoaded);

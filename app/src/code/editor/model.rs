@@ -1164,6 +1164,30 @@ impl CodeEditorModel {
         ctx.emit(CodeEditorModelEvent::DiffUpdated);
     }
 
+    /// twarp 5b: Scroll the viewport to the first diff hunk. Used when the
+    /// Code Review panel opens a file in the split diff pane — landing on
+    /// line 1 forces the user to scroll to find what changed. For files
+    /// with no hunks (brand-new file with no base, or unchanged file) this
+    /// is a no-op. Modelled on `NavBar::autoscroll`.
+    pub fn scroll_to_first_hunk(&mut self, ctx: &mut ModelContext<Self>) {
+        let Some(range) = self.diff.as_ref(ctx).line_range_by_diff_hunk_index(0) else {
+            return;
+        };
+        let character_offset = self.start_of_line_offset(range.start, ctx);
+        // Leave ~1/10 of the viewport above the hunk so the user sees a
+        // sliver of unchanged context (mirrors NavBar's diff-nav offset).
+        let delta = (self.lines_in_viewport(ctx) / 10).max(1);
+        let pixel_offset = -(delta as f32 * self.line_height(ctx));
+        self.render_state
+            .clone()
+            .update(ctx, |render_state, _ctx| {
+                render_state.request_autoscroll_to_exact_vertical(
+                    character_offset,
+                    pixel_offset.into_pixels(),
+                );
+            });
+    }
+
     pub fn diff_status(&self, app: &AppContext) -> DiffStatus {
         self.diff.as_ref(app).diff_status().clone()
     }

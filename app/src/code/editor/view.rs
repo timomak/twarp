@@ -1424,6 +1424,16 @@ impl CodeEditorView {
         });
     }
 
+    /// twarp 5b: View-level shim for `CodeEditorModel::scroll_to_first_hunk`.
+    pub fn scroll_to_first_hunk(&self, ctx: &mut ViewContext<Self>) {
+        if !self.display_options.can_show_diff_ui {
+            return;
+        }
+        self.model.update(ctx, |model, ctx| {
+            model.scroll_to_first_hunk(ctx);
+        });
+    }
+
     /// Handles [`Appearance`] changes by updating the render model.
     fn handle_appearance_or_font_change(&mut self, ctx: &mut ViewContext<Self>) {
         let new_styles = code_text_styles(
