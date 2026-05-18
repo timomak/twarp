@@ -1400,10 +1400,13 @@ impl DiffStateModel {
             |_, _| {},
         );
 
-        // Only update metadata at most once every 5 seconds. The code review pane
-        // will refresh diffs at a faster rate if it's open (from the stream above).
+        // twarp 5b: 1s throttle (was 5s upstream). Tighter so terminal `git`
+        // commands that fire FS-watcher events reach the panel within a frame
+        // or two. Explicit refresh paths (sidebar click, terminal-command-end
+        // hook) call `refresh_diff_metadata_for_current_repo` directly and
+        // bypass this throttle entirely.
         ctx.spawn_stream_local(
-            throttle(Duration::from_secs(5), throttled_repository_update_rx),
+            throttle(Duration::from_secs(1), throttled_repository_update_rx),
             |me, _, ctx| {
                 me.refresh_diff_metadata_for_current_repo(InvalidationBehavior::PromptRefresh, ctx);
             },

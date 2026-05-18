@@ -951,6 +951,15 @@ impl CodeReviewView {
         });
     }
 
+    /// twarp 5b: Force-refresh the panel from outside the FS-watcher pipeline.
+    /// The default refresh fires on filesystem events, but `git add` /
+    /// `git restore --staged` only touch `.git/index` (not the working tree),
+    /// so the watcher misses index-only state flips. Sidebar interactions and
+    /// terminal command-end events route through here to catch those cases.
+    pub fn force_refresh_panel_data(&mut self, ctx: &mut ViewContext<Self>) {
+        self.load_diffs_for_active_repo(false, ctx);
+    }
+
     /// Called when the code review view is opened/attached to a pane group.
     /// Subscribes to the diff state model and triggers diff loading.
     pub fn on_open(&mut self, repo_path: Option<PathBuf>, ctx: &mut ViewContext<Self>) {
@@ -7841,10 +7850,15 @@ impl TypedActionView for CodeReviewView {
             }
             CodeReviewAction::ToggleStagedSection => {
                 self.staged_section_expanded = !self.staged_section_expanded;
+                // twarp 5b: user interacting with the panel → force-refresh in
+                // case terminal git ops changed staged/unstaged state since the
+                // last FS-watcher tick (or while the panel was closed).
+                self.force_refresh_panel_data(ctx);
                 ctx.notify();
             }
             CodeReviewAction::ToggleChangesSection => {
                 self.changes_section_expanded = !self.changes_section_expanded;
+                self.force_refresh_panel_data(ctx);
                 ctx.notify();
             }
             CodeReviewAction::StageFile { path } => {
@@ -7895,6 +7909,11 @@ impl TypedActionView for CodeReviewView {
                     path: full_path,
                     base_content,
                 });
+                // twarp 5b: kick a fresh reload alongside the open. The diff
+                // pane uses `base_content` captured above, but `load_diffs`
+                // refreshes the sidebar + per-file hunks so the next click /
+                // hunk action sees current state.
+                self.force_refresh_panel_data(ctx);
             }
             CodeReviewAction::FileSelected(file_index) => {
                 // Early-return when repo/state/file is missing to avoid calling
