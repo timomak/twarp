@@ -10517,6 +10517,19 @@ impl Workspace {
                 } else {
                     pane_group.diff_pane_id = Some(new_pane_id);
                 }
+                // 5d: mark the new CodeView read-only so its tab
+                // header renders with a lock icon + muted title.
+                // Only commit-diff panes get this; reuse on
+                // subsequent Timeline clicks preserves the flag
+                // since `replace_with_single_path` doesn't touch it.
+                if read_only {
+                    if let Some(code_pane) = pane_group.code_pane_by_id(new_pane_id) {
+                        let code_view = code_pane.file_view(ctx);
+                        code_view.update(ctx, |view, ctx| {
+                            view.set_read_only_view(true, ctx);
+                        });
+                    }
+                }
             });
         }
 

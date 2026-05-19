@@ -243,6 +243,17 @@ pub struct CodeView {
     window_id: WindowId,
     drag_position: Option<TabBarDragPosition>,
     markdown_mode_segmented_control: Option<ViewHandle<MarkdownToggleView>>,
+    /// twarp 5d (PRODUCT §21): when `true`, every tab in this
+    /// `CodeView` renders with a lock icon to the left of the file
+    /// name and a muted (disabled) text color, signalling to the
+    /// user that the pane is read-only. Set by the workspace via
+    /// [`Self::set_read_only_view`] right after creating a
+    /// commit-diff pane through
+    /// `open_file_diff_in_new_pane_with_options(..., read_only=true)`.
+    /// The commit-diff pane only ever holds one tab (the strict-swap
+    /// reuse path keeps it that way), so a view-level flag is
+    /// sufficient — no per-tab plumbing required.
+    read_only_view: bool,
 }
 
 impl CodeView {
@@ -259,7 +270,19 @@ impl CodeView {
             window_id,
             drag_position: None,
             markdown_mode_segmented_control: None,
+            read_only_view: false,
         }
+    }
+
+    /// twarp 5d: mark this `CodeView` so its tabs render with a lock
+    /// icon and a muted (disabled) text color. The workspace calls
+    /// this on commit-diff panes opened via the Timeline click flow.
+    pub fn set_read_only_view(&mut self, read_only: bool, ctx: &mut ViewContext<Self>) {
+        if self.read_only_view == read_only {
+            return;
+        }
+        self.read_only_view = read_only;
+        ctx.notify();
     }
 
     pub fn new(
@@ -1487,10 +1510,17 @@ impl CodeView {
         is_active: bool,
         is_hovered: bool,
         has_unsaved_changes: bool,
+        read_only: bool,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
-        let text_color = if is_active {
+        // 5d: read-only tabs use the disabled text color regardless of
+        // active state — the lock + dimmed title together signal "you
+        // can't edit here." Active read-only tabs still gain the
+        // standard active-tab background; only the text is muted.
+        let text_color = if read_only {
+            blended_colors::text_disabled(theme, theme.surface_1())
+        } else if is_active {
             blended_colors::text_main(theme, theme.surface_1())
         } else {
             blended_colors::text_sub(theme, theme.surface_1())
@@ -1505,6 +1535,23 @@ impl CodeView {
             .as_ref()
             .and_then(|p| p.file_name().map(|f| f.to_string_lossy().to_string()))
             .unwrap_or_else(|| "Untitled".to_string());
+        // 5d: lock icon to the left of the language icon when the
+        // pane is read-only. Sized to the existing language-icon slot
+        // so the row layout stays the same.
+        if read_only {
+            let lock =
+                warpui::elements::Icon::new(warp_core::ui::Icon::Lock.into(), text_color).finish();
+            row.add_child(
+                Container::new(
+                    ConstrainedBox::new(lock)
+                        .with_width(LANGUAGE_ICON_WIDTH)
+                        .with_height(LANGUAGE_ICON_WIDTH)
+                        .finish(),
+                )
+                .with_margin_right(TAB_INTERNAL_MARGIN)
+                .finish(),
+            );
+        }
         let language_icon =
             icon_from_file_path(&file_name, appearance, ItemHighlightState::Default);
         row.add_child(
@@ -1680,6 +1727,7 @@ impl CodeView {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         let is_pane_dragging = header_ctx.draggable_state.is_dragging();
+        let read_only_view = self.read_only_view;
 
         let mut header_row = Flex::row()
             .with_main_axis_alignment(MainAxisAlignment::Start)
@@ -1717,6 +1765,7 @@ impl CodeView {
                             is_active,
                             tab_handle.is_hovered(),
                             Self::has_unsaved_changes(tab_data, app),
+                            read_only_view,
                             appearance,
                         ))
                         .with_horizontal_margin(TAB_HORIZONTAL_MARGIN)
@@ -1883,6 +1932,7 @@ impl CodeView {
 
         let appearance = Appearance::as_ref(app);
         let is_pane_dragging = header_ctx.draggable_state.is_dragging();
+        let read_only_view = self.read_only_view;
         let mut right_row = Flex::row()
             .with_main_axis_alignment(MainAxisAlignment::End)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -1920,12 +1970,40 @@ impl CodeView {
         let tab_handle = tab.map(|tab| tab.mouse_state_handles.tab_handle.clone());
 
         // Build the center title element, with a hover tooltip showing the full path.
+        // 5d (PRODUCT §21): when this CodeView is read-only (commit-
+        // diff pane from a Timeline click), prepend a lock icon to
+        // the left of the title so the user has a visible cue that
+        // typing won't work here. The title text already uses the
+        // muted `sub_text_color` so the row reads as grayed out.
         let title_element: Box<dyn Element> = match tab_handle {
             Some(handle) => Hoverable::new(handle, |hover_state| {
                 let title_text =
                     render_pane_header_title_text(title.clone(), appearance, ClipConfig::start());
+                let centered_title: Box<dyn Element> = if read_only_view {
+                    let theme = appearance.theme();
+                    let lock_color = blended_colors::text_sub(theme, theme.background());
+                    let lock_icon =
+                        warpui::elements::Icon::new(warp_core::ui::Icon::Lock.into(), lock_color)
+                            .finish();
+                    Flex::row()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_child(
+                            Container::new(
+                                ConstrainedBox::new(lock_icon)
+                                    .with_width(12.)
+                                    .with_height(12.)
+                                    .finish(),
+                            )
+                            .with_margin_right(6.)
+                            .finish(),
+                        )
+                        .with_child(title_text)
+                        .finish()
+                } else {
+                    title_text
+                };
                 let mut stack = Stack::new();
-                stack.add_child(title_text);
+                stack.add_child(centered_title);
                 if hover_state.is_hovered() {
                     let tooltip_relative_path = tab
                         .and_then(|tab| tab.path.clone())

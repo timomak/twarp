@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use warp_core::ui::theme::color::internal_colors;
@@ -335,6 +335,23 @@ struct TimelineSectionState {
     /// SHAs in `<upstream>..HEAD` for the focused path — drives the
     /// `↑` ahead-of-upstream marker (PRODUCT §23).
     local_only_shas: HashSet<String>,
+    /// `(owner, repo)` parsed from `git remote get-url origin` for the
+    /// focused file's repo. `None` for non-GitHub remotes (Gitlab,
+    /// Bitbucket, self-hosted, …) — those skip the API and fall back
+    /// to noreply-email parsing + Gravatar. Recomputed when the
+    /// focused file's repo root changes.
+    github_repo: Option<(String, String)>,
+    /// Per-SHA cache of GitHub commits-API author info. `Some(Some)` =
+    /// resolved with author data; `Some(None)` = resolved 404 (don't
+    /// retry); not present = not yet fetched. Lives for the lifetime
+    /// of the `LeftPanelView` so switching between files reuses
+    /// previously-fetched authors.
+    commit_author_cache: HashMap<String, Option<crate::code_review::github_author::GithubAuthor>>,
+    /// `Some(Some)` once we've resolved a token (env var or
+    /// `gh auth token`); `Some(None)` if we tried and failed; `None`
+    /// = not yet tried. Cached for the lifetime of `LeftPanelView`
+    /// to avoid spawning a `gh` subprocess per fetch.
+    github_token: Option<Option<String>>,
 }
 
 /// Action kinds that round-trip with the shortcuts parser. Mirrors
@@ -1365,6 +1382,7 @@ impl LeftPanelView {
         };
         let repo_relative = repo_relative.to_path_buf();
 
+        let repo_changed = self.timeline_state.repo_path.as_deref() != Some(repo_root.as_path());
         self.timeline_state.repo_path = Some(repo_root.clone());
         self.timeline_state.focused_path = Some(path.clone());
         self.timeline_state.entries.clear();
@@ -1372,6 +1390,12 @@ impl LeftPanelView {
         self.timeline_state.loading = true;
         self.timeline_state.local_only_shas.clear();
         self.timeline_entry_mouse_states.borrow_mut().clear();
+        if repo_changed {
+            // Per-repo state — wipe when switching repos. SHA cache
+            // stays because SHAs are globally unique.
+            self.timeline_state.github_repo = None;
+            self.fetch_github_origin(repo_root.clone(), ctx);
+        }
         ctx.notify();
 
         let path_for_log = repo_relative.clone();
@@ -1435,10 +1459,137 @@ impl LeftPanelView {
                 );
                 me.timeline_state.has_more =
                     entries.len() == crate::code_review::timeline::TIMELINE_PAGE_SIZE;
+                let shas: Vec<String> = entries.iter().map(|e| e.sha.clone()).collect();
                 me.timeline_state.entries = entries;
                 ctx.notify();
+                me.fetch_github_authors(shas, ctx);
             },
         );
+    }
+
+    /// Run `git remote get-url origin` and cache the resulting
+    /// `(owner, repo)` if it's a GitHub URL. Skipped for non-GitHub
+    /// remotes — those leave `github_repo` as `None` and we fall back
+    /// to the noreply/Gravatar avatar path.
+    #[cfg(feature = "local_fs")]
+    fn fetch_github_origin(&mut self, repo_root: PathBuf, ctx: &mut ViewContext<Self>) {
+        ctx.spawn(
+            async move {
+                let url =
+                    crate::util::git::run_git_command(&repo_root, &["remote", "get-url", "origin"])
+                        .await
+                        .ok()?;
+                crate::code_review::github_author::parse_github_origin(&url)
+            },
+            |me, parsed: Option<(String, String)>, ctx| {
+                me.timeline_state.github_repo = parsed;
+                ctx.notify();
+                if me.timeline_state.github_repo.is_some() {
+                    // Fan out for any entries already loaded.
+                    let shas: Vec<String> = me
+                        .timeline_state
+                        .entries
+                        .iter()
+                        .map(|e| e.sha.clone())
+                        .collect();
+                    me.fetch_github_authors(shas, ctx);
+                }
+            },
+        );
+    }
+
+    /// Kick off GitHub commits-API author lookups for `shas` not yet
+    /// in the cache. Each commit gets its own async task — results
+    /// drop into the cache and trigger a re-render as they arrive.
+    /// No-op when `github_repo` isn't resolved yet (the caller fires
+    /// us again from `fetch_github_origin` once it lands).
+    #[cfg(feature = "local_fs")]
+    fn fetch_github_authors(&mut self, shas: Vec<String>, ctx: &mut ViewContext<Self>) {
+        let Some((owner, repo)) = self.timeline_state.github_repo.clone() else {
+            return;
+        };
+        let Some(repo_path) = self.timeline_state.repo_path.clone() else {
+            return;
+        };
+        let needed: Vec<String> = shas
+            .into_iter()
+            .filter(|s| !self.timeline_state.commit_author_cache.contains_key(s))
+            .collect();
+        if needed.is_empty() {
+            return;
+        }
+        // Resolve the token first so the fan-out can use it. After the
+        // token lookup completes, `dispatch_github_author_fetches` is
+        // re-invoked with the same `needed` list. Subsequent calls
+        // short-circuit since `github_token` is now `Some`.
+        if self.timeline_state.github_token.is_none() {
+            let repo_path_for_token = repo_path.clone();
+            ctx.spawn(
+                async move {
+                    crate::code_review::github_author::resolve_github_token(&repo_path_for_token)
+                        .await
+                },
+                move |me, token: Option<String>, ctx| {
+                    me.timeline_state.github_token = Some(token);
+                    me.dispatch_github_author_fetches(needed, owner, repo, ctx);
+                },
+            );
+            return;
+        }
+        self.dispatch_github_author_fetches(needed, owner, repo, ctx);
+    }
+
+    /// Internal: fire one spawn per SHA. Assumes `github_token` is
+    /// already resolved (either Some or None — both are valid for the
+    /// unauthenticated path).
+    #[cfg(feature = "local_fs")]
+    fn dispatch_github_author_fetches(
+        &mut self,
+        shas: Vec<String>,
+        owner: String,
+        repo: String,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let token = self
+            .timeline_state
+            .github_token
+            .as_ref()
+            .and_then(|t| t.clone());
+        for sha in shas {
+            let owner = owner.clone();
+            let repo = repo.clone();
+            let token = token.clone();
+            let sha_for_async = sha.clone();
+            ctx.spawn(
+                async move {
+                    let client = http_client::Client::default();
+                    let result = crate::code_review::github_author::fetch_commit_author(
+                        &client,
+                        &owner,
+                        &repo,
+                        &sha_for_async,
+                        token.as_deref(),
+                    )
+                    .await;
+                    (sha_for_async, result)
+                },
+                |me, (sha, result), ctx| {
+                    match result {
+                        Ok(author) => {
+                            me.timeline_state.commit_author_cache.insert(sha, author);
+                            ctx.notify();
+                        }
+                        Err(err) => {
+                            // Don't cache failures — let a future
+                            // refocus retry (e.g. after the user sets
+                            // up `gh auth`). Log at debug to avoid
+                            // spamming on rate-limit hits.
+                            log::debug!("[twarp 5d] github author fetch failed for {sha}: {err}");
+                        }
+                    }
+                },
+            );
+        }
     }
 
     /// Fetch the next page of Timeline entries (PRODUCT §20). No-op
@@ -1491,8 +1642,10 @@ impl LeftPanelView {
                     &mut entries,
                     &me.timeline_state.local_only_shas,
                 );
+                let new_shas: Vec<String> = entries.iter().map(|e| e.sha.clone()).collect();
                 me.timeline_state.entries.extend(entries);
                 ctx.notify();
+                me.fetch_github_authors(new_shas, ctx);
             },
         );
     }
@@ -1661,6 +1814,7 @@ impl LeftPanelView {
         let main_color = theme.main_text_color(theme.surface_2());
         let sub_color = theme.sub_text_color(theme.surface_2());
 
+        let author_display = self.author_display_label(entry);
         let avatar = self.render_timeline_avatar(entry, appearance);
 
         let ts_local = chrono::DateTime::<chrono::Utc>::from_timestamp(entry.timestamp, 0)
@@ -1670,7 +1824,7 @@ impl LeftPanelView {
         let mut meta_row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
         meta_row.add_child(
             Text::new(
-                entry.author_name.clone(),
+                author_display,
                 appearance.ui_font_family(),
                 appearance.ui_font_size(),
             )
@@ -1802,14 +1956,41 @@ impl LeftPanelView {
     /// with a Gravatar URL (SHA-256 of lowercased email +
     /// `?d=identicon` fallback so users without an account still get a
     /// deterministic visual). PRODUCT §19.
+    /// Display label for a Timeline row's author. Tries (in order):
+    /// 1. GitHub `login` from the commits-API cache — real handle as
+    ///    GitHub knows it.
+    /// 2. Username extracted from the noreply email
+    ///    (`<id>+<username>@users.noreply.github.com`).
+    /// 3. Git's `author.name` as the last-resort fallback.
+    fn author_display_label(&self, entry: &crate::code_review::timeline::TimelineEntry) -> String {
+        if let Some(Some(author)) = self.timeline_state.commit_author_cache.get(&entry.sha) {
+            return author.login.clone();
+        }
+        if let Some(username) = noreply_username_from_email(&entry.author_email) {
+            return username;
+        }
+        entry.author_name.clone()
+    }
+
+    /// Avatar URL for a Timeline row. Cached GitHub `avatar_url` wins;
+    /// otherwise noreply username → `github.com/<u>.png`; otherwise
+    /// Gravatar identicon fallback. Always returns a non-empty URL so
+    /// the `Avatar` widget renders something while loading.
+    fn avatar_url_for_entry(&self, entry: &crate::code_review::timeline::TimelineEntry) -> String {
+        if let Some(Some(author)) = self.timeline_state.commit_author_cache.get(&entry.sha) {
+            return author.avatar_url.clone();
+        }
+        avatar_url_for_email(&entry.author_email)
+    }
+
     fn render_timeline_avatar(
         &self,
         entry: &crate::code_review::timeline::TimelineEntry,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         use crate::ui_components::avatar::{Avatar, AvatarContent};
-        let url = avatar_url_for_email(&entry.author_email);
-        let display_name = entry.author_name.clone();
+        let url = self.avatar_url_for_entry(entry);
+        let display_name = self.author_display_label(entry);
         let theme = appearance.theme();
         let avatar = Avatar::new(
             AvatarContent::Image { url, display_name },
@@ -1933,6 +2114,25 @@ fn avatar_url_for_email(_email: &str) -> String {
     String::new()
 }
 
+/// Extract the GitHub username from a noreply commit email. Returns
+/// `None` for non-noreply addresses and for the (rare) case where the
+/// local part isn't a valid GitHub-handle character set. Used as the
+/// fallback display label when the GitHub commits API hasn't yet
+/// (or won't ever) populate the per-SHA author cache.
+fn noreply_username_from_email(email: &str) -> Option<String> {
+    let trimmed = email.trim();
+    let prefix = trimmed.strip_suffix("@users.noreply.github.com")?;
+    let username = prefix.split_once('+').map_or(prefix, |(_, u)| u);
+    if username.is_empty()
+        || !username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return None;
+    }
+    Some(username.to_string())
+}
+
 /// True if `path` looks like a commit-diff temp file we wrote on a
 /// Timeline click. `WorkspaceView::open_timeline_commit_diff` creates
 /// `$TMPDIR/twarp-timeline-<random>/<sha>-<basename>`; we recognize
@@ -1980,6 +2180,48 @@ mod timeline_temp_path_tests {
     fn rejects_similar_but_different_prefix() {
         let p = PathBuf::from("/tmp/twarp-other-thing/foo.rs");
         assert!(!is_timeline_commit_diff_temp_path(&p));
+    }
+}
+
+#[cfg(test)]
+mod noreply_username_tests {
+    use super::noreply_username_from_email;
+
+    #[test]
+    fn extracts_username_from_id_form() {
+        assert_eq!(
+            noreply_username_from_email("12345+octocat@users.noreply.github.com"),
+            Some("octocat".to_string())
+        );
+    }
+
+    #[test]
+    fn extracts_username_from_bare_form() {
+        assert_eq!(
+            noreply_username_from_email("octocat@users.noreply.github.com"),
+            Some("octocat".to_string())
+        );
+    }
+
+    #[test]
+    fn returns_none_for_regular_email() {
+        assert_eq!(noreply_username_from_email("ada@example.com"), None);
+    }
+
+    #[test]
+    fn returns_none_for_garbage_in_local_part() {
+        assert_eq!(
+            noreply_username_from_email("weird name@users.noreply.github.com"),
+            None
+        );
+    }
+
+    #[test]
+    fn returns_none_for_empty_username() {
+        assert_eq!(
+            noreply_username_from_email("@users.noreply.github.com"),
+            None
+        );
     }
 }
 

@@ -8,6 +8,7 @@ pub mod editor_state;
 pub(crate) mod find_model;
 pub(crate) mod git_dialog;
 pub mod git_status_update;
+pub mod github_author;
 mod hidden_lines;
 #[cfg(feature = "local_fs")]
 pub mod hunk_patch;
