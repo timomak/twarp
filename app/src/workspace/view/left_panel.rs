@@ -1341,6 +1341,16 @@ impl LeftPanelView {
     fn refocus_timeline(&mut self, path: PathBuf, ctx: &mut ViewContext<Self>) {
         use repo_metadata::repositories::DetectedRepositories;
 
+        // Ignore our own commit-diff temp files. Opening one via a
+        // Timeline click steals editor focus and fires
+        // `ActiveFileChanged(<temp_path>)`; without this guard
+        // `refocus_timeline` would see the temp file (outside any
+        // repo) and `clear_timeline` would wipe the section out from
+        // under the user. Keep Timeline anchored on the real file.
+        if is_timeline_commit_diff_temp_path(&path) {
+            return;
+        }
+
         if self.timeline_state.focused_path.as_deref() == Some(path.as_path()) {
             return;
         }
@@ -1798,7 +1808,7 @@ impl LeftPanelView {
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         use crate::ui_components::avatar::{Avatar, AvatarContent};
-        let url = gravatar_url_for_email(&entry.author_email);
+        let url = avatar_url_for_email(&entry.author_email);
         let display_name = entry.author_name.clone();
         let theme = appearance.theme();
         let avatar = Avatar::new(
@@ -1879,25 +1889,137 @@ impl LeftPanelView {
     }
 }
 
-/// Build a Gravatar avatar URL from an email address. Lowercased +
-/// trimmed per Gravatar's documented hashing convention. SHA-256 is
-/// the recommended modern hash; we add `d=identicon` so emails without
-/// a Gravatar account still get a deterministic identicon, and `s=44`
-/// for 2x the 22px slot. PRODUCT §19.
+/// Build an avatar URL for a commit author. PRODUCT §19.
+///
+/// GitHub now enables a privacy-preserving noreply email by default
+/// (`<id>+<username>@users.noreply.github.com`, or the older bare
+/// `<username>@users.noreply.github.com`). For commits made under
+/// those addresses we resolve the username and hit GitHub's avatar
+/// endpoint directly — no API call, no auth, and the user gets their
+/// real profile picture. For everything else we fall back to Gravatar
+/// with `d=identicon` so emails without a Gravatar account still get
+/// a deterministic identicon instead of a blank.
+///
+/// `s=44` requests 2x the 22px avatar slot so the image stays crisp on
+/// retina displays.
 #[cfg(feature = "local_fs")]
-fn gravatar_url_for_email(email: &str) -> String {
+fn avatar_url_for_email(email: &str) -> String {
+    const SIZE: u32 = 44;
+    let trimmed = email.trim();
+    if let Some(prefix) = trimmed.strip_suffix("@users.noreply.github.com") {
+        // `<id>+<username>` (new) or just `<username>` (legacy). The
+        // numeric ID prefix is purely an anti-spam token; the username
+        // after the `+` is what GitHub serves the avatar at.
+        let username = prefix.split_once('+').map_or(prefix, |(_, u)| u);
+        if !username.is_empty()
+            && username
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
+            return format!("https://github.com/{username}.png?size={SIZE}");
+        }
+    }
     use sha2::{Digest, Sha256};
-    let normalized = email.trim().to_lowercase();
+    let normalized = trimmed.to_lowercase();
     let mut hasher = Sha256::new();
     hasher.update(normalized.as_bytes());
     let hash = hasher.finalize();
     let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
-    format!("https://www.gravatar.com/avatar/{hex}?d=identicon&s=44")
+    format!("https://www.gravatar.com/avatar/{hex}?d=identicon&s={SIZE}")
 }
 
 #[cfg(not(feature = "local_fs"))]
-fn gravatar_url_for_email(_email: &str) -> String {
+fn avatar_url_for_email(_email: &str) -> String {
     String::new()
+}
+
+/// True if `path` looks like a commit-diff temp file we wrote on a
+/// Timeline click. `WorkspaceView::open_timeline_commit_diff` creates
+/// `$TMPDIR/twarp-timeline-<random>/<sha>-<basename>`; we recognize
+/// our own files by the `twarp-timeline-` directory prefix and short-
+/// circuit `refocus_timeline` so opening one doesn't clear the
+/// section. Walking the parent chain (not just `path.parent()`) keeps
+/// this robust if future code nests files one level deeper.
+fn is_timeline_commit_diff_temp_path(path: &Path) -> bool {
+    let mut current = path.parent();
+    while let Some(p) = current {
+        if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+            if name.starts_with("twarp-timeline-") {
+                return true;
+            }
+        }
+        current = p.parent();
+    }
+    false
+}
+
+#[cfg(test)]
+mod timeline_temp_path_tests {
+    use super::is_timeline_commit_diff_temp_path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn matches_direct_child_of_temp_subdir() {
+        let p = PathBuf::from("/var/folders/_/twarp-timeline-abcdef/abc1234-main.rs");
+        assert!(is_timeline_commit_diff_temp_path(&p));
+    }
+
+    #[test]
+    fn matches_nested_under_temp_subdir() {
+        let p = PathBuf::from("/tmp/twarp-timeline-xyz/sub/abc1234-main.rs");
+        assert!(is_timeline_commit_diff_temp_path(&p));
+    }
+
+    #[test]
+    fn rejects_unrelated_path() {
+        let p = PathBuf::from("/Users/me/code/repo/src/main.rs");
+        assert!(!is_timeline_commit_diff_temp_path(&p));
+    }
+
+    #[test]
+    fn rejects_similar_but_different_prefix() {
+        let p = PathBuf::from("/tmp/twarp-other-thing/foo.rs");
+        assert!(!is_timeline_commit_diff_temp_path(&p));
+    }
+}
+
+#[cfg(all(test, feature = "local_fs"))]
+mod avatar_url_tests {
+    use super::avatar_url_for_email;
+
+    #[test]
+    fn noreply_with_id_resolves_to_github_avatar() {
+        let url = avatar_url_for_email("123456789+octocat@users.noreply.github.com");
+        assert_eq!(url, "https://github.com/octocat.png?size=44");
+    }
+
+    #[test]
+    fn noreply_without_id_resolves_to_github_avatar() {
+        let url = avatar_url_for_email("octocat@users.noreply.github.com");
+        assert_eq!(url, "https://github.com/octocat.png?size=44");
+    }
+
+    #[test]
+    fn noreply_with_invalid_username_falls_through_to_gravatar() {
+        // Spaces/symbols in the local part shouldn't reach the GitHub
+        // URL — we'd 404 and render the initial fallback forever.
+        let url = avatar_url_for_email("weird name@users.noreply.github.com");
+        assert!(url.starts_with("https://www.gravatar.com/avatar/"));
+    }
+
+    #[test]
+    fn real_email_uses_gravatar() {
+        let url = avatar_url_for_email("octocat@example.com");
+        assert!(url.starts_with("https://www.gravatar.com/avatar/"));
+        assert!(url.contains("d=identicon"));
+    }
+
+    #[test]
+    fn email_normalization_lowercases_and_trims() {
+        let mixed = avatar_url_for_email("  Octocat@Example.com  ");
+        let lower = avatar_url_for_email("octocat@example.com");
+        assert_eq!(mixed, lower);
+    }
 }
 
 impl Entity for LeftPanelView {

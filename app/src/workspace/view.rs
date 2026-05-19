@@ -10408,6 +10408,9 @@ impl Workspace {
                     if pg.diff_pane_id == Some(pane_id) {
                         pg.diff_pane_id = None;
                     }
+                    if pg.timeline_commit_diff_pane_id == Some(pane_id) {
+                        pg.timeline_commit_diff_pane_id = None;
+                    }
                     pg.close_pane(pane_id, ctx);
                 }
             });
@@ -10431,19 +10434,37 @@ impl Workspace {
         base_content: Option<String>,
         ctx: &mut ViewContext<Self>,
     ) {
-        self.open_file_diff_in_new_pane_with_options(path, base_content, false, ctx);
+        self.open_file_diff_in_new_pane_with_options(
+            path,
+            base_content,
+            false,
+            Direction::Right,
+            ctx,
+        );
     }
 
     /// twarp 5d (PRODUCT §21): same as [`Self::open_file_diff_in_new_pane`]
-    /// but skips the 5b hunk Stage/Unstage button wiring and marks the
-    /// editor as `Selectable` after load. Used by the Timeline-click
-    /// flow to render a read-only commit diff that the user can scroll
-    /// and copy from but not edit.
+    /// but with two extra knobs for the Timeline commit-diff flow:
+    /// * `read_only=true` skips 5b hunk Stage/Unstage wiring and marks
+    ///   the inner editor `Selectable` so the user can scroll/copy but
+    ///   not type.
+    /// * `direction` controls where the new pane is created relative
+    ///   to the active pane. The 5e working-diff flow keeps
+    ///   `Direction::Right` (where users expect it); the Timeline
+    ///   click flow uses `Direction::Left` so the commit diff lands
+    ///   next to the Project Explorer instead of next to a terminal.
+    ///
+    /// The reuse target also forks on `read_only`: working-diff panes
+    /// reuse [`PaneGroup::diff_pane_id`]; commit-diff panes reuse
+    /// [`PaneGroup::timeline_commit_diff_pane_id`]. Cross-flow reuse
+    /// would let a Timeline click blow away a working diff the user
+    /// has open.
     pub fn open_file_diff_in_new_pane_with_options(
         &mut self,
         path: PathBuf,
         base_content: Option<String>,
         read_only: bool,
+        direction: Direction,
         ctx: &mut ViewContext<Self>,
     ) {
         if is_binary_file(&path) {
@@ -10454,10 +10475,16 @@ impl Workspace {
         let pane_group_handle = self.active_tab_pane_group().clone();
 
         // Reuse the existing diff pane if it still exists and isn't
-        // hidden for undo-close. We tolerate stale `diff_pane_id`s by
-        // checking presence via `code_pane_by_id`.
+        // hidden for undo-close. We tolerate stale pane IDs by
+        // checking presence via `code_pane_by_id`. The flow forks by
+        // `read_only` so working-diff (5e) and commit-diff (5d) each
+        // get their own pane and never overwrite each other.
         let existing_diff_pane_id = pane_group_handle.read(ctx, |pg, _| {
-            let id = pg.diff_pane_id?;
+            let id = if read_only {
+                pg.timeline_commit_diff_pane_id?
+            } else {
+                pg.diff_pane_id?
+            };
             if pg.is_pane_hidden_for_close(id) {
                 return None;
             }
@@ -10483,13 +10510,13 @@ impl Workspace {
             let pane = CodePane::new(source, None, ctx);
             let new_pane_id = pane.id();
             pane_group_handle.update(ctx, |pane_group, ctx| {
-                pane_group.add_pane_with_direction(
-                    Direction::Right,
-                    pane,
-                    true, /* focus_new_pane */
-                    ctx,
-                );
-                pane_group.diff_pane_id = Some(new_pane_id);
+                pane_group
+                    .add_pane_with_direction(direction, pane, true /* focus_new_pane */, ctx);
+                if read_only {
+                    pane_group.timeline_commit_diff_pane_id = Some(new_pane_id);
+                } else {
+                    pane_group.diff_pane_id = Some(new_pane_id);
+                }
             });
         }
 
@@ -10666,7 +10693,18 @@ impl Workspace {
                     log::warn!("[twarp 5d] commit-diff: {err}");
                     return;
                 }
-                me.open_file_diff_in_new_pane_with_options(temp_path.clone(), Some(pre), true, ctx);
+                // 5d: open the commit diff to the *left* of the
+                // currently focused pane so it lands next to the
+                // Project Explorer where the user is browsing
+                // Timeline. The 5e working-diff flow keeps
+                // `Direction::Right`.
+                me.open_file_diff_in_new_pane_with_options(
+                    temp_path.clone(),
+                    Some(pre),
+                    true,
+                    Direction::Left,
+                    ctx,
+                );
             },
         );
     }
