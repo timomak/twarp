@@ -2780,10 +2780,18 @@ impl CodeReviewView {
         match self.diff_state(ctx) {
             DiffState::Loading => {
                 if let Some(repo) = self.active_repo.as_mut() {
-                    log::info!(
-                        "Code Review Panel: Setting state to loading after receiving 'loading' message."
-                    );
-                    repo.state = CodeReviewViewState::None;
+                    // twarp 5b: only blank the panel if we don't have a prior
+                    // Loaded state to keep showing. Refreshes that follow a
+                    // terminal `git` command or sidebar click pass through
+                    // here every time — blanking to None made the skeleton
+                    // loader flash on each refresh. Stale-then-fresh beats
+                    // blank-then-fresh.
+                    if !matches!(repo.state, CodeReviewViewState::Loaded(_)) {
+                        log::info!(
+                            "Code Review Panel: Setting state to loading after receiving 'loading' message."
+                        );
+                        repo.state = CodeReviewViewState::None;
+                    }
                 }
                 ctx.notify();
                 return;
@@ -2818,12 +2826,14 @@ impl CodeReviewView {
         };
 
         // Deallocate global buffers that are going to be invalidated.
-        if let Some(repo) = self.active_repo.as_mut() {
-            repo.state = CodeReviewViewState::None;
-            GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| {
-                model.remove_deallocated_buffers(ctx);
-            });
-        }
+        // twarp 5b: previously this also set `repo.state = None` to "clear"
+        // the panel before rebuilding. That caused the visible flicker — we
+        // now leave the prior Loaded state in place and let the final
+        // assignment below swap it out atomically (`ctx.notify()` only fires
+        // at the end of this function, so the user never sees the in-between).
+        GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| {
+            model.remove_deallocated_buffers(ctx);
+        });
 
         // Create a new list state for this update
         self.viewported_list_state = Self::create_list_state(ctx);
