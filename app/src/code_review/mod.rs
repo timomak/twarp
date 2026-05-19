@@ -13,6 +13,7 @@ mod hidden_lines;
 pub mod hunk_patch;
 pub mod porcelain_v2;
 pub mod telemetry_event;
+pub mod timeline;
 #[cfg_attr(not(feature = "local_fs"), allow(unused_imports))]
 pub use telemetry_event::CodeReviewTelemetryEvent;
 
