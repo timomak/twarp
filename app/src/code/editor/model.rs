@@ -689,23 +689,6 @@ impl CodeEditorModel {
         self.refresh_diff_state(ctx);
     }
 
-    pub fn revert_diff_index(&mut self, ctx: &mut ModelContext<Self>) {
-        let total = self.diff().as_ref(ctx).diff_hunk_count();
-
-        let active_index = match self.diff_navigation_state {
-            DiffNavigationState::Focused(index) => index,
-            _ => return,
-        };
-        self.reverse_diff_by_index(active_index, ctx);
-
-        if active_index + 1 == total {
-            self.diff_navigation_state =
-                DiffNavigationState::Focused(active_index.saturating_sub(1));
-        }
-
-        self.refresh_diff_state(ctx);
-    }
-
     /// For a diff hunk index, update the buffer with the reverse action that undo-es the diff.
     pub fn reverse_diff_by_index(&mut self, index: usize, ctx: &mut ModelContext<Self>) {
         let Some((replace_range, text)) = self
