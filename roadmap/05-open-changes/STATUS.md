@@ -1,8 +1,8 @@
 # 05 — Open Changes panel
 
-**Phase:** impl-in-review (5d open)
+**Phase:** impl-in-review (5d [#63](https://github.com/timomak/twarp/pull/63) open)
 **Spec PRs:** [#56](https://github.com/timomak/twarp/pull/56) (initial), [#58](https://github.com/timomak/twarp/pull/58) (respec — supersedes #56), both merged
-**Impl PRs:** 5a [#59](https://github.com/timomak/twarp/pull/59) merged; 5c + 5e bundled [#60](https://github.com/timomak/twarp/pull/60) merged; 5e polish [#61](https://github.com/timomak/twarp/pull/61) merged (deleted-line click/copy); 5b [#62](https://github.com/timomak/twarp/pull/62) merged; 5d open. PR [#57](https://github.com/timomak/twarp/pull/57) closed; left-panel approach scrapped.
+**Impl PRs:** 5a [#59](https://github.com/timomak/twarp/pull/59) merged; 5c + 5e bundled [#60](https://github.com/timomak/twarp/pull/60) merged; 5e polish [#61](https://github.com/timomak/twarp/pull/61) merged (deleted-line click/copy); 5b [#62](https://github.com/timomak/twarp/pull/62) merged; 5d [#63](https://github.com/timomak/twarp/pull/63) open. PR [#57](https://github.com/timomak/twarp/pull/57) closed; left-panel approach scrapped.
 
 ## Scope
 
