@@ -148,7 +148,6 @@ use string_offset::CharOffset;
 
 use indexmap::IndexMap;
 use itertools::Itertools;
-use pathfinder_color::ColorU;
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::{vec2f, Vector2F};
 use rand::{distributions::Alphanumeric, Rng};
@@ -227,7 +226,6 @@ use super::{
     file_invalidation_queue::FileInvalidationTask,
     git_dialog::{GitDialog, GitDialogEvent, GitDialogKind},
     porcelain_v2::{FileEntry as PorcelainEntry, InProgressOp},
-    timeline::{self, TimelineEntry, TIMELINE_PAGE_SIZE},
     GlobalCodeReviewEvent, GlobalCodeReviewModel,
 };
 use crate::code::ShowCommentEditorProvider;
@@ -465,11 +463,6 @@ pub enum CodeReviewAction {
     OpenCreatePrDialog,
     ViewPr(String),
     PublishBranch,
-    /// 5d (PRODUCT §20): fetch the next page of Timeline entries for
-    /// the currently focused file. No-op when there's no focused file,
-    /// when a previous fetch is still in flight, or when the last page
-    /// returned fewer entries than the page size.
-    TimelineLoadMore,
 }
 
 /// Which sidebar section a row belongs to. Drives both which per-file
@@ -788,33 +781,6 @@ struct RepositoryState {
     pending_file_updates: Option<PendingFileUpdate>,
     /// State for tracking in-flight file invalidation tasks.
     file_invalidation: FileInvalidationState,
-    /// twarp 5d: Timeline section state. Tracks the focused file's
-    /// commit history (loaded in pages of `TIMELINE_PAGE_SIZE`) and the
-    /// set of SHAs ahead of upstream for the `↑` marker.
-    /// PRODUCT.md §§18–23.
-    timeline_ui: TimelineUiState,
-}
-
-/// twarp 5d: per-file Timeline state for the right Code Review panel.
-/// Section data only — no view handles; rendering reads this directly.
-#[derive(Default)]
-struct TimelineUiState {
-    /// The path the Timeline is tracking. Updated on each
-    /// `OpenFileDiffInNewTab` click. `None` shows the empty-state hint.
-    focused_path: Option<PathBuf>,
-    /// Entries loaded so far, oldest-page-first when concatenated
-    /// (the most recent commit is `entries[0]`).
-    entries: Vec<TimelineEntry>,
-    /// True while a fetch is in flight; suppresses duplicate fetches
-    /// and dims `[Load more]`.
-    loading: bool,
-    /// `true` until a fetch returns fewer than `TIMELINE_PAGE_SIZE`
-    /// entries (or errors). Drives whether `[Load more]` renders.
-    has_more: bool,
-    /// SHAs that are in `<upstream>..HEAD` for the focused path; drives
-    /// the `↑` local-only marker (PRODUCT §23). Empty when there's no
-    /// upstream configured — the marker is then suppressed entirely.
-    local_only_shas: HashSet<String>,
 }
 
 impl RepositoryState {
@@ -826,7 +792,6 @@ impl RepositoryState {
             file_expanded: HashMap::new(),
             pending_file_updates: None,
             file_invalidation: FileInvalidationState::new(queue),
-            timeline_ui: TimelineUiState::default(),
         }
     }
 
@@ -5202,12 +5167,6 @@ impl CodeReviewView {
             ),
         );
 
-        // 5d (PRODUCT §§18–23): per-file commit Timeline below the
-        // sidebar sections. Renders an empty-state hint until the user
-        // clicks a row; thereafter shows up to 20 entries with
-        // `[Load more]`.
-        column.add_child(self.render_timeline_section(appearance));
-
         let scrollable_content = NewScrollable::vertical(
             SingleAxisConfig::Clipped {
                 handle: self.ui_state_handles.sidebar_scroll_state.clone(),
@@ -5269,434 +5228,6 @@ impl CodeReviewView {
             ))
             .with_border(Border::all(1.).with_border_fill(theme.outline()))
             .finish()
-    }
-
-    /// twarp 5d (PRODUCT §§18–23): render the per-file Timeline
-    /// section. Header reads `Timeline · <basename>` when a file is
-    /// focused, or `Timeline` with a hint otherwise. Each entry shows
-    /// an author-avatar letter, name, relative time, and subject,
-    /// plus the `R` rename badge and `↑` local-only marker where
-    /// applicable. Paged via `[Load more]` (PRODUCT §20).
-    fn render_timeline_section(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let theme = appearance.theme();
-        let timeline = self.active_repo.as_ref().map(|repo| &repo.timeline_ui);
-
-        let mut column = Flex::column()
-            .with_main_axis_alignment(MainAxisAlignment::Start)
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
-
-        // Section header (§18). `Timeline` standalone when no file is
-        // focused; `Timeline · <basename>` once the user clicks a row.
-        let header_label = match timeline.and_then(|t| t.focused_path.as_ref()) {
-            Some(path) => format!(
-                "Timeline · {}",
-                path.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or_default()
-            ),
-            None => "Timeline".to_string(),
-        };
-        let header_text = Text::new(
-            header_label,
-            appearance.ui_font_family(),
-            appearance.ui_font_size(),
-        )
-        .with_color(theme.main_text_color(theme.surface_2()).into())
-        .soft_wrap(false)
-        .finish();
-        column.add_child(
-            Container::new(header_text)
-                .with_vertical_padding(6.)
-                .with_horizontal_padding(8.)
-                .with_margin_top(8.)
-                .finish(),
-        );
-
-        // Header rule
-        column.add_child(
-            Container::new(
-                ConstrainedBox::new(
-                    Container::new(Empty::new().finish())
-                        .with_background(theme.outline())
-                        .finish(),
-                )
-                .with_height(1.)
-                .finish(),
-            )
-            .with_margin_bottom(4.)
-            .finish(),
-        );
-
-        let Some(timeline) = timeline else {
-            return column.finish();
-        };
-
-        if timeline.focused_path.is_none() {
-            // §18 empty-state hint: surfaced before the user clicks any row.
-            column.add_child(
-                self.render_timeline_hint("Click a file above to see its commits.", appearance),
-            );
-            return column.finish();
-        }
-
-        if timeline.entries.is_empty() {
-            let msg = if timeline.loading {
-                "Loading commits…"
-            } else {
-                "No commits found for this file."
-            };
-            column.add_child(self.render_timeline_hint(msg, appearance));
-            return column.finish();
-        }
-
-        for entry in &timeline.entries {
-            column.add_child(self.render_timeline_entry(entry, appearance));
-        }
-
-        if timeline.has_more {
-            column.add_child(self.render_timeline_load_more(timeline.loading, appearance));
-        }
-
-        column.finish()
-    }
-
-    /// Centered single-line hint used for the Timeline section's empty
-    /// and loading states.
-    fn render_timeline_hint(&self, msg: &str, appearance: &Appearance) -> Box<dyn Element> {
-        let theme = appearance.theme();
-        let text = Text::new(
-            msg.to_string(),
-            appearance.ui_font_family(),
-            appearance.ui_font_size(),
-        )
-        .with_color(theme.sub_text_color(theme.surface_2()).into())
-        .soft_wrap(true)
-        .finish();
-        Container::new(text)
-            .with_vertical_padding(8.)
-            .with_horizontal_padding(8.)
-            .finish()
-    }
-
-    /// Render a single Timeline row: avatar letter, author + relative
-    /// time + markers on the first line, subject on the second.
-    fn render_timeline_entry(
-        &self,
-        entry: &TimelineEntry,
-        appearance: &Appearance,
-    ) -> Box<dyn Element> {
-        let theme = appearance.theme();
-        let main_color = theme.main_text_color(theme.surface_2());
-        let sub_color = theme.sub_text_color(theme.surface_2());
-
-        // Avatar circle (PRODUCT §19): single letter, fixed theme accent
-        // color. Per-author email-hash coloring is a follow-up; keeping
-        // a single color in this PR avoids importing a hash palette.
-        let avatar_letter = entry.avatar_letter().to_string();
-        let avatar_text = Text::new(
-            avatar_letter,
-            appearance.ui_font_family(),
-            appearance.ui_font_size() * 0.85,
-        )
-        .with_color(ColorU::black().into())
-        .with_style(Properties::default().weight(Weight::Bold))
-        .soft_wrap(false)
-        .finish();
-        let avatar = Container::new(avatar_text)
-            .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
-            .with_background(theme.accent())
-            .with_uniform_padding(4.)
-            .with_margin_right(8.)
-            .finish();
-
-        // First-line metadata: author name · relative time, plus optional
-        // `R` rename badge and `↑` local-only marker.
-        let ts_local = chrono::DateTime::<chrono::Utc>::from_timestamp(entry.timestamp, 0)
-            .map(|dt| crate::util::time_format::format_approx_duration_from_now_utc(dt))
-            .unwrap_or_else(|| "unknown".to_string());
-
-        let mut meta_row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
-        meta_row.add_child(
-            Text::new(
-                entry.author_name.clone(),
-                appearance.ui_font_family(),
-                appearance.ui_font_size(),
-            )
-            .with_color(main_color.into())
-            .with_style(Properties::default().weight(Weight::Bold))
-            .soft_wrap(false)
-            .finish(),
-        );
-        meta_row.add_child(
-            Container::new(
-                Text::new(
-                    format!("· {ts_local}"),
-                    appearance.ui_font_family(),
-                    appearance.ui_font_size(),
-                )
-                .with_color(sub_color.into())
-                .soft_wrap(false)
-                .finish(),
-            )
-            .with_margin_left(6.)
-            .finish(),
-        );
-        if entry.is_local_only {
-            // §23: ahead-of-upstream marker.
-            meta_row.add_child(
-                Container::new(
-                    Text::new(
-                        "↑".to_string(),
-                        appearance.ui_font_family(),
-                        appearance.ui_font_size(),
-                    )
-                    .with_color(sub_color.into())
-                    .soft_wrap(false)
-                    .finish(),
-                )
-                .with_margin_left(6.)
-                .finish(),
-            );
-        }
-        if entry.is_rename_commit {
-            // §22: rename commit badge.
-            let badge_text = Text::new(
-                "R".to_string(),
-                appearance.ui_font_family(),
-                appearance.ui_font_size() * 0.85,
-            )
-            .with_color(ColorU::black().into())
-            .with_style(Properties::default().weight(Weight::Bold))
-            .soft_wrap(false)
-            .finish();
-            meta_row.add_child(
-                Container::new(
-                    Container::new(badge_text)
-                        .with_horizontal_padding(4.)
-                        .with_vertical_padding(1.)
-                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(3.)))
-                        .with_background(theme.accent())
-                        .finish(),
-                )
-                .with_margin_left(6.)
-                .finish(),
-            );
-        }
-
-        let subject = Text::new(
-            entry.subject.clone(),
-            appearance.ui_font_family(),
-            appearance.ui_font_size(),
-        )
-        .with_color(sub_color.into())
-        .soft_wrap(true)
-        .finish();
-
-        let mut text_column = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Start)
-            .with_child(meta_row.finish())
-            .with_child(Container::new(subject).with_margin_top(2.).finish());
-
-        // Tooltip via simple per-row text: when this entry's path was
-        // originally something else (rename or copy), surface the old
-        // path as a third line in muted color. PRODUCT §22 — keeps the
-        // information visible without needing a hover tooltip primitive.
-        if let Some(orig) = entry.original_path.as_ref() {
-            let orig_text = Text::new(
-                format!("was: {}", orig.display()),
-                appearance.ui_font_family(),
-                appearance.ui_font_size() * 0.85,
-            )
-            .with_color(sub_color.into())
-            .soft_wrap(true)
-            .finish();
-            text_column =
-                text_column.with_child(Container::new(orig_text).with_margin_top(1.).finish());
-        }
-
-        Container::new(
-            Flex::row()
-                .with_cross_axis_alignment(CrossAxisAlignment::Start)
-                .with_child(avatar)
-                .with_child(Shrinkable::new(1., text_column.finish()).finish())
-                .finish(),
-        )
-        .with_vertical_padding(6.)
-        .with_horizontal_padding(8.)
-        .finish()
-    }
-
-    /// `[Load more]` link at the bottom of the Timeline (PRODUCT §20).
-    /// Dims while a fetch is in flight.
-    fn render_timeline_load_more(
-        &self,
-        loading: bool,
-        appearance: &Appearance,
-    ) -> Box<dyn Element> {
-        let theme = appearance.theme();
-        let color = if loading {
-            theme.sub_text_color(theme.surface_2())
-        } else {
-            theme.accent()
-        };
-        let label = if loading { "Loading…" } else { "Load more" };
-        let label_owned = label.to_string();
-        let font_family = appearance.ui_font_family();
-        let font_size = appearance.ui_font_size();
-        if loading {
-            let text = Text::new(label_owned, font_family, font_size)
-                .with_color(color.into())
-                .soft_wrap(false)
-                .finish();
-            return Container::new(text)
-                .with_vertical_padding(6.)
-                .with_horizontal_padding(8.)
-                .with_margin_top(2.)
-                .finish();
-        }
-        let neutral = internal_colors::neutral_3(theme);
-        let color_for_text = color;
-        let font_family_for_closure = font_family;
-        Hoverable::new(MouseStateHandle::default(), move |state| {
-            let text = Text::new(label_owned.clone(), font_family_for_closure, font_size)
-                .with_color(color_for_text.into())
-                .soft_wrap(false)
-                .finish();
-            let mut container = Container::new(text)
-                .with_vertical_padding(6.)
-                .with_horizontal_padding(8.)
-                .with_margin_top(2.)
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
-            if state.is_hovered() {
-                container = container.with_background(warp_core::ui::theme::Fill::Solid(neutral));
-            }
-            container.finish()
-        })
-        .on_click(|ctx, _, _| {
-            ctx.dispatch_typed_action(CodeReviewAction::TimelineLoadMore);
-        })
-        .with_cursor(Cursor::PointingHand)
-        .finish()
-    }
-
-    /// twarp 5d: switch the Timeline to a different focused file and
-    /// kick off a fresh log fetch. Called from the
-    /// `OpenFileDiffInNewTab` handler so the Timeline always tracks the
-    /// row the user most-recently clicked. Re-focusing the same path is
-    /// a no-op so re-clicking the active row doesn't refetch.
-    #[cfg(feature = "local_fs")]
-    fn refocus_timeline(&mut self, path: PathBuf, ctx: &mut ViewContext<Self>) {
-        let Some(repo) = self.active_repo.as_mut() else {
-            return;
-        };
-        if repo.timeline_ui.focused_path.as_deref() == Some(path.as_path()) {
-            return;
-        }
-        repo.timeline_ui.focused_path = Some(path.clone());
-        repo.timeline_ui.entries.clear();
-        repo.timeline_ui.has_more = true;
-        repo.timeline_ui.loading = true;
-        repo.timeline_ui.local_only_shas.clear();
-        let repo_path = repo.repo_path.clone();
-        let upstream_ref = self
-            .diff_state_model
-            .as_ref(ctx)
-            .upstream_ref()
-            .map(str::to_string);
-        ctx.notify();
-        let path_for_log = path.clone();
-        let path_for_upstream = path.clone();
-        ctx.spawn(
-            async move {
-                let entries =
-                    timeline::fetch_log_page(&repo_path, &path_for_log, 0, TIMELINE_PAGE_SIZE)
-                        .await
-                        .unwrap_or_else(|err| {
-                            log::warn!(
-                                "[twarp 5d] timeline log fetch failed for {}: {err}",
-                                path_for_log.display()
-                            );
-                            Vec::new()
-                        });
-                let local_only = timeline::fetch_local_only_shas(
-                    &repo_path,
-                    &path_for_upstream,
-                    upstream_ref.as_deref(),
-                )
-                .await
-                .unwrap_or_else(|err| {
-                    log::warn!(
-                        "[twarp 5d] timeline ahead-of-upstream fetch failed for {}: {err}",
-                        path_for_upstream.display()
-                    );
-                    std::collections::HashSet::new()
-                });
-                (path, entries, local_only)
-            },
-            |me, (path, mut entries, local_only), ctx| {
-                let Some(repo) = me.active_repo.as_mut() else {
-                    return;
-                };
-                if repo.timeline_ui.focused_path.as_deref() != Some(path.as_path()) {
-                    // User clicked a different row mid-fetch — discard.
-                    return;
-                }
-                repo.timeline_ui.loading = false;
-                repo.timeline_ui.local_only_shas = local_only;
-                timeline::mark_local_only(&mut entries, &repo.timeline_ui.local_only_shas);
-                repo.timeline_ui.has_more = entries.len() == TIMELINE_PAGE_SIZE;
-                repo.timeline_ui.entries = entries;
-                ctx.notify();
-            },
-        );
-    }
-
-    /// twarp 5d (PRODUCT §20): fetch the next page of Timeline entries
-    /// starting at the current `entries.len()` offset. No-op when
-    /// there's nothing more to load or a fetch is already in flight.
-    #[cfg(feature = "local_fs")]
-    fn load_more_timeline_entries(&mut self, ctx: &mut ViewContext<Self>) {
-        let Some(repo) = self.active_repo.as_mut() else {
-            return;
-        };
-        if repo.timeline_ui.loading || !repo.timeline_ui.has_more {
-            return;
-        }
-        let Some(focused) = repo.timeline_ui.focused_path.clone() else {
-            return;
-        };
-        let offset = repo.timeline_ui.entries.len();
-        repo.timeline_ui.loading = true;
-        let repo_path = repo.repo_path.clone();
-        ctx.notify();
-        ctx.spawn(
-            async move {
-                let entries =
-                    timeline::fetch_log_page(&repo_path, &focused, offset, TIMELINE_PAGE_SIZE)
-                        .await
-                        .unwrap_or_else(|err| {
-                            log::warn!(
-                                "[twarp 5d] timeline load-more fetch failed for {} at offset {offset}: {err}",
-                                focused.display()
-                            );
-                            Vec::new()
-                        });
-                (focused, entries)
-            },
-            |me, (path, mut entries), ctx| {
-                let Some(repo) = me.active_repo.as_mut() else {
-                    return;
-                };
-                if repo.timeline_ui.focused_path.as_deref() != Some(path.as_path()) {
-                    return;
-                }
-                repo.timeline_ui.loading = false;
-                repo.timeline_ui.has_more = entries.len() == TIMELINE_PAGE_SIZE;
-                timeline::mark_local_only(&mut entries, &repo.timeline_ui.local_only_shas);
-                repo.timeline_ui.entries.extend(entries);
-                ctx.notify();
-            },
-        );
     }
 
     fn render_sidebar_section(
@@ -8439,14 +7970,6 @@ impl TypedActionView for CodeReviewView {
                     path: full_path,
                     base_content,
                 });
-                // 5d: refocus the Timeline section on this file and kick
-                // off a fresh log fetch. PRODUCT §18.
-                #[cfg(feature = "local_fs")]
-                self.refocus_timeline(path.clone(), ctx);
-            }
-            CodeReviewAction::TimelineLoadMore => {
-                #[cfg(feature = "local_fs")]
-                self.load_more_timeline_entries(ctx);
             }
             CodeReviewAction::FileSelected(file_index) => {
                 // Early-return when repo/state/file is missing to avoid calling

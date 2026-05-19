@@ -1006,6 +1006,12 @@ pub struct Workspace {
     /// `flags::SHORTCUT_RUNNING` context flag (Escape cancel) and PRODUCT
     /// §13's single-in-flight rule.
     shortcut_runner: Option<crate::shortcuts::executor::ShortcutRunner>,
+    /// twarp 5d: session-scoped tempdir for Timeline commit-diff post
+    /// content (PRODUCT §21). Created lazily on the first commit click
+    /// via `ensure_timeline_tempdir`; `TempDir`'s `Drop` removes the
+    /// directory and everything inside it when the workspace closes.
+    #[cfg(feature = "local_fs")]
+    timeline_commit_diff_tempdir: Option<tempfile::TempDir>,
 }
 
 // twarp: 2c-d — generic stub view for several AI-removed dialog/modal handles.
@@ -2907,6 +2913,8 @@ impl Workspace {
             rewind_confirmation_dialog: ctx.add_view(|_| TwarpStubView),
             ai_fact_view: ctx.add_view(|_| AIFactViewStub),
             shortcut_runner: None,
+            #[cfg(feature = "local_fs")]
+            timeline_commit_diff_tempdir: None,
         };
 
         ws.configure_new_workspace(workspace_setting, ctx);
@@ -5348,6 +5356,19 @@ impl Workspace {
             }
             LeftPanelEvent::ShowDeleteConfirmationDialog { .. } => {
                 // twarp: 2c-d — removed delete conversation dialog (AI-only).
+            }
+            LeftPanelEvent::OpenTimelineCommitDiff {
+                repo_path,
+                file_path,
+                sha,
+            } => {
+                #[cfg(feature = "local_fs")]
+                self.open_timeline_commit_diff(
+                    repo_path.clone(),
+                    file_path.clone(),
+                    sha.clone(),
+                    ctx,
+                );
             }
         }
     }
@@ -10410,6 +10431,21 @@ impl Workspace {
         base_content: Option<String>,
         ctx: &mut ViewContext<Self>,
     ) {
+        self.open_file_diff_in_new_pane_with_options(path, base_content, false, ctx);
+    }
+
+    /// twarp 5d (PRODUCT §21): same as [`Self::open_file_diff_in_new_pane`]
+    /// but skips the 5b hunk Stage/Unstage button wiring and marks the
+    /// editor as `Selectable` after load. Used by the Timeline-click
+    /// flow to render a read-only commit diff that the user can scroll
+    /// and copy from but not edit.
+    pub fn open_file_diff_in_new_pane_with_options(
+        &mut self,
+        path: PathBuf,
+        base_content: Option<String>,
+        read_only: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
         if is_binary_file(&path) {
             ctx.open_file_path(&path);
             return;
@@ -10487,34 +10523,64 @@ impl Workspace {
         // `UnstageHunkRequested` events so each click is routed to the
         // repo's `DiffStateModel`, which synthesizes a one-hunk patch
         // and applies it via `git apply --cached [--reverse]`.
-        if let Some(editor) = editor_handle.clone() {
-            editor.update(ctx, |local_editor, ctx| {
-                local_editor.editor().update(ctx, |code_editor, ctx| {
-                    code_editor.set_revert_diff_hunk_button(true, ctx);
-                    code_editor.set_stage_diff_hunk_button(true, ctx);
-                    code_editor.set_unstage_diff_hunk_button(true, ctx);
+        //
+        // 5d: skipped entirely when `read_only` is set — commit-diff
+        // panes are read-only and the buttons would mutate the wrong
+        // file.
+        if !read_only {
+            if let Some(editor) = editor_handle.clone() {
+                editor.update(ctx, |local_editor, ctx| {
+                    local_editor.editor().update(ctx, |code_editor, ctx| {
+                        code_editor.set_revert_diff_hunk_button(true, ctx);
+                        code_editor.set_stage_diff_hunk_button(true, ctx);
+                        code_editor.set_unstage_diff_hunk_button(true, ctx);
+                    });
                 });
-            });
-            ctx.subscribe_to_view(&editor, |me, _editor, event, ctx| match event {
-                crate::code::local_code_editor::LocalCodeEditorEvent::StageHunkRequested {
-                    path,
-                    line_range,
-                } => {
-                    me.dispatch_hunk_stage_op(
-                        path.clone(),
-                        line_range.start.as_usize(),
-                        false,
-                        ctx,
-                    );
+                ctx.subscribe_to_view(&editor, |me, _editor, event, ctx| {
+                    match event {
+                    crate::code::local_code_editor::LocalCodeEditorEvent::StageHunkRequested {
+                        path,
+                        line_range,
+                    } => {
+                        me.dispatch_hunk_stage_op(
+                            path.clone(),
+                            line_range.start.as_usize(),
+                            false,
+                            ctx,
+                        );
+                    }
+                    crate::code::local_code_editor::LocalCodeEditorEvent::UnstageHunkRequested {
+                        path,
+                        line_range,
+                    } => {
+                        me.dispatch_hunk_stage_op(
+                            path.clone(),
+                            line_range.start.as_usize(),
+                            true,
+                            ctx,
+                        );
+                    }
+                    _ => (),
                 }
-                crate::code::local_code_editor::LocalCodeEditorEvent::UnstageHunkRequested {
-                    path,
-                    line_range,
-                } => {
-                    me.dispatch_hunk_stage_op(path.clone(), line_range.start.as_usize(), true, ctx);
-                }
-                _ => (),
-            });
+                });
+            }
+        }
+
+        // 5d: commit-diff panes are read-only. Mark the inner editor as
+        // `Selectable` so the user can scroll + copy without typing
+        // into the synthetic temp file. Runs whether or not a diff base
+        // was supplied (PRODUCT §21).
+        if read_only {
+            if let Some(editor) = editor_handle.clone() {
+                editor.update(ctx, |local_editor, ctx| {
+                    local_editor.editor().update(ctx, |code_editor, ctx| {
+                        code_editor.set_interaction_state(
+                            crate::editor::InteractionState::Selectable,
+                            ctx,
+                        );
+                    });
+                });
+            }
         }
 
         let Some(base) = base_content else {
@@ -10526,6 +10592,98 @@ impl Workspace {
                 editor.set_pending_diff_base_on_load(base, ctx);
             });
         }
+    }
+
+    /// twarp 5d (PRODUCT §21): handle a `LeftPanelEvent::OpenTimelineCommitDiff`
+    /// by fetching the focused file's content at `<sha>` (post) and
+    /// `<sha>^` (pre), writing the post content to a session-scoped
+    /// tempdir, and opening it as a read-only diff pane next to the
+    /// active terminal. Subsequent clicks reuse the same diff pane.
+    #[cfg(feature = "local_fs")]
+    fn open_timeline_commit_diff(
+        &mut self,
+        repo_path: std::path::PathBuf,
+        file_path: std::path::PathBuf,
+        sha: String,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Ok(repo_relative) = file_path.strip_prefix(&repo_path).map(Path::to_path_buf) else {
+            log::warn!(
+                "[twarp 5d] commit-diff: file {} not inside repo {}",
+                file_path.display(),
+                repo_path.display()
+            );
+            return;
+        };
+        let basename = repo_relative
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("file")
+            .to_string();
+        let short_sha: String = sha.chars().take(7).collect();
+
+        // Session-scoped tempdir: created lazily, auto-cleaned when the
+        // workspace drops (TempDir's Drop removes the directory).
+        let tempdir_path = match self.ensure_timeline_tempdir() {
+            Ok(p) => p,
+            Err(err) => {
+                log::warn!("[twarp 5d] commit-diff: failed to create tempdir: {err}");
+                return;
+            }
+        };
+        let temp_filename = format!("{short_sha}-{basename}");
+        let temp_path = tempdir_path.join(&temp_filename);
+
+        let repo_for_async = repo_path.clone();
+        let repo_relative_for_async = repo_relative.clone();
+        let sha_for_async = sha.clone();
+        let temp_path_for_async = temp_path.clone();
+        ctx.spawn(
+            async move {
+                let post_ref = format!("{sha_for_async}:{}", repo_relative_for_async.display());
+                let parent_ref = format!("{sha_for_async}^:{}", repo_relative_for_async.display());
+                let post = crate::util::git::run_git_command(&repo_for_async, &["show", &post_ref])
+                    .await
+                    .map_err(|e| format!("git show {} failed: {e}", post_ref));
+                // Parent may not exist for the first commit on a branch
+                // — in that case the diff base is the empty string and
+                // the editor renders the file as fully added.
+                let pre =
+                    crate::util::git::run_git_command(&repo_for_async, &["show", &parent_ref])
+                        .await
+                        .unwrap_or_default();
+                let write_result = post.and_then(|post_content| {
+                    std::fs::write(&temp_path_for_async, &post_content)
+                        .map(|_| post_content.len())
+                        .map_err(|e| {
+                            format!("writing {} failed: {e}", temp_path_for_async.display())
+                        })
+                });
+                (write_result, pre)
+            },
+            move |me, (write_result, pre), ctx| {
+                if let Err(err) = write_result {
+                    log::warn!("[twarp 5d] commit-diff: {err}");
+                    return;
+                }
+                me.open_file_diff_in_new_pane_with_options(temp_path.clone(), Some(pre), true, ctx);
+            },
+        );
+    }
+
+    /// Lazily create (and cache) the session-scoped tempdir that holds
+    /// commit-diff post-content files. Auto-deletes on workspace drop.
+    #[cfg(feature = "local_fs")]
+    fn ensure_timeline_tempdir(&mut self) -> std::io::Result<std::path::PathBuf> {
+        if let Some(dir) = self.timeline_commit_diff_tempdir.as_ref() {
+            return Ok(dir.path().to_path_buf());
+        }
+        let dir = tempfile::Builder::new()
+            .prefix("twarp-timeline-")
+            .tempdir()?;
+        let path = dir.path().to_path_buf();
+        self.timeline_commit_diff_tempdir = Some(dir);
+        Ok(path)
     }
 
     /// twarp 5b: route a stage/unstage hunk click from the diff pane
