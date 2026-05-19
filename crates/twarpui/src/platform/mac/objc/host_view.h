@@ -19,5 +19,6 @@
 - (void)goForwardNativeWebView:(NSUInteger)webViewId;
 - (void)reloadNativeWebView:(NSUInteger)webViewId;
 - (void)stopLoadingNativeWebView:(NSUInteger)webViewId;
+- (void)setPresentsWithTransaction:(BOOL)presentsWithTransaction;
 - (BOOL)keyDownImpl:(NSEvent *)event;
 @end
