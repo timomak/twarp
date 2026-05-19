@@ -1676,13 +1676,14 @@ impl LeftPanelView {
         if !self.timeline_expanded {
             return header;
         }
+        // Only the **body** goes into the Resizable. The header
+        // stays outside so dragging the resize handle (which sits
+        // at the body's top edge, between header and entries)
+        // doesn't collide with the header's `Hoverable::on_click` —
+        // a drag that ends with mouse-up on the header would
+        // otherwise toggle the section closed.
         let body = self.render_timeline_body(appearance);
-        let combined = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_child(header)
-            .with_child(Shrinkable::new(1.0, body).finish())
-            .finish();
-        Resizable::new(self.timeline_resizable_handle.clone(), combined)
+        let resizable_body = Resizable::new(self.timeline_resizable_handle.clone(), body)
             .with_dragbar_side(DragBarSide::Top)
             .with_bounds_callback(Box::new(|window_size| {
                 (
@@ -1693,6 +1694,11 @@ impl LeftPanelView {
             .on_resize(|ctx, _| {
                 ctx.notify();
             })
+            .finish();
+        Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_child(header)
+            .with_child(resizable_body)
             .finish()
     }
 
@@ -1721,11 +1727,15 @@ impl LeftPanelView {
         .soft_wrap(false)
         .finish();
         let hover_bg = internal_colors::neutral_3(theme);
+        // Compact spacing — the previous (margin_top 4 +
+        // vertical_padding 6) read as a cavernous gap between the
+        // file tree and the section header. Drop the top margin and
+        // tighten vertical padding to match the surrounding tool-
+        // panel row density.
         Hoverable::new(self.timeline_header_mouse_state.clone(), move |state| {
             let mut container = Container::new(text)
                 .with_horizontal_padding(8.)
-                .with_vertical_padding(6.)
-                .with_margin_top(4.)
+                .with_vertical_padding(3.)
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
             if state.is_hovered() {
                 container = container.with_background(warp_core::ui::theme::Fill::Solid(hover_bg));

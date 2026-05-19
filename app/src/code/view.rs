@@ -212,6 +212,16 @@ pub struct TabData {
     editor_view: ViewHandle<LocalCodeEditorView>,
     mouse_state_handles: TabDataMouseStateHandles,
     preview: bool,
+    /// twarp 5d (PRODUCT §21): when `true`, this tab renders with a
+    /// lock icon to the left of the file name and a muted (disabled)
+    /// text color, signalling that the editor is read-only. Set by
+    /// `mark_read_only` on the active tab right after the workspace
+    /// creates a commit-diff pane through
+    /// `open_file_diff_in_new_pane_with_options(..., read_only=true)`.
+    /// Per-tab (not per-`CodeView`) so a project-explorer file that
+    /// later lands in the same pane as a commit-diff tab doesn't
+    /// inherit the lock — only the commit-diff tab keeps it.
+    read_only: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -243,17 +253,6 @@ pub struct CodeView {
     window_id: WindowId,
     drag_position: Option<TabBarDragPosition>,
     markdown_mode_segmented_control: Option<ViewHandle<MarkdownToggleView>>,
-    /// twarp 5d (PRODUCT §21): when `true`, every tab in this
-    /// `CodeView` renders with a lock icon to the left of the file
-    /// name and a muted (disabled) text color, signalling to the
-    /// user that the pane is read-only. Set by the workspace via
-    /// [`Self::set_read_only_view`] right after creating a
-    /// commit-diff pane through
-    /// `open_file_diff_in_new_pane_with_options(..., read_only=true)`.
-    /// The commit-diff pane only ever holds one tab (the strict-swap
-    /// reuse path keeps it that way), so a view-level flag is
-    /// sufficient — no per-tab plumbing required.
-    read_only_view: bool,
 }
 
 impl CodeView {
@@ -270,18 +269,24 @@ impl CodeView {
             window_id,
             drag_position: None,
             markdown_mode_segmented_control: None,
-            read_only_view: false,
         }
     }
 
-    /// twarp 5d: mark this `CodeView` so its tabs render with a lock
-    /// icon and a muted (disabled) text color. The workspace calls
-    /// this on commit-diff panes opened via the Timeline click flow.
-    pub fn set_read_only_view(&mut self, read_only: bool, ctx: &mut ViewContext<Self>) {
-        if self.read_only_view == read_only {
+    /// twarp 5d: flip the active tab's `read_only` flag so the tab
+    /// header renders with a lock icon and muted text. Called by the
+    /// workspace right after creating a commit-diff pane through
+    /// `open_file_diff_in_new_pane_with_options(..., read_only=true)`.
+    /// Tab-scoped (not view-scoped) on purpose: if the user later
+    /// opens another file in the same pane group, that file's tab
+    /// stays editable while the commit-diff tab keeps its lock.
+    pub fn mark_active_tab_read_only(&mut self, read_only: bool, ctx: &mut ViewContext<Self>) {
+        let Some(tab) = self.tab_group.get_mut(self.active_tab_index) else {
+            return;
+        };
+        if tab.read_only == read_only {
             return;
         }
-        self.read_only_view = read_only;
+        tab.read_only = read_only;
         ctx.notify();
     }
 
@@ -641,6 +646,7 @@ impl CodeView {
             editor_view: code_editor,
             mouse_state_handles: Default::default(),
             preview,
+            read_only: false,
         }
     }
 
@@ -1727,7 +1733,6 @@ impl CodeView {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         let is_pane_dragging = header_ctx.draggable_state.is_dragging();
-        let read_only_view = self.read_only_view;
 
         let mut header_row = Flex::row()
             .with_main_axis_alignment(MainAxisAlignment::Start)
@@ -1765,7 +1770,7 @@ impl CodeView {
                             is_active,
                             tab_handle.is_hovered(),
                             Self::has_unsaved_changes(tab_data, app),
-                            read_only_view,
+                            tab_data.read_only,
                             appearance,
                         ))
                         .with_horizontal_margin(TAB_HORIZONTAL_MARGIN)
@@ -1932,7 +1937,7 @@ impl CodeView {
 
         let appearance = Appearance::as_ref(app);
         let is_pane_dragging = header_ctx.draggable_state.is_dragging();
-        let read_only_view = self.read_only_view;
+        let read_only_view = self.tab_group.first().map(|t| t.read_only).unwrap_or(false);
         let mut right_row = Flex::row()
             .with_main_axis_alignment(MainAxisAlignment::End)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)

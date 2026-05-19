@@ -6792,15 +6792,23 @@ impl Workspace {
                 .value();
 
         if grouping_on {
-            let code_view = self
-                .active_tab_pane_group()
+            // 5d: filter out diff panes (working diff from the Code
+            // Review sidebar and the read-only commit-diff from a
+            // Timeline click). Without this filter, opening a file
+            // from the Project Explorer would land its tab inside
+            // the commit-diff pane — visually polluting a pane
+            // dedicated to a specific commit's history view.
+            let active_pane_group = self.active_tab_pane_group().clone();
+            let pg = active_pane_group.as_ref(ctx);
+            let diff_pane_id = pg.diff_pane_id;
+            let timeline_commit_diff_pane_id = pg.timeline_commit_diff_pane_id;
+            let code_view = active_pane_group
                 .as_ref(ctx)
                 .code_panes(ctx)
                 .find(|(pane_id, _)| {
-                    !self
-                        .active_tab_pane_group()
-                        .as_ref(ctx)
-                        .is_pane_hidden_for_close(*pane_id)
+                    !pg.is_pane_hidden_for_close(*pane_id)
+                        && diff_pane_id != Some(*pane_id)
+                        && timeline_commit_diff_pane_id != Some(*pane_id)
                 });
             // If the tabbed editor view is enabled and there is an existing CodeView, we should group the newly opened file into this view.
             if let (Some(path), Some((pane_id, code_view))) = (source.path(), code_view) {
@@ -10500,6 +10508,19 @@ impl Workspace {
                     });
                 }
                 pg.focus_pane(diff_pane_id, true, ctx);
+                // 5d: on reuse, re-mark the (now-swapped) active tab
+                // as read-only. `replace_with_single_path` constructs
+                // a fresh `TabData` with `read_only=false`, so without
+                // this the lock icon would vanish on the second
+                // Timeline click.
+                if read_only {
+                    if let Some(code_pane) = pg.code_pane_by_id(diff_pane_id) {
+                        let code_view = code_pane.file_view(ctx);
+                        code_view.update(ctx, |view, ctx| {
+                            view.mark_active_tab_read_only(true, ctx);
+                        });
+                    }
+                }
             });
         } else {
             let source = CodeSource::Link {
@@ -10517,16 +10538,17 @@ impl Workspace {
                 } else {
                     pane_group.diff_pane_id = Some(new_pane_id);
                 }
-                // 5d: mark the new CodeView read-only so its tab
-                // header renders with a lock icon + muted title.
-                // Only commit-diff panes get this; reuse on
-                // subsequent Timeline clicks preserves the flag
-                // since `replace_with_single_path` doesn't touch it.
+                // 5d: mark the new pane's active tab read-only so it
+                // renders with a lock icon + muted title. Per-tab
+                // (not per-view) so that if the user later opens a
+                // project-explorer file in this pane, the new tab
+                // stays editable while the commit-diff tab keeps
+                // its lock.
                 if read_only {
                     if let Some(code_pane) = pane_group.code_pane_by_id(new_pane_id) {
                         let code_view = code_pane.file_view(ctx);
                         code_view.update(ctx, |view, ctx| {
-                            view.set_read_only_view(true, ctx);
+                            view.mark_active_tab_read_only(true, ctx);
                         });
                     }
                 }
@@ -10610,6 +10632,16 @@ impl Workspace {
         // `Selectable` so the user can scroll + copy without typing
         // into the synthetic temp file. Runs whether or not a diff base
         // was supplied (PRODUCT §21).
+        //
+        // Also subscribe to `FileLoaded` and explicitly scroll to the
+        // first hunk on every load. `set_pending_diff_base_on_load`
+        // already calls `scroll_to_first_hunk` in both its immediate
+        // and deferred branches, but the immediate branch can fire
+        // before the editor has laid itself out (temp files load
+        // synchronously from the filesystem cache), leaving the
+        // viewport at line 1. Calling scroll again from the
+        // `FileLoaded` event guarantees the autoscroll lands after
+        // layout — and it's idempotent, so an extra fire is harmless.
         if read_only {
             if let Some(editor) = editor_handle.clone() {
                 editor.update(ctx, |local_editor, ctx| {
@@ -10619,6 +10651,18 @@ impl Workspace {
                             ctx,
                         );
                     });
+                });
+                ctx.subscribe_to_view(&editor, |_me, editor, event, ctx| {
+                    if matches!(
+                        event,
+                        crate::code::local_code_editor::LocalCodeEditorEvent::FileLoaded
+                    ) {
+                        editor.update(ctx, |local_editor, ctx| {
+                            local_editor.editor().update(ctx, |code_editor, ctx| {
+                                code_editor.scroll_to_first_hunk(ctx);
+                            });
+                        });
+                    }
                 });
             }
         }
