@@ -10476,20 +10476,100 @@ impl Workspace {
         }
         self.refresh_diff_pane_nav_bar_stage_state(ctx);
 
-        let Some(base) = base_content else {
-            return;
-        };
-
         let editor_handle = pane_group_handle
             .as_ref(ctx)
             .code_panes(ctx)
             .find_map(|(_, code_view)| code_view.as_ref(ctx).editor_view_for_path(&path).cloned());
+
+        // twarp 5b: enable stage / unstage / revert hunk buttons on
+        // the diff pane editor. Subscribe to the resulting
+        // `LocalCodeEditorEvent::StageHunkRequested` /
+        // `UnstageHunkRequested` events so each click is routed to the
+        // repo's `DiffStateModel`, which synthesizes a one-hunk patch
+        // and applies it via `git apply --cached [--reverse]`.
+        if let Some(editor) = editor_handle.clone() {
+            editor.update(ctx, |local_editor, ctx| {
+                local_editor.editor().update(ctx, |code_editor, ctx| {
+                    code_editor.set_revert_diff_hunk_button(true, ctx);
+                    code_editor.set_stage_diff_hunk_button(true, ctx);
+                    code_editor.set_unstage_diff_hunk_button(true, ctx);
+                });
+            });
+            ctx.subscribe_to_view(&editor, |me, _editor, event, ctx| match event {
+                crate::code::local_code_editor::LocalCodeEditorEvent::StageHunkRequested {
+                    path,
+                    line_range,
+                } => {
+                    me.dispatch_hunk_stage_op(
+                        path.clone(),
+                        line_range.start.as_usize(),
+                        false,
+                        ctx,
+                    );
+                }
+                crate::code::local_code_editor::LocalCodeEditorEvent::UnstageHunkRequested {
+                    path,
+                    line_range,
+                } => {
+                    me.dispatch_hunk_stage_op(path.clone(), line_range.start.as_usize(), true, ctx);
+                }
+                _ => (),
+            });
+        }
+
+        let Some(base) = base_content else {
+            return;
+        };
 
         if let Some(editor) = editor_handle {
             editor.update(ctx, |editor, ctx| {
                 editor.set_pending_diff_base_on_load(base, ctx);
             });
         }
+    }
+
+    /// twarp 5b: route a stage/unstage hunk click from the diff pane
+    /// to the matching repo's `DiffStateModel`. The editor emits an
+    /// absolute file path; this converts to repo-relative before the
+    /// model resolves the hunk from `git status --porcelain=v2`.
+    #[cfg(feature = "local_fs")]
+    fn dispatch_hunk_stage_op(
+        &mut self,
+        absolute_path: std::path::PathBuf,
+        line_in_new_file: usize,
+        unstage: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(repo_root) = DetectedRepositories::as_ref(ctx).get_root_for_path(&absolute_path)
+        else {
+            return;
+        };
+        let relative_path = match absolute_path.strip_prefix(&repo_root) {
+            Ok(rel) => rel.to_path_buf(),
+            Err(_) => return,
+        };
+        let Some(diff_state_model) = self.working_directories_model.update(ctx, |model, ctx| {
+            model.get_or_create_diff_state_model(repo_root.clone(), ctx)
+        }) else {
+            return;
+        };
+        diff_state_model.update(ctx, |model, ctx| {
+            if unstage {
+                model.unstage_hunk(relative_path, line_in_new_file, ctx);
+            } else {
+                model.stage_hunk(relative_path, line_in_new_file, ctx);
+            }
+        });
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    fn dispatch_hunk_stage_op(
+        &mut self,
+        _absolute_path: std::path::PathBuf,
+        _line_in_new_file: usize,
+        _unstage: bool,
+        _ctx: &mut ViewContext<Self>,
+    ) {
     }
 
     pub fn add_tab_for_new_code_file(&mut self, ctx: &mut ViewContext<Self>) {

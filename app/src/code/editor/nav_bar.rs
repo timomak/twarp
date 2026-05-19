@@ -44,14 +44,12 @@ pub enum NavBarEvent {
 pub enum NavBarAction {
     NavigateUp,
     NavigateDown,
-    Revert,
     Close,
 }
 
 #[derive(Default)]
 struct MouseStateHandles {
     close_mouse_state: MouseStateHandle,
-    revert_mouse_state: MouseStateHandle,
     /// twarp 05e: hover state for the Stage / Unstage button. See
     /// [`NavBar::stage_button_state`].
     stage_mouse_state: MouseStateHandle,
@@ -235,24 +233,6 @@ impl NavBar {
         .finish()
     }
 
-    fn render_revert_button(&self, appearance: &Appearance) -> Box<dyn Element> {
-        Container::new(
-            appearance
-                .ui_builder()
-                .button(
-                    ButtonVariant::Outlined,
-                    self.mouse_state_handles.revert_mouse_state.clone(),
-                )
-                .with_text_label("Reject".to_string())
-                .build()
-                .on_click(|ctx, _, _| ctx.dispatch_typed_action(NavBarAction::Revert))
-                .finish(),
-        )
-        .with_padding_left(NAV_BAR_SEPARATOR_PADDING)
-        .with_padding_right(NAV_BAR_SEPARATOR_PADDING)
-        .finish()
-    }
-
     /// twarp 05e: render either the "Stage" or "Unstage" button based
     /// on the current state. Click dispatches the matching
     /// `WorkspaceAction`, which the workspace resolves to the active
@@ -367,21 +347,15 @@ impl View for NavBar {
             .with_child(self.render_nav_label(true))
             .with_child(self.render_nav_label(false));
 
-        // twarp 05e: render the Stage / Unstage button to the left of
-        // Reject so the additive action sits before the destructive
-        // one. Gated by `stage_button_state` so it only appears where
-        // workspace has opted in (the twarp diff pane).
+        // twarp 05e: render the Stage / Unstage button when the workspace
+        // has opted in (gated by `stage_button_state`). The previous
+        // "Reject" (whole-hunk revert) button next to it was removed in 5b
+        // — the per-hunk `[↺]` gutter button is the canonical revert path.
         if !matches!(self.stage_button_state, NavBarStageButtonState::Hidden)
             && editable
             && total > 0
         {
             row.add_child(self.render_stage_button(appearance));
-        }
-
-        // Do not render the revert button if there is nothing to revert or the editor is
-        // not in an editable interaction state.
-        if editable && total > 0 {
-            row.add_child(self.render_revert_button(appearance));
         }
 
         if matches!(self.behavior, NavBarBehavior::Closable) {
@@ -406,12 +380,6 @@ impl TypedActionView for NavBar {
             NavBarAction::Close => ctx.emit(NavBarEvent::Close),
             NavBarAction::NavigateUp => self.navigate_up(ctx),
             NavBarAction::NavigateDown => self.navigate_down(ctx),
-            NavBarAction::Revert => {
-                self.autoscroll(ctx);
-                self.model.update(ctx, |model, ctx| {
-                    model.revert_diff_index(ctx);
-                });
-            }
         }
     }
 }

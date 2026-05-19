@@ -39,6 +39,7 @@ use crate::{code_review::diff_state::DiffStateModel, terminal::view::TerminalVie
 use dunce::canonicalize;
 use itertools::Itertools;
 use std::{
+    collections::HashSet,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -360,6 +361,13 @@ pub struct RightPanelView {
     #[cfg(feature = "local_fs")]
     code_review_session_env: Option<CodeReviewSessionEnv>,
     panel_position: super::PanelPosition,
+    /// twarp 5b: terminal `TerminalView` IDs we've already subscribed to for
+    /// `AfterBlockCompleted` events. Each `git` / `gh` command finishing in a
+    /// subscribed terminal force-refreshes the Code Review panel, covering
+    /// index-only changes (`git add`, `git restore --staged`) that the FS
+    /// watcher misses. Subscriptions auto-no-op when their terminal dies.
+    #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
+    terminal_command_subscribed_ids: HashSet<EntityId>,
 }
 
 impl RightPanelView {
@@ -454,6 +462,7 @@ impl RightPanelView {
             #[cfg(feature = "local_fs")]
             code_review_session_env: None,
             panel_position: super::PanelPosition::Right,
+            terminal_command_subscribed_ids: HashSet::new(),
         }
     }
 
@@ -582,6 +591,13 @@ impl RightPanelView {
 
         self.active_pane_group = Some(pane_group);
 
+        // twarp 5b: refresh the panel after terminal `git` commands finish.
+        // `git add` / `git restore --staged` only touch `.git/index`, which
+        // the FS watcher doesn't observe on macOS — without this hook the
+        // staged/unstaged counts go stale until the next sidebar click.
+        #[cfg(feature = "local_fs")]
+        self.subscribe_to_pane_group_terminals_for_refresh(ctx);
+
         if let Some(state) = &mut self.code_review_state {
             let active_repositories = working_directories_model.read(ctx, |model, _| {
                 model
@@ -652,6 +668,84 @@ impl RightPanelView {
             self.recompute_terminal_availability(ctx);
         };
         ctx.notify();
+    }
+
+    /// twarp 5b: subscribe to `AfterBlockCompleted` on every terminal pane in
+    /// the active pane group. Each `git` / `gh` / `hub` / `jj` command finishing
+    /// in one of those panes force-refreshes the cached `CodeReviewView` for
+    /// the active pane group + selected repo. Skips terminals we've already
+    /// subscribed to (re-subscribing would double-fire). New terminal panes
+    /// added after the initial subscription pass are picked up on the next
+    /// `set_active_pane_group` call (tab switch).
+    #[cfg(feature = "local_fs")]
+    fn subscribe_to_pane_group_terminals_for_refresh(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(pane_group) = self.active_pane_group.clone() else {
+            return;
+        };
+        let terminal_views: Vec<ViewHandle<TerminalView>> = pane_group.read(ctx, |pg, ctx| {
+            pg.terminal_pane_ids()
+                .filter_map(|id| pg.terminal_view_from_pane_id(id, ctx))
+                .collect()
+        });
+        for terminal in terminal_views {
+            let terminal_id = terminal.id();
+            if !self.terminal_command_subscribed_ids.insert(terminal_id) {
+                continue;
+            }
+            ctx.subscribe_to_view(&terminal, |me, _terminal, event, ctx| {
+                me.on_terminal_event_for_panel_refresh(event, ctx);
+            });
+        }
+    }
+
+    /// twarp 5b: handler invoked for every terminal `Event` from a subscribed
+    /// pane. Bails fast on non-`BlockCompleted` events and on commands whose
+    /// first whitespace token isn't a known git frontend. When it matches,
+    /// finds the `CodeReviewView` for the active (pane_group, selected_repo)
+    /// pair and calls `force_refresh_panel_data` so the next render reflects
+    /// the post-command repo state.
+    ///
+    /// `BlockCompleted` is the public terminal-view event; `AfterBlockCompleted`
+    /// is richer (parsed `UserBlockCompleted.command`) but only reachable via
+    /// `ModelEventDispatcher`, whose getter is `#[cfg(test)]`-gated. The
+    /// stylized command bytes here are usually plain UTF-8 for simple cases
+    /// (`git add foo`); commands with leading escape sequences would be
+    /// missed by the prefix check, accepted as a known limitation.
+    #[cfg(feature = "local_fs")]
+    fn on_terminal_event_for_panel_refresh(
+        &mut self,
+        event: &crate::terminal::Event,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let crate::terminal::Event::BlockCompleted { block, .. } = event else {
+            return;
+        };
+        let command_str = String::from_utf8_lossy(&block.stylized_command);
+        let first_token = command_str.split_whitespace().next().unwrap_or("");
+        if !matches!(first_token, "git" | "gh" | "hub" | "jj") {
+            return;
+        }
+        let Some(pane_group) = self.active_pane_group.as_ref() else {
+            return;
+        };
+        let pane_group_id = pane_group.id();
+        let Some(repo_path) = self
+            .code_review_state
+            .as_ref()
+            .and_then(|s| s.selected_repo_path.clone())
+        else {
+            return;
+        };
+        let Some(panel) = self
+            .working_directories_model
+            .as_ref(ctx)
+            .get_code_review_view(pane_group_id, &repo_path)
+        else {
+            return;
+        };
+        panel.update(ctx, |panel, ctx| {
+            panel.force_refresh_panel_data(ctx);
+        });
     }
 
     /// Closes the CodeReviewView for the given pane group and repo path (if any)

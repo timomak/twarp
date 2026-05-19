@@ -8,6 +8,7 @@ use crate::code::editor::{
     element::{
         AddAsContextButton, CommentButton, EditorWrapper, EditorWrapperStateHandle,
         GutterHoverTarget, GutterRange, InnerEditor, LineNumberConfig, RevertHunkButton,
+        StageHunkButton, UnstageHunkButton,
     },
     find::view::{CodeEditorFind as Find, Event as FindViewEvent},
     goto_line::view::{Event as GoToLineEvent, GoToLineView},
@@ -124,6 +125,17 @@ pub enum CodeEditorEvent {
     },
     /// Emitted when a diff hunk is reverted
     DiffReverted,
+    /// twarp 5b: emitted when the user clicks the `[+]` stage-hunk
+    /// button. Carries the hunk's line range — the parent resolves
+    /// the file path and applies the patch via git.
+    StageHunkRequested {
+        line_range: Range<LineCount>,
+    },
+    /// twarp 5b: emitted when the user clicks the `[−]` unstage-hunk
+    /// button.
+    UnstageHunkRequested {
+        line_range: Range<LineCount>,
+    },
     HiddenSectionExpanded,
     /// Emitted when a comment is saved. This gets propagated up so that it
     /// can be augmented with the file and repo paths and saved to the comment model.
@@ -180,6 +192,14 @@ struct CodeEditorViewDisplayOptions {
     diff_hunk_as_context: Option<AddAsContextButton>,
     /// The revert diff button, or `None` if it is not currently visible.
     revert_diff_hunk: Option<RevertHunkButton>,
+    /// twarp 5b: stage-hunk button on the diff gutter, shown on the
+    /// Changes side of the Code Review panel. `None` when this editor
+    /// is not part of a stage/unstage surface.
+    stage_diff_hunk: Option<StageHunkButton>,
+    /// twarp 5b: unstage-hunk button on the diff gutter, shown on the
+    /// Staged side of the Code Review panel. `None` when this editor
+    /// is not part of a stage/unstage surface.
+    unstage_diff_hunk: Option<UnstageHunkButton>,
     /// The add comment button, or `None` if it is not currently visible.
     comment_button: Option<CommentButton>,
     /// Whether to expand the width of the diff indicator in the gutter on hover.
@@ -411,6 +431,8 @@ impl CodeEditorView {
                 show_nav_bar: true,
                 diff_hunk_as_context: Default::default(),
                 revert_diff_hunk: Default::default(),
+                stage_diff_hunk: Default::default(),
+                unstage_diff_hunk: Default::default(),
                 comment_button: Default::default(),
                 // By default expand diff indicators on hover.
                 expand_diff_indicator_width_on_hover: true,
@@ -483,6 +505,61 @@ impl CodeEditorView {
         self.display_options.revert_diff_hunk =
             Some(RevertHunkButton::new(true /* is_enabled */));
         self
+    }
+
+    /// Enables the "stage hunk" button on diff hunks (twarp 5b). Only
+    /// enable this for the Changes side of the Code Review panel — the
+    /// click emits [`CodeEditorEvent::StageHunkRequested`] for the
+    /// parent to apply via `git apply --cached`.
+    pub fn with_stage_diff_hunk_button(mut self) -> Self {
+        self.display_options.stage_diff_hunk =
+            Some(StageHunkButton::new(true /* is_enabled */));
+        self
+    }
+
+    /// Enables the "unstage hunk" button on diff hunks (twarp 5b).
+    /// Only enable this for the Staged side of the Code Review panel.
+    /// Click emits [`CodeEditorEvent::UnstageHunkRequested`].
+    pub fn with_unstage_diff_hunk_button(mut self) -> Self {
+        self.display_options.unstage_diff_hunk =
+            Some(UnstageHunkButton::new(true /* is_enabled */));
+        self
+    }
+
+    /// Runtime toggle for the stage-hunk button, used by callers that
+    /// flip the editor between "is a diff surface" and "is just an
+    /// editor" without rebuilding the view.
+    pub fn set_stage_diff_hunk_button(&mut self, enabled: bool, ctx: &mut ViewContext<Self>) {
+        self.display_options.stage_diff_hunk = if enabled {
+            Some(StageHunkButton::new(true))
+        } else {
+            None
+        };
+        ctx.notify();
+    }
+
+    /// Runtime toggle for the unstage-hunk button. Mirrors
+    /// [`Self::set_stage_diff_hunk_button`].
+    pub fn set_unstage_diff_hunk_button(&mut self, enabled: bool, ctx: &mut ViewContext<Self>) {
+        self.display_options.unstage_diff_hunk = if enabled {
+            Some(UnstageHunkButton::new(true))
+        } else {
+            None
+        };
+        ctx.notify();
+    }
+
+    /// Runtime toggle for the revert-hunk button. Companion to the
+    /// stage/unstage toggles so callers can light up the full
+    /// `[+] [↺]` / `[−]` cluster (PRODUCT §12) at once on the diff
+    /// pane.
+    pub fn set_revert_diff_hunk_button(&mut self, enabled: bool, ctx: &mut ViewContext<Self>) {
+        self.display_options.revert_diff_hunk = if enabled {
+            Some(RevertHunkButton::new(true))
+        } else {
+            None
+        };
+        ctx.notify();
     }
 
     /// Enables the "comment" button on diff hunks. Only enable this for code review views.
@@ -633,6 +710,8 @@ impl CodeEditorView {
             false,
             self.model.as_ref(ctx).diff_navigation_state().clone(),
             None,
+            Default::default(),
+            Default::default(),
             Default::default(),
             Default::default(),
             Default::default(),
@@ -1342,6 +1421,16 @@ impl CodeEditorView {
 
         self.model.update(ctx, |model, ctx| {
             model.expand_diffs(ctx);
+        });
+    }
+
+    /// twarp 5b: View-level shim for `CodeEditorModel::scroll_to_first_hunk`.
+    pub fn scroll_to_first_hunk(&self, ctx: &mut ViewContext<Self>) {
+        if !self.display_options.can_show_diff_ui {
+            return;
+        }
+        self.model.update(ctx, |model, ctx| {
+            model.scroll_to_first_hunk(ctx);
         });
     }
 
@@ -2249,6 +2338,8 @@ impl View for CodeEditorView {
             },
             self.display_options.diff_hunk_as_context,
             self.display_options.revert_diff_hunk,
+            self.display_options.stage_diff_hunk,
+            self.display_options.unstage_diff_hunk,
             self.display_options.comment_button,
             self.comment_locations.clone(),
             self.display_options.expand_diff_indicator_width_on_hover,

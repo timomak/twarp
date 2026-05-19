@@ -951,6 +951,22 @@ impl CodeReviewView {
         });
     }
 
+    /// twarp 5b: Force-refresh the panel from outside the FS-watcher pipeline.
+    /// The default refresh fires on filesystem events, but `git add` /
+    /// `git restore --staged` only touch `.git/index` (not the working tree),
+    /// so the watcher misses index-only state flips. The terminal command-end
+    /// hook in `RightPanelView` routes through here when a `git` / `gh` /
+    /// `hub` / `jj` command finishes in a subscribed pane.
+    ///
+    /// Sidebar clicks deliberately do **not** call this — they're pure UI
+    /// (open a diff pane, toggle a section). Refreshing on click caused a
+    /// visible rebuild flicker (new ListState + new FileState ViewHandles
+    /// remount every row) on every click; the FS watcher + terminal hook
+    /// cover the cases where the sidebar genuinely needs to update.
+    pub fn force_refresh_panel_data(&mut self, ctx: &mut ViewContext<Self>) {
+        self.load_diffs_for_active_repo(false, ctx);
+    }
+
     /// Called when the code review view is opened/attached to a pane group.
     /// Subscribes to the diff state model and triggers diff loading.
     pub fn on_open(&mut self, repo_path: Option<PathBuf>, ctx: &mut ViewContext<Self>) {
@@ -2664,8 +2680,11 @@ impl CodeReviewView {
                         if status_changed {
                             diff_data.file_states.shift_remove_index(index);
                             self.viewported_list_state.remove(index);
-                            let new_states = self
-                                .build_view_state_for_file_diffs(std::slice::from_ref(&diff), ctx);
+                            let new_states = self.build_view_state_for_file_diffs(
+                                std::slice::from_ref(&diff),
+                                &mut IndexMap::new(),
+                                ctx,
+                            );
                             diff_data.file_states.extend(
                                 new_states
                                     .into_iter()
@@ -2690,8 +2709,11 @@ impl CodeReviewView {
                         self.viewported_list_state.remove(index);
                     }
                     (None, Some(diff)) => {
-                        let new_states =
-                            self.build_view_state_for_file_diffs(std::slice::from_ref(&diff), ctx);
+                        let new_states = self.build_view_state_for_file_diffs(
+                            std::slice::from_ref(&diff),
+                            &mut IndexMap::new(),
+                            ctx,
+                        );
                         diff_data.file_states.extend(
                             new_states
                                 .into_iter()
@@ -2771,10 +2793,18 @@ impl CodeReviewView {
         match self.diff_state(ctx) {
             DiffState::Loading => {
                 if let Some(repo) = self.active_repo.as_mut() {
-                    log::info!(
-                        "Code Review Panel: Setting state to loading after receiving 'loading' message."
-                    );
-                    repo.state = CodeReviewViewState::None;
+                    // twarp 5b: only blank the panel if we don't have a prior
+                    // Loaded state to keep showing. Refreshes that follow a
+                    // terminal `git` command or sidebar click pass through
+                    // here every time — blanking to None made the skeleton
+                    // loader flash on each refresh. Stale-then-fresh beats
+                    // blank-then-fresh.
+                    if !matches!(repo.state, CodeReviewViewState::Loaded(_)) {
+                        log::info!(
+                            "Code Review Panel: Setting state to loading after receiving 'loading' message."
+                        );
+                        repo.state = CodeReviewViewState::None;
+                    }
                 }
                 ctx.notify();
                 return;
@@ -2809,17 +2839,36 @@ impl CodeReviewView {
         };
 
         // Deallocate global buffers that are going to be invalidated.
-        if let Some(repo) = self.active_repo.as_mut() {
-            repo.state = CodeReviewViewState::None;
-            GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| {
-                model.remove_deallocated_buffers(ctx);
-            });
-        }
+        // twarp 5b: previously this also set `repo.state = None` to "clear"
+        // the panel before rebuilding. That caused the visible flicker — we
+        // now leave the prior Loaded state in place and let the final
+        // assignment below swap it out atomically (`ctx.notify()` only fires
+        // at the end of this function, so the user never sees the in-between).
+        GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| {
+            model.remove_deallocated_buffers(ctx);
+        });
 
         // Create a new list state for this update
         self.viewported_list_state = Self::create_list_state(ctx);
 
-        let file_states_vec = self.build_view_state_for_file_diffs(&diff_data.files, ctx);
+        // twarp 5b: take the prior file_states out so `build_view_state_for_file_diffs`
+        // can reuse per-row UI handles (chevron / stage / unstage / discard
+        // buttons, hover mouse state, `is_expanded` toggle) for paths that
+        // survive. Without this, every refresh built fresh `ViewHandle`s
+        // and every row visibly remounted — the user-visible flicker.
+        let mut previous_file_states = match self.active_repo.as_mut() {
+            Some(repo) => match &mut repo.state {
+                CodeReviewViewState::Loaded(loaded) => std::mem::take(&mut loaded.file_states),
+                _ => IndexMap::new(),
+            },
+            None => IndexMap::new(),
+        };
+
+        let file_states_vec = self.build_view_state_for_file_diffs(
+            &diff_data.files,
+            &mut previous_file_states,
+            ctx,
+        );
 
         if let Some(repo) = self.active_repo.as_mut() {
             repo.state = CodeReviewViewState::Loaded(LoadedState {
@@ -2970,9 +3019,27 @@ impl CodeReviewView {
         state.changes = changes;
     }
 
+    /// twarp 5b: `previous` carries the prior `file_states` so per-row UI
+    /// elements (button `ViewHandle`s, hover `MouseStateHandle`s, the
+    /// `is_expanded` user-toggled flag) survive a refresh. A path present in
+    /// both gets its buttons / mouse states reused; only the data fields
+    /// (`file_diff`, `editor_state`, `content_at_head`) come from the new
+    /// build. Paths missing from `previous` get fresh state.
+    ///
+    /// Without reuse, every refresh built brand-new `ViewHandle`s for the
+    /// chevron / stage / unstage / discard / resolve / etc. buttons, and
+    /// fresh `MouseStateHandle`s for the row's hover state. The renderer
+    /// keys off handle identity, so each row visibly remounted on every
+    /// refresh — the "slight flicker" the user reported.
+    ///
+    /// Bulk-refresh callers (`invalidate_all`) pass the prior `file_states`
+    /// taken via `std::mem::take`. Per-file callers (`invalidate_files`)
+    /// pass an empty map; their code path already handles incremental
+    /// updates via `IndexMap::shift_remove_index` + targeted rebuild.
     fn build_view_state_for_file_diffs(
         &self,
         files: &[FileDiffAndContent],
+        previous: &mut IndexMap<PathBuf, FileState>,
         ctx: &mut ViewContext<Self>,
     ) -> Vec<FileState> {
         let git_operation_blocked = self
@@ -2997,6 +3064,17 @@ impl CodeReviewView {
                     self.create_code_review_model(file, ctx)
                 }
             };
+
+            // twarp 5b: if this path survived the refresh, reuse its existing
+            // FileState's UI handles and only swap in the new data fields.
+            if let Some(mut reused) = previous.shift_remove(&file.file_diff.file_path) {
+                reused.file_diff = file.file_diff.clone();
+                reused.editor_state = editor_state;
+                reused.content_at_head = file.content_at_head.clone();
+                file_states.push(reused);
+                continue;
+            }
+
             let is_expanded = self.should_auto_expand_file(&file.file_diff);
 
             let file_path = file.file_diff.file_path.clone();

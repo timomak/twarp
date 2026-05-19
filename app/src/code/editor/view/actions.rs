@@ -638,6 +638,18 @@ pub enum CodeEditorViewAction {
     RevertDiffHunk {
         line_range: Range<LineCount>,
     },
+    /// twarp 5b: user clicked the `[+]` stage-hunk button in the
+    /// Code Review diff. The editor doesn't know about git — the
+    /// handler emits [`CodeEditorEvent::StageHunkRequested`] for the
+    /// parent (`LocalCodeEditorView` → `WorkspaceView`) to act on.
+    StageDiffHunk {
+        line_range: Range<LineCount>,
+    },
+    /// twarp 5b: user clicked the `[−]` unstage-hunk button.
+    /// Companion to [`Self::StageDiffHunk`].
+    UnstageDiffHunk {
+        line_range: Range<LineCount>,
+    },
     /// Open comment line (when opening a comment on a specific line)
     NewCommentOnLine {
         line: EditorLineLocation,
@@ -804,6 +816,8 @@ impl CodeEditorViewAction {
             | Self::HiddenSectionExpansion { .. }
             | Self::AddDiffHunkContext { .. }
             | Self::RevertDiffHunk { .. }
+            | Self::StageDiffHunk { .. }
+            | Self::UnstageDiffHunk { .. }
             | Self::NewCommentOnLine { .. }
             | Self::RequestOpenSavedComment { .. }
             | Self::MouseHovered { .. }
@@ -1105,6 +1119,20 @@ impl TypedActionView for CodeEditorView {
 
                     // Notify to re-render
                     ctx.notify();
+                }
+            }
+            StageDiffHunk { line_range } => {
+                if FeatureFlag::RevertDiffHunk.is_enabled() {
+                    ctx.emit(CodeEditorEvent::StageHunkRequested {
+                        line_range: line_range.clone(),
+                    });
+                }
+            }
+            UnstageDiffHunk { line_range } => {
+                if FeatureFlag::RevertDiffHunk.is_enabled() {
+                    ctx.emit(CodeEditorEvent::UnstageHunkRequested {
+                        line_range: line_range.clone(),
+                    });
                 }
             }
             NewCommentOnLine { line: line_info } => {

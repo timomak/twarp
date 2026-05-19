@@ -75,6 +75,111 @@ pub async fn run_git_command_with_env(
     Err(anyhow!("Not supported on wasm"))
 }
 
+/// Runs a git command with `stdin` piped from the provided string. Used
+/// by hunk stage / unstage / discard flows that feed a synthesized
+/// patch to `git apply --cached [--reverse]` / `git apply --reverse`.
+/// Unlike [`run_git_command`], a `git apply` failure surfaces the
+/// stderr message verbatim so the caller can decide whether to retry
+/// (e.g. "patch does not apply" → refresh and retry once per PRODUCT
+/// §14).
+#[cfg(feature = "local_fs")]
+pub async fn run_git_command_with_stdin(
+    repo_path: &Path,
+    args: &[&str],
+    stdin_data: &str,
+) -> Result<String> {
+    use command::r#async::Command;
+    use command::Stdio;
+    use futures::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    log::debug!(
+        "[GIT OPERATION] git.rs run_git_command_with_stdin git {}",
+        args.join(" ")
+    );
+    let mut child = Command::new("git")
+        .arg("-c")
+        .arg("diff.autoRefreshIndex=false")
+        .args(args)
+        .current_dir(repo_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| anyhow!("Failed to spawn git command: {e}"))?;
+
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow!("Failed to capture git stdin"))?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow!("Failed to capture git stdout"))?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow!("Failed to capture git stderr"))?;
+
+    let stdin_data_owned = stdin_data.to_owned();
+    let write_fut = async move {
+        stdin
+            .write_all(stdin_data_owned.as_bytes())
+            .await
+            .map_err(|e| anyhow!("Failed to write stdin to git: {e}"))?;
+        stdin
+            .close()
+            .await
+            .map_err(|e| anyhow!("Failed to close stdin to git: {e}"))?;
+        Ok::<_, anyhow::Error>(())
+    };
+    let read_out = async move {
+        let mut buf = Vec::new();
+        stdout
+            .read_to_end(&mut buf)
+            .await
+            .map_err(|e| anyhow!("Failed to read git stdout: {e}"))?;
+        Ok::<_, anyhow::Error>(buf)
+    };
+    let read_err = async move {
+        let mut buf = Vec::new();
+        stderr
+            .read_to_end(&mut buf)
+            .await
+            .map_err(|e| anyhow!("Failed to read git stderr: {e}"))?;
+        Ok::<_, anyhow::Error>(buf)
+    };
+
+    let (write_res, out_res, err_res) = futures::join!(write_fut, read_out, read_err);
+    write_res?;
+    let stdout_bytes = out_res?;
+    let stderr_bytes = err_res?;
+
+    let status = child
+        .status()
+        .await
+        .map_err(|e| anyhow!("Failed to wait for git: {e}"))?;
+
+    let stdout_str = String::from_utf8_lossy(&stdout_bytes).to_string();
+    let stderr_str = String::from_utf8_lossy(&stderr_bytes).to_string();
+
+    if status.success() {
+        Ok(stdout_str)
+    } else {
+        Err(anyhow!("Git command failed: {}", stderr_str.trim()))
+    }
+}
+
+#[cfg(not(feature = "local_fs"))]
+pub async fn run_git_command_with_stdin(
+    _repo_path: &Path,
+    _args: &[&str],
+    _stdin_data: &str,
+) -> Result<String> {
+    Err(anyhow!("Not supported on wasm"))
+}
+
 /// Returns the set of local branch names for the repo at `repo_path`.
 /// Uses a synchronous subprocess call — suitable for call sites in
 /// synchronous view handlers where the result is needed immediately.

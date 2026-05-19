@@ -689,23 +689,6 @@ impl CodeEditorModel {
         self.refresh_diff_state(ctx);
     }
 
-    pub fn revert_diff_index(&mut self, ctx: &mut ModelContext<Self>) {
-        let total = self.diff().as_ref(ctx).diff_hunk_count();
-
-        let active_index = match self.diff_navigation_state {
-            DiffNavigationState::Focused(index) => index,
-            _ => return,
-        };
-        self.reverse_diff_by_index(active_index, ctx);
-
-        if active_index + 1 == total {
-            self.diff_navigation_state =
-                DiffNavigationState::Focused(active_index.saturating_sub(1));
-        }
-
-        self.refresh_diff_state(ctx);
-    }
-
     /// For a diff hunk index, update the buffer with the reverse action that undo-es the diff.
     pub fn reverse_diff_by_index(&mut self, index: usize, ctx: &mut ModelContext<Self>) {
         let Some((replace_range, text)) = self
@@ -1162,6 +1145,30 @@ impl CodeEditorModel {
         self.diff_navigation_state = DiffNavigationState::Expanded;
         self.refresh_diff_state(ctx);
         ctx.emit(CodeEditorModelEvent::DiffUpdated);
+    }
+
+    /// twarp 5b: Scroll the viewport to the first diff hunk. Used when the
+    /// Code Review panel opens a file in the split diff pane — landing on
+    /// line 1 forces the user to scroll to find what changed. For files
+    /// with no hunks (brand-new file with no base, or unchanged file) this
+    /// is a no-op. Modelled on `NavBar::autoscroll`.
+    pub fn scroll_to_first_hunk(&mut self, ctx: &mut ModelContext<Self>) {
+        let Some(range) = self.diff.as_ref(ctx).line_range_by_diff_hunk_index(0) else {
+            return;
+        };
+        let character_offset = self.start_of_line_offset(range.start, ctx);
+        // Leave ~1/10 of the viewport above the hunk so the user sees a
+        // sliver of unchanged context (mirrors NavBar's diff-nav offset).
+        let delta = (self.lines_in_viewport(ctx) / 10).max(1);
+        let pixel_offset = -(delta as f32 * self.line_height(ctx));
+        self.render_state
+            .clone()
+            .update(ctx, |render_state, _ctx| {
+                render_state.request_autoscroll_to_exact_vertical(
+                    character_offset,
+                    pixel_offset.into_pixels(),
+                );
+            });
     }
 
     pub fn diff_status(&self, app: &AppContext) -> DiffStatus {
