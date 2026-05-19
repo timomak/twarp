@@ -1,16 +1,18 @@
-use std::collections::HashSet;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use warp_core::ui::theme::color::internal_colors;
 use warp_core::{send_telemetry_from_ctx, ui::Icon};
 use warp_util::path::LineAndColumnArg;
 use warpui::{
     elements::{
-        resizable_state_handle, ChildView, ConstrainedBox, Container, CrossAxisAlignment,
-        DispatchEventResult, DragBarSide, Element, Empty, EventHandler, Flex, Hoverable,
-        MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Resizable,
-        ResizableStateHandle, Shrinkable,
+        new_scrollable::{NewScrollable, ScrollableAppearance, SingleAxisConfig},
+        resizable_state_handle, Border, ChildView, ConstrainedBox, Container, CornerRadius,
+        CrossAxisAlignment, DispatchEventResult, DragBarSide, Element, Empty, EventHandler, Flex,
+        Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius,
+        Resizable, ResizableStateHandle, ScrollbarWidth, Shrinkable, Text,
     },
+    fonts::{Properties, Weight},
     platform::Cursor,
     ui_components::components::{Coords, UiComponent, UiComponentStyles},
     AppContext, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View,
@@ -139,6 +141,22 @@ pub enum LeftPanelAction {
     /// Reorder: move the action row at the given index down by one slot.
     /// No-op when already last.
     ShortcutsEditActionMoveDown(usize),
+    /// 5d: collapse/expand the Timeline section at the bottom of the
+    /// Project Explorer panel. Collapsed = header-only; expanded =
+    /// header + entries with a drag-resize handle on top.
+    /// PRODUCT §§18–23.
+    TimelineToggleExpanded,
+    /// 5d (PRODUCT §20): append the next page of Timeline entries for
+    /// the currently focused file.
+    TimelineLoadMore,
+    /// 5d (PRODUCT §21): open a read-only inline-diff pane showing the
+    /// chosen commit's changes for the focused file (`git show <sha>^:<p>`
+    /// as base, `git show <sha>:<p>` as content).
+    TimelineSelectCommit {
+        repo_path: PathBuf,
+        file_path: PathBuf,
+        sha: String,
+    },
     // twarp: 2c-d — kept for legacy call-sites; AI conversation list deleted.
     ConversationListView,
 }
@@ -152,6 +170,17 @@ pub enum LeftPanelEvent {
         path: PathBuf,
         target: FileTarget,
         line_col: Option<LineAndColumnArg>,
+    },
+    /// 5d (PRODUCT §21): open a read-only commit diff for a Timeline
+    /// entry. The workspace handler fetches `git show <sha>^:<path>` /
+    /// `git show <sha>:<path>`, writes the post content to a
+    /// session-scoped tempdir, and routes it through the existing
+    /// 5e diff-pane path with `read_only = true`.
+    #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
+    OpenTimelineCommitDiff {
+        repo_path: PathBuf,
+        file_path: PathBuf,
+        sha: String,
     },
     // twarp: 2c-d — kept for legacy call-sites; AI conversation list deleted.
     NewConversationInNewTab,
@@ -260,6 +289,69 @@ pub struct LeftPanelView {
     /// `Some` while the user is creating or editing one shortcut, in
     /// which case the panel renders the editor in place of the list.
     editing_shortcut: Option<EditingShortcutState>,
+
+    /// twarp 5d (PRODUCT §§18–23): per-file commit Timeline section at
+    /// the bottom of the Project Explorer tab. State is per-repo,
+    /// keyed on the currently-active editor file. Re-fetched whenever
+    /// `ActiveFileModel::ActiveFileChanged` fires for the active pane
+    /// group (so opening/switching tabs refocuses the Timeline).
+    timeline_state: TimelineSectionState,
+    /// Collapsed by default — header-only. Click chevron expands.
+    timeline_expanded: bool,
+    /// Resizable height for the Timeline section when expanded. Drag
+    /// bar sits on top of the section header so dragging up enlarges
+    /// the Timeline and shrinks the file tree above. Height is
+    /// session-scoped — not persisted across restarts in this PR
+    /// (follow-up via `PaneSettings` if the owner wants persistence).
+    timeline_resizable_handle: ResizableStateHandle,
+    timeline_header_mouse_state: MouseStateHandle,
+    timeline_load_more_mouse_state: MouseStateHandle,
+    timeline_scroll_state: warpui::elements::ClippedScrollStateHandle,
+    /// Per-entry stable mouse states. Grown lazily inside `render_*`
+    /// since `Hoverable::on_click` requires the same handle across
+    /// renders to detect click cycles.
+    timeline_entry_mouse_states: std::cell::RefCell<Vec<MouseStateHandle>>,
+}
+
+/// twarp 5d: ephemeral data for the Project Explorer Timeline section.
+/// Lives on the `LeftPanelView` (not a separate model) — only the
+/// Project Explorer renders this, and the state has the same lifetime.
+#[derive(Default)]
+#[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
+struct TimelineSectionState {
+    /// Resolved git repo root for the focused file.
+    repo_path: Option<PathBuf>,
+    /// Path the Timeline is currently tracking. Stored as the full
+    /// (absolute) path so callers can resolve repo-relative inside the
+    /// async fetch task; equality checks compare absolute paths.
+    focused_path: Option<PathBuf>,
+    /// Entries loaded so far, most-recent first.
+    entries: Vec<crate::code_review::timeline::TimelineEntry>,
+    /// Suppresses duplicate fetches and dims `[Load more]`.
+    loading: bool,
+    /// Drives whether `[Load more]` renders. Goes false once a page
+    /// returns fewer than `TIMELINE_PAGE_SIZE` entries.
+    has_more: bool,
+    /// SHAs in `<upstream>..HEAD` for the focused path — drives the
+    /// `↑` ahead-of-upstream marker (PRODUCT §23).
+    local_only_shas: HashSet<String>,
+    /// `(owner, repo)` parsed from `git remote get-url origin` for the
+    /// focused file's repo. `None` for non-GitHub remotes (Gitlab,
+    /// Bitbucket, self-hosted, …) — those skip the API and fall back
+    /// to noreply-email parsing + Gravatar. Recomputed when the
+    /// focused file's repo root changes.
+    github_repo: Option<(String, String)>,
+    /// Per-SHA cache of GitHub commits-API author info. `Some(Some)` =
+    /// resolved with author data; `Some(None)` = resolved 404 (don't
+    /// retry); not present = not yet fetched. Lives for the lifetime
+    /// of the `LeftPanelView` so switching between files reuses
+    /// previously-fetched authors.
+    commit_author_cache: HashMap<String, Option<crate::code_review::github_author::GithubAuthor>>,
+    /// `Some(Some)` once we've resolved a token (env var or
+    /// `gh auth token`); `Some(None)` if we tried and failed; `None`
+    /// = not yet tried. Cached for the lifetime of `LeftPanelView`
+    /// to avoid spawning a `gh` subprocess per fetch.
+    github_token: Option<Option<String>>,
 }
 
 /// Action kinds that round-trip with the shortcuts parser. Mirrors
@@ -756,6 +848,17 @@ impl LeftPanelView {
             shortcut_delete_mouse_state: MouseStateHandle::default(),
             shortcut_row_mouse_states: std::cell::RefCell::new(Vec::new()),
             editing_shortcut: None,
+            // 5d: Project Explorer Timeline section. Collapsed by
+            // default; user expands via the chevron. PRODUCT §§18–23.
+            timeline_state: TimelineSectionState::default(),
+            timeline_expanded: false,
+            // Default height = 220px when expanded; bounded to
+            // (60, 70% of window) in the Resizable callback.
+            timeline_resizable_handle: warpui::elements::resizable_state_handle(220.0),
+            timeline_header_mouse_state: MouseStateHandle::default(),
+            timeline_load_more_mouse_state: MouseStateHandle::default(),
+            timeline_scroll_state: warpui::elements::ClippedScrollStateHandle::default(),
+            timeline_entry_mouse_states: std::cell::RefCell::new(Vec::new()),
         };
         view.update_button_active_states();
 
@@ -1046,6 +1149,27 @@ impl LeftPanelView {
         let directories = deduplicate_by_directory_name(directories);
         let active_file_model = pane_group.as_ref(ctx).active_file_model().clone();
 
+        // 5d: subscribe to the new pane group's ActiveFileModel so the
+        // Timeline section refocuses on each tab switch (PRODUCT §18).
+        // The file tree's own subscription is independent — separate
+        // concerns.
+        #[cfg(feature = "local_fs")]
+        {
+            ctx.subscribe_to_model(&active_file_model, |me, _, event, ctx| {
+                let crate::code::active_file::ActiveFileEvent::ActiveFileChanged { file_info } =
+                    event;
+                me.refocus_timeline(file_info.clone(), ctx);
+            });
+            // Refocus immediately for the file that's already active in
+            // the new pane group (subscription only catches future
+            // events).
+            if let Some(current) = active_file_model.as_ref(ctx).active_file().cloned() {
+                self.refocus_timeline(current, ctx);
+            } else {
+                self.clear_timeline(ctx);
+            }
+        }
+
         let file_tree_view = self.get_or_create_file_tree_view_for_pane_group(pane_group_id, ctx);
         let left_panel_open = pane_group.as_ref(ctx).left_panel_open;
         let is_visible = left_panel_open && self.is_file_tree_active();
@@ -1218,6 +1342,936 @@ impl LeftPanelView {
             }
         }
     }
+
+    // ----- 5d Timeline helpers (PRODUCT §§18–23) -----------------------
+
+    /// Switch the Timeline to a different focused file and fire a fresh
+    /// log fetch. Called on each `ActiveFileEvent::ActiveFileChanged`
+    /// from the active pane group's `ActiveFileModel`, and once
+    /// directly on pane-group switch.
+    ///
+    /// `path` is the **absolute** path of the newly-active file. The
+    /// fetch resolves the containing git repo via
+    /// `DetectedRepositories`; files outside any repo clear the
+    /// Timeline.
+    #[cfg(feature = "local_fs")]
+    fn refocus_timeline(&mut self, path: PathBuf, ctx: &mut ViewContext<Self>) {
+        use repo_metadata::repositories::DetectedRepositories;
+
+        // Ignore our own commit-diff temp files. Opening one via a
+        // Timeline click steals editor focus and fires
+        // `ActiveFileChanged(<temp_path>)`; without this guard
+        // `refocus_timeline` would see the temp file (outside any
+        // repo) and `clear_timeline` would wipe the section out from
+        // under the user. Keep Timeline anchored on the real file.
+        if is_timeline_commit_diff_temp_path(&path) {
+            return;
+        }
+
+        if self.timeline_state.focused_path.as_deref() == Some(path.as_path()) {
+            return;
+        }
+        let repo_root = DetectedRepositories::as_ref(ctx).get_root_for_path(&path);
+        let Some(repo_root) = repo_root else {
+            self.clear_timeline(ctx);
+            return;
+        };
+        let Ok(repo_relative) = path.strip_prefix(&repo_root) else {
+            self.clear_timeline(ctx);
+            return;
+        };
+        let repo_relative = repo_relative.to_path_buf();
+
+        let repo_changed = self.timeline_state.repo_path.as_deref() != Some(repo_root.as_path());
+        self.timeline_state.repo_path = Some(repo_root.clone());
+        self.timeline_state.focused_path = Some(path.clone());
+        self.timeline_state.entries.clear();
+        self.timeline_state.has_more = true;
+        self.timeline_state.loading = true;
+        self.timeline_state.local_only_shas.clear();
+        self.timeline_entry_mouse_states.borrow_mut().clear();
+        if repo_changed {
+            // Per-repo state — wipe when switching repos. SHA cache
+            // stays because SHAs are globally unique.
+            self.timeline_state.github_repo = None;
+            self.fetch_github_origin(repo_root.clone(), ctx);
+        }
+        ctx.notify();
+
+        let path_for_log = repo_relative.clone();
+        let path_for_upstream = repo_relative.clone();
+        let path_token = path.clone();
+        let repo_for_log = repo_root.clone();
+        let repo_for_upstream = repo_root;
+        ctx.spawn(
+            async move {
+                // `@{u}` is git shorthand for the current branch's
+                // upstream tracking ref. Returns an error (no panic)
+                // when no upstream is configured, in which case
+                // `fetch_local_only_shas` is a no-op.
+                let upstream_ref = crate::util::git::run_git_command(
+                    &repo_for_upstream,
+                    &["rev-parse", "--abbrev-ref", "@{u}"],
+                )
+                .await
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+                let entries = crate::code_review::timeline::fetch_log_page(
+                    &repo_for_log,
+                    &path_for_log,
+                    0,
+                    crate::code_review::timeline::TIMELINE_PAGE_SIZE,
+                )
+                .await
+                .unwrap_or_else(|err| {
+                    log::warn!(
+                        "[twarp 5d] timeline log fetch failed for {}: {err}",
+                        path_for_log.display()
+                    );
+                    Vec::new()
+                });
+                let local_only = crate::code_review::timeline::fetch_local_only_shas(
+                    &repo_for_upstream,
+                    &path_for_upstream,
+                    upstream_ref.as_deref(),
+                )
+                .await
+                .unwrap_or_else(|err| {
+                    log::warn!(
+                        "[twarp 5d] timeline ahead-of-upstream fetch failed for {}: {err}",
+                        path_for_upstream.display()
+                    );
+                    HashSet::new()
+                });
+                (path_token, entries, local_only)
+            },
+            |me, (path, mut entries, local_only), ctx| {
+                if me.timeline_state.focused_path.as_deref() != Some(path.as_path()) {
+                    // User switched files mid-fetch — discard.
+                    return;
+                }
+                me.timeline_state.loading = false;
+                me.timeline_state.local_only_shas = local_only;
+                crate::code_review::timeline::mark_local_only(
+                    &mut entries,
+                    &me.timeline_state.local_only_shas,
+                );
+                me.timeline_state.has_more =
+                    entries.len() == crate::code_review::timeline::TIMELINE_PAGE_SIZE;
+                let shas: Vec<String> = entries.iter().map(|e| e.sha.clone()).collect();
+                me.timeline_state.entries = entries;
+                ctx.notify();
+                me.fetch_github_authors(shas, ctx);
+            },
+        );
+    }
+
+    /// Run `git remote get-url origin` and cache the resulting
+    /// `(owner, repo)` if it's a GitHub URL. Skipped for non-GitHub
+    /// remotes — those leave `github_repo` as `None` and we fall back
+    /// to the noreply/Gravatar avatar path.
+    #[cfg(feature = "local_fs")]
+    fn fetch_github_origin(&mut self, repo_root: PathBuf, ctx: &mut ViewContext<Self>) {
+        ctx.spawn(
+            async move {
+                let url =
+                    crate::util::git::run_git_command(&repo_root, &["remote", "get-url", "origin"])
+                        .await
+                        .ok()?;
+                crate::code_review::github_author::parse_github_origin(&url)
+            },
+            |me, parsed: Option<(String, String)>, ctx| {
+                me.timeline_state.github_repo = parsed;
+                ctx.notify();
+                if me.timeline_state.github_repo.is_some() {
+                    // Fan out for any entries already loaded.
+                    let shas: Vec<String> = me
+                        .timeline_state
+                        .entries
+                        .iter()
+                        .map(|e| e.sha.clone())
+                        .collect();
+                    me.fetch_github_authors(shas, ctx);
+                }
+            },
+        );
+    }
+
+    /// Kick off GitHub commits-API author lookups for `shas` not yet
+    /// in the cache. Each commit gets its own async task — results
+    /// drop into the cache and trigger a re-render as they arrive.
+    /// No-op when `github_repo` isn't resolved yet (the caller fires
+    /// us again from `fetch_github_origin` once it lands).
+    #[cfg(feature = "local_fs")]
+    fn fetch_github_authors(&mut self, shas: Vec<String>, ctx: &mut ViewContext<Self>) {
+        let Some((owner, repo)) = self.timeline_state.github_repo.clone() else {
+            return;
+        };
+        let Some(repo_path) = self.timeline_state.repo_path.clone() else {
+            return;
+        };
+        let needed: Vec<String> = shas
+            .into_iter()
+            .filter(|s| !self.timeline_state.commit_author_cache.contains_key(s))
+            .collect();
+        if needed.is_empty() {
+            return;
+        }
+        // Resolve the token first so the fan-out can use it. After the
+        // token lookup completes, `dispatch_github_author_fetches` is
+        // re-invoked with the same `needed` list. Subsequent calls
+        // short-circuit since `github_token` is now `Some`.
+        if self.timeline_state.github_token.is_none() {
+            let repo_path_for_token = repo_path.clone();
+            ctx.spawn(
+                async move {
+                    crate::code_review::github_author::resolve_github_token(&repo_path_for_token)
+                        .await
+                },
+                move |me, token: Option<String>, ctx| {
+                    me.timeline_state.github_token = Some(token);
+                    me.dispatch_github_author_fetches(needed, owner, repo, ctx);
+                },
+            );
+            return;
+        }
+        self.dispatch_github_author_fetches(needed, owner, repo, ctx);
+    }
+
+    /// Internal: fire one spawn per SHA. Assumes `github_token` is
+    /// already resolved (either Some or None — both are valid for the
+    /// unauthenticated path).
+    #[cfg(feature = "local_fs")]
+    fn dispatch_github_author_fetches(
+        &mut self,
+        shas: Vec<String>,
+        owner: String,
+        repo: String,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let token = self
+            .timeline_state
+            .github_token
+            .as_ref()
+            .and_then(|t| t.clone());
+        for sha in shas {
+            let owner = owner.clone();
+            let repo = repo.clone();
+            let token = token.clone();
+            let sha_for_async = sha.clone();
+            ctx.spawn(
+                async move {
+                    let client = http_client::Client::default();
+                    let result = crate::code_review::github_author::fetch_commit_author(
+                        &client,
+                        &owner,
+                        &repo,
+                        &sha_for_async,
+                        token.as_deref(),
+                    )
+                    .await;
+                    (sha_for_async, result)
+                },
+                |me, (sha, result), ctx| {
+                    match result {
+                        Ok(author) => {
+                            me.timeline_state.commit_author_cache.insert(sha, author);
+                            ctx.notify();
+                        }
+                        Err(err) => {
+                            // Don't cache failures — let a future
+                            // refocus retry (e.g. after the user sets
+                            // up `gh auth`). Log at debug to avoid
+                            // spamming on rate-limit hits.
+                            log::debug!("[twarp 5d] github author fetch failed for {sha}: {err}");
+                        }
+                    }
+                },
+            );
+        }
+    }
+
+    /// Fetch the next page of Timeline entries (PRODUCT §20). No-op
+    /// while a fetch is in flight or no more pages exist.
+    #[cfg(feature = "local_fs")]
+    fn load_more_timeline(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.timeline_state.loading || !self.timeline_state.has_more {
+            return;
+        }
+        let (Some(repo), Some(focused_abs)) = (
+            self.timeline_state.repo_path.clone(),
+            self.timeline_state.focused_path.clone(),
+        ) else {
+            return;
+        };
+        let Ok(repo_relative) = focused_abs.strip_prefix(&repo).map(Path::to_path_buf) else {
+            return;
+        };
+        let offset = self.timeline_state.entries.len();
+        self.timeline_state.loading = true;
+        ctx.notify();
+
+        let path_token = focused_abs.clone();
+        ctx.spawn(
+            async move {
+                let entries = crate::code_review::timeline::fetch_log_page(
+                    &repo,
+                    &repo_relative,
+                    offset,
+                    crate::code_review::timeline::TIMELINE_PAGE_SIZE,
+                )
+                .await
+                .unwrap_or_else(|err| {
+                    log::warn!(
+                        "[twarp 5d] timeline load-more failed for {} at offset {offset}: {err}",
+                        repo_relative.display()
+                    );
+                    Vec::new()
+                });
+                (path_token, entries)
+            },
+            |me, (path, mut entries), ctx| {
+                if me.timeline_state.focused_path.as_deref() != Some(path.as_path()) {
+                    return;
+                }
+                me.timeline_state.loading = false;
+                me.timeline_state.has_more =
+                    entries.len() == crate::code_review::timeline::TIMELINE_PAGE_SIZE;
+                crate::code_review::timeline::mark_local_only(
+                    &mut entries,
+                    &me.timeline_state.local_only_shas,
+                );
+                let new_shas: Vec<String> = entries.iter().map(|e| e.sha.clone()).collect();
+                me.timeline_state.entries.extend(entries);
+                ctx.notify();
+                me.fetch_github_authors(new_shas, ctx);
+            },
+        );
+    }
+
+    /// Reset Timeline state when there's no focused file or no git repo
+    /// (e.g. focus moved to a file outside any repo). Keeps the section
+    /// header rendered with its empty-state hint.
+    #[cfg(feature = "local_fs")]
+    fn clear_timeline(&mut self, ctx: &mut ViewContext<Self>) {
+        self.timeline_state = TimelineSectionState::default();
+        self.timeline_entry_mouse_states.borrow_mut().clear();
+        ctx.notify();
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    fn clear_timeline(&mut self, _ctx: &mut ViewContext<Self>) {}
+
+    /// Render the Project Explorer Timeline section (PRODUCT §§18–23).
+    /// Collapsed → header bar only. Expanded → header + scrollable
+    /// entry list wrapped in a `Resizable` so the section can be drag-
+    /// resized from the bar between file tree and Timeline header.
+    fn render_timeline_section(
+        &self,
+        appearance: &Appearance,
+        _app: &AppContext,
+    ) -> Box<dyn Element> {
+        let header = self.render_timeline_header(appearance);
+        if !self.timeline_expanded {
+            return header;
+        }
+        // Only the **body** goes into the Resizable. The header
+        // stays outside so dragging the resize handle (which sits
+        // at the body's top edge, between header and entries)
+        // doesn't collide with the header's `Hoverable::on_click` —
+        // a drag that ends with mouse-up on the header would
+        // otherwise toggle the section closed.
+        let body = self.render_timeline_body(appearance);
+        let resizable_body = Resizable::new(self.timeline_resizable_handle.clone(), body)
+            .with_dragbar_side(DragBarSide::Top)
+            .with_bounds_callback(Box::new(|window_size| {
+                (
+                    80.0_f32.min(window_size.y()),
+                    (window_size.y() * 0.7).max(80.0),
+                )
+            }))
+            .on_resize(|ctx, _| {
+                ctx.notify();
+            })
+            .finish();
+        Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_child(header)
+            .with_child(resizable_body)
+            .finish()
+    }
+
+    /// Section header bar: chevron + `TIMELINE` label + optional
+    /// focused-file basename. Click anywhere on the bar toggles
+    /// expanded.
+    fn render_timeline_header(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let chevron = if self.timeline_expanded { '▾' } else { '▸' };
+        let label = match self.timeline_state.focused_path.as_ref() {
+            Some(path) => format!(
+                "{chevron} TIMELINE  ·  {}",
+                path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or_default()
+            ),
+            None => format!("{chevron} TIMELINE"),
+        };
+        let text = Text::new(
+            label,
+            appearance.ui_font_family(),
+            appearance.ui_font_size(),
+        )
+        .with_color(theme.sub_text_color(theme.surface_2()).into())
+        .with_style(Properties::default().weight(Weight::Semibold))
+        .soft_wrap(false)
+        .finish();
+        let hover_bg = internal_colors::neutral_3(theme);
+        // Compact spacing — the previous (margin_top 4 +
+        // vertical_padding 6) read as a cavernous gap between the
+        // file tree and the section header. Drop the top margin and
+        // tighten vertical padding to match the surrounding tool-
+        // panel row density.
+        Hoverable::new(self.timeline_header_mouse_state.clone(), move |state| {
+            let mut container = Container::new(text)
+                .with_horizontal_padding(8.)
+                .with_vertical_padding(3.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
+            if state.is_hovered() {
+                container = container.with_background(warp_core::ui::theme::Fill::Solid(hover_bg));
+            }
+            container.finish()
+        })
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(LeftPanelAction::TimelineToggleExpanded);
+        })
+        .with_cursor(Cursor::PointingHand)
+        .finish()
+    }
+
+    /// Scrollable body for the expanded Timeline section. Entries
+    /// render one row per commit, with `[Load more]` at the bottom
+    /// when more pages exist.
+    fn render_timeline_body(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_alignment(MainAxisAlignment::Start);
+
+        if self.timeline_state.focused_path.is_none() {
+            column.add_child(
+                self.render_timeline_hint("Open a file to see its commit history.", appearance),
+            );
+        } else if self.timeline_state.entries.is_empty() {
+            let msg = if self.timeline_state.loading {
+                "Loading commits…"
+            } else {
+                "No commits found for this file."
+            };
+            column.add_child(self.render_timeline_hint(msg, appearance));
+        } else {
+            self.ensure_timeline_entry_mouse_states();
+            for (idx, entry) in self.timeline_state.entries.iter().enumerate() {
+                column.add_child(self.render_timeline_entry(idx, entry, appearance));
+            }
+            if self.timeline_state.has_more {
+                column.add_child(
+                    self.render_timeline_load_more(self.timeline_state.loading, appearance),
+                );
+            }
+        }
+
+        NewScrollable::vertical(
+            SingleAxisConfig::Clipped {
+                handle: self.timeline_scroll_state.clone(),
+                child: column.finish(),
+            },
+            theme.nonactive_ui_detail().into(),
+            theme.active_ui_detail().into(),
+            warpui::elements::Fill::None,
+        )
+        .with_vertical_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Auto, false))
+        .finish()
+    }
+
+    fn render_timeline_hint(&self, msg: &str, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let text = Text::new(
+            msg.to_string(),
+            appearance.ui_font_family(),
+            appearance.ui_font_size(),
+        )
+        .with_color(theme.sub_text_color(theme.surface_2()).into())
+        .soft_wrap(true)
+        .finish();
+        Container::new(text)
+            .with_horizontal_padding(10.)
+            .with_vertical_padding(10.)
+            .finish()
+    }
+
+    /// Single Timeline row: avatar (Gravatar by email), author + relative
+    /// time + markers on the first line, commit subject on the second.
+    /// Whole row clickable; dispatches `TimelineSelectCommit` to open
+    /// the read-only commit diff (PRODUCT §21).
+    fn render_timeline_entry(
+        &self,
+        idx: usize,
+        entry: &crate::code_review::timeline::TimelineEntry,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let main_color = theme.main_text_color(theme.surface_2());
+        let sub_color = theme.sub_text_color(theme.surface_2());
+
+        let author_display = self.author_display_label(entry);
+        let avatar = self.render_timeline_avatar(entry, appearance);
+
+        let ts_local = chrono::DateTime::<chrono::Utc>::from_timestamp(entry.timestamp, 0)
+            .map(crate::util::time_format::format_approx_duration_from_now_utc)
+            .unwrap_or_else(|| "unknown".to_string());
+
+        let mut meta_row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+        meta_row.add_child(
+            Text::new(
+                author_display,
+                appearance.ui_font_family(),
+                appearance.ui_font_size(),
+            )
+            .with_color(main_color.into())
+            .with_style(Properties::default().weight(Weight::Bold))
+            .soft_wrap(false)
+            .finish(),
+        );
+        meta_row.add_child(
+            Container::new(
+                Text::new(
+                    format!("· {ts_local}"),
+                    appearance.ui_font_family(),
+                    appearance.ui_font_size(),
+                )
+                .with_color(sub_color.into())
+                .soft_wrap(false)
+                .finish(),
+            )
+            .with_margin_left(6.)
+            .finish(),
+        );
+        if entry.is_local_only {
+            meta_row.add_child(
+                Container::new(
+                    Text::new(
+                        "↑".to_string(),
+                        appearance.ui_font_family(),
+                        appearance.ui_font_size(),
+                    )
+                    .with_color(sub_color.into())
+                    .soft_wrap(false)
+                    .finish(),
+                )
+                .with_margin_left(6.)
+                .finish(),
+            );
+        }
+        if entry.is_rename_commit {
+            let badge_text = Text::new(
+                "R".to_string(),
+                appearance.ui_font_family(),
+                appearance.ui_font_size() * 0.85,
+            )
+            .with_color(main_color.into())
+            .with_style(Properties::default().weight(Weight::Bold))
+            .soft_wrap(false)
+            .finish();
+            meta_row.add_child(
+                Container::new(
+                    Container::new(badge_text)
+                        .with_horizontal_padding(4.)
+                        .with_vertical_padding(1.)
+                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(3.)))
+                        .with_border(Border::all(1.).with_border_fill(theme.outline()))
+                        .finish(),
+                )
+                .with_margin_left(6.)
+                .finish(),
+            );
+        }
+
+        let subject = Text::new(
+            entry.subject.clone(),
+            appearance.ui_font_family(),
+            appearance.ui_font_size(),
+        )
+        .with_color(sub_color.into())
+        .soft_wrap(true)
+        .finish();
+
+        let mut text_column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Start)
+            .with_child(meta_row.finish())
+            .with_child(Container::new(subject).with_margin_top(2.).finish());
+        if let Some(orig) = entry.original_path.as_ref() {
+            let orig_text = Text::new(
+                format!("was: {}", orig.display()),
+                appearance.ui_font_family(),
+                appearance.ui_font_size() * 0.85,
+            )
+            .with_color(sub_color.into())
+            .soft_wrap(true)
+            .finish();
+            text_column =
+                text_column.with_child(Container::new(orig_text).with_margin_top(1.).finish());
+        }
+
+        let mouse_state = self
+            .timeline_entry_mouse_states
+            .borrow()
+            .get(idx)
+            .cloned()
+            .unwrap_or_default();
+        let hover_bg = internal_colors::neutral_3(theme);
+        let sha = entry.sha.clone();
+        let repo_path = self.timeline_state.repo_path.clone();
+        let file_path = self.timeline_state.focused_path.clone();
+        Hoverable::new(mouse_state, move |state| {
+            let inner = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                .with_child(avatar)
+                .with_child(Shrinkable::new(1., text_column.finish()).finish())
+                .finish();
+            let mut container = Container::new(inner)
+                .with_vertical_padding(6.)
+                .with_horizontal_padding(8.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
+            if state.is_hovered() {
+                container = container.with_background(warp_core::ui::theme::Fill::Solid(hover_bg));
+            }
+            container.finish()
+        })
+        .on_click(move |ctx, _, _| {
+            let (Some(repo), Some(file)) = (repo_path.clone(), file_path.clone()) else {
+                return;
+            };
+            ctx.dispatch_typed_action(LeftPanelAction::TimelineSelectCommit {
+                repo_path: repo,
+                file_path: file,
+                sha: sha.clone(),
+            });
+        })
+        .with_cursor(Cursor::PointingHand)
+        .finish()
+    }
+
+    /// Avatar circle for a Timeline entry. Uses the `Avatar` widget
+    /// with a Gravatar URL (SHA-256 of lowercased email +
+    /// `?d=identicon` fallback so users without an account still get a
+    /// deterministic visual). PRODUCT §19.
+    /// Display label for a Timeline row's author. Tries (in order):
+    /// 1. GitHub `login` from the commits-API cache — real handle as
+    ///    GitHub knows it.
+    /// 2. Username extracted from the noreply email
+    ///    (`<id>+<username>@users.noreply.github.com`).
+    /// 3. Git's `author.name` as the last-resort fallback.
+    fn author_display_label(&self, entry: &crate::code_review::timeline::TimelineEntry) -> String {
+        if let Some(Some(author)) = self.timeline_state.commit_author_cache.get(&entry.sha) {
+            return author.login.clone();
+        }
+        if let Some(username) = noreply_username_from_email(&entry.author_email) {
+            return username;
+        }
+        entry.author_name.clone()
+    }
+
+    /// Avatar URL for a Timeline row. Cached GitHub `avatar_url` wins;
+    /// otherwise noreply username → `github.com/<u>.png`; otherwise
+    /// Gravatar identicon fallback. Always returns a non-empty URL so
+    /// the `Avatar` widget renders something while loading.
+    fn avatar_url_for_entry(&self, entry: &crate::code_review::timeline::TimelineEntry) -> String {
+        if let Some(Some(author)) = self.timeline_state.commit_author_cache.get(&entry.sha) {
+            return author.avatar_url.clone();
+        }
+        avatar_url_for_email(&entry.author_email)
+    }
+
+    fn render_timeline_avatar(
+        &self,
+        entry: &crate::code_review::timeline::TimelineEntry,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        use crate::ui_components::avatar::{Avatar, AvatarContent};
+        let url = self.avatar_url_for_entry(entry);
+        let display_name = self.author_display_label(entry);
+        let theme = appearance.theme();
+        let avatar = Avatar::new(
+            AvatarContent::Image { url, display_name },
+            UiComponentStyles {
+                width: Some(22.),
+                height: Some(22.),
+                border_radius: Some(CornerRadius::with_all(Radius::Percentage(50.))),
+                font_family_id: Some(appearance.ui_font_family()),
+                font_weight: Some(Weight::Bold),
+                background: Some(theme.accent().into()),
+                font_size: Some(11.),
+                font_color: Some(pathfinder_color::ColorU::black()),
+                ..Default::default()
+            },
+        );
+        Container::new(avatar.build().finish())
+            .with_margin_right(8.)
+            .finish()
+    }
+
+    fn render_timeline_load_more(
+        &self,
+        loading: bool,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let label = if loading { "Loading…" } else { "Load more" };
+        let label_owned = label.to_string();
+        let font_family = appearance.ui_font_family();
+        let font_size = appearance.ui_font_size();
+        let color = if loading {
+            theme.sub_text_color(theme.surface_2())
+        } else {
+            theme.accent()
+        };
+        if loading {
+            let text = Text::new(label_owned, font_family, font_size)
+                .with_color(color.into())
+                .soft_wrap(false)
+                .finish();
+            return Container::new(text)
+                .with_vertical_padding(6.)
+                .with_horizontal_padding(8.)
+                .finish();
+        }
+        let neutral = internal_colors::neutral_3(theme);
+        let mouse_state = self.timeline_load_more_mouse_state.clone();
+        Hoverable::new(mouse_state, move |state| {
+            let text = Text::new(label_owned.clone(), font_family, font_size)
+                .with_color(color.into())
+                .soft_wrap(false)
+                .finish();
+            let mut container = Container::new(text)
+                .with_vertical_padding(6.)
+                .with_horizontal_padding(8.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
+            if state.is_hovered() {
+                container = container.with_background(warp_core::ui::theme::Fill::Solid(neutral));
+            }
+            container.finish()
+        })
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(LeftPanelAction::TimelineLoadMore);
+        })
+        .with_cursor(Cursor::PointingHand)
+        .finish()
+    }
+
+    /// Grow the per-entry mouse-state vec on demand so each row's
+    /// `Hoverable::on_click` sees the same handle across renders.
+    fn ensure_timeline_entry_mouse_states(&self) {
+        let needed = self.timeline_state.entries.len();
+        let mut states = self.timeline_entry_mouse_states.borrow_mut();
+        while states.len() < needed {
+            states.push(MouseStateHandle::default());
+        }
+    }
+}
+
+/// Build an avatar URL for a commit author. PRODUCT §19.
+///
+/// GitHub now enables a privacy-preserving noreply email by default
+/// (`<id>+<username>@users.noreply.github.com`, or the older bare
+/// `<username>@users.noreply.github.com`). For commits made under
+/// those addresses we resolve the username and hit GitHub's avatar
+/// endpoint directly — no API call, no auth, and the user gets their
+/// real profile picture. For everything else we fall back to Gravatar
+/// with `d=identicon` so emails without a Gravatar account still get
+/// a deterministic identicon instead of a blank.
+///
+/// `s=44` requests 2x the 22px avatar slot so the image stays crisp on
+/// retina displays.
+#[cfg(feature = "local_fs")]
+fn avatar_url_for_email(email: &str) -> String {
+    const SIZE: u32 = 44;
+    let trimmed = email.trim();
+    if let Some(prefix) = trimmed.strip_suffix("@users.noreply.github.com") {
+        // `<id>+<username>` (new) or just `<username>` (legacy). The
+        // numeric ID prefix is purely an anti-spam token; the username
+        // after the `+` is what GitHub serves the avatar at.
+        let username = prefix.split_once('+').map_or(prefix, |(_, u)| u);
+        if !username.is_empty()
+            && username
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
+            return format!("https://github.com/{username}.png?size={SIZE}");
+        }
+    }
+    use sha2::{Digest, Sha256};
+    let normalized = trimmed.to_lowercase();
+    let mut hasher = Sha256::new();
+    hasher.update(normalized.as_bytes());
+    let hash = hasher.finalize();
+    let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
+    format!("https://www.gravatar.com/avatar/{hex}?d=identicon&s={SIZE}")
+}
+
+#[cfg(not(feature = "local_fs"))]
+fn avatar_url_for_email(_email: &str) -> String {
+    String::new()
+}
+
+/// Extract the GitHub username from a noreply commit email. Returns
+/// `None` for non-noreply addresses and for the (rare) case where the
+/// local part isn't a valid GitHub-handle character set. Used as the
+/// fallback display label when the GitHub commits API hasn't yet
+/// (or won't ever) populate the per-SHA author cache.
+fn noreply_username_from_email(email: &str) -> Option<String> {
+    let trimmed = email.trim();
+    let prefix = trimmed.strip_suffix("@users.noreply.github.com")?;
+    let username = prefix.split_once('+').map_or(prefix, |(_, u)| u);
+    if username.is_empty()
+        || !username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return None;
+    }
+    Some(username.to_string())
+}
+
+/// True if `path` looks like a commit-diff temp file we wrote on a
+/// Timeline click. `WorkspaceView::open_timeline_commit_diff` creates
+/// `$TMPDIR/twarp-timeline-<random>/<sha>-<basename>`; we recognize
+/// our own files by the `twarp-timeline-` directory prefix and short-
+/// circuit `refocus_timeline` so opening one doesn't clear the
+/// section. Walking the parent chain (not just `path.parent()`) keeps
+/// this robust if future code nests files one level deeper.
+fn is_timeline_commit_diff_temp_path(path: &Path) -> bool {
+    let mut current = path.parent();
+    while let Some(p) = current {
+        if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+            if name.starts_with("twarp-timeline-") {
+                return true;
+            }
+        }
+        current = p.parent();
+    }
+    false
+}
+
+#[cfg(test)]
+mod timeline_temp_path_tests {
+    use super::is_timeline_commit_diff_temp_path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn matches_direct_child_of_temp_subdir() {
+        let p = PathBuf::from("/var/folders/_/twarp-timeline-abcdef/abc1234-main.rs");
+        assert!(is_timeline_commit_diff_temp_path(&p));
+    }
+
+    #[test]
+    fn matches_nested_under_temp_subdir() {
+        let p = PathBuf::from("/tmp/twarp-timeline-xyz/sub/abc1234-main.rs");
+        assert!(is_timeline_commit_diff_temp_path(&p));
+    }
+
+    #[test]
+    fn rejects_unrelated_path() {
+        let p = PathBuf::from("/Users/me/code/repo/src/main.rs");
+        assert!(!is_timeline_commit_diff_temp_path(&p));
+    }
+
+    #[test]
+    fn rejects_similar_but_different_prefix() {
+        let p = PathBuf::from("/tmp/twarp-other-thing/foo.rs");
+        assert!(!is_timeline_commit_diff_temp_path(&p));
+    }
+}
+
+#[cfg(test)]
+mod noreply_username_tests {
+    use super::noreply_username_from_email;
+
+    #[test]
+    fn extracts_username_from_id_form() {
+        assert_eq!(
+            noreply_username_from_email("12345+octocat@users.noreply.github.com"),
+            Some("octocat".to_string())
+        );
+    }
+
+    #[test]
+    fn extracts_username_from_bare_form() {
+        assert_eq!(
+            noreply_username_from_email("octocat@users.noreply.github.com"),
+            Some("octocat".to_string())
+        );
+    }
+
+    #[test]
+    fn returns_none_for_regular_email() {
+        assert_eq!(noreply_username_from_email("ada@example.com"), None);
+    }
+
+    #[test]
+    fn returns_none_for_garbage_in_local_part() {
+        assert_eq!(
+            noreply_username_from_email("weird name@users.noreply.github.com"),
+            None
+        );
+    }
+
+    #[test]
+    fn returns_none_for_empty_username() {
+        assert_eq!(
+            noreply_username_from_email("@users.noreply.github.com"),
+            None
+        );
+    }
+}
+
+#[cfg(all(test, feature = "local_fs"))]
+mod avatar_url_tests {
+    use super::avatar_url_for_email;
+
+    #[test]
+    fn noreply_with_id_resolves_to_github_avatar() {
+        let url = avatar_url_for_email("123456789+octocat@users.noreply.github.com");
+        assert_eq!(url, "https://github.com/octocat.png?size=44");
+    }
+
+    #[test]
+    fn noreply_without_id_resolves_to_github_avatar() {
+        let url = avatar_url_for_email("octocat@users.noreply.github.com");
+        assert_eq!(url, "https://github.com/octocat.png?size=44");
+    }
+
+    #[test]
+    fn noreply_with_invalid_username_falls_through_to_gravatar() {
+        // Spaces/symbols in the local part shouldn't reach the GitHub
+        // URL — we'd 404 and render the initial fallback forever.
+        let url = avatar_url_for_email("weird name@users.noreply.github.com");
+        assert!(url.starts_with("https://www.gravatar.com/avatar/"));
+    }
+
+    #[test]
+    fn real_email_uses_gravatar() {
+        let url = avatar_url_for_email("octocat@example.com");
+        assert!(url.starts_with("https://www.gravatar.com/avatar/"));
+        assert!(url.contains("d=identicon"));
+    }
+
+    #[test]
+    fn email_normalization_lowercases_and_trims() {
+        let mixed = avatar_url_for_email("  Octocat@Example.com  ");
+        let lower = avatar_url_for_email("octocat@example.com");
+        assert_eq!(mixed, lower);
+    }
 }
 
 impl Entity for LeftPanelView {
@@ -1291,6 +2345,11 @@ impl LeftPanelView {
                 | LeftPanelAction::ShortcutsEditActionMoveDown(_) => false,
                 // twarp: 2c-d — ConversationListView arm kept for legacy call-sites; AI deleted.
                 LeftPanelAction::ConversationListView => false,
+                // 5d: Timeline actions stay in the panel scope; no
+                // force-open semantics. PRODUCT §§18–23.
+                LeftPanelAction::TimelineToggleExpanded
+                | LeftPanelAction::TimelineLoadMore
+                | LeftPanelAction::TimelineSelectCommit { .. } => false,
             };
         }
     }
@@ -2187,6 +3246,25 @@ impl LeftPanelView {
             }
             // twarp: 2c-d — ConversationListView is a stub kept for legacy call-sites.
             LeftPanelAction::ConversationListView => {}
+            LeftPanelAction::TimelineToggleExpanded => {
+                self.timeline_expanded = !self.timeline_expanded;
+                ctx.notify();
+            }
+            LeftPanelAction::TimelineLoadMore => {
+                #[cfg(feature = "local_fs")]
+                self.load_more_timeline(ctx);
+            }
+            LeftPanelAction::TimelineSelectCommit {
+                repo_path,
+                file_path,
+                sha,
+            } => {
+                ctx.emit(LeftPanelEvent::OpenTimelineCommitDiff {
+                    repo_path: repo_path.clone(),
+                    file_path: file_path.clone(),
+                    sha: sha.clone(),
+                });
+            }
         }
     }
 
@@ -2576,18 +3654,29 @@ impl View for LeftPanelView {
 
         let content_area: Box<dyn Element> = match self.active_view.get() {
             ToolPanelView::ProjectExplorer => {
-                if let Some(file_tree_view) = self.active_file_tree_view(app) {
-                    Shrinkable::new(
-                        1.0,
+                // 5d (PRODUCT §§18–23): Project Explorer is now a
+                // vertical stack — file tree on top, collapsible
+                // Timeline section pinned to the bottom. The two
+                // sections scroll independently (each is its own
+                // scroll surface). When the Timeline is expanded, the
+                // drag bar between them lets the user resize.
+                let file_tree_element: Box<dyn Element> =
+                    if let Some(file_tree_view) = self.active_file_tree_view(app) {
                         Container::new(ChildView::new(&file_tree_view).finish())
                             .with_padding_left(2.)
                             .with_padding_right(2.)
-                            .finish(),
-                    )
-                    .finish()
-                } else {
-                    Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()
-                }
+                            .finish()
+                    } else {
+                        Container::new(Empty::new().finish()).finish()
+                    };
+                let timeline_element = self.render_timeline_section(appearance, app);
+                let stacked = Flex::column()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                    .with_main_axis_size(MainAxisSize::Max)
+                    .with_child(Shrinkable::new(1.0, file_tree_element).finish())
+                    .with_child(timeline_element)
+                    .finish();
+                Shrinkable::new(1.0, Container::new(stacked).finish()).finish()
             }
             ToolPanelView::GlobalSearch { .. } => {
                 if let Some(global_search_view) = self.active_global_search_view(app) {

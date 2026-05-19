@@ -911,6 +911,17 @@ pub struct PaneGroup {
     /// existence via `code_pane_by_id` before reusing.
     pub diff_pane_id: Option<PaneId>,
 
+    /// twarp 5d: pane ID of the **read-only** commit-diff pane created
+    /// by clicking a Timeline entry in the Project Explorer. Tracked
+    /// separately from [`Self::diff_pane_id`] so the Timeline click
+    /// flow can't accidentally swap-out a working-diff pane the user
+    /// has open from the Code Review sidebar. Always opens on the
+    /// *left* side of the active pane (Direction::Left) — VS Code
+    /// parity — so the diff lands next to the Project Explorer
+    /// instead of next to a terminal. Stale IDs are tolerated the
+    /// same way as `diff_pane_id`.
+    pub timeline_commit_diff_pane_id: Option<PaneId>,
+
     /// Ambient agent panes whose task data was not yet cached at restoration time.
     /// Entries are removed as each task's data arrives and the pane is replaced.
     pending_ambient_agent_conversation_restorations: HashMap<AmbientAgentTaskId, PaneId>,
@@ -2677,6 +2688,7 @@ impl PaneGroup {
             left_panel_open: false,
             is_right_panel_maximized: false,
             diff_pane_id: None,
+            timeline_commit_diff_pane_id: None,
             pending_ambient_agent_conversation_restorations: HashMap::new(),
             child_agent_panes: HashMap::new(),
             custom_title: None,

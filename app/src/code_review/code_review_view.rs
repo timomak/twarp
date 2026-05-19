@@ -2864,11 +2864,8 @@ impl CodeReviewView {
             None => IndexMap::new(),
         };
 
-        let file_states_vec = self.build_view_state_for_file_diffs(
-            &diff_data.files,
-            &mut previous_file_states,
-            ctx,
-        );
+        let file_states_vec =
+            self.build_view_state_for_file_diffs(&diff_data.files, &mut previous_file_states, ctx);
 
         if let Some(repo) = self.active_repo.as_mut() {
             repo.state = CodeReviewViewState::Loaded(LoadedState {

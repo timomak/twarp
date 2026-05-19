@@ -1006,6 +1006,12 @@ pub struct Workspace {
     /// `flags::SHORTCUT_RUNNING` context flag (Escape cancel) and PRODUCT
     /// §13's single-in-flight rule.
     shortcut_runner: Option<crate::shortcuts::executor::ShortcutRunner>,
+    /// twarp 5d: session-scoped tempdir for Timeline commit-diff post
+    /// content (PRODUCT §21). Created lazily on the first commit click
+    /// via `ensure_timeline_tempdir`; `TempDir`'s `Drop` removes the
+    /// directory and everything inside it when the workspace closes.
+    #[cfg(feature = "local_fs")]
+    timeline_commit_diff_tempdir: Option<tempfile::TempDir>,
 }
 
 // twarp: 2c-d — generic stub view for several AI-removed dialog/modal handles.
@@ -2907,6 +2913,8 @@ impl Workspace {
             rewind_confirmation_dialog: ctx.add_view(|_| TwarpStubView),
             ai_fact_view: ctx.add_view(|_| AIFactViewStub),
             shortcut_runner: None,
+            #[cfg(feature = "local_fs")]
+            timeline_commit_diff_tempdir: None,
         };
 
         ws.configure_new_workspace(workspace_setting, ctx);
@@ -5349,6 +5357,19 @@ impl Workspace {
             LeftPanelEvent::ShowDeleteConfirmationDialog { .. } => {
                 // twarp: 2c-d — removed delete conversation dialog (AI-only).
             }
+            LeftPanelEvent::OpenTimelineCommitDiff {
+                repo_path,
+                file_path,
+                sha,
+            } => {
+                #[cfg(feature = "local_fs")]
+                self.open_timeline_commit_diff(
+                    repo_path.clone(),
+                    file_path.clone(),
+                    sha.clone(),
+                    ctx,
+                );
+            }
         }
     }
 
@@ -6771,15 +6792,23 @@ impl Workspace {
                 .value();
 
         if grouping_on {
-            let code_view = self
-                .active_tab_pane_group()
+            // 5d: filter out diff panes (working diff from the Code
+            // Review sidebar and the read-only commit-diff from a
+            // Timeline click). Without this filter, opening a file
+            // from the Project Explorer would land its tab inside
+            // the commit-diff pane — visually polluting a pane
+            // dedicated to a specific commit's history view.
+            let active_pane_group = self.active_tab_pane_group().clone();
+            let pg = active_pane_group.as_ref(ctx);
+            let diff_pane_id = pg.diff_pane_id;
+            let timeline_commit_diff_pane_id = pg.timeline_commit_diff_pane_id;
+            let code_view = active_pane_group
                 .as_ref(ctx)
                 .code_panes(ctx)
                 .find(|(pane_id, _)| {
-                    !self
-                        .active_tab_pane_group()
-                        .as_ref(ctx)
-                        .is_pane_hidden_for_close(*pane_id)
+                    !pg.is_pane_hidden_for_close(*pane_id)
+                        && diff_pane_id != Some(*pane_id)
+                        && timeline_commit_diff_pane_id != Some(*pane_id)
                 });
             // If the tabbed editor view is enabled and there is an existing CodeView, we should group the newly opened file into this view.
             if let (Some(path), Some((pane_id, code_view))) = (source.path(), code_view) {
@@ -10387,6 +10416,9 @@ impl Workspace {
                     if pg.diff_pane_id == Some(pane_id) {
                         pg.diff_pane_id = None;
                     }
+                    if pg.timeline_commit_diff_pane_id == Some(pane_id) {
+                        pg.timeline_commit_diff_pane_id = None;
+                    }
                     pg.close_pane(pane_id, ctx);
                 }
             });
@@ -10410,6 +10442,39 @@ impl Workspace {
         base_content: Option<String>,
         ctx: &mut ViewContext<Self>,
     ) {
+        self.open_file_diff_in_new_pane_with_options(
+            path,
+            base_content,
+            false,
+            Direction::Right,
+            ctx,
+        );
+    }
+
+    /// twarp 5d (PRODUCT §21): same as [`Self::open_file_diff_in_new_pane`]
+    /// but with two extra knobs for the Timeline commit-diff flow:
+    /// * `read_only=true` skips 5b hunk Stage/Unstage wiring and marks
+    ///   the inner editor `Selectable` so the user can scroll/copy but
+    ///   not type.
+    /// * `direction` controls where the new pane is created relative
+    ///   to the active pane. The 5e working-diff flow keeps
+    ///   `Direction::Right` (where users expect it); the Timeline
+    ///   click flow uses `Direction::Left` so the commit diff lands
+    ///   next to the Project Explorer instead of next to a terminal.
+    ///
+    /// The reuse target also forks on `read_only`: working-diff panes
+    /// reuse [`PaneGroup::diff_pane_id`]; commit-diff panes reuse
+    /// [`PaneGroup::timeline_commit_diff_pane_id`]. Cross-flow reuse
+    /// would let a Timeline click blow away a working diff the user
+    /// has open.
+    pub fn open_file_diff_in_new_pane_with_options(
+        &mut self,
+        path: PathBuf,
+        base_content: Option<String>,
+        read_only: bool,
+        direction: Direction,
+        ctx: &mut ViewContext<Self>,
+    ) {
         if is_binary_file(&path) {
             ctx.open_file_path(&path);
             return;
@@ -10418,10 +10483,16 @@ impl Workspace {
         let pane_group_handle = self.active_tab_pane_group().clone();
 
         // Reuse the existing diff pane if it still exists and isn't
-        // hidden for undo-close. We tolerate stale `diff_pane_id`s by
-        // checking presence via `code_pane_by_id`.
+        // hidden for undo-close. We tolerate stale pane IDs by
+        // checking presence via `code_pane_by_id`. The flow forks by
+        // `read_only` so working-diff (5e) and commit-diff (5d) each
+        // get their own pane and never overwrite each other.
         let existing_diff_pane_id = pane_group_handle.read(ctx, |pg, _| {
-            let id = pg.diff_pane_id?;
+            let id = if read_only {
+                pg.timeline_commit_diff_pane_id?
+            } else {
+                pg.diff_pane_id?
+            };
             if pg.is_pane_hidden_for_close(id) {
                 return None;
             }
@@ -10437,6 +10508,19 @@ impl Workspace {
                     });
                 }
                 pg.focus_pane(diff_pane_id, true, ctx);
+                // 5d: on reuse, re-mark the (now-swapped) active tab
+                // as read-only. `replace_with_single_path` constructs
+                // a fresh `TabData` with `read_only=false`, so without
+                // this the lock icon would vanish on the second
+                // Timeline click.
+                if read_only {
+                    if let Some(code_pane) = pg.code_pane_by_id(diff_pane_id) {
+                        let code_view = code_pane.file_view(ctx);
+                        code_view.update(ctx, |view, ctx| {
+                            view.mark_active_tab_read_only(true, ctx);
+                        });
+                    }
+                }
             });
         } else {
             let source = CodeSource::Link {
@@ -10447,13 +10531,27 @@ impl Workspace {
             let pane = CodePane::new(source, None, ctx);
             let new_pane_id = pane.id();
             pane_group_handle.update(ctx, |pane_group, ctx| {
-                pane_group.add_pane_with_direction(
-                    Direction::Right,
-                    pane,
-                    true, /* focus_new_pane */
-                    ctx,
-                );
-                pane_group.diff_pane_id = Some(new_pane_id);
+                pane_group
+                    .add_pane_with_direction(direction, pane, true /* focus_new_pane */, ctx);
+                if read_only {
+                    pane_group.timeline_commit_diff_pane_id = Some(new_pane_id);
+                } else {
+                    pane_group.diff_pane_id = Some(new_pane_id);
+                }
+                // 5d: mark the new pane's active tab read-only so it
+                // renders with a lock icon + muted title. Per-tab
+                // (not per-view) so that if the user later opens a
+                // project-explorer file in this pane, the new tab
+                // stays editable while the commit-diff tab keeps
+                // its lock.
+                if read_only {
+                    if let Some(code_pane) = pane_group.code_pane_by_id(new_pane_id) {
+                        let code_view = code_pane.file_view(ctx);
+                        code_view.update(ctx, |view, ctx| {
+                            view.mark_active_tab_read_only(true, ctx);
+                        });
+                    }
+                }
             });
         }
 
@@ -10487,34 +10585,86 @@ impl Workspace {
         // `UnstageHunkRequested` events so each click is routed to the
         // repo's `DiffStateModel`, which synthesizes a one-hunk patch
         // and applies it via `git apply --cached [--reverse]`.
-        if let Some(editor) = editor_handle.clone() {
-            editor.update(ctx, |local_editor, ctx| {
-                local_editor.editor().update(ctx, |code_editor, ctx| {
-                    code_editor.set_revert_diff_hunk_button(true, ctx);
-                    code_editor.set_stage_diff_hunk_button(true, ctx);
-                    code_editor.set_unstage_diff_hunk_button(true, ctx);
+        //
+        // 5d: skipped entirely when `read_only` is set — commit-diff
+        // panes are read-only and the buttons would mutate the wrong
+        // file.
+        if !read_only {
+            if let Some(editor) = editor_handle.clone() {
+                editor.update(ctx, |local_editor, ctx| {
+                    local_editor.editor().update(ctx, |code_editor, ctx| {
+                        code_editor.set_revert_diff_hunk_button(true, ctx);
+                        code_editor.set_stage_diff_hunk_button(true, ctx);
+                        code_editor.set_unstage_diff_hunk_button(true, ctx);
+                    });
                 });
-            });
-            ctx.subscribe_to_view(&editor, |me, _editor, event, ctx| match event {
-                crate::code::local_code_editor::LocalCodeEditorEvent::StageHunkRequested {
-                    path,
-                    line_range,
-                } => {
-                    me.dispatch_hunk_stage_op(
-                        path.clone(),
-                        line_range.start.as_usize(),
-                        false,
-                        ctx,
-                    );
+                ctx.subscribe_to_view(&editor, |me, _editor, event, ctx| {
+                    match event {
+                    crate::code::local_code_editor::LocalCodeEditorEvent::StageHunkRequested {
+                        path,
+                        line_range,
+                    } => {
+                        me.dispatch_hunk_stage_op(
+                            path.clone(),
+                            line_range.start.as_usize(),
+                            false,
+                            ctx,
+                        );
+                    }
+                    crate::code::local_code_editor::LocalCodeEditorEvent::UnstageHunkRequested {
+                        path,
+                        line_range,
+                    } => {
+                        me.dispatch_hunk_stage_op(
+                            path.clone(),
+                            line_range.start.as_usize(),
+                            true,
+                            ctx,
+                        );
+                    }
+                    _ => (),
                 }
-                crate::code::local_code_editor::LocalCodeEditorEvent::UnstageHunkRequested {
-                    path,
-                    line_range,
-                } => {
-                    me.dispatch_hunk_stage_op(path.clone(), line_range.start.as_usize(), true, ctx);
-                }
-                _ => (),
-            });
+                });
+            }
+        }
+
+        // 5d: commit-diff panes are read-only. Mark the inner editor as
+        // `Selectable` so the user can scroll + copy without typing
+        // into the synthetic temp file. Runs whether or not a diff base
+        // was supplied (PRODUCT §21).
+        //
+        // Also subscribe to `FileLoaded` and explicitly scroll to the
+        // first hunk on every load. `set_pending_diff_base_on_load`
+        // already calls `scroll_to_first_hunk` in both its immediate
+        // and deferred branches, but the immediate branch can fire
+        // before the editor has laid itself out (temp files load
+        // synchronously from the filesystem cache), leaving the
+        // viewport at line 1. Calling scroll again from the
+        // `FileLoaded` event guarantees the autoscroll lands after
+        // layout — and it's idempotent, so an extra fire is harmless.
+        if read_only {
+            if let Some(editor) = editor_handle.clone() {
+                editor.update(ctx, |local_editor, ctx| {
+                    local_editor.editor().update(ctx, |code_editor, ctx| {
+                        code_editor.set_interaction_state(
+                            crate::editor::InteractionState::Selectable,
+                            ctx,
+                        );
+                    });
+                });
+                ctx.subscribe_to_view(&editor, |_me, editor, event, ctx| {
+                    if matches!(
+                        event,
+                        crate::code::local_code_editor::LocalCodeEditorEvent::FileLoaded
+                    ) {
+                        editor.update(ctx, |local_editor, ctx| {
+                            local_editor.editor().update(ctx, |code_editor, ctx| {
+                                code_editor.scroll_to_first_hunk(ctx);
+                            });
+                        });
+                    }
+                });
+            }
         }
 
         let Some(base) = base_content else {
@@ -10526,6 +10676,109 @@ impl Workspace {
                 editor.set_pending_diff_base_on_load(base, ctx);
             });
         }
+    }
+
+    /// twarp 5d (PRODUCT §21): handle a `LeftPanelEvent::OpenTimelineCommitDiff`
+    /// by fetching the focused file's content at `<sha>` (post) and
+    /// `<sha>^` (pre), writing the post content to a session-scoped
+    /// tempdir, and opening it as a read-only diff pane next to the
+    /// active terminal. Subsequent clicks reuse the same diff pane.
+    #[cfg(feature = "local_fs")]
+    fn open_timeline_commit_diff(
+        &mut self,
+        repo_path: std::path::PathBuf,
+        file_path: std::path::PathBuf,
+        sha: String,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Ok(repo_relative) = file_path.strip_prefix(&repo_path).map(Path::to_path_buf) else {
+            log::warn!(
+                "[twarp 5d] commit-diff: file {} not inside repo {}",
+                file_path.display(),
+                repo_path.display()
+            );
+            return;
+        };
+        let basename = repo_relative
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("file")
+            .to_string();
+        let short_sha: String = sha.chars().take(7).collect();
+
+        // Session-scoped tempdir: created lazily, auto-cleaned when the
+        // workspace drops (TempDir's Drop removes the directory).
+        let tempdir_path = match self.ensure_timeline_tempdir() {
+            Ok(p) => p,
+            Err(err) => {
+                log::warn!("[twarp 5d] commit-diff: failed to create tempdir: {err}");
+                return;
+            }
+        };
+        let temp_filename = format!("{short_sha}-{basename}");
+        let temp_path = tempdir_path.join(&temp_filename);
+
+        let repo_for_async = repo_path.clone();
+        let repo_relative_for_async = repo_relative.clone();
+        let sha_for_async = sha.clone();
+        let temp_path_for_async = temp_path.clone();
+        ctx.spawn(
+            async move {
+                let post_ref = format!("{sha_for_async}:{}", repo_relative_for_async.display());
+                let parent_ref = format!("{sha_for_async}^:{}", repo_relative_for_async.display());
+                let post = crate::util::git::run_git_command(&repo_for_async, &["show", &post_ref])
+                    .await
+                    .map_err(|e| format!("git show {} failed: {e}", post_ref));
+                // Parent may not exist for the first commit on a branch
+                // — in that case the diff base is the empty string and
+                // the editor renders the file as fully added.
+                let pre =
+                    crate::util::git::run_git_command(&repo_for_async, &["show", &parent_ref])
+                        .await
+                        .unwrap_or_default();
+                let write_result = post.and_then(|post_content| {
+                    std::fs::write(&temp_path_for_async, &post_content)
+                        .map(|_| post_content.len())
+                        .map_err(|e| {
+                            format!("writing {} failed: {e}", temp_path_for_async.display())
+                        })
+                });
+                (write_result, pre)
+            },
+            move |me, (write_result, pre), ctx| {
+                if let Err(err) = write_result {
+                    log::warn!("[twarp 5d] commit-diff: {err}");
+                    return;
+                }
+                // 5d: open the commit diff to the *left* of the
+                // currently focused pane so it lands next to the
+                // Project Explorer where the user is browsing
+                // Timeline. The 5e working-diff flow keeps
+                // `Direction::Right`.
+                me.open_file_diff_in_new_pane_with_options(
+                    temp_path.clone(),
+                    Some(pre),
+                    true,
+                    Direction::Left,
+                    ctx,
+                );
+            },
+        );
+    }
+
+    /// Lazily create (and cache) the session-scoped tempdir that holds
+    /// commit-diff post-content files. Auto-deletes on workspace drop.
+    #[cfg(feature = "local_fs")]
+    fn ensure_timeline_tempdir(&mut self) -> std::io::Result<std::path::PathBuf> {
+        if let Some(dir) = self.timeline_commit_diff_tempdir.as_ref() {
+            return Ok(dir.path().to_path_buf());
+        }
+        let dir = tempfile::Builder::new()
+            .prefix("twarp-timeline-")
+            .tempdir()?;
+        let path = dir.path().to_path_buf();
+        self.timeline_commit_diff_tempdir = Some(dir);
+        Ok(path)
     }
 
     /// twarp 5b: route a stage/unstage hunk click from the diff pane

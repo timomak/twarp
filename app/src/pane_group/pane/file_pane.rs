@@ -95,6 +95,7 @@ impl PaneContent for FilePane {
         let pane_id = self.id();
         let file_view = self.file_view(ctx);
 
+        let file_view_for_subscriber = file_view.clone();
         ctx.subscribe_to_view(
             &self.file_view(ctx),
             move |pane_group, _, event, ctx| match event {
@@ -110,7 +111,21 @@ impl PaneContent for FilePane {
                     ctx.emit(crate::pane_group::Event::PaneTitleUpdated)
                 }
                 FileNotebookEvent::FileLoaded => {
-                    ctx.emit(crate::pane_group::Event::AppStateChanged)
+                    ctx.emit(crate::pane_group::Event::AppStateChanged);
+                    // twarp 5d (markdown preview fix): `FilePane` —
+                    // unlike `CodePane` — never fed
+                    // `ActiveFileModel`, so opening a `.md` in
+                    // preview mode (feature 03's default) left the
+                    // Project Explorer Timeline section stuck on
+                    // whatever was previously focused. Mirror the
+                    // `CodePane::FileOpened` hook here so any path
+                    // that reaches preview rendering also reaches
+                    // Timeline.
+                    if let Some(path) = file_view_for_subscriber.as_ref(ctx).local_path() {
+                        pane_group.active_file_model().update(ctx, |model, ctx| {
+                            model.active_file_changed(path, ctx);
+                        });
+                    }
                 }
                 #[cfg(feature = "local_fs")]
                 FileNotebookEvent::OpenFileWithTarget {
