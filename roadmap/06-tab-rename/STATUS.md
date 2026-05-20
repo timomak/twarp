@@ -1,7 +1,7 @@
 # 06 — Tab rename shortcut
 
-**Phase:** spec-pending
-**Spec PR:** —
+**Phase:** spec-in-review ([#64](https://github.com/timomak/twarp/pull/64) open)
+**Spec PR:** [#64](https://github.com/timomak/twarp/pull/64)
 **Impl PR:** —
 
 ## Scope
