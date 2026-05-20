@@ -1,6 +1,6 @@
 # 06 — Tab rename shortcut
 
-**Phase:** not-started
+**Phase:** spec-pending
 **Spec PR:** —
 **Impl PR:** —
 
