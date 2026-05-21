@@ -1018,7 +1018,8 @@ pub fn init(app: &mut AppContext) {
     )
     .with_group(bindings::BindingGroup::Settings.as_str())
     .with_custom_action(CustomAction::RenameTab)
-    .with_context_predicate(id!("Workspace"))]);
+    .with_context_predicate(id!("Workspace"))
+    .with_key_binding("cmdorctrl-alt-r")]);
 
     // Pane rename — same shape as RenameActiveTab but acts on the focused pane
     // in the active tab. Ships with no default keybinding so it surfaces in

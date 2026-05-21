@@ -4418,6 +4418,13 @@ impl Workspace {
     }
 
     pub fn rename_tab(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        // No-op on an empty / out-of-range tab list so the ⌘⌥R keybinding (and
+        // the Rename Tab menu item) can't panic when there's no tab to rename
+        // (PRODUCT §7). rename_tab_internal guards too, but it runs after we'd
+        // already index self.tabs[index] below.
+        if index >= self.tab_count() {
+            return;
+        }
         let tab = &self.tabs[index];
         let title = tab.pane_group.as_ref(ctx).display_title(ctx);
 
