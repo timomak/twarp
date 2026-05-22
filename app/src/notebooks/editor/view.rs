@@ -91,6 +91,7 @@ use super::{
     omnibar::{Omnibar, OmnibarEvent},
     rich_text_styles, BlockType, NotebookWorkflow,
 };
+use crate::workspace::WorkspaceAction;
 
 #[cfg(test)]
 #[path = "view_tests.rs"]
@@ -883,6 +884,9 @@ pub enum EditorViewAction {
         path: PathBuf,
         line_and_column_num: Option<LineAndColumnArg>,
         force_open_in_twarp: bool,
+    },
+    OpenMermaidDiagramLightbox {
+        block_start: CharOffset,
     },
 }
 
@@ -1814,6 +1818,26 @@ impl RichTextEditorView {
         self.focus(ctx);
         self.model
             .update(ctx, |model, ctx| model.select_command_at(block_start, ctx))
+    }
+    fn open_mermaid_lightbox(&self, block_start: CharOffset, ctx: &mut ViewContext<Self>) {
+        let asset_source = {
+            let render_state = self.model.as_ref(ctx).render_state().clone();
+            let content = render_state.as_ref(ctx).content();
+            let block = content.block_at_offset(block_start);
+            block.and_then(|b| match b.item {
+                BlockItem::MermaidDiagram { asset_source, .. } => Some(asset_source.clone()),
+                _ => None,
+            })
+        };
+        if let Some(asset_source) = asset_source {
+            ctx.dispatch_typed_action(&WorkspaceAction::OpenLightbox {
+                images: vec![ui_components::lightbox::LightboxImage {
+                    source: ui_components::lightbox::LightboxImageSource::Resolved { asset_source },
+                    description: None,
+                }],
+                initial_index: 0,
+            });
+        }
     }
 
     fn maybe_open_file_or_url(
@@ -2992,6 +3016,9 @@ impl TypedActionView for RichTextEditorView {
                 .model
                 .update(ctx, |model, ctx| model.remove_embedding_at(*offset, ctx)),
             MiddleClickPaste => self.middle_click_paste(ctx),
+            OpenMermaidDiagramLightbox { block_start } => {
+                self.open_mermaid_lightbox(*block_start, ctx);
+            }
             OpenFile {
                 path,
                 line_and_column_num,
@@ -3229,6 +3256,7 @@ impl TypedActionView for RichTextEditorView {
             | EditorViewAction::RunWorkflow(_)
             | EditorViewAction::RemoveEmbeddingAt(_)
             | EditorViewAction::OpenFile { .. }
+            | EditorViewAction::OpenMermaidDiagramLightbox { .. }
             | EditorViewAction::VimUserTyped(_) => ActionAccessibilityContent::Empty,
         }
     }
@@ -3365,10 +3393,7 @@ impl RichTextAction<RichTextEditorView> for EditorViewAction {
             Location::Block {
                 start_offset,
                 end_offset,
-                block_type:
-                    HitTestBlockType::Code
-                    | HitTestBlockType::MermaidDiagram
-                    | HitTestBlockType::Embedding,
+                block_type: HitTestBlockType::MermaidDiagram,
                 ..
             } => match click_count {
                 1 if modifiers.shift => view
@@ -3384,6 +3409,17 @@ impl RichTextAction<RichTextEditorView> for EditorViewAction {
                     .or(Some(EditorViewAction::SelectBlock {
                         block_start: start_offset,
                     })),
+                1 => Some(EditorViewAction::OpenMermaidDiagramLightbox {
+                    block_start: start_offset,
+                }),
+                2 => Some(EditorViewAction::ExitCommandSelection),
+                _ => None,
+            },
+            Location::Block {
+                start_offset,
+                block_type: HitTestBlockType::Code | HitTestBlockType::Embedding,
+                ..
+            } => match click_count {
                 1 => Some(EditorViewAction::SelectBlock {
                     block_start: start_offset,
                 }),

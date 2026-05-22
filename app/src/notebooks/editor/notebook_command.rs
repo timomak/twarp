@@ -11,6 +11,8 @@ use syntect::{
     parsing::SyntaxSet,
     util::LinesWithEndings,
 };
+use twarp_editor::content::mermaid_diagram::mermaid_asset_source;
+use ui_components::lightbox::{LightboxImage, LightboxImageSource};
 use twarp_completer::signatures::CommandRegistry;
 use twarp_editor::{
     content::{
@@ -73,6 +75,8 @@ use super::{
     view::EditorViewAction,
     NotebookWorkflow,
 };
+use crate::features::FeatureFlag;
+use crate::workspace::WorkspaceAction;
 
 lazy_static! {
     static ref SUPPORTED_LANGUAGES: &'static [&'static str] = &[
@@ -95,6 +99,7 @@ lazy_static! {
 struct MouseStateHandles {
     insert_button_state: MouseStateHandle,
     copy_button_state: MouseStateHandle,
+    mermaid_fullscreen_button_state: MouseStateHandle,
 }
 
 struct CachedHighlightKey {
@@ -617,6 +622,46 @@ impl RunnableCommandModel for NotebookCommand {
                 .with_vertical_padding(11.)
                 .finish(),
             )
+        }
+        // twarp: upstream's raw/rendered mermaid toggle depends on the (unpicked)
+        // display-mode feature; only the full-screen lightbox button is ported.
+        if matches!(block_style, CodeBlockType::Mermaid)
+            && FeatureFlag::MarkdownMermaid.is_enabled()
+        {
+            let fullscreen_model = self.handle.clone();
+            footer.add_child(
+                Align::new(
+                    block_footer_action_button(
+                        appearance,
+                        Icon::Maximize,
+                        self.mouse_state_handles
+                            .mermaid_fullscreen_button_state
+                            .clone(),
+                        "Open full screen",
+                        None,
+                    )
+                    .on_click(move |ctx, app, _| {
+                        if let Some(command_model) = fullscreen_model.upgrade(app) {
+                            if let Some(source) = command_model.as_ref(app).command(app) {
+                                if !source.trim().is_empty() {
+                                    ctx.dispatch_typed_action(WorkspaceAction::OpenLightbox {
+                                        images: vec![LightboxImage {
+                                            source: LightboxImageSource::Resolved {
+                                                asset_source: mermaid_asset_source(&source),
+                                            },
+                                            description: None,
+                                        }],
+                                        initial_index: 0,
+                                    });
+                                }
+                            }
+                        }
+                    })
+                    .finish(),
+                )
+                .right()
+                .finish(),
+            );
         }
         footer.add_child(Shrinkable::new(1.0, Empty::new().finish()).finish());
         footer.add_child(
