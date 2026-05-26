@@ -437,6 +437,14 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
                 Keystroke::parse("alt-1").ok()
             }
         }
+        // twarp 06: bind ⌘⌥R (Ctrl+Alt+R on Linux/Windows) to rename the active
+        // tab. The default chord is registered here rather than via
+        // `EditableBinding::with_key_binding` so the `workspace:rename_active_tab`
+        // binding keeps its `Trigger::Custom(RenameTab)` — the mac menu's
+        // `description_for_custom_action` lookup matches on that, and overwriting
+        // the trigger with a keystroke makes the lookup fail (panics the menu
+        // builder via `default_name`'s debug_assert).
+        CustomAction::RenameTab => Keystroke::parse("cmdorctrl-alt-r").ok(),
         CustomAction::NewTerminalTab
         | CustomAction::NewFile
         | CustomAction::ShowAboutWarp
@@ -444,7 +452,6 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         | CustomAction::SelectAllBlocks
         | CustomAction::SplitPaneUp
         | CustomAction::ConfigureKeybindings
-        | CustomAction::RenameTab
         | CustomAction::CloseTab
         | CustomAction::CloseOtherTabs
         | CustomAction::CloseTabsRight
