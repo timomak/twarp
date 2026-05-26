@@ -587,7 +587,7 @@ impl LocalRepoMetadataModel {
                 let mut files = Vec::new();
                 let mut gitignores = gitignores.to_owned();
                 let mut file_limit = MAX_FILES_PER_REPO;
-                match Entry::build_tree(
+                match Entry::build_tree_with_ignored_ancestor(
                     path_to_add,
                     &mut files,
                     &mut gitignores,
@@ -595,6 +595,7 @@ impl LocalRepoMetadataModel {
                     MAX_TREE_DEPTH,
                     0,
                     &IgnoredPathStrategy::IncludeLazy,
+                    is_ignored,
                 ) {
                     Ok(subtree) => {
                         mutations.push(FileTreeMutation::AddDirectorySubtree {
