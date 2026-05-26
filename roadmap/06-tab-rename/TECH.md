@@ -41,23 +41,32 @@ Relevant files on master (all verified):
 
 ### 1. Attach the default keybinding (the entire feature)
 
-In `app/src/workspace/mod.rs`, add one builder call to the existing binding at lines 1014-1021:
+> **Implementation correction.** The original plan here was to add
+> `.with_key_binding("cmdorctrl-alt-r")` to the `EditableBinding` at
+> `app/src/workspace/mod.rs:1014-1021`. **That panics the app at startup**
+> (`app_menus.rs:122`, `default_name`'s `debug_assert!`). `with_custom_action`
+> and `with_key_binding` write the *same* `EditableBinding::trigger` field, so
+> the key chord overwrites `Trigger::Custom(RenameTab)`. The macOS menu builds
+> its "Rename Tab" item via `description_for_custom_action(RenameTab)`, which
+> only resolves a binding whose `trigger`/`original_trigger` is
+> `Trigger::Custom(RenameTab)`; once clobbered, the lookup returns `None` and
+> the menu builder panics. The two builder methods are mutually exclusive — you
+> cannot use `with_key_binding` on a binding that also carries a custom action
+> for the menu.
 
-```rust
-app.register_editable_bindings([EditableBinding::new(
-    "workspace:rename_active_tab",
-    "Rename the current tab",
-    WorkspaceAction::RenameActiveTab,
-)
-.with_group(bindings::BindingGroup::Settings.as_str())
-.with_custom_action(CustomAction::RenameTab)
-.with_context_predicate(id!("Workspace"))
-.with_key_binding("cmdorctrl-alt-r")]);
-```
+The correct change is in **two** files:
 
-`cmdorctrl-alt-r` resolves to **⌘⌥R on macOS** (the README contract and the primary target) and **Ctrl+Alt+R on Linux/Windows**. The `id!("Workspace")` predicate is unchanged and already gives PRODUCT §6's focus behavior: the shortcut is inactive when a modal/palette/settings-editor owns focus, and active when a terminal pane has focus (terminal panes don't push a competing context for this chord on macOS). Because the binding stays an `EditableBinding`, it remains remappable on the keybindings settings page (PRODUCT §10) with no extra work.
+1. **Leave the existing binding at `app/src/workspace/mod.rs:1014-1021` untouched** — it keeps `.with_custom_action(CustomAction::RenameTab)` and no `with_key_binding`, so its trigger stays `Trigger::Custom(RenameTab)` for the menu.
+2. **Assign the default chord in `custom_tag_to_keystroke` (`app/src/util/bindings.rs`)** — move `CustomAction::RenameTab` out of the `=> None` group and give it an arm:
+   ```rust
+   CustomAction::RenameTab => Keystroke::parse("cmdorctrl-alt-r").ok(),
+   ```
 
-That is the whole change. No new action, handler, state, render path, persistence, telemetry, or feature flag.
+`custom_tag_to_keystroke` is the `CustomAction -> Keystroke` map every other menu shortcut uses (NewTab, Copy, ShowSettings, …). It feeds the runtime converter on both macOS (`register_default_keystroke_triggers_for_custom_actions`) and Linux/Windows (`convert_custom_triggers_to_keystroke_triggers`, see `app/src/lib.rs:897-904`), so ⌘⌥R / Ctrl+Alt+R fires `RenameActiveTab` while the binding's custom trigger — and thus the menu's description lookup — stays intact.
+
+`cmdorctrl-alt-r` resolves to **⌘⌥R on macOS** (the README contract and the primary target) and **Ctrl+Alt+R on Linux/Windows**. The `id!("Workspace")` predicate on the binding is unchanged and gives PRODUCT §6's focus behavior. The binding stays an `EditableBinding`, so it remains remappable on the keybindings settings page (PRODUCT §10) with no extra work.
+
+No new action, handler, state, render path, persistence, telemetry, or feature flag. **This change must be validated by launching the app** — the panic was a runtime menu-construction failure that `cargo build`, `clippy`, and `cargo test` all passed.
 
 ### 2. Resolve / document the `alt-r` conflict (Linux/Windows)
 
