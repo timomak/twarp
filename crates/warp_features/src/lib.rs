@@ -605,6 +605,12 @@ pub enum FeatureFlag {
     // Enables a side panel conversation list view for AgentView mode.
     AgentViewConversationListView,
 
+    /// twarp 07: enables the Claude Code left-panel — Warp's Agent-Mode
+    /// rendering layer (resurrected) hosting the local `claude` CLI. Gates the
+    /// toolbelt tab, the ⌘⌥K toggle binding, and the `compute_left_panel_views`
+    /// push. Dogfood-only (see DOGFOOD_FLAGS); no Warp AI service comes back.
+    ClaudeCodePanel,
+
     /// When enabled, the server will use message replacement + retroactive subtasks for
     /// summarization.
     SummarizationViaMessageReplacement,
@@ -893,6 +899,9 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,
     FeatureFlag::CloudModeSetupV2,
+    // twarp 07: ship the Claude Code panel dogfood-only while the 7c driver is
+    // proven against the pinned `claude` version, then promote via PREVIEW_FLAGS.
+    FeatureFlag::ClaudeCodePanel,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).

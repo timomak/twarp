@@ -49,6 +49,8 @@ mod banner;
 mod billing;
 mod changelog_model;
 mod chip_configurator;
+// twarp 07: Claude Code left-panel (feature-flagged, dogfood-only).
+mod claude_code_panel;
 mod cloud_object;
 mod code;
 mod code_review;
@@ -2575,6 +2577,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::ContextWindowUsageV2,
         #[cfg(feature = "global_search")]
         FeatureFlag::GlobalSearch,
+        #[cfg(feature = "claude_code_panel")]
+        FeatureFlag::ClaudeCodePanel,
         #[cfg(feature = "embedded_code_review_comments")]
         FeatureFlag::EmbeddedCodeReviewComments,
         #[cfg(feature = "file_and_diff_set_comments")]
