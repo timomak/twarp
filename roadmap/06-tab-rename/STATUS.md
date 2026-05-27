@@ -1,6 +1,6 @@
 # 06 — Tab rename shortcut
 
-**Phase:** impl-in-review ([#65](https://github.com/timomak/twarp/pull/65) open)
+**Phase:** merged ([#65](https://github.com/timomak/twarp/pull/65) merged 2026-05-26)
 **Spec PR:** [#64](https://github.com/timomak/twarp/pull/64) (merged)
 **Impl PR:** [#65](https://github.com/timomak/twarp/pull/65)
 
