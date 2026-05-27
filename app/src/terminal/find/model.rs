@@ -20,12 +20,12 @@ use std::{collections::HashMap, sync::Arc};
 use alt_screen::{run_find_on_alt_screen, AltScreenFindRun};
 use parking_lot::FairMutex;
 use settings::Setting as _;
-use twarp_core::features::FeatureFlag;
 use twarpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity, ViewHandle};
 
 use crate::{
     settings::InputModeSettings,
     terminal::model::{terminal_model::BlockIndex, TerminalModel},
+    terminal::settings::TerminalSettings,
     view_components::find::{FindEvent, FindModel},
 };
 
@@ -192,7 +192,7 @@ pub struct TerminalFindModel {
     /// `true` if the find bar is open.
     is_find_bar_open: bool,
 
-    /// Controller for async find operations (used when AsyncFind feature flag is enabled).
+    /// Controller for async find operations.
     pub(crate) async_find_controller: Option<AsyncFindController>,
 }
 
@@ -241,8 +241,8 @@ impl FindModel for TerminalFindModel {
 }
 
 impl TerminalFindModel {
-    pub fn new(terminal_model: Arc<FairMutex<TerminalModel>>) -> Self {
-        let async_find_controller = if FeatureFlag::AsyncFind.is_enabled() {
+    pub fn new(terminal_model: Arc<FairMutex<TerminalModel>>, ctx: &AppContext) -> Self {
+        let async_find_controller = if TerminalSettings::as_ref(ctx).is_async_find_enabled() {
             Some(AsyncFindController::new(terminal_model.clone()))
         } else {
             None

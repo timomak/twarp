@@ -6,19 +6,21 @@ use std::sync::Arc;
 use parking_lot::FairMutex;
 use twarpui::App;
 
-use crate::terminal::block_list_element::GridType;
-use crate::terminal::find::model::block_list::run_find_on_block_list;
-use crate::terminal::find::model::{FindOptions, TerminalFindModel};
-use crate::terminal::find::BlockListMatch;
-use crate::terminal::model::grid::grid_handler::AbsolutePoint;
-use crate::terminal::model::index::Point;
-use crate::terminal::model::terminal_model::{BlockIndex, BlockSortDirection};
-use crate::terminal::model::TerminalModel;
-
 use super::{
     is_query_refinement, AbsoluteMatch, AsyncFindConfig, AsyncFindController, AsyncFindStatus,
     BlockFindResults, FindTaskMessage,
 };
+use crate::terminal::block_list_element::GridType;
+use crate::terminal::find::model::block_list::run_find_on_block_list;
+use crate::terminal::find::model::{FindOptions, TerminalFindModel};
+use crate::terminal::find::{BlockListMatch, RichContentMatchId};
+use crate::terminal::model::blocks::TotalIndex;
+use crate::terminal::model::grid::grid_handler::AbsolutePoint;
+use crate::terminal::model::index::Point;
+use crate::terminal::model::terminal_model::{BlockIndex, BlockSortDirection};
+use crate::terminal::model::TerminalModel;
+use crate::test_util::settings::initialize_settings_for_tests;
+use crate::view_components::find::FindDirection;
 
 /// Helper to create an AbsoluteMatch at a given row with default column span.
 fn make_match(row: u64) -> AbsoluteMatch {
@@ -42,6 +44,8 @@ fn make_match_at(row: u64, start_col: usize, end_col: usize) -> AbsoluteMatch {
 #[test]
 fn test_async_find_produces_same_results_as_sync_find() {
     App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+
         let mut mock_terminal_model = TerminalModel::mock(None, None);
         mock_terminal_model.simulate_block("foobar", "foo\r\nbar\r\n");
         mock_terminal_model.simulate_block("barbaz", "bar baz\r\n");
@@ -65,8 +69,8 @@ fn test_async_find_produces_same_results_as_sync_find() {
         });
 
         // Run async find using TerminalFindModel.
-        let test_model = app.add_model(|_| {
-            let mut model = TerminalFindModel::new(terminal_model.clone());
+        let test_model = app.add_model(|ctx| {
+            let mut model = TerminalFindModel::new(terminal_model.clone(), ctx);
             if model.async_find_controller.is_none() {
                 model.async_find_controller =
                     Some(AsyncFindController::new(terminal_model.clone()));
@@ -169,14 +173,16 @@ fn test_async_find_produces_same_results_as_sync_find() {
 #[test]
 fn test_async_find_cancellation() {
     App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+
         let mut mock_terminal_model = TerminalModel::mock(None, None);
         // Create some blocks with content.
         mock_terminal_model.simulate_block("cmd1", "line1\r\nline2\r\n");
         mock_terminal_model.simulate_block("cmd2", "line3\r\nline4\r\n");
 
         let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
-        let test_model = app.add_model(|_| {
-            let mut model = TerminalFindModel::new(terminal_model.clone());
+        let test_model = app.add_model(|ctx| {
+            let mut model = TerminalFindModel::new(terminal_model.clone(), ctx);
             if model.async_find_controller.is_none() {
                 model.async_find_controller =
                     Some(AsyncFindController::new(terminal_model.clone()));
@@ -249,11 +255,13 @@ fn test_async_find_cancellation() {
 #[test]
 fn test_message_processing_updates_state() {
     App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+
         let mock_terminal_model = TerminalModel::mock(None, None);
         let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
 
-        let test_model = app.add_model(|_| {
-            let mut model = TerminalFindModel::new(terminal_model.clone());
+        let test_model = app.add_model(|ctx| {
+            let mut model = TerminalFindModel::new(terminal_model.clone(), ctx);
             let mut controller = AsyncFindController::new(terminal_model);
             // Manually set up state as if a find is in progress.
             controller.set_test_status(AsyncFindStatus::Scanning);
@@ -652,6 +660,8 @@ fn test_update_dirty_matches_clear_range() {
 
 fn assert_async_focused_order_matches_sync(block_sort_direction: BlockSortDirection) {
     App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+
         let mut mock_terminal_model = TerminalModel::mock(None, None);
         mock_terminal_model.simulate_block(
             "ordtok command old ordtok",
@@ -691,8 +701,8 @@ fn assert_async_focused_order_matches_sync(block_sort_direction: BlockSortDirect
             .collect::<Vec<_>>()
         });
 
-        let test_model = app.add_model(|_| {
-            let mut model = TerminalFindModel::new(terminal_model.clone());
+        let test_model = app.add_model(|ctx| {
+            let mut model = TerminalFindModel::new(terminal_model.clone(), ctx);
             if model.async_find_controller.is_none() {
                 model.async_find_controller =
                     Some(AsyncFindController::new(terminal_model.clone()));

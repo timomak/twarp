@@ -900,6 +900,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     // into a new window / drag it between windows). Dormant upstream; turned on
     // for the twarp fork per feature 08.
     FeatureFlag::DragTabsToWindows,
+    FeatureFlag::AsyncFind,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
