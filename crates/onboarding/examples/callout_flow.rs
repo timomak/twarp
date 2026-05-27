@@ -175,6 +175,7 @@ fn main() -> Result<()> {
     twarp_logging::init(twarp_logging::LogConfig {
         is_cli: false,
         log_destination: None,
+        ..Default::default()
     })?;
 
     let app_builder =

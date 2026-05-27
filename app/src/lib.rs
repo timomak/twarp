@@ -715,10 +715,18 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             if crash_recovery::is_crash_recovery_process(launch_mode.args().as_ref()) {
                 twarp_logging::init_for_crash_recovery_process()?;
             } else {
-                twarp_logging::init(twarp_logging::LogConfig { is_cli, log_destination })?;
+                twarp_logging::init(twarp_logging::LogConfig {
+                    is_cli,
+                    log_destination,
+                    ..Default::default()
+                })?;
             }
         } else {
-            twarp_logging::init(twarp_logging::LogConfig { is_cli, log_destination })?;
+            twarp_logging::init(twarp_logging::LogConfig {
+                is_cli,
+                log_destination,
+                ..Default::default()
+            })?;
         }
     }
 

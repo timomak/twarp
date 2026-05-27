@@ -13242,6 +13242,7 @@ dependencies = [
  "log-panics",
  "sentry",
  "sentry-log",
+ "tempfile",
  "twarp_core",
  "twarp_web_event_bus",
  "wasm-bindgen",
