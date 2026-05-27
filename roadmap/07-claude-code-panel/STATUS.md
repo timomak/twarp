@@ -1,8 +1,8 @@
 # 07 — Claude Code panel
 
-**Phase:** spec-in-review ([#66](https://github.com/timomak/twarp/pull/66) open)
-**Spec PR:** [#66](https://github.com/timomak/twarp/pull/66) (PRODUCT.md + TECH.md)
-**Impl PRs:** —
+**Phase:** impl-in-review (7b — [#67](https://github.com/timomak/twarp/pull/67) open)
+**Spec PR:** [#66](https://github.com/timomak/twarp/pull/66) (PRODUCT.md + TECH.md, merged)
+**Impl PRs:** 7b [#67](https://github.com/timomak/twarp/pull/67)
 
 ## Scope
 
@@ -17,7 +17,7 @@ Full behavior in [PRODUCT.md](PRODUCT.md); implementation plan in [TECH.md](TECH
 **7a is delivered by the spec PR ([#66]).** The audit (upstream agent crates, feature-02 deletion cross-reference), the detangle-gate decision, the driver-translation layer, and panel placement are all settled in PRODUCT.md / TECH.md. The impl loop begins at **7b**.
 
 - [x] **7a — Audit + TECH.md.** Resolved the gate: **per-component port-and-adapt** from commit `fea2f7ea` (feature-02 spec commit, predates all deletions) — port leaf rendering primitives onto a new thin transcript model; do **not** `git restore` the service-coupled `Requests`/`controller`/`agent_input_footer`; rewrite any component whose port drags in more `crate::ai::` coupling than rebuilding costs. Driver lives in a new headless crate `crates/claude_code`; UI in `app/src/claude_code_panel/`. (Spec PR [#66](https://github.com/timomak/twarp/pull/66).)
-- [ ] **7b — Resurrect view + event model.** Register `ToolPanelView::ClaudeCode` (+ `LeftPanelDisplayedTab`, toolbelt button, render arm, flag-gated `compute_left_panel_views` push) and the ⌘⌥K `EditableBinding` (chord via `custom_tag_to_keystroke`, **not** `with_key_binding` — feature-06 lesson). Port/adapt the transcript + cards onto a thin `Transcript`/`TranscriptEvent` model. Panel opens and renders the zero state; no claude integration yet. PRODUCT §1–§7, §16–§22 (scaffold).
+- [x] **7b — Resurrect view + event model.** Register `ToolPanelView::ClaudeCode` (+ `LeftPanelDisplayedTab`, toolbelt button, render arm, flag-gated `compute_left_panel_views` push) and the ⌘⌥K `EditableBinding` (chord via `custom_tag_to_keystroke`, **not** `with_key_binding` — feature-06 lesson). Port/adapt the transcript + cards onto a thin `Transcript`/`TranscriptEvent` model. Panel opens and renders the zero state; no claude integration yet. PRODUCT §1–§7, §16–§22 (scaffold). **(Impl PR [#67](https://github.com/timomak/twarp/pull/67).)** New headless crate `crates/claude_code` owns the `TranscriptEvent`/`Transcript` contract (6 unit tests); `FeatureFlag::ClaudeCodePanel` is dogfood-only. ⌘⌥K conflict-free (`cmd-alt-k`/`ctrl-alt-k` unbound); launch-verified no startup panic. The 7b input is a non-editable placeholder. Deferred: live session/streaming/markdown/cwd-header → 7c; rich tool/diff/thinking/todo cards → 7d–7f; editable multi-line input + permissions → 7g; session list/resume + zero-state "Resume…" → 7h.
 - [ ] **7c — Claude Code subprocess driver.** `crates/claude_code`: spawn `claude -p --input-format stream-json --output-format stream-json --verbose [--resume <id>]`, defensive JSONL parse, emit `TranscriptEvent`s. Assistant text streaming + user-message send + lifecycle/Stop/teardown. PRODUCT §8–§22, §52–§57.
 - [ ] **7d — Tool call cards.** Map `tool_use` → tool cards with per-tool summaries; generic card for unmapped/`mcp__*` tools. PRODUCT §23–§29.
 - [ ] **7e — Diff rendering.** `Edit`/`MultiEdit`/`Write` → diff cards, reusing feature 05's code-review diff renderer. PRODUCT §30–§33.
