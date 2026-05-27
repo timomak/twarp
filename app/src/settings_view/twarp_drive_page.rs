@@ -5,17 +5,23 @@ use super::{
     },
     LocalOnlyIconState, SettingsSection, ToggleState,
 };
+use super::{
+    flags, SettingActionPairContexts, SettingActionPairDescriptions, SettingsAction,
+    ToggleSettingActionPair,
+};
 use crate::{appearance::Appearance, auth::AuthStateProvider, drive::settings::TwarpDriveSettings};
 use twarp_core::{features::FeatureFlag, report_if_error, settings::ToggleableSetting as _};
+use twarpui::keymap::ContextPredicate;
 use twarpui::{
     elements::{Container, Element, Flex, MouseStateHandle, ParentElement, Shrinkable, Text},
     fonts::Weight,
+    id,
     ui_components::{
         button::ButtonVariant,
         components::{Coords, UiComponent, UiComponentStyles},
         switch::SwitchStateHandle,
     },
-    AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
+    Action, AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
 #[derive(Debug, Clone)]
@@ -23,6 +29,28 @@ pub enum TwarpDriveSettingsPageAction {
     ToggleShowTwarpDrive,
     SignUp,
     OpenUrl(String),
+}
+
+pub fn init_actions_from_parent_view<T: Action + Clone>(
+    app: &mut AppContext,
+    context: &ContextPredicate,
+    builder: fn(SettingsAction) -> T,
+) {
+    ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(
+        vec![ToggleSettingActionPair::custom(
+            SettingActionPairDescriptions::new("Enable Twarp Drive", "Disable Twarp Drive"),
+            builder(SettingsAction::TwarpDrive(
+                TwarpDriveSettingsPageAction::ToggleShowTwarpDrive,
+            )),
+            SettingActionPairContexts::new(
+                context.clone() & !id!(flags::ENABLE_TWARP_DRIVE) & !id!("IsAnonymousUser"),
+                context.clone() & id!(flags::ENABLE_TWARP_DRIVE) & !id!("IsAnonymousUser"),
+            ),
+            None,
+        )
+        .with_enabled(|| FeatureFlag::OpenWarpNewSettingsModes.is_enabled())],
+        app,
+    );
 }
 
 pub enum TwarpDriveSettingsPageEvent {
