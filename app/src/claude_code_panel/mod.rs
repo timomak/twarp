@@ -48,6 +48,7 @@ use warpui::{
 use crate::appearance::Appearance;
 use crate::editor::{EditorOptions, EditorView, Event as EditorEvent, TextOptions};
 use crate::util::path::resolve_executable;
+use crate::workspace::WorkspaceAction;
 
 /// The executable the panel drives. Resolved on `PATH`; its absence is the
 /// unavailable state (PRODUCT §6).
@@ -124,6 +125,11 @@ pub struct ClaudeCodePanelView {
     /// Stored sessions in this panel's cwd (PRODUCT §46). Loaded at view
     /// construction and refreshed every time a session ends.
     stored_sessions: Vec<StoredSession>,
+    /// One stable `MouseStateHandle` per stored session row. Kept stable
+    /// across renders so a click's mousedown/mouseup hit the same handle —
+    /// using `MouseStateHandle::default()` inline in render would re-create
+    /// the handle every frame and the click would never register.
+    resume_button_states: Vec<MouseStateHandle>,
     mouse_state_handles: MouseStateHandles,
 }
 
@@ -140,6 +146,16 @@ impl ClaudeCodePanelView {
             EditorView::new(options, ctx)
         });
         ctx.subscribe_to_view(&input_editor, Self::handle_editor_event);
+        // PRODUCT §43-ish: show a hint in the empty input so it's obvious
+        // where to type.
+        input_editor.update(ctx, |editor, ctx| {
+            editor.set_placeholder_text("Message Claude Code…", ctx);
+        });
+        let stored_sessions = Self::load_sessions();
+        let resume_button_states = stored_sessions
+            .iter()
+            .map(|_| MouseStateHandle::default())
+            .collect();
         Self {
             transcript: Transcript::new(),
             input_editor,
@@ -152,7 +168,8 @@ impl ClaudeCodePanelView {
             streaming: false,
             expanded_tools: Vec::new(),
             expanded_thinking: Vec::new(),
-            stored_sessions: Self::load_sessions(),
+            stored_sessions,
+            resume_button_states,
             mouse_state_handles: MouseStateHandles::default(),
         }
     }
@@ -160,6 +177,15 @@ impl ClaudeCodePanelView {
     fn load_sessions() -> Vec<StoredSession> {
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         sessions::list_sessions(&cwd)
+    }
+
+    fn refresh_sessions(&mut self) {
+        self.stored_sessions = Self::load_sessions();
+        self.resume_button_states = self
+            .stored_sessions
+            .iter()
+            .map(|_| MouseStateHandle::default())
+            .collect();
     }
 
     fn handle_editor_event(
@@ -303,7 +329,7 @@ impl ClaudeCodePanelView {
         // shows up in the zero state's Resume list.
         self.session = None;
         self.streaming = false;
-        self.stored_sessions = Self::load_sessions();
+        self.refresh_sessions();
         ctx.notify();
     }
 
@@ -325,7 +351,7 @@ impl ClaudeCodePanelView {
         // visible until the next submit clears it.
         self.session = None;
         self.streaming = false;
-        self.stored_sessions = Self::load_sessions();
+        self.refresh_sessions();
         ctx.notify();
     }
 
@@ -352,7 +378,7 @@ impl ClaudeCodePanelView {
         self.session = None;
         self.streaming = false;
         self.transcript = Transcript::new();
-        self.stored_sessions = Self::load_sessions();
+        self.refresh_sessions();
         ctx.notify();
     }
 
@@ -386,7 +412,9 @@ impl ClaudeCodePanelView {
                 "Check again".to_owned(),
                 None,
                 Some(Box::new(|ctx| {
-                    ctx.dispatch_typed_action(ClaudeCodePanelAction::Refresh);
+                    ctx.dispatch_typed_action(WorkspaceAction::ClaudeCodePanel(
+                        ClaudeCodePanelAction::Refresh,
+                    ));
                 })),
                 self.mouse_state_handles.refresh_button.clone(),
             )
@@ -434,8 +462,8 @@ impl ClaudeCodePanelView {
                         // Cycle to the next mode for a simple selector. A real
                         // dropdown is straightforward to add later; cycling
                         // through the four modes keeps the chrome small.
-                        ctx.dispatch_typed_action(ClaudeCodePanelAction::SetPermissionMode(
-                            PermissionMode::Default,
+                        ctx.dispatch_typed_action(WorkspaceAction::ClaudeCodePanel(
+                            ClaudeCodePanelAction::SetPermissionMode(PermissionMode::Default),
                         ));
                     })),
                     self.mouse_state_handles.permission_mode_button.clone(),
@@ -451,7 +479,9 @@ impl ClaudeCodePanelView {
                         "End session".to_owned(),
                         None,
                         Some(Box::new(|ctx| {
-                            ctx.dispatch_typed_action(ClaudeCodePanelAction::EndSession);
+                            ctx.dispatch_typed_action(WorkspaceAction::ClaudeCodePanel(
+                                ClaudeCodePanelAction::EndSession,
+                            ));
                         })),
                         self.mouse_state_handles.end_session_button.clone(),
                     )
@@ -486,7 +516,9 @@ impl ClaudeCodePanelView {
                     "Stop".to_owned(),
                     None,
                     Some(Box::new(|ctx| {
-                        ctx.dispatch_typed_action(ClaudeCodePanelAction::Stop);
+                        ctx.dispatch_typed_action(WorkspaceAction::ClaudeCodePanel(
+                            ClaudeCodePanelAction::Stop,
+                        ));
                     })),
                     self.mouse_state_handles.stop_button.clone(),
                 )
@@ -504,7 +536,9 @@ impl ClaudeCodePanelView {
                     label.to_owned(),
                     None,
                     Some(Box::new(|ctx| {
-                        ctx.dispatch_typed_action(ClaudeCodePanelAction::Submit);
+                        ctx.dispatch_typed_action(WorkspaceAction::ClaudeCodePanel(
+                            ClaudeCodePanelAction::Submit,
+                        ));
                     })),
                     self.mouse_state_handles.submit_button.clone(),
                 )
@@ -576,14 +610,23 @@ impl ClaudeCodePanelView {
             );
             // PRODUCT §46: list `claude`'s own stored sessions for the current
             // cwd, most-recent first. Each row resumes via
-            // `claude --resume <id>`.
-            for session in &self.stored_sessions {
+            // `claude --resume <id>`. The mouse-state handle per row comes
+            // from `self.resume_button_states` so it's stable across renders
+            // — a fresh `MouseStateHandle::default()` per render would lose
+            // the press state between mousedown and mouseup and the click
+            // would never register.
+            for (idx, session) in self.stored_sessions.iter().enumerate() {
                 let id = session.id.clone();
                 let label = format!(
                     "▶ {}  — {}",
                     session.title,
                     relative_time(session.timestamp)
                 );
+                let mouse_state = self
+                    .resume_button_states
+                    .get(idx)
+                    .cloned()
+                    .unwrap_or_default();
                 children.push(
                     appearance
                         .ui_builder()
@@ -591,11 +634,11 @@ impl ClaudeCodePanelView {
                             label,
                             None,
                             Some(Box::new(move |ctx| {
-                                ctx.dispatch_typed_action(ClaudeCodePanelAction::ResumeSession(
-                                    id.clone(),
+                                ctx.dispatch_typed_action(WorkspaceAction::ClaudeCodePanel(
+                                    ClaudeCodePanelAction::ResumeSession(id.clone()),
                                 ));
                             })),
-                            MouseStateHandle::default(),
+                            mouse_state,
                         )
                         .build()
                         .finish(),
@@ -685,11 +728,16 @@ impl Entity for ClaudeCodePanelView {
     type Event = ();
 }
 
-impl TypedActionView for ClaudeCodePanelView {
-    type Action = ClaudeCodePanelAction;
-
-    fn handle_action(&mut self, action: &ClaudeCodePanelAction, ctx: &mut ViewContext<Self>) {
-        log::info!("claude_code_panel: handle_action {action:?}");
+impl ClaudeCodePanelView {
+    /// The body of [`TypedActionView::handle_action`], factored out so the
+    /// Workspace can call into it directly when in-panel link clicks dispatch
+    /// `WorkspaceAction::ClaudeCodePanel(action)` (see
+    /// `app/src/workspace/view.rs`'s `ClaudeCodePanel` handler arm). Routing
+    /// through Workspace avoids relying on the panel being in the responder
+    /// chain — in-panel `dispatch_typed_action(ClaudeCodePanelAction::…)`
+    /// dropped silently when focus wasn't on the panel.
+    pub fn dispatch_action(&mut self, action: &ClaudeCodePanelAction, ctx: &mut ViewContext<Self>) {
+        eprintln!("claude_code_panel: dispatch {action:?}");
         match action {
             ClaudeCodePanelAction::Submit => self.submit(ctx),
             ClaudeCodePanelAction::Stop => self.stop(ctx),
@@ -702,7 +750,7 @@ impl TypedActionView for ClaudeCodePanelView {
                 ctx.notify();
             }
             ClaudeCodePanelAction::Refresh => {
-                self.stored_sessions = Self::load_sessions();
+                self.refresh_sessions();
                 ctx.notify();
             }
             ClaudeCodePanelAction::ResumeSession(id) => self.resume_session(id.clone(), ctx),
@@ -716,6 +764,14 @@ impl TypedActionView for ClaudeCodePanelView {
                 ctx.notify();
             }
         }
+    }
+}
+
+impl TypedActionView for ClaudeCodePanelView {
+    type Action = ClaudeCodePanelAction;
+
+    fn handle_action(&mut self, action: &ClaudeCodePanelAction, ctx: &mut ViewContext<Self>) {
+        self.dispatch_action(action, ctx);
     }
 }
 
@@ -831,7 +887,9 @@ fn render_thinking_card(
             header_label,
             None,
             Some(Box::new(move |ctx| {
-                ctx.dispatch_typed_action(ClaudeCodePanelAction::ToggleThinkingExpanded(idx));
+                ctx.dispatch_typed_action(WorkspaceAction::ClaudeCodePanel(
+                    ClaudeCodePanelAction::ToggleThinkingExpanded(idx),
+                ));
             })),
             MouseStateHandle::default(),
         )
@@ -931,8 +989,8 @@ fn render_tool_card(
                         toggle_label.to_owned(),
                         None,
                         Some(Box::new(move |ctx| {
-                            ctx.dispatch_typed_action(ClaudeCodePanelAction::ToggleToolExpanded(
-                                idx,
+                            ctx.dispatch_typed_action(WorkspaceAction::ClaudeCodePanel(
+                                ClaudeCodePanelAction::ToggleToolExpanded(idx),
                             ));
                         })),
                         MouseStateHandle::default(),

@@ -519,9 +519,13 @@ pub enum WorkspaceAction {
     ToggleGlobalSearch,
     OpenGlobalSearch,
     ToggleConversationListView,
-    /// twarp 07: toggle the Claude Code left-panel tab (PRODUCT §2). Gated on
-    /// FeatureFlag::ClaudeCodePanel (dogfood-only).
+    /// twarp 07: toggle the Claude Code left-panel tab (PRODUCT §2).
     ToggleClaudeCodePanel,
+    /// twarp 07: forward a ClaudeCodePanelAction to the panel view. Routed
+    /// through Workspace (always the root of the responder chain) so
+    /// in-panel link clicks reliably reach the panel's dispatch method
+    /// regardless of focus.
+    ClaudeCodePanel(crate::claude_code_panel::ClaudeCodePanelAction),
     /// Open the Build Plan Migration Modal (for debugging)
     #[cfg(debug_assertions)]
     OpenBuildPlanMigrationModal,
@@ -902,6 +906,7 @@ impl WorkspaceAction {
             | OpenGlobalSearch
             | ToggleConversationListView
             | ToggleClaudeCodePanel
+            | ClaudeCodePanel(_)
             | ToggleNotificationMailbox { .. }
             | OpenLightbox { .. }
             | UpdateLightboxImage { .. }

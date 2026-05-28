@@ -1111,6 +1111,10 @@ impl LeftPanelView {
         &self.warp_drive_view
     }
 
+    pub fn claude_code_view(&self) -> &ViewHandle<ClaudeCodePanelView> {
+        &self.claude_code_view
+    }
+
     pub(crate) fn auto_expand_active_file_tree_to_most_recent_directory(
         &mut self,
         ctx: &mut ViewContext<Self>,

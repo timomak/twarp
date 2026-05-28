@@ -19753,6 +19753,18 @@ impl TypedActionView for Workspace {
                     );
                 }
             }
+            // twarp 07: forward in-panel actions to the Claude Code panel.
+            // Routed through Workspace because the workspace is always at the
+            // root of the responder chain — relying on the panel itself being
+            // in the chain proved unreliable for in-panel link callbacks
+            // (`dispatch_typed_action(ClaudeCodePanelAction::…)` would silently
+            // drop when the workspace was the focused view).
+            ClaudeCodePanel(action) => {
+                let panel = self.left_panel_view.as_ref(ctx).claude_code_view().clone();
+                panel.update(ctx, |view, ctx| {
+                    view.dispatch_action(action, ctx);
+                });
+            }
             // twarp 07 (PRODUCT §2): toggle the Claude Code tab. Open + focus it
             // when it isn't the active view; when it already is, return focus to
             // the previously focused surface (the terminal) rather than
