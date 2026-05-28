@@ -881,8 +881,7 @@ pub fn init(app: &mut AppContext) {
         // twarp 07: remappable ⌘⌥K (Ctrl+Alt+K) toggle for the Claude Code tab.
         // The default chord comes from `custom_tag_to_keystroke` via
         // `.with_custom_action` — NOT `.with_key_binding`, which would clobber
-        // the custom trigger and panic the mac menu (feature-06 lesson). Gated
-        // on the dogfood-only feature flag so it stays hidden in stable.
+        // the custom trigger and panic the mac menu (feature-06 lesson).
         EditableBinding::new(
             LEFT_PANEL_CLAUDE_CODE_BINDING_NAME,
             BindingDescription::new("Left Panel: Claude Code"),
@@ -890,7 +889,6 @@ pub fn init(app: &mut AppContext) {
         )
         .with_group(bindings::BindingGroup::Navigation.as_str())
         .with_context_predicate(id!("Workspace"))
-        .with_enabled(|| FeatureFlag::ClaudeCodePanel.is_enabled())
         .with_custom_action(CustomAction::ToggleClaudeCodePanel),
         EditableBinding::new(
             TOGGLE_PROJECT_EXPLORER_BINDING_NAME,

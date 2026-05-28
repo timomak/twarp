@@ -436,10 +436,6 @@ agent_onboarding = []
 agent_shared_sessions = []
 ask_user_question = []
 changelog = []
-# twarp 07: gates the Claude Code left-panel (FeatureFlag::ClaudeCodePanel).
-# Dogfood-only — intentionally absent from `default`; enabled at runtime for
-# the dogfood channel via DOGFOOD_FLAGS in crates/warp_features.
-claude_code_panel = []
 clear_autosuggestion_on_escape = []
 cloud_object_initial_load = ["enforce_revisions_to_cloud_objects"]
 codebase_index_speedbump = []

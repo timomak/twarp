@@ -18108,11 +18108,9 @@ impl Workspace {
         // Custom command shortcuts panel (twarp feature 04, PRODUCT §26).
         // Sits immediately after Global Search in the toolbelt.
         views.push(ToolPanelView::Shortcuts);
-        // twarp 07 (PRODUCT §1): the Claude Code tab, gated on its dogfood-only
-        // feature flag. Sits after Custom shortcuts in the toolbelt.
-        if FeatureFlag::ClaudeCodePanel.is_enabled() {
-            views.push(ToolPanelView::ClaudeCode);
-        }
+        // twarp 07 (PRODUCT §1): the Claude Code tab. Sits immediately after
+        // Custom shortcuts in the toolbelt.
+        views.push(ToolPanelView::ClaudeCode);
         if WarpDriveSettings::is_warp_drive_enabled(ctx) {
             views.push(ToolPanelView::WarpDrive);
         }
@@ -19760,17 +19758,15 @@ impl TypedActionView for Workspace {
             // the previously focused surface (the terminal) rather than
             // collapsing the whole left panel out from under other tabs.
             ToggleClaudeCodePanel => {
-                if FeatureFlag::ClaudeCodePanel.is_enabled() {
-                    let is_left_panel_open =
-                        self.active_tab_pane_group().as_ref(ctx).left_panel_open;
-                    let is_showing = is_left_panel_open
-                        && self.left_panel_view.as_ref(ctx).active_view()
-                            == ToolPanelView::ClaudeCode;
-                    if is_showing {
-                        self.focus_active_tab(ctx);
-                    } else {
-                        self.open_left_panel_view(&LeftPanelAction::ClaudeCode, ctx);
-                    }
+                let is_left_panel_open =
+                    self.active_tab_pane_group().as_ref(ctx).left_panel_open;
+                let is_showing = is_left_panel_open
+                    && self.left_panel_view.as_ref(ctx).active_view()
+                        == ToolPanelView::ClaudeCode;
+                if is_showing {
+                    self.focus_active_tab(ctx);
+                } else {
+                    self.open_left_panel_view(&LeftPanelAction::ClaudeCode, ctx);
                 }
             }
             // twarp: 2c-d — ShowRewindConfirmationDialog and ExecuteRewindAIConversation
