@@ -689,6 +689,7 @@ impl TypedActionView for ClaudeCodePanelView {
     type Action = ClaudeCodePanelAction;
 
     fn handle_action(&mut self, action: &ClaudeCodePanelAction, ctx: &mut ViewContext<Self>) {
+        log::info!("claude_code_panel: handle_action {action:?}");
         match action {
             ClaudeCodePanelAction::Submit => self.submit(ctx),
             ClaudeCodePanelAction::Stop => self.stop(ctx),

@@ -3099,6 +3099,13 @@ impl LeftPanelView {
             }
             LeftPanelAction::ClaudeCode => {
                 active_view_state::set(self, ToolPanelView::ClaudeCode, ctx);
+                // Focus the panel so its view is in the responder chain and
+                // in-panel link clicks (Mode / Start session / Resume / Stop)
+                // route to the panel's `handle_action`. Without this, a
+                // toolbelt click activates the tab visually but leaves the
+                // workspace as the focused view, and ClaudeCodePanelAction
+                // dispatches have nowhere to land.
+                ctx.focus(&self.claude_code_view);
             }
             LeftPanelAction::ShortcutsAddNew => {
                 // PRODUCT §29: opens the empty detail editor.
