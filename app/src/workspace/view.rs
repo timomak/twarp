@@ -19758,11 +19758,9 @@ impl TypedActionView for Workspace {
             // the previously focused surface (the terminal) rather than
             // collapsing the whole left panel out from under other tabs.
             ToggleClaudeCodePanel => {
-                let is_left_panel_open =
-                    self.active_tab_pane_group().as_ref(ctx).left_panel_open;
+                let is_left_panel_open = self.active_tab_pane_group().as_ref(ctx).left_panel_open;
                 let is_showing = is_left_panel_open
-                    && self.left_panel_view.as_ref(ctx).active_view()
-                        == ToolPanelView::ClaudeCode;
+                    && self.left_panel_view.as_ref(ctx).active_view() == ToolPanelView::ClaudeCode;
                 if is_showing {
                     self.focus_active_tab(ctx);
                 } else {
