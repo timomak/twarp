@@ -35,6 +35,8 @@ Feature 02 removed Warp's AI **service** (accounts, LLM clients, billing, cloud 
 
 Figma: none provided. Visual reference is Warp's deleted Agent Mode renderer (recoverable from the pre-removal commit; see TECH.md) and the public shape at warp.dev/agents/claude-code. The resurrected cards/diffs/thinking blocks should match that shape; net-new chrome (panel header, session list) follows the existing twarp left-panel conventions used by Project Explorer / Global Search / Shortcuts.
 
+**Visual consistency with Agent Mode is the acceptance gate** for this feature, not a nice-to-have. Each rendered surface — tool cards, diff cards, thinking blocks, the task list, assistant markdown — must look like Warp's Agent Mode (themed cards, +/- tinted diffs with hunk headers, collapsible thinking, a real task list), achieved by *porting/reusing* the deleted renderer per TECH.md's decision matrix. A surface that renders the right data in a primitive/plain-text shape is **not** done. (This is the gate the first implementation attempt, PR #67, failed by rebuilding from GPUI primitives; see TECH.md §Postmortem.)
+
 ## Behavior
 
 Invariants are grouped by area; each group is annotated with the sub-phase that delivers it (7b–7h, per STATUS.md). Numbering is continuous so TECH.md and STATUS.md can cite a single invariant. Chord names are macOS; substitute Ctrl for ⌘ on Linux/Windows.
@@ -237,3 +239,4 @@ Run against a freshly built twarp binary. Most steps require the `claude` CLI in
 
 26. Throughout, no Warp/Anthropic sign-in, API-key field, usage meter, or billing UI ever appears in twarp chrome. Auth/limit errors from `claude` show verbatim as copyable error cards.
 27. Toggle the app theme → all cards, diffs, thinking blocks, and status colors follow the theme (no hard-coded colors).
+28. **(Acceptance gate)** Side-by-side with `warp.dev/agents/claude-code` (or a memory of Warp's Agent Mode), the rendered panel is *visually consistent* with Agent Mode — structured tool cards (icon + name + summary + status, not raw text), +/- tinted diffs with hunk headers (feature 05's look), collapsible "Thought for N seconds" cards, and a real task list. A panel that shows the same information as plain `Flex`/text rows fails this step even if every other step passes.
