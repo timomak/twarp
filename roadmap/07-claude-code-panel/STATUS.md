@@ -1,7 +1,7 @@
 # 07 — Claude Code panel
 
-**Phase:** spec-in-review (re-spec PR [#XX](https://github.com/timomak/twarp/pull/XX) open) — **regressed from `impl-in-review`**
-**Spec PRs:** [#66](https://github.com/timomak/twarp/pull/66) (PRODUCT.md + TECH.md, merged) · re-spec [#XX](https://github.com/timomak/twarp/pull/XX) (port-and-adapt plan, open)
+**Phase:** spec-in-review (re-spec PR [#68](https://github.com/timomak/twarp/pull/68) open) — **regressed from `impl-in-review`**
+**Spec PRs:** [#66](https://github.com/timomak/twarp/pull/66) (PRODUCT.md + TECH.md, merged) · re-spec [#68](https://github.com/timomak/twarp/pull/68) (port-and-adapt plan, open)
 **Impl PRs:** [#67](https://github.com/timomak/twarp/pull/67) — **abandoned** (rebuilt from primitives instead of porting; see postmortem). Owner to close.
 
 ## Scope
@@ -24,7 +24,7 @@ PR #67 bundled 7b–7h into one PR and **rebuilt the panel from GPUI primitives*
 
 The previous 7b–7h checklist tracked behavior buckets and was marked done in #67; those ticks are **cleared** because the work shipped against the wrong approach. The new split tracks *which leaf is brought back, what it bridges to, and what stub it needs* (TECH.md §Re-derived sub-phase plan). 7a stays done (the audit/gate); it is amended by this re-spec.
 
-- [x] **7a — Audit + TECH.md (amended by this re-spec).** Gate resolved: **per-component port-and-adapt** from `fea2f7ea`; reparent leaf rendering onto the thin `claude_code::Transcript` model; do **not** `git restore` the service-coupled pieces; rewrite any leaf whose port drags in more `crate::ai::` coupling than rebuilding. Driver in `crates/claude_code`; UI in `app/src/claude_code_panel/`. Re-spec adds the per-file decision matrix, the bridge spec, and the "visually matches Agent Mode" acceptance gate. (Spec [#66], re-spec [#XX].)
+- [x] **7a — Audit + TECH.md (amended by this re-spec).** Gate resolved: **per-component port-and-adapt** from `fea2f7ea`; reparent leaf rendering onto the thin `claude_code::Transcript` model; do **not** `git restore` the service-coupled pieces; rewrite any leaf whose port drags in more `crate::ai::` coupling than rebuilding. Driver in `crates/claude_code`; UI in `app/src/claude_code_panel/`. Re-spec adds the per-file decision matrix, the bridge spec, and the "visually matches Agent Mode" acceptance gate. (Spec [#66], re-spec [#68].)
 - [ ] **7b — Panel shell + ported transcript, stub event source.** Keep registration scaffolding; replace #67's primitive body with the ported transcript renderer (`ai_assistant/transcript.rs::render_message` + the `markdown_parser`→`FormattedTextElement` stack) inside a `UniformList`, fed a **synthetic** `Transcript` (no driver). Dispatch wired the `GlobalSearchView` way; `WorkspaceAction::ClaudeCodePanel` forwarder deleted. Zero + unavailable states. **Acceptance: sample transcript renders in Agent-Mode shape and visually matches `warp.dev/agents/claude-code`.** PRODUCT §1–§7, §16–§20, §60.
 - [ ] **7c — Live driver bridge.** Connect the kept `claude_code::driver` to the ported transcript via the per-`TranscriptItem` bridge dispatch; remove the stub source. Streaming/Stop/lifecycle/teardown. PRODUCT §8–§22, §52–§57.
 - [ ] **7d — Tool cards.** Port `inline_action_icons` + `inline_action_header` + `requested_action` (co-port `WithContentItemSpacing`); bridge `TranscriptItem::Tool` → `RenderableAction` cards with per-tool summary + generic fallback for unmapped/`mcp__*`. PRODUCT §23–§29.
