@@ -1,6 +1,7 @@
 // twarp: 2c-d — AI ServerConversationToken deleted; use stub.
 use crate::app_state::SerializedBlockListItem;
 use crate::app_state::ServerConversationToken;
+use twarp_core::safe_error;
 use crate::appearance::Appearance;
 use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
 use crate::auth::auth_override_warning_modal::AuthOverrideWarningModalVariant;
@@ -2361,7 +2362,10 @@ impl RootView {
                 });
             }
             Err(error) => {
-                log::error!("Unable to parse AuthResult from url: {error}");
+                safe_error!(
+                    safe: ("Unable to parse AuthResult from url"),
+                    full: ("Unable to parse AuthResult from url: {error}")
+                );
                 self.auth_view.update(ctx, |view, ctx| {
                     view.last_login_failure_reason =
                         Some(LoginFailureReason::InvalidRedirectUrl { was_pasted: false });

@@ -1,3 +1,4 @@
+use twarp_core::safe_error;
 use crate::appearance::Appearance;
 use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
 use crate::auth::auth_view_modal::AuthRedirectPayload;
@@ -373,7 +374,10 @@ impl LoginSlideView {
                 });
             }
             Err(error) => {
-                log::error!("Failed to parse AuthRedirectPayload from redirect URL: {error:#}");
+                safe_error!(
+                    safe: ("Failed to parse AuthRedirectPayload from redirect URL"),
+                    full: ("Failed to parse AuthRedirectPayload from redirect URL: {error:#}")
+                );
                 self.last_login_failure_reason =
                     Some(LoginFailureReason::InvalidRedirectUrl { was_pasted: true });
             }
