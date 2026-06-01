@@ -16,3 +16,7 @@ log = { workspace = true }
 thiserror.workspace = true
 twarp_core = { workspace = true }
 twarpui.workspace = true
+
+[dev-dependencies]
+instant = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
