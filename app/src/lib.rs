@@ -49,6 +49,10 @@ mod banner;
 mod billing;
 mod changelog_model;
 mod chip_configurator;
+// twarp 07: Claude Code left-panel. Always-on (no feature flag — acceptable on
+// a personal fork; degrades to the unavailable state when `claude` is off PATH,
+// PRODUCT §6). See TECH.md §Feature flag & rollout.
+mod claude_code_panel;
 mod cloud_object;
 mod code;
 mod code_review;

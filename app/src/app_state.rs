@@ -891,6 +891,9 @@ pub enum LeftPanelDisplayedTab {
     GlobalSearch,
     WarpDrive,
     Shortcuts,
+    // twarp 07: persisted identity of the Claude Code tab so it can be the
+    // restored active view across restarts.
+    ClaudeCode,
     ConversationListView,
 }
 
@@ -901,6 +904,7 @@ impl From<ToolPanelView> for LeftPanelDisplayedTab {
             ToolPanelView::GlobalSearch { .. } => LeftPanelDisplayedTab::GlobalSearch,
             ToolPanelView::WarpDrive => LeftPanelDisplayedTab::WarpDrive,
             ToolPanelView::Shortcuts => LeftPanelDisplayedTab::Shortcuts,
+            ToolPanelView::ClaudeCode => LeftPanelDisplayedTab::ClaudeCode,
             ToolPanelView::ConversationListView => LeftPanelDisplayedTab::ConversationListView,
         }
     }
