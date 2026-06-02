@@ -2,21 +2,35 @@
 
 Companion to [TECH.md](TECH.md). Behavior is written as numbered, testable invariants; TECH.md references these numbers.
 
+> **Re-spec (2026-06-02), after the 7b sidebar build (PR #69) was rejected on sight.** The original spec made the Claude Code surface a **left-panel sidebar tab** opened by a toolbelt button / ⌘⌥K. That was the wrong product direction. The corrected design (owner-confirmed):
+>
+> - **Trigger:** running `claude` in a terminal opens the rich UI — there is no sidebar button or chord for the chat.
+> - **Surface:** the chat is a **main-content pane**, like an opened file or a terminal tab — never the sidebar.
+> - **Sidebar:** lists **past sessions only**, and only when some exist.
+> - **Visual bar:** match the **Claude desktop / Claude Code app** UI.
+>
+> The *rendering layer* (markdown transcript, tool/diff/thinking/todo cards) and the headless driver are unchanged in intent and carry over from PR #69; only the **entry point and host surface** change. See TECH.md §Re-spec for what's kept vs dropped.
+
 ## Summary
 
-Bring back the **rendering layer** of Warp's Agent Mode — streaming assistant text, collapsible thinking blocks, structured tool-call cards, inline diff cards, and a task/todo list — as a panel that hosts **only** the local `claude` CLI (Anthropic's Claude Code) running on the user's own machine. The panel spawns `claude` as a subprocess, parses its streaming-JSON output, and renders it in the same visual shape Warp's Agent Mode used. Authentication, model selection, and billing are entirely the `claude` binary's concern; twarp adds no account, no LLM client, no cloud sync.
+When you run `claude` in a twarp terminal, twarp opens a dedicated **Claude Code pane** — a first-class main-content pane (a tab alongside your terminals and editors) — instead of running the raw CLI in the scrollback. The pane drives the local `claude` binary, parses its streaming-JSON output, and renders the session in a polished chat UI modeled on Anthropic's Claude desktop / Claude Code app: streaming assistant markdown, collapsible thinking, structured tool-call cards, inline diff cards, and a task list. A left-sidebar entry lists your **past** Claude Code sessions for the current directory so you can reopen one. Authentication, model selection, and billing are entirely the `claude` binary's concern; twarp adds no account, no LLM client, no cloud sync.
 
 ## Problem
 
-Feature 02 removed Warp's AI **service** (accounts, LLM clients, billing, cloud conversation storage) and, with it, the conversation **rendering** layer. Users who run Claude Code in a terminal still get only raw scrolling text — no structured tool cards, no collapsible thinking, no diff previews, no task list. The polished surface that made those legible already existed in the codebase and was deleted alongside the service. This feature resurrects that surface and points it at the `claude` binary the user already runs, so twarp renders Claude Code sessions the way Warp once rendered its own agent — without re-introducing anything feature 02 deliberately removed.
+Feature 02 removed Warp's AI **service** and, with it, the conversation **rendering** layer. Running Claude Code in a terminal today gives only raw scrolling text — no structured tool cards, no collapsible thinking, no diff previews, no task list. The polished surface that made those legible already existed in the codebase and was deleted alongside the service.
+
+The first attempt to bring it back (PR #67, #69) put it in the **left sidebar** behind a toolbelt button — the wrong home. The natural way to start Claude Code is to type `claude`, and the natural home for a rich, long-running agent session is a **main pane** you can resize, split, and tab through like a file or a terminal — not a cramped sidebar you open separately. This feature resurrects the deleted renderer, points it at the `claude` binary the user already runs, and hosts it where it belongs: a main-content pane entered by the command you already type.
 
 ## Goals / Non-goals
 
 **Goals**
 
-- A left-panel surface that renders a live Claude Code session in Warp's Agent-Mode visual shape.
-- Drive sessions through the local `claude` binary; reuse the user's existing Claude Code login.
-- Render the event stream legibly: assistant text, thinking blocks, tool-call cards, diff cards, todos.
+- **Terminal-triggered:** typing `claude` in a terminal opens the rich Claude Code pane; nothing else to discover.
+- **Main-content pane:** the session is a resizable/splittable/tabbable pane like an editor or terminal — not the sidebar.
+- **Polished, Claude-app-like UI:** the session renders in Warp's Agent-Mode shape, styled to match Anthropic's Claude desktop / Claude Code app.
+- **Sidebar = history:** a left-panel entry lists past sessions for the cwd (only when some exist) so you can reopen one.
+- Drive sessions through the local `claude` binary, reusing the user's existing Claude Code login.
+- Render the event stream legibly: assistant markdown, thinking blocks, tool-call cards, diff cards, todos.
 - Let the user send messages, answer permission prompts, and resume prior `claude` sessions.
 - Tolerate an evolving, partially-undocumented JSON interface without crashing.
 
@@ -26,217 +40,158 @@ Feature 02 removed Warp's AI **service** (accounts, LLM clients, billing, cloud 
 - No LLM client, no direct model API calls, no request/response code talking to Anthropic. twarp only ever talks to the local `claude` process.
 - No billing UI, no usage metering, no cloud conversation storage, no Warp Drive sync of conversations.
 - No twarp-side session database. Sessions are the `.jsonl` files `claude` already writes under `~/.claude/`; twarp reads and resumes those, never duplicates them.
-- Not a general agent framework. The panel drives exactly one external program (`claude`); it is not a host for arbitrary agents or MCP orchestration UI.
-- No telemetry carrying conversation content. (Existing panel-open/usage counters may be reused; message text, tool inputs, and outputs are never sent anywhere.)
+- Not a general agent framework. The pane drives exactly one external program (`claude`).
+- No telemetry carrying conversation content.
 
-**Constraint the user should know (surfaced, not handled):** Anthropic has announced that **starting 2026-06-15**, `claude -p` / Agent-SDK usage on subscription plans draws from a *separate* monthly Agent-SDK credit rather than interactive limits. The panel does not meter or manage this; it surfaces whatever auth/billing/limit error `claude` itself reports (§55). The feature's value ("uses your existing Claude login") still holds, but the quota it draws is `claude`'s to define.
+**Constraint the user should know (surfaced, not handled):** Anthropic has announced that **starting 2026-06-15**, `claude -p` / Agent-SDK usage on subscription plans draws from a *separate* monthly Agent-SDK credit rather than interactive limits. The pane does not meter or manage this; it surfaces whatever auth/billing/limit error `claude` itself reports (§30). The feature's value ("uses your existing Claude login") still holds, but the quota it draws is `claude`'s to define.
 
 ## Figma
 
-Figma: none provided. Visual reference is Warp's deleted Agent Mode renderer (recoverable from the pre-removal commit; see TECH.md) and the public shape at warp.dev/agents/claude-code. The resurrected cards/diffs/thinking blocks should match that shape; net-new chrome (panel header, session list) follows the existing twarp left-panel conventions used by Project Explorer / Global Search / Shortcuts.
+Figma: none provided. The **visual target is Anthropic's Claude desktop / Claude Code app** — its chat layout (user/assistant turns, a docked message composer, structured tool/diff/thinking cards, a task list). The underlying renderer is Warp's deleted Agent Mode surface (recoverable from the pre-removal commit; see TECH.md), reused and restyled to match the Claude app. Net-new pane chrome (header, session list) follows the existing twarp pane conventions used by terminal/editor panes.
 
-**Visual consistency with Agent Mode is the acceptance gate** for this feature, not a nice-to-have. Each rendered surface — tool cards, diff cards, thinking blocks, the task list, assistant markdown — must look like Warp's Agent Mode (themed cards, +/- tinted diffs with hunk headers, collapsible thinking, a real task list), achieved by *porting/reusing* the deleted renderer per TECH.md's decision matrix. A surface that renders the right data in a primitive/plain-text shape is **not** done. (This is the gate the first implementation attempt, PR #67, failed by rebuilding from GPUI primitives; see TECH.md §Postmortem.)
+**Visual consistency with the Claude app is the acceptance gate** for this feature, not a nice-to-have. Each rendered surface — assistant markdown, tool cards, diff cards, thinking blocks, the task list, the composer — must look like a modern Claude chat UI (themed cards, +/- tinted diffs with hunk headers, collapsible thinking, a real task list, a docked input), achieved by *porting/reusing* the deleted renderer per TECH.md's decision matrix and restyling. A surface that renders the right data in a primitive/plain-text shape is **not** done. (This is the gate the first implementation, PR #67/#69, failed by rebuilding from GPUI primitives and by putting the chat in the sidebar; see TECH.md §Re-spec.)
+
+## Load-bearing decisions (surfaced for review)
+
+These shape everything below; flagged here rather than buried so they're easy to veto. Defaults are marked **(provisional)** and re-decidable in review.
+
+1. **Trigger = the `claude` command, intercepted at submit.** Pressing Enter on a terminal command whose program is `claude` opens the pane instead of writing `claude` to the PTY (§1–§4). Other ways to launch the program raw (a script that calls `claude`, `/usr/bin/claude` by full path) are out of scope for interception — only a top-level interactive `claude [args]` is caught (§3).
+2. **Pane placement = new tab (provisional).** The pane opens as a new tab in the active tab's pane group and is focused, like opening a file. Split-pane / replace-the-terminal alternatives stay open (§5).
+3. **Args/prompt are forwarded (provisional).** `claude "fix the bug"` starts the session with `fix the bug` as the first turn; bare `claude` opens an empty composer (§2).
+4. **Sidebar = read-only session list.** The left-panel entry from #69 is repurposed to list past sessions for the cwd; it hosts no chat. It appears only when sessions exist (§35–§38).
+5. **No feature flag (always-on).** Acceptable on a personal fork; degrades cleanly when `claude` is absent (§4). (TECH.md §Feature flag.)
 
 ## Behavior
 
-Invariants are grouped by area; each group is annotated with the sub-phase that delivers it (7b–7h, per STATUS.md). Numbering is continuous so TECH.md and STATUS.md can cite a single invariant. Chord names are macOS; substitute Ctrl for ⌘ on Linux/Windows.
+Invariants are grouped by area; each group is annotated with the sub-phase that delivers it (7b–7h, re-derived in TECH.md). Chord names are macOS.
 
-### Panel surface & entry — 7b
+### Trigger & pane lifecycle — 7b/7c
 
-1. A new entry appears in the left-panel toolbelt alongside Project Explorer, Global Search, and Custom Shortcuts, with its own icon and label ("Claude Code"). Selecting it shows the Claude Code panel in the left-panel content area.
+1. Running a command whose program is **`claude`** in a terminal (pressing Enter on it) opens a **Claude Code pane** in the main content area and focuses it, instead of executing `claude` in the terminal block. The terminal block does not run the raw CLI; it shows a brief inline note that the session opened in a pane (so the command is not silently swallowed).
 
-2. A default keyboard chord (**proposed ⌘⌥K**, conflict-checked and finalized in TECH.md) toggles the panel: if it is not the active left-panel view, the chord opens and focuses it; if it is already the active view, the chord returns focus to the previously focused surface (it does not collapse the whole left panel out from under other tabs). The chord is an `EditableBinding`, remappable through the same keybindings settings surface as features 01/04/06.
+2. Arguments are forwarded: `claude <prompt>` starts the session with `<prompt>` as the first user turn; bare `claude` opens the pane with an empty composer and no session yet. (Flags twarp doesn't understand are passed through to `claude` where safe; see TECH.md §Trigger.)
 
-3. The panel is resizable along with the rest of the left panel and persists its width across restarts using the existing left-panel width persistence. No new width setting.
+3. Only a **top-level interactive `claude` invocation** typed at the prompt is intercepted. A pipeline, a `claude` inside a subshell/script, a full path, or `claude` used as an argument to another program is **not** intercepted and runs normally. Detection is conservative: when in doubt, run it raw (never break a command the user meant for the shell).
 
-4. The panel's working directory is the cwd of the currently focused pane at the moment a session starts (§8). A session, once started, keeps the cwd it was started in even if pane focus later moves to a different directory; the panel header shows that cwd.
+4. The pane's working directory is the cwd of the terminal the command was run in. If the `claude` binary is not found on `PATH`, twarp does not intercept (the shell's own "command not found" stands), or — if twarp opened the pane — the pane shows a clear unavailable state naming the missing binary with an install hint and no composer.
 
-5. With no session ever started, the panel shows a **zero state**: a short explanation, a single-line message input, and a "Start session" affordance. The zero state also shows a "Resume…" entry point (§46) when prior sessions exist for the current cwd.
+5. The pane is a **first-class main-content pane**: it opens as a new tab (provisional, §load-bearing-2), has a tab title ("Claude Code", with the cwd or first-message snippet), and can be focused, resized, split, moved, and closed exactly like a terminal or editor pane. Closing the pane ends its session (§8).
 
-6. If the `claude` binary is not found on `PATH`, the panel shows a clear unavailable state naming the missing binary and a one-line hint to install Claude Code, with no input affordances. This state replaces the zero state and is re-checked each time the panel is opened.
+6. Opening the pane with no prompt starts **no** subprocess until the user sends a first message. Running `claude <prompt>` (with a prompt) starts the session immediately (§2).
 
-7. Opening the panel never starts a session on its own. A session begins only on an explicit user action (§8). Merely showing the panel spawns no subprocess.
+7. A session is a single long-lived `claude` process driven over its lifetime (multi-turn): the user sends further messages into the same session without it restarting. Exactly one live session per pane. Multiple Claude Code panes (multiple tabs) run independent sessions.
 
-### Session lifecycle — 7c
-
-8. Submitting a message from the zero state (Enter, or clicking "Start session") starts a session: twarp spawns a local `claude` process for the panel's cwd and sends the typed message as the first user turn. The input clears and the conversation view replaces the zero state.
-
-9. A session is a single long-lived `claude` process driven over its lifetime (multi-turn): the user can send further messages into the same session without it being restarted. Exactly one session is active in the panel at a time.
-
-10. While `claude` is producing output, the panel is in a **streaming** state: a visible activity indicator shows the session is working, and a **Stop** affordance is available. Sending a new message is disabled until the current turn completes (the input shows it is waiting).
-
-11. **Stop** interrupts the current turn (equivalent to the user interrupting Claude Code). The session stays alive and ready for the next message; partial output already rendered remains visible, marked as interrupted.
-
-12. When a turn completes, the activity indicator clears, the input re-enables, and focus returns to the input. The conversation auto-scrolls to the newest content unless the user has scrolled up (§22).
-
-13. The user can **end** the session explicitly (a control in the panel header). Ending terminates the `claude` process. The conversation remains visible and read-only until a new session is started or one is resumed; ending does not clear the transcript from view.
-
-14. Closing/hiding the panel (switching to another left-panel tab, or toggling the panel off) does **not** kill an active session: the process keeps running and the conversation is intact when the panel is shown again. Streaming that arrives while hidden is rendered into the transcript so reopening shows the up-to-date state.
-
-15. Quitting twarp terminates any running `claude` subprocess (it is killed on drop, not orphaned). The session is still resumable on next launch because `claude` persisted it (§46).
+8. Closing the pane, or quitting twarp, terminates that pane's `claude` subprocess (killed on drop, not orphaned). The session remains resumable on next launch because `claude` persisted it (§36). Switching to another tab does **not** kill the session; output that arrives while the pane is backgrounded is rendered when you return to it.
 
 ### Messages & streaming — 7c
 
-16. User messages render as right-aligned (or otherwise visually distinct) user turns in the transcript, in send order.
+9. While `claude` is producing output the pane is in a **streaming** state: a visible activity indicator shows work in progress and a **Stop** affordance is available. Sending a new message is disabled until the turn completes.
 
-17. Assistant text renders as it arrives. Text appears incrementally during a turn rather than only at turn end; if incremental token streaming is unavailable, whole-message updates are acceptable but the indicator (§10) must still reflect in-progress work.
+10. **Stop** interrupts the current turn (equivalent to interrupting Claude Code). The session stays alive; partial output already rendered remains, marked interrupted.
 
-18. Assistant text renders as Markdown using the same Markdown treatment the rest of twarp uses (headings, lists, inline code, fenced code blocks with syntax highlighting, links, tables), consistent with feature 03's default-rendered Markdown.
+11. When a turn completes, the indicator clears, the composer re-enables and refocuses, and the view auto-scrolls to the newest content unless the user has scrolled up (§14).
 
-19. Multiple content pieces within one assistant turn (e.g. text, then a tool call, then more text) render in the order `claude` emitted them, interleaved correctly with tool-call cards (§23) and diffs (§30).
+12. User messages render as visually distinct user turns in send order. Assistant text renders as it arrives (incremental where available; whole-message updates acceptable, but the indicator must still reflect in-progress work).
 
-20. The transcript is a single chronological stream from session start: user turns, assistant turns, tool cards, thinking blocks, todos, and permission prompts all appear in the order they occurred.
+13. Assistant text renders as **Markdown** using twarp's shared Markdown treatment (headings, lists, inline code, fenced code blocks with syntax highlighting, links, tables), consistent with feature 03. Multiple content pieces within one turn (text, tool call, more text) render in emitted order, interleaved with tool cards (§16) and diffs (§20).
 
-21. Long conversations stay responsive: the transcript scrolls smoothly and rendering does not degrade as the session grows (target: a multi-hundred-message session remains usable).
+14. The transcript is one chronological stream. It stays responsive as the session grows (target: multi-hundred-message sessions remain usable) and uses bottom-stick **auto-scroll**: while content streams the view sticks to the bottom; if the user scrolls up, auto-scroll pauses and a "jump to latest" affordance appears.
 
-22. **Auto-scroll discipline:** while new content streams in, the view sticks to the bottom. If the user scrolls up, auto-scroll pauses and a "jump to latest" affordance appears; reaching the bottom (or activating the affordance) re-enables sticking to the bottom.
+15. The composer is **docked at the bottom** of the pane (Claude-app style): multi-line (Shift+Enter newline, Enter sends), placeholder guidance when empty, disabled with a clear indication while streaming (§9) and re-enabled on completion (§11). Empty/whitespace-only messages are a no-op.
 
 ### Tool-call cards — 7d
 
-23. Each tool invocation `claude` reports renders as a structured **tool card**, not as raw JSON. The card shows the tool name, a concise human-readable summary of the key input, and a status that advances from running → completed/failed.
+16. Each tool invocation renders as a structured **tool card**, not raw JSON: tool name, a concise human-readable summary of the key input, and a status advancing running → completed/failed.
 
-24. Known tools render with tool-specific summaries: `Read`/`Write`/`Edit`/`MultiEdit`/`NotebookEdit` show the file path; `Bash` shows the command (and its `description` when present); `Grep`/`Glob` show the pattern; `WebFetch`/`WebSearch` show the URL/query; `Task` shows the sub-agent description; `TodoWrite` routes to the task list (§37) rather than a generic card.
+17. Known tools render tool-specific summaries: `Read`/`Write`/`Edit`/`MultiEdit`/`NotebookEdit` show the file path; `Bash` shows the command (and its `description` when present); `Grep`/`Glob` show the pattern; `WebFetch`/`WebSearch` show the URL/query; `Task` shows the sub-agent description; `TodoWrite` routes to the task list (§22) rather than a generic card.
 
-25. A tool whose name twarp does not specifically map (including `mcp__<server>__<tool>` MCP tools and any tool added to Claude Code after twarp shipped) renders as a **generic card**: tool name plus a compact, readable rendering of its input. Unknown tools never crash the panel and never render as a blank or broken card.
+18. A tool whose name twarp does not specifically map (including `mcp__<server>__<tool>` and any tool added to Claude Code after twarp shipped) renders as a **generic card**: tool name plus a compact, readable rendering of its input. Unknown tools never crash or render blank.
 
-26. A tool card shows its **result** when `claude` reports one: success collapses to a short summary (e.g. byte/line count, match count, exit status) with an expand affordance for the full output; failure shows the error and is visually marked as failed.
-
-27. Tool output that is large is truncated in the collapsed view with an affordance to expand; expanding never blocks the UI.
-
-28. A `Task` (sub-agent) tool card visually groups the child activity it spawned, so nested tool calls are attributable to their parent rather than appearing at top level.
-
-29. Tool cards are themed (no hard-coded colors) and use the same iconography family as the rest of the panel.
+19. A tool card shows its **result** when reported: success collapses to a short summary (byte/line/match count, exit status) with expand for full output; failure shows the error and is marked failed. Large output is truncated in the collapsed view with an expand affordance; expanding never blocks the UI. A `Task` (sub-agent) card visually groups the child activity it spawned. Cards are themed (no hard-coded colors).
 
 ### Diff rendering — 7e
 
-30. `Edit`, `MultiEdit`, and `Write` tool calls render as **diff cards**: the file path as a header and a unified diff of the change (old → new), with +/- line tinting from the active theme.
+20. `Edit`, `MultiEdit`, and `Write` tool calls render as **diff cards**: the file path as a header and a unified diff (old → new) with +/- line tinting from the active theme. A `Write` to a new file renders as an all-additions diff; `MultiEdit` renders each edit in order against the same file.
 
-31. A `Write` to a new file renders as an all-additions diff; a `Write` that replaces an existing file renders as a replacement diff where the prior content is known, otherwise as additions with a "new content" label.
-
-32. `MultiEdit` renders each edit within the one card in order, against the same file path.
-
-33. Diff cards reuse the diff-rendering treatment established by feature 05's Open Changes panel (hunk headers, +/- tinting, monospace, expand/collapse) so diffs look the same wherever twarp shows them. Diff cards are read-only here — no staging/discard affordances (that is feature 05's surface, not this one).
+21. Diff cards reuse the diff-rendering treatment established by feature 05's Open Changes panel (hunk headers, +/- tinting, monospace, expand/collapse) so diffs look the same wherever twarp shows them. Diff cards are **read-only** here — no staging/discard affordances.
 
 ### Thinking & todos — 7f
 
-34. Extended-thinking content renders as a **collapsible thinking card** labeled with a duration when available ("Thought for N seconds"), collapsed by default, expandable to show the thinking text.
+22. Extended-thinking content renders as a **collapsible thinking card** labeled with a duration when available ("Thought for N seconds"), collapsed by default, visually subordinate to assistant text. A turn with no thinking shows no card.
 
-35. Thinking cards are visually subordinate to assistant text (dimmer / smaller) so the main answer remains the focus.
-
-36. If a turn has no thinking content, no thinking card appears (no empty placeholder).
-
-37. `TodoWrite` updates render as a **task list**: each item shows its text and status (pending / in-progress / completed) with status-appropriate styling. The list updates in place as `claude` revises it within the session rather than appending a new list each time.
-
-38. The most recent todo state is shown; completed items remain visible (struck through or checked) so the user can see the full plan and its progress.
+23. `TodoWrite` updates render as a **task list**: each item shows text and status (pending / in-progress / completed) with status-appropriate styling. The list updates **in place** as `claude` revises it within the session rather than appending a new list each time; completed items remain visible (struck through / checked).
 
 ### Permissions & input — 7g
 
-39. When `claude` requests permission to use a tool (in a permission mode that prompts), the panel renders an in-transcript **permission prompt** showing the tool and the specific action (e.g. the command to run or the file to edit) with **Allow** and **Deny** actions. The session pauses on that turn until the user responds.
+24. When `claude` requests permission to use a tool (in a prompting mode), the pane renders an in-transcript **permission prompt** showing the tool and the specific action, with **Allow** and **Deny**. The session pauses on that turn until the user responds; **Allow** proceeds, **Deny** rejects and lets the session continue.
 
-40. **Allow** lets the action proceed; **Deny** rejects it and lets the session continue (the assistant sees the denial and may adapt). Responding resumes the streaming state.
+25. The pane exposes a **permission-mode** selector (at least: prompt-for-everything default, auto-accept edits, plan/read-only, skip-prompts), defaulting to the prompting mode so nothing runs unprompted on a fresh session. The selected mode applies to the current and subsequent turns.
 
-41. The panel exposes a **permission mode** selector with the modes `claude` supports (at least: prompt-for-everything default, auto-accept edits, plan/read-only, and a skip-prompts mode), defaulting to the prompting mode so nothing runs unprompted on a fresh session. The selected mode applies to the current and subsequent turns of the session.
+26. **Risk/degradation:** the wire channel `claude` uses to request a permission decision over stdio is undocumented and may change between versions (TECH.md §Risks). If interactive prompts (§24) prove unreliable against the pinned `claude` version, the pane falls back to permission-mode pre-selection (§25) only, and §24 degrades to surfacing denials after the fact rather than blocking prompts. This must not crash or hang the session.
 
-42. **Open question / risk:** the wire-level channel `claude` uses to request a permission decision over stdio is not part of its documented public interface and may change between versions (see TECH.md §Risks). If interactive prompts (§39–§40) prove unreliable against the pinned `claude` version, the panel falls back to permission-mode pre-selection (§41) only, and §39–§40 degrade to surfacing denials after the fact rather than blocking prompts. This degradation must not crash or hang the session.
+27. If the richer command editor (the Ctrl+G-style input used elsewhere in twarp) can host the composer without significant extra work it is offered; otherwise a plain multi-line input is acceptable. Either way §15 holds.
 
-43. The message input supports multi-line composition (Shift+Enter inserts a newline; Enter sends). When empty and not streaming, it shows placeholder guidance. The input is disabled with a clear indication while a turn is streaming (§10) and re-enabled when it completes (§12).
+### Errors & resilience — 7c/all
 
-44. Sending an empty or whitespace-only message is a no-op.
+28. If `claude` exits unexpectedly mid-turn (crash, killed, non-zero exit), the pane shows an error card explaining the session ended, preserves the transcript, and offers to resume (§37) or start anew. It never silently appears idle as if the turn completed.
 
-45. If the richer command editor (the Ctrl+G-style input used elsewhere in twarp) can host the message input without significant extra work, it is offered; otherwise a plain multi-line input is acceptable for this feature. Either way §43–§44 hold.
+29. The pane parses `claude`'s output **defensively**: an unrecognized event type, an unknown content-block type, or a missing optional field is tolerated and skipped rather than crashing or stalling. A non-JSON line is dropped (and noted for diagnostics) without breaking the stream. A partial/streamed event that hasn't fully arrived does not render as broken text.
 
-### Session list & resume — 7h
+30. Auth, rate-limit, and billing errors reported by `claude` (including the post-2026-06-15 subscription-credit behavior) surface **verbatim** as an error card with a copy affordance. twarp neither interprets nor hides them, and never offers an account/billing remedy of its own.
 
-46. The panel offers a **session list** for the current cwd, populated from the sessions `claude` itself stores (under `~/.claude/`). Each entry shows enough to identify it (a title or first-message snippet and a relative timestamp). A **New session** action is always present.
+31. If a turn produces no output for a long time, the activity indicator keeps reflecting "working"; the user can always Stop. The pane imposes no turn timeout that would contradict `claude`. Two panes' sessions/processes never affect each other.
 
-47. Selecting a stored session **resumes** it: twarp starts `claude` against that session id and renders its existing history, then the session continues live from there. Resume reads `claude`'s own session store; twarp keeps no parallel copy.
+### Visual fidelity (acceptance gate) — every sub-phase
 
-48. Resume is scoped to the cwd a session was created in (that is how `claude` stores them). Sessions created in other directories are not shown in the current cwd's list. The panel does not attempt to resume a session from the wrong cwd.
+32. The pane is **visually consistent with Anthropic's Claude desktop / Claude Code app**: a clean chat layout with distinct user/assistant turns, a docked composer, structured tool cards (icon + name + summary + status), +/- tinted diff cards with hunk headers (feature 05's look), collapsible "Thought for N seconds" cards, and a real task list. A surface that shows the same information as plain text rows **fails** this gate even if every other invariant passes.
 
-49. Starting a **New session** while one is active prompts to end the current session first (or switches to it after the active one is ended); two live `claude` processes are never driven from one panel simultaneously.
+33. All pane visuals — card backgrounds, status colors, diff tints, thinking-card styling, focus highlight — come from the active theme. No hard-coded colors.
 
-50. If resuming fails (the session file is missing, corrupt, or `claude` refuses), the panel shows the error and returns to a state from which the user can start a new session or pick a different one — it does not get stuck.
+### Privacy, theming, accessibility — all
 
-51. **Open question:** whether the session list is in-panel (a switcher within the Claude Code tab) or a separate surface, and whether multiple sessions can be held open as in-panel sub-tabs, is a 7h decision. The invariant that survives either choice: one live process per panel at a time (§9, §49), and the list reflects `claude`'s real on-disk sessions.
+34. No conversation content leaves the machine via twarp. The only process twarp sends conversation data to is the local `claude` binary; the only place sessions are stored is `claude`'s own store. The pane never shows a Warp/Anthropic account, sign-in, API-key field, usage meter, or upgrade prompt; anything of that nature `claude` itself prints is surfaced as plain session output, not adopted into twarp chrome. The pane is keyboard-navigable and respects twarp's theming/accessibility conventions; it introduces no mouse-only surface.
 
-### Errors & resilience
+### Sidebar: session list & resume — 7h
 
-52. If `claude` exits unexpectedly mid-turn (crash, killed, non-zero exit), the panel shows an error card explaining the session ended, preserves the transcript so far, and offers to resume (§47) or start anew. It never silently appears idle as if the turn completed.
+35. A left-panel entry offers a **session list** for the current cwd, populated from the sessions `claude` itself stores under `~/.claude/`. It hosts **no chat** — only a list. It appears only when prior sessions exist for the cwd (when none exist, it is absent/empty, not an empty chat). Each entry shows enough to identify it (a title or first-message snippet and a relative timestamp).
 
-53. The panel parses `claude`'s output **defensively**: an unrecognized event type, an unknown content-block type, or a missing optional field is tolerated and skipped rather than crashing or stalling the stream. A line that is not valid JSON is dropped (and noted for diagnostics) without breaking the rest of the stream.
+36. Selecting a stored session **resumes** it: twarp opens a Claude Code pane against that session id (`claude --resume <id>`), renders its existing history, and continues live. Resume reads `claude`'s own store; twarp keeps no parallel copy. Resume is scoped to the cwd a session was created in (that is how `claude` stores them); sessions from other directories are not shown in this cwd's list.
 
-54. A partial/streamed JSON event that has not yet fully arrived does not render as broken text; the panel waits for the complete event (or renders the corresponding incremental delta if it is a recognized streaming delta).
+37. If resuming fails (file missing, corrupt, or `claude` refuses), the pane shows the error and returns to a state from which the user can start fresh or pick a different session — it does not get stuck.
 
-55. Auth, rate-limit, and billing errors reported by `claude` (including the post-2026-06-15 subscription-credit behavior) surface **verbatim** to the user as an error card with a copy affordance. twarp neither interprets nor hides them, and never offers an account/billing remedy of its own.
-
-56. If a turn produces no output for an unusually long time, the activity indicator (§10) keeps reflecting "working"; the user can always Stop (§11). The panel does not impose its own turn timeout that would contradict `claude`'s behavior.
-
-57. Two twarp windows or panels each starting their own session operate independently; one panel's session and process are never affected by another's.
-
-### Identity, privacy, theming, accessibility
-
-58. No conversation content (messages, tool inputs, tool outputs, diffs) leaves the machine via twarp. The only process twarp sends conversation data to is the local `claude` binary; the only place sessions are stored is `claude`'s own store.
-
-59. The panel never displays a Warp/Anthropic account, sign-in, API-key field, usage meter, or upgrade prompt. Anything of that nature that `claude` itself prints is surfaced as plain session output, not adopted into twarp chrome.
-
-60. All panel visuals — card backgrounds, status colors, diff tints, thinking-card styling, focus highlight — come from the active theme. No hard-coded colors.
-
-61. The panel is keyboard-navigable: the input is focusable, Enter/Shift+Enter behave per §43, permission prompts (§39) are reachable and answerable from the keyboard, and the session/zero-state actions are reachable by Tab.
-
-62. The panel respects the same accessibility and theming conventions as the existing left-panel tabs; it introduces no surface that is mouse-only.
+38. Quitting and relaunching twarp preserves the list (these are `claude`'s own on-disk sessions). Opening a fresh `claude` from the terminal (§1) and resuming from the list both produce the same kind of Claude Code pane.
 
 ## Smoke test
 
 Run against a freshly built twarp binary. Most steps require the `claude` CLI installed and logged in (a Claude Code account/subscription). Pin the tested `claude` version per TECH.md. Chord names are macOS.
 
-### 7b — Panel surface (no live session needed)
+### 7b — Pane shell + ported transcript (no live session needed)
 
-1. Launch twarp. The left-panel toolbelt shows a **Claude Code** entry alongside Project Explorer / Global Search / Shortcuts. Click it → the Claude Code panel shows.
-2. Press ⌘⌥K (or the finalized chord). The panel toggles: opens+focuses when not active, returns focus when already active. Rebind it in keybinding settings; the new chord works and the old one no longer does.
-3. Resize the left panel wider, restart twarp, reopen the panel — the width persisted.
-4. With no session and no prior sessions for this cwd, the panel shows the zero state (explanation + input + "Start session"), and opening the panel started **no** subprocess (verify: no `claude` process for this cwd in Activity Monitor / `ps`).
-5. Temporarily rename/hide the `claude` binary on `PATH` and reopen the panel → it shows the unavailable state naming `claude` with an install hint and no input. Restore `claude`.
+1. In a terminal, run `claude` → a **Claude Code pane** opens as a new tab in the main content area and is focused; the terminal block shows a brief "opened in a pane" note and does **not** run raw `claude`. (7b may gate this behind a synthetic/stub session that renders a sample transcript — see TECH.md; the live driver is 7c.)
+2. The pane shows the chat layout: a transcript area and a **docked composer** at the bottom. Type a message → it renders as a user turn and a sample assistant reply renders as **themed Markdown** (headings, list, inline code, a fenced code block), not plain text.
+3. Resize/split the pane and open a second Claude Code pane in another tab — both behave like normal panes; the tab title reads "Claude Code".
+4. Temporarily remove `claude` from `PATH` and run `claude` → twarp does not intercept (shell shows command-not-found), or the pane shows the unavailable state with an install hint. Restore `claude`.
 
-### 7c — Session lifecycle & streaming
+### 7c — Live session & streaming
 
-6. From the zero state, type "list the files here" and press Enter. A `claude` session starts (one process appears), the zero state is replaced by the conversation, your message shows as a user turn, and assistant text streams in with a visible activity indicator and a Stop control.
-7. When the turn completes, the indicator clears, the input re-enables and is focused, and the view is scrolled to the latest content.
-8. Send a second message in the same session — it does **not** spawn a second process; the same session answers.
-9. Send a long-running request and click **Stop** mid-stream — output stops, the turn is marked interrupted, the session stays alive, and you can send another message.
-10. Switch to the Project Explorer tab and back — the conversation is intact and any output that arrived while away is present. Quit twarp — the `claude` process is gone (not orphaned).
+5. Run `claude list the files here` → a session starts (one `claude` process), the prompt is the first user turn, assistant text streams in with an activity indicator and a Stop control; on completion the composer refocuses and the view is at the latest content.
+6. Send a second message → same session answers (no second process). Send a long request and click **Stop** → output stops, turn marked interrupted, session still alive.
+7. Switch to another tab and back → transcript intact, output that arrived while away is present. Quit twarp → the `claude` process is gone (not orphaned).
 
-### 7d — Tool-call cards
+### 7d–7f — Cards, diffs, thinking, todos
 
-11. Ask "read README.md and tell me what this project is." A `Read` tool card renders showing the file path and a result summary; expanding it shows the content. The following assistant text renders after the card, in order.
-12. Ask something that runs a shell command. A `Bash` card shows the command; on completion it shows exit status / output summary, expandable.
-13. Trigger an MCP or otherwise-unmapped tool (or simulate one per TECH.md) → it renders as a readable generic card, not a crash or blank.
-
-### 7e — Diff rendering
-
-14. Ask Claude to make a small edit to a file. The `Edit` renders as a diff card: file path header, unified diff, themed +/- tints — matching feature 05's diff look. It is read-only (no stage/discard buttons).
-15. Ask Claude to create a new file → renders as an all-additions diff card.
-
-### 7f — Thinking & todos
-
-16. Ask a question that triggers extended thinking → a collapsed "Thought for N seconds" card appears, dimmer than the answer; expand/collapse works. A turn with no thinking shows no such card.
-17. Ask for a multi-step task that makes Claude use TodoWrite → a task list renders and updates **in place** (items move pending → in-progress → completed) rather than stacking duplicate lists.
+8. Ask Claude to read a file / run a shell command / make an edit / create a file / do a multi-step task with TodoWrite, and trigger an MCP/unmapped tool. Confirm: `Read`/`Bash` tool cards with summaries + expandable results; `Edit`/`Write` as themed +/- diff cards with hunk headers (feature 05's look, read-only); a collapsed "Thought for N seconds" card; an in-place task list; and the unmapped tool as a readable generic card (not a crash/blank).
 
 ### 7g — Permissions & input
 
-18. Start a session in the default (prompting) permission mode and ask Claude to run a command that needs permission → an in-transcript permission prompt shows the action with Allow/Deny; the session pauses. Click **Allow** → it proceeds. Repeat and click **Deny** → it is rejected and the session continues.
-19. Switch the permission-mode selector to auto-accept-edits and confirm edits no longer prompt; switch to plan/read-only and confirm it does not modify files.
-20. In the input, Shift+Enter inserts a newline; Enter sends; an empty/whitespace message does nothing; the input is disabled while streaming and re-enabled after.
-21. (Resilience) Against the pinned `claude` version, confirm interactive prompts work; if they don't, confirm the panel degrades to mode-pre-selection per §42 without hanging.
+9. In the default (prompting) mode, ask Claude to run a command needing permission → an in-transcript Allow/Deny prompt; Allow proceeds, Deny continues. Switch to auto-accept-edits and plan/read-only and confirm behavior. In the composer, Shift+Enter inserts a newline, Enter sends, empty message is a no-op, input disabled while streaming. If interactive prompts are unreliable against the pinned `claude`, confirm graceful degradation to mode pre-selection (§26) without hanging.
 
-### 7h — Session list & resume
+### 7h — Sidebar session list & resume
 
-22. After running a couple of sessions in this cwd, open the session list → prior sessions show with a snippet + timestamp, plus a New session action. Quit and relaunch twarp; the list still shows them (they are `claude`'s own stored sessions).
-23. Resume a prior session → its history renders and you can continue it live. Sessions created in a different directory do not appear in this cwd's list.
-24. With a live session, choose New session → you are prompted to end the current one first; confirm two `claude` processes are never driven at once.
-25. Corrupt or remove a session file and try to resume it → the panel shows the error and lets you start fresh instead of getting stuck.
+10. After running a couple of sessions in this cwd, open the left-panel **session list** → prior sessions show with a snippet + timestamp; it contains a list, **no chat**. In a directory with no prior sessions, the list is absent/empty.
+11. Click a session → it resumes in a Claude Code pane and continues live. Quit/relaunch twarp → the list still shows them. Corrupt/remove a session file and resume → the pane shows the error and lets you start fresh.
 
 ### Cross-cutting
 
-26. Throughout, no Warp/Anthropic sign-in, API-key field, usage meter, or billing UI ever appears in twarp chrome. Auth/limit errors from `claude` show verbatim as copyable error cards.
-27. Toggle the app theme → all cards, diffs, thinking blocks, and status colors follow the theme (no hard-coded colors).
-28. **(Acceptance gate)** Side-by-side with `warp.dev/agents/claude-code` (or a memory of Warp's Agent Mode), the rendered panel is *visually consistent* with Agent Mode — structured tool cards (icon + name + summary + status, not raw text), +/- tinted diffs with hunk headers (feature 05's look), collapsible "Thought for N seconds" cards, and a real task list. A panel that shows the same information as plain `Flex`/text rows fails this step even if every other step passes.
+12. Throughout, no Warp/Anthropic sign-in, API-key field, usage meter, or billing UI appears in twarp chrome; auth/limit errors from `claude` show verbatim as copyable error cards. Toggle the theme → all cards/diffs/thinking/status colors follow it (no hard-coded colors).
+13. **(Acceptance gate)** Side-by-side with the Claude desktop / Claude Code app, the pane is *visually consistent* — chat turns, docked composer, structured tool cards, +/- tinted diffs with hunk headers, collapsible thinking, a real task list. A pane that shows the same information as plain text rows fails this step even if every other step passes.
