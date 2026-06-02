@@ -1030,7 +1030,8 @@ fn save_pane_state(
         LeafContents::GetStarted => GET_STARTED_PANE_KIND,
         LeafContents::Welcome { .. } => WELCOME_PANE_KIND,
         LeafContents::AIDocument(_) => AI_DOCUMENT_PANE_KIND,
-        LeafContents::NetworkLog => {
+        // twarp 07 (7b): ClaudeCode joins NetworkLog as a non-persisted pane.
+        LeafContents::NetworkLog | LeafContents::ClaudeCode => {
             // These pane types are filtered out before this function is
             // called; see `LeafContents::is_persisted` and the skip in
             // `save_app_state`. Reaching this arm would mean a `pane_nodes`
@@ -1266,7 +1267,8 @@ fn save_pane_state(
                 .values(ambient_agent_pane)
                 .execute(conn)?;
         }
-        LeafContents::NetworkLog => {
+        // twarp 07 (7b): ClaudeCode joins NetworkLog as a non-persisted pane.
+        LeafContents::NetworkLog | LeafContents::ClaudeCode => {
             // Unreachable: filtered by `is_persisted` in `save_app_state`.
         }
     }

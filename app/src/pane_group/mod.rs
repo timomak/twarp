@@ -208,6 +208,7 @@ mod tests;
 
 pub use crate::code_review::CodeReviewPanelArg;
 // twarp: 2c-d — CodeDiffPane / ExecutionProfileEditorPane / AIFactPane removed (AI panes deleted)
+pub use pane::claude_code_pane::ClaudeCodePane; // twarp 07 (7b)
 pub use pane::code_pane::CodePane;
 pub use pane::env_var_collection_pane::EnvVarCollectionPane;
 pub use pane::file_pane::FilePane;
@@ -545,6 +546,13 @@ pub enum Event {
         path: PathBuf,
         /// The session that the path was opened from.
         session: Arc<Session>,
+    },
+    /// twarp 07 (7b): tell the workspace to open a Claude Code pane (PRODUCT §1).
+    OpenClaudeCodePane {
+        /// The args after `claude` (`claude <prompt>` seeds the first turn).
+        args: String,
+        /// The originating terminal's working directory (PRODUCT §4).
+        cwd: Option<PathBuf>,
     },
     OpenWarpDriveLink {
         open_warp_drive_args: OpenWarpDriveObjectArgs,
@@ -1778,6 +1786,14 @@ impl PaneGroup {
                     "Network log pane should not have been persisted, as it cannot be restored"
                 ))
             }
+            // twarp 07 (7b): Claude Code panes are not persisted (see
+            // `LeafContents::is_persisted`) — a restored pane can't replay a
+            // live `claude` process. `save_pane_state` skips them, so reaching
+            // this arm is a persistence-side programmer error. Sessions reopen
+            // via `claude --resume` from the 7h session list.
+            LeafContents::ClaudeCode => Err(anyhow::anyhow!(
+                "Claude Code pane should not have been persisted, as it cannot be restored"
+            )),
             LeafContents::GetStarted => {
                 if !FeatureFlag::GetStartedTab.is_enabled() {
                     Err(anyhow::anyhow!("GetStarted pane not supported"))

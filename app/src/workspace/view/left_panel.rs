@@ -20,7 +20,8 @@ use warpui::{
 };
 
 // twarp: 2c-d — AgentConversationsModel/AIConversationId stubs no longer needed in this file.
-use crate::claude_code_panel::ClaudeCodePanelView;
+// twarp 07 (7b): the Claude Code chat moved to a main-content pane (re-spec #70);
+// this left panel no longer hosts it.
 #[cfg(feature = "local_fs")]
 use crate::code::file_tree::FileTreeEvent;
 use crate::coding_panel_enablement_state::CodingPanelEnablementState;
@@ -41,10 +42,9 @@ use crate::workspace::view::global_search::view::{
     Event as GlobalSearchViewEvent, GlobalSearchEntryFocus, GlobalSearchView,
 };
 use crate::workspace::view::{
-    LEFT_PANEL_CLAUDE_CODE_BINDING_NAME, LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME,
-    LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME, LEFT_PANEL_WARP_DRIVE_BINDING_NAME,
-    OPEN_GLOBAL_SEARCH_BINDING_NAME, TOGGLE_PROJECT_EXPLORER_BINDING_NAME,
-    TOGGLE_WARP_DRIVE_BINDING_NAME,
+    LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME, LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME,
+    LEFT_PANEL_WARP_DRIVE_BINDING_NAME, OPEN_GLOBAL_SEARCH_BINDING_NAME,
+    TOGGLE_PROJECT_EXPLORER_BINDING_NAME, TOGGLE_WARP_DRIVE_BINDING_NAME,
 };
 use crate::{
     appearance::Appearance,
@@ -70,8 +70,6 @@ struct MouseStateHandles {
     global_search_button: MouseStateHandle,
     warp_drive_button: MouseStateHandle,
     shortcuts_button: MouseStateHandle,
-    // twarp 07: toolbelt button for the Claude Code tab.
-    claude_code_button: MouseStateHandle,
     add_new_shortcut_button: MouseStateHandle,
     // twarp: 2c-d — conversation_list_view_button removed
 }
@@ -161,8 +159,6 @@ pub enum LeftPanelAction {
         file_path: PathBuf,
         sha: String,
     },
-    /// twarp 07: select / toggle the Claude Code left-panel tab.
-    ClaudeCode,
     // twarp: 2c-d — kept for legacy call-sites; AI conversation list deleted.
     ConversationListView,
 }
@@ -206,10 +202,6 @@ pub enum ToolPanelView {
     /// in a future sub-phase; 4c renders the tab plus a placeholder so the
     /// integration lights up.
     Shortcuts,
-    /// twarp 07: the Claude Code panel (always-on; see TECH.md §Feature flag).
-    /// Hosts Warp's resurrected Agent-Mode renderer driven by the local
-    /// `claude` CLI.
-    ClaudeCode,
     // twarp: 2c-d — variant kept so legacy call-sites compile; AI conversation list deleted.
     ConversationListView,
 }
@@ -271,8 +263,6 @@ pub struct LeftPanelView {
     mouse_state_handles: MouseStateHandles,
     close_button_mouse_state: MouseStateHandle,
     warp_drive_view: ViewHandle<DrivePanel>,
-    // twarp 07: the Claude Code panel view (always-on; see TECH.md §Feature flag).
-    claude_code_view: ViewHandle<ClaudeCodePanelView>,
     // twarp: 2c-d — conversation_list_view removed
     active_view: active_view_state::ActiveViewState,
     toolbelt_buttons: Vec<ToolbeltButtonConfig>,
@@ -774,11 +764,6 @@ impl LeftPanelView {
             ctx.emit(LeftPanelEvent::WarpDrive(event.clone()));
         });
 
-        // twarp 07: the Claude Code panel owns its own transcript + (in 7c)
-        // driver and emits no events to the left panel in 7b, so no
-        // subscription is needed yet.
-        let claude_code_view = ctx.add_typed_action_view(ClaudeCodePanelView::new);
-
         // twarp: 2c-d — conversation_list_view subscription removed
 
         let active_view = views.first().copied().unwrap_or(ToolPanelView::WarpDrive);
@@ -855,7 +840,6 @@ impl LeftPanelView {
             mouse_state_handles: Default::default(),
             close_button_mouse_state: Default::default(),
             warp_drive_view,
-            claude_code_view,
             // twarp: 2c-d — conversation_list_view removed
             active_view: active_view_state::new(active_view),
             toolbelt_buttons,
@@ -991,20 +975,6 @@ impl LeftPanelView {
                 tooltip_keybinding: None,
                 tooltip_keybinding_names: vec![],
             },
-            // twarp 07: Claude Code tab. The ⌘⌥K default chord is surfaced in
-            // the tooltip via the remappable LEFT_PANEL_CLAUDE_CODE binding.
-            ToolPanelView::ClaudeCode => {
-                let tooltip_keybinding_names = vec![LEFT_PANEL_CLAUDE_CODE_BINDING_NAME];
-                ToolbeltButtonConfig {
-                    icon: Icon::AgentMode,
-                    active_icon: None,
-                    tooltip_text: "Claude Code".to_owned(),
-                    action: LeftPanelAction::ClaudeCode,
-                    render_with_active_state: false,
-                    tooltip_keybinding: toolbelt_tooltip_keybinding(&tooltip_keybinding_names, ctx),
-                    tooltip_keybinding_names,
-                }
-            }
             // twarp: 2c-d — ConversationListView arm: AI deleted, use ProjectExplorer config as fallback.
             ToolPanelView::ConversationListView => ToolbeltButtonConfig {
                 icon: Icon::FileCopy,
@@ -1110,10 +1080,6 @@ impl LeftPanelView {
 
     pub fn warp_drive_view(&self) -> &ViewHandle<DrivePanel> {
         &self.warp_drive_view
-    }
-
-    pub fn claude_code_view(&self) -> &ViewHandle<ClaudeCodePanelView> {
-        &self.claude_code_view
     }
 
     pub(crate) fn auto_expand_active_file_tree_to_most_recent_directory(
@@ -1280,9 +1246,6 @@ impl LeftPanelView {
             // 4c stub: Shortcuts panel has no internal child view to focus
             // yet. Full GUI (list, detail editor) lands in a follow-up.
             ToolPanelView::Shortcuts => {}
-            // twarp 07: focus the Claude Code panel (its message input becomes
-            // the real focus target in 7g).
-            ToolPanelView::ClaudeCode => ctx.focus(&self.claude_code_view),
             // twarp: 2c-d — ConversationListView arm: AI deleted, no-op.
             ToolPanelView::ConversationListView => {}
         }
@@ -2365,7 +2328,6 @@ impl LeftPanelView {
                 }
                 LeftPanelAction::WarpDrive => self.active_view.get() == ToolPanelView::WarpDrive,
                 LeftPanelAction::Shortcuts => self.active_view.get() == ToolPanelView::Shortcuts,
-                LeftPanelAction::ClaudeCode => self.active_view.get() == ToolPanelView::ClaudeCode,
                 LeftPanelAction::ShortcutsAddNew
                 | LeftPanelAction::ShortcutsOpenInEditor
                 | LeftPanelAction::ShortcutsToggleRowMenu(_)
@@ -3102,16 +3064,6 @@ impl LeftPanelView {
             LeftPanelAction::Shortcuts => {
                 active_view_state::set(self, ToolPanelView::Shortcuts, ctx);
             }
-            LeftPanelAction::ClaudeCode => {
-                active_view_state::set(self, ToolPanelView::ClaudeCode, ctx);
-                // Focus the panel so its view is in the responder chain and
-                // in-panel link clicks (Mode / Start session / Resume / Stop)
-                // route to the panel's `handle_action`. Without this, a
-                // toolbelt click activates the tab visually but leaves the
-                // workspace as the focused view, and ClaudeCodePanelAction
-                // dispatches have nowhere to land.
-                ctx.focus(&self.claude_code_view);
-            }
             LeftPanelAction::ShortcutsAddNew => {
                 // PRODUCT §29: opens the empty detail editor.
                 self.shortcut_context_menu_target = None;
@@ -3666,8 +3618,6 @@ impl View for LeftPanelView {
                 ToolPanelView::WarpDrive => ctx.focus(&self.warp_drive_view),
                 // 4c stub: no internal view to focus yet.
                 ToolPanelView::Shortcuts => {}
-                // twarp 07: focus the Claude Code panel.
-                ToolPanelView::ClaudeCode => ctx.focus(&self.claude_code_view),
                 // twarp: 2c-d — ConversationListView arm: AI deleted, no-op.
                 ToolPanelView::ConversationListView => {}
             }
@@ -3682,9 +3632,6 @@ impl View for LeftPanelView {
             self.mouse_state_handles.global_search_button.clone(),
             self.mouse_state_handles.warp_drive_button.clone(),
             self.mouse_state_handles.shortcuts_button.clone(),
-            // twarp 07: keep this vec at least as long as the toolbelt button
-            // list so the render zip doesn't truncate the Claude Code button.
-            self.mouse_state_handles.claude_code_button.clone(),
             // twarp: 2c-d — conversation_list_view_button removed
         ];
 
@@ -3758,16 +3705,6 @@ impl View for LeftPanelView {
             // `shortcuts.yaml` for now, and 4b's hot reload keeps that
             // loop tight.
             ToolPanelView::Shortcuts => self.render_shortcuts_panel(app),
-            // twarp 07: embed the Claude Code panel view, mirroring the Warp
-            // Drive arm's left/right padding.
-            ToolPanelView::ClaudeCode => Shrinkable::new(
-                1.0,
-                Container::new(ChildView::new(&self.claude_code_view).finish())
-                    .with_padding_left(2.)
-                    .with_padding_right(2.)
-                    .finish(),
-            )
-            .finish(),
             // twarp: 2c-d — ConversationListView arm: AI deleted, use empty content.
             ToolPanelView::ConversationListView => {
                 Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()

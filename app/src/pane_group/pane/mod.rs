@@ -9,6 +9,8 @@
 //! The [`PaneId`] must be created via a [`PaneView<BackingView>`]. The [`PaneId`] is consequently
 //! used to render a [`PaneView`] which internally renders the pane, including the [`BackingView`].
 // twarp: 2c-d — code_diff_pane / code_diff_pane_model / execution_profile_editor_pane removed (AI panes)
+// twarp 07 (7b): the Claude Code main-content pane host.
+pub(super) mod claude_code_pane;
 pub(super) mod code_pane;
 pub(super) mod env_var_collection_pane;
 pub(super) mod file_pane;
@@ -31,6 +33,7 @@ use crate::pane_group::pane::get_started_view::GetStartedView;
 use crate::view_components::action_button::ActionButton;
 use crate::{
     // twarp: 2c-d — ExecutionProfileEditorView/AIDocumentView/CodeDiffView/AIFactView imports removed (AI panes)
+    claude_code_view::ClaudeCodeView, // twarp 07 (7b)
     code::view::CodeView,
     drive::sharing::ShareableObject,
     env_vars::view::env_var_collection::EnvVarCollectionView,
@@ -130,6 +133,8 @@ pub(crate) enum IPaneType {
     Notebook,
     File,
     Code,
+    /// twarp 07 (7b): the Claude Code main-content pane.
+    ClaudeCode,
     CodeDiff,
     EnvVarCollection,
     Workflow,
@@ -153,6 +158,7 @@ impl Display for IPaneType {
             IPaneType::Notebook => write!(f, "Notebook"),
             IPaneType::File => write!(f, "File"),
             IPaneType::Code => write!(f, "Code"),
+            IPaneType::ClaudeCode => write!(f, "Claude Code"),
             IPaneType::CodeDiff => write!(f, "Code Diff"),
             IPaneType::EnvVarCollection => write!(f, "Environment Variable Collection"),
             IPaneType::Workflow => write!(f, "Workflow"),
@@ -217,6 +223,11 @@ impl PaneId {
         Self::new_from_ctx(IPaneType::Code, ctx)
     }
 
+    /// twarp 07 (7b): creates a [`PaneId`] from a [`ViewContext<PaneView<ClaudeCodeView>>`].
+    pub fn from_claude_code_pane_ctx(ctx: &ViewContext<PaneView<ClaudeCodeView>>) -> Self {
+        Self::new_from_ctx(IPaneType::ClaudeCode, ctx)
+    }
+
     // twarp: 2c-d — from_code_diff_pane_ctx / from_ai_fact_pane_ctx / from_ai_document_pane_ctx /
     // from_execution_profile_editor_pane_ctx removed (AI panes deleted)
 
@@ -260,6 +271,13 @@ impl PaneId {
     /// Creates a [`PaneId`] from a [`PaneView<TextView>`] entity ID.
     pub fn from_code_pane_view(code_pane_view: &ViewHandle<PaneView<CodeView>>) -> Self {
         Self::new(IPaneType::Code, code_pane_view)
+    }
+
+    /// twarp 07 (7b): creates a [`PaneId`] from a [`PaneView<ClaudeCodeView>`] entity ID.
+    pub fn from_claude_code_pane_view(
+        claude_code_pane_view: &ViewHandle<PaneView<ClaudeCodeView>>,
+    ) -> Self {
+        Self::new(IPaneType::ClaudeCode, claude_code_pane_view)
     }
 
     // twarp: 2c-d — from_code_diff_pane_view removed (AI pane deleted)
@@ -384,6 +402,9 @@ impl PaneId {
             }
             IPaneType::Code => {
                 ChildView::<PaneView<CodeView>>::with_id(self.0.pane_view_id).finish()
+            }
+            IPaneType::ClaudeCode => {
+                ChildView::<PaneView<ClaudeCodeView>>::with_id(self.0.pane_view_id).finish()
             }
             IPaneType::CodeDiff => {
                 // twarp: 2c-d — CodeDiffView removed (AI)

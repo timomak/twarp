@@ -733,6 +733,11 @@ pub enum LeafContents {
     /// The in-app network log pane. Not persisted across restarts because the
     /// backing log is an in-memory ring buffer that starts empty on launch.
     NetworkLog,
+    /// twarp 07 (7b): a Claude Code pane. Not persisted across restarts — a
+    /// restored pane can't replay a live `claude` process and twarp keeps no
+    /// transcript store; sessions are reopened via `claude --resume` from the
+    /// 7h session list.
+    ClaudeCode,
     /// An entrypoint pane type to launch other pane types from a search palette. The default view
     /// when creating a tab.
     Welcome {
@@ -759,6 +764,8 @@ impl LeafContents {
             // starts empty on launch; persisting would also regress back to
             // an on-disk log via the app-state database.
             LeafContents::NetworkLog => false,
+            // twarp 07 (7b): see the variant doc — never persisted.
+            LeafContents::ClaudeCode => false,
             LeafContents::Terminal(_)
             | LeafContents::Notebook(_)
             | LeafContents::AIDocument(_)
@@ -891,9 +898,8 @@ pub enum LeftPanelDisplayedTab {
     GlobalSearch,
     WarpDrive,
     Shortcuts,
-    // twarp 07: persisted identity of the Claude Code tab so it can be the
-    // restored active view across restarts.
-    ClaudeCode,
+    // twarp 07 (7b): no Claude Code sidebar tab to persist — it's a
+    // main-content pane opened by typing `claude` (re-spec #70).
     ConversationListView,
 }
 
@@ -904,7 +910,6 @@ impl From<ToolPanelView> for LeftPanelDisplayedTab {
             ToolPanelView::GlobalSearch { .. } => LeftPanelDisplayedTab::GlobalSearch,
             ToolPanelView::WarpDrive => LeftPanelDisplayedTab::WarpDrive,
             ToolPanelView::Shortcuts => LeftPanelDisplayedTab::Shortcuts,
-            ToolPanelView::ClaudeCode => LeftPanelDisplayedTab::ClaudeCode,
             ToolPanelView::ConversationListView => LeftPanelDisplayedTab::ConversationListView,
         }
     }
