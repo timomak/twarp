@@ -2,7 +2,7 @@
 
 **Phase:** spec-in-review (re-spec PR [#70](https://github.com/timomak/twarp/pull/70) open — main-pane redirect)
 **Spec PRs:** [#66](https://github.com/timomak/twarp/pull/66) (merged) · port-plan re-spec [#68](https://github.com/timomak/twarp/pull/68) (merged) · **main-pane re-spec [#70](https://github.com/timomak/twarp/pull/70) (open)**
-**Impl PRs:** [#67](https://github.com/timomak/twarp/pull/67) — abandoned (rebuilt from primitives). · [#69](https://github.com/timomak/twarp/pull/69) — 7b sidebar build; ported correctly but **wrong placement (sidebar)**, superseded by #70. **Owner to close #67 and #69.**
+**Impl PRs:** [#67](https://github.com/timomak/twarp/pull/67) — abandoned (rebuilt from primitives); **owner to close.** · [#69](https://github.com/timomak/twarp/pull/69) — 7b sidebar build, **merged**: landed the placement-agnostic core (`crates/claude_code` + the ported renderer) plus a now-obsolete sidebar host. Rendering was correct; sidebar placement superseded by #70 — the re-scoped 7b **relocates** the host to a main-content pane.
 
 ## Scope
 
@@ -15,17 +15,17 @@ Full behavior in [PRODUCT.md](PRODUCT.md); implementation plan in [TECH.md](TECH
 ## History — two missed turns, now corrected
 
 1. **PR #67 (abandoned):** bundled 7b–7h and **rebuilt the panel from GPUI primitives** instead of porting the deleted Agent Mode renderer (plain-text cards, untinted diffs, no `UniformList`, a `WorkspaceAction` dispatch workaround). See `twarp_07_port_not_rebuild` memory.
-2. **PR #69 (superseded):** 7b did the port **correctly** — `ai_assistant::transcript::render_message` + the markdown splitter reparented onto `claude_code::Transcript`, themed Markdown, `UniformList`, `GlobalSearchView`-style dispatch, no forwarder — **but rendered it in the left sidebar**, which the owner rejected on sight. The *rendering* was right; the *placement and entry point* were wrong.
+2. **PR #69 (merged; sidebar placement superseded):** 7b did the port **correctly** — `ai_assistant::transcript::render_message` + the markdown splitter reparented onto `claude_code::Transcript`, themed Markdown, `UniformList`, `GlobalSearchView`-style dispatch, no forwarder — **but rendered it in the left sidebar**, which the owner rejected on sight. The *rendering* was right; the *placement and entry point* were wrong.
 3. **This re-spec (#70):** keeps the rendering + driver, moves the chat to a **main-content pane triggered by typing `claude`**, and repurposes the sidebar to a read-only session list. See `twarp_07_ux_direction` memory and TECH.md §Re-spec.
 
-**Kept across all of this (placement-agnostic):** the headless `crates/claude_code` driver crate (`Transcript`/`TranscriptEvent`/`TranscriptItem` + stream-json parser + sessions reader, **19 passing unit tests**) and the ported markdown renderer from #69. Both re-introduce into the new 7b from branch `twarp-07b-port`.
+**Kept across all of this (placement-agnostic):** the headless `crates/claude_code` driver crate (`Transcript`/`TranscriptEvent`/`TranscriptItem` + stream-json parser + sessions reader, **19 passing unit tests**) and the ported markdown renderer from #69. Both are now **merged to master via #69** (inside a sidebar host); the re-scoped 7b **relocates** them into the main-content pane rather than re-introducing them from branch `twarp-07b-port`.
 
 ## Sub-phases (re-derived for the main-pane host — all ticks cleared)
 
 7a stays done (audit + specs, amended by both re-specs). 7b–7h are re-scoped to land in the pane (TECH.md §Re-derived sub-phase plan).
 
 - [x] **7a — Audit + specs.** Renderer detangling gate resolved (per-leaf port-and-adapt from `fea2f7ea`); main-pane host + terminal trigger audited (`terminal/input.rs` submit hook; `pane_group` `IPaneType`/`CodePane` model). (Specs [#66], [#68], [#70].)
-- [ ] **7b — Pane host + `claude`-at-submit trigger + ported transcript (stub session).** Re-introduce `crates/claude_code` + the ported renderer from #69. Add `IPaneType::ClaudeCode` + `ClaudeCodePane`/`ClaudeCodeView` (modeled on `CodePane`). Intercept a top-level `claude` in `terminal/input.rs` → open the pane. Render a synthetic transcript with a docked composer; drop all left-panel/⌘⌥K placement. **Acceptance: `claude` opens a real main-content pane whose sample transcript renders as themed Markdown in Claude-app shape.** PRODUCT §1–§7, §12–§15, §32–§33.
+- [ ] **7b — Pane host + `claude`-at-submit trigger + ported transcript (stub session).** `crates/claude_code` + the ported renderer are **already in master (via #69)** — 7b **relocates** them, it does not re-introduce them. Add `IPaneType::ClaudeCode` + `ClaudeCodePane`/`ClaudeCodeView` (modeled on `CodePane`) and move the merged transcript renderer into the pane. Intercept a top-level `claude` in `terminal/input.rs` → open the pane. Render a synthetic transcript with a docked composer; **delete the #69 sidebar host** (`left_panel` wiring + ⌘⌥K binding). **Acceptance: `claude` opens a real main-content pane whose sample transcript renders as themed Markdown in Claude-app shape, and the sidebar no longer hosts the chat.** PRODUCT §1–§7, §12–§15, §32–§33.
 - [ ] **7c — Live driver in the pane.** Wire `claude_code::driver` → pane via the bridge + `apply_event` pump; forward the `claude <prompt>` first turn; streaming/Stop/lifecycle/teardown. PRODUCT §6–§14, §28–§31.
 - [ ] **7d — Tool cards.** Port `inline_action` chrome; bridge `Tool` → cards + generic fallback for unmapped/`mcp__*`. PRODUCT §16–§19.
 - [ ] **7e — Diff cards.** Synthesize unified diff → render read-only via feature 05 / `InlineDiffView`. PRODUCT §20–§21.

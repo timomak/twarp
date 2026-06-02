@@ -561,6 +561,8 @@ pub(crate) const LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME: &str = "workspace:left_p
 pub(crate) const LEFT_PANEL_WARP_DRIVE_BINDING_NAME: &str = "workspace:left_panel_warp_drive";
 pub(crate) const LEFT_PANEL_AGENT_CONVERSATIONS_BINDING_NAME: &str =
     "workspace:left_panel_agent_conversations";
+// twarp 07: remappable toggle binding for the Claude Code left-panel tab.
+pub(crate) const LEFT_PANEL_CLAUDE_CODE_BINDING_NAME: &str = "workspace:left_panel_claude_code";
 
 const KEYBINDINGS_TO_CACHE: [&str; 3] = [
     TOGGLE_RESOURCE_CENTER_KEYBINDING_NAME,
@@ -3407,6 +3409,7 @@ impl Workspace {
                 },
                 LeftPanelDisplayedTab::WarpDrive => ToolPanelView::WarpDrive,
                 LeftPanelDisplayedTab::Shortcuts => ToolPanelView::Shortcuts,
+                LeftPanelDisplayedTab::ClaudeCode => ToolPanelView::ClaudeCode,
                 LeftPanelDisplayedTab::ConversationListView => ToolPanelView::ConversationListView,
             };
             lp.restore_active_view_from_snapshot(active_view, ctx);
@@ -15263,6 +15266,7 @@ impl Workspace {
                         ToolPanelView::GlobalSearch { .. } => "Global search",
                         ToolPanelView::WarpDrive => "Warp Drive",
                         ToolPanelView::Shortcuts => "Custom shortcuts",
+                        ToolPanelView::ClaudeCode => "Claude Code",
                         ToolPanelView::ConversationListView => "Agent conversations",
                     }
                 } else {
@@ -15318,6 +15322,7 @@ impl Workspace {
                 ToolPanelView::GlobalSearch { .. } => "Global search",
                 ToolPanelView::WarpDrive => "Warp Drive",
                 ToolPanelView::Shortcuts => "Custom shortcuts",
+                ToolPanelView::ClaudeCode => "Claude Code",
                 ToolPanelView::ConversationListView => "Agent conversations",
             }
         } else {
@@ -18103,6 +18108,9 @@ impl Workspace {
         // Custom command shortcuts panel (twarp feature 04, PRODUCT §26).
         // Sits immediately after Global Search in the toolbelt.
         views.push(ToolPanelView::Shortcuts);
+        // twarp 07 (PRODUCT §1): the Claude Code tab. Sits immediately after
+        // Custom shortcuts in the toolbelt.
+        views.push(ToolPanelView::ClaudeCode);
         if WarpDriveSettings::is_warp_drive_enabled(ctx) {
             views.push(ToolPanelView::WarpDrive);
         }
@@ -19743,6 +19751,20 @@ impl TypedActionView for Workspace {
                         is_showing,
                         ctx,
                     );
+                }
+            }
+            // twarp 07 (PRODUCT §2): toggle the Claude Code tab. Open + focus it
+            // when it isn't the active view; when it already is, return focus to
+            // the previously focused surface (the terminal) rather than
+            // collapsing the whole left panel out from under other tabs.
+            ToggleClaudeCodePanel => {
+                let is_left_panel_open = self.active_tab_pane_group().as_ref(ctx).left_panel_open;
+                let is_showing = is_left_panel_open
+                    && self.left_panel_view.as_ref(ctx).active_view() == ToolPanelView::ClaudeCode;
+                if is_showing {
+                    self.focus_active_tab(ctx);
+                } else {
+                    self.open_left_panel_view(&LeftPanelAction::ClaudeCode, ctx);
                 }
             }
             // twarp: 2c-d — ShowRewindConfirmationDialog and ExecuteRewindAIConversation
