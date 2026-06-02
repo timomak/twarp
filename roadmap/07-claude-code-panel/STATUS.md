@@ -1,57 +1,58 @@
 # 07 — Claude Code panel
 
-**Phase:** impl-in-review (7b PR [#69](https://github.com/timomak/twarp/pull/69) open)
-**Spec PRs:** [#66](https://github.com/timomak/twarp/pull/66) (PRODUCT.md + TECH.md, merged) · re-spec [#68](https://github.com/timomak/twarp/pull/68) (port-and-adapt plan, merged)
-**Impl PRs:** [#67](https://github.com/timomak/twarp/pull/67) — **abandoned** (rebuilt from primitives instead of porting; superseded by the 7b port). Owner to close. · 7b [#69](https://github.com/timomak/twarp/pull/69) — panel shell + ported transcript, synthetic source (open)
+**Phase:** spec-in-review (re-spec PR [#70](https://github.com/timomak/twarp/pull/70) open — main-pane redirect)
+**Spec PRs:** [#66](https://github.com/timomak/twarp/pull/66) (merged) · port-plan re-spec [#68](https://github.com/timomak/twarp/pull/68) (merged) · **main-pane re-spec [#70](https://github.com/timomak/twarp/pull/70) (open)**
+**Impl PRs:** [#67](https://github.com/timomak/twarp/pull/67) — abandoned (rebuilt from primitives); **owner to close.** · [#69](https://github.com/timomak/twarp/pull/69) — 7b sidebar build, **merged**: landed the placement-agnostic core (`crates/claude_code` + the ported renderer) plus a now-obsolete sidebar host. Rendering was correct; sidebar placement superseded by #70 — the re-scoped 7b **relocates** the host to a main-content pane.
 
 ## Scope
 
-Bring back Warp's Agent Mode rendering surface — task list, collapsible thinking blocks, structured tool cards, inline diffs — as a host for **only** the local `claude` CLI (Anthropic's Claude Code) spawned with `--output-format stream-json`. The user's Claude Code login is used implicitly: the `claude` binary handles auth.
+Run `claude` in a terminal → twarp opens a **main-content Claude Code pane** (a tab like an editor/terminal) that drives the local `claude` CLI and renders the session in a polished, Claude-app-style chat UI: streaming markdown, collapsible thinking, structured tool cards, inline diff cards, a task list. A left-sidebar entry lists **past sessions** for the cwd (only when any exist) for reopening. The `claude` binary handles auth.
 
 Do **not** re-introduce what feature 02 removed at the service layer: no Warp AI accounts, no LLM clients, no billing, no cloud conversation storage. Only the renderer + a claude-code subprocess driver feeding events into it.
 
 Full behavior in [PRODUCT.md](PRODUCT.md); implementation plan in [TECH.md](TECH.md).
 
-## PR #67 postmortem — why this feature regressed
+## History — two missed turns, now corrected
 
-PR #67 bundled 7b–7h into one PR and **rebuilt the panel from GPUI primitives** (`Flex::column()`, `Container::new(...).with_background_color(...)`, `appearance.ui_builder().span(...)`/`.link(...)`) — **zero lines from the deleted Agent Mode rendering layer**, directly against the 7a port-and-adapt mandate. Result: plain-text "tool cards" with no per-tool affordances; a `similar` unified diff rendered as untinted plain spans (no +/- tinting, no hunk headers — none of feature 05's treatment, despite PRODUCT §33); a static `Flex::column` with no `UniformList`/auto-scroll; plain-text assistant output instead of feature 03 markdown (§18); and a `WorkspaceAction::ClaudeCodePanel(...)` dispatch workaround because direct typed-action dispatch "dropped silently" (a focus-wiring symptom, not the fix). See `twarp_07_port_not_rebuild` memory and TECH.md §Postmortem.
+1. **PR #67 (abandoned):** bundled 7b–7h and **rebuilt the panel from GPUI primitives** instead of porting the deleted Agent Mode renderer (plain-text cards, untinted diffs, no `UniformList`, a `WorkspaceAction` dispatch workaround). See `twarp_07_port_not_rebuild` memory.
+2. **PR #69 (merged; sidebar placement superseded):** 7b did the port **correctly** — `ai_assistant::transcript::render_message` + the markdown splitter reparented onto `claude_code::Transcript`, themed Markdown, `UniformList`, `GlobalSearchView`-style dispatch, no forwarder — **but rendered it in the left sidebar**, which the owner rejected on sight. The *rendering* was right; the *placement and entry point* were wrong.
+3. **This re-spec (#70):** keeps the rendering + driver, moves the chat to a **main-content pane triggered by typing `claude`**, and repurposes the sidebar to a read-only session list. See `twarp_07_ux_direction` memory and TECH.md §Re-spec.
 
-**What survives #67 (kept into the next attempt):** the headless **`crates/claude_code` driver crate** (`lib.rs` `Transcript`/`TranscriptEvent`/`TranscriptItem`; `driver.rs` subprocess + defensive JSONL parser + SIGINT interrupt + stdin writer; `sessions.rs` encoded-cwd reader) — **19 passing unit tests, correct and decoupled** — and the **registration scaffolding** (`ToolPanelView::ClaudeCode`, `LeftPanelDisplayedTab`, toolbelt button, render arm, ⌘⌥K via `custom_tag_to_keystroke`, `compute_left_panel_views` push). **Discarded:** the entire primitive panel body and the `WorkspaceAction::ClaudeCodePanel` forwarder.
+**Kept across all of this (placement-agnostic):** the headless `crates/claude_code` driver crate (`Transcript`/`TranscriptEvent`/`TranscriptItem` + stream-json parser + sessions reader, **19 passing unit tests**) and the ported markdown renderer from #69. Both are now **merged to master via #69** (inside a sidebar host); the re-scoped 7b **relocates** them into the main-content pane rather than re-introducing them from branch `twarp-07b-port`.
 
-**Re-spec investigation headline:** the original TECH.md table conflated two distinct deleted surfaces — `ai_assistant/` (the simple **Warp AI Q&A panel**) and `ai/blocklist/` (**Agent Mode**, the tool-card/diff/thinking/todo surface that `warp.dev/agents/claude-code` shows). They were never composed together. The re-spec replaces the table with a per-file decision matrix (TECH.md §Per-file decision matrix): the cleanly reusable primitives are the `inline_action` card chrome (`HeaderConfig`/`RenderableAction`/status icons — already AI-agnostic), the shared markdown stack (`parse_markdown` → `FormattedTextElement`), and feature 05's read-only diff renderer; `code_diff_view.rs` and `requested_command.rs` are the *wrong* port targets (deeply service-coupled) and are rewritten/reused, not ported.
+## Sub-phases (re-derived for the main-pane host — all ticks cleared)
 
-## Sub-phases (re-derived port-shaped — prior 7b–7h ticks cleared)
+7a stays done (audit + specs, amended by both re-specs). 7b–7h are re-scoped to land in the pane (TECH.md §Re-derived sub-phase plan).
 
-The previous 7b–7h checklist tracked behavior buckets and was marked done in #67; those ticks are **cleared** because the work shipped against the wrong approach. The new split tracks *which leaf is brought back, what it bridges to, and what stub it needs* (TECH.md §Re-derived sub-phase plan). 7a stays done (the audit/gate); it is amended by this re-spec.
-
-- [x] **7a — Audit + TECH.md (amended by this re-spec).** Gate resolved: **per-component port-and-adapt** from `fea2f7ea`; reparent leaf rendering onto the thin `claude_code::Transcript` model; do **not** `git restore` the service-coupled pieces; rewrite any leaf whose port drags in more `crate::ai::` coupling than rebuilding. Driver in `crates/claude_code`; UI in `app/src/claude_code_panel/`. Re-spec adds the per-file decision matrix, the bridge spec, and the "visually matches Agent Mode" acceptance gate. (Spec [#66], re-spec [#68].)
-- [x] **7b — Panel shell + ported transcript, stub event source.** (PR [#69](https://github.com/timomak/twarp/pull/69), in review.) Kept registration scaffolding; replaced #67's primitive body with the ported transcript renderer (`ai_assistant/transcript.rs::render_message` + the `markdown_parser`→`FormattedTextElement` stack) inside a `UniformList`, fed a **synthetic** `Transcript` (no driver). Dispatch wired the `GlobalSearchView` way (panel is its own `TypedActionView` + `on_left_mouse_down` focus-grab); `WorkspaceAction::ClaudeCodePanel` forwarder deleted. Zero + unavailable states. **Acceptance: sample transcript renders in Agent-Mode shape and visually matches `warp.dev/agents/claude-code`** — owner smoke test (PRODUCT smoke 1–5 + §28 gate). `cargo test -p claude_code` (19), `cargo check`/`clippy`/`fmt` clean. PRODUCT §1–§7, §16–§20, §60.
-- [ ] **7c — Live driver bridge.** Connect the kept `claude_code::driver` to the ported transcript via the per-`TranscriptItem` bridge dispatch; remove the stub source. Streaming/Stop/lifecycle/teardown. PRODUCT §8–§22, §52–§57.
-- [ ] **7d — Tool cards.** Port `inline_action_icons` + `inline_action_header` + `requested_action` (co-port `WithContentItemSpacing`); bridge `TranscriptItem::Tool` → `RenderableAction` cards with per-tool summary + generic fallback for unmapped/`mcp__*`. PRODUCT §23–§29.
-- [ ] **7e — Diff cards.** Synthesize a unified diff (kept `diff_for_tool`) and render **read-only via feature 05 / `crate::code::inline_diff::InlineDiffView`** (not `code_diff_view.rs` chrome, not plain spans). PRODUCT §30–§33.
-- [ ] **7f — Thinking + todos.** Extract the collapsible-thinking helpers (`output.rs`/`common.rs` `render_collapsible_text_block_section` + `format_elapsed_seconds`) for `TranscriptItem::Thinking`; port `todos.rs` bridged to `TodoItem`/`TodoStatus`. PRODUCT §34–§38.
-- [ ] **7g — Permissions + input.** Permission-mode selector → `--permission-mode` (robust path first); message `EditorView`; interactive prompts version-gated with §42 degradation. PRODUCT §39–§45.
-- [ ] **7h — Session list + resume.** Kept `sessions.rs` reader; resume via `claude --resume <id>`; new-session; zero-state Resume list. No twarp-side session DB. PRODUCT §46–§51.
+- [x] **7a — Audit + specs.** Renderer detangling gate resolved (per-leaf port-and-adapt from `fea2f7ea`); main-pane host + terminal trigger audited (`terminal/input.rs` submit hook; `pane_group` `IPaneType`/`CodePane` model). (Specs [#66], [#68], [#70].)
+- [ ] **7b — Pane host + `claude`-at-submit trigger + ported transcript (stub session).** `crates/claude_code` + the ported renderer are **already in master (via #69)** — 7b **relocates** them, it does not re-introduce them. Add `IPaneType::ClaudeCode` + `ClaudeCodePane`/`ClaudeCodeView` (modeled on `CodePane`) and move the merged transcript renderer into the pane. Intercept a top-level `claude` in `terminal/input.rs` → open the pane. Render a synthetic transcript with a docked composer; **delete the #69 sidebar host** (`left_panel` wiring + ⌘⌥K binding). **Acceptance: `claude` opens a real main-content pane whose sample transcript renders as themed Markdown in Claude-app shape, and the sidebar no longer hosts the chat.** PRODUCT §1–§7, §12–§15, §32–§33.
+- [ ] **7c — Live driver in the pane.** Wire `claude_code::driver` → pane via the bridge + `apply_event` pump; forward the `claude <prompt>` first turn; streaming/Stop/lifecycle/teardown. PRODUCT §6–§14, §28–§31.
+- [ ] **7d — Tool cards.** Port `inline_action` chrome; bridge `Tool` → cards + generic fallback for unmapped/`mcp__*`. PRODUCT §16–§19.
+- [ ] **7e — Diff cards.** Synthesize unified diff → render read-only via feature 05 / `InlineDiffView`. PRODUCT §20–§21.
+- [ ] **7f — Thinking + todos.** Extract collapsible-thinking helpers; port `todos.rs` bridged to `TodoItem`/`TodoStatus`. PRODUCT §22–§23.
+- [ ] **7g — Permissions + composer.** Permission-mode selector → `--permission-mode` (robust path first); interactive prompts version-gated with §26 degradation; composer semantics. PRODUCT §24–§27.
+- [ ] **7h — Sidebar session list + resume.** Kept `sessions.rs` reader → read-only left-panel list; resume opens a pane via `--resume`. PRODUCT §35–§38.
 
 ## Notes
 
-- Closest visual reference is Warp's official Agent Mode UI ([warp.dev/agents/claude-code](https://www.warp.dev/agents/claude-code)). The twarp panel should render the **same shape** — this is the acceptance gate the port-and-adapt approach is built around (the gate #67 failed).
-- Each card/diff/thinking block in every impl PR must trace to a **ported leaf** or a **reused master renderer**, never to a fresh `Flex`/`Container`/`Link` tree. Review against TECH.md §Per-file decision matrix.
-- **Pin the claude-code version** the driver is tested against; golden stream-json transcripts are `crates/claude_code` parser fixtures (already in the kept crate).
-- **Feature flag — DECIDED (7b): always-on, no flag.** Acceptable on a personal fork (the owner is the only user), and the panel degrades cleanly to the unavailable state when `claude` is off `PATH` (§6), so always-on doesn't break a machine without Claude Code installed. `compute_left_panel_views` pushes the tab unconditionally. Re-add `FeatureFlag::ClaudeCodePanel` only if the panel ever ships beyond the fork (TECH.md §Feature flag & rollout).
-- Framing matters in STATUS / PR descriptions: feature 02 removed Warp's *AI service*; feature 07 brings back the *rendering layer only*, driven by an external CLI the user already pays for. No LLM connection, no billing, no cloud sync comes back.
+- **Visual reference: Anthropic's Claude desktop / Claude Code app** (owner-chosen; no Figma). The pane must look like a modern Claude chat UI — themed cards, +/- tinted diffs with hunk headers, collapsible thinking, a real task list, a docked composer. A primitive/plain-text shape fails the gate (PRODUCT §32).
+- Every card/diff/thinking block traces to a **ported leaf** or a **reused master renderer**, never a fresh `Flex`/`Container`/`Link` tree (TECH.md §Per-file decision matrix).
+- **Trigger must not break real shell commands:** intercept only a bare top-level `claude` token (parsed with the existing completer parser); when in doubt, run it raw (PRODUCT §3, TECH §The trigger).
+- **Feature flag — DECIDED: always-on, no flag.** The trigger no-ops when `claude` is absent and the pane is created on demand, so always-on breaks nothing (TECH.md §Feature flag).
+- **Pin the claude-code version**; golden stream-json transcripts are `crates/claude_code` parser fixtures (in the kept crate).
+- Framing: feature 02 removed Warp's *AI service*; feature 07 brings back the *rendering layer only*, driven by an external CLI the user already pays for. No LLM connection, no billing, no cloud sync comes back.
+
+## Open decisions (after the main-pane re-spec)
+
+1. **Surface placement — DECIDED: main-content pane** (`IPaneType::ClaudeCode`), entered by running `claude`. Sidebar holds the session list only. (Reverses the original "left-panel tab" decision.)
+2. **Trigger mechanics — DECIDED: intercept `claude` at terminal submit** and open the pane (PRODUCT §1–§3). Conservative detection is the top correctness risk.
+3. **Pane open location — provisional: new tab** in the active tab's group; split/replace alternatives open (PRODUCT §load-bearing-2).
+4. **Args forwarding — provisional:** `claude <prompt>` → first turn; bare `claude` → empty composer (PRODUCT §2).
+5. **Pane persistence — provisional:** persist at most the session id, restore to a resume affordance; no twarp transcript store (TECH §The pane).
+6. **Permission control protocol — highest runtime risk:** `--permission-mode`/`--allowedTools` first; interactive prompts version-gated with §26 degradation (TECH §Risks).
+7. **Subscription-auth drift — CONCRETE:** the 2026-06-15 Agent-SDK-credit change; pane meters nothing, surfaces `claude`'s errors verbatim (PRODUCT §30).
+8. **Rendering detangle — RESOLVED:** per-leaf port-and-adapt; `code_diff_view.rs`/`requested_command.rs` are the wrong port targets (reuse feature 05 / rewrite from clean chrome). Carried over from the port re-spec.
 
 ## Why this is feature 07 (before rebrand)
 
-The port from upstream's agent crates is the heart of this feature, and the rebrand (now feature 08) renames every `warp_*` / `warpui*` crate. Doing rebrand first would multiply merge effort on every cherry-pick/port. Agent panel must precede rebrand.
-
-## Open decisions (status after re-spec)
-
-1. **Cherry-pick vs `git restore` — RESOLVED.** Per-component port-and-adapt from `fea2f7ea` (TECH.md §Context, §Per-file decision matrix).
-2. **Two-surface conflation — RESOLVED (re-spec).** `ai_assistant/` (Q&A) vs `ai/blocklist/` (Agent Mode) are distinct; the decision matrix maps each PRODUCT surface to the real file + verdict (TECH.md §Context).
-3. **Tool taxonomy mismatch — RESOLVED.** Generic card for unmapped tools incl. `mcp__*` (PRODUCT §25, TECH 7d). The kept `tool_input_summary` covers `Read`/`Write`/`Edit`/`MultiEdit`/`NotebookEdit`/`Bash`/`BashOutput`/`KillShell`/`Grep`/`Glob`/`WebFetch`/`WebSearch`/`Task`/`TodoWrite`/`ExitPlanMode`.
-4. **Multi-session concurrency — DEFERRED to 7h.** One live `claude` process per panel at a time (PRODUCT §9, §49).
-5. **Panel placement — DECIDED (provisional): left-panel tab,** resizable; full-pane alternative stays open (PRODUCT §51). Re-decide after 7b renders something real.
-6. **Subscription-auth drift — CONCRETE.** Anthropic's **2026-06-15** change routes `claude -p` subscription usage to a separate Agent-SDK credit. Panel meters nothing; surfaces `claude`'s own auth/limit errors verbatim (PRODUCT §55).
-7. **Permission control protocol — highest runtime risk.** stdin/stdout permission channel is undocumented; 7g builds `--permission-mode`/`--allowedTools` first, interactive prompts version-gated (TECH §Risks).
-8. **Dispatch/focus — RESOLVED (re-spec).** Panel is a self-dispatching `TypedActionView` like `GlobalSearchView` + an `on_left_mouse_down` focus-grab; the `WorkspaceAction::ClaudeCodePanel` forwarder is deleted (TECH.md §The panel).
+The renderer port + the agent-crate cherry-picks are the heart of this feature, and the rebrand (feature 08) renames every `warp_*` / `warpui*` crate. Doing rebrand first would multiply merge effort. Claude Code panel must precede rebrand.
