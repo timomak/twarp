@@ -7247,32 +7247,56 @@ impl Input {
         ctx: &ViewContext<Self>,
     ) -> Option<(String, Option<PathBuf>)> {
         const CLAUDE_PROGRAM: &str = "claude";
+        // Shell "run-a-program" wrappers a user's alias may inject. Warp expands
+        // aliases at submit, so the common `alias claude='command claude --flags'`
+        // pattern (which adds default flags without recursing) reaches us already
+        // expanded as `command claude …`. Peel these — plus leading env-var
+        // assignments — to recover the real program token, or the program reads
+        // as `command` and the trigger never fires.
+        const PROGRAM_WRAPPERS: &[&str] = &["command", "builtin", "exec"];
 
         // Tokenize with the shell-aware completer parser (precedent:
         // terminal/alias.rs, terminal/package_installers.rs) — never hand-roll
-        // shell parsing. `top_level_command` strips leading env-var assignments
-        // and returns `None` for pipelines, `&&`/`;` chains, and subshells, so
-        // only a bare top-level program token reaches the equality check.
+        // shell parsing. `top_level_command` returns `None` for pipelines,
+        // `&&`/`;` chains, and subshells, keeping detection conservative
+        // (PRODUCT §3).
         let escape_char = self
             .editor
             .read(ctx, |editor, _| editor.shell_family())
             .unwrap_or(ShellFamily::Posix)
             .escape_char();
-        let program = warp_completer::parsers::simple::top_level_command(command, escape_char)?;
-        // A full path (`/usr/bin/claude`) tokenizes to the path, not `claude`,
-        // so it is intentionally NOT intercepted (PRODUCT §3).
+        warp_completer::parsers::simple::top_level_command(command, escape_char)?;
+
+        // Recover the effective program from the first command's tokens,
+        // skipping leading env-var assignments (`VAR=value`) and the wrappers
+        // above. A full path (`/usr/bin/claude`) keeps its separators and so
+        // never matches the bare `claude` token (PRODUCT §3).
+        let first =
+            warp_completer::parsers::simple::all_parsed_commands(command, escape_char).next()?;
+        let mut tokens = first.parts.iter().map(|part| part.as_str());
+        let program = loop {
+            let token = tokens.next()?;
+            if token.contains('=') || PROGRAM_WRAPPERS.contains(&token) {
+                continue;
+            }
+            break token;
+        };
         if program != CLAUDE_PROGRAM {
             return None;
         }
         // PRODUCT §4: if `claude` isn't on PATH, don't intercept — let the
-        // shell report "command not found".
+        // shell's own "command not found" stand.
         crate::util::path::resolve_executable(CLAUDE_PROGRAM)?;
-        // Everything after the (lowercase) `claude` program token becomes the
-        // forwarded args; `claude` alone yields an empty string (PRODUCT §2).
-        let args = command
-            .split_once(CLAUDE_PROGRAM)
-            .map(|(_, rest)| rest.trim().to_owned())
-            .unwrap_or_default();
+
+        // Forward a leading positional prompt as the first turn (PRODUCT §2);
+        // flags (incl. the alias-injected ones) are not a prompt — proper
+        // flag → SpawnOptions mapping lands in 7c.
+        let rest: Vec<&str> = tokens.collect();
+        let args = if rest.first().is_some_and(|token| token.starts_with('-')) {
+            String::new()
+        } else {
+            rest.join(" ")
+        };
         let cwd = self
             .active_block_metadata
             .as_ref()

@@ -33,7 +33,6 @@
 //! view in the responder chain. There is **no** `WorkspaceAction` forwarder —
 //! that was the #67 symptom-fix and is deleted.
 
-use std::ops::Range;
 use std::path::PathBuf;
 
 use claude_code::{Transcript, TranscriptEvent, TranscriptItem};
@@ -41,17 +40,16 @@ use markdown_parser::{parse_markdown, FormattedText, FormattedTextLine};
 use pathfinder_color::ColorU;
 use warpui::{
     elements::{
-        Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DispatchEventResult,
-        Element, EventHandler, Fill, Flex, FormattedTextElement, HighlightedHyperlink,
-        HyperlinkUrl, Icon, MainAxisSize, MouseStateHandle, ParentElement, Radius,
-        ScrollStateHandle, Scrollable, ScrollableElement, ScrollbarWidth, Shrinkable, UniformList,
-        UniformListState,
+        Border, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container,
+        CornerRadius, CrossAxisAlignment, DispatchEventResult, Element, EventHandler, Fill, Flex,
+        FormattedTextElement, HighlightedHyperlink, HyperlinkUrl, Icon, MainAxisSize,
+        MouseStateHandle, ParentElement, Radius, ScrollbarWidth, Shrinkable,
     },
     presenter::ChildView,
     text_layout::ClipConfig,
     ui_components::components::{UiComponent, UiComponentStyles},
     AppContext, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View,
-    ViewContext, ViewHandle, WeakViewHandle,
+    ViewContext, ViewHandle,
 };
 
 use crate::appearance::Appearance;
@@ -122,13 +120,7 @@ pub struct ClaudeCodeView {
     /// The working directory of the terminal that opened the pane (PRODUCT §4),
     /// shown in the header. 7c spawns `claude` here.
     cwd: Option<PathBuf>,
-    /// Weak self-handle so the [`UniformList`] `build_items` closure can render
-    /// rows on demand (the [`GlobalSearchView`] virtualized-list pattern).
-    handle: WeakViewHandle<Self>,
-    /// Virtualized transcript list state (PRODUCT §14 — large sessions stay
-    /// responsive because only visible rows render).
-    uniform_list_state: UniformListState,
-    scroll_state: ScrollStateHandle,
+    scroll_state: ClippedScrollStateHandle,
     /// Stable mouse-state handles kept across renders so a click's
     /// mousedown/mouseup hit the same handle.
     submit_button: MouseStateHandle,
@@ -184,9 +176,7 @@ impl ClaudeCodeView {
             pane_configuration,
             focus_handle: None,
             cwd,
-            handle: ctx.handle(),
-            uniform_list_state: UniformListState::new(),
-            scroll_state: ScrollStateHandle::default(),
+            scroll_state: ClippedScrollStateHandle::default(),
             submit_button: MouseStateHandle::default(),
             refresh_button: MouseStateHandle::default(),
         }
@@ -261,25 +251,23 @@ impl ClaudeCodeView {
     fn render_transcript(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        let handle = self.handle.clone();
-        let item_count = self.transcript.items().len();
 
-        let build_items = move |range: Range<usize>, app: &AppContext| {
-            let view_handle = handle
-                .upgrade(app)
-                .expect("ClaudeCodeView handle should be upgradeable");
-            let view = view_handle.as_ref(app);
-            let appearance = Appearance::as_ref(app);
-            (range.start..range.end)
-                .map(|idx| render_item(&view.transcript.items()[idx], appearance))
-                .collect::<Vec<_>>()
-                .into_iter()
-        };
+        // A chat transcript has variable-height items (a one-line user turn vs a
+        // multi-paragraph assistant reply), so a `UniformList` — which clips
+        // every row to a single measured height — truncated multi-line replies
+        // to one line. Render each item at its natural height in a column;
+        // a variable-height virtualized list can return if very large sessions
+        // need it (PRODUCT §14), but correctness comes first.
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min);
+        for item in self.transcript.items() {
+            column.add_child(render_item(item, appearance));
+        }
 
-        let list = UniformList::new(self.uniform_list_state.clone(), item_count, build_items);
-        Scrollable::vertical(
+        ClippedScrollable::vertical(
             self.scroll_state.clone(),
-            list.finish_scrollable(),
+            column.finish(),
             ScrollbarWidth::Auto,
             theme.nonactive_ui_detail().into(),
             theme.active_ui_detail().into(),
