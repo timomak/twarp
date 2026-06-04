@@ -373,10 +373,13 @@ impl LocalRepoMetadataModel {
         {
             if let Some(ref watcher) = self.watcher {
                 let watch_path = local_path.clone();
+                // Build the gitignore set (root + global) so the descend
+                // filter prunes gitignored subtrees.
+                let gitignores = crate::gitignores_for_directory(&watch_path);
                 watcher.update(ctx, |watcher, _ctx| {
                     std::mem::drop(watcher.register_path(
                         &watch_path,
-                        repo_watch_filter(),
+                        repo_watch_filter(gitignores, Vec::new()),
                         RecursiveMode::Recursive,
                     ));
                 });

@@ -554,21 +554,110 @@ fn descend_allowlist_matches(suffix: &[Component<'_>]) -> bool {
     }
 }
 
+/// Returns `true` when `path` is, contains, or lies on the way to one of the
+/// `force_included_paths`. Each force-included path is a relative component
+/// sequence (e.g. `.agents/skills`) matched against the tail of `path`, so a
+/// match also holds for the ancestor prefixes leading to it.
+fn matches_force_included_path(path: &Path, force_included_paths: &[PathBuf]) -> bool {
+    let path_components: Vec<_> = path
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(name) => Some(name),
+            Component::RootDir
+            | Component::Prefix(_)
+            | Component::CurDir
+            | Component::ParentDir => None,
+        })
+        .collect();
+
+    force_included_paths.iter().any(|force_included| {
+        let force_included_components: Vec<_> = force_included
+            .components()
+            .filter_map(|component| match component {
+                Component::Normal(name) => Some(name),
+                Component::RootDir
+                | Component::Prefix(_)
+                | Component::CurDir
+                | Component::ParentDir => None,
+            })
+            .collect();
+
+        if force_included_components.is_empty() {
+            return false;
+        }
+
+        if path_components
+            .windows(force_included_components.len())
+            .any(|window| window == force_included_components.as_slice())
+        {
+            return true;
+        }
+
+        (1..force_included_components.len()).any(|prefix_len| {
+            path_components.len() >= prefix_len
+                && path_components[path_components.len() - prefix_len..]
+                    == force_included_components[..prefix_len]
+        })
+    })
+}
+
+/// Returns whether a repository file watcher should descend into (and register
+/// a watch on) the directory at `path`.
+///
+/// Directories inside `.git/` follow the watcher allowlist, force-included
+/// paths are always watched even when gitignored, and any other gitignored
+/// directory is pruned so we don't register watches on `node_modules`, build
+/// output, vendored deps, etc.
+pub fn should_watch_repo_directory(
+    path: &Path,
+    gitignores: &[Gitignore],
+    force_included_paths: &[PathBuf],
+) -> bool {
+    if is_git_internal_path(path) {
+        return should_watch_directory_in_git_path(path);
+    }
+
+    if matches_force_included_path(path, force_included_paths) {
+        return true;
+    }
+
+    !matches_gitignores(
+        path,
+        path.is_dir(),
+        gitignores,
+        /* check_ancestors */ true,
+    )
+}
+
 /// Returns the [`WatchFilter`] used by repository file watchers.
 ///
 /// Emit predicate: forwards events for everything outside `.git/` plus the
 /// allowlisted files inside `.git/` (HEAD, refs/heads/*, index.lock,
 /// config, config.worktree, refs/remotes/<r>/*, and worktree equivalents).
+/// Gitignored files that live directly in a watched (non-ignored) directory
+/// are still emitted here and tagged `is_ignored` downstream, preserving
+/// existing behavior.
 ///
-/// Descend predicate: prunes `.git/objects/`, `.git/hooks/`, `.git/logs/`,
-/// `.git/info/`, `.git/lfs/`, etc. so the recursive walk does not register
-/// watches on those subtrees, but still descends into `.git/`,
-/// `.git/refs/heads/`, `.git/refs/remotes/<r>/`, and `.git/worktrees/<n>/`
-/// so the allowlisted children remain reachable on Linux.
+/// Descend predicate: see [`should_watch_repo_directory`]. In addition to the
+/// `.git/` allowlist, it prunes gitignored directories (honoring registered
+/// force-included paths) so the recursive walk does not register watches on
+/// gitignored subtrees.
+///
+/// `gitignores` should be the repo's root + global gitignores (as produced by
+/// [`gitignores_for_directory`]), matching `Repository::check_gitignore_status`
+/// so descend decisions and the downstream `is_ignored` tagging stay
+/// consistent. Nested per-directory `.gitignore` files are not consulted here
+/// (same limitation as the existing tagging), which can only cause us to
+/// over-watch, never to miss events.
 #[cfg(feature = "local_fs")]
-pub fn repo_watch_filter() -> WatchFilter {
+pub fn repo_watch_filter(
+    gitignores: Vec<Gitignore>,
+    force_included_paths: Vec<PathBuf>,
+) -> WatchFilter {
+    let should_watch =
+        move |path: &Path| should_watch_repo_directory(path, &gitignores, &force_included_paths);
     WatchFilter::with_filter(
-        Arc::new(should_watch_directory_in_git_path),
+        Arc::new(should_watch),
         Arc::new(|path: &Path| !should_ignore_git_path(path)),
     )
 }

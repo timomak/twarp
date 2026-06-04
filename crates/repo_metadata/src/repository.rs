@@ -207,10 +207,15 @@ impl Repository {
                         }
                     }
                 }
+                // Reuse the gitignores we already built at construction so the
+                // watch descend filter doesn't re-read `.gitignore` from disk.
+                let gitignores = self.gitignores.clone();
 
-                Box::pin(DirectoryWatcher::handle(ctx).update(ctx, |watcher, ctx| {
-                    watcher.start_watching_directories(directories_to_watch, ctx)
-                }))
+                Box::pin(
+                    DirectoryWatcher::handle(ctx).update(ctx, move |watcher, ctx| {
+                        watcher.start_watching_directories(directories_to_watch, gitignores, ctx)
+                    }),
+                )
             } else {
                 Box::pin(ready(Ok(())))
             };
