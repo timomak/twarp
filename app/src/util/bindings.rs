@@ -137,8 +137,8 @@ pub enum CustomAction {
     GoToLine,
     ToggleGlobalSearch,
     ToggleConversationListView,
-    /// twarp 07: toggle the Claude Code left-panel tab (PRODUCT §2).
-    ToggleClaudeCodePanel,
+    // twarp 07 (7b): ToggleClaudeCodePanel removed — Claude Code is a
+    // main-content pane opened by typing `claude` (re-spec #70), no chord.
 }
 
 lazy_static! {
@@ -439,13 +439,9 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
                 Keystroke::parse("alt-1").ok()
             }
         }
-        // twarp 07: ⌘⌥K (Ctrl+Alt+K on Linux/Windows) toggles the Claude Code
-        // panel. The default chord is registered here — NOT via
-        // `EditableBinding::with_key_binding` — so the binding keeps its
-        // `Trigger::Custom(ToggleClaudeCodePanel)` (the feature-06 lesson:
-        // `with_key_binding` clobbers the custom trigger and panics the mac
-        // menu builder). cmd-alt-k / ctrl-alt-k were confirmed unbound.
-        CustomAction::ToggleClaudeCodePanel => Keystroke::parse("cmdorctrl-alt-k").ok(),
+        // twarp 07 (7b): the ⌘⌥K Claude Code toggle was removed — the chat is a
+        // main-content pane opened by typing `claude` (re-spec #70), not a
+        // chord-toggled sidebar tab.
         // twarp 06: bind ⌘⌥R (Ctrl+Alt+R on Linux/Windows) to rename the active
         // tab. The default chord is registered here rather than via
         // `EditableBinding::with_key_binding` so the `workspace:rename_active_tab`

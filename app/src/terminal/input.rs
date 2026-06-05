@@ -2447,6 +2447,14 @@ pub enum Event {
         layout: external_editor::settings::EditorLayout,
     },
     OpenCodeReviewPane,
+    /// twarp 07 (7b): a bare top-level `claude [args]` was submitted at the
+    /// prompt; open a Claude Code pane instead of writing it to the PTY
+    /// (PRODUCT §1–§3). `args` is everything after `claude`; `cwd` is the
+    /// terminal's working directory.
+    OpenClaudeCodePane {
+        args: String,
+        cwd: Option<std::path::PathBuf>,
+    },
     /// Request to attach a diff set as context to the AI conversation
     AttachDiffSetContext {
         diff_mode: DiffMode,
@@ -7226,6 +7234,77 @@ impl Input {
     ///     3. There is an active, long-running command.
     ///
     /// Returns `true` if the command was executed, `false` otherwise.
+    /// twarp 07 (7b): conservative classifier for the `claude`-at-submit
+    /// trigger (PRODUCT §3). Returns `Some((args, cwd))` only when `command` is
+    /// a single bare top-level `claude` invocation — not piped, `&&`/`;`-chained,
+    /// inside a subshell, nor a full path — and the `claude` binary resolves on
+    /// `PATH`. `args` is everything after the program token; `cwd` is the
+    /// terminal's working directory. When in doubt it returns `None`, so the
+    /// command runs raw (TECH §The trigger) — never swallow a real shell command.
+    fn claude_pane_trigger(
+        &self,
+        command: &str,
+        ctx: &ViewContext<Self>,
+    ) -> Option<(String, Option<PathBuf>)> {
+        const CLAUDE_PROGRAM: &str = "claude";
+        // Shell "run-a-program" wrappers a user's alias may inject. Warp expands
+        // aliases at submit, so the common `alias claude='command claude --flags'`
+        // pattern (which adds default flags without recursing) reaches us already
+        // expanded as `command claude …`. Peel these — plus leading env-var
+        // assignments — to recover the real program token, or the program reads
+        // as `command` and the trigger never fires.
+        const PROGRAM_WRAPPERS: &[&str] = &["command", "builtin", "exec"];
+
+        // Tokenize with the shell-aware completer parser (precedent:
+        // terminal/alias.rs, terminal/package_installers.rs) — never hand-roll
+        // shell parsing. `top_level_command` returns `None` for pipelines,
+        // `&&`/`;` chains, and subshells, keeping detection conservative
+        // (PRODUCT §3).
+        let escape_char = self
+            .editor
+            .read(ctx, |editor, _| editor.shell_family())
+            .unwrap_or(ShellFamily::Posix)
+            .escape_char();
+        warp_completer::parsers::simple::top_level_command(command, escape_char)?;
+
+        // Recover the effective program from the first command's tokens,
+        // skipping leading env-var assignments (`VAR=value`) and the wrappers
+        // above. A full path (`/usr/bin/claude`) keeps its separators and so
+        // never matches the bare `claude` token (PRODUCT §3).
+        let first =
+            warp_completer::parsers::simple::all_parsed_commands(command, escape_char).next()?;
+        let mut tokens = first.parts.iter().map(|part| part.as_str());
+        let program = loop {
+            let token = tokens.next()?;
+            if token.contains('=') || PROGRAM_WRAPPERS.contains(&token) {
+                continue;
+            }
+            break token;
+        };
+        if program != CLAUDE_PROGRAM {
+            return None;
+        }
+        // PRODUCT §4: if `claude` isn't on PATH, don't intercept — let the
+        // shell's own "command not found" stand.
+        crate::util::path::resolve_executable(CLAUDE_PROGRAM)?;
+
+        // Forward a leading positional prompt as the first turn (PRODUCT §2);
+        // flags (incl. the alias-injected ones) are not a prompt — proper
+        // flag → SpawnOptions mapping lands in 7c.
+        let rest: Vec<&str> = tokens.collect();
+        let args = if rest.first().is_some_and(|token| token.starts_with('-')) {
+            String::new()
+        } else {
+            rest.join(" ")
+        };
+        let cwd = self
+            .active_block_metadata
+            .as_ref()
+            .and_then(|metadata| metadata.current_working_directory())
+            .map(PathBuf::from);
+        Some((args, cwd))
+    }
+
     fn try_execute_command_from_source(
         &mut self,
         command: &str,
@@ -7330,7 +7409,29 @@ impl Input {
                 });
             }
 
-            self.start_block_and_write_command_to_pty(command, source, ctx);
+            // twarp 07 (7b): intercept a bare top-level `claude` and open a
+            // Claude Code pane instead of running the raw CLI in a block
+            // (PRODUCT §1–§3). Conservative — only a user-typed, on-PATH, bare
+            // `claude` token matches; anything else falls through and runs raw.
+            let claude_trigger = matches!(source, CommandExecutionSource::User)
+                .then(|| self.claude_pane_trigger(command, ctx))
+                .flatten();
+            if let Some((args, cwd)) = claude_trigger {
+                ctx.emit(Event::OpenClaudeCodePane { args, cwd });
+                // PRODUCT §1: a brief note so the command isn't silently
+                // swallowed (we write nothing to the PTY, so no block starts).
+                let window_id = ctx.window_id();
+                ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                    toast_stack.add_ephemeral_toast(
+                        DismissibleToast::default("Opened Claude Code in a pane.".to_owned()),
+                        window_id,
+                        ctx,
+                    );
+                });
+                self.clear_buffer_and_reset_undo_stack(ctx);
+            } else {
+                self.start_block_and_write_command_to_pty(command, source, ctx);
+            }
             did_execute = true;
         } else {
             // We don't want to submit the command if precmd has not

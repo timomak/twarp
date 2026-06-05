@@ -593,6 +593,13 @@ fn handle_terminal_view_event(
                     session: session.clone(),
                 });
             }
+            // twarp 07 (7b): forward the `claude`-trigger event to the workspace.
+            Event::OpenClaudeCodePane { args, cwd } => {
+                ctx.emit(pane_group::Event::OpenClaudeCodePane {
+                    args: args.clone(),
+                    cwd: cwd.clone(),
+                });
+            }
             #[cfg(feature = "local_fs")]
             Event::PreviewCodeInWarp { source } => {
                 ctx.emit(pane_group::Event::PreviewCodeInWarp {

@@ -205,8 +205,8 @@ use crate::notebooks::manager::{NotebookManager, NotebookSource};
 #[cfg(feature = "local_fs")]
 use crate::pane_group::FilePane;
 use crate::pane_group::{
-    self, AnyPaneContent, CodePane, Direction, NewTerminalOptions, PaneContent, PanesLayout,
-    TabBarHoverIndex,
+    self, AnyPaneContent, ClaudeCodePane, CodePane, Direction, NewTerminalOptions, PaneContent,
+    PanesLayout, TabBarHoverIndex,
 };
 use crate::remote_server::manager::RemoteServerManager;
 #[cfg(feature = "local_fs")]
@@ -561,8 +561,8 @@ pub(crate) const LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME: &str = "workspace:left_p
 pub(crate) const LEFT_PANEL_WARP_DRIVE_BINDING_NAME: &str = "workspace:left_panel_warp_drive";
 pub(crate) const LEFT_PANEL_AGENT_CONVERSATIONS_BINDING_NAME: &str =
     "workspace:left_panel_agent_conversations";
-// twarp 07: remappable toggle binding for the Claude Code left-panel tab.
-pub(crate) const LEFT_PANEL_CLAUDE_CODE_BINDING_NAME: &str = "workspace:left_panel_claude_code";
+// twarp 07 (7b): the Claude Code left-panel toggle binding was removed — the
+// chat is a main-content pane opened by typing `claude` (re-spec #70).
 
 const KEYBINDINGS_TO_CACHE: [&str; 3] = [
     TOGGLE_RESOURCE_CENTER_KEYBINDING_NAME,
@@ -3409,7 +3409,6 @@ impl Workspace {
                 },
                 LeftPanelDisplayedTab::WarpDrive => ToolPanelView::WarpDrive,
                 LeftPanelDisplayedTab::Shortcuts => ToolPanelView::Shortcuts,
-                LeftPanelDisplayedTab::ClaudeCode => ToolPanelView::ClaudeCode,
                 LeftPanelDisplayedTab::ConversationListView => ToolPanelView::ConversationListView,
             };
             lp.restore_active_view_from_snapshot(active_view, ctx);
@@ -12066,6 +12065,31 @@ impl Workspace {
         });
     }
 
+    /// twarp 07 (7b): open a Claude Code pane in the active tab's pane group and
+    /// focus it — the destination of the `claude` terminal trigger (PRODUCT §1,
+    /// §5). `args` carries the `claude <prompt>` positional (an empty/whitespace
+    /// `args` opens a bare pane, PRODUCT §2); `cwd` is the originating terminal's
+    /// directory (PRODUCT §4). Provisional placement: a focused split in the
+    /// active group, mirroring `open_network_log_pane` (PRODUCT §load-bearing-2;
+    /// TECH §The pane).
+    pub(crate) fn open_claude_code_pane(
+        &mut self,
+        args: String,
+        cwd: Option<PathBuf>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let initial_prompt = Some(args).filter(|a| !a.trim().is_empty());
+        let pane = ClaudeCodePane::new(initial_prompt, cwd, ctx);
+        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
+            pane_group.add_pane_with_direction(
+                Direction::Right,
+                pane,
+                true, /* focus_new_pane */
+                ctx,
+            );
+        });
+    }
+
     fn handle_file_tree_event(
         &mut self,
         pane_group: ViewHandle<PaneGroup>,
@@ -12241,6 +12265,10 @@ impl Workspace {
                     let layout = *EditorSettings::as_ref(ctx).open_file_layout.value();
                     self.open_file_notebook(path.clone(), Some(session.clone()), layout, ctx);
                 }
+            }
+            // twarp 07 (7b): the `claude` terminal trigger opens a Claude Code pane.
+            pane_group::Event::OpenClaudeCodePane { args, cwd } => {
+                self.open_claude_code_pane(args.clone(), cwd.clone(), ctx);
             }
             pane_group::Event::MoveToSpace {
                 cloud_object_type_and_id,
@@ -15266,7 +15294,6 @@ impl Workspace {
                         ToolPanelView::GlobalSearch { .. } => "Global search",
                         ToolPanelView::WarpDrive => "Warp Drive",
                         ToolPanelView::Shortcuts => "Custom shortcuts",
-                        ToolPanelView::ClaudeCode => "Claude Code",
                         ToolPanelView::ConversationListView => "Agent conversations",
                     }
                 } else {
@@ -15322,7 +15349,6 @@ impl Workspace {
                 ToolPanelView::GlobalSearch { .. } => "Global search",
                 ToolPanelView::WarpDrive => "Warp Drive",
                 ToolPanelView::Shortcuts => "Custom shortcuts",
-                ToolPanelView::ClaudeCode => "Claude Code",
                 ToolPanelView::ConversationListView => "Agent conversations",
             }
         } else {
@@ -18108,9 +18134,9 @@ impl Workspace {
         // Custom command shortcuts panel (twarp feature 04, PRODUCT §26).
         // Sits immediately after Global Search in the toolbelt.
         views.push(ToolPanelView::Shortcuts);
-        // twarp 07 (PRODUCT §1): the Claude Code tab. Sits immediately after
-        // Custom shortcuts in the toolbelt.
-        views.push(ToolPanelView::ClaudeCode);
+        // twarp 07 (7b): no Claude Code toolbelt tab — the chat is a
+        // main-content pane opened by typing `claude` (re-spec #70). A read-only
+        // session-list entry returns in 7h.
         if WarpDriveSettings::is_warp_drive_enabled(ctx) {
             views.push(ToolPanelView::WarpDrive);
         }
@@ -19753,20 +19779,8 @@ impl TypedActionView for Workspace {
                     );
                 }
             }
-            // twarp 07 (PRODUCT §2): toggle the Claude Code tab. Open + focus it
-            // when it isn't the active view; when it already is, return focus to
-            // the previously focused surface (the terminal) rather than
-            // collapsing the whole left panel out from under other tabs.
-            ToggleClaudeCodePanel => {
-                let is_left_panel_open = self.active_tab_pane_group().as_ref(ctx).left_panel_open;
-                let is_showing = is_left_panel_open
-                    && self.left_panel_view.as_ref(ctx).active_view() == ToolPanelView::ClaudeCode;
-                if is_showing {
-                    self.focus_active_tab(ctx);
-                } else {
-                    self.open_left_panel_view(&LeftPanelAction::ClaudeCode, ctx);
-                }
-            }
+            // twarp 07 (7b): ToggleClaudeCodePanel handler removed — the chat is
+            // a main-content pane opened by typing `claude` (re-spec #70).
             // twarp: 2c-d — ShowRewindConfirmationDialog and ExecuteRewindAIConversation
             // handlers removed (depended on RewindDialogSource, BlocklistAIHistoryModel,
             // TerminalAction::ExecuteRewindAIConversation).

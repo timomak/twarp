@@ -2963,6 +2963,13 @@ pub enum Event {
         /// The session that the file belongs to.
         session: Arc<Session>,
     },
+    /// twarp 07 (7b): a bare top-level `claude` was submitted; tell the
+    /// workspace to open a Claude Code pane (PRODUCT §1). Bubbled from the
+    /// input's `OpenClaudeCodePane` via `handle_input_event`.
+    OpenClaudeCodePane {
+        args: String,
+        cwd: Option<PathBuf>,
+    },
     #[cfg(feature = "local_fs")]
     OpenCodeInWarp {
         source: CodeSource,
@@ -20000,6 +20007,14 @@ impl TerminalView {
                 ctx.emit(Event::OpenCodeInWarp {
                     source: source.clone(),
                     layout: *layout,
+                });
+            }
+            // twarp 07 (7b): bubble the input's `claude`-trigger event up to the
+            // pane group / workspace, which opens the Claude Code pane.
+            InputEvent::OpenClaudeCodePane { args, cwd } => {
+                ctx.emit(Event::OpenClaudeCodePane {
+                    args: args.clone(),
+                    cwd: cwd.clone(),
                 });
             }
             InputEvent::OpenCodeReviewPane => {
