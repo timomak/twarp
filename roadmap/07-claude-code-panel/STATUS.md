@@ -1,8 +1,8 @@
 # 07 — Claude Code panel
 
-**Phase:** impl-in-review (7b PR [#71](https://github.com/timomak/twarp/pull/71) open — main-pane host + `claude` trigger + relocated renderer)
+**Phase:** impl-pending (7b merged via [#71](https://github.com/timomak/twarp/pull/71); **7c — live driver — in progress** on `twarp-07c-live-driver`)
 **Spec PRs:** [#66](https://github.com/timomak/twarp/pull/66) (merged) · port-plan re-spec [#68](https://github.com/timomak/twarp/pull/68) (merged) · main-pane re-spec [#70](https://github.com/timomak/twarp/pull/70) (merged)
-**Impl PRs:** [#67](https://github.com/timomak/twarp/pull/67) — abandoned (rebuilt from primitives); **owner to close.** · [#69](https://github.com/timomak/twarp/pull/69) — 7b sidebar build, **merged**: landed the placement-agnostic core (`crates/claude_code` + the ported renderer) plus a now-obsolete sidebar host. Rendering was correct; sidebar placement superseded by #70. · **[#71](https://github.com/timomak/twarp/pull/71) — 7b main-pane host (open):** relocated the renderer into `IPaneType::ClaudeCode` (`ClaudeCodeView`/`ClaudeCodePane`), added the `claude`-at-submit terminal trigger, deleted the sidebar host. `cargo check`/`clippy`/`fmt` clean; `claude_code` 19/19.
+**Impl PRs:** [#67](https://github.com/timomak/twarp/pull/67) — abandoned (rebuilt from primitives); **owner to close.** · [#69](https://github.com/timomak/twarp/pull/69) — 7b sidebar build, **merged** (placement-agnostic core + renderer; sidebar host superseded by #70). · [#71](https://github.com/timomak/twarp/pull/71) — **7b main-pane host, merged**: relocated the renderer into `IPaneType::ClaudeCode` (`ClaudeCodeView`/`ClaudeCodePane`), added the `claude`-at-submit terminal trigger (alias-aware: peels `command`/`builtin`/`exec` wrappers), deleted the sidebar host, render transcript at natural height (no `UniformList` clipping).
 
 ## Scope
 

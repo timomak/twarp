@@ -1,5 +1,5 @@
-//! The Claude Code **main-content pane** view (roadmap feature 07, sub-phase
-//! **7b**).
+//! The Claude Code **main-content pane** view (roadmap feature 07, sub-phases
+//! **7b–7c**).
 //!
 //! This is the [`BackingView`] hosted by [`ClaudeCodePane`](crate::pane_group::pane::claude_code_pane::ClaudeCodePane):
 //! a first-class pane (like an editor or terminal tab) opened by typing
@@ -8,10 +8,10 @@
 //! (`render_message` + the markdown-segment splitter
 //! `translate_formatted_text_into_markdown_segments` from commit `fea2f7ea`)
 //! and reparenting it onto the thin, twarp-native [`claude_code::Transcript`]
-//! model. The headless driver lives in the [`claude_code`] crate; **7b feeds
-//! the transcript from a synthetic event source** (no live `claude` process) so
-//! the ported renderer is testable end-to-end with no subprocess. 7c swaps the
-//! synthetic source for the real [`claude_code::driver`].
+//! model. **7c** drives the live [`claude_code::driver`]: `spawn_session` starts
+//! the `claude` process, its event stream is pumped onto the [`Transcript`] on
+//! the main thread, and user turns are written to its stdin (PRODUCT §6–§14).
+//! Stop SIGINTs the turn; dropping the view kills the process.
 //!
 //! History: PR #69 landed this exact renderer inside a **left sidebar**, which
 //! the owner rejected on sight. The re-spec (#70) moved it into this pane and
@@ -35,7 +35,13 @@
 
 use std::path::PathBuf;
 
+use async_channel::Sender;
+use claude_code::driver::{
+    interrupt, send_user_message, spawn_session, Child, PermissionMode, SpawnOptions,
+    SpawnedSession,
+};
 use claude_code::{Transcript, TranscriptEvent, TranscriptItem};
+use futures::StreamExt;
 use markdown_parser::{parse_markdown, FormattedText, FormattedTextLine};
 use pathfinder_color::ColorU;
 use warpui::{
@@ -91,8 +97,8 @@ pub enum ClaudeCodeViewEvent {
 /// this minimal; lifecycle / permissions / resume actions arrive in 7c–7h.
 #[derive(Clone, Debug)]
 pub enum ClaudeCodeViewAction {
-    /// Submit the input buffer as a user turn. In 7b this drives the synthetic
-    /// event source; 7c spawns the real `claude` process (PRODUCT §6).
+    /// Submit the input buffer as a user turn — spawns the `claude` process on
+    /// the first message, then writes each turn to its stdin (PRODUCT §6, §16).
     Submit,
     /// Focus the message input — the `on_left_mouse_down` focus-grab that keeps
     /// the view in the responder chain so in-pane dispatches land (TECH §The
@@ -103,11 +109,14 @@ pub enum ClaudeCodeViewAction {
     /// Re-check `claude` availability — the unavailable state's "Check again"
     /// (PRODUCT §4).
     Refresh,
+    /// Interrupt the in-flight turn (SIGINT) without ending the session
+    /// (PRODUCT §11). Shown in the composer while streaming.
+    Stop,
 }
 
 pub struct ClaudeCodeView {
-    /// The conversation the pane renders. 7b populates it from a synthetic
-    /// source on submit; the live driver fills it in 7c.
+    /// The conversation the pane renders, fed by the live driver's event stream
+    /// via [`Self::on_transcript_event`] on the main thread (PRODUCT §9–§13).
     transcript: Transcript,
     /// The message input. Enter submits; Shift+Enter inserts a newline.
     input_editor: ViewHandle<EditorView>,
@@ -121,10 +130,21 @@ pub struct ClaudeCodeView {
     /// shown in the header. 7c spawns `claude` here.
     cwd: Option<PathBuf>,
     scroll_state: ClippedScrollStateHandle,
+    /// The live `claude` child, once a session is running. Kept for `interrupt`
+    /// (Stop, PRODUCT §11) and to kill the process on drop (PRODUCT §8 —
+    /// `spawn_session` sets `kill_on_drop`).
+    child: Option<Child>,
+    /// Sends user turns to the background task that owns the process stdin
+    /// (PRODUCT §16). `None` until a session is running.
+    message_tx: Option<Sender<String>>,
+    /// True while `claude` is producing output for the current turn (PRODUCT §9):
+    /// the composer shows Stop and sending is disabled until the turn ends.
+    streaming: bool,
     /// Stable mouse-state handles kept across renders so a click's
     /// mousedown/mouseup hit the same handle.
     submit_button: MouseStateHandle,
     refresh_button: MouseStateHandle,
+    stop_button: MouseStateHandle,
 }
 
 impl ClaudeCodeView {
@@ -156,18 +176,21 @@ impl ClaudeCodeView {
 
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new(PANE_TITLE));
 
-        // Seed the synthetic first turn from `claude <prompt>` (PRODUCT §2). 7c
-        // forwards this to the real `claude` process instead.
+        // PRODUCT §2/§6: `claude <prompt>` starts a live session immediately with
+        // the prompt as the first turn; bare `claude` opens idle (no process
+        // until the user sends a message). 7c drives the real
+        // `claude_code::driver` — there is no synthetic source anymore.
         let mut transcript = Transcript::new();
-        if let Some(prompt) = initial_prompt
+        let mut streaming = false;
+        let first_prompt = initial_prompt
             .as_deref()
             .map(str::trim)
             .filter(|p| !p.is_empty())
-        {
-            transcript.apply(TranscriptEvent::UserMessage(prompt.to_owned()));
-            for event in synthetic_reply(prompt) {
-                transcript.apply(event);
-            }
+            .map(str::to_owned);
+        if let Some(prompt) = &first_prompt {
+            transcript.apply(TranscriptEvent::UserMessage(prompt.clone()));
+            streaming = true;
+            Self::begin_session(cwd.clone(), Some(prompt.clone()), ctx);
         }
 
         Self {
@@ -177,8 +200,12 @@ impl ClaudeCodeView {
             focus_handle: None,
             cwd,
             scroll_state: ClippedScrollStateHandle::default(),
+            child: None,
+            message_tx: None,
+            streaming,
             submit_button: MouseStateHandle::default(),
             refresh_button: MouseStateHandle::default(),
+            stop_button: MouseStateHandle::default(),
         }
     }
 
@@ -210,14 +237,14 @@ impl ClaudeCodeView {
         }
     }
 
-    /// Send the current input as a user turn.
-    ///
-    /// 7b has **no driver**: instead of spawning `claude`, it applies a
-    /// representative sequence of [`TranscriptEvent`]s (the synthetic source) so
-    /// the ported renderer is exercised end-to-end. 7c replaces
-    /// [`synthetic_reply`] with the real `claude_code::driver` event stream and
-    /// the `apply_event` pump (TECH §Re-derived sub-phase plan).
+    /// Send the current input as a user turn to the live `claude` session,
+    /// spawning the session on the first message if none is running yet
+    /// (PRODUCT §6, §16). A no-op while a turn is streaming (PRODUCT §9).
     fn submit(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.streaming {
+            // PRODUCT §9: sending is disabled until the current turn completes.
+            return;
+        }
         let text = self
             .input_editor
             .read(ctx, |editor, ctx| editor.buffer_text(ctx).trim().to_owned());
@@ -227,12 +254,139 @@ impl ClaudeCodeView {
         }
         self.transcript
             .apply(TranscriptEvent::UserMessage(text.clone()));
-        for event in synthetic_reply(&text) {
-            self.transcript.apply(event);
-        }
         self.input_editor
             .update(ctx, |editor, ctx| editor.clear_buffer(ctx));
+        self.streaming = true;
+        match &self.message_tx {
+            // Session already running — write the turn to its stdin.
+            Some(tx) => {
+                let _ = tx.try_send(text);
+            }
+            // First message: spawn the session, forwarding this as turn one.
+            None => Self::begin_session(self.cwd.clone(), Some(text), ctx),
+        }
         ctx.notify();
+    }
+
+    /// Spawn a live `claude` session (PRODUCT §6) on the background executor —
+    /// `spawn_session` itself spawns the child (tokio), so it must not run on
+    /// the foreground. [`Self::on_session_spawned`] wires the result into the
+    /// view on the main thread and sends `first_prompt` once stdin is up.
+    fn begin_session(
+        cwd: Option<PathBuf>,
+        first_prompt: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let opts = SpawnOptions {
+            cwd: cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
+            model: None,
+            resume_session_id: None,
+            // 7c default; the permission-mode selector + interactive prompts are
+            // 7g (PRODUCT §24–§26). A turn needing tool permission pauses here
+            // until 7g, but text turns stream and complete.
+            permission_mode: PermissionMode::Default,
+            allowed_tools: Vec::new(),
+        };
+        ctx.spawn(
+            async move { spawn_session(opts) },
+            move |view, result, ctx| view.on_session_spawned(result, first_prompt, ctx),
+        );
+    }
+
+    /// Main-thread wiring once `spawn_session` resolves. Starts two background
+    /// tasks — one draining the driver's (tokio) event stream into the
+    /// transcript via an `async_channel` + [`ViewContext::spawn_stream_local`]
+    /// (keeping tokio I/O off the foreground), one owning stdin and writing
+    /// queued user turns — and keeps `child` for Stop / kill-on-drop.
+    fn on_session_spawned(
+        &mut self,
+        result: anyhow::Result<SpawnedSession>,
+        first_prompt: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let SpawnedSession {
+            child,
+            stdin,
+            mut events,
+        } = match result {
+            Ok(session) => session,
+            Err(err) => {
+                // PRODUCT §52/§55: surface the spawn failure verbatim.
+                self.streaming = false;
+                self.transcript.apply(TranscriptEvent::Ended {
+                    reason: claude_code::EndReason::Error(format!(
+                        "Couldn't start `claude`: {err}"
+                    )),
+                });
+                ctx.notify();
+                return;
+            }
+        };
+
+        // Drain the (tokio) event stream on the background executor; forward each
+        // event over a runtime-agnostic channel that the foreground pump applies.
+        let (event_tx, event_rx) = async_channel::unbounded::<TranscriptEvent>();
+        ctx.background_executor()
+            .spawn(async move {
+                while let Some(event) = events.next().await {
+                    if event_tx.send(event).await.is_err() {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        let _ = ctx.spawn_stream_local(event_rx, Self::on_transcript_event, Self::on_stream_done);
+
+        // Own stdin in a background task; the view queues user turns onto it.
+        let (message_tx, message_rx) = async_channel::unbounded::<String>();
+        ctx.background_executor()
+            .spawn(async move {
+                let mut stdin = stdin;
+                while let Ok(message) = message_rx.recv().await {
+                    if send_user_message(&mut stdin, &message).await.is_err() {
+                        break;
+                    }
+                }
+            })
+            .detach();
+
+        self.child = Some(child);
+        self.message_tx = Some(message_tx);
+
+        // Send the first turn now that stdin is wired (PRODUCT §6).
+        if let (Some(prompt), Some(tx)) = (first_prompt, &self.message_tx) {
+            let _ = tx.try_send(prompt);
+        }
+        ctx.notify();
+    }
+
+    /// Apply one driver event to the transcript on the main thread (PRODUCT
+    /// §9–§13). An `Ended` event closes the streaming turn.
+    fn on_transcript_event(&mut self, event: TranscriptEvent, ctx: &mut ViewContext<Self>) {
+        if matches!(event, TranscriptEvent::Ended { .. }) {
+            self.streaming = false;
+        }
+        self.transcript.apply(event);
+        ctx.notify();
+    }
+
+    /// The event stream closed — `claude`'s stdout reached EOF, so the process
+    /// is gone (PRODUCT §52). The driver already pushed an `Ended` notice; tear
+    /// down the live-session handles so the composer returns to a fresh state.
+    fn on_stream_done(&mut self, ctx: &mut ViewContext<Self>) {
+        self.streaming = false;
+        self.child = None;
+        self.message_tx = None;
+        ctx.notify();
+    }
+
+    /// Stop the current turn (PRODUCT §11): SIGINT the live process. The session
+    /// stays alive; `claude` emits `Ended { Interrupted }`, which clears the
+    /// streaming state via [`Self::on_transcript_event`].
+    fn stop(&mut self, _ctx: &mut ViewContext<Self>) {
+        if let Some(child) = &self.child {
+            interrupt(child);
+        }
     }
 
     fn render_body(&self, app: &AppContext) -> Box<dyn Element> {
@@ -289,40 +443,65 @@ impl ClaudeCodeView {
             .with_background_color(theme.surface_3().into_solid())
             .finish();
 
-        // "Start session" in the zero state, "Send" once a conversation exists.
-        // Both dispatch `Submit` (synthetic in 7b).
-        let label = if self.transcript.is_empty() {
-            "Start session"
+        // PRODUCT §9–§11: while a turn streams, the composer shows Stop (SIGINT)
+        // and an activity cue; otherwise it shows Send (or "Start session" in
+        // the zero state) which submits the buffer.
+        let action = if self.streaming {
+            appearance
+                .ui_builder()
+                .link(
+                    "Stop".to_owned(),
+                    None,
+                    Some(Box::new(|ctx| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::Stop);
+                    })),
+                    self.stop_button.clone(),
+                )
+                .build()
+                .finish()
         } else {
-            "Send"
+            let label = if self.transcript.is_empty() {
+                "Start session"
+            } else {
+                "Send"
+            };
+            appearance
+                .ui_builder()
+                .link(
+                    label.to_owned(),
+                    None,
+                    Some(Box::new(|ctx| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::Submit);
+                    })),
+                    self.submit_button.clone(),
+                )
+                .build()
+                .finish()
         };
-        let action = appearance
-            .ui_builder()
-            .link(
-                label.to_owned(),
-                None,
-                Some(Box::new(|ctx| {
-                    ctx.dispatch_typed_action(ClaudeCodeViewAction::Submit);
-                })),
-                self.submit_button.clone(),
-            )
-            .build()
-            .finish();
 
-        Container::new(
-            Flex::column()
-                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_spacing(8.)
-                .with_child(input_view)
-                .with_child(action)
-                .finish(),
-        )
-        .with_padding_left(10.)
-        .with_padding_right(10.)
-        .with_padding_top(6.)
-        .with_padding_bottom(10.)
-        .finish()
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(8.);
+        if self.streaming {
+            // PRODUCT §9: a visible activity indicator while `claude` works.
+            column.add_child(
+                appearance
+                    .ui_builder()
+                    .span("Claude is working…".to_owned())
+                    .build()
+                    .finish(),
+            );
+        }
+        column.add_child(input_view);
+        column.add_child(action);
+
+        Container::new(column.finish())
+            .with_padding_left(10.)
+            .with_padding_right(10.)
+            .with_padding_top(6.)
+            .with_padding_bottom(10.)
+            .finish()
     }
 
     fn render_unavailable_state(&self, appearance: &Appearance) -> Box<dyn Element> {
@@ -429,6 +608,7 @@ impl TypedActionView for ClaudeCodeView {
             ClaudeCodeViewAction::OpenUrl(url) => ctx.open_url(&url.url),
             // PRODUCT §4: render re-checks availability, so a notify suffices.
             ClaudeCodeViewAction::Refresh => ctx.notify(),
+            ClaudeCodeViewAction::Stop => self.stop(ctx),
         }
     }
 }
@@ -733,33 +913,6 @@ fn split_markdown_segments(formatted: FormattedText) -> Vec<MarkdownSegment> {
         )));
     }
     segments
-}
-
-/// The 7b **synthetic event source**: stands in for the live driver so the
-/// ported renderer can be exercised end-to-end with no `claude` process. Returns
-/// a representative markdown assistant reply (heading, list, inline code, a
-/// fenced code block, a link) that demonstrates the Agent-Mode transcript shape
-/// — the 7b acceptance gate. 7c deletes this and feeds real
-/// [`claude_code::driver`] events instead (TECH §Re-derived sub-phase plan).
-fn synthetic_reply(user_text: &str) -> Vec<TranscriptEvent> {
-    let markdown = format!(
-        "Here's how I'd approach **{user_text}**.\n\n\
-         ## Plan\n\
-         - Inspect the project layout with `ls` and `cat`\n\
-         - Make the change in the relevant module\n\
-         - Re-run the tests with `cargo test`\n\n\
-         Example command:\n\n\
-         ```bash\n\
-         cargo test -p claude_code\n\
-         ```\n\n\
-         See the [Claude Code docs](https://docs.claude.com/en/docs/claude-code) for more. \
-         This reply is the ported Agent-Mode transcript renderer (sub-phase 7b); a live \
-         `claude` session replaces it in 7c."
-    );
-    vec![
-        TranscriptEvent::AssistantTextDelta { text: markdown },
-        TranscriptEvent::AssistantTextDone,
-    ]
 }
 
 /// Zero state: a short explanation. The single-line message input and "Start
