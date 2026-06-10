@@ -626,31 +626,21 @@ impl View for ClaudeCodeView {
         // PRODUCT §4: the unavailable state replaces the pane body. The pane
         // header (title) is rendered separately by `render_header_content`.
         let contents = if Self::claude_available() {
-            // The transcript and the docked composer share a centered, max-width
-            // reading column (the Claude-app frame); the canvas around it is the
-            // themed background. Mirrors `GlobalSearchView`'s centered column: a
-            // full-width column with `CrossAxisAlignment::Center` holding a
-            // `ConstrainedBox(max_width)`, flexed to fill the pane height.
+            // The transcript area and the docked composer are each centered in a
+            // max-width reading column (the Claude-app frame); the canvas around
+            // them is the themed background. The composer is pinned to the bottom:
+            // the body is the only flexible child of the full-height outer column,
+            // so it expands and pushes the composer down — the structure 7c shipped
+            // (centering each child rather than the whole stack keeps that pin).
+            let body = center_reading_column(self.render_body(app), true);
+            let composer = center_reading_column(self.render_input(appearance), false);
             let stack = Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_main_axis_size(MainAxisSize::Max)
-                .with_child(Shrinkable::new(1.0, self.render_body(app)).finish())
-                .with_child(self.render_input(appearance))
+                .with_child(Shrinkable::new(1.0, body).finish())
+                .with_child(composer)
                 .finish();
-            let centered = Flex::column()
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_main_axis_size(MainAxisSize::Max)
-                .with_child(
-                    Shrinkable::new(
-                        1.0,
-                        ConstrainedBox::new(stack)
-                            .with_max_width(CONTENT_MAX_WIDTH)
-                            .finish(),
-                    )
-                    .finish(),
-                )
-                .finish();
-            Container::new(centered)
+            Container::new(stack)
                 .with_background_color(theme.background().into_solid())
                 .with_padding_left(16.)
                 .with_padding_right(16.)
@@ -743,6 +733,29 @@ impl BackingView for ClaudeCodeView {
     fn set_focus_handle(&mut self, focus_handle: PaneFocusHandle, _ctx: &mut ViewContext<Self>) {
         self.focus_handle = Some(focus_handle);
     }
+}
+
+/// Center `child` horizontally in a max-width reading column (the Claude-app
+/// frame). `fill_height` stretches the child to the column's full height — used
+/// for the transcript area so the docked composer (sized to content) gets pinned
+/// to the bottom by the body flexing above it.
+fn center_reading_column(child: Box<dyn Element>, fill_height: bool) -> Box<dyn Element> {
+    let constrained = ConstrainedBox::new(child)
+        .with_max_width(CONTENT_MAX_WIDTH)
+        .finish();
+    let (inner, main_axis_size) = if fill_height {
+        (
+            Shrinkable::new(1.0, constrained).finish(),
+            MainAxisSize::Max,
+        )
+    } else {
+        (constrained, MainAxisSize::Min)
+    };
+    Flex::column()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_main_axis_size(main_axis_size)
+        .with_child(inner)
+        .finish()
 }
 
 // ---------- transcript rendering (the ported leaf) ----------
