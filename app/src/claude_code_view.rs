@@ -46,10 +46,10 @@ use markdown_parser::{parse_markdown, FormattedText, FormattedTextLine};
 use pathfinder_color::ColorU;
 use warpui::{
     elements::{
-        Border, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container,
+        Border, Clipped, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container,
         CornerRadius, CrossAxisAlignment, DispatchEventResult, Element, EventHandler, Fill, Flex,
-        FormattedTextElement, HighlightedHyperlink, HyperlinkUrl, Icon, MainAxisSize,
-        MouseStateHandle, ParentElement, Radius, ScrollbarWidth, Shrinkable,
+        FormattedTextElement, HighlightedHyperlink, HyperlinkUrl, Icon, MainAxisAlignment,
+        MainAxisSize, MouseStateHandle, Padding, ParentElement, Radius, ScrollbarWidth, Shrinkable,
     },
     presenter::ChildView,
     text_layout::ClipConfig,
@@ -57,6 +57,7 @@ use warpui::{
     AppContext, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View,
     ViewContext, ViewHandle,
 };
+use warpui::ui_components::button::ButtonVariant;
 
 use crate::appearance::Appearance;
 use crate::editor::{EditorOptions, EditorView, Event as EditorEvent, TextOptions};
@@ -76,13 +77,24 @@ const PANE_TITLE: &str = "Claude Code";
 
 /// Avatar glyphs for the message rows (the Agent-Mode shape: icon + body).
 const USER_ICON_SVG_PATH: &str = "bundled/svg/user.svg";
-const ASSISTANT_ICON_SVG_PATH: &str = "bundled/svg/agentmode.svg";
+const ASSISTANT_ICON_SVG_PATH: &str = "bundled/svg/claude.svg";
 
-/// Body / code font sizes, matching the deleted `ai_assistant::transcript`
-/// renderer so the ported transcript keeps Agent Mode's proportions.
-const BODY_FONT_SIZE: f32 = 13.;
-const CODE_FONT_SIZE: f32 = 12.;
+/// Body / code font sizes. A point past the deleted `ai_assistant::transcript`
+/// renderer for the airier, Claude-app reading rhythm (shell-polish pass —
+/// PRODUCT §32 visual gate).
+const BODY_FONT_SIZE: f32 = 14.;
+const CODE_FONT_SIZE: f32 = 12.5;
 const TRANSCRIPT_LEFT_MARGIN: f32 = 15.;
+
+/// Shell-polish layout constants (the Claude-app frame): a centered reading
+/// column, a docked rounded composer, muted context pills, and a zero-state
+/// heading.
+const CONTENT_MAX_WIDTH: f32 = 760.;
+const COMPOSER_MAX_HEIGHT: f32 = 184.;
+const COMPOSER_CORNER_RADIUS: f32 = 14.;
+const MESSAGE_CORNER_RADIUS: f32 = 12.;
+const PILL_CORNER_RADIUS: f32 = 6.;
+const HEADING_FONT_SIZE: f32 = 20.;
 
 /// Events the pane view emits to its host [`ClaudeCodePane`]. 7b only needs
 /// `Close` (so the pane-header close button works); 7c adds session-lifecycle
@@ -431,33 +443,68 @@ impl ClaudeCodeView {
         .finish()
     }
 
-    /// The docked composer (PRODUCT §15): the message input plus a send button,
-    /// pinned to the bottom of the pane Claude-app style.
+    /// The originating terminal's directory name, shown as a context pill in the
+    /// composer (the Claude-app cwd chip). `None` when there is no cwd or it has
+    /// no final component (e.g. the filesystem root).
+    fn cwd_label(&self) -> Option<String> {
+        self.cwd
+            .as_ref()?
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+    }
+
+    /// The docked composer (PRODUCT §15): a rounded, bordered card holding the
+    /// message input above a controls row — muted context pills on the left, the
+    /// Send / Stop action on the right — pinned to the bottom of the reading
+    /// column, Claude-app style. Mirrors `GlobalSearchView`'s bordered query box.
     fn render_input(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
-        let input_view = Container::new(ChildView::new(&self.input_editor).finish())
-            .with_padding_top(6.)
-            .with_padding_bottom(6.)
-            .with_padding_left(10.)
-            .with_padding_right(10.)
-            .with_background_color(theme.surface_3().into_solid())
-            .finish();
+        let muted = theme.nonactive_ui_text_color().into_solid();
 
-        // PRODUCT §9–§11: while a turn streams, the composer shows Stop (SIGINT)
-        // and an activity cue; otherwise it shows Send (or "Start session" in
-        // the zero state) which submits the buffer.
-        let action = if self.streaming {
+        // The growable message input, capped so a long draft scrolls inside the
+        // composer instead of shoving the transcript off-screen (PRODUCT §15).
+        let editor = Shrinkable::new(
+            1.0,
+            ConstrainedBox::new(
+                Clipped::new(ChildView::new(&self.input_editor).finish()).finish(),
+            )
+            .with_max_height(COMPOSER_MAX_HEIGHT)
+            .finish(),
+        )
+        .finish();
+
+        // PRODUCT §9–§11: while a turn streams, the controls row shows an activity
+        // cue + Stop (SIGINT); otherwise context pills + Send (or "Start session"
+        // in the zero state), which submits the buffer.
+        let left: Box<dyn Element> = if self.streaming {
             appearance
                 .ui_builder()
-                .link(
-                    "Stop".to_owned(),
-                    None,
-                    Some(Box::new(|ctx| {
-                        ctx.dispatch_typed_action(ClaudeCodeViewAction::Stop);
-                    })),
-                    self.stop_button.clone(),
-                )
+                .span("Claude is working…".to_owned())
+                .with_style(UiComponentStyles {
+                    font_color: Some(muted),
+                    font_size: Some(12.),
+                    ..Default::default()
+                })
                 .build()
+                .finish()
+        } else {
+            let mut pills = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+            pills.add_child(render_pill("Local", appearance));
+            if let Some(name) = self.cwd_label() {
+                pills.add_child(render_pill(&name, appearance));
+            }
+            pills.finish()
+        };
+
+        let action: Box<dyn Element> = if self.streaming {
+            appearance
+                .ui_builder()
+                .button(ButtonVariant::Outlined, self.stop_button.clone())
+                .with_text_label("Stop".to_owned())
+                .build()
+                .on_click(|ctx, _, _| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::Stop);
+                })
                 .finish()
         } else {
             let label = if self.transcript.is_empty() {
@@ -467,40 +514,41 @@ impl ClaudeCodeView {
             };
             appearance
                 .ui_builder()
-                .link(
-                    label.to_owned(),
-                    None,
-                    Some(Box::new(|ctx| {
-                        ctx.dispatch_typed_action(ClaudeCodeViewAction::Submit);
-                    })),
-                    self.submit_button.clone(),
-                )
+                .button(ButtonVariant::Accent, self.submit_button.clone())
+                .with_text_label(label.to_owned())
                 .build()
+                .on_click(|ctx, _, _| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::Submit);
+                })
                 .finish()
         };
 
-        let mut column = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(8.);
-        if self.streaming {
-            // PRODUCT §9: a visible activity indicator while `claude` works.
-            column.add_child(
-                appearance
-                    .ui_builder()
-                    .span("Claude is working…".to_owned())
-                    .build()
-                    .finish(),
-            );
-        }
-        column.add_child(input_view);
-        column.add_child(action);
+        let controls = Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(left)
+            .with_child(action)
+            .finish();
 
-        Container::new(column.finish())
-            .with_padding_left(10.)
-            .with_padding_right(10.)
+        let card = Container::new(
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(8.)
+                .with_child(editor)
+                .with_child(controls)
+                .finish(),
+        )
+        .with_padding(Padding::uniform(10.))
+        .with_background_color(theme.surface_1().into_solid())
+        .with_border(Border::all(1.).with_border_fill(theme.outline()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(COMPOSER_CORNER_RADIUS)))
+        .finish();
+
+        Container::new(card)
             .with_padding_top(6.)
-            .with_padding_bottom(10.)
+            .with_padding_bottom(12.)
             .finish()
     }
 
@@ -573,14 +621,39 @@ impl View for ClaudeCodeView {
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
         // PRODUCT §4: the unavailable state replaces the pane body. The pane
         // header (title) is rendered separately by `render_header_content`.
         let contents = if Self::claude_available() {
-            Flex::column()
+            // The transcript and the docked composer share a centered, max-width
+            // reading column (the Claude-app frame); the canvas around it is the
+            // themed background. Mirrors `GlobalSearchView`'s centered column: a
+            // full-width column with `CrossAxisAlignment::Center` holding a
+            // `ConstrainedBox(max_width)`, flexed to fill the pane height.
+            let stack = Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_child(Shrinkable::new(1.0, self.render_body(app)).finish())
                 .with_child(self.render_input(appearance))
+                .finish();
+            let centered = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_child(
+                    Shrinkable::new(
+                        1.0,
+                        ConstrainedBox::new(stack)
+                            .with_max_width(CONTENT_MAX_WIDTH)
+                            .finish(),
+                    )
+                    .finish(),
+                )
+                .finish();
+            Container::new(centered)
+                .with_background_color(theme.background().into_solid())
+                .with_padding_left(16.)
+                .with_padding_right(16.)
+                .with_padding_top(8.)
                 .finish()
         } else {
             self.render_unavailable_state(appearance)
@@ -680,18 +753,10 @@ impl BackingView for ClaudeCodeView {
 /// the model contract already carries the variants.
 fn render_item(item: &TranscriptItem, appearance: &Appearance) -> Box<dyn Element> {
     match item {
-        TranscriptItem::User(text) => render_message_row(
-            USER_ICON_SVG_PATH,
-            text,
-            appearance.theme().surface_1().into_solid(),
-            appearance,
-        ),
-        TranscriptItem::Assistant { text, .. } => render_message_row(
-            ASSISTANT_ICON_SVG_PATH,
-            text,
-            appearance.theme().surface_2().into_solid(),
-            appearance,
-        ),
+        TranscriptItem::User(text) => render_message_row(true, USER_ICON_SVG_PATH, text, appearance),
+        TranscriptItem::Assistant { text, .. } => {
+            render_message_row(false, ASSISTANT_ICON_SVG_PATH, text, appearance)
+        }
         TranscriptItem::Notice(message) => render_notice(message, appearance),
         TranscriptItem::Error(message) => render_error(message, appearance),
         // 7d–7f bring back the rich tool/diff/thinking/todo cards (ported from
@@ -704,17 +769,26 @@ fn render_item(item: &TranscriptItem, appearance: &Appearance) -> Box<dyn Elemen
     }
 }
 
-/// Port of `ai_assistant::transcript::render_message`: an icon + a markdown body
-/// on a themed surface. User and assistant rows differ only by glyph and
-/// background, so the message turns are visually distinct (PRODUCT §12).
+/// Port of `ai_assistant::transcript::render_message`: an avatar glyph + a
+/// markdown body. The shell-polish pass drops the heavy full-width alternating
+/// tint for the Claude-app shape — the assistant reply flows on the canvas, the
+/// user turn sits in a subtle rounded bubble — so the turns stay visually
+/// distinct without striping the column (PRODUCT §12, §32).
 fn render_message_row(
+    is_user: bool,
     icon_svg: &'static str,
     text: &str,
-    background: ColorU,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
-    let text_color = theme.main_text_color(background.into()).into_solid();
+    // Contrast the text against whatever surface the row actually sits on: the
+    // user bubble (`surface_2`) or the bare canvas (`background`).
+    let surface = if is_user {
+        theme.surface_2()
+    } else {
+        theme.background()
+    };
+    let text_color = theme.main_text_color(surface).into_solid();
     let icon = ConstrainedBox::new(Icon::new(icon_svg, text_color).finish())
         .with_height(16.)
         .with_width(16.)
@@ -722,10 +796,11 @@ fn render_message_row(
 
     let row = Flex::row()
         .with_main_axis_size(MainAxisSize::Max)
+        .with_cross_axis_alignment(CrossAxisAlignment::Start)
         .with_child(
             Container::new(icon)
                 .with_margin_right(12.)
-                .with_margin_top(3.)
+                .with_margin_top(2.)
                 .finish(),
         )
         .with_child(
@@ -736,13 +811,16 @@ fn render_message_row(
             .finish(),
         );
 
-    Container::new(row.finish())
-        .with_background_color(background)
-        .with_padding_left(TRANSCRIPT_LEFT_MARGIN)
-        .with_padding_top(16.)
-        .with_padding_bottom(16.)
-        .with_padding_right(20.)
-        .finish()
+    let mut container = Container::new(row.finish())
+        .with_padding(Padding::uniform(14.))
+        .with_margin_top(4.)
+        .with_margin_bottom(4.);
+    if is_user {
+        container = container
+            .with_background_color(theme.surface_2().into_solid())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(MESSAGE_CORNER_RADIUS)));
+    }
+    container.finish()
 }
 
 /// Port of `render_message`'s markdown body: render each [`MarkdownSegment`] —
@@ -915,29 +993,74 @@ fn split_markdown_segments(formatted: FormattedText) -> Vec<MarkdownSegment> {
     segments
 }
 
-/// Zero state: a short explanation. The single-line message input and "Start
-/// session" affordance live in the always-present composer below. The "Resume…"
-/// entry point (PRODUCT §36) arrives with the session list in 7h.
+/// A muted, rounded context pill for the composer's controls row (the Claude-app
+/// cwd / "Local" chips). Non-interactive — purely informational, so it carries no
+/// mouse handlers.
+fn render_pill(label: &str, appearance: &Appearance) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    Container::new(
+        appearance
+            .ui_builder()
+            .span(label.to_owned())
+            .with_style(UiComponentStyles {
+                font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+                font_size: Some(11.5),
+                ..Default::default()
+            })
+            .build()
+            .finish(),
+    )
+    .with_padding_left(8.)
+    .with_padding_right(8.)
+    .with_padding_top(3.)
+    .with_padding_bottom(3.)
+    .with_margin_right(6.)
+    .with_background_color(theme.surface_2().into_solid())
+    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
+    .finish()
+}
+
+/// Zero state: a centered heading + a muted one-liner, vertically centered in the
+/// reading column above the always-present composer. The "Resume…" entry point
+/// (PRODUCT §36) arrives with the session list in 7h.
 fn render_zero_state(appearance: &Appearance) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let heading = appearance
+        .ui_builder()
+        .span("Start a Claude Code session".to_owned())
+        .with_style(UiComponentStyles {
+            font_size: Some(HEADING_FONT_SIZE),
+            font_color: Some(theme.main_text_color(theme.background()).into_solid()),
+            ..Default::default()
+        })
+        .build()
+        .finish();
     let explanation = appearance
         .ui_builder()
         .span(
-            "Type a message below and start a session — twarp drives the local `claude` CLI and \
-             renders its replies, tool calls, and diffs here. Your existing Claude Code login is \
-             used; twarp adds no account or billing."
+            "Type a message below — twarp drives the local `claude` CLI and renders its replies, \
+             tool calls, and diffs here. Your existing Claude Code login is used; twarp adds no \
+             account or billing."
                 .to_owned(),
         )
         .with_soft_wrap()
+        .with_style(UiComponentStyles {
+            font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+            font_size: Some(13.),
+            ..Default::default()
+        })
         .build()
         .finish();
     Container::new(
         Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(10.)
-            .with_child(explanation)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_spacing(12.)
+            .with_child(heading)
+            .with_child(ConstrainedBox::new(explanation).with_max_width(460.).finish())
             .finish(),
     )
-    .with_uniform_padding(15.)
+    .with_uniform_padding(24.)
     .finish()
 }
