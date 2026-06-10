@@ -48,6 +48,7 @@ fn refresh_working_directories_collapses_subroots_to_nearest_repo_root() {
                     (terminal_2, repo_b.to_string_lossy().to_string()),
                 ],
                 vec![],
+                vec![],
                 Some(terminal_1),
                 ctx,
             );
@@ -96,6 +97,7 @@ fn refresh_working_directories_preserves_non_repo_paths_and_dedupes() {
                     (terminal_3, dir_1.to_string_lossy().to_string()),
                 ],
                 vec![],
+                vec![],
                 Some(terminal_1),
                 ctx,
             );
@@ -112,5 +114,75 @@ fn refresh_working_directories_preserves_non_repo_paths_and_dedupes() {
             HashSet::from_iter([canonical_1, canonical_2]),
             "should preserve non-repo roots and dedupe exact paths"
         );
+    });
+}
+
+#[test]
+fn refresh_working_directories_treats_directory_cwds_as_roots() {
+    // twarp 07 (7d review): a Claude Code pane reports its working directory.
+    // Inside a repo it must collapse to the repo root; outside one the
+    // directory itself is the root (NOT its parent — that treatment is for
+    // file paths only).
+    App::test((), |mut app| async move {
+        let detected_repos_handle = app.add_singleton_model(|_| DetectedRepositories::default());
+
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let repo_root = temp_dir.path().join("repo");
+        let repo_sub = repo_root.join("sub");
+        let plain_dir = temp_dir.path().join("plain");
+        fs::create_dir_all(&repo_sub).expect("create repo/sub");
+        fs::create_dir_all(&plain_dir).expect("create plain");
+
+        let canonical_repo_root = dunce::canonicalize(&repo_root).expect("canonical repo root");
+        let canonical_plain = dunce::canonicalize(&plain_dir).expect("canonical plain");
+
+        detected_repos_handle.update(&mut app, |repos, _ctx| {
+            let canonical =
+                warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                    canonical_repo_root.as_path(),
+                )
+                .expect("canonicalized path");
+            repos.insert_test_repo_root(canonical);
+        });
+
+        let pane_group_id = EntityId::new();
+        let claude_pane_1 = EntityId::new();
+        let claude_pane_2 = EntityId::new();
+
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
+        let roots: HashSet<PathBuf> = working_directories_handle.update(&mut app, |model, ctx| {
+            model.refresh_working_directories_for_pane_group(
+                pane_group_id,
+                vec![],
+                vec![],
+                vec![
+                    (claude_pane_1, repo_sub.to_string_lossy().to_string()),
+                    (claude_pane_2, plain_dir.to_string_lossy().to_string()),
+                ],
+                None,
+                ctx,
+            );
+
+            model
+                .most_recent_directories_for_pane_group(pane_group_id)
+                .expect("pane group exists")
+                .map(|dir| dir.path)
+                .collect()
+        });
+
+        assert_eq!(
+            roots,
+            HashSet::from_iter([canonical_repo_root.clone(), canonical_plain]),
+            "repo-contained cwd collapses to repo root; plain cwd stays itself"
+        );
+
+        // The repo must also be listed for the Open Changes panel.
+        let repos: Vec<PathBuf> = working_directories_handle.update(&mut app, |model, _ctx| {
+            model
+                .most_recent_repositories_for_pane_group(pane_group_id)
+                .expect("pane group exists")
+                .collect()
+        });
+        assert_eq!(repos, vec![canonical_repo_root]);
     });
 }

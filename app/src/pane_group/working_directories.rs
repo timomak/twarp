@@ -351,10 +351,11 @@ impl WorkingDirectoriesModel {
         pane_group_id: EntityId,
         terminal_cwds: Vec<(EntityId, String)>,
         local_paths: Vec<(EntityId, String)>,
+        directory_cwds: Vec<(EntityId, String)>,
         focused_terminal_id: Option<EntityId>,
         ctx: &mut ModelContext<Self>,
     ) {
-        if terminal_cwds.is_empty() && local_paths.is_empty() {
+        if terminal_cwds.is_empty() && local_paths.is_empty() && directory_cwds.is_empty() {
             self.handle_empty_pane_group(pane_group_id, ctx);
             return;
         }
@@ -408,7 +409,24 @@ impl WorkingDirectoriesModel {
             })
             .collect();
 
-        // FYI we have the 3 entity types terminal, code, and notebook below but we're merging them in a way that we only care about the actual paths
+        // Directory-context panes (twarp's Claude Code pane) report a working
+        // directory rather than a file path: resolve to the containing repo
+        // root when inside one, otherwise the directory itself is the display
+        // root (the terminal-cwd treatment, not the file-path parent() one).
+        let directory_root_cwds: Vec<(EntityId, String)> = directory_cwds
+            .into_iter()
+            .filter_map(|(view_id, dir)| {
+                let resolved = root_for_raw_path(&dir)?;
+                if file_path_ancestors.insert(resolved.clone()) {
+                    Some((view_id, resolved.display().to_string()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // FYI we have several entity types below (terminal, code, notebook, claude-code) but we're
+        // merging them in a way that we only care about the actual paths
         // Be careful to not mix the entity IDs if we end up using them in the future!!!
         //
         // NOTE: We intentionally collapse paths to their repo root when possible, so this is a
@@ -416,6 +434,7 @@ impl WorkingDirectoriesModel {
         let new_root_paths: Vec<PathBuf> = terminal_cwds
             .iter()
             .chain(local_cwds.iter())
+            .chain(directory_root_cwds.iter())
             .filter_map(|(_, cwd)| root_for_raw_path(cwd))
             .collect();
 
@@ -636,6 +655,7 @@ impl WorkingDirectoriesModel {
         _pane_group_id: EntityId,
         _terminal_cwds: Vec<(EntityId, String)>,
         _local_paths: Vec<(EntityId, String)>,
+        _directory_cwds: Vec<(EntityId, String)>,
         _focused_terminal_id: Option<EntityId>,
         _ctx: &mut ModelContext<Self>,
     ) {

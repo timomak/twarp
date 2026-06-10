@@ -91,10 +91,10 @@ const BODY_FONT_SIZE: f32 = 14.;
 const CODE_FONT_SIZE: f32 = 12.5;
 const TRANSCRIPT_LEFT_MARGIN: f32 = 15.;
 
-/// Shell-polish layout constants (the Claude-app frame): a centered reading
-/// column, a docked rounded composer, muted context pills, and a zero-state
-/// heading.
-const CONTENT_MAX_WIDTH: f32 = 760.;
+/// Shell-polish layout constants (the Claude-app frame): a docked rounded
+/// composer, muted context pills, and a zero-state heading. (The centered
+/// max-width reading column was dropped per owner feedback on the 7d review —
+/// chat fills the pane.)
 const COMPOSER_MAX_HEIGHT: f32 = 184.;
 const COMPOSER_CORNER_RADIUS: f32 = 14.;
 const MESSAGE_CORNER_RADIUS: f32 = 12.;
@@ -236,6 +236,14 @@ impl ClaudeCodeView {
     /// The pane configuration (tab title) handed to [`PaneView`] by the wrapper.
     pub fn pane_configuration(&self) -> ModelHandle<PaneConfiguration> {
         self.pane_configuration.clone()
+    }
+
+    /// The working directory of the terminal that opened the pane (PRODUCT §4).
+    /// Exposed so the pane group can treat the pane like a terminal session for
+    /// directory context: new splits/tabs inherit it, and it roots the Open
+    /// Changes / file tree panels (owner feedback on the 7d review).
+    pub fn cwd(&self) -> Option<&PathBuf> {
+        self.cwd.as_ref()
     }
 
     /// Focus the message input (PRODUCT §34: keyboard-first).
@@ -682,14 +690,13 @@ impl View for ClaudeCodeView {
         // PRODUCT §4: the unavailable state replaces the pane body. The pane
         // header (title) is rendered separately by `render_header_content`.
         let contents = if Self::claude_available() {
-            // The transcript area and the docked composer are each centered in a
-            // max-width reading column (the Claude-app frame); the canvas around
-            // them is the themed background. The composer is pinned to the bottom:
-            // the body is the only flexible child of the full-height outer column,
-            // so it expands and pushes the composer down — the structure 7c shipped
-            // (centering each child rather than the whole stack keeps that pin).
-            let body = center_reading_column(self.render_body(app), true);
-            let composer = center_reading_column(self.render_input(appearance), false);
+            // Transcript and composer fill the pane width (owner feedback on the
+            // 7d review dropped the centered max-width reading column). The
+            // composer is pinned to the bottom: the body is the only flexible
+            // child of the full-height outer column, so it expands and pushes
+            // the composer down — the structure 7c shipped.
+            let body = self.render_body(app);
+            let composer = self.render_input(appearance);
             let stack = Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_main_axis_size(MainAxisSize::Max)
@@ -790,29 +797,6 @@ impl BackingView for ClaudeCodeView {
     fn set_focus_handle(&mut self, focus_handle: PaneFocusHandle, _ctx: &mut ViewContext<Self>) {
         self.focus_handle = Some(focus_handle);
     }
-}
-
-/// Center `child` horizontally in a max-width reading column (the Claude-app
-/// frame). `fill_height` stretches the child to the column's full height — used
-/// for the transcript area so the docked composer (sized to content) gets pinned
-/// to the bottom by the body flexing above it.
-fn center_reading_column(child: Box<dyn Element>, fill_height: bool) -> Box<dyn Element> {
-    let constrained = ConstrainedBox::new(child)
-        .with_max_width(CONTENT_MAX_WIDTH)
-        .finish();
-    let (inner, main_axis_size) = if fill_height {
-        (
-            Shrinkable::new(1.0, constrained).finish(),
-            MainAxisSize::Max,
-        )
-    } else {
-        (constrained, MainAxisSize::Min)
-    };
-    Flex::column()
-        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-        .with_main_axis_size(main_axis_size)
-        .with_child(inner)
-        .finish()
 }
 
 impl ClaudeCodeView {
