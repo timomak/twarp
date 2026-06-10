@@ -273,12 +273,7 @@ fn parse_system(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
         .and_then(|v| v.as_str())
         .map(PathBuf::from)
         .unwrap_or_default();
-    let str_field = |key: &str| {
-        value
-            .get(key)
-            .and_then(|v| v.as_str())
-            .map(str::to_owned)
-    };
+    let str_field = |key: &str| value.get(key).and_then(|v| v.as_str()).map(str::to_owned);
     out.push_back(TranscriptEvent::SessionInit {
         session_id,
         cwd,
@@ -296,12 +291,21 @@ fn parse_assistant(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
     else {
         return;
     };
+    // Set when this message comes from a `Task` sub-agent: the id of the Task
+    // tool call that spawned it. Child tool calls nest under that card
+    // (PRODUCT §19); sub-agent prose/thinking is internal monologue — its
+    // product comes back as the Task's tool_result — so it is not rendered as
+    // main-transcript content.
+    let parent_id = value
+        .get("parent_tool_use_id")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
     for block in content {
         let Some(ty) = block.get("type").and_then(|v| v.as_str()) else {
             continue;
         };
         match ty {
-            "text" => {
+            "text" if parent_id.is_none() => {
                 if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
                     if !text.is_empty() {
                         // Whole-message path (PRODUCT §17): one delta + done.
@@ -315,12 +319,17 @@ fn parse_assistant(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
                     }
                 }
             }
-            "thinking" => {
+            "thinking" if parent_id.is_none() => {
+                // `claude` emits empty thinking blocks (signature-only) before
+                // tool calls; a card for them would be an empty artifact
+                // (PRODUCT §22: a turn with no thinking shows no card).
                 if let Some(thinking) = block.get("thinking").and_then(|v| v.as_str()) {
-                    out.push_back(TranscriptEvent::Thinking {
-                        text: thinking.to_owned(),
-                        duration: None,
-                    });
+                    if !thinking.trim().is_empty() {
+                        out.push_back(TranscriptEvent::Thinking {
+                            text: thinking.to_owned(),
+                            duration: None,
+                        });
+                    }
                 }
             }
             "tool_use" => {
@@ -336,8 +345,16 @@ fn parse_assistant(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
                     .to_owned();
                 let input = block.get("input").cloned().unwrap_or(Value::Null);
                 if !id.is_empty() && !name.is_empty() {
-                    out.push_back(TranscriptEvent::ToolCall { id, name, input });
+                    out.push_back(TranscriptEvent::ToolCall {
+                        id,
+                        name,
+                        input,
+                        parent_id: parent_id.clone(),
+                    });
                 }
+            }
+            "text" | "thinking" => {
+                // Sub-agent prose/thinking (parent_id set) — skipped, see above.
             }
             _ => {
                 // Unknown content-block type — skip (PRODUCT §53).
@@ -534,6 +551,70 @@ mod tests {
             TranscriptEvent::ToolResult { output, .. } => assert_eq!(output.text, "a\nb"),
             other => panic!("expected ToolResult, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn empty_thinking_blocks_emit_no_event() {
+        // Live `claude` (2.1.170) emits signature-only thinking blocks with
+        // empty text before tool calls; they must not become empty cards.
+        let v: Value = serde_json::from_str(
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"","signature":"CAIS..."}]}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        assert!(
+            out.is_empty(),
+            "empty thinking must be skipped, got {out:?}"
+        );
+    }
+
+    #[test]
+    fn subagent_tool_use_carries_parent_id() {
+        let v: Value = serde_json::from_str(
+            r#"{"type":"assistant","parent_tool_use_id":"task_1","message":{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"a.rs"}}]}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        match out.front() {
+            Some(TranscriptEvent::ToolCall { id, parent_id, .. }) => {
+                assert_eq!(id, "t2");
+                assert_eq!(parent_id.as_deref(), Some("task_1"));
+            }
+            other => panic!("expected ToolCall, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn subagent_text_and_thinking_are_not_main_transcript_content() {
+        let v: Value = serde_json::from_str(
+            r#"{"type":"assistant","parent_tool_use_id":"task_1","message":{"role":"assistant","content":[{"type":"text","text":"internal"},{"type":"thinking","thinking":"hmm"}]}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        assert!(
+            out.is_empty(),
+            "sub-agent prose must not render as assistant turns, got {out:?}"
+        );
+    }
+
+    #[test]
+    fn top_level_tool_use_has_no_parent_id() {
+        let v: Value = serde_json::from_str(
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}]}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        assert!(matches!(
+            out.front(),
+            Some(TranscriptEvent::ToolCall {
+                parent_id: None,
+                ..
+            })
+        ));
     }
 
     #[test]

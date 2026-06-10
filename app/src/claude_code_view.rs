@@ -33,6 +33,10 @@
 //! view in the responder chain. There is **no** `WorkspaceAction` forwarder —
 //! that was the #67 symptom-fix and is deleted.
 
+mod inline_action;
+mod tool_cards;
+
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use async_channel::Sender;
@@ -44,6 +48,7 @@ use claude_code::{Transcript, TranscriptEvent, TranscriptItem, Usage};
 use futures::StreamExt;
 use markdown_parser::{parse_markdown, FormattedText, FormattedTextLine};
 use pathfinder_color::ColorU;
+use warpui::ui_components::button::ButtonVariant;
 use warpui::{
     elements::{
         Border, Clipped, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container,
@@ -57,8 +62,8 @@ use warpui::{
     AppContext, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View,
     ViewContext, ViewHandle,
 };
-use warpui::ui_components::button::ButtonVariant;
 
+use self::tool_cards::{render_tool_card, ToolCardUi};
 use crate::appearance::Appearance;
 use crate::editor::{EditorOptions, EditorView, Event as EditorEvent, TextOptions};
 use crate::pane_group::focus_state::PaneFocusHandle;
@@ -124,6 +129,8 @@ pub enum ClaudeCodeViewAction {
     /// Interrupt the in-flight turn (SIGINT) without ending the session
     /// (PRODUCT §11). Shown in the composer while streaming.
     Stop,
+    /// Expand / collapse the tool card with this tool-use id (PRODUCT §19).
+    ToggleToolCard(String),
 }
 
 pub struct ClaudeCodeView {
@@ -157,6 +164,10 @@ pub struct ClaudeCodeView {
     submit_button: MouseStateHandle,
     refresh_button: MouseStateHandle,
     stop_button: MouseStateHandle,
+    /// Per-tool-card UI state (stable mouse handle + the user's expand/collapse
+    /// choice), keyed by tool-use id. An entry is created when the card's
+    /// `ToolCall` event arrives (PRODUCT §16, §19).
+    tool_card_ui: HashMap<String, ToolCardUi>,
 }
 
 impl ClaudeCodeView {
@@ -218,6 +229,7 @@ impl ClaudeCodeView {
             submit_button: MouseStateHandle::default(),
             refresh_button: MouseStateHandle::default(),
             stop_button: MouseStateHandle::default(),
+            tool_card_ui: HashMap::new(),
         }
     }
 
@@ -378,6 +390,11 @@ impl ClaudeCodeView {
         if matches!(event, TranscriptEvent::Ended { .. }) {
             self.streaming = false;
         }
+        if let TranscriptEvent::ToolCall { id, .. } = &event {
+            // The card's stable mouse handle must exist before the first
+            // render so expand/collapse clicks pair across renders.
+            self.tool_card_ui.entry(id.clone()).or_default();
+        }
         self.transcript.apply(event);
         ctx.notify();
     }
@@ -398,6 +415,24 @@ impl ClaudeCodeView {
     fn stop(&mut self, _ctx: &mut ViewContext<Self>) {
         if let Some(child) = &self.child {
             interrupt(child);
+        }
+    }
+
+    /// Flip a tool card between collapsed and expanded (PRODUCT §19). The
+    /// effective state before the click is the user's prior choice, or the
+    /// status-derived default (failed cards open showing their error).
+    fn toggle_tool_card(&mut self, id: &str, ctx: &mut ViewContext<Self>) {
+        let Some(TranscriptItem::Tool {
+            status, children, ..
+        }) = self.transcript.find_tool(id)
+        else {
+            return;
+        };
+        let default = tool_cards::default_expanded(*status, !children.is_empty());
+        if let Some(ui) = self.tool_card_ui.get_mut(id) {
+            let effective = ui.expanded_override.unwrap_or(default);
+            ui.expanded_override = Some(!effective);
+            ctx.notify();
         }
     }
 
@@ -428,7 +463,7 @@ impl ClaudeCodeView {
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min);
         for item in self.transcript.items() {
-            column.add_child(render_item(item, appearance));
+            column.add_child(self.render_item(item, app));
         }
 
         ClippedScrollable::vertical(
@@ -482,11 +517,10 @@ impl ClaudeCodeView {
         // main-axis constraint (the card is measured for its natural height) and
         // panics the flex. `CrossAxisAlignment::Stretch` on the card gives it the
         // full width instead.
-        let editor = ConstrainedBox::new(
-            Clipped::new(ChildView::new(&self.input_editor).finish()).finish(),
-        )
-        .with_max_height(COMPOSER_MAX_HEIGHT)
-        .finish();
+        let editor =
+            ConstrainedBox::new(Clipped::new(ChildView::new(&self.input_editor).finish()).finish())
+                .with_max_height(COMPOSER_MAX_HEIGHT)
+                .finish();
 
         // PRODUCT §9–§11: the controls row carries the session context chips
         // (model / context usage / permission mode); while a turn streams it also
@@ -564,7 +598,9 @@ impl ClaudeCodeView {
         .with_padding(Padding::uniform(10.))
         .with_background_color(theme.surface_1().into_solid())
         .with_border(Border::all(1.).with_border_fill(theme.outline()))
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(COMPOSER_CORNER_RADIUS)))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+            COMPOSER_CORNER_RADIUS,
+        )))
         .finish();
 
         Container::new(card)
@@ -693,6 +729,7 @@ impl TypedActionView for ClaudeCodeView {
             // PRODUCT §4: render re-checks availability, so a notify suffices.
             ClaudeCodeViewAction::Refresh => ctx.notify(),
             ClaudeCodeViewAction::Stop => self.stop(ctx),
+            ClaudeCodeViewAction::ToggleToolCard(id) => self.toggle_tool_card(id, ctx),
         }
     }
 }
@@ -778,28 +815,48 @@ fn center_reading_column(child: Box<dyn Element>, fill_height: bool) -> Box<dyn 
         .finish()
 }
 
-// ---------- transcript rendering (the ported leaf) ----------
-
-/// Bridge dispatch (TECH §The bridge): one arm per [`TranscriptItem`]. 7b
-/// renders the markdown transcript (User / Assistant). The rich tool, diff,
-/// thinking and todo cards are 7d–7f; the 7b synthetic source emits none of
-/// them, so those arms render a minimal themed placeholder rather than crash —
-/// the model contract already carries the variants.
-fn render_item(item: &TranscriptItem, appearance: &Appearance) -> Box<dyn Element> {
-    match item {
-        TranscriptItem::User(text) => render_message_row(true, USER_ICON_SVG_PATH, text, appearance),
-        TranscriptItem::Assistant { text, .. } => {
-            render_message_row(false, ASSISTANT_ICON_SVG_PATH, text, appearance)
+impl ClaudeCodeView {
+    /// Bridge dispatch (TECH §The bridge): one arm per [`TranscriptItem`].
+    /// User/Assistant render through the ported markdown transcript (7b); Tool
+    /// renders through the ported `inline_action` card chrome (7d, PRODUCT
+    /// §16–§19). The diff, thinking and todo cards are 7e–7f; those arms render
+    /// a minimal themed placeholder rather than crash — the model contract
+    /// already carries the variants.
+    fn render_item(&self, item: &TranscriptItem, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        match item {
+            TranscriptItem::User(text) => {
+                render_message_row(true, USER_ICON_SVG_PATH, text, appearance)
+            }
+            TranscriptItem::Assistant { text, .. } => {
+                render_message_row(false, ASSISTANT_ICON_SVG_PATH, text, appearance)
+            }
+            TranscriptItem::Notice(message) => render_notice(message, appearance),
+            TranscriptItem::Error(message) => render_error(message, appearance),
+            TranscriptItem::Tool {
+                id,
+                name,
+                input,
+                status,
+                output,
+                children,
+            } => render_tool_card(
+                id,
+                name,
+                input,
+                *status,
+                output.as_ref(),
+                children,
+                &self.tool_card_ui,
+                false,
+                app,
+            ),
+            // 7e–7f bring back the diff/thinking/todo cards (ported from the
+            // remaining `view_impl` leaves + feature 05's diff renderer).
+            TranscriptItem::Thinking { .. }
+            | TranscriptItem::Todos(_)
+            | TranscriptItem::Permission { .. } => render_pending_card(item, appearance),
         }
-        TranscriptItem::Notice(message) => render_notice(message, appearance),
-        TranscriptItem::Error(message) => render_error(message, appearance),
-        // 7d–7f bring back the rich tool/diff/thinking/todo cards (ported from
-        // the `inline_action` chrome + feature 05's diff renderer). Not reached
-        // by 7b's synthetic source.
-        TranscriptItem::Thinking { .. }
-        | TranscriptItem::Tool { .. }
-        | TranscriptItem::Todos(_)
-        | TranscriptItem::Permission { .. } => render_pending_card(item, appearance),
     }
 }
 
@@ -852,7 +909,9 @@ fn render_message_row(
     if is_user {
         container = container
             .with_background_color(theme.surface_2().into_solid())
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(MESSAGE_CORNER_RADIUS)));
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                MESSAGE_CORNER_RADIUS,
+            )));
     }
     container.finish()
 }
@@ -971,12 +1030,11 @@ fn render_error(message: &str, appearance: &Appearance) -> Box<dyn Element> {
     .finish()
 }
 
-/// Placeholder for transcript variants whose rich cards land in 7d–7f. Kept
-/// minimal and clearly labelled; never reached by 7b's synthetic source.
+/// Placeholder for transcript variants whose rich cards land in 7e–7f.
+/// Kept minimal and clearly labelled.
 fn render_pending_card(item: &TranscriptItem, appearance: &Appearance) -> Box<dyn Element> {
     let kind = match item {
         TranscriptItem::Thinking { .. } => "Thinking",
-        TranscriptItem::Tool { .. } => "Tool call",
         TranscriptItem::Todos(_) => "Task list",
         TranscriptItem::Permission { .. } => "Permission request",
         _ => "Item",
@@ -1137,7 +1195,11 @@ fn render_zero_state(appearance: &Appearance) -> Box<dyn Element> {
             .with_main_axis_alignment(MainAxisAlignment::Center)
             .with_spacing(12.)
             .with_child(heading)
-            .with_child(ConstrainedBox::new(explanation).with_max_width(460.).finish())
+            .with_child(
+                ConstrainedBox::new(explanation)
+                    .with_max_width(460.)
+                    .finish(),
+            )
             .finish(),
     )
     .with_uniform_padding(24.)

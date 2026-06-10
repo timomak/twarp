@@ -123,10 +123,15 @@ pub enum TranscriptEvent {
     },
     /// A tool invocation (PRODUCT §23). `input` is the raw tool input; the panel
     /// renders a per-tool summary (7d) or a generic card for unmapped tools.
+    /// `parent_id` is set when the call was made by a `Task` sub-agent (the
+    /// stream-json `parent_tool_use_id`); the transcript nests it under that
+    /// Task's card so the card visually groups the child activity it spawned
+    /// (PRODUCT §19).
     ToolCall {
         id: String,
         name: String,
         input: Value,
+        parent_id: Option<String>,
     },
     /// A tool's result, matched back to its [`TranscriptEvent::ToolCall`] by id
     /// (PRODUCT §26).
@@ -168,12 +173,16 @@ pub enum TranscriptItem {
         duration: Option<Duration>,
     },
     /// A tool-call card, advancing running → completed/failed (PRODUCT §23–§29).
+    /// `children` holds the nested activity of a `Task` sub-agent (tool calls
+    /// made with this call's id as their `parent_id`), so the Task card groups
+    /// what it spawned (PRODUCT §19). Empty for every other tool.
     Tool {
         id: String,
         name: String,
         input: Value,
         status: ToolStatus,
         output: Option<ToolOutput>,
+        children: Vec<TranscriptItem>,
     },
     /// The in-place task list (PRODUCT §37).
     Todos(Vec<TodoItem>),
@@ -217,6 +226,12 @@ impl Transcript {
 
     pub fn items(&self) -> &[TranscriptItem] {
         &self.items
+    }
+
+    /// Find a tool card by id, searching nested Task children too. Used by the
+    /// panel to resolve a card's current state (e.g. on expand/collapse).
+    pub fn find_tool(&self, id: &str) -> Option<&TranscriptItem> {
+        find_tool_ref(&self.items, id)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -302,38 +317,49 @@ impl Transcript {
             TranscriptEvent::Thinking { text, duration } => {
                 self.items.push(TranscriptItem::Thinking { text, duration });
             }
-            TranscriptEvent::ToolCall { id, name, input } => {
-                self.items.push(TranscriptItem::Tool {
+            TranscriptEvent::ToolCall {
+                id,
+                name,
+                input,
+                parent_id,
+            } => {
+                let card = TranscriptItem::Tool {
                     id,
                     name,
                     input,
                     status: ToolStatus::Running,
                     output: None,
-                });
+                    children: Vec::new(),
+                };
+                // A sub-agent's call nests under its spawning Task card
+                // (PRODUCT §19). If the parent isn't in the transcript (e.g.
+                // resumed mid-task), degrade to a top-level card rather than
+                // dropping the activity.
+                let parent = parent_id.and_then(|pid| find_tool_mut(&mut self.items, &pid));
+                match parent {
+                    Some(TranscriptItem::Tool { children, .. }) => children.push(card),
+                    _ => self.items.push(card),
+                }
             }
             TranscriptEvent::ToolResult {
                 id,
                 output,
                 is_error,
             } => {
-                // Attach the result to the most recent matching running card.
-                let idx = self.items.iter().rposition(
-                    |item| matches!(item, TranscriptItem::Tool { id: tid, .. } if *tid == id),
-                );
-                if let Some(idx) = idx {
-                    if let TranscriptItem::Tool {
-                        status,
-                        output: slot,
-                        ..
-                    } = &mut self.items[idx]
-                    {
-                        *status = if is_error {
-                            ToolStatus::Failed
-                        } else {
-                            ToolStatus::Completed
-                        };
-                        *slot = Some(output);
-                    }
+                // Attach the result to the matching card, wherever it lives —
+                // top-level or nested under a Task (PRODUCT §19).
+                if let Some(TranscriptItem::Tool {
+                    status,
+                    output: slot,
+                    ..
+                }) = find_tool_mut(&mut self.items, &id)
+                {
+                    *status = if is_error {
+                        ToolStatus::Failed
+                    } else {
+                        ToolStatus::Completed
+                    };
+                    *slot = Some(output);
                 }
             }
             TranscriptEvent::Todos(todos) => {
@@ -374,6 +400,41 @@ impl Transcript {
             },
         }
     }
+}
+
+/// Depth-first, most-recent-first search for a tool card by id, descending into
+/// Task children. Most-recent-first preserves the old `rposition` semantics
+/// when (pathologically) two calls share an id.
+fn find_tool_mut<'a>(items: &'a mut [TranscriptItem], id: &str) -> Option<&'a mut TranscriptItem> {
+    for item in items.iter_mut().rev() {
+        let is_match = matches!(&*item, TranscriptItem::Tool { id: tid, .. } if tid == id);
+        if is_match {
+            return Some(item);
+        }
+        if let TranscriptItem::Tool { children, .. } = item {
+            if let Some(found) = find_tool_mut(children, id) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+fn find_tool_ref<'a>(items: &'a [TranscriptItem], id: &str) -> Option<&'a TranscriptItem> {
+    for item in items.iter().rev() {
+        if let TranscriptItem::Tool {
+            id: tid, children, ..
+        } = item
+        {
+            if tid == id {
+                return Some(item);
+            }
+            if let Some(found) = find_tool_ref(children, id) {
+                return Some(found);
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -422,6 +483,7 @@ mod tests {
             id: "call_1".to_string(),
             name: "Read".to_string(),
             input: serde_json::json!({ "file_path": "README.md" }),
+            parent_id: None,
         });
         t.apply(TranscriptEvent::ToolResult {
             id: "call_1".to_string(),
@@ -438,6 +500,69 @@ mod tests {
             }
             other => panic!("expected tool card, got {other:?}"),
         }
+    }
+
+    fn tool_call(id: &str, name: &str, parent_id: Option<&str>) -> TranscriptEvent {
+        TranscriptEvent::ToolCall {
+            id: id.to_string(),
+            name: name.to_string(),
+            input: Value::Null,
+            parent_id: parent_id.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn subagent_calls_nest_under_their_task_card() {
+        let mut t = Transcript::new();
+        t.apply(tool_call("task_1", "Task", None));
+        t.apply(tool_call("child_1", "Read", Some("task_1")));
+        t.apply(tool_call("child_2", "Bash", Some("task_1")));
+        assert_eq!(t.items().len(), 1, "children must not appear top-level");
+        match &t.items()[0] {
+            TranscriptItem::Tool { children, .. } => {
+                assert_eq!(children.len(), 2);
+                assert!(
+                    matches!(&children[0], TranscriptItem::Tool { name, .. } if name == "Read")
+                );
+            }
+            other => panic!("expected Task card, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn nested_child_result_resolves_inside_task_card() {
+        let mut t = Transcript::new();
+        t.apply(tool_call("task_1", "Task", None));
+        t.apply(tool_call("child_1", "Read", Some("task_1")));
+        t.apply(TranscriptEvent::ToolResult {
+            id: "child_1".to_string(),
+            output: ToolOutput {
+                text: "contents".to_string(),
+                summary: None,
+            },
+            is_error: false,
+        });
+        let child = t.find_tool("child_1").expect("child found via find_tool");
+        match child {
+            TranscriptItem::Tool { status, .. } => assert_eq!(*status, ToolStatus::Completed),
+            other => panic!("expected tool card, got {other:?}"),
+        }
+        // The Task card itself is still running.
+        match t.find_tool("task_1") {
+            Some(TranscriptItem::Tool { status, .. }) => assert_eq!(*status, ToolStatus::Running),
+            other => panic!("expected Task card, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn orphaned_parent_id_degrades_to_top_level_card() {
+        let mut t = Transcript::new();
+        t.apply(tool_call("child_1", "Read", Some("missing_task")));
+        assert_eq!(t.items().len(), 1);
+        assert!(matches!(
+            &t.items()[0],
+            TranscriptItem::Tool { name, .. } if name == "Read"
+        ));
     }
 
     #[test]
