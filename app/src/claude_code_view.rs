@@ -40,7 +40,7 @@ use claude_code::driver::{
     interrupt, send_user_message, spawn_session, Child, PermissionMode, SpawnOptions,
     SpawnedSession,
 };
-use claude_code::{Transcript, TranscriptEvent, TranscriptItem};
+use claude_code::{Transcript, TranscriptEvent, TranscriptItem, Usage};
 use futures::StreamExt;
 use markdown_parser::{parse_markdown, FormattedText, FormattedTextLine};
 use pathfinder_color::ColorU;
@@ -443,14 +443,28 @@ impl ClaudeCodeView {
         .finish()
     }
 
-    /// The originating terminal's directory name, shown as a context pill in the
-    /// composer (the Claude-app cwd chip). `None` when there is no cwd or it has
-    /// no final component (e.g. the filesystem root).
-    fn cwd_label(&self) -> Option<String> {
-        self.cwd
-            .as_ref()?
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
+    /// The composer's context chips, built from the live session metadata the
+    /// driver parses out of `claude`'s stream-json: a Local indicator (the pane
+    /// always drives the local CLI — there is no remote session to report), the
+    /// model, the context-window usage, the permission mode, and fast-mode when
+    /// on. Effort is intentionally absent: the headless stream-json doesn't
+    /// report an effort level (only `fast_mode_state`), unlike the interactive
+    /// TUI's status line.
+    fn metadata_chips(&self, appearance: &Appearance) -> Vec<Box<dyn Element>> {
+        let mut chips = vec![render_pill("Local", appearance)];
+        if let Some(model) = self.transcript.model() {
+            chips.push(render_pill(&prettify_model(model), appearance));
+        }
+        if let Some(label) = self.transcript.usage().and_then(format_context) {
+            chips.push(render_pill(&label, appearance));
+        }
+        if let Some(mode) = self.transcript.permission_mode() {
+            chips.push(render_pill(&prettify_permission_mode(mode), appearance));
+        }
+        if self.transcript.fast_mode() == Some("on") {
+            chips.push(render_pill("Fast mode", appearance));
+        }
+        chips
     }
 
     /// The docked composer (PRODUCT §15): a rounded, bordered card holding the
@@ -474,27 +488,33 @@ impl ClaudeCodeView {
         .with_max_height(COMPOSER_MAX_HEIGHT)
         .finish();
 
-        // PRODUCT §9–§11: while a turn streams, the controls row shows an activity
-        // cue + Stop (SIGINT); otherwise context pills + Send (or "Start session"
-        // in the zero state), which submits the buffer.
-        let left: Box<dyn Element> = if self.streaming {
-            appearance
-                .ui_builder()
-                .span("Claude is working…".to_owned())
-                .with_style(UiComponentStyles {
-                    font_color: Some(muted),
-                    font_size: Some(12.),
-                    ..Default::default()
-                })
-                .build()
-                .finish()
-        } else {
-            let mut pills = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
-            pills.add_child(render_pill("Local", appearance));
-            if let Some(name) = self.cwd_label() {
-                pills.add_child(render_pill(&name, appearance));
+        // PRODUCT §9–§11: the controls row carries the session context chips
+        // (model / context usage / permission mode); while a turn streams it also
+        // shows a "Working…" cue, and the action becomes Stop (SIGINT).
+        let left = {
+            let mut row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+            if self.streaming {
+                row.add_child(
+                    Container::new(
+                        appearance
+                            .ui_builder()
+                            .span("Working…".to_owned())
+                            .with_style(UiComponentStyles {
+                                font_color: Some(muted),
+                                font_size: Some(12.),
+                                ..Default::default()
+                            })
+                            .build()
+                            .finish(),
+                    )
+                    .with_margin_right(8.)
+                    .finish(),
+                );
             }
-            pills.finish()
+            for chip in self.metadata_chips(appearance) {
+                row.add_child(chip);
+            }
+            row.finish()
         };
 
         let action: Box<dyn Element> = if self.streaming {
@@ -1032,6 +1052,51 @@ fn render_pill(label: &str, appearance: &Appearance) -> Box<dyn Element> {
     .with_background_color(theme.surface_2().into_solid())
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
     .finish()
+}
+
+/// Shorten a `claude` model id for the chip: drop the `claude-` prefix the CLI
+/// prepends (`claude-fable-5[1m]` → `fable-5[1m]`).
+fn prettify_model(model: &str) -> String {
+    model.strip_prefix("claude-").unwrap_or(model).to_owned()
+}
+
+/// Friendly label for a `--permission-mode` value (the `init` message's
+/// `permissionMode`). Unknown modes pass through verbatim.
+fn prettify_permission_mode(mode: &str) -> String {
+    match mode {
+        "default" => "Ask".to_owned(),
+        "acceptEdits" => "Accept edits".to_owned(),
+        "plan" => "Plan".to_owned(),
+        "bypassPermissions" => "Bypass".to_owned(),
+        other => other.to_owned(),
+    }
+}
+
+/// The context chip label — `used / window`, e.g. `26K / 1M`. `None` until
+/// `claude` reports a context window (the first turn's `result`).
+fn format_context(usage: Usage) -> Option<String> {
+    let window = usage.context_window?;
+    Some(format!(
+        "{} / {}",
+        format_token_count(usage.context_used()),
+        format_token_count(window),
+    ))
+}
+
+/// Compact token count: `938` → `938`, `26370` → `26K`, `1000000` → `1M`.
+fn format_token_count(n: u64) -> String {
+    if n >= 1_000_000 {
+        let m = n as f64 / 1_000_000.0;
+        if (m - m.round()).abs() < 0.05 {
+            format!("{}M", m.round() as u64)
+        } else {
+            format!("{m:.1}M")
+        }
+    } else if n >= 1_000 {
+        format!("{}K", (n as f64 / 1_000.0).round() as u64)
+    } else {
+        n.to_string()
+    }
 }
 
 /// Zero state: a centered heading + a muted one-liner, vertically centered in the

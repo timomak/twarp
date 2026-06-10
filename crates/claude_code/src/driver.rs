@@ -17,7 +17,7 @@ use futures::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 use futures::stream::Stream;
 use serde_json::{json, Value};
 
-use crate::{EndReason, ToolOutput, TranscriptEvent};
+use crate::{EndReason, ToolOutput, TranscriptEvent, Usage};
 
 /// Permission mode passed to `claude --permission-mode`. The CLI argument
 /// names are the ones Claude Code itself accepts.
@@ -273,7 +273,19 @@ fn parse_system(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
         .and_then(|v| v.as_str())
         .map(PathBuf::from)
         .unwrap_or_default();
-    out.push_back(TranscriptEvent::SessionInit { session_id, cwd });
+    let str_field = |key: &str| {
+        value
+            .get(key)
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+    };
+    out.push_back(TranscriptEvent::SessionInit {
+        session_id,
+        cwd,
+        model: str_field("model"),
+        permission_mode: str_field("permissionMode"),
+        fast_mode: str_field("fast_mode_state"),
+    });
 }
 
 fn parse_assistant(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
@@ -385,6 +397,11 @@ fn extract_tool_result_text(content: Option<&Value>) -> String {
 }
 
 fn parse_result(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
+    // Token usage + context window land before `Ended` so the panel's context
+    // chip is up to date by the time the turn closes.
+    if let Some(usage) = parse_usage(value) {
+        out.push_back(TranscriptEvent::Usage(usage));
+    }
     let is_error = value
         .get("is_error")
         .and_then(|v| v.as_bool())
@@ -402,6 +419,27 @@ fn parse_result(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
     out.push_back(TranscriptEvent::Ended { reason });
 }
 
+/// Extract token usage from a `result` message's `usage` block, plus the
+/// context window from `modelUsage[model].contextWindow` (there is one model
+/// entry per turn). Returns `None` if the message carries no `usage`.
+fn parse_usage(value: &Value) -> Option<Usage> {
+    let usage = value.get("usage")?;
+    let count = |key: &str| usage.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
+    let context_window = value
+        .get("modelUsage")
+        .and_then(|m| m.as_object())
+        .and_then(|m| m.values().next())
+        .and_then(|model| model.get("contextWindow"))
+        .and_then(|v| v.as_u64());
+    Some(Usage {
+        input_tokens: count("input_tokens"),
+        cache_read_input_tokens: count("cache_read_input_tokens"),
+        cache_creation_input_tokens: count("cache_creation_input_tokens"),
+        output_tokens: count("output_tokens"),
+        context_window,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,12 +453,38 @@ mod tests {
         let mut out = VecDeque::new();
         parse_event_into(&v, &mut out);
         match out.front() {
-            Some(TranscriptEvent::SessionInit { session_id, cwd }) => {
+            Some(TranscriptEvent::SessionInit {
+                session_id,
+                cwd,
+                model,
+                ..
+            }) => {
                 assert_eq!(session_id, "abc");
                 assert_eq!(cwd, &PathBuf::from("/tmp/p"));
+                assert_eq!(model.as_deref(), Some("sonnet"));
             }
             other => panic!("expected SessionInit, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_result_usage_and_context_window() {
+        let v: Value = serde_json::from_str(
+            r#"{"type":"result","subtype":"success","is_error":false,"usage":{"input_tokens":5102,"cache_read_input_tokens":15818,"cache_creation_input_tokens":5450,"output_tokens":4},"modelUsage":{"claude-fable-5[1m]":{"contextWindow":1000000}}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        // Usage is emitted before Ended so the chip is fresh when the turn closes.
+        match out.front() {
+            Some(TranscriptEvent::Usage(u)) => {
+                assert_eq!(u.context_used(), 5102 + 15818 + 5450);
+                assert_eq!(u.context_window, Some(1_000_000));
+                assert_eq!(u.output_tokens, 4);
+            }
+            other => panic!("expected Usage first, got {other:?}"),
+        }
+        assert!(matches!(out.back(), Some(TranscriptEvent::Ended { .. })));
     }
 
     #[test]
