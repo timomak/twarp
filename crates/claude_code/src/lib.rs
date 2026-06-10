@@ -70,6 +70,28 @@ pub enum EndReason {
     Exited,
 }
 
+/// Token usage + context window for the latest completed turn, parsed from the
+/// stream-json `result` message. Surfaced as the composer's context chip.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Usage {
+    pub input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub output_tokens: u64,
+    /// The model's total context window, when `claude` reports it
+    /// (`result.modelUsage[model].contextWindow`).
+    pub context_window: Option<u64>,
+}
+
+impl Usage {
+    /// Tokens occupying the context window right now: the whole prompt that was
+    /// sent (fresh input + cache read + cache creation). Output tokens are the
+    /// reply, not context occupancy.
+    pub fn context_used(&self) -> u64 {
+        self.input_tokens + self.cache_read_input_tokens + self.cache_creation_input_tokens
+    }
+}
+
 /// The thin, twarp-native event the 7c driver emits and the panel consumes.
 ///
 /// This is the contract both halves of feature 07 meet at: the driver crate
@@ -77,8 +99,16 @@ pub enum EndReason {
 /// `claude`-specific wire shape — the driver absorbs schema drift behind it.
 #[derive(Debug, Clone)]
 pub enum TranscriptEvent {
-    /// `claude` announced its session id and working directory (`system`/`init`).
-    SessionInit { session_id: String, cwd: PathBuf },
+    /// `claude` announced its session id, working directory, and session
+    /// metadata (`system`/`init`) — model, permission mode, and fast-mode state,
+    /// each optional since older `claude` builds omit them.
+    SessionInit {
+        session_id: String,
+        cwd: PathBuf,
+        model: Option<String>,
+        permission_mode: Option<String>,
+        fast_mode: Option<String>,
+    },
     /// A user turn was sent into the session (PRODUCT §16).
     UserMessage(String),
     /// Incremental assistant text, or a whole message if partial streaming is
@@ -116,6 +146,9 @@ pub enum TranscriptEvent {
     },
     /// The current turn (or session) ended (PRODUCT §52).
     Ended { reason: EndReason },
+    /// Token usage + context window for the turn that just completed, from the
+    /// `result` message. Drives the composer's context chip.
+    Usage(Usage),
 }
 
 /// One rendered item in the transcript. The panel owns an ordered `Vec` of
@@ -169,6 +202,12 @@ pub struct Transcript {
     items: Vec<TranscriptItem>,
     /// The `claude` session id, once known. Used by 7h resume.
     session_id: Option<String>,
+    /// Session metadata from the `init` message, surfaced as composer chips.
+    model: Option<String>,
+    permission_mode: Option<String>,
+    fast_mode: Option<String>,
+    /// Latest turn's token usage + context window (from `result`).
+    usage: Option<Usage>,
 }
 
 impl Transcript {
@@ -188,10 +227,36 @@ impl Transcript {
         self.session_id.as_deref()
     }
 
+    /// The model `claude` reported at session init (e.g. `claude-fable-5[1m]`).
+    pub fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+
+    /// The active permission mode (`default` / `acceptEdits` / `plan` /
+    /// `bypassPermissions`) from session init.
+    pub fn permission_mode(&self) -> Option<&str> {
+        self.permission_mode.as_deref()
+    }
+
+    /// Fast-mode state (`on` / `off`) from session init — the only effort-ish
+    /// signal the headless stream-json exposes.
+    pub fn fast_mode(&self) -> Option<&str> {
+        self.fast_mode.as_deref()
+    }
+
+    /// Latest turn's token usage + context window, once a turn has completed.
+    pub fn usage(&self) -> Option<Usage> {
+        self.usage
+    }
+
     /// Reset the transcript (e.g. starting a brand-new session).
     pub fn clear(&mut self) {
         self.items.clear();
         self.session_id = None;
+        self.model = None;
+        self.permission_mode = None;
+        self.fast_mode = None;
+        self.usage = None;
     }
 
     /// Apply one driver event to the model.
@@ -201,8 +266,20 @@ impl Transcript {
     /// todo updates, tool-result matching — unit-testable without GPUI.
     pub fn apply(&mut self, event: TranscriptEvent) {
         match event {
-            TranscriptEvent::SessionInit { session_id, .. } => {
+            TranscriptEvent::SessionInit {
+                session_id,
+                model,
+                permission_mode,
+                fast_mode,
+                ..
+            } => {
                 self.session_id = Some(session_id);
+                self.model = model;
+                self.permission_mode = permission_mode;
+                self.fast_mode = fast_mode;
+            }
+            TranscriptEvent::Usage(usage) => {
+                self.usage = Some(usage);
             }
             TranscriptEvent::UserMessage(text) => {
                 self.items.push(TranscriptItem::User(text));
@@ -396,13 +473,34 @@ mod tests {
     }
 
     #[test]
-    fn session_init_records_id() {
+    fn session_init_records_id_and_metadata() {
         let mut t = Transcript::new();
         t.apply(TranscriptEvent::SessionInit {
             session_id: "abc-123".to_string(),
             cwd: PathBuf::from("/tmp/project"),
+            model: Some("claude-fable-5[1m]".to_string()),
+            permission_mode: Some("default".to_string()),
+            fast_mode: Some("off".to_string()),
         });
         assert_eq!(t.session_id(), Some("abc-123"));
+        assert_eq!(t.model(), Some("claude-fable-5[1m]"));
+        assert_eq!(t.permission_mode(), Some("default"));
+        assert_eq!(t.fast_mode(), Some("off"));
         assert!(t.is_empty(), "session init alone renders nothing");
+    }
+
+    #[test]
+    fn usage_event_records_latest() {
+        let mut t = Transcript::new();
+        t.apply(TranscriptEvent::Usage(Usage {
+            input_tokens: 5102,
+            cache_read_input_tokens: 15818,
+            cache_creation_input_tokens: 5450,
+            output_tokens: 4,
+            context_window: Some(1_000_000),
+        }));
+        let u = t.usage().expect("usage recorded");
+        assert_eq!(u.context_used(), 5102 + 15818 + 5450);
+        assert_eq!(u.context_window, Some(1_000_000));
     }
 }
