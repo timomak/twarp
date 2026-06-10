@@ -463,14 +463,15 @@ impl ClaudeCodeView {
 
         // The growable message input, capped so a long draft scrolls inside the
         // composer instead of shoving the transcript off-screen (PRODUCT §15).
-        let editor = Shrinkable::new(
-            1.0,
-            ConstrainedBox::new(
-                Clipped::new(ChildView::new(&self.input_editor).finish()).finish(),
-            )
-            .with_max_height(COMPOSER_MAX_HEIGHT)
-            .finish(),
+        // Size to the editor's own (autogrowing) height — NOT `Shrinkable`: a flex
+        // child in the `MainAxisSize::Min` card column below gets an unbounded
+        // main-axis constraint (the card is measured for its natural height) and
+        // panics the flex. `CrossAxisAlignment::Stretch` on the card gives it the
+        // full width instead.
+        let editor = ConstrainedBox::new(
+            Clipped::new(ChildView::new(&self.input_editor).finish()).finish(),
         )
+        .with_max_height(COMPOSER_MAX_HEIGHT)
         .finish();
 
         // PRODUCT §9–§11: while a turn streams, the controls row shows an activity
