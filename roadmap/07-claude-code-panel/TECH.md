@@ -128,6 +128,17 @@ Re-introduced from #69 unchanged. Subprocess: `command::r#async::Command::new("c
 
 A trimmed left-panel entry lists past sessions for the cwd using the kept `claude_code::sessions::list_sessions` reader. It hosts **no chat** — selecting an entry opens a Claude Code pane via `claude --resume <id>` (PRODUCT §35–§38). It appears only when sessions exist. This is a small left-panel view (a list with click-to-resume), far smaller than #69's sidebar chat; it may reuse a minimal `ToolPanelView` entry **or** surface from the new-session menu — decide in 7h. No transcript rendering lives here.
 
+## Raw-CLI toggle (7i — amendment 2026-06-11)
+
+PRODUCT §39–§44. Two views of one conversation: the rendered pane (headless `-p` driver) and the raw interactive CLI (a real PTY), switched in place. Mechanism, surveyed against master:
+
+- **Swap mechanism: `replace_pane` with `is_temporary`.** `pane_group/mod.rs::replace_pane` (~3736) + `close_temporary_replacement_pane` (~3784) already implement in-place pane substitution with restoration — the code ↔ file pane toggle (~3801–3849) is the precedent. Entering raw mode replaces the `ClaudeCodePane` with a `TerminalPane` (`is_temporary = true`, preserving the Claude pane for restoration); returning closes the temporary replacement. **Do not** embed `TerminalView` inside `ClaudeCodeView` — it is a top-level pane-hosted `View`, not a child component.
+- **Running the CLI:** the replacement terminal spawns the user's shell normally and uses the **pending-command** mechanism launch configs use (`TerminalView::set_pending_command`, view.rs ~8555; applied in `pane_tree_from_template_recursive` ~1945) with `exec claude --resume <id>` — `exec` replaces the shell so the PTY *is* the CLI, and the session ending on `/exit` is the shell session ending (the §44 auto-return trigger). Alias note: `claude` in argument position after `exec` is not alias-expanded, so raw mode runs vanilla `claude` (PRODUCT §43).
+- **Session identity (§41):** `ClaudeCodeView` generates a UUID at construction and passes `--session-id <uuid>` on the first headless spawn (flag verified on 2.1.173); thereafter `--resume`. This removes every "no session id yet" window — the raw toggle, the 7g mode-restart, and the sidebar all key off a pane-owned id. (Resume panes keep the resumed id instead.)
+- **The floating return button (§40):** the replacement terminal needs one piece of twarp chrome. Smallest honest change: an optional top-right overlay element on `TerminalPaneView` (a positioned `Stack` child — the same recipe as the pane's floating composer), set only by the raw-Claude path; clicking emits the return event. This touches `terminal_pane.rs`/its view once, behind an `Option` that every other terminal leaves `None`.
+- **Return handoff (§40, §42):** entering raw mode tears down the headless session first (epoch bump + drop, the 7g mechanism). Returning closes the raw pane (killing the CLI if still alive — it persists its own state) and the restored `ClaudeCodeView` re-ingests history from the session's `.jsonl` (`sessions::load_history`, the 7h path) — full reload, clearing and re-ingesting the transcript, which also refreshes card state. Exit detection for §44 auto-return: subscribe to the replacement pane's session-ended event; degrade to manual return if it proves unreliable.
+- **Risks:** (a) `replace_pane` semantics for a *non-terminal* original — the temporary-replacement path is exercised today by terminal-adjacent panes; verify the `ClaudeCodePane` snapshot/restore round-trip early. (b) The overlay on `TerminalPaneView` must not capture terminal input beyond its hit-box (waterfall dispatch, as the floating composer does). (c) `exec` requires a POSIX-family shell; for exotic shells fall back to a plain pending command (the shell stays parented — acceptable: `/exit` then ends `claude` and leaves a shell; the floating button still returns).
+
 ## Re-derived sub-phase plan
 
 7b is re-scoped to the **pane host + trigger + re-hosted renderer**; later sub-phases are unchanged in spirit (cards/diffs/thinking/permissions/sessions), now landing in the pane.
@@ -139,12 +150,13 @@ A trimmed left-panel entry lists past sessions for the cwd using the kept `claud
 - **7f — Thinking + todos.** Extract collapsible-thinking helpers; port `todos.rs` bridged to `TodoItem`/`TodoStatus`. PRODUCT §22–§23.
 - **7g — Permissions + composer.** Permission-mode selector → `--permission-mode` (robust path first); interactive prompts version-gated with §26 degradation; composer semantics. PRODUCT §24–§27.
 - **7h — Sidebar session list + resume.** Kept `sessions.rs` reader → read-only left-panel list; resume opens a pane via `--resume`. PRODUCT §35–§38.
+- **7i — Raw-CLI toggle** *(amendment)*. `replace_pane(is_temporary)` swap to a terminal running `exec claude --resume <id>`; pane-owned session ids via `--session-id`; floating return overlay on the replacement terminal; history re-ingest on return. PRODUCT §39–§44.
 
 ```mermaid
 graph TD
   A[kept: claude_code driver + ported renderer #69] --> B[7b pane host + claude-at-submit trigger + stub]
   B --> C[7c live driver in pane]
-  C --> D[7d tool cards] --> E[7e diff cards] --> F[7f thinking + todos] --> G[7g permissions + composer] --> H[7h sidebar session list]
+  C --> D[7d tool cards] --> E[7e diff cards] --> F[7f thinking + todos] --> G[7g permissions + composer] --> H[7h sidebar session list] --> I[7i raw-CLI toggle]
 ```
 
 ## Feature flag & rollout
@@ -166,7 +178,8 @@ graph TD
 | §22–§23 (thinking, todos) | Unit: duration parse; in-place todo update. **View test: collapsible card + ported todos.** Smoke 8. | 7f |
 | §24–§27 (permissions, composer) | Integration vs pinned `claude`; unit mode→flag; manual composer + §26 degradation. Smoke 9. | 7g |
 | §35–§38 (sidebar list, resume) | Unit: encoded-cwd + title parse; integration: create→list→resume; corrupt → graceful. Smoke 10–11. | 7h |
-| §32–§34 (Claude-app visual, privacy, theming) | Audit: only egress is local `claude`; no `Color::rgb(`; side-by-side with the Claude app. Smoke 12–13. | all |
+| §39–§44 (raw-CLI toggle) | Manual vs pinned `claude`: toggle round-trip, zero-state handoff, `/exit` auto-return, mid-turn guard. Unit: session-id generation/threading. Smoke 12–15. | 7i |
+| §32–§34 (Claude-app visual, privacy, theming) | Audit: only egress is local `claude`; no `Color::rgb(`; side-by-side with the Claude app. Smoke 16–17. | all |
 
 **Version pinning.** Pin the tested `claude` version, assert via `claude --version`, capture golden stream-json transcripts as parser fixtures. `./script/presubmit` should pass before each impl PR (the owner's Mac can't run it fully — rely on `cargo check`/`clippy`/`fmt` + `cargo test -p claude_code`; the `warp` app crate is one large crate, so each `cargo check -p warp` is a multi-minute full recompile).
 
