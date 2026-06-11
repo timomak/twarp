@@ -549,8 +549,9 @@ pub enum Event {
     },
     /// twarp 07 (7b): tell the workspace to open a Claude Code pane (PRODUCT §1).
     OpenClaudeCodePane {
-        /// The args after `claude` (`claude <prompt>` seeds the first turn).
-        args: String,
+        /// The tokens after `claude` — recognized flags map onto the spawn
+        /// options, the trailing positional seeds the first turn (PRODUCT §2).
+        args: Vec<String>,
         /// The originating terminal's working directory (PRODUCT §4).
         cwd: Option<PathBuf>,
     },

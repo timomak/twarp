@@ -48,6 +48,7 @@ use claude_code::driver::{
     interrupt, send_user_message, spawn_session, Child, PermissionMode, SpawnOptions,
     SpawnedSession,
 };
+use claude_code::launch::LaunchOptions;
 use claude_code::{sessions, Transcript, TranscriptEvent, TranscriptItem, Usage};
 use futures::StreamExt;
 use markdown_parser::{parse_markdown, FormattedText, FormattedTextLine};
@@ -213,9 +214,17 @@ pub struct ClaudeCodeView {
     todos_expanded: bool,
     todos_header_mouse: MouseStateHandle,
     /// The selected permission mode (PRODUCT §25). Source of truth for the
-    /// composer pill and for every (re)spawn's `--permission-mode`.
+    /// composer pill and for every (re)spawn's `--permission-mode`. Seeded
+    /// from the launch flags (`--permission-mode` /
+    /// `--dangerously-skip-permissions`, e.g. via a user's alias).
     permission_mode: PermissionMode,
     permission_pill_mouse: MouseStateHandle,
+    /// `--model` from the launch flags, passed to every spawn.
+    model: Option<String>,
+    /// `--effort` from the launch flags (e.g. an alias's `--effort max`),
+    /// passed to every spawn. Write-only: the headless stream doesn't echo
+    /// an effort level back, so there is no chip for it.
+    effort: Option<String>,
     /// Resume target for the next spawn (PRODUCT §36; also how a permission-
     /// mode change re-attaches a live conversation, §25). Cleared if a resumed
     /// spawn dies so the next message can start fresh (§37).
@@ -230,17 +239,29 @@ pub struct ClaudeCodeView {
 impl ClaudeCodeView {
     /// Build the pane view.
     ///
-    /// `initial_prompt` is the trailing positional from `claude <prompt>`
-    /// (PRODUCT §2): when present it seeds the first user turn. `cwd` is the
-    /// terminal's working directory (PRODUCT §4). `resume` reopens a stored
-    /// session (PRODUCT §36): its on-disk history renders immediately and the
-    /// next message continues it live via `claude --resume`.
+    /// `launch` is the parsed `claude [flags] [prompt]` invocation (PRODUCT
+    /// §2): recognized flags — including alias-injected ones like
+    /// `--dangerously-skip-permissions` / `--effort max` — seed the session's
+    /// spawn options, and the positional seeds the first user turn. `cwd` is
+    /// the terminal's working directory (PRODUCT §4). `resume` reopens a
+    /// stored session (PRODUCT §36): its on-disk history renders immediately
+    /// and the next message continues it live via `claude --resume` (a
+    /// `claude --resume <id>` typed in a terminal arrives through `launch`
+    /// and gets the same treatment).
     pub fn new(
-        initial_prompt: Option<String>,
+        launch: LaunchOptions,
         cwd: Option<PathBuf>,
         resume: Option<ResumeSession>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
+        let LaunchOptions {
+            prompt,
+            permission_mode,
+            model,
+            effort,
+            resume_session_id,
+        } = launch;
+
         let input_editor = ctx.add_typed_action_view(|ctx| {
             let appearance = Appearance::as_ref(ctx);
             let options = EditorOptions {
@@ -257,6 +278,23 @@ impl ClaudeCodeView {
         });
 
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new(PANE_TITLE));
+
+        // `claude --resume <id>` typed at the prompt: derive the session's
+        // on-disk file so the pane pre-renders its history exactly like the
+        // sidebar's resume (PRODUCT §36). `load_history` is best-effort, so a
+        // wrong derivation just renders nothing and `claude --resume` itself
+        // remains the source of truth.
+        let resume = resume.or_else(|| {
+            let session_id = resume_session_id?;
+            let dir = cwd
+                .clone()
+                .or_else(|| std::env::current_dir().ok())
+                .and_then(|cwd| sessions::sessions_dir(&cwd))?;
+            Some(ResumeSession {
+                jsonl_path: dir.join(format!("{session_id}.jsonl")),
+                session_id,
+            })
+        });
 
         let mut view = Self {
             transcript: Transcript::new(),
@@ -276,8 +314,10 @@ impl ClaudeCodeView {
             thinking_ui: HashMap::new(),
             todos_expanded: true,
             todos_header_mouse: MouseStateHandle::default(),
-            permission_mode: PermissionMode::Default,
+            permission_mode: permission_mode.unwrap_or(PermissionMode::Default),
             permission_pill_mouse: MouseStateHandle::default(),
+            model,
+            effort,
             resume_session_id: None,
             session_epoch: 0,
         };
@@ -295,7 +335,7 @@ impl ClaudeCodeView {
         // PRODUCT §2/§6: `claude <prompt>` starts a live session immediately
         // with the prompt as the first turn; bare `claude` opens idle (no
         // process until the user sends a message).
-        let first_prompt = initial_prompt
+        let first_prompt = prompt
             .as_deref()
             .map(str::trim)
             .filter(|p| !p.is_empty())
@@ -393,7 +433,8 @@ impl ClaudeCodeView {
                 .cwd
                 .clone()
                 .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
-            model: None,
+            model: self.model.clone(),
+            effort: self.effort.clone(),
             resume_session_id: self.resume_session_id.clone(),
             permission_mode: self.permission_mode,
             allowed_tools: Vec::new(),

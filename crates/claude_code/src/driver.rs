@@ -69,6 +69,9 @@ impl PermissionMode {
 pub struct SpawnOptions {
     pub cwd: PathBuf,
     pub model: Option<String>,
+    /// `--effort <level>` — settable but not echoed back by the headless
+    /// stream (see the #74 notes), so the pane treats it as write-only.
+    pub effort: Option<String>,
     pub resume_session_id: Option<String>,
     pub permission_mode: PermissionMode,
     pub allowed_tools: Vec<String>,
@@ -99,6 +102,9 @@ pub fn spawn_session(opts: SpawnOptions) -> Result<SpawnedSession> {
 
     if let Some(model) = &opts.model {
         cmd.arg("--model").arg(model);
+    }
+    if let Some(effort) = &opts.effort {
+        cmd.arg("--effort").arg(effort);
     }
     if let Some(id) = &opts.resume_session_id {
         cmd.arg("--resume").arg(id);

@@ -17,6 +17,7 @@
 
 pub mod diff;
 pub mod driver;
+pub mod launch;
 pub mod sessions;
 
 use std::path::PathBuf;

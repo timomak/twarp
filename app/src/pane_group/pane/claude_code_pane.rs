@@ -11,6 +11,7 @@
 
 use std::path::PathBuf;
 
+use claude_code::launch::LaunchOptions;
 use warpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle};
 
 use crate::app_state::LeafContents;
@@ -47,16 +48,17 @@ impl ClaudeCodePane {
         }
     }
 
-    /// Open a fresh Claude Code pane. `initial_prompt` is the `claude <prompt>`
-    /// positional (PRODUCT §2); `cwd` is the originating terminal's directory
-    /// (PRODUCT §4).
+    /// Open a fresh Claude Code pane. `launch` is the parsed `claude [flags]
+    /// [prompt]` invocation (PRODUCT §2 — recognized flags map onto the spawn
+    /// options, the positional seeds the first turn); `cwd` is the originating
+    /// terminal's directory (PRODUCT §4).
     pub fn new<V: View>(
-        initial_prompt: Option<String>,
+        launch: LaunchOptions,
         cwd: Option<PathBuf>,
         ctx: &mut ViewContext<V>,
     ) -> Self {
-        let view = ctx
-            .add_typed_action_view(move |ctx| ClaudeCodeView::new(initial_prompt, cwd, None, ctx));
+        let view =
+            ctx.add_typed_action_view(move |ctx| ClaudeCodeView::new(launch, cwd, None, ctx));
         Self::from_view(view, ctx)
     }
 
@@ -68,8 +70,9 @@ impl ClaudeCodePane {
         cwd: Option<PathBuf>,
         ctx: &mut ViewContext<V>,
     ) -> Self {
-        let view =
-            ctx.add_typed_action_view(move |ctx| ClaudeCodeView::new(None, cwd, Some(resume), ctx));
+        let view = ctx.add_typed_action_view(move |ctx| {
+            ClaudeCodeView::new(LaunchOptions::default(), cwd, Some(resume), ctx)
+        });
         Self::from_view(view, ctx)
     }
 

@@ -12090,19 +12090,21 @@ impl Workspace {
 
     /// twarp 07 (7b): open a Claude Code pane in the active tab's pane group and
     /// focus it — the destination of the `claude` terminal trigger (PRODUCT §1,
-    /// §5). `args` carries the `claude <prompt>` positional (an empty/whitespace
-    /// `args` opens a bare pane, PRODUCT §2); `cwd` is the originating terminal's
-    /// directory (PRODUCT §4). Provisional placement: a focused split in the
-    /// active group, mirroring `open_network_log_pane` (PRODUCT §load-bearing-2;
-    /// TECH §The pane).
+    /// §5). `args` are the tokens after `claude`: recognized flags (incl. the
+    /// ones a user's alias injects, e.g. `--dangerously-skip-permissions
+    /// --effort max`) map onto the session's spawn options and the trailing
+    /// positional seeds the first turn (PRODUCT §2; `claude_code::launch`).
+    /// `cwd` is the originating terminal's directory (PRODUCT §4). Provisional
+    /// placement: a focused split in the active group, mirroring
+    /// `open_network_log_pane` (PRODUCT §load-bearing-2; TECH §The pane).
     pub(crate) fn open_claude_code_pane(
         &mut self,
-        args: String,
+        args: Vec<String>,
         cwd: Option<PathBuf>,
         ctx: &mut ViewContext<Self>,
     ) {
-        let initial_prompt = Some(args).filter(|a| !a.trim().is_empty());
-        let pane = ClaudeCodePane::new(initial_prompt, cwd, ctx);
+        let launch = claude_code::launch::parse_launch_args(args.iter().map(String::as_str));
+        let pane = ClaudeCodePane::new(launch, cwd, ctx);
         self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
             pane_group.add_pane_with_direction(
                 Direction::Right,

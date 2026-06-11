@@ -2967,7 +2967,7 @@ pub enum Event {
     /// workspace to open a Claude Code pane (PRODUCT §1). Bubbled from the
     /// input's `OpenClaudeCodePane` via `handle_input_event`.
     OpenClaudeCodePane {
-        args: String,
+        args: Vec<String>,
         cwd: Option<PathBuf>,
     },
     #[cfg(feature = "local_fs")]
