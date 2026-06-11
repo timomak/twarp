@@ -48,13 +48,16 @@ use claude_code::{Transcript, TranscriptEvent, TranscriptItem, Usage};
 use futures::StreamExt;
 use markdown_parser::{parse_markdown, FormattedText, FormattedTextLine};
 use pathfinder_color::ColorU;
+use pathfinder_geometry::vector::vec2f;
 use warpui::ui_components::button::ButtonVariant;
 use warpui::{
     elements::{
-        Border, Clipped, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container,
-        CornerRadius, CrossAxisAlignment, DispatchEventResult, Element, EventHandler, Fill, Flex,
-        FormattedTextElement, HighlightedHyperlink, HyperlinkUrl, Icon, MainAxisAlignment,
-        MainAxisSize, MouseStateHandle, Padding, ParentElement, Radius, ScrollbarWidth, Shrinkable,
+        Align, Border, ChildAnchor, Clipped, ClippedScrollStateHandle, ClippedScrollable,
+        ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DispatchEventResult,
+        DropShadow, Element, EventDispatchMode, EventHandler, Fill, Flex, FormattedTextElement,
+        HighlightedHyperlink, HyperlinkUrl, Icon, MainAxisAlignment, MainAxisSize,
+        MouseStateHandle, OffsetPositioning, Padding, ParentAnchor, ParentElement,
+        ParentOffsetBounds, Radius, ScrollbarWidth, Shrinkable, Stack,
     },
     presenter::ChildView,
     text_layout::ClipConfig,
@@ -91,11 +94,17 @@ const BODY_FONT_SIZE: f32 = 14.;
 const CODE_FONT_SIZE: f32 = 12.5;
 const TRANSCRIPT_LEFT_MARGIN: f32 = 15.;
 
-/// Shell-polish layout constants (the Claude-app frame): a docked rounded
-/// composer, muted context pills, and a zero-state heading. (The centered
-/// max-width reading column was dropped per owner feedback on the 7d review —
-/// chat fills the pane.)
+/// Shell-polish layout constants (the Claude-app frame): a floating rounded
+/// composer, muted context pills, and a zero-state heading. (Per owner
+/// feedback on the 7d review: the chat fills the pane, and the composer
+/// floats above it at the bottom-center instead of stacking below.)
 const COMPOSER_MAX_HEIGHT: f32 = 184.;
+/// The floating composer's width cap — it stays a centered card even in a
+/// wide pane (the chat behind it is full-width).
+const COMPOSER_MAX_WIDTH: f32 = 760.;
+/// Bottom padding inside the transcript scroller so the last message can
+/// scroll clear of the floating composer.
+const COMPOSER_CLEARANCE: f32 = 140.;
 const COMPOSER_CORNER_RADIUS: f32 = 14.;
 const MESSAGE_CORNER_RADIUS: f32 = 12.;
 const PILL_CORNER_RADIUS: f32 = 6.;
@@ -474,9 +483,16 @@ impl ClaudeCodeView {
             column.add_child(self.render_item(item, app));
         }
 
+        // The composer floats over the bottom of the pane; this clearance is
+        // inside the scroll content so the newest message can scroll out from
+        // underneath it (PRODUCT §15).
+        let content = Container::new(column.finish())
+            .with_padding_bottom(COMPOSER_CLEARANCE)
+            .finish();
+
         ClippedScrollable::vertical(
             self.scroll_state.clone(),
-            column.finish(),
+            content,
             ScrollbarWidth::Auto,
             theme.nonactive_ui_detail().into(),
             theme.active_ui_detail().into(),
@@ -609,6 +625,9 @@ impl ClaudeCodeView {
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
             COMPOSER_CORNER_RADIUS,
         )))
+        // The composer floats over the transcript; the shadow separates the
+        // layers (same treatment as the input-suggestions detail panel).
+        .with_drop_shadow(DropShadow::default())
         .finish();
 
         Container::new(card)
@@ -690,20 +709,42 @@ impl View for ClaudeCodeView {
         // PRODUCT §4: the unavailable state replaces the pane body. The pane
         // header (title) is rendered separately by `render_header_content`.
         let contents = if Self::claude_available() {
-            // Transcript and composer fill the pane width (owner feedback on the
-            // 7d review dropped the centered max-width reading column). The
-            // composer is pinned to the bottom: the body is the only flexible
-            // child of the full-height outer column, so it expands and pushes
-            // the composer down — the structure 7c shipped.
-            let body = self.render_body(app);
-            let composer = self.render_input(appearance);
-            let stack = Flex::column()
-                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .with_main_axis_size(MainAxisSize::Max)
-                .with_child(Shrinkable::new(1.0, body).finish())
-                .with_child(composer)
+            // Owner feedback on the 7d review: the chat fills the pane and the
+            // composer FLOATS above it (z-axis) at the bottom-center, instead
+            // of stacking below in a flex column. `Align` is load-bearing for
+            // width: it reports the full incoming constraint, so the body
+            // spans the pane even where a flex child would have been measured
+            // loose and shrunk to its content (the bug behind the "chat is not
+            // full width" report — the zero state rendered left-hugging at
+            // content width).
+            let body: Box<dyn Element> = if self.transcript.is_empty() {
+                // Centered zero state over the full pane.
+                Align::new(self.render_body(app)).finish()
+            } else {
+                Align::new(self.render_body(app)).top_left().finish()
+            };
+            // The floating composer: a positioned stack child anchored to the
+            // pane's bottom-center, capped at a reading width, shrunk (never
+            // moved) if the pane is narrower. The transcript scrolls
+            // underneath; its scroller keeps COMPOSER_CLEARANCE of bottom
+            // padding so the newest message can scroll clear of it.
+            let composer = ConstrainedBox::new(self.render_input(appearance))
+                .with_max_width(COMPOSER_MAX_WIDTH)
                 .finish();
-            Container::new(stack)
+            // Waterfall so a click on the floating composer is consumed there
+            // and never also reaches the transcript beneath it.
+            let mut stack = Stack::new().with_event_dispatch_mode(EventDispatchMode::Waterfall);
+            stack.add_child(body);
+            stack.add_positioned_child(
+                composer,
+                OffsetPositioning::offset_from_parent(
+                    vec2f(0., 0.),
+                    ParentOffsetBounds::ParentBySize,
+                    ParentAnchor::BottomMiddle,
+                    ChildAnchor::BottomMiddle,
+                ),
+            );
+            Container::new(stack.finish())
                 .with_background_color(theme.background().into_solid())
                 .with_padding_left(16.)
                 .with_padding_right(16.)
@@ -771,7 +812,8 @@ impl BackingView for ClaudeCodeView {
     ) -> HeaderContent {
         // PRODUCT §5: title "Claude Code" with the session cwd as a secondary
         // line. Net-new chrome (the Agent-block header was service-coupled;
-        // TECH matrix marks it do-NOT-port).
+        // TECH matrix marks it do-NOT-port). The header renders title and
+        // secondary back-to-back, so the separator lives in the string.
         let cwd = self
             .cwd
             .as_ref()
@@ -780,7 +822,8 @@ impl BackingView for ClaudeCodeView {
                 std::env::current_dir()
                     .ok()
                     .map(|p| p.display().to_string())
-            });
+            })
+            .map(|cwd| format!(" — {cwd}"));
         HeaderContent::Standard(StandardHeader {
             title: PANE_TITLE.to_owned(),
             title_secondary: cwd,
@@ -1141,9 +1184,9 @@ fn format_token_count(n: u64) -> String {
     }
 }
 
-/// Zero state: a centered heading + a muted one-liner, vertically centered in the
-/// reading column above the always-present composer. The "Resume…" entry point
-/// (PRODUCT §36) arrives with the session list in 7h.
+/// Zero state: a centered heading + a muted one-liner. Sized to content — the
+/// caller centers it over the full pane via [`Align`]. The "Resume…" entry
+/// point (PRODUCT §36) arrives with the session list in 7h.
 fn render_zero_state(appearance: &Appearance) -> Box<dyn Element> {
     let theme = appearance.theme();
     let heading = appearance
@@ -1175,8 +1218,7 @@ fn render_zero_state(appearance: &Appearance) -> Box<dyn Element> {
     Container::new(
         Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(12.)
             .with_child(heading)
             .with_child(
