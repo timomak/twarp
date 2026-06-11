@@ -12007,6 +12007,13 @@ impl Workspace {
             .chain(notebook_local_paths)
             .chain(code_diff_local_paths)
             .collect();
+        // twarp 07: Claude Code panes report their cwd (a directory, not a
+        // file path) so panels root at the pane's project (7d review).
+        let claude_code_cwds: Vec<(EntityId, String)> = pane_group
+            .as_ref(ctx)
+            .claude_code_view_cwds(ctx)
+            .filter_map(|(id, cwd)| cwd.map(|c| (id, c)))
+            .collect();
 
         // Get the focused terminal ID to prioritize it in the repo_to_terminal map
         let focused_terminal_id = pane_group
@@ -12019,6 +12026,7 @@ impl Workspace {
                 pane_group_id,
                 terminal_cwds,
                 local_paths,
+                claude_code_cwds,
                 focused_terminal_id,
                 ctx,
             );

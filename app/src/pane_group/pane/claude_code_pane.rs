@@ -63,6 +63,13 @@ impl ClaudeCodePane {
     pub fn claude_code_view(&self, ctx: &AppContext) -> ViewHandle<ClaudeCodeView> {
         self.view.as_ref(ctx).child(ctx)
     }
+
+    /// The pane's working directory — the cwd of the terminal that opened it
+    /// (PRODUCT §4). Lets the pane group treat this pane like a terminal
+    /// session for directory context (split inheritance, Open Changes roots).
+    pub fn cwd(&self, ctx: &AppContext) -> Option<PathBuf> {
+        self.claude_code_view(ctx).as_ref(ctx).cwd().cloned()
+    }
 }
 
 impl PaneContent for ClaudeCodePane {

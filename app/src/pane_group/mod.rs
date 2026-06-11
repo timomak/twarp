@@ -5308,36 +5308,56 @@ impl PaneGroup {
         base_pane_id: Option<TerminalPaneId>,
         ctx: &AppContext,
     ) -> Option<PathBuf> {
-        let pane_id = base_pane_id?;
-        if let Some(current_session_path) = self.session_path(&pane_id, ctx) {
-            return Some(current_session_path);
+        if let Some(pane_id) = base_pane_id {
+            if let Some(current_session_path) = self.session_path(&pane_id, ctx) {
+                return Some(current_session_path);
+            }
+
+            let terminal_startup_path =
+                self.terminal_view_from_pane_id(pane_id, ctx)
+                    .and_then(|terminal_handle| {
+                        terminal_handle.read(ctx, |view, _| {
+                            let model = view.model.lock();
+                            let session_startup_path = model.session_startup_path();
+                            if let (Some(distribution_name), Some(path)) =
+                                (view.active_session_wsl_distro(ctx), &session_startup_path)
+                            {
+                                path.to_str().and_then(|path| {
+                                    convert_wsl_to_windows_host_path(
+                                        &TypedPath::unix(path),
+                                        &distribution_name,
+                                    )
+                                    .inspect_err(|err| {
+                                        log::warn!(
+                                        "unable to convert WSL path to Windows host path: {err:?}"
+                                    );
+                                    })
+                                    .ok()
+                                })
+                            } else {
+                                session_startup_path
+                            }
+                        })
+                    });
+            if terminal_startup_path.is_some() {
+                return terminal_startup_path;
+            }
         }
 
-        self.terminal_view_from_pane_id(pane_id, ctx)
-            .and_then(|terminal_handle| {
-                terminal_handle.read(ctx, |view, _| {
-                    let model = view.model.lock();
-                    let session_startup_path = model.session_startup_path();
-                    if let (Some(distribution_name), Some(path)) =
-                        (view.active_session_wsl_distro(ctx), &session_startup_path)
-                    {
-                        path.to_str().and_then(|path| {
-                            convert_wsl_to_windows_host_path(
-                                &TypedPath::unix(path),
-                                &distribution_name,
-                            )
-                            .inspect_err(|err| {
-                                log::warn!(
-                                    "unable to convert WSL path to Windows host path: {err:?}"
-                                );
-                            })
-                            .ok()
-                        })
-                    } else {
-                        session_startup_path
-                    }
-                })
-            })
+        // twarp 07 (7d review): a focused Claude Code pane provides the
+        // directory context a terminal session would — new splits/tabs open in
+        // its cwd instead of the default startup directory (PRODUCT §4–§5).
+        self.focused_claude_code_pane_cwd(ctx)
+    }
+
+    /// The working directory of the focused pane, when it is a Claude Code
+    /// pane (twarp feature 07). `None` for every other pane type.
+    fn focused_claude_code_pane_cwd(&self, ctx: &AppContext) -> Option<PathBuf> {
+        self.content_by_pane_id(self.focused_pane_id(ctx))?
+            .as_any()
+            .downcast_ref::<ClaudeCodePane>()?
+            .cwd(ctx)
+            .filter(|path| path.is_dir())
     }
 
     pub fn launch_data_for_session(
@@ -5754,6 +5774,21 @@ impl PaneGroup {
                 .local_path(ctx)
                 .map(|p| p.display().to_string());
             (id, local_path)
+        })
+    }
+
+    /// Working directories of the Claude Code panes in this group (twarp
+    /// feature 07). Unlike `code_view_local_paths` these are directories, not
+    /// file paths — they feed the working-directories model so the Open
+    /// Changes / file tree panels root at the pane's project.
+    pub fn claude_code_view_cwds<'a>(
+        &'a self,
+        ctx: &'a AppContext,
+    ) -> impl Iterator<Item = (EntityId, Option<String>)> + 'a {
+        self.panes_of::<ClaudeCodePane>().map(move |pane| {
+            let id = pane.claude_code_view(ctx).id();
+            let cwd = pane.cwd(ctx).map(|p| p.display().to_string());
+            (id, cwd)
         })
     }
 
