@@ -3606,6 +3606,14 @@ impl PaneGroup {
             return;
         }
 
+        // twarp 07 (7i, PRODUCT §44): closing the raw-CLI half of a temporary
+        // pane swap (⌘W, or the shell exiting) returns to the rendered Claude
+        // pane instead of collapsing the split — the original pane is parked
+        // outside the tree and would otherwise leak.
+        if self.return_from_raw_claude(pane_id, ctx) {
+            return;
+        }
+
         // If this pane is a child agent, re-hide it instead of closing it.
         if self.is_child_agent_pane(pane_id) {
             if !self.panes.is_pane_hidden(&pane_id) {
@@ -3796,6 +3804,62 @@ impl PaneGroup {
         }
 
         original_pane_id
+    }
+
+    /// twarp 07 (7i, PRODUCT §39): swap a Claude Code pane for the **raw
+    /// interactive `claude` CLI** in the same tree position — a temporary
+    /// pane replacement hosting a real terminal whose shell `exec`s
+    /// `claude --resume <session_id>` (`exec` makes the PTY *be* the CLI, so
+    /// the CLI exiting ends the session — the §44 auto-return signal). The
+    /// terminal renders the floating "back to Claude Code" overlay (§40).
+    pub(crate) fn swap_claude_pane_to_raw_cli(
+        &mut self,
+        claude_pane_id: PaneId,
+        session_id: String,
+        cwd: Option<PathBuf>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let (pane_data, view) =
+            self.create_terminal_pane_data(cwd, HashMap::new(), None, None, ctx);
+        view.update(ctx, |terminal, ctx| {
+            terminal.enable_claude_return_overlay();
+            // Session ids are UUIDs (shell-safe). `claude` in argument
+            // position after `exec` is not alias-expanded, so this runs the
+            // vanilla CLI (PRODUCT §43).
+            terminal.set_pending_command(&format!("exec claude --resume {session_id}"), ctx);
+        });
+        if !self.replace_pane(claude_pane_id, pane_data, /* is_temporary */ true, ctx) {
+            log::error!(
+                "twarp 07 (7i): failed to swap Claude pane {claude_pane_id:?} to the raw CLI"
+            );
+        }
+    }
+
+    /// twarp 07 (7i, PRODUCT §40/§44): leave raw-CLI mode — revert the
+    /// temporary pane swap and refresh the restored rendered pane from
+    /// `claude`'s on-disk store, so turns produced in the raw CLI appear in
+    /// the transcript. Returns `false` (and does nothing) when the pane is
+    /// not a temporary replacement, so callers can fall through to their
+    /// ordinary behavior.
+    pub(crate) fn return_from_raw_claude(
+        &mut self,
+        raw_pane_id: PaneId,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        if !self.panes.is_temporary_replacement(raw_pane_id) {
+            return false;
+        }
+        let Some(original_id) = self.close_temporary_replacement_pane(raw_pane_id, ctx) else {
+            return true;
+        };
+        let claude_view = self
+            .downcast_pane_by_id::<ClaudeCodePane>(original_id)
+            .map(|pane| pane.claude_code_view(ctx));
+        if let Some(view) = claude_view {
+            view.update(ctx, |view, ctx| view.refresh_from_disk(ctx));
+        }
+        ctx.emit(Event::AppStateChanged);
+        true
     }
 
     #[cfg(feature = "local_fs")]

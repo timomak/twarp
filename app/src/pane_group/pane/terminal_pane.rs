@@ -600,6 +600,12 @@ fn handle_terminal_view_event(
                     cwd: cwd.clone(),
                 });
             }
+            // twarp 07 (7i, PRODUCT §40): the raw CLI's floating overlay —
+            // revert the temporary pane swap. The pane group owns the swap,
+            // so no workspace round-trip.
+            Event::ReturnToClaudePane => {
+                group.return_from_raw_claude(pane_id, ctx);
+            }
             #[cfg(feature = "local_fs")]
             Event::PreviewCodeInWarp { source } => {
                 ctx.emit(pane_group::Event::PreviewCodeInWarp {

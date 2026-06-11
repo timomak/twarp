@@ -73,6 +73,12 @@ pub struct SpawnOptions {
     /// stream (see the #74 notes), so the pane treats it as write-only.
     pub effort: Option<String>,
     pub resume_session_id: Option<String>,
+    /// Pin a fresh session's id (`--session-id`, PRODUCT §41): the pane owns
+    /// its session identity from birth, so the raw-CLI toggle and mode
+    /// restarts never hit a "no id yet" window. Ignored when resuming —
+    /// `--resume` continues the existing id (`--fork-session` is never
+    /// passed).
+    pub session_id: Option<String>,
     pub permission_mode: PermissionMode,
     pub allowed_tools: Vec<String>,
 }
@@ -108,6 +114,9 @@ pub fn spawn_session(opts: SpawnOptions) -> Result<SpawnedSession> {
     }
     if let Some(id) = &opts.resume_session_id {
         cmd.arg("--resume").arg(id);
+    } else if let Some(id) = &opts.session_id {
+        // A fresh session under a pane-chosen id (PRODUCT §41).
+        cmd.arg("--session-id").arg(id);
     }
     if !opts.allowed_tools.is_empty() {
         cmd.arg("--allowedTools").arg(opts.allowed_tools.join(","));

@@ -124,6 +124,13 @@ const HEADING_FONT_SIZE: f32 = 20.;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClaudeCodeViewEvent {
     Pane(PaneEvent),
+    /// twarp 07 (7i, PRODUCT §39): swap this pane for the raw interactive
+    /// `claude` CLI resuming `session_id` — handled by the pane group as a
+    /// temporary pane replacement.
+    SwapToRawCli {
+        session_id: String,
+        cwd: Option<PathBuf>,
+    },
 }
 
 /// Actions the view handles, dispatched the [`GlobalSearchView`] way (the view
@@ -157,6 +164,9 @@ pub enum ClaudeCodeViewAction {
     /// the next spawn; a live session is re-attached via `--resume` so the
     /// conversation continues under the new mode.
     CyclePermissionMode,
+    /// Swap this pane for the raw interactive CLI (PRODUCT §39, 7i). Disabled
+    /// while a turn streams (§42).
+    ToggleRawCli,
 }
 
 /// A stored session to reopen (PRODUCT §36, sub-phase 7h): the pane renders
@@ -229,6 +239,13 @@ pub struct ClaudeCodeView {
     /// mode change re-attaches a live conversation, §25). Cleared if a resumed
     /// spawn dies so the next message can start fresh (§37).
     resume_session_id: Option<String>,
+    /// The pane's session identity, owned from birth (PRODUCT §41): a fresh
+    /// pane generates a UUID and pins it via `--session-id`; a resumed pane
+    /// adopts the resumed id. Synced from `init` thereafter. The raw-CLI
+    /// toggle and the on-disk history refresh key off this.
+    session_id: String,
+    /// Mouse state for the header's Raw CLI toggle (PRODUCT §39).
+    raw_cli_button: MouseStateHandle,
     /// Monotonic session generation. Spawn callbacks and stream pumps carry
     /// the epoch they were started under and are ignored when stale — a
     /// permission-mode restart must not let the old (killed) session's EOF
@@ -296,6 +313,15 @@ impl ClaudeCodeView {
             })
         });
 
+        // PRODUCT §41: every pane-born session has its identity from birth —
+        // a resumed pane adopts the resumed id, a fresh pane mints one and
+        // pins it at spawn via `--session-id`. The raw-CLI toggle, the
+        // permission-mode restart, and the history refresh all key off it.
+        let session_id = resume
+            .as_ref()
+            .map(|resume| resume.session_id.clone())
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
         let mut view = Self {
             transcript: Transcript::new(),
             input_editor,
@@ -319,6 +345,8 @@ impl ClaudeCodeView {
             model,
             effort,
             resume_session_id: None,
+            session_id,
+            raw_cli_button: MouseStateHandle::default(),
             session_epoch: 0,
         };
 
@@ -436,6 +464,12 @@ impl ClaudeCodeView {
             model: self.model.clone(),
             effort: self.effort.clone(),
             resume_session_id: self.resume_session_id.clone(),
+            // A fresh session spawns under the pane's own id (PRODUCT §41);
+            // a resume continues the id it targets.
+            session_id: self
+                .resume_session_id
+                .is_none()
+                .then(|| self.session_id.clone()),
             permission_mode: self.permission_mode,
             allowed_tools: Vec::new(),
         };
@@ -561,6 +595,12 @@ impl ClaudeCodeView {
     /// card mouse handles and diff views to exist before the first render.
     fn ingest_event(&mut self, event: TranscriptEvent, ctx: &mut ViewContext<Self>) {
         match &event {
+            TranscriptEvent::SessionInit { session_id, .. } => {
+                // Stay in lockstep with what `claude` actually reports —
+                // normally the id the pane pinned via `--session-id` or
+                // resumed (PRODUCT §41).
+                self.session_id = session_id.clone();
+            }
             TranscriptEvent::ToolCall {
                 id, name, input, ..
             } => {
@@ -620,21 +660,73 @@ impl ClaudeCodeView {
             PermissionMode::BypassPermissions => PermissionMode::Default,
         };
         if self.child.is_some() {
-            match self.transcript.session_id() {
-                Some(id) => {
-                    // Detach the live process; the next message resumes the
-                    // conversation under the new mode.
-                    self.resume_session_id = Some(id.to_owned());
-                    self.session_epoch += 1; // invalidate the old stream
-                    self.child = None; // kill_on_drop
-                    self.message_tx = None;
-                }
-                None => {
-                    // Spawned but not yet announced (init pending) — nothing
-                    // to resume yet; the mode applies from the next spawn.
-                }
-            }
+            // Detach the live process; the next message resumes the
+            // conversation under the new mode. The pane owns its session id
+            // from birth (§41), so there is no "id not announced yet" window.
+            self.detach_live_session();
         }
+        ctx.notify();
+    }
+
+    /// Kill the live `claude` process (if any) and keep the conversation as
+    /// the resume target for the next spawn. The epoch bump makes the killed
+    /// session's EOF/events stale so they can't spam the transcript or wipe
+    /// the next session's handles.
+    fn detach_live_session(&mut self) {
+        self.resume_session_id = Some(self.session_id.clone());
+        self.session_epoch += 1;
+        self.child = None; // kill_on_drop
+        self.message_tx = None;
+        self.streaming = false;
+    }
+
+    /// twarp 07 (7i, PRODUCT §39/§42): hand this conversation to the raw
+    /// interactive CLI. Disabled while a turn streams (§42 — same rule as the
+    /// mode selector); otherwise the headless process is detached first (one
+    /// driver at a time) and the host pane swaps to a terminal running
+    /// `claude --resume <session_id>`.
+    fn toggle_raw_cli(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.streaming {
+            return;
+        }
+        self.detach_live_session();
+        ctx.emit(ClaudeCodeViewEvent::SwapToRawCli {
+            session_id: self.session_id.clone(),
+            cwd: self.cwd.clone(),
+        });
+        ctx.notify();
+    }
+
+    /// twarp 07 (7i, PRODUCT §40): returning from raw-CLI mode — re-read the
+    /// session's on-disk history so turns produced in the raw CLI appear in
+    /// the transcript, and keep the conversation as the resume target so the
+    /// next message continues it live. Best-effort like every store read: a
+    /// missing file just renders what the pane already had.
+    pub fn refresh_from_disk(&mut self, ctx: &mut ViewContext<Self>) {
+        let dir = self
+            .cwd
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .and_then(|cwd| sessions::sessions_dir(&cwd));
+        let Some(dir) = dir else {
+            return;
+        };
+        let jsonl_path = dir.join(format!("{}.jsonl", self.session_id));
+        let history = sessions::load_history(&jsonl_path);
+        if history.is_empty() {
+            // Nothing (re)readable on disk — keep the rendered transcript
+            // rather than blanking it (PRODUCT §29 defensive).
+            return;
+        }
+        self.transcript.clear();
+        self.tool_card_ui.clear();
+        self.diff_cards.clear();
+        self.thinking_ui.clear();
+        for event in history {
+            self.ingest_event(event, ctx);
+        }
+        self.resume_session_id = Some(self.session_id.clone());
+        self.streaming = false;
         ctx.notify();
     }
 
@@ -1021,6 +1113,7 @@ impl TypedActionView for ClaudeCodeView {
                 ctx.notify();
             }
             ClaudeCodeViewAction::CyclePermissionMode => self.cycle_permission_mode(ctx),
+            ClaudeCodeViewAction::ToggleRawCli => self.toggle_raw_cli(ctx),
         }
     }
 }
@@ -1051,7 +1144,7 @@ impl BackingView for ClaudeCodeView {
     fn render_header_content(
         &self,
         _ctx: &view::HeaderRenderContext<'_>,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> HeaderContent {
         // PRODUCT §5: title "Claude Code" with the session cwd as a secondary
         // line. Net-new chrome (the Agent-block header was service-coupled;
@@ -1067,6 +1160,21 @@ impl BackingView for ClaudeCodeView {
                     .map(|p| p.display().to_string())
             })
             .map(|cwd| format!(" — {cwd}"));
+        // PRODUCT §39 (7i): the Raw CLI toggle — swaps the pane for the real
+        // interactive `claude` resuming this conversation. Hidden while a
+        // turn streams (§42); the header re-renders when streaming flips.
+        let raw_cli_toggle = (!self.streaming).then(|| {
+            let appearance = Appearance::as_ref(app);
+            appearance
+                .ui_builder()
+                .button(ButtonVariant::Text, self.raw_cli_button.clone())
+                .with_text_label("Raw CLI".to_owned())
+                .build()
+                .on_click(|ctx, _, _| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleRawCli);
+                })
+                .finish()
+        });
         HeaderContent::Standard(StandardHeader {
             title: PANE_TITLE.to_owned(),
             title_secondary: cwd,
@@ -1075,7 +1183,7 @@ impl BackingView for ClaudeCodeView {
             title_max_width: None,
             left_of_title: None,
             right_of_title: None,
-            left_of_overflow: None,
+            left_of_overflow: raw_cli_toggle,
             options: StandardHeaderOptions::default(),
         })
     }

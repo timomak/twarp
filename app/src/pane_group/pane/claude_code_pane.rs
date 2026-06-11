@@ -106,8 +106,16 @@ impl PaneContent for ClaudeCodePane {
         let pane_id = self.id();
 
         ctx.subscribe_to_view(&claude_code_view, move |pane_group, _, event, ctx| {
-            let ClaudeCodeViewEvent::Pane(pane_event) = event;
-            pane_group.handle_pane_event(pane_id, pane_event, ctx)
+            match event {
+                ClaudeCodeViewEvent::Pane(pane_event) => {
+                    pane_group.handle_pane_event(pane_id, pane_event, ctx)
+                }
+                // twarp 07 (7i, PRODUCT §39): swap this pane for the raw
+                // interactive CLI — a temporary pane replacement the group
+                // owns end to end.
+                ClaudeCodeViewEvent::SwapToRawCli { session_id, cwd } => pane_group
+                    .swap_claude_pane_to_raw_cli(pane_id, session_id.clone(), cwd.clone(), ctx),
+            }
         });
         ctx.subscribe_to_view(&self.view, move |group, _, event, ctx| {
             group.handle_pane_view_event(pane_id, event, ctx);
