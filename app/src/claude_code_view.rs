@@ -33,18 +33,22 @@
 //! view in the responder chain. There is **no** `WorkspaceAction` forwarder —
 //! that was the #67 symptom-fix and is deleted.
 
+mod diff_cards;
 mod inline_action;
+mod thinking;
+mod todos;
 mod tool_cards;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use async_channel::Sender;
+use claude_code::diff::diff_for_tool;
 use claude_code::driver::{
     interrupt, send_user_message, spawn_session, Child, PermissionMode, SpawnOptions,
     SpawnedSession,
 };
-use claude_code::{Transcript, TranscriptEvent, TranscriptItem, Usage};
+use claude_code::{sessions, Transcript, TranscriptEvent, TranscriptItem, Usage};
 use futures::StreamExt;
 use markdown_parser::{parse_markdown, FormattedText, FormattedTextLine};
 use pathfinder_color::ColorU;
@@ -55,10 +59,11 @@ use warpui::{
         Align, Border, ChildAnchor, Clipped, ClippedScrollStateHandle, ClippedScrollable,
         ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DispatchEventResult,
         DropShadow, Element, EventDispatchMode, EventHandler, Fill, Flex, FormattedTextElement,
-        HighlightedHyperlink, HyperlinkUrl, Icon, MainAxisAlignment, MainAxisSize,
+        HighlightedHyperlink, Hoverable, HyperlinkUrl, Icon, MainAxisAlignment, MainAxisSize,
         MouseStateHandle, OffsetPositioning, Padding, ParentAnchor, ParentElement,
         ParentOffsetBounds, Radius, ScrollbarWidth, Shrinkable, Stack,
     },
+    platform::Cursor,
     presenter::ChildView,
     text_layout::ClipConfig,
     ui_components::components::{UiComponent, UiComponentStyles},
@@ -66,6 +71,8 @@ use warpui::{
     ViewContext, ViewHandle,
 };
 
+use self::diff_cards::DiffCard;
+use self::thinking::ThinkingUi;
 use self::tool_cards::{render_tool_card, ToolCardUi};
 use crate::appearance::Appearance;
 use crate::editor::{EditorOptions, EditorView, Event as EditorEvent, TextOptions};
@@ -140,6 +147,24 @@ pub enum ClaudeCodeViewAction {
     Stop,
     /// Expand / collapse the tool card with this tool-use id (PRODUCT §19).
     ToggleToolCard(String),
+    /// Expand / collapse the thinking card at this transcript index
+    /// (PRODUCT §22).
+    ToggleThinking(usize),
+    /// Expand / collapse the task list (PRODUCT §23).
+    ToggleTodos,
+    /// Step the permission mode to the next value (PRODUCT §25). Applies to
+    /// the next spawn; a live session is re-attached via `--resume` so the
+    /// conversation continues under the new mode.
+    CyclePermissionMode,
+}
+
+/// A stored session to reopen (PRODUCT §36, sub-phase 7h): the pane renders
+/// the on-disk history up front and continues the conversation live via
+/// `claude --resume <session_id>` on the next message.
+#[derive(Clone, Debug)]
+pub struct ResumeSession {
+    pub session_id: String,
+    pub jsonl_path: PathBuf,
 }
 
 pub struct ClaudeCodeView {
@@ -177,6 +202,29 @@ pub struct ClaudeCodeView {
     /// choice), keyed by tool-use id. An entry is created when the card's
     /// `ToolCall` event arrives (PRODUCT §16, §19).
     tool_card_ui: HashMap<String, ToolCardUi>,
+    /// The feature-05 diff views backing `Edit`/`MultiEdit`/`Write` cards
+    /// (PRODUCT §20), keyed by tool-use id. Built when the `ToolCall` event
+    /// arrives; render-time only reads.
+    diff_cards: HashMap<String, DiffCard>,
+    /// Per-thinking-card UI state (PRODUCT §22), keyed by the item's
+    /// transcript index — items only ever append, so the index is stable.
+    thinking_ui: HashMap<usize, ThinkingUi>,
+    /// The task list starts open — it is the content (PRODUCT §23).
+    todos_expanded: bool,
+    todos_header_mouse: MouseStateHandle,
+    /// The selected permission mode (PRODUCT §25). Source of truth for the
+    /// composer pill and for every (re)spawn's `--permission-mode`.
+    permission_mode: PermissionMode,
+    permission_pill_mouse: MouseStateHandle,
+    /// Resume target for the next spawn (PRODUCT §36; also how a permission-
+    /// mode change re-attaches a live conversation, §25). Cleared if a resumed
+    /// spawn dies so the next message can start fresh (§37).
+    resume_session_id: Option<String>,
+    /// Monotonic session generation. Spawn callbacks and stream pumps carry
+    /// the epoch they were started under and are ignored when stale — a
+    /// permission-mode restart must not let the old (killed) session's EOF
+    /// tear down the new one's handles or spam the transcript.
+    session_epoch: u64,
 }
 
 impl ClaudeCodeView {
@@ -184,11 +232,13 @@ impl ClaudeCodeView {
     ///
     /// `initial_prompt` is the trailing positional from `claude <prompt>`
     /// (PRODUCT §2): when present it seeds the first user turn. `cwd` is the
-    /// terminal's working directory (PRODUCT §4). In 7b there is no driver, so
-    /// a non-empty prompt is rendered through the synthetic source.
+    /// terminal's working directory (PRODUCT §4). `resume` reopens a stored
+    /// session (PRODUCT §36): its on-disk history renders immediately and the
+    /// next message continues it live via `claude --resume`.
     pub fn new(
         initial_prompt: Option<String>,
         cwd: Option<PathBuf>,
+        resume: Option<ResumeSession>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let input_editor = ctx.add_typed_action_view(|ctx| {
@@ -208,25 +258,8 @@ impl ClaudeCodeView {
 
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new(PANE_TITLE));
 
-        // PRODUCT §2/§6: `claude <prompt>` starts a live session immediately with
-        // the prompt as the first turn; bare `claude` opens idle (no process
-        // until the user sends a message). 7c drives the real
-        // `claude_code::driver` — there is no synthetic source anymore.
-        let mut transcript = Transcript::new();
-        let mut streaming = false;
-        let first_prompt = initial_prompt
-            .as_deref()
-            .map(str::trim)
-            .filter(|p| !p.is_empty())
-            .map(str::to_owned);
-        if let Some(prompt) = &first_prompt {
-            transcript.apply(TranscriptEvent::UserMessage(prompt.clone()));
-            streaming = true;
-            Self::begin_session(cwd.clone(), Some(prompt.clone()), ctx);
-        }
-
-        Self {
-            transcript,
+        let mut view = Self {
+            transcript: Transcript::new(),
             input_editor,
             pane_configuration,
             focus_handle: None,
@@ -234,12 +267,47 @@ impl ClaudeCodeView {
             scroll_state: ClippedScrollStateHandle::default(),
             child: None,
             message_tx: None,
-            streaming,
+            streaming: false,
             submit_button: MouseStateHandle::default(),
             refresh_button: MouseStateHandle::default(),
             stop_button: MouseStateHandle::default(),
             tool_card_ui: HashMap::new(),
+            diff_cards: HashMap::new(),
+            thinking_ui: HashMap::new(),
+            todos_expanded: true,
+            todos_header_mouse: MouseStateHandle::default(),
+            permission_mode: PermissionMode::Default,
+            permission_pill_mouse: MouseStateHandle::default(),
+            resume_session_id: None,
+            session_epoch: 0,
+        };
+
+        // PRODUCT §36: a resumed pane renders the stored history up front —
+        // through the same ingest path as live events so tool/diff/thinking
+        // card state exists — and continues live on the next message.
+        if let Some(resume) = resume {
+            for event in sessions::load_history(&resume.jsonl_path) {
+                view.ingest_event(event, ctx);
+            }
+            view.resume_session_id = Some(resume.session_id);
         }
+
+        // PRODUCT §2/§6: `claude <prompt>` starts a live session immediately
+        // with the prompt as the first turn; bare `claude` opens idle (no
+        // process until the user sends a message).
+        let first_prompt = initial_prompt
+            .as_deref()
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .map(str::to_owned);
+        if let Some(prompt) = first_prompt {
+            view.transcript
+                .apply(TranscriptEvent::UserMessage(prompt.clone()));
+            view.streaming = true;
+            view.begin_session(Some(prompt), ctx);
+        }
+
+        view
     }
 
     /// The pane configuration (tab title) handed to [`PaneView`] by the wrapper.
@@ -304,7 +372,7 @@ impl ClaudeCodeView {
                 let _ = tx.try_send(text);
             }
             // First message: spawn the session, forwarding this as turn one.
-            None => Self::begin_session(self.cwd.clone(), Some(text), ctx),
+            None => self.begin_session(Some(text), ctx),
         }
         ctx.notify();
     }
@@ -313,24 +381,26 @@ impl ClaudeCodeView {
     /// `spawn_session` itself spawns the child (tokio), so it must not run on
     /// the foreground. [`Self::on_session_spawned`] wires the result into the
     /// view on the main thread and sends `first_prompt` once stdin is up.
-    fn begin_session(
-        cwd: Option<PathBuf>,
-        first_prompt: Option<String>,
-        ctx: &mut ViewContext<Self>,
-    ) {
+    ///
+    /// The spawn carries the selected permission mode (PRODUCT §25) and, when
+    /// set, the resume target (PRODUCT §36) — both read off `self` at the
+    /// moment of spawn.
+    fn begin_session(&mut self, first_prompt: Option<String>, ctx: &mut ViewContext<Self>) {
+        self.session_epoch += 1;
+        let epoch = self.session_epoch;
         let opts = SpawnOptions {
-            cwd: cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
+            cwd: self
+                .cwd
+                .clone()
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
             model: None,
-            resume_session_id: None,
-            // 7c default; the permission-mode selector + interactive prompts are
-            // 7g (PRODUCT §24–§26). A turn needing tool permission pauses here
-            // until 7g, but text turns stream and complete.
-            permission_mode: PermissionMode::Default,
+            resume_session_id: self.resume_session_id.clone(),
+            permission_mode: self.permission_mode,
             allowed_tools: Vec::new(),
         };
         ctx.spawn(
             async move { spawn_session(opts) },
-            move |view, result, ctx| view.on_session_spawned(result, first_prompt, ctx),
+            move |view, result, ctx| view.on_session_spawned(epoch, result, first_prompt, ctx),
         );
     }
 
@@ -339,12 +409,21 @@ impl ClaudeCodeView {
     /// transcript via an `async_channel` + [`ViewContext::spawn_stream_local`]
     /// (keeping tokio I/O off the foreground), one owning stdin and writing
     /// queued user turns — and keeps `child` for Stop / kill-on-drop.
+    ///
+    /// Everything is guarded by `epoch`: if the view moved on to a newer
+    /// session (permission-mode restart, §25) the stale spawn is dropped on
+    /// the floor — dropping `child` kills it — and its stream never touches
+    /// the transcript.
     fn on_session_spawned(
         &mut self,
+        epoch: u64,
         result: anyhow::Result<SpawnedSession>,
         first_prompt: Option<String>,
         ctx: &mut ViewContext<Self>,
     ) {
+        if epoch != self.session_epoch {
+            return;
+        }
         let SpawnedSession {
             child,
             stdin,
@@ -352,8 +431,11 @@ impl ClaudeCodeView {
         } = match result {
             Ok(session) => session,
             Err(err) => {
-                // PRODUCT §52/§55: surface the spawn failure verbatim.
+                // PRODUCT §28/§30: surface the spawn failure verbatim.
                 self.streaming = false;
+                // A failed resume must not wedge the pane on the dead id —
+                // the next message starts fresh (PRODUCT §37).
+                self.resume_session_id = None;
                 self.transcript.apply(TranscriptEvent::Ended {
                     reason: claude_code::EndReason::Error(format!(
                         "Couldn't start `claude`: {err}"
@@ -376,7 +458,11 @@ impl ClaudeCodeView {
                 }
             })
             .detach();
-        let _ = ctx.spawn_stream_local(event_rx, Self::on_transcript_event, Self::on_stream_done);
+        let _ = ctx.spawn_stream_local(
+            event_rx,
+            move |view: &mut Self, event, ctx| view.on_transcript_event(epoch, event, ctx),
+            move |view: &mut Self, ctx| view.on_stream_done(epoch, ctx),
+        );
 
         // Own stdin in a background task; the view queues user turns onto it.
         let (message_tx, message_rx) = async_channel::unbounded::<String>();
@@ -401,28 +487,120 @@ impl ClaudeCodeView {
         ctx.notify();
     }
 
-    /// Apply one driver event to the transcript on the main thread (PRODUCT
-    /// §9–§13). An `Ended` event closes the streaming turn.
-    fn on_transcript_event(&mut self, event: TranscriptEvent, ctx: &mut ViewContext<Self>) {
+    /// Apply one driver event on the main thread (PRODUCT §9–§13), dropping
+    /// events from a superseded session. An `Ended` event closes the
+    /// streaming turn.
+    fn on_transcript_event(
+        &mut self,
+        epoch: u64,
+        event: TranscriptEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if epoch != self.session_epoch {
+            return;
+        }
         if matches!(event, TranscriptEvent::Ended { .. }) {
             self.streaming = false;
         }
-        if let TranscriptEvent::ToolCall { id, .. } = &event {
-            // The card's stable mouse handle must exist before the first
-            // render so expand/collapse clicks pair across renders.
-            self.tool_card_ui.entry(id.clone()).or_default();
+        if let TranscriptEvent::Ended {
+            reason: claude_code::EndReason::Error(_) | claude_code::EndReason::Exited,
+        } = &event
+        {
+            // The process died (a failed `--resume` lands here too, with its
+            // stderr surfaced verbatim): clear the resume target so the next
+            // message starts fresh instead of re-failing (PRODUCT §37).
+            self.resume_session_id = None;
         }
-        self.transcript.apply(event);
+        self.ingest_event(event, ctx);
         ctx.notify();
     }
 
+    /// Apply one event to the transcript and keep the per-card UI state in
+    /// step. Shared by the live pump and by 7h history replay — both need the
+    /// card mouse handles and diff views to exist before the first render.
+    fn ingest_event(&mut self, event: TranscriptEvent, ctx: &mut ViewContext<Self>) {
+        match &event {
+            TranscriptEvent::ToolCall {
+                id, name, input, ..
+            } => {
+                // The card's stable mouse handle must exist before the first
+                // render so expand/collapse clicks pair across renders.
+                self.tool_card_ui.entry(id.clone()).or_default();
+                // 7e: an edit tool renders as a feature-05 diff card — build
+                // its views now (views cannot be created at render time).
+                if !self.diff_cards.contains_key(id) {
+                    if let Some(tool_diff) = diff_for_tool(name, input) {
+                        let card = diff_cards::build_diff_card(tool_diff, ctx);
+                        self.diff_cards.insert(id.clone(), card);
+                    }
+                }
+            }
+            TranscriptEvent::Thinking { .. } => {
+                // The new item lands at the end of the transcript; key its UI
+                // state by that index (items only append, §22).
+                self.thinking_ui
+                    .entry(self.transcript.items().len())
+                    .or_default();
+            }
+            _ => {}
+        }
+        self.transcript.apply(event);
+    }
+
     /// The event stream closed — `claude`'s stdout reached EOF, so the process
-    /// is gone (PRODUCT §52). The driver already pushed an `Ended` notice; tear
+    /// is gone (PRODUCT §28). The driver already pushed an `Ended` notice; tear
     /// down the live-session handles so the composer returns to a fresh state.
-    fn on_stream_done(&mut self, ctx: &mut ViewContext<Self>) {
+    /// Stale streams (superseded sessions) are ignored.
+    fn on_stream_done(&mut self, epoch: u64, ctx: &mut ViewContext<Self>) {
+        if epoch != self.session_epoch {
+            return;
+        }
         self.streaming = false;
         self.child = None;
         self.message_tx = None;
+        ctx.notify();
+    }
+
+    /// Step to the next permission mode (PRODUCT §25): Ask → Accept edits →
+    /// Plan → Bypass → Ask. The mode applies to the next spawn; a live
+    /// session is detached (killed) and its id kept as the resume target, so
+    /// the next message continues the same conversation under the new mode —
+    /// the only mode-change channel `claude`'s documented flags offer.
+    fn cycle_permission_mode(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.streaming {
+            // §25 applies between turns; restarting mid-turn would kill the
+            // in-flight work.
+            return;
+        }
+        self.permission_mode = match self.permission_mode {
+            PermissionMode::Default => PermissionMode::AcceptEdits,
+            PermissionMode::AcceptEdits => PermissionMode::Plan,
+            PermissionMode::Plan => PermissionMode::BypassPermissions,
+            PermissionMode::BypassPermissions => PermissionMode::Default,
+        };
+        if self.child.is_some() {
+            match self.transcript.session_id() {
+                Some(id) => {
+                    // Detach the live process; the next message resumes the
+                    // conversation under the new mode.
+                    self.resume_session_id = Some(id.to_owned());
+                    self.session_epoch += 1; // invalidate the old stream
+                    self.child = None; // kill_on_drop
+                    self.message_tx = None;
+                }
+                None => {
+                    // Spawned but not yet announced (init pending) — nothing
+                    // to resume yet; the mode applies from the next spawn.
+                }
+            }
+        }
+        ctx.notify();
+    }
+
+    /// Expand / collapse the thinking card at `index` (PRODUCT §22).
+    fn toggle_thinking(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        let ui = self.thinking_ui.entry(index).or_default();
+        ui.expanded = !ui.expanded;
         ctx.notify();
     }
 
@@ -437,7 +615,8 @@ impl ClaudeCodeView {
 
     /// Flip a tool card between collapsed and expanded (PRODUCT §19). The
     /// effective state before the click is the user's prior choice, or the
-    /// status-derived default (failed cards open showing their error).
+    /// status-derived default (failed cards open showing their error; diff
+    /// cards open showing their diff, §20).
     fn toggle_tool_card(&mut self, id: &str, ctx: &mut ViewContext<Self>) {
         let Some(TranscriptItem::Tool {
             status, children, ..
@@ -445,7 +624,11 @@ impl ClaudeCodeView {
         else {
             return;
         };
-        let default = tool_cards::default_expanded(*status, !children.is_empty());
+        let default = if self.diff_cards.contains_key(id) {
+            diff_cards::default_expanded()
+        } else {
+            tool_cards::default_expanded(*status, !children.is_empty())
+        };
         if let Some(ui) = self.tool_card_ui.get_mut(id) {
             let effective = ui.expanded_override.unwrap_or(default);
             ui.expanded_override = Some(!effective);
@@ -479,8 +662,8 @@ impl ClaudeCodeView {
         let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min);
-        for item in self.transcript.items() {
-            column.add_child(self.render_item(item, app));
+        for (index, item) in self.transcript.items().iter().enumerate() {
+            column.add_child(self.render_item(index, item, app));
         }
 
         // The composer floats over the bottom of the pane; this clearance is
@@ -509,6 +692,11 @@ impl ClaudeCodeView {
     /// on. Effort is intentionally absent: the headless stream-json doesn't
     /// report an effort level (only `fast_mode_state`), unlike the interactive
     /// TUI's status line.
+    ///
+    /// The permission pill is the §25 selector: it shows the view's selected
+    /// mode (the value every spawn passes via `--permission-mode`) and a click
+    /// steps to the next mode. Disabled while a turn streams (§25 applies
+    /// between turns).
     fn metadata_chips(&self, appearance: &Appearance) -> Vec<Box<dyn Element>> {
         let mut chips = vec![render_pill("Local", appearance)];
         if let Some(model) = self.transcript.model() {
@@ -517,8 +705,16 @@ impl ClaudeCodeView {
         if let Some(label) = self.transcript.usage().and_then(format_context) {
             chips.push(render_pill(&label, appearance));
         }
-        if let Some(mode) = self.transcript.permission_mode() {
-            chips.push(render_pill(&prettify_permission_mode(mode), appearance));
+        let mode_label = prettify_permission_mode(self.permission_mode.as_cli_arg());
+        if self.streaming {
+            chips.push(render_pill(&mode_label, appearance));
+        } else {
+            chips.push(render_clickable_pill(
+                &mode_label,
+                self.permission_pill_mouse.clone(),
+                |ctx| ctx.dispatch_typed_action(ClaudeCodeViewAction::CyclePermissionMode),
+                appearance,
+            ));
         }
         if self.transcript.fast_mode() == Some("on") {
             chips.push(render_pill("Fast mode", appearance));
@@ -778,6 +974,12 @@ impl TypedActionView for ClaudeCodeView {
             ClaudeCodeViewAction::Refresh => ctx.notify(),
             ClaudeCodeViewAction::Stop => self.stop(ctx),
             ClaudeCodeViewAction::ToggleToolCard(id) => self.toggle_tool_card(id, ctx),
+            ClaudeCodeViewAction::ToggleThinking(index) => self.toggle_thinking(*index, ctx),
+            ClaudeCodeViewAction::ToggleTodos => {
+                self.todos_expanded = !self.todos_expanded;
+                ctx.notify();
+            }
+            ClaudeCodeViewAction::CyclePermissionMode => self.cycle_permission_mode(ctx),
         }
     }
 }
@@ -846,10 +1048,14 @@ impl ClaudeCodeView {
     /// Bridge dispatch (TECH §The bridge): one arm per [`TranscriptItem`].
     /// User/Assistant render through the ported markdown transcript (7b); Tool
     /// renders through the ported `inline_action` card chrome (7d, PRODUCT
-    /// §16–§19). The diff, thinking and todo cards are 7e–7f; those arms render
-    /// a minimal themed placeholder rather than crash — the model contract
-    /// already carries the variants.
-    fn render_item(&self, item: &TranscriptItem, app: &AppContext) -> Box<dyn Element> {
+    /// §16–§19) — or, for `Edit`/`MultiEdit`/`Write`, the feature-05 diff card
+    /// (7e, §20–§21); Thinking/Todos render the 7f cards (§22–§23).
+    fn render_item(
+        &self,
+        index: usize,
+        item: &TranscriptItem,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         match item {
             TranscriptItem::User(text) => {
@@ -867,22 +1073,52 @@ impl ClaudeCodeView {
                 status,
                 output,
                 children,
-            } => render_tool_card(
-                id,
-                name,
-                input,
-                *status,
-                output.as_ref(),
-                children,
-                &self.tool_card_ui,
-                false,
+            } => match self.diff_cards.get(id) {
+                Some(card) => diff_cards::render_diff_card(
+                    id,
+                    *status,
+                    output.as_ref(),
+                    card,
+                    &self.tool_card_ui,
+                    app,
+                ),
+                None => render_tool_card(
+                    id,
+                    name,
+                    input,
+                    *status,
+                    output.as_ref(),
+                    children,
+                    &self.tool_card_ui,
+                    false,
+                    app,
+                ),
+            },
+            TranscriptItem::Thinking { text, duration } => thinking::render_thinking_card(
+                index,
+                text,
+                *duration,
+                self.thinking_ui.get(&index),
                 app,
             ),
-            // 7e–7f bring back the diff/thinking/todo cards (ported from the
-            // remaining `view_impl` leaves + feature 05's diff renderer).
-            TranscriptItem::Thinking { .. }
-            | TranscriptItem::Todos(_)
-            | TranscriptItem::Permission { .. } => render_pending_card(item, appearance),
+            TranscriptItem::Todos(items) => todos::render_todos(
+                items,
+                self.todos_expanded,
+                self.todos_header_mouse.clone(),
+                app,
+            ),
+            // No interactive permission wire channel exists on the pinned
+            // `claude` (2.1.x dropped `--permission-prompt-tool`); the driver
+            // never emits these today. If a future CLI brings them back, the
+            // request surfaces as a themed notice rather than nothing
+            // (PRODUCT §26 degradation: never crash, never hang).
+            TranscriptItem::Permission { tool, .. } => render_notice(
+                &format!(
+                    "Claude requested permission to use {tool}. Pick a permission mode below and \
+                     re-send to proceed."
+                ),
+                appearance,
+            ),
         }
     }
 }
@@ -1057,21 +1293,6 @@ fn render_error(message: &str, appearance: &Appearance) -> Box<dyn Element> {
     .finish()
 }
 
-/// Placeholder for transcript variants whose rich cards land in 7e–7f.
-/// Kept minimal and clearly labelled.
-fn render_pending_card(item: &TranscriptItem, appearance: &Appearance) -> Box<dyn Element> {
-    let kind = match item {
-        TranscriptItem::Thinking { .. } => "Thinking",
-        TranscriptItem::Todos(_) => "Task list",
-        TranscriptItem::Permission { .. } => "Permission request",
-        _ => "Item",
-    };
-    render_notice(
-        &format!("{kind} (rendered in a later sub-phase)"),
-        appearance,
-    )
-}
-
 /// A contiguous run of a message's markdown: prose (rendered via
 /// [`FormattedTextElement`]) or a fenced code block (rendered specially).
 ///
@@ -1136,6 +1357,46 @@ fn render_pill(label: &str, appearance: &Appearance) -> Box<dyn Element> {
     .with_margin_right(6.)
     .with_background_color(theme.surface_2().into_solid())
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
+    .finish()
+}
+
+/// The §25 permission-mode selector pill: the muted pill chrome with hover +
+/// pointer affordance; a click dispatches the cycle action. The label carries
+/// a chevron-ish suffix so it reads as a control, not a static chip.
+fn render_clickable_pill(
+    label: &str,
+    mouse_state: MouseStateHandle,
+    on_click: impl Fn(&mut warpui::EventContext) + 'static,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let label = format!("{label} ▾");
+    let pill = Container::new(
+        appearance
+            .ui_builder()
+            .span(label)
+            .with_style(UiComponentStyles {
+                font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+                font_size: Some(11.5),
+                ..Default::default()
+            })
+            .build()
+            .finish(),
+    )
+    .with_padding_left(8.)
+    .with_padding_right(8.)
+    .with_padding_top(3.)
+    .with_padding_bottom(3.)
+    .with_background_color(theme.surface_2().into_solid())
+    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
+    .finish();
+    Container::new(
+        Hoverable::new(mouse_state, move |_| pill)
+            .with_cursor(Cursor::PointingHand)
+            .on_click(move |ctx, _, _| on_click(ctx))
+            .finish(),
+    )
+    .with_margin_right(6.)
     .finish()
 }
 

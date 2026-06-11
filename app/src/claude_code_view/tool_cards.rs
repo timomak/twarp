@@ -189,13 +189,23 @@ pub(super) fn generic_input_summary(input: &Value) -> String {
 
 /// The collapsed result label (PRODUCT §19): the driver's summary when it set
 /// one; otherwise derived — a short single-line result verbatim, a line count
-/// for anything bigger, "failed" for errors.
+/// for anything bigger, "failed" for errors. A permission denial (the §26
+/// degradation path: headless `claude` refuses un-granted tools with an
+/// error tool_result) reads "needs permission" so the remedy — the composer's
+/// mode selector — is discoverable.
 pub(super) fn derive_result_label(
     status: ToolStatus,
     output: Option<&ToolOutput>,
 ) -> Option<String> {
     match status {
         ToolStatus::Running => None,
+        ToolStatus::Failed
+            if output.is_some_and(|o| {
+                o.text.contains("requested permissions") && o.text.contains("haven't granted")
+            }) =>
+        {
+            Some("needs permission".to_owned())
+        }
         ToolStatus::Failed => Some("failed".to_owned()),
         ToolStatus::Completed => {
             let output = output?;
@@ -246,7 +256,7 @@ fn is_expandable(output: Option<&ToolOutput>, children: &[TranscriptItem]) -> bo
     !children.is_empty() || output.is_some_and(|o| !o.text.trim().is_empty())
 }
 
-fn status_icon(status: ToolStatus, appearance: &Appearance) -> warpui::elements::Icon {
+pub(super) fn status_icon(status: ToolStatus, appearance: &Appearance) -> warpui::elements::Icon {
     match status {
         ToolStatus::Running => running_icon(appearance),
         ToolStatus::Completed => green_check_icon(appearance),
@@ -707,6 +717,29 @@ mod tests {
         );
         // Completed with no output yet (shouldn't happen, but §29 defensive).
         assert_eq!(derive_result_label(ToolStatus::Completed, None), None);
+    }
+
+    #[test]
+    fn permission_denial_reads_needs_permission() {
+        // The §26 degradation shape, verbatim from headless claude 2.1.173.
+        let denial = ToolOutput {
+            text: "Claude requested permissions to write to /tmp/x.txt, but you haven't \
+                   granted it yet."
+                .to_owned(),
+            summary: None,
+        };
+        assert_eq!(
+            derive_result_label(ToolStatus::Failed, Some(&denial)).as_deref(),
+            Some("needs permission")
+        );
+        let other = ToolOutput {
+            text: "boom".to_owned(),
+            summary: None,
+        };
+        assert_eq!(
+            derive_result_label(ToolStatus::Failed, Some(&other)).as_deref(),
+            Some("failed")
+        );
     }
 
     #[test]

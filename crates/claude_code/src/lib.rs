@@ -15,6 +15,7 @@
 //! [`Transcript::apply`]. Keeping the event→model mapping here (and not in the
 //! view) is what makes it testable without a window.
 
+pub mod diff;
 pub mod driver;
 pub mod sessions;
 

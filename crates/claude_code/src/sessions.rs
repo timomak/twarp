@@ -7,11 +7,14 @@
 //! best-effort: a corrupt or unfamiliar entry falls back to an untitled
 //! session with just a timestamp.
 
+use std::collections::VecDeque;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use serde_json::Value;
+
+use crate::TranscriptEvent;
 
 /// One stored session entry for a given cwd.
 #[derive(Clone, Debug)]
@@ -48,6 +51,23 @@ pub fn sessions_dir(cwd: &Path) -> Option<PathBuf> {
             .join("projects")
             .join(encode_cwd(cwd)),
     )
+}
+
+/// Whether any stored session exists for this cwd — an existence-only probe
+/// (one `read_dir`, no per-file parsing) cheap enough to gate the sidebar
+/// entry's visibility on every directory change (PRODUCT §35).
+pub fn has_sessions(cwd: &Path) -> bool {
+    let Some(dir) = sessions_dir(cwd) else {
+        return false;
+    };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return false;
+    };
+    entries.flatten().any(|e| {
+        e.file_name()
+            .to_str()
+            .is_some_and(|n| n.ends_with(".jsonl"))
+    })
 }
 
 /// List stored sessions for a given cwd, most-recent first.
@@ -90,6 +110,32 @@ pub fn list_sessions(cwd: &Path) -> Vec<StoredSession> {
     }
     sessions.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
     sessions
+}
+
+/// Replay a stored session's history as transcript events (PRODUCT §36: a
+/// resumed pane renders its existing history before continuing live).
+///
+/// Best-effort like everything else here: an unreadable file yields an empty
+/// history (the pane still opens — `claude --resume` is the source of truth
+/// for the conversation itself), and unfamiliar lines are skipped via the
+/// driver's defensive line parser.
+pub fn load_history(path: &Path) -> Vec<TranscriptEvent> {
+    let Ok(file) = std::fs::File::open(path) else {
+        log::debug!("claude: cannot open session file {}", path.display());
+        return Vec::new();
+    };
+    let reader = std::io::BufReader::new(file);
+    let mut out = VecDeque::new();
+    for line in reader.lines().map_while(Result::ok) {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        crate::driver::parse_history_line(&value, &mut out);
+    }
+    out.into()
 }
 
 fn best_effort_title(path: &Path) -> Option<String> {
@@ -177,5 +223,39 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
         let sessions = list_sessions(&tmp);
         assert!(sessions.is_empty());
+    }
+
+    #[test]
+    fn load_history_replays_turns_and_skips_bookkeeping() {
+        let dir = std::env::temp_dir().join("twarp-test-claude-history");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("session.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"type":"mode","mode":"default"}"#,
+                "\n",
+                r#"{"type":"user","message":{"role":"user","content":"hello"}}"#,
+                "\n",
+                r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi there"}]}}"#,
+                "\n",
+                r#"not json at all"#,
+                "\n",
+                r#"{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"meta"}]}}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        let events = load_history(&path);
+        assert_eq!(events.len(), 3, "user + delta + done, got {events:?}");
+        assert!(matches!(&events[0], TranscriptEvent::UserMessage(m) if m == "hello"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_history_missing_file_is_empty() {
+        let path = std::env::temp_dir().join("twarp-test-claude-history-missing.jsonl");
+        let _ = std::fs::remove_file(&path);
+        assert!(load_history(&path).is_empty());
     }
 }

@@ -3409,6 +3409,7 @@ impl Workspace {
                 },
                 LeftPanelDisplayedTab::WarpDrive => ToolPanelView::WarpDrive,
                 LeftPanelDisplayedTab::Shortcuts => ToolPanelView::Shortcuts,
+                LeftPanelDisplayedTab::ClaudeSessions => ToolPanelView::ClaudeSessions,
                 LeftPanelDisplayedTab::ConversationListView => ToolPanelView::ConversationListView,
             };
             lp.restore_active_view_from_snapshot(active_view, ctx);
@@ -5376,6 +5377,20 @@ impl Workspace {
                     repo_path.clone(),
                     file_path.clone(),
                     sha.clone(),
+                    ctx,
+                );
+            }
+            // twarp 07 (7h, PRODUCT §36): a session-list row resumes its
+            // stored session in a Claude Code pane.
+            LeftPanelEvent::ResumeClaudeSession {
+                session_id,
+                jsonl_path,
+                cwd,
+            } => {
+                self.open_claude_code_resume_pane(
+                    session_id.clone(),
+                    jsonl_path.clone(),
+                    cwd.clone(),
                     ctx,
                 );
             }
@@ -12098,6 +12113,35 @@ impl Workspace {
         });
     }
 
+    /// twarp 07 (7h, PRODUCT §36): reopen a stored Claude Code session from
+    /// the sidebar list — same pane placement as the terminal trigger; the
+    /// pane renders the on-disk history and continues live via
+    /// `claude --resume`.
+    pub(crate) fn open_claude_code_resume_pane(
+        &mut self,
+        session_id: String,
+        jsonl_path: PathBuf,
+        cwd: PathBuf,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let pane = ClaudeCodePane::new_resume(
+            crate::claude_code_view::ResumeSession {
+                session_id,
+                jsonl_path,
+            },
+            Some(cwd),
+            ctx,
+        );
+        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
+            pane_group.add_pane_with_direction(
+                Direction::Right,
+                pane,
+                true, /* focus_new_pane */
+                ctx,
+            );
+        });
+    }
+
     fn handle_file_tree_event(
         &mut self,
         pane_group: ViewHandle<PaneGroup>,
@@ -15302,6 +15346,7 @@ impl Workspace {
                         ToolPanelView::GlobalSearch { .. } => "Global search",
                         ToolPanelView::WarpDrive => "Warp Drive",
                         ToolPanelView::Shortcuts => "Custom shortcuts",
+                        ToolPanelView::ClaudeSessions => "Claude Code sessions",
                         ToolPanelView::ConversationListView => "Agent conversations",
                     }
                 } else {
@@ -15357,6 +15402,7 @@ impl Workspace {
                 ToolPanelView::GlobalSearch { .. } => "Global search",
                 ToolPanelView::WarpDrive => "Warp Drive",
                 ToolPanelView::Shortcuts => "Custom shortcuts",
+                ToolPanelView::ClaudeSessions => "Claude Code sessions",
                 ToolPanelView::ConversationListView => "Agent conversations",
             }
         } else {
@@ -18142,9 +18188,13 @@ impl Workspace {
         // Custom command shortcuts panel (twarp feature 04, PRODUCT §26).
         // Sits immediately after Global Search in the toolbelt.
         views.push(ToolPanelView::Shortcuts);
-        // twarp 07 (7b): no Claude Code toolbelt tab — the chat is a
-        // main-content pane opened by typing `claude` (re-spec #70). A read-only
-        // session-list entry returns in 7h.
+        // twarp 07 (7h, PRODUCT §35): the Claude Code session list — a
+        // read-only list of `claude`'s own stored sessions for the cwd. The
+        // chat itself stays a main-content pane (re-spec #70); the toolbelt
+        // button renders only when sessions exist (left_panel render filter).
+        if cfg!(feature = "local_fs") {
+            views.push(ToolPanelView::ClaudeSessions);
+        }
         if WarpDriveSettings::is_warp_drive_enabled(ctx) {
             views.push(ToolPanelView::WarpDrive);
         }

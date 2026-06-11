@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use warpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle};
 
 use crate::app_state::LeafContents;
-use crate::claude_code_view::{ClaudeCodeView, ClaudeCodeViewEvent};
+use crate::claude_code_view::{ClaudeCodeView, ClaudeCodeViewEvent, ResumeSession};
 
 use super::{
     view::PaneView, DetachType, PaneConfiguration, PaneContent, PaneGroup, PaneId, ShareableLink,
@@ -55,8 +55,21 @@ impl ClaudeCodePane {
         cwd: Option<PathBuf>,
         ctx: &mut ViewContext<V>,
     ) -> Self {
+        let view = ctx
+            .add_typed_action_view(move |ctx| ClaudeCodeView::new(initial_prompt, cwd, None, ctx));
+        Self::from_view(view, ctx)
+    }
+
+    /// Reopen a stored session (PRODUCT §36, 7h): the pane renders the
+    /// session's on-disk history and continues it live via `claude --resume`
+    /// on the next message.
+    pub fn new_resume<V: View>(
+        resume: ResumeSession,
+        cwd: Option<PathBuf>,
+        ctx: &mut ViewContext<V>,
+    ) -> Self {
         let view =
-            ctx.add_typed_action_view(move |ctx| ClaudeCodeView::new(initial_prompt, cwd, ctx));
+            ctx.add_typed_action_view(move |ctx| ClaudeCodeView::new(None, cwd, Some(resume), ctx));
         Self::from_view(view, ctx)
     }
 
