@@ -80,7 +80,7 @@ use crate::editor::{EditorOptions, EditorView, Event as EditorEvent, TextOptions
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::{
     pane::view::{self, HeaderContent, StandardHeader, StandardHeaderOptions},
-    BackingView, PaneConfiguration, PaneEvent,
+    BackingView, PaneConfiguration, PaneEvent, PaneHeaderAction,
 };
 use crate::util::path::resolve_executable;
 
@@ -164,8 +164,19 @@ pub enum ClaudeCodeViewAction {
     /// the next spawn; a live session is re-attached via `--resume` so the
     /// conversation continues under the new mode.
     CyclePermissionMode,
-    /// Swap this pane for the raw interactive CLI (PRODUCT §39, 7i). Disabled
-    /// while a turn streams (§42).
+}
+
+/// Actions dispatched by elements this view renders inside its **pane
+/// header** (PRODUCT §39's Raw CLI toggle). Header chrome lives in the
+/// parent [`PaneView`]'s tree, so an in-pane [`ClaudeCodeViewAction`] dispatch
+/// from there dies unhandled ("dispatched, but no view handled it") — header
+/// buttons must route through [`PaneHeaderAction::CustomAction`], which the
+/// pane framework forwards back to [`BackingView::handle_custom_action`].
+/// Same pattern as `NetworkLogViewCustomAction::Refresh`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClaudeCodeCustomAction {
+    /// Swap this pane for the raw interactive CLI (PRODUCT §39, 7i).
+    /// Hidden while a turn streams (§42).
     ToggleRawCli,
 }
 
@@ -1113,14 +1124,13 @@ impl TypedActionView for ClaudeCodeView {
                 ctx.notify();
             }
             ClaudeCodeViewAction::CyclePermissionMode => self.cycle_permission_mode(ctx),
-            ClaudeCodeViewAction::ToggleRawCli => self.toggle_raw_cli(ctx),
         }
     }
 }
 
 impl BackingView for ClaudeCodeView {
     type PaneHeaderOverflowMenuAction = ();
-    type CustomAction = ();
+    type CustomAction = ClaudeCodeCustomAction;
     type AssociatedData = ();
 
     fn handle_pane_header_overflow_menu_action(
@@ -1129,6 +1139,18 @@ impl BackingView for ClaudeCodeView {
         _ctx: &mut ViewContext<Self>,
     ) {
         // No overflow menu items in 7b.
+    }
+
+    /// Header-button actions, routed back here by the pane framework
+    /// (PRODUCT §39; see [`ClaudeCodeCustomAction`]).
+    fn handle_custom_action(
+        &mut self,
+        custom_action: &Self::CustomAction,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match custom_action {
+            ClaudeCodeCustomAction::ToggleRawCli => self.toggle_raw_cli(ctx),
+        }
     }
 
     fn close(&mut self, ctx: &mut ViewContext<Self>) {
@@ -1163,6 +1185,10 @@ impl BackingView for ClaudeCodeView {
         // PRODUCT §39 (7i): the Raw CLI toggle — swaps the pane for the real
         // interactive `claude` resuming this conversation. Hidden while a
         // turn streams (§42); the header re-renders when streaming flips.
+        // The header lives in the parent PaneView's tree, so the click must
+        // dispatch the pane framework's CustomAction (handled by the header
+        // view and routed back to `handle_custom_action`), NOT an in-pane
+        // ClaudeCodeViewAction — that dies unhandled from header chrome.
         let raw_cli_toggle = (!self.streaming).then(|| {
             let appearance = Appearance::as_ref(app);
             appearance
@@ -1171,7 +1197,9 @@ impl BackingView for ClaudeCodeView {
                 .with_text_label("Raw CLI".to_owned())
                 .build()
                 .on_click(|ctx, _, _| {
-                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleRawCli);
+                    ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
+                        PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleRawCli),
+                    );
                 })
                 .finish()
         });
