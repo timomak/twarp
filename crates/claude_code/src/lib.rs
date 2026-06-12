@@ -110,6 +110,10 @@ pub enum TranscriptEvent {
         model: Option<String>,
         permission_mode: Option<String>,
         fast_mode: Option<String>,
+        /// The session's available slash commands (built-ins + skills +
+        /// plugins), from the `init` message — drives the composer's `/`
+        /// suggestions (PRODUCT §15a).
+        slash_commands: Vec<String>,
     },
     /// A user turn was sent into the session (PRODUCT §16).
     UserMessage(String),
@@ -217,6 +221,8 @@ pub struct Transcript {
     model: Option<String>,
     permission_mode: Option<String>,
     fast_mode: Option<String>,
+    /// Slash commands `claude` reported at init (PRODUCT §15a).
+    slash_commands: Vec<String>,
     /// Latest turn's token usage + context window (from `result`).
     usage: Option<Usage>,
 }
@@ -261,6 +267,12 @@ impl Transcript {
         self.fast_mode.as_deref()
     }
 
+    /// Slash commands `claude` reported at init (PRODUCT §15a). Empty until
+    /// the first session init.
+    pub fn slash_commands(&self) -> &[String] {
+        &self.slash_commands
+    }
+
     /// Latest turn's token usage + context window, once a turn has completed.
     pub fn usage(&self) -> Option<Usage> {
         self.usage
@@ -273,6 +285,7 @@ impl Transcript {
         self.model = None;
         self.permission_mode = None;
         self.fast_mode = None;
+        self.slash_commands.clear();
         self.usage = None;
     }
 
@@ -288,12 +301,16 @@ impl Transcript {
                 model,
                 permission_mode,
                 fast_mode,
+                slash_commands,
                 ..
             } => {
                 self.session_id = Some(session_id);
                 self.model = model;
                 self.permission_mode = permission_mode;
                 self.fast_mode = fast_mode;
+                if !slash_commands.is_empty() {
+                    self.slash_commands = slash_commands;
+                }
             }
             TranscriptEvent::Usage(usage) => {
                 self.usage = Some(usage);
@@ -608,11 +625,13 @@ mod tests {
             model: Some("claude-fable-5[1m]".to_string()),
             permission_mode: Some("default".to_string()),
             fast_mode: Some("off".to_string()),
+            slash_commands: vec!["compact".to_string()],
         });
         assert_eq!(t.session_id(), Some("abc-123"));
         assert_eq!(t.model(), Some("claude-fable-5[1m]"));
         assert_eq!(t.permission_mode(), Some("default"));
         assert_eq!(t.fast_mode(), Some("off"));
+        assert_eq!(t.slash_commands(), ["compact".to_string()]);
         assert!(t.is_empty(), "session init alone renders nothing");
     }
 

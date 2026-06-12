@@ -33,20 +33,22 @@
 //! view in the responder chain. There is **no** `WorkspaceAction` forwarder —
 //! that was the #67 symptom-fix and is deleted.
 
+mod composer;
 mod diff_cards;
 mod inline_action;
 mod thinking;
 mod todos;
 mod tool_cards;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use async_channel::Sender;
+use base64::Engine as _;
 use claude_code::diff::diff_for_tool;
 use claude_code::driver::{
-    interrupt, send_user_message, spawn_session, Child, PermissionMode, SpawnOptions,
-    SpawnedSession,
+    interrupt, send_user_message, spawn_session, Child, OutgoingImage, OutgoingMessage,
+    PermissionMode, SpawnOptions, SpawnedSession,
 };
 use claude_code::launch::LaunchOptions;
 use claude_code::{sessions, Transcript, TranscriptEvent, TranscriptItem, Usage};
@@ -54,15 +56,17 @@ use futures::StreamExt;
 use markdown_parser::{parse_markdown, FormattedText, FormattedTextLine};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
+use warp_editor::editor::NavigationKey;
+use warpui::assets::asset_cache::AssetSource;
 use warpui::ui_components::button::ButtonVariant;
 use warpui::{
     elements::{
-        Align, Border, ChildAnchor, Clipped, ClippedScrollStateHandle, ClippedScrollable,
-        ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DispatchEventResult,
-        DropShadow, Element, EventDispatchMode, EventHandler, Fill, Flex, FormattedTextElement,
-        HighlightedHyperlink, Hoverable, HyperlinkUrl, Icon, MainAxisAlignment, MainAxisSize,
-        MouseStateHandle, OffsetPositioning, Padding, ParentAnchor, ParentElement,
-        ParentOffsetBounds, Radius, ScrollbarWidth, Shrinkable, Stack,
+        Align, Border, CacheOption, ChildAnchor, Clipped, ClippedScrollStateHandle,
+        ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
+        DispatchEventResult, DropShadow, Element, EventDispatchMode, EventHandler, Fill, Flex,
+        FormattedTextElement, HighlightedHyperlink, Hoverable, HyperlinkUrl, Icon, Image,
+        MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, Padding,
+        ParentAnchor, ParentElement, ParentOffsetBounds, Radius, ScrollbarWidth, Shrinkable, Stack,
     },
     platform::Cursor,
     presenter::ChildView,
@@ -72,6 +76,7 @@ use warpui::{
     ViewContext, ViewHandle,
 };
 
+use self::composer::{SuggestionKind, SuggestionQuery};
 use self::diff_cards::DiffCard;
 use self::thinking::ThinkingUi;
 use self::tool_cards::{render_tool_card, ToolCardUi};
@@ -165,6 +170,13 @@ pub enum ClaudeCodeViewAction {
     /// the next spawn; a live session is re-attached via `--resume` so the
     /// conversation continues under the new mode.
     CyclePermissionMode,
+    /// Accept the composer suggestion at this index (PRODUCT §15a, 7j) —
+    /// clicked in the suggestions panel; Enter accepts the highlighted one.
+    AcceptSuggestion(usize),
+    /// Remove an attachment chip (PRODUCT §15b, 7j): the image stays
+    /// mentioned in the text (so `claude` can still read it) but is no longer
+    /// sent as an inline image block.
+    RemoveAttachment(String),
 }
 
 /// Actions dispatched by elements this view renders inside its **pane
@@ -226,7 +238,7 @@ pub struct ClaudeCodeView {
     child: Option<Child>,
     /// Sends user turns to the background task that owns the process stdin
     /// (PRODUCT §16). `None` until a session is running.
-    message_tx: Option<Sender<String>>,
+    message_tx: Option<Sender<OutgoingMessage>>,
     /// True while `claude` is producing output for the current turn (PRODUCT §9):
     /// the composer shows Stop and sending is disabled until the turn ends.
     streaming: bool,
@@ -275,6 +287,26 @@ pub struct ClaudeCodeView {
     /// The embedded raw-CLI terminal while raw mode is active (PRODUCT §39).
     /// `None` in rendered-chat mode.
     raw_cli: Option<RawCliSession>,
+    /// The active composer suggestion query (`/` or `@`), `None` when the
+    /// panel is closed (PRODUCT §15a, 7j).
+    suggestion_query: Option<SuggestionQuery>,
+    /// Filtered suggestions for the active query, capped.
+    suggestions: Vec<String>,
+    /// The highlighted suggestion (Enter accepts it; Tab/arrows move it).
+    suggestion_selected: usize,
+    /// Stable per-row mouse handles for the suggestions panel, grown on
+    /// demand (the Timeline/shortcut-row pattern).
+    suggestion_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// The cwd's mentionable files, walked lazily on the first `@` and kept
+    /// for the pane's lifetime (gitignore-aware, capped).
+    cwd_files: Option<Vec<String>>,
+    /// `@`-mentioned images detected in the draft (PRODUCT §15b) — previewed
+    /// as chips and sent as inline image blocks.
+    pending_images: Vec<PathBuf>,
+    /// Images the user X-ed out of attaching (the mention text remains).
+    attachment_optouts: HashSet<PathBuf>,
+    /// Stable per-chip mouse handles for attachment removal.
+    attachment_chip_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
     /// Monotonic session generation. Spawn callbacks and stream pumps carry
     /// the epoch they were started under and are ignored when stale — a
     /// permission-mode restart must not let the old (killed) session's EOF
@@ -377,6 +409,14 @@ impl ClaudeCodeView {
             session_id,
             raw_cli_button: MouseStateHandle::default(),
             raw_cli: None,
+            suggestion_query: None,
+            suggestions: Vec::new(),
+            suggestion_selected: 0,
+            suggestion_row_mouse: std::cell::RefCell::new(Vec::new()),
+            cwd_files: None,
+            pending_images: Vec::new(),
+            attachment_optouts: HashSet::new(),
+            attachment_chip_mouse: std::cell::RefCell::new(Vec::new()),
             session_epoch: 0,
         };
 
@@ -402,7 +442,7 @@ impl ClaudeCodeView {
             view.transcript
                 .apply(TranscriptEvent::UserMessage(prompt.clone()));
             view.streaming = true;
-            view.begin_session(Some(prompt), ctx);
+            view.begin_session(Some(OutgoingMessage::text(prompt)), ctx);
         }
 
         view
@@ -441,11 +481,305 @@ impl ClaudeCodeView {
         event: &EditorEvent,
         ctx: &mut ViewContext<Self>,
     ) {
-        // PRODUCT §15: Enter sends; Shift+Enter is handled by the editor itself
-        // (inserts a newline) and does not reach us.
-        if matches!(event, EditorEvent::Enter) {
-            self.submit(ctx);
+        match event {
+            // PRODUCT §15: Enter sends — unless the suggestions panel is open,
+            // in which case it accepts the highlighted suggestion (7j).
+            // Shift+Enter is handled by the editor itself (inserts a newline).
+            EditorEvent::Enter => {
+                if self.suggestion_query.is_some() && !self.suggestions.is_empty() {
+                    self.accept_suggestion(self.suggestion_selected, ctx);
+                } else {
+                    self.submit(ctx);
+                }
+            }
+            // Live-filter the suggestions + attachment chips as the draft
+            // changes (PRODUCT §15a–§15b).
+            EditorEvent::Edited(_) => self.refresh_composer_intelligence(ctx),
+            EditorEvent::Escape => {
+                if self.suggestion_query.take().is_some() {
+                    self.suggestions.clear();
+                    ctx.notify();
+                }
+            }
+            // Cycle the highlighted suggestion. The editor surfaces these as
+            // events when the cursor can't move further (single-line drafts:
+            // always); clicking a row works regardless.
+            EditorEvent::Navigate(key) if self.suggestion_query.is_some() => {
+                let len = self.suggestions.len();
+                if len == 0 {
+                    return;
+                }
+                match key {
+                    NavigationKey::Down | NavigationKey::Tab => {
+                        self.suggestion_selected = (self.suggestion_selected + 1) % len;
+                        ctx.notify();
+                    }
+                    NavigationKey::Up | NavigationKey::ShiftTab => {
+                        self.suggestion_selected =
+                            self.suggestion_selected.checked_sub(1).unwrap_or(len - 1);
+                        ctx.notify();
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
         }
+    }
+
+    /// Recompute the suggestions panel and the attachment chips from the
+    /// current draft (PRODUCT §15a–§15b, 7j).
+    fn refresh_composer_intelligence(&mut self, ctx: &mut ViewContext<Self>) {
+        let text = self
+            .input_editor
+            .read(ctx, |editor, ctx| editor.buffer_text(ctx));
+
+        // Attachment chips: @-mentions resolving to images under the cwd.
+        let cwd = self
+            .cwd
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_default();
+        self.pending_images = composer::image_mentions(&text, &cwd)
+            .into_iter()
+            .filter(|path| !self.attachment_optouts.contains(path))
+            .collect();
+
+        // Suggestions panel.
+        self.suggestion_query = composer::suggestion_query(&text);
+        self.suggestions = match &self.suggestion_query {
+            Some(query) => {
+                let candidates: Vec<String> = match query.kind {
+                    SuggestionKind::SlashCommand => {
+                        let mut commands: Vec<String> = composer::DEFAULT_SLASH_COMMANDS
+                            .iter()
+                            .map(|c| c.to_string())
+                            .collect();
+                        for command in self.transcript.slash_commands() {
+                            if !commands.contains(command) {
+                                commands.push(command.clone());
+                            }
+                        }
+                        commands.sort();
+                        commands
+                    }
+                    SuggestionKind::FileMention => self
+                        .cwd_files
+                        .get_or_insert_with(|| composer::list_cwd_files(&cwd))
+                        .clone(),
+                };
+                composer::filter_suggestions(&query.query, &candidates)
+            }
+            None => Vec::new(),
+        };
+        self.suggestion_selected = 0;
+        ctx.notify();
+    }
+
+    /// Accept a suggestion (PRODUCT §15a): replace the queried token in the
+    /// draft and keep typing flowing.
+    fn accept_suggestion(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        let (Some(query), Some(accepted)) =
+            (self.suggestion_query.clone(), self.suggestions.get(index))
+        else {
+            return;
+        };
+        let accepted = accepted.clone();
+        let text = self
+            .input_editor
+            .read(ctx, |editor, ctx| editor.buffer_text(ctx));
+        let new_text = composer::apply_suggestion(&text, &query, &accepted);
+        self.input_editor
+            .update(ctx, |editor, ctx| editor.set_buffer_text(&new_text, ctx));
+        self.suggestion_query = None;
+        self.suggestions.clear();
+        self.refresh_composer_intelligence(ctx);
+    }
+
+    /// The composer's suggestions panel (PRODUCT §15a): one row per
+    /// suggestion, highlighted row tracks the keyboard selection, click
+    /// accepts. `None` when no `/` or `@` query is active.
+    fn render_suggestions_panel(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+        let query = self.suggestion_query.as_ref()?;
+        if self.suggestions.is_empty() {
+            return None;
+        }
+        let theme = appearance.theme();
+        let glyph = match query.kind {
+            SuggestionKind::SlashCommand => crate::ui_components::icons::Icon::SlashCommands,
+            SuggestionKind::FileMention => crate::ui_components::icons::Icon::File,
+        };
+        let mut rows = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min);
+        for (index, suggestion) in self.suggestions.iter().enumerate() {
+            let row_mouse = {
+                let mut states = self.suggestion_row_mouse.borrow_mut();
+                while states.len() <= index {
+                    states.push(MouseStateHandle::default());
+                }
+                states[index].clone()
+            };
+            let selected = index == self.suggestion_selected;
+            let icon = ConstrainedBox::new(
+                Icon::new(glyph.into(), theme.nonactive_ui_text_color().into_solid()).finish(),
+            )
+            .with_width(14.)
+            .with_height(14.)
+            .finish();
+            let label = appearance
+                .ui_builder()
+                .span(suggestion.clone())
+                .with_style(UiComponentStyles {
+                    font_family_id: Some(appearance.monospace_font_family()),
+                    font_size: Some(12.5),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let mut row_container = Container::new(
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(8.)
+                    .with_child(icon)
+                    .with_child(label)
+                    .finish(),
+            )
+            .with_padding_left(8.)
+            .with_padding_right(8.)
+            .with_padding_top(4.)
+            .with_padding_bottom(4.)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
+            if selected {
+                row_container = row_container.with_background_color(theme.surface_2().into_solid());
+            }
+            let row = row_container.finish();
+            rows.add_child(
+                Hoverable::new(row_mouse, move |_| row)
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::AcceptSuggestion(index));
+                    })
+                    .finish(),
+            );
+        }
+        Some(
+            Container::new(rows.finish())
+                .with_padding(Padding::uniform(4.))
+                .with_border(Border::all(1.).with_border_fill(theme.outline()))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                .finish(),
+        )
+    }
+
+    /// The attachment chips row (PRODUCT §15b): a thumbnail + name per
+    /// pending image, with an ✕ that drops it back to a plain text mention.
+    /// `None` when nothing is attached.
+    fn render_attachment_chips(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+        if self.pending_images.is_empty() {
+            return None;
+        }
+        let theme = appearance.theme();
+        let mut row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(6.);
+        for (index, path) in self.pending_images.iter().enumerate() {
+            let chip_mouse = {
+                let mut states = self.attachment_chip_mouse.borrow_mut();
+                while states.len() <= index {
+                    states.push(MouseStateHandle::default());
+                }
+                states[index].clone()
+            };
+            let thumbnail = ConstrainedBox::new(
+                Image::new(
+                    AssetSource::LocalFile {
+                        path: path.display().to_string(),
+                    },
+                    CacheOption::BySize,
+                )
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                .finish(),
+            )
+            .with_width(24.)
+            .with_height(24.)
+            .finish();
+            let name = appearance
+                .ui_builder()
+                .span(
+                    path.file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| path.display().to_string()),
+                )
+                .with_style(UiComponentStyles {
+                    font_size: Some(11.5),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let remove = appearance
+                .ui_builder()
+                .span("\u{2715}".to_owned())
+                .with_style(UiComponentStyles {
+                    font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+                    font_size: Some(11.5),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let chip = Container::new(
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(6.)
+                    .with_child(thumbnail)
+                    .with_child(name)
+                    .with_child(remove)
+                    .finish(),
+            )
+            .with_padding_left(6.)
+            .with_padding_right(6.)
+            .with_padding_top(3.)
+            .with_padding_bottom(3.)
+            .with_background_color(theme.surface_2().into_solid())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+            .finish();
+            let chip_path = path.display().to_string();
+            row.add_child(
+                Hoverable::new(chip_mouse, move |_| chip)
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::RemoveAttachment(
+                            chip_path.clone(),
+                        ));
+                    })
+                    .finish(),
+            );
+        }
+        Some(row.finish())
+    }
+
+    /// Encode the draft's surviving image mentions as outgoing image blocks
+    /// (PRODUCT §15b). Oversized or unreadable files degrade to the plain
+    /// text mention — `claude` reads those itself (§29: never block a send).
+    fn encode_pending_images(&self) -> Vec<OutgoingImage> {
+        self.pending_images
+            .iter()
+            .filter_map(|path| {
+                let media_type = composer::image_media_type(path)?;
+                let metadata = std::fs::metadata(path).ok()?;
+                if metadata.len() > composer::MAX_IMAGE_BYTES {
+                    log::info!(
+                        "claude: attachment {} exceeds the inline-image cap; left as a mention",
+                        path.display()
+                    );
+                    return None;
+                }
+                let bytes = std::fs::read(path).ok()?;
+                Some(OutgoingImage {
+                    media_type: media_type.to_owned(),
+                    base64_data: base64::engine::general_purpose::STANDARD.encode(bytes),
+                })
+            })
+            .collect()
     }
 
     /// Send the current input as a user turn to the live `claude` session,
@@ -463,18 +797,28 @@ impl ClaudeCodeView {
             // PRODUCT §15: empty / whitespace-only messages are a no-op.
             return;
         }
+        // PRODUCT §15b (7j): surviving @-mentioned images ride along as
+        // inline image blocks; the mention text stays for context.
+        let message = OutgoingMessage {
+            images: self.encode_pending_images(),
+            text,
+        };
         self.transcript
-            .apply(TranscriptEvent::UserMessage(text.clone()));
+            .apply(TranscriptEvent::UserMessage(message.text.clone()));
         self.input_editor
             .update(ctx, |editor, ctx| editor.clear_buffer(ctx));
+        self.suggestion_query = None;
+        self.suggestions.clear();
+        self.pending_images.clear();
+        self.attachment_optouts.clear();
         self.streaming = true;
         match &self.message_tx {
             // Session already running — write the turn to its stdin.
             Some(tx) => {
-                let _ = tx.try_send(text);
+                let _ = tx.try_send(message);
             }
             // First message: spawn the session, forwarding this as turn one.
-            None => self.begin_session(Some(text), ctx),
+            None => self.begin_session(Some(message), ctx),
         }
         ctx.notify();
     }
@@ -487,7 +831,11 @@ impl ClaudeCodeView {
     /// The spawn carries the selected permission mode (PRODUCT §25) and, when
     /// set, the resume target (PRODUCT §36) — both read off `self` at the
     /// moment of spawn.
-    fn begin_session(&mut self, first_prompt: Option<String>, ctx: &mut ViewContext<Self>) {
+    fn begin_session(
+        &mut self,
+        first_prompt: Option<OutgoingMessage>,
+        ctx: &mut ViewContext<Self>,
+    ) {
         self.session_epoch += 1;
         let epoch = self.session_epoch;
         let opts = SpawnOptions {
@@ -527,7 +875,7 @@ impl ClaudeCodeView {
         &mut self,
         epoch: u64,
         result: anyhow::Result<SpawnedSession>,
-        first_prompt: Option<String>,
+        first_prompt: Option<OutgoingMessage>,
         ctx: &mut ViewContext<Self>,
     ) {
         if epoch != self.session_epoch {
@@ -574,7 +922,7 @@ impl ClaudeCodeView {
         );
 
         // Own stdin in a background task; the view queues user turns onto it.
-        let (message_tx, message_rx) = async_channel::unbounded::<String>();
+        let (message_tx, message_rx) = async_channel::unbounded::<OutgoingMessage>();
         ctx.background_executor()
             .spawn(async move {
                 let mut stdin = stdin;
@@ -1018,25 +1366,32 @@ impl ClaudeCodeView {
             .with_child(action)
             .finish();
 
-        let card = Container::new(
-            Flex::column()
-                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_spacing(8.)
-                .with_child(editor)
-                .with_child(controls)
-                .finish(),
-        )
-        .with_padding(Padding::uniform(10.))
-        .with_background_color(theme.surface_1().into_solid())
-        .with_border(Border::all(1.).with_border_fill(theme.outline()))
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
-            COMPOSER_CORNER_RADIUS,
-        )))
-        // The composer floats over the transcript; the shadow separates the
-        // layers (same treatment as the input-suggestions detail panel).
-        .with_drop_shadow(DropShadow::default())
-        .finish();
+        let mut card_column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(8.);
+        // PRODUCT §15a (7j): the suggestions panel sits above the input,
+        // Claude-app style — `/` commands or `@` files, filtered live.
+        if let Some(panel) = self.render_suggestions_panel(appearance) {
+            card_column.add_child(panel);
+        }
+        // PRODUCT §15b (7j): attachment chips — @-mentioned images that will
+        // ride along as inline image blocks, with previews and an ✕ to drop
+        // one back to a plain mention.
+        if let Some(chips) = self.render_attachment_chips(appearance) {
+            card_column.add_child(chips);
+        }
+        let card = Container::new(card_column.with_child(editor).with_child(controls).finish())
+            .with_padding(Padding::uniform(10.))
+            .with_background_color(theme.surface_1().into_solid())
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                COMPOSER_CORNER_RADIUS,
+            )))
+            // The composer floats over the transcript; the shadow separates the
+            // layers (same treatment as the input-suggestions detail panel).
+            .with_drop_shadow(DropShadow::default())
+            .finish();
 
         Container::new(card)
             .with_padding_top(6.)
@@ -1202,6 +1557,18 @@ impl TypedActionView for ClaudeCodeView {
                 ctx.notify();
             }
             ClaudeCodeViewAction::CyclePermissionMode => self.cycle_permission_mode(ctx),
+            ClaudeCodeViewAction::AcceptSuggestion(index) => {
+                self.accept_suggestion(*index, ctx);
+                // A click steals focus from the editor; give it back so
+                // typing flows on (PRODUCT §15).
+                ctx.focus(&self.input_editor);
+            }
+            ClaudeCodeViewAction::RemoveAttachment(path) => {
+                self.attachment_optouts.insert(PathBuf::from(path));
+                self.pending_images
+                    .retain(|p| p.display().to_string() != *path);
+                ctx.notify();
+            }
         }
     }
 }

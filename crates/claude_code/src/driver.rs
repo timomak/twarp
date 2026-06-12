@@ -171,14 +171,59 @@ pub fn interrupt(child: &Child) {
     }
 }
 
+/// An image attached to an outgoing user turn (PRODUCT §15b): already
+/// base64-encoded, with its IANA media type (`image/png`, …). Sent as a
+/// standard API `image` content block — verified accepted by `claude`'s
+/// stream-json input (2.1.175).
+#[derive(Clone, Debug)]
+pub struct OutgoingImage {
+    pub media_type: String,
+    pub base64_data: String,
+}
+
+/// A user turn heading into the live session: the text plus any attached
+/// images.
+#[derive(Clone, Debug, Default)]
+pub struct OutgoingMessage {
+    pub text: String,
+    pub images: Vec<OutgoingImage>,
+}
+
+impl OutgoingMessage {
+    pub fn text(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            images: Vec::new(),
+        }
+    }
+}
+
 /// Write a user turn into the live session's stdin in the JSONL shape
-/// `claude --input-format stream-json` expects (PRODUCT §16).
-pub async fn send_user_message(stdin: &mut ChildStdin, text: &str) -> Result<()> {
+/// `claude --input-format stream-json` expects (PRODUCT §16). A text-only
+/// message sends the plain-string content form; attachments use the
+/// content-block array with `image` blocks (PRODUCT §15b).
+pub async fn send_user_message(stdin: &mut ChildStdin, message: &OutgoingMessage) -> Result<()> {
+    let content = if message.images.is_empty() {
+        json!(message.text)
+    } else {
+        let mut blocks = vec![json!({ "type": "text", "text": message.text })];
+        blocks.extend(message.images.iter().map(|image| {
+            json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": image.media_type,
+                    "data": image.base64_data,
+                },
+            })
+        }));
+        json!(blocks)
+    };
     let line = json!({
         "type": "user",
         "message": {
             "role": "user",
-            "content": text,
+            "content": content,
         },
     })
     .to_string();
@@ -327,12 +372,26 @@ fn parse_system(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
         .map(PathBuf::from)
         .unwrap_or_default();
     let str_field = |key: &str| value.get(key).and_then(|v| v.as_str()).map(str::to_owned);
+    // The session's available slash commands (built-ins + skills + plugins),
+    // straight from `claude` — drives the composer's `/` suggestions
+    // (PRODUCT §15a). Order is claude's; the UI fuzzy-filters.
+    let slash_commands = value
+        .get("slash_commands")
+        .and_then(|v| v.as_array())
+        .map(|commands| {
+            commands
+                .iter()
+                .filter_map(|c| c.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
     out.push_back(TranscriptEvent::SessionInit {
         session_id,
         cwd,
         model: str_field("model"),
         permission_mode: str_field("permissionMode"),
         fast_mode: str_field("fast_mode_state"),
+        slash_commands,
     });
 }
 
