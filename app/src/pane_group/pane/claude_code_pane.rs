@@ -105,16 +105,45 @@ impl PaneContent for ClaudeCodePane {
         let claude_code_view = self.claude_code_view(ctx);
         let pane_id = self.id();
 
+        let claude_view_for_raw_cli = claude_code_view.clone();
         ctx.subscribe_to_view(&claude_code_view, move |pane_group, _, event, ctx| {
             match event {
                 ClaudeCodeViewEvent::Pane(pane_event) => {
                     pane_group.handle_pane_event(pane_id, pane_event, ctx)
                 }
-                // twarp 07 (7i, PRODUCT §39): swap this pane for the raw
-                // interactive CLI — a temporary pane replacement the group
-                // owns end to end.
-                ClaudeCodeViewEvent::SwapToRawCli { session_id, cwd } => pane_group
-                    .swap_claude_pane_to_raw_cli(pane_id, session_id.clone(), cwd.clone(), ctx),
+                // twarp 07 (7i, PRODUCT §39): the pane group creates a real
+                // terminal session (it owns the session resources) and hands
+                // it to the view, which embeds it in place of the chat — the
+                // pane itself never changes, so the layout can't (PRODUCT
+                // §39: same tab position).
+                ClaudeCodeViewEvent::SwapToRawCli { session_id, cwd } => {
+                    let (manager, terminal) =
+                        pane_group.create_raw_claude_terminal(cwd.clone(), ctx);
+                    terminal.update(ctx, |terminal, ctx| {
+                        terminal.enable_claude_return_overlay();
+                        // Launch by ABSOLUTE path: the `claude`-at-submit
+                        // trigger peels `exec` as an alias wrapper and would
+                        // intercept a bare `claude` here — opening a second
+                        // Claude pane instead of running the CLI (the 7i
+                        // "terminal + duplicate pane" bug). A path token is
+                        // never intercepted (PRODUCT §3), and a quoted full
+                        // path also sidesteps shell aliases entirely, so raw
+                        // mode runs the vanilla CLI (§43). Session ids are
+                        // UUIDs (shell-safe); `exec` makes the PTY *be* the
+                        // CLI, so the CLI exiting ends the session — the §44
+                        // auto-return signal.
+                        let claude = crate::util::path::resolve_executable("claude")
+                            .map(|path| path.display().to_string())
+                            .unwrap_or_else(|| "claude".to_owned());
+                        terminal.set_pending_command(
+                            &format!("exec '{claude}' --resume {session_id}"),
+                            ctx,
+                        );
+                    });
+                    claude_view_for_raw_cli.update(ctx, |view, ctx| {
+                        view.enter_raw_mode(manager, terminal, ctx);
+                    });
+                }
             }
         });
         ctx.subscribe_to_view(&self.view, move |group, _, event, ctx| {

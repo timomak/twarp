@@ -82,6 +82,7 @@ use crate::pane_group::{
     pane::view::{self, HeaderContent, StandardHeader, StandardHeaderOptions},
     BackingView, PaneConfiguration, PaneEvent, PaneHeaderAction,
 };
+use crate::terminal::{view::Event as TerminalViewEvent, TerminalManager, TerminalView};
 use crate::util::path::resolve_executable;
 
 /// The executable the pane drives. Resolved on `PATH`; its absence is the
@@ -189,6 +190,20 @@ pub struct ResumeSession {
     pub jsonl_path: PathBuf,
 }
 
+/// The embedded raw-CLI terminal (PRODUCT §39, 7i): a real terminal session
+/// rendered **inside** this pane in place of the chat — the pane itself never
+/// leaves the tree, so toggling can't disturb the layout. Created by the pane
+/// group (it owns the session resources) and owned here.
+///
+/// Field order is load-bearing: dropping `manager` first halts the session's
+/// event loop before the view goes away (the same drop-order contract
+/// `TerminalPane` documents), and dropping it kills the PTY — which is how
+/// leaving raw mode ends the CLI (PRODUCT §42).
+struct RawCliSession {
+    manager: ModelHandle<Box<dyn TerminalManager>>,
+    view: ViewHandle<TerminalView>,
+}
+
 pub struct ClaudeCodeView {
     /// The conversation the pane renders, fed by the live driver's event stream
     /// via [`Self::on_transcript_event`] on the main thread (PRODUCT §9–§13).
@@ -257,6 +272,9 @@ pub struct ClaudeCodeView {
     session_id: String,
     /// Mouse state for the header's Raw CLI toggle (PRODUCT §39).
     raw_cli_button: MouseStateHandle,
+    /// The embedded raw-CLI terminal while raw mode is active (PRODUCT §39).
+    /// `None` in rendered-chat mode.
+    raw_cli: Option<RawCliSession>,
     /// Monotonic session generation. Spawn callbacks and stream pumps carry
     /// the epoch they were started under and are ignored when stale — a
     /// permission-mode restart must not let the old (killed) session's EOF
@@ -358,6 +376,7 @@ impl ClaudeCodeView {
             resume_session_id: None,
             session_id,
             raw_cli_button: MouseStateHandle::default(),
+            raw_cli: None,
             session_epoch: 0,
         };
 
@@ -404,7 +423,11 @@ impl ClaudeCodeView {
 
     /// Focus the message input (PRODUCT §34: keyboard-first).
     pub fn focus(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.focus(&self.input_editor);
+        // In raw mode the terminal owns the keyboard (PRODUCT §43).
+        match &self.raw_cli {
+            Some(raw_cli) => ctx.focus(&raw_cli.view),
+            None => ctx.focus(&self.input_editor),
+        }
     }
 
     /// Whether the `claude` CLI is resolvable on `PATH` right now (PRODUCT §4).
@@ -691,12 +714,17 @@ impl ClaudeCodeView {
         self.streaming = false;
     }
 
-    /// twarp 07 (7i, PRODUCT §39/§42): hand this conversation to the raw
-    /// interactive CLI. Disabled while a turn streams (§42 — same rule as the
-    /// mode selector); otherwise the headless process is detached first (one
-    /// driver at a time) and the host pane swaps to a terminal running
-    /// `claude --resume <session_id>`.
+    /// twarp 07 (7i, PRODUCT §39/§42): flip between the rendered chat and the
+    /// raw interactive CLI. Entering is disabled while a turn streams (§42 —
+    /// same rule as the mode selector); the headless process is detached
+    /// first (one driver at a time) and the host pane group hands back a real
+    /// terminal session running `claude --resume <session_id>`, which
+    /// [`Self::enter_raw_mode`] embeds.
     fn toggle_raw_cli(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.raw_cli.is_some() {
+            self.exit_raw_mode(ctx);
+            return;
+        }
         if self.streaming {
             return;
         }
@@ -705,6 +733,46 @@ impl ClaudeCodeView {
             session_id: self.session_id.clone(),
             cwd: self.cwd.clone(),
         });
+        ctx.notify();
+    }
+
+    /// twarp 07 (7i, PRODUCT §39): embed the raw-CLI terminal the pane group
+    /// created. The pane renders it in place of the chat until the user
+    /// returns (the floating overlay / the header toggle) or the CLI exits
+    /// (§44 — `exec` makes the CLI's exit end the session, which surfaces as
+    /// the terminal's `Exited` event).
+    pub(crate) fn enter_raw_mode(
+        &mut self,
+        manager: ModelHandle<Box<dyn TerminalManager>>,
+        view: ViewHandle<TerminalView>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        ctx.subscribe_to_view(&view, |me, _, event, ctx| match event {
+            // The floating "← Claude Code" overlay (PRODUCT §40) or the CLI
+            // exiting (`/exit`, a crash, a failed resume — §44).
+            TerminalViewEvent::ReturnToClaudePane | TerminalViewEvent::Exited => {
+                me.exit_raw_mode(ctx);
+            }
+            _ => {}
+        });
+        ctx.focus(&view);
+        self.raw_cli = Some(RawCliSession { manager, view });
+        ctx.notify();
+    }
+
+    /// twarp 07 (7i, PRODUCT §40/§42/§44): leave raw mode — drop the embedded
+    /// session (killing the CLI's PTY), re-read the conversation's on-disk
+    /// history so raw-mode turns appear in the transcript, and hand focus
+    /// back to the composer. The next message resumes the conversation live.
+    fn exit_raw_mode(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(raw_cli) = self.raw_cli.take() else {
+            return;
+        };
+        ctx.unsubscribe_to_view(&raw_cli.view);
+        drop(raw_cli);
+        self.refresh_from_disk(ctx);
+        self.resume_session_id = Some(self.session_id.clone());
+        ctx.focus(&self.input_editor);
         ctx.notify();
     }
 
@@ -1038,12 +1106,22 @@ impl View for ClaudeCodeView {
         // PRODUCT §34: focus the input on entry so typing just works. Focusing a
         // child keeps the view itself in the responder chain, so in-pane
         // `ClaudeCodeViewAction` dispatches reach `handle_action` below.
+        // In raw mode the embedded terminal owns the keyboard instead (§43).
         if focus_ctx.is_self_focused() {
-            ctx.focus(&self.input_editor);
+            self.focus(ctx);
         }
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
+        // twarp 07 (7i, PRODUCT §39/§43): raw mode — the pane IS the
+        // terminal. Rendered bare (no focus-grab wrapper: the terminal owns
+        // every click and keystroke; the way back is its floating overlay,
+        // the header toggle, or the CLI exiting). The terminal renders its
+        // own floating "← Claude Code" overlay (§40).
+        if let Some(raw_cli) = &self.raw_cli {
+            return ChildView::new(&raw_cli.view).finish();
+        }
+
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         // PRODUCT §4: the unavailable state replaces the pane body. The pane
@@ -1182,19 +1260,22 @@ impl BackingView for ClaudeCodeView {
                     .map(|p| p.display().to_string())
             })
             .map(|cwd| format!(" — {cwd}"));
-        // PRODUCT §39 (7i): the Raw CLI toggle — swaps the pane for the real
-        // interactive `claude` resuming this conversation. Hidden while a
-        // turn streams (§42); the header re-renders when streaming flips.
-        // The header lives in the parent PaneView's tree, so the click must
-        // dispatch the pane framework's CustomAction (handled by the header
-        // view and routed back to `handle_custom_action`), NOT an in-pane
+        // PRODUCT §39 (7i): the Raw CLI toggle — embeds the real interactive
+        // `claude` (resuming this conversation) in place of the chat, and
+        // back. Entering is hidden while a turn streams (§42); in raw mode
+        // the button always shows, labeled as the way back. The header lives
+        // in the parent PaneView's tree, so the click must dispatch the pane
+        // framework's CustomAction (handled by the header view and routed
+        // back to `handle_custom_action`), NOT an in-pane
         // ClaudeCodeViewAction — that dies unhandled from header chrome.
-        let raw_cli_toggle = (!self.streaming).then(|| {
+        let raw_mode = self.raw_cli.is_some();
+        let raw_cli_toggle = (raw_mode || !self.streaming).then(|| {
             let appearance = Appearance::as_ref(app);
+            let label = if raw_mode { "Chat UI" } else { "Raw CLI" };
             appearance
                 .ui_builder()
                 .button(ButtonVariant::Text, self.raw_cli_button.clone())
-                .with_text_label("Raw CLI".to_owned())
+                .with_text_label(label.to_owned())
                 .build()
                 .on_click(|ctx, _, _| {
                     ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
