@@ -549,8 +549,9 @@ pub enum Event {
     },
     /// twarp 07 (7b): tell the workspace to open a Claude Code pane (PRODUCT §1).
     OpenClaudeCodePane {
-        /// The args after `claude` (`claude <prompt>` seeds the first turn).
-        args: String,
+        /// The tokens after `claude` — recognized flags map onto the spawn
+        /// options, the trailing positional seeds the first turn (PRODUCT §2).
+        args: Vec<String>,
         /// The originating terminal's working directory (PRODUCT §4).
         cwd: Option<PathBuf>,
     },
@@ -3795,6 +3796,44 @@ impl PaneGroup {
         }
 
         original_pane_id
+    }
+
+    /// twarp 07 (7i, PRODUCT §39/§43): a real terminal session for the
+    /// Claude pane's **raw-CLI mode** — created with the group's own
+    /// resources (the same `create_session` every terminal pane uses) but
+    /// handed to [`ClaudeCodeView`] to embed, not mounted in the pane tree.
+    /// The session lives exactly as long as the view holds the returned
+    /// manager handle; dropping it halts the event loop and kills the PTY.
+    pub(in crate::pane_group) fn create_raw_claude_terminal(
+        &self,
+        cwd: Option<PathBuf>,
+        ctx: &mut ViewContext<Self>,
+    ) -> (
+        ModelHandle<Box<dyn TerminalManager>>,
+        ViewHandle<TerminalView>,
+    ) {
+        let resources = TerminalViewResources {
+            tips_completed: self.tips_completed.clone(),
+            server_api: self.server_api.clone(),
+            model_event_sender: self.model_event_sender.clone(),
+        };
+        let view_bounds = Self::estimated_view_bounds(ctx);
+        let (view, manager) = PaneGroup::create_session(
+            cwd,
+            HashMap::new(),
+            IsSharedSessionCreator::No,
+            resources,
+            None,
+            None,
+            self.user_default_shell_unsupported_banner_model_handle
+                .clone(),
+            view_bounds.size(),
+            self.model_event_sender.clone(),
+            None,
+            None,
+            ctx,
+        );
+        (manager, view)
     }
 
     #[cfg(feature = "local_fs")]

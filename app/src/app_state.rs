@@ -898,8 +898,10 @@ pub enum LeftPanelDisplayedTab {
     GlobalSearch,
     WarpDrive,
     Shortcuts,
-    // twarp 07 (7b): no Claude Code sidebar tab to persist — it's a
-    // main-content pane opened by typing `claude` (re-spec #70).
+    /// twarp 07 (7h): the read-only Claude Code session list (PRODUCT §35).
+    /// The chat itself is a main-content pane (re-spec #70), never a sidebar
+    /// tab.
+    ClaudeSessions,
     ConversationListView,
 }
 
@@ -910,6 +912,7 @@ impl From<ToolPanelView> for LeftPanelDisplayedTab {
             ToolPanelView::GlobalSearch { .. } => LeftPanelDisplayedTab::GlobalSearch,
             ToolPanelView::WarpDrive => LeftPanelDisplayedTab::WarpDrive,
             ToolPanelView::Shortcuts => LeftPanelDisplayedTab::Shortcuts,
+            ToolPanelView::ClaudeSessions => LeftPanelDisplayedTab::ClaudeSessions,
             ToolPanelView::ConversationListView => LeftPanelDisplayedTab::ConversationListView,
         }
     }

@@ -33,32 +33,42 @@
 //! view in the responder chain. There is **no** `WorkspaceAction` forwarder —
 //! that was the #67 symptom-fix and is deleted.
 
+mod composer;
+mod diff_cards;
 mod inline_action;
+mod thinking;
+mod todos;
 mod tool_cards;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use async_channel::Sender;
+use base64::Engine as _;
+use claude_code::diff::diff_for_tool;
 use claude_code::driver::{
-    interrupt, send_user_message, spawn_session, Child, PermissionMode, SpawnOptions,
-    SpawnedSession,
+    interrupt, send_user_message, spawn_session, Child, OutgoingImage, OutgoingMessage,
+    PermissionMode, SpawnOptions, SpawnedSession,
 };
-use claude_code::{Transcript, TranscriptEvent, TranscriptItem, Usage};
+use claude_code::launch::LaunchOptions;
+use claude_code::{sessions, Transcript, TranscriptEvent, TranscriptItem, Usage};
 use futures::StreamExt;
 use markdown_parser::{parse_markdown, FormattedText, FormattedTextLine};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
+use warp_editor::editor::NavigationKey;
+use warpui::assets::asset_cache::AssetSource;
 use warpui::ui_components::button::ButtonVariant;
 use warpui::{
     elements::{
-        Align, Border, ChildAnchor, Clipped, ClippedScrollStateHandle, ClippedScrollable,
-        ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DispatchEventResult,
-        DropShadow, Element, EventDispatchMode, EventHandler, Fill, Flex, FormattedTextElement,
-        HighlightedHyperlink, HyperlinkUrl, Icon, MainAxisAlignment, MainAxisSize,
-        MouseStateHandle, OffsetPositioning, Padding, ParentAnchor, ParentElement,
-        ParentOffsetBounds, Radius, ScrollbarWidth, Shrinkable, Stack,
+        Align, Border, CacheOption, ChildAnchor, Clipped, ClippedScrollStateHandle,
+        ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
+        DispatchEventResult, DropShadow, Element, EventDispatchMode, EventHandler, Fill, Flex,
+        FormattedTextElement, HighlightedHyperlink, Hoverable, HyperlinkUrl, Icon, Image,
+        MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, Padding,
+        ParentAnchor, ParentElement, ParentOffsetBounds, Radius, ScrollbarWidth, Shrinkable, Stack,
     },
+    platform::Cursor,
     presenter::ChildView,
     text_layout::ClipConfig,
     ui_components::components::{UiComponent, UiComponentStyles},
@@ -66,14 +76,18 @@ use warpui::{
     ViewContext, ViewHandle,
 };
 
+use self::composer::{SuggestionKind, SuggestionQuery};
+use self::diff_cards::DiffCard;
+use self::thinking::ThinkingUi;
 use self::tool_cards::{render_tool_card, ToolCardUi};
 use crate::appearance::Appearance;
 use crate::editor::{EditorOptions, EditorView, Event as EditorEvent, TextOptions};
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::{
     pane::view::{self, HeaderContent, StandardHeader, StandardHeaderOptions},
-    BackingView, PaneConfiguration, PaneEvent,
+    BackingView, PaneConfiguration, PaneEvent, PaneHeaderAction,
 };
+use crate::terminal::{view::Event as TerminalViewEvent, TerminalManager, TerminalView};
 use crate::util::path::resolve_executable;
 
 /// The executable the pane drives. Resolved on `PATH`; its absence is the
@@ -116,6 +130,13 @@ const HEADING_FONT_SIZE: f32 = 20.;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClaudeCodeViewEvent {
     Pane(PaneEvent),
+    /// twarp 07 (7i, PRODUCT §39): swap this pane for the raw interactive
+    /// `claude` CLI resuming `session_id` — handled by the pane group as a
+    /// temporary pane replacement.
+    SwapToRawCli {
+        session_id: String,
+        cwd: Option<PathBuf>,
+    },
 }
 
 /// Actions the view handles, dispatched the [`GlobalSearchView`] way (the view
@@ -140,6 +161,59 @@ pub enum ClaudeCodeViewAction {
     Stop,
     /// Expand / collapse the tool card with this tool-use id (PRODUCT §19).
     ToggleToolCard(String),
+    /// Expand / collapse the thinking card at this transcript index
+    /// (PRODUCT §22).
+    ToggleThinking(usize),
+    /// Expand / collapse the task list (PRODUCT §23).
+    ToggleTodos,
+    /// Step the permission mode to the next value (PRODUCT §25). Applies to
+    /// the next spawn; a live session is re-attached via `--resume` so the
+    /// conversation continues under the new mode.
+    CyclePermissionMode,
+    /// Accept the composer suggestion at this index (PRODUCT §15a, 7j) —
+    /// clicked in the suggestions panel; Enter accepts the highlighted one.
+    AcceptSuggestion(usize),
+    /// Remove an attachment chip (PRODUCT §15b, 7j): the image stays
+    /// mentioned in the text (so `claude` can still read it) but is no longer
+    /// sent as an inline image block.
+    RemoveAttachment(String),
+}
+
+/// Actions dispatched by elements this view renders inside its **pane
+/// header** (PRODUCT §39's Raw CLI toggle). Header chrome lives in the
+/// parent [`PaneView`]'s tree, so an in-pane [`ClaudeCodeViewAction`] dispatch
+/// from there dies unhandled ("dispatched, but no view handled it") — header
+/// buttons must route through [`PaneHeaderAction::CustomAction`], which the
+/// pane framework forwards back to [`BackingView::handle_custom_action`].
+/// Same pattern as `NetworkLogViewCustomAction::Refresh`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClaudeCodeCustomAction {
+    /// Swap this pane for the raw interactive CLI (PRODUCT §39, 7i).
+    /// Hidden while a turn streams (§42).
+    ToggleRawCli,
+}
+
+/// A stored session to reopen (PRODUCT §36, sub-phase 7h): the pane renders
+/// the on-disk history up front and continues the conversation live via
+/// `claude --resume <session_id>` on the next message.
+#[derive(Clone, Debug)]
+pub struct ResumeSession {
+    pub session_id: String,
+    pub jsonl_path: PathBuf,
+}
+
+/// The embedded raw-CLI terminal (PRODUCT §39, 7i): a real terminal session
+/// rendered **inside** this pane in place of the chat — the pane itself never
+/// leaves the tree, so toggling can't disturb the layout. Created by the pane
+/// group (it owns the session resources) and owned here.
+///
+/// Field order is load-bearing: dropping `manager` first halts the session's
+/// event loop before the view goes away (the same drop-order contract
+/// `TerminalPane` documents), and dropping it kills the PTY — which is how
+/// leaving raw mode ends the CLI (PRODUCT §42).
+struct RawCliSession {
+    manager: ModelHandle<Box<dyn TerminalManager>>,
+    view: ViewHandle<TerminalView>,
 }
 
 pub struct ClaudeCodeView {
@@ -164,7 +238,7 @@ pub struct ClaudeCodeView {
     child: Option<Child>,
     /// Sends user turns to the background task that owns the process stdin
     /// (PRODUCT §16). `None` until a session is running.
-    message_tx: Option<Sender<String>>,
+    message_tx: Option<Sender<OutgoingMessage>>,
     /// True while `claude` is producing output for the current turn (PRODUCT §9):
     /// the composer shows Stop and sending is disabled until the turn ends.
     streaming: bool,
@@ -177,20 +251,95 @@ pub struct ClaudeCodeView {
     /// choice), keyed by tool-use id. An entry is created when the card's
     /// `ToolCall` event arrives (PRODUCT §16, §19).
     tool_card_ui: HashMap<String, ToolCardUi>,
+    /// The feature-05 diff views backing `Edit`/`MultiEdit`/`Write` cards
+    /// (PRODUCT §20), keyed by tool-use id. Built when the `ToolCall` event
+    /// arrives; render-time only reads.
+    diff_cards: HashMap<String, DiffCard>,
+    /// Per-thinking-card UI state (PRODUCT §22), keyed by the item's
+    /// transcript index — items only ever append, so the index is stable.
+    thinking_ui: HashMap<usize, ThinkingUi>,
+    /// The task list starts open — it is the content (PRODUCT §23).
+    todos_expanded: bool,
+    todos_header_mouse: MouseStateHandle,
+    /// The selected permission mode (PRODUCT §25). Source of truth for the
+    /// composer pill and for every (re)spawn's `--permission-mode`. Seeded
+    /// from the launch flags (`--permission-mode` /
+    /// `--dangerously-skip-permissions`, e.g. via a user's alias).
+    permission_mode: PermissionMode,
+    permission_pill_mouse: MouseStateHandle,
+    /// `--model` from the launch flags, passed to every spawn.
+    model: Option<String>,
+    /// `--effort` from the launch flags (e.g. an alias's `--effort max`),
+    /// passed to every spawn. Write-only: the headless stream doesn't echo
+    /// an effort level back, so there is no chip for it.
+    effort: Option<String>,
+    /// Resume target for the next spawn (PRODUCT §36; also how a permission-
+    /// mode change re-attaches a live conversation, §25). Cleared if a resumed
+    /// spawn dies so the next message can start fresh (§37).
+    resume_session_id: Option<String>,
+    /// The pane's session identity, owned from birth (PRODUCT §41): a fresh
+    /// pane generates a UUID and pins it via `--session-id`; a resumed pane
+    /// adopts the resumed id. Synced from `init` thereafter. The raw-CLI
+    /// toggle and the on-disk history refresh key off this.
+    session_id: String,
+    /// Mouse state for the header's Raw CLI toggle (PRODUCT §39).
+    raw_cli_button: MouseStateHandle,
+    /// The embedded raw-CLI terminal while raw mode is active (PRODUCT §39).
+    /// `None` in rendered-chat mode.
+    raw_cli: Option<RawCliSession>,
+    /// The active composer suggestion query (`/` or `@`), `None` when the
+    /// panel is closed (PRODUCT §15a, 7j).
+    suggestion_query: Option<SuggestionQuery>,
+    /// Filtered suggestions for the active query, capped.
+    suggestions: Vec<String>,
+    /// The highlighted suggestion (Enter accepts it; Tab/arrows move it).
+    suggestion_selected: usize,
+    /// Stable per-row mouse handles for the suggestions panel, grown on
+    /// demand (the Timeline/shortcut-row pattern).
+    suggestion_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// The cwd's mentionable files, walked lazily on the first `@` and kept
+    /// for the pane's lifetime (gitignore-aware, capped).
+    cwd_files: Option<Vec<String>>,
+    /// `@`-mentioned images detected in the draft (PRODUCT §15b) — previewed
+    /// as chips and sent as inline image blocks.
+    pending_images: Vec<PathBuf>,
+    /// Images the user X-ed out of attaching (the mention text remains).
+    attachment_optouts: HashSet<PathBuf>,
+    /// Stable per-chip mouse handles for attachment removal.
+    attachment_chip_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Monotonic session generation. Spawn callbacks and stream pumps carry
+    /// the epoch they were started under and are ignored when stale — a
+    /// permission-mode restart must not let the old (killed) session's EOF
+    /// tear down the new one's handles or spam the transcript.
+    session_epoch: u64,
 }
 
 impl ClaudeCodeView {
     /// Build the pane view.
     ///
-    /// `initial_prompt` is the trailing positional from `claude <prompt>`
-    /// (PRODUCT §2): when present it seeds the first user turn. `cwd` is the
-    /// terminal's working directory (PRODUCT §4). In 7b there is no driver, so
-    /// a non-empty prompt is rendered through the synthetic source.
+    /// `launch` is the parsed `claude [flags] [prompt]` invocation (PRODUCT
+    /// §2): recognized flags — including alias-injected ones like
+    /// `--dangerously-skip-permissions` / `--effort max` — seed the session's
+    /// spawn options, and the positional seeds the first user turn. `cwd` is
+    /// the terminal's working directory (PRODUCT §4). `resume` reopens a
+    /// stored session (PRODUCT §36): its on-disk history renders immediately
+    /// and the next message continues it live via `claude --resume` (a
+    /// `claude --resume <id>` typed in a terminal arrives through `launch`
+    /// and gets the same treatment).
     pub fn new(
-        initial_prompt: Option<String>,
+        launch: LaunchOptions,
         cwd: Option<PathBuf>,
+        resume: Option<ResumeSession>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
+        let LaunchOptions {
+            prompt,
+            permission_mode,
+            model,
+            effort,
+            resume_session_id,
+        } = launch;
+
         let input_editor = ctx.add_typed_action_view(|ctx| {
             let appearance = Appearance::as_ref(ctx);
             let options = EditorOptions {
@@ -208,25 +357,34 @@ impl ClaudeCodeView {
 
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new(PANE_TITLE));
 
-        // PRODUCT §2/§6: `claude <prompt>` starts a live session immediately with
-        // the prompt as the first turn; bare `claude` opens idle (no process
-        // until the user sends a message). 7c drives the real
-        // `claude_code::driver` — there is no synthetic source anymore.
-        let mut transcript = Transcript::new();
-        let mut streaming = false;
-        let first_prompt = initial_prompt
-            .as_deref()
-            .map(str::trim)
-            .filter(|p| !p.is_empty())
-            .map(str::to_owned);
-        if let Some(prompt) = &first_prompt {
-            transcript.apply(TranscriptEvent::UserMessage(prompt.clone()));
-            streaming = true;
-            Self::begin_session(cwd.clone(), Some(prompt.clone()), ctx);
-        }
+        // `claude --resume <id>` typed at the prompt: derive the session's
+        // on-disk file so the pane pre-renders its history exactly like the
+        // sidebar's resume (PRODUCT §36). `load_history` is best-effort, so a
+        // wrong derivation just renders nothing and `claude --resume` itself
+        // remains the source of truth.
+        let resume = resume.or_else(|| {
+            let session_id = resume_session_id?;
+            let dir = cwd
+                .clone()
+                .or_else(|| std::env::current_dir().ok())
+                .and_then(|cwd| sessions::sessions_dir(&cwd))?;
+            Some(ResumeSession {
+                jsonl_path: dir.join(format!("{session_id}.jsonl")),
+                session_id,
+            })
+        });
 
-        Self {
-            transcript,
+        // PRODUCT §41: every pane-born session has its identity from birth —
+        // a resumed pane adopts the resumed id, a fresh pane mints one and
+        // pins it at spawn via `--session-id`. The raw-CLI toggle, the
+        // permission-mode restart, and the history refresh all key off it.
+        let session_id = resume
+            .as_ref()
+            .map(|resume| resume.session_id.clone())
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+        let mut view = Self {
+            transcript: Transcript::new(),
             input_editor,
             pane_configuration,
             focus_handle: None,
@@ -234,12 +392,60 @@ impl ClaudeCodeView {
             scroll_state: ClippedScrollStateHandle::default(),
             child: None,
             message_tx: None,
-            streaming,
+            streaming: false,
             submit_button: MouseStateHandle::default(),
             refresh_button: MouseStateHandle::default(),
             stop_button: MouseStateHandle::default(),
             tool_card_ui: HashMap::new(),
+            diff_cards: HashMap::new(),
+            thinking_ui: HashMap::new(),
+            todos_expanded: true,
+            todos_header_mouse: MouseStateHandle::default(),
+            permission_mode: permission_mode.unwrap_or(PermissionMode::Default),
+            permission_pill_mouse: MouseStateHandle::default(),
+            model,
+            effort,
+            resume_session_id: None,
+            session_id,
+            raw_cli_button: MouseStateHandle::default(),
+            raw_cli: None,
+            suggestion_query: None,
+            suggestions: Vec::new(),
+            suggestion_selected: 0,
+            suggestion_row_mouse: std::cell::RefCell::new(Vec::new()),
+            cwd_files: None,
+            pending_images: Vec::new(),
+            attachment_optouts: HashSet::new(),
+            attachment_chip_mouse: std::cell::RefCell::new(Vec::new()),
+            session_epoch: 0,
+        };
+
+        // PRODUCT §36: a resumed pane renders the stored history up front —
+        // through the same ingest path as live events so tool/diff/thinking
+        // card state exists — and continues live on the next message.
+        if let Some(resume) = resume {
+            for event in sessions::load_history(&resume.jsonl_path) {
+                view.ingest_event(event, ctx);
+            }
+            view.resume_session_id = Some(resume.session_id);
         }
+
+        // PRODUCT §2/§6: `claude <prompt>` starts a live session immediately
+        // with the prompt as the first turn; bare `claude` opens idle (no
+        // process until the user sends a message).
+        let first_prompt = prompt
+            .as_deref()
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .map(str::to_owned);
+        if let Some(prompt) = first_prompt {
+            view.transcript
+                .apply(TranscriptEvent::UserMessage(prompt.clone()));
+            view.streaming = true;
+            view.begin_session(Some(OutgoingMessage::text(prompt)), ctx);
+        }
+
+        view
     }
 
     /// The pane configuration (tab title) handed to [`PaneView`] by the wrapper.
@@ -257,7 +463,11 @@ impl ClaudeCodeView {
 
     /// Focus the message input (PRODUCT §34: keyboard-first).
     pub fn focus(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.focus(&self.input_editor);
+        // In raw mode the terminal owns the keyboard (PRODUCT §43).
+        match &self.raw_cli {
+            Some(raw_cli) => ctx.focus(&raw_cli.view),
+            None => ctx.focus(&self.input_editor),
+        }
     }
 
     /// Whether the `claude` CLI is resolvable on `PATH` right now (PRODUCT §4).
@@ -271,11 +481,305 @@ impl ClaudeCodeView {
         event: &EditorEvent,
         ctx: &mut ViewContext<Self>,
     ) {
-        // PRODUCT §15: Enter sends; Shift+Enter is handled by the editor itself
-        // (inserts a newline) and does not reach us.
-        if matches!(event, EditorEvent::Enter) {
-            self.submit(ctx);
+        match event {
+            // PRODUCT §15: Enter sends — unless the suggestions panel is open,
+            // in which case it accepts the highlighted suggestion (7j).
+            // Shift+Enter is handled by the editor itself (inserts a newline).
+            EditorEvent::Enter => {
+                if self.suggestion_query.is_some() && !self.suggestions.is_empty() {
+                    self.accept_suggestion(self.suggestion_selected, ctx);
+                } else {
+                    self.submit(ctx);
+                }
+            }
+            // Live-filter the suggestions + attachment chips as the draft
+            // changes (PRODUCT §15a–§15b).
+            EditorEvent::Edited(_) => self.refresh_composer_intelligence(ctx),
+            EditorEvent::Escape => {
+                if self.suggestion_query.take().is_some() {
+                    self.suggestions.clear();
+                    ctx.notify();
+                }
+            }
+            // Cycle the highlighted suggestion. The editor surfaces these as
+            // events when the cursor can't move further (single-line drafts:
+            // always); clicking a row works regardless.
+            EditorEvent::Navigate(key) if self.suggestion_query.is_some() => {
+                let len = self.suggestions.len();
+                if len == 0 {
+                    return;
+                }
+                match key {
+                    NavigationKey::Down | NavigationKey::Tab => {
+                        self.suggestion_selected = (self.suggestion_selected + 1) % len;
+                        ctx.notify();
+                    }
+                    NavigationKey::Up | NavigationKey::ShiftTab => {
+                        self.suggestion_selected =
+                            self.suggestion_selected.checked_sub(1).unwrap_or(len - 1);
+                        ctx.notify();
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
         }
+    }
+
+    /// Recompute the suggestions panel and the attachment chips from the
+    /// current draft (PRODUCT §15a–§15b, 7j).
+    fn refresh_composer_intelligence(&mut self, ctx: &mut ViewContext<Self>) {
+        let text = self
+            .input_editor
+            .read(ctx, |editor, ctx| editor.buffer_text(ctx));
+
+        // Attachment chips: @-mentions resolving to images under the cwd.
+        let cwd = self
+            .cwd
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_default();
+        self.pending_images = composer::image_mentions(&text, &cwd)
+            .into_iter()
+            .filter(|path| !self.attachment_optouts.contains(path))
+            .collect();
+
+        // Suggestions panel.
+        self.suggestion_query = composer::suggestion_query(&text);
+        self.suggestions = match &self.suggestion_query {
+            Some(query) => {
+                let candidates: Vec<String> = match query.kind {
+                    SuggestionKind::SlashCommand => {
+                        let mut commands: Vec<String> = composer::DEFAULT_SLASH_COMMANDS
+                            .iter()
+                            .map(|c| c.to_string())
+                            .collect();
+                        for command in self.transcript.slash_commands() {
+                            if !commands.contains(command) {
+                                commands.push(command.clone());
+                            }
+                        }
+                        commands.sort();
+                        commands
+                    }
+                    SuggestionKind::FileMention => self
+                        .cwd_files
+                        .get_or_insert_with(|| composer::list_cwd_files(&cwd))
+                        .clone(),
+                };
+                composer::filter_suggestions(&query.query, &candidates)
+            }
+            None => Vec::new(),
+        };
+        self.suggestion_selected = 0;
+        ctx.notify();
+    }
+
+    /// Accept a suggestion (PRODUCT §15a): replace the queried token in the
+    /// draft and keep typing flowing.
+    fn accept_suggestion(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        let (Some(query), Some(accepted)) =
+            (self.suggestion_query.clone(), self.suggestions.get(index))
+        else {
+            return;
+        };
+        let accepted = accepted.clone();
+        let text = self
+            .input_editor
+            .read(ctx, |editor, ctx| editor.buffer_text(ctx));
+        let new_text = composer::apply_suggestion(&text, &query, &accepted);
+        self.input_editor
+            .update(ctx, |editor, ctx| editor.set_buffer_text(&new_text, ctx));
+        self.suggestion_query = None;
+        self.suggestions.clear();
+        self.refresh_composer_intelligence(ctx);
+    }
+
+    /// The composer's suggestions panel (PRODUCT §15a): one row per
+    /// suggestion, highlighted row tracks the keyboard selection, click
+    /// accepts. `None` when no `/` or `@` query is active.
+    fn render_suggestions_panel(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+        let query = self.suggestion_query.as_ref()?;
+        if self.suggestions.is_empty() {
+            return None;
+        }
+        let theme = appearance.theme();
+        let glyph = match query.kind {
+            SuggestionKind::SlashCommand => crate::ui_components::icons::Icon::SlashCommands,
+            SuggestionKind::FileMention => crate::ui_components::icons::Icon::File,
+        };
+        let mut rows = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min);
+        for (index, suggestion) in self.suggestions.iter().enumerate() {
+            let row_mouse = {
+                let mut states = self.suggestion_row_mouse.borrow_mut();
+                while states.len() <= index {
+                    states.push(MouseStateHandle::default());
+                }
+                states[index].clone()
+            };
+            let selected = index == self.suggestion_selected;
+            let icon = ConstrainedBox::new(
+                Icon::new(glyph.into(), theme.nonactive_ui_text_color().into_solid()).finish(),
+            )
+            .with_width(14.)
+            .with_height(14.)
+            .finish();
+            let label = appearance
+                .ui_builder()
+                .span(suggestion.clone())
+                .with_style(UiComponentStyles {
+                    font_family_id: Some(appearance.monospace_font_family()),
+                    font_size: Some(12.5),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let mut row_container = Container::new(
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(8.)
+                    .with_child(icon)
+                    .with_child(label)
+                    .finish(),
+            )
+            .with_padding_left(8.)
+            .with_padding_right(8.)
+            .with_padding_top(4.)
+            .with_padding_bottom(4.)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
+            if selected {
+                row_container = row_container.with_background_color(theme.surface_2().into_solid());
+            }
+            let row = row_container.finish();
+            rows.add_child(
+                Hoverable::new(row_mouse, move |_| row)
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::AcceptSuggestion(index));
+                    })
+                    .finish(),
+            );
+        }
+        Some(
+            Container::new(rows.finish())
+                .with_padding(Padding::uniform(4.))
+                .with_border(Border::all(1.).with_border_fill(theme.outline()))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                .finish(),
+        )
+    }
+
+    /// The attachment chips row (PRODUCT §15b): a thumbnail + name per
+    /// pending image, with an ✕ that drops it back to a plain text mention.
+    /// `None` when nothing is attached.
+    fn render_attachment_chips(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+        if self.pending_images.is_empty() {
+            return None;
+        }
+        let theme = appearance.theme();
+        let mut row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(6.);
+        for (index, path) in self.pending_images.iter().enumerate() {
+            let chip_mouse = {
+                let mut states = self.attachment_chip_mouse.borrow_mut();
+                while states.len() <= index {
+                    states.push(MouseStateHandle::default());
+                }
+                states[index].clone()
+            };
+            let thumbnail = ConstrainedBox::new(
+                Image::new(
+                    AssetSource::LocalFile {
+                        path: path.display().to_string(),
+                    },
+                    CacheOption::BySize,
+                )
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                .finish(),
+            )
+            .with_width(24.)
+            .with_height(24.)
+            .finish();
+            let name = appearance
+                .ui_builder()
+                .span(
+                    path.file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| path.display().to_string()),
+                )
+                .with_style(UiComponentStyles {
+                    font_size: Some(11.5),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let remove = appearance
+                .ui_builder()
+                .span("\u{2715}".to_owned())
+                .with_style(UiComponentStyles {
+                    font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+                    font_size: Some(11.5),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let chip = Container::new(
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(6.)
+                    .with_child(thumbnail)
+                    .with_child(name)
+                    .with_child(remove)
+                    .finish(),
+            )
+            .with_padding_left(6.)
+            .with_padding_right(6.)
+            .with_padding_top(3.)
+            .with_padding_bottom(3.)
+            .with_background_color(theme.surface_2().into_solid())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+            .finish();
+            let chip_path = path.display().to_string();
+            row.add_child(
+                Hoverable::new(chip_mouse, move |_| chip)
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::RemoveAttachment(
+                            chip_path.clone(),
+                        ));
+                    })
+                    .finish(),
+            );
+        }
+        Some(row.finish())
+    }
+
+    /// Encode the draft's surviving image mentions as outgoing image blocks
+    /// (PRODUCT §15b). Oversized or unreadable files degrade to the plain
+    /// text mention — `claude` reads those itself (§29: never block a send).
+    fn encode_pending_images(&self) -> Vec<OutgoingImage> {
+        self.pending_images
+            .iter()
+            .filter_map(|path| {
+                let media_type = composer::image_media_type(path)?;
+                let metadata = std::fs::metadata(path).ok()?;
+                if metadata.len() > composer::MAX_IMAGE_BYTES {
+                    log::info!(
+                        "claude: attachment {} exceeds the inline-image cap; left as a mention",
+                        path.display()
+                    );
+                    return None;
+                }
+                let bytes = std::fs::read(path).ok()?;
+                Some(OutgoingImage {
+                    media_type: media_type.to_owned(),
+                    base64_data: base64::engine::general_purpose::STANDARD.encode(bytes),
+                })
+            })
+            .collect()
     }
 
     /// Send the current input as a user turn to the live `claude` session,
@@ -293,18 +797,28 @@ impl ClaudeCodeView {
             // PRODUCT §15: empty / whitespace-only messages are a no-op.
             return;
         }
+        // PRODUCT §15b (7j): surviving @-mentioned images ride along as
+        // inline image blocks; the mention text stays for context.
+        let message = OutgoingMessage {
+            images: self.encode_pending_images(),
+            text,
+        };
         self.transcript
-            .apply(TranscriptEvent::UserMessage(text.clone()));
+            .apply(TranscriptEvent::UserMessage(message.text.clone()));
         self.input_editor
             .update(ctx, |editor, ctx| editor.clear_buffer(ctx));
+        self.suggestion_query = None;
+        self.suggestions.clear();
+        self.pending_images.clear();
+        self.attachment_optouts.clear();
         self.streaming = true;
         match &self.message_tx {
             // Session already running — write the turn to its stdin.
             Some(tx) => {
-                let _ = tx.try_send(text);
+                let _ = tx.try_send(message);
             }
             // First message: spawn the session, forwarding this as turn one.
-            None => Self::begin_session(self.cwd.clone(), Some(text), ctx),
+            None => self.begin_session(Some(message), ctx),
         }
         ctx.notify();
     }
@@ -313,24 +827,37 @@ impl ClaudeCodeView {
     /// `spawn_session` itself spawns the child (tokio), so it must not run on
     /// the foreground. [`Self::on_session_spawned`] wires the result into the
     /// view on the main thread and sends `first_prompt` once stdin is up.
+    ///
+    /// The spawn carries the selected permission mode (PRODUCT §25) and, when
+    /// set, the resume target (PRODUCT §36) — both read off `self` at the
+    /// moment of spawn.
     fn begin_session(
-        cwd: Option<PathBuf>,
-        first_prompt: Option<String>,
+        &mut self,
+        first_prompt: Option<OutgoingMessage>,
         ctx: &mut ViewContext<Self>,
     ) {
+        self.session_epoch += 1;
+        let epoch = self.session_epoch;
         let opts = SpawnOptions {
-            cwd: cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
-            model: None,
-            resume_session_id: None,
-            // 7c default; the permission-mode selector + interactive prompts are
-            // 7g (PRODUCT §24–§26). A turn needing tool permission pauses here
-            // until 7g, but text turns stream and complete.
-            permission_mode: PermissionMode::Default,
+            cwd: self
+                .cwd
+                .clone()
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
+            model: self.model.clone(),
+            effort: self.effort.clone(),
+            resume_session_id: self.resume_session_id.clone(),
+            // A fresh session spawns under the pane's own id (PRODUCT §41);
+            // a resume continues the id it targets.
+            session_id: self
+                .resume_session_id
+                .is_none()
+                .then(|| self.session_id.clone()),
+            permission_mode: self.permission_mode,
             allowed_tools: Vec::new(),
         };
         ctx.spawn(
             async move { spawn_session(opts) },
-            move |view, result, ctx| view.on_session_spawned(result, first_prompt, ctx),
+            move |view, result, ctx| view.on_session_spawned(epoch, result, first_prompt, ctx),
         );
     }
 
@@ -339,12 +866,21 @@ impl ClaudeCodeView {
     /// transcript via an `async_channel` + [`ViewContext::spawn_stream_local`]
     /// (keeping tokio I/O off the foreground), one owning stdin and writing
     /// queued user turns — and keeps `child` for Stop / kill-on-drop.
+    ///
+    /// Everything is guarded by `epoch`: if the view moved on to a newer
+    /// session (permission-mode restart, §25) the stale spawn is dropped on
+    /// the floor — dropping `child` kills it — and its stream never touches
+    /// the transcript.
     fn on_session_spawned(
         &mut self,
+        epoch: u64,
         result: anyhow::Result<SpawnedSession>,
-        first_prompt: Option<String>,
+        first_prompt: Option<OutgoingMessage>,
         ctx: &mut ViewContext<Self>,
     ) {
+        if epoch != self.session_epoch {
+            return;
+        }
         let SpawnedSession {
             child,
             stdin,
@@ -352,8 +888,11 @@ impl ClaudeCodeView {
         } = match result {
             Ok(session) => session,
             Err(err) => {
-                // PRODUCT §52/§55: surface the spawn failure verbatim.
+                // PRODUCT §28/§30: surface the spawn failure verbatim.
                 self.streaming = false;
+                // A failed resume must not wedge the pane on the dead id —
+                // the next message starts fresh (PRODUCT §37).
+                self.resume_session_id = None;
                 self.transcript.apply(TranscriptEvent::Ended {
                     reason: claude_code::EndReason::Error(format!(
                         "Couldn't start `claude`: {err}"
@@ -376,10 +915,14 @@ impl ClaudeCodeView {
                 }
             })
             .detach();
-        let _ = ctx.spawn_stream_local(event_rx, Self::on_transcript_event, Self::on_stream_done);
+        let _ = ctx.spawn_stream_local(
+            event_rx,
+            move |view: &mut Self, event, ctx| view.on_transcript_event(epoch, event, ctx),
+            move |view: &mut Self, ctx| view.on_stream_done(epoch, ctx),
+        );
 
         // Own stdin in a background task; the view queues user turns onto it.
-        let (message_tx, message_rx) = async_channel::unbounded::<String>();
+        let (message_tx, message_rx) = async_channel::unbounded::<OutgoingMessage>();
         ctx.background_executor()
             .spawn(async move {
                 let mut stdin = stdin;
@@ -401,28 +944,223 @@ impl ClaudeCodeView {
         ctx.notify();
     }
 
-    /// Apply one driver event to the transcript on the main thread (PRODUCT
-    /// §9–§13). An `Ended` event closes the streaming turn.
-    fn on_transcript_event(&mut self, event: TranscriptEvent, ctx: &mut ViewContext<Self>) {
+    /// Apply one driver event on the main thread (PRODUCT §9–§13), dropping
+    /// events from a superseded session. An `Ended` event closes the
+    /// streaming turn.
+    fn on_transcript_event(
+        &mut self,
+        epoch: u64,
+        event: TranscriptEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if epoch != self.session_epoch {
+            return;
+        }
         if matches!(event, TranscriptEvent::Ended { .. }) {
             self.streaming = false;
         }
-        if let TranscriptEvent::ToolCall { id, .. } = &event {
-            // The card's stable mouse handle must exist before the first
-            // render so expand/collapse clicks pair across renders.
-            self.tool_card_ui.entry(id.clone()).or_default();
+        if let TranscriptEvent::Ended {
+            reason: claude_code::EndReason::Error(_) | claude_code::EndReason::Exited,
+        } = &event
+        {
+            // The process died (a failed `--resume` lands here too, with its
+            // stderr surfaced verbatim): clear the resume target so the next
+            // message starts fresh instead of re-failing (PRODUCT §37).
+            self.resume_session_id = None;
         }
-        self.transcript.apply(event);
+        self.ingest_event(event, ctx);
         ctx.notify();
     }
 
+    /// Apply one event to the transcript and keep the per-card UI state in
+    /// step. Shared by the live pump and by 7h history replay — both need the
+    /// card mouse handles and diff views to exist before the first render.
+    fn ingest_event(&mut self, event: TranscriptEvent, ctx: &mut ViewContext<Self>) {
+        match &event {
+            TranscriptEvent::SessionInit { session_id, .. } => {
+                // Stay in lockstep with what `claude` actually reports —
+                // normally the id the pane pinned via `--session-id` or
+                // resumed (PRODUCT §41).
+                self.session_id = session_id.clone();
+            }
+            TranscriptEvent::ToolCall {
+                id, name, input, ..
+            } => {
+                // The card's stable mouse handle must exist before the first
+                // render so expand/collapse clicks pair across renders.
+                self.tool_card_ui.entry(id.clone()).or_default();
+                // 7e: an edit tool renders as a feature-05 diff card — build
+                // its views now (views cannot be created at render time).
+                if !self.diff_cards.contains_key(id) {
+                    if let Some(tool_diff) = diff_for_tool(name, input) {
+                        let card = diff_cards::build_diff_card(tool_diff, ctx);
+                        self.diff_cards.insert(id.clone(), card);
+                    }
+                }
+            }
+            TranscriptEvent::Thinking { .. } => {
+                // The new item lands at the end of the transcript; key its UI
+                // state by that index (items only append, §22).
+                self.thinking_ui
+                    .entry(self.transcript.items().len())
+                    .or_default();
+            }
+            _ => {}
+        }
+        self.transcript.apply(event);
+    }
+
     /// The event stream closed — `claude`'s stdout reached EOF, so the process
-    /// is gone (PRODUCT §52). The driver already pushed an `Ended` notice; tear
+    /// is gone (PRODUCT §28). The driver already pushed an `Ended` notice; tear
     /// down the live-session handles so the composer returns to a fresh state.
-    fn on_stream_done(&mut self, ctx: &mut ViewContext<Self>) {
+    /// Stale streams (superseded sessions) are ignored.
+    fn on_stream_done(&mut self, epoch: u64, ctx: &mut ViewContext<Self>) {
+        if epoch != self.session_epoch {
+            return;
+        }
         self.streaming = false;
         self.child = None;
         self.message_tx = None;
+        ctx.notify();
+    }
+
+    /// Step to the next permission mode (PRODUCT §25): Ask → Accept edits →
+    /// Plan → Bypass → Ask. The mode applies to the next spawn; a live
+    /// session is detached (killed) and its id kept as the resume target, so
+    /// the next message continues the same conversation under the new mode —
+    /// the only mode-change channel `claude`'s documented flags offer.
+    fn cycle_permission_mode(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.streaming {
+            // §25 applies between turns; restarting mid-turn would kill the
+            // in-flight work.
+            return;
+        }
+        self.permission_mode = match self.permission_mode {
+            PermissionMode::Default => PermissionMode::AcceptEdits,
+            PermissionMode::AcceptEdits => PermissionMode::Plan,
+            PermissionMode::Plan => PermissionMode::BypassPermissions,
+            PermissionMode::BypassPermissions => PermissionMode::Default,
+        };
+        if self.child.is_some() {
+            // Detach the live process; the next message resumes the
+            // conversation under the new mode. The pane owns its session id
+            // from birth (§41), so there is no "id not announced yet" window.
+            self.detach_live_session();
+        }
+        ctx.notify();
+    }
+
+    /// Kill the live `claude` process (if any) and keep the conversation as
+    /// the resume target for the next spawn. The epoch bump makes the killed
+    /// session's EOF/events stale so they can't spam the transcript or wipe
+    /// the next session's handles.
+    fn detach_live_session(&mut self) {
+        self.resume_session_id = Some(self.session_id.clone());
+        self.session_epoch += 1;
+        self.child = None; // kill_on_drop
+        self.message_tx = None;
+        self.streaming = false;
+    }
+
+    /// twarp 07 (7i, PRODUCT §39/§42): flip between the rendered chat and the
+    /// raw interactive CLI. Entering is disabled while a turn streams (§42 —
+    /// same rule as the mode selector); the headless process is detached
+    /// first (one driver at a time) and the host pane group hands back a real
+    /// terminal session running `claude --resume <session_id>`, which
+    /// [`Self::enter_raw_mode`] embeds.
+    fn toggle_raw_cli(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.raw_cli.is_some() {
+            self.exit_raw_mode(ctx);
+            return;
+        }
+        if self.streaming {
+            return;
+        }
+        self.detach_live_session();
+        ctx.emit(ClaudeCodeViewEvent::SwapToRawCli {
+            session_id: self.session_id.clone(),
+            cwd: self.cwd.clone(),
+        });
+        ctx.notify();
+    }
+
+    /// twarp 07 (7i, PRODUCT §39): embed the raw-CLI terminal the pane group
+    /// created. The pane renders it in place of the chat until the user
+    /// returns (the floating overlay / the header toggle) or the CLI exits
+    /// (§44 — `exec` makes the CLI's exit end the session, which surfaces as
+    /// the terminal's `Exited` event).
+    pub(crate) fn enter_raw_mode(
+        &mut self,
+        manager: ModelHandle<Box<dyn TerminalManager>>,
+        view: ViewHandle<TerminalView>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        ctx.subscribe_to_view(&view, |me, _, event, ctx| match event {
+            // The floating "← Claude Code" overlay (PRODUCT §40) or the CLI
+            // exiting (`/exit`, a crash, a failed resume — §44).
+            TerminalViewEvent::ReturnToClaudePane | TerminalViewEvent::Exited => {
+                me.exit_raw_mode(ctx);
+            }
+            _ => {}
+        });
+        ctx.focus(&view);
+        self.raw_cli = Some(RawCliSession { manager, view });
+        ctx.notify();
+    }
+
+    /// twarp 07 (7i, PRODUCT §40/§42/§44): leave raw mode — drop the embedded
+    /// session (killing the CLI's PTY), re-read the conversation's on-disk
+    /// history so raw-mode turns appear in the transcript, and hand focus
+    /// back to the composer. The next message resumes the conversation live.
+    fn exit_raw_mode(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(raw_cli) = self.raw_cli.take() else {
+            return;
+        };
+        ctx.unsubscribe_to_view(&raw_cli.view);
+        drop(raw_cli);
+        self.refresh_from_disk(ctx);
+        self.resume_session_id = Some(self.session_id.clone());
+        ctx.focus(&self.input_editor);
+        ctx.notify();
+    }
+
+    /// twarp 07 (7i, PRODUCT §40): returning from raw-CLI mode — re-read the
+    /// session's on-disk history so turns produced in the raw CLI appear in
+    /// the transcript, and keep the conversation as the resume target so the
+    /// next message continues it live. Best-effort like every store read: a
+    /// missing file just renders what the pane already had.
+    pub fn refresh_from_disk(&mut self, ctx: &mut ViewContext<Self>) {
+        let dir = self
+            .cwd
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .and_then(|cwd| sessions::sessions_dir(&cwd));
+        let Some(dir) = dir else {
+            return;
+        };
+        let jsonl_path = dir.join(format!("{}.jsonl", self.session_id));
+        let history = sessions::load_history(&jsonl_path);
+        if history.is_empty() {
+            // Nothing (re)readable on disk — keep the rendered transcript
+            // rather than blanking it (PRODUCT §29 defensive).
+            return;
+        }
+        self.transcript.clear();
+        self.tool_card_ui.clear();
+        self.diff_cards.clear();
+        self.thinking_ui.clear();
+        for event in history {
+            self.ingest_event(event, ctx);
+        }
+        self.resume_session_id = Some(self.session_id.clone());
+        self.streaming = false;
+        ctx.notify();
+    }
+
+    /// Expand / collapse the thinking card at `index` (PRODUCT §22).
+    fn toggle_thinking(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        let ui = self.thinking_ui.entry(index).or_default();
+        ui.expanded = !ui.expanded;
         ctx.notify();
     }
 
@@ -437,7 +1175,8 @@ impl ClaudeCodeView {
 
     /// Flip a tool card between collapsed and expanded (PRODUCT §19). The
     /// effective state before the click is the user's prior choice, or the
-    /// status-derived default (failed cards open showing their error).
+    /// status-derived default (failed cards open showing their error; diff
+    /// cards open showing their diff, §20).
     fn toggle_tool_card(&mut self, id: &str, ctx: &mut ViewContext<Self>) {
         let Some(TranscriptItem::Tool {
             status, children, ..
@@ -445,7 +1184,11 @@ impl ClaudeCodeView {
         else {
             return;
         };
-        let default = tool_cards::default_expanded(*status, !children.is_empty());
+        let default = if self.diff_cards.contains_key(id) {
+            diff_cards::default_expanded()
+        } else {
+            tool_cards::default_expanded(*status, !children.is_empty())
+        };
         if let Some(ui) = self.tool_card_ui.get_mut(id) {
             let effective = ui.expanded_override.unwrap_or(default);
             ui.expanded_override = Some(!effective);
@@ -479,8 +1222,8 @@ impl ClaudeCodeView {
         let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min);
-        for item in self.transcript.items() {
-            column.add_child(self.render_item(item, app));
+        for (index, item) in self.transcript.items().iter().enumerate() {
+            column.add_child(self.render_item(index, item, app));
         }
 
         // The composer floats over the bottom of the pane; this clearance is
@@ -509,6 +1252,11 @@ impl ClaudeCodeView {
     /// on. Effort is intentionally absent: the headless stream-json doesn't
     /// report an effort level (only `fast_mode_state`), unlike the interactive
     /// TUI's status line.
+    ///
+    /// The permission pill is the §25 selector: it shows the view's selected
+    /// mode (the value every spawn passes via `--permission-mode`) and a click
+    /// steps to the next mode. Disabled while a turn streams (§25 applies
+    /// between turns).
     fn metadata_chips(&self, appearance: &Appearance) -> Vec<Box<dyn Element>> {
         let mut chips = vec![render_pill("Local", appearance)];
         if let Some(model) = self.transcript.model() {
@@ -517,8 +1265,16 @@ impl ClaudeCodeView {
         if let Some(label) = self.transcript.usage().and_then(format_context) {
             chips.push(render_pill(&label, appearance));
         }
-        if let Some(mode) = self.transcript.permission_mode() {
-            chips.push(render_pill(&prettify_permission_mode(mode), appearance));
+        let mode_label = prettify_permission_mode(self.permission_mode.as_cli_arg());
+        if self.streaming {
+            chips.push(render_pill(&mode_label, appearance));
+        } else {
+            chips.push(render_clickable_pill(
+                &mode_label,
+                self.permission_pill_mouse.clone(),
+                |ctx| ctx.dispatch_typed_action(ClaudeCodeViewAction::CyclePermissionMode),
+                appearance,
+            ));
         }
         if self.transcript.fast_mode() == Some("on") {
             chips.push(render_pill("Fast mode", appearance));
@@ -610,25 +1366,32 @@ impl ClaudeCodeView {
             .with_child(action)
             .finish();
 
-        let card = Container::new(
-            Flex::column()
-                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_spacing(8.)
-                .with_child(editor)
-                .with_child(controls)
-                .finish(),
-        )
-        .with_padding(Padding::uniform(10.))
-        .with_background_color(theme.surface_1().into_solid())
-        .with_border(Border::all(1.).with_border_fill(theme.outline()))
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
-            COMPOSER_CORNER_RADIUS,
-        )))
-        // The composer floats over the transcript; the shadow separates the
-        // layers (same treatment as the input-suggestions detail panel).
-        .with_drop_shadow(DropShadow::default())
-        .finish();
+        let mut card_column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(8.);
+        // PRODUCT §15a (7j): the suggestions panel sits above the input,
+        // Claude-app style — `/` commands or `@` files, filtered live.
+        if let Some(panel) = self.render_suggestions_panel(appearance) {
+            card_column.add_child(panel);
+        }
+        // PRODUCT §15b (7j): attachment chips — @-mentioned images that will
+        // ride along as inline image blocks, with previews and an ✕ to drop
+        // one back to a plain mention.
+        if let Some(chips) = self.render_attachment_chips(appearance) {
+            card_column.add_child(chips);
+        }
+        let card = Container::new(card_column.with_child(editor).with_child(controls).finish())
+            .with_padding(Padding::uniform(10.))
+            .with_background_color(theme.surface_1().into_solid())
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                COMPOSER_CORNER_RADIUS,
+            )))
+            // The composer floats over the transcript; the shadow separates the
+            // layers (same treatment as the input-suggestions detail panel).
+            .with_drop_shadow(DropShadow::default())
+            .finish();
 
         Container::new(card)
             .with_padding_top(6.)
@@ -698,12 +1461,22 @@ impl View for ClaudeCodeView {
         // PRODUCT §34: focus the input on entry so typing just works. Focusing a
         // child keeps the view itself in the responder chain, so in-pane
         // `ClaudeCodeViewAction` dispatches reach `handle_action` below.
+        // In raw mode the embedded terminal owns the keyboard instead (§43).
         if focus_ctx.is_self_focused() {
-            ctx.focus(&self.input_editor);
+            self.focus(ctx);
         }
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
+        // twarp 07 (7i, PRODUCT §39/§43): raw mode — the pane IS the
+        // terminal. Rendered bare (no focus-grab wrapper: the terminal owns
+        // every click and keystroke; the way back is its floating overlay,
+        // the header toggle, or the CLI exiting). The terminal renders its
+        // own floating "← Claude Code" overlay (§40).
+        if let Some(raw_cli) = &self.raw_cli {
+            return ChildView::new(&raw_cli.view).finish();
+        }
+
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         // PRODUCT §4: the unavailable state replaces the pane body. The pane
@@ -778,13 +1551,31 @@ impl TypedActionView for ClaudeCodeView {
             ClaudeCodeViewAction::Refresh => ctx.notify(),
             ClaudeCodeViewAction::Stop => self.stop(ctx),
             ClaudeCodeViewAction::ToggleToolCard(id) => self.toggle_tool_card(id, ctx),
+            ClaudeCodeViewAction::ToggleThinking(index) => self.toggle_thinking(*index, ctx),
+            ClaudeCodeViewAction::ToggleTodos => {
+                self.todos_expanded = !self.todos_expanded;
+                ctx.notify();
+            }
+            ClaudeCodeViewAction::CyclePermissionMode => self.cycle_permission_mode(ctx),
+            ClaudeCodeViewAction::AcceptSuggestion(index) => {
+                self.accept_suggestion(*index, ctx);
+                // A click steals focus from the editor; give it back so
+                // typing flows on (PRODUCT §15).
+                ctx.focus(&self.input_editor);
+            }
+            ClaudeCodeViewAction::RemoveAttachment(path) => {
+                self.attachment_optouts.insert(PathBuf::from(path));
+                self.pending_images
+                    .retain(|p| p.display().to_string() != *path);
+                ctx.notify();
+            }
         }
     }
 }
 
 impl BackingView for ClaudeCodeView {
     type PaneHeaderOverflowMenuAction = ();
-    type CustomAction = ();
+    type CustomAction = ClaudeCodeCustomAction;
     type AssociatedData = ();
 
     fn handle_pane_header_overflow_menu_action(
@@ -793,6 +1584,18 @@ impl BackingView for ClaudeCodeView {
         _ctx: &mut ViewContext<Self>,
     ) {
         // No overflow menu items in 7b.
+    }
+
+    /// Header-button actions, routed back here by the pane framework
+    /// (PRODUCT §39; see [`ClaudeCodeCustomAction`]).
+    fn handle_custom_action(
+        &mut self,
+        custom_action: &Self::CustomAction,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match custom_action {
+            ClaudeCodeCustomAction::ToggleRawCli => self.toggle_raw_cli(ctx),
+        }
     }
 
     fn close(&mut self, ctx: &mut ViewContext<Self>) {
@@ -808,7 +1611,7 @@ impl BackingView for ClaudeCodeView {
     fn render_header_content(
         &self,
         _ctx: &view::HeaderRenderContext<'_>,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> HeaderContent {
         // PRODUCT §5: title "Claude Code" with the session cwd as a secondary
         // line. Net-new chrome (the Agent-block header was service-coupled;
@@ -824,6 +1627,30 @@ impl BackingView for ClaudeCodeView {
                     .map(|p| p.display().to_string())
             })
             .map(|cwd| format!(" — {cwd}"));
+        // PRODUCT §39 (7i): the Raw CLI toggle — embeds the real interactive
+        // `claude` (resuming this conversation) in place of the chat, and
+        // back. Entering is hidden while a turn streams (§42); in raw mode
+        // the button always shows, labeled as the way back. The header lives
+        // in the parent PaneView's tree, so the click must dispatch the pane
+        // framework's CustomAction (handled by the header view and routed
+        // back to `handle_custom_action`), NOT an in-pane
+        // ClaudeCodeViewAction — that dies unhandled from header chrome.
+        let raw_mode = self.raw_cli.is_some();
+        let raw_cli_toggle = (raw_mode || !self.streaming).then(|| {
+            let appearance = Appearance::as_ref(app);
+            let label = if raw_mode { "Chat UI" } else { "Raw CLI" };
+            appearance
+                .ui_builder()
+                .button(ButtonVariant::Text, self.raw_cli_button.clone())
+                .with_text_label(label.to_owned())
+                .build()
+                .on_click(|ctx, _, _| {
+                    ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
+                        PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleRawCli),
+                    );
+                })
+                .finish()
+        });
         HeaderContent::Standard(StandardHeader {
             title: PANE_TITLE.to_owned(),
             title_secondary: cwd,
@@ -832,7 +1659,7 @@ impl BackingView for ClaudeCodeView {
             title_max_width: None,
             left_of_title: None,
             right_of_title: None,
-            left_of_overflow: None,
+            left_of_overflow: raw_cli_toggle,
             options: StandardHeaderOptions::default(),
         })
     }
@@ -846,10 +1673,14 @@ impl ClaudeCodeView {
     /// Bridge dispatch (TECH §The bridge): one arm per [`TranscriptItem`].
     /// User/Assistant render through the ported markdown transcript (7b); Tool
     /// renders through the ported `inline_action` card chrome (7d, PRODUCT
-    /// §16–§19). The diff, thinking and todo cards are 7e–7f; those arms render
-    /// a minimal themed placeholder rather than crash — the model contract
-    /// already carries the variants.
-    fn render_item(&self, item: &TranscriptItem, app: &AppContext) -> Box<dyn Element> {
+    /// §16–§19) — or, for `Edit`/`MultiEdit`/`Write`, the feature-05 diff card
+    /// (7e, §20–§21); Thinking/Todos render the 7f cards (§22–§23).
+    fn render_item(
+        &self,
+        index: usize,
+        item: &TranscriptItem,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         match item {
             TranscriptItem::User(text) => {
@@ -867,22 +1698,52 @@ impl ClaudeCodeView {
                 status,
                 output,
                 children,
-            } => render_tool_card(
-                id,
-                name,
-                input,
-                *status,
-                output.as_ref(),
-                children,
-                &self.tool_card_ui,
-                false,
+            } => match self.diff_cards.get(id) {
+                Some(card) => diff_cards::render_diff_card(
+                    id,
+                    *status,
+                    output.as_ref(),
+                    card,
+                    &self.tool_card_ui,
+                    app,
+                ),
+                None => render_tool_card(
+                    id,
+                    name,
+                    input,
+                    *status,
+                    output.as_ref(),
+                    children,
+                    &self.tool_card_ui,
+                    false,
+                    app,
+                ),
+            },
+            TranscriptItem::Thinking { text, duration } => thinking::render_thinking_card(
+                index,
+                text,
+                *duration,
+                self.thinking_ui.get(&index),
                 app,
             ),
-            // 7e–7f bring back the diff/thinking/todo cards (ported from the
-            // remaining `view_impl` leaves + feature 05's diff renderer).
-            TranscriptItem::Thinking { .. }
-            | TranscriptItem::Todos(_)
-            | TranscriptItem::Permission { .. } => render_pending_card(item, appearance),
+            TranscriptItem::Todos(items) => todos::render_todos(
+                items,
+                self.todos_expanded,
+                self.todos_header_mouse.clone(),
+                app,
+            ),
+            // No interactive permission wire channel exists on the pinned
+            // `claude` (2.1.x dropped `--permission-prompt-tool`); the driver
+            // never emits these today. If a future CLI brings them back, the
+            // request surfaces as a themed notice rather than nothing
+            // (PRODUCT §26 degradation: never crash, never hang).
+            TranscriptItem::Permission { tool, .. } => render_notice(
+                &format!(
+                    "Claude requested permission to use {tool}. Pick a permission mode below and \
+                     re-send to proceed."
+                ),
+                appearance,
+            ),
         }
     }
 }
@@ -1057,21 +1918,6 @@ fn render_error(message: &str, appearance: &Appearance) -> Box<dyn Element> {
     .finish()
 }
 
-/// Placeholder for transcript variants whose rich cards land in 7e–7f.
-/// Kept minimal and clearly labelled.
-fn render_pending_card(item: &TranscriptItem, appearance: &Appearance) -> Box<dyn Element> {
-    let kind = match item {
-        TranscriptItem::Thinking { .. } => "Thinking",
-        TranscriptItem::Todos(_) => "Task list",
-        TranscriptItem::Permission { .. } => "Permission request",
-        _ => "Item",
-    };
-    render_notice(
-        &format!("{kind} (rendered in a later sub-phase)"),
-        appearance,
-    )
-}
-
 /// A contiguous run of a message's markdown: prose (rendered via
 /// [`FormattedTextElement`]) or a fenced code block (rendered specially).
 ///
@@ -1136,6 +1982,46 @@ fn render_pill(label: &str, appearance: &Appearance) -> Box<dyn Element> {
     .with_margin_right(6.)
     .with_background_color(theme.surface_2().into_solid())
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
+    .finish()
+}
+
+/// The §25 permission-mode selector pill: the muted pill chrome with hover +
+/// pointer affordance; a click dispatches the cycle action. The label carries
+/// a chevron-ish suffix so it reads as a control, not a static chip.
+fn render_clickable_pill(
+    label: &str,
+    mouse_state: MouseStateHandle,
+    on_click: impl Fn(&mut warpui::EventContext) + 'static,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let label = format!("{label} ▾");
+    let pill = Container::new(
+        appearance
+            .ui_builder()
+            .span(label)
+            .with_style(UiComponentStyles {
+                font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+                font_size: Some(11.5),
+                ..Default::default()
+            })
+            .build()
+            .finish(),
+    )
+    .with_padding_left(8.)
+    .with_padding_right(8.)
+    .with_padding_top(3.)
+    .with_padding_bottom(3.)
+    .with_background_color(theme.surface_2().into_solid())
+    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
+    .finish();
+    Container::new(
+        Hoverable::new(mouse_state, move |_| pill)
+            .with_cursor(Cursor::PointingHand)
+            .on_click(move |ctx, _, _| on_click(ctx))
+            .finish(),
+    )
+    .with_margin_right(6.)
     .finish()
 }
 

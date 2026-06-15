@@ -2967,9 +2967,13 @@ pub enum Event {
     /// workspace to open a Claude Code pane (PRODUCT §1). Bubbled from the
     /// input's `OpenClaudeCodePane` via `handle_input_event`.
     OpenClaudeCodePane {
-        args: String,
+        args: Vec<String>,
         cwd: Option<PathBuf>,
     },
+    /// twarp 07 (7i, PRODUCT §40): the floating "back to Claude Code" overlay
+    /// on a raw-CLI terminal was clicked — the pane group reverts the
+    /// temporary pane swap.
+    ReturnToClaudePane,
     #[cfg(feature = "local_fs")]
     OpenCodeInWarp {
         source: CodeSource,
@@ -3623,6 +3627,12 @@ impl DropTargetData for TerminalDropTargetData {
 pub struct TerminalView {
     pub model: Arc<FairMutex<TerminalModel>>,
     view_handle: WeakViewHandle<Self>,
+
+    /// twarp 07 (7i, PRODUCT §40): when this terminal hosts the raw Claude
+    /// CLI (a temporary pane swap), a floating "back to Claude Code" button
+    /// overlays the top-right. `None` for every ordinary terminal. The handle
+    /// keeps the overlay's clicks stable across renders.
+    claude_return_overlay: Option<MouseStateHandle>,
 
     /// The session's size data. This is wrapped in a [`Tracked`] to
     /// guarantee that the [`TerminalView`] is redrawn whenever the
@@ -5216,6 +5226,7 @@ impl TerminalView {
             input,
             inline_menu_positioner,
             view_handle: ctx.handle(),
+            claude_return_overlay: None,
             size_info: size_info.into(),
             snackbar_header_state: Default::default(),
             colors,
@@ -8556,6 +8567,14 @@ impl TerminalView {
         self.input.update(ctx, |input, ctx| {
             input.set_pending_command(exec, ctx);
         })
+    }
+
+    /// twarp 07 (7i, PRODUCT §40): mark this terminal as hosting the raw
+    /// Claude CLI — renders the floating top-right "back to Claude Code"
+    /// button. Set once by the pane-swap path; ordinary terminals never
+    /// enable it.
+    pub fn enable_claude_return_overlay(&mut self) {
+        self.claude_return_overlay = Some(MouseStateHandle::default());
     }
 
     fn alt_scroll_cmd_sequence(&self, lines_to_scroll: i32) -> Vec<u8> {
@@ -24300,6 +24319,7 @@ impl TypedActionView for TerminalView {
             | ExecuteRewindFromInlineMenu { .. }
             | RevealChildAgent { .. }
             | OpenCLIAgentRichInput
+            | ReturnToClaudePane
             | ToggleSessionRecording => Empty,
         }
     }
@@ -25260,6 +25280,9 @@ impl TypedActionView for TerminalView {
                     self.open_cli_agent_rich_input(CLIAgentInputEntrypoint::CtrlG, ctx);
                 }
             }
+            // twarp 07 (7i, PRODUCT §40): bubble up to the pane group, which
+            // owns the temporary pane swap.
+            ReturnToClaudePane => ctx.emit(Event::ReturnToClaudePane),
         }
     }
 }
@@ -25662,6 +25685,31 @@ impl View for TerminalView {
                     );
                 }
             }
+        }
+
+        // twarp 07 (7i, PRODUCT §40): when this terminal hosts the raw Claude
+        // CLI (a temporary pane swap), float the way back over the top-right.
+        if let Some(mouse_state) = &self.claude_return_overlay {
+            stack.add_positioned_child(
+                appearance
+                    .ui_builder()
+                    .button(
+                        warpui::ui_components::button::ButtonVariant::Outlined,
+                        mouse_state.clone(),
+                    )
+                    .with_text_label("← Claude Code".to_owned())
+                    .build()
+                    .on_click(|ctx, _, _| {
+                        ctx.dispatch_typed_action(TerminalAction::ReturnToClaudePane);
+                    })
+                    .finish(),
+                OffsetPositioning::offset_from_parent(
+                    vec2f(-12. - SCROLLBAR_WIDTH.as_f32(), 12.),
+                    ParentOffsetBounds::ParentByPosition,
+                    ParentAnchor::TopRight,
+                    ChildAnchor::TopRight,
+                ),
+            );
         }
 
         // Add a border above the input view when there's an overhanging block (or below in input at the top

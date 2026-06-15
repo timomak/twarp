@@ -600,6 +600,11 @@ fn handle_terminal_view_event(
                     cwd: cwd.clone(),
                 });
             }
+            // twarp 07 (7i): only the Claude pane's *embedded* raw-CLI
+            // terminal emits this (it subscribes directly); a pane-hosted
+            // terminal never renders the overlay, so this is unreachable
+            // here. No-op rather than a panic, §29-style.
+            Event::ReturnToClaudePane => {}
             #[cfg(feature = "local_fs")]
             Event::PreviewCodeInWarp { source } => {
                 ctx.emit(pane_group::Event::PreviewCodeInWarp {

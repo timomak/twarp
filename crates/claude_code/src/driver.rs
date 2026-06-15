@@ -12,12 +12,12 @@ use std::process::Stdio;
 
 use anyhow::{anyhow, Context, Result};
 pub use async_process::Child;
-use async_process::{ChildStdin, ChildStdout};
+use async_process::{ChildStderr, ChildStdin, ChildStdout};
 use futures::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 use futures::stream::Stream;
 use serde_json::{json, Value};
 
-use crate::{EndReason, ToolOutput, TranscriptEvent, Usage};
+use crate::{EndReason, TodoItem, TodoStatus, ToolOutput, TranscriptEvent, Usage};
 
 /// Permission mode passed to `claude --permission-mode`. The CLI argument
 /// names are the ones Claude Code itself accepts.
@@ -69,7 +69,16 @@ impl PermissionMode {
 pub struct SpawnOptions {
     pub cwd: PathBuf,
     pub model: Option<String>,
+    /// `--effort <level>` — settable but not echoed back by the headless
+    /// stream (see the #74 notes), so the pane treats it as write-only.
+    pub effort: Option<String>,
     pub resume_session_id: Option<String>,
+    /// Pin a fresh session's id (`--session-id`, PRODUCT §41): the pane owns
+    /// its session identity from birth, so the raw-CLI toggle and mode
+    /// restarts never hit a "no id yet" window. Ignored when resuming —
+    /// `--resume` continues the existing id (`--fork-session` is never
+    /// passed).
+    pub session_id: Option<String>,
     pub permission_mode: PermissionMode,
     pub allowed_tools: Vec<String>,
 }
@@ -100,8 +109,14 @@ pub fn spawn_session(opts: SpawnOptions) -> Result<SpawnedSession> {
     if let Some(model) = &opts.model {
         cmd.arg("--model").arg(model);
     }
+    if let Some(effort) = &opts.effort {
+        cmd.arg("--effort").arg(effort);
+    }
     if let Some(id) = &opts.resume_session_id {
         cmd.arg("--resume").arg(id);
+    } else if let Some(id) = &opts.session_id {
+        // A fresh session under a pane-chosen id (PRODUCT §41).
+        cmd.arg("--session-id").arg(id);
     }
     if !opts.allowed_tools.is_empty() {
         cmd.arg("--allowedTools").arg(opts.allowed_tools.join(","));
@@ -124,8 +139,12 @@ pub fn spawn_session(opts: SpawnOptions) -> Result<SpawnedSession> {
         .stdout
         .take()
         .ok_or_else(|| anyhow!("Failed to capture claude stdout"))?;
+    // stderr is drained only after stdout EOF (the process is exiting then) so
+    // a startup failure — bad --resume id, auth problem — surfaces verbatim
+    // instead of as a bare "ended unexpectedly" (PRODUCT §30, §37).
+    let stderr = child.stderr.take();
 
-    let events = event_stream_from_stdout(stdout);
+    let events = event_stream(stdout, stderr);
     Ok(SpawnedSession {
         child,
         stdin,
@@ -152,14 +171,59 @@ pub fn interrupt(child: &Child) {
     }
 }
 
+/// An image attached to an outgoing user turn (PRODUCT §15b): already
+/// base64-encoded, with its IANA media type (`image/png`, …). Sent as a
+/// standard API `image` content block — verified accepted by `claude`'s
+/// stream-json input (2.1.175).
+#[derive(Clone, Debug)]
+pub struct OutgoingImage {
+    pub media_type: String,
+    pub base64_data: String,
+}
+
+/// A user turn heading into the live session: the text plus any attached
+/// images.
+#[derive(Clone, Debug, Default)]
+pub struct OutgoingMessage {
+    pub text: String,
+    pub images: Vec<OutgoingImage>,
+}
+
+impl OutgoingMessage {
+    pub fn text(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            images: Vec::new(),
+        }
+    }
+}
+
 /// Write a user turn into the live session's stdin in the JSONL shape
-/// `claude --input-format stream-json` expects (PRODUCT §16).
-pub async fn send_user_message(stdin: &mut ChildStdin, text: &str) -> Result<()> {
+/// `claude --input-format stream-json` expects (PRODUCT §16). A text-only
+/// message sends the plain-string content form; attachments use the
+/// content-block array with `image` blocks (PRODUCT §15b).
+pub async fn send_user_message(stdin: &mut ChildStdin, message: &OutgoingMessage) -> Result<()> {
+    let content = if message.images.is_empty() {
+        json!(message.text)
+    } else {
+        let mut blocks = vec![json!({ "type": "text", "text": message.text })];
+        blocks.extend(message.images.iter().map(|image| {
+            json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": image.media_type,
+                    "data": image.base64_data,
+                },
+            })
+        }));
+        json!(blocks)
+    };
     let line = json!({
         "type": "user",
         "message": {
             "role": "user",
-            "content": text,
+            "content": content,
         },
     })
     .to_string();
@@ -177,12 +241,53 @@ pub async fn send_user_message(stdin: &mut ChildStdin, text: &str) -> Result<()>
 
 struct StreamState {
     reader: Option<BufReader<ChildStdout>>,
+    stderr: Option<ChildStderr>,
     buffered: VecDeque<TranscriptEvent>,
 }
 
-fn event_stream_from_stdout(stdout: ChildStdout) -> impl Stream<Item = TranscriptEvent> + Send {
+/// Cap on the stderr tail surfaced when the process dies (PRODUCT §30 —
+/// verbatim, but bounded so a runaway stderr can't flood the transcript).
+const STDERR_TAIL_MAX_BYTES: usize = 4 * 1024;
+
+impl StreamState {
+    /// The terminal event once stdout is done: drain the (now-EOF'd) stderr
+    /// and surface it verbatim if the process left an explanation — a bad
+    /// `--resume` id, an auth failure (PRODUCT §30, §37). Empty stderr keeps
+    /// the generic Exited notice.
+    async fn end_event(&mut self) -> TranscriptEvent {
+        self.reader = None;
+        let mut tail = String::new();
+        if let Some(stderr) = self.stderr.take() {
+            let mut reader = BufReader::new(stderr);
+            let mut line = String::new();
+            while reader.read_line(&mut line).await.is_ok_and(|n| n > 0) {
+                if tail.len() + line.len() > STDERR_TAIL_MAX_BYTES {
+                    break;
+                }
+                tail.push_str(&line);
+                line.clear();
+            }
+        }
+        let tail = tail.trim();
+        if tail.is_empty() {
+            TranscriptEvent::Ended {
+                reason: EndReason::Exited,
+            }
+        } else {
+            TranscriptEvent::Ended {
+                reason: EndReason::Error(tail.to_owned()),
+            }
+        }
+    }
+}
+
+fn event_stream(
+    stdout: ChildStdout,
+    stderr: Option<ChildStderr>,
+) -> impl Stream<Item = TranscriptEvent> + Send {
     let state = StreamState {
         reader: Some(BufReader::new(stdout)),
+        stderr,
         buffered: VecDeque::new(),
     };
     futures::stream::unfold(state, |mut state| async move {
@@ -192,31 +297,24 @@ fn event_stream_from_stdout(stdout: ChildStdout) -> impl Stream<Item = Transcrip
             if let Some(evt) = state.buffered.pop_front() {
                 return Some((evt, state));
             }
-            let reader = state.reader.as_mut()?;
             let mut line = String::new();
-            match reader.read_line(&mut line).await {
+            let read = {
+                let reader = state.reader.as_mut()?;
+                reader.read_line(&mut line).await
+            };
+            match read {
                 Ok(0) => {
-                    // EOF — `claude` exited. Surface it as Ended(Exited) once,
-                    // then stop the stream so spawn_stream_local fires its
-                    // on_done callback.
-                    state.reader = None;
-                    return Some((
-                        TranscriptEvent::Ended {
-                            reason: EndReason::Exited,
-                        },
-                        state,
-                    ));
+                    // EOF — `claude` exited. Surface it once (with the stderr
+                    // tail when there is one), then stop the stream so
+                    // spawn_stream_local fires its on_done callback.
+                    let event = state.end_event().await;
+                    return Some((event, state));
                 }
                 Ok(_) => {}
                 Err(err) => {
                     log::warn!("claude stdout read failed: {err}");
-                    state.reader = None;
-                    return Some((
-                        TranscriptEvent::Ended {
-                            reason: EndReason::Exited,
-                        },
-                        state,
-                    ));
+                    let event = state.end_event().await;
+                    return Some((event, state));
                 }
             }
             if line.trim().is_empty() {
@@ -274,12 +372,26 @@ fn parse_system(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
         .map(PathBuf::from)
         .unwrap_or_default();
     let str_field = |key: &str| value.get(key).and_then(|v| v.as_str()).map(str::to_owned);
+    // The session's available slash commands (built-ins + skills + plugins),
+    // straight from `claude` — drives the composer's `/` suggestions
+    // (PRODUCT §15a). Order is claude's; the UI fuzzy-filters.
+    let slash_commands = value
+        .get("slash_commands")
+        .and_then(|v| v.as_array())
+        .map(|commands| {
+            commands
+                .iter()
+                .filter_map(|c| c.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
     out.push_back(TranscriptEvent::SessionInit {
         session_id,
         cwd,
         model: str_field("model"),
         permission_mode: str_field("permissionMode"),
         fast_mode: str_field("fast_mode_state"),
+        slash_commands,
     });
 }
 
@@ -345,6 +457,18 @@ fn parse_assistant(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
                     .to_owned();
                 let input = block.get("input").cloned().unwrap_or(Value::Null);
                 if !id.is_empty() && !name.is_empty() {
+                    // 7f: a top-level `TodoWrite` IS the session's task list —
+                    // route it to the in-place Todos item instead of a tool
+                    // card (PRODUCT §17, §23). A sub-agent's TodoWrite stays a
+                    // nested card: its list belongs to the sub-agent, not the
+                    // session. Malformed input falls back to the tool card so
+                    // something always renders (PRODUCT §29).
+                    if name == "TodoWrite" && parent_id.is_none() {
+                        if let Some(todos) = parse_todos(&input) {
+                            out.push_back(TranscriptEvent::Todos(todos));
+                            continue;
+                        }
+                    }
                     out.push_back(TranscriptEvent::ToolCall {
                         id,
                         name,
@@ -398,6 +522,75 @@ fn parse_user_event(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
             },
             is_error,
         });
+    }
+}
+
+/// Parse a `TodoWrite` input into the task list (PRODUCT §23). `None` when the
+/// shape is unfamiliar — the caller falls back to a plain tool card (§29).
+/// Items missing text are skipped; unknown statuses degrade to pending.
+fn parse_todos(input: &Value) -> Option<Vec<TodoItem>> {
+    let todos = input.get("todos")?.as_array()?;
+    Some(
+        todos
+            .iter()
+            .filter_map(|todo| {
+                let text = todo
+                    .get("content")
+                    .or_else(|| todo.get("text"))?
+                    .as_str()?
+                    .to_owned();
+                let status = match todo.get("status").and_then(|v| v.as_str()) {
+                    Some("in_progress") => TodoStatus::InProgress,
+                    Some("completed") => TodoStatus::Completed,
+                    _ => TodoStatus::Pending,
+                };
+                Some(TodoItem { text, status })
+            })
+            .collect(),
+    )
+}
+
+/// Translate one line of `claude`'s on-disk session `.jsonl` into transcript
+/// events — the 7h resume path renders a stored session's history through the
+/// same pipeline as live output (PRODUCT §36).
+///
+/// The session file is a superset of the live stream: it also holds user
+/// *turns* (string or text-block content — the live stream only echoes tool
+/// results back on `user` events), bookkeeping lines (`mode`, `attachment`,
+/// `file-history-snapshot`, …, skipped), meta turns (`isMeta`, skipped), and
+/// sub-agent sidechains (`isSidechain`, skipped — their product returns as the
+/// spawning Task's tool result).
+pub(crate) fn parse_history_line(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
+    let flag = |key: &str| value.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
+    if flag("isMeta") || flag("isSidechain") {
+        return;
+    }
+    match value.get("type").and_then(|v| v.as_str()) {
+        Some("user") => {
+            let content = value.get("message").and_then(|m| m.get("content"));
+            let text = match content {
+                Some(Value::String(s)) => s.trim().to_owned(),
+                Some(Value::Array(blocks)) => blocks
+                    .iter()
+                    .filter(|b| b.get("type").and_then(|v| v.as_str()) == Some("text"))
+                    .filter_map(|b| b.get("text").and_then(|v| v.as_str()))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .trim()
+                    .to_owned(),
+                _ => String::new(),
+            };
+            if !text.is_empty() {
+                out.push_back(TranscriptEvent::UserMessage(text));
+            }
+            // Tool results ride on `user` lines in the file exactly like the
+            // live stream; reuse that path (a text-only line pushes nothing).
+            parse_user_event(value, out);
+        }
+        Some("assistant") => parse_assistant(value, out),
+        // `system`/`result` never appear in the file; bookkeeping types
+        // (`mode`, `attachment`, `summary`, …) carry no transcript content.
+        _ => {}
     }
 }
 
@@ -642,6 +835,136 @@ mod tests {
         let mut out = VecDeque::new();
         parse_event_into(&v, &mut out);
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn top_level_todowrite_routes_to_todos_not_a_card() {
+        let v: Value = serde_json::from_str(
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"TodoWrite","input":{"todos":[{"content":"step one","status":"pending"},{"content":"step two","status":"in_progress"},{"content":"done","status":"completed"}]}}]}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        assert_eq!(out.len(), 1);
+        match out.front() {
+            Some(TranscriptEvent::Todos(items)) => {
+                assert_eq!(items.len(), 3);
+                assert_eq!(items[0].status, TodoStatus::Pending);
+                assert_eq!(items[1].status, TodoStatus::InProgress);
+                assert_eq!(items[2].status, TodoStatus::Completed);
+                assert_eq!(items[0].text, "step one");
+            }
+            other => panic!("expected Todos, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn subagent_todowrite_stays_a_nested_tool_card() {
+        let v: Value = serde_json::from_str(
+            r#"{"type":"assistant","parent_tool_use_id":"task_1","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"TodoWrite","input":{"todos":[{"content":"a","status":"pending"}]}}]}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        assert!(
+            matches!(
+                out.front(),
+                Some(TranscriptEvent::ToolCall { name, parent_id: Some(p), .. })
+                    if name == "TodoWrite" && p == "task_1"
+            ),
+            "sub-agent TodoWrite must stay a card, got {out:?}"
+        );
+    }
+
+    #[test]
+    fn malformed_todowrite_falls_back_to_tool_card() {
+        // PRODUCT §29: an unfamiliar shape renders as a card, never nothing.
+        let v: Value = serde_json::from_str(
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"TodoWrite","input":{"unexpected":true}}]}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        assert!(matches!(
+            out.front(),
+            Some(TranscriptEvent::ToolCall { name, .. }) if name == "TodoWrite"
+        ));
+    }
+
+    #[test]
+    fn parse_todos_skips_textless_items_and_defaults_unknown_status() {
+        let input: Value = serde_json::from_str(
+            r#"{"todos":[{"content":"ok","status":"someday"},{"status":"pending"},{"text":"legacy key","status":"completed"}]}"#,
+        )
+        .unwrap();
+        let todos = parse_todos(&input).expect("array parses");
+        assert_eq!(todos.len(), 2);
+        assert_eq!(todos[0].text, "ok");
+        assert_eq!(todos[0].status, TodoStatus::Pending);
+        assert_eq!(todos[1].text, "legacy key");
+        assert_eq!(todos[1].status, TodoStatus::Completed);
+    }
+
+    #[test]
+    fn history_user_string_line_becomes_user_message() {
+        let v: Value = serde_json::from_str(
+            r#"{"type":"user","message":{"role":"user","content":"fix the bug"}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_history_line(&v, &mut out);
+        assert!(matches!(
+            out.front(),
+            Some(TranscriptEvent::UserMessage(m)) if m == "fix the bug"
+        ));
+    }
+
+    #[test]
+    fn history_skips_meta_sidechain_and_bookkeeping_lines() {
+        let lines = [
+            r#"{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"meta"}]}}"#,
+            r#"{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"sidechain prose"}]}}"#,
+            r#"{"type":"mode","mode":"default"}"#,
+            r#"{"type":"attachment","attachment":{}}"#,
+            r#"{"type":"file-history-snapshot","snapshot":{}}"#,
+            r#"{"type":"summary","summary":"compacted"}"#,
+        ];
+        let mut out = VecDeque::new();
+        for line in lines {
+            parse_history_line(&serde_json::from_str(line).unwrap(), &mut out);
+        }
+        assert!(out.is_empty(), "expected nothing, got {out:?}");
+    }
+
+    #[test]
+    fn history_replays_assistant_and_tool_results() {
+        let mut out = VecDeque::new();
+        parse_history_line(
+            &serde_json::from_str(
+                r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi"},{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"a.rs"}}]}}"#,
+            )
+            .unwrap(),
+            &mut out,
+        );
+        parse_history_line(
+            &serde_json::from_str(
+                r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"data","is_error":false}]}}"#,
+            )
+            .unwrap(),
+            &mut out,
+        );
+        let kinds: Vec<&'static str> = out
+            .iter()
+            .map(|e| match e {
+                TranscriptEvent::AssistantTextDelta { .. } => "delta",
+                TranscriptEvent::AssistantTextDone => "done",
+                TranscriptEvent::ToolCall { .. } => "call",
+                TranscriptEvent::ToolResult { .. } => "result",
+                TranscriptEvent::UserMessage(_) => "user",
+                _ => "other",
+            })
+            .collect();
+        assert_eq!(kinds, vec!["delta", "done", "call", "result"]);
     }
 
     #[test]

@@ -428,6 +428,9 @@ pub enum TerminalAction {
     /// Open the rich input editor for composing a prompt to send to a CLI agent.
     /// Triggered by Ctrl-G when a CLI agent is detected, or from the footer button.
     OpenCLIAgentRichInput,
+    /// twarp 07 (7i, PRODUCT §40): the raw Claude CLI's floating overlay was
+    /// clicked — return to the rendered Claude Code pane.
+    ReturnToClaudePane,
 }
 
 // Manually implementing Debug to avoid leaking sensitive information in logs
@@ -696,6 +699,7 @@ impl fmt::Debug for TerminalAction {
             RevealChildAgent { .. } => write!(f, "RevealChildAgent"),
             ToggleSessionRecording => write!(f, "ToggleSessionRecording"),
             OpenCLIAgentRichInput => write!(f, "OpenCLIAgentRichInput"),
+            ReturnToClaudePane => write!(f, "ReturnToClaudePane"),
         }
     }
 }

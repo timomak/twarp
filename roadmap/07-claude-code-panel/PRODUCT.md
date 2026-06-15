@@ -161,6 +161,22 @@ Invariants are grouped by area; each group is annotated with the sub-phase that 
 
 38. Quitting and relaunching twarp preserves the list (these are `claude`'s own on-disk sessions). Opening a fresh `claude` from the terminal (§1) and resuming from the list both produce the same kind of Claude Code pane.
 
+### Raw-CLI toggle — 7i *(amendment 2026-06-11, owner-requested)*
+
+> Some sessions want the real thing: `claude`'s own TUI has surfaces twarp's pane doesn't render (slash commands, interactive pickers, the statusline). The toggle makes the rendered pane and the raw CLI two views of the **same conversation**, switchable at will.
+
+39. The Claude Code pane shows a **"Raw CLI" control in its header's top-right**. Activating it swaps the rendered chat for the **raw interactive `claude` CLI** running in a real twarp terminal, in the same tab/pane position. The conversation continues: the raw CLI starts with `--resume <session id>`, so the full history is available in it.
+
+40. While in raw mode, a **floating top-right button** persists over the terminal. Clicking it returns to the rendered Claude Code pane in the same position; the pane re-reads the session's on-disk history, so turns produced in raw mode appear in the rendered transcript, and the next message continues the same conversation.
+
+41. Every pane-born session has a stable identity from birth: the pane generates the session id itself (passed via `--session-id` on the first spawn), so the toggle never hits a "no session id yet" window. A pane in the zero state (no first message sent) toggles into a **fresh** raw `claude` carrying that pre-assigned id; toggling back picks up whatever conversation the raw session started, under the same id.
+
+42. Mode handoff never runs two drivers at once: entering raw mode ends the pane's headless process first; returning ends the raw CLI's process. The toggle is **disabled while a rendered turn is streaming** (same rule as the permission-mode selector, §25); leaving raw mode while the raw CLI is mid-turn interrupts it — `claude` persists what it has, and the re-read (§40) renders it.
+
+43. Raw mode is a **real terminal session**: full keyboard interactivity, `claude`'s own TUI behaviors (slash commands, shift+tab mode cycling, its statusline), twarp's standard terminal rendering and theming. twarp chrome stays out of the way except the floating return button (§40). The raw CLI runs **vanilla** `claude --resume <id>` — pane-side settings (the §25 mode pill, launch-flag effort) configure the *headless* session only; the interactive CLI applies its own saved settings, exactly as if launched by hand.
+
+44. If the raw CLI process **exits** (the user types `/exit`, or it crashes), the pane returns to the rendered chat automatically and re-reads history (§40). A failed raw launch (bad resume id) shows the CLI's own error in the terminal; the return button still works and the rendered pane stays usable (§37's never-stuck rule).
+
 ## Smoke test
 
 Run against a freshly built twarp binary. Most steps require the `claude` CLI installed and logged in (a Claude Code account/subscription). Pin the tested `claude` version per TECH.md. Chord names are macOS.
@@ -191,7 +207,14 @@ Run against a freshly built twarp binary. Most steps require the `claude` CLI in
 10. After running a couple of sessions in this cwd, open the left-panel **session list** → prior sessions show with a snippet + timestamp; it contains a list, **no chat**. In a directory with no prior sessions, the list is absent/empty.
 11. Click a session → it resumes in a Claude Code pane and continues live. Quit/relaunch twarp → the list still shows them. Corrupt/remove a session file and resume → the pane shows the error and lets you start fresh.
 
+### 7i — Raw-CLI toggle
+
+12. In a Claude Code pane with a live conversation, click the header's **Raw CLI** control → the same tab now hosts the real interactive `claude` with the conversation's history (a real terminal: arrow keys, slash commands, shift+tab all work).
+13. Send a message in the raw CLI, then click the **floating top-right button** → the rendered pane returns with the raw-mode exchange in the transcript; sending another message continues the same conversation.
+14. From a zero-state pane (no message sent), toggle to raw → a fresh interactive `claude` opens; have a short exchange, toggle back → the rendered pane shows it and continues that session.
+15. While a rendered turn is streaming, the Raw CLI control is disabled. In raw mode, type `/exit` → the pane returns to the rendered chat automatically.
+
 ### Cross-cutting
 
-12. Throughout, no Warp/Anthropic sign-in, API-key field, usage meter, or billing UI appears in twarp chrome; auth/limit errors from `claude` show verbatim as copyable error cards. Toggle the theme → all cards/diffs/thinking/status colors follow it (no hard-coded colors).
-13. **(Acceptance gate)** Side-by-side with the Claude desktop / Claude Code app, the pane is *visually consistent* — chat turns, docked composer, structured tool cards, +/- tinted diffs with hunk headers, collapsible thinking, a real task list. A pane that shows the same information as plain text rows fails this step even if every other step passes.
+16. Throughout, no Warp/Anthropic sign-in, API-key field, usage meter, or billing UI appears in twarp chrome; auth/limit errors from `claude` show verbatim as copyable error cards. Toggle the theme → all cards/diffs/thinking/status colors follow it (no hard-coded colors).
+17. **(Acceptance gate)** Side-by-side with the Claude desktop / Claude Code app, the pane is *visually consistent* — chat turns, docked composer, structured tool cards, +/- tinted diffs with hunk headers, collapsible thinking, a real task list. A pane that shows the same information as plain text rows fails this step even if every other step passes.

@@ -71,6 +71,8 @@ struct MouseStateHandles {
     warp_drive_button: MouseStateHandle,
     shortcuts_button: MouseStateHandle,
     add_new_shortcut_button: MouseStateHandle,
+    /// twarp 07 (7h): the session-list toolbelt button.
+    claude_sessions_button: MouseStateHandle,
     // twarp: 2c-d — conversation_list_view_button removed
 }
 
@@ -143,6 +145,12 @@ pub enum LeftPanelAction {
     /// Reorder: move the action row at the given index down by one slot.
     /// No-op when already last.
     ShortcutsEditActionMoveDown(usize),
+    /// twarp 07 (7h, PRODUCT §35): switch the panel to the Claude Code
+    /// session list.
+    ClaudeSessions,
+    /// twarp 07 (7h, PRODUCT §36): resume the stored session at this index
+    /// of the current list in a main-content Claude Code pane.
+    ClaudeSessionResume(usize),
     /// 5d: collapse/expand the Timeline section at the bottom of the
     /// Project Explorer panel. Collapsed = header-only; expanded =
     /// header + entries with a drag-resize handle on top.
@@ -184,6 +192,14 @@ pub enum LeftPanelEvent {
         file_path: PathBuf,
         sha: String,
     },
+    /// twarp 07 (7h, PRODUCT §36): open a Claude Code pane resuming this
+    /// stored session. The workspace handler routes it through the same
+    /// pane-opening path as the `claude` terminal trigger.
+    ResumeClaudeSession {
+        session_id: String,
+        jsonl_path: PathBuf,
+        cwd: PathBuf,
+    },
     // twarp: 2c-d — kept for legacy call-sites; AI conversation list deleted.
     NewConversationInNewTab,
     ShowDeleteConfirmationDialog {
@@ -202,6 +218,11 @@ pub enum ToolPanelView {
     /// in a future sub-phase; 4c renders the tab plus a placeholder so the
     /// integration lights up.
     Shortcuts,
+    /// twarp 07 (7h, PRODUCT §35): read-only list of the cwd's stored Claude
+    /// Code sessions (from `claude`'s own `~/.claude/projects` store). Hosts
+    /// NO chat — selecting an entry opens a main-content pane via
+    /// `claude --resume`. The toolbelt button only shows when sessions exist.
+    ClaudeSessions,
     // twarp: 2c-d — variant kept so legacy call-sites compile; AI conversation list deleted.
     ConversationListView,
 }
@@ -313,6 +334,17 @@ pub struct LeftPanelView {
     /// since `Hoverable::on_click` requires the same handle across
     /// renders to detect click cycles.
     timeline_entry_mouse_states: std::cell::RefCell<Vec<MouseStateHandle>>,
+
+    /// twarp 07 (7h, PRODUCT §35): the active cwd's stored Claude Code
+    /// sessions, refreshed when the tab opens or the cwd changes. Read-only —
+    /// `claude` owns the store.
+    claude_sessions: Vec<claude_code::sessions::StoredSession>,
+    /// Whether the active cwd has any stored sessions — gates the toolbelt
+    /// button (§35: the entry appears only when sessions exist). Kept by an
+    /// existence-only probe on directory changes; never lists in render.
+    has_claude_sessions: bool,
+    /// Per-row stable mouse states (same pattern as the Timeline's).
+    claude_session_row_mouse_states: std::cell::RefCell<Vec<MouseStateHandle>>,
 }
 
 /// twarp 5d: ephemeral data for the Project Explorer Timeline section.
@@ -831,6 +863,16 @@ impl LeftPanelView {
                         view.auto_expand_to_most_recent_directory(ctx);
                     }
                 });
+
+                // twarp 07 (7h): the session-list entry follows the active
+                // cwd (PRODUCT §35) — existence probe for the toolbelt
+                // button; full re-list only while the tab is open.
+                me.has_claude_sessions = me
+                    .active_claude_sessions_cwd(ctx)
+                    .is_some_and(|cwd| claude_code::sessions::has_sessions(&cwd));
+                if me.active_view.get() == ToolPanelView::ClaudeSessions {
+                    me.refresh_claude_sessions(ctx);
+                }
                 ctx.notify();
             }
         });
@@ -861,6 +903,9 @@ impl LeftPanelView {
             timeline_load_more_mouse_state: MouseStateHandle::default(),
             timeline_scroll_state: warpui::elements::ClippedScrollStateHandle::default(),
             timeline_entry_mouse_states: std::cell::RefCell::new(Vec::new()),
+            claude_sessions: Vec::new(),
+            has_claude_sessions: false,
+            claude_session_row_mouse_states: std::cell::RefCell::new(Vec::new()),
         };
         view.update_button_active_states();
 
@@ -971,6 +1016,18 @@ impl LeftPanelView {
                 active_icon: None,
                 tooltip_text: "Custom shortcuts".to_owned(),
                 action: LeftPanelAction::Shortcuts,
+                render_with_active_state: false,
+                tooltip_keybinding: None,
+                tooltip_keybinding_names: vec![],
+            },
+            // twarp 07 (7h, PRODUCT §35): the session-list tab. The button is
+            // filtered out of the toolbelt while the cwd has no stored
+            // sessions (see `render_toolbelt_buttons`).
+            ToolPanelView::ClaudeSessions => ToolbeltButtonConfig {
+                icon: Icon::History,
+                active_icon: None,
+                tooltip_text: "Claude Code sessions".to_owned(),
+                action: LeftPanelAction::ClaudeSessions,
                 render_with_active_state: false,
                 tooltip_keybinding: None,
                 tooltip_keybinding_names: vec![],
@@ -1188,7 +1245,39 @@ impl LeftPanelView {
 
         self.on_left_panel_visibility_changed(left_panel_open, ctx);
 
+        // twarp 07 (7h): the session list follows the active pane group's cwd
+        // (PRODUCT §35) — re-probe on every group switch.
+        self.has_claude_sessions = self
+            .active_claude_sessions_cwd(ctx)
+            .is_some_and(|cwd| claude_code::sessions::has_sessions(&cwd));
+        if self.active_view.get() == ToolPanelView::ClaudeSessions {
+            self.refresh_claude_sessions(ctx);
+        }
+
         ctx.notify();
+    }
+
+    /// twarp 07 (7h, PRODUCT §35): the most-recent working directory of the
+    /// active pane group — the cwd whose stored Claude Code sessions the
+    /// session list shows. `None` when no pane group is active yet.
+    fn active_claude_sessions_cwd(&self, ctx: &AppContext) -> Option<PathBuf> {
+        let group = self.active_pane_group.as_ref()?.upgrade(ctx)?;
+        self.working_directories_model
+            .as_ref(ctx)
+            .most_recent_directories_for_pane_group(group.id())?
+            .next()
+            .map(|dir| dir.path)
+    }
+
+    /// twarp 07 (7h): re-list the active cwd's stored sessions (PRODUCT §35).
+    /// Read-only over `claude`'s own store; called when the tab opens or the
+    /// cwd changes — never from render.
+    fn refresh_claude_sessions(&mut self, ctx: &AppContext) {
+        self.claude_sessions = match self.active_claude_sessions_cwd(ctx) {
+            Some(cwd) => claude_code::sessions::list_sessions(&cwd),
+            None => Vec::new(),
+        };
+        self.has_claude_sessions = !self.claude_sessions.is_empty();
     }
 
     pub fn update_coding_panel_enablement(
@@ -1246,6 +1335,9 @@ impl LeftPanelView {
             // 4c stub: Shortcuts panel has no internal child view to focus
             // yet. Full GUI (list, detail editor) lands in a follow-up.
             ToolPanelView::Shortcuts => {}
+            // twarp 07 (7h): the session list is a plain click-to-resume
+            // list — no internal child view to focus.
+            ToolPanelView::ClaudeSessions => {}
             // twarp: 2c-d — ConversationListView arm: AI deleted, no-op.
             ToolPanelView::ConversationListView => {}
         }
@@ -2328,6 +2420,9 @@ impl LeftPanelView {
                 }
                 LeftPanelAction::WarpDrive => self.active_view.get() == ToolPanelView::WarpDrive,
                 LeftPanelAction::Shortcuts => self.active_view.get() == ToolPanelView::Shortcuts,
+                LeftPanelAction::ClaudeSessions => {
+                    self.active_view.get() == ToolPanelView::ClaudeSessions
+                }
                 LeftPanelAction::ShortcutsAddNew
                 | LeftPanelAction::ShortcutsOpenInEditor
                 | LeftPanelAction::ShortcutsToggleRowMenu(_)
@@ -2352,6 +2447,8 @@ impl LeftPanelView {
                 LeftPanelAction::TimelineToggleExpanded
                 | LeftPanelAction::TimelineLoadMore
                 | LeftPanelAction::TimelineSelectCommit { .. } => false,
+                // twarp 07 (7h): row clicks are not a toolbelt tab.
+                LeftPanelAction::ClaudeSessionResume(_) => false,
             };
         }
     }
@@ -2583,6 +2680,127 @@ impl LeftPanelView {
                 .finish(),
         )
         .finish()
+    }
+
+    /// twarp 07 (7h, PRODUCT §35): the Claude Code session list for the
+    /// active cwd. Read-only — one row per stored session (title snippet +
+    /// relative timestamp), click to resume in a main-content pane (§36).
+    /// No chat lives here. Empty cwd → a muted hint, never an empty chat.
+    fn render_claude_sessions_panel(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+
+        let body: Box<dyn Element> = if self.claude_sessions.is_empty() {
+            appearance
+                .ui_builder()
+                .span(
+                    "No Claude Code sessions in this directory yet. Run `claude` in a terminal \
+                     to start one; finished sessions show up here for reopening.",
+                )
+                .with_soft_wrap()
+                .build()
+                .finish()
+        } else {
+            let rows = self
+                .claude_sessions
+                .iter()
+                .enumerate()
+                .map(|(idx, session)| self.render_claude_session_row(idx, session, app));
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(2.0)
+                .with_children(rows)
+                .finish()
+        };
+
+        let heading = appearance
+            .ui_builder()
+            .span("Claude Code sessions".to_owned())
+            .with_style(UiComponentStyles {
+                font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+
+        let column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_spacing(10.0)
+            .with_child(heading)
+            .with_child(Shrinkable::new(1.0, body).finish())
+            .finish();
+
+        Shrinkable::new(
+            1.0,
+            Container::new(column)
+                .with_padding_left(10.)
+                .with_padding_right(10.)
+                .with_padding_top(8.)
+                .finish(),
+        )
+        .finish()
+    }
+
+    /// One session row: first-message snippet + relative timestamp, hover +
+    /// click to resume (PRODUCT §35–§36). Mouse states grow lazily, same
+    /// pattern as the Timeline / shortcut rows.
+    fn render_claude_session_row(
+        &self,
+        idx: usize,
+        session: &claude_code::sessions::StoredSession,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+
+        let timestamp = chrono::DateTime::<chrono::Utc>::from(session.timestamp);
+        let when = crate::util::time_format::format_approx_duration_from_now_utc(timestamp);
+
+        let title = appearance
+            .ui_builder()
+            .span(session.title.clone())
+            .build()
+            .finish();
+        let subtitle = appearance
+            .ui_builder()
+            .span(when)
+            .with_style(UiComponentStyles {
+                font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+                font_size: Some(11.5),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+
+        let body = Container::new(
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(2.0)
+                .with_child(title)
+                .with_child(subtitle)
+                .finish(),
+        )
+        .with_uniform_padding(8.)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+        .finish();
+
+        let row_mouse_state = {
+            let mut states = self.claude_session_row_mouse_states.borrow_mut();
+            while states.len() <= idx {
+                states.push(MouseStateHandle::default());
+            }
+            states[idx].clone()
+        };
+
+        Hoverable::new(row_mouse_state, move |_state| body)
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(LeftPanelAction::ClaudeSessionResume(idx));
+            })
+            .with_cursor(Cursor::PointingHand)
+            .finish()
     }
 
     /// PRODUCT §§29-30, 32-38: the inline detail editor. Renders in
@@ -3063,6 +3281,25 @@ impl LeftPanelView {
             }
             LeftPanelAction::Shortcuts => {
                 active_view_state::set(self, ToolPanelView::Shortcuts, ctx);
+            }
+            // twarp 07 (7h, PRODUCT §35): open the session list, re-listing
+            // the active cwd's stored sessions on entry.
+            LeftPanelAction::ClaudeSessions => {
+                self.refresh_claude_sessions(ctx);
+                active_view_state::set(self, ToolPanelView::ClaudeSessions, ctx);
+            }
+            // twarp 07 (7h, PRODUCT §36): a row click resumes that stored
+            // session in a main-content Claude Code pane. The workspace owns
+            // pane creation; emit up.
+            LeftPanelAction::ClaudeSessionResume(index) => {
+                let cwd = self.active_claude_sessions_cwd(ctx);
+                if let (Some(session), Some(cwd)) = (self.claude_sessions.get(*index), cwd) {
+                    ctx.emit(LeftPanelEvent::ResumeClaudeSession {
+                        session_id: session.id.clone(),
+                        jsonl_path: session.jsonl_path.clone(),
+                        cwd,
+                    });
+                }
             }
             LeftPanelAction::ShortcutsAddNew => {
                 // PRODUCT §29: opens the empty detail editor.
@@ -3618,6 +3855,8 @@ impl View for LeftPanelView {
                 ToolPanelView::WarpDrive => ctx.focus(&self.warp_drive_view),
                 // 4c stub: no internal view to focus yet.
                 ToolPanelView::Shortcuts => {}
+                // twarp 07 (7h): plain list, no internal view to focus.
+                ToolPanelView::ClaudeSessions => {}
                 // twarp: 2c-d — ConversationListView arm: AI deleted, no-op.
                 ToolPanelView::ConversationListView => {}
             }
@@ -3632,6 +3871,9 @@ impl View for LeftPanelView {
             self.mouse_state_handles.global_search_button.clone(),
             self.mouse_state_handles.warp_drive_button.clone(),
             self.mouse_state_handles.shortcuts_button.clone(),
+            // twarp 07 (7h): session-list button (after Shortcuts, matching
+            // `compute_left_panel_views` order).
+            self.mouse_state_handles.claude_sessions_button.clone(),
             // twarp: 2c-d — conversation_list_view_button removed
         ];
 
@@ -3642,11 +3884,23 @@ impl View for LeftPanelView {
                 Flex::row()
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_spacing(4.0)
-                    .with_children(self.toolbelt_buttons.iter().zip(&mouse_state_handles).map(
-                        |(button_config, mouse_state)| {
-                            Self::render_button(button_config, mouse_state.clone(), appearance)
-                        },
-                    ))
+                    .with_children(
+                        self.toolbelt_buttons
+                            .iter()
+                            .zip(&mouse_state_handles)
+                            .filter(|(button_config, _)| {
+                                // twarp 07 (7h, PRODUCT §35): the session-list
+                                // tab only appears when the cwd has stored
+                                // sessions (kept while it is the active view
+                                // so the open panel doesn't lose its tab).
+                                !matches!(button_config.action, LeftPanelAction::ClaudeSessions)
+                                    || self.has_claude_sessions
+                                    || self.active_view.get() == ToolPanelView::ClaudeSessions
+                            })
+                            .map(|(button_config, mouse_state)| {
+                                Self::render_button(button_config, mouse_state.clone(), appearance)
+                            }),
+                    )
                     .with_main_axis_size(MainAxisSize::Min)
                     .finish(),
             )
@@ -3705,6 +3959,9 @@ impl View for LeftPanelView {
             // `shortcuts.yaml` for now, and 4b's hot reload keeps that
             // loop tight.
             ToolPanelView::Shortcuts => self.render_shortcuts_panel(app),
+            // twarp 07 (7h, PRODUCT §35): read-only session list for the
+            // active cwd; rows resume via a main-content pane (§36).
+            ToolPanelView::ClaudeSessions => self.render_claude_sessions_panel(app),
             // twarp: 2c-d — ConversationListView arm: AI deleted, use empty content.
             ToolPanelView::ConversationListView => {
                 Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()

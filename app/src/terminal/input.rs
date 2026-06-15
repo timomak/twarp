@@ -2449,10 +2449,12 @@ pub enum Event {
     OpenCodeReviewPane,
     /// twarp 07 (7b): a bare top-level `claude [args]` was submitted at the
     /// prompt; open a Claude Code pane instead of writing it to the PTY
-    /// (PRODUCT §1–§3). `args` is everything after `claude`; `cwd` is the
+    /// (PRODUCT §1–§3). `args` is every token after `claude` — the workspace
+    /// maps recognized flags onto the session's spawn options and the
+    /// trailing positional onto the first turn (PRODUCT §2, 7g); `cwd` is the
     /// terminal's working directory.
     OpenClaudeCodePane {
-        args: String,
+        args: Vec<String>,
         cwd: Option<std::path::PathBuf>,
     },
     /// Request to attach a diff set as context to the AI conversation
@@ -7238,14 +7240,16 @@ impl Input {
     /// trigger (PRODUCT §3). Returns `Some((args, cwd))` only when `command` is
     /// a single bare top-level `claude` invocation — not piped, `&&`/`;`-chained,
     /// inside a subshell, nor a full path — and the `claude` binary resolves on
-    /// `PATH`. `args` is everything after the program token; `cwd` is the
-    /// terminal's working directory. When in doubt it returns `None`, so the
-    /// command runs raw (TECH §The trigger) — never swallow a real shell command.
+    /// `PATH`. `args` is every token after the program token, still quoted-
+    /// token-shaped (flag mapping happens at the pane, `claude_code::launch`);
+    /// `cwd` is the terminal's working directory. When in doubt it returns
+    /// `None`, so the command runs raw (TECH §The trigger) — never swallow a
+    /// real shell command.
     fn claude_pane_trigger(
         &self,
         command: &str,
         ctx: &ViewContext<Self>,
-    ) -> Option<(String, Option<PathBuf>)> {
+    ) -> Option<(Vec<String>, Option<PathBuf>)> {
         const CLAUDE_PROGRAM: &str = "claude";
         // Shell "run-a-program" wrappers a user's alias may inject. Warp expands
         // aliases at submit, so the common `alias claude='command claude --flags'`
@@ -7288,15 +7292,11 @@ impl Input {
         // shell's own "command not found" stand.
         crate::util::path::resolve_executable(CLAUDE_PROGRAM)?;
 
-        // Forward a leading positional prompt as the first turn (PRODUCT §2);
-        // flags (incl. the alias-injected ones) are not a prompt — proper
-        // flag → SpawnOptions mapping lands in 7c.
-        let rest: Vec<&str> = tokens.collect();
-        let args = if rest.first().is_some_and(|token| token.starts_with('-')) {
-            String::new()
-        } else {
-            rest.join(" ")
-        };
+        // Forward every remaining token. The pane maps recognized flags —
+        // including alias-injected ones like `--dangerously-skip-permissions`
+        // / `--effort max` — onto its spawn options and takes the trailing
+        // positional as the first turn (PRODUCT §2; `claude_code::launch`).
+        let args: Vec<String> = tokens.map(str::to_owned).collect();
         let cwd = self
             .active_block_metadata
             .as_ref()
