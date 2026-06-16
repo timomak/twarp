@@ -2646,6 +2646,7 @@ dependencies = [
  "async-process",
  "command",
  "futures",
+ "instant",
  "libc",
  "log",
  "serde",

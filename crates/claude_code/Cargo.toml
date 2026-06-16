@@ -12,6 +12,7 @@ anyhow.workspace = true
 async-process.workspace = true
 command.workspace = true
 futures.workspace = true
+instant.workspace = true
 libc.workspace = true
 log.workspace = true
 serde.workspace = true

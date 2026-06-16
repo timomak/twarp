@@ -94,6 +94,28 @@ impl Usage {
     }
 }
 
+/// Cost + timing for the turn that just completed, parsed from the stream-json
+/// `result` message (PRODUCT §48). Every field is optional: a field the stream
+/// omits is left out of the rendered line, never shown as `0`. Session-local
+/// display only — twarp meters nothing (PRODUCT §34).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct TurnMetrics {
+    /// `result.total_cost_usd`.
+    pub total_cost_usd: Option<f64>,
+    /// `result.duration_ms` — wall-clock for the whole turn.
+    pub duration_ms: Option<u64>,
+    /// `result.ttft_ms` — time to first token.
+    pub ttft_ms: Option<u64>,
+}
+
+impl TurnMetrics {
+    /// `true` when no field is present — the caller renders no metrics line
+    /// rather than an empty one (PRODUCT §48).
+    pub fn is_empty(&self) -> bool {
+        self.total_cost_usd.is_none() && self.duration_ms.is_none() && self.ttft_ms.is_none()
+    }
+}
+
 /// The thin, twarp-native event the 7c driver emits and the panel consumes.
 ///
 /// This is the contract both halves of feature 07 meet at: the driver crate
@@ -122,11 +144,25 @@ pub enum TranscriptEvent {
     AssistantTextDelta { text: String },
     /// The current assistant text block finished.
     AssistantTextDone,
-    /// Extended-thinking content, with a duration when known (PRODUCT §34).
+    /// Extended-thinking content, with a duration when known (PRODUCT §34). The
+    /// whole-block form: the non-streaming path and 7h history replay emit this
+    /// once per finished block. Token streaming uses [`ThinkingDelta`] +
+    /// [`ThinkingDone`] instead.
+    ///
+    /// [`ThinkingDelta`]: TranscriptEvent::ThinkingDelta
+    /// [`ThinkingDone`]: TranscriptEvent::ThinkingDone
     Thinking {
         text: String,
         duration: Option<Duration>,
     },
+    /// Incremental extended-thinking text (PRODUCT §45) — accumulates into the
+    /// open thinking block exactly as [`AssistantTextDelta`] does for prose.
+    ///
+    /// [`AssistantTextDelta`]: TranscriptEvent::AssistantTextDelta
+    ThinkingDelta { text: String },
+    /// The open thinking block finished; `duration` is its measured wall-clock
+    /// (PRODUCT §47), `None` when the stream carried no timing.
+    ThinkingDone { duration: Option<Duration> },
     /// A tool invocation (PRODUCT §23). `input` is the raw tool input; the panel
     /// renders a per-tool summary (7d) or a generic card for unmapped tools.
     /// `parent_id` is set when the call was made by a `Task` sub-agent (the
@@ -160,6 +196,9 @@ pub enum TranscriptEvent {
     /// Token usage + context window for the turn that just completed, from the
     /// `result` message. Drives the composer's context chip.
     Usage(Usage),
+    /// Cost + timing for the turn that just completed, from the `result`
+    /// message. Rendered as a per-turn metrics line (PRODUCT §48).
+    Metrics(TurnMetrics),
 }
 
 /// One rendered item in the transcript. The panel owns an ordered `Vec` of
@@ -173,10 +212,14 @@ pub enum TranscriptItem {
     /// Assistant prose. Deltas accumulate into the trailing open `Assistant`
     /// item until [`TranscriptEvent::AssistantTextDone`] closes it (PRODUCT §17).
     Assistant { text: String, done: bool },
-    /// A collapsible thinking block (PRODUCT §34).
+    /// A collapsible thinking block (PRODUCT §34). `done` is `false` while
+    /// `ThinkingDelta`s are still streaming into it and flips `true` on
+    /// `ThinkingDone` (or immediately for the whole-block form); `duration`
+    /// fills in at the same moment when the stream carried timing (PRODUCT §47).
     Thinking {
         text: String,
         duration: Option<Duration>,
+        done: bool,
     },
     /// A tool-call card, advancing running → completed/failed (PRODUCT §23–§29).
     /// `children` holds the nested activity of a `Task` sub-agent (tool calls
@@ -200,6 +243,9 @@ pub enum TranscriptItem {
         input: Value,
         decision: Option<bool>,
     },
+    /// A per-turn metrics line (cost / duration / time-to-first-token), pushed
+    /// when a turn completes (PRODUCT §48).
+    Metrics(TurnMetrics),
     /// An out-of-band notice (turn interrupted, session ended).
     Notice(String),
     /// An error surfaced verbatim from `claude` (PRODUCT §55).
@@ -315,6 +361,13 @@ impl Transcript {
             TranscriptEvent::Usage(usage) => {
                 self.usage = Some(usage);
             }
+            TranscriptEvent::Metrics(metrics) => {
+                // A turn's cost/timing line renders inline after its content
+                // (PRODUCT §48); an all-empty metric set renders nothing.
+                if !metrics.is_empty() {
+                    self.items.push(TranscriptItem::Metrics(metrics));
+                }
+            }
             TranscriptEvent::UserMessage(text) => {
                 self.items.push(TranscriptItem::User(text));
             }
@@ -334,7 +387,37 @@ impl Transcript {
                 }
             }
             TranscriptEvent::Thinking { text, duration } => {
-                self.items.push(TranscriptItem::Thinking { text, duration });
+                // Whole-block form (non-streaming path, history replay): a
+                // finished block, pushed done.
+                self.items.push(TranscriptItem::Thinking {
+                    text,
+                    duration,
+                    done: true,
+                });
+            }
+            TranscriptEvent::ThinkingDelta { text } => match self.items.last_mut() {
+                // Accumulate into the open thinking block (incremental, §45).
+                Some(TranscriptItem::Thinking {
+                    text: existing,
+                    done: false,
+                    ..
+                }) => existing.push_str(&text),
+                _ => self.items.push(TranscriptItem::Thinking {
+                    text,
+                    duration: None,
+                    done: false,
+                }),
+            },
+            TranscriptEvent::ThinkingDone { duration } => {
+                if let Some(TranscriptItem::Thinking {
+                    duration: slot,
+                    done,
+                    ..
+                }) = self.items.last_mut()
+                {
+                    *done = true;
+                    *slot = duration;
+                }
             }
             TranscriptEvent::ToolCall {
                 id,
@@ -633,6 +716,76 @@ mod tests {
         assert_eq!(t.fast_mode(), Some("off"));
         assert_eq!(t.slash_commands(), ["compact".to_string()]);
         assert!(t.is_empty(), "session init alone renders nothing");
+    }
+
+    #[test]
+    fn thinking_deltas_accumulate_then_done_stamps_duration() {
+        let mut t = Transcript::new();
+        t.apply(TranscriptEvent::ThinkingDelta {
+            text: "Let me ".to_string(),
+        });
+        t.apply(TranscriptEvent::ThinkingDelta {
+            text: "reason".to_string(),
+        });
+        // Still open: one item, not done, no duration yet.
+        assert_eq!(t.items().len(), 1);
+        assert!(matches!(
+            &t.items()[0],
+            TranscriptItem::Thinking {
+                done: false,
+                duration: None,
+                ..
+            }
+        ));
+        t.apply(TranscriptEvent::ThinkingDone {
+            duration: Some(Duration::from_secs(3)),
+        });
+        match &t.items()[0] {
+            TranscriptItem::Thinking {
+                text,
+                duration,
+                done,
+            } => {
+                assert_eq!(text, "Let me reason");
+                assert!(*done);
+                assert_eq!(*duration, Some(Duration::from_secs(3)));
+            }
+            other => panic!("expected finished thinking block, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn whole_block_thinking_event_pushes_done() {
+        let mut t = Transcript::new();
+        t.apply(TranscriptEvent::Thinking {
+            text: "done block".to_string(),
+            duration: None,
+        });
+        assert!(matches!(
+            &t.items()[0],
+            TranscriptItem::Thinking { done: true, .. }
+        ));
+        // A following delta opens a fresh block rather than reopening this one.
+        t.apply(TranscriptEvent::ThinkingDelta {
+            text: "next".to_string(),
+        });
+        assert_eq!(t.items().len(), 2);
+    }
+
+    #[test]
+    fn metrics_event_pushes_line_and_skips_empty() {
+        let mut t = Transcript::new();
+        t.apply(TranscriptEvent::Metrics(TurnMetrics::default()));
+        assert!(t.is_empty(), "an all-empty metrics set renders nothing");
+        t.apply(TranscriptEvent::Metrics(TurnMetrics {
+            total_cost_usd: Some(0.01),
+            duration_ms: Some(1200),
+            ttft_ms: None,
+        }));
+        assert!(matches!(
+            &t.items()[0],
+            TranscriptItem::Metrics(m) if m.total_cost_usd == Some(0.01)
+        ));
     }
 
     #[test]

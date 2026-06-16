@@ -5,10 +5,12 @@
 //! [`TranscriptEvent`]s — the UI never sees raw `claude` JSON. Used by the
 //! Claude Code panel; headless and unit-testable here.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::Stdio;
+
+use instant::Instant;
 
 use anyhow::{anyhow, Context, Result};
 pub use async_process::Child;
@@ -17,7 +19,7 @@ use futures::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 use futures::stream::Stream;
 use serde_json::{json, Value};
 
-use crate::{EndReason, TodoItem, TodoStatus, ToolOutput, TranscriptEvent, Usage};
+use crate::{EndReason, TodoItem, TodoStatus, ToolOutput, TranscriptEvent, TurnMetrics, Usage};
 
 /// Permission mode passed to `claude --permission-mode`. The CLI argument
 /// names are the ones Claude Code itself accepts.
@@ -103,6 +105,10 @@ pub fn spawn_session(opts: SpawnOptions) -> Result<SpawnedSession> {
         .arg("--output-format")
         .arg("stream-json")
         .arg("--verbose")
+        // 7k: opt into token-level streaming so assistant text, thinking, and
+        // tool args arrive as `stream_event` deltas instead of only the
+        // consolidated end-of-block message (PRODUCT §45).
+        .arg("--include-partial-messages")
         .arg("--permission-mode")
         .arg(opts.permission_mode.as_cli_arg());
 
@@ -243,6 +249,9 @@ struct StreamState {
     reader: Option<BufReader<ChildStdout>>,
     stderr: Option<ChildStderr>,
     buffered: VecDeque<TranscriptEvent>,
+    /// Holds the cross-line streaming state (open content blocks, the
+    /// done-marker flag) the partial-message path needs (7k).
+    parser: Parser,
 }
 
 /// Cap on the stderr tail surfaced when the process dies (PRODUCT §30 —
@@ -289,6 +298,7 @@ fn event_stream(
         reader: Some(BufReader::new(stdout)),
         stderr,
         buffered: VecDeque::new(),
+        parser: Parser::default(),
     };
     futures::stream::unfold(state, |mut state| async move {
         loop {
@@ -329,30 +339,265 @@ fn event_stream(
                     continue;
                 }
             };
-            parse_event_into(&value, &mut state.buffered);
+            state.parser.parse(&value, &mut state.buffered);
         }
     })
 }
 
-/// Translate one parsed stream-json value into zero or more
-/// [`TranscriptEvent`]s. Defensive: unknown event types and missing optional
-/// fields are tolerated (PRODUCT §53).
-fn parse_event_into(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
-    let Some(ty) = value.get("type").and_then(|v| v.as_str()) else {
-        log::warn!("claude: event without `type` field, dropped");
-        return;
-    };
-    match ty {
-        "system" => parse_system(value, out),
-        "assistant" => parse_assistant(value, out),
-        "user" => parse_user_event(value, out),
-        "result" => parse_result(value, out),
-        "stream_event" => {
-            // 7c doesn't request `--include-partial-messages`; ignore deltas
-            // if they ever arrive.
+/// An assistant content block that is mid-stream under
+/// `--include-partial-messages`, keyed by its content-block `index`. Tracks just
+/// enough to route each delta and finalize the block (7k, PRODUCT §45).
+enum OpenBlock {
+    /// A streaming `text` block. `suppressed` when it belongs to a `Task`
+    /// sub-agent (sub-agent prose is internal monologue, PRODUCT §19).
+    Text { suppressed: bool },
+    /// A streaming `thinking` block. `start` stamps the wall-clock at
+    /// `content_block_start` so the duration is the measured streamed span
+    /// (PRODUCT §47); `wrote` guards against finalizing a signature-only block.
+    Thinking {
+        start: Instant,
+        wrote: bool,
+        suppressed: bool,
+    },
+    /// A streaming `tool_use` block: `input` arrives as `input_json_delta`
+    /// fragments accumulated here and parsed once at `content_block_stop`.
+    Tool {
+        id: String,
+        name: String,
+        json: String,
+        parent_id: Option<String>,
+    },
+}
+
+/// Stateful stream-json parser. Most event types are stateless, but the
+/// partial-message path (7k) needs cross-line state: the open content blocks and
+/// a flag marking that the current message streamed (so its consolidated
+/// `assistant` event is treated as a pure done-marker, PRODUCT §46).
+#[derive(Default)]
+pub(crate) struct Parser {
+    /// Open content blocks of the message currently streaming, by index.
+    blocks: HashMap<u64, OpenBlock>,
+    /// `true` once the current message emitted `message_start` — its content has
+    /// streamed incrementally, so the consolidated `assistant` is a done-marker.
+    streamed: bool,
+}
+
+impl Parser {
+    /// Translate one parsed stream-json value into zero or more
+    /// [`TranscriptEvent`]s. Defensive: unknown event types and missing optional
+    /// fields are tolerated (PRODUCT §53).
+    pub(crate) fn parse(&mut self, value: &Value, out: &mut VecDeque<TranscriptEvent>) {
+        let Some(ty) = value.get("type").and_then(|v| v.as_str()) else {
+            log::warn!("claude: event without `type` field, dropped");
+            return;
+        };
+        match ty {
+            "system" => parse_system(value, out),
+            "assistant" => self.parse_assistant(value, out),
+            "user" => parse_user_event(value, out),
+            "result" => parse_result(value, out),
+            "stream_event" => self.parse_stream_event(value, out),
+            other => log::debug!("claude: ignoring unknown event type `{other}`"),
         }
-        other => log::debug!("claude: ignoring unknown event type `{other}`"),
     }
+
+    /// Consume a `stream_event` line (PRODUCT §45): the partial-message deltas
+    /// `--include-partial-messages` emits. Routes each delta to its open block
+    /// by content-block index and emits incremental [`TranscriptEvent`]s.
+    fn parse_stream_event(&mut self, value: &Value, out: &mut VecDeque<TranscriptEvent>) {
+        // Each line carries its own `parent_tool_use_id`; a sub-agent's prose is
+        // suppressed exactly as in the consolidated path (PRODUCT §19).
+        let parent_id = value
+            .get("parent_tool_use_id")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned);
+        let Some(event) = value.get("event") else {
+            return;
+        };
+        let Some(ety) = event.get("type").and_then(|v| v.as_str()) else {
+            return;
+        };
+        let index = || event.get("index").and_then(|v| v.as_u64());
+        match ety {
+            "message_start" => {
+                // A new assistant message: mark it streamed and drop any stale
+                // open blocks (defensive — they should already be closed).
+                self.streamed = true;
+                self.blocks.clear();
+            }
+            "content_block_start" => {
+                let Some(idx) = index() else { return };
+                let cb = event.get("content_block");
+                let suppressed = parent_id.is_some();
+                match cb.and_then(|c| c.get("type")).and_then(|v| v.as_str()) {
+                    Some("text") => {
+                        self.blocks.insert(idx, OpenBlock::Text { suppressed });
+                    }
+                    Some("thinking") => {
+                        self.blocks.insert(
+                            idx,
+                            OpenBlock::Thinking {
+                                start: Instant::now(),
+                                wrote: false,
+                                suppressed,
+                            },
+                        );
+                    }
+                    Some("tool_use") => {
+                        let cb = cb.expect("matched above");
+                        let id = cb
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_owned();
+                        let name = cb
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_owned();
+                        self.blocks.insert(
+                            idx,
+                            OpenBlock::Tool {
+                                id,
+                                name,
+                                json: String::new(),
+                                parent_id: parent_id.clone(),
+                            },
+                        );
+                    }
+                    _ => {}
+                }
+            }
+            "content_block_delta" => {
+                let Some(idx) = index() else { return };
+                let Some(delta) = event.get("delta") else {
+                    return;
+                };
+                let dty = delta.get("type").and_then(|v| v.as_str());
+                match self.blocks.get_mut(&idx) {
+                    Some(OpenBlock::Text { suppressed }) if dty == Some("text_delta") => {
+                        if !*suppressed {
+                            if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
+                                if !text.is_empty() {
+                                    out.push_back(TranscriptEvent::AssistantTextDelta {
+                                        text: text.to_owned(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    Some(OpenBlock::Thinking {
+                        wrote, suppressed, ..
+                    }) if dty == Some("thinking_delta") => {
+                        if !*suppressed {
+                            if let Some(text) = delta.get("thinking").and_then(|v| v.as_str()) {
+                                if !text.is_empty() {
+                                    *wrote = true;
+                                    out.push_back(TranscriptEvent::ThinkingDelta {
+                                        text: text.to_owned(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    Some(OpenBlock::Tool { json, .. }) if dty == Some("input_json_delta") => {
+                        if let Some(fragment) = delta.get("partial_json").and_then(|v| v.as_str()) {
+                            json.push_str(fragment);
+                        }
+                    }
+                    // Unknown delta type or no matching open block — skip (§53).
+                    _ => {}
+                }
+            }
+            "content_block_stop" => {
+                let Some(idx) = index() else { return };
+                self.finish_block(idx, out);
+            }
+            // `message_delta` / `message_stop` / `ping` carry no transcript
+            // content; the consolidated `assistant` event is the done-marker.
+            _ => {}
+        }
+    }
+
+    /// Finalize one open content block at `content_block_stop`.
+    fn finish_block(&mut self, idx: u64, out: &mut VecDeque<TranscriptEvent>) {
+        match self.blocks.remove(&idx) {
+            Some(OpenBlock::Text { suppressed }) => {
+                if !suppressed {
+                    out.push_back(TranscriptEvent::AssistantTextDone);
+                }
+            }
+            Some(OpenBlock::Thinking {
+                start,
+                wrote,
+                suppressed,
+            }) => {
+                // A signature-only block (no thinking_delta) opened no item, so
+                // there is nothing to finalize (PRODUCT §22).
+                if !suppressed && wrote {
+                    out.push_back(TranscriptEvent::ThinkingDone {
+                        duration: Some(start.elapsed()),
+                    });
+                }
+            }
+            Some(OpenBlock::Tool {
+                id,
+                name,
+                json,
+                parent_id,
+            }) => {
+                let input = serde_json::from_str(&json).unwrap_or(Value::Null);
+                emit_tool_call(id, name, input, parent_id, out);
+            }
+            None => {}
+        }
+    }
+
+    fn parse_assistant(&mut self, value: &Value, out: &mut VecDeque<TranscriptEvent>) {
+        // A streamed message's consolidated `assistant` event is a pure
+        // done-marker (PRODUCT §46): its text/thinking/tools already arrived as
+        // deltas. Close any block a missing `content_block_stop` left open, then
+        // reset for the next message and emit nothing else.
+        if self.streamed {
+            let mut open: Vec<u64> = self.blocks.keys().copied().collect();
+            open.sort_unstable();
+            for idx in open {
+                self.finish_block(idx, out);
+            }
+            self.streamed = false;
+            return;
+        }
+        parse_assistant(value, out);
+    }
+}
+
+/// Emit a tool call, routing a top-level `TodoWrite` to the in-place task list
+/// instead of a card (PRODUCT §17, §23). Shared by the consolidated path and the
+/// streaming `content_block_stop` finalizer so both honor the same routing. A
+/// sub-agent's `TodoWrite` (`parent_id` set) stays a nested card; malformed
+/// input falls back to a card so something always renders (PRODUCT §29).
+fn emit_tool_call(
+    id: String,
+    name: String,
+    input: Value,
+    parent_id: Option<String>,
+    out: &mut VecDeque<TranscriptEvent>,
+) {
+    if id.is_empty() || name.is_empty() {
+        return;
+    }
+    if name == "TodoWrite" && parent_id.is_none() {
+        if let Some(todos) = parse_todos(&input) {
+            out.push_back(TranscriptEvent::Todos(todos));
+            return;
+        }
+    }
+    out.push_back(TranscriptEvent::ToolCall {
+        id,
+        name,
+        input,
+        parent_id,
+    });
 }
 
 fn parse_system(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
@@ -456,26 +701,9 @@ fn parse_assistant(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
                     .unwrap_or_default()
                     .to_owned();
                 let input = block.get("input").cloned().unwrap_or(Value::Null);
-                if !id.is_empty() && !name.is_empty() {
-                    // 7f: a top-level `TodoWrite` IS the session's task list —
-                    // route it to the in-place Todos item instead of a tool
-                    // card (PRODUCT §17, §23). A sub-agent's TodoWrite stays a
-                    // nested card: its list belongs to the sub-agent, not the
-                    // session. Malformed input falls back to the tool card so
-                    // something always renders (PRODUCT §29).
-                    if name == "TodoWrite" && parent_id.is_none() {
-                        if let Some(todos) = parse_todos(&input) {
-                            out.push_back(TranscriptEvent::Todos(todos));
-                            continue;
-                        }
-                    }
-                    out.push_back(TranscriptEvent::ToolCall {
-                        id,
-                        name,
-                        input,
-                        parent_id: parent_id.clone(),
-                    });
-                }
+                // Shared routing: a top-level `TodoWrite` becomes the in-place
+                // task list, everything else a tool card (PRODUCT §17, §23, §29).
+                emit_tool_call(id, name, input, parent_id.clone(), out);
             }
             "text" | "thinking" => {
                 // Sub-agent prose/thinking (parent_id set) — skipped, see above.
@@ -612,6 +840,12 @@ fn parse_result(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
     if let Some(usage) = parse_usage(value) {
         out.push_back(TranscriptEvent::Usage(usage));
     }
+    // Per-turn cost/timing line (PRODUCT §48), also before `Ended` so it renders
+    // as the turn's last item. Omitted entirely when the result carries none.
+    let metrics = parse_turn_metrics(value);
+    if !metrics.is_empty() {
+        out.push_back(TranscriptEvent::Metrics(metrics));
+    }
     let is_error = value
         .get("is_error")
         .and_then(|v| v.as_bool())
@@ -627,6 +861,17 @@ fn parse_result(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
         EndReason::Completed
     };
     out.push_back(TranscriptEvent::Ended { reason });
+}
+
+/// Extract the per-turn cost/timing line from a `result` message (PRODUCT §48).
+/// Every field is independently optional — an absent one stays `None` and is
+/// omitted from the rendered line, never shown as `0`.
+fn parse_turn_metrics(value: &Value) -> TurnMetrics {
+    TurnMetrics {
+        total_cost_usd: value.get("total_cost_usd").and_then(|v| v.as_f64()),
+        duration_ms: value.get("duration_ms").and_then(|v| v.as_u64()),
+        ttft_ms: value.get("ttft_ms").and_then(|v| v.as_u64()),
+    }
 }
 
 /// Extract token usage from a `result` message's `usage` block, plus the
@@ -653,6 +898,13 @@ fn parse_usage(value: &Value) -> Option<Usage> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Stateless test entry point: most tests feed one self-contained line and
+    /// never exercise the cross-line streaming state, so a fresh [`Parser`] per
+    /// call matches the old free-function semantics.
+    fn parse_event_into(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
+        Parser::default().parse(value, out);
+    }
 
     #[test]
     fn parses_init_event() {
@@ -996,5 +1248,198 @@ mod tests {
                 reason: EndReason::Completed
             })
         ));
+    }
+
+    // --- 7k: token streaming via `--include-partial-messages` ---------------
+
+    /// Feed a sequence of stream-json lines through one [`Parser`] (streaming
+    /// needs cross-line state) and collect every emitted event.
+    fn stream(lines: &[&str]) -> Vec<TranscriptEvent> {
+        let mut parser = Parser::default();
+        let mut out = VecDeque::new();
+        for line in lines {
+            parser.parse(&serde_json::from_str(line).unwrap(), &mut out);
+        }
+        out.into()
+    }
+
+    #[test]
+    fn text_deltas_stream_then_consolidated_assistant_is_a_done_marker() {
+        // Two text_deltas, a content_block_stop, then the consolidated
+        // `assistant` must NOT re-append the text (PRODUCT §46).
+        let events = stream(&[
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"message_start","message":{"role":"assistant"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hel"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"lo"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_stop","index":0}}"#,
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello"}]}}"#,
+        ]);
+        let texts: Vec<&str> = events
+            .iter()
+            .filter_map(|e| match e {
+                TranscriptEvent::AssistantTextDelta { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texts, vec!["Hel", "lo"], "text streams once, not twice");
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, TranscriptEvent::AssistantTextDone))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn non_streamed_assistant_still_renders_from_consolidated_event() {
+        // A turn that emits no partial deltas (no message_start) renders via the
+        // consolidated event exactly as before (PRODUCT §46).
+        let events = stream(&[
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}}"#,
+        ]);
+        assert!(matches!(&events[0], TranscriptEvent::AssistantTextDelta { text } if text == "hi"));
+        assert!(matches!(events[1], TranscriptEvent::AssistantTextDone));
+    }
+
+    #[test]
+    fn thinking_deltas_stream_and_finish_with_a_measured_duration() {
+        let events = stream(&[
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"message_start","message":{"role":"assistant"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Let me think"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_stop","index":0}}"#,
+        ]);
+        assert!(
+            matches!(&events[0], TranscriptEvent::ThinkingDelta { text } if text == "Let me think")
+        );
+        assert!(matches!(
+            events[1],
+            TranscriptEvent::ThinkingDone { duration: Some(_) }
+        ));
+    }
+
+    #[test]
+    fn signature_only_thinking_block_emits_nothing() {
+        // A thinking block with no thinking_delta (signature only) opens no item
+        // and finalizes nothing (PRODUCT §22).
+        let events = stream(&[
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"message_start","message":{"role":"assistant"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"CAIS"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_stop","index":0}}"#,
+        ]);
+        assert!(events.is_empty(), "expected nothing, got {events:?}");
+    }
+
+    #[test]
+    fn streamed_tool_use_args_accumulate_and_emit_one_call_at_stop() {
+        let events = stream(&[
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"message_start","message":{"role":"assistant"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t1","name":"Read","input":{}}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"file_path\":"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"a.rs\"}"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_stop","index":0}}"#,
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"a.rs"}}]}}"#,
+        ]);
+        let calls: Vec<&TranscriptEvent> = events
+            .iter()
+            .filter(|e| matches!(e, TranscriptEvent::ToolCall { .. }))
+            .collect();
+        assert_eq!(
+            calls.len(),
+            1,
+            "exactly one card, not a streamed + consolidated dup"
+        );
+        match calls[0] {
+            TranscriptEvent::ToolCall {
+                id, name, input, ..
+            } => {
+                assert_eq!(id, "t1");
+                assert_eq!(name, "Read");
+                assert_eq!(input["file_path"], "a.rs");
+            }
+            other => panic!("expected ToolCall, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn streamed_top_level_todowrite_routes_to_todos() {
+        let events = stream(&[
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"message_start","message":{"role":"assistant"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t1","name":"TodoWrite","input":{}}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"todos\":[{\"content\":\"step\",\"status\":\"pending\"}]}"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_stop","index":0}}"#,
+        ]);
+        assert!(
+            matches!(&events[0], TranscriptEvent::Todos(items) if items.len() == 1),
+            "streamed TodoWrite must route to Todos, got {events:?}"
+        );
+    }
+
+    #[test]
+    fn subagent_streamed_text_is_suppressed() {
+        // A sub-agent's streamed prose (parent_tool_use_id set) is internal
+        // monologue and must not surface as main-transcript text (PRODUCT §19).
+        let events = stream(&[
+            r#"{"type":"stream_event","parent_tool_use_id":"task_1","event":{"type":"message_start","message":{"role":"assistant"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":"task_1","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":"task_1","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"internal"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":"task_1","event":{"type":"content_block_stop","index":0}}"#,
+        ]);
+        assert!(
+            events.is_empty(),
+            "sub-agent prose must be suppressed, got {events:?}"
+        );
+    }
+
+    #[test]
+    fn result_emits_per_turn_metrics_before_ended() {
+        let events = stream(&[
+            r#"{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.0123,"duration_ms":4200,"ttft_ms":850}"#,
+        ]);
+        let metrics = events.iter().find_map(|e| match e {
+            TranscriptEvent::Metrics(m) => Some(*m),
+            _ => None,
+        });
+        let m = metrics.expect("metrics emitted");
+        assert_eq!(m.total_cost_usd, Some(0.0123));
+        assert_eq!(m.duration_ms, Some(4200));
+        assert_eq!(m.ttft_ms, Some(850));
+        // Metrics precede Ended so they render as the turn's last content item.
+        let metrics_pos = events
+            .iter()
+            .position(|e| matches!(e, TranscriptEvent::Metrics(_)))
+            .unwrap();
+        let ended_pos = events
+            .iter()
+            .position(|e| matches!(e, TranscriptEvent::Ended { .. }))
+            .unwrap();
+        assert!(metrics_pos < ended_pos);
+    }
+
+    #[test]
+    fn result_without_metric_fields_emits_no_metrics_event() {
+        let events = stream(&[r#"{"type":"result","subtype":"success","is_error":false}"#]);
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, TranscriptEvent::Metrics(_))),
+            "absent fields render no line, got {events:?}"
+        );
+    }
+
+    #[test]
+    fn unknown_stream_event_delta_type_is_skipped() {
+        let events = stream(&[
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"message_start","message":{"role":"assistant"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","index":0,"delta":{"type":"future_delta","data":"?"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_stop","index":0}}"#,
+        ]);
+        // Only the block's done marker survives; the unknown delta is dropped.
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], TranscriptEvent::AssistantTextDone));
     }
 }

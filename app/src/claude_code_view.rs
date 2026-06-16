@@ -51,7 +51,7 @@ use claude_code::driver::{
     PermissionMode, SpawnOptions, SpawnedSession,
 };
 use claude_code::launch::LaunchOptions;
-use claude_code::{sessions, Transcript, TranscriptEvent, TranscriptItem, Usage};
+use claude_code::{sessions, Transcript, TranscriptEvent, TranscriptItem, TurnMetrics, Usage};
 use futures::StreamExt;
 use markdown_parser::{parse_markdown, FormattedText, FormattedTextLine};
 use pathfinder_color::ColorU;
@@ -1005,6 +1005,22 @@ impl ClaudeCodeView {
                     .entry(self.transcript.items().len())
                     .or_default();
             }
+            TranscriptEvent::ThinkingDelta { .. } => {
+                // A streaming thinking block (7k): the first delta opens a new
+                // item, later deltas accumulate into it. Allocate the card's UI
+                // state only when a new item is actually created — i.e. when the
+                // last item is not an open thinking block (mirror Transcript's
+                // ThinkingDelta rule so the index lines up).
+                let opens_new = !matches!(
+                    self.transcript.items().last(),
+                    Some(TranscriptItem::Thinking { done: false, .. })
+                );
+                if opens_new {
+                    self.thinking_ui
+                        .entry(self.transcript.items().len())
+                        .or_default();
+                }
+            }
             _ => {}
         }
         self.transcript.apply(event);
@@ -1719,13 +1735,14 @@ impl ClaudeCodeView {
                     app,
                 ),
             },
-            TranscriptItem::Thinking { text, duration } => thinking::render_thinking_card(
+            TranscriptItem::Thinking { text, duration, .. } => thinking::render_thinking_card(
                 index,
                 text,
                 *duration,
                 self.thinking_ui.get(&index),
                 app,
             ),
+            TranscriptItem::Metrics(metrics) => render_metrics_line(metrics, appearance),
             TranscriptItem::Todos(items) => todos::render_todos(
                 items,
                 self.todos_expanded,
@@ -1894,6 +1911,60 @@ fn render_notice(message: &str, appearance: &Appearance) -> Box<dyn Element> {
     )
     .with_padding_top(6.)
     .with_padding_bottom(6.)
+    .with_padding_left(TRANSCRIPT_LEFT_MARGIN)
+    .with_padding_right(20.)
+    .finish()
+}
+
+/// Format the per-turn metrics line (PRODUCT §48): cost, wall-clock duration,
+/// time-to-first-token. Only fields the `result` carried appear — an absent one
+/// is omitted, never shown as `0`. Returns `None` when nothing is present.
+fn format_metrics_line(metrics: &TurnMetrics) -> Option<String> {
+    // `4200` → `4.2s`; `850` → `850ms`. Sub-second stays in ms for precision.
+    fn human_ms(ms: u64) -> String {
+        if ms >= 1000 {
+            format!("{:.1}s", ms as f64 / 1000.0)
+        } else {
+            format!("{ms}ms")
+        }
+    }
+    let mut parts = Vec::new();
+    if let Some(cost) = metrics.total_cost_usd {
+        parts.push(format!("${cost:.4}"));
+    }
+    if let Some(duration_ms) = metrics.duration_ms {
+        parts.push(human_ms(duration_ms));
+    }
+    if let Some(ttft_ms) = metrics.ttft_ms {
+        parts.push(format!("{} to first token", human_ms(ttft_ms)));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" · "))
+    }
+}
+
+/// A small, muted per-turn metrics line rendered after a turn's content
+/// (PRODUCT §48). Session-local display only — twarp meters nothing (§34).
+fn render_metrics_line(metrics: &TurnMetrics, appearance: &Appearance) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let Some(text) = format_metrics_line(metrics) else {
+        return Container::new(Flex::column().finish()).finish();
+    };
+    Container::new(
+        appearance
+            .ui_builder()
+            .span(text)
+            .with_style(UiComponentStyles {
+                font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+                ..Default::default()
+            })
+            .build()
+            .finish(),
+    )
+    .with_padding_top(2.)
+    .with_padding_bottom(8.)
     .with_padding_left(TRANSCRIPT_LEFT_MARGIN)
     .with_padding_right(20.)
     .finish()
@@ -2116,4 +2187,49 @@ fn render_zero_state(appearance: &Appearance) -> Box<dyn Element> {
     )
     .with_uniform_padding(24.)
     .finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_metrics_line;
+    use claude_code::TurnMetrics;
+
+    #[test]
+    fn metrics_line_omits_absent_fields() {
+        // Only duration present — no cost, no ttft segment.
+        let line = format_metrics_line(&TurnMetrics {
+            total_cost_usd: None,
+            duration_ms: Some(4200),
+            ttft_ms: None,
+        });
+        assert_eq!(line.as_deref(), Some("4.2s"));
+    }
+
+    #[test]
+    fn metrics_line_joins_all_present_fields() {
+        let line = format_metrics_line(&TurnMetrics {
+            total_cost_usd: Some(0.0123),
+            duration_ms: Some(4200),
+            ttft_ms: Some(850),
+        });
+        assert_eq!(
+            line.as_deref(),
+            Some("$0.0123 · 4.2s · 850ms to first token")
+        );
+    }
+
+    #[test]
+    fn empty_metrics_render_no_line() {
+        assert_eq!(format_metrics_line(&TurnMetrics::default()), None);
+    }
+
+    #[test]
+    fn sub_second_durations_stay_in_milliseconds() {
+        let line = format_metrics_line(&TurnMetrics {
+            total_cost_usd: None,
+            duration_ms: Some(850),
+            ttft_ms: None,
+        });
+        assert_eq!(line.as_deref(), Some("850ms"));
+    }
 }
