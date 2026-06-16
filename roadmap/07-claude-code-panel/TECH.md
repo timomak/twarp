@@ -139,6 +139,46 @@ PRODUCT §39–§44. Two views of one conversation: the rendered pane (headless 
 - **Return handoff (§40, §42):** entering raw mode tears down the headless session first (epoch bump + drop, the 7g mechanism). Returning closes the raw pane (killing the CLI if still alive — it persists its own state) and the restored `ClaudeCodeView` re-ingests history from the session's `.jsonl` (`sessions::load_history`, the 7h path) — full reload, clearing and re-ingesting the transcript, which also refreshes card state. Exit detection for §44 auto-return: subscribe to the replacement pane's session-ended event; degrade to manual return if it proves unreliable.
 - **Risks:** (a) `replace_pane` semantics for a *non-terminal* original — the temporary-replacement path is exercised today by terminal-adjacent panes; verify the `ClaudeCodePane` snapshot/restore round-trip early. (b) The overlay on `TerminalPaneView` must not capture terminal input beyond its hit-box (waterfall dispatch, as the floating composer does). (c) `exec` requires a POSIX-family shell; for exotic shells fall back to a plain pending command (the shell stays parented — acceptable: `/exit` then ends `claude` and leaves a shell; the floating button still returns).
 
+## Phase 2 — fidelity & rich input (7k–7n — amendment 2026-06-15)
+
+PRODUCT §45–§56. Four spec-first sub-phases on top of the merged phase-1 panel, each landing in the same crates phase 1 built (`crates/claude_code`, `app/src/claude_code_view`, `app/src/terminal`) — which is why they precede 08-rebrand. Feasibility was triple-checked against `claude` 2.1.175; receipts live in STATUS.md §Phase 2 feasibility. No new service surface is introduced by any sub-phase (PRODUCT §34 holds).
+
+### 7k — Token streaming + thinking duration + per-turn metrics (PRODUCT §45–§48)
+
+- **Spawn flag:** add `--include-partial-messages` to the driver's `claude` argv (the arg list already has the optional slot, TECH §The driver). Verified live: this emits `stream_event` → `content_block_{start,delta,stop}` with `text_delta` / `thinking_delta` / `input_json_delta`.
+- **Driver:** the existing `stream_event` match arm is currently a **no-op ready to fill**. Fill it to emit incremental `TranscriptEvent`s that append to the open text/thinking/tool item rather than waiting for the consolidated block. Keep the consolidated `assistant` event as the **done-marker** — finalize the item, do **not** re-append its text (PRODUCT §46). Items must carry enough identity (content-block index) to route deltas to the right open item.
+- **Thinking duration (§47):** stamp wall-clock at a thinking block's `content_block_start`, diff at `content_block_stop`; surface as the block's duration so `thinking.rs` renders "Thought for N s" instead of the unlabeled fallback. (Scripts can't call `Date::now`; the driver runs in the app, where the monotonic clock is available — this is driver-side timing, not workflow-side.)
+- **Per-turn metrics (§48):** the `result` event carries `total_cost_usd`, `duration_ms`, `duration_api_ms`, `ttft_ms`, `num_turns` — the driver already parses `result` for the §74 usage chips; extend that path to carry the metrics and render a small per-turn line on turn completion. Omit absent fields.
+- **Defensive parse (§29) still applies:** an unknown delta type or a missing index is skipped, not fatal. Golden fixtures gain a partial-message transcript.
+
+### 7l — Rich input: paste / drag-drop / file picker (PRODUCT §49–§51)
+
+All three primitives are **present and already consumed elsewhere** (corrects an earlier "absent" claim — receipts in STATUS):
+
+- **Clipboard image:** `ClipboardContent.images` (`crates/warpui_core/src/clipboard.rs`), mac read at `crates/warpui/src/platform/mac/clipboard.rs:140`. Composer paste handler routes an image into 7j's attachment list.
+- **Drag-drop:** `Event::DragAndDropFiles` (`crates/warpui_core/src/event.rs:196`), already handled in `app/src/terminal/view.rs` and `app/src/editor/view/mod.rs` — mirror that handling on the Claude pane: images → chips, others → `@`-mention text.
+- **File picker:** `Platform::open_file_picker` (`crates/warpui_core/src/platform/mod.rs:211`, `native-dialog`; callers in `welcome_view`/`project_buttons`/`code_page`). A "＋ attach" composer button calls it.
+- **One send path:** all three feed 7j's existing `OutgoingMessage { text, images }` attachment path — no parallel send code (PRODUCT §51). Oversized/unreadable degrades like §15b.
+
+### 7m — Composer controls: model/effort selector + send-queue (PRODUCT §52–§54)
+
+- **Model/effort selector:** `--model` (and effort, where the pinned CLI accepts a flag) already thread through `SpawnOptions`. Reuse 7g's mode-pill mechanism verbatim: changing the selection **detaches** the live process (epoch-guarded teardown) and the next message **resumes** the same conversation (`--resume`) under the new flag. Disabled while streaming (§52, the §25 rule).
+- **Send-queue:** pure client state in `ClaudeCodeView` — a `Vec` of pending outgoing messages. While a turn streams, Enter pushes to the queue instead of being rejected; on turn completion the pump drains the queue head and sends it (and continues draining as each turn completes). Render the queue as removable rows near the composer (§54). No external surface.
+
+### 7n — Plan-mode rendering (PRODUCT §55–§56)
+
+- **Render:** `ExitPlanMode`'s tool input holds the full `plan` markdown (confirmed live). Bridge it to a dedicated **plan card** in `tool_cards.rs` (or a sibling `plan_card.rs`) — reuse the markdown stack (feature 03) for the body, themed distinct from a generic tool card.
+- **Approve caveat (the documented wall):** `ExitPlanMode`'s tool_result is `is_error:true "Exit plan mode?"` with **no stdio approval channel** — the same headless wall as §24 permissions. So **"Approve" is not a one-click inline accept**: it switches the permission mode off `plan` and resumes (the §25 mode-pill detach→`--resume` path). "Keep planning" leaves the session in plan mode. The card never hangs (PRODUCT §56). This is the one sub-phase with a known degradation; it is by design, not a gap.
+
+### Phase-2 testing additions
+
+| PRODUCT § | Verification | Phase |
+|---|---|---|
+| §45–§48 (streaming, thinking duration, metrics) | Unit: delta routing by block index; done-marker no-double-render; duration diff; `result` field parse. Integration vs pinned `claude --include-partial-messages` on a golden partial-message transcript. Manual: Smoke 18. | 7k |
+| §49–§51 (paste / drop / picker) | Unit: file classification (image → chip, other → mention). Manual: paste, drag two file types, picker — all reach the 7j send path. Smoke 19. | 7l |
+| §52–§54 (model/effort selector, send-queue) | Unit: queue push/drain order; selector→flag mapping. Manual: model change mid-session resumes same conversation; type-ahead queues + drains. Smoke 20. | 7m |
+| §55–§56 (plan card + approve degradation) | Unit: plan-markdown extraction from `ExitPlanMode` input. Manual vs pinned `claude`: plan card renders; Approve switches off `plan` + resumes without hang. Smoke 21. | 7n |
+
 ## Re-derived sub-phase plan
 
 7b is re-scoped to the **pane host + trigger + re-hosted renderer**; later sub-phases are unchanged in spirit (cards/diffs/thinking/permissions/sessions), now landing in the pane.
@@ -152,11 +192,19 @@ PRODUCT §39–§44. Two views of one conversation: the rendered pane (headless 
 - **7h — Sidebar session list + resume.** Kept `sessions.rs` reader → read-only left-panel list; resume opens a pane via `--resume`. PRODUCT §35–§38.
 - **7i — Raw-CLI toggle** *(amendment)*. `replace_pane(is_temporary)` swap to a terminal running `exec claude --resume <id>`; pane-owned session ids via `--session-id`; floating return overlay on the replacement terminal; history re-ingest on return. PRODUCT §39–§44.
 
+**Phase 2 (7k–7n — amendment 2026-06-15; spec-first, each its own impl PR after this spec merges):**
+
+- **7k — Token streaming + thinking duration + per-turn metrics.** `--include-partial-messages`; fill the no-op `stream_event` arm to render deltas incrementally with the consolidated event as done-marker; thinking-block wall-clock duration; per-turn cost/duration/ttft from `result`. PRODUCT §45–§48.
+- **7l — Rich input.** Wire clipboard-image paste, `Event::DragAndDropFiles`, and `Platform::open_file_picker` into 7j's attachment send path. PRODUCT §49–§51.
+- **7m — Composer controls.** Model/effort selector (reuses 7g detach→`--resume`); client-side send-queue replacing the disabled-while-streaming input. PRODUCT §52–§54.
+- **7n — Plan-mode rendering.** Themed plan card from `ExitPlanMode` input; Approve degrades to the §25 mode-pill (headless approval wall). PRODUCT §55–§56.
+
 ```mermaid
 graph TD
   A[kept: claude_code driver + ported renderer #69] --> B[7b pane host + claude-at-submit trigger + stub]
   B --> C[7c live driver in pane]
   C --> D[7d tool cards] --> E[7e diff cards] --> F[7f thinking + todos] --> G[7g permissions + composer] --> H[7h sidebar session list] --> I[7i raw-CLI toggle]
+  I --> K[7k token streaming + metrics] --> L[7l rich input] --> M[7m composer controls] --> N[7n plan-mode rendering]
 ```
 
 ## Feature flag & rollout

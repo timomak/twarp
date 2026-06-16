@@ -177,6 +177,50 @@ Invariants are grouped by area; each group is annotated with the sub-phase that 
 
 44. If the raw CLI process **exits** (the user types `/exit`, or it crashes), the pane returns to the rendered chat automatically and re-reads history (§40). A failed raw launch (bad resume id) shows the CLI's own error in the terminal; the return button still works and the rendered pane stays usable (§37's never-stuck rule).
 
+### Composer intelligence — 7j *(shipped in #76; documenting §15a–§15b)*
+
+> These two invariants describe behavior that shipped with 7j (PR #76) ahead of a spec; folded in here per the STATUS note so the spec matches the code.
+
+15a. The composer offers **in-line suggestions**. Typing `/` opens a panel above the input listing the session's real slash commands (parsed from the stream-json `init`) merged with twarp built-ins; `@` opens a fuzzy file picker over the cwd (gitignore-aware `ignore` walk, capped and cached, `fuzzy_match` ranking). Enter accepts the highlighted suggestion; click accepts; Esc dismisses; with no panel open Enter sends (§15). The panel never blocks typing.
+
+15b. `@`-mentioning an **image** file attaches it as a preview chip; on send the image ships as a base64 `image` content block alongside the text (`OutgoingMessage { text, images }`). Each chip has a `✕` drop control; an oversized/unreadable image degrades gracefully (the mention stays as text, no crash).
+
+## Phase 2 — fidelity & rich input *(amendment 2026-06-15, owner-directed; sub-phases 7k–7n)*
+
+> Owner-directed addition on top of the merged phase-1 panel ("add them to the roadmap as the next step"), after a triple-checked feasibility pass against `claude` 2.1.175 (receipts in STATUS.md §Phase 2 feasibility). Each sub-phase is spec-first, like 7i. These **extend** the existing invariants — the numbering continues at §45 so nothing above renumbers. Sub-phase 7n carries a documented headless-approval caveat (same wall as §24/§26). All four precede 08-rebrand for the same crate-churn reason as phase 1.
+
+### Token streaming, thinking duration, per-turn metrics — 7k *(amends §12–§14)*
+
+45. Assistant text, extended-thinking content, and tool-call arguments render **incrementally, token-by-token** as `claude` streams them (the pane opts into `--include-partial-messages` and consumes `content_block_delta` — `text_delta` / `thinking_delta` / `input_json_delta`). The whole-message updates §12 permitted as a floor are superseded by true streaming where the stream provides it.
+
+46. The consolidated end-of-turn `assistant` event is treated as the **done-marker only**: text already rendered from deltas is **not re-rendered** (no duplicated paragraphs, no flicker). A turn that emits no partial deltas still renders correctly from the consolidated event.
+
+47. A completed thinking card is labeled with its **measured wall-clock duration** — "Thought for N s", computed from the block's streamed start/stop — replacing the §22 unlabeled "Thinking" fallback. When the stream genuinely carries no timing, the unlabeled fallback stands (§22's honesty rule).
+
+48. On turn completion the pane shows a **per-turn metrics line**: cost in USD, wall-clock duration, and time-to-first-token, sourced from the `result` event (`total_cost_usd` / `duration_ms` / `ttft_ms`). Any field the stream omits is left out — never shown as `0` or placeholder text. This is session-local display only; twarp meters nothing (§34).
+
+### Rich input: paste, drag-drop, file picker — 7l *(amends §15b)*
+
+49. **Pasting an image** into the composer (clipboard image content) attaches it as an image chip via the 7j attachment path (§15b).
+
+50. **Dropping files** onto the pane attaches them: image files become image chips; non-image files become `@`-mention text in the composer. Dropping is accepted anywhere on the pane body.
+
+51. A composer **"＋ attach"** control opens the OS-native file picker; chosen images become chips, non-images become `@`-mentions. All three routes (paste, drop, picker) reuse 7j's single attachment-send path — no parallel send code. An unreadable/oversized selection degrades like §15b (no crash).
+
+### Composer controls: model/effort selector + send-queue — 7m *(amends §25, §27)*
+
+52. The pane exposes a **model selector** (and, where the pinned CLI accepts it, an **effort** selector) changeable mid-session. Changing it detaches the current process and the **next message resumes the same conversation** under the new flag — the §25 permission-mode-pill detach→`--resume` mechanism, reused. The selector is **disabled while a turn is streaming** (same rule as §25).
+
+53. While a turn is streaming the composer **accepts type-ahead**: messages typed and sent during a turn are **queued client-side** and dispatched automatically, in order, when the turn completes — replacing §15's disabled-input behavior for text entry. (The actual send still waits for turn completion; only the input stays live.)
+
+54. Queued-but-unsent messages are **visible and individually removable** before they dispatch. Clearing the queue while a turn streams is a no-op on the live turn.
+
+### Plan-mode rendering — 7n *(amends §24, §26)*
+
+55. An `ExitPlanMode` tool call renders as a **themed plan card** showing the plan's full markdown (carried in the tool input), visually distinct from an ordinary tool card (§16) — a readable plan, not raw JSON.
+
+56. The plan card offers **Approve** and **Keep planning** affordances. Because headless `claude` exposes **no stdio approval channel** for plan exit (`ExitPlanMode`'s tool_result is `is_error:true "Exit plan mode?"` — the same wall as §24/§26), **Approve degrades** to switching the permission mode off `plan` and resuming (the §25 mode-pill path), not a one-click inline accept. The card must never hang the session; "Keep planning" simply leaves the session in plan mode for the next message.
+
 ## Smoke test
 
 Run against a freshly built twarp binary. Most steps require the `claude` CLI installed and logged in (a Claude Code account/subscription). Pin the tested `claude` version per TECH.md. Chord names are macOS.
@@ -213,6 +257,13 @@ Run against a freshly built twarp binary. Most steps require the `claude` CLI in
 13. Send a message in the raw CLI, then click the **floating top-right button** → the rendered pane returns with the raw-mode exchange in the transcript; sending another message continues the same conversation.
 14. From a zero-state pane (no message sent), toggle to raw → a fresh interactive `claude` opens; have a short exchange, toggle back → the rendered pane shows it and continues that session.
 15. While a rendered turn is streaming, the Raw CLI control is disabled. In raw mode, type `/exit` → the pane returns to the rendered chat automatically.
+
+### Phase 2 — fidelity & rich input (7k–7n)
+
+18. **(7k)** Ask a question that triggers thinking plus a tool call. Confirm: assistant text and thinking render **incrementally** (token-by-token, not a single late blob); the thinking card reads **"Thought for N s"** with a real number; on completion a **per-turn metrics line** shows cost / duration / time-to-first-token. When the turn finalizes, no already-shown text is duplicated or flickers.
+19. **(7l)** Paste an image into the composer → a chip appears. Drag an image **and** a `.txt` file onto the pane → the image becomes a chip, the `.txt` becomes an `@`-mention. Click **＋ attach**, pick an image → a chip appears. Send → Claude receives the image(s). An oversized image degrades without crashing.
+20. **(7m)** Change the **model** mid-session → the next message continues the **same conversation** under the new model (transcript intact). While a turn streams, type and send two messages → both **queue** (visible and removable) and dispatch in order on completion; the input was never disabled.
+21. **(7n)** Ask Claude to enter plan mode and present a plan → an `ExitPlanMode` **plan card** renders the full plan markdown with **Approve** / **Keep planning**. Click **Approve** → the permission mode switches off `plan` and the session resumes (no hang). "Keep planning" leaves it in plan mode.
 
 ### Cross-cutting
 
