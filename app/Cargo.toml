@@ -57,6 +57,7 @@ test = false
 [dependencies]
 addr = "0.15.6"
 # twarp: 2c-e — `ai` workspace crate deleted.
+alphanumeric-sort = "1.5.7"
 anyhow.workspace = true
 arrayvec.workspace = true
 asset_cache.workspace = true
