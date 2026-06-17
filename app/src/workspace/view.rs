@@ -21395,6 +21395,9 @@ impl View for Workspace {
         if self.shortcut_runner.is_some() {
             context.set.insert(flags::SHORTCUT_RUNNING);
         }
+        if *CodeSettings::as_ref(app).show_hidden_files {
+            context.set.insert(flags::SHOW_HIDDEN_FILES);
+        }
 
         if self.team_uid(app).is_some() {
             context.set.insert("TwarpDrive_BelongsToTeam");

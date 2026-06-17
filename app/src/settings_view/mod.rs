@@ -496,6 +496,7 @@ pub mod flags {
     /// is in flight. Used to gate the Escape-cancel binding so it only
     /// intercepts Escape when there's something to cancel.
     pub const SHORTCUT_RUNNING: &str = "ShortcutRunning";
+    pub const SHOW_HIDDEN_FILES: &str = "ShowHiddenFiles";
 }
 
 pub fn init_actions_from_parent_view<T: Action + Clone>(
