@@ -18,6 +18,8 @@ type ScrollHandler = Box<
 >;
 type ModifierStateChangedHandler =
     Box<dyn FnMut(&mut EventContext, &AppContext, &KeyCode, &KeyState) -> DispatchEventResult>;
+type DropFilesHandler =
+    Box<dyn FnMut(&mut EventContext, &AppContext, &[String], Vector2F) -> DispatchEventResult>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct MouseInBehavior {
@@ -57,6 +59,9 @@ pub struct EventHandler {
     scroll_wheel: Option<RefCell<ScrollHandler>>,
     keydown: Option<RefCell<KeyHandler>>,
     modifier_state_changed: Option<RefCell<ModifierStateChangedHandler>>,
+    /// Fired when the OS drops files onto this element's painted bounds. The
+    /// callback receives the dropped paths and the drop location.
+    drag_and_drop_files: Option<RefCell<DropFilesHandler>>,
     origin: Option<Point>,
     // This is a short-term solution for properly handling events on stacks. A stack will always
     // put its children on higher z-indexes than its origin, so a hit test using the standard
@@ -84,6 +89,7 @@ impl EventHandler {
             scroll_wheel: None,
             keydown: None,
             modifier_state_changed: None,
+            drag_and_drop_files: None,
             origin: None,
             child_max_z_index: None,
             mouse_in_behavior: Default::default(),
@@ -191,6 +197,17 @@ impl EventHandler {
             + FnMut(&mut EventContext, &AppContext, &Vector2F, &ModifiersState) -> DispatchEventResult,
     {
         self.scroll_wheel = Some(RefCell::new(Box::new(callback)));
+        self
+    }
+
+    /// Handle files dropped from the OS onto this element. The callback is only
+    /// invoked when the drop location falls inside the element's painted bounds.
+    pub fn on_drag_and_drop_files<F>(mut self, callback: F) -> Self
+    where
+        F: 'static
+            + FnMut(&mut EventContext, &AppContext, &[String], Vector2F) -> DispatchEventResult,
+    {
+        self.drag_and_drop_files = Some(RefCell::new(Box::new(callback)));
         self
     }
 
@@ -337,6 +354,19 @@ impl Element for EventHandler {
                         DispatchEventResult::PropagateToParent => false,
                         DispatchEventResult::StopPropagation => true,
                     };
+                }
+            }
+            Some(Event::DragAndDropFiles { paths, location }) => {
+                if let Some(callback) = self.drag_and_drop_files.as_ref() {
+                    if let Some(rect) = ctx.visible_rect(self.origin.unwrap(), self.size().unwrap())
+                    {
+                        if rect.contains_point(*location) {
+                            return match callback.borrow_mut()(ctx, app, paths, *location) {
+                                DispatchEventResult::PropagateToParent => false,
+                                DispatchEventResult::StopPropagation => true,
+                            };
+                        }
+                    }
                 }
             }
             Some(Event::ScrollWheel {

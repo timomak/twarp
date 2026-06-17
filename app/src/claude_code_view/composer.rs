@@ -157,6 +157,41 @@ pub(super) fn image_media_type(path: &Path) -> Option<&'static str> {
     }
 }
 
+/// Normalize a clipboard image MIME type to the API's accepted set (7l §49),
+/// mapping the `image/jpg` alias to `image/jpeg`. `None` for types the API
+/// won't take as an inline image block — those degrade like any other
+/// unsupported attachment (§51).
+pub(super) fn normalize_image_media_type(media_type: &str) -> Option<&'static str> {
+    match media_type.to_ascii_lowercase().as_str() {
+        "image/png" => Some("image/png"),
+        "image/jpeg" | "image/jpg" => Some("image/jpeg"),
+        "image/gif" => Some("image/gif"),
+        "image/webp" => Some("image/webp"),
+        _ => None,
+    }
+}
+
+/// Format an `@`-mention for `path`, relative to `cwd` when the file lives under
+/// it (keeps the draft readable instead of pasting an absolute path), absolute
+/// otherwise (7l §50–§51). `claude` resolves both.
+pub(super) fn mention_for(path: &Path, cwd: &Path) -> String {
+    let shown = path.strip_prefix(cwd).unwrap_or(path);
+    format!("@{}", shown.display())
+}
+
+/// Append `mention` to the composer `text`, inserting a separating space when
+/// the draft doesn't already end in whitespace (7l §50–§51). Returns the new
+/// buffer text.
+pub(super) fn append_mention(text: &str, mention: &str) -> String {
+    if text.is_empty() {
+        format!("{mention} ")
+    } else if text.ends_with(char::is_whitespace) {
+        format!("{text}{mention} ")
+    } else {
+        format!("{text} {mention} ")
+    }
+}
+
 /// Scan composer text for `@`-mentions that resolve to existing **image**
 /// files under `cwd` (PRODUCT §15b). These become attachment chips and are
 /// sent as `image` content blocks. Non-image mentions stay plain text —
@@ -246,6 +281,33 @@ mod tests {
         assert!(filter_suggestions("zzz", &candidates).is_empty());
         let empty = filter_suggestions("", &candidates);
         assert_eq!(empty.len(), candidates.len().min(MAX_SUGGESTIONS));
+    }
+
+    #[test]
+    fn normalize_media_type_maps_aliases_and_rejects_others() {
+        assert_eq!(normalize_image_media_type("image/png"), Some("image/png"));
+        assert_eq!(normalize_image_media_type("image/jpg"), Some("image/jpeg"));
+        assert_eq!(normalize_image_media_type("IMAGE/JPEG"), Some("image/jpeg"));
+        assert_eq!(normalize_image_media_type("image/webp"), Some("image/webp"));
+        assert_eq!(normalize_image_media_type("image/svg+xml"), None);
+        assert_eq!(normalize_image_media_type("text/plain"), None);
+    }
+
+    #[test]
+    fn mention_for_relativizes_under_cwd_and_keeps_absolute_outside() {
+        let cwd = Path::new("/repo");
+        assert_eq!(mention_for(Path::new("/repo/src/a.txt"), cwd), "@src/a.txt");
+        assert_eq!(
+            mention_for(Path::new("/elsewhere/b.txt"), cwd),
+            "@/elsewhere/b.txt"
+        );
+    }
+
+    #[test]
+    fn append_mention_spaces_correctly() {
+        assert_eq!(append_mention("", "@a.txt"), "@a.txt ");
+        assert_eq!(append_mention("see ", "@a.txt"), "see @a.txt ");
+        assert_eq!(append_mention("see", "@a.txt"), "see @a.txt ");
     }
 
     #[test]

@@ -41,7 +41,7 @@ mod todos;
 mod tool_cards;
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use async_channel::Sender;
 use base64::Engine as _;
@@ -58,6 +58,7 @@ use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use warp_editor::editor::NavigationKey;
 use warpui::assets::asset_cache::AssetSource;
+use warpui::platform::FilePickerConfiguration;
 use warpui::ui_components::button::ButtonVariant;
 use warpui::{
     elements::{
@@ -124,6 +125,20 @@ const MESSAGE_CORNER_RADIUS: f32 = 12.;
 const PILL_CORNER_RADIUS: f32 = 6.;
 const HEADING_FONT_SIZE: f32 = 20.;
 
+/// The model selector's cycle (PRODUCT §52, 7m). The first entry, "default",
+/// maps to passing no `--model` (let `claude` choose); the rest are the
+/// `--model` aliases the CLI accepts. Cycling reuses the §25 detach→`--resume`
+/// mechanism so the conversation continues under the new model.
+const MODEL_CYCLE: &[&str] = &["default", "opus", "sonnet", "haiku"];
+
+/// The effort selector's cycle (PRODUCT §52, 7m). `--effort` is a verified
+/// `claude` flag (launch.rs maps it; `--effort max` confirmed on 2.1.173); the
+/// first entry, "default", passes no `--effort` (the CLI's own default). Effort
+/// is write-only — the headless stream never echoes it back — so the pill shows
+/// the selection. A value an older CLI rejects surfaces as a spawn error
+/// (PRODUCT §30), never a hang.
+const EFFORT_CYCLE: &[&str] = &["default", "low", "medium", "high", "max"];
+
 /// Events the pane view emits to its host [`ClaudeCodePane`]. 7b only needs
 /// `Close` (so the pane-header close button works); 7c adds session-lifecycle
 /// events as the live driver lands.
@@ -177,6 +192,26 @@ pub enum ClaudeCodeViewAction {
     /// mentioned in the text (so `claude` can still read it) but is no longer
     /// sent as an inline image block.
     RemoveAttachment(String),
+    /// Files were dropped onto the pane (PRODUCT §50, 7l): images become
+    /// attachment chips, other files become `@`-mentions.
+    DropFiles(Vec<String>),
+    /// Open the OS file picker to attach files (PRODUCT §51, 7l) — the
+    /// composer's "＋ attach" control.
+    AttachFromPicker,
+    /// Remove a direct attachment chip (paste / drop / picker) by index
+    /// (PRODUCT §49–§51, 7l).
+    RemoveDirectAttachment(usize),
+    /// Step the model selector to the next model (PRODUCT §52, 7m). Detaches a
+    /// live session; the next message resumes the conversation under it.
+    CycleModel,
+    /// Step the effort selector to the next level (PRODUCT §52, 7m).
+    CycleEffort,
+    /// Remove the queued (type-ahead) message at this index before it
+    /// dispatches (PRODUCT §54, 7m).
+    RemoveQueuedMessage(usize),
+    /// Approve a plan card (PRODUCT §56, 7n): degrades to switching the
+    /// permission mode off `plan` and resuming — no one-click inline accept.
+    ApprovePlan,
 }
 
 /// Actions dispatched by elements this view renders inside its **pane
@@ -214,6 +249,17 @@ pub struct ResumeSession {
 struct RawCliSession {
     manager: ModelHandle<Box<dyn TerminalManager>>,
     view: ViewHandle<TerminalView>,
+}
+
+/// An image attached directly through paste / drag-drop / file-picker (7l,
+/// PRODUCT §49–§51), as opposed to the `@`-mention-derived `pending_images`.
+/// The image is encoded up front so all four attachment routes share the one
+/// send path (`OutgoingMessage.images`); `thumbnail_path` is `Some` for the
+/// file-sourced routes (drop / picker) and `None` for clipboard bytes.
+struct DirectAttachment {
+    label: String,
+    image: OutgoingImage,
+    thumbnail_path: Option<PathBuf>,
 }
 
 pub struct ClaudeCodeView {
@@ -307,6 +353,28 @@ pub struct ClaudeCodeView {
     attachment_optouts: HashSet<PathBuf>,
     /// Stable per-chip mouse handles for attachment removal.
     attachment_chip_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Images attached directly via paste / drag-drop / file picker (PRODUCT
+    /// §49–§51, 7l) — not tied to the draft text, so they survive edits until
+    /// the message sends. Combined with `pending_images` at send time.
+    direct_attachments: Vec<DirectAttachment>,
+    /// Stable per-chip mouse handles for the direct-attachment chips.
+    direct_chip_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Mouse state for the composer's "＋ attach" file-picker button (§51).
+    attach_button: MouseStateHandle,
+    /// Type-ahead queue (PRODUCT §53–§54, 7m): messages sent while a turn
+    /// streams wait here and dispatch in order as each turn completes.
+    message_queue: Vec<OutgoingMessage>,
+    /// Stable per-row mouse handles for the removable queue rows (§54).
+    queue_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Mouse state for the clickable model-selector pill (PRODUCT §52, 7m).
+    model_pill_mouse: MouseStateHandle,
+    /// Mouse state for the clickable effort-selector pill (PRODUCT §52, 7m).
+    effort_pill_mouse: MouseStateHandle,
+    /// Mouse state for a plan card's Approve / Keep-planning controls
+    /// (PRODUCT §56, 7n). Shared across cards — a session shows one plan at a
+    /// time in practice.
+    plan_approve_mouse: MouseStateHandle,
+    plan_keep_mouse: MouseStateHandle,
     /// Monotonic session generation. Spawn callbacks and stream pumps carry
     /// the epoch they were started under and are ignored when stale — a
     /// permission-mode restart must not let the old (killed) session's EOF
@@ -417,6 +485,15 @@ impl ClaudeCodeView {
             pending_images: Vec::new(),
             attachment_optouts: HashSet::new(),
             attachment_chip_mouse: std::cell::RefCell::new(Vec::new()),
+            direct_attachments: Vec::new(),
+            direct_chip_mouse: std::cell::RefCell::new(Vec::new()),
+            attach_button: MouseStateHandle::default(),
+            message_queue: Vec::new(),
+            queue_row_mouse: std::cell::RefCell::new(Vec::new()),
+            model_pill_mouse: MouseStateHandle::default(),
+            effort_pill_mouse: MouseStateHandle::default(),
+            plan_approve_mouse: MouseStateHandle::default(),
+            plan_keep_mouse: MouseStateHandle::default(),
             session_epoch: 0,
         };
 
@@ -495,6 +572,10 @@ impl ClaudeCodeView {
             // Live-filter the suggestions + attachment chips as the draft
             // changes (PRODUCT §15a–§15b).
             EditorEvent::Edited(_) => self.refresh_composer_intelligence(ctx),
+            // PRODUCT §49 (7l): a paste may carry a clipboard image — attach it.
+            // The editor has already inserted any plain text, so this only adds
+            // image chips (an image-only clipboard inserts no text).
+            EditorEvent::Paste => self.attach_pasted_image(ctx),
             EditorEvent::Escape => {
                 if self.suggestion_query.take().is_some() {
                     self.suggestions.clear();
@@ -675,7 +756,7 @@ impl ClaudeCodeView {
     /// pending image, with an ✕ that drops it back to a plain text mention.
     /// `None` when nothing is attached.
     fn render_attachment_chips(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
-        if self.pending_images.is_empty() {
+        if self.pending_images.is_empty() && self.direct_attachments.is_empty() {
             return None;
         }
         let theme = appearance.theme();
@@ -754,7 +835,171 @@ impl ClaudeCodeView {
                     .finish(),
             );
         }
+        // PRODUCT §49–§51 (7l): directly-attached images (paste / drop /
+        // picker). A file-sourced attachment shows a thumbnail; a pasted one
+        // (no path) shows an image glyph. The ✕ drops it entirely (unlike a
+        // mention chip, there is no underlying text to fall back to).
+        for (index, attachment) in self.direct_attachments.iter().enumerate() {
+            let chip_mouse = {
+                let mut states = self.direct_chip_mouse.borrow_mut();
+                while states.len() <= index {
+                    states.push(MouseStateHandle::default());
+                }
+                states[index].clone()
+            };
+            let preview: Box<dyn Element> = match &attachment.thumbnail_path {
+                Some(path) => ConstrainedBox::new(
+                    Image::new(
+                        AssetSource::LocalFile {
+                            path: path.display().to_string(),
+                        },
+                        CacheOption::BySize,
+                    )
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                    .finish(),
+                )
+                .with_width(24.)
+                .with_height(24.)
+                .finish(),
+                None => ConstrainedBox::new(
+                    Icon::new(
+                        crate::ui_components::icons::Icon::Image.into(),
+                        theme.nonactive_ui_text_color().into_solid(),
+                    )
+                    .finish(),
+                )
+                .with_width(16.)
+                .with_height(16.)
+                .finish(),
+            };
+            let name = appearance
+                .ui_builder()
+                .span(attachment.label.clone())
+                .with_style(UiComponentStyles {
+                    font_size: Some(11.5),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let remove = appearance
+                .ui_builder()
+                .span("\u{2715}".to_owned())
+                .with_style(UiComponentStyles {
+                    font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+                    font_size: Some(11.5),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let chip = Container::new(
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(6.)
+                    .with_child(preview)
+                    .with_child(name)
+                    .with_child(remove)
+                    .finish(),
+            )
+            .with_padding_left(6.)
+            .with_padding_right(6.)
+            .with_padding_top(3.)
+            .with_padding_bottom(3.)
+            .with_background_color(theme.surface_2().into_solid())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+            .finish();
+            row.add_child(
+                Hoverable::new(chip_mouse, move |_| chip)
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::RemoveDirectAttachment(
+                            index,
+                        ));
+                    })
+                    .finish(),
+            );
+        }
         Some(row.finish())
+    }
+
+    /// The queued (type-ahead) messages waiting to dispatch (PRODUCT §54, 7m):
+    /// one removable row per queued message, shown above the composer input.
+    /// `None` when the queue is empty.
+    fn render_message_queue(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+        if self.message_queue.is_empty() {
+            return None;
+        }
+        let theme = appearance.theme();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(4.);
+        column.add_child(
+            appearance
+                .ui_builder()
+                .span(format!("Queued ({})", self.message_queue.len()))
+                .with_style(UiComponentStyles {
+                    font_color: Some(muted),
+                    font_size: Some(11.),
+                    ..Default::default()
+                })
+                .build()
+                .finish(),
+        );
+        for (index, message) in self.message_queue.iter().enumerate() {
+            let row_mouse = {
+                let mut states = self.queue_row_mouse.borrow_mut();
+                while states.len() <= index {
+                    states.push(MouseStateHandle::default());
+                }
+                states[index].clone()
+            };
+            // One-line, length-bounded preview of the queued text.
+            let label = appearance
+                .ui_builder()
+                .span(queue_preview(&message.text))
+                .with_style(UiComponentStyles {
+                    font_size: Some(12.),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let remove = appearance
+                .ui_builder()
+                .span("\u{2715}".to_owned())
+                .with_style(UiComponentStyles {
+                    font_color: Some(muted),
+                    font_size: Some(11.5),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let row = Container::new(
+                Flex::row()
+                    .with_main_axis_size(MainAxisSize::Max)
+                    .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_child(ConstrainedBox::new(label).with_max_width(620.).finish())
+                    .with_child(remove)
+                    .finish(),
+            )
+            .with_padding_left(8.)
+            .with_padding_right(8.)
+            .with_padding_top(4.)
+            .with_padding_bottom(4.)
+            .with_background_color(theme.surface_2().into_solid())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+            .finish();
+            column.add_child(
+                Hoverable::new(row_mouse, move |_| row)
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::RemoveQueuedMessage(index));
+                    })
+                    .finish(),
+            );
+        }
+        Some(column.finish())
     }
 
     /// Encode the draft's surviving image mentions as outgoing image blocks
@@ -763,33 +1008,134 @@ impl ClaudeCodeView {
     fn encode_pending_images(&self) -> Vec<OutgoingImage> {
         self.pending_images
             .iter()
-            .filter_map(|path| {
-                let media_type = composer::image_media_type(path)?;
-                let metadata = std::fs::metadata(path).ok()?;
-                if metadata.len() > composer::MAX_IMAGE_BYTES {
-                    log::info!(
-                        "claude: attachment {} exceeds the inline-image cap; left as a mention",
-                        path.display()
-                    );
-                    return None;
-                }
-                let bytes = std::fs::read(path).ok()?;
-                Some(OutgoingImage {
-                    media_type: media_type.to_owned(),
-                    base64_data: base64::engine::general_purpose::STANDARD.encode(bytes),
-                })
-            })
+            .filter_map(|path| read_image_attachment(path))
             .collect()
+    }
+
+    /// Every image heading out with the next turn: the surviving `@`-mention
+    /// images (7j, re-read now) plus the directly-attached ones (paste / drop /
+    /// picker, 7l — already encoded). One list, one send path (PRODUCT §51).
+    fn outgoing_images(&self) -> Vec<OutgoingImage> {
+        let mut images = self.encode_pending_images();
+        images.extend(self.direct_attachments.iter().map(|a| a.image.clone()));
+        images
+    }
+
+    /// Attach a clipboard image (PRODUCT §49, 7l): triggered by a paste while
+    /// the composer is focused. Reads the clipboard, picks the best supported
+    /// image, and adds it as a direct-attachment chip. Plain-text pastes are
+    /// the editor's own job and are untouched here; an unsupported or oversized
+    /// image is dropped silently (§51 degradation, never a crash).
+    fn attach_pasted_image(&mut self, ctx: &mut ViewContext<Self>) {
+        let content = ctx.clipboard().read();
+        let Some(images) = content.images else {
+            return;
+        };
+        let mut added = false;
+        for image in images {
+            let Some(media_type) = composer::normalize_image_media_type(&image.mime_type) else {
+                continue;
+            };
+            if image.data.len() as u64 > composer::MAX_IMAGE_BYTES {
+                log::info!("claude: pasted image exceeds the inline-image cap; skipped");
+                continue;
+            }
+            let label = image
+                .filename
+                .clone()
+                .unwrap_or_else(|| "Pasted image".to_owned());
+            self.direct_attachments.push(DirectAttachment {
+                label,
+                image: OutgoingImage {
+                    media_type: media_type.to_owned(),
+                    base64_data: base64::engine::general_purpose::STANDARD.encode(&image.data),
+                },
+                thumbnail_path: None,
+            });
+            added = true;
+            // One image per paste is the common case; the API set is checked in
+            // preference order by the clipboard layer, so the first hit is best.
+            break;
+        }
+        if added {
+            ctx.notify();
+        }
+    }
+
+    /// Attach a set of file paths (PRODUCT §50–§51, 7l) — shared by drag-drop
+    /// and the file picker. Image files become attachment chips; everything
+    /// else is appended to the draft as an `@`-mention (`claude` reads those
+    /// itself). Oversized/unreadable images degrade to a mention too.
+    fn attach_files(&mut self, paths: Vec<PathBuf>, ctx: &mut ViewContext<Self>) {
+        let cwd = self
+            .cwd
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_default();
+        let mut mentions: Vec<String> = Vec::new();
+        let mut added = false;
+        for path in paths {
+            match read_image_attachment(&path) {
+                Some(image) => {
+                    self.direct_attachments.push(DirectAttachment {
+                        label: path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| path.display().to_string()),
+                        image,
+                        thumbnail_path: Some(path),
+                    });
+                    added = true;
+                }
+                // Non-image, oversized, or unreadable → @-mention (§50/§51).
+                None => mentions.push(composer::mention_for(&path, &cwd)),
+            }
+        }
+        if !mentions.is_empty() {
+            let text = self
+                .input_editor
+                .read(ctx, |editor, ctx| editor.buffer_text(ctx));
+            let new_text = mentions
+                .iter()
+                .fold(text, |acc, mention| composer::append_mention(&acc, mention));
+            self.input_editor
+                .update(ctx, |editor, ctx| editor.set_buffer_text(&new_text, ctx));
+            self.refresh_composer_intelligence(ctx);
+        }
+        if added {
+            ctx.notify();
+        }
+    }
+
+    /// Open the OS file picker (PRODUCT §51, 7l) for the composer's "＋ attach"
+    /// control. Selected files flow through the same [`Self::attach_files`]
+    /// path as a drag-drop: the callback dispatches `DropFiles` back to this
+    /// view (the proven cross-thread write-back, mirroring `EditorView`).
+    fn open_attach_picker(&mut self, ctx: &mut ViewContext<Self>) {
+        let window_id = ctx.window_id();
+        let view_id = ctx.view_id();
+        ctx.open_file_picker(
+            move |result, ctx| {
+                if let Ok(paths) = result {
+                    if !paths.is_empty() {
+                        ctx.dispatch_typed_action_for_view(
+                            window_id,
+                            view_id,
+                            &ClaudeCodeViewAction::DropFiles(paths),
+                        );
+                    }
+                }
+            },
+            FilePickerConfiguration::new().allow_multi_select(),
+        );
     }
 
     /// Send the current input as a user turn to the live `claude` session,
     /// spawning the session on the first message if none is running yet
-    /// (PRODUCT §6, §16). A no-op while a turn is streaming (PRODUCT §9).
+    /// (PRODUCT §6, §16). While a turn streams the message is **queued**
+    /// (type-ahead, PRODUCT §53) and dispatched when the turn completes —
+    /// the composer input is never disabled.
     fn submit(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.streaming {
-            // PRODUCT §9: sending is disabled until the current turn completes.
-            return;
-        }
         let text = self
             .input_editor
             .read(ctx, |editor, ctx| editor.buffer_text(ctx).trim().to_owned());
@@ -797,20 +1143,33 @@ impl ClaudeCodeView {
             // PRODUCT §15: empty / whitespace-only messages are a no-op.
             return;
         }
-        // PRODUCT §15b (7j): surviving @-mentioned images ride along as
-        // inline image blocks; the mention text stays for context.
+        // PRODUCT §15b (7j) / §49–§51 (7l): mention-derived images plus the
+        // directly-attached ones (paste / drop / picker) ride along as inline
+        // image blocks; the mention text stays for context. Captured now (files
+        // read here) so a queued message ships exactly what was attached.
         let message = OutgoingMessage {
-            images: self.encode_pending_images(),
+            images: self.outgoing_images(),
             text,
         };
-        self.transcript
-            .apply(TranscriptEvent::UserMessage(message.text.clone()));
+        // Clear the composer either way so the user can keep typing (§53).
         self.input_editor
             .update(ctx, |editor, ctx| editor.clear_buffer(ctx));
         self.suggestion_query = None;
         self.suggestions.clear();
         self.pending_images.clear();
         self.attachment_optouts.clear();
+        self.direct_attachments.clear();
+
+        if self.streaming {
+            // PRODUCT §53–§54 (7m): a turn is in flight — queue this for
+            // automatic dispatch when the turn completes, rather than blocking.
+            self.message_queue.push(message);
+            ctx.notify();
+            return;
+        }
+
+        self.transcript
+            .apply(TranscriptEvent::UserMessage(message.text.clone()));
         self.streaming = true;
         match &self.message_tx {
             // Session already running — write the turn to its stdin.
@@ -819,6 +1178,82 @@ impl ClaudeCodeView {
             }
             // First message: spawn the session, forwarding this as turn one.
             None => self.begin_session(Some(message), ctx),
+        }
+        ctx.notify();
+    }
+
+    /// Dispatch the next queued message after a turn completes (PRODUCT §53,
+    /// 7m). No-op unless the session is idle, still live, and has a queued
+    /// message. Each completed turn drains exactly one, so messages dispatch in
+    /// order as the conversation advances.
+    fn drain_message_queue(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.streaming || self.message_queue.is_empty() {
+            return;
+        }
+        let Some(tx) = self.message_tx.clone() else {
+            // Session ended (error/exit): nothing to send onto. Keep the queue
+            // so a fresh manual send can still go (the next submit spawns one).
+            return;
+        };
+        let message = self.message_queue.remove(0);
+        self.transcript
+            .apply(TranscriptEvent::UserMessage(message.text.clone()));
+        self.streaming = true;
+        let _ = tx.try_send(message);
+        ctx.notify();
+    }
+
+    /// Step the model selector to the next model (PRODUCT §52, 7m). Disabled
+    /// while a turn streams (same rule as §25). Reuses the mode-pill mechanism:
+    /// a live session is detached and the next message resumes the same
+    /// conversation under the new `--model`.
+    fn cycle_model(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.streaming {
+            return;
+        }
+        self.model = Self::advance_cycle(MODEL_CYCLE, self.model.as_deref());
+        if self.child.is_some() {
+            self.detach_live_session();
+        }
+        ctx.notify();
+    }
+
+    /// Step the effort selector to the next level (PRODUCT §52, 7m). Same
+    /// detach→`--resume` mechanism and streaming guard as [`Self::cycle_model`];
+    /// the next spawn carries the new `--effort`.
+    fn cycle_effort(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.streaming {
+            return;
+        }
+        self.effort = Self::advance_cycle(EFFORT_CYCLE, self.effort.as_deref());
+        if self.child.is_some() {
+            self.detach_live_session();
+        }
+        ctx.notify();
+    }
+
+    /// Advance a selector cycle to the entry after `current`, mapping the first
+    /// entry ("default") to `None` (pass no flag, let `claude` choose).
+    fn advance_cycle(cycle: &[&str], current: Option<&str>) -> Option<String> {
+        let current = current.unwrap_or(cycle[0]);
+        let idx = cycle.iter().position(|m| *m == current).unwrap_or(0);
+        let next = cycle[(idx + 1) % cycle.len()];
+        (next != cycle[0]).then(|| next.to_owned())
+    }
+
+    /// Approve a plan card (PRODUCT §56, 7n). Headless `claude` exposes no
+    /// stdio approval channel for `ExitPlanMode` (its tool_result is the §24
+    /// wall), so this is **not** a one-click inline accept: it switches the
+    /// permission mode off `plan` (to auto-accept edits, so the approved plan
+    /// can execute) and resumes via the §25 mode-pill detach path. A no-op
+    /// mid-turn; never hangs.
+    fn approve_plan(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.streaming || self.permission_mode != PermissionMode::Plan {
+            return;
+        }
+        self.permission_mode = PermissionMode::AcceptEdits;
+        if self.child.is_some() {
+            self.detach_live_session();
         }
         ctx.notify();
     }
@@ -959,6 +1394,14 @@ impl ClaudeCodeView {
         if matches!(event, TranscriptEvent::Ended { .. }) {
             self.streaming = false;
         }
+        // PRODUCT §53 (7m): a turn that completed cleanly (or was interrupted —
+        // the session is still alive) dispatches the next queued message.
+        let turn_completed = matches!(
+            &event,
+            TranscriptEvent::Ended {
+                reason: claude_code::EndReason::Completed | claude_code::EndReason::Interrupted,
+            }
+        );
         if let TranscriptEvent::Ended {
             reason: claude_code::EndReason::Error(_) | claude_code::EndReason::Exited,
         } = &event
@@ -969,6 +1412,9 @@ impl ClaudeCodeView {
             self.resume_session_id = None;
         }
         self.ingest_event(event, ctx);
+        if turn_completed {
+            self.drain_message_queue(ctx);
+        }
         ctx.notify();
     }
 
@@ -1275,8 +1721,41 @@ impl ClaudeCodeView {
     /// between turns).
     fn metadata_chips(&self, appearance: &Appearance) -> Vec<Box<dyn Element>> {
         let mut chips = vec![render_pill("Local", appearance)];
-        if let Some(model) = self.transcript.model() {
-            chips.push(render_pill(&prettify_model(model), appearance));
+        // PRODUCT §52 (7m): the model pill is a selector. It shows the active
+        // selection (the alias the next spawn passes via `--model`, falling
+        // back to what `claude` reported, then a generic label) and clicking it
+        // cycles models. Disabled mid-turn (same rule as the permission pill).
+        let model_label = self
+            .model
+            .as_deref()
+            .map(prettify_model)
+            .or_else(|| self.transcript.model().map(prettify_model))
+            .unwrap_or_else(|| "Model".to_owned());
+        if self.streaming {
+            chips.push(render_pill(&model_label, appearance));
+        } else {
+            chips.push(render_clickable_pill(
+                &model_label,
+                self.model_pill_mouse.clone(),
+                |ctx| ctx.dispatch_typed_action(ClaudeCodeViewAction::CycleModel),
+                appearance,
+            ));
+        }
+        // PRODUCT §52 (7m): the effort selector, write-only (no echo-back), so
+        // the pill reflects the current selection. Clickable when idle.
+        let effort_label = match self.effort.as_deref() {
+            Some(effort) => format!("Effort: {effort}"),
+            None => "Effort".to_owned(),
+        };
+        if self.streaming {
+            chips.push(render_pill(&effort_label, appearance));
+        } else {
+            chips.push(render_clickable_pill(
+                &effort_label,
+                self.effort_pill_mouse.clone(),
+                |ctx| ctx.dispatch_typed_action(ClaudeCodeViewAction::CycleEffort),
+                appearance,
+            ));
         }
         if let Some(label) = self.transcript.usage().and_then(format_context) {
             chips.push(render_pill(&label, appearance));
@@ -1374,18 +1853,49 @@ impl ClaudeCodeView {
                 .finish()
         };
 
+        // PRODUCT §51 (7l): the "＋ attach" control opens the OS file picker.
+        // A paperclip icon button, grouped with the Send/Stop action on the
+        // right.
+        let attach = Hoverable::new(self.attach_button.clone(), {
+            let glyph =
+                Icon::new(crate::ui_components::icons::Icon::Paperclip.into(), muted).finish();
+            move |_| {
+                ConstrainedBox::new(glyph)
+                    .with_width(16.)
+                    .with_height(16.)
+                    .finish()
+            }
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(ClaudeCodeViewAction::AttachFromPicker);
+        })
+        .finish();
+        let right = Flex::row()
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(10.)
+            .with_child(attach)
+            .with_child(action)
+            .finish();
+
         let controls = Flex::row()
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(left)
-            .with_child(action)
+            .with_child(right)
             .finish();
 
         let mut card_column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(8.);
+        // PRODUCT §54 (7m): queued type-ahead messages sit at the top of the
+        // composer, each removable before it dispatches.
+        if let Some(queue) = self.render_message_queue(appearance) {
+            card_column.add_child(queue);
+        }
         // PRODUCT §15a (7j): the suggestions panel sits above the input,
         // Claude-app style — `/` commands or `@` files, filtered live.
         if let Some(panel) = self.render_suggestions_panel(appearance) {
@@ -1551,6 +2061,12 @@ impl View for ClaudeCodeView {
                 ctx.dispatch_typed_action(ClaudeCodeViewAction::FocusInput);
                 DispatchEventResult::StopPropagation
             })
+            // PRODUCT §50 (7l): files dropped anywhere on the pane body attach —
+            // images as chips, others as `@`-mentions.
+            .on_drag_and_drop_files(|ctx, _, paths, _| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::DropFiles(paths.to_vec()));
+                DispatchEventResult::StopPropagation
+            })
             .finish()
     }
 }
@@ -1585,6 +2101,26 @@ impl TypedActionView for ClaudeCodeView {
                     .retain(|p| p.display().to_string() != *path);
                 ctx.notify();
             }
+            ClaudeCodeViewAction::DropFiles(paths) => {
+                let paths = paths.iter().map(PathBuf::from).collect();
+                self.attach_files(paths, ctx);
+            }
+            ClaudeCodeViewAction::AttachFromPicker => self.open_attach_picker(ctx),
+            ClaudeCodeViewAction::RemoveDirectAttachment(index) => {
+                if *index < self.direct_attachments.len() {
+                    self.direct_attachments.remove(*index);
+                    ctx.notify();
+                }
+            }
+            ClaudeCodeViewAction::CycleModel => self.cycle_model(ctx),
+            ClaudeCodeViewAction::CycleEffort => self.cycle_effort(ctx),
+            ClaudeCodeViewAction::RemoveQueuedMessage(index) => {
+                if *index < self.message_queue.len() {
+                    self.message_queue.remove(*index);
+                    ctx.notify();
+                }
+            }
+            ClaudeCodeViewAction::ApprovePlan => self.approve_plan(ctx),
         }
     }
 }
@@ -1707,6 +2243,17 @@ impl ClaudeCodeView {
             }
             TranscriptItem::Notice(message) => render_notice(message, appearance),
             TranscriptItem::Error(message) => render_error(message, appearance),
+            // PRODUCT §55–§56 (7n): an `ExitPlanMode` call renders as a themed
+            // plan card (its full markdown is in the tool input), not a generic
+            // tool card. Falls through to the tool card if the plan text is
+            // missing (§29 defensive).
+            TranscriptItem::Tool { name, input, .. }
+                if name == "ExitPlanMode"
+                    && input.get("plan").and_then(|v| v.as_str()).is_some() =>
+            {
+                let plan = input.get("plan").and_then(|v| v.as_str()).unwrap_or("");
+                self.render_plan_card(plan, appearance)
+            }
             TranscriptItem::Tool {
                 id,
                 name,
@@ -1762,6 +2309,101 @@ impl ClaudeCodeView {
                 appearance,
             ),
         }
+    }
+
+    /// Render an `ExitPlanMode` plan card (PRODUCT §55–§56, 7n): the plan's full
+    /// markdown in a themed card, distinct from a generic tool card, with
+    /// **Approve** and **Keep planning** affordances.
+    ///
+    /// Approve is *not* a one-click inline accept — headless `claude` has no
+    /// stdio approval channel for plan exit (the §24 wall) — so it switches the
+    /// permission mode off `plan` and resumes ([`Self::approve_plan`]). Keep
+    /// planning returns focus to the composer so the user refines the plan; the
+    /// session stays in plan mode. Both are hidden once the session has left
+    /// plan mode (a historical plan card needs no live controls).
+    fn render_plan_card(&self, plan: &str, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let surface = theme.surface_2();
+        let text_color = theme.main_text_color(surface).into_solid();
+        let accent = theme.accent().into_solid();
+
+        let header = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(8.)
+            .with_child(
+                ConstrainedBox::new(
+                    Icon::new(crate::ui_components::icons::Icon::File.into(), accent).finish(),
+                )
+                .with_width(15.)
+                .with_height(15.)
+                .finish(),
+            )
+            .with_child(
+                appearance
+                    .ui_builder()
+                    .span("Plan".to_owned())
+                    .with_style(UiComponentStyles {
+                        font_color: Some(text_color),
+                        font_size: Some(13.),
+                        ..Default::default()
+                    })
+                    .build()
+                    .finish(),
+            )
+            .finish();
+
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(10.)
+            .with_child(header)
+            .with_child(render_markdown_body(plan, text_color, appearance));
+
+        // The live controls only make sense while the session is still in plan
+        // mode and idle; otherwise the card is a record of an approved/aborted
+        // plan (PRODUCT §56: never hang, never offer a dead control).
+        if self.permission_mode == PermissionMode::Plan && !self.streaming {
+            let approve = appearance
+                .ui_builder()
+                .button(ButtonVariant::Accent, self.plan_approve_mouse.clone())
+                .with_text_label("Approve".to_owned())
+                .build()
+                .on_click(|ctx, _, _| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ApprovePlan);
+                })
+                .finish();
+            let keep = appearance
+                .ui_builder()
+                .button(ButtonVariant::Outlined, self.plan_keep_mouse.clone())
+                .with_text_label("Keep planning".to_owned())
+                .build()
+                .on_click(|ctx, _, _| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::FocusInput);
+                })
+                .finish();
+            column.add_child(
+                Flex::row()
+                    .with_main_axis_size(MainAxisSize::Min)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(10.)
+                    .with_child(approve)
+                    .with_child(keep)
+                    .finish(),
+            );
+        }
+
+        Container::new(column.finish())
+            .with_padding(Padding::uniform(14.))
+            .with_margin_top(4.)
+            .with_margin_bottom(4.)
+            .with_margin_left(TRANSCRIPT_LEFT_MARGIN)
+            .with_margin_right(20.)
+            .with_background_color(surface.into_solid())
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                MESSAGE_CORNER_RADIUS,
+            )))
+            .finish()
     }
 }
 
@@ -1914,6 +2556,39 @@ fn render_notice(message: &str, appearance: &Appearance) -> Box<dyn Element> {
     .with_padding_left(TRANSCRIPT_LEFT_MARGIN)
     .with_padding_right(20.)
     .finish()
+}
+
+/// A one-line, length-bounded preview of a queued message's text (PRODUCT §54).
+fn queue_preview(text: &str) -> String {
+    let first_line = text.lines().next().unwrap_or("").trim();
+    const MAX: usize = 80;
+    if first_line.chars().count() > MAX {
+        let truncated: String = first_line.chars().take(MAX).collect();
+        format!("{truncated}…")
+    } else {
+        first_line.to_owned()
+    }
+}
+
+/// Read an image file into an outgoing image block (PRODUCT §15b, §50–§51),
+/// applying the inline-image size cap. `None` for non-images, oversized, or
+/// unreadable files — the caller degrades those to a plain `@`-mention rather
+/// than blocking the send (§29).
+fn read_image_attachment(path: &Path) -> Option<OutgoingImage> {
+    let media_type = composer::image_media_type(path)?;
+    let metadata = std::fs::metadata(path).ok()?;
+    if metadata.len() > composer::MAX_IMAGE_BYTES {
+        log::info!(
+            "claude: attachment {} exceeds the inline-image cap; left as a mention",
+            path.display()
+        );
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    Some(OutgoingImage {
+        media_type: media_type.to_owned(),
+        base64_data: base64::engine::general_purpose::STANDARD.encode(bytes),
+    })
 }
 
 /// Format the per-turn metrics line (PRODUCT §48): cost, wall-clock duration,
@@ -2191,8 +2866,18 @@ fn render_zero_state(appearance: &Appearance) -> Box<dyn Element> {
 
 #[cfg(test)]
 mod tests {
-    use super::format_metrics_line;
+    use super::{format_metrics_line, queue_preview};
     use claude_code::TurnMetrics;
+
+    #[test]
+    fn queue_preview_takes_first_line_and_caps_length() {
+        assert_eq!(queue_preview("hello world"), "hello world");
+        assert_eq!(queue_preview("  first\nsecond"), "first");
+        let long = "x".repeat(200);
+        let preview = queue_preview(&long);
+        assert!(preview.ends_with('…'));
+        assert_eq!(preview.chars().count(), 81); // 80 + ellipsis
+    }
 
     #[test]
     fn metrics_line_omits_absent_fields() {
