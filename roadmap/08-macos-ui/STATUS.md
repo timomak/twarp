@@ -1,8 +1,17 @@
 # 08 — macOS-style UI overhaul
 
-**Phase:** spec-in-review
-**Spec PR:** [#81](https://github.com/timomak/twarp/pull/81)
-**Impl PRs:** —
+**Phase:** impl-in-review
+**Spec PR:** [#81](https://github.com/timomak/twarp/pull/81) — **owner-directed bundle: all of 8a–8f implemented in the same PR as the spec** (override of the spec-merge gate and one-sub-phase-per-PR rule, 2026-06-18; same call as the feature-07 bundling override)
+**Impl PRs:** folded into #81
+
+## Sub-phase status (all in #81)
+
+- [ ] **8a — Chrome-style tabs (look).** Top-rounded seated tab shape in `tab.rs::render_tab_container_internal`; feature 01 colors + feature 06 rename preserved.
+- [ ] **8b — Drag tab → new window.** `DragTabsToWindows` flag enabled (DOGFOOD); detach via `create_transferred_window` / `transfer_view_tree_to_window`; `TabData::detached` set; origin cleanup.
+- [ ] **8c — Drag tab between windows.** Cross-window drop hit-testing + insertion ghost, porting upstream `3984e67f` / `d7c45cab`.
+- [ ] **8d — Claude chat fade-out.** Bottom vertical gradient foreground overlay over the transcript, fading to the theme pane background.
+- [ ] **8e — Sessions search.** Single-line `EditorView` substring filter on `StoredSession.title` in `left_panel.rs`.
+- [ ] **8f — macOS sidebar restyle.** Flat pinned-light background, pill segmented switcher, muted headers, restyled sessions panel + footer.
 
 ## Scope
 
