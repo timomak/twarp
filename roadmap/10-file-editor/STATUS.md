@@ -1,4 +1,4 @@
-# 09 — File editor surface with go-to-definition
+# 10 — File editor surface with go-to-definition
 
 **Phase:** not-started
 **Spec PR:** —
@@ -10,12 +10,12 @@ Expose twarp's existing `crates/editor/` rich-text surface as a first-class file
 
 ## Why this slot
 
-Foundation for the IDE direction (10 and 11 depend on it). Placed after 08 (rebrand) because wiring touches `app/src/code/`, `crates/editor/`, and `crates/lsp/` — all of which would be churned during the rebrand rename pass.
+Foundation for the IDE direction (11 and 12 depend on it). Placed after 09 (rebrand) because wiring touches `app/src/code/`, `crates/editor/`, and `crates/lsp/` — all of which would be churned during the rebrand rename pass.
 
 ## Sub-phases
 
-- [ ] **9a — File-tree → code pane wiring.** Click a file in the existing file tree (or trigger "Open File" palette mode) to open it in a `Code` pane. Save (Cmd+S) with dirty-state indicator. Reload on external change via existing watcher.
-- [ ] **9b — Multi-file tabs + cmd+click gesture.** Multiple open files as tabs within the window. Cmd+click on a symbol triggers LSP `definition()` — verify whether the gesture is already wired in code-review context vs. needs a new binding. Tab close confirms when dirty.
+- [ ] **10a — File-tree → code pane wiring.** Click a file in the existing file tree (or trigger "Open File" palette mode) to open it in a `Code` pane. Save (Cmd+S) with dirty-state indicator. Reload on external change via existing watcher.
+- [ ] **10b — Multi-file tabs + cmd+click gesture.** Multiple open files as tabs within the window. Cmd+click on a symbol triggers LSP `definition()` — verify whether the gesture is already wired in code-review context vs. needs a new binding. Tab close confirms when dirty.
 
 ## What's already built (audited 2026-05-14)
 
@@ -29,5 +29,5 @@ Foundation for the IDE direction (10 and 11 depend on it). Placed after 08 (rebr
 ## Notes
 
 - 9a is the gating piece — without it, every existing LSP feature stays trapped inside the code review panel.
-- Out of scope for this feature: LSP completion, rename, outline pane, breadcrumbs, status bar, code folding. Those become candidate follow-on features if the IDE direction continues past this trio (09–11).
+- Out of scope for this feature: LSP completion, rename, outline pane, breadcrumbs, status bar, code folding. Those become candidate follow-on features if the IDE direction continues past this trio (10–12).
 - No upstream cherry-pick conflicts expected — the changes are workflow wiring, not modifications to widely-touched surfaces.

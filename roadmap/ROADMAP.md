@@ -2,7 +2,7 @@
 
 Single source of truth for what's being built next. `/twarp-next` reads this file every invocation; the user reads it to see status at a glance.
 
-**Currently active:** `07-claude-code-panel`
+**Currently active:** `08-macos-ui`
 
 ## Features
 
@@ -14,11 +14,12 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 04 | [Custom command shortcuts](04-command-shortcuts/STATUS.md) | merged | [#51](https://github.com/timomak/twarp/pull/51) | 4a [#52](https://github.com/timomak/twarp/pull/52), 4b [#53](https://github.com/timomak/twarp/pull/53), 4c [#54](https://github.com/timomak/twarp/pull/54), 4d [#55](https://github.com/timomak/twarp/pull/55) |
 | 05 | [Open Changes panel](05-open-changes/STATUS.md) | merged | [#56](https://github.com/timomak/twarp/pull/56), respec [#58](https://github.com/timomak/twarp/pull/58) | 5a [#59](https://github.com/timomak/twarp/pull/59), 5c+5e [#60](https://github.com/timomak/twarp/pull/60), 5e polish [#61](https://github.com/timomak/twarp/pull/61), 5b [#62](https://github.com/timomak/twarp/pull/62), 5d [#63](https://github.com/timomak/twarp/pull/63) |
 | 06 | [Tab rename shortcut](06-tab-rename/STATUS.md) | merged | [#64](https://github.com/timomak/twarp/pull/64) | [#65](https://github.com/timomak/twarp/pull/65) |
-| 07 | [Claude Code panel](07-claude-code-panel/STATUS.md) | impl-in-review (phase 2, 7k–7n) | [#66](https://github.com/timomak/twarp/pull/66), respec [#68](https://github.com/timomak/twarp/pull/68), main-pane respec [#70](https://github.com/timomak/twarp/pull/70), 7i amendment [#77](https://github.com/timomak/twarp/pull/77) (folded into #76) | 7b [#69](https://github.com/timomak/twarp/pull/69) (merged — sidebar host, superseded), 7b [#71](https://github.com/timomak/twarp/pull/71) (merged — main-pane host), 7c [#72](https://github.com/timomak/twarp/pull/72) (merged — live driver), polish [#74](https://github.com/timomak/twarp/pull/74) (merged — shell polish + metadata chips; superseded auto-closed #73), 7d [#75](https://github.com/timomak/twarp/pull/75) (merged — tool cards + review feedback), 7e–7j bundled [#76](https://github.com/timomak/twarp/pull/76) (merged) · **phase 2 (7k–7n: streaming, rich input, composer controls, plan rendering) — specs merged [#78](https://github.com/timomak/twarp/pull/78); all four sub-phases implemented & bundled in review [#79](https://github.com/timomak/twarp/pull/79)** |
-| 08 | [Rebrand to twarp](08-rebrand/STATUS.md) | not-started | — | — |
-| 09 | [File editor with go-to-definition](09-file-editor/STATUS.md) | not-started | — | — |
-| 10 | [Git blame](10-git-blame/STATUS.md) | not-started | — | — |
-| 11 | [Project search & replace](11-project-search-replace/STATUS.md) | not-started | — | — |
+| 07 | [Claude Code panel](07-claude-code-panel/STATUS.md) | merged | [#66](https://github.com/timomak/twarp/pull/66), respec [#68](https://github.com/timomak/twarp/pull/68), main-pane respec [#70](https://github.com/timomak/twarp/pull/70), 7i amendment [#77](https://github.com/timomak/twarp/pull/77) (folded into #76), phase-2 specs [#78](https://github.com/timomak/twarp/pull/78) | 7b [#69](https://github.com/timomak/twarp/pull/69) (merged — sidebar host, superseded), 7b [#71](https://github.com/timomak/twarp/pull/71) (merged — main-pane host), 7c [#72](https://github.com/timomak/twarp/pull/72) (merged — live driver), polish [#74](https://github.com/timomak/twarp/pull/74) (merged — shell polish + metadata chips; superseded auto-closed #73), 7d [#75](https://github.com/timomak/twarp/pull/75) (merged — tool cards + review feedback), 7e–7j bundled [#76](https://github.com/timomak/twarp/pull/76) (merged), phase 2 7k–7n bundled [#79](https://github.com/timomak/twarp/pull/79) (merged — streaming, rich input, composer controls, plan rendering) |
+| 08 | [macOS-style UI overhaul](08-macos-ui/STATUS.md) | not-started | — | — |
+| 09 | [Rebrand to twarp](09-rebrand/STATUS.md) | not-started | — | — |
+| 10 | [File editor with go-to-definition](10-file-editor/STATUS.md) | not-started | — | — |
+| 11 | [Git blame](11-git-blame/STATUS.md) | not-started | — | — |
+| 12 | [Project search & replace](12-project-search-replace/STATUS.md) | not-started | — | — |
 
 ## Phases
 
@@ -33,7 +34,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 
 - Only one feature is active at a time.
 - A feature advances from `spec-in-review` → `impl-pending` only after the spec PR is **merged to master**.
-- Features 02, 05, 07, 08, 09, 10, and 11 are sub-phased; their STATUS.md tracks individual sub-PRs and the feature only reaches `merged` after every sub-PR ships.
+- Features 02, 05, 07, 08, 09, 10, 11, and 12 are sub-phased; their STATUS.md tracks individual sub-PRs and the feature only reaches `merged` after every sub-PR ships.
 - The next feature only starts after the current one reaches `merged`.
 - Git is the source of truth. If STATUS.md and `gh pr view` disagree, trust git and update STATUS.md.
 
@@ -44,12 +45,13 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 3. **Render markdown by default third** — small default flip on whatever surface(s) twarp uses to display `.md` files. After AI removal so the markdown render path isn't entangled with the deleted assistant transcript renderer.
 4. **Command shortcuts fourth** — independent subsystem, no dependency on 01–03.
 5. **Open Changes panel fifth** — largest user-facing scope, sub-phased into panel scaffold → diffs → staging → commit/push → file timeline.
-6. **Tab rename shortcut sixth** — small, isolated keyboard binding that hooks into the existing rename interaction. Sequenced here only because 03–05 were already queued; nothing about its scope blocks earlier placement, and it stays before rebrand so the rename keybinding lands in `twarp_*` crates rather than churning during 8b.
+6. **Tab rename shortcut sixth** — small, isolated keyboard binding that hooks into the existing rename interaction. Sequenced here only because 03–05 were already queued; nothing about its scope blocks earlier placement, and it stays before rebrand so the rename keybinding lands in `twarp_*` crates rather than churning during 9b.
 7. **Claude Code panel seventh** — large user-facing scope, sub-phased. Re-introduces Warp Agent Mode's rendering layer (removed in feature 02) as a host for the local `claude` subprocess running on the user's Claude Max subscription. No LLM client, no billing, no cloud sync — only the renderer comes back. Slotted before the rebrand because cherry-picks from upstream agent crates are much harder once every `warp_*` / `warpui*` crate has been renamed. **Phase 2 (7k–7n: streaming, rich input, composer controls, plan rendering; owner-directed 2026-06-15) stays under 07 and also precedes rebrand** — it churns the same `claude_code` / `claude_code_view` / `terminal` crates the rename touches, so doing it first pays that merge cost once.
-8. **Rebrand last among the upstream-sensitive features** — file/crate renames are the worst case for git merges, so push them as late as possible to keep upstream cherry-picks clean. By feature 08, AI code is gone and the agent renderer is wired up, so the brand surface to rename is smaller.
-9. **File editor surface ninth** — pivots twarp from "terminal" to "terminal + IDE" by exposing the existing `crates/editor/` + `crates/lsp/` infrastructure as a first-class file-editing workflow. Headline gesture is cmd+click → LSP definition (already callable from `app/src/code/local_code_editor.rs`, just not wired to a workflow where you can open arbitrary files). Placed after rebrand because wiring across `app/src/code/`, `crates/editor/`, and `crates/lsp/` would otherwise be churned during the rename pass.
-10. **Git blame tenth** — depends on 09 (no blame without a file-editing surface). Genuinely net-new code: `git blame --porcelain` parser, gutter rendering, commit-detail popover. No upstream cherry-pick risk because blame is new.
-11. **Project search & replace eleventh** — wires the existing `warp_ripgrep` crate into a project-wide search UI plus a replace-all flow. Independent of 09 in principle; sequenced after for result-click → open-file.
+8. **macOS-style UI overhaul eighth** — owner-requested visual pass (macOS-style sidebar restyle, Chrome-style tabs + drag-to/between-windows, Claude chat fade-out, sessions search). Slotted *before* the rebrand on the same upstream-sensitivity logic as 07: the heavy sub-phases churn the most upstream-divergent files (`app/src/tab.rs`, `app/src/workspace/view.rs`), and the cross-window-drag sub-phases (8b/8c) **port an upstream feature** (`transfer_view_tree_to_window`; commits `3984e67f`, `d7c45cab`) — doing all this before the crate-rename pass keeps cherry-picks clean. The sidebar work is a **warpui restyle that emulates the macOS look**, not native-AppKit embedding (the whole window is one Metal drawable; embedding a real `NSOutlineView` would fork focus/layout/overlays/theming — see 08's TECH.md).
+9. **Rebrand last among the upstream-sensitive features** — file/crate renames are the worst case for git merges, so push them as late as possible to keep upstream cherry-picks clean. By feature 09, AI code is gone and the agent renderer + macOS UI pass are wired up, so the brand surface to rename is settled.
+10. **File editor surface tenth** — pivots twarp from "terminal" to "terminal + IDE" by exposing the existing `crates/editor/` + `crates/lsp/` infrastructure as a first-class file-editing workflow. Headline gesture is cmd+click → LSP definition (already callable from `app/src/code/local_code_editor.rs`, just not wired to a workflow where you can open arbitrary files). Placed after rebrand because wiring across `app/src/code/`, `crates/editor/`, and `crates/lsp/` would otherwise be churned during the rename pass.
+11. **Git blame eleventh** — depends on 10 (no blame without a file-editing surface). Genuinely net-new code: `git blame --porcelain` parser, gutter rendering, commit-detail popover. No upstream cherry-pick risk because blame is new.
+12. **Project search & replace twelfth** — wires the existing `warp_ripgrep` crate into a project-wide search UI plus a replace-all flow. Independent of 10 in principle; sequenced after for result-click → open-file.
 
 ## Out of scope for `/twarp-next`
 
