@@ -1,7 +1,7 @@
 # 08 — macOS-style UI overhaul
 
 **Phase:** spec-in-review
-**Spec PR:** #81 (pending)
+**Spec PR:** [#81](https://github.com/timomak/twarp/pull/81)
 **Impl PRs:** —
 
 ## Scope
