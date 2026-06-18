@@ -64,6 +64,57 @@ use crate::{
 };
 use warpui::keymap::Keystroke;
 
+// twarp 08e: single-line search field for the Claude sessions list.
+use crate::editor::{
+    EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
+    TextOptions,
+};
+
+/// twarp 08f: flat macOS-light sidebar fill, pinned regardless of the active
+/// twarp theme (PRODUCT §21, §2, §3). A dark terminal theme beside this light
+/// sidebar is the intended two-tone. Audited so no child fill re-darkens it.
+const MACOS_SIDEBAR_BG: warpui::color::ColorU = warpui::color::ColorU {
+    r: 0xF2,
+    g: 0xF1,
+    b: 0xF5,
+    a: 0xFF,
+};
+/// Soft light row hover/selection highlight (replaces the dense dark rows).
+const MACOS_SIDEBAR_ROW_HIGHLIGHT: warpui::color::ColorU = warpui::color::ColorU {
+    r: 0xE3,
+    g: 0xE1,
+    b: 0xE8,
+    a: 0xFF,
+};
+/// Active pill fill for the segmented tool switcher (a white-ish raised chip).
+const MACOS_SIDEBAR_PILL_ACTIVE: warpui::color::ColorU = warpui::color::ColorU {
+    r: 0xFF,
+    g: 0xFF,
+    b: 0xFF,
+    a: 0xFF,
+};
+/// The pill bar track behind the segments (slightly darker than the panel bg).
+const MACOS_SIDEBAR_PILL_TRACK: warpui::color::ColorU = warpui::color::ColorU {
+    r: 0xE7,
+    g: 0xE5,
+    b: 0xEC,
+    a: 0xFF,
+};
+/// Primary text on the light sidebar.
+const MACOS_SIDEBAR_TEXT: warpui::color::ColorU = warpui::color::ColorU {
+    r: 0x1D,
+    g: 0x1D,
+    b: 0x1F,
+    a: 0xFF,
+};
+/// Secondary / muted text (section headers, timestamps).
+const MACOS_SIDEBAR_SUBTEXT: warpui::color::ColorU = warpui::color::ColorU {
+    r: 0x7A,
+    g: 0x78,
+    b: 0x80,
+    a: 0xFF,
+};
+
 #[derive(Default)]
 struct MouseStateHandles {
     project_explorer_button: MouseStateHandle,
@@ -345,6 +396,11 @@ pub struct LeftPanelView {
     has_claude_sessions: bool,
     /// Per-row stable mouse states (same pattern as the Timeline's).
     claude_session_row_mouse_states: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// twarp 08e (PRODUCT §17–§20): live search field over the Claude sessions
+    /// list. A single-line `EditorView`; the panel reads its `buffer_text` each
+    /// render and case-insensitive substring-filters `claude_sessions` by
+    /// `session.title`. Transient view state — never touches persisted data.
+    claude_sessions_search: ViewHandle<EditorView>,
 }
 
 /// twarp 5d: ephemeral data for the Project Explorer Timeline section.
@@ -877,6 +933,28 @@ impl LeftPanelView {
             }
         });
 
+        // twarp 08e: the sessions search field. Mirrors keybindings_page.rs:94.
+        let claude_sessions_search = {
+            let appearance = Appearance::as_ref(ctx);
+            let options = SingleLineEditorOptions {
+                text: TextOptions::ui_font_size(appearance),
+                propagate_and_no_op_vertical_navigation_keys:
+                    PropagateAndNoOpNavigationKeys::Always,
+                ..Default::default()
+            };
+            ctx.add_typed_action_view(|ctx| EditorView::single_line(options, ctx))
+        };
+        // Re-render the panel live as the query changes (PRODUCT §17).
+        ctx.subscribe_to_view(&claude_sessions_search, |_me, _, event, ctx| {
+            if matches!(event, EditorEvent::Edited(_)) {
+                ctx.notify();
+            }
+        });
+        claude_sessions_search.update(ctx, |editor, ctx| {
+            editor.clear_buffer_and_reset_undo_stack(ctx);
+            editor.set_placeholder_text("Search sessions", ctx);
+        });
+
         let mut view = Self {
             resizable_state_handle,
             mouse_state_handles: Default::default(),
@@ -906,6 +984,7 @@ impl LeftPanelView {
             claude_sessions: Vec::new(),
             has_claude_sessions: false,
             claude_session_row_mouse_states: std::cell::RefCell::new(Vec::new()),
+            claude_sessions_search,
         };
         view.update_button_active_states();
 
@@ -2390,9 +2469,11 @@ impl LeftPanelView {
                 .finish()
         };
 
-        let icon_color = appearance
-            .theme()
-            .sub_text_color(appearance.theme().background());
+        // twarp 08f (§21): pin the close-panel icon to the muted sidebar text so
+        // it stays legible on the light background under any active theme
+        // (theme-derived sub_text_color would invert to near-white on a dark
+        // theme and vanish).
+        let icon_color = warp_core::ui::theme::Fill::Solid(MACOS_SIDEBAR_SUBTEXT);
         icon_button_with_color(
             appearance,
             icons::Icon::X,
@@ -2688,9 +2769,41 @@ impl LeftPanelView {
     /// No chat lives here. Empty cwd → a muted hint, never an empty chat.
     fn render_claude_sessions_panel(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
+
+        // twarp 08e: read the live search query and filter the list by title
+        // (case-insensitive substring). Empty query → full list (PRODUCT §18).
+        let query = self.claude_sessions_search.as_ref(app).buffer_text(app);
+        let matched_indices = filter_session_indices(&self.claude_sessions, &query);
+        let has_query = !query.trim().is_empty();
+
+        // twarp 08f: muted macOS section header (smaller, lighter).
+        let heading = appearance
+            .ui_builder()
+            .span("Sessions".to_owned())
+            .with_style(UiComponentStyles {
+                font_color: Some(MACOS_SIDEBAR_SUBTEXT),
+                font_size: Some(11.5),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+
+        // twarp 08e: the search field, above the heading/rows (PRODUCT §17).
+        let search_field = Container::new(
+            ChildView::new(&self.claude_sessions_search)
+                .finish(),
+        )
+        .with_background_color(MACOS_SIDEBAR_PILL_ACTIVE)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+        .with_border(Border::all(1.).with_border_color(MACOS_SIDEBAR_PILL_TRACK))
+        .with_padding_left(8.)
+        .with_padding_right(8.)
+        .with_padding_top(5.)
+        .with_padding_bottom(5.)
+        .finish();
 
         let body: Box<dyn Element> = if self.claude_sessions.is_empty() {
+            // Zero stored sessions (PRODUCT §35 first-run empty state).
             appearance
                 .ui_builder()
                 .span(
@@ -2698,14 +2811,29 @@ impl LeftPanelView {
                      to start one; finished sessions show up here for reopening.",
                 )
                 .with_soft_wrap()
+                .with_style(UiComponentStyles {
+                    font_color: Some(MACOS_SIDEBAR_SUBTEXT),
+                    ..Default::default()
+                })
+                .build()
+                .finish()
+        } else if has_query && matched_indices.is_empty() {
+            // twarp 08e (PRODUCT §18): a distinct no-match empty state.
+            appearance
+                .ui_builder()
+                .span("No matching sessions".to_owned())
+                .with_style(UiComponentStyles {
+                    font_color: Some(MACOS_SIDEBAR_SUBTEXT),
+                    ..Default::default()
+                })
                 .build()
                 .finish()
         } else {
-            let rows = self
-                .claude_sessions
-                .iter()
-                .enumerate()
-                .map(|(idx, session)| self.render_claude_session_row(idx, session, app));
+            // Render the matched rows, preserving the ORIGINAL index so the
+            // resume handler (PRODUCT §20) targets the right session.
+            let rows = matched_indices.into_iter().map(|idx| {
+                self.render_claude_session_row(idx, &self.claude_sessions[idx], app)
+            });
             Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_main_axis_size(MainAxisSize::Min)
@@ -2714,20 +2842,11 @@ impl LeftPanelView {
                 .finish()
         };
 
-        let heading = appearance
-            .ui_builder()
-            .span("Claude Code sessions".to_owned())
-            .with_style(UiComponentStyles {
-                font_color: Some(theme.nonactive_ui_text_color().into_solid()),
-                ..Default::default()
-            })
-            .build()
-            .finish();
-
         let column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Max)
-            .with_spacing(10.0)
+            .with_spacing(8.0)
+            .with_child(search_field)
             .with_child(heading)
             .with_child(Shrinkable::new(1.0, body).finish())
             .finish();
@@ -2753,39 +2872,31 @@ impl LeftPanelView {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
 
         let timestamp = chrono::DateTime::<chrono::Utc>::from(session.timestamp);
         let when = crate::util::time_format::format_approx_duration_from_now_utc(timestamp);
 
+        // twarp 08f (§24): macOS-app typography — primary title on dark-on-light,
+        // muted secondary timestamp.
         let title = appearance
             .ui_builder()
             .span(session.title.clone())
+            .with_style(UiComponentStyles {
+                font_color: Some(MACOS_SIDEBAR_TEXT),
+                ..Default::default()
+            })
             .build()
             .finish();
         let subtitle = appearance
             .ui_builder()
             .span(when)
             .with_style(UiComponentStyles {
-                font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+                font_color: Some(MACOS_SIDEBAR_SUBTEXT),
                 font_size: Some(11.5),
                 ..Default::default()
             })
             .build()
             .finish();
-
-        let body = Container::new(
-            Flex::column()
-                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_spacing(2.0)
-                .with_child(title)
-                .with_child(subtitle)
-                .finish(),
-        )
-        .with_uniform_padding(8.)
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
-        .finish();
 
         let row_mouse_state = {
             let mut states = self.claude_session_row_mouse_states.borrow_mut();
@@ -2795,8 +2906,25 @@ impl LeftPanelView {
             states[idx].clone()
         };
 
-        Hoverable::new(row_mouse_state, move |_state| body)
-            .on_click(move |ctx, _, _| {
+        let inner = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(2.0)
+            .with_child(title)
+            .with_child(subtitle)
+            .finish();
+
+        // twarp 08f (§23): soft light hover highlight instead of dense dark rows.
+        Hoverable::new(row_mouse_state, move |state| {
+            let mut body = Container::new(inner)
+                .with_uniform_padding(8.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
+            if state.is_hovered() {
+                body = body.with_background_color(MACOS_SIDEBAR_ROW_HIGHLIGHT);
+            }
+            body.finish()
+        })
+        .on_click(move |ctx, _, _| {
                 ctx.dispatch_typed_action(LeftPanelAction::ClaudeSessionResume(idx));
             })
             .with_cursor(Cursor::PointingHand)
@@ -3210,6 +3338,87 @@ impl LeftPanelView {
         })
         .with_cursor(Cursor::PointingHand)
         .finish()
+    }
+
+    /// twarp 08f (PRODUCT §22): one segment of the macOS pill switcher. Same
+    /// routing as `render_button` (dispatches the same `LeftPanelAction`); only
+    /// the shape differs — the active segment is a filled white pill, the rest
+    /// quiet. All colors are pinned light (no theme read) so the pill stays
+    /// macOS-light beside a dark terminal theme (§21, theme-leakage trap).
+    fn render_pill_segment(
+        button_config: &ToolbeltButtonConfig,
+        mouse_state: MouseStateHandle,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let action = button_config.action.clone();
+        let ui_builder = appearance.ui_builder().clone();
+        let tooltip_keybinding = button_config.tooltip_keybinding.clone();
+        let is_active = button_config.render_with_active_state;
+
+        // Pinned, theme-independent colors.
+        let icon_color: warpui::color::ColorU = if is_active {
+            MACOS_SIDEBAR_TEXT
+        } else {
+            MACOS_SIDEBAR_SUBTEXT
+        };
+
+        let tooltip = if let Some(keybinding) = tooltip_keybinding {
+            ui_builder
+                .tool_tip_with_sublabel(button_config.tooltip_text.clone(), keybinding)
+                .build()
+                .finish()
+        } else {
+            ui_builder
+                .tool_tip(button_config.tooltip_text.clone())
+                .build()
+                .finish()
+        };
+
+        let icon = if is_active {
+            button_config.active_icon.unwrap_or(button_config.icon)
+        } else {
+            button_config.icon
+        };
+
+        // The active segment gets a filled white pill; the quiet ones show a
+        // subtle hover-only highlight. Both are pinned light fills.
+        let pill_radius = CornerRadius::with_all(Radius::Pixels(6.));
+        let base_background = if is_active {
+            Some(MACOS_SIDEBAR_PILL_ACTIVE.into())
+        } else {
+            None
+        };
+
+        icon_button(appearance, icon, is_active, mouse_state.clone())
+            .with_tooltip(move || tooltip)
+            .with_style(UiComponentStyles {
+                font_color: Some(icon_color),
+                height: Some(24.),
+                width: Some(28.),
+                padding: Some(Coords::uniform(4.)),
+                border_radius: Some(pill_radius),
+                background: base_background,
+                ..Default::default()
+            })
+            .with_active_styles(UiComponentStyles {
+                font_color: Some(icon_color),
+                height: Some(24.),
+                width: Some(28.),
+                padding: Some(Coords::uniform(4.)),
+                border_radius: Some(pill_radius),
+                background: Some(if is_active {
+                    MACOS_SIDEBAR_PILL_ACTIVE.into()
+                } else {
+                    MACOS_SIDEBAR_ROW_HIGHLIGHT.into()
+                }),
+                ..Default::default()
+            })
+            .build()
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(action.clone());
+            })
+            .with_cursor(Cursor::PointingHand)
+            .finish()
     }
 }
 
@@ -3877,32 +4086,44 @@ impl View for LeftPanelView {
             // twarp: 2c-d — conversation_list_view_button removed
         ];
 
-        // If there is only one button in the toolbelt row,
-        // there is no need to show it as it's a bit redundant.
+        // twarp 08f (PRODUCT §22): the tool switcher renders as a macOS pill
+        // segmented control — a rounded track holding one segment per
+        // destination, the active one a filled pill. Routing is unchanged: each
+        // segment dispatches the same panel-switch action as the old icon row.
+        // If there is only one button there is no switcher to show.
         let toolbelt_button_row = if self.toolbelt_buttons.len() > 1 {
+            let segments: Vec<Box<dyn Element>> = self
+                .toolbelt_buttons
+                .iter()
+                .zip(&mouse_state_handles)
+                .filter(|(button_config, _)| {
+                    // twarp 07 (7h, PRODUCT §35): the session-list segment only
+                    // appears when the cwd has stored sessions (kept while it is
+                    // the active view so the open panel doesn't lose its tab).
+                    !matches!(button_config.action, LeftPanelAction::ClaudeSessions)
+                        || self.has_claude_sessions
+                        || self.active_view.get() == ToolPanelView::ClaudeSessions
+                })
+                .map(|(button_config, mouse_state)| {
+                    Self::render_pill_segment(button_config, mouse_state.clone(), appearance)
+                })
+                .collect();
             Some(
-                Flex::row()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_spacing(4.0)
-                    .with_children(
-                        self.toolbelt_buttons
-                            .iter()
-                            .zip(&mouse_state_handles)
-                            .filter(|(button_config, _)| {
-                                // twarp 07 (7h, PRODUCT §35): the session-list
-                                // tab only appears when the cwd has stored
-                                // sessions (kept while it is the active view
-                                // so the open panel doesn't lose its tab).
-                                !matches!(button_config.action, LeftPanelAction::ClaudeSessions)
-                                    || self.has_claude_sessions
-                                    || self.active_view.get() == ToolPanelView::ClaudeSessions
-                            })
-                            .map(|(button_config, mouse_state)| {
-                                Self::render_button(button_config, mouse_state.clone(), appearance)
-                            }),
-                    )
-                    .with_main_axis_size(MainAxisSize::Min)
-                    .finish(),
+                Container::new(
+                    Flex::row()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_spacing(2.0)
+                        .with_children(segments)
+                        .with_main_axis_size(MainAxisSize::Min)
+                        .finish(),
+                )
+                .with_background_color(MACOS_SIDEBAR_PILL_TRACK)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                .with_padding_left(2.)
+                .with_padding_right(2.)
+                .with_padding_top(2.)
+                .with_padding_bottom(2.)
+                .finish(),
             )
         } else {
             None
@@ -4000,6 +4221,13 @@ impl View for LeftPanelView {
                 .with_main_axis_size(MainAxisSize::Max)
                 .finish()
         })
+        // twarp 08f (PRODUCT §21, §2, §3): pin the whole sidebar to a flat
+        // macOS-light fill, independent of the active twarp theme, so a dark
+        // terminal theme leaves the sidebar light (the intended two-tone). This
+        // is the one root fill; child fills that read the theme are the
+        // theme-leakage trap and are pinned individually (pill switcher,
+        // session rows, header spans).
+        .with_background_color(MACOS_SIDEBAR_BG)
         .finish();
 
         if warpui::platform::is_mobile_device() {
@@ -4024,12 +4252,81 @@ impl View for LeftPanelView {
     }
 }
 
+/// twarp 08e (PRODUCT §17): case-insensitive substring filter of stored
+/// sessions by `title`. Returns the indices (into the original slice) of the
+/// sessions that match `query`, preserving order. An empty/whitespace-only
+/// query is not a filter — every index is returned (PRODUCT §18). Free function
+/// so it's unit-testable without a view harness; the filter is transient view
+/// state and never mutates session data (PRODUCT §19, §20).
+fn filter_session_indices(
+    sessions: &[claude_code::sessions::StoredSession],
+    query: &str,
+) -> Vec<usize> {
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return (0..sessions.len()).collect();
+    }
+    sessions
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.title.to_lowercase().contains(&needle))
+        .map(|(idx, _)| idx)
+        .collect()
+}
+
 fn deduplicate_by_directory_name(directories: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut seen_paths: HashSet<PathBuf> = HashSet::new();
     directories
         .into_iter()
         .filter(|path| seen_paths.insert(path.clone()))
         .collect()
+}
+
+#[cfg(test)]
+mod sessions_search_tests {
+    use super::*;
+    use std::time::SystemTime;
+
+    fn session(title: &str) -> claude_code::sessions::StoredSession {
+        claude_code::sessions::StoredSession {
+            id: title.to_owned(),
+            title: title.to_owned(),
+            timestamp: SystemTime::UNIX_EPOCH,
+            jsonl_path: PathBuf::from("/dev/null"),
+        }
+    }
+
+    #[test]
+    fn empty_query_matches_everything() {
+        let sessions = vec![session("Alpha"), session("Beta")];
+        assert_eq!(filter_session_indices(&sessions, ""), vec![0, 1]);
+        assert_eq!(filter_session_indices(&sessions, "   "), vec![0, 1]);
+    }
+
+    #[test]
+    fn filter_is_case_insensitive_substring() {
+        let sessions = vec![
+            session("Fix the parser bug"),
+            session("Refactor CONFIG loader"),
+            session("Write docs"),
+        ];
+        // Case-insensitive on both sides.
+        assert_eq!(filter_session_indices(&sessions, "config"), vec![1]);
+        assert_eq!(filter_session_indices(&sessions, "PARSER"), vec![0]);
+        // Substring, not prefix.
+        assert_eq!(filter_session_indices(&sessions, "the"), vec![0]);
+        // Query is trimmed before matching.
+        assert_eq!(filter_session_indices(&sessions, "  docs  "), vec![2]);
+    }
+
+    #[test]
+    fn no_match_returns_empty_and_preserves_order() {
+        let sessions = vec![session("zebra"), session("apple"), session("mango")];
+        assert!(filter_session_indices(&sessions, "qqq").is_empty());
+        // Order of original indices is preserved across multiple matches.
+        let sessions = vec![session("a one"), session("b one"), session("c two")];
+        assert_eq!(filter_session_indices(&sessions, "one"), vec![0, 1]);
+    }
 }
 
 #[cfg(test)]
