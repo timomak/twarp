@@ -27,7 +27,7 @@ use warp_editor::content::buffer::InitialBufferState;
 use warp_editor::render::element::VerticalExpansionBehavior;
 use warp_util::standardized_path::StandardizedPath;
 use warpui::{
-    elements::{Container, CrossAxisAlignment, Flex, MainAxisSize, ParentElement},
+    elements::{ConstrainedBox, Container, CrossAxisAlignment, Flex, MainAxisSize, ParentElement},
     presenter::ChildView,
     AppContext, Element, SingletonEntity, ViewContext, ViewHandle,
 };
@@ -193,7 +193,19 @@ pub(super) fn render_diff_card(
         .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
         .with_main_axis_size(MainAxisSize::Min);
     for (idx, viewer) in card.viewers.iter().enumerate() {
-        let mut diff_container = Container::new(ChildView::new(viewer).finish());
+        // The embedded editor uses `GrowToMaxHeight`, which produces a *flexible*
+        // child and so needs a bounded height constraint — but the transcript
+        // renders items in a `MainAxisSize::Min` column (natural height), which
+        // hands each child an *unbounded* vertical constraint. `InlineDiffView`
+        // never applies `DisplayMode::Embedded { max_height }` as a layout bound
+        // (its `render` emits a bare `ChildView`), so without an explicit cap the
+        // editor's inner flex panics ("infinite constraint along the flex axis").
+        // Bound it here — the same fix the composer editor uses — so the diff
+        // grows up to `DIFF_MAX_HEIGHT` and then scrolls internally (§19).
+        let bounded = ConstrainedBox::new(ChildView::new(viewer).finish())
+            .with_max_height(DIFF_MAX_HEIGHT)
+            .finish();
+        let mut diff_container = Container::new(bounded);
         if idx + 1 < card.viewers.len() {
             // MultiEdit: breathing room between consecutive edits (§20).
             diff_container = diff_container.with_margin_bottom(8.);
