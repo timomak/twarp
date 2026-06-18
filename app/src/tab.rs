@@ -125,6 +125,10 @@ const WARP_2_ACTIVE_TAB_COLOR_OPACITY: Opacity = 80;
 const NEW_TAB_ACTIVE_COLOR_OPACITY: u8 = 85;
 const NEW_TAB_HOVERED_COLOR_OPACITY: u8 = 40;
 const NEW_TAB_INACTIVE_COLOR_OPACITY: u8 = 20;
+/// Top-corner radius (px) for Chrome/Safari-style tabs (PRODUCT §1). Only the
+/// top corners are rounded; the bottom stays square so the active tab seats
+/// flush onto the pane area below.
+const NEW_TAB_CORNER_RADIUS: f32 = 7.0;
 /// Opacity (0..=100) for the saturated colored border drawn around the
 /// active tab when the tab has a custom color. Used by both legacy and new
 /// tab styling.
@@ -1598,10 +1602,17 @@ impl<'a> TabComponent<'a> {
             .with_background(background_color);
         if FeatureFlag::NewTabStyling.is_enabled() {
             let is_first_tab = self.tab_index == 0;
+            // Chrome/Safari-style: round only the top corners so the active tab seats
+            // flush onto the pane area below it (PRODUCT §1).
+            tab = tab.with_corner_radius(CornerRadius::with_top(Radius::Pixels(NEW_TAB_CORNER_RADIUS)));
+            // The active tab drops its bottom border so it merges with the content
+            // beneath it; inactive tabs keep a bottom border so they read as recessed
+            // (PRODUCT §1, §2). The first tab keeps its left border to avoid double
+            // borders against the strip edge.
+            let bottom_border = !is_active;
             tab = tab.with_border(
                 Border::all(1.)
-                    // We only include a left border on the very first tab to avoid double borders.
-                    .with_sides(false, is_first_tab, false, true)
+                    .with_sides(true, is_first_tab, bottom_border, true)
                     .with_border_fill(border_fill),
             );
         } else {

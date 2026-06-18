@@ -624,6 +624,78 @@ pub fn detach_tab_with_transfer(
     Some(new_window_id)
 }
 
+/// 8c — Move a tab from `source_window_id` into an **existing** `target_window_id`
+/// at `target_index` (PRODUCT §10–§12).
+///
+/// This is the cross-window sibling of `detach_tab_with_transfer`: instead of
+/// spinning up a fresh window it reuses the same `transfer_view_tree_to_window`
+/// primitive to move the live view tree into an already-open window, so the tab's
+/// color, custom name, and running processes survive the move (§12). The target
+/// workspace stages a placeholder via `prepare_for_transferred_tab`, adopts the
+/// transferred pane group, then reorders it to `target_index`; the source tab is
+/// removed afterwards (closing the source window if it becomes empty, per §7).
+///
+/// NOTE (8c scope): the *gesture* that decides when to call this — screen-space
+/// cross-window cursor hit-testing and the insertion-ghost drop feedback required
+/// by PRODUCT §11 — is **not** wired here. That state machine lives in upstream's
+/// `workspace::cross_window_tab_drag` module plus warpui platform changes (screen
+/// drag tracking / window-follow), which are outside this sub-phase's file scope.
+/// This helper is the in-scope transfer primitive those would drive; see the
+/// implementation report for the full gap.
+#[allow(dead_code)]
+pub fn transfer_tab_to_window(
+    source_window_id: WindowId,
+    tab_index: usize,
+    target_window_id: WindowId,
+    target_index: usize,
+    ctx: &mut AppContext,
+) -> bool {
+    if source_window_id == target_window_id {
+        return false;
+    }
+    let Some(source_workspace) = workspace_for_window(source_window_id, ctx) else {
+        log::warn!("transfer_tab_to_window: no source workspace for {source_window_id:?}");
+        return false;
+    };
+    let Some(target_workspace) = workspace_for_window(target_window_id, ctx) else {
+        log::warn!("transfer_tab_to_window: no target workspace for {target_window_id:?}");
+        return false;
+    };
+
+    let Some(transferred_tab) =
+        source_workspace.read(ctx, |workspace, ctx| workspace.get_tab_transfer_info(tab_index, ctx))
+    else {
+        return false;
+    };
+
+    let pane_group = transferred_tab.pane_group.clone();
+    let tab_color = transferred_tab.color;
+    let custom_title = transferred_tab.custom_title.clone();
+
+    // Stage a placeholder tab in the target so `adopt_transferred_pane_group` has
+    // a slot to swap the transferred pane group into.
+    target_workspace.update(ctx, |workspace, ctx| {
+        workspace.prepare_for_transferred_tab(tab_color, custom_title.clone(), ctx);
+    });
+
+    // Move the live view tree into the target window.
+    let pane_group_id = pane_group.id();
+    ctx.transfer_view_tree_to_window(pane_group_id, source_window_id, target_window_id);
+
+    // Adopt into the placeholder, then slide it to the requested drop index.
+    target_workspace.update(ctx, |workspace, ctx| {
+        workspace.adopt_transferred_pane_group(pane_group.clone(), ctx);
+        workspace.reorder_last_tab_to(target_index, ctx);
+    });
+
+    // Remove the now-moved tab from the source (closes the window if it was last).
+    source_workspace.update(ctx, |workspace, ctx| {
+        workspace.remove_tab_without_undo(tab_index, ctx);
+    });
+
+    true
+}
+
 /// Creates a new window with the transferred pane group.
 /// This function takes pre-gathered TabTransferInfo, allowing it to be called
 /// from within a view method where workspace lookup would fail.

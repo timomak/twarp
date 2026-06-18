@@ -9496,6 +9496,38 @@ impl Workspace {
     pub fn remove_tab_without_undo(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
         self.remove_tab(index, false, false, ctx);
     }
+
+    /// 8c — target-side primitive for dragging a tab into an *existing* window
+    /// (PRODUCT §10–§12).
+    ///
+    /// Creates a placeholder tab in this (the target) workspace, mirroring the
+    /// `NewWorkspaceSource::TransferredTab` placeholder path used when a detach
+    /// makes a brand-new window. The caller (`root_view::transfer_tab_to_window`)
+    /// then transfers the live view tree into this window and calls
+    /// `adopt_transferred_pane_group`, which swaps the placeholder's pane group
+    /// for the transferred one — keeping the tab's running processes intact (§12).
+    ///
+    /// The placeholder is appended; `adopt_transferred_pane_group` reads
+    /// `self.tabs.last_mut()`. After adoption the caller may reorder it to the
+    /// drop index via `move_tab`/`reorder`. The tab's color/title come across with
+    /// the transferred pane group's custom title and the supplied color.
+    pub fn prepare_for_transferred_tab(
+        &mut self,
+        tab_color: Option<AnsiColorIdentifier>,
+        custom_title: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.add_tab_with_pane_layout(
+            Default::default(),
+            Arc::new(HashMap::new()),
+            custom_title,
+            ctx,
+        );
+        if let (Some(color), Some(tab)) = (tab_color, self.tabs.last_mut()) {
+            tab.selected_color = SelectedTabColor::Color(color);
+        }
+        self.pending_pane_group_transfer = true;
+    }
     /// Adopts a transferred PaneGroup into the placeholder tab created during window transfer.
     /// This replaces the placeholder tab's PaneGroup with the actual transferred one.
     pub fn adopt_transferred_pane_group(
@@ -11003,6 +11035,19 @@ impl Workspace {
     /// Will determine if the dragged tab needs to be swapped with another tab in the list and
     /// perform the swap, making sure to maintain the active tab if necessary
     fn on_tab_drag(&mut self, current_index: usize, position: RectF, ctx: &mut ViewContext<Self>) {
+        // 8b: when the cross-window-drag flag is enabled, a drag that clearly leaves
+        // the tab strip (past a vertical threshold) detaches the tab into a brand-new
+        // window instead of reordering. Below the threshold we fall through to the
+        // existing within-window reorder (unchanged), so a small drag along the strip
+        // still reorders (PRODUCT §9). The detach is dispatched as a deferred global
+        // action so it runs after this `&mut self` borrow is released, avoiding
+        // re-entrancy into the workspace mid-drag.
+        if FeatureFlag::DragTabsToWindows.is_enabled()
+            && self.try_detach_tab_on_drag(current_index, position, ctx)
+        {
+            return;
+        }
+
         let new_index = if FeatureFlag::VerticalTabs.is_enabled()
             && *TabSettings::as_ref(ctx).use_vertical_tabs
         {
@@ -11023,6 +11068,92 @@ impl Workspace {
 
             ctx.notify();
         }
+    }
+
+    /// 8b — Drag a tab out to a new window (PRODUCT §6–§9).
+    ///
+    /// Returns `true` when the drag has left the tab strip far enough to trigger a
+    /// detach, in which case the tab has been marked `detached`, the reorder is
+    /// skipped, and a deferred `root_view:detach_tab_immediate` global action has
+    /// been queued to perform the live view-tree transfer + origin cleanup (the
+    /// transfer machinery — `detach_tab_with_transfer` — already keeps the tab's
+    /// pane tree and running processes intact, and closes the origin window if it
+    /// becomes empty, per §7/§8). Returns `false` for an in-strip drag (caller
+    /// falls through to the existing reorder, PRODUCT §9).
+    ///
+    /// The detach threshold is ported from upstream's `on_tab_drag`
+    /// (commit 3984e67f): the drag center must leave the horizontal tab bar on the
+    /// Y axis by more than `DETACH_SENSITIVITY`. The full upstream cross-window
+    /// drag-state machine (`CrossWindowTabDrag`, single-tab window-follows-cursor,
+    /// in-place ghost handoff) is out of this sub-phase's file scope; see 8c notes.
+    fn try_detach_tab_on_drag(
+        &mut self,
+        current_index: usize,
+        position: RectF,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        /// How far (px) the drag center must pass the tab bar's vertical bounds
+        /// before the gesture counts as a detach rather than a reorder.
+        const DETACH_SENSITIVITY: f32 = 10.0;
+
+        // Already detached this drag (the deferred action is in flight): swallow
+        // further drag events so we don't double-dispatch.
+        if let Some(tab_data) = self.tabs.get(current_index) {
+            if tab_data.detached {
+                return true;
+            }
+        }
+
+        // Single-tab windows would need the upstream "window follows the cursor"
+        // treatment to detach cleanly (there is no second window to leave behind).
+        // Until that machinery is ported (8c), only multi-tab windows detach.
+        if self.tabs.len() <= 1 {
+            return false;
+        }
+
+        // Detach only when the drag center clears the horizontal tab bar band on
+        // the Y axis. Reorders move along X within the bar and never trip this.
+        let drag_center_y = position.center().y();
+        let is_outside_tab_bar = drag_center_y < -DETACH_SENSITIVITY
+            || drag_center_y > TAB_BAR_HEIGHT + DETACH_SENSITIVITY;
+        if !is_outside_tab_bar {
+            return false;
+        }
+
+        // Mark the tab as detached so 8c can distinguish transferred tabs and so a
+        // repeated drag frame doesn't re-dispatch the detach.
+        if let Some(tab_data) = self.tabs.get_mut(current_index) {
+            tab_data.detached = true;
+        }
+
+        let source_window_id = ctx.window_id();
+
+        // Position the new window so the dragged tab sits roughly under the cursor:
+        // screen origin of the drag, minus the in-window offset of the first tab.
+        let window_position = ctx.window_bounds(&source_window_id).map(|bounds| {
+            let source_origin = bounds.origin();
+            let drag_origin_in_window = vec2f(position.min_x(), position.min_y());
+            let first_tab_origin = ctx
+                .element_position_by_id(tab_position_id(0))
+                .map(|rect| vec2f(rect.min_x(), rect.min_y()))
+                .unwrap_or_else(|| vec2f(0.0, 0.0));
+            source_origin + drag_origin_in_window - first_tab_origin
+        });
+
+        // Deferred: runs after this `&mut self` borrow ends. `detach_tab_with_transfer`
+        // gathers the transfer info, spins up the new window, transfers the live view
+        // tree, and removes the tab from this workspace (closing the window if empty).
+        ctx.dispatch_global_action(
+            "root_view:detach_tab_immediate",
+            crate::root_view::DetachTabImmediateArg {
+                tab_index: current_index,
+                window_position,
+                source_window_id,
+            },
+        );
+        send_telemetry_from_ctx!(TelemetryEvent::DragAndDropTab, ctx);
+
+        true
     }
 
     /// Determines the appropriate index for a tab that is being dragged, based on its current
@@ -11105,6 +11236,24 @@ impl Workspace {
         }
 
         current_index
+    }
+
+    /// 8c — move the most-recently-added tab (the just-adopted transferred tab,
+    /// which `prepare_for_transferred_tab` appended at the end) to `target_index`,
+    /// then activate it. Used by `root_view::transfer_tab_to_window` to land a
+    /// cross-window-dragged tab at the insertion position.
+    pub fn reorder_last_tab_to(&mut self, target_index: usize, ctx: &mut ViewContext<Self>) {
+        if self.tabs.is_empty() {
+            return;
+        }
+        let from = self.tabs.len() - 1;
+        let to = target_index.min(from);
+        if to != from {
+            let tab = self.tabs.remove(from);
+            self.tabs.insert(to, tab);
+        }
+        self.set_active_tab_index(to, ctx);
+        ctx.notify();
     }
 
     // Move tab, given tab index, left or right
@@ -19079,6 +19228,14 @@ impl TypedActionView for Workspace {
             } => self.on_tab_drag(*tab_index, *tab_position, ctx),
             DropTab => {
                 self.current_workspace_state.is_tab_being_dragged = false;
+                // 8b: clear any transient `detached` marks left on tabs that did NOT
+                // actually leave this workspace. A successful detach removes the tab
+                // entirely (via the deferred `detach_tab_immediate`), so any tab still
+                // present here with `detached == true` was a release-before-threshold
+                // snap-back — reset it so a later drag of the same tab can detach again.
+                for tab in &mut self.tabs {
+                    tab.detached = false;
+                }
                 send_telemetry_from_ctx!(TelemetryEvent::DragAndDropTab, ctx);
             }
             CopyAccessTokenToClipboard => {
