@@ -2048,6 +2048,14 @@ impl PaneGroup {
         self.panes_of::<CodePane>()
             .map(move |pane| (pane.id(), pane.file_view(app)))
     }
+    /// Iterate over the file notebook panes in this pane group.
+    pub fn file_notebook_panes<'a>(
+        &'a self,
+        app: &'a AppContext,
+    ) -> impl Iterator<Item = (PaneId, ViewHandle<FileNotebookView>)> + 'a {
+        self.panes_of::<FilePane>()
+            .map(move |pane| (pane.id(), pane.file_view(app)))
+    }
 
     // twarp: 2c-d.4 — AI document pane methods removed (AI-only)
     pub fn ai_document_panes(&self) -> impl Iterator<Item = PaneId> + '_ {
