@@ -141,7 +141,7 @@ PRODUCT §39–§44. Two views of one conversation: the rendered pane (headless 
 
 ## Phase 2 — fidelity & rich input (7k–7n — amendment 2026-06-15)
 
-PRODUCT §45–§56. Four spec-first sub-phases on top of the merged phase-1 panel, each landing in the same crates phase 1 built (`crates/claude_code`, `app/src/claude_code_view`, `app/src/terminal`) — which is why they precede 08-rebrand. Feasibility was triple-checked against `claude` 2.1.175; receipts live in STATUS.md §Phase 2 feasibility. No new service surface is introduced by any sub-phase (PRODUCT §34 holds).
+PRODUCT §45–§56. Four spec-first sub-phases on top of the merged phase-1 panel, each landing in the same crates phase 1 built (`crates/claude_code`, `app/src/claude_code_view`, `app/src/terminal`) — which is why they precede 09-rebrand. Feasibility was triple-checked against `claude` 2.1.175; receipts live in STATUS.md §Phase 2 feasibility. No new service surface is introduced by any sub-phase (PRODUCT §34 holds).
 
 ### 7k — Token streaming + thinking duration + per-turn metrics (PRODUCT §45–§48)
 

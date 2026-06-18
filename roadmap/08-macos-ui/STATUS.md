@@ -1,7 +1,7 @@
 # 08 — macOS-style UI overhaul
 
-**Phase:** not-started
-**Spec PR:** —
+**Phase:** spec-in-review
+**Spec PR:** #81 (pending)
 **Impl PRs:** —
 
 ## Scope
