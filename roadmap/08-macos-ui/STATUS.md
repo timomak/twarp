@@ -15,6 +15,16 @@ All six implemented and integrated on `twarp-08-specs`. Combined `cargo check -p
 - [x] **8e — Sessions search.** `claude_sessions_search: ViewHandle<EditorView>` single-line field; `filter_session_indices` case-insensitive substring on `title`, preserving original indices for resume; distinct "No matching sessions" empty state. 3 unit tests. (commit `c436143c`)
 - [x] **8f — macOS sidebar restyle.** Five pinned `ColorU` consts; root `Container` fixed light fill (ignores theme); pill segmented switcher (`render_pill_segment`, same routing as old `render_button`); muted headers + soft light row hover; restyled sessions rows/footer. (commit `c436143c`)
 
+## Review-feedback refinements (2026-06-19, owner smoke pass on #81)
+
+Owner found three issues; all fixed on the same branch:
+
+1. **Tabs not Chrome-enough** → 8a: added **outward bottom "flares"** on the active tab (`tab.rs`, commit `b9e91f55`). warpui has no path API, so flares are built from the SDF-cut primitive: two tab-colored "ear" overlays at the active tab's bottom corners, each with one corner rounded (`with_top_left`/`with_top_right`) so the transparent quarter-disc reveals the terminal/content background behind → a convex flare that melts the tab into the strip. Unclipped `add_positioned_overlay_child`; no event handlers (clicks/drag pass through); inherits feature-01 color. **Active tab only** (inactive flares would reveal strip-on-strip ≈ invisible).
+2. **Drag-out did nothing** → root cause was the flag, not the code: `DragTabsToWindows` is DOGFOOD-only and `warp-oss` (the default `./script/run`/`--release` binary) never enables the dogfood set, so the drag axis stayed `HorizontalOnly`. Force-enabled in `TWARP_OSS_FLAGS` (`app/src/bin/oss.rs`, commit `922fd190`). The 8b/8c machinery was already complete. (`NewTabStyling` is on by default via the `new_tab_styling` cargo feature, so 8a was already visible — no change needed there.)
+3. **Sidebar spacing + remove X** → 8f polish (`left_panel.rs`, commit `0cc7733f`): removed the in-header close **X** (panel still toggles via `workspace:toggle_left_panel`); file-tree + Warp Drive insets 2px→8px (`SIDEBAR_CONTENT_INSET`); added an 8px bottom inset (`SIDEBAR_BOTTOM_INSET`); TIMELINE header padding 3px→5px and **colors pinned** to the macOS consts (fixes the §25 leakage — it was theme-derived and would vanish on a dark theme).
+
+All four commits compile clean together (`cargo check -p warp`). Tab flares, drag-out, and sidebar look still need an owner binary check (manual-only surfaces).
+
 ## Known follow-ups / caveats (for the smoke pass)
 
 - **§25 theme-leakage:** the inherited non-sessions panels (Project Explorer / Shortcuts / Timeline) still read theme-derived text/hover colors; under a **dark** terminal theme they may have low contrast against the pinned-light sidebar. Left per §25 (no bespoke re-layout this pass) — verify legibility and decide if a follow-up pins them.
