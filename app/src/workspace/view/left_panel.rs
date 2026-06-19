@@ -1909,13 +1909,10 @@ impl LeftPanelView {
         .soft_wrap(false)
         .finish();
         let hover_bg = MACOS_SIDEBAR_ROW_HIGHLIGHT;
-        // Section-header density: a touch more vertical padding than the old
-        // 3px so the row reads as a real macOS section header, still snug to
-        // the file tree above it.
+        // twarp 08 (review): no padding around the TIMELINE header — the row
+        // hugs its text with no surrounding inset.
         Hoverable::new(self.timeline_header_mouse_state.clone(), move |state| {
             let mut container = Container::new(text)
-                .with_horizontal_padding(SIDEBAR_CONTENT_INSET)
-                .with_vertical_padding(5.)
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
             if state.is_hovered() {
                 container = container.with_background(warp_core::ui::theme::Fill::Solid(hover_bg));
@@ -3362,20 +3359,21 @@ impl LeftPanelView {
             .with_tooltip(move || tooltip)
             .with_style(UiComponentStyles {
                 font_color: Some(icon_color),
-                // twarp 08 (review): taller pills give the toggle buttons more
-                // vertical padding around the icon.
-                height: Some(30.),
+                // twarp 08 (review): taller pills with explicit top/bottom
+                // padding so the toggle buttons read with real vertical
+                // breathing room around the icon (the header is grown to fit).
+                height: Some(36.),
                 width: Some(28.),
-                padding: Some(Coords::uniform(4.)),
+                padding: Some(Coords::uniform(4.).top(10.).bottom(10.)),
                 border_radius: Some(pill_radius),
                 background: base_background,
                 ..Default::default()
             })
             .with_active_styles(UiComponentStyles {
                 font_color: Some(icon_color),
-                height: Some(30.),
+                height: Some(36.),
                 width: Some(28.),
-                padding: Some(Coords::uniform(4.)),
+                padding: Some(Coords::uniform(4.).top(10.).bottom(10.)),
                 border_radius: Some(pill_radius),
                 background: Some(if is_active {
                     MACOS_SIDEBAR_PILL_ACTIVE.into()
@@ -4185,7 +4183,10 @@ impl View for LeftPanelView {
                         .with_child(Shrinkable::new(1.0, header_left).finish())
                         .finish(),
                 )
-                .with_height(PANE_HEADER_HEIGHT)
+                // twarp 08 (review): taller than a normal pane header so the
+                // taller tool-switcher pills (36 + 4 track padding) aren't
+                // clipped.
+                .with_height(44.)
                 .finish(),
             )
             .with_padding_left(10.)
