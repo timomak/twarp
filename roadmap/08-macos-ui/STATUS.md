@@ -6,12 +6,21 @@
 
 ## Sub-phase status (all in #81)
 
-- [ ] **8a — Chrome-style tabs (look).** Top-rounded seated tab shape in `tab.rs::render_tab_container_internal`; feature 01 colors + feature 06 rename preserved.
-- [ ] **8b — Drag tab → new window.** `DragTabsToWindows` flag enabled (DOGFOOD); detach via `create_transferred_window` / `transfer_view_tree_to_window`; `TabData::detached` set; origin cleanup.
-- [ ] **8c — Drag tab between windows.** Cross-window drop hit-testing + insertion ghost, porting upstream `3984e67f` / `d7c45cab`.
-- [ ] **8d — Claude chat fade-out.** Bottom vertical gradient foreground overlay over the transcript, fading to the theme pane background.
-- [ ] **8e — Sessions search.** Single-line `EditorView` substring filter on `StoredSession.title` in `left_panel.rs`.
-- [ ] **8f — macOS sidebar restyle.** Flat pinned-light background, pill segmented switcher, muted headers, restyled sessions panel + footer.
+All six implemented and integrated on `twarp-08-specs`. Combined `cargo check -p warp` is clean (0 errors/warnings); 8e's 3 unit tests pass. Drag gestures, the gradient, and the macOS look are **manual-only** surfaces — they need a launched binary to validate (this Mac can't fully run presubmit; see smoke test below).
+
+- [x] **8a — Chrome-style tabs (look).** `tab.rs::render_tab_container_internal`: `CornerRadius::with_top(7.0)` top-rounded shape, active tab drops its bottom border to seat onto the pane; inactive tabs recessed. Feature 01 colors (`styles.background`) + feature 06 rename untouched. (commit `c13e580b`)
+- [x] **8b — Drag tab → new window.** `DragTabsToWindows` added to `DOGFOOD_FLAGS`; `try_detach_tab_on_drag` detaches a multi-tab past `DETACH_SENSITIVITY` via the live view-tree transfer; origin reflow + last-tab window-close; `TabData::detached` set; snap-back below threshold. (commits `c13e580b`, superseded/extended by `64d8b90b`)
+- [x] **8c — Drag tab between windows.** Full port of upstream `3984e67f` / `d7c45cab`: 1849-line `workspace::cross_window_tab_drag.rs` state machine, insertion ghost (slot + floating chip), cross-window screen-space attach targeting, and the warpui `set_window_alpha` platform chain (down to Obj-C `[window setAlphaValue:]`) for preview-hide. macOS has full `ordered_window_ids` so z-order attach works; Linux/test window-ordering bits intentionally not ported. (commit `64d8b90b`)
+- [x] **8d — Claude chat fade-out.** `claude_code_view.rs`: a `COMPOSER_CLEARANCE`-tall vertical `Fill::Gradient` band (transparent → `theme.background().into_solid()`), painted between transcript and the opaque composer, no hit-testing. (commit `7c37fb59`)
+- [x] **8e — Sessions search.** `claude_sessions_search: ViewHandle<EditorView>` single-line field; `filter_session_indices` case-insensitive substring on `title`, preserving original indices for resume; distinct "No matching sessions" empty state. 3 unit tests. (commit `c436143c`)
+- [x] **8f — macOS sidebar restyle.** Five pinned `ColorU` consts; root `Container` fixed light fill (ignores theme); pill segmented switcher (`render_pill_segment`, same routing as old `render_button`); muted headers + soft light row hover; restyled sessions rows/footer. (commit `c436143c`)
+
+## Known follow-ups / caveats (for the smoke pass)
+
+- **§25 theme-leakage:** the inherited non-sessions panels (Project Explorer / Shortcuts / Timeline) still read theme-derived text/hover colors; under a **dark** terminal theme they may have low contrast against the pinned-light sidebar. Left per §25 (no bespoke re-layout this pass) — verify legibility and decide if a follow-up pins them.
+- **8b single-tab detach:** dragging the *only* tab of a window off the strip uses the upstream single-tab "source-follows-cursor" path (8c brought this in); verify it doesn't flash a blank window.
+- **Dead code:** old `render_button` (8f) is unreferenced but compiles clean; remove in a later cleanup if desired.
+- **warpui platform changes (riskiest):** `set_window_alpha` added across `warpui_core` + `warpui/mac` + Obj-C. Verify window-alpha preview-hide looks clean and nothing else regressed window behavior.
 
 ## Scope
 
