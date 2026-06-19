@@ -114,6 +114,14 @@ const MACOS_SIDEBAR_SUBTEXT: warpui::color::ColorU = warpui::color::ColorU {
     b: 0x80,
     a: 0xFF,
 };
+/// twarp 08f polish: shared horizontal content inset for the sidebar panels
+/// (file tree, Warp Drive). The macOS sidebar gives rows a little breathing
+/// room from the edge instead of the old flush 2px; the sessions/shortcuts
+/// panels keep their own 10px text inset.
+const SIDEBAR_CONTENT_INSET: f32 = 8.;
+/// twarp 08f polish: bottom inset so the last row / Timeline section doesn't
+/// sit flush against the window edge.
+const SIDEBAR_BOTTOM_INSET: f32 = 8.;
 
 #[derive(Default)]
 struct MouseStateHandles {
@@ -333,7 +341,6 @@ pub struct ToolbeltButtonConfig {
 pub struct LeftPanelView {
     resizable_state_handle: ResizableStateHandle,
     mouse_state_handles: MouseStateHandles,
-    close_button_mouse_state: MouseStateHandle,
     warp_drive_view: ViewHandle<DrivePanel>,
     // twarp: 2c-d — conversation_list_view removed
     active_view: active_view_state::ActiveViewState,
@@ -958,7 +965,6 @@ impl LeftPanelView {
         let mut view = Self {
             resizable_state_handle,
             mouse_state_handles: Default::default(),
-            close_button_mouse_state: Default::default(),
             warp_drive_view,
             // twarp: 2c-d — conversation_list_view removed
             active_view: active_view_state::new(active_view),
@@ -1879,7 +1885,6 @@ impl LeftPanelView {
     /// focused-file basename. Click anywhere on the bar toggles
     /// expanded.
     fn render_timeline_header(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let theme = appearance.theme();
         let chevron = if self.timeline_expanded { '▾' } else { '▸' };
         let label = match self.timeline_state.focused_path.as_ref() {
             Some(path) => format!(
@@ -1895,20 +1900,22 @@ impl LeftPanelView {
             appearance.ui_font_family(),
             appearance.ui_font_size(),
         )
-        .with_color(theme.sub_text_color(theme.surface_2()).into())
+        // twarp 08f polish: pin the TIMELINE header to the macOS sidebar text
+        // color. The previous theme-derived sub_text_color/neutral_3 inverted
+        // to near-white on a dark theme and vanished on the pinned-light
+        // sidebar (the §25 theme-leakage trap).
+        .with_color(MACOS_SIDEBAR_SUBTEXT)
         .with_style(Properties::default().weight(Weight::Semibold))
         .soft_wrap(false)
         .finish();
-        let hover_bg = internal_colors::neutral_3(theme);
-        // Compact spacing — the previous (margin_top 4 +
-        // vertical_padding 6) read as a cavernous gap between the
-        // file tree and the section header. Drop the top margin and
-        // tighten vertical padding to match the surrounding tool-
-        // panel row density.
+        let hover_bg = MACOS_SIDEBAR_ROW_HIGHLIGHT;
+        // Section-header density: a touch more vertical padding than the old
+        // 3px so the row reads as a real macOS section header, still snug to
+        // the file tree above it.
         Hoverable::new(self.timeline_header_mouse_state.clone(), move |state| {
             let mut container = Container::new(text)
-                .with_horizontal_padding(8.)
-                .with_vertical_padding(3.)
+                .with_horizontal_padding(SIDEBAR_CONTENT_INSET)
+                .with_vertical_padding(5.)
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
             if state.is_hovered() {
                 container = container.with_background(warp_core::ui::theme::Fill::Solid(hover_bg));
@@ -2452,44 +2459,6 @@ impl Entity for LeftPanelView {
 }
 
 impl LeftPanelView {
-    fn close_button(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
-        let ui_builder = appearance.ui_builder().clone();
-        let tooltip_keybinding =
-            keybinding_name_to_display_string("workspace:toggle_left_panel", app);
-
-        let tooltip = if let Some(keybinding) = tooltip_keybinding {
-            ui_builder
-                .tool_tip_with_sublabel("Close panel".to_string(), keybinding)
-                .build()
-                .finish()
-        } else {
-            ui_builder
-                .tool_tip("Close panel".to_string())
-                .build()
-                .finish()
-        };
-
-        // twarp 08f (§21): pin the close-panel icon to the muted sidebar text so
-        // it stays legible on the light background under any active theme
-        // (theme-derived sub_text_color would invert to near-white on a dark
-        // theme and vanish).
-        let icon_color = warp_core::ui::theme::Fill::Solid(MACOS_SIDEBAR_SUBTEXT);
-        icon_button_with_color(
-            appearance,
-            icons::Icon::X,
-            false,
-            self.close_button_mouse_state.clone(),
-            icon_color,
-        )
-        .with_tooltip(move || tooltip)
-        .build()
-        .on_click(move |ctx, _, _| {
-            ctx.dispatch_typed_action(WorkspaceAction::ToggleLeftPanel);
-        })
-        .with_cursor(Cursor::PointingHand)
-        .finish()
-    }
-
     fn update_button_active_states(&mut self) {
         for button in &mut self.toolbelt_buttons {
             button.render_with_active_state = match &button.action {
@@ -4140,8 +4109,8 @@ impl View for LeftPanelView {
                 let file_tree_element: Box<dyn Element> =
                     if let Some(file_tree_view) = self.active_file_tree_view(app) {
                         Container::new(ChildView::new(&file_tree_view).finish())
-                            .with_padding_left(2.)
-                            .with_padding_right(2.)
+                            .with_padding_left(SIDEBAR_CONTENT_INSET)
+                            .with_padding_right(SIDEBAR_CONTENT_INSET)
                             .finish()
                     } else {
                         Container::new(Empty::new().finish()).finish()
@@ -4169,8 +4138,8 @@ impl View for LeftPanelView {
             ToolPanelView::WarpDrive => Shrinkable::new(
                 1.0,
                 Container::new(ChildView::new(&self.warp_drive_view).finish())
-                    .with_padding_left(2.)
-                    .with_padding_right(2.)
+                    .with_padding_left(SIDEBAR_CONTENT_INSET)
+                    .with_padding_right(SIDEBAR_CONTENT_INSET)
                     .finish(),
             )
             .finish(),
@@ -4198,21 +4167,23 @@ impl View for LeftPanelView {
                 Flex::row().finish()
             };
 
+            // twarp 08f polish: the explicit close-panel "X" is removed — the
+            // panel still toggles via its keybinding (workspace:toggle_left_panel),
+            // matching the macOS-app sidebar which has no close glyph in-header.
             let header_row = Container::new(
                 ConstrainedBox::new(
                     Flex::row()
                         .with_main_axis_size(MainAxisSize::Max)
-                        .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                        .with_main_axis_alignment(MainAxisAlignment::Start)
                         .with_cross_axis_alignment(CrossAxisAlignment::Center)
                         .with_child(Shrinkable::new(1.0, header_left).finish())
-                        .with_child(self.close_button(appearance, app))
                         .finish(),
                 )
                 .with_height(PANE_HEADER_HEIGHT)
                 .finish(),
             )
             .with_padding_left(10.)
-            .with_padding_right(HEADER_EDGE_PADDING)
+            .with_padding_right(10.)
             .finish();
 
             column
@@ -4228,6 +4199,8 @@ impl View for LeftPanelView {
         // theme-leakage trap and are pinned individually (pill switcher,
         // session rows, header spans).
         .with_background_color(MACOS_SIDEBAR_BG)
+        // twarp 08f polish: breathing room at the bottom edge.
+        .with_padding_bottom(SIDEBAR_BOTTOM_INSET)
         .finish();
 
         if warpui::platform::is_mobile_device() {
