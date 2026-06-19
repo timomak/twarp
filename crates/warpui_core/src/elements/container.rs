@@ -22,6 +22,7 @@ pub struct Container {
     background: Fill,
     border: Border,
     corner_radius: CornerRadius,
+    tab_flare: f32,
     drop_shadow: Option<DropShadow>,
     foreground_overlay: Option<Fill>,
     child: Box<dyn Element>,
@@ -42,6 +43,7 @@ impl Container {
             background: Fill::None,
             border: Border::default(),
             corner_radius: CornerRadius::default(),
+            tab_flare: 0.0,
             foreground_overlay: None,
             drop_shadow: None,
             child,
@@ -54,6 +56,14 @@ impl Container {
 
     pub fn with_drop_shadow(mut self, drop_shadow: DropShadow) -> Self {
         self.drop_shadow = Some(drop_shadow);
+        self
+    }
+
+    /// Render this container with a Chrome-style flared tab base. `px` is the
+    /// flare radius in logical px (0.0 = normal rounded rect). See
+    /// `scene::Rect::tab_flare`.
+    pub fn with_tab_flare(mut self, px: f32) -> Self {
+        self.tab_flare = px;
         self
     }
 
@@ -300,7 +310,8 @@ impl Element for Container {
             .draw_rect_with_hit_recording(RectF::new(origin, size))
             .with_background(self.background)
             .with_border(self.border)
-            .with_corner_radius(self.corner_radius);
+            .with_corner_radius(self.corner_radius)
+            .with_tab_flare(self.tab_flare);
         if let Some(drop_shadow) = self.drop_shadow {
             rect.with_drop_shadow(drop_shadow);
         }

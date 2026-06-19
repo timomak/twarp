@@ -40,6 +40,7 @@ struct RectFragmentData
     float drop_shadow_padding_factor;
     float dash_length;
     float2 gap_lengths;
+    float tab_flare_radius;
 };
 
 struct GlyphFragmentData
@@ -54,10 +55,35 @@ struct GlyphFragmentData
 };
 
 
+// Signed distance to a rounded box centered at the origin.
+// `p` is the point relative to the box center, `half` the box half-extent,
+// `r` the corner radius. <= 0 inside. (IQ's rounded-box SDF.)
+float sdf_round_box(float2 p, float2 half_size, float r) {
+    float2 q = abs(p) - half_size + r;
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
 float distance_from_rect(vector_float2 pixel_pos, vector_float2 rect_center, vector_float2 rect_corner, float corner_radius) {
-    vector_float2 p = pixel_pos - rect_center;
-    vector_float2 q = abs(p) - rect_corner + corner_radius;
-    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - corner_radius;
+    return sdf_round_box(pixel_pos - rect_center, rect_corner, corner_radius);
+}
+
+// Chrome-style flared tab SDF, in pixel space relative to the rect center.
+// `h` is the rect half-size, `rt` the top corner radius, `rf` the flare radius.
+// Builds a narrow rounded-top body unioned with a full-width foot strip, then
+// subtracts two circles to carve the concave valleys where the sides meet the
+// feet. Returns the outer distance (<= 0 inside).
+float distance_from_tab_flare(float2 p, float2 h, float rt, float rf) {
+    // body: rounded-top rect inset by rf on left/right, full height.
+    float body  = sdf_round_box(p, float2(h.x - rf, h.y), rt);
+    // bottom full-width strip, height 2*rf, hugging the baseline (+y is down).
+    float strip = sdf_round_box(p - float2(0.0, h.y - rf), float2(h.x, rf), 0.0);
+    float shape = min(body, strip);
+    // carve the two concave valleys at the body/foot junctions.
+    float vL = length(p - float2(-(h.x - rf), h.y - rf)) - rf;
+    float vR = length(p - float2( (h.x - rf), h.y - rf)) - rf;
+    shape = max(shape, -vL);
+    shape = max(shape, -vR);
+    return shape;
 }
 
 float4 derive_color(float2 pixel_pos, float2 start, float2 end, float4 start_color, float4 end_color) {
@@ -111,6 +137,7 @@ rect_vertex_shader(
     out.drop_shadow_padding_factor = rect->drop_shadow_padding_factor;
     out.dash_length = rect->dash_length;
     out.gap_lengths = rect->gap_lengths;
+    out.tab_flare_radius = rect->tab_flare_radius;
     return out;
 }
 
@@ -214,8 +241,28 @@ fragment float4 rect_fragment_shader(
 
     float2 rect_bottom_right = in.rect_origin + in.rect_size;
 
-    outer_distance = distance_from_rect(in.position.xy, in.rect_center, in.rect_corner, outer_corner_radius);
-    inner_distance = distance_from_rect(in.position.xy, in.rect_center, border_inner_corner, inner_corner_radius);
+    bool is_tab_flare = in.tab_flare_radius > 0.5;
+    if (is_tab_flare) {
+        // Chrome-style flared tab: replace the per-quadrant convex distance with
+        // a single continuous flare SDF. Top corner radius drives the rounded
+        // top (tabs set the top corners); the flare radius drives the feet.
+        float2 p = in.position.xy - in.rect_center;
+        float rf = in.tab_flare_radius;
+        float rt = in.corner_radius_top_left;
+        outer_distance = distance_from_tab_flare(p, in.rect_corner, rt, rf);
+
+        // Border tracks the flared outline: shrink the half-size by the (max)
+        // border width and the top radius by the top border, keeping the same
+        // flare radius so the feet stay parallel.
+        float border = max(max(in.border_top, in.border_bottom),
+                           max(in.border_left, in.border_right));
+        float2 inner_half = in.rect_corner - border;
+        float rt_inner = max(0.0, rt - in.border_top);
+        inner_distance = distance_from_tab_flare(p, inner_half, rt_inner, rf);
+    } else {
+        outer_distance = distance_from_rect(in.position.xy, in.rect_center, in.rect_corner, outer_corner_radius);
+        inner_distance = distance_from_rect(in.position.xy, in.rect_center, border_inner_corner, inner_corner_radius);
+    }
 
     float4 color;
     if (in.drop_shadow_sigma > 0) {
@@ -273,8 +320,10 @@ fragment float4 rect_fragment_shader(
         color.a = alpha;
     }
 
-    // If there's a corner radius we need to do some anti aliasing to smooth out the rounded corner effect.
-    if (outer_corner_radius > 0) {
+    // If there's a corner radius (or a flared tab) we need to do some anti
+    // aliasing to smooth out the curved edge. For a flared tab the outer corner
+    // radius may be 0, so gate on the flare flag too.
+    if (outer_corner_radius > 0 || is_tab_flare) {
         color.a *= 1.0 - saturate(outer_distance + 0.5);
     }
 

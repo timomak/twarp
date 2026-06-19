@@ -129,6 +129,13 @@ const NEW_TAB_INACTIVE_COLOR_OPACITY: u8 = 20;
 /// top corners are rounded; the bottom stays square so the active tab seats
 /// flush onto the pane area below.
 const NEW_TAB_CORNER_RADIUS: f32 = 7.0;
+/// Top-corner radius (px) for the Chrome-style flared tab shape rendered by the
+/// Metal SDF (feature 08a). Drives the rounded top of the tab.
+const TAB_TOP_RADIUS: f32 = 8.;
+/// Flare radius (px) for the Chrome-style tab feet. The feet extend this far
+/// beyond the tab body on each side, with a concave valley of this radius where
+/// the side meets the foot. 0 disables the flare. Tunable for screenshot pass.
+const TAB_FLARE_RADIUS: f32 = 8.;
 /// Opacity (0..=100) for the saturated colored border drawn around the
 /// active tab when the tab has a custom color. Used by both legacy and new
 /// tab styling.
@@ -1619,20 +1626,23 @@ impl<'a> TabComponent<'a> {
             .with_vertical_padding(2.)
             .with_background(background_color);
         if FeatureFlag::NewTabStyling.is_enabled() {
-            let is_first_tab = self.tab_index == 0;
-            // Chrome/Safari-style: round only the top corners so the active tab seats
-            // flush onto the pane area below it (PRODUCT §1).
-            tab = tab.with_corner_radius(CornerRadius::with_top(Radius::Pixels(NEW_TAB_CORNER_RADIUS)));
-            // The active tab drops its bottom border so it merges with the content
-            // beneath it; inactive tabs keep a bottom border so they read as recessed
-            // (PRODUCT §1, §2). The first tab keeps its left border to avoid double
-            // borders against the strip edge.
-            let bottom_border = !is_active;
-            tab = tab.with_border(
-                Border::all(1.)
-                    .with_sides(true, is_first_tab, bottom_border, true)
-                    .with_border_fill(border_fill),
-            );
+            // Chrome-style flared tab shape, rendered by the Metal rect SDF
+            // (feature 08a). The shader rounds the top corners (TAB_TOP_RADIUS)
+            // and flares the base outward into feet with concave valleys
+            // (TAB_FLARE_RADIUS), so the tab seats into the strip + content area
+            // below it. Applies to all tabs (active and inactive) — the SDF
+            // draws each tab's own fill, so inactive tabs render correctly too.
+            //
+            // The feet extend TAB_FLARE_RADIUS beyond the body on each side but
+            // are drawn inside the tab's own quad (the SDF insets the body by
+            // the flare). Pad content horizontally by the flare so text/icons
+            // don't sit under the feet, and the border (drawn by the SDF inner
+            // outline) tracks the flared shape on all sides.
+            tab = tab
+                .with_horizontal_padding(TAB_FLARE_RADIUS)
+                .with_corner_radius(CornerRadius::with_top(Radius::Pixels(TAB_TOP_RADIUS)))
+                .with_tab_flare(TAB_FLARE_RADIUS)
+                .with_border(Border::all(1.).with_border_fill(border_fill));
         } else {
             tab = tab
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.0)))

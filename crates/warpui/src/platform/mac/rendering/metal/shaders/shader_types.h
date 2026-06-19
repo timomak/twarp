@@ -34,6 +34,9 @@ typedef struct {
   float drop_shadow_padding_factor;
   float dash_length;
   vector_float2 gap_lengths;
+  // Chrome-style flared tab shape. 0 (default) = normal rounded rect; > 0.5 =
+  // device-px flare radius for the feet/valleys at the tab's base.
+  float tab_flare_radius;
 } PerRectUniforms;
 
 typedef struct {
