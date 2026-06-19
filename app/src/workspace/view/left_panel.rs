@@ -3362,7 +3362,9 @@ impl LeftPanelView {
             .with_tooltip(move || tooltip)
             .with_style(UiComponentStyles {
                 font_color: Some(icon_color),
-                height: Some(24.),
+                // twarp 08 (review): taller pills give the toggle buttons more
+                // vertical padding around the icon.
+                height: Some(30.),
                 width: Some(28.),
                 padding: Some(Coords::uniform(4.)),
                 border_radius: Some(pill_radius),
@@ -3371,7 +3373,7 @@ impl LeftPanelView {
             })
             .with_active_styles(UiComponentStyles {
                 font_color: Some(icon_color),
-                height: Some(24.),
+                height: Some(30.),
                 width: Some(28.),
                 padding: Some(Coords::uniform(4.)),
                 border_radius: Some(pill_radius),
@@ -4108,9 +4110,11 @@ impl View for LeftPanelView {
                 // drag bar between them lets the user resize.
                 let file_tree_element: Box<dyn Element> =
                     if let Some(file_tree_view) = self.active_file_tree_view(app) {
+                        // twarp 08 (review): drop the right inset so the file
+                        // tree fills the panel width and its scrollbar sits
+                        // flush against the panel's right edge.
                         Container::new(ChildView::new(&file_tree_view).finish())
                             .with_padding_left(SIDEBAR_CONTENT_INSET)
-                            .with_padding_right(SIDEBAR_CONTENT_INSET)
                             .finish()
                     } else {
                         Container::new(Empty::new().finish()).finish()
@@ -4174,7 +4178,9 @@ impl View for LeftPanelView {
                 ConstrainedBox::new(
                     Flex::row()
                         .with_main_axis_size(MainAxisSize::Max)
-                        .with_main_axis_alignment(MainAxisAlignment::Start)
+                        // twarp 08 (review): center the tool switcher pills in the
+                        // sidebar header rather than left-aligning them.
+                        .with_main_axis_alignment(MainAxisAlignment::Center)
                         .with_cross_axis_alignment(CrossAxisAlignment::Center)
                         .with_child(Shrinkable::new(1.0, header_left).finish())
                         .finish(),
