@@ -74,7 +74,7 @@ use crate::{
     auth::auth_override_warning_modal::{AuthOverrideWarningModal, AuthOverrideWarningModalEvent},
     auth::auth_view_modal::{AuthView, AuthViewVariant},
     server::server_api::ServerApi,
-    workspace::{view::OnboardingTutorial, PaneViewLocator, Workspace},
+    workspace::{view::OnboardingTutorial, PaneViewLocator, Workspace, WorkspaceRegistry},
 };
 use crate::{features::FeatureFlag, ChannelState};
 use crate::{send_telemetry_from_app_ctx, GlobalResourceHandles, GlobalResourceHandlesProvider};
@@ -247,29 +247,6 @@ pub struct SubshellCommandArg {
     pub shell_type: Option<ShellType>,
 }
 
-/// Arguments for the immediate tab detach action dispatched during drag.
-/// This contains minimal info needed to identify which tab to detach.
-pub struct DetachTabImmediateArg {
-    /// Index of the tab to detach
-    pub tab_index: usize,
-    /// Pre-calculated window position for the new window (in screen coordinates).
-    /// This is calculated to position the window so the mouse is in the tab bar region.
-    pub window_position: Option<Vector2F>,
-    /// Source window ID - the window containing the tab to detach.
-    /// We need this because the active window might be the preview window.
-    pub source_window_id: WindowId,
-}
-
-/// Pre-gathered information for creating a transferred window.
-/// This is used when the caller already has access to the workspace (e.g., from within a view method)
-/// and cannot rely on workspace lookup (which fails during view updates).
-pub struct TabTransferInfo {
-    pub transferred_tab: crate::workspace::view::TransferredTab,
-    pub window_size: Vector2F,
-    pub window_position: Vector2F,
-    pub source_window_id: WindowId,
-}
-
 pub fn init(app: &mut AppContext) {
     app.register_binding_validator::<RootView>(is_binding_pty_compliant);
 
@@ -285,9 +262,6 @@ pub fn init(app: &mut AppContext) {
     );
     app.add_global_action("root_view:open_launch_config", open_launch_config);
     app.add_global_action("root_view:send_feedback", send_feedback);
-    app.add_global_action("root_view:detach_tab_immediate", |arg, ctx| {
-        let _ = detach_tab_with_transfer(arg, ctx);
-    });
     app.add_global_action(
         "root_view:toggle_quake_mode_window",
         toggle_quake_mode_window,
@@ -581,145 +555,29 @@ fn send_feedback(_: &(), ctx: &mut AppContext) {
     }
 }
 
-/// Handler for tab detachment using the transferable views framework.
-/// Instead of extracting and recreating views, this transfers the PaneGroup view tree directly.
-/// Returns the new window ID if successful.
-pub fn detach_tab_with_transfer(
-    arg: &DetachTabImmediateArg,
-    ctx: &mut AppContext,
-) -> Option<WindowId> {
-    let Some(source_workspace) = workspace_for_window(arg.source_window_id, ctx) else {
-        log::warn!(
-            "No workspace found for source window {:?}",
-            arg.source_window_id
-        );
-        return None;
-    };
-
-    let transferred_tab = source_workspace.read(ctx, |workspace, ctx| {
-        workspace.get_tab_transfer_info(arg.tab_index, ctx)
-    })?;
-
-    let window_size = ctx
-        .windows()
-        .platform_window(arg.source_window_id)
-        .map(|window| window.as_ctx().size())
-        .unwrap_or(*FALLBACK_WINDOW_SIZE);
-
-    let window_position = arg.window_position.unwrap_or_default();
-
-    let info = TabTransferInfo {
-        transferred_tab,
-        window_size,
-        window_position,
-        source_window_id: arg.source_window_id,
-    };
-
-    let (new_window_id, _transferred_view_ids) = create_transferred_window(info, false, ctx);
-
-    source_workspace.update(ctx, |workspace, ctx| {
-        workspace.remove_tab_without_undo(arg.tab_index, ctx);
-    });
-
-    Some(new_window_id)
-}
-
-/// 8c — Move a tab from `source_window_id` into an **existing** `target_window_id`
-/// at `target_index` (PRODUCT §10–§12).
-///
-/// This is the cross-window sibling of `detach_tab_with_transfer`: instead of
-/// spinning up a fresh window it reuses the same `transfer_view_tree_to_window`
-/// primitive to move the live view tree into an already-open window, so the tab's
-/// color, custom name, and running processes survive the move (§12). The target
-/// workspace stages a placeholder via `prepare_for_transferred_tab`, adopts the
-/// transferred pane group, then reorders it to `target_index`; the source tab is
-/// removed afterwards (closing the source window if it becomes empty, per §7).
-///
-/// NOTE (8c scope): the *gesture* that decides when to call this — screen-space
-/// cross-window cursor hit-testing and the insertion-ghost drop feedback required
-/// by PRODUCT §11 — is **not** wired here. That state machine lives in upstream's
-/// `workspace::cross_window_tab_drag` module plus warpui platform changes (screen
-/// drag tracking / window-follow), which are outside this sub-phase's file scope.
-/// This helper is the in-scope transfer primitive those would drive; see the
-/// implementation report for the full gap.
-#[allow(dead_code)]
-pub fn transfer_tab_to_window(
-    source_window_id: WindowId,
-    tab_index: usize,
-    target_window_id: WindowId,
-    target_index: usize,
-    ctx: &mut AppContext,
-) -> bool {
-    if source_window_id == target_window_id {
-        return false;
-    }
-    let Some(source_workspace) = workspace_for_window(source_window_id, ctx) else {
-        log::warn!("transfer_tab_to_window: no source workspace for {source_window_id:?}");
-        return false;
-    };
-    let Some(target_workspace) = workspace_for_window(target_window_id, ctx) else {
-        log::warn!("transfer_tab_to_window: no target workspace for {target_window_id:?}");
-        return false;
-    };
-
-    let Some(transferred_tab) =
-        source_workspace.read(ctx, |workspace, ctx| workspace.get_tab_transfer_info(tab_index, ctx))
-    else {
-        return false;
-    };
-
-    let pane_group = transferred_tab.pane_group.clone();
-    let tab_color = transferred_tab.color;
-    let custom_title = transferred_tab.custom_title.clone();
-
-    // Stage a placeholder tab in the target so `adopt_transferred_pane_group` has
-    // a slot to swap the transferred pane group into.
-    target_workspace.update(ctx, |workspace, ctx| {
-        workspace.prepare_for_transferred_tab(tab_color, custom_title.clone(), ctx);
-    });
-
-    // Move the live view tree into the target window.
-    let pane_group_id = pane_group.id();
-    ctx.transfer_view_tree_to_window(pane_group_id, source_window_id, target_window_id);
-
-    // Adopt into the placeholder, then slide it to the requested drop index.
-    target_workspace.update(ctx, |workspace, ctx| {
-        workspace.adopt_transferred_pane_group(pane_group.clone(), ctx);
-        workspace.reorder_last_tab_to(target_index, ctx);
-    });
-
-    // Remove the now-moved tab from the source (closes the window if it was last).
-    source_workspace.update(ctx, |workspace, ctx| {
-        workspace.remove_tab_without_undo(tab_index, ctx);
-    });
-
-    true
-}
-
 /// Creates a new window with the transferred pane group.
-/// This function takes pre-gathered TabTransferInfo, allowing it to be called
-/// from within a view method where workspace lookup would fail.
 ///
-/// If `for_drag` is true, the window is created without stealing focus (for drag preview).
+/// If `is_tab_drag_preview` is true, the window is created without stealing
+/// focus so it can follow the cursor during a tab drag.
 ///
-/// Returns the new window ID and the list of transferred view entity IDs.
-/// The transferred view IDs are needed by `tab_drag::on_tab_drag` to track which
-/// views must follow the tab during subsequent handoff/reverse-handoff cycles.
+/// Returns the new window ID.
 pub fn create_transferred_window(
-    info: TabTransferInfo,
-    for_drag: bool,
+    transferred_tab: crate::workspace::view::TransferredTab,
+    source_window_id: WindowId,
+    window_size: Vector2F,
+    window_position: Vector2F,
+    is_tab_drag_preview: bool,
     ctx: &mut AppContext,
-) -> (WindowId, Vec<EntityId>) {
+) -> WindowId {
     let global_resource_handles = GlobalResourceHandlesProvider::handle(ctx)
         .as_ref(ctx)
         .get()
         .clone();
     let window_settings = WindowSettings::handle(ctx).as_ref(ctx);
 
-    let window_bounds =
-        WindowBounds::ExactPosition(RectF::new(info.window_position, info.window_size));
+    let window_bounds = WindowBounds::ExactPosition(RectF::new(window_position, window_size));
 
-    let window_style = if for_drag {
+    let window_style = if is_tab_drag_preview {
         WindowStyle::PositionedNoFocus
     } else {
         WindowStyle::Normal
@@ -739,35 +597,34 @@ pub fn create_transferred_window(
             let mut view = RootView::new(
                 global_resource_handles.clone(),
                 NewWorkspaceSource::TransferredTab {
-                    tab_color: info.transferred_tab.color,
-                    custom_title: info.transferred_tab.custom_title.clone(),
-                    left_panel_open: info.transferred_tab.left_panel_open,
-                    vertical_tabs_panel_open: info.transferred_tab.vertical_tabs_panel_open,
-                    right_panel_open: info.transferred_tab.right_panel_open,
-                    is_right_panel_maximized: info.transferred_tab.is_right_panel_maximized,
-                    for_drag_preview: for_drag,
+                    tab_color: transferred_tab.color,
+                    custom_title: transferred_tab.custom_title.clone(),
+                    left_panel_open: transferred_tab.left_panel_open,
+                    vertical_tabs_panel_open: transferred_tab.vertical_tabs_panel_open,
+                    right_panel_open: transferred_tab.right_panel_open,
+                    is_right_panel_maximized: transferred_tab.is_right_panel_maximized,
+                    is_tab_drag_preview,
                 },
                 ctx,
             );
-            if !for_drag {
+            if !is_tab_drag_preview {
                 view.focus(ctx);
             }
             view
         },
     );
 
-    let pane_group_id = info.transferred_tab.pane_group.id();
-    let transferred_view_ids =
-        ctx.transfer_view_tree_to_window(pane_group_id, info.source_window_id, new_window_id);
+    let pane_group_id = transferred_tab.pane_group.id();
+    ctx.transfer_view_tree_to_window(pane_group_id, source_window_id, new_window_id);
 
-    if let Some(new_workspace) = workspace_for_window(new_window_id, ctx) {
+    if let Some(new_workspace) = WorkspaceRegistry::as_ref(ctx).get(new_window_id, ctx) {
         new_workspace.update(ctx, |workspace, ctx| {
-            workspace.adopt_transferred_pane_group(info.transferred_tab.pane_group.clone(), ctx);
+            workspace.adopt_transferred_pane_group(transferred_tab.pane_group.clone(), ctx);
         });
     } else {
         log::warn!("Failed to find workspace in newly created window {new_window_id:?}");
     }
-    (new_window_id, transferred_view_ids)
+    new_window_id
 }
 
 #[cfg(feature = "crash_reporting")]
@@ -1565,7 +1422,7 @@ pub enum NewWorkspaceSource {
         /// Whether the right panel was maximized in the source tab
         is_right_panel_maximized: bool,
         /// Whether this transferred tab window is currently being used as a drag preview.
-        for_drag_preview: bool,
+        is_tab_drag_preview: bool,
     },
 }
 

@@ -964,7 +964,11 @@ pub fn get_app_state(app: &AppContext) -> AppState {
             .and_then(|workspaces| workspaces.first())
         {
             let ws = first_workspace.as_ref(app);
-            if ws.is_drag_preview_workspace() {
+            // Transient drag-preview windows are not real user-visible
+            // workspaces; skip them so they never end up in the persisted
+            // session. (Persistence is also short-circuited entirely while a
+            // cross-window drag is active; see `save_app`.)
+            if ws.is_tab_drag_preview() {
                 continue;
             }
             let snapshot = ws.snapshot(

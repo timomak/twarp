@@ -3,6 +3,7 @@ mod active_session;
 #[cfg(target_os = "macos")]
 mod cli_install;
 mod close_session_confirmation_dialog;
+pub(crate) mod cross_window_tab_drag;
 // twarp: 2c-d — delete_conversation_confirmation_dialog deleted (AI conversation only)
 mod global_actions;
 pub mod header_toolbar_editor;
@@ -121,6 +122,7 @@ pub use toast_stack::ToastStack;
 
 pub fn init(app: &mut AppContext) {
     app.add_singleton_model(|_| WorkspaceRegistry::new());
+    app.add_singleton_model(|_| cross_window_tab_drag::CrossWindowTabDrag::new());
     use warpui::keymap::macros::*;
     app.register_binding_validator::<Workspace>(is_binding_pty_compliant);
 

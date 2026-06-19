@@ -10,6 +10,7 @@ use warp_core::execution_mode::AppExecutionMode;
 
 use crate::root_view::OpenPath;
 use crate::undo_close::UndoCloseStack;
+use crate::workspace::cross_window_tab_drag::CrossWindowTabDrag;
 use crate::workspace::{Workspace, WorkspaceAction};
 use crate::GlobalResourceHandlesProvider;
 use std::path::PathBuf;
@@ -120,6 +121,17 @@ fn save_app(_: &(), ctx: &mut AppContext) {
     }
 
     if !*GeneralSettings::as_ref(ctx).restore_session {
+        return;
+    }
+
+    // While a cross-window tab drag is active, the dragged tab's pane group
+    // is in flight between source and preview windows and `get_app_state`
+    // would produce a snapshot with zero windows. Persisting that snapshot
+    // wipes the on-disk session. `save_app` fires from window move / focus /
+    // resize / close callbacks, all of which run during a drag, so we have to
+    // short-circuit here. The first save after the drag finalizes will rewrite
+    // the snapshot.
+    if CrossWindowTabDrag::as_ref(ctx).is_active() {
         return;
     }
 
