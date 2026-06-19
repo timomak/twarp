@@ -1639,9 +1639,69 @@ impl<'a> TabComponent<'a> {
                 .with_border(Border::all(1.).with_border_fill(border_fill));
         }
 
+        // Chrome/Safari-style bottom "flares": two decorative quarter-disc "ears"
+        // that hug the active tab's lower corners and curve outward into the strip,
+        // so the active tab reads as *seated* into the content below rather than as a
+        // floating rounded rectangle (PRODUCT §1, 8a).
+        //
+        // Each ear is an `r`x`r` box filled with the *same* fill as the active tab
+        // body (`background_color`). We round the ear's INNER-facing top corner by `r`,
+        // which cuts a transparent quarter-disc out of the ear. Because the ear is added
+        // as an *unclipped overlay* child of the wrapping `Stack`, that cut reveals
+        // whatever is painted behind it at the tab's baseline — which is the workspace
+        // terminal/content background fill that the whole tab-bar+content column sits on
+        // (`get_terminal_background_fill`, see workspace::view). The remaining convex
+        // quarter-disc of tab-color centered on the tab's bottom corner is the outward
+        // flare. The ears are purely visual (no event handlers), so clicks and drags
+        // pass straight through to the tab beneath them.
+        //
+        // Applied to the ACTIVE tab only: inactive tabs sit where the reveal color ~=
+        // the strip color, so flares there would be near-invisible and only add risk.
+        let tab: Box<dyn Element> = if FeatureFlag::NewTabStyling.is_enabled() && is_active {
+            let r = NEW_TAB_CORNER_RADIUS;
+            let build_ear = |corner: CornerRadius| -> Box<dyn Element> {
+                ConstrainedBox::new(
+                    Rect::new()
+                        .with_background(background_color)
+                        .with_corner_radius(corner)
+                        .finish(),
+                )
+                .with_width(r)
+                .with_height(r)
+                .finish()
+            };
+
+            let mut flared = Stack::new().with_child(tab.finish());
+            // LEFT ear: bottom-right corner of the ear sits at the tab's bottom-left
+            // corner; round its top-left so it flares out to the left of the tab.
+            flared.add_positioned_overlay_child(
+                build_ear(CornerRadius::with_top_left(Radius::Pixels(r))),
+                OffsetPositioning::offset_from_parent(
+                    vec2f(0.0, 0.0),
+                    ParentOffsetBounds::ParentByPosition,
+                    ParentAnchor::BottomLeft,
+                    ChildAnchor::BottomRight,
+                ),
+            );
+            // RIGHT ear: bottom-left corner of the ear sits at the tab's bottom-right
+            // corner; round its top-right so it flares out to the right of the tab.
+            flared.add_positioned_overlay_child(
+                build_ear(CornerRadius::with_top_right(Radius::Pixels(r))),
+                OffsetPositioning::offset_from_parent(
+                    vec2f(0.0, 0.0),
+                    ParentOffsetBounds::ParentByPosition,
+                    ParentAnchor::BottomRight,
+                    ChildAnchor::BottomLeft,
+                ),
+            );
+            flared.finish()
+        } else {
+            tab.finish()
+        };
+
         // If the tab is being dragged, add an opaque background behind it
         if is_tab_dragging {
-            Container::new(tab.finish())
+            Container::new(tab)
                 .with_background_color(
                     self.ui_builder
                         .warp_theme()
@@ -1655,10 +1715,10 @@ impl<'a> TabComponent<'a> {
             // semantically meaningful for an element that follows the cursor,
             // and because the inner `DropTarget`'s position is unrelated to
             // any real tab in the target window.
-            tab.finish()
+            tab
         } else {
             DropTarget::new(
-                tab.finish(),
+                tab,
                 TabBarDropTargetData {
                     tab_bar_location: TabBarLocation::TabIndex(self.tab_index),
                 },
