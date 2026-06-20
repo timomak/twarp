@@ -153,6 +153,86 @@ impl AnsiColor {
             b: ((color >> 8) & 0xff) as u8,
         }
     }
+
+    /// Returns a more saturated, punchier version of this color for use as a UI
+    /// accent (tab coloring). The default ANSI palettes are deliberately pastel
+    /// so they're easy on the eyes as terminal text; as a small color chip those
+    /// muted values are hard to tell apart. This pushes HSL saturation up and
+    /// compresses lightness toward the mid-range so the hue dominates. Grayscale
+    /// inputs (no hue to saturate) are returned unchanged.
+    pub fn vibrant(self) -> AnsiColor {
+        let r = self.r as f32 / 255.0;
+        let g = self.g as f32 / 255.0;
+        let b = self.b as f32 / 255.0;
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let delta = max - min;
+        if delta <= f32::EPSILON {
+            return self;
+        }
+
+        let l = (max + min) / 2.0;
+        let s = if l > 0.5 {
+            delta / (2.0 - max - min)
+        } else {
+            delta / (max + min)
+        };
+        let mut h = if max == r {
+            (g - b) / delta + if g < b { 6.0 } else { 0.0 }
+        } else if max == g {
+            (b - r) / delta + 2.0
+        } else {
+            (r - g) / delta + 4.0
+        };
+        h /= 6.0;
+
+        // A little extra saturation, and pull washed-out (very light/dark)
+        // colors toward L=0.5 where the hue is most vivid.
+        let s = (s * 1.35 + 0.12).clamp(0.0, 1.0);
+        let l = ((l - 0.5) * 0.82 + 0.5).clamp(0.0, 1.0);
+
+        let (r, g, b) = hsl_to_rgb(h, s, l);
+        AnsiColor {
+            r: (r * 255.0).round() as u8,
+            g: (g * 255.0).round() as u8,
+            b: (b * 255.0).round() as u8,
+        }
+    }
+}
+
+/// Converts an HSL triple (each in `0.0..=1.0`) back to RGB in `0.0..=1.0`.
+fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
+    if s <= f32::EPSILON {
+        return (l, l, l);
+    }
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
+    let p = 2.0 * l - q;
+    let hue_to_channel = |mut t: f32| {
+        if t < 0.0 {
+            t += 1.0;
+        }
+        if t > 1.0 {
+            t -= 1.0;
+        }
+        if t < 1.0 / 6.0 {
+            p + (q - p) * 6.0 * t
+        } else if t < 1.0 / 2.0 {
+            q
+        } else if t < 2.0 / 3.0 {
+            p + (q - p) * (2.0 / 3.0 - t) * 6.0
+        } else {
+            p
+        }
+    };
+    (
+        hue_to_channel(h + 1.0 / 3.0),
+        hue_to_channel(h),
+        hue_to_channel(h - 1.0 / 3.0),
+    )
 }
 
 #[derive(Serialize, Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
@@ -575,6 +655,14 @@ impl AnsiColorIdentifier {
             Self::Cyan => colors.cyan,
             Self::White => colors.white,
         }
+    }
+
+    /// Resolves this identifier to a vibrancy-boosted color for tab accents.
+    /// Use this (not [`Self::to_ansi_color`]) anywhere a tab is colored so the
+    /// chip and the tab body stay in sync and read as saturated accents rather
+    /// than the muted terminal-text palette.
+    pub fn to_tab_color(self, colors: &AnsiColors) -> AnsiColor {
+        self.to_ansi_color(colors).vibrant()
     }
 }
 

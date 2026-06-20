@@ -4232,7 +4232,7 @@ fn compute_tab_group_color_mode(
     if !matches!(tab.selected_color, SelectedTabColor::Unset) {
         return match tab.color() {
             Some(color) => TabGroupColorMode::Uniform(
-                color.to_ansi_color(&theme.terminal_colors().normal).into(),
+                color.to_tab_color(&theme.terminal_colors().normal).into(),
             ),
             None => TabGroupColorMode::None,
         };
@@ -4289,12 +4289,12 @@ fn compute_tab_group_color_mode(
         TabGroupColorMode::None
     } else if is_uniform {
         let color = distinct_colors[0];
-        TabGroupColorMode::Uniform(color.to_ansi_color(&theme.terminal_colors().normal).into())
+        TabGroupColorMode::Uniform(color.to_tab_color(&theme.terminal_colors().normal).into())
     } else {
         let theme_map = per_pane
             .into_iter()
             .map(|(id, c)| {
-                let fill = c.map(|c| c.to_ansi_color(&theme.terminal_colors().normal).into());
+                let fill = c.map(|c| c.to_tab_color(&theme.terminal_colors().normal).into());
                 (id, fill)
             })
             .collect();

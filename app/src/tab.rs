@@ -654,7 +654,7 @@ impl TabData {
                         };
                         let dot_color: ColorU = match ansi_id {
                             None => ColorU::transparent_black(),
-                            Some(id) => id.to_ansi_color(&terminal_colors).into(),
+                            Some(id) => id.to_tab_color(&terminal_colors).into(),
                         };
                         let tooltip = match ansi_id {
                             None => tab_color_reset_shortcut_tooltip(app),
@@ -709,7 +709,7 @@ impl TabData {
             items: TAB_COLOR_OPTIONS
                 .iter()
                 .map(|color_option| {
-                    let color = color_option.to_ansi_color(&terminal_colors);
+                    let color = color_option.to_tab_color(&terminal_colors);
                     MenuItemFields::new_with_icon(
                         if self.color() == Some(*color_option) {
                             TAB_NO_COLOR_ICON_PATH
@@ -831,7 +831,7 @@ impl TabStyles {
     fn default(appearance: &Appearance, tab_color: Option<AnsiColorIdentifier>) -> TabStyles {
         let theme = appearance.theme();
         let active_tab_bar_color: Option<ThemeFill> =
-            tab_color.map(|color| color.to_ansi_color(&theme.terminal_colors().normal).into());
+            tab_color.map(|color| color.to_tab_color(&theme.terminal_colors().normal).into());
         let error_color = theme.ui_error_color();
         let sharing_color = shared_session_indicator_color(appearance);
         let background = active_tab_bar_color.map(|color| {
