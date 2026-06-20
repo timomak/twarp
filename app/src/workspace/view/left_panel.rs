@@ -4191,6 +4191,10 @@ impl View for LeftPanelView {
             )
             .with_padding_left(10.)
             .with_padding_right(10.)
+            // twarp 08 (review): real breathing room above and below the tool
+            // switcher row so the toggles don't hug the top edge / file tree.
+            .with_padding_top(8.)
+            .with_padding_bottom(8.)
             .finish();
 
             column

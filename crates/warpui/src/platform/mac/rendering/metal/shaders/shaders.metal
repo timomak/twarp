@@ -67,23 +67,45 @@ float distance_from_rect(vector_float2 pixel_pos, vector_float2 rect_center, vec
     return sdf_round_box(pixel_pos - rect_center, rect_corner, corner_radius);
 }
 
+// Polynomial smooth-min (a.k.a. smooth union for SDFs). Blends the two surfaces
+// with a concave fillet of radius ~k where they meet, instead of the hard crease
+// a plain min() would leave. (IQ's quadratic smin.)
+float smin(float a, float b, float k) {
+    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
 // Chrome-style flared tab SDF, in pixel space relative to the rect center.
 // `h` is the rect half-size, `rt` the top corner radius, `rf` the flare radius.
-// Builds a narrow rounded-top body unioned with a full-width foot strip, then
-// subtracts two circles to carve the concave valleys where the sides meet the
-// feet. Returns the outer distance (<= 0 inside).
+//
+// An inset rounded-top body is smooth-unioned with a full-width foot bar hugging
+// the baseline (+y is down). The smin fillet between the two *is* the Chrome
+// "ogee" neck — the side leaves the body vertical, sweeps out through a single
+// concave curve, and seats flush into the foot at full width. Because the foot
+// is full-width and solid, adjacent tabs meet edge-to-edge at the baseline and
+// the only gap between two tabs is the smooth valley where their necks pinch in
+// — no separate "feet" blobs and no circular holes. All the sub-radii are
+// derived from `rf` so the caller only has to tune one value.
+// Returns the outer distance (<= 0 inside).
 float distance_from_tab_flare(float2 p, float2 h, float rt, float rf) {
-    // body: rounded-top rect inset by rf on left/right, full height.
-    float body  = sdf_round_box(p, float2(h.x - rf, h.y), rt);
-    // bottom full-width strip, height 2*rf, hugging the baseline (+y is down).
-    float strip = sdf_round_box(p - float2(0.0, h.y - rf), float2(h.x, rf), 0.0);
-    float shape = min(body, strip);
-    // carve the two concave valleys at the body/foot junctions.
-    float vL = length(p - float2(-(h.x - rf), h.y - rf)) - rf;
-    float vR = length(p - float2( (h.x - rf), h.y - rf)) - rf;
-    shape = max(shape, -vL);
-    shape = max(shape, -vR);
-    return shape;
+    float inset       = rf;         // side inset == how far the foot flares past the body
+    float neck        = rf * 0.8;   // smin radius: softness of the concave neck
+    // Half-height of the full-width foot bar. Kept very small so the flare is
+    // just a low splay right at the baseline: the tab's straight sides run
+    // almost the full height, then fan out only at the very bottom to blend the
+    // tab *down into the panel* below it — not sideways into its neighbours.
+    float foot_half   = rf * 0.12;
+    // Keep the foot's bottom-outer corners nearly square (just enough to
+    // anti-alias) so the feet drop straight to the baseline. A larger radius
+    // curls them back inward, reopening the gap between neighbours into a
+    // "keyhole" instead of one clean valley that's narrowest at the baseline.
+    float foot_radius = rf * 0.15;
+
+    float body = sdf_round_box(p, float2(h.x - inset, h.y), rt);
+    float2 fp = p - float2(0.0, h.y - foot_half);
+    float foot = sdf_round_box(fp, float2(h.x, foot_half), foot_radius);
+
+    return smin(body, foot, neck);
 }
 
 float4 derive_color(float2 pixel_pos, float2 start, float2 end, float4 start_color, float4 end_color) {
@@ -251,14 +273,14 @@ fragment float4 rect_fragment_shader(
         float rt = in.corner_radius_top_left;
         outer_distance = distance_from_tab_flare(p, in.rect_corner, rt, rf);
 
-        // Border tracks the flared outline: shrink the half-size by the (max)
-        // border width and the top radius by the top border, keeping the same
-        // flare radius so the feet stay parallel.
+        // Border tracks the flared outline by simply offsetting the outer field
+        // inward by the border width: the border is the ring where the outer
+        // distance lies in [-border, 0]. (The smin field isn't a clean
+        // per-quadrant distance, so re-deriving an inset shape would drift; an
+        // offset stays exactly parallel to the outline everywhere.)
         float border = max(max(in.border_top, in.border_bottom),
                            max(in.border_left, in.border_right));
-        float2 inner_half = in.rect_corner - border;
-        float rt_inner = max(0.0, rt - in.border_top);
-        inner_distance = distance_from_tab_flare(p, inner_half, rt_inner, rf);
+        inner_distance = outer_distance + border;
     } else {
         outer_distance = distance_from_rect(in.position.xy, in.rect_center, in.rect_corner, outer_corner_radius);
         inner_distance = distance_from_rect(in.position.xy, in.rect_center, border_inner_corner, inner_corner_radius);

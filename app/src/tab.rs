@@ -135,7 +135,12 @@ const TAB_TOP_RADIUS: f32 = 8.;
 /// Flare radius (px) for the Chrome-style tab feet. The feet extend this far
 /// beyond the tab body on each side, with a concave valley of this radius where
 /// the side meets the foot. 0 disables the flare. Tunable for screenshot pass.
-const TAB_FLARE_RADIUS: f32 = 8.;
+///
+/// Note this doubles as the body's side inset (the SDF draws the body at
+/// `half_width - flare`), so the gap between two adjacent tabs is `2 * flare`.
+/// Kept small so that gap reads as a subtle Chrome notch rather than a tall
+/// white slot once the tab-bar strip behind it is transparent.
+const TAB_FLARE_RADIUS: f32 = 7.;
 /// Opacity (0..=100) for the saturated colored border drawn around the
 /// active tab when the tab has a custom color. Used by both legacy and new
 /// tab styling.
@@ -1625,7 +1630,7 @@ impl<'a> TabComponent<'a> {
         let mut tab = Container::new(stack)
             .with_vertical_padding(2.)
             .with_background(background_color);
-        if FeatureFlag::NewTabStyling.is_enabled() {
+        if FeatureFlag::NewTabStyling.is_enabled() && !is_tab_dragging {
             // Chrome-style flared tab shape, rendered by the Metal rect SDF
             // (feature 08a). The shader rounds the top corners (TAB_TOP_RADIUS)
             // and flares the base outward into feet with concave valleys
@@ -1643,22 +1648,26 @@ impl<'a> TabComponent<'a> {
                 .with_corner_radius(CornerRadius::with_top(Radius::Pixels(TAB_TOP_RADIUS)))
                 .with_tab_flare(TAB_FLARE_RADIUS)
                 .with_border(Border::all(1.).with_border_fill(border_fill));
+        } else if FeatureFlag::NewTabStyling.is_enabled() {
+            // While the tab is being dragged it's lifted off the strip, so the
+            // baseline-seating flare reads as wrong (its feet have nothing to
+            // sit on). Render it as a fully self-contained pill instead: all
+            // corners rounded, no flare, and — see below — no opaque backing.
+            tab = tab
+                .with_horizontal_padding(TAB_FLARE_RADIUS)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(TAB_TOP_RADIUS)))
+                .with_border(Border::all(1.).with_border_fill(border_fill));
         } else {
             tab = tab
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.0)))
                 .with_border(Border::all(1.).with_border_fill(border_fill));
         }
 
-        // If the tab is being dragged, add an opaque background behind it
+        // While dragging, the tab is a rounded pill (set above) and floats on
+        // its own — no opaque backing slab behind it, so the colored fill reads
+        // cleanly against whatever it's dragged over.
         if is_tab_dragging {
-            Container::new(tab.finish())
-                .with_background_color(
-                    self.ui_builder
-                        .warp_theme()
-                        .background()
-                        .into_solid_bias_top_color(),
-                )
-                .finish()
+            tab.finish()
         } else if self.for_drag_ghost {
             // The chip overlay is a purely visual snapshot of the source tab.
             // It must not act as a drop target — both because that's not
