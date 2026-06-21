@@ -1707,6 +1707,43 @@ impl ClaudeCodeView {
         .finish()
     }
 
+    /// twarp 08d (PRODUCT §13–§16): the bottom gradient fade-out band.
+    ///
+    /// A full-width region pinned to the bottom of the pane, `COMPOSER_CLEARANCE`
+    /// tall (the same gap the scroller reserves below the last message). Its
+    /// background is a vertical gradient that runs from fully transparent at the
+    /// top of the band to the opaque pane background at the bottom, so transcript
+    /// content scrolling up under the floating composer dissolves into the
+    /// background instead of ending at a hard horizontal cut (§13).
+    ///
+    /// `bg` is the pane's live theme background (passed from `theme.background()`),
+    /// and the transparent endpoint reuses its RGB with zero alpha — so the fade
+    /// never tints toward a hard-coded colour and is invisible-by-design in both
+    /// light and dark themes (§16). The band carries no event handlers, so it does
+    /// not consume clicks or change scroll extent / hit-testing (§15); the caller
+    /// paints it above the scrolled body but below the opaque composer (§14).
+    fn render_transcript_fade(bg: ColorU) -> Box<dyn Element> {
+        let transparent = ColorU::new(bg.r, bg.g, bg.b, 0);
+        // A `MainAxisSize::Max` row expands to the full pane width; the
+        // `ConstrainedBox` fixes the band height to the composer clearance.
+        ConstrainedBox::new(
+            Container::new(
+                Flex::row()
+                    .with_main_axis_size(MainAxisSize::Max)
+                    .finish(),
+            )
+            .with_background(Fill::Gradient {
+                start: vec2f(0., 0.),
+                end: vec2f(0., 1.),
+                start_color: transparent,
+                end_color: bg,
+            })
+            .finish(),
+        )
+        .with_height(COMPOSER_CLEARANCE)
+        .finish()
+    }
+
     /// The composer's context chips, built from the live session metadata the
     /// driver parses out of `claude`'s stream-json: a Local indicator (the pane
     /// always drives the local CLI — there is no remote session to report), the
@@ -2034,6 +2071,27 @@ impl View for ClaudeCodeView {
             // and never also reaches the transcript beneath it.
             let mut stack = Stack::new().with_event_dispatch_mode(EventDispatchMode::Waterfall);
             stack.add_child(body);
+            // twarp 08d (PRODUCT §13–§16): a bottom gradient fade. Stack
+            // children paint in insertion order, so adding this *after* the
+            // transcript body and *before* the composer puts the fade above
+            // scrolled content but below the opaque composer (§14). The band
+            // is a full-width region pinned to the pane bottom over the
+            // composer-clearance gap; its vertical gradient runs from
+            // transparent (top) to the pane background (bottom), so transcript
+            // content sliding under the composer dissolves into the
+            // background. The band has no event handlers — it never consumes
+            // clicks or alters scroll extent/hit-testing (§15) — and its
+            // bottom color is read live from the theme background, so it is
+            // invisible-by-design in light and dark themes (§16).
+            stack.add_positioned_child(
+                Self::render_transcript_fade(theme.background().into_solid()),
+                OffsetPositioning::offset_from_parent(
+                    vec2f(0., 0.),
+                    ParentOffsetBounds::ParentBySize,
+                    ParentAnchor::BottomMiddle,
+                    ChildAnchor::BottomMiddle,
+                ),
+            );
             stack.add_positioned_child(
                 composer,
                 OffsetPositioning::offset_from_parent(

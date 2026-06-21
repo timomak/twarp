@@ -14,7 +14,16 @@ use warp_core::{
 // rework IS the canonical layout for twarp, so enable the flag in OSS by
 // default — otherwise `cargo run` (which defaults to warp-oss) hides the
 // reworked sidebar entirely.
-const TWARP_OSS_FLAGS: &[FeatureFlag] = &[FeatureFlag::GitOperationsInCodeReview];
+//
+// twarp: feature 08 (macOS UI overhaul, sub-phase 8b/8c) gates drag-a-tab-out
+// / drag-between-windows behind DragTabsToWindows, which upstream ships only in
+// DOGFOOD_FLAGS. warp-oss (the default `./script/run` binary) never enables the
+// dogfood set, so without this the tab drag axis stays locked to horizontal and
+// detach-to-new-window never fires. Force-enable it for the OSS build.
+const TWARP_OSS_FLAGS: &[FeatureFlag] = &[
+    FeatureFlag::GitOperationsInCodeReview,
+    FeatureFlag::DragTabsToWindows,
+];
 
 // Simple wrapper around warp::run() for Warp OSS builds.
 fn main() -> Result<()> {

@@ -15,15 +15,17 @@ use crate::ui_components::icons::Icon;
 
 const COLOR_DOT_SIZE: f32 = 16.;
 
-pub(crate) const TAB_COLOR_OPTIONS: [AnsiColorIdentifier; 8] = [
+// twarp: Black and White are intentionally omitted — they read as muted
+// grays against the tab bar and don't function as distinguishing accents.
+// The six chromatic colors are rendered with a vibrancy boost (see
+// `AnsiColorIdentifier::to_tab_color`).
+pub(crate) const TAB_COLOR_OPTIONS: [AnsiColorIdentifier; 6] = [
     AnsiColorIdentifier::Red,
     AnsiColorIdentifier::Yellow,
     AnsiColorIdentifier::Green,
     AnsiColorIdentifier::Cyan,
     AnsiColorIdentifier::Blue,
     AnsiColorIdentifier::Magenta,
-    AnsiColorIdentifier::White,
-    AnsiColorIdentifier::Black,
 ];
 
 /// Renders a hoverable color dot with selection ring, tooltip, and pointer cursor.

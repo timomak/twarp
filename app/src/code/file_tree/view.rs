@@ -2737,7 +2737,10 @@ impl FileTreeView {
         let container = Container::new(main_content)
             // we have padding from the left panel toolbelt so we don't need top padding here
             .with_padding_bottom(12.)
-            .with_horizontal_padding(8.)
+            // twarp 08 (review): left-only inset — the file tree fills the
+            // available width and the overlayed scrollbar sits flush against
+            // the panel's right edge instead of being inset.
+            .with_padding_left(8.)
             .finish();
 
         let positioned_content = SavePosition::new(container, &self.position_id).finish();

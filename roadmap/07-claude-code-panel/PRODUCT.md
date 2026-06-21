@@ -187,7 +187,7 @@ Invariants are grouped by area; each group is annotated with the sub-phase that 
 
 ## Phase 2 — fidelity & rich input *(amendment 2026-06-15, owner-directed; sub-phases 7k–7n)*
 
-> Owner-directed addition on top of the merged phase-1 panel ("add them to the roadmap as the next step"), after a triple-checked feasibility pass against `claude` 2.1.175 (receipts in STATUS.md §Phase 2 feasibility). Each sub-phase is spec-first, like 7i. These **extend** the existing invariants — the numbering continues at §45 so nothing above renumbers. Sub-phase 7n carries a documented headless-approval caveat (same wall as §24/§26). All four precede 08-rebrand for the same crate-churn reason as phase 1.
+> Owner-directed addition on top of the merged phase-1 panel ("add them to the roadmap as the next step"), after a triple-checked feasibility pass against `claude` 2.1.175 (receipts in STATUS.md §Phase 2 feasibility). Each sub-phase is spec-first, like 7i. These **extend** the existing invariants — the numbering continues at §45 so nothing above renumbers. Sub-phase 7n carries a documented headless-approval caveat (same wall as §24/§26). All four precede 09-rebrand for the same crate-churn reason as phase 1.
 
 ### Token streaming, thinking duration, per-turn metrics — 7k *(amends §12–§14)*
 

@@ -103,6 +103,10 @@ pub struct Rect {
     pub corner_radius: CornerRadius,
     pub background: Fill,
     pub border: Border,
+    /// Chrome-style flared tab shape, in logical px. 0.0 (default) renders a
+    /// normal rounded rect; > 0.5 flares the bottom corners outward into feet
+    /// with concave valleys (the SDF lives in the Metal rect fragment shader).
+    pub tab_flare: f32,
 }
 
 #[derive(Clone)]
@@ -710,6 +714,11 @@ impl Rect {
 
     pub fn with_drop_shadow(&mut self, drop_shadow: DropShadow) -> &mut Self {
         self.drop_shadow = Some(drop_shadow);
+        self
+    }
+
+    pub fn with_tab_flare(&mut self, tab_flare: f32) -> &mut Self {
+        self.tab_flare = tab_flare;
         self
     }
 }

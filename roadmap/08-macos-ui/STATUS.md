@@ -1,8 +1,36 @@
 # 08 — macOS-style UI overhaul
 
-**Phase:** not-started
-**Spec PR:** —
-**Impl PRs:** —
+**Phase:** impl-in-review
+**Spec PR:** [#81](https://github.com/timomak/twarp/pull/81) — **owner-directed bundle: all of 8a–8f implemented in the same PR as the spec** (override of the spec-merge gate and one-sub-phase-per-PR rule, 2026-06-18; same call as the feature-07 bundling override)
+**Impl PRs:** folded into #81
+
+## Sub-phase status (all in #81)
+
+All six implemented and integrated on `twarp-08-specs`. Combined `cargo check -p warp` is clean (0 errors/warnings); 8e's 3 unit tests pass. Drag gestures, the gradient, and the macOS look are **manual-only** surfaces — they need a launched binary to validate (this Mac can't fully run presubmit; see smoke test below).
+
+- [x] **8a — Chrome-style tabs (look).** `tab.rs::render_tab_container_internal`: `CornerRadius::with_top(7.0)` top-rounded shape, active tab drops its bottom border to seat onto the pane; inactive tabs recessed. Feature 01 colors (`styles.background`) + feature 06 rename untouched. (commit `c13e580b`)
+- [x] **8b — Drag tab → new window.** `DragTabsToWindows` added to `DOGFOOD_FLAGS`; `try_detach_tab_on_drag` detaches a multi-tab past `DETACH_SENSITIVITY` via the live view-tree transfer; origin reflow + last-tab window-close; `TabData::detached` set; snap-back below threshold. (commits `c13e580b`, superseded/extended by `64d8b90b`)
+- [x] **8c — Drag tab between windows.** Full port of upstream `3984e67f` / `d7c45cab`: 1849-line `workspace::cross_window_tab_drag.rs` state machine, insertion ghost (slot + floating chip), cross-window screen-space attach targeting, and the warpui `set_window_alpha` platform chain (down to Obj-C `[window setAlphaValue:]`) for preview-hide. macOS has full `ordered_window_ids` so z-order attach works; Linux/test window-ordering bits intentionally not ported. (commit `64d8b90b`)
+- [x] **8d — Claude chat fade-out.** `claude_code_view.rs`: a `COMPOSER_CLEARANCE`-tall vertical `Fill::Gradient` band (transparent → `theme.background().into_solid()`), painted between transcript and the opaque composer, no hit-testing. (commit `7c37fb59`)
+- [x] **8e — Sessions search.** `claude_sessions_search: ViewHandle<EditorView>` single-line field; `filter_session_indices` case-insensitive substring on `title`, preserving original indices for resume; distinct "No matching sessions" empty state. 3 unit tests. (commit `c436143c`)
+- [x] **8f — macOS sidebar restyle.** Five pinned `ColorU` consts; root `Container` fixed light fill (ignores theme); pill segmented switcher (`render_pill_segment`, same routing as old `render_button`); muted headers + soft light row hover; restyled sessions rows/footer. (commit `c436143c`)
+
+## Review-feedback refinements (2026-06-19, owner smoke pass on #81)
+
+Owner found three issues; all fixed on the same branch:
+
+1. **Tabs not Chrome-enough** → 8a. *(First attempt: "ear" overlays, commit `b9e91f55` — **rejected on sight**, rendered as glued-on quarter-disc nubs. Reverted in `5fe82c92`.)* **Redone as a real Metal SDF shape** (commit `25a06adc`, owner chose the shader path knowing it's blind-tuned). warpui is rounded-rect-only with no path API, so a continuous Chrome tab can't be composed from primitives — it needs the shader. Added a `tab_flare_radius` field threaded `scene::Rect` → `Container::with_tab_flare` → `PerRectUniforms` → `shaders.metal` (defaults 0 → every other rect unchanged). New `distance_from_tab_flare` SDF: rounded-top body inset by `rf`, unioned with a full-width bottom strip, minus two valley circles at the body/foot junctions = convex top + flared feet + concave valleys as ONE shape. Border tracks the flare via the inner SDF. All tabs (each draws its own feature-01 color). Tunables in `tab.rs`: `TAB_TOP_RADIUS=8`, `TAB_FLARE_RADIUS=8`. **Needs owner screenshot to dial in** (flare size, inter-tab gap, first/last-tab edge vs traffic-lights/"+").
+2. **Drag-out did nothing** → root cause was the flag, not the code: `DragTabsToWindows` is DOGFOOD-only and `warp-oss` (the default `./script/run`/`--release` binary) never enables the dogfood set, so the drag axis stayed `HorizontalOnly`. Force-enabled in `TWARP_OSS_FLAGS` (`app/src/bin/oss.rs`, commit `922fd190`). The 8b/8c machinery was already complete. (`NewTabStyling` is on by default via the `new_tab_styling` cargo feature, so 8a was already visible — no change needed there.)
+3. **Sidebar spacing + remove X** → 8f polish (`left_panel.rs`, commit `0cc7733f`): removed the in-header close **X** (panel still toggles via `workspace:toggle_left_panel`); file-tree + Warp Drive insets 2px→8px (`SIDEBAR_CONTENT_INSET`); added an 8px bottom inset (`SIDEBAR_BOTTOM_INSET`); TIMELINE header padding 3px→5px and **colors pinned** to the macOS consts (fixes the §25 leakage — it was theme-derived and would vanish on a dark theme).
+
+All four commits compile clean together (`cargo check -p warp`). Tab flares, drag-out, and sidebar look still need an owner binary check (manual-only surfaces).
+
+## Known follow-ups / caveats (for the smoke pass)
+
+- **§25 theme-leakage:** the inherited non-sessions panels (Project Explorer / Shortcuts / Timeline) still read theme-derived text/hover colors; under a **dark** terminal theme they may have low contrast against the pinned-light sidebar. Left per §25 (no bespoke re-layout this pass) — verify legibility and decide if a follow-up pins them.
+- **8b single-tab detach:** dragging the *only* tab of a window off the strip uses the upstream single-tab "source-follows-cursor" path (8c brought this in); verify it doesn't flash a blank window.
+- **Dead code:** old `render_button` (8f) is unreferenced but compiles clean; remove in a later cleanup if desired.
+- **warpui platform changes (riskiest):** `set_window_alpha` added across `warpui_core` + `warpui/mac` + Obj-C. Verify window-alpha preview-hide looks clean and nothing else regressed window behavior.
 
 ## Scope
 

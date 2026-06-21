@@ -4897,7 +4897,7 @@ impl SettingsWidget for DirectoryTabColorsWidget {
                 };
                 let dot_color = match ansi_id {
                     None => pathfinder_color::ColorU::transparent_black(),
-                    Some(id) => id.to_ansi_color(&theme.terminal_colors().normal).into(),
+                    Some(id) => id.to_tab_color(&theme.terminal_colors().normal).into(),
                 };
                 let is_selected = current_color == tab_color;
                 let tooltip_text = match ansi_id {

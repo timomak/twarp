@@ -382,6 +382,7 @@ impl<'a> Frame<'a> {
             0_f32,
             0.,
             vec2f(0.0, 0.0).into(),
+            0.,
         ));
         let per_rect_uniforms_buffer = new_metal_buffer(
             self.ctx.device,
@@ -541,6 +542,7 @@ impl<'a> Frame<'a> {
                     padding,
                     dash_length,
                     gap_lengths.into(),
+                    0.,
                 ));
             }
 
@@ -575,6 +577,7 @@ impl<'a> Frame<'a> {
                 0_f32,
                 dash_length,
                 gap_lengths.into(),
+                rect.tab_flare * scale_factor,
             ));
         }
         let per_rect_uniforms_buffer = new_metal_buffer(
@@ -845,6 +848,7 @@ mod shader {
             drop_shadow_padding_factor: f32,
             dash_length: f32,
             gap_lengths: Vector2F,
+            tab_flare_radius: f32,
         ) -> Self {
             Self {
                 origin: origin.0,
@@ -873,6 +877,7 @@ mod shader {
                 drop_shadow_padding_factor,
                 dash_length,
                 gap_lengths: gap_lengths.0,
+                tab_flare_radius,
             }
         }
     }

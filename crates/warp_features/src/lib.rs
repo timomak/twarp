@@ -893,6 +893,10 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,
     FeatureFlag::CloudModeSetupV2,
+    // twarp 08b: re-enable Chrome-style cross-window tab dragging (detach a tab
+    // into a new window / drag it between windows). Dormant upstream; turned on
+    // for the twarp fork per feature 08.
+    FeatureFlag::DragTabsToWindows,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
