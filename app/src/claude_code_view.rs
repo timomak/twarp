@@ -36,6 +36,7 @@
 mod composer;
 mod diff_cards;
 mod inline_action;
+mod repo_context;
 mod thinking;
 mod todos;
 mod tool_cards;
@@ -83,6 +84,7 @@ use warpui::{
 
 use self::composer::{SuggestionKind, SuggestionQuery};
 use self::diff_cards::DiffCard;
+use self::repo_context::{CiState, RepoContext};
 use self::thinking::ThinkingUi;
 use self::tool_cards::{render_tool_card, ToolCardUi};
 use crate::appearance::Appearance;
@@ -433,6 +435,10 @@ pub struct ClaudeCodeView {
     /// across renders so the shimmer keeps a continuous phase; the element
     /// self-schedules repaints while it's on screen.
     working_shimmer: ShimmeringTextStateHandle,
+    /// Folder / branch / diff / PR / CI shown in the composer context bar (#11).
+    /// `None` until the first async `git`/`gh` probe resolves; refreshed on open
+    /// and after each turn.
+    repo_context: Option<RepoContext>,
 }
 
 impl ClaudeCodeView {
@@ -553,6 +559,7 @@ impl ClaudeCodeView {
             question_option_mouse: std::cell::RefCell::new(HashMap::new()),
             question_submit_mouse: std::cell::RefCell::new(HashMap::new()),
             working_shimmer: ShimmeringTextStateHandle::new(),
+            repo_context: None,
         };
 
         // PRODUCT §4: capture the login-shell PATH up front so availability
@@ -592,6 +599,10 @@ impl ClaudeCodeView {
         // `claude <prompt>` first turn); stays "Claude Code" for a bare `claude`
         // until the user sends something.
         view.update_pane_title(ctx);
+
+        // #11: populate the composer context bar (folder / branch / diff / PR /
+        // CI) for the pane's directory.
+        view.refresh_repo_context(ctx);
 
         view
     }
@@ -650,6 +661,51 @@ impl ClaudeCodeView {
 
     #[cfg(not(all(feature = "local_fs", feature = "local_tty")))]
     fn capture_interactive_path(_ctx: &mut ViewContext<Self>) {}
+
+    /// Refresh the composer context bar (#11): run `git`/`gh` in the user's
+    /// login shell (so they resolve and the right repo/PR are visible) and store
+    /// the parsed folder / branch / diff / PR / CI. Best-effort and off the main
+    /// thread — a missing repo, absent `gh`, or a slow network call just leaves
+    /// the bar partial or unchanged. Called on open and after each turn (the
+    /// agent may have edited files, committed, or pushed).
+    #[cfg(all(feature = "local_fs", feature = "local_tty"))]
+    fn refresh_repo_context(&self, ctx: &mut ViewContext<Self>) {
+        use crate::terminal::local_shell::execute_command;
+        let Some(cwd) = self.cwd.clone().or_else(|| std::env::current_dir().ok()) else {
+            return;
+        };
+        let folder = repo_context::folder_name(&cwd);
+        let command = repo_context::build_command(&cwd);
+        let shell_state = LocalShellState::as_ref(ctx);
+        let Some(shell) = shell_state.local_shell_info() else {
+            return;
+        };
+        let shell_type = shell.get_shell_type();
+        let shell_path = shell.get_shell_path().clone();
+        let path_env = self
+            .interactive_path
+            .clone()
+            .or_else(|| shell_state.login_shell_path_env());
+        let fut = async move {
+            execute_command(shell_type, shell_path, path_env, &command)
+                .await
+                .ok()
+        };
+        ctx.spawn(fut, move |me, output, ctx| {
+            let context = match output {
+                Some(out) => repo_context::parse(&out, folder),
+                None => RepoContext {
+                    folder,
+                    ..Default::default()
+                },
+            };
+            me.repo_context = Some(context);
+            ctx.notify();
+        });
+    }
+
+    #[cfg(not(all(feature = "local_fs", feature = "local_tty")))]
+    fn refresh_repo_context(&self, _ctx: &mut ViewContext<Self>) {}
 
     fn handle_editor_event(
         &mut self,
@@ -1607,9 +1663,15 @@ impl ClaudeCodeView {
             // message starts fresh instead of re-failing (PRODUCT §37).
             self.resume_session_id = None;
         }
+        let ended = matches!(event, TranscriptEvent::Ended { .. });
         self.ingest_event(event, ctx);
         if turn_completed {
             self.drain_message_queue(ctx);
+        }
+        if ended {
+            // #11: the turn may have edited files, committed, or pushed —
+            // refresh the diff / branch / PR / CI bar.
+            self.refresh_repo_context(ctx);
         }
         // PRODUCT §14: follow streaming output to the bottom as it arrives.
         self.scroll_to_bottom();
@@ -1989,10 +2051,10 @@ impl ClaudeCodeView {
     }
 
     /// The composer's context chips, built from the live session metadata the
-    /// driver parses out of `claude`'s stream-json: a Local indicator (the pane
-    /// always drives the local CLI — there is no remote session to report), the
-    /// model, the context-window usage, the permission mode, and fast-mode when
-    /// on. Effort is intentionally absent: the headless stream-json doesn't
+    /// driver parses out of `claude`'s stream-json: the model, the
+    /// context-window usage, the permission mode, and fast-mode when on. (The
+    /// old "Local" chip is gone — #12.) Effort is intentionally absent: the
+    /// headless stream-json doesn't
     /// report an effort level (only `fast_mode_state`), unlike the interactive
     /// TUI's status line.
     ///
@@ -2001,7 +2063,8 @@ impl ClaudeCodeView {
     /// steps to the next mode. Disabled while a turn streams (§25 applies
     /// between turns).
     fn metadata_chips(&self, appearance: &Appearance) -> Vec<Box<dyn Element>> {
-        let mut chips = vec![render_pill("Local", appearance)];
+        // (#12: the "Local" pill is gone — it told the user nothing.)
+        let mut chips: Vec<Box<dyn Element>> = Vec::new();
         // PRODUCT §52 (7m): the model pill is a selector. It shows the active
         // selection (the alias the next spawn passes via `--model`, falling
         // back to what `claude` reported, then a generic label) and clicking it
@@ -2056,6 +2119,68 @@ impl ClaudeCodeView {
             chips.push(render_pill("Fast mode", appearance));
         }
         chips
+    }
+
+    /// The composer context bar (#11): folder · branch · +added −removed · PR
+    /// #n · CI, shown above the input. Each segment appears only when resolved
+    /// ([`RepoContext`]); the whole bar is hidden until the first probe returns
+    /// and stays hidden if nothing (not even a folder) resolved.
+    fn render_repo_context_bar(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+        let context = self.repo_context.as_ref()?;
+        if context.folder.is_none() && context.is_effectively_empty() {
+            return None;
+        }
+        let theme = appearance.theme();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+
+        let mut segments: Vec<Box<dyn Element>> = Vec::new();
+        if let Some(folder) = &context.folder {
+            segments.push(context_segment(appearance, folder.clone(), muted));
+        }
+        if let Some(branch) = &context.branch {
+            segments.push(context_segment(appearance, branch.clone(), muted));
+        }
+        if context.added.is_some() || context.removed.is_some() {
+            let added = context.added.unwrap_or(0);
+            let removed = context.removed.unwrap_or(0);
+            segments.push(context_segment(
+                appearance,
+                format!("+{added} \u{2212}{removed}"),
+                muted,
+            ));
+        }
+        if let Some(pr) = context.pr_number {
+            segments.push(context_segment(appearance, format!("PR #{pr}"), muted));
+        }
+        if let Some(ci) = context.ci {
+            // Semantic CI colours (mirroring `Fill::success`/`error`/`warn`).
+            let color = match ci {
+                CiState::Passing => ColorU::new(0, 142, 65, 255),
+                CiState::Failing => ColorU::new(188, 54, 42, 255),
+                CiState::Pending => ColorU::new(194, 128, 0, 255),
+            };
+            segments.push(context_segment(appearance, ci.label().to_owned(), color));
+        }
+        if segments.is_empty() {
+            return None;
+        }
+
+        let mut row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(6.);
+        for (index, segment) in segments.into_iter().enumerate() {
+            if index > 0 {
+                row.add_child(context_segment(appearance, "\u{00B7}".to_owned(), muted));
+            }
+            row.add_child(segment);
+        }
+        Some(
+            Container::new(row.finish())
+                .with_padding_left(6.)
+                .with_padding_bottom(2.)
+                .finish(),
+        )
     }
 
     /// The docked composer (PRODUCT §15): a rounded, bordered card holding the
@@ -2205,7 +2330,18 @@ impl ClaudeCodeView {
             .with_drop_shadow(DropShadow::default())
             .finish();
 
-        Container::new(card)
+        // #11: the context bar (folder / branch / diff / PR / CI) sits just
+        // above the composer card.
+        let mut composer_column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(4.);
+        if let Some(bar) = self.render_repo_context_bar(appearance) {
+            composer_column.add_child(bar);
+        }
+        composer_column.add_child(card);
+
+        Container::new(composer_column.finish())
             .with_padding_top(6.)
             .with_padding_bottom(12.)
             .finish()
@@ -3365,6 +3501,22 @@ fn split_markdown_segments(formatted: FormattedText) -> Vec<MarkdownSegment> {
 /// A muted, rounded context pill for the composer's controls row (the Claude-app
 /// cwd / "Local" chips). Non-interactive — purely informational, so it carries no
 /// mouse handlers.
+/// One plain coloured text segment of the composer context bar (#11). Unlike
+/// [`render_pill`] there's no chip chrome — the bar reads as a quiet status
+/// line above the input.
+fn context_segment(appearance: &Appearance, text: String, color: ColorU) -> Box<dyn Element> {
+    appearance
+        .ui_builder()
+        .span(text)
+        .with_style(UiComponentStyles {
+            font_color: Some(color),
+            font_size: Some(11.5),
+            ..Default::default()
+        })
+        .build()
+        .finish()
+}
+
 fn render_pill(label: &str, appearance: &Appearance) -> Box<dyn Element> {
     let theme = appearance.theme();
     Container::new(
