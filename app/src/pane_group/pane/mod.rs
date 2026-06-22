@@ -377,6 +377,10 @@ impl PaneId {
         matches!(self.0.pane_type, IPaneType::CodeDiff)
     }
 
+    pub fn is_claude_code_pane(&self) -> bool {
+        matches!(self.0.pane_type, IPaneType::ClaudeCode)
+    }
+
     /// Returns true if this pane contains a Warp Drive object (notebook, workflow, etc.).
     pub fn is_warp_drive_object_pane(&self) -> bool {
         matches!(

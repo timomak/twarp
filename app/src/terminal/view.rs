@@ -5838,6 +5838,33 @@ impl TerminalView {
                             log::warn!("GitStatusUpdateModel subscribe failed: {err}");
                         }
                     }
+                } else if let Some(active_dir) = self.active_session_path_if_local(ctx) {
+                    // No repo path was set via the shell block-metadata CWD path
+                    // (which only runs for a completed, bootstrapped shell
+                    // block). A terminal that launches `claude` — or any
+                    // long-running foreground program — before that fires has no
+                    // `current_repo_path`, so without this the diff badge falls
+                    // back to the shell-prompt parse, which omits untracked
+                    // files and disagrees with the code-review panel. Detect the
+                    // repo from the active session's working directory and
+                    // re-run subscription so the badge uses the untracked-aware
+                    // GitRepoStatusModel. Self-bounds: once detection sets
+                    // `current_repo_path` and we subscribe, the branch above is
+                    // taken instead.
+                    let dir = active_dir.to_string_lossy().into_owned();
+                    let fut = DetectedRepositories::handle(ctx).update(ctx, |updater, ctx| {
+                        updater.detect_possible_git_repo(
+                            &dir,
+                            RepoDetectionSource::TerminalNavigation,
+                            ctx,
+                        )
+                    });
+                    ctx.spawn(fut, |me, repo_path_opt, ctx| {
+                        if repo_path_opt.is_some() && me.current_repo_path.is_none() {
+                            me.current_repo_path = repo_path_opt;
+                            me.update_git_status_subscription(ctx);
+                        }
+                    });
                 }
             }
         } else if self.git_repo_status.is_some() {

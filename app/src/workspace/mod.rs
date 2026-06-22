@@ -825,6 +825,19 @@ pub fn init(app: &mut AppContext) {
         )
         .with_context_predicate(id!("Workspace"))
         .with_custom_action(CustomAction::ToggleWarpDrive),
+        // twarp: `cmd-b` toggles the left panel open/closed while preserving the
+        // active view (project explorer / global search / …). Routed through the
+        // dedicated `ToggleLeftPanel` custom action so the existing
+        // `Custom(ToggleWarpDrive)` trigger above — which the mac menu's
+        // `description_for_custom_action(ToggleWarpDrive)` lookup depends on —
+        // stays intact.
+        EditableBinding::new(
+            "workspace:toggle_left_panel_chord",
+            BindingDescription::new("Toggle Left Panel"),
+            WorkspaceAction::ToggleLeftPanel,
+        )
+        .with_context_predicate(id!("Workspace"))
+        .with_custom_action(CustomAction::ToggleLeftPanel),
         EditableBinding::new(
             TOGGLE_RIGHT_PANEL_BINDING_NAME,
             BindingDescription::new("Toggle code review")

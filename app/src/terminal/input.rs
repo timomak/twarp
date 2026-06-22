@@ -7288,8 +7288,15 @@ impl Input {
         if program != CLAUDE_PROGRAM {
             return None;
         }
-        // PRODUCT §4: if `claude` isn't on PATH, don't intercept — let the
-        // shell's own "command not found" stand.
+        // PRODUCT §4: if `claude` isn't installed, don't intercept — let the
+        // shell's own "command not found" stand. Resolve against the user's
+        // login-shell PATH rather than Warp's (minimal) process PATH: a
+        // homebrew / `~/.local/bin` `claude` is invisible to the process PATH
+        // when Warp is launched from Finder/Dock, which would silently no-op
+        // this trigger and run the bare command (or the user's alias) raw.
+        #[cfg(feature = "local_tty")]
+        crate::terminal::local_shell::resolve_executable_via_login_shell(CLAUDE_PROGRAM, ctx)?;
+        #[cfg(not(feature = "local_tty"))]
         crate::util::path::resolve_executable(CLAUDE_PROGRAM)?;
 
         // Forward every remaining token. The pane maps recognized flags —

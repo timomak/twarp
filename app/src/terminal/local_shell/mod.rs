@@ -139,6 +139,14 @@ impl LocalShellState {
         }
     }
 
+    /// The user's login-shell PATH (the fast `echo $PATH` capture done at
+    /// startup), if it has completed. Synchronous — unlike
+    /// [`Self::get_interactive_path_env_var`] this never kicks off a capture.
+    pub fn login_shell_path_env(&self) -> Option<String> {
+        self.local_shell_info()
+            .and_then(|shell| shell.get_path_env_var().clone())
+    }
+
     /// Returns a future that will yield the PATH from an interactive login shell.
     /// This lazily triggers the capture on first call and caches the result.
     /// Use this for LSP operations that need the full interactive environment.
@@ -194,6 +202,26 @@ impl LocalShellState {
             }
         }
     }
+}
+
+/// Resolve `program` to an absolute path using the user's login-shell PATH
+/// (the cached startup capture), falling back to the Warp process PATH.
+///
+/// Warp's process PATH is minimal when it is launched from Finder/Dock (no
+/// `/opt/homebrew/bin`, no `~/.local/bin`), so user-installed CLIs such as
+/// `claude` are only discoverable via the captured shell PATH — the same
+/// reason MCP servers and LSP resolve their binaries this way.
+#[cfg(feature = "local_tty")]
+pub fn resolve_executable_via_login_shell(
+    program: &str,
+    ctx: &warpui::AppContext,
+) -> Option<PathBuf> {
+    use crate::util::path::{resolve_executable, resolve_executable_in_path};
+    match LocalShellState::as_ref(ctx).login_shell_path_env().as_deref() {
+        Some(path) => resolve_executable_in_path(program, std::ffi::OsStr::new(path)),
+        None => resolve_executable(program),
+    }
+    .map(|path| path.into_owned())
 }
 
 #[cfg(feature = "local_tty")]
