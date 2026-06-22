@@ -120,9 +120,12 @@ const WARP_2_HOVERED_TAB_COLOR_OPACITY: Opacity = 50;
 /// so the active colored tab is clearly distinguishable.
 const WARP_2_ACTIVE_TAB_COLOR_OPACITY: Opacity = 80;
 /// Opacity used for the active tab's colored background in the
-/// `NewTabStyling` tab bar. Bumped relative to hover/inactive so the active
-/// colored tab is clearly brighter than its neighbours.
-const NEW_TAB_ACTIVE_COLOR_OPACITY: u8 = 85;
+/// `NewTabStyling` tab bar. Full opacity so the selected tab shows its color at
+/// full strength: at less than 100% the dark tab bar bleeds through and mutes
+/// the color — most visibly on the perceptually-darker hues (red, blue, violet),
+/// which then read as "too dark" when selected. Hover/inactive stay translucent
+/// so the active tab is still clearly the brightest.
+const NEW_TAB_ACTIVE_COLOR_OPACITY: u8 = 100;
 const NEW_TAB_HOVERED_COLOR_OPACITY: u8 = 40;
 const NEW_TAB_INACTIVE_COLOR_OPACITY: u8 = 20;
 /// Top-corner radius (px) for Chrome/Safari-style tabs (PRODUCT §1). Only the
