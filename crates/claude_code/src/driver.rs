@@ -83,6 +83,13 @@ pub struct SpawnOptions {
     pub session_id: Option<String>,
     pub permission_mode: PermissionMode,
     pub allowed_tools: Vec<String>,
+    /// `PATH` to run `claude` under. macOS GUI apps launched via Finder/`open`
+    /// inherit launchd's minimal `PATH`, which omits the user's shell dirs
+    /// (Homebrew, `~/.local/bin`, version managers) where `claude` usually
+    /// lives. The pane captures the login-shell `PATH` and passes it here so
+    /// both resolution of the `claude` binary and the child's environment match
+    /// what the user gets in a terminal. `None` → inherit the process `PATH`.
+    pub path_env: Option<String>,
 }
 
 /// A live `claude` session: the child process, a writer for user messages on
@@ -95,10 +102,28 @@ pub struct SpawnedSession {
     pub events: Pin<Box<dyn Stream<Item = TranscriptEvent> + Send>>,
 }
 
+/// Resolve `program` to an absolute path by searching `path_env` (a
+/// `PATH`-style string). Returns `None` when `path_env` is `None` or no
+/// matching executable file is found, in which case the caller falls back to
+/// the bare program name (process-`PATH` lookup).
+fn resolve_in_path(program: &str, path_env: Option<&str>) -> Option<PathBuf> {
+    let path_env = path_env?;
+    std::env::split_paths(path_env)
+        .map(|dir| dir.join(program))
+        .find(|candidate| candidate.is_file())
+}
+
 /// Spawn `claude` with stream-json IO. PRODUCT §8: the session is one
 /// long-lived process driven multi-turn via stdin.
 pub fn spawn_session(opts: SpawnOptions) -> Result<SpawnedSession> {
-    let mut cmd = command::r#async::Command::new("claude");
+    // Resolve the `claude` binary against the supplied login-shell PATH. On
+    // Unix, program lookup ignores a PATH set via `Command::env` (it searches
+    // the parent process's PATH), so we resolve to an absolute path ourselves
+    // — otherwise a GUI launch (launchd-minimal PATH) wouldn't find `claude`
+    // even though we also set it in the child env below.
+    let program = resolve_in_path("claude", opts.path_env.as_deref())
+        .unwrap_or_else(|| PathBuf::from("claude"));
+    let mut cmd = command::r#async::Command::new(program);
     cmd.arg("-p")
         .arg("--input-format")
         .arg("stream-json")
@@ -126,6 +151,13 @@ pub fn spawn_session(opts: SpawnOptions) -> Result<SpawnedSession> {
     }
     if !opts.allowed_tools.is_empty() {
         cmd.arg("--allowedTools").arg(opts.allowed_tools.join(","));
+    }
+
+    // Run under the login-shell PATH when provided (PRODUCT §4): under `open`
+    // the process PATH is launchd-minimal, so without this `claude` — and any
+    // tools it shells out to — wouldn't resolve.
+    if let Some(path_env) = &opts.path_env {
+        cmd.env("PATH", path_env);
     }
 
     cmd.current_dir(&opts.cwd)

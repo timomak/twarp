@@ -89,7 +89,9 @@ use crate::pane_group::{
     BackingView, PaneConfiguration, PaneEvent, PaneHeaderAction,
 };
 use crate::terminal::{view::Event as TerminalViewEvent, TerminalManager, TerminalView};
-use crate::util::path::resolve_executable;
+use crate::util::path::{resolve_executable, resolve_executable_in_path};
+#[cfg(all(feature = "local_fs", feature = "local_tty"))]
+use crate::terminal::local_shell::LocalShellState;
 
 /// The executable the pane drives. Resolved on `PATH`; its absence is the
 /// unavailable state (PRODUCT §4).
@@ -277,6 +279,13 @@ pub struct ClaudeCodeView {
     /// The working directory of the terminal that opened the pane (PRODUCT §4),
     /// shown in the header. 7c spawns `claude` here.
     cwd: Option<PathBuf>,
+    /// `PATH` captured from the user's interactive login shell, used to resolve
+    /// and run `claude` (PRODUCT §4). macOS GUI launches inherit launchd's
+    /// minimal `PATH`, which omits the dirs where `claude` lives, so the
+    /// process `PATH` alone reports it unavailable. `None` until the async
+    /// capture resolves (or when capture is unsupported); availability and the
+    /// spawn fall back to the process `PATH` in that case.
+    interactive_path: Option<String>,
     scroll_state: ClippedScrollStateHandle,
     /// The live `claude` child, once a session is running. Kept for `interrupt`
     /// (Stop, PRODUCT §11) and to kill the process on drop (PRODUCT §8 —
@@ -457,6 +466,7 @@ impl ClaudeCodeView {
             pane_configuration,
             focus_handle: None,
             cwd,
+            interactive_path: None,
             scroll_state: ClippedScrollStateHandle::default(),
             child: None,
             message_tx: None,
@@ -496,6 +506,11 @@ impl ClaudeCodeView {
             plan_keep_mouse: MouseStateHandle::default(),
             session_epoch: 0,
         };
+
+        // PRODUCT §4: capture the login-shell PATH up front so availability
+        // detection and the spawn see the user's real PATH even under a GUI
+        // (launchd-minimal) launch. Resolves asynchronously and re-renders.
+        Self::capture_interactive_path(ctx);
 
         // PRODUCT §36: a resumed pane renders the stored history up front —
         // through the same ingest path as live events so tool/diff/thinking
@@ -547,10 +562,38 @@ impl ClaudeCodeView {
         }
     }
 
-    /// Whether the `claude` CLI is resolvable on `PATH` right now (PRODUCT §4).
-    fn claude_available() -> bool {
+    /// Whether the `claude` CLI is resolvable right now (PRODUCT §4) — against
+    /// the captured login-shell PATH when available, falling back to the
+    /// process PATH (which, under a GUI launch, is launchd-minimal and usually
+    /// omits where `claude` lives).
+    fn claude_available(&self) -> bool {
+        if let Some(path) = &self.interactive_path {
+            if resolve_executable_in_path(CLAUDE_BINARY, std::ffi::OsStr::new(path)).is_some() {
+                return true;
+            }
+        }
         resolve_executable(CLAUDE_BINARY).is_some()
     }
+
+    /// Kick off (or refresh) the async capture of the interactive login-shell
+    /// PATH, storing it on the view and re-rendering when it resolves. The
+    /// underlying capture is cached by `LocalShellState`, so repeated calls
+    /// (e.g. the "Check again" button) are cheap. No-op when the local shell
+    /// integration isn't compiled in; availability then uses the process PATH.
+    #[cfg(all(feature = "local_fs", feature = "local_tty"))]
+    fn capture_interactive_path(ctx: &mut ViewContext<Self>) {
+        let fut = LocalShellState::handle(ctx)
+            .update(ctx, |shell_state, ctx| shell_state.get_interactive_path_env_var(ctx));
+        ctx.spawn(fut, |me, path, ctx| {
+            if path.is_some() && me.interactive_path != path {
+                me.interactive_path = path;
+                ctx.notify();
+            }
+        });
+    }
+
+    #[cfg(not(all(feature = "local_fs", feature = "local_tty")))]
+    fn capture_interactive_path(_ctx: &mut ViewContext<Self>) {}
 
     fn handle_editor_event(
         &mut self,
@@ -1289,6 +1332,7 @@ impl ClaudeCodeView {
                 .then(|| self.session_id.clone()),
             permission_mode: self.permission_mode,
             allowed_tools: Vec::new(),
+            path_env: self.interactive_path.clone(),
         };
         ctx.spawn(
             async move { spawn_session(opts) },
@@ -2044,7 +2088,7 @@ impl View for ClaudeCodeView {
         let theme = appearance.theme();
         // PRODUCT §4: the unavailable state replaces the pane body. The pane
         // header (title) is rendered separately by `render_header_content`.
-        let contents = if Self::claude_available() {
+        let contents = if self.claude_available() {
             // Owner feedback on the 7d review: the chat fills the pane and the
             // composer FLOATS above it (z-axis) at the bottom-center, instead
             // of stacking below in a flex column. `Align` is load-bearing for
@@ -2138,7 +2182,13 @@ impl TypedActionView for ClaudeCodeView {
             ClaudeCodeViewAction::FocusInput => ctx.focus(&self.input_editor),
             ClaudeCodeViewAction::OpenUrl(url) => ctx.open_url(&url.url),
             // PRODUCT §4: render re-checks availability, so a notify suffices.
-            ClaudeCodeViewAction::Refresh => ctx.notify(),
+            ClaudeCodeViewAction::Refresh => {
+                // Re-capture the login-shell PATH (cheap — cached) in case it
+                // wasn't ready on first render, then re-render to re-check
+                // availability (PRODUCT §4).
+                Self::capture_interactive_path(ctx);
+                ctx.notify();
+            }
             ClaudeCodeViewAction::Stop => self.stop(ctx),
             ClaudeCodeViewAction::ToggleToolCard(id) => self.toggle_tool_card(id, ctx),
             ClaudeCodeViewAction::ToggleThinking(index) => self.toggle_thinking(*index, ctx),
