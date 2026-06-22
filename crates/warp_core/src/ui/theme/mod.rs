@@ -161,6 +161,30 @@ impl AnsiColor {
     /// compresses lightness toward the mid-range so the hue dominates. Grayscale
     /// inputs (no hue to saturate) are returned unchanged.
     pub fn vibrant(self) -> AnsiColor {
+        let (h, s, l) = match self.to_hsl() {
+            Some(hsl) => hsl,
+            None => return self, // grayscale: nothing to saturate
+        };
+        // A little extra saturation, and pull washed-out (very light/dark)
+        // colors toward L=0.5 where the hue is most vivid.
+        let s = (s * 1.35 + 0.12).clamp(0.0, 1.0);
+        let l = ((l - 0.5) * 0.82 + 0.5).clamp(0.0, 1.0);
+        AnsiColor::from_hsl(h, s, l)
+    }
+
+    /// Returns this color with its HSL lightness raised by `amount` (in
+    /// `0.0..=1.0`). Useful for nudging an individual accent brighter without
+    /// touching its hue or saturation. Grayscale inputs are returned unchanged.
+    pub fn lighten(self, amount: f32) -> AnsiColor {
+        match self.to_hsl() {
+            Some((h, s, l)) => AnsiColor::from_hsl(h, s, (l + amount).clamp(0.0, 1.0)),
+            None => self,
+        }
+    }
+
+    /// Decomposes this color into HSL (each component in `0.0..=1.0`). Returns
+    /// `None` for grayscale colors, which have no meaningful hue/saturation.
+    fn to_hsl(self) -> Option<(f32, f32, f32)> {
         let r = self.r as f32 / 255.0;
         let g = self.g as f32 / 255.0;
         let b = self.b as f32 / 255.0;
@@ -168,7 +192,7 @@ impl AnsiColor {
         let min = r.min(g).min(b);
         let delta = max - min;
         if delta <= f32::EPSILON {
-            return self;
+            return None;
         }
 
         let l = (max + min) / 2.0;
@@ -185,12 +209,11 @@ impl AnsiColor {
             (r - g) / delta + 4.0
         };
         h /= 6.0;
+        Some((h, s, l))
+    }
 
-        // A little extra saturation, and pull washed-out (very light/dark)
-        // colors toward L=0.5 where the hue is most vivid.
-        let s = (s * 1.35 + 0.12).clamp(0.0, 1.0);
-        let l = ((l - 0.5) * 0.82 + 0.5).clamp(0.0, 1.0);
-
+    /// Builds a color from an HSL triple (each component in `0.0..=1.0`).
+    fn from_hsl(h: f32, s: f32, l: f32) -> AnsiColor {
         let (r, g, b) = hsl_to_rgb(h, s, l);
         AnsiColor {
             r: (r * 255.0).round() as u8,
@@ -662,7 +685,14 @@ impl AnsiColorIdentifier {
     /// chip and the tab body stay in sync and read as saturated accents rather
     /// than the muted terminal-text palette.
     pub fn to_tab_color(self, colors: &AnsiColors) -> AnsiColor {
-        self.to_ansi_color(colors).vibrant()
+        let color = self.to_ansi_color(colors).vibrant();
+        match self {
+            // Vibrancy compression leaves the purple/magenta accent sitting a
+            // touch dark next to the others; lift its lightness so it reads as
+            // a bright violet.
+            Self::Magenta => color.lighten(0.1),
+            _ => color,
+        }
     }
 }
 
