@@ -139,6 +139,11 @@ pub enum CustomAction {
     ToggleConversationListView,
     // twarp 07 (7b): ToggleClaudeCodePanel removed — Claude Code is a
     // main-content pane opened by typing `claude` (re-spec #70), no chord.
+    // twarp: pure open/close toggle of the left panel (preserves the active
+    // view) bound to cmd-b — distinct from ToggleProjectExplorer, which forces
+    // the project-explorer view. Keep this LAST so existing discriminants
+    // (used as `CustomTag` via `as isize`) are unchanged.
+    ToggleLeftPanel,
 }
 
 lazy_static! {
@@ -407,14 +412,24 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
             Keystroke::parse("ctrl-shift-space").ok()
         }
         CustomAction::ToggleProjectExplorer => {
-            // twarp 05e: match VS Code (cmd+B / ctrl+B). Mac `cmd-b`
-            // was previously free; `cmd-shift-b` stays bound to
-            // ToggleBookmarkBlock. Linux/Windows keep the existing
-            // ctrl-shift-2 to avoid disrupting muscle memory.
+            // twarp: `cmd-b` now toggles the whole left panel
+            // (`CustomAction::ToggleLeftPanel`) rather than forcing the project
+            // explorer view, so this no longer claims `cmd-b` on mac. Linux/
+            // Windows keep `ctrl-shift-2` to open straight to the explorer.
+            if OperatingSystem::get().is_mac() {
+                None
+            } else {
+                Keystroke::parse("ctrl-shift-2").ok()
+            }
+        }
+        CustomAction::ToggleLeftPanel => {
+            // twarp: VS Code-style `cmd-b` opens/closes the left panel,
+            // preserving whichever view was active. Mac-only by default; the
+            // shell reserves `ctrl-b` on Linux/Windows so we leave those unbound.
             if OperatingSystem::get().is_mac() {
                 Keystroke::parse("cmd-b").ok()
             } else {
-                Keystroke::parse("ctrl-shift-2").ok()
+                None
             }
         }
         CustomAction::OpenRepository => {

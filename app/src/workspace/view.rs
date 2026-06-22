@@ -16057,6 +16057,11 @@ impl Workspace {
                     || id.is_file_pane()
                     || id.is_code_pane()
                     || id.is_code_diff_pane()
+                    // twarp 07: a Claude Code pane reports its cwd and roots the
+                    // panels at its project, so it enables the file tree / global
+                    // search too — otherwise a Claude-only pane group renders the
+                    // "Project explorer unavailable" disabled state.
+                    || id.is_claude_code_pane()
             })
     }
 
@@ -18851,9 +18856,8 @@ impl Workspace {
         if cfg!(feature = "local_fs") {
             views.push(ToolPanelView::ClaudeSessions);
         }
-        if WarpDriveSettings::is_warp_drive_enabled(ctx) {
-            views.push(ToolPanelView::WarpDrive);
-        }
+        // twarp: Warp Drive is intentionally omitted from the left-panel toolbelt
+        // — it's no longer surfaced as a sidebar tab.
         views
     }
 
