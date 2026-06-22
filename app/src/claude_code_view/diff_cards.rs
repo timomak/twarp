@@ -46,10 +46,15 @@ use crate::code::inline_diff::InlineDiffView;
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon as WarpIcon;
 
-/// Cap on one embedded diff's height before it scrolls internally — the
-/// Agent-Mode `DisplayMode::Embedded` treatment (§19: expanding never blocks
-/// the UI; a huge `Write` scrolls inside its card).
-const DIFF_MAX_HEIGHT: f32 = 320.;
+/// Height bound for one embedded diff. Kept very large on purpose: a diff that
+/// scrolls *internally* traps the mouse wheel, so scrolling over a code edit
+/// never scrolls the transcript behind it (the "scroll the page too" report).
+/// Letting the diff grow to its full content height instead means there's no
+/// inner vertical scroll to capture — wheel events flow straight to the
+/// transcript — while a finite bound still satisfies the editor's flex layout
+/// (it needs a bounded vertical constraint or its inner flex panics). Practical
+/// diffs render in full; only a pathologically huge `Write` would clip here.
+const DIFF_MAX_HEIGHT: f32 = 100_000.;
 
 /// The live diff views backing one tool call's card, one per edit
 /// (PRODUCT §20: `MultiEdit` renders each edit in order).

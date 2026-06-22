@@ -58,6 +58,9 @@ use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use warp_editor::editor::NavigationKey;
 use warpui::assets::asset_cache::AssetSource;
+use warpui::elements::shimmering_text::{
+    ShimmerConfig, ShimmeringTextElement, ShimmeringTextStateHandle,
+};
 use warpui::platform::FilePickerConfiguration;
 use warpui::ui_components::button::ButtonVariant;
 use warpui::{
@@ -425,6 +428,11 @@ pub struct ClaudeCodeView {
     /// buttons (keyed by card index), created on demand.
     question_option_mouse: std::cell::RefCell<HashMap<(usize, usize), MouseStateHandle>>,
     question_submit_mouse: std::cell::RefCell<HashMap<usize, MouseStateHandle>>,
+    /// Animation state for the composer's shimmering "Working…" indicator (#9):
+    /// the Claude-app-style loading shimmer shown while a turn streams. Persisted
+    /// across renders so the shimmer keeps a continuous phase; the element
+    /// self-schedules repaints while it's on screen.
+    working_shimmer: ShimmeringTextStateHandle,
 }
 
 impl ClaudeCodeView {
@@ -544,6 +552,7 @@ impl ClaudeCodeView {
             question_selected: HashMap::new(),
             question_option_mouse: std::cell::RefCell::new(HashMap::new()),
             question_submit_mouse: std::cell::RefCell::new(HashMap::new()),
+            working_shimmer: ShimmeringTextStateHandle::new(),
         };
 
         // PRODUCT §4: capture the login-shell PATH up front so availability
@@ -578,6 +587,11 @@ impl ClaudeCodeView {
             view.streaming = true;
             view.begin_session(Some(OutgoingMessage::text(prompt)), ctx);
         }
+
+        // #7: name the tab from the first user message (resumed history or the
+        // `claude <prompt>` first turn); stays "Claude Code" for a bare `claude`
+        // until the user sends something.
+        view.update_pane_title(ctx);
 
         view
     }
@@ -1272,6 +1286,8 @@ impl ClaudeCodeView {
             // First message: spawn the session, forwarding this as turn one.
             None => self.begin_session(Some(message), ctx),
         }
+        // #7: the first user turn names the tab.
+        self.update_pane_title(ctx);
         // PRODUCT §14: a user turn always jumps back to the live bottom.
         self.scroll_to_bottom();
         ctx.notify();
@@ -1853,6 +1869,26 @@ impl ClaudeCodeView {
         });
     }
 
+    /// Label the pane's tab with the conversation's first user message (#7) —
+    /// a wall of identical "Claude Code" tabs is impossible to tell apart once a
+    /// few are open. Keeps the generic title until a user turn exists.
+    /// `set_title` no-ops when unchanged, so calling this on each new turn is
+    /// cheap.
+    fn update_pane_title(&self, ctx: &mut ViewContext<Self>) {
+        let title = self
+            .transcript
+            .items()
+            .iter()
+            .find_map(|item| match item {
+                TranscriptItem::User(text) => Some(pane_tab_title(text)),
+                _ => None,
+            })
+            .filter(|title| !title.is_empty())
+            .unwrap_or_else(|| PANE_TITLE.to_owned());
+        self.pane_configuration
+            .update(ctx, |config, ctx| config.set_title(title, ctx));
+    }
+
     fn render_body(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         if self.transcript.is_empty() {
@@ -2048,18 +2084,23 @@ impl ClaudeCodeView {
         let left = {
             let mut row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
             if self.streaming {
+                // #9: a Claude-app-style loading shimmer — the band sweeps from
+                // the muted base toward the brighter shimmer colour and loops.
+                // The element self-schedules repaints, so the animation runs
+                // without the view driving a timer.
+                let shimmer = theme.main_text_color(theme.surface_1()).into_solid();
                 row.add_child(
                     Container::new(
-                        appearance
-                            .ui_builder()
-                            .span("Working…".to_owned())
-                            .with_style(UiComponentStyles {
-                                font_color: Some(muted),
-                                font_size: Some(12.),
-                                ..Default::default()
-                            })
-                            .build()
-                            .finish(),
+                        ShimmeringTextElement::new(
+                            "Working…",
+                            appearance.ui_font_family(),
+                            12.,
+                            muted,
+                            shimmer,
+                            ShimmerConfig::default(),
+                            self.working_shimmer.clone(),
+                        )
+                        .finish(),
                     )
                     .with_margin_right(8.)
                     .finish(),
@@ -3101,6 +3142,11 @@ fn render_markdown_body(
             .register_default_click_handlers(|url, ctx, _| {
                 ctx.dispatch_typed_action(ClaudeCodeViewAction::OpenUrl(url));
             })
+            // The transcript prose is read-only, but the user still needs to
+            // highlight + copy it (same as the tool-output body in
+            // inline_action.rs). FormattedTextElement carries the selection +
+            // copy machinery; it's just off by default.
+            .set_selectable(true)
             .finish(),
             MarkdownSegment::Code(code) => render_code_block(&code.code, appearance),
         };
@@ -3150,6 +3196,24 @@ fn render_notice(message: &str, appearance: &Appearance) -> Box<dyn Element> {
     .with_padding_left(TRANSCRIPT_LEFT_MARGIN)
     .with_padding_right(20.)
     .finish()
+}
+
+/// A short, one-line tab label derived from a user message (#7) — the first
+/// non-blank line, ellipsized. Falls back to the empty string for blank input
+/// (the caller then keeps the generic pane title).
+fn pane_tab_title(text: &str) -> String {
+    const MAX: usize = 40;
+    let head = text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("");
+    if head.chars().count() > MAX {
+        let truncated: String = head.chars().take(MAX).collect();
+        format!("{truncated}…")
+    } else {
+        head.to_owned()
+    }
 }
 
 /// A one-line, length-bounded preview of a queued message's text (PRODUCT §54).
