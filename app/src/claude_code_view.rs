@@ -620,6 +620,16 @@ impl ClaudeCodeView {
         self.cwd.as_ref()
     }
 
+    /// The embedded raw-CLI terminal view while raw mode is active (#14).
+    /// The host [`ClaudeCodePane`] checks this directly for focus: the terminal
+    /// is created by the pane group, not as a structural child of this view, so
+    /// the usual layout-ancestor focus check on the pane can miss it — which
+    /// left Cmd+W targeting whatever pane was focused before. Checking the
+    /// terminal handle itself is layout-timing-independent.
+    pub(crate) fn raw_cli_view(&self) -> Option<ViewHandle<TerminalView>> {
+        self.raw_cli.as_ref().map(|raw| raw.view.clone())
+    }
+
     /// Focus the message input (PRODUCT §34: keyboard-first).
     pub fn focus(&mut self, ctx: &mut ViewContext<Self>) {
         // In raw mode the terminal owns the keyboard (PRODUCT §43).
