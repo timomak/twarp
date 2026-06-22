@@ -154,13 +154,51 @@ impl AnsiColor {
         }
     }
 
-    /// Returns a more saturated, punchier version of this color for use as a UI
+    /// Returns a brighter, more saturated version of this color for use as a UI
     /// accent (tab coloring). The default ANSI palettes are deliberately pastel
     /// so they're easy on the eyes as terminal text; as a small color chip those
-    /// muted values are hard to tell apart. This pushes HSL saturation up and
-    /// compresses lightness toward the mid-range so the hue dominates. Grayscale
-    /// inputs (no hue to saturate) are returned unchanged.
+    /// muted values are hard to tell apart, and the active tab paints its color
+    /// at only partial opacity over the dark tab bar — so the source needs to be
+    /// bright to survive that compositing.
+    ///
+    /// This boosts HSL saturation and then guarantees the color is bright: it is
+    /// never darkened, and any hue whose *perceived* luminance falls short of a
+    /// common target is lifted to meet it. That perceptual step matters because
+    /// at the same HSL lightness a saturated red/blue/violet reads far darker
+    /// than a yellow/green/cyan; without it those hues look dull when selected.
+    /// Grayscale inputs (no hue to saturate) are returned unchanged.
     pub fn vibrant(self) -> AnsiColor {
+        let (h, s, l) = match self.to_hsl() {
+            Some(hsl) => hsl,
+            None => return self, // grayscale: nothing to saturate
+        };
+        // Punch up saturation, and never let the accent be dimmer than a bright
+        // floor (the pastels already sit above it; this just guards darker hues).
+        let s = (s * 1.25 + 0.1).clamp(0.0, 1.0);
+        let mut l = l.max(0.64);
+
+        // Perceived-brightness compensation: lift hues that read dark even at a
+        // high HSL lightness up to a shared luminance target so red, blue and
+        // violet look about as bright as yellow/green/cyan when a tab is active.
+        const TARGET_LUMINANCE: f32 = 0.62;
+        let luminance = AnsiColor::from_hsl(h, s, l).relative_luminance();
+        if luminance < TARGET_LUMINANCE {
+            l = (l + (TARGET_LUMINANCE - luminance)).clamp(0.0, 0.95);
+        }
+
+        AnsiColor::from_hsl(h, s, l)
+    }
+
+    /// Rec. 709 relative luminance of this color in `0.0..=1.0`, computed on the
+    /// (gamma-encoded) sRGB channel values. Approximate, but enough to rank how
+    /// bright one accent reads against another.
+    fn relative_luminance(self) -> f32 {
+        (0.2126 * self.r as f32 + 0.7152 * self.g as f32 + 0.0722 * self.b as f32) / 255.0
+    }
+
+    /// Decomposes this color into HSL (each component in `0.0..=1.0`). Returns
+    /// `None` for grayscale colors, which have no meaningful hue/saturation.
+    fn to_hsl(self) -> Option<(f32, f32, f32)> {
         let r = self.r as f32 / 255.0;
         let g = self.g as f32 / 255.0;
         let b = self.b as f32 / 255.0;
@@ -168,7 +206,7 @@ impl AnsiColor {
         let min = r.min(g).min(b);
         let delta = max - min;
         if delta <= f32::EPSILON {
-            return self;
+            return None;
         }
 
         let l = (max + min) / 2.0;
@@ -185,12 +223,11 @@ impl AnsiColor {
             (r - g) / delta + 4.0
         };
         h /= 6.0;
+        Some((h, s, l))
+    }
 
-        // A little extra saturation, and pull washed-out (very light/dark)
-        // colors toward L=0.5 where the hue is most vivid.
-        let s = (s * 1.35 + 0.12).clamp(0.0, 1.0);
-        let l = ((l - 0.5) * 0.82 + 0.5).clamp(0.0, 1.0);
-
+    /// Builds a color from an HSL triple (each component in `0.0..=1.0`).
+    fn from_hsl(h: f32, s: f32, l: f32) -> AnsiColor {
         let (r, g, b) = hsl_to_rgb(h, s, l);
         AnsiColor {
             r: (r * 255.0).round() as u8,
