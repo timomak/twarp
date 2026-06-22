@@ -7277,7 +7277,54 @@ impl Input {
         // never matches the bare `claude` token (PRODUCT §3).
         let first =
             warp_completer::parsers::simple::all_parsed_commands(command, escape_char).next()?;
-        let mut tokens = first.parts.iter().map(|part| part.as_str());
+        let original: Vec<&str> = first.parts.iter().map(|part| part.as_str()).collect();
+
+        // Expand the user's `claude` alias ourselves (PRODUCT §2). Warp only
+        // rewrites the editor text when the "expand aliases" setting is on
+        // (see `should_expand_aliases`); with it off, a user's
+        // `alias claude='command claude --dangerously-skip-permissions --effort
+        // medium'` reaches us as a bare `claude`, so the pane would open with
+        // none of the alias's flags. The shell *would* expand it, but the
+        // trigger fires before the PTY ever sees the command — so we expand it
+        // here from the session's captured alias table, independent of the
+        // setting, mirroring `terminal::alias::check_for_alias`. Only the first
+        // token is treated as an alias; a value like `command claude …` is
+        // non-recursive (`is_expandable_alias`) and, because `command`/`exec`
+        // are not aliases, an already-expanded command never double-expands.
+        let mut owned_tokens: Vec<String> = Vec::new();
+        let effective_tokens: Vec<&str> = match original.first() {
+            Some(first_token) => {
+                let alias_value: Option<String> =
+                    self.active_block_session_id().and_then(|id| {
+                        // Resolve and own the alias value inside the closure: the
+                        // `Sessions`/`Session` borrows are temporaries that end
+                        // here, so the expanded flags must be copied out before
+                        // returning.
+                        let session = self.sessions.as_ref(ctx).get(id)?;
+                        let value = session.alias_value(first_token)?;
+                        crate::terminal::alias::is_expandable_alias(first_token, value)
+                            .then(|| value.to_owned())
+                    });
+                match alias_value {
+                    Some(value) => {
+                        if let Some(cmd) = warp_completer::parsers::simple::all_parsed_commands(
+                            &value,
+                            escape_char,
+                        )
+                        .next()
+                        {
+                            owned_tokens.extend(cmd.parts.iter().map(|part| part.as_str().to_owned()));
+                        }
+                        owned_tokens.extend(original[1..].iter().map(|t| (*t).to_owned()));
+                        owned_tokens.iter().map(String::as_str).collect()
+                    }
+                    None => original,
+                }
+            }
+            None => original,
+        };
+
+        let mut tokens = effective_tokens.into_iter();
         let program = loop {
             let token = tokens.next()?;
             if token.contains('=') || PROGRAM_WRAPPERS.contains(&token) {

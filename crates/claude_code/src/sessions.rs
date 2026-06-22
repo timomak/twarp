@@ -53,6 +53,14 @@ pub fn sessions_dir(cwd: &Path) -> Option<PathBuf> {
     )
 }
 
+/// The on-disk `.jsonl` path `claude` uses for `session_id` under `cwd`, when
+/// `HOME` is set. Existence is *not* implied — callers that need to know
+/// whether the session has been persisted yet (e.g. before `claude --resume`)
+/// must probe with [`Path::exists`].
+pub fn session_file(cwd: &Path, session_id: &str) -> Option<PathBuf> {
+    sessions_dir(cwd).map(|dir| dir.join(format!("{session_id}.jsonl")))
+}
+
 /// Whether any stored session exists for this cwd — an existence-only probe
 /// (one `read_dir`, no per-file parsing) cheap enough to gate the sidebar
 /// entry's visibility on every directory change (PRODUCT §35).

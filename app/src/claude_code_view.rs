@@ -67,7 +67,8 @@ use warpui::{
         DispatchEventResult, DropShadow, Element, EventDispatchMode, EventHandler, Fill, Flex,
         FormattedTextElement, HighlightedHyperlink, Hoverable, HyperlinkUrl, Icon, Image,
         MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, Padding,
-        ParentAnchor, ParentElement, ParentOffsetBounds, Radius, ScrollbarWidth, Shrinkable, Stack,
+        ParentAnchor, ParentElement, ParentOffsetBounds, Radius, SavePosition, ScrollTarget,
+        ScrollToPositionMode, ScrollbarWidth, Shrinkable, Stack,
     },
     platform::Cursor,
     presenter::ChildView,
@@ -121,7 +122,19 @@ const COMPOSER_MAX_HEIGHT: f32 = 184.;
 const COMPOSER_MAX_WIDTH: f32 = 760.;
 /// Bottom padding inside the transcript scroller so the last message can
 /// scroll clear of the floating composer.
-const COMPOSER_CLEARANCE: f32 = 140.;
+const COMPOSER_CLEARANCE: f32 = 24.;
+/// Height reserved at the bottom of the pane for the floating composer, so the
+/// scroll viewport — and therefore the scrollbar track — ends *above* the
+/// composer instead of running down behind the message input (the "scroll bar
+/// goes beyond the text input" report). Sized to the composer's resting height
+/// (one-line input + controls row + padding); a taller composer (multi-line
+/// draft, queued messages, suggestions) simply overlaps the transcript as
+/// before, but the scrollbar still stops here.
+const COMPOSER_RESERVED: f32 = 96.;
+/// Position id of the zero-height sentinel pinned to the end of the transcript.
+/// Bottom-stick auto-scroll (PRODUCT §14) scrolls this into view to follow
+/// streaming output and to open a resumed session at its latest message.
+const TRANSCRIPT_BOTTOM_POSITION_ID: &str = "claude_transcript_bottom";
 const COMPOSER_CORNER_RADIUS: f32 = 14.;
 const MESSAGE_CORNER_RADIUS: f32 = 12.;
 const PILL_CORNER_RADIUS: f32 = 6.;
@@ -214,6 +227,19 @@ pub enum ClaudeCodeViewAction {
     /// Approve a plan card (PRODUCT §56, 7n): degrades to switching the
     /// permission mode off `plan` and resuming — no one-click inline accept.
     ApprovePlan,
+    /// Select (radio) / toggle (multi-select) an option on an `AskUserQuestion`
+    /// card (PRODUCT §1 "questions UI"). `item` is the card's transcript index,
+    /// `option` the option index; `multi` chooses toggle vs. replace.
+    SelectQuestionOption {
+        item: usize,
+        option: usize,
+        multi: bool,
+    },
+    /// Submit the chosen answers for the `AskUserQuestion` card at this
+    /// transcript index as the next user turn. Headless `claude` auto-dismisses
+    /// the tool and ends the turn, so the answer continues the conversation as
+    /// an ordinary message rather than a tool_result.
+    SubmitQuestionAnswers(usize),
 }
 
 /// Actions dispatched by elements this view renders inside its **pane
@@ -389,6 +415,16 @@ pub struct ClaudeCodeView {
     /// permission-mode restart must not let the old (killed) session's EOF
     /// tear down the new one's handles or spam the transcript.
     session_epoch: u64,
+    /// Chosen options for each `AskUserQuestion` card (PRODUCT §1), keyed by the
+    /// card's transcript index → the set of selected (flattened) option
+    /// indices. A single-select question keeps one entry (radio); a
+    /// multi-select toggles.
+    question_selected: HashMap<usize, HashSet<usize>>,
+    /// Stable mouse handles for the question option rows (keyed by card
+    /// transcript index + flattened option index) and the per-card submit
+    /// buttons (keyed by card index), created on demand.
+    question_option_mouse: std::cell::RefCell<HashMap<(usize, usize), MouseStateHandle>>,
+    question_submit_mouse: std::cell::RefCell<HashMap<usize, MouseStateHandle>>,
 }
 
 impl ClaudeCodeView {
@@ -505,6 +541,9 @@ impl ClaudeCodeView {
             plan_approve_mouse: MouseStateHandle::default(),
             plan_keep_mouse: MouseStateHandle::default(),
             session_epoch: 0,
+            question_selected: HashMap::new(),
+            question_option_mouse: std::cell::RefCell::new(HashMap::new()),
+            question_submit_mouse: std::cell::RefCell::new(HashMap::new()),
         };
 
         // PRODUCT §4: capture the login-shell PATH up front so availability
@@ -520,6 +559,9 @@ impl ClaudeCodeView {
                 view.ingest_event(event, ctx);
             }
             view.resume_session_id = Some(resume.session_id);
+            // PRODUCT §14: open a resumed session at its latest message, not
+            // scrolled to the top of a long history.
+            view.scroll_to_bottom();
         }
 
         // PRODUCT §2/§6: `claude <prompt>` starts a live session immediately
@@ -1203,6 +1245,14 @@ impl ClaudeCodeView {
         self.attachment_optouts.clear();
         self.direct_attachments.clear();
 
+        self.submit_message(message, ctx);
+    }
+
+    /// Deliver one already-composed user turn (PRODUCT §16): queue it behind a
+    /// streaming turn (type-ahead, §53), write it to a live session's stdin, or
+    /// spawn the session on the first message. Shared by the composer
+    /// ([`Self::submit`]) and the `AskUserQuestion` answer path (§1).
+    fn submit_message(&mut self, message: OutgoingMessage, ctx: &mut ViewContext<Self>) {
         if self.streaming {
             // PRODUCT §53–§54 (7m): a turn is in flight — queue this for
             // automatic dispatch when the turn completes, rather than blocking.
@@ -1222,7 +1272,93 @@ impl ClaudeCodeView {
             // First message: spawn the session, forwarding this as turn one.
             None => self.begin_session(Some(message), ctx),
         }
+        // PRODUCT §14: a user turn always jumps back to the live bottom.
+        self.scroll_to_bottom();
         ctx.notify();
+    }
+
+    /// Select (radio) or toggle (multi-select) an option on the
+    /// `AskUserQuestion` card at transcript index `item` (PRODUCT §1).
+    fn select_question_option(
+        &mut self,
+        item: usize,
+        option: usize,
+        multi: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if multi {
+            let chosen = self.question_selected.entry(item).or_default();
+            if !chosen.insert(option) {
+                chosen.remove(&option);
+            }
+            ctx.notify();
+            return;
+        }
+        // Radio: the selection set spans every question on the card, so clear
+        // only the sibling options of the question this option belongs to,
+        // leaving other questions' answers intact.
+        let siblings: Vec<usize> = {
+            let Some(TranscriptItem::Tool { input, .. }) = self.transcript.items().get(item) else {
+                return;
+            };
+            parse_questions(input)
+                .into_iter()
+                .find(|q| q.options.iter().any(|o| o.flat_index == option))
+                .map(|q| q.options.iter().map(|o| o.flat_index).collect())
+                .unwrap_or_default()
+        };
+        let chosen = self.question_selected.entry(item).or_default();
+        for sibling in &siblings {
+            chosen.remove(sibling);
+        }
+        chosen.insert(option);
+        ctx.notify();
+    }
+
+    /// Submit the chosen answers for the `AskUserQuestion` card at `item` as the
+    /// next user turn (PRODUCT §1). Headless `claude` auto-dismisses the tool
+    /// and ends the turn, so the answer continues the conversation as an
+    /// ordinary message; the model reads the question from the transcript above.
+    fn submit_question_answers(&mut self, item: usize, ctx: &mut ViewContext<Self>) {
+        let parsed = {
+            let Some(TranscriptItem::Tool { name, input, .. }) =
+                self.transcript.items().get(item)
+            else {
+                return;
+            };
+            if name != "AskUserQuestion" {
+                return;
+            }
+            parse_questions(input)
+        };
+        let Some(selected) = self.question_selected.get(&item) else {
+            return;
+        };
+        let mut lines = Vec::new();
+        for question in &parsed {
+            let picks: Vec<&str> = question
+                .options
+                .iter()
+                .filter(|o| selected.contains(&o.flat_index))
+                .map(|o| o.label.as_str())
+                .collect();
+            if picks.is_empty() {
+                continue;
+            }
+            let label = if question.header.trim().is_empty() {
+                question.question.as_str()
+            } else {
+                question.header.as_str()
+            };
+            lines.push(format!("{}: {}", label, picks.join(", ")));
+        }
+        if lines.is_empty() {
+            return;
+        }
+        // Drop the selection so the card stops offering live controls once the
+        // answer is on its way.
+        self.question_selected.remove(&item);
+        self.submit_message(OutgoingMessage::text(lines.join("\n")), ctx);
     }
 
     /// Dispatch the next queued message after a turn completes (PRODUCT §53,
@@ -1459,6 +1595,8 @@ impl ClaudeCodeView {
         if turn_completed {
             self.drain_message_queue(ctx);
         }
+        // PRODUCT §14: follow streaming output to the bottom as it arrives.
+        self.scroll_to_bottom();
         ctx.notify();
     }
 
@@ -1660,6 +1798,7 @@ impl ClaudeCodeView {
         }
         self.resume_session_id = Some(self.session_id.clone());
         self.streaming = false;
+        self.scroll_to_bottom();
         ctx.notify();
     }
 
@@ -1702,6 +1841,18 @@ impl ClaudeCodeView {
         }
     }
 
+    /// Bottom-stick auto-scroll (PRODUCT §14): bring the transcript's end
+    /// marker into view so streaming output stays in sight and a resumed
+    /// session opens at its latest message rather than its first. A no-op once
+    /// the marker is already visible, so it doesn't yank a view that is already
+    /// at the bottom.
+    fn scroll_to_bottom(&self) {
+        self.scroll_state.scroll_to_position(ScrollTarget {
+            position_id: TRANSCRIPT_BOTTOM_POSITION_ID.to_owned(),
+            mode: ScrollToPositionMode::FullyIntoView,
+        });
+    }
+
     fn render_body(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         if self.transcript.is_empty() {
@@ -1731,6 +1882,19 @@ impl ClaudeCodeView {
         for (index, item) in self.transcript.items().iter().enumerate() {
             column.add_child(self.render_item(index, item, app));
         }
+
+        // PRODUCT §14: a zero-height marker pinned to the end of the transcript.
+        // [`Self::scroll_to_bottom`] scrolls this into view to follow streaming
+        // output and to open a resumed session at its latest message.
+        column.add_child(
+            SavePosition::new(
+                ConstrainedBox::new(Container::new(Flex::row().finish()).finish())
+                    .with_height(1.)
+                    .finish(),
+                TRANSCRIPT_BOTTOM_POSITION_ID,
+            )
+            .finish(),
+        );
 
         // The composer floats over the bottom of the pane; this clearance is
         // inside the scroll content so the newest message can scroll out from
@@ -2101,7 +2265,16 @@ impl View for ClaudeCodeView {
                 // Centered zero state over the full pane.
                 Align::new(self.render_body(app)).finish()
             } else {
-                Align::new(self.render_body(app)).top_left().finish()
+                // Reserve the composer's resting height at the bottom so the
+                // scroll viewport — and with it the scrollbar track — ends
+                // *above* the floating composer instead of running down behind
+                // the message input (the "scroll bar goes beyond the text
+                // input" report). The composer still floats over this reserved
+                // band; the transcript's own COMPOSER_CLEARANCE keeps the last
+                // message clear of it.
+                Container::new(Align::new(self.render_body(app)).top_left().finish())
+                    .with_padding_bottom(COMPOSER_RESERVED)
+                    .finish()
             };
             // The floating composer: a positioned stack child anchored to the
             // pane's bottom-center, capped at a reading width, shrunk (never
@@ -2229,6 +2402,14 @@ impl TypedActionView for ClaudeCodeView {
                 }
             }
             ClaudeCodeViewAction::ApprovePlan => self.approve_plan(ctx),
+            ClaudeCodeViewAction::SelectQuestionOption {
+                item,
+                option,
+                multi,
+            } => self.select_question_option(*item, *option, *multi, ctx),
+            ClaudeCodeViewAction::SubmitQuestionAnswers(item) => {
+                self.submit_question_answers(*item, ctx)
+            }
         }
     }
 }
@@ -2361,6 +2542,16 @@ impl ClaudeCodeView {
             {
                 let plan = input.get("plan").and_then(|v| v.as_str()).unwrap_or("");
                 self.render_plan_card(plan, appearance)
+            }
+            // PRODUCT §1 (questions UI): an `AskUserQuestion` call renders as an
+            // interactive question card (clickable options + a Send button)
+            // rather than a generic tool card — headless `claude` auto-dismisses
+            // the tool, so the user's pick is sent as the next turn.
+            TranscriptItem::Tool { name, input, .. }
+                if name == "AskUserQuestion"
+                    && input.get("questions").and_then(|v| v.as_array()).is_some() =>
+            {
+                self.render_question_card(index, input, appearance)
             }
             TranscriptItem::Tool {
                 id,
@@ -2513,6 +2704,301 @@ impl ClaudeCodeView {
             )))
             .finish()
     }
+
+    /// Render an `AskUserQuestion` call as an interactive question card
+    /// (PRODUCT §1). Each question shows its options as selectable rows (radio
+    /// for single-select, checkbox for multi-select); a Send button submits the
+    /// chosen answers as the next user turn. Controls are live only while the
+    /// session is idle (not mid-stream) — a historical card just records the
+    /// question (the answer the user already sent renders as the following user
+    /// turn).
+    fn render_question_card(
+        &self,
+        index: usize,
+        input: &serde_json::Value,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let surface = theme.surface_2();
+        let text_color = theme.main_text_color(surface).into_solid();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let accent = theme.accent().into_solid();
+        let questions = parse_questions(input);
+        let selected = self.question_selected.get(&index);
+        let interactive = !self.streaming;
+
+        let header = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(8.)
+            .with_child(
+                ConstrainedBox::new(
+                    Icon::new(crate::ui_components::icons::Icon::HelpCircle.into(), accent)
+                        .finish(),
+                )
+                .with_width(15.)
+                .with_height(15.)
+                .finish(),
+            )
+            .with_child(
+                appearance
+                    .ui_builder()
+                    .span("Question".to_owned())
+                    .with_style(UiComponentStyles {
+                        font_color: Some(text_color),
+                        font_size: Some(13.),
+                        ..Default::default()
+                    })
+                    .build()
+                    .finish(),
+            )
+            .finish();
+
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(12.)
+            .with_child(header);
+
+        for question in &questions {
+            let mut block = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(6.);
+            if !question.question.trim().is_empty() {
+                block.add_child(
+                    appearance
+                        .ui_builder()
+                        .span(question.question.clone())
+                        .with_soft_wrap()
+                        .with_style(UiComponentStyles {
+                            font_color: Some(text_color),
+                            font_size: Some(BODY_FONT_SIZE),
+                            ..Default::default()
+                        })
+                        .build()
+                        .finish(),
+                );
+            }
+            for option in &question.options {
+                let is_selected =
+                    selected.is_some_and(|chosen| chosen.contains(&option.flat_index));
+                let marker = match (question.multi, is_selected) {
+                    (true, true) => "\u{2611}",  // ballot box with check
+                    (true, false) => "\u{2610}", // ballot box
+                    (false, true) => "\u{25C9}", // fisheye (filled radio)
+                    (false, false) => "\u{25CB}", // circle
+                };
+                let mut option_row = Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(8.)
+                    .with_child(
+                        appearance
+                            .ui_builder()
+                            .span(marker.to_owned())
+                            .with_style(UiComponentStyles {
+                                font_color: Some(if is_selected { accent } else { muted }),
+                                font_size: Some(14.),
+                                ..Default::default()
+                            })
+                            .build()
+                            .finish(),
+                    );
+                let mut label_col = Flex::column()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                    .with_main_axis_size(MainAxisSize::Min)
+                    .with_spacing(2.)
+                    .with_child(
+                        appearance
+                            .ui_builder()
+                            .span(option.label.clone())
+                            .with_soft_wrap()
+                            .with_style(UiComponentStyles {
+                                font_color: Some(text_color),
+                                font_size: Some(13.),
+                                ..Default::default()
+                            })
+                            .build()
+                            .finish(),
+                    );
+                if let Some(description) = &option.description {
+                    if !description.trim().is_empty() {
+                        label_col.add_child(
+                            appearance
+                                .ui_builder()
+                                .span(description.clone())
+                                .with_soft_wrap()
+                                .with_style(UiComponentStyles {
+                                    font_color: Some(muted),
+                                    font_size: Some(11.5),
+                                    ..Default::default()
+                                })
+                                .build()
+                                .finish(),
+                        );
+                    }
+                }
+                option_row.add_child(label_col.finish());
+                let mut row_container = Container::new(option_row.finish())
+                    .with_padding_left(8.)
+                    .with_padding_right(8.)
+                    .with_padding_top(6.)
+                    .with_padding_bottom(6.)
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)));
+                if is_selected {
+                    row_container = row_container.with_background_color(theme.surface_1().into_solid());
+                }
+                let row = row_container.finish();
+                if interactive {
+                    let mouse = self
+                        .question_option_mouse
+                        .borrow_mut()
+                        .entry((index, option.flat_index))
+                        .or_default()
+                        .clone();
+                    let option_index = option.flat_index;
+                    let multi = question.multi;
+                    block.add_child(
+                        Hoverable::new(mouse, move |_| row)
+                            .with_cursor(Cursor::PointingHand)
+                            .on_click(move |ctx, _, _| {
+                                ctx.dispatch_typed_action(
+                                    ClaudeCodeViewAction::SelectQuestionOption {
+                                        item: index,
+                                        option: option_index,
+                                        multi,
+                                    },
+                                );
+                            })
+                            .finish(),
+                    );
+                } else {
+                    block.add_child(row);
+                }
+            }
+            column.add_child(block.finish());
+        }
+
+        // The Send control is live only while idle and only once something is
+        // chosen — a mid-stream or unanswered card offers no dead button
+        // (PRODUCT §29).
+        let has_selection = selected.is_some_and(|chosen| !chosen.is_empty());
+        if interactive && has_selection {
+            let mouse = self
+                .question_submit_mouse
+                .borrow_mut()
+                .entry(index)
+                .or_default()
+                .clone();
+            column.add_child(
+                Flex::row()
+                    .with_main_axis_size(MainAxisSize::Min)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_child(
+                        appearance
+                            .ui_builder()
+                            .button(ButtonVariant::Accent, mouse)
+                            .with_text_label("Send answer".to_owned())
+                            .build()
+                            .on_click(move |ctx, _, _| {
+                                ctx.dispatch_typed_action(
+                                    ClaudeCodeViewAction::SubmitQuestionAnswers(index),
+                                );
+                            })
+                            .finish(),
+                    )
+                    .finish(),
+            );
+        }
+
+        Container::new(column.finish())
+            .with_padding(Padding::uniform(14.))
+            .with_margin_top(4.)
+            .with_margin_bottom(4.)
+            .with_margin_left(TRANSCRIPT_LEFT_MARGIN)
+            .with_margin_right(20.)
+            .with_background_color(surface.into_solid())
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                MESSAGE_CORNER_RADIUS,
+            )))
+            .finish()
+    }
+}
+
+/// One option of a parsed `AskUserQuestion` (PRODUCT §1). `flat_index` is the
+/// option's position across *all* the card's questions, so the view's selection
+/// set can address every option on the card with a single integer.
+struct ParsedQuestionOption {
+    flat_index: usize,
+    label: String,
+    description: Option<String>,
+}
+
+/// One parsed question from an `AskUserQuestion` tool call (PRODUCT §1).
+struct ParsedQuestion {
+    header: String,
+    question: String,
+    multi: bool,
+    options: Vec<ParsedQuestionOption>,
+}
+
+/// Parse an `AskUserQuestion` tool input into its questions and options
+/// (PRODUCT §1). Defensive like the rest of the ingest path: missing/garbled
+/// fields degrade (a label-less option is skipped) rather than panic. The
+/// `flat_index` counter runs across every option on the card so the view keys
+/// selections by one integer.
+fn parse_questions(input: &serde_json::Value) -> Vec<ParsedQuestion> {
+    let mut flat_index = 0usize;
+    let mut out = Vec::new();
+    let Some(questions) = input.get("questions").and_then(|v| v.as_array()) else {
+        return out;
+    };
+    for question in questions {
+        let header = question
+            .get("header")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let text = question
+            .get("question")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let multi = question
+            .get("multiSelect")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let mut options = Vec::new();
+        if let Some(raw_options) = question.get("options").and_then(|v| v.as_array()) {
+            for option in raw_options {
+                let label = option
+                    .get("label")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_owned();
+                if label.is_empty() {
+                    continue;
+                }
+                let description = option
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned);
+                options.push(ParsedQuestionOption {
+                    flat_index,
+                    label,
+                    description,
+                });
+                flat_index += 1;
+            }
+        }
+        out.push(ParsedQuestion {
+            header,
+            question: text,
+            multi,
+            options,
+        });
+    }
+    out
 }
 
 /// Port of `ai_assistant::transcript::render_message`: an avatar glyph + a

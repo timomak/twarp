@@ -135,8 +135,29 @@ impl PaneContent for ClaudeCodePane {
                         let claude = crate::util::path::resolve_executable("claude")
                             .map(|path| path.display().to_string())
                             .unwrap_or_else(|| "claude".to_owned());
+                        // `--resume <id>` only when the session is actually on
+                        // disk. A fresh pane (or one whose first turn hasn't
+                        // completed) has no `.jsonl` yet, so `--resume` would
+                        // fail instantly and the CLI's immediate exit bounces
+                        // straight back to the chat — the "View CLI breaks and
+                        // reverts to UI" report. In that case start a fresh
+                        // interactive session pinned to the pane's own id
+                        // (`--session-id`, a real flag) so returning still
+                        // re-reads the right history (§44).
+                        let persisted = cwd
+                            .clone()
+                            .or_else(|| std::env::current_dir().ok())
+                            .and_then(|cwd| {
+                                claude_code::sessions::session_file(&cwd, session_id)
+                            })
+                            .is_some_and(|path| path.exists());
+                        let session_arg = if persisted {
+                            format!("--resume {session_id}")
+                        } else {
+                            format!("--session-id {session_id}")
+                        };
                         terminal.set_pending_command(
-                            &format!("exec '{claude}' --resume {session_id}"),
+                            &format!("exec '{claude}' {session_arg}"),
                             ctx,
                         );
                     });
