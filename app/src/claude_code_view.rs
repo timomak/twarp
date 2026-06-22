@@ -64,6 +64,7 @@ use warpui::elements::shimmering_text::{
 };
 use warpui::platform::FilePickerConfiguration;
 use warpui::ui_components::button::ButtonVariant;
+use warpui::ui_components::slider::SliderStateHandle;
 use warpui::{
     elements::{
         Align, Border, CacheOption, ChildAnchor, Clipped, ClippedScrollStateHandle,
@@ -221,11 +222,14 @@ pub enum ClaudeCodeViewAction {
     /// Remove a direct attachment chip (paste / drop / picker) by index
     /// (PRODUCT §49–§51, 7l).
     RemoveDirectAttachment(usize),
-    /// Step the model selector to the next model (PRODUCT §52, 7m). Detaches a
-    /// live session; the next message resumes the conversation under it.
-    CycleModel,
-    /// Step the effort selector to the next level (PRODUCT §52, 7m).
-    CycleEffort,
+    /// Open / close one of the composer dropdowns (model / effort / context),
+    /// #13. Re-dispatching the open menu closes it.
+    ToggleComposerMenu(ComposerMenu),
+    /// Pick a model from the dropdown (#13; `None` = let `claude` choose).
+    /// Detaches a live session so the next message resumes under it.
+    SetModel(Option<String>),
+    /// Set the effort from the slider (#13; `None` = the CLI's default).
+    SetEffort(Option<String>),
     /// Remove the queued (type-ahead) message at this index before it
     /// dispatches (PRODUCT §54, 7m).
     RemoveQueuedMessage(usize),
@@ -259,6 +263,16 @@ pub enum ClaudeCodeCustomAction {
     /// Swap this pane for the raw interactive CLI (PRODUCT §39, 7i).
     /// Hidden while a turn streams (§42).
     ToggleRawCli,
+}
+
+/// Which composer dropdown / popover is open (#13). The model picker, the
+/// effort slider, and the context-usage breakdown each open above the input;
+/// only one is open at a time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComposerMenu {
+    Model,
+    Effort,
+    Context,
 }
 
 /// A stored session to reopen (PRODUCT §36, sub-phase 7h): the pane renders
@@ -439,6 +453,16 @@ pub struct ClaudeCodeView {
     /// `None` until the first async `git`/`gh` probe resolves; refreshed on open
     /// and after each turn.
     repo_context: Option<RepoContext>,
+    /// The open composer dropdown / popover (#13), or `None`.
+    composer_menu: Option<ComposerMenu>,
+    /// Slider state for the effort picker (#13). Persisted so the thumb keeps
+    /// its position across renders.
+    effort_slider: SliderStateHandle,
+    /// Mouse state for the clickable context-usage chip that opens the context
+    /// breakdown popover (#13).
+    context_button: MouseStateHandle,
+    /// Pooled mouse handles for the model-picker rows (#13).
+    model_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
 }
 
 impl ClaudeCodeView {
@@ -560,6 +584,10 @@ impl ClaudeCodeView {
             question_submit_mouse: std::cell::RefCell::new(HashMap::new()),
             working_shimmer: ShimmeringTextStateHandle::new(),
             repo_context: None,
+            composer_menu: None,
+            effort_slider: SliderStateHandle::default(),
+            context_button: MouseStateHandle::default(),
+            model_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
         };
 
         // PRODUCT §4: capture the login-shell PATH up front so availability
@@ -1464,42 +1492,50 @@ impl ClaudeCodeView {
         ctx.notify();
     }
 
-    /// Step the model selector to the next model (PRODUCT §52, 7m). Disabled
-    /// while a turn streams (same rule as §25). Reuses the mode-pill mechanism:
-    /// a live session is detached and the next message resumes the same
-    /// conversation under the new `--model`.
-    fn cycle_model(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.streaming {
+    /// Open the given composer dropdown / popover, or close it if it's already
+    /// the open one (#13). The model and effort pickers only open while idle
+    /// (changing model/effort mid-turn would tear down the live turn, §25); the
+    /// read-only context popover opens any time.
+    fn toggle_composer_menu(&mut self, menu: ComposerMenu, ctx: &mut ViewContext<Self>) {
+        if self.streaming && menu != ComposerMenu::Context {
             return;
         }
-        self.model = Self::advance_cycle(MODEL_CYCLE, self.model.as_deref());
+        self.composer_menu = if self.composer_menu == Some(menu) {
+            None
+        } else {
+            Some(menu)
+        };
+        ctx.notify();
+    }
+
+    /// Pick a model from the dropdown (#13). No-op (just closes the menu) when
+    /// the choice is unchanged or a turn is streaming; otherwise detaches a
+    /// live session so the next message resumes under the new `--model` (§25).
+    fn set_model(&mut self, model: Option<String>, ctx: &mut ViewContext<Self>) {
+        self.composer_menu = None;
+        if self.streaming || self.model == model {
+            ctx.notify();
+            return;
+        }
+        self.model = model;
         if self.child.is_some() {
             self.detach_live_session();
         }
         ctx.notify();
     }
 
-    /// Step the effort selector to the next level (PRODUCT §52, 7m). Same
-    /// detach→`--resume` mechanism and streaming guard as [`Self::cycle_model`];
-    /// the next spawn carries the new `--effort`.
-    fn cycle_effort(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.streaming {
+    /// Set the effort from the slider (#13). Same detach→`--resume` mechanism
+    /// and streaming guard as [`Self::set_model`]; idempotent so the slider's
+    /// continuous `on_change` doesn't restart the session on every pixel.
+    fn set_effort(&mut self, effort: Option<String>, ctx: &mut ViewContext<Self>) {
+        if self.streaming || self.effort == effort {
             return;
         }
-        self.effort = Self::advance_cycle(EFFORT_CYCLE, self.effort.as_deref());
+        self.effort = effort;
         if self.child.is_some() {
             self.detach_live_session();
         }
         ctx.notify();
-    }
-
-    /// Advance a selector cycle to the entry after `current`, mapping the first
-    /// entry ("default") to `None` (pass no flag, let `claude` choose).
-    fn advance_cycle(cycle: &[&str], current: Option<&str>) -> Option<String> {
-        let current = current.unwrap_or(cycle[0]);
-        let idx = cycle.iter().position(|m| *m == current).unwrap_or(0);
-        let next = cycle[(idx + 1) % cycle.len()];
-        (next != cycle[0]).then(|| next.to_owned())
     }
 
     /// Approve a plan card (PRODUCT §56, 7n). Headless `claude` exposes no
@@ -2060,75 +2096,293 @@ impl ClaudeCodeView {
         .finish()
     }
 
-    /// The composer's context chips, built from the live session metadata the
-    /// driver parses out of `claude`'s stream-json: the model, the
-    /// context-window usage, the permission mode, and fast-mode when on. (The
-    /// old "Local" chip is gone — #12.) Effort is intentionally absent: the
-    /// headless stream-json doesn't
-    /// report an effort level (only `fast_mode_state`), unlike the interactive
-    /// TUI's status line.
-    ///
-    /// The permission pill is the §25 selector: it shows the view's selected
-    /// mode (the value every spawn passes via `--permission-mode`) and a click
-    /// steps to the next mode. Disabled while a turn streams (§25 applies
-    /// between turns).
-    fn metadata_chips(&self, appearance: &Appearance) -> Vec<Box<dyn Element>> {
-        // (#12: the "Local" pill is gone — it told the user nothing.)
-        let mut chips: Vec<Box<dyn Element>> = Vec::new();
-        // PRODUCT §52 (7m): the model pill is a selector. It shows the active
-        // selection (the alias the next spawn passes via `--model`, falling
-        // back to what `claude` reported, then a generic label) and clicking it
-        // cycles models. Disabled mid-turn (same rule as the permission pill).
-        let model_label = self
+    /// The permission-mode selector (§25): clicking cycles Ask → Accept edits →
+    /// Plan → Bypass. Static while a turn streams (the mode applies between
+    /// turns). On the left of the #13 footer.
+    fn render_permission_control(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let label = prettify_permission_mode(self.permission_mode.as_cli_arg());
+        if self.streaming {
+            render_pill(&label, appearance)
+        } else {
+            render_clickable_pill(
+                &label,
+                self.permission_pill_mouse.clone(),
+                |ctx| ctx.dispatch_typed_action(ClaudeCodeViewAction::CyclePermissionMode),
+                appearance,
+            )
+        }
+    }
+
+    /// The context-usage chip (#13): the live context-window fill, clickable to
+    /// open the context breakdown popover. Read-only, so it opens even
+    /// mid-turn.
+    fn render_context_control(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let label = self
+            .transcript
+            .usage()
+            .and_then(format_context)
+            .unwrap_or_else(|| "Context".to_owned());
+        render_clickable_pill(
+            &label,
+            self.context_button.clone(),
+            |ctx| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
+                    ComposerMenu::Context,
+                ))
+            },
+            appearance,
+        )
+    }
+
+    /// The model chip (#13): the active model; clicking opens the model
+    /// dropdown. Static while a turn streams (changing model restarts the
+    /// session, §25).
+    fn render_model_control(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let label = self
             .model
             .as_deref()
             .map(prettify_model)
             .or_else(|| self.transcript.model().map(prettify_model))
             .unwrap_or_else(|| "Model".to_owned());
         if self.streaming {
-            chips.push(render_pill(&model_label, appearance));
+            render_pill(&label, appearance)
         } else {
-            chips.push(render_clickable_pill(
-                &model_label,
+            render_clickable_pill(
+                &label,
                 self.model_pill_mouse.clone(),
-                |ctx| ctx.dispatch_typed_action(ClaudeCodeViewAction::CycleModel),
+                |ctx| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
+                        ComposerMenu::Model,
+                    ))
+                },
                 appearance,
-            ));
+            )
         }
-        // PRODUCT §52 (7m): the effort selector, write-only (no echo-back), so
-        // the pill reflects the current selection. Clickable when idle.
-        let effort_label = match self.effort.as_deref() {
+    }
+
+    /// The effort chip (#13): the selected effort; clicking opens the effort
+    /// slider. Static while a turn streams.
+    fn render_effort_control(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let label = match self.effort.as_deref() {
             Some(effort) => format!("Effort: {effort}"),
             None => "Effort".to_owned(),
         };
         if self.streaming {
-            chips.push(render_pill(&effort_label, appearance));
+            render_pill(&label, appearance)
         } else {
-            chips.push(render_clickable_pill(
-                &effort_label,
+            render_clickable_pill(
+                &label,
                 self.effort_pill_mouse.clone(),
-                |ctx| ctx.dispatch_typed_action(ClaudeCodeViewAction::CycleEffort),
+                |ctx| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
+                        ComposerMenu::Effort,
+                    ))
+                },
                 appearance,
-            ));
+            )
         }
-        if let Some(label) = self.transcript.usage().and_then(format_context) {
-            chips.push(render_pill(&label, appearance));
-        }
-        let mode_label = prettify_permission_mode(self.permission_mode.as_cli_arg());
-        if self.streaming {
-            chips.push(render_pill(&mode_label, appearance));
-        } else {
-            chips.push(render_clickable_pill(
-                &mode_label,
-                self.permission_pill_mouse.clone(),
-                |ctx| ctx.dispatch_typed_action(ClaudeCodeViewAction::CyclePermissionMode),
+    }
+
+    /// The open composer dropdown / popover (#13), wrapped in a bordered card
+    /// that sits above the input. `None` when nothing is open.
+    fn render_composer_menu(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+        let menu = self.composer_menu?;
+        let theme = appearance.theme();
+        let content = match menu {
+            ComposerMenu::Model => self.render_model_menu(appearance),
+            ComposerMenu::Effort => self.render_effort_menu(appearance),
+            ComposerMenu::Context => self.render_context_panel(appearance),
+        };
+        Some(
+            Container::new(content)
+                .with_padding(Padding::uniform(10.))
+                .with_background_color(theme.surface_2().into_solid())
+                .with_border(Border::all(1.).with_border_fill(theme.outline()))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                .finish(),
+        )
+    }
+
+    /// The model dropdown (#13): one row per `MODEL_CYCLE` entry, the active one
+    /// highlighted; clicking sets the model and closes the menu.
+    fn render_model_menu(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let text_color = theme.main_text_color(theme.surface_2()).into_solid();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let accent = theme.accent().into_solid();
+        let current = self.model.as_deref();
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(2.)
+            .with_child(menu_header("Model", muted, appearance));
+        for (index, name) in MODEL_CYCLE.iter().enumerate() {
+            // The first entry ("default") maps to no `--model` flag (None).
+            let value: Option<String> = (*name != MODEL_CYCLE[0]).then(|| (*name).to_owned());
+            let selected = current == value.as_deref();
+            let mouse = {
+                let mut pool = self.model_menu_row_mouse.borrow_mut();
+                while pool.len() <= index {
+                    pool.push(MouseStateHandle::default());
+                }
+                pool[index].clone()
+            };
+            let label = if *name == MODEL_CYCLE[0] {
+                "Default".to_owned()
+            } else {
+                prettify_model(name)
+            };
+            let mut row = Container::new(context_segment(
                 appearance,
-            ));
+                label,
+                if selected { accent } else { text_color },
+            ))
+            .with_padding_left(8.)
+            .with_padding_right(8.)
+            .with_padding_top(5.)
+            .with_padding_bottom(5.)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
+            if selected {
+                row = row.with_background_color(theme.surface_1().into_solid());
+            }
+            let row = row.finish();
+            let action_value = value.clone();
+            column.add_child(
+                Hoverable::new(mouse, move |_| row)
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::SetModel(
+                            action_value.clone(),
+                        ));
+                    })
+                    .finish(),
+            );
         }
-        if self.transcript.fast_mode() == Some("on") {
-            chips.push(render_pill("Fast mode", appearance));
-        }
-        chips
+        column.finish()
+    }
+
+    /// The effort slider (#13): a continuous slider snapped to the
+    /// `EFFORT_CYCLE` levels (default … max). `on_change` is idempotent on the
+    /// view side, so dragging across a level only restarts the session once.
+    fn render_effort_menu(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let text_color = theme.main_text_color(theme.surface_2()).into_solid();
+        let max_index = (EFFORT_CYCLE.len() - 1) as f32;
+        let current_index = EFFORT_CYCLE
+            .iter()
+            .position(|level| Some(*level) == self.effort.as_deref())
+            .unwrap_or(0) as f32;
+        let current_label = self.effort.as_deref().unwrap_or("default");
+        let slider = appearance
+            .ui_builder()
+            .slider(self.effort_slider.clone())
+            .with_range(0.0..max_index)
+            .with_default_value(current_index)
+            .with_style(UiComponentStyles {
+                width: Some(240.),
+                ..Default::default()
+            })
+            .on_change(|ctx, _, value| {
+                let index = (value.round().max(0.0) as usize).min(EFFORT_CYCLE.len() - 1);
+                // The first level ("default") maps to no `--effort` flag.
+                let effort = (index > 0).then(|| EFFORT_CYCLE[index].to_owned());
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::SetEffort(effort));
+            })
+            .build()
+            .finish();
+        let labels = Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_child(context_segment(appearance, "Default".to_owned(), muted))
+            .with_child(context_segment(appearance, "Max".to_owned(), muted))
+            .finish();
+        Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(6.)
+            .with_child(menu_header(
+                &format!("Effort: {current_label}"),
+                text_color,
+                appearance,
+            ))
+            .with_child(ConstrainedBox::new(slider).with_width(240.).finish())
+            .with_child(labels)
+            .finish()
+    }
+
+    /// The context-usage breakdown popover (#13). Shows what the headless
+    /// stream-json actually exposes — total context used vs. the model's
+    /// window, and the input / cache / output token split — not the per-source
+    /// categories or plan limits the desktop app shows (those aren't in the
+    /// CLI's output).
+    fn render_context_panel(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let text_color = theme.main_text_color(theme.surface_2()).into_solid();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let accent = theme.accent().into_solid();
+        let track = theme.surface_3().into_solid();
+        let Some(usage) = self.transcript.usage() else {
+            return menu_header(
+                "No context usage yet — send a message first.",
+                muted,
+                appearance,
+            );
+        };
+        let used = usage.context_used();
+        let summary = match usage.context_window {
+            Some(window) if window > 0 => {
+                let pct = (used as f64 / window as f64 * 100.0).round() as u64;
+                format!("{} / {} ({pct}%)", fmt_tokens(used), fmt_tokens(window))
+            }
+            _ => format!("{} used", fmt_tokens(used)),
+        };
+        let fraction = usage
+            .context_window
+            .map(|window| {
+                if window > 0 {
+                    used as f32 / window as f32
+                } else {
+                    0.
+                }
+            })
+            .unwrap_or(0.);
+        Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(6.)
+            .with_child(menu_header("Context window", muted, appearance))
+            .with_child(context_segment(appearance, summary, text_color))
+            .with_child(render_context_progress(fraction, accent, track))
+            .with_child(usage_row(
+                "Input",
+                usage.input_tokens,
+                muted,
+                text_color,
+                appearance,
+            ))
+            .with_child(usage_row(
+                "Cache read",
+                usage.cache_read_input_tokens,
+                muted,
+                text_color,
+                appearance,
+            ))
+            .with_child(usage_row(
+                "Cache write",
+                usage.cache_creation_input_tokens,
+                muted,
+                text_color,
+                appearance,
+            ))
+            .with_child(usage_row(
+                "Output",
+                usage.output_tokens,
+                muted,
+                text_color,
+                appearance,
+            ))
+            .finish()
     }
 
     /// The composer context bar (#11): folder · branch · +added −removed · PR
@@ -2213,40 +2467,7 @@ impl ClaudeCodeView {
                 .with_max_height(COMPOSER_MAX_HEIGHT)
                 .finish();
 
-        // PRODUCT §9–§11: the controls row carries the session context chips
-        // (model / context usage / permission mode); while a turn streams it also
-        // shows a "Working…" cue, and the action becomes Stop (SIGINT).
-        let left = {
-            let mut row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
-            if self.streaming {
-                // #9: a Claude-app-style loading shimmer — the band sweeps from
-                // the muted base toward the brighter shimmer colour and loops.
-                // The element self-schedules repaints, so the animation runs
-                // without the view driving a timer.
-                let shimmer = theme.main_text_color(theme.surface_1()).into_solid();
-                row.add_child(
-                    Container::new(
-                        ShimmeringTextElement::new(
-                            "Working…",
-                            appearance.ui_font_family(),
-                            12.,
-                            muted,
-                            shimmer,
-                            ShimmerConfig::default(),
-                            self.working_shimmer.clone(),
-                        )
-                        .finish(),
-                    )
-                    .with_margin_right(8.)
-                    .finish(),
-                );
-            }
-            for chip in self.metadata_chips(appearance) {
-                row.add_child(chip);
-            }
-            row.finish()
-        };
-
+        // #13: the Send / Stop action.
         let action: Box<dyn Element> = if self.streaming {
             appearance
                 .ui_builder()
@@ -2275,8 +2496,6 @@ impl ClaudeCodeView {
         };
 
         // PRODUCT §51 (7l): the "＋ attach" control opens the OS file picker.
-        // A paperclip icon button, grouped with the Send/Stop action on the
-        // right.
         let attach = Hoverable::new(self.attach_button.clone(), {
             let glyph =
                 Icon::new(crate::ui_components::icons::Icon::Paperclip.into(), muted).finish();
@@ -2292,11 +2511,43 @@ impl ClaudeCodeView {
             ctx.dispatch_typed_action(ClaudeCodeViewAction::AttachFromPicker);
         })
         .finish();
+
+        // #13: Claude-style footer below the input — permission selector and
+        // attach on the left; the context / model / effort controls (each opens
+        // a dropdown / popover above the input) and the Send/Stop action on the
+        // right. While a turn streams, the left also shows the #9 shimmer.
+        let mut left = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(8.)
+            .with_child(self.render_permission_control(appearance))
+            .with_child(attach);
+        if self.streaming {
+            let shimmer = theme.main_text_color(theme.surface_1()).into_solid();
+            left.add_child(
+                Container::new(
+                    ShimmeringTextElement::new(
+                        "Working…",
+                        appearance.ui_font_family(),
+                        12.,
+                        muted,
+                        shimmer,
+                        ShimmerConfig::default(),
+                        self.working_shimmer.clone(),
+                    )
+                    .finish(),
+                )
+                .with_margin_left(4.)
+                .finish(),
+            );
+        }
+
         let right = Flex::row()
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_spacing(10.)
-            .with_child(attach)
+            .with_spacing(8.)
+            .with_child(self.render_context_control(appearance))
+            .with_child(self.render_model_control(appearance))
+            .with_child(self.render_effort_control(appearance))
             .with_child(action)
             .finish();
 
@@ -2304,7 +2555,7 @@ impl ClaudeCodeView {
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(left)
+            .with_child(left.finish())
             .with_child(right)
             .finish();
 
@@ -2312,6 +2563,11 @@ impl ClaudeCodeView {
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(8.);
+        // #13: the open composer dropdown / popover (model / effort / context)
+        // sits at the top of the card, above the input.
+        if let Some(menu) = self.render_composer_menu(appearance) {
+            card_column.add_child(menu);
+        }
         // PRODUCT §54 (7m): queued type-ahead messages sit at the top of the
         // composer, each removable before it dispatches.
         if let Some(queue) = self.render_message_queue(appearance) {
@@ -2580,8 +2836,9 @@ impl TypedActionView for ClaudeCodeView {
                     ctx.notify();
                 }
             }
-            ClaudeCodeViewAction::CycleModel => self.cycle_model(ctx),
-            ClaudeCodeViewAction::CycleEffort => self.cycle_effort(ctx),
+            ClaudeCodeViewAction::ToggleComposerMenu(menu) => self.toggle_composer_menu(*menu, ctx),
+            ClaudeCodeViewAction::SetModel(model) => self.set_model(model.clone(), ctx),
+            ClaudeCodeViewAction::SetEffort(effort) => self.set_effort(effort.clone(), ctx),
             ClaudeCodeViewAction::RemoveQueuedMessage(index) => {
                 if *index < self.message_queue.len() {
                     self.message_queue.remove(*index);
@@ -3524,6 +3781,66 @@ fn context_segment(appearance: &Appearance, text: String, color: ColorU) -> Box<
             ..Default::default()
         })
         .build()
+        .finish()
+}
+
+/// Compact token count for the context popover (#13): `365.8k`, `1.0M`.
+fn fmt_tokens(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}k", n as f64 / 1_000.0)
+    } else {
+        n.to_string()
+    }
+}
+
+/// A small muted header line for a composer menu / popover (#13).
+fn menu_header(text: &str, color: ColorU, appearance: &Appearance) -> Box<dyn Element> {
+    Container::new(context_segment(appearance, text.to_owned(), color))
+        .with_padding_bottom(2.)
+        .finish()
+}
+
+/// One `label … count` row in the context breakdown popover (#13).
+fn usage_row(
+    label: &str,
+    count: u64,
+    label_color: ColorU,
+    value_color: ColorU,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    Flex::row()
+        .with_main_axis_size(MainAxisSize::Max)
+        .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_child(context_segment(appearance, label.to_owned(), label_color))
+        .with_child(context_segment(appearance, fmt_tokens(count), value_color))
+        .finish()
+}
+
+/// A two-segment fill bar for the context popover (#13): `filled` proportion in
+/// the accent colour, the remainder in the track colour.
+fn render_context_progress(fraction: f32, filled: ColorU, track: ColorU) -> Box<dyn Element> {
+    const WIDTH: f32 = 240.;
+    const HEIGHT: f32 = 6.;
+    let fraction = fraction.clamp(0., 1.);
+    let filled_width = WIDTH * fraction;
+    let bar = |width: f32, color: ColorU| -> Box<dyn Element> {
+        ConstrainedBox::new(
+            Container::new(Flex::row().finish())
+                .with_background_color(color)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(3.)))
+                .finish(),
+        )
+        .with_width(width)
+        .with_height(HEIGHT)
+        .finish()
+    };
+    Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_child(bar(filled_width, filled))
+        .with_child(bar(WIDTH - filled_width, track))
         .finish()
 }
 
