@@ -250,6 +250,7 @@ use crate::view_components::{DismissibleToast, ToastFlavor};
 use crate::workflows::workflow::Workflow;
 use crate::workflows::WorkflowSelectionSource;
 use crate::workspace::sync_inputs::SyncedInputState;
+use crate::workspace::tab_settings::TabSettings;
 use crate::workspace::{CommandSearchOptions, OneTimeModalModel, ToastStack, WorkspaceAction};
 use crate::workspace::{ForkAIConversationParams, ForkFromExchange, ForkedConversationDestination};
 use crate::workspaces::{user_workspaces::UserWorkspaces, workspace::CustomerType};
@@ -5760,11 +5761,28 @@ impl TerminalView {
 
     /// Returns whether this terminal view should subscribe to git status
     /// updates. We subscribe when:
-    /// 1. Agent mode is active and its chip list includes `GitDiffStats`, or
-    /// 2. Terminal mode with the Warp prompt enabled and the git stats chip
+    /// 1. A diff-stats badge is enabled (code-review button pill or vertical
+    ///    tabs / detail-sidecar badge), or
+    /// 2. Agent mode is active and its chip list includes `GitDiffStats`, or
+    /// 3. Terminal mode with the Warp prompt enabled and the git stats chip
     ///    configured.
     #[cfg(feature = "local_fs")]
     fn should_subscribe_to_git_status(&self, ctx: &AppContext) -> bool {
+        // Diff-stats badges (the code-review button's +N/-N pill and the
+        // vertical tabs / detail-sidecar diff badge) read uncommitted-vs-HEAD
+        // stats from the GitRepoStatusModel, which counts untracked files the
+        // same way the code-review panel does. Those badges render regardless of
+        // prompt mode, so load the model whenever either is enabled. Without
+        // this, panes on a raw PS1 prompt have no model and the badge falls back
+        // to parsing the shell prompt, which omits untracked files and disagrees
+        // with the code-review panel.
+        let tab_settings = TabSettings::as_ref(ctx);
+        if *tab_settings.show_code_review_diff_stats
+            || *tab_settings.vertical_tabs_show_diff_stats.value()
+        {
+            return true;
+        }
+
         // Agent view: subscribe only when the configured agent footer includes git stats.
         if self.agent_view_controller.as_ref(ctx).is_active() {
             return SessionSettings::as_ref(ctx)
