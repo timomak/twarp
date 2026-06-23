@@ -7516,16 +7516,8 @@ impl Input {
                 .flatten();
             if let Some((args, cwd)) = claude_trigger {
                 ctx.emit(Event::OpenClaudeCodePane { args, cwd });
-                // PRODUCT §1: a brief note so the command isn't silently
-                // swallowed (we write nothing to the PTY, so no block starts).
-                let window_id = ctx.window_id();
-                ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    toast_stack.add_ephemeral_toast(
-                        DismissibleToast::default("Opened Claude Code in a pane.".to_owned()),
-                        window_id,
-                        ctx,
-                    );
-                });
+                // We write nothing to the PTY (no block starts); the new pane
+                // opening is feedback enough, so no toast.
                 self.clear_buffer_and_reset_undo_stack(ctx);
             } else {
                 self.start_block_and_write_command_to_pty(command, source, ctx);
