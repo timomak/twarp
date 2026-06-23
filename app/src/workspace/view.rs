@@ -4147,6 +4147,12 @@ impl Workspace {
         self.active_tab_index
     }
 
+    /// The active tab's resolved colour (#10/#11), used to theme panes (e.g. the
+    /// Claude Code pane) to match their tab. `None` when the tab has no colour.
+    pub fn active_tab_color(&self) -> Option<AnsiColorIdentifier> {
+        self.tabs.get(self.active_tab_index).and_then(|tab| tab.color())
+    }
+
     pub fn is_overflow_menu_showing(&self) -> bool {
         self.show_tab_bar_overflow_menu
     }

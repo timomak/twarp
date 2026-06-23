@@ -43,6 +43,7 @@ mod tool_cards;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use async_channel::Sender;
 use base64::Engine as _;
@@ -80,12 +81,13 @@ use warpui::{
     text_layout::ClipConfig,
     ui_components::components::{UiComponent, UiComponentStyles},
     AppContext, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View,
-    ViewContext, ViewHandle,
+    ViewContext, ViewHandle, WindowId,
 };
 
 use self::composer::{SuggestionKind, SuggestionQuery};
 use self::diff_cards::DiffCard;
 use self::repo_context::{CiState, RepoContext};
+use crate::workspace::WorkspaceRegistry;
 use self::thinking::ThinkingUi;
 use self::tool_cards::{render_tool_card, ToolCardUi};
 use crate::appearance::Appearance;
@@ -202,10 +204,10 @@ pub enum ClaudeCodeViewAction {
     ToggleThinking(usize),
     /// Expand / collapse the task list (PRODUCT §23).
     ToggleTodos,
-    /// Step the permission mode to the next value (PRODUCT §25). Applies to
+    /// Pick a permission mode from the dropdown (PRODUCT §25, #2). Applies to
     /// the next spawn; a live session is re-attached via `--resume` so the
     /// conversation continues under the new mode.
-    CyclePermissionMode,
+    SetPermissionMode(PermissionMode),
     /// Accept the composer suggestion at this index (PRODUCT §15a, 7j) —
     /// clicked in the suggestions panel; Enter accepts the highlighted one.
     AcceptSuggestion(usize),
@@ -270,6 +272,7 @@ pub enum ClaudeCodeCustomAction {
 /// only one is open at a time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ComposerMenu {
+    Permission,
     Model,
     Effort,
     Context,
@@ -313,6 +316,9 @@ pub struct ClaudeCodeView {
     /// The conversation the pane renders, fed by the live driver's event stream
     /// via [`Self::on_transcript_event`] on the main thread (PRODUCT §9–§13).
     transcript: Transcript,
+    /// The window this pane lives in (#10/#11), so render can look up the
+    /// active tab's colour to theme the UI.
+    window_id: WindowId,
     /// The message input. Enter submits; Shift+Enter inserts a newline.
     input_editor: ViewHandle<EditorView>,
     /// Pane chrome state (tab title). Owned here, handed to [`PaneView`] by the
@@ -382,8 +388,10 @@ pub struct ClaudeCodeView {
     /// adopts the resumed id. Synced from `init` thereafter. The raw-CLI
     /// toggle and the on-disk history refresh key off this.
     session_id: String,
-    /// Mouse state for the header's Raw CLI toggle (PRODUCT §39).
+    /// Mouse state for the header's Raw CLI / Chat UI section toggle (PRODUCT
+    /// §39, #7). One handle per segment.
     raw_cli_button: MouseStateHandle,
+    chat_ui_button: MouseStateHandle,
     /// The embedded raw-CLI terminal while raw mode is active (PRODUCT §39).
     /// `None` in rendered-chat mode.
     raw_cli: Option<RawCliSession>,
@@ -463,6 +471,20 @@ pub struct ClaudeCodeView {
     context_button: MouseStateHandle,
     /// Pooled mouse handles for the model-picker rows (#13).
     model_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Pooled mouse handles for the permission-picker rows (#2).
+    permission_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// When the current streaming turn started (#7), for the live elapsed in
+    /// the status line below the last message. `None` when idle.
+    turn_started: Option<Instant>,
+    /// Preview image paths for sent user turns (#8), keyed by the user item's
+    /// transcript index — rendered above that message's bubble. Only covers
+    /// images sent this session (resumed history has no previews).
+    sent_images: HashMap<usize, Vec<PathBuf>>,
+    /// The tab-derived accent (#10) and its faint wash (#11), cached at the top
+    /// of each `render` so the deep render tree and free helper functions can
+    /// theme to the tab colour without threading `app` everywhere.
+    render_accent: std::cell::Cell<ColorU>,
+    render_wash: std::cell::Cell<ColorU>,
 }
 
 impl ClaudeCodeView {
@@ -536,6 +558,7 @@ impl ClaudeCodeView {
 
         let mut view = Self {
             transcript: Transcript::new(),
+            window_id: ctx.window_id(),
             input_editor,
             pane_configuration,
             focus_handle: None,
@@ -560,6 +583,7 @@ impl ClaudeCodeView {
             resume_session_id: None,
             session_id,
             raw_cli_button: MouseStateHandle::default(),
+            chat_ui_button: MouseStateHandle::default(),
             raw_cli: None,
             suggestion_query: None,
             suggestions: Vec::new(),
@@ -588,6 +612,13 @@ impl ClaudeCodeView {
             effort_slider: SliderStateHandle::default(),
             context_button: MouseStateHandle::default(),
             model_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
+            permission_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
+            turn_started: None,
+            sent_images: HashMap::new(),
+            render_accent: std::cell::Cell::new(
+                Appearance::as_ref(ctx).theme().accent().into_solid(),
+            ),
+            render_wash: std::cell::Cell::new(ColorU::new(0, 0, 0, 0)),
         };
 
         // PRODUCT §4: capture the login-shell PATH up front so availability
@@ -620,6 +651,7 @@ impl ClaudeCodeView {
             view.transcript
                 .apply(TranscriptEvent::UserMessage(prompt.clone()));
             view.streaming = true;
+            view.turn_started = Some(Instant::now());
             view.begin_session(Some(OutgoingMessage::text(prompt)), ctx);
         }
 
@@ -656,6 +688,43 @@ impl ClaudeCodeView {
     /// terminal handle itself is layout-timing-independent.
     pub(crate) fn raw_cli_view(&self) -> Option<ViewHandle<TerminalView>> {
         self.raw_cli.as_ref().map(|raw| raw.view.clone())
+    }
+
+    /// The message input editor (#13). The host pane checks it directly for
+    /// focus: in chat mode the editor holds keyboard focus, and like the raw-CLI
+    /// terminal its focus can be missed by the pane's layout-ancestor check
+    /// right after the pane opens (before the first layout). Checking the editor
+    /// handle itself is layout-timing-independent, so Cmd+W / maximize target
+    /// this pane while the chat is focused.
+    pub(crate) fn input_editor_view(&self) -> ViewHandle<EditorView> {
+        self.input_editor.clone()
+    }
+
+    /// The active tab's colour (#10/#11) resolved to a `ColorU`, or `None` when
+    /// the tab has no colour. Looked up via the window's workspace.
+    fn tab_accent(&self, app: &AppContext) -> Option<ColorU> {
+        let workspace = WorkspaceRegistry::as_ref(app).get(self.window_id, app)?;
+        let identifier = workspace.as_ref(app).active_tab_color()?;
+        let theme = Appearance::as_ref(app).theme();
+        Some(ColorU::from(
+            identifier.to_tab_color(&theme.terminal_colors().normal),
+        ))
+    }
+
+    /// The pane's primary/accent colour (#10): the active tab's colour when set,
+    /// otherwise the theme accent. Used for the primary button, the Claude
+    /// glyph, links, progress, and selection highlights.
+    fn accent(&self, app: &AppContext) -> ColorU {
+        self.tab_accent(app)
+            .unwrap_or_else(|| Appearance::as_ref(app).theme().accent().into_solid())
+    }
+
+    /// A faint wash of the accent (#11) for the "gray" highlight fills — pill
+    /// backgrounds, the context bar, selected rows — so they read as tinted by
+    /// the tab colour rather than neutral gray.
+    fn accent_wash(&self, app: &AppContext) -> ColorU {
+        let accent = self.accent(app);
+        ColorU::new(accent.r, accent.g, accent.b, 52)
     }
 
     /// Focus the message input (PRODUCT §34: keyboard-first).
@@ -784,7 +853,10 @@ impl ClaudeCodeView {
                     return;
                 }
                 match key {
-                    NavigationKey::Down | NavigationKey::Tab => {
+                    // #9: Tab accepts the highlighted suggestion (like the
+                    // `claude` CLI); arrows still move the selection.
+                    NavigationKey::Tab => self.accept_suggestion(self.suggestion_selected, ctx),
+                    NavigationKey::Down => {
                         self.suggestion_selected = (self.suggestion_selected + 1) % len;
                         ctx.notify();
                     }
@@ -1344,6 +1416,14 @@ impl ClaudeCodeView {
             images: self.outgoing_images(),
             text,
         };
+        // #8: the on-disk paths of the images riding along, to preview above the
+        // user bubble (pasted-only images have no path and are omitted).
+        let mut previews: Vec<PathBuf> = self.pending_images.clone();
+        previews.extend(
+            self.direct_attachments
+                .iter()
+                .filter_map(|attachment| attachment.thumbnail_path.clone()),
+        );
         // Clear the composer either way so the user can keep typing (§53).
         self.input_editor
             .update(ctx, |editor, ctx| editor.clear_buffer(ctx));
@@ -1353,17 +1433,23 @@ impl ClaudeCodeView {
         self.attachment_optouts.clear();
         self.direct_attachments.clear();
 
-        self.submit_message(message, ctx);
+        self.submit_message(message, previews, ctx);
     }
 
     /// Deliver one already-composed user turn (PRODUCT §16): queue it behind a
     /// streaming turn (type-ahead, §53), write it to a live session's stdin, or
     /// spawn the session on the first message. Shared by the composer
     /// ([`Self::submit`]) and the `AskUserQuestion` answer path (§1).
-    fn submit_message(&mut self, message: OutgoingMessage, ctx: &mut ViewContext<Self>) {
+    fn submit_message(
+        &mut self,
+        message: OutgoingMessage,
+        previews: Vec<PathBuf>,
+        ctx: &mut ViewContext<Self>,
+    ) {
         if self.streaming {
             // PRODUCT §53–§54 (7m): a turn is in flight — queue this for
             // automatic dispatch when the turn completes, rather than blocking.
+            // (Type-ahead image previews aren't carried through the queue.)
             self.message_queue.push(message);
             ctx.notify();
             return;
@@ -1371,7 +1457,13 @@ impl ClaudeCodeView {
 
         self.transcript
             .apply(TranscriptEvent::UserMessage(message.text.clone()));
+        // #8: attach the previews to the just-pushed user item (it's last).
+        if !previews.is_empty() {
+            let index = self.transcript.items().len().saturating_sub(1);
+            self.sent_images.insert(index, previews);
+        }
         self.streaming = true;
+        self.turn_started = Some(Instant::now());
         match &self.message_tx {
             // Session already running — write the turn to its stdin.
             Some(tx) => {
@@ -1468,7 +1560,7 @@ impl ClaudeCodeView {
         // Drop the selection so the card stops offering live controls once the
         // answer is on its way.
         self.question_selected.remove(&item);
-        self.submit_message(OutgoingMessage::text(lines.join("\n")), ctx);
+        self.submit_message(OutgoingMessage::text(lines.join("\n")), Vec::new(), ctx);
     }
 
     /// Dispatch the next queued message after a turn completes (PRODUCT §53,
@@ -1488,6 +1580,7 @@ impl ClaudeCodeView {
         self.transcript
             .apply(TranscriptEvent::UserMessage(message.text.clone()));
         self.streaming = true;
+        self.turn_started = Some(Instant::now());
         let _ = tx.try_send(message);
         ctx.notify();
     }
@@ -1792,23 +1885,19 @@ impl ClaudeCodeView {
         ctx.notify();
     }
 
-    /// Step to the next permission mode (PRODUCT §25): Ask → Accept edits →
-    /// Plan → Bypass → Ask. The mode applies to the next spawn; a live
-    /// session is detached (killed) and its id kept as the resume target, so
-    /// the next message continues the same conversation under the new mode —
-    /// the only mode-change channel `claude`'s documented flags offer.
-    fn cycle_permission_mode(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.streaming {
-            // §25 applies between turns; restarting mid-turn would kill the
-            // in-flight work.
+    /// Set the permission mode from the dropdown (PRODUCT §25, #2). The mode
+    /// applies to the next spawn; a live session is detached (killed) and its id
+    /// kept as the resume target, so the next message continues the same
+    /// conversation under the new mode — the only mode-change channel `claude`'s
+    /// documented flags offer. Closes the menu; idempotent / a no-op mid-turn
+    /// (§25 applies between turns).
+    fn set_permission_mode(&mut self, mode: PermissionMode, ctx: &mut ViewContext<Self>) {
+        self.composer_menu = None;
+        if self.streaming || self.permission_mode == mode {
+            ctx.notify();
             return;
         }
-        self.permission_mode = match self.permission_mode {
-            PermissionMode::Default => PermissionMode::AcceptEdits,
-            PermissionMode::AcceptEdits => PermissionMode::Plan,
-            PermissionMode::Plan => PermissionMode::BypassPermissions,
-            PermissionMode::BypassPermissions => PermissionMode::Default,
-        };
+        self.permission_mode = mode;
         if self.child.is_some() {
             // Detach the live process; the next message resumes the
             // conversation under the new mode. The pane owns its session id
@@ -1997,6 +2086,52 @@ impl ClaudeCodeView {
             .update(ctx, |config, ctx| config.set_title(title, ctx));
     }
 
+    /// The live streaming status line (#7), shown below the last message while
+    /// a turn is in flight: a Claude glyph + a shimmering "Working · <elapsed>"
+    /// label. The shimmer self-schedules repaints, which also ticks the elapsed
+    /// time. (Live token counts aren't in the headless stream, so the stat is
+    /// the elapsed time.)
+    fn render_streaming_status(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let bright = theme.main_text_color(theme.background()).into_solid();
+        let accent = self.render_accent.get();
+        let label = match self.turn_started {
+            Some(started) => {
+                format!("Working · {}", thinking::format_elapsed_seconds(started.elapsed()))
+            }
+            None => "Working…".to_owned(),
+        };
+        let icon = ConstrainedBox::new(Icon::new(ASSISTANT_ICON_SVG_PATH, accent).finish())
+            .with_width(14.)
+            .with_height(14.)
+            .finish();
+        let shimmer = ShimmeringTextElement::new(
+            label,
+            appearance.ui_font_family(),
+            13.,
+            muted,
+            bright,
+            ShimmerConfig::default(),
+            self.working_shimmer.clone(),
+        )
+        .finish();
+        Container::new(
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(8.)
+                .with_child(icon)
+                .with_child(shimmer)
+                .finish(),
+        )
+        .with_margin_left(TRANSCRIPT_LEFT_MARGIN)
+        .with_margin_top(8.)
+        .with_margin_bottom(8.)
+        .finish()
+    }
+
     fn render_body(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         if self.transcript.is_empty() {
@@ -2025,6 +2160,12 @@ impl ClaudeCodeView {
             .with_main_axis_size(MainAxisSize::Min);
         for (index, item) in self.transcript.items().iter().enumerate() {
             column.add_child(self.render_item(index, item, app));
+        }
+
+        // #7: a live status line below the last message while a turn streams —
+        // an animated label + elapsed, replacing the composer's "Working…".
+        if self.streaming {
+            column.add_child(self.render_streaming_status(app));
         }
 
         // PRODUCT §14: a zero-height marker pinned to the end of the transcript.
@@ -2096,18 +2237,23 @@ impl ClaudeCodeView {
         .finish()
     }
 
-    /// The permission-mode selector (§25): clicking cycles Ask → Accept edits →
-    /// Plan → Bypass. Static while a turn streams (the mode applies between
-    /// turns). On the left of the #13 footer.
+    /// The permission-mode selector (§25, #2): clicking opens a dropdown of the
+    /// four modes, like the model picker. Static while a turn streams (the mode
+    /// applies between turns).
     fn render_permission_control(&self, appearance: &Appearance) -> Box<dyn Element> {
         let label = prettify_permission_mode(self.permission_mode.as_cli_arg());
         if self.streaming {
-            render_pill(&label, appearance)
+            render_pill(&label, self.render_wash.get(), appearance)
         } else {
             render_clickable_pill(
                 &label,
                 self.permission_pill_mouse.clone(),
-                |ctx| ctx.dispatch_typed_action(ClaudeCodeViewAction::CyclePermissionMode),
+                |ctx| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
+                        ComposerMenu::Permission,
+                    ))
+                },
+                self.render_wash.get(),
                 appearance,
             )
         }
@@ -2130,6 +2276,7 @@ impl ClaudeCodeView {
                     ComposerMenu::Context,
                 ))
             },
+            self.render_wash.get(),
             appearance,
         )
     }
@@ -2145,7 +2292,7 @@ impl ClaudeCodeView {
             .or_else(|| self.transcript.model().map(prettify_model))
             .unwrap_or_else(|| "Model".to_owned());
         if self.streaming {
-            render_pill(&label, appearance)
+            render_pill(&label, self.render_wash.get(), appearance)
         } else {
             render_clickable_pill(
                 &label,
@@ -2155,6 +2302,7 @@ impl ClaudeCodeView {
                         ComposerMenu::Model,
                     ))
                 },
+                self.render_wash.get(),
                 appearance,
             )
         }
@@ -2168,7 +2316,7 @@ impl ClaudeCodeView {
             None => "Effort".to_owned(),
         };
         if self.streaming {
-            render_pill(&label, appearance)
+            render_pill(&label, self.render_wash.get(), appearance)
         } else {
             render_clickable_pill(
                 &label,
@@ -2178,6 +2326,7 @@ impl ClaudeCodeView {
                         ComposerMenu::Effort,
                     ))
                 },
+                self.render_wash.get(),
                 appearance,
             )
         }
@@ -2189,6 +2338,7 @@ impl ClaudeCodeView {
         let menu = self.composer_menu?;
         let theme = appearance.theme();
         let content = match menu {
+            ComposerMenu::Permission => self.render_permission_menu(appearance),
             ComposerMenu::Model => self.render_model_menu(appearance),
             ComposerMenu::Effort => self.render_effort_menu(appearance),
             ComposerMenu::Context => self.render_context_panel(appearance),
@@ -2203,13 +2353,76 @@ impl ClaudeCodeView {
         )
     }
 
+    /// The permission-mode dropdown (#2): a row per mode (title + the §25
+    /// one-liner), the active one highlighted; clicking sets it and closes the
+    /// menu.
+    fn render_permission_menu(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let text_color = theme.main_text_color(theme.surface_2()).into_solid();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let accent = self.render_accent.get();
+        const MODES: [PermissionMode; 4] = [
+            PermissionMode::Default,
+            PermissionMode::AcceptEdits,
+            PermissionMode::Plan,
+            PermissionMode::BypassPermissions,
+        ];
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(2.)
+            .with_child(menu_header("Permission mode", muted, appearance));
+        for (index, mode) in MODES.iter().enumerate() {
+            let mode = *mode;
+            let selected = self.permission_mode == mode;
+            let mouse = {
+                let mut pool = self.permission_menu_row_mouse.borrow_mut();
+                while pool.len() <= index {
+                    pool.push(MouseStateHandle::default());
+                }
+                pool[index].clone()
+            };
+            let title = prettify_permission_mode(mode.as_cli_arg());
+            let label_col = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(1.)
+                .with_child(context_segment(
+                    appearance,
+                    title,
+                    if selected { accent } else { text_color },
+                ))
+                .with_child(context_segment(appearance, mode.label().to_owned(), muted))
+                .finish();
+            let mut row = Container::new(label_col)
+                .with_padding_left(8.)
+                .with_padding_right(8.)
+                .with_padding_top(5.)
+                .with_padding_bottom(5.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
+            if selected {
+                row = row.with_background_color(theme.surface_1().into_solid());
+            }
+            let row = row.finish();
+            column.add_child(
+                Hoverable::new(mouse, move |_| row)
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::SetPermissionMode(mode));
+                    })
+                    .finish(),
+            );
+        }
+        column.finish()
+    }
+
     /// The model dropdown (#13): one row per `MODEL_CYCLE` entry, the active one
     /// highlighted; clicking sets the model and closes the menu.
     fn render_model_menu(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
         let text_color = theme.main_text_color(theme.surface_2()).into_solid();
         let muted = theme.nonactive_ui_text_color().into_solid();
-        let accent = theme.accent().into_solid();
+        let accent = self.render_accent.get();
         let current = self.model.as_deref();
         let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
@@ -2320,7 +2533,7 @@ impl ClaudeCodeView {
         let theme = appearance.theme();
         let text_color = theme.main_text_color(theme.surface_2()).into_solid();
         let muted = theme.nonactive_ui_text_color().into_solid();
-        let accent = theme.accent().into_solid();
+        let accent = self.render_accent.get();
         let track = theme.surface_3().into_solid();
         let Some(usage) = self.transcript.usage() else {
             return menu_header(
@@ -2396,31 +2609,42 @@ impl ClaudeCodeView {
         }
         let theme = appearance.theme();
         let muted = theme.nonactive_ui_text_color().into_solid();
+        let text_color = theme.main_text_color(theme.surface_2()).into_solid();
+        let accent = self.render_accent.get();
+        // #3: semantic colours — green additions, red deletions (and the same
+        // green/red/amber for CI as before).
+        let green = ColorU::new(0, 142, 65, 255);
+        let red = ColorU::new(188, 54, 42, 255);
 
         let mut segments: Vec<Box<dyn Element>> = Vec::new();
         if let Some(folder) = &context.folder {
-            segments.push(context_segment(appearance, folder.clone(), muted));
+            segments.push(context_segment(appearance, folder.clone(), text_color));
         }
         if let Some(branch) = &context.branch {
-            segments.push(context_segment(appearance, branch.clone(), muted));
+            // #3: the branch reads as a link-ish identifier in the accent colour.
+            segments.push(context_segment(appearance, branch.clone(), accent));
         }
         if context.added.is_some() || context.removed.is_some() {
             let added = context.added.unwrap_or(0);
             let removed = context.removed.unwrap_or(0);
-            segments.push(context_segment(
-                appearance,
-                format!("+{added} \u{2212}{removed}"),
-                muted,
-            ));
+            // Keep `+N −M` as one unit (no `·` between the two halves).
+            segments.push(
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(4.)
+                    .with_child(context_segment(appearance, format!("+{added}"), green))
+                    .with_child(context_segment(appearance, format!("\u{2212}{removed}"), red))
+                    .finish(),
+            );
         }
         if let Some(pr) = context.pr_number {
-            segments.push(context_segment(appearance, format!("PR #{pr}"), muted));
+            segments.push(context_segment(appearance, format!("PR #{pr}"), accent));
         }
         if let Some(ci) = context.ci {
             // Semantic CI colours (mirroring `Fill::success`/`error`/`warn`).
             let color = match ci {
-                CiState::Passing => ColorU::new(0, 142, 65, 255),
-                CiState::Failing => ColorU::new(188, 54, 42, 255),
+                CiState::Passing => green,
+                CiState::Failing => red,
                 CiState::Pending => ColorU::new(194, 128, 0, 255),
             };
             segments.push(context_segment(appearance, ci.label().to_owned(), color));
@@ -2439,10 +2663,23 @@ impl ClaudeCodeView {
             }
             row.add_child(segment);
         }
+        // #3: a subtle rounded fill so the bar reads as its own surface above
+        // the input. Hug the content width (left-aligned) rather than stretching
+        // the fill across the whole composer.
+        let chip = Container::new(row.finish())
+            .with_padding_left(8.)
+            .with_padding_right(8.)
+            .with_padding_top(3.)
+            .with_padding_bottom(3.)
+            // #11: tint the bar's fill with the tab colour.
+            .with_background_color(self.render_wash.get())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+            .finish();
         Some(
-            Container::new(row.finish())
-                .with_padding_left(6.)
-                .with_padding_bottom(2.)
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(chip)
                 .finish(),
         )
     }
@@ -2484,11 +2721,31 @@ impl ClaudeCodeView {
             } else {
                 "Send"
             };
-            appearance
+            // #10: the primary button is the pane's accent (the tab colour),
+            // not the theme accent — so a custom-coloured button rather than
+            // ButtonVariant::Accent. The label colour contrasts the fill.
+            let accent = self.render_accent.get();
+            let text_color = contrasting_text(accent);
+            let button_label = appearance
                 .ui_builder()
-                .button(ButtonVariant::Accent, self.submit_button.clone())
-                .with_text_label(label.to_owned())
+                .span(label.to_owned())
+                .with_style(UiComponentStyles {
+                    font_color: Some(text_color),
+                    font_size: Some(13.),
+                    ..Default::default()
+                })
                 .build()
+                .finish();
+            let button = Container::new(button_label)
+                .with_padding_left(12.)
+                .with_padding_right(12.)
+                .with_padding_top(6.)
+                .with_padding_bottom(6.)
+                .with_background_color(accent)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                .finish();
+            Hoverable::new(self.submit_button.clone(), move |_| button)
+                .with_cursor(Cursor::PointingHand)
                 .on_click(|ctx, _, _| {
                     ctx.dispatch_typed_action(ClaudeCodeViewAction::Submit);
                 })
@@ -2515,31 +2772,14 @@ impl ClaudeCodeView {
         // #13: Claude-style footer below the input — permission selector and
         // attach on the left; the context / model / effort controls (each opens
         // a dropdown / popover above the input) and the Send/Stop action on the
-        // right. While a turn streams, the left also shows the #9 shimmer.
-        let mut left = Flex::row()
+        // right. (#7: the streaming indicator moved out of here to below the
+        // last message.)
+        let left = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(8.)
             .with_child(self.render_permission_control(appearance))
-            .with_child(attach);
-        if self.streaming {
-            let shimmer = theme.main_text_color(theme.surface_1()).into_solid();
-            left.add_child(
-                Container::new(
-                    ShimmeringTextElement::new(
-                        "Working…",
-                        appearance.ui_font_family(),
-                        12.,
-                        muted,
-                        shimmer,
-                        ShimmerConfig::default(),
-                        self.working_shimmer.clone(),
-                    )
-                    .finish(),
-                )
-                .with_margin_left(4.)
-                .finish(),
-            );
-        }
+            .with_child(attach)
+            .finish();
 
         let right = Flex::row()
             .with_main_axis_size(MainAxisSize::Min)
@@ -2555,7 +2795,7 @@ impl ClaudeCodeView {
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(left.finish())
+            .with_child(left)
             .with_child(right)
             .finish();
 
@@ -2563,11 +2803,6 @@ impl ClaudeCodeView {
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(8.);
-        // #13: the open composer dropdown / popover (model / effort / context)
-        // sits at the top of the card, above the input.
-        if let Some(menu) = self.render_composer_menu(appearance) {
-            card_column.add_child(menu);
-        }
         // PRODUCT §54 (7m): queued type-ahead messages sit at the top of the
         // composer, each removable before it dispatches.
         if let Some(queue) = self.render_message_queue(appearance) {
@@ -2584,7 +2819,9 @@ impl ClaudeCodeView {
         if let Some(chips) = self.render_attachment_chips(appearance) {
             card_column.add_child(chips);
         }
-        let card = Container::new(card_column.with_child(editor).with_child(controls).finish())
+        // #4: the input card holds ONLY the message input (and its queue /
+        // suggestions / attachment chips) — the control pills moved out, below.
+        let card = Container::new(card_column.with_child(editor).finish())
             .with_padding(Padding::uniform(10.))
             .with_background_color(theme.surface_1().into_solid())
             .with_border(Border::all(1.).with_border_fill(theme.outline()))
@@ -2596,8 +2833,9 @@ impl ClaudeCodeView {
             .with_drop_shadow(DropShadow::default())
             .finish();
 
-        // #11: the context bar (folder / branch / diff / PR / CI) sits just
-        // above the composer card.
+        // Composer column, top → bottom: context bar (#11) above the input;
+        // the input card; the open dropdown / popover (#13/#2) just above the
+        // pills; then the control pills (#4) below the input, outside the card.
         let mut composer_column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
@@ -2606,6 +2844,10 @@ impl ClaudeCodeView {
             composer_column.add_child(bar);
         }
         composer_column.add_child(card);
+        if let Some(menu) = self.render_composer_menu(appearance) {
+            composer_column.add_child(menu);
+        }
+        composer_column.add_child(controls);
 
         Container::new(composer_column.finish())
             .with_padding_top(6.)
@@ -2682,6 +2924,11 @@ impl View for ClaudeCodeView {
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
+        // #10/#11: resolve the tab-derived accent + wash once, for the whole
+        // render tree (read via `render_accent` / `render_wash`).
+        self.render_accent.set(self.accent(app));
+        self.render_wash.set(self.accent_wash(app));
+
         // twarp 07 (7i, PRODUCT §39/§43): raw mode — the pane IS the
         // terminal. Rendered bare (no focus-grab wrapper: the terminal owns
         // every click and keystroke; the way back is its floating overlay,
@@ -2812,7 +3059,7 @@ impl TypedActionView for ClaudeCodeView {
                 self.todos_expanded = !self.todos_expanded;
                 ctx.notify();
             }
-            ClaudeCodeViewAction::CyclePermissionMode => self.cycle_permission_mode(ctx),
+            ClaudeCodeViewAction::SetPermissionMode(mode) => self.set_permission_mode(*mode, ctx),
             ClaudeCodeViewAction::AcceptSuggestion(index) => {
                 self.accept_suggestion(*index, ctx);
                 // A click steals focus from the editor; give it back so
@@ -2920,22 +3167,51 @@ impl BackingView for ClaudeCodeView {
         // framework's CustomAction (handled by the header view and routed
         // back to `handle_custom_action`), NOT an in-pane
         // ClaudeCodeViewAction — that dies unhandled from header chrome.
+        // #7: a [ Chat UI | Raw CLI ] section toggle (a segmented control), the
+        // active section highlighted. Entering raw mode is disabled mid-turn
+        // (§42); leaving it is always allowed. Clicking the inactive section
+        // flips via the pane framework's CustomAction (header chrome can't
+        // dispatch an in-pane action).
+        let appearance = Appearance::as_ref(app);
+        // #10/#11: theme the toggle to the tab accent (the header renders
+        // separately from the body, so compute it here rather than via the cell).
+        let accent = self.accent(app);
+        let wash = self.accent_wash(app);
         let raw_mode = self.raw_cli.is_some();
-        let raw_cli_toggle = (raw_mode || !self.streaming).then(|| {
-            let appearance = Appearance::as_ref(app);
-            let label = if raw_mode { "Chat UI" } else { "Raw CLI" };
-            appearance
-                .ui_builder()
-                .button(ButtonVariant::Text, self.raw_cli_button.clone())
-                .with_text_label(label.to_owned())
-                .build()
-                .on_click(|ctx, _, _| {
-                    ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
-                        PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleRawCli),
-                    );
-                })
-                .finish()
-        });
+        let chat_segment = render_mode_segment(
+            "Chat UI",
+            !raw_mode,                  // active when in chat
+            raw_mode,                   // clickable only from raw mode (to exit)
+            self.chat_ui_button.clone(),
+            accent,
+            wash,
+            appearance,
+        );
+        let raw_segment = render_mode_segment(
+            "Raw CLI",
+            raw_mode,                   // active when in raw
+            !raw_mode && !self.streaming, // enter raw only when idle
+            self.raw_cli_button.clone(),
+            accent,
+            wash,
+            appearance,
+        );
+        let theme = appearance.theme();
+        let toggle = Container::new(
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(2.)
+                .with_child(chat_segment)
+                .with_child(raw_segment)
+                .finish(),
+        )
+        .with_padding(Padding::uniform(2.))
+        .with_border(Border::all(1.).with_border_fill(theme.outline()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+        // #5: breathing room between the toggle and the always-visible close ✕.
+        .with_margin_right(10.)
+        .finish();
         HeaderContent::Standard(StandardHeader {
             title: PANE_TITLE.to_owned(),
             title_secondary: cwd,
@@ -2944,8 +3220,17 @@ impl BackingView for ClaudeCodeView {
             title_max_width: None,
             left_of_title: None,
             right_of_title: None,
-            left_of_overflow: raw_cli_toggle,
-            options: StandardHeaderOptions::default(),
+            left_of_overflow: Some(toggle),
+            options: StandardHeaderOptions {
+                // #5: keep the close ✕ (and overflow) visible without hovering.
+                always_show_icons: true,
+                // The [ Chat UI | Raw CLI ] segmented toggle is wider than the
+                // default 80px right-edge budget — without this it overflowed
+                // off the right of the window. Reserve room for the toggle plus
+                // the close/overflow icons.
+                control_container_width: Some(210.),
+                ..Default::default()
+            },
         })
     }
 
@@ -2969,10 +3254,33 @@ impl ClaudeCodeView {
         let appearance = Appearance::as_ref(app);
         match item {
             TranscriptItem::User(text) => {
-                render_message_row(true, USER_ICON_SVG_PATH, text, appearance)
+                let bubble = render_message_row(
+                    true,
+                    USER_ICON_SVG_PATH,
+                    text,
+                    self.render_accent.get(),
+                    appearance,
+                );
+                // #8: any images sent with this turn preview above the bubble.
+                match self.sent_images.get(&index) {
+                    Some(paths) if !paths.is_empty() => Flex::column()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                        .with_main_axis_size(MainAxisSize::Min)
+                        .with_spacing(6.)
+                        .with_child(render_sent_images(paths, appearance))
+                        .with_child(bubble)
+                        .finish(),
+                    _ => bubble,
+                }
             }
             TranscriptItem::Assistant { text, .. } => {
-                render_message_row(false, ASSISTANT_ICON_SVG_PATH, text, appearance)
+                render_message_row(
+                    false,
+                    ASSISTANT_ICON_SVG_PATH,
+                    text,
+                    self.render_accent.get(),
+                    appearance,
+                )
             }
             TranscriptItem::Notice(message) => render_notice(message, appearance),
             TranscriptItem::Error(message) => render_error(message, appearance),
@@ -3068,7 +3376,7 @@ impl ClaudeCodeView {
         let theme = appearance.theme();
         let surface = theme.surface_2();
         let text_color = theme.main_text_color(surface).into_solid();
-        let accent = theme.accent().into_solid();
+        let accent = self.render_accent.get();
 
         let header = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -3166,7 +3474,7 @@ impl ClaudeCodeView {
         let surface = theme.surface_2();
         let text_color = theme.main_text_color(surface).into_solid();
         let muted = theme.nonactive_ui_text_color().into_solid();
-        let accent = theme.accent().into_solid();
+        let accent = self.render_accent.get();
         let questions = parse_questions(input);
         let selected = self.question_selected.get(&index);
         let interactive = !self.streaming;
@@ -3454,6 +3762,7 @@ fn render_message_row(
     is_user: bool,
     icon_svg: &'static str,
     text: &str,
+    accent: ColorU,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
@@ -3465,7 +3774,10 @@ fn render_message_row(
         theme.background()
     };
     let text_color = theme.main_text_color(surface).into_solid();
-    let icon = ConstrainedBox::new(Icon::new(icon_svg, text_color).finish())
+    // #11: the Claude (assistant) glyph takes the tab accent; the user glyph
+    // stays neutral.
+    let icon_color = if is_user { text_color } else { accent };
+    let icon = ConstrainedBox::new(Icon::new(icon_svg, icon_color).finish())
         .with_height(16.)
         .with_width(16.)
         .finish();
@@ -3784,6 +4096,82 @@ fn context_segment(appearance: &Appearance, text: String, color: ColorU) -> Box<
         .finish()
 }
 
+/// Image previews shown above a user message bubble (#8): a row of rounded
+/// thumbnails, each capped so a large image doesn't dominate the transcript.
+/// Left-margined to roughly sit under the message body (past the avatar).
+fn render_sent_images(paths: &[PathBuf], _appearance: &Appearance) -> Box<dyn Element> {
+    let mut row = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_main_axis_size(MainAxisSize::Min)
+        .with_spacing(6.);
+    for path in paths {
+        row.add_child(
+            ConstrainedBox::new(
+                Image::new(
+                    AssetSource::LocalFile {
+                        path: path.display().to_string(),
+                    },
+                    CacheOption::BySize,
+                )
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                .finish(),
+            )
+            .with_max_width(220.)
+            .with_max_height(160.)
+            .finish(),
+        );
+    }
+    Container::new(row.finish())
+        .with_margin_left(TRANSCRIPT_LEFT_MARGIN + 30.)
+        .finish()
+}
+
+/// One segment of the Chat UI / Raw CLI section toggle (#7). The active segment
+/// is a filled, non-clickable highlight; an inactive-but-allowed segment is
+/// clickable and flips the mode; an inactive-disabled segment (e.g. entering
+/// raw mid-turn) is muted and inert.
+fn render_mode_segment(
+    label: &str,
+    active: bool,
+    clickable: bool,
+    mouse: MouseStateHandle,
+    accent: ColorU,
+    wash: ColorU,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    // #10/#11: the active section reads in the tab accent over a faint wash.
+    let color = if active {
+        accent
+    } else if clickable {
+        theme.main_text_color(theme.background()).into_solid()
+    } else {
+        theme.nonactive_ui_text_color().into_solid()
+    };
+    let mut chip = Container::new(context_segment(appearance, label.to_owned(), color))
+        .with_padding_left(8.)
+        .with_padding_right(8.)
+        .with_padding_top(3.)
+        .with_padding_bottom(3.)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
+    if active {
+        chip = chip.with_background_color(wash);
+    }
+    let chip = chip.finish();
+    if clickable {
+        Hoverable::new(mouse, move |_| chip)
+            .with_cursor(Cursor::PointingHand)
+            .on_click(|ctx, _, _| {
+                ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
+                    PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleRawCli),
+                );
+            })
+            .finish()
+    } else {
+        chip
+    }
+}
+
 /// Compact token count for the context popover (#13): `365.8k`, `1.0M`.
 fn fmt_tokens(n: u64) -> String {
     if n >= 1_000_000 {
@@ -3844,7 +4232,18 @@ fn render_context_progress(fraction: f32, filled: ColorU, track: ColorU) -> Box<
         .finish()
 }
 
-fn render_pill(label: &str, appearance: &Appearance) -> Box<dyn Element> {
+/// Black or white, whichever reads better on `bg` (#10) — for the primary
+/// button label on an arbitrary tab colour.
+fn contrasting_text(bg: ColorU) -> ColorU {
+    let luminance = 0.299 * bg.r as f32 + 0.587 * bg.g as f32 + 0.114 * bg.b as f32;
+    if luminance > 150. {
+        ColorU::new(0, 0, 0, 255)
+    } else {
+        ColorU::new(255, 255, 255, 255)
+    }
+}
+
+fn render_pill(label: &str, bg: ColorU, appearance: &Appearance) -> Box<dyn Element> {
     let theme = appearance.theme();
     Container::new(
         appearance
@@ -3863,7 +4262,7 @@ fn render_pill(label: &str, appearance: &Appearance) -> Box<dyn Element> {
     .with_padding_top(3.)
     .with_padding_bottom(3.)
     .with_margin_right(6.)
-    .with_background_color(theme.surface_2().into_solid())
+    .with_background_color(bg)
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
     .finish()
 }
@@ -3875,6 +4274,7 @@ fn render_clickable_pill(
     label: &str,
     mouse_state: MouseStateHandle,
     on_click: impl Fn(&mut warpui::EventContext) + 'static,
+    bg: ColorU,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
@@ -3895,7 +4295,7 @@ fn render_clickable_pill(
     .with_padding_right(8.)
     .with_padding_top(3.)
     .with_padding_bottom(3.)
-    .with_background_color(theme.surface_2().into_solid())
+    .with_background_color(bg)
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
     .finish();
     Container::new(
