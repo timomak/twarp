@@ -3221,9 +3221,14 @@ impl BackingView for ClaudeCodeView {
             left_of_title: None,
             right_of_title: None,
             left_of_overflow: Some(toggle),
-            // #5: keep the close ✕ (and overflow) visible without hovering.
             options: StandardHeaderOptions {
+                // #5: keep the close ✕ (and overflow) visible without hovering.
                 always_show_icons: true,
+                // The [ Chat UI | Raw CLI ] segmented toggle is wider than the
+                // default 80px right-edge budget — without this it overflowed
+                // off the right of the window. Reserve room for the toggle plus
+                // the close/overflow icons.
+                control_container_width: Some(210.),
                 ..Default::default()
             },
         })
