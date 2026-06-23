@@ -1,6 +1,6 @@
 # 08 — macOS-style UI overhaul
 
-**Phase:** impl-in-review
+**Phase:** merged
 **Spec PR:** [#81](https://github.com/timomak/twarp/pull/81) — **owner-directed bundle: all of 8a–8f implemented in the same PR as the spec** (override of the spec-merge gate and one-sub-phase-per-PR rule, 2026-06-18; same call as the feature-07 bundling override)
 **Impl PRs:** folded into #81
 
