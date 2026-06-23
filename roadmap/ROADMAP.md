@@ -2,7 +2,7 @@
 
 Single source of truth for what's being built next. `/twarp-next` reads this file every invocation; the user reads it to see status at a glance.
 
-**Currently active:** `08-macos-ui`
+**Currently active:** `13-mcp-viewer`
 
 ## Features
 
@@ -15,11 +15,12 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 05 | [Open Changes panel](05-open-changes/STATUS.md) | merged | [#56](https://github.com/timomak/twarp/pull/56), respec [#58](https://github.com/timomak/twarp/pull/58) | 5a [#59](https://github.com/timomak/twarp/pull/59), 5c+5e [#60](https://github.com/timomak/twarp/pull/60), 5e polish [#61](https://github.com/timomak/twarp/pull/61), 5b [#62](https://github.com/timomak/twarp/pull/62), 5d [#63](https://github.com/timomak/twarp/pull/63) |
 | 06 | [Tab rename shortcut](06-tab-rename/STATUS.md) | merged | [#64](https://github.com/timomak/twarp/pull/64) | [#65](https://github.com/timomak/twarp/pull/65) |
 | 07 | [Claude Code panel](07-claude-code-panel/STATUS.md) | merged | [#66](https://github.com/timomak/twarp/pull/66), respec [#68](https://github.com/timomak/twarp/pull/68), main-pane respec [#70](https://github.com/timomak/twarp/pull/70), 7i amendment [#77](https://github.com/timomak/twarp/pull/77) (folded into #76), phase-2 specs [#78](https://github.com/timomak/twarp/pull/78) | 7b [#69](https://github.com/timomak/twarp/pull/69) (merged — sidebar host, superseded), 7b [#71](https://github.com/timomak/twarp/pull/71) (merged — main-pane host), 7c [#72](https://github.com/timomak/twarp/pull/72) (merged — live driver), polish [#74](https://github.com/timomak/twarp/pull/74) (merged — shell polish + metadata chips; superseded auto-closed #73), 7d [#75](https://github.com/timomak/twarp/pull/75) (merged — tool cards + review feedback), 7e–7j bundled [#76](https://github.com/timomak/twarp/pull/76) (merged), phase 2 7k–7n bundled [#79](https://github.com/timomak/twarp/pull/79) (merged — streaming, rich input, composer controls, plan rendering) |
-| 08 | [macOS-style UI overhaul](08-macos-ui/STATUS.md) | impl-in-review | #81 | #81 (spec+impl bundled, owner-directed) |
+| 08 | [macOS-style UI overhaul](08-macos-ui/STATUS.md) | merged | #81 | #81 (spec+impl bundled, owner-directed) |
 | 09 | [Rebrand to twarp](09-rebrand/STATUS.md) | not-started | — | — |
 | 10 | [File editor with go-to-definition](10-file-editor/STATUS.md) | not-started | — | — |
 | 11 | [Git blame](11-git-blame/STATUS.md) | not-started | — | — |
 | 12 | [Project search & replace](12-project-search-replace/STATUS.md) | not-started | — | — |
+| 13 | [MCP viewer in Claude pane](13-mcp-viewer/STATUS.md) | spec-in-review | [#91](https://github.com/timomak/twarp/pull/91) | — |
 
 ## Phases
 
@@ -52,6 +53,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 10. **File editor surface tenth** — pivots twarp from "terminal" to "terminal + IDE" by exposing the existing `crates/editor/` + `crates/lsp/` infrastructure as a first-class file-editing workflow. Headline gesture is cmd+click → LSP definition (already callable from `app/src/code/local_code_editor.rs`, just not wired to a workflow where you can open arbitrary files). Placed after rebrand because wiring across `app/src/code/`, `crates/editor/`, and `crates/lsp/` would otherwise be churned during the rename pass.
 11. **Git blame eleventh** — depends on 10 (no blame without a file-editing surface). Genuinely net-new code: `git blame --porcelain` parser, gutter rendering, commit-detail popover. No upstream cherry-pick risk because blame is new.
 12. **Project search & replace twelfth** — wires the existing `warp_ripgrep` crate into a project-wide search UI plus a replace-all flow. Independent of 10 in principle; sequenced after for result-click → open-file.
+13. **MCP viewer thirteenth** — owner-requested follow-on to feature 07. Surfaces the MCP servers configured for the local `claude` CLI as a read-only view inside the Claude pane (a composer pill/popover listing connected servers + their tools). No add/edit/remove this pass — management stays in the `claude` CLI. Pulled to active ahead of 09 by owner direction (2026-06-23) because it's a small, self-contained win on the just-shipped Claude pane and touches only `claude_code*` crates the rebrand hasn't renamed yet.
 
 ## Out of scope for `/twarp-next`
 
