@@ -95,7 +95,7 @@ use crate::editor::{EditorOptions, EditorView, Event as EditorEvent, TextOptions
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::{
     pane::view::{self, HeaderContent, StandardHeader, StandardHeaderOptions},
-    BackingView, PaneConfiguration, PaneEvent, PaneHeaderAction,
+    BackingView, PaneConfiguration, PaneEvent, PaneGroupAction, PaneHeaderAction,
 };
 use crate::terminal::{view::Event as TerminalViewEvent, TerminalManager, TerminalView};
 use crate::util::path::{resolve_executable, resolve_executable_in_path};
@@ -2921,6 +2921,11 @@ impl View for ClaudeCodeView {
         if focus_ctx.is_self_focused() {
             self.focus(ctx);
         }
+        // #13: tell the pane group this pane's focus changed (it doesn't watch
+        // editor focus itself), so it updates the focused pane — otherwise
+        // Cmd+W / maximize keep targeting whatever pane was focused before.
+        // Mirrors `TerminalView::on_focus`.
+        ctx.dispatch_typed_action(&PaneGroupAction::HandleFocusChange);
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
@@ -3042,7 +3047,12 @@ impl TypedActionView for ClaudeCodeView {
     fn handle_action(&mut self, action: &ClaudeCodeViewAction, ctx: &mut ViewContext<Self>) {
         match action {
             ClaudeCodeViewAction::Submit => self.submit(ctx),
-            ClaudeCodeViewAction::FocusInput => ctx.focus(&self.input_editor),
+            ClaudeCodeViewAction::FocusInput => {
+                ctx.focus(&self.input_editor);
+                // #13: a click on the pane focuses the editor — report it so the
+                // pane group makes this the active pane (Cmd+W / maximize).
+                ctx.dispatch_typed_action(&PaneGroupAction::HandleFocusChange);
+            }
             ClaudeCodeViewAction::OpenUrl(url) => ctx.open_url(&url.url),
             // PRODUCT §4: render re-checks availability, so a notify suffices.
             ClaudeCodeViewAction::Refresh => {
