@@ -135,14 +135,41 @@ impl PaneContent for ClaudeCodePane {
                         let claude = crate::util::path::resolve_executable("claude")
                             .map(|path| path.display().to_string())
                             .unwrap_or_else(|| "claude".to_owned());
+                        // `--resume <id>` only when the session is actually on
+                        // disk. A fresh pane (or one whose first turn hasn't
+                        // completed) has no `.jsonl` yet, so `--resume` would
+                        // fail instantly and the CLI's immediate exit bounces
+                        // straight back to the chat — the "View CLI breaks and
+                        // reverts to UI" report. In that case start a fresh
+                        // interactive session pinned to the pane's own id
+                        // (`--session-id`, a real flag) so returning still
+                        // re-reads the right history (§44).
+                        let persisted = cwd
+                            .clone()
+                            .or_else(|| std::env::current_dir().ok())
+                            .and_then(|cwd| {
+                                claude_code::sessions::session_file(&cwd, session_id)
+                            })
+                            .is_some_and(|path| path.exists());
+                        let session_arg = if persisted {
+                            format!("--resume {session_id}")
+                        } else {
+                            format!("--session-id {session_id}")
+                        };
                         terminal.set_pending_command(
-                            &format!("exec '{claude}' --resume {session_id}"),
+                            &format!("exec '{claude}' {session_arg}"),
                             ctx,
                         );
                     });
                     claude_view_for_raw_cli.update(ctx, |view, ctx| {
                         view.enter_raw_mode(manager, terminal, ctx);
                     });
+                    // #14: make this pane the active one as raw mode opens. The
+                    // embedded terminal's focus-change can't reliably reach the
+                    // pane group before its first layout, so set it explicitly —
+                    // otherwise Cmd+W would still target the previously focused
+                    // pane.
+                    pane_group.focus_pane_by_id(pane_id, ctx);
                 }
             }
         });
@@ -173,7 +200,19 @@ impl PaneContent for ClaudeCodePane {
     }
 
     fn has_application_focus(&self, ctx: &mut ViewContext<PaneGroup>) -> bool {
-        self.view.is_self_or_child_focused(ctx)
+        if self.view.is_self_or_child_focused(ctx) {
+            return true;
+        }
+        // #14: the embedded raw-CLI terminal isn't a structural child of the
+        // pane view, so the layout-ancestor check above can miss it (the
+        // terminal's chain up to this pane isn't established until the first
+        // layout after entering raw mode). Check the terminal handle directly
+        // so pane activation / Cmd+W target this pane while the CLI is focused.
+        let raw_cli_view = self.claude_code_view(ctx).as_ref(ctx).raw_cli_view();
+        match raw_cli_view {
+            Some(terminal) => terminal.is_self_or_child_focused(ctx),
+            None => false,
+        }
     }
 
     fn focus(&self, ctx: &mut ViewContext<PaneGroup>) {
