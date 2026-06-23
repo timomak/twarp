@@ -202,10 +202,10 @@ pub enum ClaudeCodeViewAction {
     ToggleThinking(usize),
     /// Expand / collapse the task list (PRODUCT §23).
     ToggleTodos,
-    /// Step the permission mode to the next value (PRODUCT §25). Applies to
+    /// Pick a permission mode from the dropdown (PRODUCT §25, #2). Applies to
     /// the next spawn; a live session is re-attached via `--resume` so the
     /// conversation continues under the new mode.
-    CyclePermissionMode,
+    SetPermissionMode(PermissionMode),
     /// Accept the composer suggestion at this index (PRODUCT §15a, 7j) —
     /// clicked in the suggestions panel; Enter accepts the highlighted one.
     AcceptSuggestion(usize),
@@ -270,6 +270,7 @@ pub enum ClaudeCodeCustomAction {
 /// only one is open at a time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ComposerMenu {
+    Permission,
     Model,
     Effort,
     Context,
@@ -463,6 +464,8 @@ pub struct ClaudeCodeView {
     context_button: MouseStateHandle,
     /// Pooled mouse handles for the model-picker rows (#13).
     model_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Pooled mouse handles for the permission-picker rows (#2).
+    permission_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
 }
 
 impl ClaudeCodeView {
@@ -588,6 +591,7 @@ impl ClaudeCodeView {
             effort_slider: SliderStateHandle::default(),
             context_button: MouseStateHandle::default(),
             model_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
+            permission_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
         };
 
         // PRODUCT §4: capture the login-shell PATH up front so availability
@@ -1792,23 +1796,19 @@ impl ClaudeCodeView {
         ctx.notify();
     }
 
-    /// Step to the next permission mode (PRODUCT §25): Ask → Accept edits →
-    /// Plan → Bypass → Ask. The mode applies to the next spawn; a live
-    /// session is detached (killed) and its id kept as the resume target, so
-    /// the next message continues the same conversation under the new mode —
-    /// the only mode-change channel `claude`'s documented flags offer.
-    fn cycle_permission_mode(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.streaming {
-            // §25 applies between turns; restarting mid-turn would kill the
-            // in-flight work.
+    /// Set the permission mode from the dropdown (PRODUCT §25, #2). The mode
+    /// applies to the next spawn; a live session is detached (killed) and its id
+    /// kept as the resume target, so the next message continues the same
+    /// conversation under the new mode — the only mode-change channel `claude`'s
+    /// documented flags offer. Closes the menu; idempotent / a no-op mid-turn
+    /// (§25 applies between turns).
+    fn set_permission_mode(&mut self, mode: PermissionMode, ctx: &mut ViewContext<Self>) {
+        self.composer_menu = None;
+        if self.streaming || self.permission_mode == mode {
+            ctx.notify();
             return;
         }
-        self.permission_mode = match self.permission_mode {
-            PermissionMode::Default => PermissionMode::AcceptEdits,
-            PermissionMode::AcceptEdits => PermissionMode::Plan,
-            PermissionMode::Plan => PermissionMode::BypassPermissions,
-            PermissionMode::BypassPermissions => PermissionMode::Default,
-        };
+        self.permission_mode = mode;
         if self.child.is_some() {
             // Detach the live process; the next message resumes the
             // conversation under the new mode. The pane owns its session id
@@ -2096,9 +2096,9 @@ impl ClaudeCodeView {
         .finish()
     }
 
-    /// The permission-mode selector (§25): clicking cycles Ask → Accept edits →
-    /// Plan → Bypass. Static while a turn streams (the mode applies between
-    /// turns). On the left of the #13 footer.
+    /// The permission-mode selector (§25, #2): clicking opens a dropdown of the
+    /// four modes, like the model picker. Static while a turn streams (the mode
+    /// applies between turns).
     fn render_permission_control(&self, appearance: &Appearance) -> Box<dyn Element> {
         let label = prettify_permission_mode(self.permission_mode.as_cli_arg());
         if self.streaming {
@@ -2107,7 +2107,11 @@ impl ClaudeCodeView {
             render_clickable_pill(
                 &label,
                 self.permission_pill_mouse.clone(),
-                |ctx| ctx.dispatch_typed_action(ClaudeCodeViewAction::CyclePermissionMode),
+                |ctx| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
+                        ComposerMenu::Permission,
+                    ))
+                },
                 appearance,
             )
         }
@@ -2189,6 +2193,7 @@ impl ClaudeCodeView {
         let menu = self.composer_menu?;
         let theme = appearance.theme();
         let content = match menu {
+            ComposerMenu::Permission => self.render_permission_menu(appearance),
             ComposerMenu::Model => self.render_model_menu(appearance),
             ComposerMenu::Effort => self.render_effort_menu(appearance),
             ComposerMenu::Context => self.render_context_panel(appearance),
@@ -2201,6 +2206,69 @@ impl ClaudeCodeView {
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
                 .finish(),
         )
+    }
+
+    /// The permission-mode dropdown (#2): a row per mode (title + the §25
+    /// one-liner), the active one highlighted; clicking sets it and closes the
+    /// menu.
+    fn render_permission_menu(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let text_color = theme.main_text_color(theme.surface_2()).into_solid();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let accent = theme.accent().into_solid();
+        const MODES: [PermissionMode; 4] = [
+            PermissionMode::Default,
+            PermissionMode::AcceptEdits,
+            PermissionMode::Plan,
+            PermissionMode::BypassPermissions,
+        ];
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(2.)
+            .with_child(menu_header("Permission mode", muted, appearance));
+        for (index, mode) in MODES.iter().enumerate() {
+            let mode = *mode;
+            let selected = self.permission_mode == mode;
+            let mouse = {
+                let mut pool = self.permission_menu_row_mouse.borrow_mut();
+                while pool.len() <= index {
+                    pool.push(MouseStateHandle::default());
+                }
+                pool[index].clone()
+            };
+            let title = prettify_permission_mode(mode.as_cli_arg());
+            let label_col = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(1.)
+                .with_child(context_segment(
+                    appearance,
+                    title,
+                    if selected { accent } else { text_color },
+                ))
+                .with_child(context_segment(appearance, mode.label().to_owned(), muted))
+                .finish();
+            let mut row = Container::new(label_col)
+                .with_padding_left(8.)
+                .with_padding_right(8.)
+                .with_padding_top(5.)
+                .with_padding_bottom(5.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
+            if selected {
+                row = row.with_background_color(theme.surface_1().into_solid());
+            }
+            let row = row.finish();
+            column.add_child(
+                Hoverable::new(mouse, move |_| row)
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::SetPermissionMode(mode));
+                    })
+                    .finish(),
+            );
+        }
+        column.finish()
     }
 
     /// The model dropdown (#13): one row per `MODEL_CYCLE` entry, the active one
@@ -2396,31 +2464,42 @@ impl ClaudeCodeView {
         }
         let theme = appearance.theme();
         let muted = theme.nonactive_ui_text_color().into_solid();
+        let text_color = theme.main_text_color(theme.surface_2()).into_solid();
+        let accent = theme.accent().into_solid();
+        // #3: semantic colours — green additions, red deletions (and the same
+        // green/red/amber for CI as before).
+        let green = ColorU::new(0, 142, 65, 255);
+        let red = ColorU::new(188, 54, 42, 255);
 
         let mut segments: Vec<Box<dyn Element>> = Vec::new();
         if let Some(folder) = &context.folder {
-            segments.push(context_segment(appearance, folder.clone(), muted));
+            segments.push(context_segment(appearance, folder.clone(), text_color));
         }
         if let Some(branch) = &context.branch {
-            segments.push(context_segment(appearance, branch.clone(), muted));
+            // #3: the branch reads as a link-ish identifier in the accent colour.
+            segments.push(context_segment(appearance, branch.clone(), accent));
         }
         if context.added.is_some() || context.removed.is_some() {
             let added = context.added.unwrap_or(0);
             let removed = context.removed.unwrap_or(0);
-            segments.push(context_segment(
-                appearance,
-                format!("+{added} \u{2212}{removed}"),
-                muted,
-            ));
+            // Keep `+N −M` as one unit (no `·` between the two halves).
+            segments.push(
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(4.)
+                    .with_child(context_segment(appearance, format!("+{added}"), green))
+                    .with_child(context_segment(appearance, format!("\u{2212}{removed}"), red))
+                    .finish(),
+            );
         }
         if let Some(pr) = context.pr_number {
-            segments.push(context_segment(appearance, format!("PR #{pr}"), muted));
+            segments.push(context_segment(appearance, format!("PR #{pr}"), accent));
         }
         if let Some(ci) = context.ci {
             // Semantic CI colours (mirroring `Fill::success`/`error`/`warn`).
             let color = match ci {
-                CiState::Passing => ColorU::new(0, 142, 65, 255),
-                CiState::Failing => ColorU::new(188, 54, 42, 255),
+                CiState::Passing => green,
+                CiState::Failing => red,
                 CiState::Pending => ColorU::new(194, 128, 0, 255),
             };
             segments.push(context_segment(appearance, ci.label().to_owned(), color));
@@ -2439,10 +2518,22 @@ impl ClaudeCodeView {
             }
             row.add_child(segment);
         }
+        // #3: a subtle rounded fill so the bar reads as its own surface above
+        // the input. Hug the content width (left-aligned) rather than stretching
+        // the fill across the whole composer.
+        let chip = Container::new(row.finish())
+            .with_padding_left(8.)
+            .with_padding_right(8.)
+            .with_padding_top(3.)
+            .with_padding_bottom(3.)
+            .with_background_color(theme.surface_2().into_solid())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+            .finish();
         Some(
-            Container::new(row.finish())
-                .with_padding_left(6.)
-                .with_padding_bottom(2.)
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(chip)
                 .finish(),
         )
     }
@@ -2563,11 +2654,6 @@ impl ClaudeCodeView {
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(8.);
-        // #13: the open composer dropdown / popover (model / effort / context)
-        // sits at the top of the card, above the input.
-        if let Some(menu) = self.render_composer_menu(appearance) {
-            card_column.add_child(menu);
-        }
         // PRODUCT §54 (7m): queued type-ahead messages sit at the top of the
         // composer, each removable before it dispatches.
         if let Some(queue) = self.render_message_queue(appearance) {
@@ -2584,7 +2670,9 @@ impl ClaudeCodeView {
         if let Some(chips) = self.render_attachment_chips(appearance) {
             card_column.add_child(chips);
         }
-        let card = Container::new(card_column.with_child(editor).with_child(controls).finish())
+        // #4: the input card holds ONLY the message input (and its queue /
+        // suggestions / attachment chips) — the control pills moved out, below.
+        let card = Container::new(card_column.with_child(editor).finish())
             .with_padding(Padding::uniform(10.))
             .with_background_color(theme.surface_1().into_solid())
             .with_border(Border::all(1.).with_border_fill(theme.outline()))
@@ -2596,8 +2684,9 @@ impl ClaudeCodeView {
             .with_drop_shadow(DropShadow::default())
             .finish();
 
-        // #11: the context bar (folder / branch / diff / PR / CI) sits just
-        // above the composer card.
+        // Composer column, top → bottom: context bar (#11) above the input;
+        // the input card; the open dropdown / popover (#13/#2) just above the
+        // pills; then the control pills (#4) below the input, outside the card.
         let mut composer_column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
@@ -2606,6 +2695,10 @@ impl ClaudeCodeView {
             composer_column.add_child(bar);
         }
         composer_column.add_child(card);
+        if let Some(menu) = self.render_composer_menu(appearance) {
+            composer_column.add_child(menu);
+        }
+        composer_column.add_child(controls);
 
         Container::new(composer_column.finish())
             .with_padding_top(6.)
@@ -2812,7 +2905,7 @@ impl TypedActionView for ClaudeCodeView {
                 self.todos_expanded = !self.todos_expanded;
                 ctx.notify();
             }
-            ClaudeCodeViewAction::CyclePermissionMode => self.cycle_permission_mode(ctx),
+            ClaudeCodeViewAction::SetPermissionMode(mode) => self.set_permission_mode(*mode, ctx),
             ClaudeCodeViewAction::AcceptSuggestion(index) => {
                 self.accept_suggestion(*index, ctx);
                 // A click steals focus from the editor; give it back so
