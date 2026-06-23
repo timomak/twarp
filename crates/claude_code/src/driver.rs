@@ -597,6 +597,10 @@ impl Parser {
                 self.finish_block(idx, out);
             }
             self.streamed = false;
+            // The text/thinking/tools arrived as deltas, but the consolidated
+            // event still carries this message's token usage — surface it (the
+            // free `parse_assistant` below is skipped on this path).
+            emit_message_usage(value, out);
             return;
         }
         parse_assistant(value, out);
@@ -689,6 +693,7 @@ fn parse_assistant(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
         .get("parent_tool_use_id")
         .and_then(|v| v.as_str())
         .map(str::to_owned);
+    emit_message_usage(value, out);
     for block in content {
         let Some(ty) = block.get("type").and_then(|v| v.as_str()) else {
             continue;
@@ -906,25 +911,53 @@ fn parse_turn_metrics(value: &Value) -> TurnMetrics {
     }
 }
 
+/// Surface the per-message token usage from an `assistant` event. The running
+/// context + output counts live in `message.usage` (the end-of-turn `result`
+/// re-reports the final figure with the context window); surfacing it here lets
+/// the streaming status show a live token count instead of waiting for the turn
+/// to close. Only the main thread counts — a sub-agent (`parent_tool_use_id`
+/// set) has its own context window. There is no `modelUsage` mid-turn, so the
+/// window is `None`; the reducer keeps the last-known window across the turn.
+fn emit_message_usage(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
+    let is_subagent = value
+        .get("parent_tool_use_id")
+        .and_then(|v| v.as_str())
+        .is_some();
+    if is_subagent {
+        return;
+    }
+    if let Some(usage) = value.get("message").and_then(|m| m.get("usage")) {
+        out.push_back(TranscriptEvent::Usage(usage_from_obj(usage, None)));
+    }
+}
+
+/// Build a [`Usage`] from a wire `usage` object (the four token counts). The
+/// context window is supplied separately because it lives in a sibling
+/// `modelUsage` block on the `result` message and is absent on the per-message
+/// `assistant` usage.
+fn usage_from_obj(usage: &Value, context_window: Option<u64>) -> Usage {
+    let count = |key: &str| usage.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
+    Usage {
+        input_tokens: count("input_tokens"),
+        cache_read_input_tokens: count("cache_read_input_tokens"),
+        cache_creation_input_tokens: count("cache_creation_input_tokens"),
+        output_tokens: count("output_tokens"),
+        context_window,
+    }
+}
+
 /// Extract token usage from a `result` message's `usage` block, plus the
 /// context window from `modelUsage[model].contextWindow` (there is one model
 /// entry per turn). Returns `None` if the message carries no `usage`.
 fn parse_usage(value: &Value) -> Option<Usage> {
     let usage = value.get("usage")?;
-    let count = |key: &str| usage.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
     let context_window = value
         .get("modelUsage")
         .and_then(|m| m.as_object())
         .and_then(|m| m.values().next())
         .and_then(|model| model.get("contextWindow"))
         .and_then(|v| v.as_u64());
-    Some(Usage {
-        input_tokens: count("input_tokens"),
-        cache_read_input_tokens: count("cache_read_input_tokens"),
-        cache_creation_input_tokens: count("cache_creation_input_tokens"),
-        output_tokens: count("output_tokens"),
-        context_window,
-    })
+    Some(usage_from_obj(usage, context_window))
 }
 
 #[cfg(test)]
@@ -992,6 +1025,44 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert!(matches!(&out[0], TranscriptEvent::AssistantTextDelta { text } if text == "hi"));
         assert!(matches!(out[1], TranscriptEvent::AssistantTextDone));
+    }
+
+    #[test]
+    fn assistant_message_emits_live_usage() {
+        let v: Value = serde_json::from_str(
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":5000,"cache_read_input_tokens":50000,"cache_creation_input_tokens":3700,"output_tokens":12}}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        // Usage rides ahead of the text so the live token count is fresh.
+        match out.front() {
+            Some(TranscriptEvent::Usage(u)) => {
+                assert_eq!(u.context_used(), 5000 + 50000 + 3700);
+                assert_eq!(u.output_tokens, 12);
+                // No `modelUsage` mid-turn — the window fills in at `result`.
+                assert_eq!(u.context_window, None);
+            }
+            other => panic!("expected Usage first, got {other:?}"),
+        }
+        assert!(out
+            .iter()
+            .any(|e| matches!(e, TranscriptEvent::AssistantTextDelta { text } if text == "hi")));
+    }
+
+    #[test]
+    fn subagent_assistant_message_emits_no_usage() {
+        // A `Task` sub-agent has its own context window; its tokens must not
+        // overwrite the main thread's live count.
+        let v: Value = serde_json::from_str(
+            r#"{"type":"assistant","parent_tool_use_id":"task_1","message":{"role":"assistant","content":[{"type":"text","text":"sub"}],"usage":{"input_tokens":1,"output_tokens":2}}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        assert!(!out
+            .iter()
+            .any(|e| matches!(e, TranscriptEvent::Usage(_))));
     }
 
     #[test]

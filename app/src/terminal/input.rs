@@ -7359,6 +7359,50 @@ impl Input {
         Some((args, cwd))
     }
 
+    /// Resolve the user's `claude` shell alias into [`LaunchOptions`] (flags
+    /// only — e.g. `--dangerously-skip-permissions`, `--effort`,
+    /// `--permission-mode`), so a session resumed from the sidebar gets the
+    /// SAME defaults a freshly typed `claude` would, instead of the bare
+    /// ask-mode default (PRODUCT §2/§36). Mirrors the alias expansion in
+    /// [`Self::claude_pane_trigger`]; returns `None` when there is no
+    /// expandable `claude` alias on the active session.
+    pub(crate) fn claude_alias_launch_options(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<claude_code::launch::LaunchOptions> {
+        let id = self.active_block_session_id()?;
+        let value = {
+            let session = self.sessions.as_ref(ctx).get(id)?;
+            let value = session.alias_value("claude")?;
+            crate::terminal::alias::is_expandable_alias("claude", value).then(|| value.to_owned())
+        }?;
+        let escape_char = self
+            .editor
+            .read(ctx, |editor, _| editor.shell_family())
+            .unwrap_or(ShellFamily::Posix)
+            .escape_char();
+        let cmd =
+            warp_completer::parsers::simple::all_parsed_commands(&value, escape_char).next()?;
+        // Drop leading env assignments + program wrappers, then the `claude`
+        // program token itself; what remains is the flag list the pane maps
+        // onto its spawn options. (An alias has no positional prompt, so
+        // `parse_launch_args` leaves the first turn empty.)
+        let mut args: Vec<String> = Vec::new();
+        let mut seen_program = false;
+        for token in cmd.parts.iter().map(|part| part.as_str()) {
+            if seen_program {
+                args.push(token.to_owned());
+            } else if token.contains('=') || ["command", "builtin", "exec"].contains(&token) {
+                continue;
+            } else {
+                seen_program = true;
+            }
+        }
+        Some(claude_code::launch::parse_launch_args(
+            args.iter().map(String::as_str),
+        ))
+    }
+
     fn try_execute_command_from_source(
         &mut self,
         command: &str,

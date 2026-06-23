@@ -356,6 +356,37 @@ impl Element for ClippedScrollable {
         // constrained by the incoming constraints.
         let mut child_constraint = SizeConstraint::tight_on_cross_axis(self.axis, constraint);
 
+        // When this scrollable is a non-flexible child of a Flex laid out along
+        // its main axis, that Flex hands it an *infinite* max constraint on that
+        // axis to measure its intrinsic size (see `tight_on_cross_axis`'s callers
+        // in `flex`). If that infinite extent lands on our cross axis (the one
+        // perpendicular to scrolling), `tight_on_cross_axis` makes the child's
+        // cross-axis size infinite too — so soft-wrapping content would be laid
+        // out at infinite width/height and trip the scene's finite-rect
+        // assertion. Clamp an infinite cross-axis extent to the window size (the
+        // true upper bound on any on-screen dimension); a real, finite layout
+        // pass passes through unchanged.
+        match self.axis {
+            // Vertical scroll → cross axis is width (x).
+            Axis::Vertical => {
+                if child_constraint.max.x().is_infinite() {
+                    child_constraint.max.set_x(ctx.window_size.x());
+                    child_constraint
+                        .min
+                        .set_x(child_constraint.min.x().min(ctx.window_size.x()));
+                }
+            }
+            // Horizontal scroll → cross axis is height (y).
+            Axis::Horizontal => {
+                if child_constraint.max.y().is_infinite() {
+                    child_constraint.max.set_y(ctx.window_size.y());
+                    child_constraint
+                        .min
+                        .set_y(child_constraint.min.y().min(ctx.window_size.y()));
+                }
+            }
+        }
+
         // When fill_min_main_axis is set, pass the visible size along the main
         // axis as the child's min constraint so centering elements (e.g. Align)
         // can fill and center their content within the visible area.
