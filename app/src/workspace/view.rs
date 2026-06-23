@@ -601,6 +601,48 @@ lazy_static! {
         CornerRadius::with_top(Radius::Pixels(8.));
 }
 
+/// twarp: floating-panel treatment shared by the sidebar (ToolsPanel /
+/// `LeftPanelView`) and the code review (right) panel (`RightPanelView`). Both
+/// read as cards floating above the terminal background: a small gap from the
+/// window/terminal edges, rounded corners, and a soft drop shadow. The panel
+/// backgrounds match the active tab's fill (see `floating_panel_surface_fill`),
+/// so the panels share their tab's colour.
+pub(super) const FLOATING_PANEL_MARGIN: f32 = 8.;
+
+pub(super) fn floating_panel_corner_radius() -> CornerRadius {
+    CornerRadius::with_all(Radius::Pixels(10.))
+}
+
+pub(super) fn floating_panel_drop_shadow() -> warpui::elements::DropShadow {
+    warpui::elements::DropShadow {
+        color: warpui::color::ColorU::new(0, 0, 0, 24),
+        offset: pathfinder_geometry::vector::vec2f(0., 2.),
+        blur_radius: 10.,
+        spread_radius: 0.,
+    }
+}
+
+/// twarp: the floating side panels share the main terminal background, so they
+/// read as the same surface as the terminal (white in light themes, dark in dark
+/// themes). The cards are set apart only by their gray outline, edge gap, and
+/// soft shadow rather than a distinct fill.
+pub(super) fn floating_panel_surface_fill(app: &AppContext) -> warp_core::ui::theme::Fill {
+    Appearance::as_ref(app).theme().background()
+}
+
+/// twarp: a subtle gray outline around the floating side panels so each card's
+/// edge reads cleanly against the terminal background.
+const FLOATING_PANEL_BORDER_COLOR: ColorU = ColorU {
+    r: 0xCB,
+    g: 0xC9,
+    b: 0xD2,
+    a: 0xFF,
+};
+
+pub(super) fn floating_panel_border() -> Border {
+    Border::all(1.).with_border_color(FLOATING_PANEL_BORDER_COLOR)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TabConfigsMenuOpenSource {
     KeyboardShortcut,
@@ -3429,7 +3471,9 @@ impl Workspace {
                     entry_focus: GlobalSearchEntryFocus::Results,
                 },
                 LeftPanelDisplayedTab::WarpDrive => ToolPanelView::WarpDrive,
-                LeftPanelDisplayedTab::Shortcuts => ToolPanelView::Shortcuts,
+                // twarp: Shortcuts moved to Settings; a stale persisted
+                // "Shortcuts" tab degrades to the Project Explorer.
+                LeftPanelDisplayedTab::Shortcuts => ToolPanelView::ProjectExplorer,
                 LeftPanelDisplayedTab::ClaudeSessions => ToolPanelView::ClaudeSessions,
                 LeftPanelDisplayedTab::ConversationListView => ToolPanelView::ConversationListView,
             };
@@ -18027,15 +18071,13 @@ impl Workspace {
         container.finish()
     }
 
-    fn render_panel_separator(app: &AppContext) -> Box<dyn Element> {
-        let appearance = Appearance::as_ref(app);
-        ConstrainedBox::new(
-            Rect::new()
-                .with_background_color(appearance.theme().outline().into_solid())
-                .finish(),
-        )
-        .with_width(1.0)
-        .finish()
+    fn render_panel_separator(_app: &AppContext) -> Box<dyn Element> {
+        // twarp (#3): no visible divider line between panels. The floating side
+        // panels now carry their own margin gap, which separates them from the
+        // terminal and each other, so the old 1px outline line is redundant and
+        // read as a hard seam against the floating cards. Kept as a zero-width
+        // element so the panel-ordering control flow stays unchanged.
+        Empty::new().finish()
     }
 
     fn add_panel_with_separator(
@@ -18870,9 +18912,10 @@ impl Workspace {
                 entry_focus: GlobalSearchEntryFocus::Results,
             });
         }
-        // Custom command shortcuts panel (twarp feature 04, PRODUCT §26).
-        // Sits immediately after Global Search in the toolbelt.
-        views.push(ToolPanelView::Shortcuts);
+        // twarp: Custom command shortcuts moved out of the toolbelt into
+        // Settings > Shortcuts (settings_view::shortcuts_page), so the sidebar
+        // is just Files | Search | Code. No `ToolPanelView::Shortcuts` is
+        // pushed here anymore.
         // twarp 07 (7h, PRODUCT §35): the Claude Code session list — a
         // read-only list of `claude`'s own stored sessions for the cwd. The
         // chat itself stays a main-content pane (re-spec #70); the toolbelt

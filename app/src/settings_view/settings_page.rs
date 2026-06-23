@@ -10,7 +10,8 @@ use super::{
     billing_and_usage_page::BillingAndUsagePageView, code_page::CodeSettingsPageView,
     features_page::FeaturesPageView, keybindings::KeybindingsView, main_page::MainSettingsPageView,
     mcp_servers_page::MCPServersSettingsPageView, privacy_page::PrivacyPageView,
-    referrals_page::ReferralsPageView, show_blocks_view::ShowBlocksView, teams_page::TeamsPageView,
+    referrals_page::ReferralsPageView, shortcuts_page::ShortcutsSettingsPageView,
+    show_blocks_view::ShowBlocksView, teams_page::TeamsPageView,
     warp_drive_page::WarpDriveSettingsPageView, warpify_page::WarpifyPageView, SettingsSection,
 };
 use crate::{
@@ -105,6 +106,7 @@ pub enum SettingsPageViewHandle {
     BillingAndUsage(ViewHandle<BillingAndUsagePageView>),
     MCPServers(ViewHandle<MCPServersSettingsPageView>),
     WarpDrive(ViewHandle<WarpDriveSettingsPageView>),
+    Shortcuts(ViewHandle<ShortcutsSettingsPageView>),
 }
 
 impl SettingsPageViewHandle {
@@ -126,6 +128,7 @@ impl SettingsPageViewHandle {
             BillingAndUsage(view_handle) => ChildView::new(view_handle).finish(),
             MCPServers(view_handle) => ChildView::new(view_handle).finish(),
             WarpDrive(view_handle) => ChildView::new(view_handle).finish(),
+            Shortcuts(view_handle) => ChildView::new(view_handle).finish(),
         }
     }
 }

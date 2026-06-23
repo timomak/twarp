@@ -1157,9 +1157,10 @@ impl CodeEditorModel {
             return;
         };
         let character_offset = self.start_of_line_offset(range.start, ctx);
-        // Leave ~1/10 of the viewport above the hunk so the user sees a
-        // sliver of unchanged context (mirrors NavBar's diff-nav offset).
-        let delta = (self.lines_in_viewport(ctx) / 10).max(1);
+        // Center the first changed line in the viewport by leaving ~half the
+        // viewport of unchanged context above it, so the panel opens looking
+        // straight at what changed instead of pinning it to the top edge.
+        let delta = (self.lines_in_viewport(ctx) / 2).max(1);
         let pixel_offset = -(delta as f32 * self.line_height(ctx));
         self.render_state.clone().update(ctx, |render_state, _ctx| {
             render_state

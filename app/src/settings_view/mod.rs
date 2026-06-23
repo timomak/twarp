@@ -43,6 +43,7 @@ use settings_page::{
     MatchData, SettingsPage, SettingsPageEvent, SettingsPageMeta, SettingsPageViewHandle,
     HEADER_PADDING,
 };
+use shortcuts_page::ShortcutsSettingsPageView;
 use show_blocks_view::{ShowBlocksEvent, ShowBlocksView};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -95,6 +96,7 @@ mod privacy_page;
 mod referrals_page;
 mod settings_file_footer;
 pub(crate) mod settings_page;
+mod shortcuts_page;
 mod show_blocks_view;
 mod tab_menu;
 // twarp: 2c-d — visibility raised to pub(crate) so lib.rs can register the
@@ -184,6 +186,9 @@ pub enum SettingsSection {
     Teams,
     WarpDrive,
     Warpify,
+    /// Custom command shortcuts (chord → terminal action sequence). Moved here
+    /// from the left-panel toolbelt so the sidebar is just Files | Search | Code.
+    Shortcuts,
     /// Internal backing-page identifier for CodeSettingsPageView. Multiple subpages
     /// (CodeIndexing, EditorAndCodeReview) share this single backing page,
     /// so this variant is needed as the key in `settings_pages`.
@@ -270,6 +275,7 @@ impl FromStr for SettingsSection {
             "Privacy" => Ok(Self::Privacy),
             "Referrals" => Ok(Self::Referrals),
             "Shared blocks" => Ok(Self::SharedBlocks),
+            "Shortcuts" => Ok(Self::Shortcuts),
             "Teams" => Ok(Self::Teams),
             "Warpify" => Ok(Self::Warpify),
             "WarpDrive" | "Warp Drive" => Ok(Self::WarpDrive),
@@ -901,6 +907,7 @@ macro_rules! update_page {
             SettingsPageViewHandle::BillingAndUsage(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::MCPServers(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::WarpDrive(handle) => $ctx.update_view(handle, $update),
+            SettingsPageViewHandle::Shortcuts(handle) => $ctx.update_view(handle, $update),
         }
     };
 }
@@ -986,6 +993,9 @@ impl SettingsView {
 
         // Keybindings page
         let keybindings_handle = ctx.add_typed_action_view(KeybindingsView::new);
+
+        // Custom shortcuts page (moved out of the left-panel toolbelt).
+        let shortcuts_page_handle = ctx.add_typed_action_view(ShortcutsSettingsPageView::new);
 
         // Code page
         let code_page_handle = ctx.add_typed_action_view(CodeSettingsPageView::new);
@@ -1080,6 +1090,7 @@ impl SettingsView {
             SettingsPage::new(appearance_page_handle),
             SettingsPage::new(features_page_handle),
             SettingsPage::new(keybindings_handle),
+            SettingsPage::new(shortcuts_page_handle),
             SettingsPage::new(platform_page_handle),
             SettingsPage::new(warpify_page_handle),
             SettingsPage::new(referrals_page_handle),
@@ -1117,6 +1128,7 @@ impl SettingsView {
             SettingsNavItem::Page(SettingsSection::Appearance),
             SettingsNavItem::Page(SettingsSection::Features),
             SettingsNavItem::Page(SettingsSection::Keybindings),
+            SettingsNavItem::Page(SettingsSection::Shortcuts),
             SettingsNavItem::Page(SettingsSection::Warpify),
             SettingsNavItem::Page(SettingsSection::Referrals),
             SettingsNavItem::Page(SettingsSection::SharedBlocks),
@@ -1792,6 +1804,7 @@ impl SettingsView {
             SettingsPageViewHandle::MCPServers(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Code(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::WarpDrive(v) => v.as_ref(app).should_render(app),
+            SettingsPageViewHandle::Shortcuts(v) => v.as_ref(app).should_render(app),
         }
     }
 

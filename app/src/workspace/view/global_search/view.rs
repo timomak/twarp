@@ -2011,10 +2011,8 @@ impl View for GlobalSearchView {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
-        let search_label = Text::new_inline("Search", appearance.ui_font_family(), 14.)
-            .with_color(blended_colors::text_sub(theme, theme.background()))
-            .finish();
-
+        // twarp: the "Search" header label above the input was removed — the
+        // toolbelt tab already labels this panel.
         let editor_line_height = self
             .query_editor
             .as_ref(app)
@@ -2061,7 +2059,6 @@ impl View for GlobalSearchView {
 
         let mut header_column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
-            .with_child(search_label)
             .with_child(query_row);
 
         let files = self.unique_match_count();

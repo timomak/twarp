@@ -8,7 +8,7 @@ use warpui::{
     elements::{
         new_scrollable::{NewScrollable, ScrollableAppearance, SingleAxisConfig},
         resizable_state_handle, Border, ChildView, ConstrainedBox, Container, CornerRadius,
-        CrossAxisAlignment, DispatchEventResult, DragBarSide, Element, Empty, EventHandler, Flex,
+        CrossAxisAlignment, DragBarSide, Element, Empty, Flex,
         Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius,
         Resizable, ResizableStateHandle, ScrollbarWidth, Shrinkable, Text,
     },
@@ -58,11 +58,8 @@ use crate::{
         icons,
     },
     util::bindings::keybinding_name_to_display_string,
-    view_components::{ClickableTextInput, ClickableTextInputAction, ClickableTextInputEvent},
-    workspace::WorkspaceAction,
     TelemetryEvent,
 };
-use warpui::keymap::Keystroke;
 
 // twarp 08e: single-line search field for the Claude sessions list.
 use crate::editor::{
@@ -70,50 +67,40 @@ use crate::editor::{
     TextOptions,
 };
 
-/// twarp 08f: flat macOS-light sidebar fill, pinned regardless of the active
-/// twarp theme (PRODUCT §21, §2, §3). A dark terminal theme beside this light
-/// sidebar is the intended two-tone. Audited so no child fill re-darkens it.
-const MACOS_SIDEBAR_BG: warpui::color::ColorU = warpui::color::ColorU {
-    r: 0xF2,
-    g: 0xF1,
-    b: 0xF5,
-    a: 0xFF,
-};
-/// Soft light row hover/selection highlight (replaces the dense dark rows).
-const MACOS_SIDEBAR_ROW_HIGHLIGHT: warpui::color::ColorU = warpui::color::ColorU {
-    r: 0xE3,
-    g: 0xE1,
-    b: 0xE8,
-    a: 0xFF,
-};
-/// Active pill fill for the segmented tool switcher (a white-ish raised chip).
-const MACOS_SIDEBAR_PILL_ACTIVE: warpui::color::ColorU = warpui::color::ColorU {
-    r: 0xFF,
-    g: 0xFF,
-    b: 0xFF,
-    a: 0xFF,
-};
-/// The pill bar track behind the segments (slightly darker than the panel bg).
-const MACOS_SIDEBAR_PILL_TRACK: warpui::color::ColorU = warpui::color::ColorU {
-    r: 0xE7,
-    g: 0xE5,
-    b: 0xEC,
-    a: 0xFF,
-};
-/// Primary text on the light sidebar.
-const MACOS_SIDEBAR_TEXT: warpui::color::ColorU = warpui::color::ColorU {
-    r: 0x1D,
-    g: 0x1D,
-    b: 0x1F,
-    a: 0xFF,
-};
-/// Secondary / muted text (section headers, timestamps).
-const MACOS_SIDEBAR_SUBTEXT: warpui::color::ColorU = warpui::color::ColorU {
-    r: 0x7A,
-    g: 0x78,
-    b: 0x80,
-    a: 0xFF,
-};
+// twarp: theme-following sidebar palette. The sidebar surface now matches the
+// active tab fill (`surface_overlay_2` == fg_overlay_2), so the sidebar follows
+// the active twarp theme instead of the old pinned macOS-light look. Every
+// child color derives from the same theme so the panel reads correctly in both
+// light and dark themes (the old §25 theme-leakage trap is gone now that the
+// surface itself is theme-driven rather than a fixed light fill).
+
+/// Primary sidebar text (session titles, active pill icon).
+fn sidebar_text(appearance: &Appearance) -> warpui::color::ColorU {
+    let theme = appearance.theme();
+    theme.main_text_color(theme.background()).into_solid()
+}
+
+/// Muted secondary text (section headers, timestamps, inactive pill icons).
+fn sidebar_subtext(appearance: &Appearance) -> warpui::color::ColorU {
+    let theme = appearance.theme();
+    theme.sub_text_color(theme.background()).into_solid()
+}
+
+/// Soft row hover/selection highlight, layered over the sidebar surface.
+fn sidebar_row_highlight(appearance: &Appearance) -> warpui::color::ColorU {
+    appearance.theme().surface_overlay_2().into_solid()
+}
+
+/// Raised chip for the active tool-switcher pill (stands out from the track).
+fn sidebar_pill_active(appearance: &Appearance) -> warpui::color::ColorU {
+    appearance.theme().surface_3().into_solid()
+}
+
+/// Recessed track behind the segmented tool switcher (and the search border).
+fn sidebar_pill_track(appearance: &Appearance) -> warpui::color::ColorU {
+    appearance.theme().surface_1().into_solid()
+}
+
 /// twarp 08f polish: shared horizontal content inset for the sidebar panels
 /// (file tree, Warp Drive). The macOS sidebar gives rows a little breathing
 /// room from the edge instead of the old flush 2px; the sessions/shortcuts
@@ -127,12 +114,10 @@ const SIDEBAR_BOTTOM_INSET: f32 = 8.;
 struct MouseStateHandles {
     project_explorer_button: MouseStateHandle,
     global_search_button: MouseStateHandle,
-    warp_drive_button: MouseStateHandle,
-    shortcuts_button: MouseStateHandle,
-    add_new_shortcut_button: MouseStateHandle,
     /// twarp 07 (7h): the session-list toolbelt button.
     claude_sessions_button: MouseStateHandle,
     // twarp: 2c-d — conversation_list_view_button removed
+    // twarp: shortcuts moved to Settings; its toolbelt mouse states removed.
 }
 
 #[derive(Clone, Debug)]
@@ -142,68 +127,8 @@ pub enum LeftPanelAction {
         entry_focus: GlobalSearchEntryFocus,
     },
     WarpDrive,
-    /// Custom command shortcuts panel (PRODUCT 04 §26).
-    Shortcuts,
-    /// Open the inline detail editor in "create new" mode
-    /// (PRODUCT §29). Triggered by the "+ New shortcut" link. 4c
-    /// originally appended a placeholder shortcut here; 4d replaced
-    /// that with the editor flow now that the editor exists.
-    ShortcutsAddNew,
-    /// Open `shortcuts.yaml` in the OS default editor so the user can
-    /// hand-edit a shortcut's chord, actions, or both. Used both as
-    /// the row-click action (PRODUCT §30 simplified) and as the
-    /// "Rename" context-menu item — inline keystroke capture is 4d.
-    ShortcutsOpenInEditor,
-    /// Toggle the inline Rename / Delete menu for a specific row
-    /// (PRODUCT §§30, 31). Set by right-clicking a row; cleared by a
-    /// subsequent click or by a menu item firing.
-    ShortcutsToggleRowMenu(usize),
-    /// Close any open per-row inline menu (e.g. clicking outside).
-    ShortcutsCloseRowMenu,
-    /// Remove the shortcut at the given index from the registry,
-    /// persist via 4b's `save_to_disk`, and reload. (PRODUCT §31.)
-    ShortcutsDelete(usize),
-    /// Open the inline detail editor for the shortcut at this index
-    /// (PRODUCT §30, smoke test step 9). Triggered by the inline
-    /// right-click menu's [edit] item. `ShortcutsAddNew` opens the
-    /// editor in create mode instead, replacing 4c's placeholder-
-    /// append behavior.
-    ShortcutsBeginEdit(usize),
-    /// Discard the in-flight detail editor without saving (PRODUCT §29).
-    ShortcutsEditCancel,
-    /// Validate and persist the in-flight detail editor (PRODUCT §36).
-    /// Triggers a hot reload on success; surfaces an inline error
-    /// banner on failure.
-    ShortcutsEditSave,
-    /// Click the chord field; enters keystroke-capture mode (PRODUCT §32).
-    /// The next non-modifier-only keystroke replaces the chord.
-    ShortcutsEditChordFieldClick,
-    /// A keystroke was captured while the chord field was in
-    /// capture mode (PRODUCT §32). Stores it and returns to display mode.
-    ShortcutsEditChordCaptured(Keystroke),
-    /// Escape while in chord-capture mode: restore the previous chord
-    /// (PRODUCT §32).
-    ShortcutsEditChordCancel,
-    /// Cycle the action kind on the row at the given index
-    /// (PRODUCT §33). Order: NewTab → NewPane → Type → Press → Wait → NewTab.
-    /// Cycle-buttons stand in for the PRODUCT-spec dropdown so the editor
-    /// doesn't have to manage one `FilterableDropdown` View handle per row.
-    ShortcutsEditActionCycleKind(usize),
-    /// Cycle the action's enum-valued parameter (PRODUCT §33). Applies to
-    /// `new_pane` (right/down/left/up) and `press` (one of the v1
-    /// supported named keys). Other action kinds ignore.
-    ShortcutsEditActionCycleParam(usize),
-    /// Append a new action row defaulting to `new_tab` (PRODUCT §33).
-    ShortcutsEditActionAdd,
-    /// Remove the action row at the given index (PRODUCT §33). When the
-    /// list is empty the [+ Add action] button remains.
-    ShortcutsEditActionRemove(usize),
-    /// Reorder: move the action row at the given index up by one slot
-    /// (PRODUCT §33). No-op for index 0.
-    ShortcutsEditActionMoveUp(usize),
-    /// Reorder: move the action row at the given index down by one slot.
-    /// No-op when already last.
-    ShortcutsEditActionMoveDown(usize),
+    // twarp: the Shortcuts panel + its inline editor actions moved to
+    // Settings > Shortcuts (see settings_view::shortcuts_page).
     /// twarp 07 (7h, PRODUCT §35): switch the panel to the Claude Code
     /// session list.
     ClaudeSessions,
@@ -324,6 +249,9 @@ pub struct ToolbeltButtonConfig {
     pub icon: warp_core::ui::Icon,
     /// Optional icon to use when the given toolbelt option is in an active state.
     pub active_icon: Option<warp_core::ui::Icon>,
+    /// Short label shown next to the icon in the toolbelt segment (e.g.
+    /// "Files", "Search", "Code").
+    pub label: String,
     pub tooltip_text: String,
     pub action: LeftPanelAction,
     /// Whether the button should be rendered with an "active" state.
@@ -349,27 +277,8 @@ pub struct LeftPanelView {
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     working_directories_model: ModelHandle<WorkingDirectoriesModel>,
     panel_position: super::PanelPosition,
-    /// Index of the row whose inline Delete button is currently
-    /// shown. Set by right-clicking a row, cleared by any subsequent
-    /// click or by Delete completing.
-    shortcut_context_menu_target: Option<usize>,
-    /// Mouse state for the inline Delete button. One state total since
-    /// only one row's menu is open at a time.
-    shortcut_delete_mouse_state: MouseStateHandle,
-    /// Persistent mouse states for the shortcut list rows. Grown on
-    /// demand in `render_shortcut_row` to match the registry length.
-    /// `Hoverable::on_click` only fires when the mouse-down and
-    /// mouse-up events see the *same* `MouseStateHandle` — a fresh
-    /// inline state per render breaks click detection silently, so
-    /// these need to be stable across renders. Behind a `RefCell` so
-    /// the `&self` render path can extend the vec when a new shortcut
-    /// is added.
-    shortcut_row_mouse_states: std::cell::RefCell<Vec<MouseStateHandle>>,
-    /// State for the inline detail editor (PRODUCT §§29-30, 32-38).
-    /// `None` when no editor is open and the panel shows the list view;
-    /// `Some` while the user is creating or editing one shortcut, in
-    /// which case the panel renders the editor in place of the list.
-    editing_shortcut: Option<EditingShortcutState>,
+    // twarp: shortcuts list/editor state moved to Settings > Shortcuts
+    // (settings_view::shortcuts_page).
 
     /// twarp 5d (PRODUCT §§18–23): per-file commit Timeline section at
     /// the bottom of the Project Explorer tab. State is per-repo,
@@ -449,375 +358,6 @@ struct TimelineSectionState {
     /// = not yet tried. Cached for the lifetime of `LeftPanelView`
     /// to avoid spawning a `gh` subprocess per fetch.
     github_token: Option<Option<String>>,
-}
-
-/// Action kinds that round-trip with the shortcuts parser. Mirrors
-/// `shortcuts::action::Action` shape but holds raw parameter text so
-/// the editor can offer in-progress edits without requiring a valid
-/// parse on every keystroke.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum EditingActionKind {
-    NewTab,
-    NewPane,
-    Type,
-    Press,
-    Wait,
-}
-
-impl EditingActionKind {
-    fn label(self) -> &'static str {
-        match self {
-            EditingActionKind::NewTab => "new_tab",
-            EditingActionKind::NewPane => "new_pane",
-            EditingActionKind::Type => "type",
-            EditingActionKind::Press => "press",
-            EditingActionKind::Wait => "wait",
-        }
-    }
-
-    /// Cycle to the next kind (PRODUCT §33 dropdown stand-in).
-    fn next(self) -> Self {
-        match self {
-            EditingActionKind::NewTab => EditingActionKind::NewPane,
-            EditingActionKind::NewPane => EditingActionKind::Type,
-            EditingActionKind::Type => EditingActionKind::Press,
-            EditingActionKind::Press => EditingActionKind::Wait,
-            EditingActionKind::Wait => EditingActionKind::NewTab,
-        }
-    }
-}
-
-/// The directions accepted by `new_pane`, in cycle order. Matches
-/// PRODUCT §7's expanded v1 set (right/down/left/up).
-const NEW_PANE_DIRECTIONS: [&str; 4] = ["right", "down", "left", "up"];
-
-/// The named keys offered by the action editor's `press` selector.
-/// A subset of PRODUCT §10's full v1 list — the editor cycles through
-/// the common cases; users wanting `f1`–`f12` or arrow keys can hand-
-/// edit `shortcuts.yaml` (which the parser still accepts).
-const PRESS_KEY_CYCLE: [&str; 7] = ["enter", "tab", "escape", "backspace", "space", "up", "down"];
-
-/// Whether this kind takes a free-text parameter or a cycled enum.
-fn kind_param_is_freetext(kind: EditingActionKind) -> bool {
-    matches!(kind, EditingActionKind::Type | EditingActionKind::Wait)
-}
-
-/// Whether this kind takes no parameter at all.
-fn kind_has_no_param(kind: EditingActionKind) -> bool {
-    matches!(kind, EditingActionKind::NewTab)
-}
-
-/// One row in the action editor. Holds the kind and the current parameter
-/// representation: a cycle-state index for enum-valued params, a string
-/// for free-text params, or nothing for `new_tab`.
-struct EditingAction {
-    kind: EditingActionKind,
-    /// Free-text parameter (used when `kind` is `Type` / `Wait`).
-    /// Backed by a `ClickableTextInput` child view so it round-trips
-    /// through warpui's editor without us managing focus by hand.
-    param_text: String,
-    param_text_input: Option<ViewHandle<ClickableTextInput>>,
-    /// Cycle index into the enum's accepted values
-    /// (`NEW_PANE_DIRECTIONS` for `NewPane`, `PRESS_KEY_CYCLE` for
-    /// `Press`). Ignored when `kind` is `NewTab` / `Type` / `Wait`.
-    param_cycle_idx: usize,
-    /// Mouse state for the cycle-kind button.
-    kind_button_mouse: MouseStateHandle,
-    /// Mouse state for the cycle-param button (when applicable).
-    param_button_mouse: MouseStateHandle,
-    /// Mouse state for the [×] remove affordance.
-    remove_button_mouse: MouseStateHandle,
-    /// Mouse states for the up/down reorder buttons.
-    move_up_mouse: MouseStateHandle,
-    move_down_mouse: MouseStateHandle,
-}
-
-impl EditingAction {
-    /// Default action used for new rows added via [+ Add action]. PRODUCT
-    /// §33 specifies `new_tab` as the default; matches our cycle order.
-    fn new_default() -> Self {
-        Self {
-            kind: EditingActionKind::NewTab,
-            param_text: String::new(),
-            param_text_input: None,
-            param_cycle_idx: 0,
-            kind_button_mouse: MouseStateHandle::default(),
-            param_button_mouse: MouseStateHandle::default(),
-            remove_button_mouse: MouseStateHandle::default(),
-            move_up_mouse: MouseStateHandle::default(),
-            move_down_mouse: MouseStateHandle::default(),
-        }
-    }
-
-    /// Hydrate an editor row from a parsed `Action` on disk. The
-    /// cycle indices are recovered from the action's payload so the
-    /// row renders the value the user originally wrote.
-    fn from_runtime(action: &crate::shortcuts::action::Action) -> Self {
-        use crate::pane_group::Direction;
-        use crate::shortcuts::action::Action as A;
-        let mut row = Self::new_default();
-        match action {
-            A::NewTab => {
-                row.kind = EditingActionKind::NewTab;
-            }
-            A::NewPane(dir) => {
-                row.kind = EditingActionKind::NewPane;
-                let dir_str = match dir {
-                    Direction::Right => "right",
-                    Direction::Down => "down",
-                    Direction::Left => "left",
-                    Direction::Up => "up",
-                };
-                row.param_cycle_idx = NEW_PANE_DIRECTIONS
-                    .iter()
-                    .position(|c| *c == dir_str)
-                    .unwrap_or(0);
-            }
-            A::Type(text) => {
-                row.kind = EditingActionKind::Type;
-                row.param_text = text.clone();
-            }
-            A::Press(key) => {
-                row.kind = EditingActionKind::Press;
-                let key_str = key_name_to_label(*key);
-                row.param_cycle_idx = PRESS_KEY_CYCLE
-                    .iter()
-                    .position(|c| *c == key_str)
-                    .unwrap_or(0);
-            }
-            A::Wait(dur) => {
-                row.kind = EditingActionKind::Wait;
-                // Express the duration in whichever unit yields a clean integer.
-                let ms = dur.as_millis() as u64;
-                row.param_text = if ms >= 60_000 && ms.is_multiple_of(60_000) {
-                    format!("{}m", ms / 60_000)
-                } else if ms >= 1_000 && ms.is_multiple_of(1_000) {
-                    format!("{}s", ms / 1_000)
-                } else {
-                    format!("{ms}ms")
-                };
-            }
-        }
-        // `param_text_input` is filled in by `ensure_param_input_for_row` once we
-        // have a `ViewContext` — `from_runtime` is `ViewContext`-free.
-        row
-    }
-
-    /// Build the runtime `Action` for this row, returning an error
-    /// message suitable for `validation_error` if the parameter is
-    /// missing or malformed. Mirrors PRODUCT §20 vocabulary where it can.
-    fn to_runtime_action(
-        &self,
-        one_based_index: usize,
-    ) -> Result<crate::shortcuts::action::Action, String> {
-        use crate::pane_group::Direction;
-        use crate::shortcuts::action::Action as A;
-        match self.kind {
-            EditingActionKind::NewTab => Ok(A::NewTab),
-            EditingActionKind::NewPane => {
-                let dir_str = NEW_PANE_DIRECTIONS
-                    .get(self.param_cycle_idx)
-                    .copied()
-                    .unwrap_or("right");
-                let direction = match dir_str {
-                    "right" => Direction::Right,
-                    "down" => Direction::Down,
-                    "left" => Direction::Left,
-                    "up" => Direction::Up,
-                    other => {
-                        return Err(format!(
-                            "action #{one_based_index}: invalid 'new_pane' direction '{other}'"
-                        ));
-                    }
-                };
-                Ok(A::NewPane(direction))
-            }
-            EditingActionKind::Type => {
-                if self.param_text.contains('\n') {
-                    return Err(format!(
-                        "action #{one_based_index}: 'type' value contains a newline; use 'press: enter' to submit input"
-                    ));
-                }
-                Ok(A::Type(self.param_text.clone()))
-            }
-            EditingActionKind::Press => {
-                let key_str = PRESS_KEY_CYCLE
-                    .get(self.param_cycle_idx)
-                    .copied()
-                    .unwrap_or("enter");
-                let key = label_to_key_name(key_str).ok_or_else(|| {
-                    format!("action #{one_based_index}: unknown key '{key_str}' in 'press'")
-                })?;
-                Ok(A::Press(key))
-            }
-            EditingActionKind::Wait => {
-                let dur = parse_wait_value(&self.param_text)
-                    .map_err(|msg| format!("action #{one_based_index}: {msg}"))?;
-                Ok(A::Wait(dur))
-            }
-        }
-    }
-}
-
-/// Convert a `KeyName` to the string we use in the cycle list and on disk.
-fn key_name_to_label(key: crate::shortcuts::action::KeyName) -> &'static str {
-    use crate::shortcuts::action::KeyName;
-    match key {
-        KeyName::Enter => "enter",
-        KeyName::Tab => "tab",
-        KeyName::Escape => "escape",
-        KeyName::Backspace => "backspace",
-        KeyName::Space => "space",
-        KeyName::Up => "up",
-        KeyName::Down => "down",
-        KeyName::Left => "left",
-        KeyName::Right => "right",
-        KeyName::Home => "home",
-        KeyName::End => "end",
-        KeyName::PageUp => "pageup",
-        KeyName::PageDown => "pagedown",
-        KeyName::Delete => "delete",
-        KeyName::Insert => "insert",
-        KeyName::NumpadEnter => "numpadenter",
-        KeyName::F(n) => match n {
-            1 => "f1",
-            2 => "f2",
-            3 => "f3",
-            4 => "f4",
-            5 => "f5",
-            6 => "f6",
-            7 => "f7",
-            8 => "f8",
-            9 => "f9",
-            10 => "f10",
-            11 => "f11",
-            12 => "f12",
-            _ => "f1",
-        },
-    }
-}
-
-/// Inverse of `key_name_to_label`, scoped to the labels the editor's
-/// cycle list can produce — `PRESS_KEY_CYCLE` plus the future-proofing
-/// extras the parser can already round-trip.
-fn label_to_key_name(label: &str) -> Option<crate::shortcuts::action::KeyName> {
-    use crate::shortcuts::action::KeyName;
-    Some(match label {
-        "enter" => KeyName::Enter,
-        "tab" => KeyName::Tab,
-        "escape" => KeyName::Escape,
-        "backspace" => KeyName::Backspace,
-        "space" => KeyName::Space,
-        "up" => KeyName::Up,
-        "down" => KeyName::Down,
-        "left" => KeyName::Left,
-        "right" => KeyName::Right,
-        "home" => KeyName::Home,
-        "end" => KeyName::End,
-        "pageup" => KeyName::PageUp,
-        "pagedown" => KeyName::PageDown,
-        "delete" => KeyName::Delete,
-        "insert" => KeyName::Insert,
-        "numpadenter" => KeyName::NumpadEnter,
-        other if other.starts_with('f') => {
-            let n: u8 = other[1..].parse().ok()?;
-            if (1..=12).contains(&n) {
-                KeyName::F(n)
-            } else {
-                return None;
-            }
-        }
-        _ => return None,
-    })
-}
-
-/// PRODUCT §11: parse a `wait` value like `500ms` / `2s` / `1m`,
-/// clamped to `[1ms, 60s]`. Returns a human-readable error message
-/// (matching PRODUCT §20 wording) for failures.
-fn parse_wait_value(raw: &str) -> Result<std::time::Duration, String> {
-    let trimmed = raw.trim();
-    let (num, unit) = if let Some(n) = trimmed.strip_suffix("ms") {
-        (n, "ms")
-    } else if let Some(n) = trimmed.strip_suffix('s') {
-        (n, "s")
-    } else if let Some(n) = trimmed.strip_suffix('m') {
-        (n, "m")
-    } else {
-        return Err(format!(
-            "invalid 'wait' value '{trimmed}'; expected a duration like '500ms', '2s', '1m' (1ms\u{2013}60s)"
-        ));
-    };
-    let value: u64 = num.parse().map_err(|_| {
-        format!(
-            "invalid 'wait' value '{trimmed}'; expected a duration like '500ms', '2s', '1m' (1ms\u{2013}60s)"
-        )
-    })?;
-    let ms = match unit {
-        "ms" => value,
-        "s" => value.saturating_mul(1_000),
-        "m" => value.saturating_mul(60_000),
-        _ => unreachable!(),
-    };
-    if !(1..=60_000).contains(&ms) {
-        return Err(format!(
-            "invalid 'wait' value '{trimmed}'; expected a duration like '500ms', '2s', '1m' (1ms\u{2013}60s)"
-        ));
-    }
-    Ok(std::time::Duration::from_millis(ms))
-}
-
-/// What the in-flight editor is editing — a brand-new entry or a row by index.
-#[derive(Clone, Copy, Debug)]
-enum EditTarget {
-    Create,
-    Index(usize),
-}
-
-/// The detail editor's full mutable state.
-///
-/// Lives inside `LeftPanelView::editing_shortcut` while the editor is
-/// open and is `take()`n on Save/Cancel. Owns the child `ClickableTextInput`
-/// view handles for the name field and each action's param input.
-struct EditingShortcutState {
-    target: EditTarget,
-    /// Display copy of the name; mirrors what `name_text_input` emits
-    /// so renders don't have to read the child view every frame.
-    name_text: String,
-    name_text_input: ViewHandle<ClickableTextInput>,
-    /// Captured chord. `None` while the user has not yet captured one.
-    chord: Option<Keystroke>,
-    /// Whether the chord field is currently intercepting the next keystroke.
-    /// PRODUCT §32 says capture is one-shot: click to enter, next key (or
-    /// Escape) exits.
-    capturing_chord: bool,
-    /// Chord value at the moment capture started; restored on Escape.
-    chord_before_capture: Option<Keystroke>,
-    chord_field_mouse: MouseStateHandle,
-    actions: Vec<EditingAction>,
-    add_action_button_mouse: MouseStateHandle,
-    save_button_mouse: MouseStateHandle,
-    cancel_button_mouse: MouseStateHandle,
-    /// Most recent validation error from a Save attempt (PRODUCT §34/§36).
-    /// Cleared on the next successful Save or any state mutation.
-    validation_error: Option<String>,
-}
-
-/// Maximum display length for a shortcut name in the side-panel list
-/// row. Names longer than this are truncated with `…`. Character-based
-/// rather than pixel-based so it works without a layout pass.
-const ROW_NAME_MAX_CHARS: usize = 28;
-
-/// Truncate `name` to at most `max_chars` characters, appending `…` if
-/// truncated. Char-count-based so multi-byte UTF-8 sequences are handled
-/// correctly.
-fn truncate_display_name(name: &str, max_chars: usize) -> String {
-    let count = name.chars().count();
-    if count <= max_chars {
-        return name.to_owned();
-    }
-    let mut s: String = name.chars().take(max_chars.saturating_sub(1)).collect();
-    s.push('…');
-    s
 }
 
 fn toolbelt_tooltip_keybinding(binding_names: &[&'static str], app: &AppContext) -> Option<String> {
@@ -972,10 +512,6 @@ impl LeftPanelView {
             active_pane_group: None,
             working_directories_model,
             panel_position: super::PanelPosition::Left,
-            shortcut_context_menu_target: None,
-            shortcut_delete_mouse_state: MouseStateHandle::default(),
-            shortcut_row_mouse_states: std::cell::RefCell::new(Vec::new()),
-            editing_shortcut: None,
             // 5d: Project Explorer Timeline section. Collapsed by
             // default; user expands via the chevron. PRODUCT §§18–23.
             timeline_state: TimelineSectionState::default(),
@@ -1055,6 +591,7 @@ impl LeftPanelView {
                 ToolbeltButtonConfig {
                     icon: Icon::FileCopy,
                     active_icon: None,
+                    label: "Files".to_string(),
                     tooltip_text: "Project explorer".to_string(),
                     action: LeftPanelAction::ProjectExplorer,
                     render_with_active_state: false,
@@ -1071,6 +608,7 @@ impl LeftPanelView {
                 ToolbeltButtonConfig {
                     icon: Icon::Search,
                     active_icon: None,
+                    label: "Search".to_string(),
                     tooltip_text: "Global search".to_string(),
                     action: LeftPanelAction::GlobalSearch {
                         entry_focus: GlobalSearchEntryFocus::QueryEditor,
@@ -1089,6 +627,7 @@ impl LeftPanelView {
                 ToolbeltButtonConfig {
                     icon: Icon::WarpDrive,
                     active_icon: None,
+                    label: "Warp Drive".to_string(),
                     tooltip_text: "Warp Drive".to_string(),
                     action: LeftPanelAction::WarpDrive,
                     render_with_active_state: false,
@@ -1096,11 +635,17 @@ impl LeftPanelView {
                     tooltip_keybinding_names,
                 }
             }
+            // twarp: Shortcuts moved to Settings; this toolbelt entry is never
+            // produced (compute_left_panel_views no longer pushes it). The arm
+            // stays only because the ToolPanelView variant is kept for
+            // persisted-tab back-compat. Fall back to the ProjectExplorer
+            // action like the ConversationListView stub below.
             ToolPanelView::Shortcuts => ToolbeltButtonConfig {
                 icon: Icon::Keyboard,
                 active_icon: None,
-                tooltip_text: "Custom shortcuts".to_owned(),
-                action: LeftPanelAction::Shortcuts,
+                label: String::new(),
+                tooltip_text: String::new(),
+                action: LeftPanelAction::ProjectExplorer,
                 render_with_active_state: false,
                 tooltip_keybinding: None,
                 tooltip_keybinding_names: vec![],
@@ -1111,6 +656,7 @@ impl LeftPanelView {
             ToolPanelView::ClaudeSessions => ToolbeltButtonConfig {
                 icon: Icon::History,
                 active_icon: None,
+                label: "Code".to_owned(),
                 tooltip_text: "Claude Code sessions".to_owned(),
                 action: LeftPanelAction::ClaudeSessions,
                 render_with_active_state: false,
@@ -1121,6 +667,7 @@ impl LeftPanelView {
             ToolPanelView::ConversationListView => ToolbeltButtonConfig {
                 icon: Icon::FileCopy,
                 active_icon: None,
+                label: String::new(),
                 tooltip_text: String::new(),
                 action: LeftPanelAction::ProjectExplorer,
                 render_with_active_state: false,
@@ -1900,15 +1447,13 @@ impl LeftPanelView {
             appearance.ui_font_family(),
             appearance.ui_font_size(),
         )
-        // twarp 08f polish: pin the TIMELINE header to the macOS sidebar text
-        // color. The previous theme-derived sub_text_color/neutral_3 inverted
-        // to near-white on a dark theme and vanished on the pinned-light
-        // sidebar (the §25 theme-leakage trap).
-        .with_color(MACOS_SIDEBAR_SUBTEXT)
+        // twarp: theme-following muted header color; the sidebar surface now
+        // follows the theme so sub_text_color reads correctly against it.
+        .with_color(sidebar_subtext(appearance))
         .with_style(Properties::default().weight(Weight::Semibold))
         .soft_wrap(false)
         .finish();
-        let hover_bg = MACOS_SIDEBAR_ROW_HIGHLIGHT;
+        let hover_bg = sidebar_row_highlight(appearance);
         // twarp 08 (review): no padding around the TIMELINE header — the row
         // hugs its text with no surrounding inset.
         Hoverable::new(self.timeline_header_mouse_state.clone(), move |state| {
@@ -2466,27 +2011,9 @@ impl LeftPanelView {
                     matches!(self.active_view.get(), ToolPanelView::GlobalSearch { .. })
                 }
                 LeftPanelAction::WarpDrive => self.active_view.get() == ToolPanelView::WarpDrive,
-                LeftPanelAction::Shortcuts => self.active_view.get() == ToolPanelView::Shortcuts,
                 LeftPanelAction::ClaudeSessions => {
                     self.active_view.get() == ToolPanelView::ClaudeSessions
                 }
-                LeftPanelAction::ShortcutsAddNew
-                | LeftPanelAction::ShortcutsOpenInEditor
-                | LeftPanelAction::ShortcutsToggleRowMenu(_)
-                | LeftPanelAction::ShortcutsCloseRowMenu
-                | LeftPanelAction::ShortcutsDelete(_)
-                | LeftPanelAction::ShortcutsBeginEdit(_)
-                | LeftPanelAction::ShortcutsEditCancel
-                | LeftPanelAction::ShortcutsEditSave
-                | LeftPanelAction::ShortcutsEditChordFieldClick
-                | LeftPanelAction::ShortcutsEditChordCaptured(_)
-                | LeftPanelAction::ShortcutsEditChordCancel
-                | LeftPanelAction::ShortcutsEditActionCycleKind(_)
-                | LeftPanelAction::ShortcutsEditActionCycleParam(_)
-                | LeftPanelAction::ShortcutsEditActionAdd
-                | LeftPanelAction::ShortcutsEditActionRemove(_)
-                | LeftPanelAction::ShortcutsEditActionMoveUp(_)
-                | LeftPanelAction::ShortcutsEditActionMoveDown(_) => false,
                 // twarp: 2c-d — ConversationListView arm kept for legacy call-sites; AI deleted.
                 LeftPanelAction::ConversationListView => false,
                 // 5d: Timeline actions stay in the panel scope; no
@@ -2498,235 +2025,6 @@ impl LeftPanelView {
                 LeftPanelAction::ClaudeSessionResume(_) => false,
             };
         }
-    }
-
-    /// One row in the Custom shortcuts list. Hoverable + clickable.
-    /// PRODUCT 04 §§27, 30, 31.
-    ///
-    /// Layout: name on the left (truncated with `…` if too long for the
-    /// panel width), styled chord pill on the right (separate boxed
-    /// glyphs per modifier + key via `appearance.ui_builder().keyboard_shortcut(...)`).
-    /// When `shortcut.name` is `None`, falls back to an arrow-form summary
-    /// of the action sequence.
-    ///
-    /// - Left click on the row body → dispatch
-    ///   `LeftPanelAction::ShortcutsOpenInEditor`, which opens
-    ///   `shortcuts.yaml` in a new twarp tab (not the OS app) so users
-    ///   stay inside the terminal.
-    /// - Right click → toggle the inline Delete menu. Rename moved to
-    ///   "left-click row" — the inline keystroke-capture editor is 4d.
-    fn render_shortcut_row(
-        &self,
-        idx: usize,
-        shortcut: &crate::shortcuts::config::Shortcut,
-        menu_target: Option<usize>,
-        delete_state: MouseStateHandle,
-        appearance: &Appearance,
-    ) -> Box<dyn Element> {
-        let label_text = shortcut
-            .name
-            .clone()
-            .unwrap_or_else(|| crate::shortcuts::summary::summarize_actions(&shortcut.actions));
-        let truncated = truncate_display_name(&label_text, ROW_NAME_MAX_CHARS);
-        let name_span = appearance.ui_builder().span(truncated).build().finish();
-        let chord_pill = appearance
-            .ui_builder()
-            .keyboard_shortcut(&shortcut.keys)
-            .with_space_between_keys(2.)
-            .build()
-            .finish();
-
-        let header_row = Flex::row()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(Shrinkable::new(1.0, name_span).finish())
-            .with_child(chord_pill)
-            .finish();
-
-        let mut row_column = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(4.0)
-            .with_child(header_row);
-
-        if menu_target == Some(idx) {
-            // PRODUCT §30 ([edit]) + §31 ([delete]). Edit opens the
-            // inline detail editor for this row; Delete drops it from
-            // the registry. The mouse state for [edit] is shared with
-            // [delete] since only one menu is open at a time and reuse
-            // simplifies the LeftPanelView state surface.
-            let edit_link = appearance
-                .ui_builder()
-                .link(
-                    "Edit".to_owned(),
-                    None,
-                    Some(Box::new(move |ctx| {
-                        ctx.dispatch_typed_action(LeftPanelAction::ShortcutsBeginEdit(idx));
-                    })),
-                    delete_state.clone(),
-                )
-                .build()
-                .finish();
-            let delete_link = appearance
-                .ui_builder()
-                .link(
-                    "Delete".to_owned(),
-                    None,
-                    Some(Box::new(move |ctx| {
-                        ctx.dispatch_typed_action(LeftPanelAction::ShortcutsDelete(idx));
-                    })),
-                    delete_state,
-                )
-                .build()
-                .finish();
-            row_column = row_column.with_child(
-                Flex::row()
-                    .with_main_axis_size(MainAxisSize::Min)
-                    .with_spacing(12.0)
-                    .with_child(edit_link)
-                    .with_child(delete_link)
-                    .finish(),
-            );
-        }
-
-        let body: Box<dyn Element> = Container::new(row_column.finish())
-            .with_padding_top(6.0)
-            .with_padding_bottom(6.0)
-            .finish();
-
-        let row_mouse_state = {
-            let mut states = self.shortcut_row_mouse_states.borrow_mut();
-            while states.len() <= idx {
-                states.push(MouseStateHandle::default());
-            }
-            states[idx].clone()
-        };
-
-        Hoverable::new(row_mouse_state, move |_state| body)
-            .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(LeftPanelAction::ShortcutsOpenInEditor);
-            })
-            .on_right_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(LeftPanelAction::ShortcutsToggleRowMenu(idx));
-            })
-            .with_cursor(Cursor::PointingHand)
-            .finish()
-    }
-
-    /// Renders the Custom shortcuts panel content: header with
-    /// "+ New shortcut" link + a row per registered shortcut showing
-    /// chord + arrow-form summary, OR an empty-state hint if the
-    /// registry is empty. PRODUCT 04 §§27-29.
-    fn render_shortcuts_panel(&self, app: &AppContext) -> Box<dyn Element> {
-        // PRODUCT §§29-30, 32-38: when the detail editor is open the
-        // panel becomes the editor; the list returns once Save/Cancel
-        // takes us back to `editing_shortcut = None`.
-        if self.editing_shortcut.is_some() {
-            return self.render_shortcuts_editor(app);
-        }
-        let appearance = Appearance::as_ref(app);
-        let (registry, errors) = {
-            let model = crate::shortcuts::ShortcutsModel::handle(app);
-            let m = model.as_ref(app);
-            (m.registry.clone(), m.errors.clone())
-        };
-
-        let add_new_link = appearance
-            .ui_builder()
-            .link(
-                "+ New shortcut".to_owned(),
-                None,
-                Some(Box::new(|ctx| {
-                    ctx.dispatch_typed_action(LeftPanelAction::ShortcutsAddNew);
-                })),
-                self.mouse_state_handles.add_new_shortcut_button.clone(),
-            )
-            .build()
-            .finish();
-
-        // Errors banner: PRODUCT 04 §35. Shown whenever parsing produced
-        // any errors so users see that some entries in `shortcuts.yaml`
-        // were dropped, with the offending message inline. Without this
-        // the panel just silently misses entries (which is what the user
-        // saw with `new_pane: left`).
-        let errors_banner: Option<Box<dyn Element>> = if errors.is_empty() {
-            None
-        } else {
-            let mut col = Flex::column()
-                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_spacing(4.0);
-            col = col.with_child(
-                appearance
-                    .ui_builder()
-                    .span(format!("shortcuts.yaml has {} error(s):", errors.len()))
-                    .build()
-                    .finish(),
-            );
-            for err in &errors {
-                col = col.with_child(
-                    appearance
-                        .ui_builder()
-                        .span(err.clone())
-                        .with_soft_wrap()
-                        .build()
-                        .finish(),
-                );
-            }
-            Some(
-                Container::new(col.finish())
-                    .with_padding_top(6.0)
-                    .with_padding_bottom(6.0)
-                    .finish(),
-            )
-        };
-
-        let body: Box<dyn Element> = if registry.is_empty() {
-            appearance
-                .ui_builder()
-                .span(
-                    "Custom shortcuts run a sequence of terminal actions when you press a chord. \
-                     Click \"+ New shortcut\" to add one, then edit `shortcuts.yaml` to customize.",
-                )
-                .with_soft_wrap()
-                .build()
-                .finish()
-        } else {
-            let menu_target = self.shortcut_context_menu_target;
-            let delete_state = self.shortcut_delete_mouse_state.clone();
-            let rows = registry.iter().enumerate().map(|(idx, sc)| {
-                self.render_shortcut_row(idx, sc, menu_target, delete_state.clone(), appearance)
-            });
-            Flex::column()
-                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_spacing(6.0)
-                .with_children(rows)
-                .finish()
-        };
-
-        let mut column = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_spacing(10.0)
-            .with_child(add_new_link);
-        if let Some(banner) = errors_banner {
-            column = column.with_child(banner);
-        }
-        let column = column
-            .with_child(Shrinkable::new(1.0, body).finish())
-            .finish();
-
-        Shrinkable::new(
-            1.0,
-            Container::new(column)
-                .with_padding_left(10.)
-                .with_padding_right(10.)
-                .with_padding_top(8.)
-                .finish(),
-        )
-        .finish()
     }
 
     /// twarp 07 (7h, PRODUCT §35): the Claude Code session list for the
@@ -2747,7 +2045,7 @@ impl LeftPanelView {
             .ui_builder()
             .span("Sessions".to_owned())
             .with_style(UiComponentStyles {
-                font_color: Some(MACOS_SIDEBAR_SUBTEXT),
+                font_color: Some(sidebar_subtext(appearance)),
                 font_size: Some(11.5),
                 ..Default::default()
             })
@@ -2755,18 +2053,17 @@ impl LeftPanelView {
             .finish();
 
         // twarp 08e: the search field, above the heading/rows (PRODUCT §17).
-        let search_field = Container::new(
-            ChildView::new(&self.claude_sessions_search)
-                .finish(),
-        )
-        .with_background_color(MACOS_SIDEBAR_PILL_ACTIVE)
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-        .with_border(Border::all(1.).with_border_color(MACOS_SIDEBAR_PILL_TRACK))
-        .with_padding_left(8.)
-        .with_padding_right(8.)
-        .with_padding_top(5.)
-        .with_padding_bottom(5.)
-        .finish();
+        // Uses the same bordered, fill-less input container as the Global
+        // Search page (radius 6, 1px surface_3 border, uniform 6 padding) so
+        // the two side-panel search bars match.
+        let search_field = Container::new(ChildView::new(&self.claude_sessions_search).finish())
+            .with_border(Border::all(1.).with_border_fill(appearance.theme().surface_3()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+            .with_padding_left(6.)
+            .with_padding_right(6.)
+            .with_padding_top(6.)
+            .with_padding_bottom(6.)
+            .finish();
 
         let body: Box<dyn Element> = if self.claude_sessions.is_empty() {
             // Zero stored sessions (PRODUCT §35 first-run empty state).
@@ -2778,7 +2075,7 @@ impl LeftPanelView {
                 )
                 .with_soft_wrap()
                 .with_style(UiComponentStyles {
-                    font_color: Some(MACOS_SIDEBAR_SUBTEXT),
+                    font_color: Some(sidebar_subtext(appearance)),
                     ..Default::default()
                 })
                 .build()
@@ -2789,7 +2086,7 @@ impl LeftPanelView {
                 .ui_builder()
                 .span("No matching sessions".to_owned())
                 .with_style(UiComponentStyles {
-                    font_color: Some(MACOS_SIDEBAR_SUBTEXT),
+                    font_color: Some(sidebar_subtext(appearance)),
                     ..Default::default()
                 })
                 .build()
@@ -2842,13 +2139,13 @@ impl LeftPanelView {
         let timestamp = chrono::DateTime::<chrono::Utc>::from(session.timestamp);
         let when = crate::util::time_format::format_approx_duration_from_now_utc(timestamp);
 
-        // twarp 08f (§24): macOS-app typography — primary title on dark-on-light,
-        // muted secondary timestamp.
+        // twarp 08f (§24): macOS-app typography — primary title, muted
+        // secondary timestamp; both now theme-following.
         let title = appearance
             .ui_builder()
             .span(session.title.clone())
             .with_style(UiComponentStyles {
-                font_color: Some(MACOS_SIDEBAR_TEXT),
+                font_color: Some(sidebar_text(appearance)),
                 ..Default::default()
             })
             .build()
@@ -2857,7 +2154,7 @@ impl LeftPanelView {
             .ui_builder()
             .span(when)
             .with_style(UiComponentStyles {
-                font_color: Some(MACOS_SIDEBAR_SUBTEXT),
+                font_color: Some(sidebar_subtext(appearance)),
                 font_size: Some(11.5),
                 ..Default::default()
             })
@@ -2880,13 +2177,14 @@ impl LeftPanelView {
             .with_child(subtitle)
             .finish();
 
-        // twarp 08f (§23): soft light hover highlight instead of dense dark rows.
+        // twarp: soft theme-following hover highlight over the sidebar surface.
+        let row_highlight = sidebar_row_highlight(appearance);
         Hoverable::new(row_mouse_state, move |state| {
             let mut body = Container::new(inner)
                 .with_uniform_padding(8.)
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
             if state.is_hovered() {
-                body = body.with_background_color(MACOS_SIDEBAR_ROW_HIGHLIGHT);
+                body = body.with_background_color(row_highlight);
             }
             body.finish()
         })
@@ -2894,349 +2192,6 @@ impl LeftPanelView {
                 ctx.dispatch_typed_action(LeftPanelAction::ClaudeSessionResume(idx));
             })
             .with_cursor(Cursor::PointingHand)
-            .finish()
-    }
-
-    /// PRODUCT §§29-30, 32-38: the inline detail editor. Renders in
-    /// place of the list view while `editing_shortcut.is_some()`.
-    ///
-    /// Layout (top to bottom): header row with Cancel + Save, name
-    /// field, chord field, validation banner (if any), action list
-    /// (one row per action), [+ Add action] button.
-    fn render_shortcuts_editor(&self, app: &AppContext) -> Box<dyn Element> {
-        let appearance = Appearance::as_ref(app);
-        let state = self
-            .editing_shortcut
-            .as_ref()
-            .expect("render_shortcuts_editor called without editor state");
-
-        let header_text = match state.target {
-            EditTarget::Create => "New shortcut",
-            EditTarget::Index(_) => "Edit shortcut",
-        };
-        let header_label = appearance
-            .ui_builder()
-            .span(header_text.to_owned())
-            .build()
-            .finish();
-        let cancel_link = appearance
-            .ui_builder()
-            .link(
-                "Cancel".to_owned(),
-                None,
-                Some(Box::new(|ctx| {
-                    ctx.dispatch_typed_action(LeftPanelAction::ShortcutsEditCancel);
-                })),
-                state.cancel_button_mouse.clone(),
-            )
-            .build()
-            .finish();
-        let save_link = appearance
-            .ui_builder()
-            .link(
-                "Save".to_owned(),
-                None,
-                Some(Box::new(|ctx| {
-                    ctx.dispatch_typed_action(LeftPanelAction::ShortcutsEditSave);
-                })),
-                state.save_button_mouse.clone(),
-            )
-            .build()
-            .finish();
-        let header = Flex::row()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(header_label)
-            .with_child(
-                Flex::row()
-                    .with_main_axis_size(MainAxisSize::Min)
-                    .with_spacing(12.0)
-                    .with_child(cancel_link)
-                    .with_child(save_link)
-                    .finish(),
-            )
-            .finish();
-
-        // Name field — a `ClickableTextInput` child view sits in a
-        // labelled row.
-        let name_label = appearance
-            .ui_builder()
-            .span("Name".to_owned())
-            .build()
-            .finish();
-        let name_input_view = Container::new(ChildView::new(&state.name_text_input).finish())
-            .with_padding_top(2.0)
-            .with_padding_bottom(2.0)
-            .finish();
-        let name_row = Flex::column()
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_spacing(4.0)
-            .with_child(name_label)
-            .with_child(name_input_view)
-            .finish();
-
-        // Chord field — a clickable line that toggles capture mode.
-        let chord_text = if state.capturing_chord {
-            "Press a chord (Esc to cancel)…".to_owned()
-        } else if let Some(chord) = &state.chord {
-            chord.normalized()
-        } else {
-            "(no chord set — click to capture)".to_owned()
-        };
-        let chord_pill = appearance.ui_builder().span(chord_text).build().finish();
-        let chord_field_clickable = Hoverable::new(state.chord_field_mouse.clone(), |_| {
-            Container::new(chord_pill)
-                .with_padding_top(4.0)
-                .with_padding_bottom(4.0)
-                .with_padding_left(8.0)
-                .with_padding_right(8.0)
-                .finish()
-        })
-        .with_cursor(Cursor::PointingHand)
-        .on_click(|ctx, _, _| {
-            ctx.dispatch_typed_action(LeftPanelAction::ShortcutsEditChordFieldClick);
-        })
-        .finish();
-        // While in capture mode, wrap the chord field in an EventHandler
-        // that intercepts the next keydown event and turns it into a
-        // typed action (PRODUCT §32). This is the same hook the
-        // keybindings settings page uses for chord rebinding.
-        let chord_field: Box<dyn Element> = if state.capturing_chord {
-            EventHandler::new(chord_field_clickable)
-                .on_keydown(|ctx, _, keystroke| {
-                    // Bare Escape exits capture without committing
-                    // (PRODUCT §32 last sentence). Anything else is
-                    // committed as the new chord.
-                    if keystroke.key == "escape"
-                        && !keystroke.cmd
-                        && !keystroke.ctrl
-                        && !keystroke.alt
-                        && !keystroke.shift
-                        && !keystroke.meta
-                    {
-                        ctx.dispatch_typed_action(LeftPanelAction::ShortcutsEditChordCancel);
-                    } else {
-                        ctx.dispatch_typed_action(LeftPanelAction::ShortcutsEditChordCaptured(
-                            keystroke.clone(),
-                        ));
-                    }
-                    DispatchEventResult::StopPropagation
-                })
-                .finish()
-        } else {
-            chord_field_clickable
-        };
-        let chord_label = appearance
-            .ui_builder()
-            .span("Chord".to_owned())
-            .build()
-            .finish();
-        let chord_row = Flex::column()
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_spacing(4.0)
-            .with_child(chord_label)
-            .with_child(chord_field)
-            .finish();
-
-        // Validation error banner (PRODUCT §34/§36).
-        let error_banner: Option<Box<dyn Element>> = state.validation_error.as_ref().map(|msg| {
-            appearance
-                .ui_builder()
-                .span(msg.clone())
-                .with_soft_wrap()
-                .build()
-                .finish()
-        });
-
-        // Action editor: one row per action, plus [+ Add action].
-        let actions_label = appearance
-            .ui_builder()
-            .span("Actions".to_owned())
-            .build()
-            .finish();
-        let mut action_column = Flex::column()
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_spacing(6.0)
-            .with_child(actions_label);
-        for (idx, row) in state.actions.iter().enumerate() {
-            action_column = action_column.with_child(self.render_action_row(idx, row, appearance));
-        }
-        let add_action_link = appearance
-            .ui_builder()
-            .link(
-                "+ Add action".to_owned(),
-                None,
-                Some(Box::new(|ctx| {
-                    ctx.dispatch_typed_action(LeftPanelAction::ShortcutsEditActionAdd);
-                })),
-                state.add_action_button_mouse.clone(),
-            )
-            .build()
-            .finish();
-        action_column = action_column.with_child(add_action_link);
-        let action_section = action_column.finish();
-
-        let mut column = Flex::column()
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_spacing(10.0)
-            .with_child(header)
-            .with_child(name_row)
-            .with_child(chord_row);
-        if let Some(banner) = error_banner {
-            column = column.with_child(banner);
-        }
-        column = column.with_child(action_section);
-        let column = column.finish();
-
-        Shrinkable::new(
-            1.0,
-            Container::new(column)
-                .with_padding_left(10.)
-                .with_padding_right(10.)
-                .with_padding_top(8.)
-                .finish(),
-        )
-        .finish()
-    }
-
-    /// Render one row of the action editor (PRODUCT §33). Layout:
-    /// `[kind cycle button] [param widget] [↑] [↓] [×]`. The param
-    /// widget shape depends on the kind: free-text rows embed the
-    /// row's `ClickableTextInput`; enum rows show a cycle button; the
-    /// `new_tab` row shows a dash.
-    fn render_action_row(
-        &self,
-        idx: usize,
-        row: &EditingAction,
-        appearance: &Appearance,
-    ) -> Box<dyn Element> {
-        let kind_label = format!("type: {}", row.kind.label());
-        let kind_button = appearance
-            .ui_builder()
-            .link(
-                kind_label,
-                None,
-                Some(Box::new(move |ctx| {
-                    ctx.dispatch_typed_action(LeftPanelAction::ShortcutsEditActionCycleKind(idx));
-                })),
-                row.kind_button_mouse.clone(),
-            )
-            .build()
-            .finish();
-
-        let param_element: Box<dyn Element> = match row.kind {
-            EditingActionKind::NewTab => appearance
-                .ui_builder()
-                .span("(no parameter)".to_owned())
-                .build()
-                .finish(),
-            EditingActionKind::NewPane => {
-                let dir = NEW_PANE_DIRECTIONS
-                    .get(row.param_cycle_idx)
-                    .copied()
-                    .unwrap_or("right");
-                appearance
-                    .ui_builder()
-                    .link(
-                        format!("direction: {dir}"),
-                        None,
-                        Some(Box::new(move |ctx| {
-                            ctx.dispatch_typed_action(
-                                LeftPanelAction::ShortcutsEditActionCycleParam(idx),
-                            );
-                        })),
-                        row.param_button_mouse.clone(),
-                    )
-                    .build()
-                    .finish()
-            }
-            EditingActionKind::Press => {
-                let key = PRESS_KEY_CYCLE
-                    .get(row.param_cycle_idx)
-                    .copied()
-                    .unwrap_or("enter");
-                appearance
-                    .ui_builder()
-                    .link(
-                        format!("key: {key}"),
-                        None,
-                        Some(Box::new(move |ctx| {
-                            ctx.dispatch_typed_action(
-                                LeftPanelAction::ShortcutsEditActionCycleParam(idx),
-                            );
-                        })),
-                        row.param_button_mouse.clone(),
-                    )
-                    .build()
-                    .finish()
-            }
-            EditingActionKind::Type | EditingActionKind::Wait => {
-                if let Some(input) = &row.param_text_input {
-                    Container::new(ChildView::new(input).finish())
-                        .with_padding_top(2.0)
-                        .with_padding_bottom(2.0)
-                        .finish()
-                } else {
-                    appearance
-                        .ui_builder()
-                        .span("(click to edit)".to_owned())
-                        .build()
-                        .finish()
-                }
-            }
-        };
-
-        let move_up_link = appearance
-            .ui_builder()
-            .link(
-                "↑".to_owned(),
-                None,
-                Some(Box::new(move |ctx| {
-                    ctx.dispatch_typed_action(LeftPanelAction::ShortcutsEditActionMoveUp(idx));
-                })),
-                row.move_up_mouse.clone(),
-            )
-            .build()
-            .finish();
-        let move_down_link = appearance
-            .ui_builder()
-            .link(
-                "↓".to_owned(),
-                None,
-                Some(Box::new(move |ctx| {
-                    ctx.dispatch_typed_action(LeftPanelAction::ShortcutsEditActionMoveDown(idx));
-                })),
-                row.move_down_mouse.clone(),
-            )
-            .build()
-            .finish();
-        let remove_link = appearance
-            .ui_builder()
-            .link(
-                "×".to_owned(),
-                None,
-                Some(Box::new(move |ctx| {
-                    ctx.dispatch_typed_action(LeftPanelAction::ShortcutsEditActionRemove(idx));
-                })),
-                row.remove_button_mouse.clone(),
-            )
-            .build()
-            .finish();
-
-        Flex::row()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_spacing(8.0)
-            .with_child(kind_button)
-            .with_child(Shrinkable::new(1.0, param_element).finish())
-            .with_child(move_up_link)
-            .with_child(move_down_link)
-            .with_child(remove_link)
             .finish()
     }
 
@@ -3306,88 +2261,76 @@ impl LeftPanelView {
         .finish()
     }
 
-    /// twarp 08f (PRODUCT §22): one segment of the macOS pill switcher. Same
-    /// routing as `render_button` (dispatches the same `LeftPanelAction`); only
-    /// the shape differs — the active segment is a filled white pill, the rest
-    /// quiet. All colors are pinned light (no theme read) so the pill stays
-    /// macOS-light beside a dark terminal theme (§21, theme-leakage trap).
+    /// twarp: one segment of the tool switcher, rendered as an icon + label
+    /// chip (Files | Search | Code). The active segment is a filled raised box;
+    /// inactive ones are quiet and show a subtle hover highlight. Colors are
+    /// theme-following (see the `sidebar_*` palette helpers) so the switcher
+    /// tracks the active theme alongside the rest of the sidebar.
     fn render_pill_segment(
         button_config: &ToolbeltButtonConfig,
         mouse_state: MouseStateHandle,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let action = button_config.action.clone();
-        let ui_builder = appearance.ui_builder().clone();
-        let tooltip_keybinding = button_config.tooltip_keybinding.clone();
         let is_active = button_config.render_with_active_state;
-
-        // Pinned, theme-independent colors.
-        let icon_color: warpui::color::ColorU = if is_active {
-            MACOS_SIDEBAR_TEXT
-        } else {
-            MACOS_SIDEBAR_SUBTEXT
-        };
-
-        let tooltip = if let Some(keybinding) = tooltip_keybinding {
-            ui_builder
-                .tool_tip_with_sublabel(button_config.tooltip_text.clone(), keybinding)
-                .build()
-                .finish()
-        } else {
-            ui_builder
-                .tool_tip(button_config.tooltip_text.clone())
-                .build()
-                .finish()
-        };
-
+        let label = button_config.label.clone();
         let icon = if is_active {
             button_config.active_icon.unwrap_or(button_config.icon)
         } else {
             button_config.icon
         };
-
-        // The active segment gets a filled white pill; the quiet ones show a
-        // subtle hover-only highlight. Both are pinned light fills.
+        let font_size = appearance.ui_font_size();
+        let font_family = appearance.ui_font_family();
         let pill_radius = CornerRadius::with_all(Radius::Pixels(6.));
-        let base_background = if is_active {
-            Some(MACOS_SIDEBAR_PILL_ACTIVE.into())
-        } else {
-            None
-        };
 
-        icon_button(appearance, icon, is_active, mouse_state.clone())
-            .with_tooltip(move || tooltip)
-            .with_style(UiComponentStyles {
-                font_color: Some(icon_color),
-                // twarp 08 (review): taller pills with explicit top/bottom
-                // padding so the toggle buttons read with real vertical
-                // breathing room around the icon (the header is grown to fit).
-                height: Some(36.),
-                width: Some(28.),
-                padding: Some(Coords::uniform(4.).top(10.).bottom(10.)),
-                border_radius: Some(pill_radius),
-                background: base_background,
-                ..Default::default()
-            })
-            .with_active_styles(UiComponentStyles {
-                font_color: Some(icon_color),
-                height: Some(36.),
-                width: Some(28.),
-                padding: Some(Coords::uniform(4.).top(10.).bottom(10.)),
-                border_radius: Some(pill_radius),
-                background: Some(if is_active {
-                    MACOS_SIDEBAR_PILL_ACTIVE.into()
+        Hoverable::new(mouse_state, move |state| {
+            let theme = appearance.theme();
+            let bg = theme.background();
+            // Active segments read at full strength; quiet ones are muted.
+            let content_fill = if is_active {
+                theme.main_text_color(bg)
+            } else {
+                theme.sub_text_color(bg)
+            };
+
+            let icon_el = ConstrainedBox::new(icon.to_warpui_icon(content_fill).finish())
+                .with_width(16.)
+                .with_height(16.)
+                .finish();
+            let label_el = Text::new_inline(label.clone(), font_family, font_size)
+                .with_color(content_fill.into())
+                .with_style(Properties::default().weight(if is_active {
+                    Weight::Medium
                 } else {
-                    MACOS_SIDEBAR_ROW_HIGHLIGHT.into()
-                }),
-                ..Default::default()
-            })
-            .build()
-            .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(action.clone());
-            })
-            .with_cursor(Cursor::PointingHand)
-            .finish()
+                    Weight::Normal
+                }))
+                .finish();
+            let row = Flex::row()
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(6.0)
+                .with_child(icon_el)
+                .with_child(label_el)
+                .finish();
+
+            let mut chip = Container::new(row)
+                .with_padding_left(12.)
+                .with_padding_right(12.)
+                .with_padding_top(6.)
+                .with_padding_bottom(6.)
+                .with_corner_radius(pill_radius);
+            if is_active {
+                chip = chip.with_background_color(sidebar_pill_active(appearance));
+            } else if state.is_hovered() {
+                chip = chip.with_background_color(sidebar_row_highlight(appearance));
+            }
+            chip.finish()
+        })
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(action.clone());
+        })
+        .with_cursor(Cursor::PointingHand)
+        .finish()
     }
 }
 
@@ -3457,9 +2400,6 @@ impl LeftPanelView {
                     );
                 }
             }
-            LeftPanelAction::Shortcuts => {
-                active_view_state::set(self, ToolPanelView::Shortcuts, ctx);
-            }
             // twarp 07 (7h, PRODUCT §35): open the session list, re-listing
             // the active cwd's stored sessions on entry.
             LeftPanelAction::ClaudeSessions => {
@@ -3478,188 +2418,6 @@ impl LeftPanelView {
                         cwd,
                     });
                 }
-            }
-            LeftPanelAction::ShortcutsAddNew => {
-                // PRODUCT §29: opens the empty detail editor.
-                self.shortcut_context_menu_target = None;
-                self.editing_shortcut = Some(Self::new_editing_state(EditTarget::Create, ctx));
-                ctx.notify();
-            }
-            LeftPanelAction::ShortcutsBeginEdit(idx) => {
-                self.shortcut_context_menu_target = None;
-                if let Some(state) = Self::editing_state_for_existing(*idx, ctx) {
-                    self.editing_shortcut = Some(state);
-                    ctx.notify();
-                }
-            }
-            LeftPanelAction::ShortcutsEditCancel => {
-                if self.editing_shortcut.is_some() {
-                    self.editing_shortcut = None;
-                    // Capture mode is one-shot; make sure global dispatch
-                    // is enabled in case we cancel mid-capture.
-                    ctx.enable_key_bindings_dispatching();
-                    ctx.notify();
-                }
-            }
-            LeftPanelAction::ShortcutsEditSave => {
-                self.handle_edit_save(ctx);
-            }
-            LeftPanelAction::ShortcutsEditChordFieldClick => {
-                if let Some(state) = self.editing_shortcut.as_mut() {
-                    if state.capturing_chord {
-                        // Click again to bail out of capture mode without
-                        // changing anything (PRODUCT §32 doesn't strictly
-                        // require this — but it avoids trap states if a
-                        // user changes their mind mid-capture).
-                        state.capturing_chord = false;
-                        ctx.enable_key_bindings_dispatching();
-                    } else {
-                        state.chord_before_capture = state.chord.clone();
-                        state.capturing_chord = true;
-                        ctx.disable_key_bindings_dispatching();
-                    }
-                    state.validation_error = None;
-                    ctx.notify();
-                }
-            }
-            LeftPanelAction::ShortcutsEditChordCaptured(keystroke) => {
-                if let Some(state) = self.editing_shortcut.as_mut() {
-                    state.chord = Some(keystroke.clone());
-                    state.capturing_chord = false;
-                    state.validation_error = None;
-                    ctx.enable_key_bindings_dispatching();
-                    ctx.notify();
-                }
-            }
-            LeftPanelAction::ShortcutsEditChordCancel => {
-                if let Some(state) = self.editing_shortcut.as_mut() {
-                    state.chord = state.chord_before_capture.clone();
-                    state.capturing_chord = false;
-                    ctx.enable_key_bindings_dispatching();
-                    ctx.notify();
-                }
-            }
-            LeftPanelAction::ShortcutsEditActionCycleKind(idx) => {
-                let idx = *idx;
-                if let Some(state) = self.editing_shortcut.as_mut() {
-                    if let Some(row) = state.actions.get_mut(idx) {
-                        row.kind = row.kind.next();
-                        // Reset parameter representation to the new kind's defaults.
-                        row.param_text.clear();
-                        row.param_cycle_idx = 0;
-                        row.param_text_input = None;
-                        state.validation_error = None;
-                        Self::ensure_param_input_for_row(row, ctx);
-                        ctx.notify();
-                    }
-                }
-            }
-            LeftPanelAction::ShortcutsEditActionCycleParam(idx) => {
-                let idx = *idx;
-                if let Some(state) = self.editing_shortcut.as_mut() {
-                    if let Some(row) = state.actions.get_mut(idx) {
-                        let modulus = match row.kind {
-                            EditingActionKind::NewPane => NEW_PANE_DIRECTIONS.len(),
-                            EditingActionKind::Press => PRESS_KEY_CYCLE.len(),
-                            _ => 0,
-                        };
-                        if modulus > 0 {
-                            row.param_cycle_idx = (row.param_cycle_idx + 1) % modulus;
-                            state.validation_error = None;
-                            ctx.notify();
-                        }
-                    }
-                }
-            }
-            LeftPanelAction::ShortcutsEditActionAdd => {
-                if let Some(state) = self.editing_shortcut.as_mut() {
-                    let mut row = EditingAction::new_default();
-                    Self::ensure_param_input_for_row(&mut row, ctx);
-                    state.actions.push(row);
-                    state.validation_error = None;
-                    ctx.notify();
-                }
-            }
-            LeftPanelAction::ShortcutsEditActionRemove(idx) => {
-                let idx = *idx;
-                if let Some(state) = self.editing_shortcut.as_mut() {
-                    if idx < state.actions.len() {
-                        state.actions.remove(idx);
-                        state.validation_error = None;
-                        ctx.notify();
-                    }
-                }
-            }
-            LeftPanelAction::ShortcutsEditActionMoveUp(idx) => {
-                let idx = *idx;
-                if let Some(state) = self.editing_shortcut.as_mut() {
-                    if idx > 0 && idx < state.actions.len() {
-                        state.actions.swap(idx, idx - 1);
-                        state.validation_error = None;
-                        ctx.notify();
-                    }
-                }
-            }
-            LeftPanelAction::ShortcutsEditActionMoveDown(idx) => {
-                let idx = *idx;
-                if let Some(state) = self.editing_shortcut.as_mut() {
-                    if idx + 1 < state.actions.len() {
-                        state.actions.swap(idx, idx + 1);
-                        state.validation_error = None;
-                        ctx.notify();
-                    }
-                }
-            }
-            LeftPanelAction::ShortcutsOpenInEditor => {
-                self.shortcut_context_menu_target = None;
-                let full_path = crate::shortcuts::shortcuts_file_path();
-                // If `shortcuts.yaml` already has an open code pane in
-                // some tab, activate that tab instead of creating a
-                // duplicate (user request). Falls back to
-                // `OpenFileInNewTab` when no existing pane is found.
-                let existing = crate::code::editor_management::CodeManager::handle(ctx)
-                    .read(ctx, |manager, _ctx| {
-                        manager.get_locator_for_path_anywhere(&full_path)
-                    });
-                if let Some(locator) = existing {
-                    log::info!(
-                        "shortcuts: shortcuts.yaml already open at locator {locator:?}; activating tab"
-                    );
-                    ctx.dispatch_typed_action_deferred(WorkspaceAction::FocusPane(locator));
-                } else {
-                    log::info!("shortcuts: opening {full_path:?} in a new twarp tab");
-                    // Defer the workspace-action dispatch — we're currently
-                    // inside our own handle_action, and dispatching another
-                    // typed action synchronously re-enters the view update
-                    // machinery and panics ("Circular view update"). The
-                    // deferred path queues the action onto `pending_effects`
-                    // so it fires after this handler returns.
-                    ctx.dispatch_typed_action_deferred(WorkspaceAction::OpenFileInNewTab {
-                        full_path,
-                        line_and_column: None,
-                    });
-                }
-                ctx.notify();
-            }
-            LeftPanelAction::ShortcutsToggleRowMenu(index) => {
-                self.shortcut_context_menu_target =
-                    if self.shortcut_context_menu_target == Some(*index) {
-                        None
-                    } else {
-                        Some(*index)
-                    };
-                ctx.notify();
-            }
-            LeftPanelAction::ShortcutsCloseRowMenu => {
-                if self.shortcut_context_menu_target.is_some() {
-                    self.shortcut_context_menu_target = None;
-                    ctx.notify();
-                }
-            }
-            LeftPanelAction::ShortcutsDelete(index) => {
-                let index = *index;
-                self.shortcut_context_menu_target = None;
-                Self::delete_shortcut_at_index(index, ctx);
             }
             // twarp: 2c-d — ConversationListView is a stub kept for legacy call-sites.
             LeftPanelAction::ConversationListView => {}
@@ -3681,272 +2439,6 @@ impl LeftPanelView {
                     file_path: file_path.clone(),
                     sha: sha.clone(),
                 });
-            }
-        }
-    }
-
-    /// Construct the initial state for a brand-new shortcut. Spawns
-    /// the name-field `ClickableTextInput` child view; per-action-row
-    /// inputs are spawned lazily as actions are added.
-    fn new_editing_state(target: EditTarget, ctx: &mut ViewContext<Self>) -> EditingShortcutState {
-        let name_input = Self::make_text_input(String::new(), ctx);
-        EditingShortcutState {
-            target,
-            name_text: String::new(),
-            name_text_input: name_input,
-            chord: None,
-            capturing_chord: false,
-            chord_before_capture: None,
-            chord_field_mouse: MouseStateHandle::default(),
-            actions: Vec::new(),
-            add_action_button_mouse: MouseStateHandle::default(),
-            save_button_mouse: MouseStateHandle::default(),
-            cancel_button_mouse: MouseStateHandle::default(),
-            validation_error: None,
-        }
-    }
-
-    /// Construct editor state pre-populated from the row at `index` in
-    /// the current registry. Returns `None` when the index is out of
-    /// range (race with reload).
-    fn editing_state_for_existing(
-        index: usize,
-        ctx: &mut ViewContext<Self>,
-    ) -> Option<EditingShortcutState> {
-        let shortcut = {
-            let model = crate::shortcuts::ShortcutsModel::handle(ctx);
-            let m = model.as_ref(ctx);
-            m.registry.get(index).cloned()
-        }?;
-
-        let name_text = shortcut.name.clone().unwrap_or_default();
-        let name_input = Self::make_text_input(name_text.clone(), ctx);
-
-        let actions = shortcut
-            .actions
-            .iter()
-            .map(|a| {
-                let mut row = EditingAction::from_runtime(a);
-                Self::ensure_param_input_for_row(&mut row, ctx);
-                row
-            })
-            .collect();
-
-        Some(EditingShortcutState {
-            target: EditTarget::Index(index),
-            name_text,
-            name_text_input: name_input,
-            chord: Some(shortcut.keys.clone()),
-            capturing_chord: false,
-            chord_before_capture: None,
-            chord_field_mouse: MouseStateHandle::default(),
-            actions,
-            add_action_button_mouse: MouseStateHandle::default(),
-            save_button_mouse: MouseStateHandle::default(),
-            cancel_button_mouse: MouseStateHandle::default(),
-            validation_error: None,
-        })
-    }
-
-    /// Spawn a `ClickableTextInput` child view pre-populated with the
-    /// initial text. Subscribes to its Submit event so edits route
-    /// back to the editor's typed-action surface — when the input
-    /// emits a Submit, we look up which slot it belonged to in the
-    /// current editor state and update `param_text` / `name_text`.
-    fn make_text_input(
-        initial: String,
-        ctx: &mut ViewContext<Self>,
-    ) -> ViewHandle<ClickableTextInput> {
-        let handle = ctx
-            .add_typed_action_view(|child_ctx| ClickableTextInput::new(initial.clone(), child_ctx));
-        let weak = handle.downgrade();
-        ctx.subscribe_to_view(&handle, move |me, _, event, ctx| {
-            let ClickableTextInputEvent::Submit(text) = event;
-            // Resolve which slot this submit came from by comparing
-            // ViewHandle identity inside the current editor state, then
-            // push the new text back into the input's `text` field so
-            // its display-mode label shows the saved value. Without
-            // this UpdateText round-trip the input would emit Submit,
-            // flip back to display mode, and render the empty `text`
-            // it was created with — values appear to vanish even
-            // though they did make it into our state and onto disk.
-            if let Some(state) = me.editing_shortcut.as_mut() {
-                if let Some(other) = weak.upgrade(ctx) {
-                    if state.name_text_input == other {
-                        state.name_text = text.clone();
-                        state.validation_error = None;
-                        let new_text = text.clone();
-                        state.name_text_input.update(ctx, |input, ctx| {
-                            input.handle_action(
-                                &ClickableTextInputAction::UpdateText(new_text),
-                                ctx,
-                            );
-                        });
-                        ctx.notify();
-                        return;
-                    }
-                    let updated_param: Option<(ViewHandle<ClickableTextInput>, String)> =
-                        state.actions.iter_mut().find_map(|row| {
-                            row.param_text_input.as_ref().and_then(|input| {
-                                if *input == other {
-                                    row.param_text = text.clone();
-                                    Some((input.clone(), text.clone()))
-                                } else {
-                                    None
-                                }
-                            })
-                        });
-                    if let Some((input, new_text)) = updated_param {
-                        state.validation_error = None;
-                        input.update(ctx, |input_view, ctx| {
-                            input_view.handle_action(
-                                &ClickableTextInputAction::UpdateText(new_text),
-                                ctx,
-                            );
-                        });
-                        ctx.notify();
-                    }
-                }
-            }
-        });
-        handle
-    }
-
-    /// Ensure that a row whose kind takes free-text input has a backing
-    /// `ClickableTextInput`, and that rows whose kind doesn't take
-    /// free-text input have `None`. Called whenever the row's kind
-    /// changes or a row is added/loaded.
-    fn ensure_param_input_for_row(row: &mut EditingAction, ctx: &mut ViewContext<Self>) {
-        if kind_param_is_freetext(row.kind) {
-            if row.param_text_input.is_none() {
-                let input = Self::make_text_input(row.param_text.clone(), ctx);
-                row.param_text_input = Some(input);
-            }
-        } else {
-            row.param_text_input = None;
-        }
-    }
-
-    /// PRODUCT §36 save semantics: validate the editor against the same
-    /// parser the file path uses, build a `Shortcut`, splice it into
-    /// the current registry snapshot, write to disk, and reload. On
-    /// failure surface the error inline so the user can fix it.
-    fn handle_edit_save(&mut self, ctx: &mut ViewContext<Self>) {
-        let Some(state) = self.editing_shortcut.as_mut() else {
-            return;
-        };
-        if state.capturing_chord {
-            // Refuse to save mid-capture; we don't have a chord yet.
-            state.validation_error = Some("Press a chord (or Escape) before saving.".to_owned());
-            ctx.notify();
-            return;
-        }
-        let Some(chord) = state.chord.clone() else {
-            state.validation_error = Some("Pick a chord before saving.".to_owned());
-            ctx.notify();
-            return;
-        };
-        if state.actions.is_empty() {
-            state.validation_error = Some("Add at least one action before saving.".to_owned());
-            ctx.notify();
-            return;
-        }
-        let runtime_actions: Result<Vec<crate::shortcuts::action::Action>, String> = state
-            .actions
-            .iter()
-            .enumerate()
-            .map(|(idx, row)| row.to_runtime_action(idx + 1))
-            .collect();
-        let runtime_actions = match runtime_actions {
-            Ok(actions) => actions,
-            Err(msg) => {
-                state.validation_error = Some(msg);
-                ctx.notify();
-                return;
-            }
-        };
-        let trimmed_name = state.name_text.trim();
-        let name = if trimmed_name.is_empty() {
-            None
-        } else {
-            Some(trimmed_name.to_owned())
-        };
-        let target = state.target;
-
-        let mut snapshot: Vec<crate::shortcuts::config::Shortcut> =
-            crate::shortcuts::ShortcutsModel::handle(ctx)
-                .as_ref(ctx)
-                .registry
-                .clone();
-        let new_shortcut = crate::shortcuts::config::Shortcut {
-            keys: chord,
-            actions: runtime_actions,
-            name,
-            binding_name: String::new(), // assigned on reload
-        };
-        match target {
-            EditTarget::Create => snapshot.push(new_shortcut),
-            EditTarget::Index(idx) => {
-                if idx < snapshot.len() {
-                    snapshot[idx] = new_shortcut;
-                } else {
-                    // The row we were editing was deleted out from under us
-                    // by a concurrent reload; degrade to an append rather
-                    // than dropping the edit.
-                    snapshot.push(new_shortcut);
-                }
-            }
-        }
-        match crate::shortcuts::save::save_to_disk(&snapshot) {
-            Ok(path) => {
-                log::info!(
-                    "shortcuts: detail editor saved to {path:?} ({entries} entr{plural})",
-                    entries = snapshot.len(),
-                    plural = if snapshot.len() == 1 { "y" } else { "ies" }
-                );
-                self.editing_shortcut = None;
-                ctx.enable_key_bindings_dispatching();
-                crate::shortcuts::reload(ctx);
-                ctx.notify();
-            }
-            Err(err) => {
-                if let Some(state) = self.editing_shortcut.as_mut() {
-                    state.validation_error = Some(format!("Failed to write shortcuts.yaml: {err}"));
-                }
-                ctx.notify();
-            }
-        }
-    }
-
-    /// PRODUCT 04 §31 (delete). Removes the shortcut at `index` from the
-    /// in-memory registry snapshot, writes the result via 4b's
-    /// `save_to_disk`, and triggers a reload so the keymap drops the
-    /// binding immediately. Out-of-range indices are a no-op.
-    fn delete_shortcut_at_index(index: usize, ctx: &mut ViewContext<Self>) {
-        let mut snapshot: Vec<crate::shortcuts::config::Shortcut> =
-            crate::shortcuts::ShortcutsModel::handle(ctx)
-                .as_ref(ctx)
-                .registry
-                .clone();
-        if index >= snapshot.len() {
-            log::warn!(
-                "shortcuts: delete requested for out-of-range index {index} (registry has {len})",
-                len = snapshot.len()
-            );
-            return;
-        }
-        let removed = snapshot.remove(index);
-        match crate::shortcuts::save::save_to_disk(&snapshot) {
-            Ok(path) => {
-                log::info!(
-                    "shortcuts: deleted shortcut #{index} ({chord}) and saved to {:?}",
-                    path,
-                    chord = removed.keys.normalized()
-                );
-                crate::shortcuts::reload(ctx);
-            }
-            Err(err) => {
-                log::warn!("shortcuts: failed to save after delete: {err}");
             }
         }
     }
@@ -4044,13 +2536,12 @@ impl View for LeftPanelView {
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
 
+        // One stable hover handle per toolbelt segment, in the same order as
+        // `compute_left_panel_views` (Project Explorer, Global Search, Claude
+        // sessions). Shortcuts moved to Settings, so it has no segment here.
         let mouse_state_handles = vec![
             self.mouse_state_handles.project_explorer_button.clone(),
             self.mouse_state_handles.global_search_button.clone(),
-            self.mouse_state_handles.warp_drive_button.clone(),
-            self.mouse_state_handles.shortcuts_button.clone(),
-            // twarp 07 (7h): session-list button (after Shortcuts, matching
-            // `compute_left_panel_views` order).
             self.mouse_state_handles.claude_sessions_button.clone(),
             // twarp: 2c-d — conversation_list_view_button removed
         ];
@@ -4078,6 +2569,9 @@ impl View for LeftPanelView {
                 })
                 .collect();
             Some(
+                // twarp: no recessed track behind the switcher — the segments
+                // sit directly on the panel background, with only the active
+                // segment showing a filled box.
                 Container::new(
                     Flex::row()
                         .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -4086,12 +2580,6 @@ impl View for LeftPanelView {
                         .with_main_axis_size(MainAxisSize::Min)
                         .finish(),
                 )
-                .with_background_color(MACOS_SIDEBAR_PILL_TRACK)
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-                .with_padding_left(2.)
-                .with_padding_right(2.)
-                .with_padding_top(2.)
-                .with_padding_bottom(2.)
                 .finish(),
             )
         } else {
@@ -4145,12 +2633,12 @@ impl View for LeftPanelView {
                     .finish(),
             )
             .finish(),
-            // PRODUCT 04 §§27-29: read-only list of shortcuts + "+ New
-            // shortcut" link. Inline editing (keystroke capture, action
-            // editor, validation) is deferred to 4d; users hand-edit
-            // `shortcuts.yaml` for now, and 4b's hot reload keeps that
-            // loop tight.
-            ToolPanelView::Shortcuts => self.render_shortcuts_panel(app),
+            // twarp: Shortcuts moved to Settings > Shortcuts. The variant is
+            // retained for persisted-tab back-compat but is never an active
+            // toolbelt view, so it renders nothing.
+            ToolPanelView::Shortcuts => {
+                Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()
+            }
             // twarp 07 (7h, PRODUCT §35): read-only session list for the
             // active cwd; rows resume via a main-content pane (§36).
             ToolPanelView::ClaudeSessions => self.render_claude_sessions_panel(app),
@@ -4203,26 +2691,33 @@ impl View for LeftPanelView {
                 .with_main_axis_size(MainAxisSize::Max)
                 .finish()
         })
-        // twarp 08f (PRODUCT §21, §2, §3): pin the whole sidebar to a flat
-        // macOS-light fill, independent of the active twarp theme, so a dark
-        // terminal theme leaves the sidebar light (the intended two-tone). This
-        // is the one root fill; child fills that read the theme are the
-        // theme-leakage trap and are pinned individually (pill switcher,
-        // session rows, header spans).
-        .with_background_color(MACOS_SIDEBAR_BG)
+        // twarp: the sidebar surface is the main terminal background (shared
+        // with the code review panel), so the card blends into the background
+        // and is set apart only by its outline/gap/shadow. Child colors derive
+        // from the theme (see the `sidebar_*` palette helpers).
+        .with_background(super::floating_panel_surface_fill(app))
+        // twarp: floating-card treatment — rounded corners, a gray outline, and
+        // a soft drop shadow so the sidebar reads as floating above the terminal
+        // background. The edge gap (margin) is applied OUTSIDE the Resizable
+        // below so the drag bar sits on the card's border, not out in the gap.
+        .with_corner_radius(super::floating_panel_corner_radius())
+        .with_border(super::floating_panel_border())
+        .with_drop_shadow(super::floating_panel_drop_shadow())
         // twarp 08f polish: breathing room at the bottom edge.
         .with_padding_bottom(SIDEBAR_BOTTOM_INSET)
         .finish();
 
         if warpui::platform::is_mobile_device() {
-            return panel_content;
+            return Container::new(panel_content)
+                .with_uniform_margin(super::FLOATING_PANEL_MARGIN)
+                .finish();
         }
 
         let drag_side = match self.panel_position {
             super::PanelPosition::Left => DragBarSide::Right,
             super::PanelPosition::Right => DragBarSide::Left,
         };
-        Resizable::new(self.resizable_state_handle.clone(), panel_content)
+        let resizable = Resizable::new(self.resizable_state_handle.clone(), panel_content)
             .with_dragbar_side(drag_side)
             .on_resize(move |ctx, _| {
                 ctx.notify();
@@ -4232,6 +2727,12 @@ impl View for LeftPanelView {
                 let max_width = window_size.x() * MAX_SIDEBAR_WIDTH_RATIO;
                 (min_width, max_width.max(min_width))
             }))
+            .finish();
+        // The floating gap goes here, around the Resizable, so the drag bar
+        // (the rightmost few px of the Resizable's child) lands on the card's
+        // border rather than 8px out in the gap.
+        Container::new(resizable)
+            .with_uniform_margin(super::FLOATING_PANEL_MARGIN)
             .finish()
     }
 }
@@ -4313,173 +2814,3 @@ mod sessions_search_tests {
     }
 }
 
-#[cfg(test)]
-mod shortcuts_editor_tests {
-    use super::*;
-    use crate::shortcuts::action::{Action, KeyName};
-    use std::time::Duration;
-
-    #[test]
-    fn parse_wait_value_accepts_supported_units_within_range() {
-        assert_eq!(parse_wait_value("1ms"), Ok(Duration::from_millis(1)));
-        assert_eq!(parse_wait_value("500ms"), Ok(Duration::from_millis(500)));
-        assert_eq!(parse_wait_value("2s"), Ok(Duration::from_secs(2)));
-        assert_eq!(parse_wait_value("1m"), Ok(Duration::from_secs(60)));
-        // Trims surrounding whitespace because typed-input values often have it.
-        assert_eq!(parse_wait_value("  150ms "), Ok(Duration::from_millis(150)));
-    }
-
-    #[test]
-    fn parse_wait_value_rejects_zero_and_overflow() {
-        assert!(parse_wait_value("0ms").is_err());
-        // 1m1ms == 60_001 ms which is over the 60s cap.
-        assert!(parse_wait_value("61s").is_err());
-        assert!(parse_wait_value("2m").is_err());
-    }
-
-    #[test]
-    fn parse_wait_value_rejects_garbage() {
-        assert!(parse_wait_value("garbage").is_err());
-        assert!(parse_wait_value("100").is_err());
-        assert!(parse_wait_value("ms").is_err());
-        assert!(parse_wait_value("3.5s").is_err());
-    }
-
-    #[test]
-    fn key_name_label_round_trip() {
-        let names = [
-            KeyName::Enter,
-            KeyName::Tab,
-            KeyName::Escape,
-            KeyName::Backspace,
-            KeyName::Space,
-            KeyName::Up,
-            KeyName::Down,
-            KeyName::Left,
-            KeyName::Right,
-            KeyName::Home,
-            KeyName::End,
-            KeyName::PageUp,
-            KeyName::PageDown,
-            KeyName::Delete,
-            KeyName::Insert,
-            KeyName::NumpadEnter,
-            KeyName::F(1),
-            KeyName::F(5),
-            KeyName::F(12),
-        ];
-        for n in &names {
-            let label = key_name_to_label(*n);
-            let back = label_to_key_name(label)
-                .unwrap_or_else(|| panic!("label_to_key_name lost {label} for {n:?}"));
-            assert_eq!(back, *n, "round-trip failed for {label}");
-        }
-    }
-
-    #[test]
-    fn editing_action_round_trip_new_tab() {
-        let row = EditingAction::from_runtime(&Action::NewTab);
-        assert_eq!(row.kind, EditingActionKind::NewTab);
-        let back = row.to_runtime_action(1).expect("new_tab serialises back");
-        assert!(matches!(back, Action::NewTab));
-    }
-
-    #[test]
-    fn editing_action_round_trip_new_pane_all_directions() {
-        use crate::pane_group::Direction;
-        // `Direction` doesn't derive `PartialEq` in pane_group (upstream
-        // code we don't want to fork), so the round-trip asserts via the
-        // expected label string instead of comparing enum values directly.
-        let cases = [
-            (Direction::Right, "right"),
-            (Direction::Down, "down"),
-            (Direction::Left, "left"),
-            (Direction::Up, "up"),
-        ];
-        for (dir, label) in cases {
-            let row = EditingAction::from_runtime(&Action::NewPane(dir));
-            assert_eq!(row.kind, EditingActionKind::NewPane);
-            assert_eq!(NEW_PANE_DIRECTIONS[row.param_cycle_idx], label);
-            let back = row.to_runtime_action(1).expect("new_pane serialises back");
-            match back {
-                Action::NewPane(d) => {
-                    let back_label = match d {
-                        Direction::Right => "right",
-                        Direction::Down => "down",
-                        Direction::Left => "left",
-                        Direction::Up => "up",
-                    };
-                    assert_eq!(back_label, label);
-                }
-                other => panic!("expected NewPane, got {other:?}"),
-            }
-        }
-    }
-
-    #[test]
-    fn editing_action_round_trip_type_preserves_text() {
-        let row = EditingAction::from_runtime(&Action::Type("hello world".to_owned()));
-        assert_eq!(row.kind, EditingActionKind::Type);
-        assert_eq!(row.param_text, "hello world");
-        let back = row.to_runtime_action(1).expect("type serialises back");
-        match back {
-            Action::Type(s) => assert_eq!(s, "hello world"),
-            _ => panic!("expected Type, got {back:?}"),
-        }
-    }
-
-    #[test]
-    fn editing_action_type_rejects_newline() {
-        let mut row = EditingAction::new_default();
-        row.kind = EditingActionKind::Type;
-        row.param_text = "a\nb".to_owned();
-        assert!(row.to_runtime_action(1).is_err());
-    }
-
-    #[test]
-    fn editing_action_round_trip_press_supported_keys() {
-        for key_label in PRESS_KEY_CYCLE {
-            let kn = label_to_key_name(key_label).expect("cycle list keys are recognised");
-            let row = EditingAction::from_runtime(&Action::Press(kn));
-            assert_eq!(row.kind, EditingActionKind::Press);
-            assert_eq!(PRESS_KEY_CYCLE[row.param_cycle_idx], key_label);
-            let back = row.to_runtime_action(1).expect("press serialises back");
-            match back {
-                Action::Press(k) => assert_eq!(k, kn),
-                _ => panic!("expected Press, got {back:?}"),
-            }
-        }
-    }
-
-    #[test]
-    fn editing_action_round_trip_wait_uses_clean_unit() {
-        // ms-granularity (not a clean second multiple): rendered with `ms`.
-        let row = EditingAction::from_runtime(&Action::Wait(Duration::from_millis(150)));
-        assert_eq!(row.param_text, "150ms");
-        let back = row.to_runtime_action(1).expect("wait serialises back");
-        match back {
-            Action::Wait(d) => assert_eq!(d, Duration::from_millis(150)),
-            _ => panic!("expected Wait, got {back:?}"),
-        }
-
-        // Whole seconds: rendered with `s`.
-        let row = EditingAction::from_runtime(&Action::Wait(Duration::from_secs(2)));
-        assert_eq!(row.param_text, "2s");
-        let back = row.to_runtime_action(1).expect("wait serialises back");
-        assert!(matches!(back, Action::Wait(d) if d == Duration::from_secs(2)));
-
-        // Whole minute: rendered with `m`.
-        let row = EditingAction::from_runtime(&Action::Wait(Duration::from_secs(60)));
-        assert_eq!(row.param_text, "1m");
-    }
-
-    #[test]
-    fn editing_action_kind_cycle_is_total() {
-        // Cycle through all five kinds once and confirm we land back on NewTab.
-        let mut k = EditingActionKind::NewTab;
-        for _ in 0..5 {
-            k = k.next();
-        }
-        assert_eq!(k, EditingActionKind::NewTab);
-    }
-}

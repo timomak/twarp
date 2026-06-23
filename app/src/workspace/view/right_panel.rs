@@ -871,6 +871,7 @@ impl RightPanelView {
         let Some(state) = &self.code_review_state else {
             let simple_header = self.render_simple_header(close_button);
             return Flex::column()
+                .with_main_axis_size(MainAxisSize::Max)
                 .with_child(simple_header)
                 .with_child(
                     Shrinkable::new(1.0, CodeReviewView::render_loading_state(appearance)).finish(),
@@ -906,6 +907,7 @@ impl RightPanelView {
             let no_repo_body = CodeReviewView::render_not_repo_state(appearance, None);
 
             return Flex::column()
+                .with_main_axis_size(MainAxisSize::Max)
                 .with_child(simple_header)
                 .with_child(Shrinkable::new(1.0, no_repo_body).finish())
                 .finish();
@@ -928,12 +930,14 @@ impl RightPanelView {
                 Shrinkable::new(1.0, ChildView::new(&code_review_view).finish()).finish();
 
             Flex::column()
+                .with_main_axis_size(MainAxisSize::Max)
                 .with_child(header)
                 .with_child(code_review_content)
                 .finish()
         } else {
             let simple_header = self.render_simple_header(close_button);
             Flex::column()
+                .with_main_axis_size(MainAxisSize::Max)
                 .with_child(simple_header)
                 .with_child(
                     Shrinkable::new(1.0, CodeReviewView::render_loading_state(appearance)).finish(),
@@ -1850,11 +1854,23 @@ impl View for RightPanelView {
             return Shrinkable::new(1.0, panel_content).finish();
         }
 
+        // twarp: the code review panel shares the neutral light panel surface
+        // and floats as a card above the terminal background — rounded corners,
+        // a gray outline, and a soft drop shadow, matching the sidebar. The edge
+        // gap (margin) is applied OUTSIDE the Resizable below so the drag bar
+        // sits on the card's border, not out in the gap.
+        let panel_content = Container::new(panel_content)
+            .with_background(super::floating_panel_surface_fill(app))
+            .with_corner_radius(super::floating_panel_corner_radius())
+            .with_border(super::floating_panel_border())
+            .with_drop_shadow(super::floating_panel_drop_shadow())
+            .finish();
+
         let drag_side = match self.panel_position {
             super::PanelPosition::Left => DragBarSide::Right,
             super::PanelPosition::Right => DragBarSide::Left,
         };
-        Resizable::new(self.resizable_state_handle.clone(), panel_content)
+        let resizable = Resizable::new(self.resizable_state_handle.clone(), panel_content)
             .with_dragbar_side(drag_side)
             .on_resize(move |ctx, _| {
                 ctx.notify();
@@ -1864,6 +1880,12 @@ impl View for RightPanelView {
                 let max_width = window_size.x() * MAX_SIDEBAR_WIDTH_RATIO;
                 (min_width, max_width.max(min_width))
             }))
+            .finish();
+        // The floating gap goes here, around the Resizable, so the drag bar
+        // (the leftmost few px of the Resizable's child) lands on the card's
+        // border rather than out in the gap.
+        Container::new(resizable)
+            .with_uniform_margin(super::FLOATING_PANEL_MARGIN)
             .finish()
     }
 }
