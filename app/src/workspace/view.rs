@@ -12639,9 +12639,11 @@ impl Workspace {
     /// ones a user's alias injects, e.g. `--dangerously-skip-permissions
     /// --effort max`) map onto the session's spawn options and the trailing
     /// positional seeds the first turn (PRODUCT §2; `claude_code::launch`).
-    /// `cwd` is the originating terminal's directory (PRODUCT §4). Provisional
-    /// placement: a focused split in the active group, mirroring
-    /// `open_network_log_pane` (PRODUCT §load-bearing-2; TECH §The pane).
+    /// `cwd` is the originating terminal's directory (PRODUCT §4). Placement:
+    /// the Claude pane **takes over the current panel** — it replaces the
+    /// terminal pane that ran `claude` in place, rather than opening a new split
+    /// (owner request). `replace_pane` cleans up the replaced terminal and
+    /// focuses the new pane.
     pub(crate) fn open_claude_code_pane(
         &mut self,
         args: Vec<String>,
@@ -12651,12 +12653,10 @@ impl Workspace {
         let launch = claude_code::launch::parse_launch_args(args.iter().map(String::as_str));
         let pane = ClaudeCodePane::new(launch, cwd, ctx);
         self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
-            pane_group.add_pane_with_direction(
-                Direction::Right,
-                pane,
-                true, /* focus_new_pane */
-                ctx,
-            );
+            // The pane that ran `claude` is the focused one — swap it for the
+            // Claude pane in place so the UI opens in the current panel.
+            let target = pane_group.focused_pane_id(ctx);
+            pane_group.replace_pane(target, pane, false /* is_temporary */, ctx);
         });
     }
 
