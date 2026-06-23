@@ -127,7 +127,18 @@ if [[ ",$FEATURES," =~ ",heap_usage_tracking," ]]; then
 fi
 
 echo "Codesigning app..."
-SIGNING_CERT="$(security find-identity -p codesigning -v | grep "Apple Development" | awk '{print $2}' | head -1)"
+# Pick a STABLE signing identity so macOS keychain "Always Allow" persists
+# across rebuilds. The code signature's designated requirement is keyed to the
+# signing cert's subject CN, so signing with a different cert each build changes
+# the requirement and re-triggers the per-launch keychain password prompt.
+# Prefer a Developer ID Application cert (the cert intended for apps run outside
+# Xcode — stable, Gatekeeper-friendly), then fall back to an Apple Development
+# cert, then ad-hoc ("-"). Override explicitly with WARP_SIGNING_IDENTITY.
+SIGNING_CERT="${WARP_SIGNING_IDENTITY:-$(security find-identity -p codesigning -v | grep "Developer ID Application" | awk '{print $2}' | head -1)}"
+if [ -z "$SIGNING_CERT" ]; then
+    SIGNING_CERT="$(security find-identity -p codesigning -v | grep "Apple Development" | awk '{print $2}' | head -1)"
+fi
+echo "Signing with identity: ${SIGNING_CERT:--} (ad-hoc if '-')"
 codesign --force --deep --options runtime --sign "${SIGNING_CERT:--}" "$WARP_APP_PATH" --entitlements script/Debug-Entitlements.plist
 
 if [ "$DONT_OPEN" = false ] ; then
