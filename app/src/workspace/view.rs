@@ -12677,11 +12677,29 @@ impl Workspace {
         cwd: PathBuf,
         ctx: &mut ViewContext<Self>,
     ) {
+        // Resume with the SAME defaults a freshly typed `claude` would get:
+        // resolve the user's `claude` alias (e.g. `--permission-mode`,
+        // `--effort`, `--dangerously-skip-permissions`) from the active
+        // terminal session. Without this the pane opens in bare ask-mode even
+        // though the user's alias asks otherwise (the "opens in ask mode" bug).
+        let launch = self
+            .get_pane_group_view(self.active_tab_index)
+            .and_then(|group| {
+                group.read(ctx, |pane_group, ctx| {
+                    pane_group.active_session_view(ctx).and_then(|terminal| {
+                        terminal.read(ctx, |terminal, ctx| {
+                            terminal.input().as_ref(ctx).claude_alias_launch_options(ctx)
+                        })
+                    })
+                })
+            })
+            .unwrap_or_default();
         let pane = ClaudeCodePane::new_resume(
             crate::claude_code_view::ResumeSession {
                 session_id,
                 jsonl_path,
             },
+            launch,
             Some(cwd),
             ctx,
         );

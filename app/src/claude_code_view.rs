@@ -43,9 +43,11 @@ mod tool_cards;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use async_channel::Sender;
+use parking_lot::RwLock;
 use base64::Engine as _;
 use claude_code::diff::diff_for_tool;
 use claude_code::driver::{
@@ -55,7 +57,10 @@ use claude_code::driver::{
 use claude_code::launch::LaunchOptions;
 use claude_code::{sessions, Transcript, TranscriptEvent, TranscriptItem, TurnMetrics, Usage};
 use futures::StreamExt;
-use markdown_parser::{parse_markdown, FormattedText, FormattedTextLine};
+use markdown_parser::{
+    parse_markdown_with_gfm_tables, FormattedTable, FormattedText, FormattedTextInline,
+    FormattedTextLine, TableAlignment,
+};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use warp_editor::editor::NavigationKey;
@@ -70,11 +75,11 @@ use warpui::{
     elements::{
         Align, Border, CacheOption, ChildAnchor, Clipped, ClippedScrollStateHandle,
         ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
-        DispatchEventResult, DropShadow, Element, EventDispatchMode, EventHandler, Fill, Flex,
-        FormattedTextElement, HighlightedHyperlink, Hoverable, HyperlinkUrl, Icon, Image,
+        DispatchEventResult, DropShadow, Element, EventDispatchMode, EventHandler, Expanded, Fill,
+        Flex, FormattedTextElement, HighlightedHyperlink, Hoverable, HyperlinkUrl, Icon, Image,
         MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, Padding,
         ParentAnchor, ParentElement, ParentOffsetBounds, Radius, SavePosition, ScrollTarget,
-        ScrollToPositionMode, ScrollbarWidth, Shrinkable, Stack,
+        ScrollToPositionMode, ScrollbarWidth, SelectableArea, SelectionHandle, Shrinkable, Stack,
     },
     platform::Cursor,
     presenter::ChildView,
@@ -83,6 +88,8 @@ use warpui::{
     AppContext, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View,
     ViewContext, ViewHandle, WindowId,
 };
+use warpui::clipboard::ClipboardContent;
+use warpui::r#async::Timer;
 
 use self::composer::{SuggestionKind, SuggestionQuery};
 use self::diff_cards::DiffCard;
@@ -338,6 +345,15 @@ pub struct ClaudeCodeView {
     /// spawn fall back to the process `PATH` in that case.
     interactive_path: Option<String>,
     scroll_state: ClippedScrollStateHandle,
+    /// Drag-to-select state for the transcript (PRODUCT §13: the prose is
+    /// read-only, but the user still needs to highlight + copy it). The
+    /// [`SelectableArea`] wrapping the transcript drives the gesture; the
+    /// selected text is mirrored into `transcript_selection` so a Copy
+    /// (Cmd+C with an empty composer, surfaced as [`EditorEvent::Copy`]) can
+    /// write it to the clipboard. `set_selectable(true)` on the text elements
+    /// alone is inert without this coordinator.
+    selection_handle: SelectionHandle,
+    transcript_selection: Arc<RwLock<Option<String>>>,
     /// The live `claude` child, once a session is running. Kept for `interrupt`
     /// (Stop, PRODUCT §11) and to kill the process on drop (PRODUCT §8 —
     /// `spawn_session` sets `kill_on_drop`).
@@ -565,6 +581,8 @@ impl ClaudeCodeView {
             cwd,
             interactive_path: None,
             scroll_state: ClippedScrollStateHandle::default(),
+            selection_handle: Default::default(),
+            transcript_selection: Default::default(),
             child: None,
             message_tx: None,
             streaming: false,
@@ -650,8 +668,10 @@ impl ClaudeCodeView {
         if let Some(prompt) = first_prompt {
             view.transcript
                 .apply(TranscriptEvent::UserMessage(prompt.clone()));
+            let started = Instant::now();
             view.streaming = true;
-            view.turn_started = Some(Instant::now());
+            view.turn_started = Some(started);
+            view.schedule_elapsed_tick(started, ctx);
             view.begin_session(Some(OutgoingMessage::text(prompt)), ctx);
         }
 
@@ -838,6 +858,17 @@ impl ClaudeCodeView {
             // The editor has already inserted any plain text, so this only adds
             // image chips (an image-only clipboard inserts no text).
             EditorEvent::Paste => self.attach_pasted_image(ctx),
+            // PRODUCT §13: Cmd+C with an empty composer surfaces here (the editor
+            // emits `Copy` instead of writing an empty clipboard). Copy the
+            // current transcript selection if there is one. When the composer is
+            // non-empty the editor copies its own selection and never emits this.
+            EditorEvent::Copy => {
+                if let Some(text) = self.transcript_selection.read().clone() {
+                    if !text.is_empty() {
+                        ctx.clipboard().write(ClipboardContent::plain_text(text));
+                    }
+                }
+            }
             EditorEvent::Escape => {
                 if self.suggestion_query.take().is_some() {
                     self.suggestions.clear();
@@ -1462,8 +1493,10 @@ impl ClaudeCodeView {
             let index = self.transcript.items().len().saturating_sub(1);
             self.sent_images.insert(index, previews);
         }
+        let started = Instant::now();
         self.streaming = true;
-        self.turn_started = Some(Instant::now());
+        self.turn_started = Some(started);
+        self.schedule_elapsed_tick(started, ctx);
         match &self.message_tx {
             // Session already running — write the turn to its stdin.
             Some(tx) => {
@@ -1579,8 +1612,10 @@ impl ClaudeCodeView {
         let message = self.message_queue.remove(0);
         self.transcript
             .apply(TranscriptEvent::UserMessage(message.text.clone()));
+        let started = Instant::now();
         self.streaming = true;
-        self.turn_started = Some(Instant::now());
+        self.turn_started = Some(started);
+        self.schedule_elapsed_tick(started, ctx);
         let _ = tx.try_send(message);
         ctx.notify();
     }
@@ -2086,20 +2121,61 @@ impl ClaudeCodeView {
             .update(ctx, |config, ctx| config.set_title(title, ctx));
     }
 
+    /// Drive the "Working · <elapsed>" counter (#7) on a steady 1 s cadence.
+    ///
+    /// The shimmer self-schedules ~30 fps repaints, but those only re-*shade*
+    /// the already-baked label string — they never re-run
+    /// [`Self::render_streaming_status`], so `turn_started.elapsed()` is not
+    /// recomputed by them. Absent this timer the label refreshes only when a
+    /// stream event lands and calls `notify()`, and those arrive in irregular
+    /// bursts (deltas, then long gaps during tool calls / model thinking), so
+    /// the seconds jump instead of ticking. A self-re-arming 1 s `notify()`
+    /// re-renders the status line on a regular beat. Stale chains die on their
+    /// own: when the turn ends `streaming` is false, and when a new turn starts
+    /// its fresh `turn_started` `Instant` no longer matches the captured one.
+    fn schedule_elapsed_tick(&self, started: Instant, ctx: &mut ViewContext<Self>) {
+        ctx.spawn(
+            async move {
+                Timer::after(Duration::from_secs(1)).await;
+            },
+            move |me, _, ctx| {
+                if me.streaming && me.turn_started == Some(started) {
+                    ctx.notify();
+                    me.schedule_elapsed_tick(started, ctx);
+                }
+            },
+        );
+    }
+
     /// The live streaming status line (#7), shown below the last message while
     /// a turn is in flight: a Claude glyph + a shimmering "Working · <elapsed>"
-    /// label. The shimmer self-schedules repaints, which also ticks the elapsed
-    /// time. (Live token counts aren't in the headless stream, so the stat is
-    /// the elapsed time.)
+    /// label. The shimmer animates the gradient; [`Self::schedule_elapsed_tick`]
+    /// re-renders this line once a second so the elapsed counter ticks smoothly.
+    /// (Live token counts aren't in the headless stream, so the stat is the
+    /// elapsed time.)
     fn render_streaming_status(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         let muted = theme.nonactive_ui_text_color().into_solid();
         let bright = theme.main_text_color(theme.background()).into_solid();
         let accent = self.render_accent.get();
+        // Format: "<elapsed> · <tokens> tokens · Working…", matching the
+        // interactive CLI's status line. The token segment is dropped until a
+        // live count is known (the first `assistant` message reports usage);
+        // the elapsed clock stays compact (e.g. `1m 21s`) as turns run long.
         let label = match self.turn_started {
             Some(started) => {
-                format!("Working · {}", thinking::format_elapsed_seconds(started.elapsed()))
+                let mut label = thinking::format_compact_elapsed(started.elapsed());
+                if let Some(used) = self
+                    .transcript
+                    .usage()
+                    .map(|usage| usage.context_used())
+                    .filter(|used| *used > 0)
+                {
+                    label.push_str(&format!(" · {} tokens", fmt_tokens(used)));
+                }
+                label.push_str(" · Working…");
+                label
             }
             None => "Working…".to_owned(),
         };
@@ -2187,6 +2263,25 @@ impl ClaudeCodeView {
         let content = Container::new(column.finish())
             .with_padding_bottom(COMPOSER_CLEARANCE)
             .finish();
+
+        // PRODUCT §13: make the transcript prose highlightable. `SelectableArea`
+        // is the coordinator that turns the per-element `set_selectable(true)`
+        // into an actual drag-to-select gesture (it tracks the drag and paints
+        // the selection); it must sit *inside* the scrollable, because
+        // `ClippedScrollable` does not forward `as_selectable_element` to its
+        // child — wrapping it on the outside would sever the selectable chain.
+        // The selected text is mirrored into `transcript_selection`; Copy is
+        // handled in `handle_editor_event` (an empty composer surfaces Cmd+C as
+        // `EditorEvent::Copy`).
+        let selection = self.transcript_selection.clone();
+        let content = SelectableArea::new(
+            self.selection_handle.clone(),
+            move |args, _, _| {
+                *selection.write() = args.selection;
+            },
+            content,
+        )
+        .finish();
 
         ClippedScrollable::vertical(
             self.scroll_state.clone(),
@@ -3551,6 +3646,7 @@ impl ClaudeCodeView {
                     (false, false) => "\u{25CB}", // circle
                 };
                 let mut option_row = Flex::row()
+                    .with_main_axis_size(MainAxisSize::Max)
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_spacing(8.)
                     .with_child(
@@ -3599,7 +3695,15 @@ impl ClaudeCodeView {
                         );
                     }
                 }
-                option_row.add_child(label_col.finish());
+                // The label/description are soft-wrap text. A non-flexible child
+                // of a row is laid out with an unbounded main-axis (width)
+                // constraint, which a `Stretch` column turns into a *tight
+                // infinite* width — and soft-wrap text under an infinite width
+                // returns an infinite size, tripping the scene's finite-rect
+                // assert (the "twarp keeps crashing" report). Make the label
+                // column flexible so it receives the row's remaining (finite)
+                // width and wraps within it, mirroring `render_message_row`.
+                option_row.add_child(Shrinkable::new(1., label_col.finish()).finish());
                 let mut row_container = Container::new(option_row.finish())
                     .with_padding_left(8.)
                     .with_padding_right(8.)
@@ -3835,7 +3939,7 @@ fn render_markdown_body(
     let theme = appearance.theme();
     let inline_code_bg = theme.surface_3().into_solid();
 
-    let Ok(formatted) = parse_markdown(text) else {
+    let Ok(formatted) = parse_markdown_with_gfm_tables(text) else {
         return appearance
             .ui_builder()
             .wrappable_text(text.to_owned(), true)
@@ -3874,10 +3978,138 @@ fn render_markdown_body(
             .set_selectable(true)
             .finish(),
             MarkdownSegment::Code(code) => render_code_block(&code.code, appearance),
+            MarkdownSegment::Table(table) => render_table(table, appearance),
         };
         column.add_child(child);
     }
     column.finish()
+}
+
+/// Render a GFM table (PRODUCT §13) as a real grid — a bordered, rounded box
+/// (mirroring [`render_code_block`]) holding a header row over body rows. The
+/// parser hands us each cell as a [`FormattedTextInline`], so cells keep their
+/// inline styling (bold/code/links). Columns share width equally via
+/// [`Expanded`]; per-column alignment comes from the GFM `:---:` separators.
+fn render_table(table: FormattedTable, appearance: &Appearance) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let header_bg = theme.surface_3().into_solid();
+    let column_count = table
+        .headers
+        .len()
+        .max(table.rows.iter().map(Vec::len).max().unwrap_or(0));
+    let align_of = |col: usize| table.alignments.get(col).copied().unwrap_or_default();
+
+    let mut grid = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+    grid.add_child(
+        Container::new(render_table_row(
+            table.headers,
+            column_count,
+            &align_of,
+            true,
+            appearance,
+        ))
+        .with_background_color(header_bg)
+        .finish(),
+    );
+    for (index, row) in table.rows.into_iter().enumerate() {
+        if index > 0 {
+            // A thin divider between body rows, so the grid reads as rows
+            // without heavy full-grid lines.
+            grid.add_child(
+                ConstrainedBox::new(
+                    Container::new(Flex::row().finish())
+                        .with_background_color(theme.outline().into_solid())
+                        .finish(),
+                )
+                .with_height(1.)
+                .finish(),
+            );
+        }
+        grid.add_child(render_table_row(
+            row,
+            column_count,
+            &align_of,
+            false,
+            appearance,
+        ));
+    }
+
+    Container::new(grid.finish())
+        .with_border(Border::all(1.).with_border_fill(theme.outline()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+        .with_margin_top(10.)
+        .with_margin_bottom(10.)
+        .finish()
+}
+
+/// One table row: `column_count` equal-width cells (missing trailing cells are
+/// padded blank so short rows still line up under the header).
+fn render_table_row(
+    mut cells: Vec<FormattedTextInline>,
+    column_count: usize,
+    align_of: &impl Fn(usize) -> TableAlignment,
+    header: bool,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    cells.resize(column_count, Vec::new());
+    let mut row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+    for (col, cell) in cells.into_iter().enumerate() {
+        row.add_child(
+            Expanded::new(
+                1.,
+                render_table_cell(cell, align_of(col), header, appearance),
+            )
+            .finish(),
+        );
+    }
+    row.finish()
+}
+
+/// One table cell: the inline content, padded, horizontally aligned per the
+/// column's GFM alignment. Header cells read in the strong text color.
+fn render_table_cell(
+    inline: FormattedTextInline,
+    alignment: TableAlignment,
+    header: bool,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let inline_code_bg = theme.surface_3().into_solid();
+    let text_color = if header {
+        theme.main_text_color(theme.background()).into_solid()
+    } else {
+        theme.active_ui_text_color().into_solid()
+    };
+    let element = FormattedTextElement::new(
+        FormattedText::new(vec![FormattedTextLine::Line(inline)]),
+        BODY_FONT_SIZE,
+        appearance.ui_font_family(),
+        appearance.monospace_font_family(),
+        text_color,
+        HighlightedHyperlink::default(),
+    )
+    .with_inline_code_properties(Some(theme.nonactive_ui_text_color().into()), Some(inline_code_bg))
+    .register_default_click_handlers(|url, ctx, _| {
+        ctx.dispatch_typed_action(ClaudeCodeViewAction::OpenUrl(url));
+    })
+    .set_selectable(true)
+    .finish();
+    let main_axis_alignment = match alignment {
+        TableAlignment::Left => MainAxisAlignment::Start,
+        TableAlignment::Center => MainAxisAlignment::Center,
+        TableAlignment::Right => MainAxisAlignment::End,
+    };
+    Container::new(
+        Flex::row()
+            .with_main_axis_alignment(main_axis_alignment)
+            .with_child(element)
+            .finish(),
+    )
+    .with_padding_left(10.)
+    .with_padding_right(10.)
+    .with_padding_top(6.)
+    .with_padding_bottom(6.)
+    .finish()
 }
 
 /// Port of `ai_assistant::transcript`'s code-block branch, minus the Warp-AI
@@ -4056,6 +4288,10 @@ fn render_error(message: &str, appearance: &Appearance) -> Box<dyn Element> {
 enum MarkdownSegment {
     Prose(FormattedText),
     Code(markdown_parser::CodeBlockText),
+    /// A GFM pipe table (PRODUCT §13). Split out like code so it renders as a
+    /// real grid instead of flattening back to literal `| a | b |` pipe-text
+    /// (which is what a `FormattedTextElement` does with a `Table` line).
+    Table(FormattedTable),
 }
 
 /// Port of `ai_assistant::utils::translate_formatted_text_into_markdown_segments`
@@ -4075,6 +4311,14 @@ fn split_markdown_segments(formatted: FormattedText) -> Vec<MarkdownSegment> {
                 }
                 code.code = code.code.trim().to_string();
                 segments.push(MarkdownSegment::Code(code));
+            }
+            FormattedTextLine::Table(table) => {
+                if !running_prose.is_empty() {
+                    segments.push(MarkdownSegment::Prose(FormattedText::new_trimmed(
+                        std::mem::take(&mut running_prose),
+                    )));
+                }
+                segments.push(MarkdownSegment::Table(table));
             }
             other => running_prose.push(other),
         }

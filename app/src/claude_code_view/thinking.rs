@@ -55,6 +55,27 @@ pub(super) fn format_elapsed_seconds(elapsed: Duration) -> String {
     }
 }
 
+/// Compact running-clock format for the live streaming status (#7): the two
+/// most-significant non-zero units, e.g. `45s`, `1m 21s`, `2h 3m`, `1d 4h`.
+/// Unlike [`format_elapsed_seconds`] (a prose "N seconds" for finished thinking
+/// cards) this stays short as a turn runs into minutes or hours.
+pub(super) fn format_compact_elapsed(elapsed: Duration) -> String {
+    let total = elapsed.as_secs();
+    let days = total / 86_400;
+    let hours = (total % 86_400) / 3_600;
+    let minutes = (total % 3_600) / 60;
+    let seconds = total % 60;
+    if days > 0 {
+        format!("{days}d {hours}h")
+    } else if hours > 0 {
+        format!("{hours}h {minutes}m")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds}s")
+    } else {
+        format!("{seconds}s")
+    }
+}
+
 /// The header label — the `Reasoning` arm's text ("Thought for N seconds"
 /// when a duration is known, "Thinking" otherwise).
 pub(super) fn header_label(duration: Option<Duration>) -> String {
@@ -171,5 +192,15 @@ mod tests {
             header_label(Some(Duration::from_secs(7))),
             "Thought for 7 seconds"
         );
+    }
+
+    #[test]
+    fn compact_elapsed_scales_units() {
+        let s = Duration::from_secs;
+        assert_eq!(format_compact_elapsed(s(0)), "0s");
+        assert_eq!(format_compact_elapsed(s(45)), "45s");
+        assert_eq!(format_compact_elapsed(s(81)), "1m 21s");
+        assert_eq!(format_compact_elapsed(s(60 * 60 + 3 * 60)), "1h 3m");
+        assert_eq!(format_compact_elapsed(s(2 * 86_400 + 5 * 3_600)), "2d 5h");
     }
 }

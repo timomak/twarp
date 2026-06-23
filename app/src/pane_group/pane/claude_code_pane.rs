@@ -67,11 +67,12 @@ impl ClaudeCodePane {
     /// on the next message.
     pub fn new_resume<V: View>(
         resume: ResumeSession,
+        launch: LaunchOptions,
         cwd: Option<PathBuf>,
         ctx: &mut ViewContext<V>,
     ) -> Self {
         let view = ctx.add_typed_action_view(move |ctx| {
-            ClaudeCodeView::new(LaunchOptions::default(), cwd, Some(resume), ctx)
+            ClaudeCodeView::new(launch, cwd, Some(resume), ctx)
         });
         Self::from_view(view, ctx)
     }

@@ -359,7 +359,17 @@ impl Transcript {
                 }
             }
             TranscriptEvent::Usage(usage) => {
-                self.usage = Some(usage);
+                // Mid-turn `assistant` usage carries no context window (that
+                // arrives only on the end-of-turn `result`). Keep the last-known
+                // window so the context chip's fill doesn't blink off and back
+                // on as live counts stream in.
+                let context_window = usage
+                    .context_window
+                    .or_else(|| self.usage.and_then(|u| u.context_window));
+                self.usage = Some(Usage {
+                    context_window,
+                    ..usage
+                });
             }
             TranscriptEvent::Metrics(metrics) => {
                 // A turn's cost/timing line renders inline after its content
@@ -547,6 +557,29 @@ mod tests {
         TranscriptEvent::AssistantTextDelta {
             text: text.to_string(),
         }
+    }
+
+    #[test]
+    fn mid_turn_usage_keeps_last_known_context_window() {
+        let mut t = Transcript::new();
+        // End-of-turn result establishes the window.
+        t.apply(TranscriptEvent::Usage(Usage {
+            input_tokens: 1000,
+            output_tokens: 50,
+            context_window: Some(1_000_000),
+            ..Usage::default()
+        }));
+        // Next turn's live `assistant` usage carries no window — it must not
+        // blink the chip's fill off.
+        t.apply(TranscriptEvent::Usage(Usage {
+            input_tokens: 2000,
+            output_tokens: 5,
+            context_window: None,
+            ..Usage::default()
+        }));
+        let usage = t.usage().expect("usage stored");
+        assert_eq!(usage.input_tokens, 2000);
+        assert_eq!(usage.context_window, Some(1_000_000));
     }
 
     #[test]
