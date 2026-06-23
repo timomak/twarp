@@ -394,6 +394,12 @@ fn make_new_edit_menu(ctx: &AppContext) -> Menu {
 
 fn make_new_view_menu(ctx: &AppContext) -> Menu {
     let mut items = vec![
+        // twarp: this menu item is what registers the `cmd-b` NSMenu key
+        // equivalent for `CustomAction::ToggleLeftPanel`. On macOS, custom-action
+        // chords are menu-driven — the keymap matcher does not match them directly
+        // (see the `cfg(target_os = "macos")` branch in `app::run`, lib.rs). Without
+        // this item the accelerator is never installed and `cmd-b` does nothing.
+        updateable_custom_item_without_checkmark(CustomAction::ToggleLeftPanel, ctx),
         updateable_custom_item_without_checkmark(CustomAction::ToggleWarpDrive, ctx),
         MenuItem::Separator,
         updateable_custom_item_without_checkmark(CustomAction::CommandPalette, ctx),
