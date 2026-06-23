@@ -120,7 +120,8 @@ impl PaneContent for ClaudeCodePane {
                     let (manager, terminal) =
                         pane_group.create_raw_claude_terminal(cwd.clone(), ctx);
                     terminal.update(ctx, |terminal, ctx| {
-                        terminal.enable_claude_return_overlay();
+                        // #6: no floating "← Claude Code" overlay — the header's
+                        // Chat UI / Raw CLI section toggle is the way back.
                         // Launch by ABSOLUTE path: the `claude`-at-submit
                         // trigger peels `exec` as an alias wrapper and would
                         // intercept a bare `claude` here — opening a second

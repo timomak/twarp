@@ -43,6 +43,7 @@ mod tool_cards;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use async_channel::Sender;
 use base64::Engine as _;
@@ -383,8 +384,10 @@ pub struct ClaudeCodeView {
     /// adopts the resumed id. Synced from `init` thereafter. The raw-CLI
     /// toggle and the on-disk history refresh key off this.
     session_id: String,
-    /// Mouse state for the header's Raw CLI toggle (PRODUCT §39).
+    /// Mouse state for the header's Raw CLI / Chat UI section toggle (PRODUCT
+    /// §39, #7). One handle per segment.
     raw_cli_button: MouseStateHandle,
+    chat_ui_button: MouseStateHandle,
     /// The embedded raw-CLI terminal while raw mode is active (PRODUCT §39).
     /// `None` in rendered-chat mode.
     raw_cli: Option<RawCliSession>,
@@ -466,6 +469,13 @@ pub struct ClaudeCodeView {
     model_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
     /// Pooled mouse handles for the permission-picker rows (#2).
     permission_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// When the current streaming turn started (#7), for the live elapsed in
+    /// the status line below the last message. `None` when idle.
+    turn_started: Option<Instant>,
+    /// Preview image paths for sent user turns (#8), keyed by the user item's
+    /// transcript index — rendered above that message's bubble. Only covers
+    /// images sent this session (resumed history has no previews).
+    sent_images: HashMap<usize, Vec<PathBuf>>,
 }
 
 impl ClaudeCodeView {
@@ -563,6 +573,7 @@ impl ClaudeCodeView {
             resume_session_id: None,
             session_id,
             raw_cli_button: MouseStateHandle::default(),
+            chat_ui_button: MouseStateHandle::default(),
             raw_cli: None,
             suggestion_query: None,
             suggestions: Vec::new(),
@@ -592,6 +603,8 @@ impl ClaudeCodeView {
             context_button: MouseStateHandle::default(),
             model_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
             permission_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
+            turn_started: None,
+            sent_images: HashMap::new(),
         };
 
         // PRODUCT §4: capture the login-shell PATH up front so availability
@@ -624,6 +637,7 @@ impl ClaudeCodeView {
             view.transcript
                 .apply(TranscriptEvent::UserMessage(prompt.clone()));
             view.streaming = true;
+            view.turn_started = Some(Instant::now());
             view.begin_session(Some(OutgoingMessage::text(prompt)), ctx);
         }
 
@@ -788,7 +802,10 @@ impl ClaudeCodeView {
                     return;
                 }
                 match key {
-                    NavigationKey::Down | NavigationKey::Tab => {
+                    // #9: Tab accepts the highlighted suggestion (like the
+                    // `claude` CLI); arrows still move the selection.
+                    NavigationKey::Tab => self.accept_suggestion(self.suggestion_selected, ctx),
+                    NavigationKey::Down => {
                         self.suggestion_selected = (self.suggestion_selected + 1) % len;
                         ctx.notify();
                     }
@@ -1348,6 +1365,14 @@ impl ClaudeCodeView {
             images: self.outgoing_images(),
             text,
         };
+        // #8: the on-disk paths of the images riding along, to preview above the
+        // user bubble (pasted-only images have no path and are omitted).
+        let mut previews: Vec<PathBuf> = self.pending_images.clone();
+        previews.extend(
+            self.direct_attachments
+                .iter()
+                .filter_map(|attachment| attachment.thumbnail_path.clone()),
+        );
         // Clear the composer either way so the user can keep typing (§53).
         self.input_editor
             .update(ctx, |editor, ctx| editor.clear_buffer(ctx));
@@ -1357,17 +1382,23 @@ impl ClaudeCodeView {
         self.attachment_optouts.clear();
         self.direct_attachments.clear();
 
-        self.submit_message(message, ctx);
+        self.submit_message(message, previews, ctx);
     }
 
     /// Deliver one already-composed user turn (PRODUCT §16): queue it behind a
     /// streaming turn (type-ahead, §53), write it to a live session's stdin, or
     /// spawn the session on the first message. Shared by the composer
     /// ([`Self::submit`]) and the `AskUserQuestion` answer path (§1).
-    fn submit_message(&mut self, message: OutgoingMessage, ctx: &mut ViewContext<Self>) {
+    fn submit_message(
+        &mut self,
+        message: OutgoingMessage,
+        previews: Vec<PathBuf>,
+        ctx: &mut ViewContext<Self>,
+    ) {
         if self.streaming {
             // PRODUCT §53–§54 (7m): a turn is in flight — queue this for
             // automatic dispatch when the turn completes, rather than blocking.
+            // (Type-ahead image previews aren't carried through the queue.)
             self.message_queue.push(message);
             ctx.notify();
             return;
@@ -1375,7 +1406,13 @@ impl ClaudeCodeView {
 
         self.transcript
             .apply(TranscriptEvent::UserMessage(message.text.clone()));
+        // #8: attach the previews to the just-pushed user item (it's last).
+        if !previews.is_empty() {
+            let index = self.transcript.items().len().saturating_sub(1);
+            self.sent_images.insert(index, previews);
+        }
         self.streaming = true;
+        self.turn_started = Some(Instant::now());
         match &self.message_tx {
             // Session already running — write the turn to its stdin.
             Some(tx) => {
@@ -1472,7 +1509,7 @@ impl ClaudeCodeView {
         // Drop the selection so the card stops offering live controls once the
         // answer is on its way.
         self.question_selected.remove(&item);
-        self.submit_message(OutgoingMessage::text(lines.join("\n")), ctx);
+        self.submit_message(OutgoingMessage::text(lines.join("\n")), Vec::new(), ctx);
     }
 
     /// Dispatch the next queued message after a turn completes (PRODUCT §53,
@@ -1492,6 +1529,7 @@ impl ClaudeCodeView {
         self.transcript
             .apply(TranscriptEvent::UserMessage(message.text.clone()));
         self.streaming = true;
+        self.turn_started = Some(Instant::now());
         let _ = tx.try_send(message);
         ctx.notify();
     }
@@ -1997,6 +2035,52 @@ impl ClaudeCodeView {
             .update(ctx, |config, ctx| config.set_title(title, ctx));
     }
 
+    /// The live streaming status line (#7), shown below the last message while
+    /// a turn is in flight: a Claude glyph + a shimmering "Working · <elapsed>"
+    /// label. The shimmer self-schedules repaints, which also ticks the elapsed
+    /// time. (Live token counts aren't in the headless stream, so the stat is
+    /// the elapsed time.)
+    fn render_streaming_status(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let bright = theme.main_text_color(theme.background()).into_solid();
+        let accent = theme.accent().into_solid();
+        let label = match self.turn_started {
+            Some(started) => {
+                format!("Working · {}", thinking::format_elapsed_seconds(started.elapsed()))
+            }
+            None => "Working…".to_owned(),
+        };
+        let icon = ConstrainedBox::new(Icon::new(ASSISTANT_ICON_SVG_PATH, accent).finish())
+            .with_width(14.)
+            .with_height(14.)
+            .finish();
+        let shimmer = ShimmeringTextElement::new(
+            label,
+            appearance.ui_font_family(),
+            13.,
+            muted,
+            bright,
+            ShimmerConfig::default(),
+            self.working_shimmer.clone(),
+        )
+        .finish();
+        Container::new(
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(8.)
+                .with_child(icon)
+                .with_child(shimmer)
+                .finish(),
+        )
+        .with_margin_left(TRANSCRIPT_LEFT_MARGIN)
+        .with_margin_top(8.)
+        .with_margin_bottom(8.)
+        .finish()
+    }
+
     fn render_body(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         if self.transcript.is_empty() {
@@ -2025,6 +2109,12 @@ impl ClaudeCodeView {
             .with_main_axis_size(MainAxisSize::Min);
         for (index, item) in self.transcript.items().iter().enumerate() {
             column.add_child(self.render_item(index, item, app));
+        }
+
+        // #7: a live status line below the last message while a turn streams —
+        // an animated label + elapsed, replacing the composer's "Working…".
+        if self.streaming {
+            column.add_child(self.render_streaming_status(app));
         }
 
         // PRODUCT §14: a zero-height marker pinned to the end of the transcript.
@@ -2606,31 +2696,14 @@ impl ClaudeCodeView {
         // #13: Claude-style footer below the input — permission selector and
         // attach on the left; the context / model / effort controls (each opens
         // a dropdown / popover above the input) and the Send/Stop action on the
-        // right. While a turn streams, the left also shows the #9 shimmer.
-        let mut left = Flex::row()
+        // right. (#7: the streaming indicator moved out of here to below the
+        // last message.)
+        let left = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(8.)
             .with_child(self.render_permission_control(appearance))
-            .with_child(attach);
-        if self.streaming {
-            let shimmer = theme.main_text_color(theme.surface_1()).into_solid();
-            left.add_child(
-                Container::new(
-                    ShimmeringTextElement::new(
-                        "Working…",
-                        appearance.ui_font_family(),
-                        12.,
-                        muted,
-                        shimmer,
-                        ShimmerConfig::default(),
-                        self.working_shimmer.clone(),
-                    )
-                    .finish(),
-                )
-                .with_margin_left(4.)
-                .finish(),
-            );
-        }
+            .with_child(attach)
+            .finish();
 
         let right = Flex::row()
             .with_main_axis_size(MainAxisSize::Min)
@@ -2646,7 +2719,7 @@ impl ClaudeCodeView {
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(left.finish())
+            .with_child(left)
             .with_child(right)
             .finish();
 
@@ -3013,22 +3086,43 @@ impl BackingView for ClaudeCodeView {
         // framework's CustomAction (handled by the header view and routed
         // back to `handle_custom_action`), NOT an in-pane
         // ClaudeCodeViewAction — that dies unhandled from header chrome.
+        // #7: a [ Chat UI | Raw CLI ] section toggle (a segmented control), the
+        // active section highlighted. Entering raw mode is disabled mid-turn
+        // (§42); leaving it is always allowed. Clicking the inactive section
+        // flips via the pane framework's CustomAction (header chrome can't
+        // dispatch an in-pane action).
+        let appearance = Appearance::as_ref(app);
         let raw_mode = self.raw_cli.is_some();
-        let raw_cli_toggle = (raw_mode || !self.streaming).then(|| {
-            let appearance = Appearance::as_ref(app);
-            let label = if raw_mode { "Chat UI" } else { "Raw CLI" };
-            appearance
-                .ui_builder()
-                .button(ButtonVariant::Text, self.raw_cli_button.clone())
-                .with_text_label(label.to_owned())
-                .build()
-                .on_click(|ctx, _, _| {
-                    ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
-                        PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleRawCli),
-                    );
-                })
-                .finish()
-        });
+        let chat_segment = render_mode_segment(
+            "Chat UI",
+            !raw_mode,                  // active when in chat
+            raw_mode,                   // clickable only from raw mode (to exit)
+            self.chat_ui_button.clone(),
+            appearance,
+        );
+        let raw_segment = render_mode_segment(
+            "Raw CLI",
+            raw_mode,                   // active when in raw
+            !raw_mode && !self.streaming, // enter raw only when idle
+            self.raw_cli_button.clone(),
+            appearance,
+        );
+        let theme = appearance.theme();
+        let toggle = Container::new(
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(2.)
+                .with_child(chat_segment)
+                .with_child(raw_segment)
+                .finish(),
+        )
+        .with_padding(Padding::uniform(2.))
+        .with_border(Border::all(1.).with_border_fill(theme.outline()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+        // #5: breathing room between the toggle and the always-visible close ✕.
+        .with_margin_right(10.)
+        .finish();
         HeaderContent::Standard(StandardHeader {
             title: PANE_TITLE.to_owned(),
             title_secondary: cwd,
@@ -3037,8 +3131,12 @@ impl BackingView for ClaudeCodeView {
             title_max_width: None,
             left_of_title: None,
             right_of_title: None,
-            left_of_overflow: raw_cli_toggle,
-            options: StandardHeaderOptions::default(),
+            left_of_overflow: Some(toggle),
+            // #5: keep the close ✕ (and overflow) visible without hovering.
+            options: StandardHeaderOptions {
+                always_show_icons: true,
+                ..Default::default()
+            },
         })
     }
 
@@ -3062,7 +3160,18 @@ impl ClaudeCodeView {
         let appearance = Appearance::as_ref(app);
         match item {
             TranscriptItem::User(text) => {
-                render_message_row(true, USER_ICON_SVG_PATH, text, appearance)
+                let bubble = render_message_row(true, USER_ICON_SVG_PATH, text, appearance);
+                // #8: any images sent with this turn preview above the bubble.
+                match self.sent_images.get(&index) {
+                    Some(paths) if !paths.is_empty() => Flex::column()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                        .with_main_axis_size(MainAxisSize::Min)
+                        .with_spacing(6.)
+                        .with_child(render_sent_images(paths, appearance))
+                        .with_child(bubble)
+                        .finish(),
+                    _ => bubble,
+                }
             }
             TranscriptItem::Assistant { text, .. } => {
                 render_message_row(false, ASSISTANT_ICON_SVG_PATH, text, appearance)
@@ -3875,6 +3984,79 @@ fn context_segment(appearance: &Appearance, text: String, color: ColorU) -> Box<
         })
         .build()
         .finish()
+}
+
+/// Image previews shown above a user message bubble (#8): a row of rounded
+/// thumbnails, each capped so a large image doesn't dominate the transcript.
+/// Left-margined to roughly sit under the message body (past the avatar).
+fn render_sent_images(paths: &[PathBuf], _appearance: &Appearance) -> Box<dyn Element> {
+    let mut row = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_main_axis_size(MainAxisSize::Min)
+        .with_spacing(6.);
+    for path in paths {
+        row.add_child(
+            ConstrainedBox::new(
+                Image::new(
+                    AssetSource::LocalFile {
+                        path: path.display().to_string(),
+                    },
+                    CacheOption::BySize,
+                )
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                .finish(),
+            )
+            .with_max_width(220.)
+            .with_max_height(160.)
+            .finish(),
+        );
+    }
+    Container::new(row.finish())
+        .with_margin_left(TRANSCRIPT_LEFT_MARGIN + 30.)
+        .finish()
+}
+
+/// One segment of the Chat UI / Raw CLI section toggle (#7). The active segment
+/// is a filled, non-clickable highlight; an inactive-but-allowed segment is
+/// clickable and flips the mode; an inactive-disabled segment (e.g. entering
+/// raw mid-turn) is muted and inert.
+fn render_mode_segment(
+    label: &str,
+    active: bool,
+    clickable: bool,
+    mouse: MouseStateHandle,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let color = if active {
+        theme.main_text_color(theme.surface_2()).into_solid()
+    } else if clickable {
+        theme.main_text_color(theme.background()).into_solid()
+    } else {
+        theme.nonactive_ui_text_color().into_solid()
+    };
+    let mut chip = Container::new(context_segment(appearance, label.to_owned(), color))
+        .with_padding_left(8.)
+        .with_padding_right(8.)
+        .with_padding_top(3.)
+        .with_padding_bottom(3.)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
+    if active {
+        chip = chip.with_background_color(theme.surface_2().into_solid());
+    }
+    let chip = chip.finish();
+    if clickable {
+        Hoverable::new(mouse, move |_| chip)
+            .with_cursor(Cursor::PointingHand)
+            .on_click(|ctx, _, _| {
+                ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
+                    PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleRawCli),
+                );
+            })
+            .finish()
+    } else {
+        chip
+    }
 }
 
 /// Compact token count for the context popover (#13): `365.8k`, `1.0M`.
