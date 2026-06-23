@@ -204,16 +204,21 @@ impl PaneContent for ClaudeCodePane {
         if self.view.is_self_or_child_focused(ctx) {
             return true;
         }
-        // #14: the embedded raw-CLI terminal isn't a structural child of the
-        // pane view, so the layout-ancestor check above can miss it (the
-        // terminal's chain up to this pane isn't established until the first
-        // layout after entering raw mode). Check the terminal handle directly
-        // so pane activation / Cmd+W target this pane while the CLI is focused.
-        let raw_cli_view = self.claude_code_view(ctx).as_ref(ctx).raw_cli_view();
-        match raw_cli_view {
-            Some(terminal) => terminal.is_self_or_child_focused(ctx),
-            None => false,
+        // #14/#13: the focused inner view (the raw-CLI terminal, or in chat
+        // mode the message editor) can be missed by the layout-ancestor check
+        // above right after the pane opens, before the first layout establishes
+        // the chain up to this pane. Check those handles directly
+        // (layout-timing-independent) so pane activation / Cmd+W / maximize
+        // target this pane whenever its chat or CLI is focused.
+        let view = self.claude_code_view(ctx);
+        let raw_cli_view = view.as_ref(ctx).raw_cli_view();
+        if let Some(terminal) = raw_cli_view {
+            if terminal.is_self_or_child_focused(ctx) {
+                return true;
+            }
         }
+        let editor = view.as_ref(ctx).input_editor_view();
+        editor.is_self_or_child_focused(ctx)
     }
 
     fn focus(&self, ctx: &mut ViewContext<PaneGroup>) {

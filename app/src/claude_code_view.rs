@@ -81,12 +81,13 @@ use warpui::{
     text_layout::ClipConfig,
     ui_components::components::{UiComponent, UiComponentStyles},
     AppContext, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View,
-    ViewContext, ViewHandle,
+    ViewContext, ViewHandle, WindowId,
 };
 
 use self::composer::{SuggestionKind, SuggestionQuery};
 use self::diff_cards::DiffCard;
 use self::repo_context::{CiState, RepoContext};
+use crate::workspace::WorkspaceRegistry;
 use self::thinking::ThinkingUi;
 use self::tool_cards::{render_tool_card, ToolCardUi};
 use crate::appearance::Appearance;
@@ -315,6 +316,9 @@ pub struct ClaudeCodeView {
     /// The conversation the pane renders, fed by the live driver's event stream
     /// via [`Self::on_transcript_event`] on the main thread (PRODUCT §9–§13).
     transcript: Transcript,
+    /// The window this pane lives in (#10/#11), so render can look up the
+    /// active tab's colour to theme the UI.
+    window_id: WindowId,
     /// The message input. Enter submits; Shift+Enter inserts a newline.
     input_editor: ViewHandle<EditorView>,
     /// Pane chrome state (tab title). Owned here, handed to [`PaneView`] by the
@@ -476,6 +480,11 @@ pub struct ClaudeCodeView {
     /// transcript index — rendered above that message's bubble. Only covers
     /// images sent this session (resumed history has no previews).
     sent_images: HashMap<usize, Vec<PathBuf>>,
+    /// The tab-derived accent (#10) and its faint wash (#11), cached at the top
+    /// of each `render` so the deep render tree and free helper functions can
+    /// theme to the tab colour without threading `app` everywhere.
+    render_accent: std::cell::Cell<ColorU>,
+    render_wash: std::cell::Cell<ColorU>,
 }
 
 impl ClaudeCodeView {
@@ -549,6 +558,7 @@ impl ClaudeCodeView {
 
         let mut view = Self {
             transcript: Transcript::new(),
+            window_id: ctx.window_id(),
             input_editor,
             pane_configuration,
             focus_handle: None,
@@ -605,6 +615,10 @@ impl ClaudeCodeView {
             permission_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
             turn_started: None,
             sent_images: HashMap::new(),
+            render_accent: std::cell::Cell::new(
+                Appearance::as_ref(ctx).theme().accent().into_solid(),
+            ),
+            render_wash: std::cell::Cell::new(ColorU::new(0, 0, 0, 0)),
         };
 
         // PRODUCT §4: capture the login-shell PATH up front so availability
@@ -674,6 +688,43 @@ impl ClaudeCodeView {
     /// terminal handle itself is layout-timing-independent.
     pub(crate) fn raw_cli_view(&self) -> Option<ViewHandle<TerminalView>> {
         self.raw_cli.as_ref().map(|raw| raw.view.clone())
+    }
+
+    /// The message input editor (#13). The host pane checks it directly for
+    /// focus: in chat mode the editor holds keyboard focus, and like the raw-CLI
+    /// terminal its focus can be missed by the pane's layout-ancestor check
+    /// right after the pane opens (before the first layout). Checking the editor
+    /// handle itself is layout-timing-independent, so Cmd+W / maximize target
+    /// this pane while the chat is focused.
+    pub(crate) fn input_editor_view(&self) -> ViewHandle<EditorView> {
+        self.input_editor.clone()
+    }
+
+    /// The active tab's colour (#10/#11) resolved to a `ColorU`, or `None` when
+    /// the tab has no colour. Looked up via the window's workspace.
+    fn tab_accent(&self, app: &AppContext) -> Option<ColorU> {
+        let workspace = WorkspaceRegistry::as_ref(app).get(self.window_id, app)?;
+        let identifier = workspace.as_ref(app).active_tab_color()?;
+        let theme = Appearance::as_ref(app).theme();
+        Some(ColorU::from(
+            identifier.to_tab_color(&theme.terminal_colors().normal),
+        ))
+    }
+
+    /// The pane's primary/accent colour (#10): the active tab's colour when set,
+    /// otherwise the theme accent. Used for the primary button, the Claude
+    /// glyph, links, progress, and selection highlights.
+    fn accent(&self, app: &AppContext) -> ColorU {
+        self.tab_accent(app)
+            .unwrap_or_else(|| Appearance::as_ref(app).theme().accent().into_solid())
+    }
+
+    /// A faint wash of the accent (#11) for the "gray" highlight fills — pill
+    /// backgrounds, the context bar, selected rows — so they read as tinted by
+    /// the tab colour rather than neutral gray.
+    fn accent_wash(&self, app: &AppContext) -> ColorU {
+        let accent = self.accent(app);
+        ColorU::new(accent.r, accent.g, accent.b, 52)
     }
 
     /// Focus the message input (PRODUCT §34: keyboard-first).
@@ -2045,7 +2096,7 @@ impl ClaudeCodeView {
         let theme = appearance.theme();
         let muted = theme.nonactive_ui_text_color().into_solid();
         let bright = theme.main_text_color(theme.background()).into_solid();
-        let accent = theme.accent().into_solid();
+        let accent = self.render_accent.get();
         let label = match self.turn_started {
             Some(started) => {
                 format!("Working · {}", thinking::format_elapsed_seconds(started.elapsed()))
@@ -2192,7 +2243,7 @@ impl ClaudeCodeView {
     fn render_permission_control(&self, appearance: &Appearance) -> Box<dyn Element> {
         let label = prettify_permission_mode(self.permission_mode.as_cli_arg());
         if self.streaming {
-            render_pill(&label, appearance)
+            render_pill(&label, self.render_wash.get(), appearance)
         } else {
             render_clickable_pill(
                 &label,
@@ -2202,6 +2253,7 @@ impl ClaudeCodeView {
                         ComposerMenu::Permission,
                     ))
                 },
+                self.render_wash.get(),
                 appearance,
             )
         }
@@ -2224,6 +2276,7 @@ impl ClaudeCodeView {
                     ComposerMenu::Context,
                 ))
             },
+            self.render_wash.get(),
             appearance,
         )
     }
@@ -2239,7 +2292,7 @@ impl ClaudeCodeView {
             .or_else(|| self.transcript.model().map(prettify_model))
             .unwrap_or_else(|| "Model".to_owned());
         if self.streaming {
-            render_pill(&label, appearance)
+            render_pill(&label, self.render_wash.get(), appearance)
         } else {
             render_clickable_pill(
                 &label,
@@ -2249,6 +2302,7 @@ impl ClaudeCodeView {
                         ComposerMenu::Model,
                     ))
                 },
+                self.render_wash.get(),
                 appearance,
             )
         }
@@ -2262,7 +2316,7 @@ impl ClaudeCodeView {
             None => "Effort".to_owned(),
         };
         if self.streaming {
-            render_pill(&label, appearance)
+            render_pill(&label, self.render_wash.get(), appearance)
         } else {
             render_clickable_pill(
                 &label,
@@ -2272,6 +2326,7 @@ impl ClaudeCodeView {
                         ComposerMenu::Effort,
                     ))
                 },
+                self.render_wash.get(),
                 appearance,
             )
         }
@@ -2305,7 +2360,7 @@ impl ClaudeCodeView {
         let theme = appearance.theme();
         let text_color = theme.main_text_color(theme.surface_2()).into_solid();
         let muted = theme.nonactive_ui_text_color().into_solid();
-        let accent = theme.accent().into_solid();
+        let accent = self.render_accent.get();
         const MODES: [PermissionMode; 4] = [
             PermissionMode::Default,
             PermissionMode::AcceptEdits,
@@ -2367,7 +2422,7 @@ impl ClaudeCodeView {
         let theme = appearance.theme();
         let text_color = theme.main_text_color(theme.surface_2()).into_solid();
         let muted = theme.nonactive_ui_text_color().into_solid();
-        let accent = theme.accent().into_solid();
+        let accent = self.render_accent.get();
         let current = self.model.as_deref();
         let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
@@ -2478,7 +2533,7 @@ impl ClaudeCodeView {
         let theme = appearance.theme();
         let text_color = theme.main_text_color(theme.surface_2()).into_solid();
         let muted = theme.nonactive_ui_text_color().into_solid();
-        let accent = theme.accent().into_solid();
+        let accent = self.render_accent.get();
         let track = theme.surface_3().into_solid();
         let Some(usage) = self.transcript.usage() else {
             return menu_header(
@@ -2555,7 +2610,7 @@ impl ClaudeCodeView {
         let theme = appearance.theme();
         let muted = theme.nonactive_ui_text_color().into_solid();
         let text_color = theme.main_text_color(theme.surface_2()).into_solid();
-        let accent = theme.accent().into_solid();
+        let accent = self.render_accent.get();
         // #3: semantic colours — green additions, red deletions (and the same
         // green/red/amber for CI as before).
         let green = ColorU::new(0, 142, 65, 255);
@@ -2616,7 +2671,8 @@ impl ClaudeCodeView {
             .with_padding_right(8.)
             .with_padding_top(3.)
             .with_padding_bottom(3.)
-            .with_background_color(theme.surface_2().into_solid())
+            // #11: tint the bar's fill with the tab colour.
+            .with_background_color(self.render_wash.get())
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
             .finish();
         Some(
@@ -2665,11 +2721,31 @@ impl ClaudeCodeView {
             } else {
                 "Send"
             };
-            appearance
+            // #10: the primary button is the pane's accent (the tab colour),
+            // not the theme accent — so a custom-coloured button rather than
+            // ButtonVariant::Accent. The label colour contrasts the fill.
+            let accent = self.render_accent.get();
+            let text_color = contrasting_text(accent);
+            let button_label = appearance
                 .ui_builder()
-                .button(ButtonVariant::Accent, self.submit_button.clone())
-                .with_text_label(label.to_owned())
+                .span(label.to_owned())
+                .with_style(UiComponentStyles {
+                    font_color: Some(text_color),
+                    font_size: Some(13.),
+                    ..Default::default()
+                })
                 .build()
+                .finish();
+            let button = Container::new(button_label)
+                .with_padding_left(12.)
+                .with_padding_right(12.)
+                .with_padding_top(6.)
+                .with_padding_bottom(6.)
+                .with_background_color(accent)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                .finish();
+            Hoverable::new(self.submit_button.clone(), move |_| button)
+                .with_cursor(Cursor::PointingHand)
                 .on_click(|ctx, _, _| {
                     ctx.dispatch_typed_action(ClaudeCodeViewAction::Submit);
                 })
@@ -2848,6 +2924,11 @@ impl View for ClaudeCodeView {
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
+        // #10/#11: resolve the tab-derived accent + wash once, for the whole
+        // render tree (read via `render_accent` / `render_wash`).
+        self.render_accent.set(self.accent(app));
+        self.render_wash.set(self.accent_wash(app));
+
         // twarp 07 (7i, PRODUCT §39/§43): raw mode — the pane IS the
         // terminal. Rendered bare (no focus-grab wrapper: the terminal owns
         // every click and keystroke; the way back is its floating overlay,
@@ -3092,12 +3173,18 @@ impl BackingView for ClaudeCodeView {
         // flips via the pane framework's CustomAction (header chrome can't
         // dispatch an in-pane action).
         let appearance = Appearance::as_ref(app);
+        // #10/#11: theme the toggle to the tab accent (the header renders
+        // separately from the body, so compute it here rather than via the cell).
+        let accent = self.accent(app);
+        let wash = self.accent_wash(app);
         let raw_mode = self.raw_cli.is_some();
         let chat_segment = render_mode_segment(
             "Chat UI",
             !raw_mode,                  // active when in chat
             raw_mode,                   // clickable only from raw mode (to exit)
             self.chat_ui_button.clone(),
+            accent,
+            wash,
             appearance,
         );
         let raw_segment = render_mode_segment(
@@ -3105,6 +3192,8 @@ impl BackingView for ClaudeCodeView {
             raw_mode,                   // active when in raw
             !raw_mode && !self.streaming, // enter raw only when idle
             self.raw_cli_button.clone(),
+            accent,
+            wash,
             appearance,
         );
         let theme = appearance.theme();
@@ -3160,7 +3249,13 @@ impl ClaudeCodeView {
         let appearance = Appearance::as_ref(app);
         match item {
             TranscriptItem::User(text) => {
-                let bubble = render_message_row(true, USER_ICON_SVG_PATH, text, appearance);
+                let bubble = render_message_row(
+                    true,
+                    USER_ICON_SVG_PATH,
+                    text,
+                    self.render_accent.get(),
+                    appearance,
+                );
                 // #8: any images sent with this turn preview above the bubble.
                 match self.sent_images.get(&index) {
                     Some(paths) if !paths.is_empty() => Flex::column()
@@ -3174,7 +3269,13 @@ impl ClaudeCodeView {
                 }
             }
             TranscriptItem::Assistant { text, .. } => {
-                render_message_row(false, ASSISTANT_ICON_SVG_PATH, text, appearance)
+                render_message_row(
+                    false,
+                    ASSISTANT_ICON_SVG_PATH,
+                    text,
+                    self.render_accent.get(),
+                    appearance,
+                )
             }
             TranscriptItem::Notice(message) => render_notice(message, appearance),
             TranscriptItem::Error(message) => render_error(message, appearance),
@@ -3270,7 +3371,7 @@ impl ClaudeCodeView {
         let theme = appearance.theme();
         let surface = theme.surface_2();
         let text_color = theme.main_text_color(surface).into_solid();
-        let accent = theme.accent().into_solid();
+        let accent = self.render_accent.get();
 
         let header = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -3368,7 +3469,7 @@ impl ClaudeCodeView {
         let surface = theme.surface_2();
         let text_color = theme.main_text_color(surface).into_solid();
         let muted = theme.nonactive_ui_text_color().into_solid();
-        let accent = theme.accent().into_solid();
+        let accent = self.render_accent.get();
         let questions = parse_questions(input);
         let selected = self.question_selected.get(&index);
         let interactive = !self.streaming;
@@ -3656,6 +3757,7 @@ fn render_message_row(
     is_user: bool,
     icon_svg: &'static str,
     text: &str,
+    accent: ColorU,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
@@ -3667,7 +3769,10 @@ fn render_message_row(
         theme.background()
     };
     let text_color = theme.main_text_color(surface).into_solid();
-    let icon = ConstrainedBox::new(Icon::new(icon_svg, text_color).finish())
+    // #11: the Claude (assistant) glyph takes the tab accent; the user glyph
+    // stays neutral.
+    let icon_color = if is_user { text_color } else { accent };
+    let icon = ConstrainedBox::new(Icon::new(icon_svg, icon_color).finish())
         .with_height(16.)
         .with_width(16.)
         .finish();
@@ -4025,11 +4130,14 @@ fn render_mode_segment(
     active: bool,
     clickable: bool,
     mouse: MouseStateHandle,
+    accent: ColorU,
+    wash: ColorU,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
+    // #10/#11: the active section reads in the tab accent over a faint wash.
     let color = if active {
-        theme.main_text_color(theme.surface_2()).into_solid()
+        accent
     } else if clickable {
         theme.main_text_color(theme.background()).into_solid()
     } else {
@@ -4042,7 +4150,7 @@ fn render_mode_segment(
         .with_padding_bottom(3.)
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
     if active {
-        chip = chip.with_background_color(theme.surface_2().into_solid());
+        chip = chip.with_background_color(wash);
     }
     let chip = chip.finish();
     if clickable {
@@ -4119,7 +4227,18 @@ fn render_context_progress(fraction: f32, filled: ColorU, track: ColorU) -> Box<
         .finish()
 }
 
-fn render_pill(label: &str, appearance: &Appearance) -> Box<dyn Element> {
+/// Black or white, whichever reads better on `bg` (#10) — for the primary
+/// button label on an arbitrary tab colour.
+fn contrasting_text(bg: ColorU) -> ColorU {
+    let luminance = 0.299 * bg.r as f32 + 0.587 * bg.g as f32 + 0.114 * bg.b as f32;
+    if luminance > 150. {
+        ColorU::new(0, 0, 0, 255)
+    } else {
+        ColorU::new(255, 255, 255, 255)
+    }
+}
+
+fn render_pill(label: &str, bg: ColorU, appearance: &Appearance) -> Box<dyn Element> {
     let theme = appearance.theme();
     Container::new(
         appearance
@@ -4138,7 +4257,7 @@ fn render_pill(label: &str, appearance: &Appearance) -> Box<dyn Element> {
     .with_padding_top(3.)
     .with_padding_bottom(3.)
     .with_margin_right(6.)
-    .with_background_color(theme.surface_2().into_solid())
+    .with_background_color(bg)
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
     .finish()
 }
@@ -4150,6 +4269,7 @@ fn render_clickable_pill(
     label: &str,
     mouse_state: MouseStateHandle,
     on_click: impl Fn(&mut warpui::EventContext) + 'static,
+    bg: ColorU,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
@@ -4170,7 +4290,7 @@ fn render_clickable_pill(
     .with_padding_right(8.)
     .with_padding_top(3.)
     .with_padding_bottom(3.)
-    .with_background_color(theme.surface_2().into_solid())
+    .with_background_color(bg)
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
     .finish();
     Container::new(
