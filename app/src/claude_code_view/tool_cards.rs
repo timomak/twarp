@@ -37,9 +37,11 @@ use warpui::{
     AppContext, Element, SingletonEntity,
 };
 
+use warp_core::ui::theme::AnsiColorIdentifier;
+
 use super::inline_action::{
-    green_check_icon, red_x_icon, render_requested_action_body_text, running_icon, ExpandedConfig,
-    HeaderConfig, InteractionMode, RenderableAction, RightCluster,
+    green_check_icon, red_x_icon, render_requested_action_body_text, running_icon, Disclosure,
+    RightCluster,
 };
 use super::ClaudeCodeViewAction;
 use crate::appearance::Appearance;
@@ -264,155 +266,68 @@ pub(super) fn status_icon(status: ToolStatus, appearance: &Appearance) -> warpui
     }
 }
 
-/// Render one tool card (PRODUCT §16–§19). `nested` marks a `Task` child
-/// rendered inside its parent's footer (tighter spacing, no column indent).
-#[allow(clippy::too_many_arguments)]
-pub(super) fn render_tool_card(
-    id: &str,
-    name: &str,
-    input: &Value,
-    status: ToolStatus,
-    output: Option<&ToolOutput>,
-    children: &[TranscriptItem],
-    ui: &HashMap<String, ToolCardUi>,
-    nested: bool,
-    app: &AppContext,
-) -> Box<dyn Element> {
-    let appearance = Appearance::as_ref(app);
-    let theme = appearance.theme();
-
-    let card_ui = ui.get(id);
-    let mouse_state = card_ui.map(|ui| ui.mouse_state.clone()).unwrap_or_default();
-    let expandable = is_expandable(output, children);
-    let expanded = expandable
-        && card_ui
-            .and_then(|ui| ui.expanded_override)
-            .unwrap_or_else(|| default_expanded(status, !children.is_empty()));
-
-    let display_name = tool_display_name(name);
-    let summary = tool_input_summary(name, input);
-    let cluster = RightCluster {
-        label: derive_result_label(status, output),
-        icon: Some(status_icon(status, appearance)),
+/// The leading verb + argument for a card's label (UI cleanup: rows read as
+/// "Ran …", "Read …", "Searched …" to match the Claude app, instead of the raw
+/// tool name). Unmapped tools keep their (prettified) name as the verb with no
+/// argument; the input still renders in the expanded box.
+pub(super) fn tool_verb_label(name: &str, input: &Value) -> (Cow<'static, str>, Option<String>) {
+    let verb: Cow<'static, str> = match name {
+        "Read" => "Read".into(),
+        "Write" => "Wrote".into(),
+        "Edit" | "MultiEdit" | "NotebookEdit" => "Edited".into(),
+        "Bash" => "Ran".into(),
+        "Grep" | "Glob" | "WebSearch" => "Searched".into(),
+        "WebFetch" => "Fetched".into(),
+        "Task" => "Task".into(),
+        "TodoWrite" => "Updated".into(),
+        _ => Cow::Owned(tool_display_name(name)),
     };
-    let glyph =
-        warpui::elements::Icon::new(tool_icon(name).into(), blended_colors::neutral_7(theme));
-
-    let toggle_id = id.to_owned();
-    let on_toggle = move |ctx: &mut warpui::EventContext| {
-        ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleToolCard(toggle_id.clone()));
+    let arg = match name {
+        // A `Bash` row reads best as its human description; fall back to the
+        // command's first line so the row always says *something*.
+        "Bash" => bash_description(input).or_else(|| tool_input_summary(name, input)),
+        "TodoWrite" => Some("todos".to_owned()),
+        _ => tool_input_summary(name, input),
     };
-
-    let footer = expanded.then(|| render_footer(output, children, status, ui, app));
-
-    // `Bash` and unmapped tools carry a body (the command / the §18 input
-    // rendering) under a ported header; mapped path/pattern tools are a single
-    // compact row.
-    let body: Option<(Cow<'static, str>, String)> = match name {
-        "Bash" => input
-            .get("command")
-            .and_then(|v| v.as_str())
-            .map(|command| {
-                let title = bash_description(input).unwrap_or_else(|| "Bash".to_owned());
-                (Cow::Owned(title), command.to_owned())
-            }),
-        _ if summary.is_none() => {
-            let rendered = generic_input_summary(input);
-            (!rendered.is_empty()).then(|| (Cow::Owned(display_name.clone()), rendered))
-        }
-        _ => None,
-    };
-
-    let card = match body {
-        Some((title, body_text)) => {
-            // Header card: the old `requested_command` shape from the ported
-            // chrome — header (title + cluster + chevron, clickable) above a
-            // monospace body.
-            let mut header = HeaderConfig::new(title, app)
-                .with_icon(glyph)
-                .with_right_cluster(cluster);
-            if expandable {
-                header = header.with_interaction_mode(InteractionMode::ManuallyExpandable(
-                    ExpandedConfig::new(expanded, mouse_state).with_toggle_callback(on_toggle),
-                ));
-            }
-            let body_element = render_requested_action_body_text(
-                Cow::Owned(body_text),
-                appearance.monospace_font_family(),
-                app,
-            );
-            let mut action =
-                RenderableAction::new_with_formatted_text(body_element, app).with_header(header);
-            if let Some(footer) = footer {
-                action = action.with_footer(footer);
-            }
-            action.with_nested(nested).render(app).finish()
-        }
-        None => {
-            // Compact card: one action row — glyph + name + summary, the
-            // cluster (+ chevron) trailing.
-            let title_row = compact_title_row(&display_name, summary.as_deref(), appearance);
-            let mut trailing_row = Flex::row()
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_main_axis_size(MainAxisSize::Min);
-            for child in cluster.render(appearance, app) {
-                trailing_row.add_child(child);
-            }
-            if expandable {
-                trailing_row.add_child(
-                    crate::view_components::compactible_action_button::render_expansion_icon(
-                        expanded, false, appearance, app,
-                    ),
-                );
-            }
-            let mut action = RenderableAction::new_with_element(title_row, app)
-                .with_icon(glyph.finish())
-                .with_trailing(trailing_row.finish());
-            if expandable {
-                // The compact card has no header to click; its row is the
-                // toggle target (scoped to the row, so expanded output in the
-                // footer stays selectable).
-                action = action.with_row_click(mouse_state, on_toggle);
-            }
-            if let Some(footer) = footer {
-                action = action.with_footer(footer);
-            }
-            action.with_nested(nested).render(app).finish()
-        }
-    };
-    card
+    (verb, arg)
 }
 
-/// The compact card's row content: tool name in the main text color, the §17
-/// input summary muted monospace beside it, clipped to the row.
-fn compact_title_row(
-    display_name: &str,
-    summary: Option<&str>,
+/// A card's label row: the verb in the main text color (red on failure, so a
+/// collapsed error still reads at a glance), the argument muted monospace
+/// beside it, clipped to the row.
+pub(super) fn verb_title_row(
+    verb: &str,
+    arg: Option<&str>,
+    failed: bool,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
+    let verb_color = if failed {
+        AnsiColorIdentifier::Red
+            .to_ansi_color(&theme.terminal_colors().normal)
+            .into()
+    } else {
+        blended_colors::text_main(theme, blended_colors::neutral_2(theme))
+    };
     let mut row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
     row.add_child(
         Text::new_inline(
-            display_name.to_owned(),
+            verb.to_owned(),
             appearance.ui_font_family(),
             appearance.monospace_font_size(),
         )
-        .with_color(blended_colors::text_main(
-            theme,
-            blended_colors::neutral_2(theme),
-        ))
+        .with_color(verb_color)
         .with_selectable(false)
         .finish(),
     );
-    if let Some(summary) = summary {
+    if let Some(arg) = arg {
         row.add_child(
             Shrinkable::new(
                 1.,
                 Container::new(
                     Clipped::new(
                         Text::new_inline(
-                            summary.to_owned(),
+                            arg.to_owned(),
                             appearance.monospace_font_family(),
                             appearance.monospace_font_size() - 1.,
                         )
@@ -433,6 +348,121 @@ fn compact_title_row(
         );
     }
     row.finish()
+}
+
+/// The monospace block shown at the top of an expanded card's box: a `Bash`
+/// command verbatim, or an unmapped tool's `key: value` input (§18). Mapped
+/// path/pattern tools carry their key input in the label, so they get nothing
+/// here — just their result.
+fn input_block_text(name: &str, input: &Value) -> Option<String> {
+    match name {
+        "Bash" => input
+            .get("command")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+            .filter(|s| !s.trim().is_empty()),
+        _ if tool_input_summary(name, input).is_none() => {
+            let rendered = generic_input_summary(input);
+            (!rendered.is_empty()).then_some(rendered)
+        }
+        _ => None,
+    }
+}
+
+/// Whether the card has anything to reveal on expand: nested calls, a non-empty
+/// result, or an input block.
+fn body_present(
+    name: &str,
+    input: &Value,
+    output: Option<&ToolOutput>,
+    children: &[TranscriptItem],
+) -> bool {
+    !children.is_empty()
+        || output.is_some_and(|o| !o.text.trim().is_empty())
+        || input_block_text(name, input).is_some()
+}
+
+/// The expanded box content: the optional input block above the §19 footer
+/// (nested `Task` calls + the result text).
+#[allow(clippy::too_many_arguments)]
+fn build_tool_body(
+    name: &str,
+    input: &Value,
+    output: Option<&ToolOutput>,
+    children: &[TranscriptItem],
+    status: ToolStatus,
+    ui: &HashMap<String, ToolCardUi>,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let appearance = Appearance::as_ref(app);
+    let mut column = Flex::column()
+        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+        .with_main_axis_size(MainAxisSize::Min);
+    if let Some(text) = input_block_text(name, input) {
+        column.add_child(
+            render_requested_action_body_text(
+                Cow::Owned(text),
+                appearance.monospace_font_family(),
+                app,
+            )
+            .finish(),
+        );
+    }
+    column.add_child(render_footer(output, children, status, ui, app));
+    column.finish()
+}
+
+/// Render one tool call as a flat disclosure (PRODUCT §16–§19, UI cleanup):
+/// a borderless `glyph + verb + arg` row, with the result/status cluster and a
+/// bordered content box revealed only on expand. `nested` marks a `Task` child
+/// rendered inside its parent's box (tighter spacing, no column indent).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn render_tool_card(
+    id: &str,
+    name: &str,
+    input: &Value,
+    status: ToolStatus,
+    output: Option<&ToolOutput>,
+    children: &[TranscriptItem],
+    ui: &HashMap<String, ToolCardUi>,
+    nested: bool,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+
+    let card_ui = ui.get(id);
+    let mouse_state = card_ui.map(|ui| ui.mouse_state.clone()).unwrap_or_default();
+    let expandable = body_present(name, input, output, children);
+    let expanded = expandable
+        && card_ui
+            .and_then(|ui| ui.expanded_override)
+            .unwrap_or_else(|| default_expanded(status, !children.is_empty()));
+
+    let (verb, arg) = tool_verb_label(name, input);
+    let title = verb_title_row(&verb, arg.as_deref(), status == ToolStatus::Failed, appearance);
+    let glyph =
+        warpui::elements::Icon::new(tool_icon(name).into(), blended_colors::neutral_7(theme));
+
+    let toggle_id = id.to_owned();
+    let mut disclosure = Disclosure::new(title)
+        .with_glyph(glyph)
+        .expandable(expandable)
+        .expanded(expanded)
+        .with_cluster(RightCluster {
+            label: derive_result_label(status, output),
+            icon: Some(status_icon(status, appearance)),
+        })
+        .with_mouse_state(mouse_state)
+        .nested(nested)
+        .on_toggle(move |ctx| {
+            ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleToolCard(toggle_id.clone()));
+        });
+    if expanded {
+        disclosure =
+            disclosure.with_body(build_tool_body(name, input, output, children, status, ui, app));
+    }
+    disclosure.render(app)
 }
 
 /// The expanded footer (PRODUCT §19): a `Task`'s nested child cards, then the

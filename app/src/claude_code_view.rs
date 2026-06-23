@@ -3420,6 +3420,7 @@ impl ClaudeCodeView {
             } => match self.diff_cards.get(id) {
                 Some(card) => diff_cards::render_diff_card(
                     id,
+                    name,
                     *status,
                     output.as_ref(),
                     card,

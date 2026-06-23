@@ -624,3 +624,187 @@ impl WithContentItemSpacing for Box<dyn Element> {
             .with_margin_bottom(CONTENT_ITEM_VERTICAL_MARGIN)
     }
 }
+
+/// Left indent that lines a top-level disclosure up with the transcript's text
+/// column (avatar width + margin past the message-row padding) — the same
+/// column `with_agent_output_item_spacing` indents to.
+const DISCLOSURE_LEFT_MARGIN: f32 =
+    CONTENT_HORIZONTAL_PADDING + MESSAGE_AVATAR_WIDTH + MESSAGE_AVATAR_MARGIN;
+/// Tight gap below each disclosure row so consecutive tool calls stack closely
+/// (the clean look) instead of the old card's 16px breathing room.
+const DISCLOSURE_VERTICAL_MARGIN: f32 = 4.;
+
+/// A flat, borderless disclosure row (feature 07 UI cleanup): a leading glyph +
+/// label + trailing chevron, with the result/status cluster and a bordered
+/// content box revealed **only when expanded** (per owner direction: keep the
+/// icons, keep the line-count/matches labels, but show the boundaries below the
+/// label only on expand). Replaces the always-boxed `HeaderConfig` /
+/// `RenderableAction` chrome everywhere a tool card, diff card, thinking card,
+/// or the task list used it, so every collapsible in the pane reads the same.
+pub(super) struct Disclosure {
+    title: Box<dyn Element>,
+    glyph: Option<warpui::elements::Icon>,
+    expanded: bool,
+    expandable: bool,
+    /// Result label + status icon — rendered in the row's trailing cluster only
+    /// while expanded.
+    cluster: RightCluster,
+    mouse_state: MouseStateHandle,
+    on_toggle: Option<OnToggleExpandedCallback>,
+    /// The content shown in the bordered box below the label when expanded.
+    body: Option<Box<dyn Element>>,
+    /// A child rendered inside a parent's box (a `Task`'s sub-calls): no
+    /// transcript-column indent, just a tight bottom margin.
+    nested: bool,
+}
+
+impl Disclosure {
+    pub fn new(title: Box<dyn Element>) -> Self {
+        Self {
+            title,
+            glyph: None,
+            expanded: false,
+            expandable: false,
+            cluster: RightCluster::default(),
+            mouse_state: MouseStateHandle::default(),
+            on_toggle: None,
+            body: None,
+            nested: false,
+        }
+    }
+
+    pub fn with_glyph(mut self, glyph: warpui::elements::Icon) -> Self {
+        self.glyph = Some(glyph);
+        self
+    }
+
+    pub fn expanded(mut self, expanded: bool) -> Self {
+        self.expanded = expanded;
+        self
+    }
+
+    pub fn expandable(mut self, expandable: bool) -> Self {
+        self.expandable = expandable;
+        self
+    }
+
+    pub fn with_cluster(mut self, cluster: RightCluster) -> Self {
+        self.cluster = cluster;
+        self
+    }
+
+    pub fn with_mouse_state(mut self, mouse_state: MouseStateHandle) -> Self {
+        self.mouse_state = mouse_state;
+        self
+    }
+
+    pub fn on_toggle<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(&mut EventContext) + 'static,
+    {
+        self.on_toggle = Some(Rc::new(callback));
+        self
+    }
+
+    pub fn with_body(mut self, body: Box<dyn Element>) -> Self {
+        self.body = Some(body);
+        self
+    }
+
+    pub fn nested(mut self, nested: bool) -> Self {
+        self.nested = nested;
+        self
+    }
+
+    pub fn render(self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+
+        let mut left = Flex::row()
+            .with_main_axis_alignment(MainAxisAlignment::Start)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        if let Some(glyph) = self.glyph {
+            left.add_child(
+                Container::new(
+                    ConstrainedBox::new(glyph.finish())
+                        .with_width(icon_size(app))
+                        .with_height(icon_size(app))
+                        .finish(),
+                )
+                .with_margin_right(ICON_MARGIN)
+                .finish(),
+            );
+        }
+        left.add_child(Expanded::new(1., self.title).finish());
+
+        let mut row = Flex::row()
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(Shrinkable::new(1., left.finish()).finish());
+
+        let mut trailing = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+        // The cluster (result label + status icon) is part of the reveal: it
+        // only appears once the row is expanded.
+        if self.expanded {
+            for child in self.cluster.render(appearance, app) {
+                trailing.add_child(child);
+            }
+        }
+        if self.expandable {
+            trailing.add_child(
+                ConstrainedBox::new(render_expansion_icon(self.expanded, false, appearance, app))
+                    .with_width(icon_size(app))
+                    .with_height(icon_size(app))
+                    .finish(),
+            );
+        }
+        row.add_child(trailing.finish());
+
+        let header = Container::new(row.finish())
+            .with_horizontal_padding(2.)
+            .with_vertical_padding(5.)
+            .finish();
+
+        let header = match (self.expandable, self.on_toggle) {
+            (true, Some(callback)) => Hoverable::new(self.mouse_state, |_| header)
+                .on_click(move |ctx, _, _| callback(ctx))
+                .with_cursor(Cursor::PointingHand)
+                .finish(),
+            _ => header,
+        };
+
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_child(header);
+
+        if self.expanded {
+            if let Some(body) = self.body {
+                // The boundaries the owner wants back — but below the label and
+                // only on expand: a bordered, rounded box on the lower surface.
+                let boxed = Container::new(body)
+                    .with_horizontal_padding(12.)
+                    .with_vertical_padding(8.)
+                    .with_background(theme.surface_1())
+                    .with_border(Border::all(1.).with_border_fill(theme.surface_2()))
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                    .finish();
+                column.add_child(Container::new(boxed).with_margin_top(6.).finish());
+            }
+        }
+
+        let content = column.finish();
+        if self.nested {
+            Container::new(content)
+                .with_margin_bottom(DISCLOSURE_VERTICAL_MARGIN)
+                .finish()
+        } else {
+            Container::new(content)
+                .with_margin_left(DISCLOSURE_LEFT_MARGIN)
+                .with_margin_right(CONTENT_HORIZONTAL_PADDING)
+                .with_margin_bottom(DISCLOSURE_VERTICAL_MARGIN)
+                .finish()
+        }
+    }
+}

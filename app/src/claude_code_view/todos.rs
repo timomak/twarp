@@ -24,15 +24,14 @@ use warpui::fonts::Properties;
 use warpui::text_layout::TextStyle;
 use warpui::{
     elements::{
-        Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, Highlight,
-        MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
+        ConstrainedBox, Container, CrossAxisAlignment, Flex, Highlight, MainAxisSize,
+        MouseStateHandle, ParentElement, Shrinkable, Text,
     },
     AppContext, Element, SingletonEntity,
 };
 
 use super::inline_action::{
-    icon_size, ExpandedConfig, HeaderConfig, InteractionMode, RightCluster, WithContentItemSpacing,
-    INLINE_ACTION_HORIZONTAL_PADDING,
+    icon_size, Disclosure, RightCluster, INLINE_ACTION_HORIZONTAL_PADDING,
 };
 use super::ClaudeCodeViewAction;
 use crate::appearance::Appearance;
@@ -97,22 +96,30 @@ pub(super) fn render_todos(
         return warpui::elements::Empty::new().finish();
     }
 
-    let header = HeaderConfig::new("Tasks", app)
-        .with_icon(todo_list_icon(appearance))
-        .with_right_cluster(RightCluster {
+    let title = Text::new_inline(
+        "Tasks".to_owned(),
+        appearance.ui_font_family(),
+        appearance.monospace_font_size(),
+    )
+    .with_color(blended_colors::text_main(
+        theme,
+        blended_colors::neutral_2(theme),
+    ))
+    .with_selectable(false)
+    .finish();
+
+    let mut disclosure = Disclosure::new(title)
+        .with_glyph(todo_list_icon(appearance))
+        .expandable(true)
+        .expanded(expanded)
+        .with_cluster(RightCluster {
             label: Some(progress_label(todos)),
             icon: None,
         })
-        .with_interaction_mode(InteractionMode::ManuallyExpandable(
-            ExpandedConfig::new(expanded, header_mouse_state).with_toggle_callback(|ctx| {
-                ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleTodos);
-            }),
-        ));
-
-    let mut container = Flex::column()
-        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-        .with_main_axis_size(MainAxisSize::Min)
-        .with_child(header.render(app));
+        .with_mouse_state(header_mouse_state)
+        .on_toggle(|ctx| {
+            ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleTodos);
+        });
 
     if expanded {
         let mut rows = Flex::column()
@@ -121,21 +128,10 @@ pub(super) fn render_todos(
         for todo in todos {
             rows.add_child(render_todo(todo, app));
         }
-        container.add_child(
-            Container::new(rows.finish())
-                .with_padding_top(12.)
-                .with_border(
-                    Border::new(1.)
-                        .with_sides(false, true, true, true)
-                        .with_border_fill(theme.outline()),
-                )
-                .with_background_color(theme.background().into_solid())
-                .with_corner_radius(CornerRadius::with_bottom(Radius::Pixels(8.)))
-                .finish(),
-        );
+        disclosure = disclosure.with_body(rows.finish());
     }
 
-    container.finish().with_agent_output_item_spacing().finish()
+    disclosure.render(app)
 }
 
 /// Port of the original `render_todo` row: status glyph + title; completed

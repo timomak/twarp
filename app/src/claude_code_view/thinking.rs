@@ -30,8 +30,8 @@ use warpui::{
     AppContext, Element, SingletonEntity,
 };
 
-use super::inline_action::icon_size;
-use super::{render_markdown_body, ClaudeCodeViewAction, TRANSCRIPT_LEFT_MARGIN};
+use super::inline_action::Disclosure;
+use super::{render_markdown_body, ClaudeCodeViewAction};
 use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon as WarpIcon;
@@ -102,73 +102,30 @@ pub(super) fn render_thinking_card(
     let expanded = ui.is_some_and(|ui| ui.expanded);
     let mouse_state = ui.map(|ui| ui.mouse_state.clone()).unwrap_or_default();
 
-    // Port of `render_collapsible_header`: label + chevron, hover + pointer,
-    // click toggles.
-    let chevron = if expanded {
-        WarpIcon::ChevronDown
-    } else {
-        WarpIcon::ChevronRight
-    };
-    let label = header_label(duration);
-    let glyph_size = icon_size(app);
-    let header_row = Hoverable::new(mouse_state, move |_is_hovered| {
-        Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(
-                appearance
-                    .ui_builder()
-                    .span(label.clone())
-                    .with_style(UiComponentStyles {
-                        font_color: Some(text_color),
-                        ..Default::default()
-                    })
-                    .build()
-                    .finish(),
-            )
-            .with_child(
-                Container::new(
-                    ConstrainedBox::new(chevron.to_warpui_icon(text_color.into()).finish())
-                        .with_width(glyph_size - 2.)
-                        .with_height(glyph_size - 2.)
-                        .finish(),
-                )
-                .with_margin_left(4.)
-                .finish(),
-            )
-            .finish()
-    })
-    .with_cursor(Cursor::PointingHand)
-    .on_click(move |ctx, _, _| {
-        ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleThinking(index));
-    })
-    .finish();
-
-    // `MainAxisSize::Min` keeps the click target on the label itself rather
-    // than the whole row width (the ported header's shape).
-    let header = Flex::row()
-        .with_main_axis_size(MainAxisSize::Min)
-        .with_child(header_row)
+    // Same flat disclosure as the tool/diff/task cards (§22: visually
+    // subordinate — muted label, muted body — but consistent chrome): label +
+    // chevron, the reasoning revealed in the bordered box on expand.
+    let title = appearance
+        .ui_builder()
+        .span(header_label(duration))
+        .with_style(UiComponentStyles {
+            font_color: Some(text_color),
+            ..Default::default()
+        })
+        .build()
         .finish();
 
-    let mut column = Flex::column()
-        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-        .with_main_axis_size(MainAxisSize::Min)
-        .with_child(header);
-
+    let mut disclosure = Disclosure::new(title)
+        .expandable(true)
+        .expanded(expanded)
+        .with_mouse_state(mouse_state)
+        .on_toggle(move |ctx| {
+            ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleThinking(index));
+        });
     if expanded {
-        column.add_child(
-            Container::new(render_markdown_body(text, text_color, appearance))
-                .with_padding_top(8.)
-                .finish(),
-        );
+        disclosure = disclosure.with_body(render_markdown_body(text, text_color, appearance));
     }
-
-    Container::new(column.finish())
-        .with_padding_left(TRANSCRIPT_LEFT_MARGIN)
-        .with_padding_right(20.)
-        .with_padding_top(4.)
-        .with_padding_bottom(8.)
-        .finish()
+    disclosure.render(app)
 }
 
 #[cfg(test)]

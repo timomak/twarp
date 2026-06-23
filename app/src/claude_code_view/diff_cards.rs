@@ -32,11 +32,8 @@ use warpui::{
     AppContext, Element, SingletonEntity, ViewContext, ViewHandle,
 };
 
-use super::inline_action::{
-    render_requested_action_body_text, ExpandedConfig, HeaderConfig, InteractionMode,
-    RenderableAction, RightCluster, WithContentItemSpacing,
-};
-use super::tool_cards::{status_icon, ToolCardUi};
+use super::inline_action::{render_requested_action_body_text, Disclosure, RightCluster};
+use super::tool_cards::{status_icon, verb_title_row, ToolCardUi};
 use super::{ClaudeCodeView, ClaudeCodeViewAction};
 use crate::app_state::{DiffDelta, DiffType};
 use crate::appearance::Appearance;
@@ -153,11 +150,13 @@ fn cluster_label(card: &DiffCard, status: ToolStatus) -> String {
     }
 }
 
-/// Render one diff card (PRODUCT §20–§21): ported header (pencil glyph, file
-/// path, `+N −M` cluster, status icon, chevron) over the stacked feature-05
-/// diff views; a failed call appends the error verbatim below the diff.
+/// Render one diff card (PRODUCT §20–§21, UI cleanup): a flat `pencil + "Edited
+/// file.rs"` disclosure with the `+N −M` cluster and status icon revealed on
+/// expand, over the stacked feature-05 diff views; a failed call appends the
+/// error verbatim below the diff. `name` selects the verb (`Write` → "Wrote").
 pub(super) fn render_diff_card(
     id: &str,
+    name: &str,
     status: ToolStatus,
     output: Option<&ToolOutput>,
     card: &DiffCard,
@@ -172,72 +171,78 @@ pub(super) fn render_diff_card(
     let expanded = card_ui
         .and_then(|ui| ui.expanded_override)
         .unwrap_or_else(default_expanded);
+    let failed = status == ToolStatus::Failed;
 
+    let verb = if name == "Write" { "Wrote" } else { "Edited" };
+    let arg = Path::new(&card.file_path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(str::to_owned);
+    let title = verb_title_row(verb, arg.as_deref(), failed, appearance);
     let glyph =
         warpui::elements::Icon::new(WarpIcon::Pencil.into(), blended_colors::neutral_7(theme));
+
     let toggle_id = id.to_owned();
-    let header = HeaderConfig::new(Cow::Owned(card.file_path.clone()), app)
-        .with_icon(glyph)
-        .with_right_cluster(RightCluster {
+    let mut disclosure = Disclosure::new(title)
+        .with_glyph(glyph)
+        .expandable(true)
+        .expanded(expanded)
+        .with_cluster(RightCluster {
             label: Some(cluster_label(card, status)),
             icon: Some(status_icon(status, appearance)),
         })
-        .with_interaction_mode(InteractionMode::ManuallyExpandable(
-            ExpandedConfig::new(expanded, mouse_state).with_toggle_callback(move |ctx| {
-                ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleToolCard(toggle_id.clone()));
-            }),
-        ));
+        .with_mouse_state(mouse_state)
+        .on_toggle(move |ctx| {
+            ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleToolCard(toggle_id.clone()));
+        });
 
-    if !expanded {
-        // Header-only collapsed card — the ported header renders itself
-        // fully rounded when nothing is expanded below it.
-        return header.render(app).with_agent_output_item_spacing().finish();
-    }
-
-    let mut body = Flex::column()
-        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-        .with_main_axis_size(MainAxisSize::Min);
-    for (idx, viewer) in card.viewers.iter().enumerate() {
-        // The embedded editor uses `GrowToMaxHeight`, which produces a *flexible*
-        // child and so needs a bounded height constraint — but the transcript
-        // renders items in a `MainAxisSize::Min` column (natural height), which
-        // hands each child an *unbounded* vertical constraint. `InlineDiffView`
-        // never applies `DisplayMode::Embedded { max_height }` as a layout bound
-        // (its `render` emits a bare `ChildView`), so without an explicit cap the
-        // editor's inner flex panics ("infinite constraint along the flex axis").
-        // Bound it here — the same fix the composer editor uses — so the diff
-        // grows up to `DIFF_MAX_HEIGHT` and then scrolls internally (§19).
-        let bounded = ConstrainedBox::new(ChildView::new(viewer).finish())
-            .with_max_height(DIFF_MAX_HEIGHT)
-            .finish();
-        let mut diff_container = Container::new(bounded);
-        if idx + 1 < card.viewers.len() {
-            // MultiEdit: breathing room between consecutive edits (§20).
-            diff_container = diff_container.with_margin_bottom(8.);
+    if expanded {
+        let mut body = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min);
+        for (idx, viewer) in card.viewers.iter().enumerate() {
+            // The embedded editor uses `GrowToMaxHeight`, which produces a
+            // *flexible* child and so needs a bounded height constraint — but the
+            // transcript renders items in a `MainAxisSize::Min` column (natural
+            // height), which hands each child an *unbounded* vertical constraint.
+            // `InlineDiffView` never applies `DisplayMode::Embedded { max_height }`
+            // as a layout bound (its `render` emits a bare `ChildView`), so without
+            // an explicit cap the editor's inner flex panics ("infinite constraint
+            // along the flex axis"). Bound it here — the same fix the composer
+            // editor uses — so the diff grows up to `DIFF_MAX_HEIGHT` and then
+            // scrolls internally (§19).
+            let bounded = ConstrainedBox::new(ChildView::new(viewer).finish())
+                .with_max_height(DIFF_MAX_HEIGHT)
+                .finish();
+            let mut diff_container = Container::new(bounded);
+            if idx + 1 < card.viewers.len() {
+                // MultiEdit: breathing room between consecutive edits (§20).
+                diff_container = diff_container.with_margin_bottom(8.);
+            }
+            body.add_child(diff_container.finish());
         }
-        body.add_child(diff_container.finish());
+        if failed {
+            // The edit failed — the diff above shows what was *attempted*; the
+            // error below says why it didn't land (PRODUCT §19/§30 verbatim).
+            let error_text = output
+                .map(|o| o.text.trim().to_owned())
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| "The edit failed with no error output.".to_owned());
+            body.add_child(
+                Container::new(
+                    render_requested_action_body_text(
+                        Cow::Owned(error_text),
+                        appearance.monospace_font_family(),
+                        app,
+                    )
+                    .finish(),
+                )
+                .with_padding_top(6.)
+                .finish(),
+            );
+        }
+        disclosure = disclosure.with_body(body.finish());
     }
 
-    let mut action = RenderableAction::new_with_element(body.finish(), app).with_header(header);
-    if status == ToolStatus::Failed {
-        // The edit failed — the diff above shows what was *attempted*; the
-        // error below says why it didn't land (PRODUCT §19/§30 verbatim).
-        let error_text = output
-            .map(|o| o.text.trim().to_owned())
-            .filter(|t| !t.is_empty())
-            .unwrap_or_else(|| "The edit failed with no error output.".to_owned());
-        action = action.with_footer(
-            Container::new(
-                render_requested_action_body_text(
-                    Cow::Owned(error_text),
-                    appearance.monospace_font_family(),
-                    app,
-                )
-                .finish(),
-            )
-            .with_vertical_padding(6.)
-            .finish(),
-        );
-    }
-    action.render(app).finish()
+    disclosure.render(app)
 }
