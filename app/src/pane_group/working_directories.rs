@@ -172,6 +172,11 @@ impl WorkingDirectoriesModel {
             .and_then(|roots| roots.get(root_path).copied())
     }
 
+    #[cfg(test)]
+    pub fn focused_repo_for_pane_group(&self, pane_group_id: EntityId) -> Option<PathBuf> {
+        self.focused_repo.get(&pane_group_id).cloned().flatten()
+    }
+
     /// Get or create a DiffStateModel for a specific repository.
     /// If the model doesn't exist, it will be created.
     pub fn get_or_create_diff_state_model(
@@ -353,6 +358,7 @@ impl WorkingDirectoriesModel {
         local_paths: Vec<(EntityId, String)>,
         directory_cwds: Vec<(EntityId, String)>,
         focused_terminal_id: Option<EntityId>,
+        focused_directory_id: Option<EntityId>,
         ctx: &mut ModelContext<Self>,
     ) {
         if terminal_cwds.is_empty() && local_paths.is_empty() && directory_cwds.is_empty() {
@@ -386,6 +392,19 @@ impl WorkingDirectoriesModel {
         };
 
         let root_for_raw_path = |raw_path: &str| normalize_cwd(raw_path).map(root_for_path);
+
+        // twarp 07: resolve the focused directory-context pane's (a Claude Code
+        // pane) repo root from the *raw* cwds before they're deduped below — a
+        // focused Claude pane sharing a repo with a terminal would otherwise be
+        // dropped by the dedup and never resolve. Used as the focused-repo
+        // fallback when no terminal is focused, so the code-review / Open
+        // Changes panel roots at the focused Claude pane's project.
+        let focused_directory_repo: Option<PathBuf> = focused_directory_id.and_then(|focused_id| {
+            directory_cwds
+                .iter()
+                .find(|(id, _)| *id == focused_id)
+                .and_then(|(_, cwd)| root_for_raw_path(cwd))
+        });
 
         // Collapse working directories to their nearest repository root (when detected).
         let mut file_path_ancestors: HashSet<PathBuf> = terminal_cwds
@@ -478,6 +497,11 @@ impl WorkingDirectoriesModel {
             for (repo_root, focused_id) in repos_to_insert {
                 new_root_to_terminal.insert(repo_root, focused_id);
             }
+        }
+        // twarp 07: no terminal is focused but a Claude Code pane is — root the
+        // panel at its repo (resolved above, dedup-independent).
+        if focused_repo.is_none() {
+            focused_repo = focused_directory_repo;
         }
 
         // Get or create the IndexSet for repository roots
@@ -657,6 +681,7 @@ impl WorkingDirectoriesModel {
         _local_paths: Vec<(EntityId, String)>,
         _directory_cwds: Vec<(EntityId, String)>,
         _focused_terminal_id: Option<EntityId>,
+        _focused_directory_id: Option<EntityId>,
         _ctx: &mut ModelContext<Self>,
     ) {
     }

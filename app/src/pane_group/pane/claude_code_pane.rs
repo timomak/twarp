@@ -117,7 +117,11 @@ impl PaneContent for ClaudeCodePane {
                 // it to the view, which embeds it in place of the chat — the
                 // pane itself never changes, so the layout can't (PRODUCT
                 // §39: same tab position).
-                ClaudeCodeViewEvent::SwapToRawCli { session_id, cwd } => {
+                ClaudeCodeViewEvent::SwapToRawCli {
+                    session_id,
+                    cwd,
+                    claude_binary,
+                } => {
                     let (manager, terminal) =
                         pane_group.create_raw_claude_terminal(cwd.clone(), ctx);
                     terminal.update(ctx, |terminal, ctx| {
@@ -130,13 +134,16 @@ impl PaneContent for ClaudeCodePane {
                         // "terminal + duplicate pane" bug). A path token is
                         // never intercepted (PRODUCT §3), and a quoted full
                         // path also sidesteps shell aliases entirely, so raw
-                        // mode runs the vanilla CLI (§43). Session ids are
-                        // UUIDs (shell-safe); `exec` makes the PTY *be* the
-                        // CLI, so the CLI exiting ends the session — the §44
-                        // auto-return signal.
-                        let claude = crate::util::path::resolve_executable("claude")
-                            .map(|path| path.display().to_string())
-                            .unwrap_or_else(|| "claude".to_owned());
+                        // mode runs the vanilla CLI (§43). `claude_binary` is
+                        // resolved by the view against the login-shell PATH —
+                        // the pane only sees the launchd-minimal process PATH
+                        // under a GUI launch, where a bare-`claude` fallback
+                        // would be eaten by the trigger and never start (the
+                        // release-only "Raw CLI shows an empty terminal" bug).
+                        // Session ids are UUIDs (shell-safe); `exec` makes the
+                        // PTY *be* the CLI, so the CLI exiting ends the session
+                        // — the §44 auto-return signal.
+                        let claude = claude_binary.clone();
                         // `--resume <id>` only when the session is actually on
                         // disk. A fresh pane (or one whose first turn hasn't
                         // completed) has no `.jsonl` yet, so `--resume` would

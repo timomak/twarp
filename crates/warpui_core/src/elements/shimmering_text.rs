@@ -224,11 +224,17 @@ impl Element for ShimmeringTextElement {
                 );
 
                 // Restart the animation if the font or font size has changed.
+                //
+                // Deliberately NOT on a text change: the shimmer is a
+                // continuous time-based sweep (see `shimmer_center`), and
+                // restarting it on every text edit makes a frequently-updating
+                // label visibly stutter. The Claude pane's "<elapsed> ·
+                // Working…" status rewrites its text once a second, so a
+                // text-triggered restart reset the shimmer every tick.
                 let should_restart_animation = match (&layout_key, state.laid_out_key.as_ref()) {
                     (new_layout_key, Some(old_layout_key)) => {
                         new_layout_key.font_family != old_layout_key.font_family
                             || new_layout_key.font_size != old_layout_key.font_size
-                            || new_layout_key.text != old_layout_key.text
                     }
                     _ => true,
                 };

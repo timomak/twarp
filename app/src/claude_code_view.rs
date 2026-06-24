@@ -181,6 +181,14 @@ pub enum ClaudeCodeViewEvent {
     SwapToRawCli {
         session_id: String,
         cwd: Option<PathBuf>,
+        /// The resolved `claude` executable, an absolute path whenever it can
+        /// be found on the captured login-shell PATH (PRODUCT §43). Resolved
+        /// here (the view holds `interactive_path`) rather than in the pane,
+        /// which only sees the launchd-minimal process PATH under a GUI launch
+        /// and would fall back to a bare `claude` — a bare token gets eaten by
+        /// the `claude`-at-submit trigger, so the CLI never starts and the pane
+        /// shows an empty terminal (the release-only "Raw CLI does nothing").
+        claude_binary: String,
     },
 }
 
@@ -1972,8 +1980,29 @@ impl ClaudeCodeView {
         ctx.emit(ClaudeCodeViewEvent::SwapToRawCli {
             session_id: self.session_id.clone(),
             cwd: self.cwd.clone(),
+            claude_binary: self.resolve_claude_binary(),
         });
         ctx.notify();
+    }
+
+    /// Resolve the `claude` executable to launch in raw mode. Prefers an
+    /// absolute path off the captured login-shell PATH (mirrors
+    /// [`Self::claude_available`]); falls back to the process PATH, then to the
+    /// bare command. An absolute path is required so the raw-CLI command isn't
+    /// intercepted by the `claude`-at-submit trigger (PRODUCT §43) — under a
+    /// GUI launch the process PATH is launchd-minimal and omits where `claude`
+    /// lives, so a bare fallback would be eaten by the trigger and never run.
+    fn resolve_claude_binary(&self) -> String {
+        if let Some(path) = &self.interactive_path {
+            if let Some(resolved) =
+                resolve_executable_in_path(CLAUDE_BINARY, std::ffi::OsStr::new(path))
+            {
+                return resolved.display().to_string();
+            }
+        }
+        resolve_executable(CLAUDE_BINARY)
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| CLAUDE_BINARY.to_owned())
     }
 
     /// twarp 07 (7i, PRODUCT §39): embed the raw-CLI terminal the pane group
@@ -3020,7 +3049,15 @@ impl View for ClaudeCodeView {
         // editor focus itself), so it updates the focused pane — otherwise
         // Cmd+W / maximize keep targeting whatever pane was focused before.
         // Mirrors `TerminalView::on_focus`.
-        ctx.dispatch_typed_action(&PaneGroupAction::HandleFocusChange);
+        //
+        // Deferred, not synchronous: `handle_focus_change` calls
+        // `ClaudeCodePane::has_application_focus`, which reads this view via
+        // `ViewHandle::as_ref`. Dispatching synchronously while we hold `&mut
+        // self` means the view is out of the views map, so that read panics
+        // with "circular view reference" (seen on click-back into a split
+        // Claude pane). Deferring runs it after this update returns the view
+        // to the map.
+        ctx.dispatch_typed_action_deferred(PaneGroupAction::HandleFocusChange);
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
@@ -3146,7 +3183,10 @@ impl TypedActionView for ClaudeCodeView {
                 ctx.focus(&self.input_editor);
                 // #13: a click on the pane focuses the editor — report it so the
                 // pane group makes this the active pane (Cmd+W / maximize).
-                ctx.dispatch_typed_action(&PaneGroupAction::HandleFocusChange);
+                // Deferred to avoid the re-entrant "circular view reference"
+                // panic (see `on_focus`): `has_application_focus` reads this
+                // view, which is mid-update here.
+                ctx.dispatch_typed_action_deferred(PaneGroupAction::HandleFocusChange);
             }
             ClaudeCodeViewAction::OpenUrl(url) => ctx.open_url(&url.url),
             // PRODUCT §4: render re-checks availability, so a notify suffices.

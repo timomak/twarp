@@ -12631,6 +12631,12 @@ impl Workspace {
             .active_session_view(ctx)
             .map(|terminal_view| terminal_view.id());
 
+        // twarp 07: when the focused pane is a Claude Code pane (not a
+        // terminal) prioritize its repo too, so the code-review / Open Changes
+        // panel roots at the focused Claude pane's project instead of falling
+        // back to whatever terminal repo was last active.
+        let focused_directory_id = pane_group.as_ref(ctx).focused_claude_code_view_id(ctx);
+
         self.working_directories_model.update(ctx, |model, ctx| {
             model.refresh_working_directories_for_pane_group(
                 pane_group_id,
@@ -12638,6 +12644,7 @@ impl Workspace {
                 local_paths,
                 claude_code_cwds,
                 focused_terminal_id,
+                focused_directory_id,
                 ctx,
             );
         });

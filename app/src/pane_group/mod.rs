@@ -5521,6 +5521,20 @@ impl PaneGroup {
         self.terminal_view_from_pane_id(self.focused_pane_id(ctx), ctx)
     }
 
+    /// The [`ClaudeCodeView`] entity id of the focused pane, when it is a
+    /// Claude Code pane (twarp 07). The id matches the one reported by
+    /// [`Self::claude_code_view_cwds`], so the working-directories model can
+    /// treat a focused Claude pane like a focused terminal — rooting the
+    /// code-review / Open Changes panel at the pane's project.
+    pub fn focused_claude_code_view_id(&self, ctx: &AppContext) -> Option<EntityId> {
+        let pane = self
+            .pane_contents
+            .get(&self.focused_pane_id(ctx))?
+            .as_any()
+            .downcast_ref::<ClaudeCodePane>()?;
+        Some(pane.claude_code_view(ctx).id())
+    }
+
     /// Given a pane ID, retrieve its backing terminal pane contents, if the pane is a terminal pane.
     fn terminal_session_by_id(&self, pane_id: impl Into<PaneId>) -> Option<&TerminalPane> {
         self.pane_contents

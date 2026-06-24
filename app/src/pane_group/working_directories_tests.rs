@@ -50,6 +50,7 @@ fn refresh_working_directories_collapses_subroots_to_nearest_repo_root() {
                 vec![],
                 vec![],
                 Some(terminal_1),
+                None,
                 ctx,
             );
 
@@ -99,6 +100,7 @@ fn refresh_working_directories_preserves_non_repo_paths_and_dedupes() {
                 vec![],
                 vec![],
                 Some(terminal_1),
+                None,
                 ctx,
             );
 
@@ -160,6 +162,7 @@ fn refresh_working_directories_treats_directory_cwds_as_roots() {
                     (claude_pane_2, plain_dir.to_string_lossy().to_string()),
                 ],
                 None,
+                None,
                 ctx,
             );
 
@@ -184,5 +187,53 @@ fn refresh_working_directories_treats_directory_cwds_as_roots() {
                 .collect()
         });
         assert_eq!(repos, vec![canonical_repo_root]);
+    });
+}
+
+#[test]
+fn refresh_working_directories_focuses_focused_claude_pane_repo() {
+    // twarp 07: when a Claude Code pane is the focused pane (no terminal
+    // focused), the code-review / Open Changes panel must root at its repo.
+    App::test((), |mut app| async move {
+        let detected_repos_handle = app.add_singleton_model(|_| DetectedRepositories::default());
+
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let repo_root = temp_dir.path().join("repo");
+        let repo_sub = repo_root.join("sub");
+        fs::create_dir_all(&repo_sub).expect("create repo/sub");
+        let canonical_repo_root = dunce::canonicalize(&repo_root).expect("canonical repo root");
+
+        detected_repos_handle.update(&mut app, |repos, _ctx| {
+            let canonical =
+                warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                    canonical_repo_root.as_path(),
+                )
+                .expect("canonicalized path");
+            repos.insert_test_repo_root(canonical);
+        });
+
+        let pane_group_id = EntityId::new();
+        let claude_pane = EntityId::new();
+
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
+        let focused_repo: Option<PathBuf> =
+            working_directories_handle.update(&mut app, |model, ctx| {
+                model.refresh_working_directories_for_pane_group(
+                    pane_group_id,
+                    vec![],
+                    vec![],
+                    vec![(claude_pane, repo_sub.to_string_lossy().to_string())],
+                    None,
+                    Some(claude_pane),
+                    ctx,
+                );
+                model.focused_repo_for_pane_group(pane_group_id)
+            });
+
+        assert_eq!(
+            focused_repo,
+            Some(canonical_repo_root),
+            "focused Claude pane's repo root becomes the focused repo"
+        );
     });
 }
