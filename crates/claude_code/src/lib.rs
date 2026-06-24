@@ -435,6 +435,23 @@ impl Transcript {
                 input,
                 parent_id,
             } => {
+                // Idempotent on id: resuming a session first renders the stored
+                // history (`load_history`), then `claude --resume` replays the
+                // same turns on stdout, re-emitting each `tool_use` with the
+                // same id. Without this guard each tool would render twice — two
+                // cards sharing one expand state, the replayed `tool_result`
+                // landing on the duplicate (see `find_tool_mut`'s most-recent
+                // semantics). Refresh the existing card in place instead.
+                if let Some(TranscriptItem::Tool {
+                    name: slot_name,
+                    input: slot_input,
+                    ..
+                }) = find_tool_mut(&mut self.items, &id)
+                {
+                    *slot_name = name;
+                    *slot_input = input;
+                    return;
+                }
                 let card = TranscriptItem::Tool {
                     id,
                     name,
@@ -515,8 +532,9 @@ impl Transcript {
 }
 
 /// Depth-first, most-recent-first search for a tool card by id, descending into
-/// Task children. Most-recent-first preserves the old `rposition` semantics
-/// when (pathologically) two calls share an id.
+/// Task children. `ToolCall` application is idempotent on id, so a live
+/// transcript holds at most one card per id; most-recent-first is just a
+/// belt-and-braces ordering.
 fn find_tool_mut<'a>(items: &'a mut [TranscriptItem], id: &str) -> Option<&'a mut TranscriptItem> {
     for item in items.iter_mut().rev() {
         let is_match = matches!(&*item, TranscriptItem::Tool { id: tid, .. } if tid == id);
@@ -632,6 +650,45 @@ mod tests {
             TranscriptItem::Tool { status, output, .. } => {
                 assert_eq!(*status, ToolStatus::Completed);
                 assert!(output.is_some());
+            }
+            other => panic!("expected tool card, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn duplicate_tool_call_id_refreshes_in_place() {
+        // Resume replays the stored turns after `load_history` already rendered
+        // them, re-emitting each `tool_use` with the same id. The second call
+        // must refresh the existing card, not push a duplicate (else the tool
+        // renders twice and the replayed result lands on the dup).
+        let mut t = Transcript::new();
+        t.apply(TranscriptEvent::ToolCall {
+            id: "call_1".to_string(),
+            name: "Bash".to_string(),
+            input: serde_json::json!({ "command": "ls" }),
+            parent_id: None,
+        });
+        t.apply(TranscriptEvent::ToolResult {
+            id: "call_1".to_string(),
+            output: ToolOutput {
+                text: "a.txt".to_string(),
+                summary: None,
+            },
+            is_error: false,
+        });
+        // Replay of the same call (no result re-applied this round).
+        t.apply(TranscriptEvent::ToolCall {
+            id: "call_1".to_string(),
+            name: "Bash".to_string(),
+            input: serde_json::json!({ "command": "ls" }),
+            parent_id: None,
+        });
+        assert_eq!(t.items().len(), 1, "duplicate id must not add a card");
+        match &t.items()[0] {
+            TranscriptItem::Tool { status, output, .. } => {
+                // The earlier result and completed status survive the refresh.
+                assert_eq!(*status, ToolStatus::Completed);
+                assert!(output.is_some(), "in-place refresh must keep the output");
             }
             other => panic!("expected tool card, got {other:?}"),
         }

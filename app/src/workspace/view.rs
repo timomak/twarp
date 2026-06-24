@@ -12733,12 +12733,17 @@ impl Workspace {
     ) {
         let launch = claude_code::launch::parse_launch_args(args.iter().map(String::as_str));
         let pane = ClaudeCodePane::new(launch, cwd, ctx);
-        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
+        let pane_group = self.active_tab_pane_group().clone();
+        pane_group.update(ctx, |pane_group, ctx| {
             // The pane that ran `claude` is the focused one — swap it for the
             // Claude pane in place so the UI opens in the current panel.
             let target = pane_group.focused_pane_id(ctx);
             pane_group.replace_pane(target, pane, false /* is_temporary */, ctx);
         });
+        // twarp 07: kick off repo detection for the new pane's cwd right away so
+        // the code-review / Open Changes panel resolves its folder without
+        // waiting on a focus event to drive the refresh.
+        self.refresh_working_directories_for_pane_group(&pane_group, ctx);
     }
 
     /// twarp 07 (7h, PRODUCT §36): reopen a stored Claude Code session from
@@ -12778,7 +12783,8 @@ impl Workspace {
             Some(cwd),
             ctx,
         );
-        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
+        let pane_group = self.active_tab_pane_group().clone();
+        pane_group.update(ctx, |pane_group, ctx| {
             pane_group.add_pane_with_direction(
                 Direction::Right,
                 pane,
@@ -12786,6 +12792,10 @@ impl Workspace {
                 ctx,
             );
         });
+        // twarp 07: detect the resumed session's repo immediately (its cwd may
+        // never have been visited by a terminal, so nothing else would), so the
+        // code-review / Open Changes panel roots at the right folder.
+        self.refresh_working_directories_for_pane_group(&pane_group, ctx);
     }
 
     pub(crate) fn handle_file_tree_event(

@@ -1926,6 +1926,11 @@ impl ClaudeCodeView {
                 self.cwd = Some(worktree);
                 self.use_worktree = false;
                 self.refresh_repo_context(ctx);
+                // The pane's cwd just moved to the worktree — tell the host so
+                // the workspace re-detects this pane's repo and the code-review /
+                // Open Changes panel follows it to the worktree (otherwise the
+                // panel stays pinned to the original checkout).
+                ctx.emit(ClaudeCodeViewEvent::Pane(PaneEvent::RepoChanged));
             }
         }
         let opts = SpawnOptions {
@@ -2770,7 +2775,18 @@ impl ClaudeCodeView {
         let selection = self.transcript_selection.clone();
         let content = SelectableArea::new(
             self.selection_handle.clone(),
-            move |args, _, _| {
+            move |args, ctx, _| {
+                // A mouse-down on the transcript is consumed by this
+                // `SelectableArea` (its `dispatch_event` returns "handled"),
+                // so it never bubbles to the pane's outer focus-grab or the
+                // pane group's `Activate` handler — without this, clicking
+                // transcript text wouldn't select the pane (only the composer
+                // did). Re-fire the focus-grab on the initiating click (no
+                // selection yet) so a click anywhere in the transcript makes
+                // this the active pane, matching the composer. See `FocusInput`.
+                if args.selection.is_none() {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::FocusInput);
+                }
                 *selection.write() = args.selection;
             },
             content,
