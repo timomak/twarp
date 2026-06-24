@@ -312,6 +312,9 @@ pub struct LeftPanelView {
     has_claude_sessions: bool,
     /// Per-row stable mouse states (same pattern as the Timeline's).
     claude_session_row_mouse_states: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// twarp: vertical scroll state for the sessions list so a long list scrolls
+    /// instead of overflowing the panel (same pattern as the Timeline).
+    claude_sessions_scroll_state: warpui::elements::ClippedScrollStateHandle,
     /// twarp 08e (PRODUCT §17–§20): live search field over the Claude sessions
     /// list. A single-line `EditorView`; the panel reads its `buffer_text` each
     /// render and case-insensitive substring-filters `claude_sessions` by
@@ -526,6 +529,7 @@ impl LeftPanelView {
             claude_sessions: Vec::new(),
             has_claude_sessions: false,
             claude_session_row_mouse_states: std::cell::RefCell::new(Vec::new()),
+            claude_sessions_scroll_state: warpui::elements::ClippedScrollStateHandle::default(),
             claude_sessions_search,
         };
         view.update_button_active_states();
@@ -2097,12 +2101,26 @@ impl LeftPanelView {
             let rows = matched_indices.into_iter().map(|idx| {
                 self.render_claude_session_row(idx, &self.claude_sessions[idx], app)
             });
-            Flex::column()
+            let rows_column = Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_main_axis_size(MainAxisSize::Min)
                 .with_spacing(2.0)
                 .with_children(rows)
-                .finish()
+                .finish();
+            // twarp: scroll a long sessions list instead of overflowing the
+            // panel (same NewScrollable pattern as the Timeline body).
+            let theme = appearance.theme();
+            NewScrollable::vertical(
+                SingleAxisConfig::Clipped {
+                    handle: self.claude_sessions_scroll_state.clone(),
+                    child: rows_column,
+                },
+                theme.nonactive_ui_detail().into(),
+                theme.active_ui_detail().into(),
+                warpui::elements::Fill::None,
+            )
+            .with_vertical_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Auto, false))
+            .finish()
         };
 
         let column = Flex::column()
