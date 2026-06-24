@@ -36,6 +36,10 @@ pub struct ScrollTarget {
 #[derive(Clone, Default)]
 pub struct ClippedScrollData {
     scroll_start_px: Pixels,
+    /// The greatest scroll offset the content currently allows (content extent
+    /// minus the viewport extent, clamped at zero). Refreshed every layout so
+    /// callers can ask the handle whether the view is pinned to the bottom.
+    max_scroll_px: Pixels,
     pub(super) scroll_to_position: Option<ScrollTarget>,
     selection_scroll_anchor: Option<ClippedSelectionScrollAnchor>,
 }
@@ -73,6 +77,25 @@ impl ClippedScrollStateHandle {
 
     pub fn scroll_start(&self) -> Pixels {
         self.clipped_scroll_data.lock().scroll_start_px
+    }
+
+    /// The greatest scroll offset the content currently allows, as of the last
+    /// layout (content extent minus viewport extent, clamped at zero).
+    pub fn max_scroll(&self) -> Pixels {
+        self.clipped_scroll_data.lock().max_scroll_px
+    }
+
+    pub(super) fn set_max_scroll(&self, px: Pixels) {
+        self.clipped_scroll_data.lock().max_scroll_px = px;
+    }
+
+    /// Whether the scroll position is pinned to within `slack` pixels of the
+    /// bottom (also true when the content fits without scrolling). Lets a
+    /// streaming view decide whether to keep following new content or leave the
+    /// user's scroll position alone because they've scrolled up to read.
+    pub fn is_at_bottom(&self, slack: f32) -> bool {
+        let data = self.clipped_scroll_data.lock();
+        data.scroll_start_px.as_f32() + slack >= data.max_scroll_px.as_f32()
     }
 
     pub fn scroll_by(&self, delta: Pixels) {
@@ -448,6 +471,9 @@ impl Element for ClippedScrollable {
         if let Some(scroll_data) = self.scroll_data(app) {
             let max_scroll_top =
                 (scroll_data.total_size - scroll_data.visible_px).max(Pixels::zero());
+            // Publish the max for `is_at_bottom` consumers (e.g. follow-the-
+            // stream auto-scroll that must yield to a user scrolling up).
+            self.state.set_max_scroll(max_scroll_top);
             let scroll_top = scroll_data.scroll_start;
             if scroll_top > max_scroll_top {
                 self.state.scroll_to(max_scroll_top);

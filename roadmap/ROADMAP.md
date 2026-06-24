@@ -3,6 +3,7 @@
 Single source of truth for what's being built next. `/twarp-next` reads this file every invocation; the user reads it to see status at a glance.
 
 **Currently active:** `13-mcp-viewer`
+**Next up:** `14-builtin-browser` (owner-directed 2026-06-24, pulled ahead of 09)
 
 ## Features
 
@@ -21,6 +22,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 11 | [Git blame](11-git-blame/STATUS.md) | not-started | — | — |
 | 12 | [Project search & replace](12-project-search-replace/STATUS.md) | not-started | — | — |
 | 13 | [MCP viewer in Claude pane](13-mcp-viewer/STATUS.md) | spec-in-review | [#91](https://github.com/timomak/twarp/pull/91) | — |
+| 14 | [Built-in browser (Claude-debuggable)](14-builtin-browser/STATUS.md) | not-started | — | — |
 
 ## Phases
 
@@ -54,6 +56,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 11. **Git blame eleventh** — depends on 10 (no blame without a file-editing surface). Genuinely net-new code: `git blame --porcelain` parser, gutter rendering, commit-detail popover. No upstream cherry-pick risk because blame is new.
 12. **Project search & replace twelfth** — wires the existing `warp_ripgrep` crate into a project-wide search UI plus a replace-all flow. Independent of 10 in principle; sequenced after for result-click → open-file.
 13. **MCP viewer thirteenth** — owner-requested follow-on to feature 07. Surfaces the MCP servers configured for the local `claude` CLI as a read-only view inside the Claude pane (a composer pill/popover listing connected servers + their tools). No add/edit/remove this pass — management stays in the `claude` CLI. Pulled to active ahead of 09 by owner direction (2026-06-23) because it's a small, self-contained win on the just-shipped Claude pane and touches only `claude_code*` crates the rebrand hasn't renamed yet.
+14. **Built-in browser fourteenth** — owner-requested (2026-06-24). A built-in browser pane modeled on [cmux](https://github.com/manaflow-ai/cmux): `WKWebView` (via `objc2-web-kit`) embedded as a child `NSView` over the Metal host view, with an injected-JS automation bridge **exposed as an MCP server** so the Claude CLI session can debug the *same live tab the user sees* (DOM, console, interaction, network). mac-first; v1 = dev-preview pane. CEF rejected (multi-process Chromium + helper code-signing collide with the bundle). Net-new code, low cherry-pick risk; final placement vs. rebrand decided when it goes active. See [14-builtin-browser/PLAN.md](14-builtin-browser/PLAN.md).
 
 ## Out of scope for `/twarp-next`
 

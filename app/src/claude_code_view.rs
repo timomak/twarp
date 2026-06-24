@@ -75,11 +75,12 @@ use warpui::{
     elements::{
         Align, Border, CacheOption, ChildAnchor, Clipped, ClippedScrollStateHandle,
         ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
-        DispatchEventResult, DropShadow, Element, EventDispatchMode, EventHandler, Expanded, Fill,
-        Flex, FormattedTextElement, HighlightedHyperlink, Hoverable, HyperlinkUrl, Icon, Image,
-        MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, Padding,
-        ParentAnchor, ParentElement, ParentOffsetBounds, Radius, SavePosition, ScrollTarget,
-        ScrollToPositionMode, ScrollbarWidth, SelectableArea, SelectionHandle, Shrinkable, Stack,
+        Dismiss, DispatchEventResult, DropShadow, Element, EventDispatchMode, EventHandler,
+        Expanded, Fill, Flex, FormattedTextElement, HighlightedHyperlink, Hoverable, HyperlinkUrl,
+        Icon, Image, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, Padding,
+        ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementAnchor,
+        PositionedElementOffsetBounds, Radius, SavePosition, ScrollTarget, ScrollToPositionMode,
+        ScrollbarWidth, SelectableArea, SelectionHandle, Shrinkable, Stack,
     },
     platform::Cursor,
     presenter::ChildView,
@@ -135,23 +136,33 @@ const COMPOSER_MAX_HEIGHT: f32 = 184.;
 /// The floating composer's width cap — it stays a centered card even in a
 /// wide pane (the chat behind it is full-width).
 const COMPOSER_MAX_WIDTH: f32 = 760.;
-/// Bottom padding inside the transcript scroller so the last message can
-/// scroll clear of the floating composer.
-const COMPOSER_CLEARANCE: f32 = 24.;
-/// Height reserved at the bottom of the pane for the floating composer, so the
-/// scroll viewport — and therefore the scrollbar track — ends *above* the
-/// composer instead of running down behind the message input (the "scroll bar
-/// goes beyond the text input" report). Sized to the composer's resting height
-/// (one-line input + controls row + padding); a taller composer (multi-line
-/// draft, queued messages, suggestions) simply overlaps the transcript as
-/// before, but the scrollbar still stops here.
-const COMPOSER_RESERVED: f32 = 96.;
+/// Height of the clearance spacer between the last message and the end-of-
+/// transcript sentinel, so the newest message scrolls fully clear of the
+/// floating composer (which floats over the bottom of the pane) rather than
+/// tucking behind it. Sized generously past the composer's resting height.
+const COMPOSER_CLEARANCE: f32 = 132.;
+/// Height of the bottom gradient fade band (§13). Runs from transparent at its
+/// top to the opaque pane background at the bottom, tall enough that transcript
+/// content scrolling toward the floating composer dissolves into the background
+/// well above the composer's top edge instead of meeting a hard cut.
+const TRANSCRIPT_FADE_HEIGHT: f32 = 150.;
+/// Horizontal gutter inside the transcript scroller. Lives *inside* the
+/// scrollable so the overlay scrollbar can hug the pane's right edge while the
+/// prose keeps its breathing room.
+const TRANSCRIPT_GUTTER: f32 = 16.;
 /// Position id of the zero-height sentinel pinned to the end of the transcript.
 /// Bottom-stick auto-scroll (PRODUCT §14) scrolls this into view to follow
 /// streaming output and to open a resumed session at its latest message.
 const TRANSCRIPT_BOTTOM_POSITION_ID: &str = "claude_transcript_bottom";
 const COMPOSER_CORNER_RADIUS: f32 = 14.;
+/// Slack (px) for the streaming follow-to-bottom check. While following, the
+/// view sits exactly at the bottom; this only absorbs sub-pixel/line-height
+/// rounding so a genuine upward scroll (tens of px) reliably pauses the follow.
+const AUTOSCROLL_STICK_SLACK: f32 = 16.;
 const MESSAGE_CORNER_RADIUS: f32 = 12.;
+/// Cap the outgoing (user) iMessage bubble so long messages wrap into a column
+/// hugging the right edge instead of stretching across the whole transcript.
+const USER_BUBBLE_MAX_WIDTH: f32 = 520.;
 const PILL_CORNER_RADIUS: f32 = 6.;
 const HEADING_FONT_SIZE: f32 = 20.;
 
@@ -233,15 +244,36 @@ pub enum ClaudeCodeViewAction {
     /// Files were dropped onto the pane (PRODUCT §50, 7l): images become
     /// attachment chips, other files become `@`-mentions.
     DropFiles(Vec<String>),
+    /// The OS is dragging file(s) over (or away from) the pane (7l): toggles the
+    /// composer's drag-sensing highlight. `true` only while the cursor is inside
+    /// the pane bounds.
+    SetDragActive(bool),
     /// Open the OS file picker to attach files (PRODUCT §51, 7l) — the
     /// composer's "＋ attach" control.
     AttachFromPicker,
     /// Remove a direct attachment chip (paste / drop / picker) by index
     /// (PRODUCT §49–§51, 7l).
     RemoveDirectAttachment(usize),
-    /// Open / close one of the composer dropdowns (model / effort / context),
-    /// #13. Re-dispatching the open menu closes it.
+    /// Open / close one of the composer dropdowns (model / effort / context /
+    /// branch / CI / PR), #13. Re-dispatching the open menu closes it.
     ToggleComposerMenu(ComposerMenu),
+    /// Close whatever composer dropdown is open (#13). Dispatched by the menu's
+    /// click-outside [`Dismiss`] scrim.
+    CloseComposerMenu,
+    /// twarp: copy a string (branch name, PR URL, …) to the clipboard and close
+    /// the open menu.
+    CopyToClipboard(String),
+    /// twarp: open the current branch on GitHub (`…/tree/<branch>`).
+    OpenBranchInGitHub,
+    /// twarp: check out a different local branch from the branch menu, then
+    /// refresh the context bar. Runs `git checkout <name>` in the cwd.
+    CheckoutBranch(String),
+    /// twarp: open a PR for the current branch (`gh pr create --web`) when none
+    /// exists yet — the "Create PR" pill.
+    CreatePr,
+    /// twarp: toggle the "start new chats in a worktree" preference (#11). When
+    /// on, the first turn spawns its session in a fresh worktree at `../<name>`.
+    ToggleWorktree,
     /// Pick a model from the dropdown (#13; `None` = let `claude` choose).
     /// Detaches a live session so the next message resumes under it.
     SetModel(Option<String>),
@@ -266,6 +298,10 @@ pub enum ClaudeCodeViewAction {
     /// the tool and ends the turn, so the answer continues the conversation as
     /// an ordinary message rather than a tool_result.
     SubmitQuestionAnswers(usize),
+    /// twarp: resume the recent session at this index in the zero-state
+    /// "Welcome back" panel — loads its stored history into this pane and
+    /// re-attaches it, the same as a sidebar resume but in place.
+    ResumeRecentSession(usize),
 }
 
 /// Actions dispatched by elements this view renders inside its **pane
@@ -291,6 +327,35 @@ enum ComposerMenu {
     Model,
     Effort,
     Context,
+    /// The branch pill's menu: copy name, open on GitHub, switch branch (#11).
+    Branch,
+    /// The CI pill's menu: one row per status check (#11).
+    Ci,
+    /// The PR pill's menu when a PR exists: open / copy URL (#11).
+    Pr,
+}
+
+impl ComposerMenu {
+    /// The `SavePosition` id of this menu's trigger pill, so the floating
+    /// overlay can anchor to it.
+    fn anchor_id(self) -> &'static str {
+        match self {
+            ComposerMenu::Permission => "claude_pill_permission",
+            ComposerMenu::Model => "claude_pill_model",
+            ComposerMenu::Effort => "claude_pill_effort",
+            ComposerMenu::Context => "claude_pill_context",
+            ComposerMenu::Branch => "claude_pill_branch",
+            ComposerMenu::Ci => "claude_pill_ci",
+            ComposerMenu::Pr => "claude_pill_pr",
+        }
+    }
+
+    /// Whether this menu's trigger pill lives in the context bar *above* the
+    /// input (branch / CI / PR) — those menus drop *downward*; the bottom
+    /// control pills (permission / model / effort / context) open *upward*.
+    fn opens_downward(self) -> bool {
+        matches!(self, ComposerMenu::Branch | ComposerMenu::Ci | ComposerMenu::Pr)
+    }
 }
 
 /// A stored session to reopen (PRODUCT §36, sub-phase 7h): the pane renders
@@ -487,6 +552,10 @@ pub struct ClaudeCodeView {
     repo_context: Option<RepoContext>,
     /// The open composer dropdown / popover (#13), or `None`.
     composer_menu: Option<ComposerMenu>,
+    /// `true` while the OS is dragging file(s) over the pane (PRODUCT §50, 7l):
+    /// the composer lights up with an accent border + "Drop to attach" hint so
+    /// the drop target is obvious before release. Cleared on drop or drag-exit.
+    drag_active: bool,
     /// Slider state for the effort picker (#13). Persisted so the thumb keeps
     /// its position across renders.
     effort_slider: SliderStateHandle,
@@ -509,6 +578,28 @@ pub struct ClaudeCodeView {
     /// theme to the tab colour without threading `app` everywhere.
     render_accent: std::cell::Cell<ColorU>,
     render_wash: std::cell::Cell<ColorU>,
+    /// twarp: recent stored sessions for this pane's cwd, listed in the
+    /// zero-state "Welcome back" panel so the empty pane is a launchpad — pick
+    /// up a recent session or start fresh by typing. Captured once in `new`
+    /// (the zero state only shows before the first turn) and dropped from view
+    /// the moment the transcript has content.
+    recent_sessions: Vec<sessions::StoredSession>,
+    /// Pooled mouse handles for the zero-state recent-session rows.
+    recent_session_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Mouse handles for the context-bar pills (#11): branch / CI / PR / the
+    /// Create-PR button / the worktree toggle.
+    branch_pill_mouse: MouseStateHandle,
+    ci_pill_mouse: MouseStateHandle,
+    pr_pill_mouse: MouseStateHandle,
+    worktree_toggle_mouse: MouseStateHandle,
+    /// Pooled mouse handles for the branch / CI menu rows (#11).
+    branch_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    ci_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// twarp (#11): when on, the first turn of a not-yet-started session spawns
+    /// `claude` in a fresh git worktree at `../<branch>` instead of the cwd, so
+    /// the work happens on an isolated branch. A per-pane toggle, reset only by
+    /// the user; ignored once a session is live (`message_tx` set).
+    use_worktree: bool,
 }
 
 impl ClaudeCodeView {
@@ -635,6 +726,7 @@ impl ClaudeCodeView {
             working_shimmer: ShimmeringTextStateHandle::new(),
             repo_context: None,
             composer_menu: None,
+            drag_active: false,
             effort_slider: SliderStateHandle::default(),
             context_button: MouseStateHandle::default(),
             model_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
@@ -645,6 +737,15 @@ impl ClaudeCodeView {
                 Appearance::as_ref(ctx).theme().accent().into_solid(),
             ),
             render_wash: std::cell::Cell::new(ColorU::new(0, 0, 0, 0)),
+            recent_sessions: Vec::new(),
+            recent_session_mouse: std::cell::RefCell::new(Vec::new()),
+            branch_pill_mouse: MouseStateHandle::default(),
+            ci_pill_mouse: MouseStateHandle::default(),
+            pr_pill_mouse: MouseStateHandle::default(),
+            worktree_toggle_mouse: MouseStateHandle::default(),
+            branch_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
+            ci_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
+            use_worktree: false,
         };
 
         // PRODUCT §4: capture the login-shell PATH up front so availability
@@ -681,6 +782,18 @@ impl ClaudeCodeView {
             view.turn_started = Some(started);
             view.schedule_elapsed_tick(started, ctx);
             view.begin_session(Some(OutgoingMessage::text(prompt)), ctx);
+        }
+
+        // twarp: a bare `claude` opens to the zero state — load the cwd's recent
+        // sessions so the empty pane doubles as a launchpad (pick one up, or type
+        // to start fresh). Skipped when the pane already has content (a resumed
+        // pane or `claude <prompt>`), where the transcript replaces the panel.
+        if view.transcript.is_empty() {
+            view.recent_sessions = view
+                .cwd
+                .as_deref()
+                .map(sessions::list_sessions)
+                .unwrap_or_default();
         }
 
         // #7: name the tab from the first user message (resumed history or the
@@ -841,6 +954,56 @@ impl ClaudeCodeView {
 
     #[cfg(not(all(feature = "local_fs", feature = "local_tty")))]
     fn refresh_repo_context(&self, _ctx: &mut ViewContext<Self>) {}
+
+    /// Run a one-off `git`/`gh` command in the user's login shell from the cwd,
+    /// then refresh the context bar (#11). Best-effort: any failure leaves the
+    /// bar unchanged. Shared by the branch-switch and Create-PR menu actions.
+    #[cfg(all(feature = "local_fs", feature = "local_tty"))]
+    fn run_repo_command(&self, command: String, ctx: &mut ViewContext<Self>) {
+        use crate::terminal::local_shell::execute_command;
+        let Some(cwd) = self.cwd.clone().or_else(|| std::env::current_dir().ok()) else {
+            return;
+        };
+        let dir = cwd.to_string_lossy().replace('\'', r"'\''");
+        let command = format!("cd '{dir}' 2>/dev/null || exit 0\n{command}\n");
+        let shell_state = LocalShellState::as_ref(ctx);
+        let Some(shell) = shell_state.local_shell_info() else {
+            return;
+        };
+        let shell_type = shell.get_shell_type();
+        let shell_path = shell.get_shell_path().clone();
+        let path_env = self
+            .interactive_path
+            .clone()
+            .or_else(|| shell_state.login_shell_path_env());
+        let fut = async move {
+            let _ = execute_command(shell_type, shell_path, path_env, &command).await;
+        };
+        ctx.spawn(fut, move |me, _output, ctx| {
+            me.refresh_repo_context(ctx);
+        });
+    }
+
+    #[cfg(not(all(feature = "local_fs", feature = "local_tty")))]
+    fn run_repo_command(&self, _command: String, _ctx: &mut ViewContext<Self>) {}
+
+    /// Check out another local branch from the branch menu (#11), then refresh
+    /// the bar so it reflects the new branch / diff / PR.
+    fn checkout_branch(&mut self, branch: String, ctx: &mut ViewContext<Self>) {
+        self.composer_menu = None;
+        let escaped = branch.replace('\'', r"'\''");
+        self.run_repo_command(format!("git checkout '{escaped}' 2>/dev/null"), ctx);
+        ctx.notify();
+    }
+
+    /// Open a PR for the current branch via `gh pr create --web` (#11) — the
+    /// browser create page, so the user fills in the title/body. Refreshes the
+    /// bar afterward so the new `PR #n` pill appears once it exists.
+    fn create_pr(&mut self, ctx: &mut ViewContext<Self>) {
+        self.composer_menu = None;
+        self.run_repo_command("gh pr create --web 2>/dev/null".to_owned(), ctx);
+        ctx.notify();
+    }
 
     fn handle_editor_event(
         &mut self,
@@ -1633,7 +1796,14 @@ impl ClaudeCodeView {
     /// (changing model/effort mid-turn would tear down the live turn, §25); the
     /// read-only context popover opens any time.
     fn toggle_composer_menu(&mut self, menu: ComposerMenu, ctx: &mut ViewContext<Self>) {
-        if self.streaming && menu != ComposerMenu::Context {
+        // Model / effort / permission tear down or re-attach the live turn, so
+        // they're idle-only; the read-only / git menus (context, branch, CI, PR)
+        // open any time.
+        let idle_only = matches!(
+            menu,
+            ComposerMenu::Model | ComposerMenu::Effort | ComposerMenu::Permission
+        );
+        if self.streaming && idle_only {
             return;
         }
         self.composer_menu = if self.composer_menu == Some(menu) {
@@ -1696,6 +1866,47 @@ impl ClaudeCodeView {
     /// the foreground. [`Self::on_session_spawned`] wires the result into the
     /// view on the main thread and sends `first_prompt` once stdin is up.
     ///
+    /// Create a fresh git worktree for this session at `../<name>` on a new
+    /// branch (#11, the worktree toggle). Returns the worktree path on success;
+    /// `None` (and no change) if the cwd isn't a repo or `git` fails. Blocking,
+    /// but a local `git worktree add` is sub-second and only runs on the user's
+    /// explicit toggle + first send.
+    #[cfg(all(feature = "local_fs", feature = "local_tty"))]
+    fn create_worktree(&self) -> Option<PathBuf> {
+        let cwd = self.cwd.clone().or_else(|| std::env::current_dir().ok())?;
+        let parent = cwd.parent()?;
+        // A readable, collision-resistant name: `<folder>-<short session id>`.
+        let folder = repo_context::folder_name(&cwd).unwrap_or_else(|| "work".to_owned());
+        let short: String = self
+            .session_id
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .take(8)
+            .collect();
+        let name = format!("{folder}-{short}");
+        let target = parent.join(&name);
+        if target.exists() {
+            return None;
+        }
+        let mut command = std::process::Command::new("git");
+        command
+            .current_dir(&cwd)
+            .args(["worktree", "add", "-b", &name])
+            .arg(&target);
+        if let Some(path_env) = &self.interactive_path {
+            command.env("PATH", path_env);
+        }
+        match command.output() {
+            Ok(output) if output.status.success() => Some(target),
+            _ => None,
+        }
+    }
+
+    #[cfg(not(all(feature = "local_fs", feature = "local_tty")))]
+    fn create_worktree(&self) -> Option<PathBuf> {
+        None
+    }
+
     /// The spawn carries the selected permission mode (PRODUCT §25) and, when
     /// set, the resume target (PRODUCT §36) — both read off `self` at the
     /// moment of spawn.
@@ -1706,6 +1917,17 @@ impl ClaudeCodeView {
     ) {
         self.session_epoch += 1;
         let epoch = self.session_epoch;
+        // twarp (#11): when the worktree toggle is on, the first turn of a fresh
+        // session runs in a new git worktree at `../<name>` on an isolated
+        // branch, so the agent's work doesn't touch the original checkout. Only
+        // for a fresh (non-resumed) session; falls back to the cwd on any error.
+        if self.use_worktree && self.resume_session_id.is_none() {
+            if let Some(worktree) = self.create_worktree() {
+                self.cwd = Some(worktree);
+                self.use_worktree = false;
+                self.refresh_repo_context(ctx);
+            }
+        }
         let opts = SpawnOptions {
             cwd: self
                 .cwd
@@ -1855,8 +2077,13 @@ impl ClaudeCodeView {
             // refresh the diff / branch / PR / CI bar.
             self.refresh_repo_context(ctx);
         }
-        // PRODUCT §14: follow streaming output to the bottom as it arrives.
-        self.scroll_to_bottom();
+        // PRODUCT §14: follow streaming output to the bottom as it arrives —
+        // but only while the user is still pinned to the bottom. If they've
+        // scrolled up to read earlier output mid-turn, leave their position
+        // untouched so scrolling stays smooth instead of yanking them back down.
+        if self.scroll_state.is_at_bottom(AUTOSCROLL_STICK_SLACK) {
+            self.scroll_to_bottom();
+        }
         ctx.notify();
     }
 
@@ -2237,13 +2464,239 @@ impl ClaudeCodeView {
         .finish()
     }
 
+    /// twarp: resume a recent session from the zero-state panel, in place.
+    /// Mirrors the resume path in [`Self::new`] (load stored history through the
+    /// same ingest path, adopt the session id, re-attach on the next message)
+    /// without spawning a new pane — the empty pane becomes the resumed one.
+    fn resume_recent_session(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        // Only meaningful from the zero state; a live/streaming pane has no panel.
+        if self.streaming || !self.transcript.is_empty() {
+            return;
+        }
+        let Some(session) = self.recent_sessions.get(index).cloned() else {
+            return;
+        };
+
+        // Render the stored history up front (PRODUCT §36), then key the pane's
+        // identity off the resumed id so `--resume`, the raw-CLI toggle, and the
+        // history refresh all target the right session.
+        for event in sessions::load_history(&session.jsonl_path) {
+            self.ingest_event(event, ctx);
+        }
+        self.resume_session_id = Some(session.id.clone());
+        self.session_id = session.id;
+        // The panel is gone the moment the transcript has content.
+        self.recent_sessions = Vec::new();
+        self.recent_session_mouse.borrow_mut().clear();
+
+        // Open at the latest message, name the tab from the history, and refresh
+        // the composer context bar for the resumed conversation.
+        self.scroll_to_bottom();
+        self.update_pane_title(ctx);
+        self.refresh_repo_context(ctx);
+        ctx.focus(&self.input_editor);
+        ctx.notify();
+    }
+
     fn render_body(&self, app: &AppContext) -> Box<dyn Element> {
-        let appearance = Appearance::as_ref(app);
         if self.transcript.is_empty() {
-            // Zero state when no session has produced anything.
-            return render_zero_state(appearance);
+            // Zero state when no session has produced anything — a "Welcome
+            // back" launchpad listing this directory's recent sessions.
+            return self.render_zero_state(app);
         }
         self.render_transcript(app)
+    }
+
+    /// twarp: the zero state — a "Welcome back" launchpad. An accent-tinted
+    /// Claude glyph + heading, then either the directory's recent sessions
+    /// (click to resume in place) or a first-run explanation when there are
+    /// none. Width-capped to the composer's reading column so the two align;
+    /// the caller top-centers it over the pane (the composer floats below).
+    fn render_zero_state(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let accent = self.render_accent.get();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+
+        // Header: the Claude glyph beside a "Welcome back" heading.
+        let glyph = ConstrainedBox::new(Icon::new(ASSISTANT_ICON_SVG_PATH, accent).finish())
+            .with_width(28.)
+            .with_height(28.)
+            .finish();
+        let heading = appearance
+            .ui_builder()
+            .span("Welcome back".to_owned())
+            .with_style(UiComponentStyles {
+                font_size: Some(HEADING_FONT_SIZE),
+                font_color: Some(theme.main_text_color(theme.background()).into_solid()),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+        let header = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(12.)
+            .with_child(glyph)
+            .with_child(heading)
+            .finish();
+
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(16.)
+            .with_child(header);
+
+        if self.recent_sessions.is_empty() {
+            // First-run: no stored sessions for this directory yet.
+            let explanation = appearance
+                .ui_builder()
+                .span(
+                    "Type a message below — twarp drives the local `claude` CLI and renders its \
+                     replies, tool calls, and diffs here. Your existing Claude Code login is used; \
+                     twarp adds no account or billing."
+                        .to_owned(),
+                )
+                .with_soft_wrap()
+                .with_style(UiComponentStyles {
+                    font_color: Some(muted),
+                    font_size: Some(13.),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            column.add_child(explanation);
+        } else {
+            // A "Sessions" section listing this directory's recent sessions,
+            // capped so a long history doesn't run under the floating composer.
+            const MAX_ROWS: usize = 6;
+            let section = appearance
+                .ui_builder()
+                .span("Sessions".to_owned())
+                .with_style(UiComponentStyles {
+                    font_color: Some(muted),
+                    font_size: Some(11.5),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let mut rows = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(2.);
+            for (idx, session) in self.recent_sessions.iter().enumerate().take(MAX_ROWS) {
+                rows.add_child(self.render_recent_session_row(idx, session, app));
+            }
+            column.add_child(
+                Flex::column()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                    .with_main_axis_size(MainAxisSize::Min)
+                    .with_spacing(8.)
+                    .with_child(section)
+                    .with_child(rows.finish())
+                    .finish(),
+            );
+        }
+
+        Container::new(
+            ConstrainedBox::new(column.finish())
+                .with_max_width(COMPOSER_MAX_WIDTH)
+                .finish(),
+        )
+        .with_padding_left(24.)
+        .with_padding_right(24.)
+        .with_padding_top(64.)
+        .finish()
+    }
+
+    /// One recent-session row in the zero state: title on the left, relative
+    /// time + chevron on the right, hover highlight, click to resume in place.
+    /// Mirrors the sidebar's session row (left_panel) but laid out as a full
+    /// list item like the Claude desktop "Sessions" rows.
+    fn render_recent_session_row(
+        &self,
+        idx: usize,
+        session: &sessions::StoredSession,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+
+        let timestamp = chrono::DateTime::<chrono::Utc>::from(session.timestamp);
+        let when = crate::util::time_format::format_approx_duration_from_now_utc(timestamp);
+
+        let title = appearance
+            .ui_builder()
+            .span(session.title.clone())
+            .with_style(UiComponentStyles {
+                font_color: Some(theme.main_text_color(theme.background()).into_solid()),
+                font_size: Some(13.),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+        let when_label = appearance
+            .ui_builder()
+            .span(when)
+            .with_style(UiComponentStyles {
+                font_color: Some(muted),
+                font_size: Some(11.5),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+        let chevron = ConstrainedBox::new(
+            Icon::new(crate::ui_components::icons::Icon::ChevronRight.into(), muted).finish(),
+        )
+        .with_width(14.)
+        .with_height(14.)
+        .finish();
+
+        // Title on the left; time + chevron hug the right edge. SpaceBetween
+        // pushes the two groups apart across the full row width; a long title
+        // shrinks rather than shoving the right group off the edge.
+        let right = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(8.)
+            .with_child(when_label)
+            .with_child(chevron)
+            .finish();
+        let inner = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_spacing(12.)
+            .with_child(Shrinkable::new(1., title).finish())
+            .with_child(right)
+            .finish();
+
+        let row_mouse_state = {
+            let mut states = self.recent_session_mouse.borrow_mut();
+            while states.len() <= idx {
+                states.push(MouseStateHandle::default());
+            }
+            states[idx].clone()
+        };
+        let highlight = self.accent_wash(app);
+        Hoverable::new(row_mouse_state, move |state| {
+            let mut body = Container::new(inner)
+                .with_padding_left(12.)
+                .with_padding_right(12.)
+                .with_padding_top(10.)
+                .with_padding_bottom(10.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)));
+            if state.is_hovered() {
+                body = body.with_background_color(highlight);
+            }
+            body.finish()
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(ClaudeCodeViewAction::ResumeRecentSession(idx));
+        })
+        .finish()
     }
 
     /// Render the transcript into a [`UniformList`] (PRODUCT §14) wrapped in a
@@ -2273,6 +2726,17 @@ impl ClaudeCodeView {
             column.add_child(self.render_streaming_status(app));
         }
 
+        // Clearance spacer between the last message and the end marker. It must
+        // sit *above* the sentinel: `scroll_to_bottom` aligns the sentinel to the
+        // viewport's bottom edge, so this spacer is what lifts the last message
+        // clear of the floating composer (trailing padding *below* the sentinel
+        // would just be scrolled out of view, behind the composer).
+        column.add_child(
+            ConstrainedBox::new(Container::new(Flex::row().finish()).finish())
+                .with_height(COMPOSER_CLEARANCE)
+                .finish(),
+        );
+
         // PRODUCT §14: a zero-height marker pinned to the end of the transcript.
         // [`Self::scroll_to_bottom`] scrolls this into view to follow streaming
         // output and to open a resumed session at its latest message.
@@ -2290,7 +2754,8 @@ impl ClaudeCodeView {
         // inside the scroll content so the newest message can scroll out from
         // underneath it (PRODUCT §15).
         let content = Container::new(column.finish())
-            .with_padding_bottom(COMPOSER_CLEARANCE)
+            .with_padding_left(TRANSCRIPT_GUTTER)
+            .with_padding_right(TRANSCRIPT_GUTTER)
             .finish();
 
         // PRODUCT §13: make the transcript prose highlightable. `SelectableArea`
@@ -2326,9 +2791,9 @@ impl ClaudeCodeView {
 
     /// twarp 08d (PRODUCT §13–§16): the bottom gradient fade-out band.
     ///
-    /// A full-width region pinned to the bottom of the pane, `COMPOSER_CLEARANCE`
-    /// tall (the same gap the scroller reserves below the last message). Its
-    /// background is a vertical gradient that runs from fully transparent at the
+    /// A full-width region pinned to the bottom of the pane, `TRANSCRIPT_FADE_HEIGHT`
+    /// tall (tall enough to span the floating composer plus a soft zone above it).
+    /// Its background is a vertical gradient that runs from fully transparent at the
     /// top of the band to the opaque pane background at the bottom, so transcript
     /// content scrolling up under the floating composer dissolves into the
     /// background instead of ending at a hard horizontal cut (§13).
@@ -2357,7 +2822,7 @@ impl ClaudeCodeView {
             })
             .finish(),
         )
-        .with_height(COMPOSER_CLEARANCE)
+        .with_height(TRANSCRIPT_FADE_HEIGHT)
         .finish()
     }
 
@@ -2378,6 +2843,7 @@ impl ClaudeCodeView {
                     ))
                 },
                 self.render_wash.get(),
+                ComposerMenu::Permission.anchor_id(),
                 appearance,
             )
         }
@@ -2401,6 +2867,7 @@ impl ClaudeCodeView {
                 ))
             },
             self.render_wash.get(),
+            ComposerMenu::Context.anchor_id(),
             appearance,
         )
     }
@@ -2427,6 +2894,7 @@ impl ClaudeCodeView {
                     ))
                 },
                 self.render_wash.get(),
+                ComposerMenu::Model.anchor_id(),
                 appearance,
             )
         }
@@ -2451,6 +2919,7 @@ impl ClaudeCodeView {
                     ))
                 },
                 self.render_wash.get(),
+                ComposerMenu::Effort.anchor_id(),
                 appearance,
             )
         }
@@ -2466,6 +2935,9 @@ impl ClaudeCodeView {
             ComposerMenu::Model => self.render_model_menu(appearance),
             ComposerMenu::Effort => self.render_effort_menu(appearance),
             ComposerMenu::Context => self.render_context_panel(appearance),
+            ComposerMenu::Branch => self.render_branch_menu(appearance)?,
+            ComposerMenu::Ci => self.render_ci_menu(appearance)?,
+            ComposerMenu::Pr => self.render_pr_menu(appearance)?,
         };
         Some(
             Container::new(content)
@@ -2722,8 +3194,185 @@ impl ClaudeCodeView {
             .finish()
     }
 
-    /// The composer context bar (#11): folder · branch · +added −removed · PR
-    /// #n · CI, shown above the input. Each segment appears only when resolved
+    /// The branch pill's menu (#11): copy the branch name, open it on GitHub,
+    /// and switch to another local branch. `None` if no branch resolved.
+    fn render_branch_menu(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+        let context = self.repo_context.as_ref()?;
+        let branch = context.branch.clone()?;
+        let theme = appearance.theme();
+        let text_color = theme.main_text_color(theme.surface_2()).into_solid();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+
+        let mut rows = self.branch_menu_row_mouse.borrow_mut();
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(1.)
+            .with_child(menu_header("Branch", muted, appearance));
+
+        let mut index = 0;
+        column.add_child(menu_action_row(
+            "Copy branch name",
+            text_color,
+            pool_mouse(&mut rows, index),
+            {
+                let branch = branch.clone();
+                move |ctx| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::CopyToClipboard(branch.clone()))
+                }
+            },
+            appearance,
+        ));
+        index += 1;
+        if context.branch_web_url().is_some() {
+            column.add_child(menu_action_row(
+                "Open branch in GitHub",
+                text_color,
+                pool_mouse(&mut rows, index),
+                |ctx| ctx.dispatch_typed_action(ClaudeCodeViewAction::OpenBranchInGitHub),
+                appearance,
+            ));
+            index += 1;
+        }
+
+        // Switch to another local branch, most-recent first (capped).
+        let others: Vec<String> = context
+            .branches
+            .iter()
+            .filter(|b| **b != branch)
+            .take(8)
+            .cloned()
+            .collect();
+        if !others.is_empty() {
+            column.add_child(menu_header("Switch to", muted, appearance));
+            for name in others {
+                column.add_child(menu_action_row(
+                    &name,
+                    text_color,
+                    pool_mouse(&mut rows, index),
+                    {
+                        let name = name.clone();
+                        move |ctx| {
+                            ctx.dispatch_typed_action(ClaudeCodeViewAction::CheckoutBranch(
+                                name.clone(),
+                            ))
+                        }
+                    },
+                    appearance,
+                ));
+                index += 1;
+            }
+        }
+        Some(column.finish())
+    }
+
+    /// The CI pill's menu (#11): one row per status check, coloured by state,
+    /// each opening its run on GitHub. `None` if there are no checks.
+    fn render_ci_menu(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+        let context = self.repo_context.as_ref()?;
+        if context.ci_checks.is_empty() {
+            return None;
+        }
+        let theme = appearance.theme();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let green = ColorU::new(0, 142, 65, 255);
+        let red = ColorU::new(188, 54, 42, 255);
+        let amber = ColorU::new(194, 128, 0, 255);
+
+        let mut rows = self.ci_menu_row_mouse.borrow_mut();
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(1.)
+            .with_child(menu_header("Checks", muted, appearance));
+        for (index, check) in context.ci_checks.iter().take(12).enumerate() {
+            while rows.len() <= index {
+                rows.push(MouseStateHandle::default());
+            }
+            let color = match check.state {
+                CiState::Passing => green,
+                CiState::Failing => red,
+                CiState::Pending => amber,
+            };
+            // A status glyph in the state colour, then the check name.
+            let glyph = match check.state {
+                CiState::Passing => "\u{2713}",
+                CiState::Failing => "\u{2717}",
+                CiState::Pending => "\u{25CB}",
+            };
+            let label = format!("{glyph}  {}", check.name);
+            let url = check.url.clone();
+            column.add_child(menu_action_row(
+                &label,
+                color,
+                rows[index].clone(),
+                move |ctx| {
+                    if let Some(url) = &url {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::OpenUrl(HyperlinkUrl {
+                            url: url.clone(),
+                        }));
+                    }
+                },
+                appearance,
+            ));
+        }
+        Some(column.finish())
+    }
+
+    /// The PR pill's menu (#11): open the PR on GitHub or copy its URL. `None`
+    /// if there's no PR URL.
+    fn render_pr_menu(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+        let context = self.repo_context.as_ref()?;
+        let url = context.pr_url.clone()?;
+        let theme = appearance.theme();
+        let text_color = theme.main_text_color(theme.surface_2()).into_solid();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let header = match context.pr_number {
+            Some(n) => format!("PR #{n}"),
+            None => "Pull request".to_owned(),
+        };
+        let mut rows = self.ci_menu_row_mouse.borrow_mut();
+        while rows.len() < 2 {
+            rows.push(MouseStateHandle::default());
+        }
+        let open = menu_action_row(
+            "Open PR in GitHub",
+            text_color,
+            rows[0].clone(),
+            {
+                let url = url.clone();
+                move |ctx| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::OpenUrl(HyperlinkUrl {
+                        url: url.clone(),
+                    }))
+                }
+            },
+            appearance,
+        );
+        let copy = menu_action_row(
+            "Copy PR URL",
+            text_color,
+            rows[1].clone(),
+            move |ctx| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::CopyToClipboard(url.clone()))
+            },
+            appearance,
+        );
+        Some(
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(1.)
+                .with_child(menu_header(&header, muted, appearance))
+                .with_child(open)
+                .with_child(copy)
+                .finish(),
+        )
+    }
+
+    /// The composer context bar (#11): a row of pills above the input — folder,
+    /// branch (→ branch menu), `+added −removed`, PR #n / Create PR, CI (→ check
+    /// menu), and the worktree toggle. Each pill appears only when resolved
     /// ([`RepoContext`]); the whole bar is hidden until the first probe returns
     /// and stays hidden if nothing (not even a folder) resolved.
     fn render_repo_context_bar(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
@@ -2732,78 +3381,151 @@ impl ClaudeCodeView {
             return None;
         }
         let theme = appearance.theme();
-        let muted = theme.nonactive_ui_text_color().into_solid();
         let text_color = theme.main_text_color(theme.surface_2()).into_solid();
         let accent = self.render_accent.get();
         // #3: semantic colours — green additions, red deletions (and the same
         // green/red/amber for CI as before).
         let green = ColorU::new(0, 142, 65, 255);
         let red = ColorU::new(188, 54, 42, 255);
-
-        let mut segments: Vec<Box<dyn Element>> = Vec::new();
-        if let Some(folder) = &context.folder {
-            segments.push(context_segment(appearance, folder.clone(), text_color));
-        }
-        if let Some(branch) = &context.branch {
-            // #3: the branch reads as a link-ish identifier in the accent colour.
-            segments.push(context_segment(appearance, branch.clone(), accent));
-        }
-        if context.added.is_some() || context.removed.is_some() {
-            let added = context.added.unwrap_or(0);
-            let removed = context.removed.unwrap_or(0);
-            // Keep `+N −M` as one unit (no `·` between the two halves).
-            segments.push(
-                Flex::row()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_spacing(4.)
-                    .with_child(context_segment(appearance, format!("+{added}"), green))
-                    .with_child(context_segment(appearance, format!("\u{2212}{removed}"), red))
-                    .finish(),
-            );
-        }
-        if let Some(pr) = context.pr_number {
-            segments.push(context_segment(appearance, format!("PR #{pr}"), accent));
-        }
-        if let Some(ci) = context.ci {
-            // Semantic CI colours (mirroring `Fill::success`/`error`/`warn`).
-            let color = match ci {
-                CiState::Passing => green,
-                CiState::Failing => red,
-                CiState::Pending => ColorU::new(194, 128, 0, 255),
-            };
-            segments.push(context_segment(appearance, ci.label().to_owned(), color));
-        }
-        if segments.is_empty() {
-            return None;
-        }
+        let wash = self.render_wash.get();
+        // Semantic CI / diff colour for a state (mirroring success/error/warn).
+        let ci_color = |ci: CiState| match ci {
+            CiState::Passing => green,
+            CiState::Failing => red,
+            CiState::Pending => ColorU::new(194, 128, 0, 255),
+        };
 
         let mut row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(6.);
-        for (index, segment) in segments.into_iter().enumerate() {
-            if index > 0 {
-                row.add_child(context_segment(appearance, "\u{00B7}".to_owned(), muted));
-            }
-            row.add_child(segment);
+
+        // Folder — static (#11).
+        if let Some(folder) = &context.folder {
+            row.add_child(render_context_pill(folder.clone(), text_color, wash, appearance));
         }
-        // #3: a subtle rounded fill so the bar reads as its own surface above
-        // the input. Hug the content width (left-aligned) rather than stretching
-        // the fill across the whole composer.
-        let chip = Container::new(row.finish())
-            .with_padding_left(8.)
-            .with_padding_right(8.)
-            .with_padding_top(3.)
-            .with_padding_bottom(3.)
-            // #11: tint the bar's fill with the tab colour.
-            .with_background_color(self.render_wash.get())
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-            .finish();
+        // Branch — clickable, opens the branch menu (copy / open on GitHub /
+        // switch). Always shown when resolved, including on the default branch.
+        if let Some(branch) = &context.branch {
+            row.add_child(render_context_menu_pill(
+                branch.clone(),
+                accent,
+                wash,
+                self.branch_pill_mouse.clone(),
+                ComposerMenu::Branch.anchor_id(),
+                |ctx| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
+                        ComposerMenu::Branch,
+                    ))
+                },
+                appearance,
+            ));
+        }
+        // Diff `+N −M` — static, as one unit.
+        if context.added.is_some() || context.removed.is_some() {
+            let added = context.added.unwrap_or(0);
+            let removed = context.removed.unwrap_or(0);
+            row.add_child(
+                Container::new(
+                    Flex::row()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_spacing(4.)
+                        .with_child(context_segment(appearance, format!("+{added}"), green))
+                        .with_child(context_segment(
+                            appearance,
+                            format!("\u{2212}{removed}"),
+                            red,
+                        ))
+                        .finish(),
+                )
+                .with_padding_left(8.)
+                .with_padding_right(8.)
+                .with_padding_top(3.)
+                .with_padding_bottom(3.)
+                .with_background_color(wash)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
+                .finish(),
+            );
+        }
+        // PR — `PR #n` opens its menu when one exists; otherwise a "Create PR"
+        // button when we have a branch on a GitHub remote.
+        if let Some(pr) = context.pr_number {
+            row.add_child(render_context_menu_pill(
+                format!("PR #{pr}"),
+                accent,
+                wash,
+                self.pr_pill_mouse.clone(),
+                ComposerMenu::Pr.anchor_id(),
+                |ctx| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
+                        ComposerMenu::Pr,
+                    ))
+                },
+                appearance,
+            ));
+        } else if context.branch.is_some() && context.repo_web_url.is_some() {
+            row.add_child(
+                Container::new(
+                    Hoverable::new(self.pr_pill_mouse.clone(), {
+                        let pill = render_context_pill("Create PR".to_owned(), accent, wash, appearance);
+                        move |_| pill
+                    })
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(|ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::CreatePr);
+                    })
+                    .finish(),
+                )
+                .finish(),
+            );
+        }
+        // CI — clickable, opens the per-check menu.
+        if let Some(ci) = context.ci {
+            row.add_child(render_context_menu_pill(
+                ci.label().to_owned(),
+                ci_color(ci),
+                wash,
+                self.ci_pill_mouse.clone(),
+                ComposerMenu::Ci.anchor_id(),
+                |ctx| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
+                        ComposerMenu::Ci,
+                    ))
+                },
+                appearance,
+            ));
+        }
+        // Worktree toggle (#11): only meaningful before a session starts — it
+        // governs where the *first* turn spawns. Hidden once live.
+        if self.message_tx.is_none() && context.branch.is_some() {
+            let on = self.use_worktree;
+            let label = format!("{} worktree", if on { "\u{2611}" } else { "\u{2610}" });
+            row.add_child(
+                Container::new(
+                    Hoverable::new(self.worktree_toggle_mouse.clone(), {
+                        let pill = render_context_pill(
+                            label,
+                            if on { accent } else { text_color },
+                            wash,
+                            appearance,
+                        );
+                        move |_| pill
+                    })
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(|ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleWorktree);
+                    })
+                    .finish(),
+                )
+                .finish(),
+            );
+        }
+
         Some(
             Flex::row()
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_child(chip)
+                .with_child(row.finish())
                 .finish(),
         )
     }
@@ -2943,12 +3665,51 @@ impl ClaudeCodeView {
         if let Some(chips) = self.render_attachment_chips(appearance) {
             card_column.add_child(chips);
         }
+        // 7l: while a file drag hovers the pane, replace the editor with a
+        // "Drop to attach" hint and light the card up — the composer becomes the
+        // drop target. Otherwise it holds the message input (and its queue /
+        // suggestions / attachment chips); the control pills moved out, below.
+        if self.drag_active {
+            let accent = self.render_accent.get();
+            card_column.add_child(
+                ConstrainedBox::new(
+                    Align::new(
+                        appearance
+                            .ui_builder()
+                            .span("Drop to attach files".to_owned())
+                            .with_style(UiComponentStyles {
+                                font_color: Some(accent),
+                                font_size: Some(13.),
+                                ..Default::default()
+                            })
+                            .build()
+                            .finish(),
+                    )
+                    .finish(),
+                )
+                .with_height(COMPOSER_MAX_HEIGHT.min(56.))
+                .finish(),
+            );
+        } else {
+            card_column.add_child(editor);
+        }
         // #4: the input card holds ONLY the message input (and its queue /
         // suggestions / attachment chips) — the control pills moved out, below.
-        let card = Container::new(card_column.with_child(editor).finish())
+        let (card_border, card_fill) = if self.drag_active {
+            (
+                Border::all(1.5).with_border_color(self.render_accent.get()),
+                self.render_wash.get(),
+            )
+        } else {
+            (
+                Border::all(1.).with_border_fill(theme.outline()),
+                theme.surface_1().into_solid(),
+            )
+        };
+        let card = Container::new(card_column.finish())
             .with_padding(Padding::uniform(10.))
-            .with_background_color(theme.surface_1().into_solid())
-            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_background_color(card_fill)
+            .with_border(card_border)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
                 COMPOSER_CORNER_RADIUS,
             )))
@@ -2958,8 +3719,11 @@ impl ClaudeCodeView {
             .finish();
 
         // Composer column, top → bottom: context bar (#11) above the input;
-        // the input card; the open dropdown / popover (#13/#2) just above the
-        // pills; then the control pills (#4) below the input, outside the card.
+        // the input card; then the control pills (#4) below the input, outside
+        // the card. The open dropdown / popover (#13/#2) is no longer a column
+        // child — it floats as a positioned overlay anchored to its trigger
+        // pill (below), so it overlaps neighbouring content instead of pushing
+        // the layout open between the pills and the input.
         let mut composer_column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
@@ -2968,15 +3732,62 @@ impl ClaudeCodeView {
             composer_column.add_child(bar);
         }
         composer_column.add_child(card);
-        if let Some(menu) = self.render_composer_menu(appearance) {
-            composer_column.add_child(menu);
-        }
         composer_column.add_child(controls);
 
-        Container::new(composer_column.finish())
+        let composer = Container::new(composer_column.finish())
             .with_padding_top(6.)
             .with_padding_bottom(12.)
-            .finish()
+            // Keep a gutter so the card doesn't touch the pane edges in a narrow
+            // pane (the outer container no longer pads horizontally — that gutter
+            // moved inside the transcript scroller so the scrollbar hugs the edge).
+            .with_padding_left(TRANSCRIPT_GUTTER)
+            .with_padding_right(TRANSCRIPT_GUTTER)
+            .finish();
+
+        // The open dropdown floats above everything, anchored to the trigger
+        // pill's saved position (#11/#13). Context-bar pills (branch / CI / PR)
+        // sit above the input, so their menus drop downward; the bottom control
+        // pills open upward. A click-outside `Dismiss` scrim closes it.
+        let (Some(anchor), Some(menu)) = (self.composer_menu, self.render_composer_menu(appearance))
+        else {
+            return composer;
+        };
+        let menu = Container::new(
+            Dismiss::new(menu)
+                .prevent_interaction_with_other_elements()
+                .on_dismiss(|ctx, _| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::CloseComposerMenu);
+                })
+                .finish(),
+        )
+        .with_drop_shadow(DropShadow::default())
+        .finish();
+        let (element_anchor, child_anchor, offset) = if anchor.opens_downward() {
+            (
+                PositionedElementAnchor::BottomLeft,
+                ChildAnchor::TopLeft,
+                vec2f(0., 6.),
+            )
+        } else {
+            (
+                PositionedElementAnchor::TopLeft,
+                ChildAnchor::BottomLeft,
+                vec2f(0., -6.),
+            )
+        };
+        let mut stack = Stack::new();
+        stack.add_child(composer);
+        stack.add_positioned_overlay_child(
+            menu,
+            OffsetPositioning::offset_from_save_position_element(
+                anchor.anchor_id(),
+                offset,
+                PositionedElementOffsetBounds::WindowByPosition,
+                element_anchor,
+                child_anchor,
+            ),
+        );
+        stack.finish()
     }
 
     fn render_unavailable_state(&self, appearance: &Appearance) -> Box<dyn Element> {
@@ -3089,19 +3900,17 @@ impl View for ClaudeCodeView {
             // full width" report — the zero state rendered left-hugging at
             // content width).
             let body: Box<dyn Element> = if self.transcript.is_empty() {
-                // Centered zero state over the full pane.
-                Align::new(self.render_body(app)).finish()
+                // Zero state pinned to the top-center so the "Welcome back"
+                // launchpad (which grows with the recent-session list) clears
+                // the floating composer at the pane bottom.
+                Align::new(self.render_body(app)).top_center().finish()
             } else {
-                // Reserve the composer's resting height at the bottom so the
-                // scroll viewport — and with it the scrollbar track — ends
-                // *above* the floating composer instead of running down behind
-                // the message input (the "scroll bar goes beyond the text
-                // input" report). The composer still floats over this reserved
-                // band; the transcript's own COMPOSER_CLEARANCE keeps the last
-                // message clear of it.
-                Container::new(Align::new(self.render_body(app)).top_left().finish())
-                    .with_padding_bottom(COMPOSER_RESERVED)
-                    .finish()
+                // Full-height transcript: it scrolls behind the floating
+                // composer so content dissolves under it (the bottom fade band
+                // + the composer's COMPOSER_CLEARANCE bottom padding handle the
+                // visual hand-off). The overlay scrollbar therefore runs the
+                // full pane height at the right edge.
+                Align::new(self.render_body(app)).top_left().finish()
             };
             // The floating composer: a positioned stack child anchored to the
             // pane's bottom-center, capped at a reading width, shrunk (never
@@ -3145,10 +3954,13 @@ impl View for ClaudeCodeView {
                     ChildAnchor::BottomMiddle,
                 ),
             );
+            // No horizontal padding here: the transcript scrollable spans the
+            // full pane width so its overlay scrollbar hugs the right edge
+            // (the prose keeps its margins via TRANSCRIPT_GUTTER inside the
+            // scroller). The floating composer is centred + width-capped, so it
+            // is unaffected.
             Container::new(stack.finish())
                 .with_background_color(theme.background().into_solid())
-                .with_padding_left(16.)
-                .with_padding_right(16.)
                 .with_padding_top(8.)
                 .finish()
         } else {
@@ -3167,6 +3979,16 @@ impl View for ClaudeCodeView {
             // images as chips, others as `@`-mentions.
             .on_drag_and_drop_files(|ctx, _, paths, _| {
                 ctx.dispatch_typed_action(ClaudeCodeViewAction::DropFiles(paths.to_vec()));
+                DispatchEventResult::StopPropagation
+            })
+            // 7l: while a drag hovers the pane, light up the composer so the drop
+            // target is obvious; clear it the moment the drag leaves the window.
+            .on_file_drag(|ctx, _, _, in_bounds| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::SetDragActive(in_bounds));
+                DispatchEventResult::StopPropagation
+            })
+            .on_file_drag_exit(|ctx, _| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::SetDragActive(false));
                 DispatchEventResult::StopPropagation
             })
             .finish()
@@ -3218,8 +4040,15 @@ impl TypedActionView for ClaudeCodeView {
                 ctx.notify();
             }
             ClaudeCodeViewAction::DropFiles(paths) => {
+                self.drag_active = false;
                 let paths = paths.iter().map(PathBuf::from).collect();
                 self.attach_files(paths, ctx);
+            }
+            ClaudeCodeViewAction::SetDragActive(active) => {
+                if self.drag_active != *active {
+                    self.drag_active = *active;
+                    ctx.notify();
+                }
             }
             ClaudeCodeViewAction::AttachFromPicker => self.open_attach_picker(ctx),
             ClaudeCodeViewAction::RemoveDirectAttachment(index) => {
@@ -3229,6 +4058,34 @@ impl TypedActionView for ClaudeCodeView {
                 }
             }
             ClaudeCodeViewAction::ToggleComposerMenu(menu) => self.toggle_composer_menu(*menu, ctx),
+            ClaudeCodeViewAction::CloseComposerMenu => {
+                if self.composer_menu.take().is_some() {
+                    ctx.notify();
+                }
+            }
+            ClaudeCodeViewAction::CopyToClipboard(text) => {
+                ctx.clipboard()
+                    .write(ClipboardContent::plain_text(text.clone()));
+                self.composer_menu = None;
+                ctx.notify();
+            }
+            ClaudeCodeViewAction::OpenBranchInGitHub => {
+                if let Some(url) = self
+                    .repo_context
+                    .as_ref()
+                    .and_then(|context| context.branch_web_url())
+                {
+                    ctx.open_url(&url);
+                }
+                self.composer_menu = None;
+                ctx.notify();
+            }
+            ClaudeCodeViewAction::CheckoutBranch(name) => self.checkout_branch(name.clone(), ctx),
+            ClaudeCodeViewAction::CreatePr => self.create_pr(ctx),
+            ClaudeCodeViewAction::ToggleWorktree => {
+                self.use_worktree = !self.use_worktree;
+                ctx.notify();
+            }
             ClaudeCodeViewAction::SetModel(model) => self.set_model(model.clone(), ctx),
             ClaudeCodeViewAction::SetEffort(effort) => self.set_effort(effort.clone(), ctx),
             ClaudeCodeViewAction::RemoveQueuedMessage(index) => {
@@ -3245,6 +4102,9 @@ impl TypedActionView for ClaudeCodeView {
             } => self.select_question_option(*item, *option, *multi, ctx),
             ClaudeCodeViewAction::SubmitQuestionAnswers(item) => {
                 self.submit_question_answers(*item, ctx)
+            }
+            ClaudeCodeViewAction::ResumeRecentSession(index) => {
+                self.resume_recent_session(*index, ctx)
             }
         }
     }
@@ -3921,18 +4781,38 @@ fn render_message_row(
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
-    // Contrast the text against whatever surface the row actually sits on: the
-    // user bubble (`surface_2`) or the bare canvas (`background`).
-    let surface = if is_user {
-        theme.surface_2()
-    } else {
-        theme.background()
-    };
-    let text_color = theme.main_text_color(surface).into_solid();
-    // #11: the Claude (assistant) glyph takes the tab accent; the user glyph
-    // stays neutral.
-    let icon_color = if is_user { text_color } else { accent };
-    let icon = ConstrainedBox::new(Icon::new(icon_svg, icon_color).finish())
+
+    if is_user {
+        // iMessage-style outgoing bubble: a tab-accent filled, rounded card that
+        // hugs its content and is pushed to the right edge of the transcript.
+        // No avatar glyph — like the sender's own bubble in Messages.
+        let text_color = theme
+            .main_text_color(warp_core::ui::theme::Fill::Solid(accent))
+            .into_solid();
+        let bubble = Container::new(render_markdown_body(text, text_color, appearance))
+            .with_padding(Padding::uniform(10.).with_left(14.).with_right(14.))
+            .with_background_color(accent)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(MESSAGE_CORNER_RADIUS)));
+        // Cap the bubble width so long messages wrap into a column instead of
+        // spanning the whole pane, then right-align it within a full-width row.
+        let constrained = ConstrainedBox::new(bubble.finish())
+            .with_max_width(USER_BUBBLE_MAX_WIDTH)
+            .finish();
+        return Container::new(
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_main_axis_alignment(MainAxisAlignment::End)
+                .with_child(constrained)
+                .finish(),
+        )
+        .with_margin_top(4.)
+        .with_margin_bottom(4.)
+        .finish();
+    }
+
+    // Assistant message: bare canvas, accent glyph, full-width prose.
+    let text_color = theme.main_text_color(theme.background()).into_solid();
+    let icon = ConstrainedBox::new(Icon::new(icon_svg, accent).finish())
         .with_height(16.)
         .with_width(16.)
         .finish();
@@ -3954,18 +4834,11 @@ fn render_message_row(
             .finish(),
         );
 
-    let mut container = Container::new(row.finish())
+    Container::new(row.finish())
         .with_padding(Padding::uniform(14.))
         .with_margin_top(4.)
-        .with_margin_bottom(4.);
-    if is_user {
-        container = container
-            .with_background_color(theme.surface_2().into_solid())
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
-                MESSAGE_CORNER_RADIUS,
-            )));
-    }
-    container.finish()
+        .with_margin_bottom(4.)
+        .finish()
 }
 
 /// Port of `render_message`'s markdown body: render each [`MarkdownSegment`] —
@@ -4485,6 +5358,38 @@ fn menu_header(text: &str, color: ColorU, appearance: &Appearance) -> Box<dyn El
         .finish()
 }
 
+/// Fetch (growing on demand) the pooled mouse handle at `index` — the
+/// Timeline/shortcut-row pattern for variable-length menu lists (#11).
+fn pool_mouse(pool: &mut Vec<MouseStateHandle>, index: usize) -> MouseStateHandle {
+    while pool.len() <= index {
+        pool.push(MouseStateHandle::default());
+    }
+    pool[index].clone()
+}
+
+/// One clickable action row in a composer dropdown (#11): a hoverable label
+/// that dispatches `on_click` and reads in `color`. Used by the branch / CI /
+/// PR menus.
+fn menu_action_row(
+    label: &str,
+    color: ColorU,
+    mouse: MouseStateHandle,
+    on_click: impl Fn(&mut warpui::EventContext) + 'static,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let row = Container::new(context_segment(appearance, label.to_owned(), color))
+        .with_padding_left(8.)
+        .with_padding_right(8.)
+        .with_padding_top(5.)
+        .with_padding_bottom(5.)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+        .finish();
+    Hoverable::new(mouse, move |_| row)
+        .with_cursor(Cursor::PointingHand)
+        .on_click(move |ctx, _, _| on_click(ctx))
+        .finish()
+}
+
 /// One `label … count` row in the context breakdown popover (#13).
 fn usage_row(
     label: &str,
@@ -4565,11 +5470,59 @@ fn render_pill(label: &str, bg: ColorU, appearance: &Appearance) -> Box<dyn Elem
 /// The §25 permission-mode selector pill: the muted pill chrome with hover +
 /// pointer affordance; a click dispatches the cycle action. The label carries
 /// a chevron-ish suffix so it reads as a control, not a static chip.
+/// A context-bar pill (#11) with arbitrary `color` text on the tab wash — the
+/// shared chrome for the folder / branch / diff / PR / CI chips. Static (no
+/// interaction); [`render_context_menu_pill`] adds the click + anchor.
+fn render_context_pill(label: String, color: ColorU, bg: ColorU, appearance: &Appearance) -> Box<dyn Element> {
+    Container::new(
+        appearance
+            .ui_builder()
+            .span(label)
+            .with_style(UiComponentStyles {
+                font_color: Some(color),
+                font_size: Some(11.5),
+                ..Default::default()
+            })
+            .build()
+            .finish(),
+    )
+    .with_padding_left(8.)
+    .with_padding_right(8.)
+    .with_padding_top(3.)
+    .with_padding_bottom(3.)
+    .with_background_color(bg)
+    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
+    .finish()
+}
+
+/// A clickable context-bar pill (#11) that opens a floating menu — hover +
+/// pointer affordance, `SavePosition`-wrapped so the dropdown can anchor to it.
+fn render_context_menu_pill(
+    label: String,
+    color: ColorU,
+    bg: ColorU,
+    mouse_state: MouseStateHandle,
+    position_id: &str,
+    on_click: impl Fn(&mut warpui::EventContext) + 'static,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let pill = render_context_pill(format!("{label} ▾"), color, bg, appearance);
+    SavePosition::new(
+        Hoverable::new(mouse_state, move |_| pill)
+            .with_cursor(Cursor::PointingHand)
+            .on_click(move |ctx, _, _| on_click(ctx))
+            .finish(),
+        position_id,
+    )
+    .finish()
+}
+
 fn render_clickable_pill(
     label: &str,
     mouse_state: MouseStateHandle,
     on_click: impl Fn(&mut warpui::EventContext) + 'static,
     bg: ColorU,
+    position_id: &str,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
@@ -4593,14 +5546,17 @@ fn render_clickable_pill(
     .with_background_color(bg)
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
     .finish();
-    Container::new(
+    // Wrap the pill in a `SavePosition` so the open dropdown can anchor its
+    // floating overlay to this trigger (#11/#13).
+    let trigger = SavePosition::new(
         Hoverable::new(mouse_state, move |_| pill)
             .with_cursor(Cursor::PointingHand)
             .on_click(move |ctx, _, _| on_click(ctx))
             .finish(),
+        position_id,
     )
-    .with_margin_right(6.)
-    .finish()
+    .finish();
+    Container::new(trigger).with_margin_right(6.).finish()
 }
 
 /// Shorten a `claude` model id for the chip: drop the `claude-` prefix the CLI
@@ -4646,54 +5602,6 @@ fn format_token_count(n: u64) -> String {
     } else {
         n.to_string()
     }
-}
-
-/// Zero state: a centered heading + a muted one-liner. Sized to content — the
-/// caller centers it over the full pane via [`Align`]. The "Resume…" entry
-/// point (PRODUCT §36) arrives with the session list in 7h.
-fn render_zero_state(appearance: &Appearance) -> Box<dyn Element> {
-    let theme = appearance.theme();
-    let heading = appearance
-        .ui_builder()
-        .span("Start a Claude Code session".to_owned())
-        .with_style(UiComponentStyles {
-            font_size: Some(HEADING_FONT_SIZE),
-            font_color: Some(theme.main_text_color(theme.background()).into_solid()),
-            ..Default::default()
-        })
-        .build()
-        .finish();
-    let explanation = appearance
-        .ui_builder()
-        .span(
-            "Type a message below — twarp drives the local `claude` CLI and renders its replies, \
-             tool calls, and diffs here. Your existing Claude Code login is used; twarp adds no \
-             account or billing."
-                .to_owned(),
-        )
-        .with_soft_wrap()
-        .with_style(UiComponentStyles {
-            font_color: Some(theme.nonactive_ui_text_color().into_solid()),
-            font_size: Some(13.),
-            ..Default::default()
-        })
-        .build()
-        .finish();
-    Container::new(
-        Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(12.)
-            .with_child(heading)
-            .with_child(
-                ConstrainedBox::new(explanation)
-                    .with_max_width(460.)
-                    .finish(),
-            )
-            .finish(),
-    )
-    .with_uniform_padding(24.)
-    .finish()
 }
 
 #[cfg(test)]

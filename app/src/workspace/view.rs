@@ -329,7 +329,7 @@ use futures::Future;
 use itertools::Itertools;
 use parking_lot::FairMutex;
 use pathfinder_geometry::rect::RectF;
-use repo_metadata::repositories::DetectedRepositories;
+use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
 use session_sharing_protocol::common::SessionId as SharedSessionId;
 use std::collections::{HashMap, HashSet};
 #[cfg(feature = "local_fs")]
@@ -631,16 +631,12 @@ pub(super) fn floating_panel_surface_fill(app: &AppContext) -> warp_core::ui::th
 }
 
 /// twarp: a subtle gray outline around the floating side panels so each card's
-/// edge reads cleanly against the terminal background.
-const FLOATING_PANEL_BORDER_COLOR: ColorU = ColorU {
-    r: 0xCB,
-    g: 0xC9,
-    b: 0xD2,
-    a: 0xFF,
-};
-
-pub(super) fn floating_panel_border() -> Border {
-    Border::all(1.).with_border_color(FLOATING_PANEL_BORDER_COLOR)
+/// edge reads cleanly against the terminal background. Uses the theme's standard
+/// `outline()` gray (the same border the shell-selector menu uses) rather than a
+/// fixed light-gray that read as a stark white edge on dark themes.
+pub(super) fn floating_panel_border(app: &AppContext) -> Border {
+    let outline = Appearance::as_ref(app).theme().outline();
+    Border::all(1.).with_border_color(outline.into())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -12636,6 +12632,34 @@ impl Workspace {
         // panel roots at the focused Claude pane's project instead of falling
         // back to whatever terminal repo was last active.
         let focused_directory_id = pane_group.as_ref(ctx).focused_claude_code_view_id(ctx);
+
+        // twarp 07: a Claude Code pane is not a terminal, so its cwd never goes
+        // through the `TerminalNavigation` repo detection that populates
+        // `DetectedRepositories`. Without that, `get_root_for_path` below can't
+        // resolve the pane's cwd to a repo root and the code-review / Open
+        // Changes panel shows nothing — "doesn't detect which folder we're in."
+        // Kick off detection here for any Claude cwd whose repo isn't known yet;
+        // when one resolves, re-run this refresh so the panel picks it up. The
+        // `get_root_for_path().is_none()` guard makes the second pass a no-op
+        // (the repo is now cached), so there's no refresh loop.
+        #[cfg(feature = "local_fs")]
+        for (_, cwd) in &claude_code_cwds {
+            let already_known = DetectedRepositories::as_ref(ctx)
+                .get_root_for_path(std::path::Path::new(cwd))
+                .is_some();
+            if already_known {
+                continue;
+            }
+            let fut = DetectedRepositories::handle(ctx).update(ctx, |model, ctx| {
+                model.detect_possible_git_repo(cwd, RepoDetectionSource::TerminalNavigation, ctx)
+            });
+            let pane_group = pane_group.clone();
+            ctx.spawn(fut, move |me, repo_root, ctx| {
+                if repo_root.is_some() {
+                    me.refresh_working_directories_for_pane_group(&pane_group, ctx);
+                }
+            });
+        }
 
         self.working_directories_model.update(ctx, |model, ctx| {
             model.refresh_working_directories_for_pane_group(

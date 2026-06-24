@@ -21,7 +21,7 @@ use crate::shell_indicator::ShellIndicatorType;
 use crate::terminal::shared_session::render_util::shared_session_indicator_color;
 use crate::terminal::view::TerminalViewState;
 use crate::themes::theme::{AnsiColorIdentifier, Fill as ThemeFill, VerticalGradient};
-use crate::ui_components::buttons::icon_button;
+use crate::ui_components::buttons::{icon_button, icon_button_with_color};
 use crate::ui_components::color_dot::{render_color_dot, TAB_COLOR_OPTIONS};
 use crate::ui_components::icons::{Icon, ICON_DIMENSIONS};
 use crate::util::color::{coloru_with_opacity, Opacity};
@@ -837,6 +837,16 @@ impl TabStyles {
             tab_color.map(|color| color.to_tab_color(&theme.terminal_colors().normal).into());
         let error_color = theme.ui_error_color();
         let sharing_color = shared_session_indicator_color(appearance);
+        // twarp (#1): when the active tab carries a custom color, its fill is a
+        // bright saturated swatch (`to_tab_color` lifts every hue to a shared
+        // luminance target). The default light `active_ui_text_color` reads as a
+        // glaring near-white label on top of that bright fill in dark mode. Pick
+        // the best-contrast foreground for the tab's own fill instead, which
+        // resolves to a dark/black label over the bright swatch.
+        let active_font_color = match active_tab_bar_color.as_ref() {
+            Some(color) => theme.main_text_color(color.clone().into()),
+            None => theme.active_ui_text_color(),
+        };
         let background = active_tab_bar_color.map(|color| {
             ThemeFill::VerticalGradient(VerticalGradient::new(
                 theme.background().into(),
@@ -853,7 +863,7 @@ impl TabStyles {
                 .set_font_family_id(appearance.ui_builder().ui_font_family())
                 .set_font_size(appearance.ui_builder().ui_font_size()),
             active: UiComponentStyles::default()
-                .set_font_color(theme.active_ui_text_color().into())
+                .set_font_color(active_font_color.into())
                 .set_font_weight(Weight::Medium)
                 .set_border_color(theme.accent().into()),
         }
@@ -1236,7 +1246,30 @@ impl<'a> TabComponent<'a> {
                 ..default_styles
             };
 
-            icon_button(self.appearance, Icon::X, false, close_mouse_state)
+            // twarp (#1): on a custom-colored tab the close (×) glyph should
+            // match the active label — a dark/best-contrast color over the bright
+            // tab swatch rather than the default light icon color (which reads as
+            // a glaring near-white × in dark mode). Tabs with no color keep the
+            // default icon color.
+            let close_icon_color = self.styles.background.as_ref().map(|_| {
+                self.styles
+                    .default
+                    .merge(self.styles.active)
+                    .font_color
+                    .map(ThemeFill::Solid)
+                    .unwrap_or_else(|| self.appearance.theme().active_ui_text_color())
+            });
+            let close_button = match close_icon_color {
+                Some(color) => icon_button_with_color(
+                    self.appearance,
+                    Icon::X,
+                    false,
+                    close_mouse_state,
+                    color,
+                ),
+                None => icon_button(self.appearance, Icon::X, false, close_mouse_state),
+            };
+            close_button
                 .with_style(default_styles)
                 .with_active_styles(hover_styles)
                 .with_hovered_styles(hover_styles)

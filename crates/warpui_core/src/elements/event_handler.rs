@@ -20,6 +20,9 @@ type ModifierStateChangedHandler =
     Box<dyn FnMut(&mut EventContext, &AppContext, &KeyCode, &KeyState) -> DispatchEventResult>;
 type DropFilesHandler =
     Box<dyn FnMut(&mut EventContext, &AppContext, &[String], Vector2F) -> DispatchEventResult>;
+type FileDragHandler =
+    Box<dyn FnMut(&mut EventContext, &AppContext, Vector2F, bool) -> DispatchEventResult>;
+type FileDragExitHandler = Box<dyn FnMut(&mut EventContext, &AppContext) -> DispatchEventResult>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct MouseInBehavior {
@@ -62,6 +65,13 @@ pub struct EventHandler {
     /// Fired when the OS drops files onto this element's painted bounds. The
     /// callback receives the dropped paths and the drop location.
     drag_and_drop_files: Option<RefCell<DropFilesHandler>>,
+    /// Fired continuously while the OS drags files over the window (before the
+    /// drop). The callback receives the drag location and whether it falls
+    /// inside this element's painted bounds — so a drop target can light up only
+    /// while the cursor hovers it.
+    file_drag: Option<RefCell<FileDragHandler>>,
+    /// Fired when a file drag leaves the window entirely.
+    file_drag_exit: Option<RefCell<FileDragExitHandler>>,
     origin: Option<Point>,
     // This is a short-term solution for properly handling events on stacks. A stack will always
     // put its children on higher z-indexes than its origin, so a hit test using the standard
@@ -90,6 +100,8 @@ impl EventHandler {
             keydown: None,
             modifier_state_changed: None,
             drag_and_drop_files: None,
+            file_drag: None,
+            file_drag_exit: None,
             origin: None,
             child_max_z_index: None,
             mouse_in_behavior: Default::default(),
@@ -208,6 +220,26 @@ impl EventHandler {
             + FnMut(&mut EventContext, &AppContext, &[String], Vector2F) -> DispatchEventResult,
     {
         self.drag_and_drop_files = Some(RefCell::new(Box::new(callback)));
+        self
+    }
+
+    /// Handle the OS dragging files over the window, fired continuously before
+    /// the drop. The callback receives the drag location and whether it lies
+    /// within this element's painted bounds.
+    pub fn on_file_drag<F>(mut self, callback: F) -> Self
+    where
+        F: 'static + FnMut(&mut EventContext, &AppContext, Vector2F, bool) -> DispatchEventResult,
+    {
+        self.file_drag = Some(RefCell::new(Box::new(callback)));
+        self
+    }
+
+    /// Handle a file drag leaving the window entirely.
+    pub fn on_file_drag_exit<F>(mut self, callback: F) -> Self
+    where
+        F: 'static + FnMut(&mut EventContext, &AppContext) -> DispatchEventResult,
+    {
+        self.file_drag_exit = Some(RefCell::new(Box::new(callback)));
         self
     }
 
@@ -367,6 +399,25 @@ impl Element for EventHandler {
                             };
                         }
                     }
+                }
+            }
+            Some(Event::DragFiles { location }) => {
+                if let Some(callback) = self.file_drag.as_ref() {
+                    let in_bounds = ctx
+                        .visible_rect(self.origin.unwrap(), self.size().unwrap())
+                        .is_some_and(|rect| rect.contains_point(*location));
+                    return match callback.borrow_mut()(ctx, app, *location, in_bounds) {
+                        DispatchEventResult::PropagateToParent => false,
+                        DispatchEventResult::StopPropagation => true,
+                    };
+                }
+            }
+            Some(Event::DragFileExit) => {
+                if let Some(callback) = self.file_drag_exit.as_ref() {
+                    return match callback.borrow_mut()(ctx, app) {
+                        DispatchEventResult::PropagateToParent => false,
+                        DispatchEventResult::StopPropagation => true,
+                    };
                 }
             }
             Some(Event::ScrollWheel {

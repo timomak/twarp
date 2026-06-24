@@ -2719,7 +2719,7 @@ impl View for LeftPanelView {
         // background. The edge gap (margin) is applied OUTSIDE the Resizable
         // below so the drag bar sits on the card's border, not out in the gap.
         .with_corner_radius(super::floating_panel_corner_radius())
-        .with_border(super::floating_panel_border())
+        .with_border(super::floating_panel_border(app))
         .with_drop_shadow(super::floating_panel_drop_shadow())
         // twarp 08f polish: breathing room at the bottom edge.
         .with_padding_bottom(SIDEBAR_BOTTOM_INSET)
@@ -2749,9 +2749,20 @@ impl View for LeftPanelView {
         // The floating gap goes here, around the Resizable, so the drag bar
         // (the rightmost few px of the Resizable's child) lands on the card's
         // border rather than 8px out in the gap.
-        Container::new(resizable)
-            .with_uniform_margin(super::FLOATING_PANEL_MARGIN)
-            .finish()
+        //
+        // twarp (#3): the panel hugs the center — no gap on the terminal-facing
+        // side. The card keeps its float against the window edge / top / bottom,
+        // but butts directly up to the center pane (gap removed on the inner side
+        // so there's no dead strip between the card and the terminal).
+        let margin = super::FLOATING_PANEL_MARGIN;
+        let mut container = Container::new(resizable)
+            .with_margin_top(margin)
+            .with_margin_bottom(margin);
+        container = match self.panel_position {
+            super::PanelPosition::Left => container.with_margin_left(margin),
+            super::PanelPosition::Right => container.with_margin_right(margin),
+        };
+        container.finish()
     }
 }
 

@@ -152,7 +152,17 @@ impl WarpTheme {
     }
 
     pub fn outline(&self) -> Fill {
-        fg_overlay_2(self)
+        // twarp: in dark themes the default 10%-foreground overlay reads as an
+        // almost-invisible hairline, so bump the outline a little brighter (a
+        // touch more foreground) everywhere `outline()` is used. Light themes
+        // keep the original subtle overlay.
+        let is_dark =
+            crate::ui::color::contrast::relative_luminance(self.background().into_solid()) < 0.2;
+        if is_dark {
+            self.foreground().with_opacity(18)
+        } else {
+            fg_overlay_2(self)
+        }
     }
 
     // text colors

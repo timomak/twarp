@@ -31,16 +31,38 @@ impl CiState {
     }
 }
 
+/// One individual status check on the branch's PR (#11), shown as a row in the
+/// CI menu. `url` opens the check's run page on GitHub when present.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct CiCheck {
+    pub name: String,
+    pub state: CiState,
+    pub url: Option<String>,
+}
+
 /// The resolved context shown in the composer bar (#11). Every field is
 /// independently optional — a non-repo cwd still yields a `folder`.
 #[derive(Clone, Debug, Default)]
 pub(super) struct RepoContext {
     pub folder: Option<String>,
     pub branch: Option<String>,
+    /// The repo's default branch (`main`/`master`/…), from `origin/HEAD`. Used
+    /// as the branch fallback in a detached HEAD and offered in the switch menu.
+    pub default_branch: Option<String>,
+    /// Local branch names, most-recently-committed first — the branch menu's
+    /// switch list.
+    pub branches: Vec<String>,
+    /// The repo's GitHub web URL (`https://github.com/owner/repo`), derived from
+    /// `origin`. Lets the branch menu open `…/tree/<branch>`.
+    pub repo_web_url: Option<String>,
     pub added: Option<usize>,
     pub removed: Option<usize>,
     pub pr_number: Option<u64>,
+    /// The PR's own web URL, when one exists.
+    pub pr_url: Option<String>,
     pub ci: Option<CiState>,
+    /// Per-check CI detail for the CI menu (name · state · run URL).
+    pub ci_checks: Vec<CiCheck>,
 }
 
 impl RepoContext {
@@ -52,6 +74,14 @@ impl RepoContext {
             && self.removed.is_none()
             && self.pr_number.is_none()
             && self.ci.is_none()
+    }
+
+    /// The GitHub URL for the current branch (`…/tree/<branch>`), if both the
+    /// repo URL and a branch resolved.
+    pub(super) fn branch_web_url(&self) -> Option<String> {
+        let base = self.repo_web_url.as_deref()?;
+        let branch = self.branch.as_deref()?;
+        Some(format!("{base}/tree/{branch}"))
     }
 }
 
@@ -72,9 +102,32 @@ pub(super) fn build_command(cwd: &Path) -> String {
     format!(
         "cd '{dir}' 2>/dev/null || exit 0\n\
          echo '@@BRANCH@@'; git rev-parse --abbrev-ref HEAD 2>/dev/null\n\
+         echo '@@DEFAULT@@'; git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null\n\
+         echo '@@BRANCHES@@'; git branch --format='%(refname:short)' --sort=-committerdate 2>/dev/null\n\
+         echo '@@REMOTE@@'; git remote get-url origin 2>/dev/null\n\
          echo '@@DIFF@@'; git diff --shortstat 2>/dev/null\n\
-         echo '@@PR@@'; gh pr view --json number,additions,deletions,statusCheckRollup 2>/dev/null\n"
+         echo '@@PR@@'; gh pr view --json number,additions,deletions,url,statusCheckRollup 2>/dev/null\n"
     )
+}
+
+/// Convert an `origin` remote URL into its GitHub web URL, e.g.
+/// `git@github.com:owner/repo.git` / `https://github.com/owner/repo.git` →
+/// `https://github.com/owner/repo`. Returns `None` for unrecognised hosts.
+fn remote_to_web_url(remote: &str) -> Option<String> {
+    let remote = remote.trim();
+    let stripped = remote.strip_suffix(".git").unwrap_or(remote);
+    if let Some(rest) = stripped.strip_prefix("git@") {
+        // `git@host:owner/repo` → `https://host/owner/repo`
+        let (host, path) = rest.split_once(':')?;
+        Some(format!("https://{host}/{path}"))
+    } else if stripped.starts_with("https://") || stripped.starts_with("http://") {
+        Some(stripped.to_owned())
+    } else if let Some(rest) = stripped.strip_prefix("ssh://git@") {
+        // `ssh://git@host/owner/repo`
+        Some(format!("https://{rest}"))
+    } else {
+        None
+    }
 }
 
 /// Parse the [`build_command`] output into a [`RepoContext`]. `folder` is
@@ -87,15 +140,28 @@ pub(super) fn parse(output: &str, folder: Option<String>) -> RepoContext {
 
     let mut section = "";
     let mut branch_lines: Vec<&str> = Vec::new();
+    let mut default_lines: Vec<&str> = Vec::new();
+    let mut branch_list: Vec<String> = Vec::new();
+    let mut remote_line: Option<&str> = None;
     let mut diff_line: Option<&str> = None;
     let mut pr_json = String::new();
     for line in output.lines() {
         match line.trim() {
             "@@BRANCH@@" => section = "branch",
+            "@@DEFAULT@@" => section = "default",
+            "@@BRANCHES@@" => section = "branches",
+            "@@REMOTE@@" => section = "remote",
             "@@DIFF@@" => section = "diff",
             "@@PR@@" => section = "pr",
             _ => match section {
                 "branch" => branch_lines.push(line),
+                "default" => default_lines.push(line),
+                "branches" if !line.trim().is_empty() => {
+                    branch_list.push(line.trim().to_owned())
+                }
+                "remote" if remote_line.is_none() && !line.trim().is_empty() => {
+                    remote_line = Some(line)
+                }
                 "diff" if diff_line.is_none() && !line.trim().is_empty() => {
                     diff_line = Some(line)
                 }
@@ -108,11 +174,24 @@ pub(super) fn parse(output: &str, folder: Option<String>) -> RepoContext {
         }
     }
 
+    // `origin/HEAD` resolves to `origin/main`; keep just the branch name.
+    context.default_branch = default_lines
+        .iter()
+        .map(|line| line.trim())
+        .find(|line| !line.is_empty())
+        .map(|line| line.strip_prefix("origin/").unwrap_or(line).to_owned());
+    context.branches = branch_list;
+    context.repo_web_url = remote_line.and_then(remote_to_web_url);
+
+    // The checked-out branch, falling back to the repo's default branch on a
+    // detached HEAD so the bar still shows a meaningful ref (#11, "show master
+    // even on the default branch").
     context.branch = branch_lines
         .iter()
         .map(|line| line.trim())
         .find(|line| !line.is_empty() && *line != "HEAD")
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .or_else(|| context.default_branch.clone());
 
     if let Some(line) = diff_line {
         let (added, removed) = parse_shortstat(line);
@@ -125,19 +204,72 @@ pub(super) fn parse(output: &str, folder: Option<String>) -> RepoContext {
     // matches the PR the way GitHub shows it.
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(pr_json.trim()) {
         context.pr_number = value.get("number").and_then(|v| v.as_u64());
+        context.pr_url = value
+            .get("url")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned);
         if let Some(additions) = value.get("additions").and_then(|v| v.as_u64()) {
             context.added = Some(additions as usize);
         }
         if let Some(deletions) = value.get("deletions").and_then(|v| v.as_u64()) {
             context.removed = Some(deletions as usize);
         }
-        context.ci = value
-            .get("statusCheckRollup")
-            .and_then(|v| v.as_array())
-            .and_then(|checks| aggregate_ci(checks));
+        if let Some(checks) = value.get("statusCheckRollup").and_then(|v| v.as_array()) {
+            context.ci = aggregate_ci(checks);
+            context.ci_checks = checks.iter().filter_map(parse_check).collect();
+        }
     }
 
     context
+}
+
+/// Pull one [`CiCheck`] out of a `statusCheckRollup` entry. Handles both
+/// `CheckRun` items (`name` + `detailsUrl`) and `StatusContext` items
+/// (`context` + `targetUrl`). Returns `None` for entries with no recognisable
+/// name.
+fn parse_check(check: &serde_json::Value) -> Option<CiCheck> {
+    let name = check
+        .get("name")
+        .or_else(|| check.get("context"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())?
+        .to_owned();
+    let url = check
+        .get("detailsUrl")
+        .or_else(|| check.get("targetUrl"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
+    Some(CiCheck {
+        name,
+        state: classify_check(check),
+        url,
+    })
+}
+
+/// Classify a single check into a [`CiState`]: a terminal failure conclusion is
+/// `Failing`, a clean terminal conclusion is `Passing`, anything not yet
+/// completed is `Pending`.
+fn classify_check(check: &serde_json::Value) -> CiState {
+    let conclusion = check
+        .get("conclusion")
+        .and_then(|v| v.as_str())
+        .map(str::to_ascii_uppercase);
+    let state = check
+        .get("state")
+        .and_then(|v| v.as_str())
+        .map(str::to_ascii_uppercase);
+    let status = check
+        .get("status")
+        .and_then(|v| v.as_str())
+        .map(str::to_ascii_uppercase);
+    match conclusion.as_deref().or(state.as_deref()) {
+        Some("FAILURE" | "TIMED_OUT" | "ERROR" | "CANCELLED" | "STARTUP_FAILURE"
+        | "ACTION_REQUIRED") => CiState::Failing,
+        Some("SUCCESS" | "NEUTRAL" | "SKIPPED") => CiState::Passing,
+        _ if status.as_deref() == Some("COMPLETED") => CiState::Passing,
+        _ => CiState::Pending,
+    }
 }
 
 /// Pull insertion/deletion counts out of a `git diff --shortstat` line, e.g.
@@ -171,36 +303,14 @@ fn aggregate_ci(checks: &[serde_json::Value]) -> Option<CiState> {
     if checks.is_empty() {
         return None;
     }
+    // Any failure wins, then any still-running, else passing.
+    let states = checks.iter().map(classify_check);
     let mut any_pending = false;
-    for check in checks {
-        let conclusion = check
-            .get("conclusion")
-            .and_then(|v| v.as_str())
-            .map(str::to_ascii_uppercase);
-        let state = check
-            .get("state")
-            .and_then(|v| v.as_str())
-            .map(str::to_ascii_uppercase);
-        let status = check
-            .get("status")
-            .and_then(|v| v.as_str())
-            .map(str::to_ascii_uppercase);
-
-        let verdict = conclusion.as_deref().or(state.as_deref());
-        match verdict {
-            Some("FAILURE" | "TIMED_OUT" | "ERROR" | "CANCELLED" | "STARTUP_FAILURE"
-            | "ACTION_REQUIRED") => return Some(CiState::Failing),
-            Some("SUCCESS" | "NEUTRAL" | "SKIPPED") => {}
-            // No verdict yet, or an in-progress status — still pending.
-            _ => {
-                let completed = status.as_deref() == Some("COMPLETED");
-                if !completed {
-                    any_pending = true;
-                }
-            }
-        }
-        if status.as_deref().is_some_and(|s| s != "COMPLETED") {
-            any_pending = true;
+    for state in states {
+        match state {
+            CiState::Failing => return Some(CiState::Failing),
+            CiState::Pending => any_pending = true,
+            CiState::Passing => {}
         }
     }
     Some(if any_pending {
@@ -256,5 +366,62 @@ mod tests {
         let context = parse(output, Some("tmp".to_owned()));
         assert_eq!(context.folder.as_deref(), Some("tmp"));
         assert!(context.is_effectively_empty());
+    }
+
+    #[test]
+    fn parses_branches_default_and_remote() {
+        let output = "@@BRANCH@@\nmaster\n@@DEFAULT@@\norigin/master\n@@BRANCHES@@\nmaster\nfeature/x\nfix/y\n@@REMOTE@@\ngit@github.com:timomak/twarp.git\n@@DIFF@@\n@@PR@@\n";
+        let context = parse(output, Some("twarp".to_owned()));
+        assert_eq!(context.branch.as_deref(), Some("master"));
+        assert_eq!(context.default_branch.as_deref(), Some("master"));
+        assert_eq!(context.branches, vec!["master", "feature/x", "fix/y"]);
+        assert_eq!(
+            context.repo_web_url.as_deref(),
+            Some("https://github.com/timomak/twarp")
+        );
+        assert_eq!(
+            context.branch_web_url().as_deref(),
+            Some("https://github.com/timomak/twarp/tree/master")
+        );
+    }
+
+    #[test]
+    fn detached_head_falls_back_to_default_branch() {
+        // `git rev-parse --abbrev-ref HEAD` prints `HEAD` when detached.
+        let output = "@@BRANCH@@\nHEAD\n@@DEFAULT@@\norigin/main\n@@BRANCHES@@\nmain\n@@REMOTE@@\nhttps://github.com/o/r.git\n@@DIFF@@\n@@PR@@\n";
+        let context = parse(output, None);
+        assert_eq!(context.branch.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn parses_pr_url_and_individual_checks() {
+        let output = "@@BRANCH@@\nfeat/x\n@@DIFF@@\n@@PR@@\n{\"number\":12,\"url\":\"https://github.com/o/r/pull/12\",\"additions\":3,\"deletions\":1,\"statusCheckRollup\":[{\"name\":\"build\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"detailsUrl\":\"https://ci/1\"},{\"context\":\"lint\",\"state\":\"FAILURE\",\"targetUrl\":\"https://ci/2\"}]}\n";
+        let context = parse(output, None);
+        assert_eq!(context.pr_url.as_deref(), Some("https://github.com/o/r/pull/12"));
+        assert_eq!(context.ci, Some(CiState::Failing));
+        assert_eq!(context.ci_checks.len(), 2);
+        assert_eq!(context.ci_checks[0].name, "build");
+        assert_eq!(context.ci_checks[0].state, CiState::Passing);
+        assert_eq!(context.ci_checks[0].url.as_deref(), Some("https://ci/1"));
+        assert_eq!(context.ci_checks[1].name, "lint");
+        assert_eq!(context.ci_checks[1].state, CiState::Failing);
+        assert_eq!(context.ci_checks[1].url.as_deref(), Some("https://ci/2"));
+    }
+
+    #[test]
+    fn remote_url_variants() {
+        assert_eq!(
+            remote_to_web_url("git@github.com:o/r.git"),
+            Some("https://github.com/o/r".to_owned())
+        );
+        assert_eq!(
+            remote_to_web_url("https://github.com/o/r.git"),
+            Some("https://github.com/o/r".to_owned())
+        );
+        assert_eq!(
+            remote_to_web_url("ssh://git@github.com/o/r.git"),
+            Some("https://github.com/o/r".to_owned())
+        );
+        assert_eq!(remote_to_web_url("/local/path"), None);
     }
 }

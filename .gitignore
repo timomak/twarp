@@ -58,3 +58,6 @@ desired_behavior.md
 
 # Don't include the python cache for bundled skills.
 __pycache__/
+
+# External reference codebases (not part of twarp)
+.external/
