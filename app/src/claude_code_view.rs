@@ -95,7 +95,7 @@ use warpui::r#async::Timer;
 use self::composer::{SuggestionKind, SuggestionQuery};
 use self::diff_cards::DiffCard;
 use self::repo_context::{CiState, RepoContext};
-use crate::workspace::WorkspaceRegistry;
+use crate::workspace::{WorkspaceAction, WorkspaceRegistry};
 use self::thinking::ThinkingUi;
 use self::tool_cards::{render_tool_card, ToolCardUi};
 use crate::appearance::Appearance;
@@ -103,7 +103,7 @@ use crate::editor::{EditorOptions, EditorView, Event as EditorEvent, TextOptions
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::{
     pane::view::{self, HeaderContent, StandardHeader, StandardHeaderOptions},
-    BackingView, PaneConfiguration, PaneEvent, PaneGroupAction, PaneHeaderAction,
+    BackingView, PaneConfiguration, PaneEvent, PaneHeaderAction,
 };
 use crate::terminal::{view::Event as TerminalViewEvent, TerminalManager, TerminalView};
 use crate::util::path::{resolve_executable, resolve_executable_in_path};
@@ -163,6 +163,9 @@ const MESSAGE_CORNER_RADIUS: f32 = 12.;
 /// Cap the outgoing (user) iMessage bubble so long messages wrap into a column
 /// hugging the right edge instead of stretching across the whole transcript.
 const USER_BUBBLE_MAX_WIDTH: f32 = 520.;
+/// Side length of a sent-image preview thumbnail (#8): a fixed square so
+/// attachments sit as uniform tiles above the message bubble.
+const SENT_IMAGE_SIZE: f32 = 120.;
 const PILL_CORNER_RADIUS: f32 = 6.;
 const HEADING_FONT_SIZE: f32 = 20.;
 
@@ -254,6 +257,9 @@ pub enum ClaudeCodeViewAction {
     /// Remove a direct attachment chip (paste / drop / picker) by index
     /// (PRODUCT §49–§51, 7l).
     RemoveDirectAttachment(usize),
+    /// twarp: open a sent-image preview (#8) in the OS default image app —
+    /// a click on the thumbnail above a user turn reveals the full image.
+    OpenSentImage(String),
     /// Open / close one of the composer dropdowns (model / effort / context /
     /// branch / CI / PR), #13. Re-dispatching the open menu closes it.
     ToggleComposerMenu(ComposerMenu),
@@ -573,6 +579,9 @@ pub struct ClaudeCodeView {
     /// transcript index — rendered above that message's bubble. Only covers
     /// images sent this session (resumed history has no previews).
     sent_images: HashMap<usize, Vec<PathBuf>>,
+    /// Pooled mouse handles for the clickable sent-image thumbnails (#8),
+    /// keyed by path string so hover state survives across renders.
+    sent_image_mouse: std::cell::RefCell<HashMap<String, MouseStateHandle>>,
     /// The tab-derived accent (#10) and its faint wash (#11), cached at the top
     /// of each `render` so the deep render tree and free helper functions can
     /// theme to the tab colour without threading `app` everywhere.
@@ -600,6 +609,14 @@ pub struct ClaudeCodeView {
     /// the work happens on an isolated branch. A per-pane toggle, reset only by
     /// the user; ignored once a session is live (`message_tx` set).
     use_worktree: bool,
+    /// twarp: shell-style draft history. Every submitted message text is pushed
+    /// here (oldest first); Up/Down in the composer recall older / newer entries
+    /// (like a terminal). `history_cursor` is the position being browsed (`None`
+    /// = the live draft, not in history); `history_draft` stashes the in-progress
+    /// text when navigation starts so Down past the newest entry restores it.
+    message_history: Vec<String>,
+    history_cursor: Option<usize>,
+    history_draft: String,
 }
 
 impl ClaudeCodeView {
@@ -672,6 +689,9 @@ impl ClaudeCodeView {
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
         let mut view = Self {
+            message_history: Vec::new(),
+            history_cursor: None,
+            history_draft: String::new(),
             transcript: Transcript::new(),
             window_id: ctx.window_id(),
             input_editor,
@@ -733,6 +753,7 @@ impl ClaudeCodeView {
             permission_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
             turn_started: None,
             sent_images: HashMap::new(),
+            sent_image_mouse: std::cell::RefCell::new(HashMap::new()),
             render_accent: std::cell::Cell::new(
                 Appearance::as_ref(ctx).theme().accent().into_solid(),
             ),
@@ -1070,8 +1091,52 @@ impl ClaudeCodeView {
                     _ => {}
                 }
             }
+            // twarp: with no suggestions open, Up/Down walk the draft history
+            // like a terminal. The editor only surfaces these when the cursor
+            // can't move further (single-line drafts: always; multi-line: at the
+            // top/bottom edge), so multi-line editing still works normally.
+            EditorEvent::Navigate(NavigationKey::Up) => self.recall_history(true, ctx),
+            EditorEvent::Navigate(NavigationKey::Down) => self.recall_history(false, ctx),
             _ => {}
         }
+    }
+
+    /// twarp: step through the submitted-message history in the composer. `older`
+    /// recalls the previous (older) entry; `!older` moves toward newer entries
+    /// and, past the newest, restores the draft that was in the box when
+    /// browsing began. A no-op when there is no history.
+    fn recall_history(&mut self, older: bool, ctx: &mut ViewContext<Self>) {
+        if self.message_history.is_empty() {
+            return;
+        }
+        let last = self.message_history.len() - 1;
+        let next = match (older, self.history_cursor) {
+            // Entering history from the live draft: stash it, recall the newest.
+            (true, None) => {
+                self.history_draft = self
+                    .input_editor
+                    .read(ctx, |editor, ctx| editor.buffer_text(ctx));
+                Some(last)
+            }
+            // Older: move toward index 0, clamping at the oldest entry.
+            (true, Some(i)) => Some(i.saturating_sub(1)),
+            // Newer past the newest entry: leave history, restore the draft.
+            (false, Some(i)) if i >= last => None,
+            // Newer: move toward the newest entry.
+            (false, Some(i)) => Some(i + 1),
+            // Already on the live draft and pressing Down: nothing to do.
+            (false, None) => return,
+        };
+        let text = match next {
+            Some(i) => self.message_history[i].clone(),
+            None => std::mem::take(&mut self.history_draft),
+        };
+        self.history_cursor = next;
+        // `set_buffer_text` inserts the content and leaves the cursor at the
+        // end, so the next keystroke (or another Up) picks up from there.
+        self.input_editor
+            .update(ctx, |editor, ctx| editor.set_buffer_text(&text, ctx));
+        ctx.notify();
     }
 
     /// Recompute the suggestions panel and the attachment chips from the
@@ -1511,13 +1576,18 @@ impl ClaudeCodeView {
                 .filename
                 .clone()
                 .unwrap_or_else(|| "Pasted image".to_owned());
+            // twarp (#8): persist the clipboard bytes to a temp file so the
+            // paste previews as a real thumbnail in the composer and the chat,
+            // and can be re-opened in the OS default image app on click. A
+            // write failure degrades to `None` — the paste still sends inline.
+            let thumbnail_path = persist_pasted_image(&image.data, media_type);
             self.direct_attachments.push(DirectAttachment {
                 label,
                 image: OutgoingImage {
                     media_type: media_type.to_owned(),
                     base64_data: base64::engine::general_purpose::STANDARD.encode(&image.data),
                 },
-                thumbnail_path: None,
+                thumbnail_path,
             });
             added = true;
             // One image per paste is the common case; the API set is checked in
@@ -1614,6 +1684,14 @@ impl ClaudeCodeView {
         // directly-attached ones (paste / drop / picker) ride along as inline
         // image blocks; the mention text stays for context. Captured now (files
         // read here) so a queued message ships exactly what was attached.
+        // twarp: record the turn for Up/Down recall (skip an immediate
+        // duplicate of the last entry, like a shell). Reset the browse cursor
+        // so the next Up starts from the newest message again.
+        if self.message_history.last() != Some(&text) {
+            self.message_history.push(text.clone());
+        }
+        self.history_cursor = None;
+        self.history_draft.clear();
         let message = OutgoingMessage {
             images: self.outgoing_images(),
             text,
@@ -3132,7 +3210,7 @@ impl ClaudeCodeView {
                 appearance,
             ))
             .with_child(ConstrainedBox::new(slider).with_width(240.).finish())
-            .with_child(labels)
+            .with_child(ConstrainedBox::new(labels).with_width(240.).finish())
             .finish()
     }
 
@@ -3872,19 +3950,26 @@ impl View for ClaudeCodeView {
         if focus_ctx.is_self_focused() {
             self.focus(ctx);
         }
-        // #13: tell the pane group this pane's focus changed (it doesn't watch
-        // editor focus itself), so it updates the focused pane — otherwise
-        // Cmd+W / maximize keep targeting whatever pane was focused before.
-        // Mirrors `TerminalView::on_focus`.
+        // #13: tell the pane group this pane is now the focused pane (it doesn't
+        // watch editor focus itself), so Cmd+W / maximize / Open Changes target
+        // this pane instead of whatever was focused before.
         //
-        // Deferred, not synchronous: `handle_focus_change` calls
-        // `ClaudeCodePane::has_application_focus`, which reads this view via
-        // `ViewHandle::as_ref`. Dispatching synchronously while we hold `&mut
-        // self` means the view is out of the views map, so that read panics
-        // with "circular view reference" (seen on click-back into a split
-        // Claude pane). Deferring runs it after this update returns the view
-        // to the map.
-        ctx.dispatch_typed_action_deferred(PaneGroupAction::HandleFocusChange);
+        // Report it pane-specifically via `PaneEvent::FocusSelf` rather than the
+        // generic `PaneGroupAction::HandleFocusChange`. `HandleFocusChange`
+        // *rescans* every pane and keeps whichever currently passes
+        // `has_application_focus` — fine with one pane, but with two Claude panes
+        // in the same group that global rescan races: the click and the deferred
+        // rescan straddle a focus-settling window, so it can latch onto the wrong
+        // pane and the input feels stuck on one of them (the "side-by-side Claude
+        // panes lock the composer" report). `FocusSelf` names *this* pane by id,
+        // so the focused pane is deterministic regardless of timing.
+        //
+        // It also sidesteps the circular-view-reference panic that forced the old
+        // deferral: `focus_pane_by_id` never calls `has_application_focus`, and
+        // the event is delivered to the pane group's subscriber (outside this
+        // view's own update), so nothing reads this view while we hold `&mut
+        // self`.
+        ctx.emit(ClaudeCodeViewEvent::Pane(PaneEvent::FocusSelf));
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
@@ -4020,11 +4105,11 @@ impl TypedActionView for ClaudeCodeView {
             ClaudeCodeViewAction::FocusInput => {
                 ctx.focus(&self.input_editor);
                 // #13: a click on the pane focuses the editor — report it so the
-                // pane group makes this the active pane (Cmd+W / maximize).
-                // Deferred to avoid the re-entrant "circular view reference"
-                // panic (see `on_focus`): `has_application_focus` reads this
-                // view, which is mid-update here.
-                ctx.dispatch_typed_action_deferred(PaneGroupAction::HandleFocusChange);
+                // pane group makes THIS pane (by id) the active one for Cmd+W /
+                // maximize. `FocusSelf` rather than the global
+                // `HandleFocusChange` rescan, which races between side-by-side
+                // Claude panes (see `on_focus`).
+                ctx.emit(ClaudeCodeViewEvent::Pane(PaneEvent::FocusSelf));
             }
             ClaudeCodeViewAction::OpenUrl(url) => ctx.open_url(&url.url),
             // PRODUCT §4: render re-checks availability, so a notify suffices.
@@ -4072,6 +4157,9 @@ impl TypedActionView for ClaudeCodeView {
                     self.direct_attachments.remove(*index);
                     ctx.notify();
                 }
+            }
+            ClaudeCodeViewAction::OpenSentImage(path) => {
+                ctx.open_file_path(Path::new(path));
             }
             ClaudeCodeViewAction::ToggleComposerMenu(menu) => self.toggle_composer_menu(*menu, ctx),
             ClaudeCodeViewAction::CloseComposerMenu => {
@@ -4252,6 +4340,13 @@ impl BackingView for ClaudeCodeView {
                 control_container_width: Some(210.),
                 ..Default::default()
             },
+            // twarp: double-clicking the "Claude Code" header title renames the
+            // session's tab, reusing the workspace rename editor (the tab strip
+            // sits directly above the pane header). Mirrors double-clicking the
+            // tab itself, but reachable from the pane the user is looking at.
+            title_on_double_click: Some(Box::new(|ctx| {
+                ctx.dispatch_typed_action(WorkspaceAction::RenameActiveTab);
+            })),
         })
     }
 
@@ -4288,7 +4383,7 @@ impl ClaudeCodeView {
                         .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                         .with_main_axis_size(MainAxisSize::Min)
                         .with_spacing(6.)
-                        .with_child(render_sent_images(paths, appearance))
+                        .with_child(self.render_sent_images(paths))
                         .with_child(bubble)
                         .finish(),
                     _ => bubble,
@@ -5115,6 +5210,30 @@ fn queue_preview(text: &str) -> String {
     }
 }
 
+/// twarp (#8): persist pasted clipboard image bytes to a temp file so the
+/// attachment can be previewed as a thumbnail and re-opened in the OS default
+/// app on click. The filename hashes the bytes so identical pastes dedupe and
+/// the path is stable across renders. Returns `None` on any IO error — the
+/// paste still ships via base64, it just won't preview.
+fn persist_pasted_image(data: &[u8], media_type: &str) -> Option<PathBuf> {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    data.hash(&mut hasher);
+    let ext = match media_type {
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        _ => "png",
+    };
+    let dir = std::env::temp_dir().join("twarp-claude-pasted");
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join(format!("paste-{:016x}.{ext}", hasher.finish()));
+    if !path.exists() {
+        std::fs::write(&path, data).ok()?;
+    }
+    Some(path)
+}
+
 /// Read an image file into an outgoing image block (PRODUCT §15b, §50–§51),
 /// applying the inline-image size cap. `None` for non-images, oversized, or
 /// unreadable files — the caller degrades those to a plain `@`-mention rather
@@ -5281,33 +5400,51 @@ fn context_segment(appearance: &Appearance, text: String, color: ColorU) -> Box<
 }
 
 /// Image previews shown above a user message bubble (#8): a row of rounded
-/// thumbnails, each capped so a large image doesn't dominate the transcript.
-/// Left-margined to roughly sit under the message body (past the avatar).
-fn render_sent_images(paths: &[PathBuf], _appearance: &Appearance) -> Box<dyn Element> {
-    let mut row = Flex::row()
-        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-        .with_main_axis_size(MainAxisSize::Min)
-        .with_spacing(6.);
-    for path in paths {
-        row.add_child(
-            ConstrainedBox::new(
+/// square thumbnails, right-aligned so they sit directly above the (also
+/// right-aligned) message bubble.
+impl ClaudeCodeView {
+    /// twarp (#8): the row of sent-image thumbnails above a user turn. Each tile
+    /// is clickable — opening the full image in the OS default app.
+    fn render_sent_images(&self, paths: &[PathBuf]) -> Box<dyn Element> {
+        let mut row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::End)
+            .with_spacing(6.);
+        for path in paths {
+            let path_str = path.display().to_string();
+            let tile = ConstrainedBox::new(
                 Image::new(
                     AssetSource::LocalFile {
-                        path: path.display().to_string(),
+                        path: path_str.clone(),
                     },
                     CacheOption::BySize,
                 )
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
                 .finish(),
             )
-            .with_max_width(220.)
-            .with_max_height(160.)
-            .finish(),
-        );
+            .with_width(SENT_IMAGE_SIZE)
+            .with_height(SENT_IMAGE_SIZE)
+            .finish();
+            let mouse = self
+                .sent_image_mouse
+                .borrow_mut()
+                .entry(path_str.clone())
+                .or_default()
+                .clone();
+            row.add_child(
+                Hoverable::new(mouse, move |_| tile)
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::OpenSentImage(
+                            path_str.clone(),
+                        ));
+                    })
+                    .finish(),
+            );
+        }
+        row.finish()
     }
-    Container::new(row.finish())
-        .with_margin_left(TRANSCRIPT_LEFT_MARGIN + 30.)
-        .finish()
 }
 
 /// One segment of the Chat UI / Raw CLI section toggle (#7). The active segment

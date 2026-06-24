@@ -1053,6 +1053,7 @@ impl BackingView for FileNotebookView {
                 right_of_title: None,
                 left_of_overflow: None,
                 options: Default::default(),
+                title_on_double_click: None,
             })
         }
     }

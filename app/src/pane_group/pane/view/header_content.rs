@@ -97,6 +97,10 @@ pub struct StandardHeader {
     pub left_of_overflow: Option<Box<dyn Element>>,
     /// Render options controlling visual behavior.
     pub options: StandardHeaderOptions,
+    /// twarp: optional double-click handler for the title text. When set, the
+    /// title becomes a pointer/double-click target (e.g. the Claude session pane
+    /// double-clicks its header to rename the tab). `None` leaves it inert.
+    pub title_on_double_click: Option<Box<dyn Fn(&mut warpui::EventContext)>>,
 }
 
 /// Content that a backing view can return for its pane header.
@@ -147,6 +151,7 @@ impl HeaderContent {
             right_of_title: None,
             left_of_overflow: None,
             options: StandardHeaderOptions::default(),
+            title_on_double_click: None,
         })
     }
 }

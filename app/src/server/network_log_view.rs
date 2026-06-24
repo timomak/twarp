@@ -247,6 +247,7 @@ impl BackingView for NetworkLogView {
                 always_show_icons: true,
                 ..StandardHeaderOptions::default()
             },
+            title_on_double_click: None,
         })
     }
 

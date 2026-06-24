@@ -365,6 +365,8 @@ struct MouseStateHandles {
     draggable_state: DraggableState,
     header_click_handle: MouseStateHandle,
     header_hover_handle: MouseStateHandle,
+    /// twarp: hover state for the double-click-to-rename title target.
+    title_double_click_handle: MouseStateHandle,
 }
 
 #[derive(Default, Debug, PartialEq, Eq)]
@@ -556,7 +558,12 @@ impl<P: BackingView> PaneHeader<P> {
             right_of_title,
             left_of_overflow,
             options,
+            title_on_double_click,
         } = header;
+        // twarp: a fresh `Rc` cell per render that the inner hover closure moves
+        // and the double-click handler reads — lets us hand the same boxed
+        // callback to a `FnMut` slot without requiring the field to be `Clone`.
+        let title_on_double_click = title_on_double_click.map(std::rc::Rc::new);
         let appearance = Appearance::as_ref(app);
         let header_icon_color = appearance
             .theme()
@@ -655,6 +662,23 @@ impl<P: BackingView> PaneHeader<P> {
                 } else {
                     Shrinkable::new(1., title_row.finish()).finish()
                 };
+                // twarp: when the pane opts in, double-clicking the title fires
+                // its rename handler (the Claude session pane renames its tab).
+                // Only a double-click handler is attached, so single-click drags
+                // of the pane by its header still pass through to the framework's
+                // draggable wrapper.
+                let title_element: Box<dyn Element> =
+                    if let Some(on_double_click) = title_on_double_click.clone() {
+                        Hoverable::new(
+                            self.mouse_state_handles.title_double_click_handle.clone(),
+                            move |_| title_element,
+                        )
+                        .with_cursor(warpui::platform::Cursor::PointingHand)
+                        .on_double_click(move |ctx, _, _| on_double_click(ctx))
+                        .finish()
+                    } else {
+                        title_element
+                    };
                 center_row.add_child(title_element);
 
                 if let Some(right_element) = right_of_title {

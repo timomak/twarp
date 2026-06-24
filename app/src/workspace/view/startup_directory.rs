@@ -18,9 +18,14 @@ impl Workspace {
         (!self.tabs.is_empty())
             .then(|| {
                 self.active_tab_pane_group().read(ctx, |pane_group, ctx| {
-                    pane_group.active_session_id(ctx).and_then(|base_pane_id| {
-                        pane_group.startup_path_for_new_session(Some(base_pane_id), ctx)
-                    })
+                    // Pass the active session id through even when it's `None`:
+                    // a focused non-terminal pane (e.g. a Claude Code pane) has
+                    // no terminal session, but `startup_path_for_new_session`
+                    // still falls back to its cwd. Short-circuiting on `None`
+                    // here would make new tabs open in the home directory while
+                    // splits (which reach this fallback) open in the pane's cwd.
+                    let base_pane_id = pane_group.active_session_id(ctx);
+                    pane_group.startup_path_for_new_session(base_pane_id, ctx)
                 })
             })
             .flatten()
