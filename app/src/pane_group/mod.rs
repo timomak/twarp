@@ -1787,14 +1787,44 @@ impl PaneGroup {
                     "Network log pane should not have been persisted, as it cannot be restored"
                 ))
             }
-            // twarp 07 (7b): Claude Code panes are not persisted (see
-            // `LeafContents::is_persisted`) — a restored pane can't replay a
-            // live `claude` process. `save_pane_state` skips them, so reaching
-            // this arm is a persistence-side programmer error. Sessions reopen
-            // via `claude --resume` from the 7h session list.
-            LeafContents::ClaudeCode => Err(anyhow::anyhow!(
-                "Claude Code pane should not have been persisted, as it cannot be restored"
-            )),
+            // twarp 07: reopen the Claude Code pane that was live at quit. We
+            // don't replay the process — the pane reads the session's `.jsonl`
+            // (the one `claude` wrote) and continues live via `claude --resume`
+            // only on the next message, the same lazy path the 7h session list
+            // uses. A persisted snapshot always carries a `session_id` (see
+            // `is_persisted`); without one there's nothing to resume.
+            LeafContents::ClaudeCode(snapshot) => {
+                let Some(session_id) = snapshot.session_id else {
+                    return Err(anyhow::anyhow!(
+                        "Claude Code pane persisted without a session_id; cannot resume"
+                    ));
+                };
+                let cwd = snapshot.cwd.map(PathBuf::from);
+                let jsonl_path = cwd
+                    .clone()
+                    .or_else(|| std::env::current_dir().ok())
+                    .and_then(|dir| claude_code::sessions::session_file(&dir, &session_id))
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Cannot locate Claude session file for {session_id}")
+                    })?;
+                let resume = crate::claude_code_view::ResumeSession {
+                    session_id: session_id.clone(),
+                    jsonl_path,
+                };
+                let launch = claude_code::launch::LaunchOptions {
+                    resume_session_id: Some(session_id),
+                    ..Default::default()
+                };
+                let pane: Box<dyn AnyPaneContent + 'static> =
+                    Box::new(ClaudeCodePane::new_resume(resume, launch, cwd, ctx));
+                let pane_id = pane.as_pane().id();
+                pane_contents.insert(pane_id, pane);
+                let focus = InitialFocus {
+                    focused_pane: leaf.is_focused.then_some(pane_id),
+                    active_session: None,
+                };
+                Ok((PaneData::new(pane_id), focus))
+            }
             LeafContents::GetStarted => {
                 if !FeatureFlag::GetStartedTab.is_enabled() {
                     Err(anyhow::anyhow!("GetStarted pane not supported"))

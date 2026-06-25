@@ -69,7 +69,7 @@ Each line ends with the **triple-checked feasibility evidence** (2026-06-15). Al
 2. **Trigger mechanics — DECIDED: intercept `claude` at terminal submit** and open the pane (PRODUCT §1–§3). Conservative detection is the top correctness risk.
 3. **Pane open location — provisional: new tab** in the active tab's group; split/replace alternatives open (PRODUCT §load-bearing-2).
 4. **Args forwarding — provisional:** `claude <prompt>` → first turn; bare `claude` → empty composer (PRODUCT §2).
-5. **Pane persistence — provisional:** persist at most the session id, restore to a resume affordance; no twarp transcript store (TECH §The pane).
+5. **Pane persistence — DECIDED (7m):** persist only `{ session_id, cwd }` to a new `claude_code_panes` table, restore via the existing lazy `claude --resume` path (no process spawned on launch); no twarp transcript store. Zero-state panes (no `.jsonl` yet) stay non-persisted. (PRODUCT §8a, TECH §Persistence (7m).)
 6. **Permission control protocol — highest runtime risk:** `--permission-mode`/`--allowedTools` first; interactive prompts version-gated with §26 degradation (TECH §Risks).
 7. **Subscription-auth drift — CONCRETE:** the 2026-06-15 Agent-SDK-credit change; pane meters nothing, surfaces `claude`'s errors verbatim (PRODUCT §30).
 8. **Rendering detangle — RESOLVED:** per-leaf port-and-adapt; `code_diff_view.rs`/`requested_command.rs` are the wrong port targets (reuse feature 05 / rewrite from clean chrome). Carried over from the port re-spec.

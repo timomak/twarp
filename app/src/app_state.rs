@@ -733,11 +733,13 @@ pub enum LeafContents {
     /// The in-app network log pane. Not persisted across restarts because the
     /// backing log is an in-memory ring buffer that starts empty on launch.
     NetworkLog,
-    /// twarp 07 (7b): a Claude Code pane. Not persisted across restarts — a
-    /// restored pane can't replay a live `claude` process and twarp keeps no
-    /// transcript store; sessions are reopened via `claude --resume` from the
-    /// 7h session list.
-    ClaudeCode,
+    /// twarp 07: a Claude Code pane. Persisted *only* once its session exists
+    /// on disk (see [`ClaudeCodePaneSnapshot`] and `is_persisted`): twarp keeps
+    /// no transcript store of its own, so restoration is a `claude --resume` of
+    /// the `.jsonl` `claude` already wrote — the same path the 7h session list
+    /// uses. A pane whose first turn hasn't landed has no session to resume and
+    /// is treated as non-persisted.
+    ClaudeCode(ClaudeCodePaneSnapshot),
     /// An entrypoint pane type to launch other pane types from a search palette. The default view
     /// when creating a tab.
     Welcome {
@@ -764,8 +766,12 @@ impl LeafContents {
             // starts empty on launch; persisting would also regress back to
             // an on-disk log via the app-state database.
             LeafContents::NetworkLog => false,
-            // twarp 07 (7b): see the variant doc — never persisted.
-            LeafContents::ClaudeCode => false,
+            // twarp 07: a Claude Code pane is restorable only once `claude` has
+            // written its session `.jsonl` (i.e. the first turn completed and a
+            // `session_id` is known). A pane still in its zero-state has nothing
+            // to `--resume`, so don't persist it — a `pane_nodes` row with no
+            // resumable session would restore to an empty pane.
+            LeafContents::ClaudeCode(snapshot) => snapshot.session_id.is_some(),
             LeafContents::Terminal(_)
             | LeafContents::Notebook(_)
             | LeafContents::AIDocument(_)
@@ -788,6 +794,21 @@ impl LeafContents {
 pub struct AmbientAgentPaneSnapshot {
     pub uuid: Vec<u8>,
     pub task_id: Option<AmbientAgentTaskId>,
+}
+
+/// Snapshot of a Claude Code pane (twarp 07). twarp stores no transcript of its
+/// own — the only durable handle to a conversation is the `session_id` that
+/// `claude` writes its `.jsonl` under. On restore the pane is reopened with
+/// `claude --resume <session_id>` (lazily — history is read from the `.jsonl`,
+/// and the live process only respawns on the next message), so this carries the
+/// minimum needed to relocate that file: the id, plus the originating `cwd`
+/// (which both anchors the `~/.claude/projects/<cwd>` lookup and restores the
+/// pane's directory context). `session_id` is `None` for a pane whose first
+/// turn hasn't completed; such a pane is not persisted (see `is_persisted`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClaudeCodePaneSnapshot {
+    pub session_id: Option<String>,
+    pub cwd: Option<String>,
 }
 
 /// Snapshot of the contents of a terminal pane.

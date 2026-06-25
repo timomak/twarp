@@ -9,7 +9,8 @@ use warp_multi_agent_api::{self as api, response_event::stream_finished};
 
 use super::schema::{
     active_mcp_servers, agent_conversations, agent_tasks, ai_document_panes, ai_memory_panes,
-    ambient_agent_panes, app, blocks, cloud_objects_refreshes, code_pane_tabs, code_panes,
+    ambient_agent_panes, app, blocks, claude_code_panes, cloud_objects_refreshes, code_pane_tabs,
+    code_panes,
     code_review_panes, commands, current_user_information, env_var_collection_panes, folders,
     generic_string_objects, ignored_suggestions, mcp_environment_variables,
     mcp_server_installations, mcp_server_panes, notebook_panes, notebooks, object_actions,
@@ -569,6 +570,9 @@ pub const AI_DOCUMENT_PANE_KIND: &str = "ai_document";
 /// The [`pane_leaves::kind`] value for ambient agent (cloud mode) panes.
 pub const AMBIENT_AGENT_PANE_KIND: &str = "ambient_agent";
 
+/// The [`pane_leaves::kind`] value for Claude Code panes (twarp 07).
+pub const CLAUDE_CODE_PANE_KIND: &str = "claude_code";
+
 #[derive(Insertable)]
 #[diesel(table_name = terminal_panes)]
 pub struct NewTerminalPane {
@@ -676,6 +680,26 @@ pub struct NewAmbientAgentPane {
     pub id: i32,
     pub uuid: Vec<u8>,
     pub task_id: Option<String>,
+}
+
+#[derive(Identifiable, Queryable, Selectable)]
+#[diesel(table_name = claude_code_panes)]
+#[diesel(primary_key(id))]
+pub struct ClaudeCodePane {
+    pub id: i32,
+    pub kind: String,
+    /// The `claude` session id whose `.jsonl` this pane resumes on restore.
+    pub session_id: Option<String>,
+    /// The pane's originating working directory (anchors the session lookup).
+    pub cwd: Option<String>,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = claude_code_panes)]
+pub struct NewClaudeCodePane {
+    pub id: i32,
+    pub session_id: Option<String>,
+    pub cwd: Option<String>,
 }
 
 #[derive(Insertable)]

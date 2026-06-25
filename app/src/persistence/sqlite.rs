@@ -29,7 +29,7 @@ use itertools::Itertools;
 use libsqlite3_sys as sqlite3;
 use num_traits::FromPrimitive;
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
-use persistence::model::AMBIENT_AGENT_PANE_KIND;
+use persistence::model::{AMBIENT_AGENT_PANE_KIND, CLAUDE_CODE_PANE_KIND};
 use uuid::Uuid;
 use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::platform::FullscreenState;
@@ -1030,8 +1030,13 @@ fn save_pane_state(
         LeafContents::GetStarted => GET_STARTED_PANE_KIND,
         LeafContents::Welcome { .. } => WELCOME_PANE_KIND,
         LeafContents::AIDocument(_) => AI_DOCUMENT_PANE_KIND,
-        // twarp 07 (7b): ClaudeCode joins NetworkLog as a non-persisted pane.
-        LeafContents::NetworkLog | LeafContents::ClaudeCode => {
+        // twarp 07: a Claude Code pane with a known session is persistable; a
+        // zero-state one is filtered upstream by `is_persisted` (so it falls
+        // into the non-persisted arm below alongside NetworkLog).
+        LeafContents::ClaudeCode(snapshot) if snapshot.session_id.is_some() => {
+            CLAUDE_CODE_PANE_KIND
+        }
+        LeafContents::NetworkLog | LeafContents::ClaudeCode(_) => {
             // These pane types are filtered out before this function is
             // called; see `LeafContents::is_persisted` and the skip in
             // `save_app_state`. Reaching this arm would mean a `pane_nodes`
@@ -1267,8 +1272,21 @@ fn save_pane_state(
                 .values(ambient_agent_pane)
                 .execute(conn)?;
         }
-        // twarp 07 (7b): ClaudeCode joins NetworkLog as a non-persisted pane.
-        LeafContents::NetworkLog | LeafContents::ClaudeCode => {
+        // twarp 07: record the session handle so the pane can `claude --resume`
+        // on restore. Guarded by the same `session_id.is_some()` test the kind
+        // match used above; a `None` session is non-persisted (next arm).
+        LeafContents::ClaudeCode(snapshot) if snapshot.session_id.is_some() => {
+            let claude_code_pane = model::NewClaudeCodePane {
+                id,
+                session_id: snapshot.session_id.clone(),
+                cwd: snapshot.cwd.clone(),
+            };
+
+            diesel::insert_into(schema::claude_code_panes::dsl::claude_code_panes)
+                .values(claude_code_pane)
+                .execute(conn)?;
+        }
+        LeafContents::NetworkLog | LeafContents::ClaudeCode(_) => {
             // Unreachable: filtered by `is_persisted` in `save_app_state`.
         }
     }
@@ -2517,6 +2535,17 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                     LeafContents::AmbientAgent(AmbientAgentPaneSnapshot {
                         uuid: pane.uuid,
                         task_id,
+                    })
+                }
+                CLAUDE_CODE_PANE_KIND => {
+                    let pane = schema::claude_code_panes::dsl::claude_code_panes
+                        .find(node.id)
+                        .select(model::ClaudeCodePane::as_select())
+                        .first(conn)?;
+
+                    LeafContents::ClaudeCode(crate::app_state::ClaudeCodePaneSnapshot {
+                        session_id: pane.session_id,
+                        cwd: pane.cwd,
                     })
                 }
                 other => bail!("Unrecognized pane kind: {other}"),

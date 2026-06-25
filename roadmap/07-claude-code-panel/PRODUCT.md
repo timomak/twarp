@@ -83,6 +83,8 @@ Invariants are grouped by area; each group is annotated with the sub-phase that 
 
 8. Closing the pane, or quitting twarp, terminates that pane's `claude` subprocess (killed on drop, not orphaned). The session remains resumable on next launch because `claude` persisted it (§36). Switching to another tab does **not** kill the session; output that arrives while the pane is backgrounded is rendered when you return to it.
 
+8a. **(7m) Restore on relaunch.** A Claude Code pane that had a live session at quit or crash **reopens in its tab** on next launch — same tab/split position as any restored terminal or editor pane. twarp persists only the `claude` session id and the pane's cwd (no transcript of its own, §42); restore is a `claude --resume` of that session, so the reopened pane renders the conversation from the `.jsonl` `claude` wrote and continues live only on the next message (it does **not** respawn a process on launch, consistent with §6). A pane whose first turn never completed (no session on disk yet, §6) has nothing to resume and is not restored. Restore failures (the `.jsonl` was deleted out from under us, an unreadable session) degrade to an empty pane rather than dropping the tab.
+
 ### Messages & streaming — 7c
 
 9. While `claude` is producing output the pane is in a **streaming** state: a visible activity indicator shows work in progress and a **Stop** affordance is available. Sending a new message is disabled until the turn completes.
