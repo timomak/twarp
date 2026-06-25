@@ -230,11 +230,28 @@ impl PaneContent for ClaudeCodePane {
         ctx.unsubscribe_to_view(&self.view);
     }
 
-    fn snapshot(&self, _app: &AppContext) -> LeafContents {
-        // Non-persisted (see `LeafContents::is_persisted`): a restored pane
-        // can't replay a live `claude` process, and twarp keeps no transcript
-        // store. Session restore is `claude --resume` from the 7h session list.
-        LeafContents::ClaudeCode
+    fn snapshot(&self, app: &AppContext) -> LeafContents {
+        // twarp 07: persist enough to `claude --resume` this conversation on
+        // next launch (see `LeafContents::ClaudeCode`). We don't replay the live
+        // process — restoration reads the `.jsonl` `claude` already wrote and
+        // respawns lazily on the next message. Only record a `session_id` once
+        // that file actually exists (mirrors the raw-CLI `--resume` guard): a
+        // zero-state pane has a pinned id but no on-disk session, so persisting
+        // it would restore an empty pane. Such a pane reports `session_id: None`
+        // and is filtered by `is_persisted`.
+        let view = self.claude_code_view(app);
+        let view = view.as_ref(app);
+        let cwd = view.cwd().cloned();
+        let session_id = view.session_id().to_owned();
+        let has_session = cwd
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .and_then(|cwd| claude_code::sessions::session_file(&cwd, &session_id))
+            .is_some_and(|path| path.exists());
+        LeafContents::ClaudeCode(crate::app_state::ClaudeCodePaneSnapshot {
+            session_id: has_session.then_some(session_id),
+            cwd: cwd.map(|p| p.to_string_lossy().into_owned()),
+        })
     }
 
     fn has_application_focus(&self, ctx: &mut ViewContext<PaneGroup>) -> bool {
