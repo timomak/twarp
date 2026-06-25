@@ -1975,6 +1975,24 @@ impl PaneGroup {
             .map(|pane| pane.id())
     }
 
+    /// Returns the [`PaneId`] of the Claude Code pane already bound to
+    /// `session_id`, or `None`. Resuming a session that is already open in a
+    /// pane must focus that pane rather than spawn a second pane on the same id:
+    /// two panes sharing a session id make focus reconciliation thrash between
+    /// them, which floods `workspace:save_app` and wedges the main thread.
+    pub fn find_claude_code_pane_by_session_id(
+        &self,
+        session_id: &str,
+        ctx: &AppContext,
+    ) -> Option<PaneId> {
+        self.panes_of::<ClaudeCodePane>()
+            .find(|pane| {
+                !self.is_pane_hidden_for_close(pane.id())
+                    && pane.claude_code_view(ctx).as_ref(ctx).session_id() == session_id
+            })
+            .map(|pane| pane.id())
+    }
+
     /// Iterate over the code editors in this pane group.
     pub fn code_panes<'a>(
         &'a self,

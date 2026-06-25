@@ -121,6 +121,7 @@ impl PaneContent for ClaudeCodePane {
                     session_id,
                     cwd,
                     claude_binary,
+                    flags,
                 } => {
                     let (manager, terminal) =
                         pane_group.create_raw_claude_terminal(cwd.clone(), ctx);
@@ -133,8 +134,13 @@ impl PaneContent for ClaudeCodePane {
                         // Claude pane instead of running the CLI (the 7i
                         // "terminal + duplicate pane" bug). A path token is
                         // never intercepted (PRODUCT §3), and a quoted full
-                        // path also sidesteps shell aliases entirely, so raw
-                        // mode runs the vanilla CLI (§43). `claude_binary` is
+                        // path also sidesteps shell aliases entirely — so the
+                        // alias's *default flags* (effort / model / permission
+                        // mode) are re-applied explicitly via `flags`, kept in
+                        // lockstep with the chat UI's headless spawn (§43;
+                        // otherwise the CLI falls back to its own config
+                        // defaults, e.g. xhigh effort over the alias's medium).
+                        // `claude_binary` is
                         // resolved by the view against the login-shell PATH —
                         // the pane only sees the launchd-minimal process PATH
                         // under a GUI launch, where a bare-`claude` fallback
@@ -144,6 +150,7 @@ impl PaneContent for ClaudeCodePane {
                         // PTY *be* the CLI, so the CLI exiting ends the session
                         // — the §44 auto-return signal.
                         let claude = claude_binary.clone();
+                        let flags = flags.clone();
                         // `--resume <id>` only when the session is actually on
                         // disk. A fresh pane (or one whose first turn hasn't
                         // completed) has no `.jsonl` yet, so `--resume` would
@@ -166,7 +173,7 @@ impl PaneContent for ClaudeCodePane {
                             format!("--session-id {session_id}")
                         };
                         terminal.set_pending_command(
-                            &format!("exec '{claude}' {session_arg}"),
+                            &format!("exec '{claude}' {flags} {session_arg}"),
                             ctx,
                         );
                     });
@@ -179,6 +186,28 @@ impl PaneContent for ClaudeCodePane {
                     // otherwise Cmd+W would still target the previously focused
                     // pane.
                     pane_group.focus_pane_by_id(pane_id, ctx);
+                }
+                // twarp: "Fork conversation" — the view has written the branch
+                // file; open it as a resumed session in a fresh split to the
+                // right, inheriting the parent pane's launch settings and cwd.
+                // The forking pane and its session are untouched.
+                ClaudeCodeViewEvent::ForkSession {
+                    resume,
+                    launch,
+                    cwd,
+                } => {
+                    let pane = ClaudeCodePane::new_resume(
+                        resume.clone(),
+                        launch.clone(),
+                        cwd.clone(),
+                        ctx,
+                    );
+                    pane_group.add_pane_with_direction(
+                        crate::pane_group::Direction::Right,
+                        pane,
+                        true, /* focus_new_pane */
+                        ctx,
+                    );
                 }
             }
         });
@@ -209,23 +238,48 @@ impl PaneContent for ClaudeCodePane {
     }
 
     fn has_application_focus(&self, ctx: &mut ViewContext<PaneGroup>) -> bool {
+        // #14/#13: the focused inner view (the raw-CLI terminal, or in chat
+        // mode the message editor) can be missed by the layout-ancestor check
+        // right after the pane opens — or, the bug this guards against, right
+        // after a `Split` creates a *second* Claude pane: before the first
+        // layout establishes the chain up to this pane, the layout-ancestor
+        // walk (`is_self_or_child_focused` → `check_view_or_child_focused`,
+        // which traverses the *presenter* tree) returns a stale answer. When
+        // the global `HandleFocusChange` rescan asks every pane "are you
+        // focused?" against that stale tree, none answers yes, so the
+        // focused-pane state is left pointing at the *previously* focused Claude
+        // pane. A later focus reconciliation (window reactivation,
+        // `focus_active_tab`) then yanks UI focus back into that pane's
+        // composer — the "click the other pane, it focuses for a split second,
+        // then snaps back to the Claude input" report, and it's intermittent
+        // because it hinges on whether layout has caught up to focus yet.
+        //
+        // Resolve it against the live window focus (`focused_view_id`, updated
+        // synchronously in `App::focus`, independent of layout) by comparing the
+        // pane's own view-handle ids directly. This is what the old comment
+        // *claimed* to do but didn't — the direct handles were still queried via
+        // the presenter-based `is_self_or_child_focused`.
+        let view = self.claude_code_view(ctx);
+        let raw_cli_view = view.as_ref(ctx).raw_cli_view();
+        let editor = view.as_ref(ctx).input_editor_view();
+
+        if let Some(focused) = ctx.focused_view_id(ctx.window_id()) {
+            if focused == editor.id() || raw_cli_view.as_ref().is_some_and(|t| focused == t.id()) {
+                return true;
+            }
+        }
+
+        // Fall back to the layout-ancestor walk for the case the direct id
+        // check can't see: focus landed on a *descendant* of the editor or
+        // raw-CLI terminal (a popup/child view), whose id we don't hold.
         if self.view.is_self_or_child_focused(ctx) {
             return true;
         }
-        // #14/#13: the focused inner view (the raw-CLI terminal, or in chat
-        // mode the message editor) can be missed by the layout-ancestor check
-        // above right after the pane opens, before the first layout establishes
-        // the chain up to this pane. Check those handles directly
-        // (layout-timing-independent) so pane activation / Cmd+W / maximize
-        // target this pane whenever its chat or CLI is focused.
-        let view = self.claude_code_view(ctx);
-        let raw_cli_view = view.as_ref(ctx).raw_cli_view();
         if let Some(terminal) = raw_cli_view {
             if terminal.is_self_or_child_focused(ctx) {
                 return true;
             }
         }
-        let editor = view.as_ref(ctx).input_editor_view();
         editor.is_self_or_child_focused(ctx)
     }
 

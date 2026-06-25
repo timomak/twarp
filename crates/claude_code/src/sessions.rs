@@ -146,6 +146,97 @@ pub fn load_history(path: &Path) -> Vec<TranscriptEvent> {
     out.into()
 }
 
+/// Fork a stored session at a turn boundary into a new independent session
+/// ("Fork conversation" — Claude's own term, the CLI's `--fork-session`).
+///
+/// Writes a fresh `<new_session_id>.jsonl` under `cwd`'s session dir containing
+/// the first `keep_user_turns` user turns of `parent_path` (and all the
+/// assistant/thinking/tool activity those turns produced), then returns its
+/// path. `claude --resume <new_session_id>` continues it as a branch that
+/// diverges from the chosen point — the original session is never touched.
+///
+/// The `claude` CLI has no native fork-at-message flag, so the branch is
+/// synthesized by truncating claude's own jsonl after the chosen user turn and
+/// rewriting each retained line's `sessionId` to the new id. Retained lines are
+/// a contiguous prefix, so the `uuid`/`parentUuid` chain stays internally
+/// consistent and claude resumes it like any ordinary session.
+///
+/// Turn counting reuses the driver's defensive parser, so it classifies genuine
+/// prompts versus meta / tool-result `user` lines exactly the way the panel
+/// counts its `User` transcript items — the caller and this function agree on
+/// what "turn N" means.
+pub fn fork_session_file(
+    parent_path: &Path,
+    new_session_id: &str,
+    keep_user_turns: usize,
+    cwd: &Path,
+) -> std::io::Result<PathBuf> {
+    use std::io::Write as _;
+
+    let file = std::fs::File::open(parent_path)?;
+    let reader = std::io::BufReader::new(file);
+
+    let mut kept: Vec<String> = Vec::new();
+    let mut user_turns_seen = 0usize;
+    for line in reader.lines().map_while(Result::ok) {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            // Unparseable line: carry it through unchanged (defensive — claude
+            // writes valid JSON, and a stray line shouldn't drop the prefix).
+            kept.push(line);
+            continue;
+        };
+        let mut events = VecDeque::new();
+        crate::driver::parse_history_line(&value, &mut events);
+        let starts_user_turn = events
+            .iter()
+            .any(|e| matches!(e, TranscriptEvent::UserMessage(_)));
+        if starts_user_turn && user_turns_seen >= keep_user_turns {
+            // This line begins the turn *after* the fork point — stop before it.
+            break;
+        }
+        kept.push(rewrite_session_id(value, new_session_id));
+        if starts_user_turn {
+            user_turns_seen += 1;
+        }
+    }
+
+    let dir = sessions_dir(cwd).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no claude sessions dir (HOME unset)",
+        )
+    })?;
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("{new_session_id}.jsonl"));
+    let mut out = std::fs::File::create(&path)?;
+    for line in &kept {
+        out.write_all(line.as_bytes())?;
+        out.write_all(b"\n")?;
+    }
+    Ok(path)
+}
+
+/// Rewrite a parsed jsonl line's `sessionId` to `new_session_id`, leaving every
+/// other field intact, and re-serialize. A line that isn't a JSON object is
+/// serialized back unchanged.
+fn rewrite_session_id(value: Value, new_session_id: &str) -> String {
+    match value {
+        Value::Object(mut map) => {
+            if map.contains_key("sessionId") {
+                map.insert(
+                    "sessionId".to_owned(),
+                    Value::String(new_session_id.to_owned()),
+                );
+            }
+            Value::Object(map).to_string()
+        }
+        other => other.to_string(),
+    }
+}
+
 fn best_effort_title(path: &Path) -> Option<String> {
     let file = std::fs::File::open(path).ok()?;
     let reader = std::io::BufReader::new(file);
@@ -258,6 +349,57 @@ mod tests {
         assert_eq!(events.len(), 3, "user + delta + done, got {events:?}");
         assert!(matches!(&events[0], TranscriptEvent::UserMessage(m) if m == "hello"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fork_truncates_at_user_turn_and_rewrites_session_id() {
+        // Two user turns; forking after the first must keep turn 1 (its user +
+        // assistant lines) and drop turn 2, with every kept line re-stamped.
+        let home = std::env::temp_dir().join("twarp-test-fork-home");
+        let cwd = Path::new("/proj/x");
+        let _ = std::fs::remove_dir_all(&home);
+        std::env::set_var("HOME", &home);
+        let dir = sessions_dir(cwd).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        let parent = dir.join("orig.jsonl");
+        std::fs::write(
+            &parent,
+            concat!(
+                r#"{"type":"user","sessionId":"orig","message":{"role":"user","content":"one"}}"#,
+                "\n",
+                r#"{"type":"assistant","sessionId":"orig","message":{"role":"assistant","content":[{"type":"text","text":"a1"}]}}"#,
+                "\n",
+                r#"{"type":"user","sessionId":"orig","message":{"role":"user","content":[{"type":"tool_result","content":"r"}]}}"#,
+                "\n",
+                r#"{"type":"user","sessionId":"orig","message":{"role":"user","content":"two"}}"#,
+                "\n",
+                r#"{"type":"assistant","sessionId":"orig","message":{"role":"assistant","content":[{"type":"text","text":"a2"}]}}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+
+        let new_path = fork_session_file(&parent, "fork", 1, cwd).unwrap();
+        assert_eq!(new_path, dir.join("fork.jsonl"));
+        let forked = std::fs::read_to_string(&new_path).unwrap();
+        // Kept: user "one", assistant "a1", and the tool-result user line (which
+        // isn't a genuine turn) — but NOT user "two" or its reply.
+        assert!(forked.contains("\"one\""));
+        assert!(forked.contains("a1"));
+        assert!(forked.contains("tool_result"));
+        assert!(!forked.contains("\"two\""), "turn 2 must be dropped: {forked}");
+        assert!(!forked.contains("a2"));
+        // Every retained line is re-stamped to the new session id.
+        assert!(!forked.contains("\"orig\""), "sessionId not rewritten: {forked}");
+        assert!(forked.contains("\"fork\""));
+
+        // Replaying the fork yields exactly turn 1 (user + assistant).
+        let events = load_history(&new_path);
+        assert!(matches!(&events[0], TranscriptEvent::UserMessage(m) if m == "one"));
+        assert!(events
+            .iter()
+            .all(|e| !matches!(e, TranscriptEvent::UserMessage(m) if m == "two")));
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]

@@ -4605,10 +4605,15 @@ impl EditorView {
     fn tab(&mut self, ctx: &mut ViewContext<Self>) {
         if self.can_edit(ctx) {
             match self.propagate_vertical_navigation_keys {
-                PropagateAndNoOpNavigationKeys::Always => {
+                // Unlike the arrow keys, Tab has no cursor "boundary", so both
+                // `Always` and `AtBoundary` propagate it — the parent uses Tab to
+                // drive an open completion list (e.g. the Claude composer's `/`
+                // suggestions) rather than indenting the buffer.
+                PropagateAndNoOpNavigationKeys::Always
+                | PropagateAndNoOpNavigationKeys::AtBoundary => {
                     ctx.emit(Event::Navigate(NavigationKey::Tab))
                 }
-                _ => self.handle_tab(ctx),
+                PropagateAndNoOpNavigationKeys::Never => self.handle_tab(ctx),
             };
         }
     }
@@ -4670,10 +4675,13 @@ impl EditorView {
     fn shift_tab(&mut self, ctx: &mut ViewContext<Self>) {
         if self.can_edit(ctx) {
             match self.propagate_vertical_navigation_keys {
-                PropagateAndNoOpNavigationKeys::Always => {
+                // Mirrors `tab`: both propagating modes surface Shift+Tab so the
+                // parent can walk an open completion list backward.
+                PropagateAndNoOpNavigationKeys::Always
+                | PropagateAndNoOpNavigationKeys::AtBoundary => {
                     ctx.emit(Event::Navigate(NavigationKey::ShiftTab))
                 }
-                _ => self.unindent(ctx),
+                PropagateAndNoOpNavigationKeys::Never => self.unindent(ctx),
             };
         }
     }

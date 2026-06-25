@@ -18,7 +18,7 @@ use crate::driver::PermissionMode;
 
 /// The parsed launch request: the spawn-relevant flags plus the positional
 /// prompt (PRODUCT §2: a trailing positional becomes the first user turn).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LaunchOptions {
     pub prompt: Option<String>,
     /// `--permission-mode <m>`, or `--dangerously-skip-permissions` →

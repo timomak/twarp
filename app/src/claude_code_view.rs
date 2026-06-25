@@ -99,7 +99,9 @@ use crate::workspace::{WorkspaceAction, WorkspaceRegistry};
 use self::thinking::ThinkingUi;
 use self::tool_cards::{render_tool_card, ToolCardUi};
 use crate::appearance::Appearance;
-use crate::editor::{EditorOptions, EditorView, Event as EditorEvent, TextOptions};
+use crate::editor::{
+    EditorOptions, EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, TextOptions,
+};
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::{
     pane::view::{self, HeaderContent, StandardHeader, StandardHeaderOptions},
@@ -120,6 +122,8 @@ const PANE_TITLE: &str = "Claude Code";
 /// Avatar glyphs for the message rows (the Agent-Mode shape: icon + body).
 const USER_ICON_SVG_PATH: &str = "bundled/svg/user.svg";
 const ASSISTANT_ICON_SVG_PATH: &str = "bundled/svg/claude.svg";
+/// Branch glyph for the hover "Fork" affordance below an assistant response.
+const FORK_ICON_SVG_PATH: &str = "bundled/svg/git-branch-02.svg";
 
 /// Body / code font sizes. A point past the deleted `ai_assistant::transcript`
 /// renderer for the airier, Claude-app reading rhythm (shell-polish pass —
@@ -136,6 +140,10 @@ const COMPOSER_MAX_HEIGHT: f32 = 184.;
 /// The floating composer's width cap — it stays a centered card even in a
 /// wide pane (the chat behind it is full-width).
 const COMPOSER_MAX_WIDTH: f32 = 760.;
+/// Width cap for a composer pill's dropdown popover (permission / model /
+/// effort / context / branch / CI / PR). Keeps the menu a compact card anchored
+/// to its pill rather than stretching to the pane edge (issue #1).
+const COMPOSER_MENU_MAX_WIDTH: f32 = 320.;
 /// Height of the clearance spacer between the last message and the end-of-
 /// transcript sentinel, so the newest message scrolls fully clear of the
 /// floating composer (which floats over the bottom of the pane) rather than
@@ -203,6 +211,25 @@ pub enum ClaudeCodeViewEvent {
         /// the `claude`-at-submit trigger, so the CLI never starts and the pane
         /// shows an empty terminal (the release-only "Raw CLI does nothing").
         claude_binary: String,
+        /// The alias-derived default flags (`--effort` / `--model` /
+        /// `--permission-mode`) to re-apply on the raw-CLI command line. Raw
+        /// mode launches the binary by absolute path (PRODUCT §43), which
+        /// sidesteps the shell alias that supplied those defaults — so without
+        /// passing them explicitly the CLI falls back to its own config
+        /// defaults (e.g. xhigh effort instead of the alias's `--effort
+        /// medium`), and the two modes disagree on an empty chat. Pre-joined
+        /// and shell-quoted by the view, which owns the parsed flags.
+        flags: String,
+    },
+    /// twarp: fork this conversation into a new pane (PRODUCT "Fork
+    /// conversation"; Claude's `--fork-session`). The view has already written
+    /// the truncated branch file under `resume.session_id`; the pane group
+    /// opens it as a resumed session in a fresh split, inheriting the parent
+    /// pane's `launch` settings (model / effort / permission mode) and `cwd`.
+    ForkSession {
+        resume: ResumeSession,
+        launch: LaunchOptions,
+        cwd: Option<PathBuf>,
     },
 }
 
@@ -308,6 +335,11 @@ pub enum ClaudeCodeViewAction {
     /// "Welcome back" panel — loads its stored history into this pane and
     /// re-attaches it, the same as a sidebar resume but in place.
     ResumeRecentSession(usize),
+    /// twarp: fork the conversation at the assistant response with this
+    /// transcript index ("Fork conversation" — Claude's `--fork-session`).
+    /// Branches the session up to that turn into a new pane to the right,
+    /// leaving this one untouched. Shown on hover below a response.
+    ForkConversation(usize),
 }
 
 /// Actions dispatched by elements this view renders inside its **pane
@@ -367,7 +399,7 @@ impl ComposerMenu {
 /// A stored session to reopen (PRODUCT §36, sub-phase 7h): the pane renders
 /// the on-disk history up front and continues the conversation live via
 /// `claude --resume <session_id>` on the next message.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResumeSession {
     pub session_id: String,
     pub jsonl_path: PathBuf,
@@ -503,6 +535,10 @@ pub struct ClaudeCodeView {
     /// The cwd's mentionable files, walked lazily on the first `@` and kept
     /// for the pane's lifetime (gitignore-aware, capped).
     cwd_files: Option<Vec<String>>,
+    /// The `/` slash-command catalogue (names + descriptions), scanned lazily
+    /// on the first `/` from the on-disk skill dirs so skills + their
+    /// descriptions show before the session's first `init` (issues #2/#3).
+    slash_command_index: Option<composer::SlashCommandIndex>,
     /// `@`-mentioned images detected in the draft (PRODUCT §15b) — previewed
     /// as chips and sent as inline image blocks.
     pending_images: Vec<PathBuf>,
@@ -595,6 +631,11 @@ pub struct ClaudeCodeView {
     recent_sessions: Vec<sessions::StoredSession>,
     /// Pooled mouse handles for the zero-state recent-session rows.
     recent_session_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Pooled mouse handles, per transcript index, for the hover "Fork"
+    /// affordance below assistant responses: `fork_row_mouse` senses the hover
+    /// over the response block, `fork_button_mouse` drives the button itself.
+    fork_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    fork_button_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
     /// Mouse handles for the context-bar pills (#11): branch / CI / PR / the
     /// Create-PR button / the worktree toggle.
     branch_pill_mouse: MouseStateHandle,
@@ -651,6 +692,13 @@ impl ClaudeCodeView {
                 autogrow: true,
                 soft_wrap: true,
                 text: TextOptions::ui_font_size(appearance),
+                // Surface Tab / Shift+Tab and the arrow keys to the view so the
+                // composer can accept a `/` or `@` suggestion with Tab and cycle
+                // the list / recall draft history with the arrows. `AtBoundary`
+                // keeps multi-line editing intact — the arrows only propagate
+                // once the cursor can't move further within the draft.
+                propagate_and_no_op_vertical_navigation_keys:
+                    PropagateAndNoOpNavigationKeys::AtBoundary,
                 ..Default::default()
             };
             EditorView::new(options, ctx)
@@ -727,6 +775,7 @@ impl ClaudeCodeView {
             suggestion_selected: 0,
             suggestion_row_mouse: std::cell::RefCell::new(Vec::new()),
             cwd_files: None,
+            slash_command_index: None,
             pending_images: Vec::new(),
             attachment_optouts: HashSet::new(),
             attachment_chip_mouse: std::cell::RefCell::new(Vec::new()),
@@ -760,6 +809,8 @@ impl ClaudeCodeView {
             render_wash: std::cell::Cell::new(ColorU::new(0, 0, 0, 0)),
             recent_sessions: Vec::new(),
             recent_session_mouse: std::cell::RefCell::new(Vec::new()),
+            fork_row_mouse: std::cell::RefCell::new(Vec::new()),
+            fork_button_mouse: std::cell::RefCell::new(Vec::new()),
             branch_pill_mouse: MouseStateHandle::default(),
             ci_pill_mouse: MouseStateHandle::default(),
             pr_pill_mouse: MouseStateHandle::default(),
@@ -840,6 +891,13 @@ impl ClaudeCodeView {
     /// Changes / file tree panels (owner feedback on the 7d review).
     pub fn cwd(&self) -> Option<&PathBuf> {
         self.cwd.as_ref()
+    }
+
+    /// The Claude session id this view is bound to. Every pane has one from
+    /// birth (a resumed pane adopts the resumed id, a fresh pane mints a UUID),
+    /// so this is safe to match on to detect a session already open in a pane.
+    pub fn session_id(&self) -> &str {
+        &self.session_id
     }
 
     /// The embedded raw-CLI terminal view while raw mode is active (#14).
@@ -1163,17 +1221,17 @@ impl ClaudeCodeView {
             Some(query) => {
                 let candidates: Vec<String> = match query.kind {
                     SuggestionKind::SlashCommand => {
-                        let mut commands: Vec<String> = composer::DEFAULT_SLASH_COMMANDS
-                            .iter()
-                            .map(|c| c.to_string())
-                            .collect();
-                        for command in self.transcript.slash_commands() {
-                            if !commands.contains(command) {
-                                commands.push(command.clone());
-                            }
-                        }
-                        commands.sort();
-                        commands
+                        // The catalogue (built-ins + on-disk skills with their
+                        // descriptions) is scanned once and kept; a running
+                        // session's `init` list folds in any names we can't see
+                        // on disk (plugins / MCP commands).
+                        let index = self
+                            .slash_command_index
+                            .get_or_insert_with(|| composer::build_slash_command_index(&cwd));
+                        index.merge_names(
+                            self.transcript.slash_commands().iter().map(String::as_str),
+                        );
+                        index.names.clone()
                     }
                     SuggestionKind::FileMention => self
                         .cwd_files
@@ -1249,12 +1307,42 @@ impl ClaudeCodeView {
                 })
                 .build()
                 .finish();
+            // For `/` commands, show the skill's description beneath the name
+            // (issue #3) when we discovered one on disk.
+            let description = (query.kind == SuggestionKind::SlashCommand)
+                .then(|| {
+                    self.slash_command_index
+                        .as_ref()
+                        .and_then(|index| index.descriptions.get(suggestion))
+                })
+                .flatten();
+            let label_block: Box<dyn Element> = if let Some(description) = description {
+                let desc = appearance
+                    .ui_builder()
+                    .span(truncate_description(description))
+                    .with_style(UiComponentStyles {
+                        font_size: Some(11.),
+                        font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+                        ..Default::default()
+                    })
+                    .build()
+                    .finish();
+                Flex::column()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                    .with_main_axis_size(MainAxisSize::Min)
+                    .with_spacing(1.)
+                    .with_child(label)
+                    .with_child(desc)
+                    .finish()
+            } else {
+                label
+            };
             let mut row_container = Container::new(
                 Flex::row()
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_spacing(8.)
                     .with_child(icon)
-                    .with_child(label)
+                    .with_child(label_block)
                     .finish(),
             )
             .with_padding_left(8.)
@@ -2291,8 +2379,34 @@ impl ClaudeCodeView {
             session_id: self.session_id.clone(),
             cwd: self.cwd.clone(),
             claude_binary: self.resolve_claude_binary(),
+            flags: self.raw_cli_flags(),
         });
         ctx.notify();
+    }
+
+    /// The alias-derived defaults to re-apply when launching the raw CLI by
+    /// absolute path (which bypasses the shell alias). Mirrors the flags the
+    /// headless spawn passes (`SpawnOptions` → `driver::spawn_session`), so the
+    /// chat UI and the raw CLI agree on effort / model / permission mode on an
+    /// empty chat rather than the CLI silently falling back to its own config
+    /// defaults. Values are single-quoted so a model id never splits a token.
+    fn raw_cli_flags(&self) -> String {
+        let mut flags = Vec::new();
+        if let Some(effort) = &self.effort {
+            flags.push(format!("--effort '{effort}'"));
+        }
+        if let Some(model) = &self.model {
+            flags.push(format!("--model '{model}'"));
+        }
+        // Always set: the chat UI always spawns with an explicit
+        // `--permission-mode` (`driver::spawn_session`), so passing the view's
+        // current mode keeps the two modes in lockstep — e.g. an alias's
+        // `--dangerously-skip-permissions` (→ bypassPermissions) carries over.
+        flags.push(format!(
+            "--permission-mode {}",
+            self.permission_mode.as_cli_arg()
+        ));
+        flags.join(" ")
     }
 
     /// Resolve the `claude` executable to launch in raw mode. Prefers an
@@ -2579,6 +2693,154 @@ impl ClaudeCodeView {
         self.refresh_repo_context(ctx);
         ctx.focus(&self.input_editor);
         ctx.notify();
+    }
+
+    /// twarp: fork the conversation at the assistant response at transcript
+    /// `index` ("Fork conversation"; Claude's `--fork-session`). Truncates the
+    /// session's on-disk jsonl after that turn into a new branch file, then asks
+    /// the pane group to open it as a resumed session in a split — this pane and
+    /// its session are left untouched.
+    fn fork_conversation(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        if index >= self.transcript.items().len() {
+            return;
+        }
+        // The live conversation is always stored under the pane's own session id
+        // (`--session-id` for a fresh pane, `--resume <id>` for a resumed one,
+        // where `session_id == resume id`). Forking needs that file on disk.
+        let Some(cwd) = self.cwd.clone().or_else(|| std::env::current_dir().ok()) else {
+            return;
+        };
+        let Some(parent_path) = sessions::session_file(&cwd, &self.session_id) else {
+            return;
+        };
+        if !parent_path.exists() {
+            // Nothing persisted yet (first turn still streaming) — nothing to fork.
+            return;
+        }
+
+        // Keep every user turn up to and including the one this response belongs
+        // to. `User` items map 1:1 to the `UserMessage` events `fork_session_file`
+        // counts, so the boundary the user sees and the file cut agree.
+        let keep_user_turns = self.transcript.items()[..=index]
+            .iter()
+            .filter(|item| matches!(item, TranscriptItem::User(_)))
+            .count();
+        if keep_user_turns == 0 {
+            return;
+        }
+
+        let new_id = uuid::Uuid::new_v4().to_string();
+        let jsonl_path =
+            match sessions::fork_session_file(&parent_path, &new_id, keep_user_turns, &cwd) {
+                Ok(path) => path,
+                Err(err) => {
+                    log::warn!("claude: fork conversation failed: {err}");
+                    return;
+                }
+            };
+
+        // The branch inherits this pane's effective settings (model / effort /
+        // permission mode); `prompt`/`resume_session_id` stay empty because the
+        // `ResumeSession` itself is the resume target.
+        let launch = LaunchOptions {
+            prompt: None,
+            permission_mode: Some(self.permission_mode),
+            model: self.model.clone(),
+            effort: self.effort.clone(),
+            resume_session_id: None,
+        };
+        ctx.emit(ClaudeCodeViewEvent::ForkSession {
+            resume: ResumeSession {
+                session_id: new_id,
+                jsonl_path,
+            },
+            launch,
+            cwd: Some(cwd),
+        });
+    }
+
+    /// twarp: an assistant response plus its hover "Fork" affordance. The reply
+    /// renders exactly as before; on hover a small branch button slides in below
+    /// it, dispatching [`ClaudeCodeViewAction::ForkConversation`] for this index.
+    fn render_assistant_response(
+        &self,
+        index: usize,
+        text: &str,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let row = render_message_row(
+            false,
+            ASSISTANT_ICON_SVG_PATH,
+            text,
+            self.render_accent.get(),
+            appearance,
+        );
+        let fork_button = self.render_fork_affordance(index, app);
+        let row_mouse = pooled_mouse_state(&self.fork_row_mouse, index);
+        Hoverable::new(row_mouse, move |state| {
+            let mut col = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_child(row);
+            if state.is_hovered() {
+                col.add_child(fork_button);
+            }
+            col.finish()
+        })
+        .finish()
+    }
+
+    /// twarp: the "⑂ Fork" button shown under a response on hover. Aligned under
+    /// the message prose (past the avatar gutter) and clickable on its own — the
+    /// surrounding response stays plain text.
+    fn render_fork_affordance(&self, index: usize, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let label_color = theme.nonactive_ui_text_color().into_solid();
+        let button_mouse = pooled_mouse_state(&self.fork_button_mouse, index);
+
+        let icon = ConstrainedBox::new(Icon::new(FORK_ICON_SVG_PATH, label_color).finish())
+            .with_width(12.)
+            .with_height(12.)
+            .finish();
+        let label = appearance
+            .ui_builder()
+            .span("Fork")
+            .with_style(UiComponentStyles {
+                font_color: Some(label_color),
+                font_size: Some(11.5),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+        let content = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(5.)
+            .with_child(icon)
+            .with_child(label)
+            .finish();
+        let pill = Container::new(content)
+            .with_padding_left(8.)
+            .with_padding_right(8.)
+            .with_padding_top(3.)
+            .with_padding_bottom(3.)
+            .with_background_color(self.accent_wash(app))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
+            .finish();
+        let button = Hoverable::new(button_mouse, move |_| pill)
+            .with_cursor(Cursor::PointingHand)
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::ForkConversation(index));
+            })
+            .finish();
+        // Indent under the prose (avatar gutter ≈ 14 padding + 16 icon + 12
+        // margin) so it reads as belonging to the message above it.
+        Container::new(button)
+            .with_margin_left(42.)
+            .with_margin_bottom(6.)
+            .finish()
     }
 
     fn render_body(&self, app: &AppContext) -> Box<dyn Element> {
@@ -3034,12 +3296,19 @@ impl ClaudeCodeView {
             ComposerMenu::Pr => self.render_pr_menu(appearance)?,
         };
         Some(
-            Container::new(content)
-                .with_padding(Padding::uniform(10.))
-                .with_background_color(theme.surface_2().into_solid())
-                .with_border(Border::all(1.).with_border_fill(theme.outline()))
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-                .finish(),
+            // Cap the width so the dropdown stays a compact popover anchored to
+            // its pill instead of stretching to the pane edge (issue #1). The
+            // inner columns size to content up to this cap.
+            ConstrainedBox::new(
+                Container::new(content)
+                    .with_padding(Padding::uniform(10.))
+                    .with_background_color(theme.surface_2().into_solid())
+                    .with_border(Border::all(1.).with_border_fill(theme.outline()))
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                    .finish(),
+            )
+            .with_max_width(COMPOSER_MENU_MAX_WIDTH)
+            .finish(),
         )
     }
 
@@ -4210,6 +4479,9 @@ impl TypedActionView for ClaudeCodeView {
             ClaudeCodeViewAction::ResumeRecentSession(index) => {
                 self.resume_recent_session(*index, ctx)
             }
+            ClaudeCodeViewAction::ForkConversation(index) => {
+                self.fork_conversation(*index, ctx)
+            }
         }
     }
 }
@@ -4390,13 +4662,7 @@ impl ClaudeCodeView {
                 }
             }
             TranscriptItem::Assistant { text, .. } => {
-                render_message_row(
-                    false,
-                    ASSISTANT_ICON_SVG_PATH,
-                    text,
-                    self.render_accent.get(),
-                    appearance,
-                )
+                self.render_assistant_response(index, text, app)
             }
             TranscriptItem::Notice(message) => render_notice(message, appearance),
             TranscriptItem::Error(message) => render_error(message, appearance),
@@ -4884,6 +5150,19 @@ fn parse_questions(input: &serde_json::Value) -> Vec<ParsedQuestion> {
 /// tint for the Claude-app shape — the assistant reply flows on the canvas, the
 /// user turn sits in a subtle rounded bubble — so the turns stay visually
 /// distinct without striping the column (PRODUCT §12, §32).
+/// Grow `pool` to cover `index` and hand back that slot's mouse handle — the
+/// per-index pooling idiom the recent-session rows and fork affordances share.
+fn pooled_mouse_state(
+    pool: &std::cell::RefCell<Vec<MouseStateHandle>>,
+    index: usize,
+) -> MouseStateHandle {
+    let mut states = pool.borrow_mut();
+    while states.len() <= index {
+        states.push(MouseStateHandle::default());
+    }
+    states[index].clone()
+}
+
 fn render_message_row(
     is_user: bool,
     icon_svg: &'static str,
@@ -5716,6 +5995,27 @@ fn render_clickable_pill(
 /// prepends (`claude-fable-5[1m]` → `fable-5[1m]`).
 fn prettify_model(model: &str) -> String {
     model.strip_prefix("claude-").unwrap_or(model).to_owned()
+}
+
+/// Shorten a slash-command description to a single readable line for the
+/// suggestions panel (issue #3): clip at the first sentence boundary, then to a
+/// hard character cap so a long "Use when…" blurb can't dominate the row.
+fn truncate_description(description: &str) -> String {
+    const MAX_CHARS: usize = 80;
+    // Prefer the first sentence — skill descriptions lead with a summary then
+    // a "Use when…" clause we don't need in the preview.
+    let summary = description
+        .split_once(". ")
+        .map(|(first, _)| first)
+        .unwrap_or(description)
+        .trim_end_matches('.')
+        .trim();
+    if summary.chars().count() <= MAX_CHARS {
+        return summary.to_owned();
+    }
+    let mut clipped: String = summary.chars().take(MAX_CHARS).collect();
+    clipped.push('…');
+    clipped
 }
 
 /// Friendly label for a `--permission-mode` value (the `init` message's

@@ -472,7 +472,7 @@ define_settings_group!(TabSettings, settings: [
     },
     preserve_active_tab_color: PreserveActiveTabColor {
         type: bool,
-        default: false,
+        default: true,
         supported_platforms: SupportedPlatforms::ALL,
         sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
         private: false,

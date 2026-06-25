@@ -13,7 +13,9 @@ use crate::undo_close::UndoCloseStack;
 use crate::workspace::cross_window_tab_drag::CrossWindowTabDrag;
 use crate::workspace::{Workspace, WorkspaceAction};
 use crate::GlobalResourceHandlesProvider;
+use std::cell::Cell;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 use warp_graphql::mutations::create_anonymous_user::AnonymousUserType;
 use warpui::windowing::WindowManager;
 use warpui::{AppContext, SingletonEntity, TypedActionView};
@@ -121,6 +123,33 @@ fn save_app(_: &(), ctx: &mut AppContext) {
     }
 
     if !*GeneralSettings::as_ref(ctx).restore_session {
+        return;
+    }
+
+    // Circuit breaker against a save_app feedback loop. `save_app` is dispatched
+    // from many focus / window-move / resize / tab-change callbacks, and a focus
+    // reconciliation bug can re-enter this path thousands of times per second.
+    // Each call serializes the entire app state and writes SQLite, so an
+    // unbounded burst starves the main thread until the app dies (observed
+    // 2026-06-25: ~5k saves/sec for ~100s in a Claude-pane focus thrash, then a
+    // native crash with no panic). Throttle to at most one save per
+    // MIN_SAVE_INTERVAL — far more often than session restore needs, but a hard
+    // ceiling no focus glitch can blow past. The next callback after the window
+    // elapses persists the latest state. Runs only on the main thread, so a
+    // thread-local Cell is sufficient (no atomics / wall-clock epoch needed).
+    const MIN_SAVE_INTERVAL: Duration = Duration::from_millis(250);
+    thread_local! {
+        static LAST_SAVE: Cell<Option<Instant>> = const { Cell::new(None) };
+    }
+    let now = Instant::now();
+    let throttled = LAST_SAVE.with(|last| match last.get() {
+        Some(prev) if now.duration_since(prev) < MIN_SAVE_INTERVAL => true,
+        _ => {
+            last.set(Some(now));
+            false
+        }
+    });
+    if throttled {
         return;
     }
 

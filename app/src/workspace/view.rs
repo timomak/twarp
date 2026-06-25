@@ -10273,9 +10273,15 @@ impl Workspace {
 
         if !is_restoration {
             if *TabSettings::as_ref(ctx).preserve_active_tab_color.value() {
-                if let Some(SelectedTabColor::Color(color)) = active_tab_selected_color {
-                    self.tabs[self.active_tab_index].selected_color =
-                        SelectedTabColor::Color(color);
+                // Inherit the source tab's full color state so the new tab matches the
+                // color theme of the tab it was created from — whether that color was
+                // chosen manually (`selected_color`) or derived from the directory
+                // (`default_directory_color`).
+                if let Some(selected) = active_tab_selected_color {
+                    self.tabs[self.active_tab_index].selected_color = selected;
+                }
+                if let Some(color) = active_tab_default_color {
+                    self.tabs[self.active_tab_index].default_directory_color = Some(color);
                 }
             }
 
@@ -12757,6 +12763,21 @@ impl Workspace {
         cwd: PathBuf,
         ctx: &mut ViewContext<Self>,
     ) {
+        let pane_group = self.active_tab_pane_group().clone();
+
+        // If this session is already open in a pane, focus that pane instead of
+        // spawning a second pane bound to the same session id. Two Claude panes
+        // sharing a session id make focus reconciliation thrash between them,
+        // which floods `workspace:save_app` until the main thread wedges and the
+        // app dies (observed 2026-06-25: SplitPaneRight + resume of an already
+        // open session → ~5k saves/sec → native crash).
+        if let Some(existing) = pane_group.read(ctx, |pg, ctx| {
+            pg.find_claude_code_pane_by_session_id(&session_id, ctx)
+        }) {
+            pane_group.update(ctx, |pg, ctx| pg.focus_pane_by_id(existing, ctx));
+            return;
+        }
+
         // Resume with the SAME defaults a freshly typed `claude` would get:
         // resolve the user's `claude` alias (e.g. `--permission-mode`,
         // `--effort`, `--dangerously-skip-permissions`) from the active
@@ -12783,7 +12804,6 @@ impl Workspace {
             Some(cwd),
             ctx,
         );
-        let pane_group = self.active_tab_pane_group().clone();
         pane_group.update(ctx, |pane_group, ctx| {
             pane_group.add_pane_with_direction(
                 Direction::Right,
@@ -13164,6 +13184,19 @@ impl Workspace {
 
                 // Re-evaluate which region is focused and update pane dimming accordingly.
                 self.update_pane_dimming_for_current_focus_region(ctx);
+
+                // twarp 07: focusing a Claude Code pane doesn't change the active
+                // *terminal* session, so neither `ActiveSessionChanged` nor the
+                // terminal branch below recomputes working directories. Without
+                // this, the code-review / Open Changes panel never re-derives the
+                // focused repo for the Claude pane and shows no diff count.
+                if pane_group
+                    .as_ref(ctx)
+                    .focused_claude_code_view_id(ctx)
+                    .is_some()
+                {
+                    self.refresh_working_directories_for_pane_group(&pane_group, ctx);
+                }
 
                 let mut active_object_open_in_pane = false;
                 // Case 1: if workflow, get workflow ID via TerminalView input

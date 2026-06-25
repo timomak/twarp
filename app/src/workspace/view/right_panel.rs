@@ -217,6 +217,7 @@ impl CodeReviewState {
         self.set_selected_repo_internal(repo_path, true, ctx);
     }
 
+    #[cfg(not(feature = "local_fs"))]
     pub fn set_focused_repo(
         &mut self,
         repo_path: Option<PathBuf>,
@@ -224,6 +225,33 @@ impl CodeReviewState {
     ) {
         self.did_focused_repo_change = true;
         self.focused_repo_path = repo_path;
+        ctx.notify();
+    }
+
+    #[cfg(feature = "local_fs")]
+    pub fn set_focused_repo(
+        &mut self,
+        repo_path: Option<PathBuf>,
+        ctx: &mut ViewContext<RightPanelView>,
+    ) {
+        self.did_focused_repo_change = true;
+        self.focused_repo_path = repo_path.clone();
+
+        // twarp 07: make the focused repo drive the panel's selection so the
+        // diff + count follow the focused pane (e.g. a Claude Code pane). The
+        // model only emits a repo it has detected, so it's always one of
+        // `available_repos`; selecting it switches the displayed diff.
+        // `set_selected_repo` is a no-op when the selection is unchanged, so
+        // repeated focus events don't churn.
+        if let Some(repo_path) = repo_path {
+            if self.available_repos.contains(&repo_path) {
+                self.set_selected_repo(repo_path, ctx);
+                // `set_selected_repo` clears the jump-to-repo flag; the focus
+                // change still happened, so restore it for the button.
+                self.did_focused_repo_change = true;
+            }
+        }
+
         ctx.notify();
     }
 
@@ -659,7 +687,7 @@ impl RightPanelView {
             repo_path,
             diff_state_model.clone(),
             pane_group_id,
-            terminal_view.clone(),
+            Some(terminal_view.clone()),
             ctx,
         ) {
             view.update(ctx, |view, ctx| {
@@ -1211,7 +1239,11 @@ impl RightPanelView {
         repo_path: &Path,
         diff_state_model: ModelHandle<DiffStateModel>,
         pane_group_id: EntityId,
-        terminal_view: WeakViewHandle<TerminalView>,
+        // twarp 07: a repo discovered only via a Claude Code pane (e.g. after
+        // `claude` replaced the terminal) has no backing terminal. The review
+        // view tolerates that — it only needs a terminal for the optional
+        // "send comments to terminal" affordance.
+        terminal_view: Option<WeakViewHandle<TerminalView>>,
         ctx: &mut ViewContext<Self>,
     ) -> Option<ViewHandle<CodeReviewView>> {
         // Early check: if pane group has no active repositories, don't create a view
@@ -1236,7 +1268,7 @@ impl RightPanelView {
                 Some(repo_path.to_path_buf()),
                 diff_state_model_clone,
                 code_review_comment_batch,
-                Some(terminal_view),
+                terminal_view,
                 ctx,
             )
         });
@@ -1721,32 +1753,34 @@ impl RightPanelView {
                 return;
             };
             let working_directories_model = self.working_directories_model.as_ref(ctx);
-            let Some(terminal_view_id) =
-                working_directories_model.get_terminal_id_for_root_path(pane_group_id, repo_path)
-            else {
-                return;
-            };
+            // twarp 07: the terminal is optional — a repo discovered only via a
+            // Claude Code pane (after `claude` replaced its terminal) has no
+            // terminal mapping, but should still get a review view so the diff
+            // count shows. Resolve a terminal when one exists, otherwise create
+            // the view without one.
+            let terminal_view = working_directories_model
+                .get_terminal_id_for_root_path(pane_group_id, repo_path)
+                .and_then(|terminal_view_id| {
+                    ctx.view_with_id::<TerminalView>(ctx.window_id(), terminal_view_id)
+                })
+                .map(|terminal_view| terminal_view.downgrade());
 
             if working_directories_model
                 .most_recent_repositories_for_pane_group(pane_group_id)
                 .is_some_and(|mut repos| repos.contains(repo_path))
             {
-                if let Some(terminal_view) =
-                    ctx.view_with_id::<TerminalView>(ctx.window_id(), terminal_view_id)
-                {
-                    if let Some(view) = self.create_code_review_view(
-                        repo_path,
-                        diff_state_model,
-                        pane_group_id,
-                        terminal_view.downgrade(),
-                        ctx,
-                    ) {
-                        if is_panel_open {
-                            let repo_path = repo_path.to_path_buf();
-                            view.update(ctx, |view, ctx| {
-                                view.on_open(Some(repo_path), ctx);
-                            });
-                        }
+                if let Some(view) = self.create_code_review_view(
+                    repo_path,
+                    diff_state_model,
+                    pane_group_id,
+                    terminal_view,
+                    ctx,
+                ) {
+                    if is_panel_open {
+                        let repo_path = repo_path.to_path_buf();
+                        view.update(ctx, |view, ctx| {
+                            view.on_open(Some(repo_path), ctx);
+                        });
                     }
                 }
             }

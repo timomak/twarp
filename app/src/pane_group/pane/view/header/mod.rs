@@ -651,35 +651,37 @@ impl<P: BackingView> PaneHeader<P> {
                 }
 
                 // If a max width is set, constrain the title to that width.
-                let title_element = if let Some(max_width) = title_max_width {
-                    Shrinkable::new(
-                        1.,
-                        ConstrainedBox::new(title_row.finish())
-                            .with_max_width(max_width)
-                            .finish(),
-                    )
-                    .finish()
+                let title_inner: Box<dyn Element> = if let Some(max_width) = title_max_width {
+                    ConstrainedBox::new(title_row.finish())
+                        .with_max_width(max_width)
+                        .finish()
                 } else {
-                    Shrinkable::new(1., title_row.finish()).finish()
+                    title_row.finish()
                 };
                 // twarp: when the pane opts in, double-clicking the title fires
                 // its rename handler (the Claude session pane renames its tab).
                 // Only a double-click handler is attached, so single-click drags
                 // of the pane by its header still pass through to the framework's
                 // draggable wrapper.
-                let title_element: Box<dyn Element> =
+                //
+                // Wrap the *inner* content here, not the outer Shrinkable below:
+                // Hoverable doesn't expose a flex factor, so if it were the direct
+                // child of center_row the flex factor would be hidden and center_row's
+                // infinite measuring constraint (it sits inside Align) would reach
+                // title_row's flexible child and panic the flex layout.
+                let title_inner: Box<dyn Element> =
                     if let Some(on_double_click) = title_on_double_click.clone() {
                         Hoverable::new(
                             self.mouse_state_handles.title_double_click_handle.clone(),
-                            move |_| title_element,
+                            move |_| title_inner,
                         )
                         .with_cursor(warpui::platform::Cursor::PointingHand)
                         .on_double_click(move |ctx, _, _| on_double_click(ctx))
                         .finish()
                     } else {
-                        title_element
+                        title_inner
                     };
-                center_row.add_child(title_element);
+                center_row.add_child(Shrinkable::new(1., title_inner).finish());
 
                 if let Some(right_element) = right_of_title {
                     center_row

@@ -16,6 +16,7 @@
 //! The pure parsing/filtering/scanning lives here, unit-tested headlessly;
 //! the view owns the state and rendering.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// What the active token asks for.
@@ -44,6 +45,95 @@ pub(super) const DEFAULT_SLASH_COMMANDS: &[&str] = &[
 
 /// Cap on suggestion rows rendered (the list filters as you type).
 pub(super) const MAX_SUGGESTIONS: usize = 8;
+
+/// The slash-command catalogue the composer offers under `/` (PRODUCT §15a):
+/// command names plus, where we can find one, a one-line description.
+///
+/// `claude`'s `init` reports the *names* of every command (built-ins + skills +
+/// plugins), but no descriptions, and only once a session has started. We scan
+/// the on-disk skill directories ourselves so (a) skills show up the moment the
+/// pane opens — before the first `init` — and (b) each one carries the
+/// description from its `SKILL.md` frontmatter (issues #2/#3).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct SlashCommandIndex {
+    /// Command names offered as `/` completions, deduped and sorted.
+    pub names: Vec<String>,
+    /// `name → description`, for the rows we found a `SKILL.md` description for.
+    pub descriptions: HashMap<String, String>,
+}
+
+impl SlashCommandIndex {
+    /// Merge command names reported by `claude`'s `init` (skills + plugins +
+    /// MCP commands we can't see on disk) into the catalogue, keeping it sorted
+    /// and deduped. Descriptions already discovered are preserved.
+    pub fn merge_names<'a>(&mut self, names: impl IntoIterator<Item = &'a str>) {
+        for name in names {
+            if !self.names.iter().any(|existing| existing == name) {
+                self.names.push(name.to_owned());
+            }
+        }
+        self.names.sort();
+        self.names.dedup();
+    }
+}
+
+/// Build the slash-command catalogue from the built-ins plus the user-level and
+/// project-level skill directories (`~/.claude/skills/*/SKILL.md` and
+/// `<cwd>/.claude/skills/*/SKILL.md`). Descriptions come from each skill's
+/// frontmatter; names with no on-disk skill (built-ins, plugins) simply carry
+/// no description.
+pub(super) fn build_slash_command_index(cwd: &Path) -> SlashCommandIndex {
+    let mut index = SlashCommandIndex::default();
+    index.merge_names(DEFAULT_SLASH_COMMANDS.iter().copied());
+
+    let mut skill_roots: Vec<PathBuf> = Vec::new();
+    if let Some(home) = std::env::var_os("HOME") {
+        skill_roots.push(Path::new(&home).join(".claude").join("skills"));
+    }
+    skill_roots.push(cwd.join(".claude").join("skills"));
+
+    for root in skill_roots {
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if !entry.file_type().is_ok_and(|ty| ty.is_dir()) {
+                continue;
+            }
+            let skill_md = entry.path().join("SKILL.md");
+            let Ok(contents) = std::fs::read_to_string(&skill_md) else {
+                continue;
+            };
+            // The directory name is the command name `claude` exposes; the
+            // frontmatter `name` is usually identical but we trust the dir.
+            let name = entry.file_name().to_string_lossy().into_owned();
+            index.merge_names(std::iter::once(name.as_str()));
+            if let Some(description) = parse_frontmatter_description(&contents) {
+                index.descriptions.entry(name).or_insert(description);
+            }
+        }
+    }
+    index
+}
+
+/// Pull the `description:` value out of a `SKILL.md` YAML frontmatter block
+/// (the leading `---`-fenced section). Returns `None` when there's no
+/// frontmatter or no description key.
+fn parse_frontmatter_description(contents: &str) -> Option<String> {
+    let body = contents.strip_prefix("---")?;
+    // Frontmatter ends at the next line that is exactly `---`.
+    let end = body.find("\n---")?;
+    let frontmatter = &body[..end];
+    for line in frontmatter.lines() {
+        if let Some(value) = line.trim_start().strip_prefix("description:") {
+            let value = value.trim().trim_matches('"').trim_matches('\'').trim();
+            if !value.is_empty() {
+                return Some(value.to_owned());
+            }
+        }
+    }
+    None
+}
 
 /// Cap on files gathered by the cwd walk — enough for real repos, bounded so
 /// a giant tree can't stall the composer.
@@ -341,5 +431,59 @@ mod tests {
         let files = list_cwd_files(&dir);
         assert_eq!(files, vec!["a.rs".to_string(), "sub/b.rs".to_string()]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parse_frontmatter_description_reads_the_value() {
+        let md = "---\nname: foo\ndescription: Does a thing. Use when X.\n---\n# Foo\nbody";
+        assert_eq!(
+            parse_frontmatter_description(md).as_deref(),
+            Some("Does a thing. Use when X.")
+        );
+        // Quoted values are unquoted.
+        let quoted = "---\ndescription: \"quoted desc\"\n---\n";
+        assert_eq!(
+            parse_frontmatter_description(quoted).as_deref(),
+            Some("quoted desc")
+        );
+        // No frontmatter / no key → None.
+        assert_eq!(parse_frontmatter_description("# just a heading"), None);
+        assert_eq!(parse_frontmatter_description("---\nname: foo\n---\n"), None);
+    }
+
+    #[test]
+    fn build_slash_command_index_discovers_project_skills_with_descriptions() {
+        let dir = std::env::temp_dir().join("twarp-test-slash-index");
+        let _ = std::fs::remove_dir_all(&dir);
+        let skill_dir = dir.join(".claude").join("skills").join("my-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: my-skill\ndescription: My local skill.\n---\n# body",
+        )
+        .unwrap();
+
+        let index = build_slash_command_index(&dir);
+        // Built-ins are present...
+        assert!(index.names.iter().any(|n| n == "compact"));
+        // ...and so is the discovered project skill, with its description.
+        assert!(index.names.iter().any(|n| n == "my-skill"));
+        assert_eq!(
+            index.descriptions.get("my-skill").map(String::as_str),
+            Some("My local skill.")
+        );
+        // Names stay sorted/deduped.
+        let mut sorted = index.names.clone();
+        sorted.sort();
+        assert_eq!(index.names, sorted);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn merge_names_adds_unseen_and_keeps_sorted() {
+        let mut index = SlashCommandIndex::default();
+        index.merge_names(["zebra", "alpha"]);
+        index.merge_names(["alpha", "mango"]);
+        assert_eq!(index.names, vec!["alpha", "mango", "zebra"]);
     }
 }
