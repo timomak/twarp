@@ -459,6 +459,15 @@ impl Parser {
             }
             "content_block_start" => {
                 let Some(idx) = index() else { return };
+                // Mark the message streamed here too, not only at `message_start`:
+                // the consolidated `assistant` event suppresses its (already
+                // streamed) text only when `streamed` is set, and an opened
+                // content block is the real proof that content streamed. If a
+                // `message_start` is ever missing/dropped, the deltas still
+                // render (the block was inserted) and the consolidated event
+                // would otherwise re-append the same text — a duplicate of the
+                // last message (PRODUCT §46).
+                self.streamed = true;
                 let cb = event.get("content_block");
                 let suppressed = parent_id.is_some();
                 match cb.and_then(|c| c.get("type")).and_then(|v| v.as_str()) {
@@ -1386,6 +1395,35 @@ mod tests {
             })
             .collect();
         assert_eq!(texts, vec!["Hel", "lo"], "text streams once, not twice");
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, TranscriptEvent::AssistantTextDone))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn streamed_text_without_message_start_still_suppresses_consolidated() {
+        // If a `message_start` is missing but content blocks still stream, the
+        // text must render exactly once — the consolidated `assistant` event
+        // must not re-append it (the "duplicate of the last message" bug). The
+        // opened content block is enough to mark the message streamed.
+        let events = stream(&[
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#,
+            r#"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_stop","index":0}}"#,
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello"}]}}"#,
+        ]);
+        let texts: Vec<&str> = events
+            .iter()
+            .filter_map(|e| match e {
+                TranscriptEvent::AssistantTextDelta { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texts, vec!["Hello"], "text streams once, not twice");
         assert_eq!(
             events
                 .iter()

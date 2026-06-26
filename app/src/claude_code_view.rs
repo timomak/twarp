@@ -33,6 +33,7 @@
 //! view in the responder chain. There is **no** `WorkspaceAction` forwarder —
 //! that was the #67 symptom-fix and is deleted.
 
+mod background_scripts;
 mod composer;
 mod diff_cards;
 mod inline_action;
@@ -92,6 +93,7 @@ use warpui::{
 use warpui::clipboard::ClipboardContent;
 use warpui::r#async::Timer;
 
+use self::background_scripts::{BackgroundScript, BackgroundScriptState};
 use self::composer::{SuggestionKind, SuggestionQuery};
 use self::diff_cards::DiffCard;
 use self::repo_context::{CiState, RepoContext};
@@ -124,6 +126,9 @@ const USER_ICON_SVG_PATH: &str = "bundled/svg/user.svg";
 const ASSISTANT_ICON_SVG_PATH: &str = "bundled/svg/claude.svg";
 /// Branch glyph for the hover "Fork" affordance below an assistant response.
 const FORK_ICON_SVG_PATH: &str = "bundled/svg/git-branch-02.svg";
+/// Down-chevron for the floating "scroll to bottom" button (shown above the
+/// composer's right edge while the transcript is scrolled up off the bottom).
+const SCROLL_TO_BOTTOM_ICON_SVG_PATH: &str = "bundled/svg/chevron-down.svg";
 
 /// Body / code font sizes. A point past the deleted `ai_assistant::transcript`
 /// renderer for the airier, Claude-app reading rhythm (shell-polish pass —
@@ -140,6 +145,10 @@ const COMPOSER_MAX_HEIGHT: f32 = 184.;
 /// The floating composer's width cap — it stays a centered card even in a
 /// wide pane (the chat behind it is full-width).
 const COMPOSER_MAX_WIDTH: f32 = 760.;
+/// Width cap for the floating background-scripts panel (twarp): a compact status
+/// card pinned to the pane's top-right, narrow enough to clear the centered
+/// reading column behind it.
+const BACKGROUND_PANEL_MAX_WIDTH: f32 = 360.;
 /// Width cap for a composer pill's dropdown popover (permission / model /
 /// effort / context / branch / CI / PR). Keeps the menu a compact card anchored
 /// to its pill rather than stretching to the pane edge (issue #1).
@@ -253,6 +262,10 @@ pub enum ClaudeCodeViewAction {
     /// Interrupt the in-flight turn (SIGINT) without ending the session
     /// (PRODUCT §11). Shown in the composer while streaming.
     Stop,
+    /// twarp: jump the transcript to its latest message — the floating
+    /// "scroll to bottom" button shown above the composer when the user has
+    /// scrolled up off the bottom.
+    ScrollToBottom,
     /// Expand / collapse the tool card with this tool-use id (PRODUCT §19).
     ToggleToolCard(String),
     /// Expand / collapse the thinking card at this transcript index
@@ -340,6 +353,12 @@ pub enum ClaudeCodeViewAction {
     /// Branches the session up to that turn into a new pane to the right,
     /// leaving this one untouched. Shown on hover below a response.
     ForkConversation(usize),
+    /// twarp: expand / collapse the floating background-scripts panel — the
+    /// pill listing this chat's `run_in_background` Bash launches.
+    ToggleBackgroundPanel,
+    /// twarp: expand / collapse one background-script row's captured output,
+    /// keyed by the launching tool-use id.
+    ToggleBackgroundScript(String),
 }
 
 /// Actions dispatched by elements this view renders inside its **pane
@@ -554,6 +573,11 @@ pub struct ClaudeCodeView {
     direct_chip_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
     /// Mouse state for the composer's "＋ attach" file-picker button (§51).
     attach_button: MouseStateHandle,
+    /// twarp: mouse state for the floating "scroll to bottom" button, shown
+    /// above the composer's right edge whenever the transcript is scrolled up
+    /// off the bottom (a no-op affordance once the view follows the latest
+    /// message).
+    scroll_to_bottom_button: MouseStateHandle,
     /// Type-ahead queue (PRODUCT §53–§54, 7m): messages sent while a turn
     /// streams wait here and dispatch in order as each turn completes.
     message_queue: Vec<OutgoingMessage>,
@@ -658,6 +682,20 @@ pub struct ClaudeCodeView {
     message_history: Vec<String>,
     history_cursor: Option<usize>,
     history_draft: String,
+    /// twarp: whether the floating background-scripts panel is expanded. The
+    /// panel lists this chat's `run_in_background` Bash launches (derived from
+    /// the transcript each render via [`background_scripts::collect`]); collapsed
+    /// by default to a compact pill so it never crowds the conversation.
+    background_scripts_expanded: bool,
+    /// Per-script output disclosure, keyed by the launching tool-use id. A
+    /// script id is present iff the user expanded that row's captured output.
+    background_expanded_rows: HashSet<String>,
+    /// Stable per-row mouse handles for the background-script rows, keyed by
+    /// launch id and created on demand (the `sent_image_mouse` pattern) so hover
+    /// state survives across renders even though the rows are derived.
+    background_row_mouse: std::cell::RefCell<HashMap<String, MouseStateHandle>>,
+    /// Mouse state for the panel's header (the collapse/expand toggle).
+    background_panel_mouse: MouseStateHandle,
 }
 
 impl ClaudeCodeView {
@@ -696,7 +734,10 @@ impl ClaudeCodeView {
                 // composer can accept a `/` or `@` suggestion with Tab and cycle
                 // the list / recall draft history with the arrows. `AtBoundary`
                 // keeps multi-line editing intact — the arrows only propagate
-                // once the cursor can't move further within the draft.
+                // once the cursor can't move further within the draft. This is
+                // the menu-closed default; `sync_navigation_propagation` flips it
+                // to `Always` while a suggestion menu is open so the arrows cycle
+                // the menu even mid-draft.
                 propagate_and_no_op_vertical_navigation_keys:
                     PropagateAndNoOpNavigationKeys::AtBoundary,
                 ..Default::default()
@@ -782,6 +823,7 @@ impl ClaudeCodeView {
             direct_attachments: Vec::new(),
             direct_chip_mouse: std::cell::RefCell::new(Vec::new()),
             attach_button: MouseStateHandle::default(),
+            scroll_to_bottom_button: MouseStateHandle::default(),
             message_queue: Vec::new(),
             queue_row_mouse: std::cell::RefCell::new(Vec::new()),
             model_pill_mouse: MouseStateHandle::default(),
@@ -818,6 +860,10 @@ impl ClaudeCodeView {
             branch_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
             ci_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
             use_worktree: false,
+            background_scripts_expanded: false,
+            background_expanded_rows: HashSet::new(),
+            background_row_mouse: std::cell::RefCell::new(HashMap::new()),
+            background_panel_mouse: MouseStateHandle::default(),
         };
 
         // PRODUCT §4: capture the login-shell PATH up front so availability
@@ -1122,12 +1168,15 @@ impl ClaudeCodeView {
             EditorEvent::Escape => {
                 if self.suggestion_query.take().is_some() {
                     self.suggestions.clear();
+                    self.sync_navigation_propagation(ctx);
                     ctx.notify();
                 }
             }
-            // Cycle the highlighted suggestion. The editor surfaces these as
-            // events when the cursor can't move further (single-line drafts:
-            // always); clicking a row works regardless.
+            // Cycle the highlighted suggestion. While a menu is open the editor
+            // is flipped to `Always` propagation (see
+            // `sync_navigation_propagation`), so the arrows reach us on every
+            // keypress — even mid-draft in a multi-line message; clicking a row
+            // works regardless.
             EditorEvent::Navigate(key) if self.suggestion_query.is_some() => {
                 let len = self.suggestions.len();
                 if len == 0 {
@@ -1243,7 +1292,27 @@ impl ClaudeCodeView {
             None => Vec::new(),
         };
         self.suggestion_selected = 0;
+        self.sync_navigation_propagation(ctx);
         ctx.notify();
+    }
+
+    /// twarp: keep the composer editor's vertical-arrow behaviour in sync with
+    /// the suggestions panel. While a `/` or `@` menu is open the arrows must
+    /// always cycle the menu — even mid-draft in a multi-line message, where
+    /// the cursor isn't at a top/bottom edge — so we flip the editor to
+    /// `Always`. With the menu closed we restore `AtBoundary`: multi-line
+    /// editing keeps the arrows in the buffer, and Up/Down only walk the
+    /// submitted-message history once the cursor reaches the top/bottom edge.
+    fn sync_navigation_propagation(&mut self, ctx: &mut ViewContext<Self>) {
+        let menu_open = self.suggestion_query.is_some() && !self.suggestions.is_empty();
+        let mode = if menu_open {
+            PropagateAndNoOpNavigationKeys::Always
+        } else {
+            PropagateAndNoOpNavigationKeys::AtBoundary
+        };
+        self.input_editor.update(ctx, |editor, _ctx| {
+            editor.set_propagate_vertical_navigation_keys(mode);
+        });
     }
 
     /// Accept a suggestion (PRODUCT §15a): replace the queried token in the
@@ -2554,6 +2623,41 @@ impl ClaudeCodeView {
         });
     }
 
+    /// twarp: the floating circular "scroll to bottom" button. Returned only
+    /// when the transcript has content and is scrolled up off the bottom (see
+    /// `render_input`); a click jumps back to the latest message. A bare
+    /// down-chevron in a shadowed circle, anchored above the composer's right
+    /// edge so it reads as belonging to the conversation, not the input.
+    fn render_scroll_to_bottom_button(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let icon = ConstrainedBox::new(
+            Icon::new(
+                SCROLL_TO_BOTTOM_ICON_SVG_PATH,
+                theme.active_ui_text_color().into_solid(),
+            )
+            .finish(),
+        )
+        .with_width(16.)
+        .with_height(16.)
+        .finish();
+        let sized = ConstrainedBox::new(Align::new(icon).finish())
+            .with_width(28.)
+            .with_height(28.)
+            .finish();
+        let circle = Container::new(sized)
+            .with_background_color(theme.surface_1().into_solid())
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(14.)))
+            .with_drop_shadow(DropShadow::default())
+            .finish();
+        Hoverable::new(self.scroll_to_bottom_button.clone(), move |_| circle)
+            .with_cursor(Cursor::PointingHand)
+            .on_click(|ctx, _, _| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::ScrollToBottom);
+            })
+            .finish()
+    }
+
     /// Label the pane's tab with the conversation's first user message (#7) —
     /// a wall of identical "Claude Code" tabs is impossible to tell apart once a
     /// few are open. Keeps the generic title until a user turn exists.
@@ -2766,6 +2870,7 @@ impl ClaudeCodeView {
         &self,
         index: usize,
         text: &str,
+        is_reply_end: bool,
         app: &AppContext,
     ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
@@ -2776,28 +2881,75 @@ impl ClaudeCodeView {
             self.render_accent.get(),
             appearance,
         );
-        let fork_button = self.render_fork_affordance(index, app);
+        // Fork is offered only at the end of a reply (the last assistant
+        // message of a turn) — not on intermediate assistant messages that sit
+        // between tool calls within the same turn.
+        if !is_reply_end {
+            return row;
+        }
+        // The affordance is always laid out below the row; hovering only
+        // toggles its visibility (transparent colours ↔ painted). Both states
+        // have identical layout, so the row's hover bounds never change — that
+        // stable region is what kills the old show/hide flicker (adding the
+        // button moved the cursor outside last frame's bounds, hiding it
+        // again) and avoids the layout jump from inserting/removing it.
+        let fork_visible = self.render_fork_affordance(index, true, app);
+        let fork_hidden = self.render_fork_affordance(index, false, app);
         let row_mouse = pooled_mouse_state(&self.fork_row_mouse, index);
         Hoverable::new(row_mouse, move |state| {
-            let mut col = Flex::column()
+            let fork = if state.is_hovered() {
+                fork_visible
+            } else {
+                fork_hidden
+            };
+            Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Start)
                 .with_main_axis_size(MainAxisSize::Min)
-                .with_child(row);
-            if state.is_hovered() {
-                col.add_child(fork_button);
-            }
-            col.finish()
+                .with_child(row)
+                .with_child(fork)
+                .finish()
         })
         .finish()
     }
 
+    /// Whether the assistant message at `index` is the last one of its turn —
+    /// no later assistant message appears before the next user turn (or the end
+    /// of the transcript). Drives where the Fork affordance is offered.
+    fn is_reply_end(&self, index: usize) -> bool {
+        for later in self.transcript.items().iter().skip(index + 1) {
+            match later {
+                TranscriptItem::User(_) => return true,
+                TranscriptItem::Assistant { .. } => return false,
+                _ => {}
+            }
+        }
+        true
+    }
+
     /// twarp: the "⑂ Fork" button shown under a response on hover. Aligned under
     /// the message prose (past the avatar gutter) and clickable on its own — the
-    /// surrounding response stays plain text.
-    fn render_fork_affordance(&self, index: usize, app: &AppContext) -> Box<dyn Element> {
+    /// surrounding response stays plain text. When `visible` is false the same
+    /// element is laid out with transparent colours and no click/cursor, so it
+    /// reserves its space silently (see [`Self::render_assistant_response`]).
+    fn render_fork_affordance(
+        &self,
+        index: usize,
+        visible: bool,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        let label_color = theme.nonactive_ui_text_color().into_solid();
+        // Transparent when hidden — keeps identical layout to the visible state.
+        let label_color = if visible {
+            theme.nonactive_ui_text_color().into_solid()
+        } else {
+            ColorU::new(0, 0, 0, 0)
+        };
+        let pill_bg = if visible {
+            self.accent_wash(app)
+        } else {
+            ColorU::new(0, 0, 0, 0)
+        };
         let button_mouse = pooled_mouse_state(&self.fork_button_mouse, index);
 
         let icon = ConstrainedBox::new(Icon::new(FORK_ICON_SVG_PATH, label_color).finish())
@@ -2826,18 +2978,24 @@ impl ClaudeCodeView {
             .with_padding_right(8.)
             .with_padding_top(3.)
             .with_padding_bottom(3.)
-            .with_background_color(self.accent_wash(app))
+            .with_background_color(pill_bg)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
             .finish();
-        let button = Hoverable::new(button_mouse, move |_| pill)
-            .with_cursor(Cursor::PointingHand)
-            .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(ClaudeCodeViewAction::ForkConversation(index));
-            })
-            .finish();
+        let button = Hoverable::new(button_mouse, move |_| pill);
+        // Only the painted state is interactive — the transparent placeholder
+        // must not catch clicks or show the pointer cursor in the empty gap.
+        let button = if visible {
+            button
+                .with_cursor(Cursor::PointingHand)
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ForkConversation(index));
+                })
+        } else {
+            button
+        };
         // Indent under the prose (avatar gutter ≈ 14 padding + 16 icon + 12
         // margin) so it reads as belonging to the message above it.
-        Container::new(button)
+        Container::new(button.finish())
             .with_margin_left(42.)
             .with_margin_bottom(6.)
             .finish()
@@ -3042,6 +3200,262 @@ impl ClaudeCodeView {
             ctx.dispatch_typed_action(ClaudeCodeViewAction::ResumeRecentSession(idx));
         })
         .finish()
+    }
+
+    /// twarp: the floating **background-scripts** panel — a per-chat status
+    /// widget for the `run_in_background` Bash commands Claude launched in this
+    /// session (a dev server, a watcher, a long build). Derived fresh from the
+    /// transcript each render via [`background_scripts::collect`] — twarp keeps no
+    /// separate model — so it stays in lock-step with the conversation and needs
+    /// no teardown. Read-only: twarp can observe a background script (command,
+    /// state, captured output) but can't start, poll, or kill it; those are
+    /// Claude's tool calls.
+    ///
+    /// Returns `None` when this chat launched no background scripts, so the
+    /// caller floats nothing. Otherwise a compact pill the user can expand into a
+    /// list of rows, each of which expands again to its captured output.
+    fn render_background_panel(&self, app: &AppContext) -> Option<Box<dyn Element>> {
+        let scripts = background_scripts::collect(self.transcript.items());
+        if scripts.is_empty() {
+            return None;
+        }
+
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let accent = self.render_accent.get();
+        let wash = self.render_wash.get();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let main = theme.main_text_color(theme.background()).into_solid();
+
+        let active = scripts.iter().filter(|s| s.state.is_active()).count();
+        let expanded = self.background_scripts_expanded;
+
+        // Header: terminal glyph + title + a muted count, then a chevron whose
+        // direction tracks the expand state. The whole row toggles the panel.
+        let glyph = ConstrainedBox::new(
+            Icon::new(crate::ui_components::icons::Icon::Terminal.into(), accent).finish(),
+        )
+        .with_width(15.)
+        .with_height(15.)
+        .finish();
+        let title = appearance
+            .ui_builder()
+            .span("Background scripts".to_owned())
+            .with_style(UiComponentStyles {
+                font_color: Some(main),
+                font_size: Some(12.5),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+        let count_text = if active > 0 {
+            format!("{} · {active} running", scripts.len())
+        } else {
+            format!(
+                "{} script{}",
+                scripts.len(),
+                if scripts.len() == 1 { "" } else { "s" }
+            )
+        };
+        let count = appearance
+            .ui_builder()
+            .span(count_text)
+            .with_style(UiComponentStyles {
+                font_color: Some(muted),
+                font_size: Some(11.),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+        let chevron_icon = if expanded {
+            crate::ui_components::icons::Icon::ChevronUp
+        } else {
+            crate::ui_components::icons::Icon::ChevronDown
+        };
+        let chevron = ConstrainedBox::new(Icon::new(chevron_icon.into(), muted).finish())
+            .with_width(14.)
+            .with_height(14.)
+            .finish();
+        let header_inner = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_spacing(8.)
+            .with_child(glyph)
+            .with_child(Shrinkable::new(1., title).finish())
+            .with_child(count)
+            .with_child(chevron)
+            .finish();
+        let header = Hoverable::new(self.background_panel_mouse.clone(), move |state| {
+            let mut body = Container::new(header_inner)
+                .with_padding_left(12.)
+                .with_padding_right(12.)
+                .with_padding_top(9.)
+                .with_padding_bottom(9.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(10.)));
+            if state.is_hovered() {
+                body = body.with_background_color(wash);
+            }
+            body.finish()
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleBackgroundPanel);
+        })
+        .finish();
+
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_child(header);
+
+        if expanded {
+            for script in &scripts {
+                column.add_child(self.render_background_row(script, app));
+            }
+        }
+
+        // The card: a surface that floats above the transcript, shadowed like the
+        // composer menus so it reads as an overlay.
+        let card = Container::new(column.finish())
+            .with_background_color(theme.surface_1().into_solid())
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(12.)))
+            .with_drop_shadow(DropShadow::default())
+            .finish();
+        Some(
+            ConstrainedBox::new(card)
+                .with_max_width(BACKGROUND_PANEL_MAX_WIDTH)
+                .finish(),
+        )
+    }
+
+    /// One background-script row in the expanded panel: a status glyph + the
+    /// command + its state label, expanding on click into the captured output.
+    fn render_background_row(
+        &self,
+        script: &BackgroundScript,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let main = theme.main_text_color(theme.background()).into_solid();
+        let wash = self.render_wash.get();
+
+        let status_icon: Box<dyn Element> = match script.state {
+            BackgroundScriptState::Running => inline_action::running_icon(appearance).finish(),
+            BackgroundScriptState::Finished => inline_action::green_check_icon(appearance).finish(),
+            BackgroundScriptState::LaunchFailed => inline_action::red_x_icon(appearance).finish(),
+            BackgroundScriptState::Killed => {
+                Icon::new(crate::ui_components::icons::Icon::Stop.into(), muted).finish()
+            }
+        };
+        let status_icon = ConstrainedBox::new(status_icon)
+            .with_width(13.)
+            .with_height(13.)
+            .finish();
+
+        let command = tool_cards::format_command_text(&script.command);
+        let command_text = warpui::elements::Text::new_inline(
+            command,
+            appearance.monospace_font_family(),
+            appearance.monospace_font_size() - 1.,
+        )
+        .with_color(main.into())
+        .with_selectable(false)
+        .finish();
+        let state_label = appearance
+            .ui_builder()
+            .span(script.state.label().to_owned())
+            .with_style(UiComponentStyles {
+                font_color: Some(muted),
+                font_size: Some(10.5),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+
+        let row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_spacing(8.)
+            .with_child(status_icon)
+            .with_child(Shrinkable::new(1., Clipped::new(command_text).finish()).finish())
+            .with_child(state_label)
+            .finish();
+
+        let row_mouse = {
+            let mut states = self.background_row_mouse.borrow_mut();
+            states
+                .entry(script.id.clone())
+                .or_insert_with(MouseStateHandle::default)
+                .clone()
+        };
+        let id = script.id.clone();
+        let header = Hoverable::new(row_mouse, move |state| {
+            let mut body = Container::new(row)
+                .with_padding_left(12.)
+                .with_padding_right(12.)
+                .with_padding_top(7.)
+                .with_padding_bottom(7.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)));
+            if state.is_hovered() {
+                body = body.with_background_color(wash);
+            }
+            body.finish()
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleBackgroundScript(id.clone()));
+        })
+        .finish();
+
+        // The captured output, revealed on click. Capped the same way tool-card
+        // results are so a chatty watcher can't stall layout.
+        let output_open =
+            self.background_expanded_rows.contains(&script.id) && !script.output.trim().is_empty();
+        if !output_open {
+            return header;
+        }
+        let (shown, hidden) = tool_cards::truncate_output(script.output.trim());
+        let mut body = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_child(header);
+        body.add_child(
+            Container::new(
+                inline_action::render_requested_action_body_text(
+                    std::borrow::Cow::Owned(shown),
+                    appearance.monospace_font_family(),
+                    app,
+                )
+                .finish(),
+            )
+            .with_padding_left(28.)
+            .with_padding_right(12.)
+            .with_padding_bottom(6.)
+            .finish(),
+        );
+        if hidden > 0 {
+            body.add_child(
+                Container::new(
+                    appearance
+                        .ui_builder()
+                        .span(format!("… {hidden} more lines"))
+                        .with_style(UiComponentStyles {
+                            font_color: Some(muted),
+                            font_size: Some(10.5),
+                            ..Default::default()
+                        })
+                        .build()
+                        .finish(),
+                )
+                .with_padding_left(28.)
+                .with_padding_bottom(6.)
+                .finish(),
+            );
+        }
+        body.finish()
     }
 
     /// Render the transcript into a [`UniformList`] (PRODUCT §14) wrapped in a
@@ -4107,13 +4521,49 @@ impl ClaudeCodeView {
             .with_padding_right(TRANSCRIPT_GUTTER)
             .finish();
 
+        // twarp: the floating "scroll to bottom" button, shown above the
+        // composer's right edge only while the transcript has content and is
+        // scrolled up off the bottom (`is_at_bottom` is true — so the button is
+        // hidden — whenever the content fits or the view is following the
+        // latest message). A scroll calls `notify()`, so `render` re-runs and
+        // the button appears/disappears as the user scrolls.
+        let scroll_button = (!self.transcript.is_empty()
+            && !self.scroll_state.is_at_bottom(AUTOSCROLL_STICK_SLACK))
+        .then(|| self.render_scroll_to_bottom_button(appearance));
+
         // The open dropdown floats above everything, anchored to the trigger
         // pill's saved position (#11/#13). Context-bar pills (branch / CI / PR)
         // sit above the input, so their menus drop downward; the bottom control
         // pills open upward. A click-outside `Dismiss` scrim closes it.
-        let (Some(anchor), Some(menu)) = (self.composer_menu, self.render_composer_menu(appearance))
-        else {
+        let open_menu = self
+            .composer_menu
+            .zip(self.render_composer_menu(appearance));
+
+        // Nothing floats over the composer — return it bare.
+        if scroll_button.is_none() && open_menu.is_none() {
             return composer;
+        }
+
+        let mut stack = Stack::new();
+        stack.add_child(composer);
+        // Anchor the button's bottom-right just above the composer's top-right
+        // (indented by the composer's own right gutter so it lines up with the
+        // input card's edge). It rides with the centered, width-capped composer
+        // card rather than the full pane, so it stays at the conversation's
+        // right edge in a wide pane.
+        if let Some(button) = scroll_button {
+            stack.add_positioned_child(
+                button,
+                OffsetPositioning::offset_from_parent(
+                    vec2f(-TRANSCRIPT_GUTTER, -8.),
+                    ParentOffsetBounds::ParentBySize,
+                    ParentAnchor::TopRight,
+                    ChildAnchor::BottomRight,
+                ),
+            );
+        }
+        let Some((anchor, menu)) = open_menu else {
+            return stack.finish();
         };
         let menu = Container::new(
             Dismiss::new(menu)
@@ -4138,8 +4588,6 @@ impl ClaudeCodeView {
                 vec2f(0., -6.),
             )
         };
-        let mut stack = Stack::new();
-        stack.add_child(composer);
         stack.add_positioned_overlay_child(
             menu,
             OffsetPositioning::offset_from_save_position_element(
@@ -4212,6 +4660,11 @@ impl View for ClaudeCodeView {
     }
 
     fn on_focus(&mut self, focus_ctx: &FocusContext, ctx: &mut ViewContext<Self>) {
+        log::info!(
+            "FOCUSDBG claude on_focus session={} is_self_focused={} emit FocusSelf",
+            self.session_id,
+            focus_ctx.is_self_focused()
+        );
         // PRODUCT §34: focus the input on entry so typing just works. Focusing a
         // child keeps the view itself in the responder chain, so in-pane
         // `ClaudeCodeViewAction` dispatches reach `handle_action` below.
@@ -4324,6 +4777,21 @@ impl View for ClaudeCodeView {
                     ChildAnchor::BottomMiddle,
                 ),
             );
+            // twarp: the floating background-scripts panel, pinned to the pane's
+            // top-right above the transcript so a long-running dev server / watcher
+            // Claude launched stays visible while the conversation scrolls under
+            // it. `None` (and so nothing floated) until this chat launches one.
+            if let Some(panel) = self.render_background_panel(app) {
+                stack.add_positioned_child(
+                    panel,
+                    OffsetPositioning::offset_from_parent(
+                        vec2f(-12., 12.),
+                        ParentOffsetBounds::ParentBySize,
+                        ParentAnchor::TopRight,
+                        ChildAnchor::TopRight,
+                    ),
+                );
+            }
             // No horizontal padding here: the transcript scrollable spans the
             // full pane width so its overlay scrollbar hugs the right edge
             // (the prose keeps its margins via TRANSCRIPT_GUTTER inside the
@@ -4372,6 +4840,10 @@ impl TypedActionView for ClaudeCodeView {
         match action {
             ClaudeCodeViewAction::Submit => self.submit(ctx),
             ClaudeCodeViewAction::FocusInput => {
+                log::info!(
+                    "FOCUSDBG claude FocusInput handled session={} -> focus input_editor",
+                    self.session_id
+                );
                 ctx.focus(&self.input_editor);
                 // #13: a click on the pane focuses the editor — report it so the
                 // pane group makes THIS pane (by id) the active one for Cmd+W /
@@ -4390,6 +4862,10 @@ impl TypedActionView for ClaudeCodeView {
                 ctx.notify();
             }
             ClaudeCodeViewAction::Stop => self.stop(ctx),
+            ClaudeCodeViewAction::ScrollToBottom => {
+                self.scroll_to_bottom();
+                ctx.notify();
+            }
             ClaudeCodeViewAction::ToggleToolCard(id) => self.toggle_tool_card(id, ctx),
             ClaudeCodeViewAction::ToggleThinking(index) => self.toggle_thinking(*index, ctx),
             ClaudeCodeViewAction::ToggleTodos => {
@@ -4481,6 +4957,16 @@ impl TypedActionView for ClaudeCodeView {
             }
             ClaudeCodeViewAction::ForkConversation(index) => {
                 self.fork_conversation(*index, ctx)
+            }
+            ClaudeCodeViewAction::ToggleBackgroundPanel => {
+                self.background_scripts_expanded = !self.background_scripts_expanded;
+                ctx.notify();
+            }
+            ClaudeCodeViewAction::ToggleBackgroundScript(id) => {
+                if !self.background_expanded_rows.remove(id) {
+                    self.background_expanded_rows.insert(id.clone());
+                }
+                ctx.notify();
             }
         }
     }
@@ -4662,7 +5148,7 @@ impl ClaudeCodeView {
                 }
             }
             TranscriptItem::Assistant { text, .. } => {
-                self.render_assistant_response(index, text, app)
+                self.render_assistant_response(index, text, self.is_reply_end(index), app)
             }
             TranscriptItem::Notice(message) => render_notice(message, appearance),
             TranscriptItem::Error(message) => render_error(message, appearance),

@@ -223,6 +223,14 @@ Invariants are grouped by area; each group is annotated with the sub-phase that 
 
 56. The plan card offers **Approve** and **Keep planning** affordances. Because headless `claude` exposes **no stdio approval channel** for plan exit (`ExitPlanMode`'s tool_result is `is_error:true "Exit plan mode?"` — the same wall as §24/§26), **Approve degrades** to switching the permission mode off `plan` and resuming (the §25 mode-pill path), not a one-click inline accept. The card must never hang the session; "Keep planning" simply leaves the session in plan mode for the next message.
 
+### Background-scripts panel — 7o *(amendment 2026-06-25, owner-requested)*
+
+57. When Claude launches a shell command **in the background** (a `Bash` call with `run_in_background: true` — a dev server, a watcher, a long build), the pane surfaces it in a **per-chat background-scripts panel**: a compact card floated at the pane's top-right, present only once this chat has launched at least one background script. Each chat (each `ClaudeCodeView`) shows only its own scripts; the panel is derived from that pane's transcript and needs no separate state or teardown.
+
+58. Collapsed, the panel is a pill — terminal glyph, "Background scripts", and a count that reads "*N* · *M* running" when any are live. Expanded, it lists one row per script: a **status glyph** (running / finished / stopped / failed-to-start), the **command**, and a state label. A row expands again to its **captured output** (the launch acknowledgement plus any `BashOutput` polls Claude ran, matched by shell id), capped the same way tool-card results are so a chatty watcher can't stall layout.
+
+59. State is derived best-effort from the transcript and is **read-only**: twarp observes the scripts Claude launched but does not itself start, poll, or kill them (those are the model's tool calls; ask Claude in chat to stop a script). A script reads **running** from a successful launch until a `KillShell` for its shell marks it **stopped** or a `BashOutput` status marker marks it **finished**; a launch whose `Bash` call failed reads **failed to start**. When the transcript doesn't make the state explicit, it stays **running** rather than guessing. The panel follows the active theme and adds no Warp/Anthropic chrome (§ cross-cutting).
+
 ## Smoke test
 
 Run against a freshly built twarp binary. Most steps require the `claude` CLI installed and logged in (a Claude Code account/subscription). Pin the tested `claude` version per TECH.md. Chord names are macOS.
@@ -266,6 +274,7 @@ Run against a freshly built twarp binary. Most steps require the `claude` CLI in
 19. **(7l)** Paste an image into the composer → a chip appears. Drag an image **and** a `.txt` file onto the pane → the image becomes a chip, the `.txt` becomes an `@`-mention. Click **＋ attach**, pick an image → a chip appears. Send → Claude receives the image(s). An oversized image degrades without crashing.
 20. **(7m)** Change the **model** mid-session → the next message continues the **same conversation** under the new model (transcript intact). While a turn streams, type and send two messages → both **queue** (visible and removable) and dispatch in order on completion; the input was never disabled.
 21. **(7n)** Ask Claude to enter plan mode and present a plan → an `ExitPlanMode` **plan card** renders the full plan markdown with **Approve** / **Keep planning**. Click **Approve** → the permission mode switches off `plan` and the session resumes (no hang). "Keep planning" leaves it in plan mode.
+22. **(7o)** In a chat with no background scripts, no top-right panel shows. Ask Claude to start a long-running command in the background (e.g. "run `sleep 600` in the background", or start a dev server) → a **background-scripts pill** appears top-right reading "1 · 1 running". Expand it → a row with a running glyph + the command; expand the row → its captured output. Open a **second** Claude pane and confirm its panel is independent (empty unless that chat launched its own). Ask Claude to kill the script → the row reads **stopped**. The panel follows a theme toggle and shows no Warp/Anthropic chrome.
 
 ### Cross-cutting
 
