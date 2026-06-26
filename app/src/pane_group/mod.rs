@@ -5482,6 +5482,10 @@ impl PaneGroup {
     pub fn focus(&mut self, ctx: &mut ViewContext<Self>) {
         self.update_session_visibility(ctx);
 
+        log::info!(
+            "FOCUSDBG PaneGroup::focus -> focusing focused_pane={:?}",
+            self.focused_pane_id(ctx)
+        );
         // We're adding a new pane to a tab that potentially has set the custom tab title.
         // Lets ensure the new pane will honor it, otherwise, we'd want to change the title based
         // on the default title for the pane.
@@ -5641,6 +5645,12 @@ impl PaneGroup {
         let maybe_origin_terminal_view =
             self.terminal_view_from_pane_id(self.focused_pane_id(ctx), ctx);
 
+        log::info!(
+            "FOCUSDBG focus_pane id={:?} contents={} (was focused={:?})",
+            id,
+            focus_pane_contents,
+            self.focused_pane_id(ctx)
+        );
         if self.focused_pane_id(ctx) == id
             // As a safeguard, don't allow switching to unknown panes.
             || !self.pane_contents.contains_key(&id)
@@ -6094,10 +6104,12 @@ impl PaneGroup {
     /// Updates the pane group's state in response to a view within a pane
     /// receiving focus.
     fn handle_focus_change(&mut self, ctx: &mut ViewContext<Self>) {
+        let mut picked = None;
         for pane_index in 0..self.pane_count() {
             if let Some(content) = self.pane_by_index(pane_index) {
                 if content.has_application_focus(ctx) {
                     if let Some(pane_id) = self.pane_id_from_index(pane_index) {
+                        picked = Some(pane_id);
                         // Mark the pane as the focused pane _without_ moving
                         // application focus to it.
                         //
@@ -6114,6 +6126,7 @@ impl PaneGroup {
                 }
             }
         }
+        log::info!("FOCUSDBG handle_focus_change picked={picked:?}");
     }
     // twarp: 2c-d — bulk stubs
     fn create_missing_child_agent_panes<A, C>(&mut self, _: A, _: &mut C) {}

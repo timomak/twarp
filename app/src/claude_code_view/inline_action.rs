@@ -36,7 +36,6 @@ use std::borrow::Cow;
 use std::rc::Rc;
 
 use pathfinder_color::ColorU;
-use warp_core::ui::theme::AnsiColorIdentifier;
 use warpui::{
     elements::{
         Align, Border, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
@@ -50,15 +49,21 @@ use warpui::{
 
 use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
-use crate::ui_components::icons::Icon as WarpIcon;
 use crate::view_components::compactible_action_button::render_expansion_icon;
+
+// The collapsible-card chrome now lives in the neutral `code::diff_card` module
+// so the Open Changes panel can share it; the Claude pane keeps reaching these
+// names through `inline_action` (its original home) via this re-export.
+pub(super) use crate::code::diff_card::{
+    green_check_icon, icon_size, red_x_icon, running_icon, Disclosure, OnToggleExpandedCallback,
+    RightCluster, ICON_MARGIN,
+};
 
 /// Ported padding constants — same values as the original for consistency.
 pub(super) const INLINE_ACTION_HORIZONTAL_PADDING: f32 = 16.;
 /// The vertical padding applied to the requested action row's content body.
 pub(super) const INLINE_ACTION_VERTICAL_PADDING: f32 = 12.;
 pub(super) const INLINE_ACTION_HEADER_VERTICAL_PADDING: f32 = 10.;
-pub(super) const ICON_MARGIN: f32 = 8.;
 
 /// The space below each card, ported from the AI block's
 /// `CONTENT_ITEM_VERTICAL_MARGIN`.
@@ -70,42 +75,6 @@ const CONTENT_ITEM_VERTICAL_MARGIN: f32 = 16.;
 const CONTENT_HORIZONTAL_PADDING: f32 = 14.;
 const MESSAGE_AVATAR_WIDTH: f32 = 16.;
 const MESSAGE_AVATAR_MARGIN: f32 = 12.;
-
-/// Returns the size for icons in the card chrome, scaled to the user's current
-/// font size. (Port of `inline_action_icons::icon_size`.)
-pub(super) fn icon_size(app: &AppContext) -> f32 {
-    let appearance = Appearance::as_ref(app);
-    app.font_cache().line_height(
-        appearance.monospace_font_size(),
-        appearance.line_height_ratio(),
-    )
-}
-
-/// Status icon for a running tool (port of `agent::icons::yellow_running_icon`).
-pub(super) fn running_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(
-        WarpIcon::Circle.into(),
-        AnsiColorIdentifier::Yellow.to_ansi_color(&appearance.theme().terminal_colors().normal),
-    )
-}
-
-/// Status icon for a completed tool (port of `green_check_icon`).
-pub(super) fn green_check_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(
-        WarpIcon::Check.into(),
-        AnsiColorIdentifier::Green.to_ansi_color(&appearance.theme().terminal_colors().normal),
-    )
-}
-
-/// Status icon for a failed tool (port of `red_x_icon`).
-pub(super) fn red_x_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(
-        WarpIcon::X.into(),
-        AnsiColorIdentifier::Red.to_ansi_color(&appearance.theme().terminal_colors().normal),
-    )
-}
-
-pub(super) type OnToggleExpandedCallback = Rc<dyn Fn(&mut EventContext) + 'static>;
 
 /// Configuration for manual expansion behavior (ported; the right-click and
 /// expands-upwards options had no consumer here and are trimmed).
@@ -142,54 +111,6 @@ impl ExpandedConfig {
 pub(super) enum InteractionMode {
     /// Renders an expansion chevron, with caller-specified click handler.
     ManuallyExpandable(ExpandedConfig),
-}
-
-/// The muted right-hand cluster of a card row: an optional result label and an
-/// optional status icon. (Adaptation: this is the right-label + icon slot the
-/// sibling leaf `search_results_common.rs` rendered; it replaces the ported
-/// header's bordered `badge`.)
-#[derive(Default)]
-pub(super) struct RightCluster {
-    pub label: Option<String>,
-    pub icon: Option<warpui::elements::Icon>,
-}
-
-impl RightCluster {
-    /// Render the cluster's label + icon, each separated by the ported
-    /// 8px margin (`search_results_common` spacing).
-    pub(super) fn render(self, appearance: &Appearance, app: &AppContext) -> Vec<Box<dyn Element>> {
-        let theme = appearance.theme();
-        let mut children: Vec<Box<dyn Element>> = Vec::new();
-        if let Some(label) = self.label {
-            children.push(
-                Container::new(
-                    Text::new_inline(
-                        label,
-                        appearance.ui_font_family(),
-                        appearance.monospace_font_size() - 1.,
-                    )
-                    .with_color(theme.sub_text_color(theme.surface_2()).into())
-                    .with_selectable(false)
-                    .finish(),
-                )
-                .with_margin_right(ICON_MARGIN)
-                .finish(),
-            );
-        }
-        if let Some(icon) = self.icon {
-            children.push(
-                Container::new(
-                    ConstrainedBox::new(icon.finish())
-                        .with_width(icon_size(app) - 4.)
-                        .with_height(icon_size(app) - 4.)
-                        .finish(),
-                )
-                .with_margin_right(ICON_MARGIN)
-                .finish(),
-            );
-        }
-        children
-    }
 }
 
 /// Ported card header (port of `inline_action_header::HeaderConfig`).
@@ -622,189 +543,5 @@ impl WithContentItemSpacing for Box<dyn Element> {
             .with_margin_left(left_margin)
             .with_margin_right(CONTENT_HORIZONTAL_PADDING)
             .with_margin_bottom(CONTENT_ITEM_VERTICAL_MARGIN)
-    }
-}
-
-/// Left indent that lines a top-level disclosure up with the transcript's text
-/// column (avatar width + margin past the message-row padding) — the same
-/// column `with_agent_output_item_spacing` indents to.
-const DISCLOSURE_LEFT_MARGIN: f32 =
-    CONTENT_HORIZONTAL_PADDING + MESSAGE_AVATAR_WIDTH + MESSAGE_AVATAR_MARGIN;
-/// Tight gap below each disclosure row so consecutive tool calls stack closely
-/// (the clean look) instead of the old card's 16px breathing room.
-const DISCLOSURE_VERTICAL_MARGIN: f32 = 4.;
-
-/// A flat, borderless disclosure row (feature 07 UI cleanup): a leading glyph +
-/// label + trailing chevron, with the result/status cluster and a bordered
-/// content box revealed **only when expanded** (per owner direction: keep the
-/// icons, keep the line-count/matches labels, but show the boundaries below the
-/// label only on expand). Replaces the always-boxed `HeaderConfig` /
-/// `RenderableAction` chrome everywhere a tool card, diff card, thinking card,
-/// or the task list used it, so every collapsible in the pane reads the same.
-pub(super) struct Disclosure {
-    title: Box<dyn Element>,
-    glyph: Option<warpui::elements::Icon>,
-    expanded: bool,
-    expandable: bool,
-    /// Result label + status icon — rendered in the row's trailing cluster only
-    /// while expanded.
-    cluster: RightCluster,
-    mouse_state: MouseStateHandle,
-    on_toggle: Option<OnToggleExpandedCallback>,
-    /// The content shown in the bordered box below the label when expanded.
-    body: Option<Box<dyn Element>>,
-    /// A child rendered inside a parent's box (a `Task`'s sub-calls): no
-    /// transcript-column indent, just a tight bottom margin.
-    nested: bool,
-}
-
-impl Disclosure {
-    pub fn new(title: Box<dyn Element>) -> Self {
-        Self {
-            title,
-            glyph: None,
-            expanded: false,
-            expandable: false,
-            cluster: RightCluster::default(),
-            mouse_state: MouseStateHandle::default(),
-            on_toggle: None,
-            body: None,
-            nested: false,
-        }
-    }
-
-    pub fn with_glyph(mut self, glyph: warpui::elements::Icon) -> Self {
-        self.glyph = Some(glyph);
-        self
-    }
-
-    pub fn expanded(mut self, expanded: bool) -> Self {
-        self.expanded = expanded;
-        self
-    }
-
-    pub fn expandable(mut self, expandable: bool) -> Self {
-        self.expandable = expandable;
-        self
-    }
-
-    pub fn with_cluster(mut self, cluster: RightCluster) -> Self {
-        self.cluster = cluster;
-        self
-    }
-
-    pub fn with_mouse_state(mut self, mouse_state: MouseStateHandle) -> Self {
-        self.mouse_state = mouse_state;
-        self
-    }
-
-    pub fn on_toggle<F>(mut self, callback: F) -> Self
-    where
-        F: Fn(&mut EventContext) + 'static,
-    {
-        self.on_toggle = Some(Rc::new(callback));
-        self
-    }
-
-    pub fn with_body(mut self, body: Box<dyn Element>) -> Self {
-        self.body = Some(body);
-        self
-    }
-
-    pub fn nested(mut self, nested: bool) -> Self {
-        self.nested = nested;
-        self
-    }
-
-    pub fn render(self, app: &AppContext) -> Box<dyn Element> {
-        let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
-
-        let mut left = Flex::row()
-            .with_main_axis_alignment(MainAxisAlignment::Start)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center);
-        if let Some(glyph) = self.glyph {
-            left.add_child(
-                Container::new(
-                    ConstrainedBox::new(glyph.finish())
-                        .with_width(icon_size(app))
-                        .with_height(icon_size(app))
-                        .finish(),
-                )
-                .with_margin_right(ICON_MARGIN)
-                .finish(),
-            );
-        }
-        left.add_child(Expanded::new(1., self.title).finish());
-
-        let mut row = Flex::row()
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(Shrinkable::new(1., left.finish()).finish());
-
-        let mut trailing = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
-        // The cluster (result label + status icon) is part of the reveal: it
-        // only appears once the row is expanded.
-        if self.expanded {
-            for child in self.cluster.render(appearance, app) {
-                trailing.add_child(child);
-            }
-        }
-        if self.expandable {
-            trailing.add_child(
-                ConstrainedBox::new(render_expansion_icon(self.expanded, false, appearance, app))
-                    .with_width(icon_size(app))
-                    .with_height(icon_size(app))
-                    .finish(),
-            );
-        }
-        row.add_child(trailing.finish());
-
-        let header = Container::new(row.finish())
-            .with_horizontal_padding(2.)
-            .with_vertical_padding(5.)
-            .finish();
-
-        let header = match (self.expandable, self.on_toggle) {
-            (true, Some(callback)) => Hoverable::new(self.mouse_state, |_| header)
-                .on_click(move |ctx, _, _| callback(ctx))
-                .with_cursor(Cursor::PointingHand)
-                .finish(),
-            _ => header,
-        };
-
-        let mut column = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_child(header);
-
-        if self.expanded {
-            if let Some(body) = self.body {
-                // The boundaries the owner wants back — but below the label and
-                // only on expand: a bordered, rounded box on the lower surface.
-                let boxed = Container::new(body)
-                    .with_horizontal_padding(12.)
-                    .with_vertical_padding(8.)
-                    .with_background(theme.surface_1())
-                    .with_border(Border::all(1.).with_border_fill(theme.surface_2()))
-                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-                    .finish();
-                column.add_child(Container::new(boxed).with_margin_top(6.).finish());
-            }
-        }
-
-        let content = column.finish();
-        if self.nested {
-            Container::new(content)
-                .with_margin_bottom(DISCLOSURE_VERTICAL_MARGIN)
-                .finish()
-        } else {
-            Container::new(content)
-                .with_margin_left(DISCLOSURE_LEFT_MARGIN)
-                .with_margin_right(CONTENT_HORIZONTAL_PADDING)
-                .with_margin_bottom(DISCLOSURE_VERTICAL_MARGIN)
-                .finish()
-        }
     }
 }

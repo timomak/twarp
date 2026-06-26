@@ -204,11 +204,18 @@ impl Element for Flex {
             #[cfg(not(debug_assertions))]
             let location_info = "";
 
-            debug_assert!(
-                constraint.max_along(self.axis).is_finite(),
-                "A flex that should expand to a max space can't be rendered in an infinite max constraint\n{location_info}
-See https://www.notion.so/warpdev/Debugging-Flex-acc03383be5644a8af29d9c52b1142bd?pvs=4#fff43263616d8008b3e3efe280686886 for troubleshooting steps"
-            );
+            // twarp: do NOT `debug_assert!` here. An infinite max constraint
+            // along the main axis legitimately occurs on transient intrinsic
+            // measuring passes (e.g. `child_constraint_along_axis` /
+            // `tight_on_cross_axis` set one axis to f32::INFINITY) — this is
+            // reachable for the Standard pane header's `MainAxisSize::Max` rows
+            // while a Claude Code pane is being restored (`open_from_restored`,
+            // feature 07/7m), before the window width has propagated. The code
+            // below already degrades gracefully (intrinsic fallback at the
+            // `actual_size` computation), so a hard abort here turned a
+            // recoverable transient into a SIGABRT in debug-assertions builds
+            // (the dogfood `rltoda` profile) while shipped `release` builds
+            // merely logged. Log loudly and degrade in every build instead.
             if constraint.max_along(self.axis).is_infinite() {
                 log::error!("A flex that should expand to a max space can't be rendered in an infinite max constraint\n{location_info}");
             }
@@ -268,11 +275,12 @@ See https://www.notion.so/warpdev/Debugging-Flex-acc03383be5644a8af29d9c52b1142b
             #[cfg(not(debug_assertions))]
             let location_info = "";
 
-            debug_assert!(
-                constraint.max_along(self.axis).is_finite(),
-                "flex contains flexible children but has an infinite constraint along the flex axis{location_info}
-See https://www.notion.so/warpdev/Debugging-Flex-acc03383be5644a8af29d9c52b1142bd?pvs=4#057b1e4ba7b844f7ad2e69433b295363 for troubleshooting steps"
-            );
+            // twarp: see the matching comment in the `MainAxisSize::Max` branch
+            // above — a flex with flexible children can transiently receive an
+            // infinite main-axis constraint during intrinsic measuring (and
+            // while restoring a Claude Code pane). The `remaining_space`
+            // computation below clamps to a finite result, so log and degrade
+            // rather than aborting the process in debug-assertions builds.
             if constraint.max_along(self.axis).is_infinite() {
                 log::error!("flex contains flexible children but has an infinite constraint along the flex axis{location_info}");
             }
