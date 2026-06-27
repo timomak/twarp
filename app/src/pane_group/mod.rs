@@ -3973,7 +3973,27 @@ impl PaneGroup {
                 self.focus_pane_by_id(pane_id, ctx);
                 self.toggle_maximize_pane(ctx);
             }
-            PaneEvent::FocusSelf => self.focus_pane_by_id(pane_id, ctx),
+            PaneEvent::FocusSelf => {
+                // twarp: `FocusSelf` is emitted from a pane that ALREADY holds
+                // application focus (its own `on_focus` / `FocusInput` handler),
+                // so we only need to MARK it as the group's focused pane — not
+                // re-grab focus. `focus_pane_by_id` uses `focus_pane(.., true)`,
+                // which re-moves application focus; with two side-by-side Claude
+                // panes the two `on_focus` handlers then steal focus from each
+                // other every frame, emitting `AppStateChanged`/`PaneFocused`
+                // nonstop and pinning the main thread on the working-directory
+                // refresh + `save_app` (a sustained beachball). Use
+                // `focus_pane(.., false)` — same as `handle_focus_change` and its
+                // "DO NOT change false to true … infinite loop" warning — which
+                // is idempotent once the pane is focused, breaking the loop while
+                // still recording focus + history for Cmd+W / Open Changes.
+                self.dragged_border = None;
+                if self.focus_pane(pane_id, false, ctx) {
+                    self.update_pane_history(pane_id);
+                    ctx.emit(Event::AppStateChanged);
+                    ctx.emit(Event::PaneFocused);
+                }
+            }
             PaneEvent::FocusActiveSession => self.focus_active_session(ctx),
             PaneEvent::AppStateChanged => {
                 ctx.emit(Event::AppStateChanged);

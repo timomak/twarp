@@ -96,7 +96,29 @@ pub struct WorkingDirectoriesModel {
     focused_repo: HashMap<EntityId, Option<PathBuf>>,
     global_search_views: HashMap<EntityId, ViewHandle<GlobalSearchView>>,
     file_tree_views: HashMap<EntityId, ViewHandle<FileTreeView>>,
+    /// twarp perf: memoizes the inputs of the last
+    /// `refresh_working_directories_for_pane_group` per pane group. That refresh
+    /// resolves every pane's working directory to its repo root via blocking
+    /// `std::fs::canonicalize` on the main thread, and it is invoked on every
+    /// `PaneFocused` / `AppStateChanged` event. A restored multi-pane Claude
+    /// session fires those events in a tight storm, which pinned the main thread
+    /// on canonicalize syscalls (a sustained beachball). The refresh result is a
+    /// pure function of these inputs, so we skip the recompute when they are
+    /// identical to the previous run. Cleared in `handle_empty_pane_group`.
+    last_refresh_inputs: HashMap<EntityId, RefreshInputsSignature>,
 }
+
+/// Cheap, fs-free signature of the inputs to
+/// `refresh_working_directories_for_pane_group`, used to skip redundant
+/// canonicalize-heavy recomputes (see `last_refresh_inputs`).
+#[cfg(feature = "local_fs")]
+type RefreshInputsSignature = (
+    Vec<(EntityId, String)>, // terminal_cwds
+    Vec<(EntityId, String)>, // local_paths
+    Vec<(EntityId, String)>, // directory_cwds
+    Option<EntityId>,        // focused_terminal_id
+    Option<EntityId>,        // focused_directory_id
+);
 
 #[derive(Default)]
 #[cfg(not(feature = "local_fs"))]
@@ -320,6 +342,9 @@ impl WorkingDirectoriesModel {
     }
 
     fn handle_empty_pane_group(&mut self, pane_group_id: EntityId, ctx: &mut ModelContext<Self>) {
+        // twarp perf: drop the memoized refresh inputs so the next non-empty
+        // refresh for this pane group is recomputed (see `last_refresh_inputs`).
+        self.last_refresh_inputs.remove(&pane_group_id);
         let did_remove_dirs = self.pane_groups.remove(&pane_group_id).is_some();
         let did_remove_terminals = self.directory_to_terminal.remove(&pane_group_id).is_some();
         let removed_repos = self.repository_roots.remove(&pane_group_id);
@@ -365,6 +390,23 @@ impl WorkingDirectoriesModel {
             self.handle_empty_pane_group(pane_group_id, ctx);
             return;
         }
+
+        // twarp perf: skip the canonicalize-heavy recompute when the inputs are
+        // identical to the previous run for this pane group. Without this, a
+        // restored multi-pane Claude session storms `PaneFocused` events and
+        // pins the main thread on blocking `std::fs::canonicalize` syscalls,
+        // beachballing the whole app. See `last_refresh_inputs`.
+        let signature: RefreshInputsSignature = (
+            terminal_cwds.clone(),
+            local_paths.clone(),
+            directory_cwds.clone(),
+            focused_terminal_id,
+            focused_directory_id,
+        );
+        if self.last_refresh_inputs.get(&pane_group_id) == Some(&signature) {
+            return;
+        }
+        self.last_refresh_inputs.insert(pane_group_id, signature);
 
         let old_directories: Vec<WorkingDirectory> = self
             .least_recent_directories_for_pane_group(pane_group_id)
