@@ -4190,7 +4190,9 @@ impl Workspace {
     /// The active tab's resolved colour (#10/#11), used to theme panes (e.g. the
     /// Claude Code pane) to match their tab. `None` when the tab has no colour.
     pub fn active_tab_color(&self) -> Option<AnsiColorIdentifier> {
-        self.tabs.get(self.active_tab_index).and_then(|tab| tab.color())
+        self.tabs
+            .get(self.active_tab_index)
+            .and_then(|tab| tab.color())
     }
 
     pub fn is_overflow_menu_showing(&self) -> bool {
@@ -11221,7 +11223,14 @@ impl Workspace {
         position: RectF,
         ctx: &mut ViewContext<Self>,
     ) {
-        const DETACH_SENSITIVITY: f32 = 10.0;
+        // The perpendicular distance the cursor must travel past the tab bar
+        // before a drag becomes a tear-out into a new window. Sized to roughly
+        // a tab height so a casual vertical wiggle during reordering stays
+        // docked; only a deliberate pull off the bar detaches. This also keeps
+        // a comfortable gap above the `TAB_BAR_HIT_MARGIN` (12px) re-attach
+        // zone, so dragging a detached tab back in snaps cleanly instead of
+        // bouncing in the dead band that the old 10px threshold created.
+        const DETACH_DISTANCE: f32 = 48.0;
         // Only detach when the drag leaves every tab-bar presentation on its
         // perpendicular axis. Windows with vertical tabs still render the
         // horizontal bar, so checking only the horizontal rect would make
@@ -11232,16 +11241,16 @@ impl Workspace {
             // No rect laid out yet (first frame); fall back to the horizontal
             // bar's hardcoded height.
             let drag_y = position.min_y();
-            !(-DETACH_SENSITIVITY..=TAB_BAR_HEIGHT + DETACH_SENSITIVITY).contains(&drag_y)
+            !(-DETACH_DISTANCE..=TAB_BAR_HEIGHT + DETACH_DISTANCE).contains(&drag_y)
         } else {
             rects.into_iter().all(|rect| {
                 let is_vertical = rect.height() > rect.width();
                 if is_vertical {
-                    drag_center.x() < rect.min_x() - DETACH_SENSITIVITY
-                        || drag_center.x() > rect.max_x() + DETACH_SENSITIVITY
+                    drag_center.x() < rect.min_x() - DETACH_DISTANCE
+                        || drag_center.x() > rect.max_x() + DETACH_DISTANCE
                 } else {
-                    drag_center.y() < rect.min_y() - DETACH_SENSITIVITY
-                        || drag_center.y() > rect.max_y() + DETACH_SENSITIVITY
+                    drag_center.y() < rect.min_y() - DETACH_DISTANCE
+                        || drag_center.y() > rect.max_y() + DETACH_DISTANCE
                 }
             })
         };
@@ -11736,7 +11745,6 @@ impl Workspace {
 
         current_index
     }
-
 
     /// 8c — move the most-recently-added tab (the just-adopted transferred tab,
     /// which `prepare_for_transferred_tab` appended at the end) to `target_index`,
@@ -12854,7 +12862,10 @@ impl Workspace {
                     group.read(ctx, |pane_group, ctx| {
                         pane_group.active_session_view(ctx).and_then(|terminal| {
                             terminal.read(ctx, |terminal, ctx| {
-                                terminal.input().as_ref(ctx).claude_alias_launch_options(ctx)
+                                terminal
+                                    .input()
+                                    .as_ref(ctx)
+                                    .claude_alias_launch_options(ctx)
                             })
                         })
                     })
@@ -19944,13 +19955,14 @@ impl TypedActionView for Workspace {
             } => self.on_tab_drag(*tab_index, *tab_position, ctx),
             DropTab => {
                 let is_cross_window = CrossWindowTabDrag::as_ref(ctx).is_active();
-                let handed_off_tab_index = CrossWindowTabDrag::as_ref(ctx)
-                    .handed_off_target()
-                    .map(|_| {
-                        CrossWindowTabDrag::as_ref(ctx)
-                            .transferred_tab_index()
-                            .unwrap_or(0)
-                    });
+                let handed_off_tab_index =
+                    CrossWindowTabDrag::as_ref(ctx)
+                        .handed_off_target()
+                        .map(|_| {
+                            CrossWindowTabDrag::as_ref(ctx)
+                                .transferred_tab_index()
+                                .unwrap_or(0)
+                        });
                 self.current_workspace_state.is_tab_being_dragged = false;
                 // Clear any transient `detached` marks left on tabs that did
                 // NOT actually leave this workspace. Skip the tab that has

@@ -13,6 +13,7 @@
 //! app crate.
 
 use serde_json::Value;
+use similar::{Algorithm, ChangeTag, TextDiff};
 
 /// One old → new replacement. A `Write` is a single edit from empty.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,26 +39,47 @@ pub struct ToolDiff {
 }
 
 impl ToolDiff {
-    /// Net line delta across all edits — the `+N −M` summary the collapsed
-    /// card shows (PRODUCT §19/§20).
+    /// Added / removed line counts across all edits — the `+N −M` summary the
+    /// collapsed card shows (PRODUCT §19/§20).
+    ///
+    /// This is a real line-level diff of `old → new`, not `lines(new) +
+    /// lines(old)`: an edit that replaces a 9-line block with a 10-line block
+    /// sharing 9 lines is `+1 −0`, not `+10 −9`. It must match the hunks the
+    /// card renders below the header, so it mirrors the app-side renderer's
+    /// Patience algorithm and trailing-newline normalization
+    /// (`InlineDiffView` / `diff_cards::ensure_trailing_newline`).
     pub fn line_counts(&self) -> (usize, usize) {
         let mut added = 0;
         let mut removed = 0;
         for edit in &self.edits {
-            removed += count_lines(&edit.old);
-            added += count_lines(&edit.new);
+            let old = ensure_trailing_newline(&edit.old);
+            let new = ensure_trailing_newline(&edit.new);
+            let diff = TextDiff::configure()
+                .algorithm(Algorithm::Patience)
+                .diff_lines(&old, &new);
+            for change in diff.iter_all_changes() {
+                match change.tag() {
+                    ChangeTag::Insert => added += 1,
+                    ChangeTag::Delete => removed += 1,
+                    ChangeTag::Equal => {}
+                }
+            }
         }
         (added, removed)
     }
 }
 
-/// Lines in a tool-input string. Empty text has no lines; a trailing newline
-/// does not add a phantom line (`"a\n"` is one line, like `wc -l`).
-fn count_lines(text: &str) -> usize {
-    if text.is_empty() {
-        0
+/// The renderer diffs whole lines, so a string whose final line lacks a
+/// newline would otherwise read as differing from an identical line that has
+/// one. Match `diff_cards::ensure_trailing_newline` so the count agrees with
+/// the rendered hunks.
+fn ensure_trailing_newline(text: &str) -> String {
+    if !text.is_empty() && !text.ends_with('\n') {
+        let mut text = text.to_owned();
+        text.push('\n');
+        text
     } else {
-        text.lines().count()
+        text.to_owned()
     }
 }
 
@@ -192,7 +214,9 @@ mod tests {
     }
 
     #[test]
-    fn line_counts_ignore_trailing_newline() {
+    fn line_counts_are_a_real_diff_not_total_lines() {
+        // Appending one line to a shared block is +1 −0, not +3 −2 — this is
+        // the header/hunk mismatch the count used to show.
         let diff = ToolDiff {
             file_path: "x".into(),
             edits: vec![DiffEdit {
@@ -200,6 +224,22 @@ mod tests {
                 new: "a\nb\nc\n".into(),
             }],
         };
-        assert_eq!(diff.line_counts(), (3, 2));
+        assert_eq!(diff.line_counts(), (1, 0));
+    }
+
+    #[test]
+    fn line_counts_only_count_changed_lines_in_a_shared_block() {
+        // The screenshot bug: a multi-line block where a single line is
+        // inserted reads as +1 −0, not +(all new) −(all old).
+        let old = "let title = appearance\n    .ui_builder()\n    .span(s)\n    .with_style(x)\n    .build()\n    .finish();";
+        let new = "let title = appearance\n    .ui_builder()\n    .span(s)\n    .with_soft_wrap()\n    .with_style(x)\n    .build()\n    .finish();";
+        let diff = ToolDiff {
+            file_path: "x".into(),
+            edits: vec![DiffEdit {
+                old: old.into(),
+                new: new.into(),
+            }],
+        };
+        assert_eq!(diff.line_counts(), (1, 0));
     }
 }

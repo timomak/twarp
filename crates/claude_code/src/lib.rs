@@ -184,12 +184,23 @@ pub enum TranscriptEvent {
     },
     /// A `TodoWrite` update. Replaces the live task list in place (PRODUCT §37).
     Todos(Vec<TodoItem>),
-    /// `claude` requested permission to use a tool (PRODUCT §39; see TECH §Risks
-    /// — this wire channel is the highest-risk, version-gated part of 7g).
+    /// `claude` requested permission to use a tool (PRODUCT §24, 7g). `id` is the
+    /// control-protocol `request_id` the Allow/Deny answer echoes back
+    /// (`driver::send_control_response`); `input` is the proposed tool input,
+    /// returned verbatim as `updatedInput` on allow.
     PermissionRequest {
         id: String,
         tool: String,
         input: Value,
+    },
+    /// `claude` asked the user a question over the control channel (an
+    /// `AskUserQuestion` `request_user_dialog`, PRODUCT §24/§1). `id` is the
+    /// `request_id` to answer; `payload` is the opaque dialog body (the
+    /// `question` kind mirrors the tool's `{questions:[..]}` shape).
+    QuestionRequest {
+        id: String,
+        dialog_kind: String,
+        payload: Value,
     },
     /// The current turn (or session) ended (PRODUCT §52).
     Ended { reason: EndReason },
@@ -235,13 +246,23 @@ pub enum TranscriptItem {
     },
     /// The in-place task list (PRODUCT §37).
     Todos(Vec<TodoItem>),
-    /// An in-transcript permission prompt (PRODUCT §39). `decision` is `None`
-    /// while pending, `Some(true/false)` once answered.
+    /// An in-transcript permission prompt (PRODUCT §24). `decision` is `None`
+    /// while pending, `Some(true/false)` once Allow/Deny is clicked.
     Permission {
         id: String,
         tool: String,
         input: Value,
         decision: Option<bool>,
+    },
+    /// An in-transcript question prompt from `claude`'s control channel — an
+    /// `AskUserQuestion` `request_user_dialog` (PRODUCT §24/§1). `id` is the
+    /// `request_id` to answer; `payload` is the opaque dialog body. `answered`
+    /// flips once the user submits, so the card stops offering live controls.
+    Question {
+        id: String,
+        dialog_kind: String,
+        payload: Value,
+        answered: bool,
     },
     /// A per-turn metrics line (cost / duration / time-to-first-token), pushed
     /// when a turn completes (PRODUCT §48).
@@ -271,6 +292,10 @@ pub struct Transcript {
     slash_commands: Vec<String>,
     /// Latest turn's token usage + context window (from `result`).
     usage: Option<Usage>,
+    /// Bumped on every mutation (`apply` / `clear`). Lets renderers cheaply
+    /// invalidate derived views (e.g. the background-scripts list) without
+    /// diffing the items — equal revision ⇒ identical `items`.
+    revision: u64,
 }
 
 impl Transcript {
@@ -282,10 +307,62 @@ impl Transcript {
         &self.items
     }
 
+    /// A monotonic counter bumped on every mutation. Two reads with the same
+    /// revision are guaranteed to see identical `items`, so a renderer can use
+    /// it as a cache key for anything derived purely from the transcript.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
     /// Find a tool card by id, searching nested Task children too. Used by the
     /// panel to resolve a card's current state (e.g. on expand/collapse).
     pub fn find_tool(&self, id: &str) -> Option<&TranscriptItem> {
         find_tool_ref(&self.items, id)
+    }
+
+    /// Record a permission decision (7g, PRODUCT §24): flip the matching
+    /// pending `Permission` card to `Some(allow)` and return its proposed tool
+    /// `input` (echoed back as `updatedInput` on allow). `None` if the id is
+    /// unknown or already answered — the caller then sends no control_response.
+    pub fn answer_permission(&mut self, id: &str, allow: bool) -> Option<Value> {
+        for item in self.items.iter_mut().rev() {
+            if let TranscriptItem::Permission {
+                id: pid,
+                input,
+                decision,
+                ..
+            } = item
+            {
+                if pid == id && decision.is_none() {
+                    *decision = Some(allow);
+                    self.revision = self.revision.wrapping_add(1);
+                    return Some(input.clone());
+                }
+            }
+        }
+        None
+    }
+
+    /// Mark a question card answered (7g, PRODUCT §24/§1) and return its dialog
+    /// `payload` so the caller can build the answer. `None` if the id is unknown
+    /// or already answered.
+    pub fn answer_question(&mut self, id: &str) -> Option<Value> {
+        for item in self.items.iter_mut().rev() {
+            if let TranscriptItem::Question {
+                id: qid,
+                payload,
+                answered,
+                ..
+            } = item
+            {
+                if qid == id && !*answered {
+                    *answered = true;
+                    self.revision = self.revision.wrapping_add(1);
+                    return Some(payload.clone());
+                }
+            }
+        }
+        None
     }
 
     pub fn is_empty(&self) -> bool {
@@ -333,6 +410,7 @@ impl Transcript {
         self.fast_mode = None;
         self.slash_commands.clear();
         self.usage = None;
+        self.revision = self.revision.wrapping_add(1);
     }
 
     /// Apply one driver event to the model.
@@ -341,6 +419,7 @@ impl Transcript {
     /// headless makes the event→model mapping — delta accumulation, in-place
     /// todo updates, tool-result matching — unit-testable without GPUI.
     pub fn apply(&mut self, event: TranscriptEvent) {
+        self.revision = self.revision.wrapping_add(1);
         match event {
             TranscriptEvent::SessionInit {
                 session_id,
@@ -512,6 +591,18 @@ impl Transcript {
                     tool,
                     input,
                     decision: None,
+                });
+            }
+            TranscriptEvent::QuestionRequest {
+                id,
+                dialog_kind,
+                payload,
+            } => {
+                self.items.push(TranscriptItem::Question {
+                    id,
+                    dialog_kind,
+                    payload,
+                    answered: false,
                 });
             }
             TranscriptEvent::Ended { reason } => match reason {
@@ -778,6 +869,47 @@ mod tests {
             TranscriptItem::Todos(items) => assert_eq!(items[0].status, TodoStatus::Completed),
             other => panic!("expected todos, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn permission_request_then_answer_records_decision_and_returns_input() {
+        let mut t = Transcript::new();
+        t.apply(TranscriptEvent::PermissionRequest {
+            id: "req-1".to_string(),
+            tool: "Bash".to_string(),
+            input: serde_json::json!({ "command": "echo hi" }),
+        });
+        // The proposed input comes back so the caller can echo it as updatedInput.
+        let input = t
+            .answer_permission("req-1", true)
+            .expect("known pending id");
+        assert_eq!(
+            input.get("command").and_then(|v| v.as_str()),
+            Some("echo hi")
+        );
+        match &t.items()[0] {
+            TranscriptItem::Permission { decision, .. } => assert_eq!(*decision, Some(true)),
+            other => panic!("expected Permission, got {other:?}"),
+        }
+        // Answering twice is a no-op (the control_response was already sent).
+        assert!(t.answer_permission("req-1", false).is_none());
+    }
+
+    #[test]
+    fn question_request_then_answer_marks_answered_and_returns_payload() {
+        let mut t = Transcript::new();
+        t.apply(TranscriptEvent::QuestionRequest {
+            id: "req-2".to_string(),
+            dialog_kind: "question".to_string(),
+            payload: serde_json::json!({ "questions": [] }),
+        });
+        let payload = t.answer_question("req-2").expect("known pending id");
+        assert!(payload.get("questions").is_some());
+        match &t.items()[0] {
+            TranscriptItem::Question { answered, .. } => assert!(*answered),
+            other => panic!("expected Question, got {other:?}"),
+        }
+        assert!(t.answer_question("req-2").is_none());
     }
 
     #[test]

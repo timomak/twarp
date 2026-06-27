@@ -48,12 +48,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_channel::Sender;
-use parking_lot::RwLock;
 use base64::Engine as _;
 use claude_code::diff::diff_for_tool;
 use claude_code::driver::{
-    interrupt, send_user_message, spawn_session, Child, OutgoingImage, OutgoingMessage,
-    PermissionMode, SpawnOptions, SpawnedSession,
+    interrupt, send_control_response, send_interrupt, send_user_message, spawn_session, Child,
+    OutgoingImage,
+    OutgoingMessage, PermissionMode, SpawnOptions, SpawnedSession,
 };
 use claude_code::launch::LaunchOptions;
 use claude_code::{sessions, Transcript, TranscriptEvent, TranscriptItem, TurnMetrics, Usage};
@@ -62,26 +62,30 @@ use markdown_parser::{
     parse_markdown_with_gfm_tables, FormattedTable, FormattedText, FormattedTextInline,
     FormattedTextLine, TableAlignment,
 };
+use parking_lot::RwLock;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use warp_editor::editor::NavigationKey;
 use warpui::assets::asset_cache::AssetSource;
+use warpui::clipboard::ClipboardContent;
 use warpui::elements::shimmering_text::{
     ShimmerConfig, ShimmeringTextElement, ShimmeringTextStateHandle,
 };
 use warpui::platform::FilePickerConfiguration;
+use warpui::r#async::Timer;
 use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::slider::SliderStateHandle;
 use warpui::{
     elements::{
         Align, Border, CacheOption, ChildAnchor, Clipped, ClippedScrollStateHandle,
-        ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
-        Dismiss, DispatchEventResult, DropShadow, Element, EventDispatchMode, EventHandler,
-        Expanded, Fill, Flex, FormattedTextElement, HighlightedHyperlink, Hoverable, HyperlinkUrl,
-        Icon, Image, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, Padding,
+        ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss,
+        DispatchEventResult, DropShadow, Element, EventDispatchMode, EventHandler, Expanded, Fill,
+        Flex, FormattedTextElement, HighlightedHyperlink, Hoverable, HyperlinkUrl, Icon, Image,
+        MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, Padding,
         ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementAnchor,
-        PositionedElementOffsetBounds, Radius, SavePosition, ScrollTarget, ScrollToPositionMode,
-        ScrollbarWidth, SelectableArea, SelectionHandle, Shrinkable, Stack,
+        PositionedElementOffsetBounds, PulsingIcon, PulsingIconStateHandle, Radius, SavePosition,
+        ScrollTarget, ScrollToPositionMode, ScrollbarWidth, SelectableArea, SelectionHandle,
+        Shrinkable, Stack,
     },
     platform::Cursor,
     presenter::ChildView,
@@ -90,14 +94,11 @@ use warpui::{
     AppContext, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View,
     ViewContext, ViewHandle, WindowId,
 };
-use warpui::clipboard::ClipboardContent;
-use warpui::r#async::Timer;
 
 use self::background_scripts::{BackgroundScript, BackgroundScriptState};
 use self::composer::{SuggestionKind, SuggestionQuery};
 use self::diff_cards::DiffCard;
 use self::repo_context::{CiState, RepoContext};
-use crate::workspace::{WorkspaceAction, WorkspaceRegistry};
 use self::thinking::ThinkingUi;
 use self::tool_cards::{render_tool_card, ToolCardUi};
 use crate::appearance::Appearance;
@@ -110,10 +111,11 @@ use crate::pane_group::{
     pane::view::{self, HeaderContent, StandardHeader, StandardHeaderOptions},
     BackingView, PaneConfiguration, PaneEvent, PaneHeaderAction,
 };
-use crate::terminal::{view::Event as TerminalViewEvent, TerminalManager, TerminalView};
-use crate::util::path::{resolve_executable, resolve_executable_in_path};
 #[cfg(all(feature = "local_fs", feature = "local_tty"))]
 use crate::terminal::local_shell::LocalShellState;
+use crate::terminal::{view::Event as TerminalViewEvent, TerminalManager, TerminalView};
+use crate::util::path::{resolve_executable, resolve_executable_in_path};
+use crate::workspace::{WorkspaceAction, WorkspaceRegistry};
 
 /// The executable the pane drives. Resolved on `PATH`; its absence is the
 /// unavailable state (PRODUCT §4).
@@ -345,6 +347,14 @@ pub enum ClaudeCodeViewAction {
     /// the tool and ends the turn, so the answer continues the conversation as
     /// an ordinary message rather than a tool_result.
     SubmitQuestionAnswers(usize),
+    /// Answer a `can_use_tool` permission prompt over the control channel (7g,
+    /// PRODUCT §24): `request_id` is the control-protocol id; `allow` proceeds,
+    /// otherwise the action is denied and the session continues.
+    AnswerPermission { request_id: String, allow: bool },
+    /// Submit the chosen answers for a control-channel question card (the
+    /// `request_user_dialog` path, 7g/§24) at this transcript index. Releases the
+    /// dialog and sends the picks as the next turn (PRODUCT §26: never hang).
+    SubmitQuestionDialog(usize),
     /// twarp: resume the recent session at this index in the zero-state
     /// "Welcome back" panel — loads its stored history into this pane and
     /// re-attaches it, the same as a sidebar resume but in place.
@@ -418,7 +428,10 @@ impl ComposerMenu {
     /// input (branch / CI / PR) — those menus drop *downward*; the bottom
     /// control pills (permission / model / effort / context) open *upward*.
     fn opens_downward(self) -> bool {
-        matches!(self, ComposerMenu::Branch | ComposerMenu::Ci | ComposerMenu::Pr)
+        matches!(
+            self,
+            ComposerMenu::Branch | ComposerMenu::Ci | ComposerMenu::Pr
+        )
     }
 }
 
@@ -443,6 +456,24 @@ pub struct ResumeSession {
 struct RawCliSession {
     manager: ModelHandle<Box<dyn TerminalManager>>,
     view: ViewHandle<TerminalView>,
+}
+
+/// One thing to write to the live `claude` process's stdin. The background
+/// writer task owns stdin exclusively, so user turns (7c) and control-protocol
+/// answers (7g — permission Allow/Deny, question replies, PRODUCT §24) share the
+/// one channel instead of racing two writers.
+enum StdinCommand {
+    /// A user turn (`send_user_message`).
+    Turn(OutgoingMessage),
+    /// An answer to a `control_request` (`send_control_response`): the
+    /// `request_id` to echo and the decision payload.
+    Control {
+        request_id: String,
+        response: serde_json::Value,
+    },
+    /// Interrupt the in-flight turn (`send_interrupt`) — the session-preserving
+    /// Stop (PRODUCT §11). `request_id` is echoed on the acknowledgement.
+    Interrupt { request_id: String },
 }
 
 /// An image attached directly through paste / drag-drop / file-picker (7l,
@@ -495,12 +526,19 @@ pub struct ClaudeCodeView {
     /// (Stop, PRODUCT §11) and to kill the process on drop (PRODUCT §8 —
     /// `spawn_session` sets `kill_on_drop`).
     child: Option<Child>,
-    /// Sends user turns to the background task that owns the process stdin
-    /// (PRODUCT §16). `None` until a session is running.
-    message_tx: Option<Sender<OutgoingMessage>>,
+    /// Sends user turns and control-protocol answers to the background task that
+    /// owns the process stdin (PRODUCT §16, §24). `None` until a session is
+    /// running.
+    message_tx: Option<Sender<StdinCommand>>,
     /// True while `claude` is producing output for the current turn (PRODUCT §9):
     /// the composer shows Stop and sending is disabled until the turn ends.
     streaming: bool,
+    /// True between a user Stop and the turn's terminal event (PRODUCT §11). The
+    /// interrupt makes `claude` end the turn with an error `result`, but the
+    /// session stays alive — this flag re-labels that terminal event as a clean
+    /// `Interrupted` so it shows the "Interrupted." notice instead of a spurious
+    /// error and keeps the session resumable.
+    interrupt_pending: bool,
     /// Stable mouse-state handles kept across renders so a click's
     /// mousedown/mouseup hit the same handle.
     submit_button: MouseStateHandle,
@@ -614,11 +652,20 @@ pub struct ClaudeCodeView {
     /// buttons (keyed by card index), created on demand.
     question_option_mouse: std::cell::RefCell<HashMap<(usize, usize), MouseStateHandle>>,
     question_submit_mouse: std::cell::RefCell<HashMap<usize, MouseStateHandle>>,
+    /// Stable mouse handles for the permission card's Allow / Deny buttons (7g,
+    /// PRODUCT §24), keyed by the control-protocol `request_id`, created on
+    /// demand so the two buttons keep distinct hover state across renders.
+    permission_button_mouse: std::cell::RefCell<HashMap<(String, bool), MouseStateHandle>>,
     /// Animation state for the composer's shimmering "Working…" indicator (#9):
     /// the Claude-app-style loading shimmer shown while a turn streams. Persisted
     /// across renders so the shimmer keeps a continuous phase; the element
     /// self-schedules repaints while it's on screen.
     working_shimmer: ShimmeringTextStateHandle,
+    /// Animation phase for the Claude glyph beside the streaming "Working…"
+    /// status: a gentle opacity pulse signalling the turn is live. Persisted
+    /// across renders so the pulse keeps a continuous clock; the element
+    /// self-schedules repaints while it's on screen.
+    working_icon_pulse: PulsingIconStateHandle,
     /// Folder / branch / diff / PR / CI shown in the composer context bar (#11).
     /// `None` until the first async `git`/`gh` probe resolves; refreshed on open
     /// and after each turn.
@@ -706,6 +753,14 @@ pub struct ClaudeCodeView {
     /// Mouse state for the header's background-scripts icon button (left of the
     /// Chat UI / Raw CLI toggle) that opens the floating panel.
     background_button_mouse: MouseStateHandle,
+    /// Memoized [`background_scripts::collect`] output, keyed by the transcript
+    /// revision it was derived from. The list is recomputed (walking the whole
+    /// transcript, descending into Task children) by both the header button and
+    /// the floating panel; without this it ran twice per render. `Rc` so the
+    /// two readers share one allocation; invalidated whenever the transcript's
+    /// revision moves on.
+    background_scripts_memo:
+        std::cell::RefCell<Option<(u64, std::rc::Rc<Vec<background_scripts::BackgroundScript>>)>>,
 }
 
 impl ClaudeCodeView {
@@ -819,6 +874,7 @@ impl ClaudeCodeView {
             child: None,
             message_tx: None,
             streaming: false,
+            interrupt_pending: false,
             submit_button: MouseStateHandle::default(),
             refresh_button: MouseStateHandle::default(),
             stop_button: MouseStateHandle::default(),
@@ -859,7 +915,9 @@ impl ClaudeCodeView {
             question_selected: HashMap::new(),
             question_option_mouse: std::cell::RefCell::new(HashMap::new()),
             question_submit_mouse: std::cell::RefCell::new(HashMap::new()),
+            permission_button_mouse: std::cell::RefCell::new(HashMap::new()),
             working_shimmer: ShimmeringTextStateHandle::new(),
+            working_icon_pulse: PulsingIconStateHandle::new(),
             repo_context: None,
             composer_menu: None,
             drag_active: false,
@@ -890,6 +948,7 @@ impl ClaudeCodeView {
             background_row_mouse: std::cell::RefCell::new(HashMap::new()),
             background_panel_mouse: MouseStateHandle::default(),
             background_button_mouse: MouseStateHandle::default(),
+            background_scripts_memo: std::cell::RefCell::new(None),
         };
 
         // PRODUCT §4: capture the login-shell PATH up front so availability
@@ -1048,8 +1107,9 @@ impl ClaudeCodeView {
     /// integration isn't compiled in; availability then uses the process PATH.
     #[cfg(all(feature = "local_fs", feature = "local_tty"))]
     fn capture_interactive_path(ctx: &mut ViewContext<Self>) {
-        let fut = LocalShellState::handle(ctx)
-            .update(ctx, |shell_state, ctx| shell_state.get_interactive_path_env_var(ctx));
+        let fut = LocalShellState::handle(ctx).update(ctx, |shell_state, ctx| {
+            shell_state.get_interactive_path_env_var(ctx)
+        });
         ctx.spawn(fut, |me, path, ctx| {
             if path.is_some() && me.interactive_path != path {
                 me.interactive_path = path;
@@ -1942,7 +2002,7 @@ impl ClaudeCodeView {
         match &self.message_tx {
             // Session already running — write the turn to its stdin.
             Some(tx) => {
-                let _ = tx.try_send(message);
+                let _ = tx.try_send(StdinCommand::Turn(message));
             }
             // First message: spawn the session, forwarding this as turn one.
             None => self.begin_session(Some(message), ctx),
@@ -1975,10 +2035,10 @@ impl ClaudeCodeView {
         // only the sibling options of the question this option belongs to,
         // leaving other questions' answers intact.
         let siblings: Vec<usize> = {
-            let Some(TranscriptItem::Tool { input, .. }) = self.transcript.items().get(item) else {
+            let Some(source) = question_source(self.transcript.items().get(item)) else {
                 return;
             };
-            parse_questions(input)
+            parse_questions(source)
                 .into_iter()
                 .find(|q| q.options.iter().any(|o| o.flat_index == option))
                 .map(|q| q.options.iter().map(|o| o.flat_index).collect())
@@ -1998,8 +2058,7 @@ impl ClaudeCodeView {
     /// ordinary message; the model reads the question from the transcript above.
     fn submit_question_answers(&mut self, item: usize, ctx: &mut ViewContext<Self>) {
         let parsed = {
-            let Some(TranscriptItem::Tool { name, input, .. }) =
-                self.transcript.items().get(item)
+            let Some(TranscriptItem::Tool { name, input, .. }) = self.transcript.items().get(item)
             else {
                 return;
             };
@@ -2038,6 +2097,92 @@ impl ClaudeCodeView {
         self.submit_message(OutgoingMessage::text(lines.join("\n")), Vec::new(), ctx);
     }
 
+    /// Answer a `can_use_tool` permission prompt over the control channel (7g,
+    /// PRODUCT §24). Flips the card to its decided state and writes the
+    /// `control_response` `claude` is waiting on: Allow echoes the proposed
+    /// `input` back as `updatedInput`; Deny rejects with a short reason and the
+    /// session continues. A no-op (no response sent) if the request was already
+    /// answered or the session is gone — never hangs (PRODUCT §26).
+    fn answer_permission(&mut self, request_id: &str, allow: bool, ctx: &mut ViewContext<Self>) {
+        let Some(input) = self.transcript.answer_permission(request_id, allow) else {
+            return;
+        };
+        let response = if allow {
+            serde_json::json!({ "behavior": "allow", "updatedInput": input })
+        } else {
+            serde_json::json!({ "behavior": "deny", "message": "The user declined this action." })
+        };
+        if let Some(tx) = &self.message_tx {
+            let _ = tx.try_send(StdinCommand::Control {
+                request_id: request_id.to_owned(),
+                response,
+            });
+        }
+        ctx.notify();
+    }
+
+    /// Submit the chosen answers for a control-channel question card (the
+    /// `request_user_dialog` path, 7g/§24) at transcript index `item`. The exact
+    /// `completed`-answer wire shape for the `question` dialog kind isn't pinned
+    /// down against the headless CLI, so we take the safe route the §26
+    /// degradation already sanctions: **cancel** the dialog (releasing the
+    /// turn — never a hang) and resend the picks as the next user turn, exactly
+    /// like the tool-card question path. The model reads the answer from the
+    /// transcript above.
+    fn submit_question_dialog(&mut self, item: usize, ctx: &mut ViewContext<Self>) {
+        let (request_id, payload) = {
+            let Some(TranscriptItem::Question {
+                id,
+                payload,
+                answered,
+                ..
+            }) = self.transcript.items().get(item)
+            else {
+                return;
+            };
+            if *answered {
+                return;
+            }
+            (id.clone(), payload.clone())
+        };
+        let parsed = parse_questions(&payload);
+        let Some(selected) = self.question_selected.get(&item) else {
+            return;
+        };
+        let mut lines = Vec::new();
+        for question in &parsed {
+            let picks: Vec<&str> = question
+                .options
+                .iter()
+                .filter(|o| selected.contains(&o.flat_index))
+                .map(|o| o.label.as_str())
+                .collect();
+            if picks.is_empty() {
+                continue;
+            }
+            let label = if question.header.trim().is_empty() {
+                question.question.as_str()
+            } else {
+                question.header.as_str()
+            };
+            lines.push(format!("{}: {}", label, picks.join(", ")));
+        }
+        if lines.is_empty() {
+            return;
+        }
+        // Mark the card answered (stops its live controls) and release the
+        // dialog so `claude` continues, then resend the picks as a turn.
+        self.transcript.answer_question(&request_id);
+        self.question_selected.remove(&item);
+        if let Some(tx) = &self.message_tx {
+            let _ = tx.try_send(StdinCommand::Control {
+                request_id,
+                response: serde_json::json!({ "behavior": "cancelled" }),
+            });
+        }
+        self.submit_message(OutgoingMessage::text(lines.join("\n")), Vec::new(), ctx);
+    }
+
     /// Dispatch the next queued message after a turn completes (PRODUCT §53,
     /// 7m). No-op unless the session is idle, still live, and has a queued
     /// message. Each completed turn drains exactly one, so messages dispatch in
@@ -2058,7 +2203,7 @@ impl ClaudeCodeView {
         self.streaming = true;
         self.turn_started = Some(started);
         self.schedule_elapsed_tick(started, ctx);
-        let _ = tx.try_send(message);
+        let _ = tx.try_send(StdinCommand::Turn(message));
         ctx.notify();
     }
 
@@ -2091,8 +2236,11 @@ impl ClaudeCodeView {
     /// twarp 07: mirror the pane's current settings into the global last-used
     /// store so the next Claude pane (and a crash-restored one) inherits them.
     fn persist_session_defaults(&self, ctx: &mut ViewContext<Self>) {
-        let (model, effort, permission_mode) =
-            (self.model.clone(), self.effort.clone(), self.permission_mode);
+        let (model, effort, permission_mode) = (
+            self.model.clone(),
+            self.effort.clone(),
+            self.permission_mode,
+        );
         ClaudeSessionDefaultsModel::handle(ctx).update(ctx, |defaults, ctx| {
             defaults.record(model, effort, permission_mode, ctx);
         });
@@ -2301,13 +2449,26 @@ impl ClaudeCodeView {
             move |view: &mut Self, ctx| view.on_stream_done(epoch, ctx),
         );
 
-        // Own stdin in a background task; the view queues user turns onto it.
-        let (message_tx, message_rx) = async_channel::unbounded::<OutgoingMessage>();
+        // Own stdin in a background task; the view queues user turns and
+        // control-protocol answers onto it (one writer, no races, §24).
+        let (message_tx, message_rx) = async_channel::unbounded::<StdinCommand>();
         ctx.background_executor()
             .spawn(async move {
                 let mut stdin = stdin;
-                while let Ok(message) = message_rx.recv().await {
-                    if send_user_message(&mut stdin, &message).await.is_err() {
+                while let Ok(command) = message_rx.recv().await {
+                    let wrote = match command {
+                        StdinCommand::Turn(message) => {
+                            send_user_message(&mut stdin, &message).await
+                        }
+                        StdinCommand::Control {
+                            request_id,
+                            response,
+                        } => send_control_response(&mut stdin, &request_id, response).await,
+                        StdinCommand::Interrupt { request_id } => {
+                            send_interrupt(&mut stdin, &request_id).await
+                        }
+                    };
+                    if wrote.is_err() {
                         break;
                     }
                 }
@@ -2319,7 +2480,7 @@ impl ClaudeCodeView {
 
         // Send the first turn now that stdin is wired (PRODUCT §6).
         if let (Some(prompt), Some(tx)) = (first_prompt, &self.message_tx) {
-            let _ = tx.try_send(prompt);
+            let _ = tx.try_send(StdinCommand::Turn(prompt));
         }
         ctx.notify();
     }
@@ -2330,11 +2491,30 @@ impl ClaudeCodeView {
     fn on_transcript_event(
         &mut self,
         epoch: u64,
-        event: TranscriptEvent,
+        mut event: TranscriptEvent,
         ctx: &mut ViewContext<Self>,
     ) {
         if epoch != self.session_epoch {
             return;
+        }
+        // PRODUCT §11: a user-requested Stop makes `claude` end the turn with an
+        // error `result` (subtype `error_during_execution`) while the session
+        // stays alive. Re-label that terminal event as a clean interrupt so it
+        // shows the "Interrupted." notice — not a scary error — and stays
+        // resumable (the Error/Exited arm below would otherwise drop the resume
+        // id and wedge the pane).
+        if self.interrupt_pending {
+            if let TranscriptEvent::Ended { reason } = &event {
+                if matches!(
+                    reason,
+                    claude_code::EndReason::Error(_) | claude_code::EndReason::Exited
+                ) {
+                    event = TranscriptEvent::Ended {
+                        reason: claude_code::EndReason::Interrupted,
+                    };
+                }
+                self.interrupt_pending = false;
+            }
         }
         if matches!(event, TranscriptEvent::Ended { .. }) {
             self.streaming = false;
@@ -2439,6 +2619,7 @@ impl ClaudeCodeView {
             return;
         }
         self.streaming = false;
+        self.interrupt_pending = false;
         self.child = None;
         self.message_tx = None;
         ctx.notify();
@@ -2477,6 +2658,7 @@ impl ClaudeCodeView {
         self.child = None; // kill_on_drop
         self.message_tx = None;
         self.streaming = false;
+        self.interrupt_pending = false;
     }
 
     /// twarp 07 (7i, PRODUCT §39/§42): flip between the rendered chat and the
@@ -2629,11 +2811,22 @@ impl ClaudeCodeView {
         ctx.notify();
     }
 
-    /// Stop the current turn (PRODUCT §11): SIGINT the live process. The session
-    /// stays alive; `claude` emits `Ended { Interrupted }`, which clears the
-    /// streaming state via [`Self::on_transcript_event`].
-    fn stop(&mut self, _ctx: &mut ViewContext<Self>) {
-        if let Some(child) = &self.child {
+    /// Stop the current turn (PRODUCT §11): send an `interrupt` control request
+    /// over stdin. The session stays alive; `claude` ends the turn with an error
+    /// `result`, which [`Self::on_transcript_event`] re-labels as
+    /// `Ended { Interrupted }` (via `interrupt_pending`) — clearing the streaming
+    /// state and keeping the session resumable. Falls back to a SIGINT only when
+    /// there's no live stdin pump (e.g. the process is mid-spawn).
+    fn stop(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.streaming {
+            return;
+        }
+        if let Some(tx) = &self.message_tx {
+            self.interrupt_pending = true;
+            let request_id = format!("interrupt-{}", self.session_epoch);
+            let _ = tx.try_send(StdinCommand::Interrupt { request_id });
+            ctx.notify();
+        } else if let Some(child) = &self.child {
             interrupt(child);
         }
     }
@@ -2786,10 +2979,17 @@ impl ClaudeCodeView {
             }
             None => "Working…".to_owned(),
         };
-        let icon = ConstrainedBox::new(Icon::new(ASSISTANT_ICON_SVG_PATH, accent).finish())
-            .with_width(14.)
-            .with_height(14.)
-            .finish();
+        let icon = ConstrainedBox::new(
+            PulsingIcon::new(
+                ASSISTANT_ICON_SVG_PATH,
+                accent,
+                self.working_icon_pulse.clone(),
+            )
+            .finish(),
+        )
+        .with_width(14.)
+        .with_height(14.)
+        .finish();
         let shimmer = ShimmeringTextElement::new(
             label,
             appearance.ui_font_family(),
@@ -3200,7 +3400,11 @@ impl ClaudeCodeView {
             .build()
             .finish();
         let chevron = ConstrainedBox::new(
-            Icon::new(crate::ui_components::icons::Icon::ChevronRight.into(), muted).finish(),
+            Icon::new(
+                crate::ui_components::icons::Icon::ChevronRight.into(),
+                muted,
+            )
+            .finish(),
         )
         .with_width(14.)
         .with_height(14.)
@@ -3252,6 +3456,23 @@ impl ClaudeCodeView {
         .finish()
     }
 
+    /// twarp: the per-chat background-scripts list, derived from the transcript
+    /// via [`background_scripts::collect`] and memoized on the transcript's
+    /// revision. Both the header button and the floating panel read it each
+    /// render; the memo keeps that to one walk of the transcript per mutation
+    /// instead of two per render.
+    fn background_scripts(&self) -> std::rc::Rc<Vec<background_scripts::BackgroundScript>> {
+        let revision = self.transcript.revision();
+        if let Some((rev, scripts)) = self.background_scripts_memo.borrow().as_ref() {
+            if *rev == revision {
+                return scripts.clone();
+            }
+        }
+        let scripts = std::rc::Rc::new(background_scripts::collect(self.transcript.items()));
+        *self.background_scripts_memo.borrow_mut() = Some((revision, scripts.clone()));
+        scripts
+    }
+
     /// twarp: the header's **background-scripts icon button** — a terminal
     /// glyph sitting to the left of the Chat UI / Raw CLI toggle that opens the
     /// floating [`render_background_panel`](Self::render_background_panel)
@@ -3265,7 +3486,7 @@ impl ClaudeCodeView {
     /// [`ClaudeCodeCustomAction::ToggleBackgroundPanel`] rather than dispatching
     /// the in-pane action directly.
     fn render_background_button(&self, app: &AppContext) -> Option<Box<dyn Element>> {
-        let scripts = background_scripts::collect(self.transcript.items());
+        let scripts = self.background_scripts();
         if scripts.is_empty() {
             return None;
         }
@@ -3370,7 +3591,7 @@ impl ClaudeCodeView {
         if !self.background_scripts_expanded {
             return None;
         }
-        let scripts = background_scripts::collect(self.transcript.items());
+        let scripts = self.background_scripts();
         if scripts.is_empty() {
             return None;
         }
@@ -3464,7 +3685,7 @@ impl ClaudeCodeView {
             .with_child(header);
 
         if expanded {
-            for script in &scripts {
+            for script in scripts.iter() {
                 column.add_child(self.render_background_row(script, app));
             }
         }
@@ -3740,18 +3961,14 @@ impl ClaudeCodeView {
         // A `MainAxisSize::Max` row expands to the full pane width; the
         // `ConstrainedBox` fixes the band height to the composer clearance.
         ConstrainedBox::new(
-            Container::new(
-                Flex::row()
-                    .with_main_axis_size(MainAxisSize::Max)
-                    .finish(),
-            )
-            .with_background(Fill::Gradient {
-                start: vec2f(0., 0.),
-                end: vec2f(0., 1.),
-                start_color: transparent,
-                end_color: bg,
-            })
-            .finish(),
+            Container::new(Flex::row().with_main_axis_size(MainAxisSize::Max).finish())
+                .with_background(Fill::Gradient {
+                    start: vec2f(0., 0.),
+                    end: vec2f(0., 1.),
+                    start_color: transparent,
+                    end_color: bg,
+                })
+                .finish(),
         )
         .with_height(TRANSCRIPT_FADE_HEIGHT)
         .finish()
@@ -4340,7 +4557,12 @@ impl ClaudeCodeView {
 
         // Folder — static (#11).
         if let Some(folder) = &context.folder {
-            row.add_child(render_context_pill(folder.clone(), text_color, wash, appearance));
+            row.add_child(render_context_pill(
+                folder.clone(),
+                text_color,
+                wash,
+                appearance,
+            ));
         }
         // Branch — clickable, opens the branch menu (copy / open on GitHub /
         // switch). Always shown when resolved, including on the default branch.
@@ -4405,7 +4627,8 @@ impl ClaudeCodeView {
             row.add_child(
                 Container::new(
                     Hoverable::new(self.pr_pill_mouse.clone(), {
-                        let pill = render_context_pill("Create PR".to_owned(), accent, wash, appearance);
+                        let pill =
+                            render_context_pill("Create PR".to_owned(), accent, wash, appearance);
                         move |_| pill
                     })
                     .with_cursor(Cursor::PointingHand)
@@ -4717,7 +4940,14 @@ impl ClaudeCodeView {
                 button,
                 OffsetPositioning::offset_from_parent(
                     vec2f(-TRANSCRIPT_GUTTER, -8.),
-                    ParentOffsetBounds::ParentBySize,
+                    // The button floats *above* the composer's top edge, so it
+                    // sits outside the parent (composer) rect. `ParentBySize`
+                    // clamps the child's position back inside the parent's
+                    // bounds (see `compute_child_position`), which pinned the
+                    // button to the composer's top edge — hidden behind the
+                    // context bar — so it never appeared. `Unbounded` lets it
+                    // overflow above the composer as intended.
+                    ParentOffsetBounds::Unbounded,
                     ParentAnchor::TopRight,
                     ChildAnchor::BottomRight,
                 ),
@@ -5121,12 +5351,16 @@ impl TypedActionView for ClaudeCodeView {
             ClaudeCodeViewAction::SubmitQuestionAnswers(item) => {
                 self.submit_question_answers(*item, ctx)
             }
+            ClaudeCodeViewAction::AnswerPermission { request_id, allow } => {
+                self.answer_permission(request_id, *allow, ctx)
+            }
+            ClaudeCodeViewAction::SubmitQuestionDialog(item) => {
+                self.submit_question_dialog(*item, ctx)
+            }
             ClaudeCodeViewAction::ResumeRecentSession(index) => {
                 self.resume_recent_session(*index, ctx)
             }
-            ClaudeCodeViewAction::ForkConversation(index) => {
-                self.fork_conversation(*index, ctx)
-            }
+            ClaudeCodeViewAction::ForkConversation(index) => self.fork_conversation(*index, ctx),
             ClaudeCodeViewAction::ToggleBackgroundPanel => {
                 self.background_scripts_expanded = !self.background_scripts_expanded;
                 ctx.notify();
@@ -5220,8 +5454,8 @@ impl BackingView for ClaudeCodeView {
         let raw_mode = self.raw_cli.is_some();
         let chat_segment = render_mode_segment(
             "Chat UI",
-            !raw_mode,                  // active when in chat
-            raw_mode,                   // clickable only from raw mode (to exit)
+            !raw_mode, // active when in chat
+            raw_mode,  // clickable only from raw mode (to exit)
             self.chat_ui_button.clone(),
             accent,
             wash,
@@ -5229,7 +5463,7 @@ impl BackingView for ClaudeCodeView {
         );
         let raw_segment = render_mode_segment(
             "Raw CLI",
-            raw_mode,                   // active when in raw
+            raw_mode,                     // active when in raw
             !raw_mode && !self.streaming, // enter raw only when idle
             self.raw_cli_button.clone(),
             accent,
@@ -5406,19 +5640,202 @@ impl ClaudeCodeView {
                 self.todos_header_mouse.clone(),
                 app,
             ),
-            // No interactive permission wire channel exists on the pinned
-            // `claude` (2.1.x dropped `--permission-prompt-tool`); the driver
-            // never emits these today. If a future CLI brings them back, the
-            // request surfaces as a themed notice rather than nothing
-            // (PRODUCT §26 degradation: never crash, never hang).
-            TranscriptItem::Permission { tool, .. } => render_notice(
-                &format!(
-                    "Claude requested permission to use {tool}. Pick a permission mode below and \
-                     re-send to proceed."
-                ),
-                appearance,
-            ),
+            // 7g (PRODUCT §24): an interactive permission prompt — the driver
+            // wires `--permission-prompt-tool stdio`, so `claude` raises a
+            // `can_use_tool` control_request the pane answers Allow/Deny inline.
+            TranscriptItem::Permission {
+                id,
+                tool,
+                input,
+                decision,
+            } => self.render_permission_card(id, tool, input, *decision, appearance),
+            // 7g (PRODUCT §24/§1): an `AskUserQuestion` raised over the control
+            // channel (`request_user_dialog`) — render the interactive question
+            // card; the answer is sent back over the same channel.
+            TranscriptItem::Question {
+                id,
+                payload,
+                answered,
+                ..
+            } => self.render_question_dialog_card(index, id, payload, *answered, appearance),
         }
+    }
+
+    /// Render an interactive permission prompt (7g, PRODUCT §24): a `can_use_tool`
+    /// control_request `claude` raised because a tool needs approval in a
+    /// prompting mode. Shows the tool + a one-line summary of what it would do,
+    /// with **Allow** / **Deny**. Once answered (`decision` set) the buttons are
+    /// replaced by a static outcome line, so a historical card carries no dead
+    /// control. While pending, the buttons answer over the control channel
+    /// ([`Self::answer_permission`]).
+    fn render_permission_card(
+        &self,
+        id: &str,
+        tool: &str,
+        input: &serde_json::Value,
+        decision: Option<bool>,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let surface = theme.surface_2();
+        let text_color = theme.main_text_color(surface).into_solid();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let accent = self.render_accent.get();
+
+        let header = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(8.)
+            .with_child(
+                ConstrainedBox::new(
+                    Icon::new(crate::ui_components::icons::Icon::Lock.into(), accent).finish(),
+                )
+                .with_width(15.)
+                .with_height(15.)
+                .finish(),
+            )
+            .with_child(
+                appearance
+                    .ui_builder()
+                    .span("Permission".to_owned())
+                    .with_style(UiComponentStyles {
+                        font_color: Some(text_color),
+                        font_size: Some(13.),
+                        ..Default::default()
+                    })
+                    .build()
+                    .finish(),
+            )
+            .finish();
+
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(12.)
+            .with_child(header)
+            .with_child(
+                appearance
+                    .ui_builder()
+                    .span(format!("Claude wants to use {tool}."))
+                    .with_soft_wrap()
+                    .with_style(UiComponentStyles {
+                        font_color: Some(text_color),
+                        font_size: Some(BODY_FONT_SIZE),
+                        ..Default::default()
+                    })
+                    .build()
+                    .finish(),
+            );
+
+        // A one-line summary of the concrete action (the command, the file…),
+        // shown in a muted row so the user knows what they grant.
+        if let Some(summary) = permission_summary(tool, input) {
+            column.add_child(
+                Container::new(
+                    appearance
+                        .ui_builder()
+                        .span(summary)
+                        .with_soft_wrap()
+                        .with_style(UiComponentStyles {
+                            font_color: Some(muted),
+                            font_size: Some(12.),
+                            ..Default::default()
+                        })
+                        .build()
+                        .finish(),
+                )
+                .with_padding(Padding::uniform(8.))
+                .with_background_color(theme.surface_1().into_solid())
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                .finish(),
+            );
+        }
+
+        match decision {
+            // Pending: offer Allow / Deny while the session is still live to
+            // receive the answer (PRODUCT §26: never offer a dead control).
+            None if self.message_tx.is_some() => {
+                let allow_mouse = self
+                    .permission_button_mouse
+                    .borrow_mut()
+                    .entry((id.to_owned(), true))
+                    .or_default()
+                    .clone();
+                let deny_mouse = self
+                    .permission_button_mouse
+                    .borrow_mut()
+                    .entry((id.to_owned(), false))
+                    .or_default()
+                    .clone();
+                let allow_id = id.to_owned();
+                let deny_id = id.to_owned();
+                let allow = appearance
+                    .ui_builder()
+                    .button(ButtonVariant::Accent, allow_mouse)
+                    .with_text_label("Allow".to_owned())
+                    .build()
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::AnswerPermission {
+                            request_id: allow_id.clone(),
+                            allow: true,
+                        });
+                    })
+                    .finish();
+                let deny = appearance
+                    .ui_builder()
+                    .button(ButtonVariant::Outlined, deny_mouse)
+                    .with_text_label("Deny".to_owned())
+                    .build()
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::AnswerPermission {
+                            request_id: deny_id.clone(),
+                            allow: false,
+                        });
+                    })
+                    .finish();
+                column.add_child(
+                    Flex::row()
+                        .with_main_axis_size(MainAxisSize::Min)
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_spacing(10.)
+                        .with_child(allow)
+                        .with_child(deny)
+                        .finish(),
+                );
+            }
+            // Answered (or the session is gone): a static outcome line.
+            decision => {
+                let label = match decision {
+                    Some(true) => "Allowed",
+                    Some(false) => "Denied",
+                    None => "Awaiting a new session",
+                };
+                column.add_child(
+                    appearance
+                        .ui_builder()
+                        .span(label.to_owned())
+                        .with_style(UiComponentStyles {
+                            font_color: Some(muted),
+                            font_size: Some(12.),
+                            ..Default::default()
+                        })
+                        .build()
+                        .finish(),
+                );
+            }
+        }
+
+        Container::new(column.finish())
+            .with_padding(Padding::uniform(14.))
+            .with_margin_top(4.)
+            .with_margin_bottom(4.)
+            .with_margin_left(TRANSCRIPT_LEFT_MARGIN)
+            .with_margin_right(20.)
+            .with_background_color(surface.into_solid())
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                MESSAGE_CORNER_RADIUS,
+            )))
+            .finish()
     }
 
     /// Render an `ExitPlanMode` plan card (PRODUCT §55–§56, 7n): the plan's full
@@ -5529,14 +5946,48 @@ impl ClaudeCodeView {
         input: &serde_json::Value,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
+        // Tool-card path (PRODUCT §1): headless `claude` auto-dismisses the
+        // `AskUserQuestion` tool and ends the turn, so controls are live only
+        // while the session is idle and the pick is sent as the next turn.
+        let questions = parse_questions(input);
+        self.render_question_card_inner(index, &questions, !self.streaming, false, appearance)
+    }
+
+    /// 7g (PRODUCT §24/§1): an `AskUserQuestion` raised over the *control*
+    /// channel (`request_user_dialog`). Same card as the tool path, but the
+    /// session is paused on the dialog, so controls stay live until the user
+    /// answers; submitting releases the dialog and resends the picks
+    /// ([`Self::submit_question_dialog`]).
+    fn render_question_dialog_card(
+        &self,
+        index: usize,
+        _id: &str,
+        payload: &serde_json::Value,
+        answered: bool,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let questions = parse_questions(payload);
+        let interactive = !answered && self.message_tx.is_some();
+        self.render_question_card_inner(index, &questions, interactive, true, appearance)
+    }
+
+    /// Shared body for both question cards (tool-card §1 and control-channel
+    /// §24). `interactive` gates the clickable options + Send button; `dialog`
+    /// selects which submit action fires (control-channel vs. next-turn).
+    fn render_question_card_inner(
+        &self,
+        index: usize,
+        questions: &[ParsedQuestion],
+        interactive: bool,
+        dialog: bool,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
         let theme = appearance.theme();
         let surface = theme.surface_2();
         let text_color = theme.main_text_color(surface).into_solid();
         let muted = theme.nonactive_ui_text_color().into_solid();
         let accent = self.render_accent.get();
-        let questions = parse_questions(input);
         let selected = self.question_selected.get(&index);
-        let interactive = !self.streaming;
 
         let header = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -5570,7 +6021,7 @@ impl ClaudeCodeView {
             .with_spacing(12.)
             .with_child(header);
 
-        for question in &questions {
+        for question in questions {
             let mut block = Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_main_axis_size(MainAxisSize::Min)
@@ -5594,9 +6045,9 @@ impl ClaudeCodeView {
                 let is_selected =
                     selected.is_some_and(|chosen| chosen.contains(&option.flat_index));
                 let marker = match (question.multi, is_selected) {
-                    (true, true) => "\u{2611}",  // ballot box with check
-                    (true, false) => "\u{2610}", // ballot box
-                    (false, true) => "\u{25C9}", // fisheye (filled radio)
+                    (true, true) => "\u{2611}",   // ballot box with check
+                    (true, false) => "\u{2610}",  // ballot box
+                    (false, true) => "\u{25C9}",  // fisheye (filled radio)
                     (false, false) => "\u{25CB}", // circle
                 };
                 let mut option_row = Flex::row()
@@ -5665,7 +6116,8 @@ impl ClaudeCodeView {
                     .with_padding_bottom(6.)
                     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)));
                 if is_selected {
-                    row_container = row_container.with_background_color(theme.surface_1().into_solid());
+                    row_container =
+                        row_container.with_background_color(theme.surface_1().into_solid());
                 }
                 let row = row_container.finish();
                 if interactive {
@@ -5720,9 +6172,11 @@ impl ClaudeCodeView {
                             .with_text_label("Send answer".to_owned())
                             .build()
                             .on_click(move |ctx, _, _| {
-                                ctx.dispatch_typed_action(
-                                    ClaudeCodeViewAction::SubmitQuestionAnswers(index),
-                                );
+                                ctx.dispatch_typed_action(if dialog {
+                                    ClaudeCodeViewAction::SubmitQuestionDialog(index)
+                                } else {
+                                    ClaudeCodeViewAction::SubmitQuestionAnswers(index)
+                                });
                             })
                             .finish(),
                     )
@@ -5760,6 +6214,46 @@ struct ParsedQuestion {
     question: String,
     multi: bool,
     options: Vec<ParsedQuestionOption>,
+}
+
+/// A one-line, human summary of the concrete action a permission prompt grants
+/// (7g, PRODUCT §24): the command for `Bash`, the path for the file tools, the
+/// URL for `WebFetch`. `None` for tools with no obvious single field — the card
+/// then shows the tool name alone. Defensive: a missing field just degrades to
+/// `None` (never panics).
+fn permission_summary(tool: &str, input: &serde_json::Value) -> Option<String> {
+    let field = |key: &str| input.get(key).and_then(|v| v.as_str());
+    let value = match tool {
+        "Bash" => field("command"),
+        "Read" | "Write" | "Edit" | "MultiEdit" | "NotebookEdit" => field("file_path"),
+        "WebFetch" => field("url"),
+        "WebSearch" => field("query"),
+        "Glob" | "Grep" => field("pattern"),
+        _ => None,
+    }?;
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    // Keep the card compact — a long command/path is truncated with an ellipsis.
+    const MAX: usize = 240;
+    if value.chars().count() > MAX {
+        Some(format!("{}…", value.chars().take(MAX).collect::<String>()))
+    } else {
+        Some(value.to_owned())
+    }
+}
+
+/// The `{questions:[..]}` source for a question card, whichever path produced
+/// it: the `AskUserQuestion` tool input (§1) or the control-channel dialog
+/// payload (§24). `None` for any other item, so a caller keyed by transcript
+/// index degrades safely.
+fn question_source(item: Option<&TranscriptItem>) -> Option<&serde_json::Value> {
+    match item? {
+        TranscriptItem::Tool { name, input, .. } if name == "AskUserQuestion" => Some(input),
+        TranscriptItem::Question { payload, .. } => Some(payload),
+        _ => None,
+    }
 }
 
 /// Parse an `AskUserQuestion` tool input into its questions and options
@@ -5858,7 +6352,9 @@ fn render_message_row(
         let bubble = Container::new(render_markdown_body(text, text_color, appearance))
             .with_padding(Padding::uniform(10.).with_left(14.).with_right(14.))
             .with_background_color(accent)
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(MESSAGE_CORNER_RADIUS)));
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                MESSAGE_CORNER_RADIUS,
+            )));
         // Cap the bubble width so long messages wrap into a column instead of
         // spanning the whole pane, then right-align it within a full-width row.
         let constrained = ConstrainedBox::new(bubble.finish())
@@ -5908,9 +6404,12 @@ fn render_message_row(
 }
 
 /// Max number of distinct markdown bodies kept parsed in [`MARKDOWN_CACHE`].
-/// Generous enough to cover a long transcript while bounding memory; the live
-/// streaming message changes every delta and simply churns one slot.
-const MARKDOWN_CACHE_CAP: usize = 512;
+/// The cache is global (shared by every Claude pane), so this must comfortably
+/// hold the *combined* settled bodies of several long transcripts open at once —
+/// not just one. Sized so a few hundred messages per pane across a handful of
+/// panes all stay resident; the live streaming message churns one slot per
+/// delta and LRU keeps that churn from evicting the settled set.
+const MARKDOWN_CACHE_CAP: usize = 2048;
 
 thread_local! {
     /// Memoized `parse_markdown_with_gfm_tables` output, keyed by the raw body
@@ -5918,19 +6417,33 @@ thread_local! {
     /// re-runs `render()` over the *whole* transcript — so without a cache an
     /// N-message conversation re-parses N markdown blobs on every token, and
     /// several panes streaming at once saturate the main thread (the multi-pane
-    /// lag/crash). The parse depends only on the text, so settled messages hit
-    /// the cache and only the still-streaming tail re-parses. FIFO-bounded so a
-    /// long session can't grow it without bound. Lives on the render (main)
-    /// thread, so a plain `RefCell` is sufficient.
+    /// lag / force-quit hang). The parse depends only on the text, so settled
+    /// messages hit the cache and only the still-streaming tail re-parses.
+    ///
+    /// Eviction is **LRU**, not FIFO: the streaming tail mints a *new* key on
+    /// every delta, and under FIFO that flood evicted the oldest entries — the
+    /// settled bodies that are re-touched (hit) on every single render. So with
+    /// multiple panes the settled set was evicted as fast as it was inserted and
+    /// the cache degenerated to "re-parse everything every frame," which is the
+    /// saturation. LRU evicts the streaming garbage (touched once) and keeps the
+    /// settled bodies (touched every render). Lives on the render (main) thread,
+    /// so a plain `RefCell` is sufficient.
     static MARKDOWN_CACHE: std::cell::RefCell<MarkdownParseCache> =
         std::cell::RefCell::new(MarkdownParseCache::default());
 }
 
+struct MarkdownCacheEntry {
+    value: FormattedText,
+    /// `MarkdownParseCache::tick` at the entry's most recent access, for LRU
+    /// eviction (the smallest is the least-recently used).
+    last_used: u64,
+}
+
 #[derive(Default)]
 struct MarkdownParseCache {
-    map: HashMap<String, FormattedText>,
-    /// Insertion order, for FIFO eviction once `map` exceeds the cap.
-    order: std::collections::VecDeque<String>,
+    map: HashMap<String, MarkdownCacheEntry>,
+    /// Monotonic access counter; stamped onto an entry on every hit/insert.
+    tick: u64,
 }
 
 /// Parse `text` as markdown, reusing a cached parse when the same body was seen
@@ -5939,17 +6452,33 @@ struct MarkdownParseCache {
 fn parse_markdown_cached(text: &str) -> Option<FormattedText> {
     MARKDOWN_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if let Some(hit) = cache.map.get(text) {
-            return Some(hit.clone());
+        let tick = cache.tick.wrapping_add(1);
+        cache.tick = tick;
+        if let Some(entry) = cache.map.get_mut(text) {
+            entry.last_used = tick;
+            return Some(entry.value.clone());
         }
         let parsed = parse_markdown_with_gfm_tables(text).ok()?;
-        cache.map.insert(text.to_owned(), parsed.clone());
-        cache.order.push_back(text.to_owned());
-        while cache.order.len() > MARKDOWN_CACHE_CAP {
-            if let Some(evicted) = cache.order.pop_front() {
-                cache.map.remove(&evicted);
+        // Evict the least-recently-used entry once at capacity. A scan is O(cap)
+        // and only runs on a miss (first sight of a body, or a streaming delta),
+        // which is negligible against the markdown parse it guards.
+        if cache.map.len() >= MARKDOWN_CACHE_CAP {
+            if let Some(lru_key) = cache
+                .map
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(key, _)| key.clone())
+            {
+                cache.map.remove(&lru_key);
             }
         }
+        cache.map.insert(
+            text.to_owned(),
+            MarkdownCacheEntry {
+                value: parsed.clone(),
+                last_used: tick,
+            },
+        );
         Some(parsed)
     })
 }
@@ -6115,7 +6644,10 @@ fn render_table_cell(
         text_color,
         HighlightedHyperlink::default(),
     )
-    .with_inline_code_properties(Some(theme.nonactive_ui_text_color().into()), Some(inline_code_bg))
+    .with_inline_code_properties(
+        Some(theme.nonactive_ui_text_color().into()),
+        Some(inline_code_bg),
+    )
     .register_default_click_handlers(|url, ctx, _| {
         ctx.dispatch_typed_action(ClaudeCodeViewAction::OpenUrl(url));
     })
@@ -6628,7 +7160,12 @@ fn render_pill(label: &str, bg: ColorU, appearance: &Appearance) -> Box<dyn Elem
 /// A context-bar pill (#11) with arbitrary `color` text on the tab wash — the
 /// shared chrome for the folder / branch / diff / PR / CI chips. Static (no
 /// interaction); [`render_context_menu_pill`] adds the click + anchor.
-fn render_context_pill(label: String, color: ColorU, bg: ColorU, appearance: &Appearance) -> Box<dyn Element> {
+fn render_context_pill(
+    label: String,
+    color: ColorU,
+    bg: ColorU,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
     Container::new(
         appearance
             .ui_builder()

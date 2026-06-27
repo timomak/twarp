@@ -8,9 +8,9 @@ use warpui::{
     elements::{
         new_scrollable::{NewScrollable, ScrollableAppearance, SingleAxisConfig},
         resizable_state_handle, Border, ChildView, ConstrainedBox, Container, CornerRadius,
-        CrossAxisAlignment, DragBarSide, Element, Empty, Flex,
-        Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius,
-        Resizable, ResizableStateHandle, ScrollbarWidth, Shrinkable, Text,
+        CrossAxisAlignment, DragBarSide, Element, Empty, Flex, Hoverable, MainAxisAlignment,
+        MainAxisSize, MouseStateHandle, ParentElement, Radius, Resizable, ResizableStateHandle,
+        ScrollbarWidth, Shrinkable, Text,
     },
     fonts::{Properties, Weight},
     platform::Cursor,
@@ -279,7 +279,6 @@ pub struct LeftPanelView {
     panel_position: super::PanelPosition,
     // twarp: shortcuts list/editor state moved to Settings > Shortcuts
     // (settings_view::shortcuts_page).
-
     /// twarp 5d (PRODUCT §§18–23): per-file commit Timeline section at
     /// the bottom of the Project Explorer tab. State is per-repo,
     /// keyed on the currently-active editor file. Re-fetched whenever
@@ -1461,8 +1460,8 @@ impl LeftPanelView {
         // twarp 08 (review): no padding around the TIMELINE header — the row
         // hugs its text with no surrounding inset.
         Hoverable::new(self.timeline_header_mouse_state.clone(), move |state| {
-            let mut container = Container::new(text)
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
+            let mut container =
+                Container::new(text).with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
             if state.is_hovered() {
                 container = container.with_background(warp_core::ui::theme::Fill::Solid(hover_bg));
             }
@@ -2098,9 +2097,9 @@ impl LeftPanelView {
         } else {
             // Render the matched rows, preserving the ORIGINAL index so the
             // resume handler (PRODUCT §20) targets the right session.
-            let rows = matched_indices.into_iter().map(|idx| {
-                self.render_claude_session_row(idx, &self.claude_sessions[idx], app)
-            });
+            let rows = matched_indices
+                .into_iter()
+                .map(|idx| self.render_claude_session_row(idx, &self.claude_sessions[idx], app));
             let rows_column = Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_main_axis_size(MainAxisSize::Min)
@@ -2162,6 +2161,7 @@ impl LeftPanelView {
         let title = appearance
             .ui_builder()
             .span(session.title.clone())
+            .with_soft_wrap()
             .with_style(UiComponentStyles {
                 font_color: Some(sidebar_text(appearance)),
                 ..Default::default()
@@ -2207,10 +2207,10 @@ impl LeftPanelView {
             body.finish()
         })
         .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(LeftPanelAction::ClaudeSessionResume(idx));
-            })
-            .with_cursor(Cursor::PointingHand)
-            .finish()
+            ctx.dispatch_typed_action(LeftPanelAction::ClaudeSessionResume(idx));
+        })
+        .with_cursor(Cursor::PointingHand)
+        .finish()
     }
 
     fn render_button(
@@ -2842,4 +2842,3 @@ mod sessions_search_tests {
         assert_eq!(filter_session_indices(&sessions, "one"), vec![0, 1]);
     }
 }
-

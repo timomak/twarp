@@ -805,6 +805,13 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
         diesel::delete(schema::code_review_panes::dsl::code_review_panes).execute(conn)?;
         diesel::delete(schema::ambient_agent_panes::dsl::ambient_agent_panes).execute(conn)?;
         diesel::delete(schema::welcome_panes::dsl::welcome_panes).execute(conn)?;
+        // twarp 07: `claude_code_panes.id REFERENCES pane_nodes(id)` (no ON
+        // DELETE CASCADE), so it must be cleared before the `pane_nodes` delete
+        // below — exactly like every other kind-specific pane table above. It
+        // was omitted when 7m added the table, so once any Claude pane was
+        // persisted every subsequent snapshot save aborted on a FOREIGN KEY
+        // constraint, silently losing all app-state persistence.
+        diesel::delete(schema::claude_code_panes::dsl::claude_code_panes).execute(conn)?;
         diesel::delete(schema::pane_leaves::dsl::pane_leaves).execute(conn)?;
         diesel::delete(schema::pane_branches::dsl::pane_branches).execute(conn)?;
         diesel::delete(schema::pane_nodes::dsl::pane_nodes).execute(conn)?;

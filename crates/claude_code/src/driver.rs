@@ -147,7 +147,17 @@ pub fn spawn_session(opts: SpawnOptions) -> Result<SpawnedSession> {
         // consolidated end-of-block message (PRODUCT §45).
         .arg("--include-partial-messages")
         .arg("--permission-mode")
-        .arg(opts.permission_mode.as_cli_arg());
+        .arg(opts.permission_mode.as_cli_arg())
+        // 7g: route tool-permission decisions over the stream-json control
+        // channel (PRODUCT §24). The `stdio` sentinel makes `claude` emit a
+        // `can_use_tool` control_request on stdout and wait for our
+        // control_response on stdin, instead of auto-denying in headless mode.
+        // Verified against `claude` 2.1.195 (the flag is hidden from `--help`
+        // but still honoured) — the interactive path the earlier §26 feasibility
+        // pass thought was gone. Harmless in the non-prompting modes
+        // (`acceptEdits`/`bypassPermissions` simply never raise the request).
+        .arg("--permission-prompt-tool")
+        .arg("stdio");
 
     if let Some(model) = &opts.model {
         cmd.arg("--model").arg(model);
@@ -202,9 +212,37 @@ pub fn spawn_session(opts: SpawnOptions) -> Result<SpawnedSession> {
     })
 }
 
-/// Send a SIGINT to the live `claude` process to interrupt the current turn
-/// without ending the session (PRODUCT §11). Best-effort: Unix only — on
-/// other platforms Stop falls back to ending the session via drop.
+/// Interrupt the in-flight turn over the stream-json control channel — the
+/// supported, session-preserving Stop (PRODUCT §11). `claude` acknowledges with
+/// a `control_response`, ends the turn with a `result` (subtype
+/// `error_during_execution`, `is_error: true`), and **stays alive** for the next
+/// turn. This is why Stop must use this and not [`interrupt`]: a SIGINT kills the
+/// process, which surfaces as a spurious "session ended unexpectedly" error and
+/// wedges the pane until it's reopened. `request_id` is echoed back on the
+/// acknowledgement; it only needs to be unique per live session.
+pub async fn send_interrupt(stdin: &mut ChildStdin, request_id: &str) -> Result<()> {
+    let line = json!({
+        "type": "control_request",
+        "request_id": request_id,
+        "request": { "subtype": "interrupt" },
+    })
+    .to_string();
+    stdin
+        .write_all(line.as_bytes())
+        .await
+        .context("write interrupt request to claude stdin")?;
+    stdin
+        .write_all(b"\n")
+        .await
+        .context("write newline to claude stdin")?;
+    stdin.flush().await.context("flush claude stdin")?;
+    Ok(())
+}
+
+/// Send a SIGINT to the live `claude` process to interrupt the current turn.
+/// Last-resort fallback for platforms / states without a live stdin pump —
+/// prefer [`send_interrupt`], which keeps the session alive. Best-effort: Unix
+/// only — on other platforms Stop falls back to ending the session via drop.
 pub fn interrupt(child: &Child) {
     #[cfg(unix)]
     {
@@ -281,6 +319,40 @@ pub async fn send_user_message(stdin: &mut ChildStdin, message: &OutgoingMessage
         .write_all(line.as_bytes())
         .await
         .context("write user message to claude stdin")?;
+    stdin
+        .write_all(b"\n")
+        .await
+        .context("write newline to claude stdin")?;
+    stdin.flush().await.context("flush claude stdin")?;
+    Ok(())
+}
+
+/// Answer a `control_request` `claude` raised over the stream-json control
+/// channel (7g, PRODUCT §24) — a tool-permission `can_use_tool` or an
+/// `AskUserQuestion` `request_user_dialog`. `response` is the request-specific
+/// decision payload (e.g. `{"behavior":"allow","updatedInput":..}` for a
+/// permission, `{"behavior":"cancelled"}` to release a dialog); we wrap it in
+/// the `control_response` envelope `claude` matches back to its pending request
+/// by `request_id`. Best-effort: a late answer (past `claude`'s park deadline)
+/// is ignored on its side, never an error on ours (PRODUCT §26: never hang).
+pub async fn send_control_response(
+    stdin: &mut ChildStdin,
+    request_id: &str,
+    response: Value,
+) -> Result<()> {
+    let line = json!({
+        "type": "control_response",
+        "response": {
+            "subtype": "success",
+            "request_id": request_id,
+            "response": response,
+        },
+    })
+    .to_string();
+    stdin
+        .write_all(line.as_bytes())
+        .await
+        .context("write control response to claude stdin")?;
     stdin
         .write_all(b"\n")
         .await
@@ -441,6 +513,7 @@ impl Parser {
             "user" => parse_user_event(value, out),
             "result" => parse_result(value, out),
             "stream_event" => self.parse_stream_event(value, out),
+            "control_request" => parse_control_request(value, out),
             other => log::debug!("claude: ignoring unknown event type `{other}`"),
         }
     }
@@ -655,6 +728,60 @@ fn emit_tool_call(
         input,
         parent_id,
     });
+}
+
+/// Parse a `control_request` `claude` raised over the stream-json control
+/// channel (7g). Two subtypes surface as transcript events the pane can answer
+/// (`driver::send_control_response`):
+///
+/// - `can_use_tool` — a tool-permission prompt (PRODUCT §24). Carries the
+///   `tool_name` and the proposed `input`; the pane renders Allow/Deny and
+///   echoes `input` back as `updatedInput` on allow.
+/// - `request_user_dialog` — an `AskUserQuestion` (and kin). The `payload` is
+///   opaque per `dialog_kind`; we hand it through verbatim for the pane to
+///   render (the `question` kind mirrors the tool's `{questions:[..]}` input).
+///
+/// Both carry the `request_id` the control_response must echo. Unknown subtypes
+/// are ignored — `claude` settles them with its own park deadline (PRODUCT §26).
+fn parse_control_request(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
+    let Some(request_id) = value.get("request_id").and_then(|v| v.as_str()) else {
+        log::warn!("claude: control_request without request_id, dropped");
+        return;
+    };
+    let Some(request) = value.get("request") else {
+        return;
+    };
+    match request.get("subtype").and_then(|v| v.as_str()) {
+        Some("can_use_tool") => {
+            let tool = request
+                .get("tool_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_owned();
+            let input = request.get("input").cloned().unwrap_or(Value::Null);
+            out.push_back(TranscriptEvent::PermissionRequest {
+                id: request_id.to_owned(),
+                tool,
+                input,
+            });
+        }
+        Some("request_user_dialog") => {
+            let dialog_kind = request
+                .get("dialog_kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_owned();
+            let payload = request.get("payload").cloned().unwrap_or(Value::Null);
+            out.push_back(TranscriptEvent::QuestionRequest {
+                id: request_id.to_owned(),
+                dialog_kind,
+                payload,
+            });
+        }
+        other => {
+            log::debug!("claude: ignoring control_request subtype {other:?}");
+        }
+    }
 }
 
 fn parse_system(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
@@ -1016,6 +1143,65 @@ mod tests {
     }
 
     #[test]
+    fn parses_can_use_tool_as_permission_request() {
+        let v: Value = serde_json::from_str(
+            r#"{"type":"control_request","request_id":"req-1","request":{"subtype":"can_use_tool","tool_name":"Write","input":{"file_path":"/tmp/x.txt","content":"hi"}}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        match out.front() {
+            Some(TranscriptEvent::PermissionRequest { id, tool, input }) => {
+                assert_eq!(id, "req-1");
+                assert_eq!(tool, "Write");
+                assert_eq!(
+                    input.get("file_path").and_then(|v| v.as_str()),
+                    Some("/tmp/x.txt")
+                );
+            }
+            other => panic!("expected PermissionRequest, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_request_user_dialog_as_question_request() {
+        let v: Value = serde_json::from_str(
+            r#"{"type":"control_request","request_id":"req-9","request":{"subtype":"request_user_dialog","dialog_kind":"question","payload":{"questions":[{"header":"Indent","question":"Tabs or spaces?","options":["Tabs","Spaces"]}]}}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        match out.front() {
+            Some(TranscriptEvent::QuestionRequest {
+                id,
+                dialog_kind,
+                payload,
+            }) => {
+                assert_eq!(id, "req-9");
+                assert_eq!(dialog_kind, "question");
+                assert!(payload
+                    .get("questions")
+                    .and_then(|v| v.as_array())
+                    .is_some());
+            }
+            other => panic!("expected QuestionRequest, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ignores_unknown_control_request_subtype() {
+        // An unrecognized control_request must not crash or emit — `claude`
+        // settles it with its own park deadline (PRODUCT §26).
+        let v: Value = serde_json::from_str(
+            r#"{"type":"control_request","request_id":"x","request":{"subtype":"oauth_token_refresh"}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        assert!(out.is_empty());
+    }
+
+    #[test]
     fn parses_result_usage_and_context_window() {
         let v: Value = serde_json::from_str(
             r#"{"type":"result","subtype":"success","is_error":false,"usage":{"input_tokens":5102,"cache_read_input_tokens":15818,"cache_creation_input_tokens":5450,"output_tokens":4},"modelUsage":{"claude-fable-5[1m]":{"contextWindow":1000000}}}"#,
@@ -1081,9 +1267,7 @@ mod tests {
         .unwrap();
         let mut out = VecDeque::new();
         parse_event_into(&v, &mut out);
-        assert!(!out
-            .iter()
-            .any(|e| matches!(e, TranscriptEvent::Usage(_))));
+        assert!(!out.iter().any(|e| matches!(e, TranscriptEvent::Usage(_))));
     }
 
     #[test]
