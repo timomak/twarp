@@ -4778,11 +4778,37 @@ impl Workspace {
                     });
                 }
                 Action::Type(text) => {
+                    use crate::shortcuts::action::KeyName;
                     let Some(runner) = self.shortcut_runner.as_ref() else {
                         return;
                     };
                     let target = runner.target_tab;
-                    if self
+                    // When `type "<cmd>"` is immediately followed by `press
+                    // enter` and the target pane is at an editable shell prompt,
+                    // submit the text through the normal command pipeline rather
+                    // than writing raw bytes to the PTY. This is what makes
+                    // submit-time interceptions fire — most importantly the
+                    // bare-`claude` → Claude Code pane trigger (feature 07), but
+                    // also alias expansion and autosuggestion bookkeeping. Raw
+                    // PTY writes bypass `try_execute_command_from_source`
+                    // entirely, so `claude` would run as the raw CLI instead of
+                    // opening our pane. We fall back to a raw write when the
+                    // prompt is busy (e.g. a foreground program is running and
+                    // the sequence is feeding it input), preserving the original
+                    // passthrough behavior.
+                    let next_is_enter =
+                        matches!(runner.next_action(), Some(Action::Press(KeyName::Enter)));
+                    if next_is_enter && self.target_can_submit_command(target, ctx) {
+                        if self.submit_command_in_target(target, &text, ctx).is_err() {
+                            self.finish_shortcut_runner(ctx);
+                            return;
+                        }
+                        // The paired `press enter` is what submission performed;
+                        // consume it so it isn't also written to the PTY.
+                        if let Some(runner) = self.shortcut_runner.as_mut() {
+                            runner.advance();
+                        }
+                    } else if self
                         .write_to_target_pty(target, text.into_bytes(), ctx)
                         .is_err()
                     {
@@ -4839,6 +4865,39 @@ impl Workspace {
         let session_view = pane_group.as_ref(ctx).active_session_view(ctx).ok_or(())?;
         session_view.update(ctx, |terminal_view: &mut TerminalView, ctx| {
             terminal_view.write_to_pty(bytes, ctx);
+        });
+        Ok(())
+    }
+
+    /// True when the active pane of the tab at `target_tab` is a terminal at an
+    /// editable prompt that can accept a freshly-submitted command. Used by the
+    /// shortcut executor to decide between submitting a `type … / press enter`
+    /// pair through the command pipeline (so the bare-`claude` pane trigger and
+    /// other submit-time interceptions fire) and writing raw bytes to the PTY.
+    fn target_can_submit_command(&self, target_tab: usize, ctx: &AppContext) -> bool {
+        let Some(pane_group) = self.get_pane_group_view(target_tab) else {
+            return false;
+        };
+        let Some(session_view) = pane_group.as_ref(ctx).active_session_view(ctx) else {
+            return false;
+        };
+        session_view.as_ref(ctx).can_execute_command_now(ctx)
+    }
+
+    /// Submits `command` on the active pane of the tab at `target_tab` through
+    /// the normal command pipeline (`execute_command_or_set_pending`), as if the
+    /// user had typed it at the prompt and pressed enter. Returns `Err(())` when
+    /// the tab or its active pane is gone (PRODUCT §17).
+    fn submit_command_in_target(
+        &self,
+        target_tab: usize,
+        command: &str,
+        ctx: &mut ViewContext<Self>,
+    ) -> Result<(), ()> {
+        let pane_group = self.get_pane_group_view(target_tab).ok_or(())?.clone();
+        let session_view = pane_group.as_ref(ctx).active_session_view(ctx).ok_or(())?;
+        session_view.update(ctx, |terminal_view: &mut TerminalView, ctx| {
+            terminal_view.execute_command_or_set_pending(command, ctx);
         });
         Ok(())
     }
@@ -12778,23 +12837,30 @@ impl Workspace {
             return;
         }
 
-        // Resume with the SAME defaults a freshly typed `claude` would get:
-        // resolve the user's `claude` alias (e.g. `--permission-mode`,
-        // `--effort`, `--dangerously-skip-permissions`) from the active
-        // terminal session. Without this the pane opens in bare ask-mode even
-        // though the user's alias asks otherwise (the "opens in ask mode" bug).
-        let launch = self
-            .get_pane_group_view(self.active_tab_index)
-            .and_then(|group| {
-                group.read(ctx, |pane_group, ctx| {
-                    pane_group.active_session_view(ctx).and_then(|terminal| {
-                        terminal.read(ctx, |terminal, ctx| {
-                            terminal.input().as_ref(ctx).claude_alias_launch_options(ctx)
+        // Resume with the SAME defaults a freshly typed `claude` would get. Once
+        // the last-used store is seeded, `ClaudeCodeView::new` fills the defaults
+        // from the previous session, so this passes none (an empty `launch`).
+        // Only during the first-run bootstrap (store empty) do we resolve the
+        // user's `claude` alias (e.g. `--permission-mode`, `--effort`,
+        // `--dangerously-skip-permissions`) from the active terminal session —
+        // without that seed the pane would open in bare ask-mode (twarp 07 §2).
+        let launch = if crate::claude_code_session_defaults::ClaudeSessionDefaultsModel::as_ref(ctx)
+            .is_seeded()
+        {
+            Default::default()
+        } else {
+            self.get_pane_group_view(self.active_tab_index)
+                .and_then(|group| {
+                    group.read(ctx, |pane_group, ctx| {
+                        pane_group.active_session_view(ctx).and_then(|terminal| {
+                            terminal.read(ctx, |terminal, ctx| {
+                                terminal.input().as_ref(ctx).claude_alias_launch_options(ctx)
+                            })
                         })
                     })
                 })
-            })
-            .unwrap_or_default();
+                .unwrap_or_default()
+        };
         let pane = ClaudeCodePane::new_resume(
             crate::claude_code_view::ResumeSession {
                 session_id,

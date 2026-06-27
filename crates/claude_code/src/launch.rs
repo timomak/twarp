@@ -117,13 +117,7 @@ pub fn parse_launch_args<'a>(args: impl IntoIterator<Item = &'a str>) -> LaunchO
 /// (PRODUCT §25). Unknown values (2.1.173 added `auto`/`dontAsk`) are
 /// ignored rather than guessed.
 fn permission_mode_from_cli(value: &str) -> Option<PermissionMode> {
-    match value {
-        "default" => Some(PermissionMode::Default),
-        "acceptEdits" => Some(PermissionMode::AcceptEdits),
-        "plan" => Some(PermissionMode::Plan),
-        "bypassPermissions" => Some(PermissionMode::BypassPermissions),
-        _ => None,
-    }
+    PermissionMode::from_cli_arg(value)
 }
 
 #[cfg(test)]

@@ -58,6 +58,15 @@ The user types `claude [args]` and presses Enter in a terminal. twarp recognizes
 
 The terminal block, once intercepted, prints a one-line inline note ("Opened Claude Code in a pane") so the command isn't silently swallowed (PRODUCT §1). Implement via the existing block/banner mechanism rather than writing to the PTY.
 
+### Session defaults: last-used store, alias as bootstrap (amends §2, 2026-06-27)
+
+Originally a new pane's `model`/`effort`/`permission_mode` came **only** from the user's `claude` shell alias, re-expanded on every launch (`claude_pane_trigger`, and `claude_alias_launch_options` for the sidebar/resume paths). That is now a **bootstrap fallback**: defaults are remembered from the **previous session** and reused.
+
+- **Store.** A single global SQLite row `claude_session_defaults(id, model, effort, permission_mode)` (migration `2026-06-27-000000_add_claude_session_defaults`; diesel model `ClaudeSessionDefaults`; `permission_mode` is `PermissionMode::as_cli_arg()`). Read once at startup into `PersistedData.claude_session_defaults`; held in the `ClaudeSessionDefaultsModel` singleton (`app/src/claude_code_session_defaults.rs`, mirrors `IgnoredSuggestionsModel`); written via `ModelEvent::UpsertClaudeSessionDefaults`. `is_seeded()` ⇔ a row exists.
+- **Read (one chokepoint).** `ClaudeCodeView::new` fills any setting the invocation didn't pin from the store, then **records the effective settings back** as the new last-used. This covers all creation paths (typed trigger, sidebar resume, crash restore) and replaces the old per-restore `LaunchOptions::default()` (which silently dropped settings).
+- **Write-through.** The in-pane mutators (`set_model`/`set_effort`/`set_permission_mode`/`approve_plan`) call `persist_session_defaults`, so an in-session change becomes the next pane's default.
+- **Precedence.** typed per-invocation flags (`claude --model haiku`) > stored last-used > app default. Typed flags also update the store. The alias contributes **only while `!is_seeded()`**: `claude_pane_trigger` forwards just the user's literally-typed tokens once seeded (alias-expanded tokens during bootstrap), and `open_claude_code_resume_pane` skips `claude_alias_launch_options` once seeded.
+
 ## The pane: `IPaneType::ClaudeCode` (new host)
 
 The chat is a main-content pane modeled on the **code editor pane**. Reference implementation: `app/src/pane_group/pane/code_pane.rs` (`CodePane` wrapping `PaneView<CodeView>`).

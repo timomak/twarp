@@ -7097,6 +7097,17 @@ impl Input {
         }
     }
 
+    /// True when the input is at an editable shell prompt that can accept a
+    /// freshly-submitted command right now (bootstrapped, no foreground program
+    /// in control, history appendable). The custom-shortcut executor uses this
+    /// to decide whether a `type … / press enter` sequence should be submitted
+    /// through the normal command pipeline (so the bare-`claude` interception in
+    /// `try_execute_command_from_source` fires) versus written as raw bytes to a
+    /// running foreground program's PTY (twarp 07 / feature 04 interplay).
+    pub fn can_execute_command_now(&self, ctx: &AppContext) -> bool {
+        !self.can_execute_command(ctx).is_no()
+    }
+
     pub fn execute_pending_command(&mut self, ctx: &mut ViewContext<Self>) {
         if !self.has_pending_command {
             return;
@@ -7279,6 +7290,25 @@ impl Input {
             warp_completer::parsers::simple::all_parsed_commands(command, escape_char).next()?;
         let original: Vec<&str> = first.parts.iter().map(|part| part.as_str()).collect();
 
+        // twarp 07: the user's literally-typed tokens (alias NOT expanded) — the
+        // per-invocation overrides. Skip the same leading env assignments /
+        // program wrappers and the program token the detection loop below skips.
+        // Computed before the alias-expansion match consumes `original`.
+        let typed_args: Vec<String> = {
+            let mut rest: Vec<&str> = Vec::new();
+            let mut seen_program = false;
+            for token in original.iter().copied() {
+                if seen_program {
+                    rest.push(token);
+                } else if token.contains('=') || PROGRAM_WRAPPERS.contains(&token) {
+                    continue;
+                } else {
+                    seen_program = true; // the program token itself; drop it
+                }
+            }
+            rest.into_iter().map(str::to_owned).collect()
+        };
+
         // Expand the user's `claude` alias ourselves (PRODUCT §2). Warp only
         // rewrites the editor text when the "expand aliases" setting is on
         // (see `should_expand_aliases`); with it off, a user's
@@ -7346,11 +7376,21 @@ impl Input {
         #[cfg(not(feature = "local_tty"))]
         crate::util::path::resolve_executable(CLAUDE_PROGRAM)?;
 
-        // Forward every remaining token. The pane maps recognized flags —
-        // including alias-injected ones like `--dangerously-skip-permissions`
-        // / `--effort max` — onto its spawn options and takes the trailing
-        // positional as the first turn (PRODUCT §2; `claude_code::launch`).
-        let args: Vec<String> = tokens.map(str::to_owned).collect();
+        // The alias-expanded remainder (alias flags + the user's typed tokens).
+        let alias_expanded_args: Vec<String> = tokens.map(str::to_owned).collect();
+
+        // twarp 07: once the last-used store is seeded, the `claude` alias is no
+        // longer a source of session defaults — forward only the user's typed
+        // flags and let the pane inherit model/effort/permission mode from the
+        // previous session (`ClaudeCodeView::new`). Before the first run the
+        // store is empty, so the alias still seeds the defaults (PRODUCT §2).
+        let store_seeded =
+            crate::claude_code_session_defaults::ClaudeSessionDefaultsModel::as_ref(ctx).is_seeded();
+        let args = if store_seeded {
+            typed_args
+        } else {
+            alias_expanded_args
+        };
         let cwd = self
             .active_block_metadata
             .as_ref()

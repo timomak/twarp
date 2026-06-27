@@ -14500,6 +14500,15 @@ impl TerminalView {
         }
     }
 
+    /// True when this terminal is at an editable prompt that can accept a
+    /// freshly-submitted command (see `Input::can_execute_command_now`). The
+    /// custom-shortcut executor consults this before deciding whether a
+    /// `type … / press enter` pair should go through the command pipeline.
+    pub fn can_execute_command_now(&self, ctx: &AppContext) -> bool {
+        self.input
+            .read(ctx, |input, ctx| input.can_execute_command_now(ctx))
+    }
+
     // Try to execute the provided command. If we cannot execute it now, set it as the pending
     // command.
     //

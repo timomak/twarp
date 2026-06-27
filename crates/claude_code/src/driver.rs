@@ -49,6 +49,18 @@ impl PermissionMode {
         }
     }
 
+    /// Inverse of [`Self::as_cli_arg`]. Unknown values (the CLI's `auto`/
+    /// `dontAsk`, or anything future) return `None` rather than a guess.
+    pub fn from_cli_arg(value: &str) -> Option<Self> {
+        match value {
+            "default" => Some(Self::Default),
+            "acceptEdits" => Some(Self::AcceptEdits),
+            "plan" => Some(Self::Plan),
+            "bypassPermissions" => Some(Self::BypassPermissions),
+            _ => None,
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Default => "Prompt for each tool",

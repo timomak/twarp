@@ -736,11 +736,21 @@ impl ScrollableState {
         &mut self,
         mut delta: Vector2F,
         precise: bool,
+        shift: bool,
         scrollable_size: Vector2F,
         propagate_if_not_handled: bool,
         ctx: &mut EventContext,
         app: &AppContext,
     ) -> bool {
+        // Holding shift while scrolling a plain mouse wheel is the conventional gesture for
+        // horizontal scrolling (a trackpad / Magic Mouse already reports a horizontal delta
+        // directly). When shift is held and the wheel only carries a vertical delta, redirect it
+        // onto the horizontal axis. The `delta.x() == 0` guard means we never double-swap a delta
+        // that the OS already reported as horizontal.
+        if shift && delta.x() == 0. && delta.y() != 0. {
+            delta = vec2f(delta.y(), delta.x());
+        }
+
         let viewport_size = self.viewport_size(scrollable_size);
         match self {
             Self::BothAxes {
@@ -1334,7 +1344,10 @@ impl NewScrollable {
                 delta,
                 precise,
                 position,
-                modifiers: ModifiersState { ctrl: false, .. },
+                modifiers:
+                    ModifiersState {
+                        ctrl: false, shift, ..
+                    },
             } => {
                 let is_covered = ctx.is_covered(Point::from_vec2f(*position, z_index));
                 let in_bound = self
@@ -1350,6 +1363,7 @@ impl NewScrollable {
                     self.state.mousewheel(
                         *delta,
                         *precise,
+                        *shift,
                         self.scrollable_size.expect("Size should exist"),
                         self.propagate_mousewheel_if_not_handled,
                         ctx,

@@ -4,6 +4,8 @@ use std::sync::Arc;
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
 
 use crate::scene::ClipBounds;
+use crate::text::word_boundaries::WordBoundariesPolicy;
+use crate::text::{IsRect, SelectionDirection, SelectionType};
 use crate::units::{IntoPixels, Pixels};
 use crate::{
     event::DispatchedEvent, AfterLayoutContext, AppContext, Element, EventContext, LayoutContext,
@@ -12,7 +14,8 @@ use crate::{
 
 use super::{
     new_scrollable::util::scroll_delta_for_axis, Axis, F32Ext, Fill, Point, ScrollData,
-    ScrollStateHandle, Scrollable, ScrollableElement, ScrollbarWidth, Selection, Vector2FExt,
+    ScrollStateHandle, Scrollable, ScrollableElement, ScrollbarWidth, Selection, SelectableElement,
+    SelectionFragment, Vector2FExt,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -455,6 +458,16 @@ impl Element for ClippedScrollable {
         self.origin
     }
 
+    fn as_selectable_element(&self) -> Option<&dyn SelectableElement> {
+        // Forward selection to the (scroll-translated) child so a `SelectableArea`
+        // can wrap this scrollable from the *outside* — the proven arrangement for
+        // selectable text inside a scroll viewport. Each child text element is
+        // painted at its real, scroll-translated bounds, so delegating the
+        // absolute selection coordinates straight through resolves correctly; the
+        // scroll offset is already baked into the children's painted origins.
+        Some(self as &dyn SelectableElement)
+    }
+
     fn dispatch_event(
         &mut self,
         event: &DispatchedEvent,
@@ -518,6 +531,66 @@ impl ScrollableElement for ClippedScrollable {
 
     fn should_handle_scroll_wheel(&self) -> bool {
         true
+    }
+}
+
+impl SelectableElement for ClippedScrollable {
+    fn get_selection(
+        &self,
+        selection_start: Vector2F,
+        selection_end: Vector2F,
+        is_rect: IsRect,
+    ) -> Option<Vec<SelectionFragment>> {
+        self.child
+            .as_selectable_element()
+            .and_then(|selectable_child| {
+                selectable_child.get_selection(selection_start, selection_end, is_rect)
+            })
+    }
+
+    fn expand_selection(
+        &self,
+        point: Vector2F,
+        direction: SelectionDirection,
+        unit: SelectionType,
+        word_boundaries_policy: &WordBoundariesPolicy,
+    ) -> Option<Vector2F> {
+        self.child
+            .as_selectable_element()
+            .and_then(|selectable_child| {
+                selectable_child.expand_selection(point, direction, unit, word_boundaries_policy)
+            })
+    }
+
+    fn is_point_semantically_before(
+        &self,
+        absolute_point: Vector2F,
+        absolute_point_other: Vector2F,
+    ) -> Option<bool> {
+        self.child
+            .as_selectable_element()
+            .and_then(|selectable_child| {
+                selectable_child.is_point_semantically_before(absolute_point, absolute_point_other)
+            })
+    }
+
+    fn smart_select(
+        &self,
+        absolute_point: Vector2F,
+        smart_select_fn: crate::elements::SmartSelectFn,
+    ) -> Option<(Vector2F, Vector2F)> {
+        self.child
+            .as_selectable_element()
+            .and_then(|selectable_child| {
+                selectable_child.smart_select(absolute_point, smart_select_fn)
+            })
+    }
+
+    fn calculate_clickable_bounds(&self, current_selection: Option<Selection>) -> Vec<RectF> {
+        self.child
+            .as_selectable_element()
+            .map(|selectable_child| selectable_child.calculate_clickable_bounds(current_selection))
+            .unwrap_or_default()
     }
 }
 

@@ -115,6 +115,15 @@ diesel::table! {
 }
 
 diesel::table! {
+    claude_session_defaults (id) {
+        id -> Integer,
+        model -> Nullable<Text>,
+        effort -> Nullable<Text>,
+        permission_mode -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
     cloud_objects_refreshes (id) {
         id -> Integer,
         time_of_next_refresh -> Timestamp,
@@ -528,6 +537,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     ambient_agent_panes,
     app,
     claude_code_panes,
+    claude_session_defaults,
     pane_branches,
     pane_leaves,
     pane_nodes,

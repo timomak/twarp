@@ -5194,6 +5194,15 @@ impl CodeReviewView {
             warpui::elements::Fill::None,
         )
         .with_vertical_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Auto, false))
+        // This vertical panel wraps the expandable diff cards, whose editors are
+        // themselves horizontally scrollable. `NewScrollable::vertical` defaults
+        // to `always_handle_events_first` with no propagation, so it would
+        // *consume* every wheel event — scrolling vertically by 0 on a
+        // horizontal-only delta — and the inner diff editor would never see it.
+        // Propagating deltas this panel can't actually act on (a horizontal
+        // swipe, or a shift+wheel that resolves to horizontal) lets them fall
+        // through to the diff editor so a wide diff can scroll sideways.
+        .with_propagate_mousewheel_if_not_handled(true)
         .finish();
 
         // Sidebar fills the panel content area; the legacy Resizable

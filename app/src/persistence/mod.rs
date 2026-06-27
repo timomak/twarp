@@ -218,6 +218,21 @@ pub struct PersistedData {
     pub ignored_suggestions: Vec<(String, SuggestionType)>,
     pub mcp_server_installations: HashMap<Uuid, TemplatableMCPServerInstallation>,
     pub mcp_servers_to_restore: Vec<Uuid>,
+    /// twarp 07: last-used Claude session settings (model / effort / permission
+    /// mode), or `None` if no Claude pane has run yet. Seeds new panes so they
+    /// inherit the previous session instead of the `claude` shell alias.
+    pub claude_session_defaults: Option<PersistedClaudeSessionDefaults>,
+}
+
+/// twarp 07: the last-used Claude session settings persisted in the single
+/// `claude_session_defaults` row. Mirrors `claude_code::launch::LaunchOptions`
+/// minus the per-invocation prompt/resume id.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PersistedClaudeSessionDefaults {
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    /// `PermissionMode::as_cli_arg()` (e.g. "bypassPermissions"), or `None`.
+    pub permission_mode: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -346,6 +361,10 @@ pub enum ModelEvent {
 
     UpsertCurrentUserInformation {
         user_information: PersistedCurrentUserInformation,
+    },
+    /// twarp 07: persist the last-used Claude session settings (single row).
+    UpsertClaudeSessionDefaults {
+        defaults: PersistedClaudeSessionDefaults,
     },
     UpsertCodebaseIndexMetadata {
         index_metadata: Box<CodeWorkspaceMetadata>,

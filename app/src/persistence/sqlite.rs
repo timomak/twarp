@@ -52,8 +52,8 @@ use super::model::{
 };
 use super::schema;
 use super::{
-    BlockCompleted, FinishedCommandMetadata, ModelEvent, PersistedData, StartedCommandMetadata,
-    WriterHandles,
+    BlockCompleted, FinishedCommandMetadata, ModelEvent, PersistedClaudeSessionDefaults,
+    PersistedData, StartedCommandMetadata, WriterHandles,
 };
 use crate::app_state::AIConversationId;
 use crate::app_state::AIDocumentId;
@@ -649,6 +649,10 @@ fn handle_model_event(event: ModelEvent, connection: &mut SqliteConnection) -> a
         ModelEvent::UpsertCurrentUserInformation { user_information } => {
             upsert_current_user_information(connection, user_information)
                 .context("error upserting user information")
+        }
+        ModelEvent::UpsertClaudeSessionDefaults { defaults } => {
+            upsert_claude_session_defaults(connection, defaults)
+                .context("error upserting claude session defaults")
         }
         ModelEvent::UpsertMCPServerEnvironmentVariables {
             mcp_server_uuid,
@@ -3102,6 +3106,7 @@ fn read_sqlite_data(
     let ignored_suggestions = get_all_ignored_suggestions(conn)?;
     let mcp_server_installations = get_all_mcp_server_installations(conn)?;
     let mcp_servers_to_restore = get_mcp_servers_to_restore(conn)?;
+    let claude_session_defaults = get_claude_session_defaults(conn)?;
 
     Ok(PersistedData {
         app_state,
@@ -3122,7 +3127,24 @@ fn read_sqlite_data(
         ignored_suggestions,
         mcp_server_installations,
         mcp_servers_to_restore,
+        claude_session_defaults,
     })
+}
+
+/// twarp 07: read the single last-used Claude settings row, if present.
+fn get_claude_session_defaults(
+    conn: &mut SqliteConnection,
+) -> Result<Option<PersistedClaudeSessionDefaults>, Error> {
+    use schema::claude_session_defaults::dsl::claude_session_defaults;
+    let row = claude_session_defaults
+        .select(model::ClaudeSessionDefaults::as_select())
+        .first(conn)
+        .optional()?;
+    Ok(row.map(|row| PersistedClaudeSessionDefaults {
+        model: row.model,
+        effort: row.effort,
+        permission_mode: row.permission_mode,
+    }))
 }
 
 fn id_from_metadata<K: HashableId + ToServerId>(metadata: &ObjectMetadata) -> Option<SyncId> {
@@ -3405,6 +3427,28 @@ fn upsert_current_user_information(
         diesel::insert_into(schema::current_user_information::dsl::current_user_information)
             .values(CurrentUserInformation {
                 email: user_information.email,
+            })
+            .execute(conn)?;
+        Ok(())
+    })
+}
+
+/// twarp 07: replace the single `claude_session_defaults` row with the latest
+/// last-used Claude settings (delete+insert, mirroring `current_user_information`).
+fn upsert_claude_session_defaults(
+    conn: &mut SqliteConnection,
+    defaults: PersistedClaudeSessionDefaults,
+) -> Result<(), Error> {
+    conn.transaction::<(), Error, _>(|conn| {
+        diesel::delete(schema::claude_session_defaults::dsl::claude_session_defaults)
+            .execute(conn)?;
+
+        diesel::insert_into(schema::claude_session_defaults::dsl::claude_session_defaults)
+            .values(model::ClaudeSessionDefaults {
+                id: 0,
+                model: defaults.model,
+                effort: defaults.effort,
+                permission_mode: defaults.permission_mode,
             })
             .execute(conn)?;
         Ok(())

@@ -101,6 +101,7 @@ use crate::workspace::{WorkspaceAction, WorkspaceRegistry};
 use self::thinking::ThinkingUi;
 use self::tool_cards::{render_tool_card, ToolCardUi};
 use crate::appearance::Appearance;
+use crate::claude_code_session_defaults::ClaudeSessionDefaultsModel;
 use crate::editor::{
     EditorOptions, EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, TextOptions,
 };
@@ -373,6 +374,12 @@ pub enum ClaudeCodeCustomAction {
     /// Swap this pane for the raw interactive CLI (PRODUCT §39, 7i).
     /// Hidden while a turn streams (§42).
     ToggleRawCli,
+    /// twarp: expand / collapse the floating background-scripts panel from the
+    /// header's icon button (left of the Chat UI / Raw CLI toggle). The button
+    /// lives in the parent `PaneView`'s header tree, so it routes through the
+    /// pane framework rather than dispatching the in-pane
+    /// [`ClaudeCodeViewAction::ToggleBackgroundPanel`] directly.
+    ToggleBackgroundPanel,
 }
 
 /// Which composer dropdown / popover is open (#13). The model picker, the
@@ -696,6 +703,9 @@ pub struct ClaudeCodeView {
     background_row_mouse: std::cell::RefCell<HashMap<String, MouseStateHandle>>,
     /// Mouse state for the panel's header (the collapse/expand toggle).
     background_panel_mouse: MouseStateHandle,
+    /// Mouse state for the header's background-scripts icon button (left of the
+    /// Chat UI / Raw CLI toggle) that opens the floating panel.
+    background_button_mouse: MouseStateHandle,
 }
 
 impl ClaudeCodeView {
@@ -723,6 +733,21 @@ impl ClaudeCodeView {
             effort,
             resume_session_id,
         } = launch;
+
+        // twarp 07: a fresh pane inherits the PREVIOUS session's settings. Any
+        // setting the invocation didn't pin (typed flags, or the alias during
+        // the first-run bootstrap) falls back to the persisted last-used store;
+        // the effective settings are then recorded back as the new last-used so
+        // the next pane — and a crash-restored pane — inherits them in turn.
+        let stored = ClaudeSessionDefaultsModel::as_ref(ctx).get().cloned();
+        let model = model.or_else(|| stored.as_ref().and_then(|s| s.model.clone()));
+        let effort = effort.or_else(|| stored.as_ref().and_then(|s| s.effort.clone()));
+        let permission_mode = permission_mode
+            .or_else(|| stored.as_ref().and_then(|s| s.permission_mode))
+            .unwrap_or(PermissionMode::Default);
+        ClaudeSessionDefaultsModel::handle(ctx).update(ctx, |defaults, ctx| {
+            defaults.record(model.clone(), effort.clone(), permission_mode, ctx);
+        });
 
         let input_editor = ctx.add_typed_action_view(|ctx| {
             let appearance = Appearance::as_ref(ctx);
@@ -802,7 +827,7 @@ impl ClaudeCodeView {
             thinking_ui: HashMap::new(),
             todos_expanded: true,
             todos_header_mouse: MouseStateHandle::default(),
-            permission_mode: permission_mode.unwrap_or(PermissionMode::Default),
+            permission_mode,
             permission_pill_mouse: MouseStateHandle::default(),
             model,
             effort,
@@ -864,6 +889,7 @@ impl ClaudeCodeView {
             background_expanded_rows: HashSet::new(),
             background_row_mouse: std::cell::RefCell::new(HashMap::new()),
             background_panel_mouse: MouseStateHandle::default(),
+            background_button_mouse: MouseStateHandle::default(),
         };
 
         // PRODUCT §4: capture the login-shell PATH up front so availability
@@ -1239,10 +1265,20 @@ impl ClaudeCodeView {
             None => std::mem::take(&mut self.history_draft),
         };
         self.history_cursor = next;
-        // `set_buffer_text` inserts the content and leaves the cursor at the
-        // end, so the next keystroke (or another Up) picks up from there.
-        self.input_editor
-            .update(ctx, |editor, ctx| editor.set_buffer_text(&text, ctx));
+        self.input_editor.update(ctx, |editor, ctx| {
+            editor.set_buffer_text(&text, ctx);
+            // Park the cursor at the edge we'd continue walking from, so
+            // repeated presses keep stepping through history even when an entry
+            // wraps to several visual rows. The editor only surfaces Up/Down to
+            // us at a visual-row boundary (`AtBoundary`), and `set_buffer_text`
+            // leaves the cursor at the very end: fine for Down (already on the
+            // last row → next Down steps newer), but for Up we must move to the
+            // start (first row) or the next Up would just walk up within the
+            // recalled text instead of reaching the older entry.
+            if older {
+                editor.move_to_buffer_start(ctx);
+            }
+        });
         ctx.notify();
     }
 
@@ -2052,6 +2088,16 @@ impl ClaudeCodeView {
     /// Pick a model from the dropdown (#13). No-op (just closes the menu) when
     /// the choice is unchanged or a turn is streaming; otherwise detaches a
     /// live session so the next message resumes under the new `--model` (§25).
+    /// twarp 07: mirror the pane's current settings into the global last-used
+    /// store so the next Claude pane (and a crash-restored one) inherits them.
+    fn persist_session_defaults(&self, ctx: &mut ViewContext<Self>) {
+        let (model, effort, permission_mode) =
+            (self.model.clone(), self.effort.clone(), self.permission_mode);
+        ClaudeSessionDefaultsModel::handle(ctx).update(ctx, |defaults, ctx| {
+            defaults.record(model, effort, permission_mode, ctx);
+        });
+    }
+
     fn set_model(&mut self, model: Option<String>, ctx: &mut ViewContext<Self>) {
         self.composer_menu = None;
         if self.streaming || self.model == model {
@@ -2059,6 +2105,7 @@ impl ClaudeCodeView {
             return;
         }
         self.model = model;
+        self.persist_session_defaults(ctx);
         if self.child.is_some() {
             self.detach_live_session();
         }
@@ -2073,6 +2120,7 @@ impl ClaudeCodeView {
             return;
         }
         self.effort = effort;
+        self.persist_session_defaults(ctx);
         if self.child.is_some() {
             self.detach_live_session();
         }
@@ -2090,6 +2138,7 @@ impl ClaudeCodeView {
             return;
         }
         self.permission_mode = PermissionMode::AcceptEdits;
+        self.persist_session_defaults(ctx);
         if self.child.is_some() {
             self.detach_live_session();
         }
@@ -2408,6 +2457,7 @@ impl ClaudeCodeView {
             return;
         }
         self.permission_mode = mode;
+        self.persist_session_defaults(ctx);
         if self.child.is_some() {
             // Detach the live process; the next message resumes the
             // conversation under the new mode. The pane owns its session id
@@ -3202,6 +3252,102 @@ impl ClaudeCodeView {
         .finish()
     }
 
+    /// twarp: the header's **background-scripts icon button** — a terminal
+    /// glyph sitting to the left of the Chat UI / Raw CLI toggle that opens the
+    /// floating [`render_background_panel`](Self::render_background_panel)
+    /// menu. While any of this chat's `run_in_background` Bash launches are
+    /// still running, a small accent notification bubble overlays the glyph's
+    /// top-right corner with the active count.
+    ///
+    /// Returns `None` (so the header shows no button) when this chat launched
+    /// no background scripts. The button lives in the parent `PaneView`'s
+    /// header tree, so its click routes through
+    /// [`ClaudeCodeCustomAction::ToggleBackgroundPanel`] rather than dispatching
+    /// the in-pane action directly.
+    fn render_background_button(&self, app: &AppContext) -> Option<Box<dyn Element>> {
+        let scripts = background_scripts::collect(self.transcript.items());
+        if scripts.is_empty() {
+            return None;
+        }
+        let active = scripts.iter().filter(|s| s.state.is_active()).count();
+
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let accent = self.accent(app);
+        let wash = self.accent_wash(app);
+        let expanded = self.background_scripts_expanded;
+
+        let glyph = ConstrainedBox::new(
+            Icon::new(crate::ui_components::icons::Icon::Terminal.into(), accent).finish(),
+        )
+        .with_width(15.)
+        .with_height(15.)
+        .finish();
+
+        // Compose the glyph with the floating notification bubble. The badge is
+        // anchored to the glyph's top-right corner, nudged out so it reads as an
+        // overlay rather than part of the icon.
+        let mut stack = Stack::new();
+        stack.add_child(
+            Container::new(glyph)
+                .with_padding(Padding::uniform(1.))
+                .finish(),
+        );
+        if active > 0 {
+            let label = appearance
+                .ui_builder()
+                .span(active.to_string())
+                .with_style(UiComponentStyles {
+                    font_color: Some(ColorU::white()),
+                    font_size: Some(9.),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let sized = ConstrainedBox::new(Align::new(label).finish())
+                .with_min_width(13.)
+                .with_min_height(13.)
+                .finish();
+            let badge = Container::new(sized)
+                .with_padding_left(2.)
+                .with_padding_right(2.)
+                .with_background_color(accent)
+                .with_border(Border::all(1.).with_border_fill(theme.background()))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(7.)))
+                .finish();
+            stack.add_positioned_child(
+                badge,
+                OffsetPositioning::offset_from_parent(
+                    vec2f(5., -5.),
+                    ParentOffsetBounds::ParentBySize,
+                    ParentAnchor::TopRight,
+                    ChildAnchor::Center,
+                ),
+            );
+        }
+
+        let inner = stack.finish();
+        let button = Hoverable::new(self.background_button_mouse.clone(), move |state| {
+            let mut body = Container::new(inner)
+                .with_padding(Padding::uniform(4.))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)));
+            // Highlight while the panel is open (or hovered) so the button reads
+            // as the panel's toggle, mirroring the active segment of the toggle.
+            if expanded || state.is_hovered() {
+                body = body.with_background_color(wash);
+            }
+            body.finish()
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
+                PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleBackgroundPanel),
+            );
+        })
+        .finish();
+        Some(button)
+    }
+
     /// twarp: the floating **background-scripts** panel — a per-chat status
     /// widget for the `run_in_background` Bash commands Claude launched in this
     /// session (a dev server, a watcher, a long build). Derived fresh from the
@@ -3211,10 +3357,19 @@ impl ClaudeCodeView {
     /// state, captured output) but can't start, poll, or kill it; those are
     /// Claude's tool calls.
     ///
-    /// Returns `None` when this chat launched no background scripts, so the
-    /// caller floats nothing. Otherwise a compact pill the user can expand into a
-    /// list of rows, each of which expands again to its captured output.
+    /// Opened from the header's
+    /// [`render_background_button`](Self::render_background_button); returns
+    /// `None` (floats nothing) unless the panel is expanded and this chat
+    /// launched at least one background script. When shown it is the open menu:
+    /// a header row (click to close) over one row per script, each expanding
+    /// again to its captured output.
     fn render_background_panel(&self, app: &AppContext) -> Option<Box<dyn Element>> {
+        // twarp: the panel is now opened from the header's background-scripts
+        // icon button (left of the Chat UI / Raw CLI toggle). It only floats
+        // while expanded; collapsed, the header button is the sole affordance.
+        if !self.background_scripts_expanded {
+            return None;
+        }
         let scripts = background_scripts::collect(self.transcript.items());
         if scripts.is_empty() {
             return None;
@@ -3520,14 +3675,31 @@ impl ClaudeCodeView {
         // PRODUCT §13: make the transcript prose highlightable. `SelectableArea`
         // is the coordinator that turns the per-element `set_selectable(true)`
         // into an actual drag-to-select gesture (it tracks the drag and paints
-        // the selection); it must sit *inside* the scrollable, because
-        // `ClippedScrollable` does not forward `as_selectable_element` to its
-        // child — wrapping it on the outside would sever the selectable chain.
-        // The selected text is mirrored into `transcript_selection`; Copy is
-        // handled in `handle_editor_event` (an empty composer surfaces Cmd+C as
+        // the selection). It must wrap the scrollable from the *outside*, not sit
+        // inside it: outside, the `SelectableArea` keeps the viewport's fixed
+        // origin/size (so the mouse-down hit-test in viewport coordinates works),
+        // and the scrollable forwards `get_selection`/`expand_selection` down to
+        // its scroll-translated children (`ClippedScrollable::as_selectable_element`),
+        // which carry their real painted bounds. An earlier arrangement nested the
+        // `SelectableArea` *inside* the `ClippedScrollable`; that compiled but
+        // never selected at runtime — this is the proven outside-wrapping pattern
+        // (see `warpui` `table-sample` and `NewScrollable`). The selected text is
+        // mirrored into `transcript_selection`; Copy is handled in
+        // `handle_editor_event` (an empty composer surfaces Cmd+C as
         // `EditorEvent::Copy`).
+        let scrollable = ClippedScrollable::vertical(
+            self.scroll_state.clone(),
+            content,
+            ScrollbarWidth::Auto,
+            theme.nonactive_ui_detail().into(),
+            theme.active_ui_detail().into(),
+            Fill::None,
+        )
+        .with_overlayed_scrollbar()
+        .finish();
+
         let selection = self.transcript_selection.clone();
-        let content = SelectableArea::new(
+        SelectableArea::new(
             self.selection_handle.clone(),
             move |args, ctx, _| {
                 // A mouse-down on the transcript is consumed by this
@@ -3543,19 +3715,8 @@ impl ClaudeCodeView {
                 }
                 *selection.write() = args.selection;
             },
-            content,
+            scrollable,
         )
-        .finish();
-
-        ClippedScrollable::vertical(
-            self.scroll_state.clone(),
-            content,
-            ScrollbarWidth::Auto,
-            theme.nonactive_ui_detail().into(),
-            theme.active_ui_detail().into(),
-            Fill::None,
-        )
-        .with_overlayed_scrollbar()
         .finish()
     }
 
@@ -4566,8 +4727,16 @@ impl ClaudeCodeView {
             return stack.finish();
         };
         let menu = Container::new(
+            // NOT `prevent_interaction_with_other_elements`: that flag makes
+            // `Dismiss` paint a window-spanning hit-recording rect under the
+            // menu, so a click *outside* the menu is both dismissed AND
+            // swallowed — it never reaches whatever was clicked. With the
+            // composer dropdown open, that ate the first click into any other
+            // input field in the app (terminal, search, another pane), so you
+            // had to click twice. The layered (non-modal) `Dismiss` still fires
+            // the dismiss on an outside click but propagates the event through,
+            // so the underlying input focuses on the same click.
             Dismiss::new(menu)
-                .prevent_interaction_with_other_elements()
                 .on_dismiss(|ctx, _| {
                     ctx.dispatch_typed_action(ClaudeCodeViewAction::CloseComposerMenu);
                 })
@@ -4994,6 +5163,10 @@ impl BackingView for ClaudeCodeView {
     ) {
         match custom_action {
             ClaudeCodeCustomAction::ToggleRawCli => self.toggle_raw_cli(ctx),
+            ClaudeCodeCustomAction::ToggleBackgroundPanel => {
+                self.background_scripts_expanded = !self.background_scripts_expanded;
+                ctx.notify();
+            }
         }
     }
 
@@ -5079,6 +5252,22 @@ impl BackingView for ClaudeCodeView {
         // #5: breathing room between the toggle and the always-visible close ✕.
         .with_margin_right(10.)
         .finish();
+        // twarp: the background-scripts icon button sits to the LEFT of the
+        // toggle, opening the floating panel and badging the active run count.
+        // Present only when this chat launched a background script — widen the
+        // header control budget to fit it when it is.
+        let background_button = self.render_background_button(app);
+        let has_background_button = background_button.is_some();
+        let left_of_overflow: Box<dyn Element> = match background_button {
+            Some(button) => Flex::row()
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(6.)
+                .with_child(button)
+                .with_child(toggle)
+                .finish(),
+            None => toggle,
+        };
         HeaderContent::Standard(StandardHeader {
             title: PANE_TITLE.to_owned(),
             title_secondary: cwd,
@@ -5087,15 +5276,16 @@ impl BackingView for ClaudeCodeView {
             title_max_width: None,
             left_of_title: None,
             right_of_title: None,
-            left_of_overflow: Some(toggle),
+            left_of_overflow: Some(left_of_overflow),
             options: StandardHeaderOptions {
                 // #5: keep the close ✕ (and overflow) visible without hovering.
                 always_show_icons: true,
                 // The [ Chat UI | Raw CLI ] segmented toggle is wider than the
                 // default 80px right-edge budget — without this it overflowed
                 // off the right of the window. Reserve room for the toggle plus
-                // the close/overflow icons.
-                control_container_width: Some(210.),
+                // the close/overflow icons, and extra for the background-scripts
+                // button when it is shown.
+                control_container_width: Some(if has_background_button { 250. } else { 210. }),
                 ..Default::default()
             },
             // twarp: double-clicking the "Claude Code" header title renames the
@@ -5717,6 +5907,53 @@ fn render_message_row(
         .finish()
 }
 
+/// Max number of distinct markdown bodies kept parsed in [`MARKDOWN_CACHE`].
+/// Generous enough to cover a long transcript while bounding memory; the live
+/// streaming message changes every delta and simply churns one slot.
+const MARKDOWN_CACHE_CAP: usize = 512;
+
+thread_local! {
+    /// Memoized `parse_markdown_with_gfm_tables` output, keyed by the raw body
+    /// text. Every streaming delta calls `notify()` (see `apply_event`), which
+    /// re-runs `render()` over the *whole* transcript — so without a cache an
+    /// N-message conversation re-parses N markdown blobs on every token, and
+    /// several panes streaming at once saturate the main thread (the multi-pane
+    /// lag/crash). The parse depends only on the text, so settled messages hit
+    /// the cache and only the still-streaming tail re-parses. FIFO-bounded so a
+    /// long session can't grow it without bound. Lives on the render (main)
+    /// thread, so a plain `RefCell` is sufficient.
+    static MARKDOWN_CACHE: std::cell::RefCell<MarkdownParseCache> =
+        std::cell::RefCell::new(MarkdownParseCache::default());
+}
+
+#[derive(Default)]
+struct MarkdownParseCache {
+    map: HashMap<String, FormattedText>,
+    /// Insertion order, for FIFO eviction once `map` exceeds the cap.
+    order: std::collections::VecDeque<String>,
+}
+
+/// Parse `text` as markdown, reusing a cached parse when the same body was seen
+/// before. Returns `None` when the text fails to parse (callers fall back to
+/// plain wrapped text); parse failures are not cached.
+fn parse_markdown_cached(text: &str) -> Option<FormattedText> {
+    MARKDOWN_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some(hit) = cache.map.get(text) {
+            return Some(hit.clone());
+        }
+        let parsed = parse_markdown_with_gfm_tables(text).ok()?;
+        cache.map.insert(text.to_owned(), parsed.clone());
+        cache.order.push_back(text.to_owned());
+        while cache.order.len() > MARKDOWN_CACHE_CAP {
+            if let Some(evicted) = cache.order.pop_front() {
+                cache.map.remove(&evicted);
+            }
+        }
+        Some(parsed)
+    })
+}
+
 /// Port of `render_message`'s markdown body: render each [`MarkdownSegment`] —
 /// prose via [`FormattedTextElement`] (feature 03's stack), fenced code via a
 /// bordered monospace box. PRODUCT §13 (markdown), §29 (defensive: fall back to
@@ -5729,7 +5966,7 @@ fn render_markdown_body(
     let theme = appearance.theme();
     let inline_code_bg = theme.surface_3().into_solid();
 
-    let Ok(formatted) = parse_markdown_with_gfm_tables(text) else {
+    let Some(formatted) = parse_markdown_cached(text) else {
         return appearance
             .ui_builder()
             .wrappable_text(text.to_owned(), true)

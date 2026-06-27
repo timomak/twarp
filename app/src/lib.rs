@@ -54,6 +54,7 @@ mod chip_configurator;
 // Always-on (no feature flag — acceptable on a personal fork; degrades to the
 // unavailable state when `claude` is off PATH, PRODUCT §4). See TECH.md
 // §Feature flag & rollout.
+mod claude_code_session_defaults;
 mod claude_code_view;
 mod cloud_object;
 mod code;
@@ -1102,6 +1103,7 @@ fn initialize_app(
         persisted_ignored_suggestions,
         persisted_mcp_server_installations,
         mcp_servers_to_restore,
+        persisted_claude_session_defaults,
     ) = sqlite_data
         .map(|sqlite_data| {
             (
@@ -1121,10 +1123,12 @@ fn initialize_app(
                 sqlite_data.ignored_suggestions,
                 sqlite_data.mcp_server_installations,
                 sqlite_data.mcp_servers_to_restore,
+                sqlite_data.claude_session_defaults,
             )
         })
         .unwrap_or_else(|| {
             (
+                Default::default(),
                 Default::default(),
                 Default::default(),
                 Default::default(),
@@ -1728,6 +1732,14 @@ fn initialize_app(
     // twarp: 2c-f — InputClassifierModel singleton deleted along with `input_classifier` crate.
 
     ctx.add_singleton_model(move |_| IgnoredSuggestionsModel::new(persisted_ignored_suggestions));
+
+    // twarp 07: last-used Claude session settings, so a new Claude pane inherits
+    // the previous session's model/effort/permission mode instead of the alias.
+    ctx.add_singleton_model(move |_| {
+        crate::claude_code_session_defaults::ClaudeSessionDefaultsModel::new(
+            persisted_claude_session_defaults,
+        )
+    });
 
     // Subscribe WorkflowAliases to the UpdateManager so that it can be notified when objects are
     // trashed.

@@ -9,8 +9,8 @@ use warp_multi_agent_api::{self as api, response_event::stream_finished};
 
 use super::schema::{
     active_mcp_servers, agent_conversations, agent_tasks, ai_document_panes, ai_memory_panes,
-    ambient_agent_panes, app, blocks, claude_code_panes, cloud_objects_refreshes, code_pane_tabs,
-    code_panes,
+    ambient_agent_panes, app, blocks, claude_code_panes, claude_session_defaults,
+    cloud_objects_refreshes, code_pane_tabs, code_panes,
     code_review_panes, commands, current_user_information, env_var_collection_panes, folders,
     generic_string_objects, ignored_suggestions, mcp_environment_variables,
     mcp_server_installations, mcp_server_panes, notebook_panes, notebooks, object_actions,
@@ -700,6 +700,19 @@ pub struct NewClaudeCodePane {
     pub id: i32,
     pub session_id: Option<String>,
     pub cwd: Option<String>,
+}
+
+/// twarp 07: the single global row recording the last-used Claude session
+/// settings, so a freshly opened pane inherits them instead of re-reading the
+/// `claude` shell alias. `id` is always 0 (one row, upserted by delete+insert).
+#[derive(Insertable, Queryable, Selectable)]
+#[diesel(table_name = claude_session_defaults)]
+pub struct ClaudeSessionDefaults {
+    pub id: i32,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    /// `PermissionMode::as_cli_arg()` (e.g. "bypassPermissions"), or `None`.
+    pub permission_mode: Option<String>,
 }
 
 #[derive(Insertable)]
