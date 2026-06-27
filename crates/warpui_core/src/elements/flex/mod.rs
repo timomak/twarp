@@ -370,7 +370,17 @@ impl Element for Flex {
 
         // If the axis size is set to max--ensure the flex takes up the max possible size it can
         // while still respecting size constraints.
-        if self.main_axis_size == MainAxisSize::Max {
+        //
+        // twarp: guard on `is_finite()`. A `MainAxisSize::Max` flex can
+        // transiently receive an infinite main-axis constraint (intrinsic
+        // measuring pass; the Standard pane header while a Claude Code pane is
+        // restored, before window width propagates — see the log-and-degrade
+        // branches above). Setting the size to an infinite `max_constraint_size`
+        // here used to merely move the abort downstream: the infinite size flows
+        // into paint and trips `Scene::validate_rect`'s `!is_infinite` assert
+        // (SIGABRT in debug-assertions / dogfood builds). Fall back to the finite
+        // intrinsic `allocated_size` instead so the degrade is complete.
+        if self.main_axis_size == MainAxisSize::Max && max_constraint_size.is_finite() {
             match self.axis {
                 Axis::Horizontal => size.set_x(max_constraint_size),
                 Axis::Vertical => size.set_y(max_constraint_size),

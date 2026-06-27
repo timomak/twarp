@@ -270,7 +270,11 @@ fn best_effort_title(path: &Path) -> Option<String> {
 }
 
 fn short_title(text: &str) -> String {
-    const MAX: usize = 60;
+    // Generous safety cap only — the session list wraps the title across the
+    // panel width (soft-wrap), so the full first message line is shown rather
+    // than a 60-char preview. The cap just guards against a pathologically
+    // long single line producing one enormous row.
+    const MAX: usize = 200;
     let head = text
         .trim()
         .split('\n')
@@ -304,11 +308,11 @@ mod tests {
 
     #[test]
     fn short_title_truncates_long_input() {
-        let long = "a".repeat(200);
+        let long = "a".repeat(400);
         let t = short_title(&long);
-        // 60 'a's + ellipsis.
+        // 200 'a's + ellipsis.
         assert!(t.ends_with('…'));
-        assert_eq!(t.chars().count(), 61);
+        assert_eq!(t.chars().count(), 201);
     }
 
     #[test]

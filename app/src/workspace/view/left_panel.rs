@@ -135,6 +135,9 @@ pub enum LeftPanelAction {
     /// twarp 07 (7h, PRODUCT §36): resume the stored session at this index
     /// of the current list in a main-content Claude Code pane.
     ClaudeSessionResume(usize),
+    /// twarp: clear the session-list search field (the inline X button that
+    /// appears once the query is non-empty).
+    ClaudeSessionsClearSearch,
     /// 5d: collapse/expand the Timeline section at the bottom of the
     /// Project Explorer panel. Collapsed = header-only; expanded =
     /// header + entries with a drag-resize handle on top.
@@ -319,6 +322,9 @@ pub struct LeftPanelView {
     /// render and case-insensitive substring-filters `claude_sessions` by
     /// `session.title`. Transient view state — never touches persisted data.
     claude_sessions_search: ViewHandle<EditorView>,
+    /// twarp: mouse state for the inline X button that clears the session-list
+    /// search; the button only renders while the query is non-empty.
+    claude_sessions_clear_mouse_state: MouseStateHandle,
 }
 
 /// twarp 5d: ephemeral data for the Project Explorer Timeline section.
@@ -530,6 +536,7 @@ impl LeftPanelView {
             claude_session_row_mouse_states: std::cell::RefCell::new(Vec::new()),
             claude_sessions_scroll_state: warpui::elements::ClippedScrollStateHandle::default(),
             claude_sessions_search,
+            claude_sessions_clear_mouse_state: MouseStateHandle::default(),
         };
         view.update_button_active_states();
 
@@ -2026,6 +2033,8 @@ impl LeftPanelView {
                 | LeftPanelAction::TimelineSelectCommit { .. } => false,
                 // twarp 07 (7h): row clicks are not a toolbelt tab.
                 LeftPanelAction::ClaudeSessionResume(_) => false,
+                // twarp: the search-clear X is not a toolbelt tab.
+                LeftPanelAction::ClaudeSessionsClearSearch => false,
             };
         }
     }
@@ -2059,7 +2068,41 @@ impl LeftPanelView {
         // Uses the same bordered, fill-less input container as the Global
         // Search page (radius 6, 1px surface_3 border, uniform 6 padding) so
         // the two side-panel search bars match.
-        let search_field = Container::new(ChildView::new(&self.claude_sessions_search).finish())
+        // twarp: when the query is non-empty, an inline X button clears it.
+        let editor_cell = Shrinkable::new(
+            1.0,
+            ChildView::new(&self.claude_sessions_search).finish(),
+        )
+        .finish();
+        let mut search_row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_spacing(6.0)
+            .with_child(editor_cell);
+        if has_query {
+            let clear_fill = appearance.theme().sub_text_color(appearance.theme().background());
+            let clear_button = Hoverable::new(
+                self.claude_sessions_clear_mouse_state.clone(),
+                move |state| {
+                    let fill = if state.is_hovered() {
+                        appearance.theme().main_text_color(appearance.theme().background())
+                    } else {
+                        clear_fill
+                    };
+                    ConstrainedBox::new(Icon::X.to_warpui_icon(fill).finish())
+                        .with_width(14.)
+                        .with_height(14.)
+                        .finish()
+                },
+            )
+            .on_click(|ctx, _, _| {
+                ctx.dispatch_typed_action(LeftPanelAction::ClaudeSessionsClearSearch);
+            })
+            .with_cursor(Cursor::PointingHand)
+            .finish();
+            search_row = search_row.with_child(clear_button);
+        }
+        let search_field = Container::new(search_row.finish())
             .with_border(Border::all(1.).with_border_fill(appearance.theme().surface_3()))
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
             .with_padding_left(6.)
@@ -2436,6 +2479,13 @@ impl LeftPanelView {
                         cwd,
                     });
                 }
+            }
+            // twarp: clear the session-list search and re-render the full list.
+            LeftPanelAction::ClaudeSessionsClearSearch => {
+                self.claude_sessions_search.update(ctx, |editor, ctx| {
+                    editor.clear_buffer_and_reset_undo_stack(ctx);
+                });
+                ctx.notify();
             }
             // twarp: 2c-d — ConversationListView is a stub kept for legacy call-sites.
             LeftPanelAction::ConversationListView => {}

@@ -667,3 +667,63 @@ fn test_flex_cross_axis_alignment() {
         });
     })
 }
+
+/// twarp regression: rendering a `MainAxisSize::Max` flex under an infinite
+/// main-axis constraint must not abort the process.
+///
+/// A `MainAxisSize::Max` flex receives an infinite main-axis constraint when it
+/// is laid out as a non-flexible child of another flex: the parent measures its
+/// non-flex children with `child_constraint_along_axis`, whose main-axis max is
+/// `f32::INFINITY`. This mirrors the Standard pane header's `MainAxisSize::Max`
+/// rows while a Claude Code pane is restored (before the window width has
+/// propagated). A flexible cell in that row then stretches to the infinite width
+/// and paints an infinite-sized rect, which used to trip `Scene::validate_rect`'s
+/// `!is_infinite` debug-assert and abort the whole process (SIGABRT) in
+/// debug-assertions / dogfood builds. Layout (clamp the degraded size to finite)
+/// and the scene (log-and-skip rather than abort) now degrade gracefully, so
+/// rendering this tree must complete without panicking.
+#[test]
+fn test_flex_max_under_infinite_main_constraint_does_not_abort() {
+    App::test((), |mut app| async move {
+        let app = &mut app;
+        let (window_id, test_view) = app.add_window(WindowStyle::NotStealFocus, |_| {
+            TestDynamicView::new(|_| {
+                // Outer flex hands its non-flexible child an infinite main-axis max.
+                Flex::row()
+                    .with_children([
+                        // Inner `MainAxisSize::Max` row with a flexible cell that
+                        // expands into — and paints at — the infinite width.
+                        Flex::row()
+                            .with_main_axis_size(MainAxisSize::Max)
+                            .with_children([Expanded::new(1., Rect::new().finish()).finish()])
+                            .finish(),
+                    ])
+                    .finish()
+            })
+        });
+
+        // Before the fix this update aborted during paint via the
+        // `Scene::validate_rect` debug-assert. Returning from it is the core
+        // assertion; we additionally confirm a scene with painted rects exists.
+        test_view.update(app, |_, ctx| {
+            ctx.notify();
+        });
+
+        let presenter_ref = app
+            .presenter(window_id)
+            .expect("window should have a presenter after the first frame");
+        let presenter = presenter_ref.borrow();
+        let scene = presenter
+            .scene()
+            .expect("presenter should have rendered a scene");
+        let painted_rects = scene
+            .layers()
+            .next()
+            .map(|layer| layer.rects.len())
+            .unwrap_or(0);
+        assert!(
+            painted_rects >= 1,
+            "infinite-constraint flex tree should paint at least one rect without aborting"
+        );
+    })
+}

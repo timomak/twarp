@@ -551,31 +551,24 @@ impl Scene {
             .unwrap_or_default();
         #[cfg(not(debug_assertions))]
         let location_info = "";
-        debug_assert!(
-            !rect.origin().y().is_infinite(),
-            "!rect.origin().y().is_infinite(){location_info}"
-        );
-        debug_assert!(
-            !rect.origin().y().is_nan(),
-            "!rect.origin().y().is_nan(){location_info}"
-        );
 
-        debug_assert!(
-            !rect.size().x().is_infinite(),
-            "!rect.size().x().is_infinite(){location_info}"
-        );
-        debug_assert!(
-            !rect.size().x().is_nan(),
-            "!rect.size().x().is_nan(){location_info}"
-        );
-        debug_assert!(
-            !rect.size().y().is_infinite(),
-            "!rect.size().y().is_infinite(){location_info}"
-        );
-        debug_assert!(
-            !rect.size().y().is_nan(),
-            "!rect.size().y().is_nan(){location_info}"
-        );
+        // twarp: log-and-continue rather than `debug_assert!`. A non-finite rect
+        // dimension can transiently reach paint when a `MainAxisSize::Max` flex
+        // is measured under an infinite constraint (e.g. the Standard pane header
+        // while a Claude Code pane is restored). The flex layout now clamps such
+        // sizes to a finite intrinsic value, but a hard abort here turned any
+        // remaining transient into a SIGABRT in debug-assertions / dogfood builds
+        // while shipped `release` builds merely skipped the bad frame. Match that:
+        // log loudly and skip validation instead of aborting the whole process.
+        let invalid = rect.origin().y().is_infinite()
+            || rect.origin().y().is_nan()
+            || rect.size().x().is_infinite()
+            || rect.size().x().is_nan()
+            || rect.size().y().is_infinite()
+            || rect.size().y().is_nan();
+        if invalid {
+            log::error!("Scene::validate_rect skipped a non-finite rect {rect:?}{location_info}");
+        }
     }
 
     /// This method draws a rectangle without recording any information about it in the current

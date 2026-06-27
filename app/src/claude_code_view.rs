@@ -1113,6 +1113,15 @@ impl ClaudeCodeView {
         ctx.spawn(fut, |me, path, ctx| {
             if path.is_some() && me.interactive_path != path {
                 me.interactive_path = path;
+                // The constructor's first `refresh_repo_context` ran before this
+                // PATH was available, so its `git`/`gh` probe used the fallback
+                // login-shell PATH — which on some setups lacks `git` (homebrew /
+                // Xcode location), leaving every git-derived field empty (only the
+                // cwd-derived folder pill resolved). Re-run the probe now that the
+                // richer interactive PATH is known, so the branch pill and the
+                // worktree toggle (both gated on a resolved branch) appear on a
+                // fresh chat.
+                me.refresh_repo_context(ctx);
                 ctx.notify();
             }
         });
@@ -3931,6 +3940,10 @@ impl ClaudeCodeView {
                 // did). Re-fire the focus-grab on the initiating click (no
                 // selection yet) so a click anywhere in the transcript makes
                 // this the active pane, matching the composer. See `FocusInput`.
+                eprintln!(
+                    "[twarp-sel] SelectableArea callback fired, selection={:?}",
+                    args.selection.as_deref().map(|s| s.chars().take(40).collect::<String>())
+                );
                 if args.selection.is_none() {
                     ctx.dispatch_typed_action(ClaudeCodeViewAction::FocusInput);
                 }
@@ -6496,6 +6509,10 @@ fn render_markdown_body(
     let inline_code_bg = theme.surface_3().into_solid();
 
     let Some(formatted) = parse_markdown_cached(text) else {
+        eprintln!(
+            "[twarp-sel] render_markdown_body FALLBACK (non-selectable wrappable_text), len={}",
+            text.len()
+        );
         return appearance
             .ui_builder()
             .wrappable_text(text.to_owned(), true)
@@ -6506,6 +6523,10 @@ fn render_markdown_body(
             .build()
             .finish();
     };
+    eprintln!(
+        "[twarp-sel] render_markdown_body parsed OK (selectable path), len={}",
+        text.len()
+    );
 
     let mut column = Flex::column()
         .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
