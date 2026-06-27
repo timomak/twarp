@@ -21,7 +21,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 10 | [File editor with go-to-definition](10-file-editor/STATUS.md) | not-started | — | — |
 | 11 | [Git blame](11-git-blame/STATUS.md) | not-started | — | — |
 | 12 | [Project search & replace](12-project-search-replace/STATUS.md) | not-started | — | — |
-| 13 | [MCP viewer in Claude pane](13-mcp-viewer/STATUS.md) | spec-in-review | [#91](https://github.com/timomak/twarp/pull/91) | — |
+| 13 | [MCP viewer in Claude pane](13-mcp-viewer/STATUS.md) | impl-in-review | [#91](https://github.com/timomak/twarp/pull/91) | 13a (pending) |
 | 14 | [Built-in browser (Claude-debuggable)](14-builtin-browser/STATUS.md) | not-started | — | — |
 
 ## Phases
