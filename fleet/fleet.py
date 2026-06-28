@@ -18,7 +18,8 @@ Design notes:
 import argparse, concurrent.futures as cf, json, os, subprocess, sys, threading, time
 from pathlib import Path
 
-_qlock = threading.Lock()  # serialize all access to queue.json across worker threads
+_qlock = threading.Lock()   # serialize all access to queue.json across worker threads
+_screenlock = threading.Lock()  # the build node has ONE display — serialize real-display captures
 
 LOCAL_REPO = Path("/Users/thirdfacedev/Development/twarp")
 QUEUE = LOCAL_REPO / "fleet" / "queue.json"
@@ -220,12 +221,39 @@ def run_worker(it):
 UXTEST = "test_video_recording"   # bootstraps the UI and captures after_bootstrap.png
 GOLDEN = LOCAL_REPO / "fleet" / "golden"
 
+def vision_review(new_png, golden_png):
+    """A headless vision agent compares the new screenshot against the approved golden and judges
+    whether there is a USER-VISIBLE regression. Robust to anti-aliasing/cursor/timestamp noise in a
+    way a pixel diff is not. Returns (verdict, note) with verdict in {'pass','regression','error'}."""
+    prompt = (
+        "You are a UX visual-regression gate for the twarp terminal app. Two screenshots:\n"
+        f"  GOLDEN (approved baseline): {golden_png}\n"
+        f"  NEW (current build):        {new_png}\n"
+        "Use your Read tool to view BOTH images, then decide if NEW has any real user-visible "
+        "regression vs GOLDEN: misaligned / overlapping / clipped / missing UI, broken layout, "
+        "wrong colors or contrast, unstyled controls. IGNORE benign differences (anti-aliasing, "
+        "cursor blink, timestamps, tiny 1-2px shifts).\n"
+        "Reply with EXACTLY one line:\n"
+        "  VERDICT pass — <short reason>        (if visually equivalent / acceptable)\n"
+        "  VERDICT regression — <what broke>    (if there is a real regression)")
+    r = sh(["claude", "-p", prompt, "--dangerously-skip-permissions"], timeout=300)
+    out = (r.stdout or "").strip()
+    line = next((l for l in out.splitlines() if "VERDICT" in l.upper()),
+                out.splitlines()[-1] if out else "")
+    low = line.lower()
+    if "regression" in low:
+        return "regression", line
+    if "pass" in low:
+        return "pass", line
+    return "error", line or "no verdict from vision agent"
+
+
 def uxgate(test=UXTEST, png="after_bootstrap.png"):
-    """Render twarp on the build node's REAL display, capture a screenshot, pull it here, and
-    compare against the golden baseline. Returns (verdict, local_png_path):
-      'golden-saved' first run (baseline stored), 'pass' byte-identical, 'review' changed (a vision
-      agent should inspect the PNG), 'fail' no screenshot produced. The visual judgment itself is
-      done by a vision agent on the returned PNG (see README)."""
+    """Render twarp on the build node's REAL display, capture a screenshot, pull it here, and have a
+    vision agent compare it to the golden baseline. Returns (verdict, local_png_path):
+      'golden-saved' first run (baseline stored), 'pass' / 'regression' from the vision agent,
+      'fail' no screenshot produced, 'error' no verdict. Captures hold the screen semaphore so only
+      one real-display render runs at a time."""
     GOLDEN.mkdir(parents=True, exist_ok=True); LOG.mkdir(parents=True, exist_ok=True)
     art = "/tmp/uxgate"
     cmd = (f"{REMOTE_ENV}\nexport CARGO_TARGET_DIR={REMOTE_REPO}/target\n"
@@ -237,7 +265,8 @@ def uxgate(test=UXTEST, png="after_bootstrap.png"):
            f"kill $CAF 2>/dev/null\n"
            f"find {art} -name '{png}' -print | head -1\n")
     say(f"  uxgate: rendering {test} on {REMOTE}'s real display…")
-    r = ssh(cmd, timeout=600)
+    with _screenlock:                       # one display → one capture at a time
+        r = ssh(cmd, timeout=600)
     remote_png = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
     if not remote_png.endswith(".png"):
         return "fail", None
@@ -246,8 +275,9 @@ def uxgate(test=UXTEST, png="after_bootstrap.png"):
     golden = GOLDEN / png
     if not golden.exists():
         sh(["cp", str(local), str(golden)]); return "golden-saved", local
-    same = sh(["cmp", "-s", str(local), str(golden)]).returncode == 0
-    return ("pass" if same else "review"), local
+    verdict, note = vision_review(str(local), str(golden))
+    say(f"  uxgate vision → {note}")
+    return verdict, local
 
 
 # ---------- gate (always on build node) ----------
@@ -326,9 +356,17 @@ def cmd_run(args):
         if not ok:
             for ln in tail:
                 say(f"      | {ln}")
-        set_status(iid, "gated" if ok else "failed")
-        if ok:
-            green.append(iid)
+            set_status(iid, "failed")
+            continue
+        # optional visual gate (items flagged ux:true) — blocks merge on a regression
+        if it.get("ux"):
+            verdict, _ = uxgate(it.get("ux_test", UXTEST))
+            say(f"  [{iid}] UX gate → {verdict}")
+            if verdict == "regression":
+                set_status(iid, "failed")
+                continue
+        set_status(iid, "gated")
+        green.append(iid)
 
     # merge queue: serialized speculative-merge + auto-merge
     say(f"=== merge queue: {green} ===")
