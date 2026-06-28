@@ -1,0 +1,127 @@
+{
+  "config": {
+    "comment": "twarp dev fleet work-ledger. The dispatcher leases items whose deps are merged, whose touches are disjoint from every other leased item, and that are not behind an active barrier. build_node is the single machine that owns building/testing (warm cache + working toolchain); screen-bound UX gates also serialize there via a semaphore.",
+    "repo": "timomak/twarp",
+    "base": "master",
+    "build_node": "other-mac",
+    "concurrency": 2
+  },
+  "items": [
+    {
+      "id": "seed-truncation-tests",
+      "title": "Unit tests for util/truncation.rs",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "app/src/util/truncation.rs",
+        "app/src/util/truncation_tests.rs"
+      ],
+      "barrier": false,
+      "task": "app/src/util/truncation.rs has two pure functions (truncate_from_end, truncate_from_beginning) and NO tests. Add a thorough unit-test module for them. Cover: empty string, max_length 0, text shorter than max, text exactly max, text longer than max (both directions), and a multi-byte/unicode string near the boundary. Wire the tests as a sibling file the same way other util modules do it: add `#[cfg(test)] #[path = \"truncation_tests.rs\"] mod tests;` to truncation.rs and put the tests in app/src/util/truncation_tests.rs with `use super::*;`. Do NOT change the two functions unless you find a real correctness bug (if you do, fix it and add a test that proves it). Keep the change to only those two files.",
+      "verify": "cargo test -p warp --lib truncat",
+      "branch": "fleet/seed-truncation-tests"
+    },
+    {
+      "id": "seed-prefix-tests",
+      "title": "Edge-case tests for prefix::longest_common_prefix",
+      "node": "local",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "app/src/prefix.rs",
+        "app/src/prefix_tests.rs"
+      ],
+      "barrier": false,
+      "task": "app/src/prefix.rs has `longest_common_prefix` with an existing test sibling app/src/prefix_tests.rs. Strengthen coverage by ADDING edge-case tests to prefix_tests.rs (do not remove existing ones): empty input iterator, a single string, strings with no common prefix, identical strings, a common prefix that ends mid-multibyte-char must not split a UTF-8 boundary, and an input containing an empty string. If any test reveals a real bug in longest_common_prefix, fix the function minimally and keep the test. Keep the change to only prefix.rs and prefix_tests.rs.",
+      "verify": "cargo test -p warp --lib prefix",
+      "branch": "fleet/seed-prefix-tests"
+    },
+    {
+      "id": "09-rebrand",
+      "title": "Rebrand warp_* / warpui* crates to twarp",
+      "node": "any",
+      "status": "blocked",
+      "depends_on": [],
+      "touches": [
+        "**"
+      ],
+      "barrier": true,
+      "task": "See roadmap/09-rebrand. BARRIER: renames every crate; the fleet must drain and freeze across it. Run solo.",
+      "verify": "cargo build --bin warp-oss"
+    },
+    {
+      "id": "10-file-editor",
+      "title": "File editor with go-to-definition",
+      "node": "any",
+      "status": "blocked",
+      "depends_on": [],
+      "touches": [
+        "app/src/code/**",
+        "crates/editor/**",
+        "crates/lsp/**"
+      ],
+      "barrier": false,
+      "task": "See roadmap/10-file-editor. Expose existing editor+LSP infra as a file-editing workflow.",
+      "verify": "cargo build --bin warp-oss"
+    },
+    {
+      "id": "11-git-blame",
+      "title": "Git blame gutter",
+      "node": "any",
+      "status": "blocked",
+      "depends_on": [
+        "10-file-editor"
+      ],
+      "touches": [
+        "crates/editor/**",
+        "app/src/code/**"
+      ],
+      "barrier": false,
+      "task": "See roadmap/11-git-blame. Depends on 10 (no blame without a file surface); overlaps 10's files so cannot run concurrently with it.",
+      "verify": "cargo build --bin warp-oss"
+    },
+    {
+      "id": "12-project-search-replace",
+      "title": "Project search & replace",
+      "node": "any",
+      "status": "blocked",
+      "depends_on": [],
+      "touches": [
+        "crates/warp_ripgrep/**",
+        "app/src/search/**"
+      ],
+      "barrier": false,
+      "task": "See roadmap/12-project-search-replace. Independent of 10/11 by file footprint.",
+      "verify": "cargo build --bin warp-oss"
+    },
+    {
+      "id": "14-builtin-browser",
+      "title": "Built-in browser (Claude-debuggable)",
+      "node": "any",
+      "status": "blocked",
+      "depends_on": [],
+      "touches": [
+        "crates/browser/**",
+        "app/src/claude_code*/**"
+      ],
+      "barrier": false,
+      "task": "See roadmap/14-builtin-browser.",
+      "verify": "cargo build --bin warp-oss"
+    },
+    {
+      "id": "15-computer-control",
+      "title": "Computer control overlay",
+      "node": "any",
+      "status": "blocked",
+      "depends_on": [],
+      "touches": [
+        "crates/computer_use/**",
+        "app/src/overlay/**"
+      ],
+      "barrier": false,
+      "task": "See roadmap/15-computer-control.",
+      "verify": "cargo build --bin warp-oss"
+    }
+  ]
+}
