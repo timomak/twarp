@@ -22,7 +22,7 @@ green branches.
 | Command | What it does |
 |---|---|
 | `python3 fleet/fleet.py status` | Show the ledger + which items are eligible right now |
-| `python3 fleet/fleet.py run` | Full loop: dispatch → author (parallel) → gate → merge-queue auto-merge |
+| `python3 fleet/fleet.py run` | **Continuous batch loop**: fill up to `batch` items → author in parallel → drive each PR to green + architect-approved → merge-queue → refill → repeat until drained |
 | `python3 fleet/fleet.py worker <id>` | Author one item on its node (debug) |
 | `python3 fleet/fleet.py gate <id>` | Build + targeted tests for a branch on the build node (debug) |
 | `python3 fleet/fleet.py supervise <id>` | Speculative-merge + gate a branch (debug) |
@@ -47,6 +47,25 @@ render runs at a time. Items in `queue.json` flagged `"ux": true` get this gate 
 
 Validated end-to-end: a fresh capture vs golden → `pass`; a deliberately broken (cropped) image →
 `regression`, correctly described.
+
+## Parallel batch loop + per-PR iterate
+
+`fleet.py run` is a continuous loop (`config.batch`, default 5):
+
+1. **Fill a batch** — up to `batch` ready items (deps met, file-disjoint), topped up from the roadmap.
+2. **Author in parallel** — one agent session per item across Claude (local) + Codex (other-mac). N
+   authors run at once; **all building/testing serializes through the single build node** (`_gatelock`)
+   — that's the "one queue gate always running."
+3. **Drive each PR to mergeable** (`iterate`) — a PR is opened immediately, then per item:
+   `gate (build+test) → if red, fix-agent revises → re-gate → when green, staff-architect review →
+   if changes requested, fix → re-gate → when green + approved → ready`. Up to `MAX_ROUNDS` attempts.
+   The PR auto-updates every round until tests are green **and** the staff-architect approves.
+4. **Merge queue** — ready PRs go through the speculative-merge gate and auto-merge, serialized.
+5. **Report + refill** — print the batch result, pull the next batch, repeat **until the queue and
+   roadmap are drained**.
+
+So: N parallel authors, one serialized gate, every PR green-and-architect-approved before it merges.
+Throughput is bounded by the single build node, not by the number of authors.
 
 ## Roadmap bridge (auto-pull)
 
@@ -97,6 +116,8 @@ which node authored the branch. See the `twarp_fleet_other_mac` memory for its s
   Remaining polish: per-item UX *tests* (each item drives twarp to the screen it changed, instead of
   the generic bootstrap shot) and its own golden.
 - **Speculative depth = 1** (serialized merges). No N-deep speculative train yet.
-- Concurrency is capped in `queue.json` (`config.concurrency`). Builds serialize on the build node's
-  cargo lock (shared `CARGO_TARGET_DIR`).
+- **Batch size** is `config.batch` (default 5); authors run in parallel, but builds/tests serialize
+  on the single build node (`_gatelock`), so the gate is the throughput ceiling, not the author count.
+- The per-PR loop retries up to `MAX_ROUNDS` (default 4); an item that can't reach green+approved is
+  marked `exhausted` (its PR stays open for a human). `needs-rebase` items also wait for a human.
 - `fleet/runs/` (prompts + per-item logs) is gitignored.
