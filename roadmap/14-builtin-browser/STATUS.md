@@ -1,7 +1,7 @@
 # 14 — Built-in browser (Claude-debuggable)
 
 **Phase:** spec-in-review
-**Spec PR:** (pending push)
+**Spec PR:** [#96](https://github.com/timomak/twarp/pull/96)
 **Impl PRs:** —
 
 Specs: [PRODUCT.md](PRODUCT.md) · [TECH.md](TECH.md) (pre-spec direction in [PLAN.md](PLAN.md)).
