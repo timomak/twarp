@@ -62,6 +62,8 @@ const INITIAL_WINDOW_WIDTH: f32 = 1280.;
 const INITIAL_WINDOW_HEIGHT: f32 = 800.;
 const DEFAULT_WINDOW_BACKGROUND_BLUR_RADIUS: u8 = 1;
 pub type BrowserWebViewId = usize;
+type BrowserStringSender = futures::channel::oneshot::Sender<std::result::Result<String, String>>;
+type BrowserBytesSender = futures::channel::oneshot::Sender<std::result::Result<Vec<u8>, String>>;
 
 // A mac::window::Window holds a reference to a WindowState.
 // The NSWindow also holds a reference, so that either may be deallocated first.
@@ -79,6 +81,50 @@ impl WindowManager {
             renderer_manager: Rc::new(RefCell::new(RendererManager::new())),
         }
     }
+}
+
+extern "C" fn browser_string_callback(
+    context: *mut c_void,
+    result: *const c_char,
+    error: *const c_char,
+) {
+    let sender = *unsafe { Box::from_raw(context as *mut BrowserStringSender) };
+    let outcome = if error.is_null() {
+        let value = if result.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(result) }
+                .to_string_lossy()
+                .into_owned()
+        };
+        Ok(value)
+    } else {
+        Err(unsafe { CStr::from_ptr(error) }
+            .to_string_lossy()
+            .into_owned())
+    };
+    let _ = sender.send(outcome);
+}
+
+extern "C" fn browser_bytes_callback(
+    context: *mut c_void,
+    bytes: *const c_uchar,
+    bytes_len: usize,
+    error: *const c_char,
+) {
+    let sender = *unsafe { Box::from_raw(context as *mut BrowserBytesSender) };
+    let outcome = if error.is_null() {
+        if bytes.is_null() {
+            Ok(Vec::new())
+        } else {
+            Ok(unsafe { slice::from_raw_parts(bytes, bytes_len) }.to_vec())
+        }
+    } else {
+        Err(unsafe { CStr::from_ptr(error) }
+            .to_string_lossy()
+            .into_owned())
+    };
+    let _ = sender.send(outcome);
 }
 
 impl platform::WindowManager for WindowManager {
@@ -479,6 +525,7 @@ extern "C" {
     fn open_url(urlString: id);
     fn set_titlebar_height(window: id, height: f64);
     fn warp_host_create_webview(host: id) -> usize;
+    fn warp_host_install_automation_script(host: id, webview_id: usize, script: id);
     fn warp_host_set_webview_frame(host: id, webview_id: usize, frame: NSRect);
     fn warp_host_set_webview_hidden(host: id, webview_id: usize, hidden: BOOL);
     fn warp_host_load_url(host: id, webview_id: usize, url: id);
@@ -501,6 +548,31 @@ extern "C" {
         buffer: *mut c_char,
         buffer_len: usize,
     ) -> BOOL;
+    fn warp_host_copy_console_json(
+        host: id,
+        webview_id: usize,
+        buffer: *mut c_char,
+        buffer_len: usize,
+    ) -> BOOL;
+    fn warp_host_copy_network_json(
+        host: id,
+        webview_id: usize,
+        buffer: *mut c_char,
+        buffer_len: usize,
+    ) -> BOOL;
+    fn warp_host_evaluate_javascript(
+        host: id,
+        webview_id: usize,
+        script: id,
+        callback: extern "C" fn(*mut c_void, *const c_char, *const c_char),
+        context: *mut c_void,
+    );
+    fn warp_host_take_snapshot(
+        host: id,
+        webview_id: usize,
+        callback: extern "C" fn(*mut c_void, *const c_uchar, usize, *const c_char),
+        context: *mut c_void,
+    );
     fn warp_host_focus_webview(host: id, webview_id: usize);
     fn warp_host_destroy_webview(host: id, webview_id: usize);
     fn warp_host_prepare_webviews_for_frame(host: id);
@@ -955,6 +1027,19 @@ impl Window {
         }
     }
 
+    pub fn install_browser_webview_automation_script(
+        window_id: WindowId,
+        webview_id: BrowserWebViewId,
+        script: &str,
+    ) {
+        unsafe {
+            if let Some(window) = Self::find_window_with_id(window_id) {
+                let host_view: id = msg_send![window, contentView];
+                warp_host_install_automation_script(host_view, webview_id, make_nsstring(script));
+            }
+        }
+    }
+
     pub fn set_browser_webview_frame(
         window_id: WindowId,
         webview_id: BrowserWebViewId,
@@ -1079,6 +1164,68 @@ impl Window {
         webview_id: BrowserWebViewId,
     ) -> Option<String> {
         Self::copy_browser_webview_string(window_id, webview_id, warp_host_copy_title)
+    }
+
+    pub fn browser_webview_console_entries(
+        window_id: WindowId,
+        webview_id: BrowserWebViewId,
+    ) -> String {
+        Self::copy_browser_webview_string(window_id, webview_id, warp_host_copy_console_json)
+            .unwrap_or_else(|| "[]".to_owned())
+    }
+
+    pub fn browser_webview_network_entries(
+        window_id: WindowId,
+        webview_id: BrowserWebViewId,
+    ) -> String {
+        Self::copy_browser_webview_string(window_id, webview_id, warp_host_copy_network_json)
+            .unwrap_or_else(|| "[]".to_owned())
+    }
+
+    pub async fn browser_webview_evaluate_javascript(
+        window_id: WindowId,
+        webview_id: BrowserWebViewId,
+        script: &str,
+    ) -> std::result::Result<String, String> {
+        let (sender, receiver) = futures::channel::oneshot::channel();
+        unsafe {
+            let Some(window) = Self::find_window_with_id(window_id) else {
+                return Err("browser window not found".to_owned());
+            };
+            let host_view: id = msg_send![window, contentView];
+            warp_host_evaluate_javascript(
+                host_view,
+                webview_id,
+                make_nsstring(script),
+                browser_string_callback,
+                Box::into_raw(Box::new(sender)) as *mut c_void,
+            );
+        }
+        receiver
+            .await
+            .unwrap_or_else(|_| Err("javascript evaluation callback dropped".to_owned()))
+    }
+
+    pub async fn browser_webview_screenshot(
+        window_id: WindowId,
+        webview_id: BrowserWebViewId,
+    ) -> std::result::Result<Vec<u8>, String> {
+        let (sender, receiver) = futures::channel::oneshot::channel();
+        unsafe {
+            let Some(window) = Self::find_window_with_id(window_id) else {
+                return Err("browser window not found".to_owned());
+            };
+            let host_view: id = msg_send![window, contentView];
+            warp_host_take_snapshot(
+                host_view,
+                webview_id,
+                browser_bytes_callback,
+                Box::into_raw(Box::new(sender)) as *mut c_void,
+            );
+        }
+        receiver
+            .await
+            .unwrap_or_else(|_| Err("snapshot callback dropped".to_owned()))
     }
 
     fn copy_browser_webview_string(
