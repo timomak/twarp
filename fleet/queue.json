@@ -4,7 +4,8 @@
     "repo": "timomak/twarp",
     "base": "master",
     "build_node": "other-mac",
-    "concurrency": 2
+    "concurrency": 2,
+    "batch": 5
   },
   "items": [
     {
@@ -36,6 +37,37 @@
       "task": "app/src/prefix.rs has `longest_common_prefix` with an existing test sibling app/src/prefix_tests.rs. Strengthen coverage by ADDING edge-case tests to prefix_tests.rs (do not remove existing ones): empty input iterator, a single string, strings with no common prefix, identical strings, a common prefix that ends mid-multibyte-char must not split a UTF-8 boundary, and an input containing an empty string. If any test reveals a real bug in longest_common_prefix, fix the function minimally and keep the test. Keep the change to only prefix.rs and prefix_tests.rs.",
       "verify": "cargo test -p warp --lib prefix",
       "branch": "fleet/seed-prefix-tests"
+    },
+    {
+      "id": "seed-timefmt-tests",
+      "title": "Edge-case tests for util/time_format duration formatting",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "app/src/util/time_format.rs",
+        "app/src/util/time_format_tests.rs"
+      ],
+      "barrier": false,
+      "ux": true,
+      "task": "app/src/util/time_format.rs has pure duration-formatting functions (human_readable_precise_duration, human_readable_approx_duration) with only a few tests in app/src/util/time_format_tests.rs. ADD edge-case unit tests (do not remove existing ones): zero duration, sub-second, and the boundaries around 1 minute / 1 hour / 1 day, plus the sentence_case=true vs false variants of human_readable_approx_duration. Follow the existing tests' style for constructing Durations. If a test reveals a real bug, fix it minimally and keep the test. Keep changes to ONLY time_format.rs and time_format_tests.rs.",
+      "verify": "cargo test -p warp --lib time_format",
+      "branch": "fleet/seed-timefmt-tests"
+    },
+    {
+      "id": "seed-openable-tests",
+      "title": "Edge-case tests for util/openable_file_type extension checks",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "app/src/util/openable_file_type.rs"
+      ],
+      "barrier": false,
+      "ux": false,
+      "task": "app/src/util/openable_file_type.rs has pure extension-based predicates: is_supported_code_file, is_supported_image_file, is_runnable_shell_script. It already has a #[cfg(test)] module. ADD edge-case unit tests (do not remove existing): no/unknown extension, uppercase extension, dotfile, and one representative supported case per predicate. Follow the existing tests style. If a test reveals a real bug, fix it minimally and keep the test. Keep changes to ONLY app/src/util/openable_file_type.rs.",
+      "verify": "cargo test -p warp --lib openable_file_type",
+      "branch": "fleet/seed-openable-tests"
     },
     {
       "id": "09-rebrand",

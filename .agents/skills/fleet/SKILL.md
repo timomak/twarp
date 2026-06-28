@@ -39,10 +39,12 @@ Always run from the repo root: `/Users/thirdfacedev/Development/twarp`.
      cd /Users/thirdfacedev/Development/twarp
      nohup python3 fleet/fleet.py run > fleet/runs/run.log 2>&1 &
      ```
-     Then report what was launched (the eligible items) and that it will author in parallel on both
-     machines, gate, UX-gate (for `ux:true` items), and auto-merge whatever passes. Set up a
-     background watcher on `fleet/runs/run.log` for the `=== run complete ===` marker so you can
-     report the outcome when it finishes.
+     Then report what was launched, and that it runs as a **continuous batch loop**: authors up to
+     `config.batch` items in parallel, drives each PR to green + staff-architect-approved (auto-fixing
+     until it passes), auto-merges through the speculative gate, then refills the next batch and
+     repeats **until the queue + roadmap are drained**. Set up a background watcher on
+     `fleet/runs/run.log` for the `=== run complete ===` marker (and the per-batch
+     `=== batch N done ===` lines) so you can report progress/outcome.
    - **No process and `eligible now` is empty** → everything is merged or blocked. Report that
      there's nothing to do and that work is added by dropping items into `fleet/queue.json`
      (`id`, `node`, `touches`, `depends_on`, `task`, `verify`, optional `"ux": true`). **Stop.**

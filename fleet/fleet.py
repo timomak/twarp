@@ -20,6 +20,8 @@ from pathlib import Path
 
 _qlock = threading.Lock()   # serialize all access to queue.json across worker threads
 _screenlock = threading.Lock()  # the build node has ONE display — serialize real-display captures
+_gatelock = threading.Lock()    # the build node has ONE cargo cache — serialize all builds/tests
+MAX_ROUNDS = 4   # per-PR fix-until-green+approved attempts before giving up
 
 LOCAL_REPO = Path("/Users/thirdfacedev/Development/twarp")
 QUEUE = LOCAL_REPO / "fleet" / "queue.json"
@@ -30,7 +32,7 @@ REMOTE_WT = "$HOME/Development/twarp-fleet-wt"
 REMOTE_ENV = "source ~/.config/twarp-fleet/env; set -a; source ~/.codex/.env-foundry; set +a"
 LOG = LOCAL_REPO / "fleet" / "runs"
 ROADMAP = LOCAL_REPO / "roadmap" / "ROADMAP.md"
-INFLIGHT = {"leased", "building", "authored", "gating", "gated", "merging"}
+INFLIGHT = {"leased", "building", "authored", "iterating", "gating", "gated", "ready", "merging"}
 
 
 # ---------- io helpers ----------
@@ -148,11 +150,11 @@ def touches_overlap(a, b):
                 return True
     return False
 
-def eligible(q):
+def eligible(q, cap=None):
     items = q["items"]
     merged = {i["id"] for i in items if i["status"] == "merged"}
     inflight = [i for i in items if i["status"] in INFLIGHT]
-    cap = q["config"].get("concurrency", 2)
+    cap = cap if cap is not None else q["config"].get("concurrency", 2)
     if any(i.get("barrier") for i in inflight):
         return []  # a barrier is running -> nothing else
     claimed_touches = [i["touches"] for i in inflight]
@@ -197,7 +199,13 @@ def write_prompt(it):
     p.write_text(body)
     return p
 
-def worker_local(it):
+def write_text_prompt(iid, text):
+    LOG.mkdir(parents=True, exist_ok=True)
+    p = LOG / f"{iid}.prompt.txt"
+    p.write_text(text)
+    return p
+
+def worker_local(it, ref="origin/master", prompt_text=None):
     iid = it["id"]
     wt = LOCAL_WT / iid
     sh(["git", "-C", str(LOCAL_REPO), "fetch", "-q", "origin"], check=True)
@@ -205,8 +213,8 @@ def worker_local(it):
     sh(f"rm -rf {wt}")
     sh(["git", "-C", str(LOCAL_REPO), "worktree", "prune"])
     sh(["git", "-C", str(LOCAL_REPO), "branch", "-D", f"fleet/{iid}"])
-    sh(["git", "-C", str(LOCAL_REPO), "worktree", "add", "-B", f"fleet/{iid}", str(wt), "origin/master"], check=True)
-    prompt = write_prompt(it)
+    sh(["git", "-C", str(LOCAL_REPO), "worktree", "add", "-B", f"fleet/{iid}", str(wt), ref], check=True)
+    prompt = write_prompt(it) if prompt_text is None else write_text_prompt(iid, prompt_text)
     say(f"  [{iid}] local Claude worker authoring…")
     r = sh(["claude", "-p", prompt.read_text(), "--dangerously-skip-permissions"],
            cwd=str(wt), timeout=1200)
@@ -223,12 +231,12 @@ def _commit_push_local(it, wt):
     sh(["git", "-C", str(wt), "push", "-q", "-f", "-u", "origin", f"fleet/{iid}"], check=True)
     return True, diff
 
-def worker_remote(it):
+def worker_remote(it, ref="origin/master", prompt_text=None):
     iid = it["id"]
-    prompt = write_prompt(it)
+    prompt = write_prompt(it) if prompt_text is None else write_text_prompt(iid, prompt_text)
     sh(["scp", "-q", str(prompt), f"{REMOTE}:/tmp/fleet_{iid}.prompt"], check=True)
     wt = f"{REMOTE_WT}/{iid}"
-    ssh(remote_fresh_worktree(wt, ref="origin/master", branch=f"fleet/{iid}"), timeout=120, check=True)
+    ssh(remote_fresh_worktree(wt, ref=ref, branch=f"fleet/{iid}"), timeout=120, check=True)
     say(f"  [{iid}] remote Codex worker authoring…")
     run = (f"{REMOTE_ENV}\n"
            f"cd {wt}\n"
@@ -338,7 +346,8 @@ def gate(iid, verify, ref=None):
            f"export CARGO_TARGET_DIR={REMOTE_REPO}/target\ncd {wt}\n"
            f"({verify}) > /tmp/gate_{iid}.log 2>&1\necho GATE_EXIT_$?\ntail -25 /tmp/gate_{iid}.log\n")
     say(f"  [{iid}] gating ({verify}) on {REMOTE}…")
-    r = ssh(cmd, timeout=2400)
+    with _gatelock:                  # one build node, one cargo cache — serialize
+        r = ssh(cmd, timeout=2400)
     ok = "GATE_EXIT_0" in r.stdout
     (LOG / f"{iid}.gate.log").write_text(r.stdout)
     return ok, r.stdout.strip().splitlines()[-8:]
@@ -353,7 +362,8 @@ def speculative_gate(iid, verify):
            f"if ! git -c user.email=fleet@local -c user.name=fleet merge --no-edit origin/fleet/{iid} > /tmp/spec_{iid}.log 2>&1; then\n"
            f"  echo MERGE_CONFLICT; tail -15 /tmp/spec_{iid}.log; exit 0\nfi\n"
            f"({verify}) >> /tmp/spec_{iid}.log 2>&1\necho SPEC_EXIT_$?\ntail -20 /tmp/spec_{iid}.log\n")
-    r = ssh(cmd, timeout=2400)
+    with _gatelock:                  # serialize on the build node
+        r = ssh(cmd, timeout=2400)
     (LOG / f"{iid}.spec.log").write_text(r.stdout)
     if "MERGE_CONFLICT" in r.stdout:
         return "conflict", r.stdout.strip().splitlines()[-6:]
@@ -361,15 +371,86 @@ def speculative_gate(iid, verify):
 
 def auto_merge(iid, title):
     repo = load()["config"]["repo"]
-    base = load()["config"]["base"]
-    body = (f"Auto-merged by the twarp fleet merge-queue.\n\nFunctional gate + speculative-merge "
-            f"gate both green on the build node before merge.\n\n"
-            f"🤖 Generated with [Claude Code](https://claude.com/claude-code)")
-    sh(["gh", "pr", "create", "--repo", repo, "--base", base, "--head", f"timomak:fleet/{iid}",
-        "--title", title, "--body", body], cwd=str(LOCAL_REPO))
+    make_pr(iid, title)   # idempotent — PR already opened during iterate()
     r = sh(["gh", "pr", "merge", f"fleet/{iid}", "--repo", repo, "--squash", "--delete-branch"],
            cwd=str(LOCAL_REPO))
     return r.returncode == 0, (r.stdout + r.stderr).strip()
+
+
+# ---------- per-PR loop: fix-until-green + staff-architect review ----------
+def make_pr(iid, title):
+    """Open a PR for fleet/<id> if one isn't already open (idempotent)."""
+    repo = load()["config"]["repo"]; base = load()["config"]["base"]
+    ex = sh(["gh", "pr", "list", "--repo", repo, "--head", f"fleet/{iid}", "--json", "number",
+             "-q", ".[0].number"], cwd=str(LOCAL_REPO))
+    if ex.stdout.strip():
+        return ex.stdout.strip()
+    body = ("Opened by the twarp fleet. Auto-iterated until the functional gate + staff-architect "
+            "review pass, then merged via the speculative merge-queue.\n\n"
+            "🤖 Generated with [Claude Code](https://claude.com/claude-code)")
+    sh(["gh", "pr", "create", "--repo", repo, "--base", base, "--head", f"timomak:fleet/{iid}",
+        "--title", title, "--body", body], cwd=str(LOCAL_REPO))
+    return "created"
+
+def fix_agent(it, errors):
+    """Re-run the item's node agent ON ITS EXISTING branch with the failure as context."""
+    iid = it["id"]
+    fix_prompt = (
+        f"You are fixing your own branch fleet/{iid} (task: {it['title']}). Read AGENTS.md. The fleet "
+        f"gate FAILED — fix the ROOT CAUSE, stay in scope, do not revert prior good work.\n\n"
+        f"Original task: {it['task']}\n\nFAILURE OUTPUT:\n{errors}\n\n"
+        f"Output one final line: WORKER_DONE {iid}")
+    ref = f"origin/fleet/{iid}"
+    return worker_remote(it, ref=ref, prompt_text=fix_prompt) if it["node"] == REMOTE \
+        else worker_local(it, ref=ref, prompt_text=fix_prompt)
+
+def architect_review(iid):
+    """Staff/principal-altitude pre-merge review of the branch diff. Returns (verdict, note)."""
+    repo = load()["config"]["repo"]
+    sh(["git", "-C", str(LOCAL_REPO), "fetch", "-q", "origin"])
+    diff = sh(["git", "-C", str(LOCAL_REPO), "diff", f"origin/master...origin/fleet/{iid}"]).stdout
+    if len(diff) > 60000:
+        diff = diff[:60000] + "\n...[diff truncated]..."
+    prompt = (
+        "You are a staff/principal engineer doing a PRE-MERGE review of a twarp change at ARCHITECTURE "
+        "altitude — correctness, blast radius, fork discipline, reversibility, long-term "
+        "maintainability — NOT style nitpicks. Approve unless there's a real blocking concern.\n\n"
+        f"Diff (origin/master...fleet/{iid}):\n\n{diff}\n\n"
+        "Reply with EXACTLY one line:\n"
+        "  ARCH approve — <one line: why it's safe to merge>\n"
+        "  ARCH changes — <the specific blocking issue(s) to fix>")
+    r = sh(["claude", "-p", prompt, "--dangerously-skip-permissions"], timeout=300)
+    out = (r.stdout or "").strip()
+    line = next((l for l in out.splitlines() if l.strip().upper().startswith("ARCH")),
+                out.splitlines()[-1] if out else "")
+    return ("approve" if "approve" in line.lower() else "changes"), line
+
+def iterate(it):
+    """Drive ONE PR to green + architect-approved: gate → fix → re-gate → architect → fix → … .
+    Gates serialize on the build node; authoring/fixing/review run in parallel across items."""
+    iid = it["id"]
+    set_status(iid, "iterating")
+    make_pr(iid, it["title"])
+    for rnd in range(1, MAX_ROUNDS + 1):
+        ok, tail = gate(iid, it["verify"])
+        if not ok:
+            say(f"  [{iid}] gate FAIL (round {rnd}) → fix-agent")
+            fixed, _ = fix_agent(it, "\n".join(tail))
+            if not fixed:
+                say(f"  [{iid}] fix produced no change — giving up"); set_status(iid, "failed"); return False
+            continue
+        if it.get("ux"):
+            uv, _ = uxgate(it.get("ux_test", UXTEST))
+            if uv == "regression":
+                say(f"  [{iid}] UX regression (round {rnd}) → fix-agent")
+                fix_agent(it, "The UX visual gate found a regression vs the golden screenshot."); continue
+        verdict, note = architect_review(iid)
+        say(f"  [{iid}] architect (round {rnd}): {note}")
+        if verdict != "approve":
+            fix_agent(it, f"Staff-architect review requested changes: {note}"); continue
+        set_status(iid, "ready"); return True
+    say(f"  [{iid}] exhausted {MAX_ROUNDS} rounds without green+approved"); set_status(iid, "exhausted")
+    return False
 
 
 # ---------- orchestration ----------
@@ -384,61 +465,58 @@ def cmd_dispatch(args):
         set_status(it["id"], "leased")
     return picked
 
+def merge_one(it):
+    """Speculative-merge gate + auto-merge a single ready PR. Serialized by the caller."""
+    iid = it["id"]
+    set_status(iid, "merging")
+    verdict, tail = speculative_gate(iid, it["verify"])
+    if verdict == "conflict":
+        say(f"  [{iid}] speculative merge CONFLICT — needs rebase"); set_status(iid, "needs-rebase"); return False
+    if verdict != "ok":
+        say(f"  [{iid}] speculative gate FAILED (semantic conflict) — ejected"); set_status(iid, "failed"); return False
+    ok, out = auto_merge(iid, it["title"])
+    say(f"  [{iid}] auto-merge {'OK' if ok else 'FAILED'}: {out.splitlines()[-1] if out else ''}")
+    set_status(iid, "merged" if ok else "ready"); return ok
+
 def cmd_run(args):
+    """Continuous batch loop: fill up to `batch` ready items → author in parallel → drive each PR to
+    green + architect-approved (parallel authoring/fixing, serialized gates) → merge-queue → report →
+    refill → repeat until the queue (and roadmap) are drained."""
     LOG.mkdir(parents=True, exist_ok=True)
-    say(f"roadmap: {roadmap_sync()}")   # auto-pull next impl sub-phase before dispatching
-    picked = cmd_dispatch(args)
-    if not picked:
-        return
-    say(f"=== authoring {len(picked)} item(s) in parallel ===")
-    with cf.ThreadPoolExecutor(max_workers=len(picked)) as ex:
-        results = list(ex.map(run_worker, picked))
-    authored = [iid for iid, ok in results if ok]
-    say(f"=== authored: {authored} ===")
+    batch_size = load()["config"].get("batch", 5)
+    batch_no = 0
+    while True:
+        # reflect just-merged changes locally (e.g. STATUS.md checkbox ticks) — best-effort
+        sh(["git", "-C", str(LOCAL_REPO), "fetch", "-q", "origin"])
+        sh(["git", "-C", str(LOCAL_REPO), "merge", "-q", "--ff-only", "origin/master"])
+        say(f"roadmap: {roadmap_sync()}")            # top up from the roadmap each batch
+        picked = eligible(load(), cap=batch_size)    # up to `batch` file-disjoint ready items
+        if not picked:
+            say("=== queue drained — nothing ready ==="); break
+        batch_no += 1
+        say(f"=== batch {batch_no}: authoring {len(picked)} in parallel → {[i['id'] for i in picked]} ===")
+        for it in picked:
+            set_status(it["id"], "leased")
 
-    # gate each authored branch (build node serializes via cargo lock)
-    green = []
-    for iid in authored:
-        it = item(load(), iid)
-        set_status(iid, "gating")
-        ok, tail = gate(iid, it["verify"])
-        say(f"  [{iid}] gate {'PASS' if ok else 'FAIL'}")
-        if not ok:
-            for ln in tail:
-                say(f"      | {ln}")
-            set_status(iid, "failed")
-            continue
-        # optional visual gate (items flagged ux:true) — blocks merge on a regression
-        if it.get("ux"):
-            verdict, _ = uxgate(it.get("ux_test", UXTEST))
-            say(f"  [{iid}] UX gate → {verdict}")
-            if verdict == "regression":
-                set_status(iid, "failed")
-                continue
-        set_status(iid, "gated")
-        green.append(iid)
+        # 1) author in parallel (N sessions across Claude + Codex)
+        with cf.ThreadPoolExecutor(max_workers=len(picked)) as ex:
+            authored = list(ex.map(run_worker, picked))
+        live = [item(load(), iid) for iid, ok in authored if ok]
 
-    # merge queue: serialized speculative-merge + auto-merge
-    say(f"=== merge queue: {green} ===")
-    for iid in green:
-        it = item(load(), iid)
-        set_status(iid, "merging")
-        verdict, tail = speculative_gate(iid, it["verify"])
-        if verdict == "conflict":
-            say(f"  [{iid}] speculative merge CONFLICT — ejected for rebase")
-            set_status(iid, "needs-rebase")
-            continue
-        if verdict != "ok":
-            say(f"  [{iid}] speculative gate FAILED (semantic conflict) — ejected")
-            for ln in tail:
-                say(f"      | {ln}")
-            set_status(iid, "failed")
-            continue
-        ok, out = auto_merge(iid, it["title"])
-        say(f"  [{iid}] auto-merge {'OK' if ok else 'FAILED'}: {out.splitlines()[-1] if out else ''}")
-        set_status(iid, "merged" if ok else "gated")
+        # 2) drive each PR to green + architect-approved (gates serialize via _gatelock)
+        if live:
+            with cf.ThreadPoolExecutor(max_workers=len(live)) as ex:
+                flags = list(ex.map(iterate, live))
+            ready = [it for it, ok in zip(live, flags) if ok]
+        else:
+            ready = []
+
+        # 3) merge queue: serialized speculative-merge + auto-merge
+        say(f"=== batch {batch_no} merge queue: {[i['id'] for i in ready]} ===")
+        merged = [it["id"] for it in ready if merge_one(it)]
+        say(f"=== batch {batch_no} done — merged {merged} ===")
+        cmd_status(args)
     say("=== run complete ===")
-    cmd_status(args)
 
 
 def main():
