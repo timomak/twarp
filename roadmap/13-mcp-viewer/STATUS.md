@@ -1,8 +1,8 @@
 # 13 — MCP viewer in Claude pane
 
-**Phase:** impl-in-review
+**Phase:** merged
 **Spec PR:** [#91](https://github.com/timomak/twarp/pull/91)
-**Impl PRs:** 13a [#95](https://github.com/timomak/twarp/pull/95)
+**Impl PRs:** 13a [#95](https://github.com/timomak/twarp/pull/95) (merged)
 
 ## Scope
 

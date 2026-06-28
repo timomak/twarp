@@ -1,8 +1,10 @@
 # 14 — Built-in browser (Claude-debuggable)
 
-**Phase:** not-started
-**Spec PR:** —
+**Phase:** spec-in-review
+**Spec PR:** (pending push)
 **Impl PRs:** —
+
+Specs: [PRODUCT.md](PRODUCT.md) · [TECH.md](TECH.md) (pre-spec direction in [PLAN.md](PLAN.md)).
 
 ## Scope
 
