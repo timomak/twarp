@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use browser::BrowserEngine;
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
 use url::Url;
 use warpui::elements::{
@@ -70,7 +71,7 @@ struct NativeBrowserState {
 
 pub struct BrowserView {
     window_id: WindowId,
-    webview_id: Option<BrowserWebViewId>,
+    engine: Option<BrowserEngine>,
     omnibar_editor: warpui::ViewHandle<EditorView>,
     pane_configuration: warpui::ModelHandle<PaneConfiguration>,
     focus_handle: Option<PaneFocusHandle>,
@@ -103,11 +104,11 @@ impl BrowserView {
 
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new(BROWSER_TITLE));
         let window_id = ctx.window_id();
-        let webview_id = Self::create_webview(window_id);
+        let engine = BrowserEngine::new(window_id);
 
         let mut view = Self {
             window_id,
-            webview_id,
+            engine,
             omnibar_editor,
             pane_configuration,
             focus_handle: None,
@@ -146,35 +147,19 @@ impl BrowserView {
     }
 
     pub fn focus_webview(&self) {
-        #[cfg(target_os = "macos")]
-        if let Some(webview_id) = self.webview_id {
-            MacWindow::focus_browser_webview(self.window_id, webview_id);
+        if let Some(engine) = &self.engine {
+            engine.focus();
         }
     }
 
     pub fn destroy_webview(&mut self) {
-        #[cfg(target_os = "macos")]
-        if let Some(webview_id) = self.webview_id.take() {
-            MacWindow::destroy_browser_webview(self.window_id, webview_id);
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            self.webview_id = None;
+        if let Some(engine) = self.engine.take() {
+            engine.destroy();
         }
     }
 
-    fn create_webview(window_id: WindowId) -> Option<BrowserWebViewId> {
-        #[cfg(target_os = "macos")]
-        {
-            MacWindow::create_browser_webview(window_id)
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = window_id;
-            None
-        }
+    pub fn browser_engine(&self) -> Option<&BrowserEngine> {
+        self.engine.as_ref()
     }
 
     fn handle_omnibar_editor_event(
@@ -203,9 +188,8 @@ impl BrowserView {
     }
 
     fn navigate_to_normalized_url(&mut self, url: String, ctx: &mut ViewContext<Self>) {
-        #[cfg(target_os = "macos")]
-        if let Some(webview_id) = self.webview_id {
-            MacWindow::load_browser_webview_url(self.window_id, webview_id, &url);
+        if let Some(engine) = &self.engine {
+            engine.load_url(&url);
         }
 
         self.current_url = Some(url.clone());
@@ -216,30 +200,27 @@ impl BrowserView {
     }
 
     fn go_back(&mut self, ctx: &mut ViewContext<Self>) {
-        #[cfg(target_os = "macos")]
-        if let Some(webview_id) = self.webview_id {
-            MacWindow::browser_webview_go_back(self.window_id, webview_id);
+        if let Some(engine) = &self.engine {
+            engine.go_back();
         }
         self.is_loading = true;
         ctx.notify();
     }
 
     fn go_forward(&mut self, ctx: &mut ViewContext<Self>) {
-        #[cfg(target_os = "macos")]
-        if let Some(webview_id) = self.webview_id {
-            MacWindow::browser_webview_go_forward(self.window_id, webview_id);
+        if let Some(engine) = &self.engine {
+            engine.go_forward();
         }
         self.is_loading = true;
         ctx.notify();
     }
 
     fn reload_or_stop(&mut self, ctx: &mut ViewContext<Self>) {
-        #[cfg(target_os = "macos")]
-        if let Some(webview_id) = self.webview_id {
+        if let Some(engine) = &self.engine {
             if self.is_loading {
-                MacWindow::browser_webview_stop_loading(self.window_id, webview_id);
+                engine.stop_loading();
             } else {
-                MacWindow::browser_webview_reload(self.window_id, webview_id);
+                engine.reload();
             }
         }
         self.is_loading = !self.is_loading;
@@ -252,7 +233,7 @@ impl BrowserView {
                 Timer::after(STATE_POLL_INTERVAL).await;
             },
             |me, _, ctx| {
-                if me.webview_id.is_none() {
+                if me.engine.is_none() {
                     return;
                 }
 
@@ -291,17 +272,13 @@ impl BrowserView {
     }
 
     fn read_native_state(&self) -> NativeBrowserState {
-        #[cfg(target_os = "macos")]
-        if let Some(webview_id) = self.webview_id {
+        if let Some(engine) = &self.engine {
             return NativeBrowserState {
-                url: MacWindow::browser_webview_url(self.window_id, webview_id),
-                title: MacWindow::browser_webview_title(self.window_id, webview_id),
-                can_go_back: MacWindow::browser_webview_can_go_back(self.window_id, webview_id),
-                can_go_forward: MacWindow::browser_webview_can_go_forward(
-                    self.window_id,
-                    webview_id,
-                ),
-                is_loading: MacWindow::browser_webview_is_loading(self.window_id, webview_id),
+                url: engine.current_url(),
+                title: engine.title(),
+                can_go_back: engine.can_go_back(),
+                can_go_forward: engine.can_go_forward(),
+                is_loading: engine.is_loading(),
             };
         }
 
@@ -463,11 +440,8 @@ impl View for BrowserView {
             .with_child(self.render_toolbar(app))
             .with_child(self.render_loading_indicator(app))
             .with_child(
-                Shrinkable::new(
-                    1.,
-                    NativeBrowserElement::new(self.window_id, self.webview_id).finish(),
-                )
-                .finish(),
+                Shrinkable::new(1., NativeBrowserElement::new(self.engine.as_ref()).finish())
+                    .finish(),
             )
             .finish()
     }
@@ -485,7 +459,7 @@ impl View for BrowserView {
         let url = self.current_url.clone();
         self.destroy_webview();
         self.window_id = target_window_id;
-        self.webview_id = Self::create_webview(target_window_id);
+        self.engine = BrowserEngine::new(target_window_id);
         if let Some(url) = url {
             self.navigate_to_normalized_url(url, ctx);
         }
@@ -553,17 +527,15 @@ impl BackingView for BrowserView {
 }
 
 struct NativeBrowserElement {
-    window_id: WindowId,
-    webview_id: Option<BrowserWebViewId>,
+    webview: Option<(WindowId, BrowserWebViewId)>,
     size: Option<Vector2F>,
     origin: Option<warpui::elements::Point>,
 }
 
 impl NativeBrowserElement {
-    fn new(window_id: WindowId, webview_id: Option<BrowserWebViewId>) -> Self {
+    fn new(engine: Option<&BrowserEngine>) -> Self {
         Self {
-            window_id,
-            webview_id,
+            webview: engine.map(|engine| (engine.window_id(), engine.webview_id())),
             size: None,
             origin: None,
         }
@@ -604,14 +576,14 @@ impl Element for NativeBrowserElement {
         ));
 
         #[cfg(target_os = "macos")]
-        if let (Some(webview_id), Some(size)) = (self.webview_id, self.size) {
+        if let (Some((window_id, webview_id)), Some(size)) = (self.webview, self.size) {
             if size.x() > 0.0 && size.y() > 0.0 {
                 MacWindow::set_browser_webview_frame(
-                    self.window_id,
+                    window_id,
                     webview_id,
                     RectF::new(origin, size),
                 );
-                MacWindow::set_browser_webview_hidden(self.window_id, webview_id, false);
+                MacWindow::set_browser_webview_hidden(window_id, webview_id, false);
             }
         }
     }

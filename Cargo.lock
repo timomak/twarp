@@ -2232,6 +2232,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "browser"
+version = "0.0.0"
+dependencies = [
+ "futures",
+ "instant",
+ "pathfinder_geometry",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "url",
+ "warpui",
+]
+
+[[package]]
 name = "bstr"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13239,6 +13253,7 @@ dependencies = [
  "block",
  "blocking",
  "bounded-vec-deque",
+ "browser",
  "byte-unit",
  "bytecount",
  "bytemuck",

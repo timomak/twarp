@@ -19,28 +19,128 @@ id warp_get_accessibility_contents(WarpHostView *);
 void warp_marked_text_updated(WarpHostView *, NSString *, NSRange);
 void warp_marked_text_cleared(WarpHostView *);
 
-@interface WarpNativeWebViewEntry : NSObject
+typedef void (*WarpBrowserStringCallback)(void *, const char *, const char *);
+typedef void (*WarpBrowserBytesCallback)(void *, const uint8_t *, uintptr_t, const char *);
+
+@class WarpNativeWebViewEntry;
+
+@interface WarpAutomationScriptMessageHandler : NSObject <WKScriptMessageHandler>
+@property(nonatomic, assign) WarpNativeWebViewEntry *entry;
+- (instancetype)initWithEntry:(WarpNativeWebViewEntry *)entry;
+@end
+
+@interface WarpNativeWebViewEntry : NSObject <WKNavigationDelegate>
 @property(nonatomic, retain) NSView *containerView;
 @property(nonatomic, retain) WKWebView *webView;
+@property(nonatomic, retain) WKUserContentController *userContentController;
+@property(nonatomic, retain) WarpAutomationScriptMessageHandler *messageHandler;
+@property(nonatomic, retain) NSMutableArray<NSString *> *consoleMessages;
+@property(nonatomic, retain) NSMutableArray<NSString *> *networkMessages;
 @property(nonatomic) BOOL hiddenRequested;
-- (instancetype)initWithContainerView:(NSView *)containerView webView:(WKWebView *)webView;
+- (instancetype)initWithContainerView:(NSView *)containerView
+                              webView:(WKWebView *)webView
+                userContentController:(WKUserContentController *)userContentController;
+- (void)appendAutomationMessage:(id)message;
+- (void)clearAutomationMessages;
+- (NSString *)consoleMessagesJSON;
+- (NSString *)networkMessagesJSON;
 @end
+
+static const NSUInteger WarpAutomationMessageLimit = 200;
 
 @implementation WarpNativeWebViewEntry
 
-- (instancetype)initWithContainerView:(NSView *)containerView webView:(WKWebView *)webView {
+- (instancetype)initWithContainerView:(NSView *)containerView
+                              webView:(WKWebView *)webView
+                userContentController:(WKUserContentController *)userContentController {
     self = [super init];
     if (self) {
         _containerView = [containerView retain];
         _webView = [webView retain];
+        _userContentController = [userContentController retain];
+        _consoleMessages = [[NSMutableArray alloc] init];
+        _networkMessages = [[NSMutableArray alloc] init];
         _hiddenRequested = YES;
     }
     return self;
 }
 
 - (void)dealloc {
+    [_userContentController removeScriptMessageHandlerForName:@"twarpAutomation"];
+    _webView.navigationDelegate = nil;
+    [_messageHandler release];
+    [_networkMessages release];
+    [_consoleMessages release];
+    [_userContentController release];
     [_webView release];
     [_containerView release];
+    [super dealloc];
+}
+
+- (void)appendJSONString:(NSString *)jsonString toMessages:(NSMutableArray<NSString *> *)messages {
+    if (!jsonString) return;
+    [messages addObject:jsonString];
+    while (messages.count > WarpAutomationMessageLimit) {
+        [messages removeObjectAtIndex:0];
+    }
+}
+
+- (void)appendAutomationMessage:(id)message {
+    if (!message || ![NSJSONSerialization isValidJSONObject:message]) return;
+
+    NSError *error = nil;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:message options:0 error:&error];
+    if (!jsonData || error) return;
+
+    NSString *jsonString = [[[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding] autorelease];
+    NSString *type = [message isKindOfClass:[NSDictionary class]] ? [(NSDictionary *)message objectForKey:@"type"] : nil;
+    if ([type isEqualToString:@"network"]) {
+        [self appendJSONString:jsonString toMessages:_networkMessages];
+    } else if ([type isEqualToString:@"console"]) {
+        [self appendJSONString:jsonString toMessages:_consoleMessages];
+    }
+}
+
+- (void)clearAutomationMessages {
+    [_consoleMessages removeAllObjects];
+    [_networkMessages removeAllObjects];
+}
+
+- (NSString *)jsonArrayForMessages:(NSArray<NSString *> *)messages {
+    if (messages.count == 0) return @"[]";
+    return [NSString stringWithFormat:@"[%@]", [messages componentsJoinedByString:@","]];
+}
+
+- (NSString *)consoleMessagesJSON {
+    return [self jsonArrayForMessages:_consoleMessages];
+}
+
+- (NSString *)networkMessagesJSON {
+    return [self jsonArrayForMessages:_networkMessages];
+}
+
+- (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation {
+    [self clearAutomationMessages];
+}
+
+@end
+
+@implementation WarpAutomationScriptMessageHandler
+
+- (instancetype)initWithEntry:(WarpNativeWebViewEntry *)entry {
+    self = [super init];
+    if (self) {
+        _entry = entry;
+    }
+    return self;
+}
+
+- (void)userContentController:(WKUserContentController *)userContentController
+      didReceiveScriptMessage:(WKScriptMessage *)message {
+    [_entry appendAutomationMessage:message.body];
+}
+
+- (void)dealloc {
     [super dealloc];
 }
 
@@ -214,6 +314,9 @@ void warp_marked_text_cleared(WarpHostView *);
 
 - (NSUInteger)createNativeWebView {
     WKWebViewConfiguration *configuration = [[[WKWebViewConfiguration alloc] init] autorelease];
+    WKUserContentController *userContentController =
+        [[[WKUserContentController alloc] init] autorelease];
+    configuration.userContentController = userContentController;
     WKWebView *webView = [[[WKWebView alloc] initWithFrame:NSZeroRect
                                              configuration:configuration] autorelease];
     webView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
@@ -225,15 +328,32 @@ void warp_marked_text_cleared(WarpHostView *);
     containerView.layer.opaque = NO;
     [containerView addSubview:webView];
 
-    WarpNativeWebViewEntry *entry =
-        [[[WarpNativeWebViewEntry alloc] initWithContainerView:containerView webView:webView]
-            autorelease];
+    WarpNativeWebViewEntry *entry = [[[WarpNativeWebViewEntry alloc]
+        initWithContainerView:containerView
+                      webView:webView
+        userContentController:userContentController] autorelease];
+    WarpAutomationScriptMessageHandler *messageHandler =
+        [[[WarpAutomationScriptMessageHandler alloc] initWithEntry:entry] autorelease];
+    entry.messageHandler = messageHandler;
+    [userContentController addScriptMessageHandler:messageHandler name:@"twarpAutomation"];
+    webView.navigationDelegate = entry;
 
     NSUInteger webViewId = nextNativeWebViewId++;
     [nativeWebViews setObject:entry forKey:@(webViewId)];
     [self addSubview:containerView positioned:NSWindowAbove relativeTo:nil];
     [self applyHiddenStateToNativeWebViewEntry:entry];
     return webViewId;
+}
+
+- (void)installNativeWebViewAutomationScript:(NSUInteger)webViewId source:(NSString *)source {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry || !source) return;
+
+    WKUserScript *userScript =
+        [[[WKUserScript alloc] initWithSource:source
+                                injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+                             forMainFrameOnly:NO] autorelease];
+    [entry.userContentController addUserScript:userScript];
 }
 
 - (void)setNativeWebViewFrame:(NSUInteger)webViewId frame:(NSRect)frame {
@@ -326,6 +446,85 @@ void warp_marked_text_cleared(WarpHostView *);
     if (!entry) return NO;
 
     return [self copyNativeWebViewString:entry.webView.title buffer:buffer bufferLength:bufferLength];
+}
+
+- (BOOL)copyNativeWebViewConsoleJSON:(NSUInteger)webViewId buffer:(char *)buffer bufferLength:(NSUInteger)bufferLength {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry) return NO;
+
+    return [self copyNativeWebViewString:[entry consoleMessagesJSON] buffer:buffer bufferLength:bufferLength];
+}
+
+- (BOOL)copyNativeWebViewNetworkJSON:(NSUInteger)webViewId buffer:(char *)buffer bufferLength:(NSUInteger)bufferLength {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry) return NO;
+
+    return [self copyNativeWebViewString:[entry networkMessagesJSON] buffer:buffer bufferLength:bufferLength];
+}
+
+- (void)evaluateNativeWebView:(NSUInteger)webViewId
+                       script:(NSString *)script
+                     callback:(WarpBrowserStringCallback)callback
+                      context:(void *)context {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry) {
+        callback(context, NULL, "browser webview not found");
+        return;
+    }
+
+    [entry.webView evaluateJavaScript:script
+                    completionHandler:^(id result, NSError *error) {
+                        if (error) {
+                            callback(context, NULL, error.localizedDescription.UTF8String);
+                            return;
+                        }
+
+                        NSString *resultString = nil;
+                        if (!result || result == [NSNull null]) {
+                            resultString = @"";
+                        } else if ([result isKindOfClass:[NSString class]]) {
+                            resultString = (NSString *)result;
+                        } else {
+                            resultString = [result description];
+                        }
+                        callback(context, resultString.UTF8String, NULL);
+                    }];
+}
+
+- (void)takeNativeWebViewSnapshot:(NSUInteger)webViewId
+                         callback:(WarpBrowserBytesCallback)callback
+                          context:(void *)context {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry) {
+        callback(context, NULL, 0, "browser webview not found");
+        return;
+    }
+
+    if (@available(macOS 10.13, *)) {
+        [entry.webView takeSnapshotWithConfiguration:nil
+                                   completionHandler:^(NSImage *snapshotImage, NSError *error) {
+                                       if (error) {
+                                           callback(context, NULL, 0, error.localizedDescription.UTF8String);
+                                           return;
+                                       }
+                                       NSData *tiffData = [snapshotImage TIFFRepresentation];
+                                       NSBitmapImageRep *bitmap =
+                                           [NSBitmapImageRep imageRepWithData:tiffData];
+                                       NSData *pngData =
+                                           [bitmap representationUsingType:NSBitmapImageFileTypePNG
+                                                                properties:@{}];
+                                       if (!pngData) {
+                                           callback(context, NULL, 0, "failed to encode browser snapshot as PNG");
+                                           return;
+                                       }
+                                       callback(context,
+                                                (const uint8_t *)pngData.bytes,
+                                                (uintptr_t)pngData.length,
+                                                NULL);
+                                   }];
+    } else {
+        callback(context, NULL, 0, "browser snapshots require macOS 10.13 or newer");
+    }
 }
 
 - (void)focusNativeWebView:(NSUInteger)webViewId {
@@ -726,6 +925,10 @@ uintptr_t warp_host_create_webview(WarpHostView *host) {
     return [host createNativeWebView];
 }
 
+void warp_host_install_automation_script(WarpHostView *host, uintptr_t webViewId, NSString *source) {
+    [host installNativeWebViewAutomationScript:(NSUInteger)webViewId source:source];
+}
+
 void warp_host_set_webview_frame(WarpHostView *host, uintptr_t webViewId, NSRect frame) {
     [host setNativeWebViewFrame:(NSUInteger)webViewId frame:frame];
 }
@@ -776,6 +979,33 @@ BOOL warp_host_copy_title(WarpHostView *host, uintptr_t webViewId, char *buffer,
     return [host copyNativeWebViewTitle:(NSUInteger)webViewId
                                  buffer:buffer
                            bufferLength:(NSUInteger)bufferLength];
+}
+
+BOOL warp_host_copy_console_json(WarpHostView *host, uintptr_t webViewId, char *buffer, uintptr_t bufferLength) {
+    return [host copyNativeWebViewConsoleJSON:(NSUInteger)webViewId
+                                       buffer:buffer
+                                 bufferLength:(NSUInteger)bufferLength];
+}
+
+BOOL warp_host_copy_network_json(WarpHostView *host, uintptr_t webViewId, char *buffer, uintptr_t bufferLength) {
+    return [host copyNativeWebViewNetworkJSON:(NSUInteger)webViewId
+                                       buffer:buffer
+                                 bufferLength:(NSUInteger)bufferLength];
+}
+
+void warp_host_evaluate_javascript(WarpHostView *host,
+                                   uintptr_t webViewId,
+                                   NSString *script,
+                                   WarpBrowserStringCallback callback,
+                                   void *context) {
+    [host evaluateNativeWebView:(NSUInteger)webViewId script:script callback:callback context:context];
+}
+
+void warp_host_take_snapshot(WarpHostView *host,
+                             uintptr_t webViewId,
+                             WarpBrowserBytesCallback callback,
+                             void *context) {
+    [host takeNativeWebViewSnapshot:(NSUInteger)webViewId callback:callback context:context];
 }
 
 void warp_host_focus_webview(WarpHostView *host, uintptr_t webViewId) {
