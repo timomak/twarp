@@ -208,15 +208,15 @@ impl DirectoryTabColors {
             .iter()
             .filter_map(|(configured_path, color)| {
                 let configured = Path::new(configured_path);
-                match color {
-                    DirectoryTabColor::Suppressed => None,
-                    _ => canonical_dir
-                        .starts_with(configured)
-                        .then_some((configured, *color)),
-                }
+                canonical_dir
+                    .starts_with(configured)
+                    .then_some((configured, *color))
             })
             .max_by_key(|(configured, _)| configured.as_os_str().len())
-            .map(|(_, color)| color)
+            .and_then(|(_, color)| match color {
+                DirectoryTabColor::Suppressed => None,
+                _ => Some(color),
+            })
     }
 
     /// Returns a new value with the given directory's color updated.
