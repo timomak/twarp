@@ -60,7 +60,21 @@ pub enum FileTarget {
 #[cfg(feature = "local_fs")]
 pub fn is_supported_code_file(path: impl AsRef<Path>) -> bool {
     let path = path.as_ref();
-    languages::language_by_filename(path).is_some()
+    if languages::language_by_filename(path).is_some() {
+        return true;
+    }
+
+    let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
+        return false;
+    };
+    let lowercase_ext = ext.to_ascii_lowercase();
+    if lowercase_ext == ext {
+        return false;
+    }
+
+    let mut lowercase_ext_path = path.to_path_buf();
+    lowercase_ext_path.set_extension(lowercase_ext);
+    languages::language_by_filename(&lowercase_ext_path).is_some()
 }
 
 #[cfg(not(feature = "local_fs"))]
@@ -476,6 +490,24 @@ mod tests {
     }
 
     #[test]
+    fn test_is_supported_code_file_extension_edges() {
+        assert!(is_supported_code_file(Path::new("main.rs")));
+        assert!(is_supported_code_file(Path::new("MAIN.RS")));
+        assert!(!is_supported_code_file(Path::new("source")));
+        assert!(!is_supported_code_file(Path::new("main.unknown")));
+        assert!(!is_supported_code_file(Path::new(".rs")));
+    }
+
+    #[test]
+    fn test_is_supported_image_file_extension_edges() {
+        assert!(is_supported_image_file(Path::new("image.png")));
+        assert!(is_supported_image_file(Path::new("image.PNG")));
+        assert!(!is_supported_image_file(Path::new("image")));
+        assert!(!is_supported_image_file(Path::new("image.unknown")));
+        assert!(!is_supported_image_file(Path::new(".png")));
+    }
+
+    #[test]
     #[cfg(unix)]
     fn test_is_runnable_shell_script_executable_sh() {
         use std::os::unix::fs::PermissionsExt;
@@ -571,6 +603,36 @@ mod tests {
         let link = dir.path().join("link.sh");
         std::os::unix::fs::symlink(&target, &link).unwrap();
         assert!(is_runnable_shell_script(&link));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_is_runnable_shell_script_extension_edges() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+
+        for (name, contents, expected) in [
+            ("run.sh", b"#!/bin/sh\n:\n".as_slice(), true),
+            ("RUN.SH", b"#!/bin/sh\n:\n".as_slice(), true),
+            ("run", b":\n".as_slice(), false),
+            ("run.unknown", b"#!/bin/sh\n:\n".as_slice(), false),
+            (".sh", b":\n".as_slice(), false),
+        ] {
+            let p = dir.path().join(name);
+            std::fs::write(&p, contents).unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert_eq!(is_runnable_shell_script(&p), expected, "{name}");
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_runnable_shell_script_extension_edges() {
+        assert!(is_runnable_shell_script(Path::new("run.ps1")));
+        assert!(is_runnable_shell_script(Path::new("RUN.PS1")));
+        assert!(!is_runnable_shell_script(Path::new("run")));
+        assert!(!is_runnable_shell_script(Path::new("run.unknown")));
+        assert!(!is_runnable_shell_script(Path::new(".ps1")));
     }
 
     #[test]
