@@ -135,6 +135,8 @@ pub enum WorkspaceAction {
     CloseTabsRight(usize),
     CloseTabsRightActiveTab,
     AddDefaultTab,
+    // twarp: open a fresh Claude Code pane in a new tab (cmd-shift-T).
+    OpenClaudeCodeInNewTab,
     AddTerminalTab {
         hide_homepage: bool,
     },
@@ -732,6 +734,7 @@ impl WorkspaceAction {
             | SetActiveTabColor { .. }
             | ResetActiveTabColor
             | AddDefaultTab
+            | OpenClaudeCodeInNewTab
             | AddTerminalTab { .. }
             | AddTabWithShell { .. }
             | AddGetStartedTab

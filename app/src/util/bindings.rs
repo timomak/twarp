@@ -144,6 +144,11 @@ pub enum CustomAction {
     // the project-explorer view. Keep this LAST so existing discriminants
     // (used as `CustomTag` via `as isize`) are unchanged.
     ToggleLeftPanel,
+    // twarp: open a fresh Claude Code pane in a NEW tab (default chord
+    // cmd-shift-T). Mirrors the bare-`claude` trigger but lands in its own tab
+    // instead of replacing the focused pane. Keep new variants LAST so existing
+    // discriminants stay unchanged.
+    OpenClaudeCodeInNewTab,
 }
 
 lazy_static! {
@@ -387,11 +392,24 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         }
         CustomAction::ReopenClosedSession => {
             if OperatingSystem::get().is_mac() {
-                Keystroke::parse("cmd-shift-T").ok()
+                // twarp: cmd-shift-T now opens Claude in a new tab
+                // (OpenClaudeCodeInNewTab). Reopen-closed-session moves to
+                // cmd-alt-shift-T so it keeps a default chord.
+                Keystroke::parse("cmd-alt-shift-T").ok()
             } else {
                 // Use a custom keybinding for linux/windows since the binding would otherwise
                 // conflict with the binding for creating a new tab.
                 Keystroke::parse("ctrl-alt-t").ok()
+            }
+        }
+        // twarp: open Claude Code in a new tab. mac-only default chord
+        // (cmd-shift-T, reclaimed from ReopenClosedSession above); other
+        // platforms reserve ctrl-shift-t for NewTab, so no default there.
+        CustomAction::OpenClaudeCodeInNewTab => {
+            if OperatingSystem::get().is_mac() {
+                Keystroke::parse("cmd-shift-T").ok()
+            } else {
+                None
             }
         }
 
