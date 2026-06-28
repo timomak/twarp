@@ -2,8 +2,8 @@
 
 Single source of truth for what's being built next. `/twarp-next` reads this file every invocation; the user reads it to see status at a glance.
 
-**Currently active:** `13-mcp-viewer`
-**Next up:** `14-builtin-browser` (owner-directed 2026-06-24, pulled ahead of 09)
+**Currently active:** `14-builtin-browser` (owner-directed 2026-06-24, pulled ahead of 09)
+**Next up:** `15-computer-control` (owner-directed 2026-06-27, pulled ahead of 09)
 
 ## Features
 
@@ -21,8 +21,8 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 10 | [File editor with go-to-definition](10-file-editor/STATUS.md) | not-started | — | — |
 | 11 | [Git blame](11-git-blame/STATUS.md) | not-started | — | — |
 | 12 | [Project search & replace](12-project-search-replace/STATUS.md) | not-started | — | — |
-| 13 | [MCP viewer in Claude pane](13-mcp-viewer/STATUS.md) | impl-in-review | [#91](https://github.com/timomak/twarp/pull/91) | 13a [#95](https://github.com/timomak/twarp/pull/95) |
-| 14 | [Built-in browser (Claude-debuggable)](14-builtin-browser/STATUS.md) | not-started | — | — |
+| 13 | [MCP viewer in Claude pane](13-mcp-viewer/STATUS.md) | merged | [#91](https://github.com/timomak/twarp/pull/91) | 13a [#95](https://github.com/timomak/twarp/pull/95) |
+| 14 | [Built-in browser (Claude-debuggable)](14-builtin-browser/STATUS.md) | spec-in-review | [#96](https://github.com/timomak/twarp/pull/96) | — |
 
 ## Phases
 
