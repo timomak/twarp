@@ -3205,6 +3205,9 @@ impl PaneGroup {
             IPaneType::ExecutionProfileEditor => TypedPane::ExecutionProfileEditor,
             IPaneType::GetStarted
             | IPaneType::NetworkLog
+            // twarp 14a: temporary native browser spike has no specialized
+            // vertical-tab row content.
+            | IPaneType::BrowserSpike
             // twarp 07 (7b): the Claude Code pane has no vertical-tab-specific
             // row content; treat it like the other simple panes.
             | IPaneType::ClaudeCode

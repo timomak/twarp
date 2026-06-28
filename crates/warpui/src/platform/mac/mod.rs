@@ -18,6 +18,7 @@ pub use app::{App, AppExt};
 pub use delegate::{AppDelegate, IntegrationTestDelegate};
 pub use fonts::FontDB;
 pub use rendering::is_low_power_gpu_available;
+pub use window::BrowserWebViewId;
 pub use window::Window;
 pub use window::WindowExt;
 

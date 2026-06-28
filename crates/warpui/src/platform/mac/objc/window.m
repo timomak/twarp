@@ -149,6 +149,23 @@ NSNumber *previouslyActiveAppPID;
     [warp_view setAsyncCallback:YES];
 }
 
+- (void)windowDidMiniaturize:(NSNotification *)notification {
+    NSWindow *window = notification.object;
+    [(WarpHostView *)window.contentView setNativeWebViewsOccluded:YES];
+}
+
+- (void)windowDidDeminiaturize:(NSNotification *)notification {
+    NSWindow *window = notification.object;
+    BOOL visible = (window.occlusionState & NSWindowOcclusionStateVisible) != 0;
+    [(WarpHostView *)window.contentView setNativeWebViewsOccluded:!visible];
+}
+
+- (void)windowDidChangeOcclusionState:(NSNotification *)notification {
+    NSWindow *window = notification.object;
+    BOOL visible = (window.occlusionState & NSWindowOcclusionStateVisible) != 0;
+    [(WarpHostView *)window.contentView setNativeWebViewsOccluded:!visible];
+}
+
 - (void)setForceTermination {
     forceTermination = YES;
 }

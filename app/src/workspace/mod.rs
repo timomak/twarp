@@ -110,8 +110,8 @@ use crate::workspace::view::{
     LEFT_PANEL_AGENT_CONVERSATIONS_BINDING_NAME, LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME,
     LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME, LEFT_PANEL_WARP_DRIVE_BINDING_NAME,
     NEW_AGENT_TAB_BINDING_NAME, NEW_AMBIENT_AGENT_TAB_BINDING_NAME, NEW_TAB_BINDING_NAME,
-    NEW_TERMINAL_TAB_BINDING_NAME, OPEN_CLAUDE_CODE_TAB_BINDING_NAME,
-    OPEN_GLOBAL_SEARCH_BINDING_NAME,
+    NEW_TERMINAL_TAB_BINDING_NAME, OPEN_BROWSER_SPIKE_PANE_BINDING_NAME,
+    OPEN_CLAUDE_CODE_TAB_BINDING_NAME, OPEN_GLOBAL_SEARCH_BINDING_NAME,
     TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME, TOGGLE_NOTIFICATION_MAILBOX_BINDING_NAME,
     TOGGLE_PROJECT_EXPLORER_BINDING_NAME, TOGGLE_RIGHT_PANEL_BINDING_NAME,
     TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME, TOGGLE_VERTICAL_TABS_PANEL_BINDING_NAME,
@@ -795,6 +795,13 @@ pub fn init(app: &mut AppContext) {
         )
         .with_context_predicate(id!("Workspace") & !id!("Workspace_PaneDragging"))
         .with_custom_action(CustomAction::OpenClaudeCodeInNewTab)
+        .with_enabled(|| ContextFlag::CreateNewSession.is_enabled()),
+        EditableBinding::new(
+            OPEN_BROWSER_SPIKE_PANE_BINDING_NAME,
+            BindingDescription::new("Open Browser Spike Pane"),
+            WorkspaceAction::OpenBrowserSpikePane,
+        )
+        .with_context_predicate(id!("Workspace") & !id!("Workspace_PaneDragging"))
         .with_enabled(|| ContextFlag::CreateNewSession.is_enabled()),
         EditableBinding::new(
             NEW_TERMINAL_TAB_BINDING_NAME,

@@ -208,6 +208,7 @@ mod tests;
 
 pub use crate::code_review::CodeReviewPanelArg;
 // twarp: 2c-d — CodeDiffPane / ExecutionProfileEditorPane / AIFactPane removed (AI panes deleted)
+pub use pane::browser_spike_pane::BrowserSpikePane;
 pub use pane::claude_code_pane::ClaudeCodePane; // twarp 07 (7b)
 pub use pane::code_pane::CodePane;
 pub use pane::env_var_collection_pane::EnvVarCollectionPane;
@@ -1787,6 +1788,9 @@ impl PaneGroup {
                     "Network log pane should not have been persisted, as it cannot be restored"
                 ))
             }
+            LeafContents::BrowserSpike => Err(anyhow::anyhow!(
+                "Browser spike pane should not have been persisted, as it cannot be restored"
+            )),
             // twarp 07: reopen the Claude Code pane that was live at quit. We
             // don't replay the process — the pane reads the session's `.jsonl`
             // (the one `claude` wrote) and continues live via `claude --resume`

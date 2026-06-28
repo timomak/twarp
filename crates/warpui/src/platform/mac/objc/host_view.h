@@ -13,5 +13,7 @@
              enableTitlebarDrag:(BOOL)enableTitlebarDrag
                        testMode:(BOOL)testMode;
 - (void)setAsyncCallback:(BOOL)shouldAsync;
+- (void)setNativeWebViewsOccluded:(BOOL)occluded;
+- (void)prepareNativeWebViewsForFrame;
 - (BOOL)keyDownImpl:(NSEvent *)event;
 @end

@@ -18,7 +18,7 @@ Net-new feature, owner-requested. Independent of the IDE-pivot features (10–12
 
 ## Sub-phases (from PLAN.md)
 
-- [ ] **14a — Native embed spike.** `WKWebView` rendering in a twarp pane, frame-synced to the warpui rect; correct clipping, z-order, occlusion-on-tab-switch, focus + keyboard routing. **Highest-risk gate.**
+- [x] **14a — Native embed spike.** `WKWebView` rendering in a twarp pane, frame-synced to the warpui rect; correct clipping, z-order, occlusion-on-tab-switch, focus + keyboard routing. **Highest-risk gate.**
 - [ ] **14b — Minimal browser UX.** Omnibar (navigate), back/forward/reload, loading state, single tab, open trigger (mirrors feature-07 pane wiring).
 - [ ] **14c — Automation core.** Injected content script: navigate/snapshot/click/type/eval + console + network capture. Internal Rust API.
 - [ ] **14d — Claude bridge.** Expose the automation core as an MCP server twarp registers for the session. Acceptance: Claude CLI drives the live pane via MCP tools. Not "done" until MCP-exposed.

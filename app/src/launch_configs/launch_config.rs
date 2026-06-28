@@ -155,6 +155,7 @@ impl TryFrom<PaneNodeSnapshot> for PaneTemplateType {
                 | LeafContents::ExecutionProfileEditor
                 | LeafContents::GetStarted
                 | LeafContents::NetworkLog
+                | LeafContents::BrowserSpike
                 // twarp 07: Claude Code panes aren't saved in launch configs.
                 | LeafContents::ClaudeCode(_)
                 | LeafContents::Welcome { .. }

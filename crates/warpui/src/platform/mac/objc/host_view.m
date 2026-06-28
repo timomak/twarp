@@ -1,6 +1,8 @@
 #import "host_view.h"
 
 #import <Metal/Metal.h>
+#import <WebKit/WebKit.h>
+#import <stdint.h>
 
 void warp_view_did_change_backing_properties(WarpHostView *, BOOL);
 void warp_view_set_frame_size(WarpHostView *, NSSize, BOOL);
@@ -16,6 +18,33 @@ NSRect warp_ime_position(WarpHostView *, NSRect *);
 id warp_get_accessibility_contents(WarpHostView *);
 void warp_marked_text_updated(WarpHostView *, NSString *, NSRange);
 void warp_marked_text_cleared(WarpHostView *);
+
+@interface WarpNativeWebViewEntry : NSObject
+@property(nonatomic, retain) NSView *containerView;
+@property(nonatomic, retain) WKWebView *webView;
+@property(nonatomic) BOOL hiddenRequested;
+- (instancetype)initWithContainerView:(NSView *)containerView webView:(WKWebView *)webView;
+@end
+
+@implementation WarpNativeWebViewEntry
+
+- (instancetype)initWithContainerView:(NSView *)containerView webView:(WKWebView *)webView {
+    self = [super init];
+    if (self) {
+        _containerView = [containerView retain];
+        _webView = [webView retain];
+        _hiddenRequested = YES;
+    }
+    return self;
+}
+
+- (void)dealloc {
+    [_webView release];
+    [_containerView release];
+    [super dealloc];
+}
+
+@end
 
 @implementation NSPasteboard (Warp)
 
@@ -63,6 +92,10 @@ void warp_marked_text_cleared(WarpHostView *);
     // new in-progress text) in the same keystroke. Without this, the trailing
     // unmarkText in keyDownImpl would clobber that new marked text.
     BOOL imeTouchedMarkedTextDuringInterpret;
+
+    NSMutableDictionary<NSNumber *, WarpNativeWebViewEntry *> *nativeWebViews;
+    NSUInteger nextNativeWebViewId;
+    BOOL nativeWebViewsOccluded;
 }
 
 - (BOOL)acceptsFirstResponder {
@@ -152,6 +185,103 @@ void warp_marked_text_cleared(WarpHostView *);
 
 - (void)setAsyncCallback:(BOOL)shouldAsync {
     asyncCallback = shouldAsync;
+}
+
+- (WarpNativeWebViewEntry *)nativeWebViewEntry:(NSUInteger)webViewId {
+    return [nativeWebViews objectForKey:@(webViewId)];
+}
+
+- (void)applyHiddenStateToNativeWebViewEntry:(WarpNativeWebViewEntry *)entry {
+    [entry.containerView setHidden:(entry.hiddenRequested || nativeWebViewsOccluded)];
+}
+
+- (void)setNativeWebViewsOccluded:(BOOL)occluded {
+    nativeWebViewsOccluded = occluded;
+    for (WarpNativeWebViewEntry *entry in [nativeWebViews allValues]) {
+        [self applyHiddenStateToNativeWebViewEntry:entry];
+    }
+    if (occluded) {
+        [self.window makeFirstResponder:self];
+    }
+}
+
+- (void)prepareNativeWebViewsForFrame {
+    for (WarpNativeWebViewEntry *entry in [nativeWebViews allValues]) {
+        entry.hiddenRequested = YES;
+        [self applyHiddenStateToNativeWebViewEntry:entry];
+    }
+}
+
+- (NSUInteger)createNativeWebView {
+    WKWebViewConfiguration *configuration = [[[WKWebViewConfiguration alloc] init] autorelease];
+    WKWebView *webView = [[[WKWebView alloc] initWithFrame:NSZeroRect
+                                             configuration:configuration] autorelease];
+    webView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+    NSView *containerView = [[[NSView alloc] initWithFrame:NSZeroRect] autorelease];
+    containerView.autoresizingMask = NSViewMinYMargin;
+    containerView.wantsLayer = YES;
+    containerView.layer.masksToBounds = YES;
+    containerView.layer.opaque = NO;
+    [containerView addSubview:webView];
+
+    WarpNativeWebViewEntry *entry =
+        [[[WarpNativeWebViewEntry alloc] initWithContainerView:containerView webView:webView]
+            autorelease];
+
+    NSUInteger webViewId = nextNativeWebViewId++;
+    [nativeWebViews setObject:entry forKey:@(webViewId)];
+    [self addSubview:containerView positioned:NSWindowAbove relativeTo:nil];
+    [self applyHiddenStateToNativeWebViewEntry:entry];
+    return webViewId;
+}
+
+- (void)setNativeWebViewFrame:(NSUInteger)webViewId frame:(NSRect)frame {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry) return;
+
+    [entry.containerView setFrame:frame];
+    [entry.webView setFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height)];
+}
+
+- (void)setNativeWebViewHidden:(NSUInteger)webViewId hidden:(BOOL)hidden {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry) return;
+
+    entry.hiddenRequested = hidden;
+    [self applyHiddenStateToNativeWebViewEntry:entry];
+}
+
+- (void)loadNativeWebView:(NSUInteger)webViewId urlString:(NSString *)urlString {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry) return;
+
+    NSURL *url = [NSURL URLWithString:urlString];
+    if (!url) return;
+
+    NSURLRequest *request = [NSURLRequest requestWithURL:url];
+    [entry.webView loadRequest:request];
+}
+
+- (void)focusNativeWebView:(NSUInteger)webViewId {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry) return;
+
+    [self.window makeFirstResponder:entry.webView];
+}
+
+- (void)destroyNativeWebView:(NSUInteger)webViewId {
+    NSNumber *key = @(webViewId);
+    WarpNativeWebViewEntry *entry = [nativeWebViews objectForKey:key];
+    if (!entry) return;
+
+    if (self.window.firstResponder == entry.webView) {
+        [self.window makeFirstResponder:self];
+    }
+    [entry.webView stopLoading];
+    [entry.webView removeFromSuperview];
+    [entry.containerView removeFromSuperview];
+    [nativeWebViews removeObjectForKey:key];
 }
 
 - (void)keyDown:(NSEvent *)event {
@@ -262,6 +392,12 @@ void warp_marked_text_cleared(WarpHostView *);
 }
 
 - (void)dealloc {
+    NSArray<NSNumber *> *keys = [[nativeWebViews allKeys] copy];
+    for (NSNumber *key in keys) {
+        [self destroyNativeWebView:[key unsignedIntegerValue]];
+    }
+    [keys release];
+    [nativeWebViews release];
     [markedText release];
     [textToInsert release];
     [metalDevice release];
@@ -297,6 +433,9 @@ void warp_marked_text_cleared(WarpHostView *);
     self->metalDevice = [device retain];
     self->markedText = [[NSMutableAttributedString alloc] init];
     self->textToInsert = [[NSMutableString alloc] init];
+    self->nativeWebViews = [[NSMutableDictionary alloc] init];
+    self->nextNativeWebViewId = 1;
+    self->nativeWebViewsOccluded = NO;
     self->asyncCallback = YES;
     self.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.wantsLayer = YES;
@@ -517,3 +656,31 @@ void warp_marked_text_cleared(WarpHostView *);
 }
 
 @end
+
+uintptr_t warp_host_create_webview(WarpHostView *host) {
+    return [host createNativeWebView];
+}
+
+void warp_host_set_webview_frame(WarpHostView *host, uintptr_t webViewId, NSRect frame) {
+    [host setNativeWebViewFrame:(NSUInteger)webViewId frame:frame];
+}
+
+void warp_host_set_webview_hidden(WarpHostView *host, uintptr_t webViewId, BOOL hidden) {
+    [host setNativeWebViewHidden:(NSUInteger)webViewId hidden:hidden];
+}
+
+void warp_host_load_url(WarpHostView *host, uintptr_t webViewId, NSString *urlString) {
+    [host loadNativeWebView:(NSUInteger)webViewId urlString:urlString];
+}
+
+void warp_host_focus_webview(WarpHostView *host, uintptr_t webViewId) {
+    [host focusNativeWebView:(NSUInteger)webViewId];
+}
+
+void warp_host_destroy_webview(WarpHostView *host, uintptr_t webViewId) {
+    [host destroyNativeWebView:(NSUInteger)webViewId];
+}
+
+void warp_host_prepare_webviews_for_frame(WarpHostView *host) {
+    [host prepareNativeWebViewsForFrame];
+}
