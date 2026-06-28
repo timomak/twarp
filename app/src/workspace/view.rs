@@ -553,6 +553,8 @@ pub(crate) const OPEN_GLOBAL_SEARCH_BINDING_NAME: &str = "workspace:open_global_
 pub(crate) const TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME: &str =
     "workspace:toggle_conversation_list_view";
 pub(crate) const NEW_TAB_BINDING_NAME: &str = "workspace:new_tab";
+// twarp: open Claude Code in a new tab (cmd-shift-T).
+pub(crate) const OPEN_CLAUDE_CODE_TAB_BINDING_NAME: &str = "workspace:open_claude_code_tab";
 pub(crate) const NEW_TERMINAL_TAB_BINDING_NAME: &str = "workspace:new_terminal_tab";
 pub(crate) const NEW_AGENT_TAB_BINDING_NAME: &str = "workspace:new_agent_tab";
 pub(crate) const NEW_AMBIENT_AGENT_TAB_BINDING_NAME: &str = "workspace:new_ambient_agent_tab";
@@ -12798,6 +12800,26 @@ impl Workspace {
     /// terminal pane that ran `claude` in place, rather than opening a new split
     /// (owner request). `replace_pane` cleans up the replaced terminal and
     /// focuses the new pane.
+    /// twarp: open a fresh Claude Code pane in a NEW tab (default chord
+    /// cmd-shift-T / `OpenClaudeCodeInNewTab`). Unlike the bare-`claude` trigger
+    /// — which replaces the focused pane in place — this spawns its own tab so
+    /// the current pane is left untouched. The new tab inherits the active
+    /// pane's working directory (same rule as a new terminal tab), so Claude
+    /// starts in the same repo (PRODUCT §4).
+    pub(crate) fn open_claude_code_tab(&mut self, ctx: &mut ViewContext<Self>) {
+        let cwd = self.get_new_tab_startup_directory(
+            NewSessionSource::Tab,
+            Some(ctx.window_id()),
+            None,
+            ctx,
+        );
+        // Open a fresh tab (it becomes active and focused), then swap its
+        // freshly-spawned terminal for a Claude pane in place — reusing the
+        // exact replace path the `claude` command uses.
+        self.add_terminal_tab(true /* hide_homepage */, ctx);
+        self.open_claude_code_pane(Vec::new(), cwd, ctx);
+    }
+
     pub(crate) fn open_claude_code_pane(
         &mut self,
         args: Vec<String>,
@@ -19257,6 +19279,7 @@ impl TypedActionView for Workspace {
                     }
                 }
             }
+            OpenClaudeCodeInNewTab => self.open_claude_code_tab(ctx),
             AddTerminalTab { hide_homepage } => {
                 self.add_new_session_tab_internal_with_default_session_mode_behavior(
                     NewSessionSource::Tab,

@@ -1027,6 +1027,8 @@ fn make_new_elements_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
             Some(Keystroke::parse("cmd-t").expect("Valid keystroke")),
         )),
         non_updateable_custom_item(CustomAction::NewFile, ctx),
+        // twarp: open a fresh Claude Code pane in a new tab (cmd-shift-T).
+        non_updateable_custom_item(CustomAction::OpenClaudeCodeInNewTab, ctx),
     ];
 
     let reopen_session_action_updater =
@@ -1043,7 +1045,9 @@ fn make_new_elements_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
             changes.disabled = Some(UndoCloseStack::handle(ctx).as_ref(ctx).is_empty());
             changes
         },
-        Some(Keystroke::parse("cmd-shift-T").expect("Valid keystroke")),
+        // twarp: cmd-shift-T was reclaimed for OpenClaudeCodeInNewTab; reopen
+        // moved to cmd-alt-shift-T (see custom_tag_to_keystroke).
+        Some(Keystroke::parse("cmd-alt-shift-T").expect("Valid keystroke")),
     )));
 
     new_elements_menu.push(MenuItem::Custom(CustomMenuItem::new_with_submenu(
