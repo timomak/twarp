@@ -15,5 +15,9 @@
 - (void)setAsyncCallback:(BOOL)shouldAsync;
 - (void)setNativeWebViewsOccluded:(BOOL)occluded;
 - (void)prepareNativeWebViewsForFrame;
+- (void)goBackNativeWebView:(NSUInteger)webViewId;
+- (void)goForwardNativeWebView:(NSUInteger)webViewId;
+- (void)reloadNativeWebView:(NSUInteger)webViewId;
+- (void)stopLoadingNativeWebView:(NSUInteger)webViewId;
 - (BOOL)keyDownImpl:(NSEvent *)event;
 @end

@@ -9,6 +9,7 @@
 //! The [`PaneId`] must be created via a [`PaneView<BackingView>`]. The [`PaneId`] is consequently
 //! used to render a [`PaneView`] which internally renders the pane, including the [`BackingView`].
 // twarp: 2c-d — code_diff_pane / code_diff_pane_model / execution_profile_editor_pane removed (AI panes)
+pub(super) mod browser_pane;
 pub(super) mod browser_spike_pane;
 // twarp 07 (7b): the Claude Code main-content pane host.
 pub(super) mod claude_code_pane;
@@ -30,6 +31,7 @@ pub mod workflow_pane;
 use std::{any::Any, fmt::Display};
 
 use crate::browser_spike_view::BrowserSpikeView;
+use crate::browser_view::BrowserView;
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::pane::get_started_view::GetStartedView;
 use crate::view_components::action_button::ActionButton;
@@ -137,6 +139,8 @@ pub(crate) enum IPaneType {
     Code,
     /// twarp 07 (7b): the Claude Code main-content pane.
     ClaudeCode,
+    /// twarp 14b: a single-tab built-in browser pane.
+    Browser,
     /// twarp 14a: temporary WKWebView native embed spike pane.
     BrowserSpike,
     CodeDiff,
@@ -163,6 +167,7 @@ impl Display for IPaneType {
             IPaneType::File => write!(f, "File"),
             IPaneType::Code => write!(f, "Code"),
             IPaneType::ClaudeCode => write!(f, "Claude Code"),
+            IPaneType::Browser => write!(f, "Browser"),
             IPaneType::BrowserSpike => write!(f, "Browser Spike"),
             IPaneType::CodeDiff => write!(f, "Code Diff"),
             IPaneType::EnvVarCollection => write!(f, "Environment Variable Collection"),
@@ -233,6 +238,11 @@ impl PaneId {
         Self::new_from_ctx(IPaneType::ClaudeCode, ctx)
     }
 
+    /// twarp 14b: creates a [`PaneId`] from a [`ViewContext<PaneView<BrowserView>>`].
+    pub fn from_browser_pane_ctx(ctx: &ViewContext<PaneView<BrowserView>>) -> Self {
+        Self::new_from_ctx(IPaneType::Browser, ctx)
+    }
+
     /// twarp 14a: creates a [`PaneId`] from a [`ViewContext<PaneView<BrowserSpikeView>>`].
     pub fn from_browser_spike_pane_ctx(ctx: &ViewContext<PaneView<BrowserSpikeView>>) -> Self {
         Self::new_from_ctx(IPaneType::BrowserSpike, ctx)
@@ -288,6 +298,11 @@ impl PaneId {
         claude_code_pane_view: &ViewHandle<PaneView<ClaudeCodeView>>,
     ) -> Self {
         Self::new(IPaneType::ClaudeCode, claude_code_pane_view)
+    }
+
+    /// twarp 14b: creates a [`PaneId`] from a [`PaneView<BrowserView>`] entity ID.
+    pub fn from_browser_pane_view(browser_pane_view: &ViewHandle<PaneView<BrowserView>>) -> Self {
+        Self::new(IPaneType::Browser, browser_pane_view)
     }
 
     /// twarp 14a: creates a [`PaneId`] from a [`PaneView<BrowserSpikeView>`] entity ID.
@@ -426,6 +441,9 @@ impl PaneId {
             }
             IPaneType::ClaudeCode => {
                 ChildView::<PaneView<ClaudeCodeView>>::with_id(self.0.pane_view_id).finish()
+            }
+            IPaneType::Browser => {
+                ChildView::<PaneView<BrowserView>>::with_id(self.0.pane_view_id).finish()
             }
             IPaneType::BrowserSpike => {
                 ChildView::<PaneView<BrowserSpikeView>>::with_id(self.0.pane_view_id).finish()

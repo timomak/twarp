@@ -149,6 +149,9 @@ pub enum CustomAction {
     // instead of replacing the focused pane. Keep new variants LAST so existing
     // discriminants stay unchanged.
     OpenClaudeCodeInNewTab,
+    // twarp 14b: open the built-in Browser pane. Keep new variants LAST so
+    // existing discriminants stay unchanged.
+    OpenBrowserPane,
 }
 
 lazy_static! {
@@ -410,6 +413,13 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
                 Keystroke::parse("cmd-shift-T").ok()
             } else {
                 None
+            }
+        }
+        CustomAction::OpenBrowserPane => {
+            if OperatingSystem::get().is_mac() {
+                Keystroke::parse("cmd-shift-B").ok()
+            } else {
+                Keystroke::parse("ctrl-shift-B").ok()
             }
         }
 

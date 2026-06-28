@@ -1027,6 +1027,7 @@ fn make_new_elements_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
             Some(Keystroke::parse("cmd-t").expect("Valid keystroke")),
         )),
         non_updateable_custom_item(CustomAction::NewFile, ctx),
+        non_updateable_custom_item(CustomAction::OpenBrowserPane, ctx),
         // twarp: open a fresh Claude Code pane in a new tab (cmd-shift-T).
         non_updateable_custom_item(CustomAction::OpenClaudeCodeInNewTab, ctx),
     ];
