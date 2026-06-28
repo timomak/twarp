@@ -29,6 +29,13 @@ else
     WARP_SCHEME_NAME="warposs"
 fi
 DONT_OPEN=false
+# twarp: when --install is passed, the freshly built + signed bundle is also
+# copied to /Applications/<AppName>.app after the build. `./script/run` otherwise
+# only produces the bundle under target/<profile>/bundle, which is a SEPARATE
+# copy from any /Applications install that shares the same bundle id — so a
+# rebuild here is invisible to a Dock/Spotlight launch until you reinstall. With
+# --install, Dock/Spotlight launches pick up the new code.
+INSTALL=false
 # Launches the binary with "open", meaning the Warp process is
 # launched by the MacOS application launcher instead of a shell session.
 # Note that since Warp isn't launched as a child process, using ctrl+c
@@ -83,6 +90,10 @@ while (( "$#" )); do
       ;;
     --generate-schema)
       GENERATE_SCHEMA=true
+      shift
+      ;;
+    --install)
+      INSTALL=true
       shift
       ;;
     *) # preserve positional arguments
@@ -140,6 +151,18 @@ if [ -z "$SIGNING_CERT" ]; then
 fi
 echo "Signing with identity: ${SIGNING_CERT:--} (ad-hoc if '-')"
 codesign --force --deep --options runtime --sign "${SIGNING_CERT:--}" "$WARP_APP_PATH" --entitlements script/Debug-Entitlements.plist
+
+if [ "$INSTALL" = true ] ; then
+    APP_NAME="$(basename "$WARP_APP_PATH")"
+    INSTALL_PATH="/Applications/$APP_NAME"
+    echo "Installing $APP_NAME to /Applications (ditto preserves the bundle + signature)..."
+    # rm first so files removed in the new build don't linger. macOS unlinks the
+    # old bundle safely even if an instance is still running (its mmap'd binary
+    # keeps working); the running instance just keeps the OLD code until relaunch.
+    rm -rf "$INSTALL_PATH"
+    ditto "$WARP_APP_PATH" "$INSTALL_PATH"
+    echo "Installed to $INSTALL_PATH — Dock/Spotlight launches will now use this build."
+fi
 
 if [ "$DONT_OPEN" = false ] ; then
     if  [ "$OPEN_WITH_LAUNCHD" = true ]; then

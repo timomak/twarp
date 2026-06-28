@@ -32,8 +32,9 @@ else
 fi
 
 # Shared argument parsing. macOS-specific flags (--dont-open,
-# --open_with_launchd, --generate-schema) are forwarded through MAC_ARGS and
-# silently ignored on other platforms.
+# --open_with_launchd, --generate-schema, --install) are forwarded through
+# MAC_ARGS and silently ignored on other platforms. (--install copies the built
+# bundle to /Applications so Dock/Spotlight launches use the fresh build.)
 MAC_ARGS=()
 CARGO_PARAMS=()
 WARP_ARGS=()
