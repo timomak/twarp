@@ -216,6 +216,40 @@ def run_worker(it):
         return it["id"], False
 
 
+# ---------- UX gate (real-display screenshot + golden baseline) ----------
+UXTEST = "test_video_recording"   # bootstraps the UI and captures after_bootstrap.png
+GOLDEN = LOCAL_REPO / "fleet" / "golden"
+
+def uxgate(test=UXTEST, png="after_bootstrap.png"):
+    """Render twarp on the build node's REAL display, capture a screenshot, pull it here, and
+    compare against the golden baseline. Returns (verdict, local_png_path):
+      'golden-saved' first run (baseline stored), 'pass' byte-identical, 'review' changed (a vision
+      agent should inspect the PNG), 'fail' no screenshot produced. The visual judgment itself is
+      done by a vision agent on the returned PNG (see README)."""
+    GOLDEN.mkdir(parents=True, exist_ok=True); LOG.mkdir(parents=True, exist_ok=True)
+    art = "/tmp/uxgate"
+    cmd = (f"{REMOTE_ENV}\nexport CARGO_TARGET_DIR={REMOTE_REPO}/target\n"
+           f"export WARP_INTEGRATION_TEST_ARTIFACTS_DIR={art}\n"
+           f"export WARPUI_USE_REAL_DISPLAY_IN_INTEGRATION_TESTS=1\n"
+           f"caffeinate -dimsu & CAF=$!\n"
+           f"rm -rf {art}; mkdir -p {art}\ncd {REMOTE_REPO}\n"
+           f"./target/debug/integration {test} > /tmp/uxgate.log 2>&1 || true\n"
+           f"kill $CAF 2>/dev/null\n"
+           f"find {art} -name '{png}' -print | head -1\n")
+    say(f"  uxgate: rendering {test} on {REMOTE}'s real display…")
+    r = ssh(cmd, timeout=600)
+    remote_png = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
+    if not remote_png.endswith(".png"):
+        return "fail", None
+    local = LOG / f"uxgate_{png}"
+    sh(["scp", "-q", f"{REMOTE}:{remote_png}", str(local)], check=True)
+    golden = GOLDEN / png
+    if not golden.exists():
+        sh(["cp", str(local), str(golden)]); return "golden-saved", local
+    same = sh(["cmp", "-s", str(local), str(golden)]).returncode == 0
+    return ("pass" if same else "review"), local
+
+
 # ---------- gate (always on build node) ----------
 def gate(iid, verify, ref=None):
     """Build+test `ref` (default origin/fleet/<id>) on the build node. Returns (ok, tail)."""
@@ -327,6 +361,7 @@ def main():
     w = sub.add_parser("worker"); w.add_argument("id")
     g = sub.add_parser("gate"); g.add_argument("id")
     s = sub.add_parser("supervise"); s.add_argument("id")
+    u = sub.add_parser("uxgate"); u.add_argument("test", nargs="?", default=UXTEST)
     args = ap.parse_args()
 
     if args.cmd == "status":
@@ -344,6 +379,9 @@ def main():
     elif args.cmd == "supervise":
         it = item(load(), args.id)
         print(speculative_gate(args.id, it["verify"]))
+    elif args.cmd == "uxgate":
+        verdict, png = uxgate(args.test)
+        print(f"UXGATE {verdict} png={png}")
 
 if __name__ == "__main__":
     main()

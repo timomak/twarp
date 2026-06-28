@@ -26,6 +26,21 @@ green branches.
 | `python3 fleet/fleet.py worker <id>` | Author one item on its node (debug) |
 | `python3 fleet/fleet.py gate <id>` | Build + targeted tests for a branch on the build node (debug) |
 | `python3 fleet/fleet.py supervise <id>` | Speculative-merge + gate a branch (debug) |
+| `python3 fleet/fleet.py uxgate [test]` | Render twarp on the build node's real display, capture a screenshot, diff vs golden |
+
+## UX / visual gate
+
+`uxgate` renders twarp on **other-mac's built-in display** (Option A — lid open, no extra hardware),
+runs an integration test that bootstraps the UI (`test_video_recording`), captures a real Retina
+screenshot, pulls it here, and compares against the golden baseline in `fleet/golden/`:
+- first run → `golden-saved` (baseline stored)
+- byte-identical → `pass`
+- changed → `review` (a vision agent inspects the PNG for layout/contrast/clipping regressions)
+
+The screenshot capture works **over SSH** because other-mac has an active GUI console session +
+`caffeinate` keeps the display awake. The pixel `cmp` is a coarse change-detector; the actual visual
+judgment is done by a vision agent on the returned PNG (and `cmp` should be upgraded to a perceptual
+diff to tolerate benign AA noise).
 
 ## The work ledger (`queue.json`)
 
@@ -58,9 +73,10 @@ which node authored the branch. See the `twarp_fleet_other_mac` memory for its s
 
 ## Status / not yet built
 
-- **UX gate** (screenshot → vision review + golden diff) is not wired yet — `verify` is build+tests
-  only. The screen semaphore + real-display gate land when other-mac gets a virtual display
-  (Screen Sharing / dummy HDMI; see memory).
+- **UX gate** is wired (`uxgate`, real display on other-mac) and produces a golden-compared
+  screenshot. Still to harden: call the vision agent automatically on a `review` verdict, upgrade the
+  byte `cmp` to a perceptual diff, and fold `uxgate` into `run` (per-item, gated by a screen
+  semaphore) rather than a standalone command.
 - **Speculative depth = 1** (serialized merges). No N-deep speculative train yet.
 - Concurrency is capped in `queue.json` (`config.concurrency`). Builds serialize on the build node's
   cargo lock (shared `CARGO_TARGET_DIR`).
