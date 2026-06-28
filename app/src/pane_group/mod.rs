@@ -208,6 +208,7 @@ mod tests;
 
 pub use crate::code_review::CodeReviewPanelArg;
 // twarp: 2c-d — CodeDiffPane / ExecutionProfileEditorPane / AIFactPane removed (AI panes deleted)
+pub use pane::browser_pane::BrowserPane;
 pub use pane::browser_spike_pane::BrowserSpikePane;
 pub use pane::claude_code_pane::ClaudeCodePane; // twarp 07 (7b)
 pub use pane::code_pane::CodePane;
@@ -1791,6 +1792,17 @@ impl PaneGroup {
             LeafContents::BrowserSpike => Err(anyhow::anyhow!(
                 "Browser spike pane should not have been persisted, as it cannot be restored"
             )),
+            LeafContents::Browser(snapshot) => {
+                let pane: Box<dyn AnyPaneContent + 'static> =
+                    Box::new(BrowserPane::new_restore(snapshot.url, ctx));
+                let pane_id = pane.as_pane().id();
+                pane_contents.insert(pane_id, pane);
+                let focus = InitialFocus {
+                    focused_pane: leaf.is_focused.then_some(pane_id),
+                    active_session: None,
+                };
+                Ok((PaneData::new(pane_id), focus))
+            }
             // twarp 07: reopen the Claude Code pane that was live at quit. We
             // don't replay the process — the pane reads the session's `.jsonl`
             // (the one `claude` wrote) and continues live via `claude --resume`

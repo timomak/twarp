@@ -740,6 +740,9 @@ pub enum LeafContents {
     /// uses. A pane whose first turn hasn't landed has no session to resume and
     /// is treated as non-persisted.
     ClaudeCode(ClaudeCodePaneSnapshot),
+    /// twarp 14b: a single-tab built-in browser pane. Persisted once it has a
+    /// committed URL so restart can reopen the pane and re-navigate there.
+    Browser(BrowserPaneSnapshot),
     /// twarp 14a: temporary native WKWebView embed spike. Not persisted; 14b
     /// replaces this with the real browser pane snapshot.
     BrowserSpike,
@@ -769,6 +772,7 @@ impl LeafContents {
             // starts empty on launch; persisting would also regress back to
             // an on-disk log via the app-state database.
             LeafContents::NetworkLog | LeafContents::BrowserSpike => false,
+            LeafContents::Browser(snapshot) => snapshot.url.is_some(),
             // twarp 07: a Claude Code pane is restorable only once `claude` has
             // written its session `.jsonl` (i.e. the first turn completed and a
             // `session_id` is known). A pane still in its zero-state has nothing
@@ -812,6 +816,13 @@ pub struct AmbientAgentPaneSnapshot {
 pub struct ClaudeCodePaneSnapshot {
     pub session_id: Option<String>,
     pub cwd: Option<String>,
+}
+
+/// Snapshot of a browser pane. Only the last committed URL is durable in v1;
+/// form state, scroll position, and JS heap are intentionally not restored.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BrowserPaneSnapshot {
+    pub url: Option<String>,
 }
 
 /// Snapshot of the contents of a terminal pane.

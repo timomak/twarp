@@ -44,6 +44,8 @@ use warpui_core::{DisplayId, DisplayIdx};
 
 use instant::Instant;
 use std::collections::HashMap;
+use std::ffi::CStr;
+use std::os::raw::c_char;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{cell::Cell, os::raw::c_uchar, panic, path::Path, ptr};
@@ -480,6 +482,25 @@ extern "C" {
     fn warp_host_set_webview_frame(host: id, webview_id: usize, frame: NSRect);
     fn warp_host_set_webview_hidden(host: id, webview_id: usize, hidden: BOOL);
     fn warp_host_load_url(host: id, webview_id: usize, url: id);
+    fn warp_host_go_back(host: id, webview_id: usize);
+    fn warp_host_go_forward(host: id, webview_id: usize);
+    fn warp_host_reload(host: id, webview_id: usize);
+    fn warp_host_stop_loading(host: id, webview_id: usize);
+    fn warp_host_can_go_back(host: id, webview_id: usize) -> BOOL;
+    fn warp_host_can_go_forward(host: id, webview_id: usize) -> BOOL;
+    fn warp_host_is_loading(host: id, webview_id: usize) -> BOOL;
+    fn warp_host_copy_url(
+        host: id,
+        webview_id: usize,
+        buffer: *mut c_char,
+        buffer_len: usize,
+    ) -> BOOL;
+    fn warp_host_copy_title(
+        host: id,
+        webview_id: usize,
+        buffer: *mut c_char,
+        buffer_len: usize,
+    ) -> BOOL;
     fn warp_host_focus_webview(host: id, webview_id: usize);
     fn warp_host_destroy_webview(host: id, webview_id: usize);
     fn warp_host_prepare_webviews_for_frame(host: id);
@@ -971,6 +992,112 @@ impl Window {
                 let host_view: id = msg_send![window, contentView];
                 warp_host_load_url(host_view, webview_id, make_nsstring(url));
             }
+        }
+    }
+
+    pub fn browser_webview_go_back(window_id: WindowId, webview_id: BrowserWebViewId) {
+        unsafe {
+            if let Some(window) = Self::find_window_with_id(window_id) {
+                let host_view: id = msg_send![window, contentView];
+                warp_host_go_back(host_view, webview_id);
+            }
+        }
+    }
+
+    pub fn browser_webview_go_forward(window_id: WindowId, webview_id: BrowserWebViewId) {
+        unsafe {
+            if let Some(window) = Self::find_window_with_id(window_id) {
+                let host_view: id = msg_send![window, contentView];
+                warp_host_go_forward(host_view, webview_id);
+            }
+        }
+    }
+
+    pub fn browser_webview_reload(window_id: WindowId, webview_id: BrowserWebViewId) {
+        unsafe {
+            if let Some(window) = Self::find_window_with_id(window_id) {
+                let host_view: id = msg_send![window, contentView];
+                warp_host_reload(host_view, webview_id);
+            }
+        }
+    }
+
+    pub fn browser_webview_stop_loading(window_id: WindowId, webview_id: BrowserWebViewId) {
+        unsafe {
+            if let Some(window) = Self::find_window_with_id(window_id) {
+                let host_view: id = msg_send![window, contentView];
+                warp_host_stop_loading(host_view, webview_id);
+            }
+        }
+    }
+
+    pub fn browser_webview_can_go_back(window_id: WindowId, webview_id: BrowserWebViewId) -> bool {
+        unsafe {
+            Self::find_window_with_id(window_id)
+                .map(|window| {
+                    let host_view: id = msg_send![window, contentView];
+                    warp_host_can_go_back(host_view, webview_id) == YES
+                })
+                .unwrap_or(false)
+        }
+    }
+
+    pub fn browser_webview_can_go_forward(
+        window_id: WindowId,
+        webview_id: BrowserWebViewId,
+    ) -> bool {
+        unsafe {
+            Self::find_window_with_id(window_id)
+                .map(|window| {
+                    let host_view: id = msg_send![window, contentView];
+                    warp_host_can_go_forward(host_view, webview_id) == YES
+                })
+                .unwrap_or(false)
+        }
+    }
+
+    pub fn browser_webview_is_loading(window_id: WindowId, webview_id: BrowserWebViewId) -> bool {
+        unsafe {
+            Self::find_window_with_id(window_id)
+                .map(|window| {
+                    let host_view: id = msg_send![window, contentView];
+                    warp_host_is_loading(host_view, webview_id) == YES
+                })
+                .unwrap_or(false)
+        }
+    }
+
+    pub fn browser_webview_url(
+        window_id: WindowId,
+        webview_id: BrowserWebViewId,
+    ) -> Option<String> {
+        Self::copy_browser_webview_string(window_id, webview_id, warp_host_copy_url)
+    }
+
+    pub fn browser_webview_title(
+        window_id: WindowId,
+        webview_id: BrowserWebViewId,
+    ) -> Option<String> {
+        Self::copy_browser_webview_string(window_id, webview_id, warp_host_copy_title)
+    }
+
+    fn copy_browser_webview_string(
+        window_id: WindowId,
+        webview_id: BrowserWebViewId,
+        copy_fn: unsafe extern "C" fn(id, usize, *mut c_char, usize) -> BOOL,
+    ) -> Option<String> {
+        unsafe {
+            let window = Self::find_window_with_id(window_id)?;
+            let host_view: id = msg_send![window, contentView];
+            let mut buffer = vec![0 as c_char; 4096];
+            if copy_fn(host_view, webview_id, buffer.as_mut_ptr(), buffer.len()) != YES {
+                return None;
+            }
+            Some(
+                CStr::from_ptr(buffer.as_ptr())
+                    .to_string_lossy()
+                    .into_owned(),
+            )
         }
     }
 

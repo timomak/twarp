@@ -135,6 +135,8 @@ pub enum WorkspaceAction {
     CloseTabsRight(usize),
     CloseTabsRightActiveTab,
     AddDefaultTab,
+    /// twarp 14b: open a single-tab built-in Browser pane.
+    OpenBrowserPane,
     /// twarp 14a: temporary dev entry point for the native WKWebView embed spike.
     OpenBrowserSpikePane,
     // twarp: open a fresh Claude Code pane in a new tab (cmd-shift-T).
@@ -736,6 +738,7 @@ impl WorkspaceAction {
             | SetActiveTabColor { .. }
             | ResetActiveTabColor
             | AddDefaultTab
+            | OpenBrowserPane
             | OpenBrowserSpikePane
             | OpenClaudeCodeInNewTab
             | AddTerminalTab { .. }

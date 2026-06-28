@@ -29,7 +29,7 @@ use itertools::Itertools;
 use libsqlite3_sys as sqlite3;
 use num_traits::FromPrimitive;
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
-use persistence::model::{AMBIENT_AGENT_PANE_KIND, CLAUDE_CODE_PANE_KIND};
+use persistence::model::{AMBIENT_AGENT_PANE_KIND, BROWSER_PANE_KIND, CLAUDE_CODE_PANE_KIND};
 use uuid::Uuid;
 use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::platform::FullscreenState;
@@ -805,6 +805,7 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
         diesel::delete(schema::code_review_panes::dsl::code_review_panes).execute(conn)?;
         diesel::delete(schema::ambient_agent_panes::dsl::ambient_agent_panes).execute(conn)?;
         diesel::delete(schema::welcome_panes::dsl::welcome_panes).execute(conn)?;
+        diesel::delete(schema::browser_panes::dsl::browser_panes).execute(conn)?;
         // twarp 07: `claude_code_panes.id REFERENCES pane_nodes(id)` (no ON
         // DELETE CASCADE), so it must be cleared before the `pane_nodes` delete
         // below — exactly like every other kind-specific pane table above. It
@@ -1041,13 +1042,17 @@ fn save_pane_state(
         LeafContents::GetStarted => GET_STARTED_PANE_KIND,
         LeafContents::Welcome { .. } => WELCOME_PANE_KIND,
         LeafContents::AIDocument(_) => AI_DOCUMENT_PANE_KIND,
+        LeafContents::Browser(snapshot) if snapshot.url.is_some() => BROWSER_PANE_KIND,
         // twarp 07: a Claude Code pane with a known session is persistable; a
         // zero-state one is filtered upstream by `is_persisted` (so it falls
         // into the non-persisted arm below alongside NetworkLog).
         LeafContents::ClaudeCode(snapshot) if snapshot.session_id.is_some() => {
             CLAUDE_CODE_PANE_KIND
         }
-        LeafContents::NetworkLog | LeafContents::BrowserSpike | LeafContents::ClaudeCode(_) => {
+        LeafContents::NetworkLog
+        | LeafContents::BrowserSpike
+        | LeafContents::Browser(_)
+        | LeafContents::ClaudeCode(_) => {
             // These pane types are filtered out before this function is
             // called; see `LeafContents::is_persisted` and the skip in
             // `save_app_state`. Reaching this arm would mean a `pane_nodes`
@@ -1283,6 +1288,16 @@ fn save_pane_state(
                 .values(ambient_agent_pane)
                 .execute(conn)?;
         }
+        LeafContents::Browser(snapshot) if snapshot.url.is_some() => {
+            let browser_pane = model::NewBrowserPane {
+                id,
+                url: snapshot.url.clone(),
+            };
+
+            diesel::insert_into(schema::browser_panes::dsl::browser_panes)
+                .values(browser_pane)
+                .execute(conn)?;
+        }
         // twarp 07: record the session handle so the pane can `claude --resume`
         // on restore. Guarded by the same `session_id.is_some()` test the kind
         // match used above; a `None` session is non-persisted (next arm).
@@ -1297,7 +1312,10 @@ fn save_pane_state(
                 .values(claude_code_pane)
                 .execute(conn)?;
         }
-        LeafContents::NetworkLog | LeafContents::BrowserSpike | LeafContents::ClaudeCode(_) => {
+        LeafContents::NetworkLog
+        | LeafContents::BrowserSpike
+        | LeafContents::Browser(_)
+        | LeafContents::ClaudeCode(_) => {
             // Unreachable: filtered by `is_persisted` in `save_app_state`.
         }
     }
@@ -2558,6 +2576,14 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                         session_id: pane.session_id,
                         cwd: pane.cwd,
                     })
+                }
+                BROWSER_PANE_KIND => {
+                    let pane = schema::browser_panes::dsl::browser_panes
+                        .find(node.id)
+                        .select(model::BrowserPane::as_select())
+                        .first(conn)?;
+
+                    LeafContents::Browser(crate::app_state::BrowserPaneSnapshot { url: pane.url })
                 }
                 other => bail!("Unrecognized pane kind: {other}"),
             };

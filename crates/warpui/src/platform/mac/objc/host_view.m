@@ -263,6 +263,71 @@ void warp_marked_text_cleared(WarpHostView *);
     [entry.webView loadRequest:request];
 }
 
+- (void)goBackNativeWebView:(NSUInteger)webViewId {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry || !entry.webView.canGoBack) return;
+
+    [entry.webView goBack];
+}
+
+- (void)goForwardNativeWebView:(NSUInteger)webViewId {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry || !entry.webView.canGoForward) return;
+
+    [entry.webView goForward];
+}
+
+- (void)reloadNativeWebView:(NSUInteger)webViewId {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry) return;
+
+    [entry.webView reload];
+}
+
+- (void)stopLoadingNativeWebView:(NSUInteger)webViewId {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry) return;
+
+    [entry.webView stopLoading];
+}
+
+- (BOOL)nativeWebViewCanGoBack:(NSUInteger)webViewId {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    return entry && entry.webView.canGoBack;
+}
+
+- (BOOL)nativeWebViewCanGoForward:(NSUInteger)webViewId {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    return entry && entry.webView.canGoForward;
+}
+
+- (BOOL)nativeWebViewIsLoading:(NSUInteger)webViewId {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    return entry && entry.webView.isLoading;
+}
+
+- (BOOL)copyNativeWebViewString:(NSString *)string buffer:(char *)buffer bufferLength:(NSUInteger)bufferLength {
+    if (!buffer || bufferLength == 0 || !string) return NO;
+
+    return [string getCString:buffer maxLength:bufferLength encoding:NSUTF8StringEncoding];
+}
+
+- (BOOL)copyNativeWebViewURL:(NSUInteger)webViewId buffer:(char *)buffer bufferLength:(NSUInteger)bufferLength {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry || !entry.webView.URL) return NO;
+
+    return [self copyNativeWebViewString:entry.webView.URL.absoluteString
+                                  buffer:buffer
+                            bufferLength:bufferLength];
+}
+
+- (BOOL)copyNativeWebViewTitle:(NSUInteger)webViewId buffer:(char *)buffer bufferLength:(NSUInteger)bufferLength {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry) return NO;
+
+    return [self copyNativeWebViewString:entry.webView.title buffer:buffer bufferLength:bufferLength];
+}
+
 - (void)focusNativeWebView:(NSUInteger)webViewId {
     WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
     if (!entry) return;
@@ -671,6 +736,46 @@ void warp_host_set_webview_hidden(WarpHostView *host, uintptr_t webViewId, BOOL 
 
 void warp_host_load_url(WarpHostView *host, uintptr_t webViewId, NSString *urlString) {
     [host loadNativeWebView:(NSUInteger)webViewId urlString:urlString];
+}
+
+void warp_host_go_back(WarpHostView *host, uintptr_t webViewId) {
+    [host goBackNativeWebView:(NSUInteger)webViewId];
+}
+
+void warp_host_go_forward(WarpHostView *host, uintptr_t webViewId) {
+    [host goForwardNativeWebView:(NSUInteger)webViewId];
+}
+
+void warp_host_reload(WarpHostView *host, uintptr_t webViewId) {
+    [host reloadNativeWebView:(NSUInteger)webViewId];
+}
+
+void warp_host_stop_loading(WarpHostView *host, uintptr_t webViewId) {
+    [host stopLoadingNativeWebView:(NSUInteger)webViewId];
+}
+
+BOOL warp_host_can_go_back(WarpHostView *host, uintptr_t webViewId) {
+    return [host nativeWebViewCanGoBack:(NSUInteger)webViewId];
+}
+
+BOOL warp_host_can_go_forward(WarpHostView *host, uintptr_t webViewId) {
+    return [host nativeWebViewCanGoForward:(NSUInteger)webViewId];
+}
+
+BOOL warp_host_is_loading(WarpHostView *host, uintptr_t webViewId) {
+    return [host nativeWebViewIsLoading:(NSUInteger)webViewId];
+}
+
+BOOL warp_host_copy_url(WarpHostView *host, uintptr_t webViewId, char *buffer, uintptr_t bufferLength) {
+    return [host copyNativeWebViewURL:(NSUInteger)webViewId
+                               buffer:buffer
+                         bufferLength:(NSUInteger)bufferLength];
+}
+
+BOOL warp_host_copy_title(WarpHostView *host, uintptr_t webViewId, char *buffer, uintptr_t bufferLength) {
+    return [host copyNativeWebViewTitle:(NSUInteger)webViewId
+                                 buffer:buffer
+                           bufferLength:(NSUInteger)bufferLength];
 }
 
 void warp_host_focus_webview(WarpHostView *host, uintptr_t webViewId) {
