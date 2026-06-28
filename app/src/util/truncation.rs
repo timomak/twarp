@@ -23,3 +23,7 @@ pub fn truncate_from_beginning(text: &str, max_length: usize) -> String {
         format!("…{truncated}")
     }
 }
+
+#[cfg(test)]
+#[path = "truncation_tests.rs"]
+mod tests;
