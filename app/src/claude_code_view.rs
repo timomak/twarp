@@ -2408,6 +2408,16 @@ impl ClaudeCodeView {
                 .then(|| self.session_id.clone()),
             permission_mode: self.permission_mode,
             allowed_tools: Vec::new(),
+            mcp_config: {
+                #[cfg(not(target_family = "wasm"))]
+                {
+                    crate::browser_mcp::BrowserMcpBridge::as_ref(ctx).mcp_config_json()
+                }
+                #[cfg(target_family = "wasm")]
+                {
+                    None
+                }
+            },
             path_env: self.interactive_path.clone(),
         };
         ctx.spawn(

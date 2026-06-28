@@ -97,6 +97,8 @@ pub struct SpawnOptions {
     pub session_id: Option<String>,
     pub permission_mode: PermissionMode,
     pub allowed_tools: Vec<String>,
+    /// Inline JSON or a config path passed to `claude --mcp-config`.
+    pub mcp_config: Option<String>,
     /// `PATH` to run `claude` under. macOS GUI apps launched via Finder/`open`
     /// inherit launchd's minimal `PATH`, which omits the user's shell dirs
     /// (Homebrew, `~/.local/bin`, version managers) where `claude` usually
@@ -175,6 +177,9 @@ pub fn spawn_session(opts: SpawnOptions) -> Result<SpawnedSession> {
     }
     if !opts.allowed_tools.is_empty() {
         cmd.arg("--allowedTools").arg(opts.allowed_tools.join(","));
+    }
+    if let Some(mcp_config) = &opts.mcp_config {
+        cmd.arg("--mcp-config").arg(mcp_config);
     }
 
     // Run under the login-shell PATH when provided (PRODUCT §4): under `open`

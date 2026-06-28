@@ -47,6 +47,8 @@ mod auth;
 mod autoupdate;
 mod banner;
 mod billing;
+#[cfg(not(target_family = "wasm"))]
+mod browser_mcp;
 mod browser_spike_view;
 mod browser_view;
 mod changelog_model;
@@ -1758,6 +1760,8 @@ fn initialize_app(
         ];
         http_server::HttpServer::new(routers, ctx)
     });
+    #[cfg(not(target_family = "wasm"))]
+    ctx.add_singleton_model(crate::browser_mcp::BrowserMcpBridge::new);
 
     app_state
 }
