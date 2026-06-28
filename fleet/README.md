@@ -32,15 +32,21 @@ green branches.
 
 `uxgate` renders twarp on **other-mac's built-in display** (Option A — lid open, no extra hardware),
 runs an integration test that bootstraps the UI (`test_video_recording`), captures a real Retina
-screenshot, pulls it here, and compares against the golden baseline in `fleet/golden/`:
+screenshot, pulls it here, and has a **vision agent** compare it to the golden baseline in
+`fleet/golden/`:
 - first run → `golden-saved` (baseline stored)
-- byte-identical → `pass`
-- changed → `review` (a vision agent inspects the PNG for layout/contrast/clipping regressions)
+- `pass` / `regression` — a headless `claude -p` views BOTH the new shot and the golden and judges
+  whether there's a user-visible regression (misaligned/clipped/missing UI, broken layout, wrong
+  colors). It ignores benign noise (anti-aliasing, cursor blink, sub-pixel shifts) that a byte
+  compare would false-flag.
 
-The screenshot capture works **over SSH** because other-mac has an active GUI console session +
-`caffeinate` keeps the display awake. The pixel `cmp` is a coarse change-detector; the actual visual
-judgment is done by a vision agent on the returned PNG (and `cmp` should be upgraded to a perceptual
-diff to tolerate benign AA noise).
+The capture works **over SSH** because other-mac has an active GUI console session + `caffeinate`
+keeps the display awake. Captures hold a **screen semaphore** (`_screenlock`) so only one real-display
+render runs at a time. Items in `queue.json` flagged `"ux": true` get this gate automatically inside
+`fleet.py run` after their functional gate — a `regression` verdict blocks the merge.
+
+Validated end-to-end: a fresh capture vs golden → `pass`; a deliberately broken (cropped) image →
+`regression`, correctly described.
 
 ## The work ledger (`queue.json`)
 
@@ -73,10 +79,10 @@ which node authored the branch. See the `twarp_fleet_other_mac` memory for its s
 
 ## Status / not yet built
 
-- **UX gate** is wired (`uxgate`, real display on other-mac) and produces a golden-compared
-  screenshot. Still to harden: call the vision agent automatically on a `review` verdict, upgrade the
-  byte `cmp` to a perceptual diff, and fold `uxgate` into `run` (per-item, gated by a screen
-  semaphore) rather than a standalone command.
+- **UX gate** is wired and hardened: vision-agent comparison (not byte `cmp`), screen semaphore,
+  and per-item integration into `fleet.py run` (`"ux": true` items block merge on a `regression`).
+  Remaining polish: per-item UX *tests* (each item drives twarp to the screen it changed, instead of
+  the generic bootstrap shot) and its own golden.
 - **Speculative depth = 1** (serialized merges). No N-deep speculative train yet.
 - Concurrency is capped in `queue.json` (`config.concurrency`). Builds serialize on the build node's
   cargo lock (shared `CARGO_TARGET_DIR`).
