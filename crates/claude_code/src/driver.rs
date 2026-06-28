@@ -19,7 +19,9 @@ use futures::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 use futures::stream::Stream;
 use serde_json::{json, Value};
 
-use crate::{EndReason, TodoItem, TodoStatus, ToolOutput, TranscriptEvent, TurnMetrics, Usage};
+use crate::{
+    EndReason, McpServerInfo, TodoItem, TodoStatus, ToolOutput, TranscriptEvent, TurnMetrics, Usage,
+};
 
 /// Permission mode passed to `claude --permission-mode`. The CLI argument
 /// names are the ones Claude Code itself accepts.
@@ -814,6 +816,28 @@ fn parse_system(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
                 .collect()
         })
         .unwrap_or_default();
+    // MCP servers the session can reach (feature 13). The init event lists
+    // `{ name, status }` per server; tools are not enumerated here (the panel
+    // derives them from observed calls). Parse defensively — the field may be
+    // absent (older CLI), empty, or carry a server without a status.
+    let mcp_servers = value
+        .get("mcp_servers")
+        .and_then(|v| v.as_array())
+        .map(|servers| {
+            servers
+                .iter()
+                .filter_map(|s| {
+                    let name = s.get("name")?.as_str()?.to_owned();
+                    let status = s.get("status").and_then(|v| v.as_str()).map(str::to_owned);
+                    Some(McpServerInfo {
+                        name,
+                        status,
+                        tools: Vec::new(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     out.push_back(TranscriptEvent::SessionInit {
         session_id,
         cwd,
@@ -821,6 +845,7 @@ fn parse_system(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
         permission_mode: str_field("permissionMode"),
         fast_mode: str_field("fast_mode_state"),
         slash_commands,
+        mcp_servers,
     });
 }
 
@@ -1137,6 +1162,49 @@ mod tests {
                 assert_eq!(session_id, "abc");
                 assert_eq!(cwd, &PathBuf::from("/tmp/p"));
                 assert_eq!(model.as_deref(), Some("sonnet"));
+            }
+            other => panic!("expected SessionInit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_init_mcp_servers() {
+        let v: Value = serde_json::from_str(
+            r#"{"type":"system","subtype":"init","session_id":"abc","cwd":"/tmp/p",
+                "mcp_servers":[
+                    {"name":"github","status":"connected"},
+                    {"name":"figma","status":"failed"},
+                    {"name":"bare"}
+                ]}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        match out.front() {
+            Some(TranscriptEvent::SessionInit { mcp_servers, .. }) => {
+                assert_eq!(mcp_servers.len(), 3);
+                assert_eq!(mcp_servers[0].name, "github");
+                assert_eq!(mcp_servers[0].status.as_deref(), Some("connected"));
+                assert!(mcp_servers[0].tools.is_empty());
+                assert_eq!(mcp_servers[1].status.as_deref(), Some("failed"));
+                assert_eq!(mcp_servers[2].name, "bare");
+                assert_eq!(mcp_servers[2].status, None, "missing status tolerated");
+            }
+            other => panic!("expected SessionInit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_init_without_mcp_servers_field() {
+        let v: Value = serde_json::from_str(
+            r#"{"type":"system","subtype":"init","session_id":"abc","cwd":"/tmp/p"}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        match out.front() {
+            Some(TranscriptEvent::SessionInit { mcp_servers, .. }) => {
+                assert!(mcp_servers.is_empty(), "absent field → empty, not a panic");
             }
             other => panic!("expected SessionInit, got {other:?}"),
         }

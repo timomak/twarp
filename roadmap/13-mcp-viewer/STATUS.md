@@ -1,8 +1,8 @@
 # 13 — MCP viewer in Claude pane
 
-**Phase:** spec-in-review
+**Phase:** impl-in-review
 **Spec PR:** [#91](https://github.com/timomak/twarp/pull/91)
-**Impl PRs:** —
+**Impl PRs:** 13a [#95](https://github.com/timomak/twarp/pull/95)
 
 ## Scope
 
@@ -23,7 +23,7 @@ Read-only visibility into the MCP servers available to the local `claude` CLI, s
 
 _(to be finalized in TECH.md)_
 
-- [ ] **13a — MCP viewer.** Source the server/tool list, add the composer pill + popover, render servers and their tools read-only.
+- [x] **13a — MCP viewer.** Source the server/tool list, add the composer pill + popover, render servers and their tools read-only.
 
 ## Smoke test
 

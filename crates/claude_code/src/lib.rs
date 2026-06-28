@@ -50,6 +50,22 @@ pub struct TodoItem {
     pub status: TodoStatus,
 }
 
+/// One MCP server available to the session, for the read-only MCP viewer
+/// (feature 13). Name + status come from the `system`/`init` event; `tools` is
+/// derived incrementally from observed `mcp__<server>__<tool>` calls (the init
+/// event does not enumerate tools).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpServerInfo {
+    pub name: String,
+    /// Raw status string from the init event (`"connected"` / `"failed"` /
+    /// `"pending"` / other), or `None` if the event listed the server without a
+    /// status.
+    pub status: Option<String>,
+    /// Tool names (with the `mcp__<server>__` prefix stripped), in first-seen
+    /// order. Empty until Claude actually calls one of the server's tools.
+    pub tools: Vec<String>,
+}
+
 /// Status of a tool-call card (PRODUCT §23: running → completed/failed).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolStatus {
@@ -136,6 +152,9 @@ pub enum TranscriptEvent {
         /// plugins), from the `init` message — drives the composer's `/`
         /// suggestions (PRODUCT §15a).
         slash_commands: Vec<String>,
+        /// MCP servers the session reported at init (name + status only; tools
+        /// are derived from observed calls). Drives the MCP viewer (feature 13).
+        mcp_servers: Vec<McpServerInfo>,
     },
     /// A user turn was sent into the session (PRODUCT §16).
     UserMessage(String),
@@ -290,6 +309,9 @@ pub struct Transcript {
     fast_mode: Option<String>,
     /// Slash commands `claude` reported at init (PRODUCT §15a).
     slash_commands: Vec<String>,
+    /// MCP servers available to this session (feature 13). Name + status from
+    /// the init event; per-server `tools` derived from observed tool calls.
+    mcp_servers: Vec<McpServerInfo>,
     /// Latest turn's token usage + context window (from `result`).
     usage: Option<Usage>,
     /// Bumped on every mutation (`apply` / `clear`). Lets renderers cheaply
@@ -396,6 +418,13 @@ impl Transcript {
         &self.slash_commands
     }
 
+    /// MCP servers available to this session (feature 13), in init order.
+    /// Empty until the first session init. Per-server `tools` fill in as Claude
+    /// calls each server's tools during the session.
+    pub fn mcp_servers(&self) -> &[McpServerInfo] {
+        &self.mcp_servers
+    }
+
     /// Latest turn's token usage + context window, once a turn has completed.
     pub fn usage(&self) -> Option<Usage> {
         self.usage
@@ -409,8 +438,41 @@ impl Transcript {
         self.permission_mode = None;
         self.fast_mode = None;
         self.slash_commands.clear();
+        self.mcp_servers.clear();
         self.usage = None;
         self.revision = self.revision.wrapping_add(1);
+    }
+
+    /// Record a tool call against the MCP viewer's per-server tool sets
+    /// (feature 13). Non-MCP tools (no `mcp__` prefix) are ignored. The server
+    /// is found-or-inserted (inserted with `status: None` if the init event
+    /// never listed it — defensive), and the tool is appended once, preserving
+    /// first-seen order. Mirrors `tool_cards::tool_display_name`'s split so the
+    /// server/tool parsing stays consistent.
+    fn record_mcp_tool(&mut self, tool_name: &str) {
+        let Some(rest) = tool_name.strip_prefix("mcp__") else {
+            return;
+        };
+        let Some((server, tool)) = rest.split_once("__") else {
+            return;
+        };
+        if tool.is_empty() {
+            return;
+        }
+        let entry = match self.mcp_servers.iter_mut().find(|s| s.name == server) {
+            Some(entry) => entry,
+            None => {
+                self.mcp_servers.push(McpServerInfo {
+                    name: server.to_owned(),
+                    status: None,
+                    tools: Vec::new(),
+                });
+                self.mcp_servers.last_mut().expect("just pushed")
+            }
+        };
+        if !entry.tools.iter().any(|t| t == tool) {
+            entry.tools.push(tool.to_owned());
+        }
     }
 
     /// Apply one driver event to the model.
@@ -427,6 +489,7 @@ impl Transcript {
                 permission_mode,
                 fast_mode,
                 slash_commands,
+                mut mcp_servers,
                 ..
             } => {
                 self.session_id = Some(session_id);
@@ -436,6 +499,18 @@ impl Transcript {
                 if !slash_commands.is_empty() {
                     self.slash_commands = slash_commands;
                 }
+                // On resume the init event replays before the tool history
+                // re-streams, so overwrite the server list (to pick up fresh
+                // statuses) but carry over any tools we'd already derived for a
+                // same-named server — otherwise the resume would blank them.
+                for server in &mut mcp_servers {
+                    if let Some(prev) = self.mcp_servers.iter().find(|s| s.name == server.name) {
+                        if server.tools.is_empty() {
+                            server.tools = prev.tools.clone();
+                        }
+                    }
+                }
+                self.mcp_servers = mcp_servers;
             }
             TranscriptEvent::Usage(usage) => {
                 // Mid-turn `assistant` usage carries no context window (that
@@ -514,6 +589,11 @@ impl Transcript {
                 input,
                 parent_id,
             } => {
+                // Bucket MCP tool calls under their server for the viewer
+                // (feature 13). Done before the idempotency guard so a server
+                // listed at init that only ever has a replayed call still picks
+                // up its tool; dedup inside the helper makes repeats a no-op.
+                self.record_mcp_tool(&name);
                 // Idempotent on id: resuming a session first renders the stored
                 // history (`load_history`), then `claude --resume` replays the
                 // same turns on stdout, re-emitting each `tool_use` with the
@@ -931,6 +1011,7 @@ mod tests {
             permission_mode: Some("default".to_string()),
             fast_mode: Some("off".to_string()),
             slash_commands: vec!["compact".to_string()],
+            mcp_servers: vec![],
         });
         assert_eq!(t.session_id(), Some("abc-123"));
         assert_eq!(t.model(), Some("claude-fable-5[1m]"));
@@ -938,6 +1019,104 @@ mod tests {
         assert_eq!(t.fast_mode(), Some("off"));
         assert_eq!(t.slash_commands(), ["compact".to_string()]);
         assert!(t.is_empty(), "session init alone renders nothing");
+    }
+
+    /// A `SessionInit` carrying the given MCP servers (name, raw status), with
+    /// the other metadata fields left at sensible defaults — for the feature-13
+    /// viewer tests.
+    fn session_init_with_mcp(servers: &[(&str, Option<&str>)]) -> TranscriptEvent {
+        TranscriptEvent::SessionInit {
+            session_id: "s".to_string(),
+            cwd: PathBuf::from("/tmp"),
+            model: None,
+            permission_mode: None,
+            fast_mode: None,
+            slash_commands: vec![],
+            mcp_servers: servers
+                .iter()
+                .map(|(name, status)| McpServerInfo {
+                    name: (*name).to_string(),
+                    status: status.map(str::to_owned),
+                    tools: Vec::new(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn session_init_records_mcp_servers_with_status() {
+        let mut t = Transcript::new();
+        t.apply(session_init_with_mcp(&[
+            ("github", Some("connected")),
+            ("figma", Some("failed")),
+            ("linear", None),
+        ]));
+        let servers = t.mcp_servers();
+        assert_eq!(servers.len(), 3);
+        assert_eq!(servers[0].name, "github");
+        assert_eq!(servers[0].status.as_deref(), Some("connected"));
+        assert!(servers[0].tools.is_empty(), "init enumerates no tools");
+        assert_eq!(servers[1].status.as_deref(), Some("failed"));
+        assert_eq!(servers[2].status, None);
+    }
+
+    #[test]
+    fn mcp_tool_calls_bucket_under_their_server() {
+        let mut t = Transcript::new();
+        t.apply(session_init_with_mcp(&[("github", Some("connected"))]));
+        t.apply(tool_call("c1", "mcp__github__create_issue", None));
+        t.apply(tool_call("c2", "mcp__github__list_issues", None));
+        // A non-MCP tool must not touch the server inventory.
+        t.apply(tool_call("c3", "Read", None));
+        let github = t
+            .mcp_servers()
+            .iter()
+            .find(|s| s.name == "github")
+            .expect("github server present");
+        assert_eq!(
+            github.tools,
+            vec!["create_issue".to_string(), "list_issues".to_string()],
+            "tools bucket under server, prefix stripped, first-seen order"
+        );
+        assert_eq!(t.mcp_servers().len(), 1, "Read did not add a server");
+    }
+
+    #[test]
+    fn repeated_mcp_tool_calls_dedup() {
+        let mut t = Transcript::new();
+        t.apply(session_init_with_mcp(&[("github", Some("connected"))]));
+        t.apply(tool_call("c1", "mcp__github__create_issue", None));
+        t.apply(tool_call("c2", "mcp__github__create_issue", None));
+        let github = &t.mcp_servers()[0];
+        assert_eq!(github.tools, vec!["create_issue".to_string()]);
+    }
+
+    #[test]
+    fn mcp_tool_for_unlisted_server_is_inserted_defensively() {
+        let mut t = Transcript::new();
+        // No init listing `surprise`; a call to its tool still records it.
+        t.apply(tool_call("c1", "mcp__surprise__do_thing", None));
+        let server = &t.mcp_servers()[0];
+        assert_eq!(server.name, "surprise");
+        assert_eq!(server.status, None);
+        assert_eq!(server.tools, vec!["do_thing".to_string()]);
+    }
+
+    #[test]
+    fn resumed_init_preserves_derived_tools_and_refreshes_status() {
+        let mut t = Transcript::new();
+        t.apply(session_init_with_mcp(&[("github", Some("pending"))]));
+        t.apply(tool_call("c1", "mcp__github__create_issue", None));
+        // Resume replays the init (now connected) before the tool history
+        // re-streams: status must refresh, derived tools must survive.
+        t.apply(session_init_with_mcp(&[("github", Some("connected"))]));
+        let github = &t.mcp_servers()[0];
+        assert_eq!(github.status.as_deref(), Some("connected"));
+        assert_eq!(
+            github.tools,
+            vec!["create_issue".to_string()],
+            "resume must not blank already-derived tools"
+        );
     }
 
     #[test]

@@ -370,6 +370,10 @@ pub enum ClaudeCodeViewAction {
     /// twarp: expand / collapse one background-script row's captured output,
     /// keyed by the launching tool-use id.
     ToggleBackgroundScript(String),
+    /// twarp: expand / collapse one server's tool list in the MCP viewer popover
+    /// (feature 13). Only one server is expanded at a time; re-dispatching the
+    /// open server collapses it.
+    ToggleMcpServer(String),
 }
 
 /// Actions dispatched by elements this view renders inside its **pane
@@ -407,6 +411,9 @@ enum ComposerMenu {
     Ci,
     /// The PR pill's menu when a PR exists: open / copy URL (#11).
     Pr,
+    /// The MCP pill's menu: read-only list of the session's MCP servers and
+    /// their tools (feature 13).
+    Mcp,
 }
 
 impl ComposerMenu {
@@ -421,6 +428,7 @@ impl ComposerMenu {
             ComposerMenu::Branch => "claude_pill_branch",
             ComposerMenu::Ci => "claude_pill_ci",
             ComposerMenu::Pr => "claude_pill_pr",
+            ComposerMenu::Mcp => "claude_pill_mcp",
         }
     }
 
@@ -686,6 +694,13 @@ pub struct ClaudeCodeView {
     model_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
     /// Pooled mouse handles for the permission-picker rows (#2).
     permission_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Mouse state for the MCP viewer pill (feature 13).
+    mcp_pill_mouse: MouseStateHandle,
+    /// Pooled mouse handles for the MCP popover's server rows (feature 13).
+    mcp_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Which MCP server row is expanded in the viewer popover, if any
+    /// (feature 13). One at a time; ephemeral UI state, not persisted.
+    mcp_expanded_server: Option<String>,
     /// When the current streaming turn started (#7), for the live elapsed in
     /// the status line below the last message. `None` when idle.
     turn_started: Option<Instant>,
@@ -925,6 +940,9 @@ impl ClaudeCodeView {
             context_button: MouseStateHandle::default(),
             model_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
             permission_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
+            mcp_pill_mouse: MouseStateHandle::default(),
+            mcp_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
+            mcp_expanded_server: None,
             turn_started: None,
             sent_images: HashMap::new(),
             sent_image_mouse: std::cell::RefCell::new(HashMap::new()),
@@ -3940,6 +3958,21 @@ impl ClaudeCodeView {
                 // did). Re-fire the focus-grab on the initiating click (no
                 // selection yet) so a click anywhere in the transcript makes
                 // this the active pane, matching the composer. See `FocusInput`.
+                //
+                // twarp: gate on an *actual selection change*. `SelectableArea`
+                // invokes this handler on EVERY `LeftMouseDown`/`LeftMouseUp` in
+                // the window — including clicks outside this transcript (see
+                // `selectable_area.rs` `dispatch_event`). Dispatching `FocusInput`
+                // on every `selection.is_none()` fire therefore stole application
+                // focus back to this pane's composer whenever the user clicked
+                // anything else (e.g. the left-panel file search), making those
+                // inputs impossible to type into. An out-of-pane click leaves the
+                // selection unchanged (typically `None` -> `None`), so skipping
+                // unchanged fires keeps focus where the user put it while still
+                // grabbing focus when a real in-transcript selection is cleared.
+                if *selection.read() == args.selection {
+                    return;
+                }
                 if args.selection.is_none() {
                     ctx.dispatch_typed_action(ClaudeCodeViewAction::FocusInput);
                 }
@@ -4082,6 +4115,147 @@ impl ClaudeCodeView {
         }
     }
 
+    /// The MCP viewer pill (feature 13): `MCP · N` where N is the count of
+    /// servers the session reported at init. Read-only, so — unlike the
+    /// permission / model / effort pills — it stays clickable mid-stream (like
+    /// the context chip).
+    fn render_mcp_control(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let label = format!("MCP · {}", self.transcript.mcp_servers().len());
+        render_clickable_pill(
+            &label,
+            self.mcp_pill_mouse.clone(),
+            |ctx| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
+                    ComposerMenu::Mcp,
+                ))
+            },
+            self.render_wash.get(),
+            ComposerMenu::Mcp.anchor_id(),
+            appearance,
+        )
+    }
+
+    /// The MCP viewer popover (feature 13): a read-only list of the session's
+    /// MCP servers, each with a status indicator and tool count; clicking a row
+    /// expands its (incrementally-derived) tool list. Mirrors the permission /
+    /// CI menus' chrome. Empty state shows the CLI hint.
+    fn render_mcp_menu(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let text_color = theme.main_text_color(theme.surface_2()).into_solid();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let accent = self.render_accent.get();
+        // Reuse the CI menu's canonical status colours so the two popovers read
+        // consistently (theme has no dedicated success/error accessor here).
+        let green = ColorU::new(0, 142, 65, 255);
+        let red = ColorU::new(188, 54, 42, 255);
+
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(2.)
+            .with_child(menu_header("MCP servers", muted, appearance));
+
+        let servers = self.transcript.mcp_servers();
+        if servers.is_empty() {
+            // Empty state (PRODUCT): the feature stays discoverable, and the row
+            // points at the CLI as the place to add servers.
+            column.add_child(context_segment(
+                appearance,
+                "No MCP servers connected.".to_owned(),
+                muted,
+            ));
+            column.add_child(context_segment(
+                appearance,
+                "Configure with the claude CLI (claude mcp add).".to_owned(),
+                muted,
+            ));
+            return column.finish();
+        }
+
+        let mut rows = self.mcp_menu_row_mouse.borrow_mut();
+        for (index, server) in servers.iter().enumerate() {
+            let mouse = pool_mouse(&mut rows, index);
+            let expanded = self.mcp_expanded_server.as_deref() == Some(server.name.as_str());
+
+            // Status indicator: connected → green, failed → red, anything else
+            // (pending / unknown / a server seen only via a tool call) → muted.
+            // A server listed at init without a status counts as connected
+            // (it was reported), shown muted (PRODUCT "best-effort").
+            let (status_color, status_label) = match server.status.as_deref() {
+                Some("connected") => (green, "connected".to_owned()),
+                Some("failed") => (red, "failed".to_owned()),
+                Some("pending") => (muted, "pending".to_owned()),
+                Some(other) => (muted, other.to_owned()),
+                None => (muted, "connected".to_owned()),
+            };
+            let count_label = match server.tools.len() {
+                0 => "tools unknown".to_owned(),
+                1 => "1 tool".to_owned(),
+                n => format!("{n} tools"),
+            };
+
+            let meta = Flex::row()
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(6.)
+                .with_child(context_segment(
+                    appearance,
+                    format!("\u{25CF} {status_label}"),
+                    status_color,
+                ))
+                .with_child(context_segment(appearance, count_label, muted))
+                .finish();
+            let header_row = Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(context_segment(
+                    appearance,
+                    server.name.clone(),
+                    if expanded { accent } else { text_color },
+                ))
+                .with_child(meta)
+                .finish();
+
+            let mut row = Container::new(header_row)
+                .with_padding_left(8.)
+                .with_padding_right(8.)
+                .with_padding_top(5.)
+                .with_padding_bottom(5.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
+            if expanded {
+                row = row.with_background_color(theme.surface_1().into_solid());
+            }
+            let row = row.finish();
+            let server_name = server.name.clone();
+            column.add_child(
+                Hoverable::new(mouse, move |_| row)
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleMcpServer(
+                            server_name.clone(),
+                        ));
+                    })
+                    .finish(),
+            );
+
+            // Expanded: the bare tool names (prefix already stripped at parse
+            // time), indented and muted, in first-seen order.
+            if expanded {
+                for tool in &server.tools {
+                    column.add_child(
+                        Container::new(context_segment(appearance, tool.clone(), muted))
+                            .with_padding_left(20.)
+                            .with_padding_top(2.)
+                            .with_padding_bottom(2.)
+                            .finish(),
+                    );
+                }
+            }
+        }
+        column.finish()
+    }
+
     /// The open composer dropdown / popover (#13), wrapped in a bordered card
     /// that sits above the input. `None` when nothing is open.
     fn render_composer_menu(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
@@ -4095,6 +4269,7 @@ impl ClaudeCodeView {
             ComposerMenu::Branch => self.render_branch_menu(appearance)?,
             ComposerMenu::Ci => self.render_ci_menu(appearance)?,
             ComposerMenu::Pr => self.render_pr_menu(appearance)?,
+            ComposerMenu::Mcp => self.render_mcp_menu(appearance),
         };
         Some(
             // Cap the width so the dropdown stays a compact popover anchored to
@@ -4801,6 +4976,7 @@ impl ClaudeCodeView {
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(8.)
+            .with_child(self.render_mcp_control(appearance))
             .with_child(self.render_context_control(appearance))
             .with_child(self.render_model_control(appearance))
             .with_child(self.render_effort_control(appearance))
@@ -5378,6 +5554,16 @@ impl TypedActionView for ClaudeCodeView {
                 if !self.background_expanded_rows.remove(id) {
                     self.background_expanded_rows.insert(id.clone());
                 }
+                ctx.notify();
+            }
+            ClaudeCodeViewAction::ToggleMcpServer(name) => {
+                // One server expanded at a time (feature 13): re-clicking the
+                // open server collapses it.
+                self.mcp_expanded_server = if self.mcp_expanded_server.as_deref() == Some(name) {
+                    None
+                } else {
+                    Some(name.clone())
+                };
                 ctx.notify();
             }
         }
