@@ -126,7 +126,7 @@ struct AutomationEnvelope<T> {
     error: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct BrowserEngine {
     window_id: WindowId,
     webview_id: BrowserWebViewId,

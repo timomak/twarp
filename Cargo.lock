@@ -10059,14 +10059,19 @@ version = "0.10.0"
 source = "git+https://github.com/warpdotdev/rmcp.git?rev=c0f65dc441af7d714b9c453ac5e7ef641451abe3#c0f65dc441af7d714b9c453ac5e7ef641451abe3"
 dependencies = [
  "async-trait",
+ "axum",
  "base64 0.22.1",
+ "bytes",
  "chrono",
  "futures",
  "http 1.4.0",
+ "http-body 1.0.1",
+ "http-body-util",
  "oauth2",
  "pastey 0.2.1",
  "pin-project-lite",
  "process-wrap",
+ "rand 0.9.4",
  "reqwest",
  "rmcp-macros",
  "schemars",
@@ -10077,8 +10082,10 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
+ "tower-service",
  "tracing",
  "url",
+ "uuid",
 ]
 
 [[package]]

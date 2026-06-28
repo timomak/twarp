@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use browser::BrowserEngine;
@@ -41,6 +42,7 @@ const TOOLBAR_HEIGHT: f32 = 36.;
 const TOOLBAR_PADDING: f32 = 6.;
 const LOADING_INDICATOR_HEIGHT: f32 = 2.;
 const STATE_POLL_INTERVAL: Duration = Duration::from_millis(250);
+static NEXT_BROWSER_FOCUS_SEQ: AtomicU64 = AtomicU64::new(1);
 
 #[cfg(not(target_os = "macos"))]
 type BrowserWebViewId = usize;
@@ -59,6 +61,23 @@ pub enum BrowserViewAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BrowserViewCustomAction {}
+
+#[derive(Clone, Debug)]
+pub(crate) struct BrowserAutomationTarget {
+    pub engine: BrowserEngine,
+    pub title: String,
+    pub url: Option<String>,
+    pub last_focus_seq: u64,
+}
+
+impl BrowserAutomationTarget {
+    pub fn label(&self) -> String {
+        match self.url.as_deref() {
+            Some(url) if !url.is_empty() => format!("{} ({url})", self.title),
+            _ => self.title.clone(),
+        }
+    }
+}
 
 #[derive(Default, PartialEq, Eq)]
 struct NativeBrowserState {
@@ -83,6 +102,7 @@ pub struct BrowserView {
     back_button: MouseStateHandle,
     forward_button: MouseStateHandle,
     reload_button: MouseStateHandle,
+    last_focus_seq: u64,
 }
 
 impl BrowserView {
@@ -120,6 +140,7 @@ impl BrowserView {
             back_button: Default::default(),
             forward_button: Default::default(),
             reload_button: Default::default(),
+            last_focus_seq: 0,
         };
 
         if let Some(url) = initial_url {
@@ -142,11 +163,13 @@ impl BrowserView {
         self.current_url.clone()
     }
 
-    pub fn focus_omnibar(&self, ctx: &mut ViewContext<Self>) {
+    pub fn focus_omnibar(&mut self, ctx: &mut ViewContext<Self>) {
+        self.touch_focus();
         ctx.focus(&self.omnibar_editor);
     }
 
-    pub fn focus_webview(&self) {
+    pub fn focus_webview(&mut self) {
+        self.touch_focus();
         if let Some(engine) = &self.engine {
             engine.focus();
         }
@@ -160,6 +183,19 @@ impl BrowserView {
 
     pub fn browser_engine(&self) -> Option<&BrowserEngine> {
         self.engine.as_ref()
+    }
+
+    pub(crate) fn automation_target(&self) -> Option<BrowserAutomationTarget> {
+        Some(BrowserAutomationTarget {
+            engine: *self.engine.as_ref()?,
+            title: self.title.clone(),
+            url: self.current_url.clone(),
+            last_focus_seq: self.last_focus_seq,
+        })
+    }
+
+    fn touch_focus(&mut self) {
+        self.last_focus_seq = NEXT_BROWSER_FOCUS_SEQ.fetch_add(1, Ordering::Relaxed);
     }
 
     fn handle_omnibar_editor_event(
@@ -608,7 +644,7 @@ impl Element for NativeBrowserElement {
     }
 }
 
-fn normalize_browser_url(input: &str) -> Option<String> {
+pub(crate) fn normalize_browser_url(input: &str) -> Option<String> {
     let trimmed = input.trim();
     if trimmed.is_empty() || trimmed.chars().any(char::is_whitespace) {
         return None;
