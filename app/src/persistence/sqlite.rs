@@ -1047,7 +1047,7 @@ fn save_pane_state(
         LeafContents::ClaudeCode(snapshot) if snapshot.session_id.is_some() => {
             CLAUDE_CODE_PANE_KIND
         }
-        LeafContents::NetworkLog | LeafContents::ClaudeCode(_) => {
+        LeafContents::NetworkLog | LeafContents::BrowserSpike | LeafContents::ClaudeCode(_) => {
             // These pane types are filtered out before this function is
             // called; see `LeafContents::is_persisted` and the skip in
             // `save_app_state`. Reaching this arm would mean a `pane_nodes`
@@ -1297,7 +1297,7 @@ fn save_pane_state(
                 .values(claude_code_pane)
                 .execute(conn)?;
         }
-        LeafContents::NetworkLog | LeafContents::ClaudeCode(_) => {
+        LeafContents::NetworkLog | LeafContents::BrowserSpike | LeafContents::ClaudeCode(_) => {
             // Unreachable: filtered by `is_persisted` in `save_app_state`.
         }
     }

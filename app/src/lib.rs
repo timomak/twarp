@@ -47,6 +47,7 @@ mod auth;
 mod autoupdate;
 mod banner;
 mod billing;
+mod browser_spike_view;
 mod changelog_model;
 mod chip_configurator;
 // twarp 07 (7b): the Claude Code main-content pane view. Opened by typing

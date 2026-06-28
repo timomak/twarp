@@ -59,6 +59,7 @@ pub const WINDOW_STATE_IVAR: &str = "windowState";
 const INITIAL_WINDOW_WIDTH: f32 = 1280.;
 const INITIAL_WINDOW_HEIGHT: f32 = 800.;
 const DEFAULT_WINDOW_BACKGROUND_BLUR_RADIUS: u8 = 1;
+pub type BrowserWebViewId = usize;
 
 // A mac::window::Window holds a reference to a WindowState.
 // The NSWindow also holds a reference, so that either may be deallocated first.
@@ -475,6 +476,13 @@ extern "C" {
     fn open_save_file_picker(callback: *mut c_void, default_filename: id, default_directory: id);
     fn open_url(urlString: id);
     fn set_titlebar_height(window: id, height: f64);
+    fn warp_host_create_webview(host: id) -> usize;
+    fn warp_host_set_webview_frame(host: id, webview_id: usize, frame: NSRect);
+    fn warp_host_set_webview_hidden(host: id, webview_id: usize, hidden: BOOL);
+    fn warp_host_load_url(host: id, webview_id: usize, url: id);
+    fn warp_host_focus_webview(host: id, webview_id: usize);
+    fn warp_host_destroy_webview(host: id, webview_id: usize);
+    fn warp_host_prepare_webviews_for_frame(host: id);
 }
 
 pub type FrameCaptureCallback = Box<dyn FnOnce(platform::CapturedFrame) + Send + 'static>;
@@ -917,6 +925,72 @@ impl Window {
             }
         }
     }
+
+    pub fn create_browser_webview(window_id: WindowId) -> Option<BrowserWebViewId> {
+        unsafe {
+            let window = Self::find_window_with_id(window_id)?;
+            let host_view: id = msg_send![window, contentView];
+            Some(warp_host_create_webview(host_view))
+        }
+    }
+
+    pub fn set_browser_webview_frame(
+        window_id: WindowId,
+        webview_id: BrowserWebViewId,
+        frame: RectF,
+    ) {
+        unsafe {
+            if let Some(window) = Self::find_window_with_id(window_id) {
+                let host_view: id = msg_send![window, contentView];
+                let ns_frame = RectF::new(
+                    transform_origin_from_rect_coord_to_frame_coord(frame.origin(), frame.size()),
+                    frame.size(),
+                )
+                .to_ns_rect();
+                warp_host_set_webview_frame(host_view, webview_id, ns_frame);
+            }
+        }
+    }
+
+    pub fn set_browser_webview_hidden(
+        window_id: WindowId,
+        webview_id: BrowserWebViewId,
+        hidden: bool,
+    ) {
+        unsafe {
+            if let Some(window) = Self::find_window_with_id(window_id) {
+                let host_view: id = msg_send![window, contentView];
+                warp_host_set_webview_hidden(host_view, webview_id, hidden as BOOL);
+            }
+        }
+    }
+
+    pub fn load_browser_webview_url(window_id: WindowId, webview_id: BrowserWebViewId, url: &str) {
+        unsafe {
+            if let Some(window) = Self::find_window_with_id(window_id) {
+                let host_view: id = msg_send![window, contentView];
+                warp_host_load_url(host_view, webview_id, make_nsstring(url));
+            }
+        }
+    }
+
+    pub fn focus_browser_webview(window_id: WindowId, webview_id: BrowserWebViewId) {
+        unsafe {
+            if let Some(window) = Self::find_window_with_id(window_id) {
+                let host_view: id = msg_send![window, contentView];
+                warp_host_focus_webview(host_view, webview_id);
+            }
+        }
+    }
+
+    pub fn destroy_browser_webview(window_id: WindowId, webview_id: BrowserWebViewId) {
+        unsafe {
+            if let Some(window) = Self::find_window_with_id(window_id) {
+                let host_view: id = msg_send![window, contentView];
+                warp_host_destroy_webview(host_view, webview_id);
+            }
+        }
+    }
 }
 
 impl platform::Window for Window {
@@ -1334,6 +1408,7 @@ extern "C-unwind" fn warp_update_layer(this: &Object) {
 
     unsafe {
         let window = get_window_state(this);
+        warp_host_prepare_webviews_for_frame(this as *const Object as id);
 
         let scene = {
             if window.next_scene.borrow().is_none() {

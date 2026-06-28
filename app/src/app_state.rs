@@ -740,6 +740,9 @@ pub enum LeafContents {
     /// uses. A pane whose first turn hasn't landed has no session to resume and
     /// is treated as non-persisted.
     ClaudeCode(ClaudeCodePaneSnapshot),
+    /// twarp 14a: temporary native WKWebView embed spike. Not persisted; 14b
+    /// replaces this with the real browser pane snapshot.
+    BrowserSpike,
     /// An entrypoint pane type to launch other pane types from a search palette. The default view
     /// when creating a tab.
     Welcome {
@@ -765,7 +768,7 @@ impl LeafContents {
             // Network log: the backing log is an in-memory ring buffer that
             // starts empty on launch; persisting would also regress back to
             // an on-disk log via the app-state database.
-            LeafContents::NetworkLog => false,
+            LeafContents::NetworkLog | LeafContents::BrowserSpike => false,
             // twarp 07: a Claude Code pane is restorable only once `claude` has
             // written its session `.jsonl` (i.e. the first turn completed and a
             // `session_id` is known). A pane still in its zero-state has nothing

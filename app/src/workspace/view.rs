@@ -208,8 +208,8 @@ use crate::notebooks::manager::{NotebookManager, NotebookSource};
 #[cfg(feature = "local_fs")]
 use crate::pane_group::FilePane;
 use crate::pane_group::{
-    self, AnyPaneContent, ClaudeCodePane, CodePane, Direction, NewTerminalOptions, PaneContent,
-    PanesLayout, TabBarHoverIndex,
+    self, AnyPaneContent, BrowserSpikePane, ClaudeCodePane, CodePane, Direction,
+    NewTerminalOptions, PaneContent, PanesLayout, TabBarHoverIndex,
 };
 use crate::remote_server::manager::RemoteServerManager;
 #[cfg(feature = "local_fs")]
@@ -553,6 +553,7 @@ pub(crate) const OPEN_GLOBAL_SEARCH_BINDING_NAME: &str = "workspace:open_global_
 pub(crate) const TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME: &str =
     "workspace:toggle_conversation_list_view";
 pub(crate) const NEW_TAB_BINDING_NAME: &str = "workspace:new_tab";
+pub(crate) const OPEN_BROWSER_SPIKE_PANE_BINDING_NAME: &str = "workspace:open_browser_spike_pane";
 // twarp: open Claude Code in a new tab (cmd-shift-T).
 pub(crate) const OPEN_CLAUDE_CODE_TAB_BINDING_NAME: &str = "workspace:open_claude_code_tab";
 pub(crate) const NEW_TERMINAL_TAB_BINDING_NAME: &str = "workspace:new_terminal_tab";
@@ -12789,6 +12790,20 @@ impl Workspace {
         });
     }
 
+    /// twarp 14a: temporary dev entry point for the native WKWebView embed
+    /// spike. 14b replaces this with the real Browser pane and UX.
+    pub(crate) fn open_browser_spike_pane(&mut self, ctx: &mut ViewContext<Self>) {
+        let pane = BrowserSpikePane::new(ctx);
+        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
+            pane_group.add_pane_with_direction(
+                Direction::Right,
+                pane,
+                true, /* focus_new_pane */
+                ctx,
+            );
+        });
+    }
+
     /// twarp 07 (7b): open a Claude Code pane in the active tab's pane group and
     /// focus it — the destination of the `claude` terminal trigger (PRODUCT §1,
     /// §5). `args` are the tokens after `claude`: recognized flags (incl. the
@@ -19279,6 +19294,7 @@ impl TypedActionView for Workspace {
                     }
                 }
             }
+            OpenBrowserSpikePane => self.open_browser_spike_pane(ctx),
             OpenClaudeCodeInNewTab => self.open_claude_code_tab(ctx),
             AddTerminalTab { hide_homepage } => {
                 self.add_new_session_tab_internal_with_default_session_mode_behavior(
