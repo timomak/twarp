@@ -47,6 +47,42 @@ fn test_human_readable_precise_duration() {
 }
 
 #[test]
+fn test_human_readable_precise_duration_edge_cases() {
+    assert_eq!(
+        human_readable_precise_duration(Duration::milliseconds(0)),
+        "0 ms".to_owned()
+    );
+    assert_eq!(
+        human_readable_precise_duration(Duration::milliseconds(999)),
+        "999 ms".to_owned()
+    );
+    assert_eq!(
+        human_readable_precise_duration(Duration::seconds(59)),
+        "59.0 sec".to_owned()
+    );
+    assert_eq!(
+        human_readable_precise_duration(Duration::seconds(60)),
+        "1.00 min".to_owned()
+    );
+    assert_eq!(
+        human_readable_precise_duration(Duration::minutes(59)),
+        "59.0 min".to_owned()
+    );
+    assert_eq!(
+        human_readable_precise_duration(Duration::minutes(60)),
+        "1.00 hours".to_owned()
+    );
+    assert_eq!(
+        human_readable_precise_duration(Duration::hours(23)),
+        "23.0 hours".to_owned()
+    );
+    assert_eq!(
+        human_readable_precise_duration(Duration::hours(24)),
+        "1.00 days".to_owned()
+    );
+}
+
+#[test]
 fn test_human_readable_approx_duration() {
     assert_eq!(
         human_readable_approx_duration(Duration::milliseconds(2), false),
@@ -91,5 +127,69 @@ fn test_human_readable_approx_duration() {
     assert_eq!(
         human_readable_approx_duration(Duration::weeks(520), false),
         "9 years ago".to_owned()
+    );
+}
+
+#[test]
+fn test_human_readable_approx_duration_edge_cases() {
+    assert_eq!(
+        human_readable_approx_duration(Duration::milliseconds(0), false),
+        "just now".to_owned()
+    );
+    assert_eq!(
+        human_readable_approx_duration(Duration::milliseconds(999), false),
+        "just now".to_owned()
+    );
+    assert_eq!(
+        human_readable_approx_duration(Duration::seconds(59), false),
+        "just now".to_owned()
+    );
+    assert_eq!(
+        human_readable_approx_duration(Duration::seconds(60), false),
+        "1 min ago".to_owned()
+    );
+    assert_eq!(
+        human_readable_approx_duration(Duration::minutes(59), false),
+        "59 min ago".to_owned()
+    );
+    assert_eq!(
+        human_readable_approx_duration(Duration::minutes(60), false),
+        "1 hour ago".to_owned()
+    );
+    assert_eq!(
+        human_readable_approx_duration(Duration::hours(23), false),
+        "23 hours ago".to_owned()
+    );
+    assert_eq!(
+        human_readable_approx_duration(Duration::hours(24), false),
+        "1 day ago".to_owned()
+    );
+}
+
+#[test]
+fn test_human_readable_approx_duration_sentence_case_variants() {
+    assert_eq!(
+        human_readable_approx_duration(Duration::milliseconds(0), false),
+        "just now".to_owned()
+    );
+    assert_eq!(
+        human_readable_approx_duration(Duration::milliseconds(0), true),
+        "Just now".to_owned()
+    );
+    assert_eq!(
+        human_readable_approx_duration(Duration::milliseconds(999), false),
+        "just now".to_owned()
+    );
+    assert_eq!(
+        human_readable_approx_duration(Duration::milliseconds(999), true),
+        "Just now".to_owned()
+    );
+    assert_eq!(
+        human_readable_approx_duration(Duration::minutes(1), false),
+        "1 min ago".to_owned()
+    );
+    assert_eq!(
+        human_readable_approx_duration(Duration::minutes(1), true),
+        "1 min ago".to_owned()
     );
 }

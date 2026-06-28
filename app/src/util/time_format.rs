@@ -57,7 +57,7 @@ pub fn human_readable_precise_duration(duration: Duration) -> String {
 
 fn format_sigfigs(num: f64, sigfigs: usize) -> String {
     let a = num.abs();
-    let precision = if a > 1. {
+    let precision = if a >= 1. {
         let n = (1. + a.log10().floor()) as usize;
         sigfigs.saturating_sub(n)
     } else if a > 0. {
