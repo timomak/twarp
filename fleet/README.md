@@ -48,6 +48,19 @@ render runs at a time. Items in `queue.json` flagged `"ux": true` get this gate 
 Validated end-to-end: a fresh capture vs golden → `pass`; a deliberately broken (cropped) image →
 `regression`, correctly described.
 
+## Roadmap bridge (auto-pull)
+
+`fleet.py run` (and `/fleet`) call `roadmap_sync()` first, which reads `roadmap/ROADMAP.md`'s active
+feature and its `STATUS.md`:
+- **Specs stay human.** If the feature isn't `impl-pending` (e.g. `spec-in-review`, `not-started`),
+  it pulls **nothing** and prints what's needed — spec writing/review stays with `/twarp-next` + you.
+- **Impl auto-flows.** When the feature is `impl-pending`, it pulls the **next unchecked sub-phase**
+  from `STATUS.md` into the queue — routed to **other-mac/Codex** (sparing the Claude sub), with a
+  task that reads the merged `PRODUCT.md`/`TECH.md` and ticks the sub-phase checkbox on completion.
+  One sub-phase at a time (they're sequential and share files).
+
+`python3 fleet/fleet.py roadmap-sync` runs just the bridge (debug).
+
 ## The work ledger (`queue.json`)
 
 Each item declares:

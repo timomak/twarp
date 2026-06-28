@@ -12,6 +12,13 @@ Always run from the repo root: `/Users/thirdfacedev/Development/twarp`.
 
 ## Workflow for `/fleet` (no args)
 
+0. **Pull the next roadmap sub-task** (auto-bridge from the roadmap):
+   ```bash
+   python3 fleet/fleet.py roadmap-sync
+   ```
+   If the active roadmap feature is `impl-pending`, this adds its next unchecked sub-phase to the
+   queue (routed to other-mac/Codex). For any other phase it pulls nothing and prints what's needed
+   (e.g. "review/merge the spec PR" — **specs stay human**). Report this line.
 1. **Is a run already in progress?**
    ```bash
    pgrep -fl "fleet/fleet.py run"
@@ -42,7 +49,8 @@ Always run from the repo root: `/Users/thirdfacedev/Development/twarp`.
 
 ## `/fleet status`
 
-Run steps 1–2 and report only. **Never start a run**, even if items are eligible.
+Run steps **1–2 only** (skip step 0 — `status` is read-only and must not pull/modify the queue) and
+report. **Never start a run**, even if items are eligible.
 
 ## Reset a stuck/interrupted run
 

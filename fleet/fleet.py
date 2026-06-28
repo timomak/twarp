@@ -15,7 +15,7 @@ Design notes:
   * Auto-merge only happens after the functional gate passes on the *merge with current master*
     (catches green-alone-but-break-together semantic conflicts).
 """
-import argparse, concurrent.futures as cf, json, os, subprocess, sys, threading, time
+import argparse, concurrent.futures as cf, json, os, re, subprocess, sys, threading, time
 from pathlib import Path
 
 _qlock = threading.Lock()   # serialize all access to queue.json across worker threads
@@ -29,6 +29,7 @@ REMOTE_REPO = "$HOME/Development/twarp"
 REMOTE_WT = "$HOME/Development/twarp-fleet-wt"
 REMOTE_ENV = "source ~/.config/twarp-fleet/env; set -a; source ~/.codex/.env-foundry; set +a"
 LOG = LOCAL_REPO / "fleet" / "runs"
+ROADMAP = LOCAL_REPO / "roadmap" / "ROADMAP.md"
 INFLIGHT = {"leased", "building", "authored", "gating", "gated", "merging"}
 
 
@@ -84,6 +85,54 @@ def ssh(remote_cmd, timeout=None, check=False):
     if check and r.returncode != 0:
         raise RuntimeError(f"ssh failed ({r.returncode}):\n{r.stdout}\n{r.stderr}")
     return r
+
+
+# ---------- roadmap bridge ----------
+def _active_feature():
+    if not ROADMAP.exists():
+        return None
+    m = re.search(r"\*\*Currently active:\*\*\s*`([^`]+)`", ROADMAP.read_text())
+    return m.group(1) if m else None
+
+def roadmap_sync():
+    """Pull the next unchecked IMPL sub-phase of the active roadmap feature into the queue.
+    Specs are human-gated: this only acts when the feature is `impl-pending`; for any other phase it
+    pulls nothing and explains what's needed. Pulls ONE sub-phase at a time (they're sequential and
+    share files). Returns a one-line status string."""
+    feat = _active_feature()
+    if not feat:
+        return "no active feature in ROADMAP.md"
+    status_md = LOCAL_REPO / "roadmap" / feat / "STATUS.md"
+    if not status_md.exists():
+        return f"{feat}: no STATUS.md"
+    text = status_md.read_text()
+    pm = re.search(r"\*\*Phase:\*\*\s*`?([a-z-]+)`?", text)
+    phase = pm.group(1) if pm else "unknown"
+    if phase != "impl-pending":
+        hint = {"spec-in-review": "review/merge the spec PR", "spec-pending": "run /twarp-next to write specs",
+                "not-started": "run /twarp-next to start specs", "impl-in-review": "review/merge the open impl PR",
+                "merged": "feature done — advance ROADMAP to the next feature"}.get(phase, "no fleet action")
+        return f"{feat}: phase={phase} — {hint}; nothing pulled (specs stay human)"
+    m = re.search(r"^- \[ \] \*\*([0-9]+[a-z]) — ([^*]+?)\.?\*\*\s*(.*)$", text, re.M)
+    if not m:
+        return f"{feat}: impl-pending but no unchecked sub-phase found"
+    sub_id, sub_title, sub_desc = m.group(1), m.group(2).strip(), m.group(3).strip()
+    q = load()
+    if any(it["id"] == sub_id for it in q["items"]):
+        return f"{sub_id}: already in queue"
+    base = next((it for it in q["items"]
+                 if it["id"] == feat or it["id"].split("-")[0] == feat.split("-")[0]), None)
+    touches = (base["touches"][:] if base else ["app/**"]) + [f"roadmap/{feat}/STATUS.md"]
+    verify = base["verify"] if base else "cargo build --bin warp-oss"
+    task = (f"Implement sub-phase {sub_id} of roadmap feature {feat}. FIRST read the merged specs "
+            f"roadmap/{feat}/PRODUCT.md and roadmap/{feat}/TECH.md. Sub-phase {sub_id} — {sub_title}: "
+            f"{sub_desc}\nImplement ONLY this sub-phase, scoped to its files. When done, tick this "
+            f"sub-phase's checkbox in roadmap/{feat}/STATUS.md from `- [ ]` to `- [x]`.")
+    q["items"].append({"id": sub_id, "title": f"{feat} {sub_id}: {sub_title}", "node": "other-mac",
+                       "status": "queued", "depends_on": [], "touches": touches, "barrier": False,
+                       "task": task, "verify": verify, "ux": False})
+    save(q)
+    return f"queued {sub_id} — {sub_title}"
 
 
 # ---------- dispatcher ----------
@@ -337,6 +386,7 @@ def cmd_dispatch(args):
 
 def cmd_run(args):
     LOG.mkdir(parents=True, exist_ok=True)
+    say(f"roadmap: {roadmap_sync()}")   # auto-pull next impl sub-phase before dispatching
     picked = cmd_dispatch(args)
     if not picked:
         return
@@ -394,7 +444,7 @@ def cmd_run(args):
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("status", "dispatch", "run"):
+    for name in ("status", "dispatch", "run", "roadmap-sync"):
         sub.add_parser(name)
     w = sub.add_parser("worker"); w.add_argument("id")
     g = sub.add_parser("gate"); g.add_argument("id")
@@ -404,6 +454,8 @@ def main():
 
     if args.cmd == "status":
         cmd_status(args)
+    elif args.cmd == "roadmap-sync":
+        print("roadmap:", roadmap_sync())
     elif args.cmd == "dispatch":
         cmd_dispatch(args)
     elif args.cmd == "run":
