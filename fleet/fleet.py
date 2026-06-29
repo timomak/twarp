@@ -55,7 +55,12 @@ def load():
     return json.loads(QUEUE.read_text())
 
 def save(q):
-    QUEUE.write_text(json.dumps(q, indent=2) + "\n")
+    # Atomic replace so concurrent readers (the many lock-free node_*/load() calls in worker threads)
+    # never observe a half-written or empty file. Writers are serialized by _qlock; readers always
+    # see a complete snapshot (old or new), never a torn one.
+    tmp = QUEUE.with_name(f"{QUEUE.name}.tmp.{os.getpid()}.{threading.get_ident()}")
+    tmp.write_text(json.dumps(q, indent=2) + "\n")
+    os.replace(str(tmp), str(QUEUE))
 
 def item(q, iid):
     return next(i for i in q["items"] if i["id"] == iid)
