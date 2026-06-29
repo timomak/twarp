@@ -1,6 +1,6 @@
 use super::{
     AfterLayoutContext, AppContext, Axis, Element, Event, EventContext, Fill, LayoutContext,
-    PaintContext, Point, SizeConstraint, Vector2FExt, ZIndex,
+    PaintContext, Point, SelectableElement, SizeConstraint, Vector2FExt, ZIndex,
 };
 use crate::elements::F32Ext;
 use crate::event::ModifiersState;
@@ -544,6 +544,17 @@ impl Element for Scrollable {
         }
 
         self.child_max_z_index = Some(ctx.scene.max_active_z_index());
+    }
+
+    fn as_selectable_element(&self) -> Option<&dyn SelectableElement> {
+        // Forward selection through to the scrollable child (e.g. a
+        // `ClippedScrollable`, which in turn delegates to its own selectable
+        // content). Without this, a `SelectableArea` wrapping this `Scrollable`
+        // from the outside finds a non-selectable child and bails in
+        // `on_mouse_down` before a selection can ever start — selection silently
+        // does nothing. `ClippedScrollable::vertical` returns a `Scrollable`, so
+        // this is the link the whole outside-wrapping pattern depends on.
+        self.child.as_selectable_element()
     }
 
     fn dispatch_event(

@@ -161,3 +161,34 @@ fn test_scroll_to_position() {
         });
     });
 }
+
+// Regression: `ClippedScrollable::vertical` returns a `Scrollable` that wraps
+// the `ClippedScrollable`. A `SelectableArea` wrapping that scrollable from the
+// outside calls `as_selectable_element()` on its child in `on_mouse_down`; if
+// the `Scrollable` wrapper fails to forward it, the call returns `None` and the
+// selection silently never starts (drag-to-select in the Claude transcript was
+// completely dead because of this missing link). Assert the wrapper forwards
+// selectability through to the clipped child.
+#[test]
+fn test_scrollable_forwards_as_selectable_element() {
+    use crate::elements::{Fill, ScrollbarWidth};
+
+    let scrollable = ClippedScrollable::vertical(
+        ClippedScrollStateHandle::default(),
+        ConstrainedBox::new(Empty::new().finish())
+            .with_height(20.)
+            .with_width(100.)
+            .finish(),
+        ScrollbarWidth::Auto,
+        Fill::None,
+        Fill::None,
+        Fill::None,
+    )
+    .finish();
+
+    assert!(
+        scrollable.as_selectable_element().is_some(),
+        "Scrollable must forward as_selectable_element to its child, otherwise \
+         SelectableArea selection never starts",
+    );
+}
