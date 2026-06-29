@@ -2,8 +2,8 @@
 
 Single source of truth for what's being built next. `/twarp-next` reads this file every invocation; the user reads it to see status at a glance.
 
-**Currently active:** `14-builtin-browser` (owner-directed 2026-06-24, pulled ahead of 09)
-**Next up:** `15-computer-control` (owner-directed 2026-06-27, pulled ahead of 09)
+**Currently active:** `15-computer-control` (owner-directed 2026-06-27, pulled ahead of 09)
+**Next up:** `09-rebrand` (barrier) — or owner direction
 
 ## Features
 
@@ -22,7 +22,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 11 | [Git blame](11-git-blame/STATUS.md) | not-started | — | — |
 | 12 | [Project search & replace](12-project-search-replace/STATUS.md) | not-started | — | — |
 | 13 | [MCP viewer in Claude pane](13-mcp-viewer/STATUS.md) | merged | [#91](https://github.com/timomak/twarp/pull/91) | 13a [#95](https://github.com/timomak/twarp/pull/95) |
-| 14 | [Built-in browser (Claude-debuggable)](14-builtin-browser/STATUS.md) | impl-pending | [#96](https://github.com/timomak/twarp/pull/96) | — |
+| 14 | [Built-in browser (Claude-debuggable)](14-builtin-browser/STATUS.md) | merged | [#96](https://github.com/timomak/twarp/pull/96) | 14a [#111](https://github.com/timomak/twarp/pull/111), 14b [#112](https://github.com/timomak/twarp/pull/112), 14c [#113](https://github.com/timomak/twarp/pull/113), 14d [#114](https://github.com/timomak/twarp/pull/114), 14e [#115](https://github.com/timomak/twarp/pull/115) |
 | 15 | [Computer control overlay (Claude drives the Mac)](15-computer-control/STATUS.md) | not-started | — | — |
 
 ## Phases

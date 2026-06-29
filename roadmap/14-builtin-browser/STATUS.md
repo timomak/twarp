@@ -1,8 +1,8 @@
 # 14 — Built-in browser (Claude-debuggable)
 
-**Phase:** impl-pending
+**Phase:** merged
 **Spec PR:** [#96](https://github.com/timomak/twarp/pull/96) (merged)
-**Impl PRs:** —
+**Impl PRs:** 14a [#111](https://github.com/timomak/twarp/pull/111), 14b [#112](https://github.com/timomak/twarp/pull/112), 14c [#113](https://github.com/timomak/twarp/pull/113), 14d [#114](https://github.com/timomak/twarp/pull/114), 14e [#115](https://github.com/timomak/twarp/pull/115)
 
 Specs: [PRODUCT.md](PRODUCT.md) · [TECH.md](TECH.md) (pre-spec direction in [PLAN.md](PLAN.md)).
 
