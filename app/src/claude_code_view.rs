@@ -2534,6 +2534,29 @@ impl ClaudeCodeView {
         if epoch != self.session_epoch {
             return;
         }
+        // PRODUCT §1: `AskUserQuestion` must never sit behind a `can_use_tool`
+        // permission prompt. claude blocks the whole turn waiting for that
+        // answer, but the inline Question card (the §1 tool-card path) is
+        // non-interactive mid-stream — so the user has no way to pick an option
+        // and the only live control is a confusing "Allow AskUserQuestion"
+        // prompt. (Observed: a turn wedged ~2h with a dead question card until
+        // the user clicked the permission, which resolved as "user did not
+        // answer".) Auto-allow it: the tool returns immediately, the turn ends,
+        // and the live Question card lets the user answer as the next turn.
+        if let TranscriptEvent::PermissionRequest { id, tool, input } = &event {
+            if should_auto_allow_permission(tool) {
+                if let Some(tx) = &self.message_tx {
+                    let _ = tx.try_send(StdinCommand::Control {
+                        request_id: id.clone(),
+                        response: serde_json::json!({
+                            "behavior": "allow",
+                            "updatedInput": input,
+                        }),
+                    });
+                }
+                return;
+            }
+        }
         // PRODUCT §11: a user-requested Stop makes `claude` end the turn with an
         // error `result` (subtype `error_during_execution`) while the session
         // stays alive. Re-label that terminal event as a clean interrupt so it
@@ -6449,6 +6472,16 @@ fn permission_summary(tool: &str, input: &serde_json::Value) -> Option<String> {
     }
 }
 
+/// Whether a `can_use_tool` permission prompt for `tool` should be auto-allowed
+/// rather than surfaced as an interactive Permission card (PRODUCT §1). Only
+/// `AskUserQuestion`: gating it behind a prompt wedges the whole turn (claude
+/// blocks on the permission) while its inline Question card is non-interactive
+/// mid-stream, leaving the user no way to answer. Auto-allowing lets the tool
+/// return at once so the turn ends and the live Question card takes the pick.
+fn should_auto_allow_permission(tool: &str) -> bool {
+    tool == "AskUserQuestion"
+}
+
 /// The `{questions:[..]}` source for a question card, whichever path produced
 /// it: the `AskUserQuestion` tool input (§1) or the control-channel dialog
 /// payload (§24). `None` for any other item, so a caller keyed by transcript
@@ -7524,8 +7557,18 @@ fn format_token_count(n: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_metrics_line, queue_preview};
+    use super::{format_metrics_line, queue_preview, should_auto_allow_permission};
     use claude_code::TurnMetrics;
+
+    #[test]
+    fn ask_user_question_permission_is_auto_allowed() {
+        // §1: AskUserQuestion must never block the turn behind a permission
+        // prompt — it is answered via the inline Question card once the turn
+        // ends. Every other tool keeps its interactive Allow/Deny card.
+        assert!(should_auto_allow_permission("AskUserQuestion"));
+        assert!(!should_auto_allow_permission("Bash"));
+        assert!(!should_auto_allow_permission("Write"));
+    }
 
     #[test]
     fn queue_preview_takes_first_line_and_caps_length() {
