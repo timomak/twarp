@@ -160,7 +160,7 @@ const COMPOSER_MENU_MAX_WIDTH: f32 = 320.;
 /// transcript sentinel, so the newest message scrolls fully clear of the
 /// floating composer (which floats over the bottom of the pane) rather than
 /// tucking behind it. Sized generously past the composer's resting height.
-const COMPOSER_CLEARANCE: f32 = 132.;
+const COMPOSER_CLEARANCE: f32 = 200.;
 /// Height of the bottom gradient fade band (§13). Runs from transparent at its
 /// top to the opaque pane background at the bottom, tall enough that transcript
 /// content scrolling toward the floating composer dissolves into the background
@@ -5154,7 +5154,16 @@ impl ClaudeCodeView {
         // card rather than the full pane, so it stays at the conversation's
         // right edge in a wide pane.
         if let Some(button) = scroll_button {
-            stack.add_positioned_child(
+            // An *overlay* child, not a plain positioned one: the button floats
+            // *outside* the composer rect (above its top edge, over the
+            // transcript), so as a normal-layer child its click hit-test
+            // (`Hoverable::is_mouse_over_element`) was rejected — the transcript
+            // scrollable painted around it left the button's point reading as
+            // `is_covered`, so a press silently did nothing even though the
+            // button painted visibly. The overlay layer is unclipped and sits
+            // above all normal content (the same reason the composer menu below
+            // uses `add_positioned_overlay_child`), so the click lands.
+            stack.add_positioned_overlay_child(
                 button,
                 OffsetPositioning::offset_from_parent(
                     vec2f(-TRANSCRIPT_GUTTER, -8.),
