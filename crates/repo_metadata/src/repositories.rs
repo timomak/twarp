@@ -37,6 +37,12 @@ pub enum DetectedRepositoriesEvent {
 #[derive(Default)]
 pub struct DetectedRepositories {
     repository_roots: HashSet<StandardizedPath>,
+    /// Monotonic counter bumped every time a new repository root is detected.
+    /// Lets callers cheaply observe that repo-detection state changed (so a
+    /// memoized computation keyed on the *same* inputs can be invalidated)
+    /// without re-canonicalizing paths. See `WorkingDirectoriesModel`'s
+    /// `last_refresh_inputs` memo.
+    generation: u64,
     #[cfg(test)]
     /// List of spawned background tasks, for testing.
     spawned_futures: Vec<FutureId>,
@@ -92,7 +98,9 @@ impl DetectedRepositories {
                             .as_ref()
                             .and_then(|path| StandardizedPath::from_local_canonicalized(path).ok())
                         {
-                            me.repository_roots.insert(repo_root_path.clone());
+                            if me.repository_roots.insert(repo_root_path.clone()) {
+                                me.generation = me.generation.wrapping_add(1);
+                            }
 
                             let external_git_dir = StandardizedPath::from_local_canonicalized(
                                 info.git_dir_path.as_path(),
@@ -170,6 +178,14 @@ impl DetectedRepositories {
         repo.to_local_path()
     }
 
+    /// Monotonic counter bumped whenever a new repository root is detected.
+    /// Callers that memoize a path-resolution result keyed on raw inputs should
+    /// fold this into their cache key, otherwise an async detection that lands
+    /// between two otherwise-identical calls is silently missed.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
     /// Find the repository that contains the given path, if any.
     fn find_repository_root(&self, path: &StandardizedPath) -> Option<StandardizedPath> {
         let mut current = Some(path.clone());
@@ -194,7 +210,9 @@ impl SingletonEntity for DetectedRepositories {}
 impl DetectedRepositories {
     /// Insert a repository root path directly, bypassing git detection.
     pub fn insert_test_repo_root(&mut self, path: StandardizedPath) {
-        self.repository_roots.insert(path);
+        if self.repository_roots.insert(path) {
+            self.generation = self.generation.wrapping_add(1);
+        }
     }
 }
 

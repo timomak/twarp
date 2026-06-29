@@ -191,6 +191,84 @@ fn refresh_working_directories_treats_directory_cwds_as_roots() {
 }
 
 #[test]
+fn refresh_picks_up_repo_detected_after_a_prior_identical_refresh() {
+    // Regression: a Claude Code pane opened with no terminal already in the
+    // repo triggers a refresh *before* its repo is detected (panel empty),
+    // then async detection completes and re-runs the refresh with identical
+    // cwds. The `last_refresh_inputs` memo is keyed on the raw cwds, so without
+    // folding the `DetectedRepositories` generation into that key the second
+    // pass is skipped and the code-review / Open Changes panel never picks up
+    // the now-detected repo.
+    App::test((), |mut app| async move {
+        let detected_repos_handle = app.add_singleton_model(|_| DetectedRepositories::default());
+
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let repo_root = temp_dir.path().join("repo");
+        let repo_sub = repo_root.join("sub");
+        fs::create_dir_all(&repo_sub).expect("create repo/sub");
+        let canonical_repo_root = dunce::canonicalize(&repo_root).expect("canonical repo root");
+
+        let pane_group_id = EntityId::new();
+        let claude_pane = EntityId::new();
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
+
+        // First refresh: repo NOT yet detected, so no repo root resolves.
+        let repos_before: Vec<PathBuf> = working_directories_handle.update(&mut app, |model, ctx| {
+            model.refresh_working_directories_for_pane_group(
+                pane_group_id,
+                vec![],
+                vec![],
+                vec![(claude_pane, repo_sub.to_string_lossy().to_string())],
+                None,
+                Some(claude_pane),
+                ctx,
+            );
+            model
+                .most_recent_repositories_for_pane_group(pane_group_id)
+                .map(|iter| iter.collect())
+                .unwrap_or_default()
+        });
+        assert!(
+            repos_before.is_empty(),
+            "no repo should be listed before detection completes"
+        );
+
+        // Detection completes and registers the repo root (bumps generation).
+        detected_repos_handle.update(&mut app, |repos, _ctx| {
+            let canonical =
+                warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                    canonical_repo_root.as_path(),
+                )
+                .expect("canonicalized path");
+            repos.insert_test_repo_root(canonical);
+        });
+
+        // Second refresh with IDENTICAL cwds must NOT be memoized away — it has
+        // to re-resolve and surface the now-detected repo root.
+        let repos_after: Vec<PathBuf> = working_directories_handle.update(&mut app, |model, ctx| {
+            model.refresh_working_directories_for_pane_group(
+                pane_group_id,
+                vec![],
+                vec![],
+                vec![(claude_pane, repo_sub.to_string_lossy().to_string())],
+                None,
+                Some(claude_pane),
+                ctx,
+            );
+            model
+                .most_recent_repositories_for_pane_group(pane_group_id)
+                .map(|iter| iter.collect())
+                .unwrap_or_default()
+        });
+        assert_eq!(
+            repos_after,
+            vec![canonical_repo_root],
+            "repo detected between identical refreshes must be picked up"
+        );
+    });
+}
+
+#[test]
 fn refresh_working_directories_focuses_focused_claude_pane_repo() {
     // twarp 07: when a Claude Code pane is the focused pane (no terminal
     // focused), the code-review / Open Changes panel must root at its repo.

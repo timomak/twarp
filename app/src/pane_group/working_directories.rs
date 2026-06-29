@@ -118,6 +118,7 @@ type RefreshInputsSignature = (
     Vec<(EntityId, String)>, // directory_cwds
     Option<EntityId>,        // focused_terminal_id
     Option<EntityId>,        // focused_directory_id
+    u64,                     // DetectedRepositories generation
 );
 
 #[derive(Default)]
@@ -396,12 +397,21 @@ impl WorkingDirectoriesModel {
         // restored multi-pane Claude session storms `PaneFocused` events and
         // pins the main thread on blocking `std::fs::canonicalize` syscalls,
         // beachballing the whole app. See `last_refresh_inputs`.
+        // Fold in the repo-detection generation: the resolved repo roots below
+        // depend on `DetectedRepositories`, which is populated asynchronously.
+        // A Claude Code pane opened with no terminal in the repo triggers a
+        // refresh *before* its repo is detected, then detection completes and
+        // re-runs this refresh with identical cwds. Without the generation in
+        // the key, that second pass is memoized away and the code-review /
+        // Open Changes panel never picks up the now-detected repo.
+        let detection_generation = DetectedRepositories::as_ref(ctx).generation();
         let signature: RefreshInputsSignature = (
             terminal_cwds.clone(),
             local_paths.clone(),
             directory_cwds.clone(),
             focused_terminal_id,
             focused_directory_id,
+            detection_generation,
         );
         if self.last_refresh_inputs.get(&pane_group_id) == Some(&signature) {
             return;
