@@ -78,6 +78,24 @@ def remote_fresh_worktree(wt, ref, branch=None):
             f"git worktree add -f {bflag} {wt} {ref}\n")
 
 
+def reap_worktrees(iid):
+    """Remove an item's worktrees (author + gate- + spec- helpers) on the build node and locally,
+    freeing the multi-GB `target/` each carries. The build node's boot disk is small and shared;
+    leftover merged/failed worktrees pile up and eventually crash workers with `No space left on
+    device` (surfaces as a bare/empty codex exit). Never touches the master worktree. Best-effort."""
+    names = [iid, f"gate-{iid}", f"spec-{iid}"]
+    rm = "".join(f"git worktree remove --force {REMOTE_WT}/{n} 2>/dev/null || true\nrm -rf {REMOTE_WT}/{n}\n"
+                 for n in names)
+    try:
+        ssh(f"cd {REMOTE_REPO}\n{rm}git worktree prune\n", timeout=120)
+    except Exception as e:
+        say(f"  [{iid}] remote reap warning: {e}")
+    for n in names:
+        sh(["git", "-C", str(LOCAL_REPO), "worktree", "remove", "--force", str(LOCAL_WT / n)])
+        sh(f"rm -rf {LOCAL_WT / n}")
+    sh(["git", "-C", str(LOCAL_REPO), "worktree", "prune"])
+
+
 def ssh(remote_cmd, timeout=None, check=False):
     """Run a bash script on the build node. The script is fed via stdin so the remote login
     shell never re-parses it — this avoids the `ssh host bash -lc "a; b"` trap where everything
@@ -515,6 +533,12 @@ def cmd_run(args):
         say(f"=== batch {batch_no} merge queue: {[i['id'] for i in ready]} ===")
         merged = [it["id"] for it in ready if merge_one(it)]
         say(f"=== batch {batch_no} done — merged {merged} ===")
+        # reap worktrees for every item that reached a terminal state this batch (merged or failed)
+        # so their multi-GB `target/` dirs don't accumulate and fill the build node's disk.
+        for it in picked:
+            st = item(load(), it["id"]).get("status")
+            if st in ("merged", "failed"):
+                reap_worktrees(it["id"])
         cmd_status(args)
     say("=== run complete ===")
 
