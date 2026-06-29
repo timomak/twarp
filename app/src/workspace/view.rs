@@ -379,8 +379,8 @@ use super::one_time_modal_model::OneTimeModalEvent;
 use super::{ActiveSession, TabBarDropTargetData, TabBarLocation};
 
 use super::tab_settings::{
-    HeaderToolbarChipSelection, NewTabPlacement, TabSettings, TabSettingsChangedEvent,
-    VerticalTabsDisplayGranularity, WorkspaceDecorationVisibility,
+    DirectoryTabColor, HeaderToolbarChipSelection, NewTabPlacement, TabSettings,
+    TabSettingsChangedEvent, VerticalTabsDisplayGranularity, WorkspaceDecorationVisibility,
 };
 use super::util::{
     PaneViewLocator, TabMovement, TerminalSessionFallbackBehavior, WelcomeTipsViewState,
@@ -4601,6 +4601,14 @@ impl Workspace {
             );
             SelectedTabColor::Color(color)
         };
+        // Make the choice stick to the tab's folder so new tabs / `cd`s here
+        // re-apply it. Toggling the active color off records the folder as
+        // explicitly uncolored.
+        self.persist_directory_color_for_tab(
+            index,
+            if is_same { None } else { Some(color) },
+            ctx,
+        );
         ctx.notify();
     }
 
@@ -4627,6 +4635,7 @@ impl Workspace {
             ctx
         );
         self.tabs[index].selected_color = SelectedTabColor::Color(color);
+        self.persist_directory_color_for_tab(index, Some(color), ctx);
         ctx.notify();
     }
 
@@ -4657,6 +4666,9 @@ impl Workspace {
         } else {
             SelectedTabColor::Unset
         };
+        // Clear the folder's stored color so it stops auto-applying to new
+        // tabs / `cd`s here.
+        self.persist_directory_color_for_tab(index, None, ctx);
         ctx.notify();
     }
 
@@ -4953,6 +4965,51 @@ impl Workspace {
 
         tab.default_directory_color = color;
         ctx.notify();
+    }
+
+    /// Persists the user's manual tab-color choice to the directory→color
+    /// setting, keyed by the tab's current local working directory. This is what
+    /// makes a color "stick" to a folder: any tab later opened in (or `cd`-ed
+    /// into) that folder picks it up automatically via `sync_codebase_tab_color`.
+    ///
+    /// `color: Some(c)` records the folder's color; `None` records it as
+    /// explicitly uncolored (`Suppressed`), so a previously-stuck color stops
+    /// auto-applying once the user clears it.
+    ///
+    /// No-op when the `DirectoryTabColors` feature is off, or when the tab's
+    /// active session has no resolvable local cwd (e.g. a remote/SSH session).
+    fn persist_directory_color_for_tab(
+        &self,
+        index: usize,
+        color: Option<AnsiColorIdentifier>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if !FeatureFlag::DirectoryTabColors.is_enabled() {
+            return;
+        }
+        let Some(tab) = self.tabs.get(index) else {
+            return;
+        };
+        let cwd = tab
+            .pane_group
+            .as_ref(ctx)
+            .active_session_view(ctx)
+            .and_then(|tv| tv.as_ref(ctx).pwd_if_local(ctx));
+        let Some(cwd) = cwd else {
+            return;
+        };
+        let path = PathBuf::from(cwd);
+        let new_color = match color {
+            Some(c) => DirectoryTabColor::Color(c),
+            None => DirectoryTabColor::Suppressed,
+        };
+        TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+            let new_value = settings
+                .directory_tab_colors
+                .value()
+                .with_color(&path, new_color);
+            let _ = settings.directory_tab_colors.set_value(new_value, ctx);
+        });
     }
 
     fn clear_tab_name_editor(&mut self, ctx: &mut ViewContext<Self>) {
