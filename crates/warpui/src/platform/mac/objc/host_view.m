@@ -29,7 +29,7 @@ typedef void (*WarpBrowserBytesCallback)(void *, const uint8_t *, uintptr_t, con
 - (instancetype)initWithEntry:(WarpNativeWebViewEntry *)entry;
 @end
 
-@interface WarpNativeWebViewEntry : NSObject <WKNavigationDelegate>
+@interface WarpNativeWebViewEntry : NSObject <WKNavigationDelegate, WKUIDelegate>
 @property(nonatomic, retain) NSView *containerView;
 @property(nonatomic, retain) WKWebView *webView;
 @property(nonatomic, retain) WKUserContentController *userContentController;
@@ -44,6 +44,7 @@ typedef void (*WarpBrowserBytesCallback)(void *, const uint8_t *, uintptr_t, con
 - (void)clearAutomationMessages;
 - (NSString *)consoleMessagesJSON;
 - (NSString *)networkMessagesJSON;
+- (void)downloadRequest:(NSURLRequest *)request response:(NSURLResponse *)response;
 @end
 
 static const NSUInteger WarpAutomationMessageLimit = 200;
@@ -68,6 +69,7 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
 - (void)dealloc {
     [_userContentController removeScriptMessageHandlerForName:@"twarpAutomation"];
     _webView.navigationDelegate = nil;
+    _webView.UIDelegate = nil;
     [_messageHandler release];
     [_networkMessages release];
     [_consoleMessages release];
@@ -121,6 +123,144 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
 
 - (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation {
     [self clearAutomationMessages];
+}
+
+- (BOOL)responseShouldDownload:(WKNavigationResponse *)navigationResponse {
+    if (!navigationResponse.canShowMIMEType) return YES;
+
+    NSURLResponse *response = navigationResponse.response;
+    if (![response isKindOfClass:[NSHTTPURLResponse class]]) return NO;
+
+    NSDictionary *headers = [(NSHTTPURLResponse *)response allHeaderFields];
+    for (id key in headers) {
+        if ([[key description] caseInsensitiveCompare:@"Content-Disposition"] == NSOrderedSame) {
+            NSString *value = [[headers objectForKey:key] description];
+            return [value rangeOfString:@"attachment" options:NSCaseInsensitiveSearch].location != NSNotFound;
+        }
+    }
+    return NO;
+}
+
+- (NSURL *)uniqueDownloadURLForFilename:(NSString *)filename {
+    NSURL *downloadsDirectory =
+        [[[NSFileManager defaultManager] URLsForDirectory:NSDownloadsDirectory
+                                                inDomains:NSUserDomainMask] firstObject];
+    if (!downloadsDirectory) {
+        downloadsDirectory = [NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES];
+    }
+
+    NSString *safeFilename = filename.lastPathComponent.length > 0 ? filename.lastPathComponent : @"download";
+    NSString *baseName = [safeFilename stringByDeletingPathExtension];
+    NSString *extension = [safeFilename pathExtension];
+    NSURL *candidate = [downloadsDirectory URLByAppendingPathComponent:safeFilename];
+    NSUInteger suffix = 2;
+    while ([[NSFileManager defaultManager] fileExistsAtPath:candidate.path]) {
+        NSString *name = extension.length > 0
+            ? [NSString stringWithFormat:@"%@-%lu.%@", baseName, (unsigned long)suffix, extension]
+            : [NSString stringWithFormat:@"%@-%lu", baseName, (unsigned long)suffix];
+        candidate = [downloadsDirectory URLByAppendingPathComponent:name];
+        suffix++;
+    }
+    return candidate;
+}
+
+- (void)downloadRequest:(NSURLRequest *)request response:(NSURLResponse *)response {
+    if (!request.URL) return;
+
+    NSString *filename = response.suggestedFilename;
+    if (filename.length == 0) {
+        filename = request.URL.lastPathComponent.length > 0 ? request.URL.lastPathComponent : @"download";
+    }
+    NSURL *destinationURL = [self uniqueDownloadURLForFilename:filename];
+
+    NSURLSessionDownloadTask *task =
+        [[NSURLSession sharedSession] downloadTaskWithRequest:request
+                                            completionHandler:^(NSURL *location,
+                                                                NSURLResponse *downloadResponse,
+                                                                NSError *error) {
+                                                (void)downloadResponse;
+                                                if (error || !location) return;
+
+                                                NSFileManager *fileManager = [NSFileManager defaultManager];
+                                                NSURL *finalURL = [self uniqueDownloadURLForFilename:destinationURL.lastPathComponent];
+                                                [fileManager moveItemAtURL:location toURL:finalURL error:nil];
+                                            }];
+    [task resume];
+}
+
+- (void)webView:(WKWebView *)webView
+    decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction
+                    decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
+    if (!navigationAction.targetFrame && navigationAction.request.URL) {
+        [webView loadRequest:navigationAction.request];
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+    decisionHandler(WKNavigationActionPolicyAllow);
+}
+
+- (void)webView:(WKWebView *)webView
+    decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse
+                      decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler {
+    if ([self responseShouldDownload:navigationResponse]) {
+        [self downloadRequest:navigationResponse.response.URL
+            ? [NSURLRequest requestWithURL:navigationResponse.response.URL]
+            : webView.URL ? [NSURLRequest requestWithURL:webView.URL] : nil
+                     response:navigationResponse.response];
+        decisionHandler(WKNavigationResponsePolicyCancel);
+        return;
+    }
+    decisionHandler(WKNavigationResponsePolicyAllow);
+}
+
+- (void)webView:(WKWebView *)webView
+    runJavaScriptAlertPanelWithMessage:(NSString *)message
+                      initiatedByFrame:(WKFrameInfo *)frame
+                     completionHandler:(void (^)(void))completionHandler {
+    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+    alert.messageText = webView.title.length > 0 ? webView.title : @"Browser";
+    alert.informativeText = message ?: @"";
+    [alert addButtonWithTitle:@"OK"];
+    [alert runModal];
+    completionHandler();
+}
+
+- (void)webView:(WKWebView *)webView
+    runJavaScriptConfirmPanelWithMessage:(NSString *)message
+                        initiatedByFrame:(WKFrameInfo *)frame
+                       completionHandler:(void (^)(BOOL result))completionHandler {
+    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+    alert.messageText = webView.title.length > 0 ? webView.title : @"Browser";
+    alert.informativeText = message ?: @"";
+    [alert addButtonWithTitle:@"OK"];
+    [alert addButtonWithTitle:@"Cancel"];
+    completionHandler([alert runModal] == NSAlertFirstButtonReturn);
+}
+
+- (void)webView:(WKWebView *)webView
+    runJavaScriptTextInputPanelWithPrompt:(NSString *)prompt
+                              defaultText:(NSString *)defaultText
+                         initiatedByFrame:(WKFrameInfo *)frame
+                        completionHandler:(void (^)(NSString *result))completionHandler {
+    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+    alert.messageText = webView.title.length > 0 ? webView.title : @"Browser";
+    alert.informativeText = prompt ?: @"";
+    NSTextField *input = [[[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 280, 24)] autorelease];
+    input.stringValue = defaultText ?: @"";
+    alert.accessoryView = input;
+    [alert addButtonWithTitle:@"OK"];
+    [alert addButtonWithTitle:@"Cancel"];
+    completionHandler([alert runModal] == NSAlertFirstButtonReturn ? input.stringValue : nil);
+}
+
+- (WKWebView *)webView:(WKWebView *)webView
+    createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
+               forNavigationAction:(WKNavigationAction *)navigationAction
+                    windowFeatures:(WKWindowFeatures *)windowFeatures {
+    if (!navigationAction.targetFrame && navigationAction.request.URL) {
+        [webView loadRequest:navigationAction.request];
+    }
+    return nil;
 }
 
 @end
@@ -312,11 +452,14 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
     }
 }
 
-- (NSUInteger)createNativeWebView {
+- (NSUInteger)createNativeWebViewWithPersistentDataStore:(BOOL)persistentDataStore {
     WKWebViewConfiguration *configuration = [[[WKWebViewConfiguration alloc] init] autorelease];
     WKUserContentController *userContentController =
         [[[WKUserContentController alloc] init] autorelease];
     configuration.userContentController = userContentController;
+    configuration.websiteDataStore = persistentDataStore
+        ? [WKWebsiteDataStore defaultDataStore]
+        : [WKWebsiteDataStore nonPersistentDataStore];
     WKWebView *webView = [[[WKWebView alloc] initWithFrame:NSZeroRect
                                              configuration:configuration] autorelease];
     webView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
@@ -337,12 +480,23 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
     entry.messageHandler = messageHandler;
     [userContentController addScriptMessageHandler:messageHandler name:@"twarpAutomation"];
     webView.navigationDelegate = entry;
+    webView.UIDelegate = entry;
 
     NSUInteger webViewId = nextNativeWebViewId++;
     [nativeWebViews setObject:entry forKey:@(webViewId)];
     [self addSubview:containerView positioned:NSWindowAbove relativeTo:nil];
     [self applyHiddenStateToNativeWebViewEntry:entry];
     return webViewId;
+}
+
+- (void)clearNativeBrowserWebsiteData {
+    NSSet *dataTypes = [WKWebsiteDataStore allWebsiteDataTypes];
+    [[WKWebsiteDataStore defaultDataStore] removeDataOfTypes:dataTypes
+                                               modifiedSince:[NSDate distantPast]
+                                           completionHandler:^{}];
+    for (WarpNativeWebViewEntry *entry in [nativeWebViews allValues]) {
+        [entry clearAutomationMessages];
+    }
 }
 
 - (void)installNativeWebViewAutomationScript:(NSUInteger)webViewId source:(NSString *)source {
@@ -921,8 +1075,8 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
 
 @end
 
-uintptr_t warp_host_create_webview(WarpHostView *host) {
-    return [host createNativeWebView];
+uintptr_t warp_host_create_webview(WarpHostView *host, BOOL persistentDataStore) {
+    return [host createNativeWebViewWithPersistentDataStore:persistentDataStore];
 }
 
 void warp_host_install_automation_script(WarpHostView *host, uintptr_t webViewId, NSString *source) {
@@ -1014,6 +1168,10 @@ void warp_host_focus_webview(WarpHostView *host, uintptr_t webViewId) {
 
 void warp_host_destroy_webview(WarpHostView *host, uintptr_t webViewId) {
     [host destroyNativeWebView:(NSUInteger)webViewId];
+}
+
+void warp_host_clear_browser_website_data(WarpHostView *host) {
+    [host clearNativeBrowserWebsiteData];
 }
 
 void warp_host_prepare_webviews_for_frame(WarpHostView *host) {

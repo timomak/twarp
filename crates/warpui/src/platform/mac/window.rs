@@ -524,7 +524,7 @@ extern "C" {
     fn open_save_file_picker(callback: *mut c_void, default_filename: id, default_directory: id);
     fn open_url(urlString: id);
     fn set_titlebar_height(window: id, height: f64);
-    fn warp_host_create_webview(host: id) -> usize;
+    fn warp_host_create_webview(host: id, persistent_data_store: BOOL) -> usize;
     fn warp_host_install_automation_script(host: id, webview_id: usize, script: id);
     fn warp_host_set_webview_frame(host: id, webview_id: usize, frame: NSRect);
     fn warp_host_set_webview_hidden(host: id, webview_id: usize, hidden: BOOL);
@@ -575,6 +575,7 @@ extern "C" {
     );
     fn warp_host_focus_webview(host: id, webview_id: usize);
     fn warp_host_destroy_webview(host: id, webview_id: usize);
+    fn warp_host_clear_browser_website_data(host: id);
     fn warp_host_prepare_webviews_for_frame(host: id);
 }
 
@@ -1019,11 +1020,17 @@ impl Window {
         }
     }
 
-    pub fn create_browser_webview(window_id: WindowId) -> Option<BrowserWebViewId> {
+    pub fn create_browser_webview(
+        window_id: WindowId,
+        persistent_data_store: bool,
+    ) -> Option<BrowserWebViewId> {
         unsafe {
             let window = Self::find_window_with_id(window_id)?;
             let host_view: id = msg_send![window, contentView];
-            Some(warp_host_create_webview(host_view))
+            Some(warp_host_create_webview(
+                host_view,
+                persistent_data_store as BOOL,
+            ))
         }
     }
 
@@ -1262,6 +1269,15 @@ impl Window {
             if let Some(window) = Self::find_window_with_id(window_id) {
                 let host_view: id = msg_send![window, contentView];
                 warp_host_destroy_webview(host_view, webview_id);
+            }
+        }
+    }
+
+    pub fn clear_browser_website_data(window_id: WindowId) {
+        unsafe {
+            if let Some(window) = Self::find_window_with_id(window_id) {
+                let host_view: id = msg_send![window, contentView];
+                warp_host_clear_browser_website_data(host_view);
             }
         }
     }

@@ -22,7 +22,7 @@ Net-new feature, owner-requested. Independent of the IDE-pivot features (10–12
 - [x] **14b — Minimal browser UX.** Omnibar (navigate), back/forward/reload, loading state, single tab, open trigger (mirrors feature-07 pane wiring).
 - [x] **14c — Automation core.** Injected content script: navigate/snapshot/click/type/eval + console + network capture. Internal Rust API.
 - [x] **14d — Claude bridge.** Expose the automation core as an MCP server twarp registers for the session. Acceptance: Claude CLI drives the live pane via MCP tools. Not "done" until MCP-exposed.
-- [ ] **14e — Full-browser features (optional/later).** Tabs, history, downloads, profiles/cookies, popups.
+- [x] **14e — Full-browser features (optional/later).** Tabs, history, downloads, profiles/cookies, popups.
 
 ## What's already built
 
