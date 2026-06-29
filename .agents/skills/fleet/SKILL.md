@@ -10,6 +10,31 @@ skill **reports status first, then starts a run only if nothing is already in pr
 
 Always run from the repo root: `/Users/thirdfacedev/Development/twarp`.
 
+## Pods & run modes (node-pod model)
+
+A **pod** is one machine = N builder sessions + its own gate (builds/tests locally; gates run serial
+within a pod, parallel across pods). Two modes:
+
+- **Default (`/fleet`)** — the whole loop runs **on other-mac** (single codex pod, 2 builders + 1
+  gate). This Mac stays idle. Launch it over SSH with the pod env sourced:
+  ```bash
+  ssh other-mac 'source ~/.config/twarp-fleet/env; cd ~/Development/twarp && \
+    nohup python3 fleet/fleet.py run --self other-mac > fleet/runs/run.log 2>&1 & echo started'
+  ```
+  **Requires `GH_TOKEN` on other-mac** (so its `gh` can open/merge PRs). If absent, the run authors+
+  gates but can't merge — check with `ssh other-mac 'source ~/.config/twarp-fleet/env; gh auth status'`
+  and, if unset, tell the user to add a `repo`-scoped PAT to `~/.config/twarp-fleet/env` on other-mac.
+- **Both machines (`/fleet --both` or `/fleet both`)** — the loop runs **here on this Mac** with two
+  pods (local=claude here + other-mac=codex over SSH) → **4 builders / 2 gates**. `gh` runs here
+  (already authed), so no token needed. Launch locally:
+  ```bash
+  cd /Users/thirdfacedev/Development/twarp
+  nohup python3 fleet/fleet.py run --self local --both > fleet/runs/run.log 2>&1 &
+  ```
+
+For the default mode, `pgrep`/`status`/`run.log` live **on other-mac** — run those over SSH. For
+`--both`, they're local (this Mac).
+
 ## Workflow for `/fleet` (no args)
 
 0. **Pull the next roadmap sub-task** (auto-bridge from the roadmap):
@@ -34,17 +59,16 @@ Always run from the repo root: `/Users/thirdfacedev/Development/twarp`.
    - **No process, but items are stuck in-flight** (status shows `leased`/`building`/`gating`/
      `gated`/`merging`) → a previous run was interrupted. Report it and tell the user to reset with
      the reset snippet below; **do not auto-start**.
-   - **No process and `eligible now` is non-empty** → start a run **in the background**:
-     ```bash
-     cd /Users/thirdfacedev/Development/twarp
-     nohup python3 fleet/fleet.py run > fleet/runs/run.log 2>&1 &
-     ```
-     Then report what was launched, and that it runs as a **continuous batch loop**: authors up to
-     `config.batch` items in parallel, drives each PR to green + staff-architect-approved (auto-fixing
-     until it passes), auto-merges through the speculative gate, then refills the next batch and
-     repeats **until the queue + roadmap are drained**. Set up a background watcher on
-     `fleet/runs/run.log` for the `=== run complete ===` marker (and the per-batch
-     `=== batch N done ===` lines) so you can report progress/outcome.
+   - **No process and `eligible now` is non-empty** → start a run **in the background** using the
+     launch command for the requested mode (see **Pods & run modes** above): default = on other-mac
+     over SSH; `--both` = locally with both machines. Then report what was launched, and that it runs
+     as a **continuous batch loop**: authors items in parallel across pods (up to total builder
+     capacity), drives each PR to green + staff-architect-approved (auto-fixing until it passes, with
+     the review done by the *opposite* model from the author), auto-merges through the speculative
+     gate, then refills and repeats **until the queue + roadmap are drained**. Set up a background
+     watcher on `run.log` for the `=== run complete ===` marker (and the per-batch
+     `=== batch N done ===` lines) so you can report progress/outcome. For default mode the watcher
+     must read other-mac's `run.log` over SSH.
    - **No process and `eligible now` is empty** → everything is merged or blocked. Report that
      there's nothing to do and that work is added by dropping items into `fleet/queue.json`
      (`id`, `node`, `touches`, `depends_on`, `task`, `verify`, optional `"ux": true`). **Stop.**
@@ -81,8 +105,9 @@ fleet status
 
 ## Rules
 
-- **Never start a second concurrent run.** One `fleet.py run` at a time (the build node has one
-  screen and one cargo cache).
+- **Never start a second concurrent run.** One `fleet.py run` at a time across the whole fleet — a
+  pod has one cargo cache and one display, and two loops would double-lease items. Check for an
+  existing process on *both* the default (other-mac, over SSH) and `--both` (local) launch points.
 - **`/fleet status` never starts anything.**
 - The fleet **auto-merges green PRs to master** — that is intended (gates are the safety net). Don't
   add confirmation prompts.
@@ -91,6 +116,8 @@ fleet status
 
 ## What the fleet does (for reference)
 
-`fleet.py run` → dispatch (file-disjoint, dependency-aware) → parallel workers (Claude local +
-Codex on other-mac) → functional gate on the build node → UX vision gate for `ux:true` items →
-bors-style speculative-merge → auto-merge. See `fleet/README.md`.
+`fleet.py run` → dispatch (file-disjoint, dependency-aware) → assign items across active pods →
+parallel workers (codex on other-mac / claude on local) → per-pod functional gate (parallel across
+pods) → UX vision gate for `ux:true` items (on a display pod) → opposite-model staff-architect
+review → bors-style speculative-merge → auto-merge (`gh` on the self pod). `config.nodes` defines
+pods; `pods_default`/`pods_both` select the active set. See `fleet/README.md`.
