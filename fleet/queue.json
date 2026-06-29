@@ -5,7 +5,33 @@
     "base": "master",
     "build_node": "other-mac",
     "concurrency": 2,
-    "batch": 5
+    "batch": 5,
+    "nodes": {
+      "local": {
+        "host": "self",
+        "kind": "claude",
+        "builders": 2,
+        "repo": "/Users/thirdfacedev/Development/twarp",
+        "wt": "/Users/thirdfacedev/Development/twarp-fleet-wt",
+        "env": ""
+      },
+      "other-mac": {
+        "host": "other-mac",
+        "kind": "codex",
+        "builders": 2,
+        "display": true,
+        "repo": "$HOME/Development/twarp",
+        "wt": "$HOME/Development/twarp-fleet-wt",
+        "env": "source ~/.config/twarp-fleet/env; set -a; source ~/.codex/.env-foundry; set +a"
+      }
+    },
+    "pods_default": [
+      "other-mac"
+    ],
+    "pods_both": [
+      "other-mac",
+      "local"
+    ]
   },
   "items": [
     {
@@ -154,6 +180,91 @@
       "barrier": false,
       "task": "See roadmap/15-computer-control.",
       "verify": "cargo build --bin warp-oss"
+    },
+    {
+      "id": "14a",
+      "title": "14-builtin-browser 14a: Native embed spike",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "crates/browser/**",
+        "app/src/claude_code*/**",
+        "roadmap/14-builtin-browser/STATUS.md"
+      ],
+      "barrier": false,
+      "task": "Implement sub-phase 14a of roadmap feature 14-builtin-browser. FIRST read the merged specs roadmap/14-builtin-browser/PRODUCT.md and roadmap/14-builtin-browser/TECH.md. Sub-phase 14a \u2014 Native embed spike: `WKWebView` rendering in a twarp pane, frame-synced to the warpui rect; correct clipping, z-order, occlusion-on-tab-switch, focus + keyboard routing. **Highest-risk gate.**\nImplement ONLY this sub-phase, scoped to its files. When done, tick this sub-phase's checkbox in roadmap/14-builtin-browser/STATUS.md from `- [ ]` to `- [x]`.",
+      "verify": "cargo build --bin warp-oss",
+      "ux": false,
+      "branch": "fleet/14a"
+    },
+    {
+      "id": "14b",
+      "title": "14-builtin-browser 14b: Minimal browser UX",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "crates/browser/**",
+        "app/src/claude_code*/**",
+        "roadmap/14-builtin-browser/STATUS.md"
+      ],
+      "barrier": false,
+      "task": "Implement sub-phase 14b of roadmap feature 14-builtin-browser. FIRST read the merged specs roadmap/14-builtin-browser/PRODUCT.md and roadmap/14-builtin-browser/TECH.md. Sub-phase 14b \u2014 Minimal browser UX: Omnibar (navigate), back/forward/reload, loading state, single tab, open trigger (mirrors feature-07 pane wiring).\nImplement ONLY this sub-phase, scoped to its files. When done, tick this sub-phase's checkbox in roadmap/14-builtin-browser/STATUS.md from `- [ ]` to `- [x]`.",
+      "verify": "cargo build --bin warp-oss",
+      "ux": false,
+      "branch": "fleet/14b"
+    },
+    {
+      "id": "14c",
+      "title": "14-builtin-browser 14c: Automation core",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "crates/browser/**",
+        "app/src/claude_code*/**",
+        "roadmap/14-builtin-browser/STATUS.md"
+      ],
+      "barrier": false,
+      "task": "Implement sub-phase 14c of roadmap feature 14-builtin-browser. FIRST read the merged specs roadmap/14-builtin-browser/PRODUCT.md and roadmap/14-builtin-browser/TECH.md. Sub-phase 14c \u2014 Automation core: Injected content script: navigate/snapshot/click/type/eval + console + network capture. Internal Rust API.\nImplement ONLY this sub-phase, scoped to its files. When done, tick this sub-phase's checkbox in roadmap/14-builtin-browser/STATUS.md from `- [ ]` to `- [x]`.",
+      "verify": "cargo build --bin warp-oss",
+      "ux": false,
+      "branch": "fleet/14c"
+    },
+    {
+      "id": "14d",
+      "title": "14-builtin-browser 14d: Claude bridge",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "crates/browser/**",
+        "app/src/claude_code*/**",
+        "roadmap/14-builtin-browser/STATUS.md"
+      ],
+      "barrier": false,
+      "task": "Implement sub-phase 14d of roadmap feature 14-builtin-browser. FIRST read the merged specs roadmap/14-builtin-browser/PRODUCT.md and roadmap/14-builtin-browser/TECH.md. Sub-phase 14d \u2014 Claude bridge: Expose the automation core as an MCP server twarp registers for the session. Acceptance: Claude CLI drives the live pane via MCP tools. Not \"done\" until MCP-exposed.\nImplement ONLY this sub-phase, scoped to its files. When done, tick this sub-phase's checkbox in roadmap/14-builtin-browser/STATUS.md from `- [ ]` to `- [x]`.",
+      "verify": "cargo build --bin warp-oss",
+      "ux": false,
+      "branch": "fleet/14d"
+    },
+    {
+      "id": "14e",
+      "title": "14-builtin-browser 14e: Full-browser features (optional/later)",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "crates/browser/**",
+        "app/src/claude_code*/**",
+        "roadmap/14-builtin-browser/STATUS.md"
+      ],
+      "barrier": false,
+      "task": "Implement sub-phase 14e of roadmap feature 14-builtin-browser. FIRST read the merged specs roadmap/14-builtin-browser/PRODUCT.md and roadmap/14-builtin-browser/TECH.md. Sub-phase 14e \u2014 Full-browser features (optional/later): Tabs, history, downloads, profiles/cookies, popups.\nImplement ONLY this sub-phase, scoped to its files. When done, tick this sub-phase's checkbox in roadmap/14-builtin-browser/STATUS.md from `- [ ]` to `- [x]`.",
+      "verify": "cargo build --bin warp-oss",
+      "ux": false,
+      "branch": "fleet/14e"
     }
   ]
 }

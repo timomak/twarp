@@ -3,35 +3,44 @@
 
 Roles (all driven from this file):
   dispatch   pick eligible, file-disjoint, dependency-unblocked items and lease them
-  worker     author one item on its node (local=claude / other-mac=codex) -> push branch
-  gate       build + targeted tests for a branch on the build node (other-mac)
+  worker     author one item on its pod (codex / claude) -> push branch
+  gate       build + targeted tests for a branch on the pod that authored it
   supervise  bors-style merge queue: speculative-merge each green branch, re-gate, auto-merge
   run        full loop: dispatch -> workers (parallel) -> gate -> supervise
 
-Design notes:
-  * other-mac is the single BUILD NODE (warm cache + working toolchain). All building/testing
-    happens there, regardless of which node authored the branch. This Mac orchestrates + merges.
-  * Workers run in isolated git worktrees so parallel authors never share a working tree.
+Node-pod model:
+  * A POD is one machine = a pool of builder sessions + its own gate. Pods build/test LOCALLY
+    (warm cache, no cross-machine branch shipping). Gates run serial WITHIN a pod, parallel ACROSS
+    pods (one lock per pod).
+  * The orchestrator runs ON one of the pods — the "self" pod (run commands locally) — and reaches
+    any other pod over SSH. `--self NAME` (or $FLEET_SELF) says which pod that is, so the same script
+    runs correctly on either machine. Paths derive from this file's location, so "self" is wherever
+    the checkout lives.
+  * Default: one pod (other-mac, codex) and the loop runs there → this Mac is idle.
+    `--both`: loop runs on this Mac with two pods (local=claude here + other-mac=codex over SSH) →
+    4 builders / 2 gates.
   * Auto-merge only happens after the functional gate passes on the *merge with current master*
-    (catches green-alone-but-break-together semantic conflicts).
+    (catches green-alone-but-break-together semantic conflicts). gh runs on the self pod.
 """
 import argparse, concurrent.futures as cf, json, os, re, subprocess, sys, threading, time
 from pathlib import Path
 
-_qlock = threading.Lock()   # serialize all access to queue.json across worker threads
-_screenlock = threading.Lock()  # the build node has ONE display — serialize real-display captures
-_gatelock = threading.Lock()    # the build node has ONE cargo cache — serialize all builds/tests
+_qlock = threading.Lock()        # serialize all access to queue.json across worker threads
+_screenlock = threading.Lock()   # a display pod has ONE display — serialize real-display captures
+_gatelocks = {}                  # one lock per pod — each machine has one cargo cache
+_gatelocks_guard = threading.Lock()
 MAX_ROUNDS = 4   # per-PR fix-until-green+approved attempts before giving up
 
-LOCAL_REPO = Path("/Users/thirdfacedev/Development/twarp")
-QUEUE = LOCAL_REPO / "fleet" / "queue.json"
-LOCAL_WT = Path("/Users/thirdfacedev/Development/twarp-fleet-wt")
-REMOTE = "other-mac"
-REMOTE_REPO = "$HOME/Development/twarp"
-REMOTE_WT = "$HOME/Development/twarp-fleet-wt"
-REMOTE_ENV = "source ~/.config/twarp-fleet/env; set -a; source ~/.codex/.env-foundry; set +a"
-LOG = LOCAL_REPO / "fleet" / "runs"
-ROADMAP = LOCAL_REPO / "roadmap" / "ROADMAP.md"
+# Paths derive from THIS file so the script runs correctly on whichever machine is "self".
+SELF_REPO = Path(__file__).resolve().parents[1]
+QUEUE = SELF_REPO / "fleet" / "queue.json"
+SELF_WT = SELF_REPO.parent / (SELF_REPO.name + "-fleet-wt")
+LOG = SELF_REPO / "fleet" / "runs"
+ROADMAP = SELF_REPO / "roadmap" / "ROADMAP.md"
+GOLDEN = SELF_REPO / "fleet" / "golden"
+
+SELF = os.environ.get("FLEET_SELF", "local")   # which pod this process runs on; set by --self
+ACTIVE_PODS = []                               # filled by cmd_run / _resolve_pods
 INFLIGHT = {"leased", "building", "authored", "iterating", "gating", "gated", "ready", "merging"}
 
 
@@ -46,7 +55,12 @@ def load():
     return json.loads(QUEUE.read_text())
 
 def save(q):
-    QUEUE.write_text(json.dumps(q, indent=2) + "\n")
+    # Atomic replace so concurrent readers (the many lock-free node_*/load() calls in worker threads)
+    # never observe a half-written or empty file. Writers are serialized by _qlock; readers always
+    # see a complete snapshot (old or new), never a torn one.
+    tmp = QUEUE.with_name(f"{QUEUE.name}.tmp.{os.getpid()}.{threading.get_ident()}")
+    tmp.write_text(json.dumps(q, indent=2) + "\n")
+    os.replace(str(tmp), str(QUEUE))
 
 def item(q, iid):
     return next(i for i in q["items"] if i["id"] == iid)
@@ -67,44 +81,128 @@ def sh(cmd, cwd=None, timeout=None, check=False):
         raise RuntimeError(f"cmd failed ({r.returncode}): {cmd}\n{r.stdout}\n{r.stderr}")
     return r
 
-def remote_fresh_worktree(wt, ref, branch=None):
-    """Script that force-creates a clean worktree at `wt` checked out to `ref` (robust against
-    orphan dirs left by killed runs)."""
+
+# ---------- node/pod layer ----------
+def cfg():
+    return load()["config"]
+
+def nodes_cfg():
+    """Pod definitions. Falls back to a legacy two-pod layout if `config.nodes` is absent so old
+    queue.json files keep working (self=local claude here, other-mac codex over SSH)."""
+    n = cfg().get("nodes")
+    if n:
+        return n
+    return {
+        "local": {"host": "self", "kind": "claude", "builders": 2,
+                  "repo": str(SELF_REPO), "wt": str(SELF_WT), "env": ""},
+        "other-mac": {"host": "other-mac", "kind": "codex", "builders": 2, "display": True,
+                      "repo": "$HOME/Development/twarp", "wt": "$HOME/Development/twarp-fleet-wt",
+                      "env": "source ~/.config/twarp-fleet/env; set -a; source ~/.codex/.env-foundry; set +a"},
+    }
+
+def node_repo(name):
+    return str(SELF_REPO) if name == SELF else nodes_cfg()[name]["repo"]
+
+def node_wt(name):
+    return str(SELF_WT) if name == SELF else nodes_cfg()[name]["wt"]
+
+def node_env(name):
+    return nodes_cfg().get(name, {}).get("env", "")
+
+def node_kind(name):
+    return nodes_cfg().get(name, {}).get("kind", "codex")
+
+def node_host(name):
+    return nodes_cfg()[name].get("host", name)
+
+def node_builders(name):
+    return nodes_cfg().get(name, {}).get("builders", 2)
+
+def gatelock(name):
+    with _gatelocks_guard:
+        return _gatelocks.setdefault(name, threading.Lock())
+
+def codex_node(pods=None):
+    for p in (pods or ACTIVE_PODS):
+        if node_kind(p) == "codex":
+            return p
+    return None
+
+def claude_node(pods=None):
+    for p in (pods or ACTIVE_PODS):
+        if node_kind(p) == "claude":
+            return p
+    return None
+
+def display_node(pods=None):
+    pods = pods or ACTIVE_PODS
+    for p in pods:
+        if nodes_cfg().get(p, {}).get("display"):
+            return p
+    return pods[0] if pods else None
+
+def bash_on(name, script, timeout=None, check=False):
+    """Run a bash script on pod `name`: locally if it's the self pod, else over SSH. The pod's env
+    prefix (PATH for ~/.local/bin tools, Foundry key, etc.) is sourced first. Fed via stdin so the
+    remote login shell never re-parses it (the `ssh host bash -lc "a; b"` trap runs everything after
+    the first `;` under the remote default shell)."""
+    env = node_env(name)
+    full = (env + "\n" + script) if env else script
+    if name == SELF:
+        argv = ["bash", "-s"]
+    else:
+        argv = ["ssh", "-o", "ConnectTimeout=10", node_host(name), "bash", "-s"]
+    r = subprocess.run(argv, input=full, capture_output=True, text=True, timeout=timeout)
+    if check and r.returncode != 0:
+        raise RuntimeError(f"bash_on({name}) failed ({r.returncode}):\n{r.stdout}\n{r.stderr}")
+    return r
+
+def put_file(name, local_path, dest):
+    """Copy a local file to `dest` on pod `name` (cp if self, scp otherwise)."""
+    if name == SELF:
+        sh(["cp", str(local_path), dest], check=True)
+    else:
+        sh(["scp", "-q", str(local_path), f"{node_host(name)}:{dest}"], check=True)
+
+def node_read(name, path):
+    """Read a file from pod `name` (local read if self, ssh cat otherwise). '' if missing."""
+    if name == SELF:
+        try:
+            return Path(path).read_text()
+        except FileNotFoundError:
+            return ""
+    return sh(["ssh", "-o", "ConnectTimeout=10", node_host(name), "cat", path]).stdout
+
+def get_file(name, remote_path, local_path):
+    """Pull a file from pod `name` to a local path (cp if self, scp otherwise)."""
+    if name == SELF:
+        sh(["cp", remote_path, str(local_path)], check=True)
+    else:
+        sh(["scp", "-q", f"{node_host(name)}:{remote_path}", str(local_path)], check=True)
+
+def fresh_worktree(name, wt, ref, branch=None):
+    """Script that force-creates a clean worktree at `wt` on pod `name` (robust against orphan dirs
+    left by killed runs). Returned for bash_on (which prepends the pod env)."""
+    repo = node_repo(name)
     bflag = f"-B {branch}" if branch else "--detach"
     delbranch = f"git branch -D {branch} 2>/dev/null || true\n" if branch else ""
-    return (f"{REMOTE_ENV}\ncd {REMOTE_REPO}\ngit fetch -q origin\n"
+    return (f"cd {repo}\ngit fetch -q origin\n"
             f"git worktree remove --force {wt} 2>/dev/null || true\n"
             f"rm -rf {wt}\ngit worktree prune\n{delbranch}"
             f"git worktree add -f {bflag} {wt} {ref}\n")
 
-
-def reap_worktrees(iid):
-    """Remove an item's worktrees (author + gate- + spec- helpers) on the build node and locally,
-    freeing the multi-GB `target/` each carries. The build node's boot disk is small and shared;
-    leftover merged/failed worktrees pile up and eventually crash workers with `No space left on
-    device` (surfaces as a bare/empty codex exit). Never touches the master worktree. Best-effort."""
+def reap_worktrees(iid, name):
+    """Remove an item's worktrees (author + gate- + spec- helpers) on its pod, freeing the multi-GB
+    `target/` each carries. Boot disks are small/shared; leftover merged/failed worktrees pile up and
+    eventually crash workers with `No space left on device`. Never touches the master worktree."""
+    wt = node_wt(name); repo = node_repo(name)
     names = [iid, f"gate-{iid}", f"spec-{iid}"]
-    rm = "".join(f"git worktree remove --force {REMOTE_WT}/{n} 2>/dev/null || true\nrm -rf {REMOTE_WT}/{n}\n"
+    rm = "".join(f"git worktree remove --force {wt}/{n} 2>/dev/null || true\nrm -rf {wt}/{n}\n"
                  for n in names)
     try:
-        ssh(f"cd {REMOTE_REPO}\n{rm}git worktree prune\n", timeout=120)
+        bash_on(name, f"cd {repo}\n{rm}git worktree prune\n", timeout=120)
     except Exception as e:
-        say(f"  [{iid}] remote reap warning: {e}")
-    for n in names:
-        sh(["git", "-C", str(LOCAL_REPO), "worktree", "remove", "--force", str(LOCAL_WT / n)])
-        sh(f"rm -rf {LOCAL_WT / n}")
-    sh(["git", "-C", str(LOCAL_REPO), "worktree", "prune"])
-
-
-def ssh(remote_cmd, timeout=None, check=False):
-    """Run a bash script on the build node. The script is fed via stdin so the remote login
-    shell never re-parses it — this avoids the `ssh host bash -lc "a; b"` trap where everything
-    after the first `;` is run by the remote default shell (zsh) instead of bash."""
-    r = subprocess.run(["ssh", "-o", "ConnectTimeout=10", REMOTE, "bash", "-s"],
-                       input=remote_cmd, capture_output=True, text=True, timeout=timeout)
-    if check and r.returncode != 0:
-        raise RuntimeError(f"ssh failed ({r.returncode}):\n{r.stdout}\n{r.stderr}")
-    return r
+        say(f"  [{iid}] reap warning on {name}: {e}")
 
 
 # ---------- roadmap bridge ----------
@@ -122,7 +220,7 @@ def roadmap_sync():
     feat = _active_feature()
     if not feat:
         return "no active feature in ROADMAP.md"
-    status_md = LOCAL_REPO / "roadmap" / feat / "STATUS.md"
+    status_md = SELF_REPO / "roadmap" / feat / "STATUS.md"
     if not status_md.exists():
         return f"{feat}: no STATUS.md"
     text = status_md.read_text()
@@ -148,7 +246,7 @@ def roadmap_sync():
             f"roadmap/{feat}/PRODUCT.md and roadmap/{feat}/TECH.md. Sub-phase {sub_id} — {sub_title}: "
             f"{sub_desc}\nImplement ONLY this sub-phase, scoped to its files. When done, tick this "
             f"sub-phase's checkbox in roadmap/{feat}/STATUS.md from `- [ ]` to `- [x]`.")
-    q["items"].append({"id": sub_id, "title": f"{feat} {sub_id}: {sub_title}", "node": "other-mac",
+    q["items"].append({"id": sub_id, "title": f"{feat} {sub_id}: {sub_title}", "node": None,
                        "status": "queued", "depends_on": [], "touches": touches, "barrier": False,
                        "task": task, "verify": verify, "ux": False})
     save(q)
@@ -191,16 +289,37 @@ def eligible(q, cap=None):
         picked.append(it)
     return picked
 
+def assign_pods(picked):
+    """Assign each picked item to an active pod (least-loaded under per-pod builder capacity).
+    UX items pin to a pod with a real display. Sets it['node'] in the queue."""
+    load_ct = {p: 0 for p in ACTIVE_PODS}
+    for it in picked:
+        cands = [p for p in ACTIVE_PODS if (not it.get("ux")) or nodes_cfg().get(p, {}).get("display")]
+        cands = cands or ACTIVE_PODS
+        pod = min(cands, key=lambda p: (load_ct[p] / max(1, node_builders(p))))
+        load_ct[pod] += 1
+        it["node"] = pod
+        set_status(it["id"], "leased", node=pod)
+    return picked
+
 def cmd_status(_):
     q = load()
-    print(f"\ntwarp fleet — concurrency={q['config']['concurrency']} build_node={q['config']['build_node']}\n")
+    pods = _resolve_pods_for_status(q)
+    print(f"\ntwarp fleet — self={SELF} pods={pods} "
+          f"builders={sum(node_builders(p) for p in pods)} gates={len(pods)}\n")
     for it in q["items"]:
         dep = f" deps={it['depends_on']}" if it["depends_on"] else ""
         bar = " [BARRIER]" if it.get("barrier") else ""
+        nd = f" @{it.get('node')}" if it.get("node") else ""
         br = f" {it.get('branch','')}" if it.get("branch") else ""
-        print(f"  {it['status']:>9}  {it['id']:<26}{bar}{dep}{br}")
-    elig = eligible(q)
+        print(f"  {it['status']:>9}  {it['id']:<26}{bar}{dep}{nd}{br}")
+    cap = sum(node_builders(p) for p in pods)
+    elig = eligible(q, cap=cap)
     print(f"\n  eligible now: {[i['id'] for i in elig] or '—'}\n")
+
+def _resolve_pods_for_status(q):
+    # status is read-only and pod-agnostic; show whatever's configured as the default set.
+    return q["config"].get("pods_default", [SELF] if SELF in nodes_cfg() else list(nodes_cfg())[:1])
 
 
 # ---------- worker ----------
@@ -223,24 +342,22 @@ def write_text_prompt(iid, text):
     p.write_text(text)
     return p
 
-def worker_local(it, ref="origin/master", prompt_text=None):
-    iid = it["id"]
-    wt = LOCAL_WT / iid
-    sh(["git", "-C", str(LOCAL_REPO), "fetch", "-q", "origin"], check=True)
-    sh(["git", "-C", str(LOCAL_REPO), "worktree", "remove", "--force", str(wt)])
+def worker_claude(it, name, ref="origin/master", prompt_text=None):
+    """Author on a claude pod. claude runs where its auth lives → only on the self pod."""
+    iid = it["id"]; repo = node_repo(name); wt = Path(node_wt(name)) / iid
+    if name != SELF:
+        return False, f"claude pod {name} is not self — claude can only author locally"
+    sh(["git", "-C", repo, "fetch", "-q", "origin"], check=True)
+    sh(["git", "-C", repo, "worktree", "remove", "--force", str(wt)])
     sh(f"rm -rf {wt}")
-    sh(["git", "-C", str(LOCAL_REPO), "worktree", "prune"])
-    sh(["git", "-C", str(LOCAL_REPO), "branch", "-D", f"fleet/{iid}"])
-    sh(["git", "-C", str(LOCAL_REPO), "worktree", "add", "-B", f"fleet/{iid}", str(wt), ref], check=True)
+    sh(["git", "-C", repo, "worktree", "prune"])
+    sh(["git", "-C", repo, "branch", "-D", f"fleet/{iid}"])
+    sh(["git", "-C", repo, "worktree", "add", "-B", f"fleet/{iid}", str(wt), ref], check=True)
     prompt = write_prompt(it) if prompt_text is None else write_text_prompt(iid, prompt_text)
-    say(f"  [{iid}] local Claude worker authoring…")
+    say(f"  [{iid}] claude worker authoring on {name}…")
     r = sh(["claude", "-p", prompt.read_text(), "--dangerously-skip-permissions"],
            cwd=str(wt), timeout=1200)
     (LOG / f"{iid}.author.log").write_text(r.stdout + "\n---STDERR---\n" + r.stderr)
-    return _commit_push_local(it, wt)
-
-def _commit_push_local(it, wt):
-    iid = it["id"]
     sh(["git", "-C", str(wt), "add", "-A"], check=True)
     diff = sh(["git", "-C", str(wt), "diff", "--cached", "--stat"]).stdout.strip()
     if not diff:
@@ -249,42 +366,45 @@ def _commit_push_local(it, wt):
     sh(["git", "-C", str(wt), "push", "-q", "-f", "-u", "origin", f"fleet/{iid}"], check=True)
     return True, diff
 
-def worker_remote(it, ref="origin/master", prompt_text=None):
-    iid = it["id"]
+def worker_codex(it, name, ref="origin/master", prompt_text=None):
+    """Author on a codex pod (local if self, else over SSH)."""
+    iid = it["id"]; wt = f"{node_wt(name)}/{iid}"
     prompt = write_prompt(it) if prompt_text is None else write_text_prompt(iid, prompt_text)
-    sh(["scp", "-q", str(prompt), f"{REMOTE}:/tmp/fleet_{iid}.prompt"], check=True)
-    wt = f"{REMOTE_WT}/{iid}"
-    ssh(remote_fresh_worktree(wt, ref=ref, branch=f"fleet/{iid}"), timeout=120, check=True)
-    say(f"  [{iid}] remote Codex worker authoring…")
-    run = (f"{REMOTE_ENV}\n"
-           f"cd {wt}\n"
+    put_file(name, prompt, f"/tmp/fleet_{iid}.prompt")
+    bash_on(name, fresh_worktree(name, wt, ref=ref, branch=f"fleet/{iid}"), timeout=120, check=True)
+    say(f"  [{iid}] codex worker authoring on {name}…")
+    run = (f"cd {wt}\n"
            f"cat /tmp/fleet_{iid}.prompt | $HOME/.local/bin/codex exec "
            f"--dangerously-bypass-approvals-and-sandbox -c model_reasoning_effort='high' "
            f"> /tmp/fleet_{iid}.author.log 2>&1\n"
            f"echo CODEX_EXIT_$?\n")
-    r = ssh(run, timeout=1500)
-    (LOG / f"{iid}.author.log").write_text(ssh(f"cat /tmp/fleet_{iid}.author.log").stdout)
+    r = bash_on(name, run, timeout=1500)
+    (LOG / f"{iid}.author.log").write_text(node_read(name, f"/tmp/fleet_{iid}.author.log"))
     if "CODEX_EXIT_0" not in r.stdout:
         return False, f"codex did not exit clean: {r.stdout.strip()[-200:]}"
-    # commit + push on remote, then VERIFY the branch is really on origin
     commit = (f"set -e\ncd {wt}\ngit add -A\n"
               f"if git diff --cached --quiet; then echo NO_CHANGES; exit 0; fi\n"
               f"git commit -q -m 'fleet({iid}): {it['title']}'\n"
               f"git push -q -f -u origin fleet/{iid}\n"
               f"git diff --stat origin/master..origin/fleet/{iid} | tail -4\n"
               f"echo PUSHED_$(git rev-parse --short HEAD)\n")
-    c = ssh(commit, timeout=120)
+    c = bash_on(name, commit, timeout=120)
     if "NO_CHANGES" in c.stdout:
         return False, "no changes produced"
-    ok = "PUSHED_" in c.stdout and bool(ssh(f"cd {REMOTE_REPO} && git ls-remote origin fleet/{iid}").stdout.strip())
+    ok = "PUSHED_" in c.stdout and bool(
+        bash_on(name, f"cd {node_repo(name)} && git ls-remote origin fleet/{iid}").stdout.strip())
     return ok, c.stdout.strip()
 
+def author(it, name, ref="origin/master", prompt_text=None):
+    return (worker_codex if node_kind(name) == "codex" else worker_claude)(it, name, ref, prompt_text)
+
 def run_worker(it):
+    name = it.get("node") or codex_node() or ACTIVE_PODS[0]
     try:
-        set_status(it["id"], "building", branch=f"fleet/{it['id']}")
-        ok, info = worker_remote(it) if it["node"] == REMOTE else worker_local(it)
+        set_status(it["id"], "building", node=name, branch=f"fleet/{it['id']}")
+        ok, info = author(it, name)
         set_status(it["id"], "authored" if ok else "failed")
-        say(f"  [{it['id']}] author {'OK' if ok else 'FAILED'}: {info.splitlines()[-1] if info else ''}")
+        say(f"  [{it['id']}] author on {name} {'OK' if ok else 'FAILED'}: {info.splitlines()[-1] if info else ''}")
         return it["id"], ok
     except Exception as e:
         set_status(it["id"], "failed")
@@ -294,12 +414,10 @@ def run_worker(it):
 
 # ---------- UX gate (real-display screenshot + golden baseline) ----------
 UXTEST = "test_video_recording"   # bootstraps the UI and captures after_bootstrap.png
-GOLDEN = LOCAL_REPO / "fleet" / "golden"
 
 def vision_review(new_png, golden_png):
     """A headless vision agent compares the new screenshot against the approved golden and judges
-    whether there is a USER-VISIBLE regression. Robust to anti-aliasing/cursor/timestamp noise in a
-    way a pixel diff is not. Returns (verdict, note) with verdict in {'pass','regression','error'}."""
+    whether there is a USER-VISIBLE regression. Returns (verdict, note) in {'pass','regression','error'}."""
     prompt = (
         "You are a UX visual-regression gate for the twarp terminal app. Two screenshots:\n"
         f"  GOLDEN (approved baseline): {golden_png}\n"
@@ -324,29 +442,27 @@ def vision_review(new_png, golden_png):
 
 
 def uxgate(test=UXTEST, png="after_bootstrap.png"):
-    """Render twarp on the build node's REAL display, capture a screenshot, pull it here, and have a
-    vision agent compare it to the golden baseline. Returns (verdict, local_png_path):
-      'golden-saved' first run (baseline stored), 'pass' / 'regression' from the vision agent,
-      'fail' no screenshot produced, 'error' no verdict. Captures hold the screen semaphore so only
-      one real-display render runs at a time."""
+    """Render twarp on a display pod's REAL display, capture a screenshot, pull it to the self pod,
+    and vision-compare to the golden baseline. Returns (verdict, local_png_path)."""
     GOLDEN.mkdir(parents=True, exist_ok=True); LOG.mkdir(parents=True, exist_ok=True)
-    art = "/tmp/uxgate"
-    cmd = (f"{REMOTE_ENV}\nexport CARGO_TARGET_DIR={REMOTE_REPO}/target\n"
+    name = display_node()
+    repo = node_repo(name); art = "/tmp/uxgate"
+    cmd = (f"export CARGO_TARGET_DIR={repo}/target\n"
            f"export WARP_INTEGRATION_TEST_ARTIFACTS_DIR={art}\n"
            f"export WARPUI_USE_REAL_DISPLAY_IN_INTEGRATION_TESTS=1\n"
            f"caffeinate -dimsu & CAF=$!\n"
-           f"rm -rf {art}; mkdir -p {art}\ncd {REMOTE_REPO}\n"
+           f"rm -rf {art}; mkdir -p {art}\ncd {repo}\n"
            f"./target/debug/integration {test} > /tmp/uxgate.log 2>&1 || true\n"
            f"kill $CAF 2>/dev/null\n"
            f"find {art} -name '{png}' -print | head -1\n")
-    say(f"  uxgate: rendering {test} on {REMOTE}'s real display…")
+    say(f"  uxgate: rendering {test} on {name}'s real display…")
     with _screenlock:                       # one display → one capture at a time
-        r = ssh(cmd, timeout=600)
+        r = bash_on(name, cmd, timeout=600)
     remote_png = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
     if not remote_png.endswith(".png"):
         return "fail", None
     local = LOG / f"uxgate_{png}"
-    sh(["scp", "-q", f"{REMOTE}:{remote_png}", str(local)], check=True)
+    get_file(name, remote_png, local)
     golden = GOLDEN / png
     if not golden.exists():
         sh(["cp", str(local), str(golden)]); return "golden-saved", local
@@ -355,72 +471,72 @@ def uxgate(test=UXTEST, png="after_bootstrap.png"):
     return verdict, local
 
 
-# ---------- gate (always on build node) ----------
-def gate(iid, verify, ref=None):
-    """Build+test `ref` (default origin/fleet/<id>) on the build node. Returns (ok, tail)."""
-    ref = ref or f"origin/fleet/{iid}"
-    wt = f"{REMOTE_WT}/gate-{iid}"
-    cmd = (remote_fresh_worktree(wt, ref) +
-           f"export CARGO_TARGET_DIR={REMOTE_REPO}/target\ncd {wt}\n"
+# ---------- gate (on the pod that authored) ----------
+def gate(it, ref=None):
+    """Build+test `ref` (default origin/fleet/<id>) on the item's pod. Returns (ok, tail)."""
+    iid = it["id"]; name = it.get("node") or codex_node() or ACTIVE_PODS[0]
+    verify = it["verify"]; ref = ref or f"origin/fleet/{iid}"
+    repo = node_repo(name); wt = f"{node_wt(name)}/gate-{iid}"
+    cmd = (fresh_worktree(name, wt, ref) +
+           f"export CARGO_TARGET_DIR={repo}/target\ncd {wt}\n"
            f"({verify}) > /tmp/gate_{iid}.log 2>&1\necho GATE_EXIT_$?\ntail -25 /tmp/gate_{iid}.log\n")
-    say(f"  [{iid}] gating ({verify}) on {REMOTE}…")
-    with _gatelock:                  # one build node, one cargo cache — serialize
-        r = ssh(cmd, timeout=2400)
+    say(f"  [{iid}] gating ({verify}) on {name}…")
+    with gatelock(name):                  # one cargo cache per pod — serialize within the pod
+        r = bash_on(name, cmd, timeout=2400)
     ok = "GATE_EXIT_0" in r.stdout
     (LOG / f"{iid}.gate.log").write_text(r.stdout)
     return ok, r.stdout.strip().splitlines()[-8:]
 
 
 # ---------- supervisor (merge queue) ----------
-def speculative_gate(iid, verify):
-    """Merge origin/master + origin/fleet/<id> on the build node, gate the combination."""
-    wt = f"{REMOTE_WT}/spec-{iid}"
-    cmd = (remote_fresh_worktree(wt, "origin/master") +
-           f"export CARGO_TARGET_DIR={REMOTE_REPO}/target\ncd {wt}\n"
+def speculative_gate(it):
+    """Merge origin/master + origin/fleet/<id> on the item's pod, gate the combination."""
+    iid = it["id"]; name = it.get("node") or codex_node() or ACTIVE_PODS[0]
+    verify = it["verify"]; repo = node_repo(name); wt = f"{node_wt(name)}/spec-{iid}"
+    cmd = (fresh_worktree(name, wt, "origin/master") +
+           f"export CARGO_TARGET_DIR={repo}/target\ncd {wt}\n"
            f"if ! git -c user.email=fleet@local -c user.name=fleet merge --no-edit origin/fleet/{iid} > /tmp/spec_{iid}.log 2>&1; then\n"
            f"  echo MERGE_CONFLICT; tail -15 /tmp/spec_{iid}.log; exit 0\nfi\n"
            f"({verify}) >> /tmp/spec_{iid}.log 2>&1\necho SPEC_EXIT_$?\ntail -20 /tmp/spec_{iid}.log\n")
-    with _gatelock:                  # serialize on the build node
-        r = ssh(cmd, timeout=2400)
+    with gatelock(name):
+        r = bash_on(name, cmd, timeout=2400)
     (LOG / f"{iid}.spec.log").write_text(r.stdout)
     if "MERGE_CONFLICT" in r.stdout:
         return "conflict", r.stdout.strip().splitlines()[-6:]
     return ("ok" if "SPEC_EXIT_0" in r.stdout else "fail"), r.stdout.strip().splitlines()[-6:]
 
 def auto_merge(iid, title):
-    repo = load()["config"]["repo"]
+    repo = cfg()["repo"]
     make_pr(iid, title)   # idempotent — PR already opened during iterate()
     r = sh(["gh", "pr", "merge", f"fleet/{iid}", "--repo", repo, "--squash", "--delete-branch"],
-           cwd=str(LOCAL_REPO))
+           cwd=str(SELF_REPO))
     return r.returncode == 0, (r.stdout + r.stderr).strip()
 
 
 # ---------- per-PR loop: fix-until-green + staff-architect review ----------
 def make_pr(iid, title):
-    """Open a PR for fleet/<id> if one isn't already open (idempotent)."""
-    repo = load()["config"]["repo"]; base = load()["config"]["base"]
+    """Open a PR for fleet/<id> if one isn't already open (idempotent). gh runs on the self pod."""
+    repo = cfg()["repo"]; base = cfg()["base"]
     ex = sh(["gh", "pr", "list", "--repo", repo, "--head", f"fleet/{iid}", "--json", "number",
-             "-q", ".[0].number"], cwd=str(LOCAL_REPO))
+             "-q", ".[0].number"], cwd=str(SELF_REPO))
     if ex.stdout.strip():
         return ex.stdout.strip()
     body = ("Opened by the twarp fleet. Auto-iterated until the functional gate + staff-architect "
             "review pass, then merged via the speculative merge-queue.\n\n"
             "🤖 Generated with [Claude Code](https://claude.com/claude-code)")
     sh(["gh", "pr", "create", "--repo", repo, "--base", base, "--head", f"timomak:fleet/{iid}",
-        "--title", title, "--body", body], cwd=str(LOCAL_REPO))
+        "--title", title, "--body", body], cwd=str(SELF_REPO))
     return "created"
 
 def fix_agent(it, errors):
-    """Re-run the item's node agent ON ITS EXISTING branch with the failure as context."""
-    iid = it["id"]
+    """Re-run the item's pod agent ON ITS EXISTING branch with the failure as context."""
+    iid = it["id"]; name = it.get("node") or codex_node() or ACTIVE_PODS[0]
     fix_prompt = (
         f"You are fixing your own branch fleet/{iid} (task: {it['title']}). Read AGENTS.md. The fleet "
         f"gate FAILED — fix the ROOT CAUSE, stay in scope, do not revert prior good work.\n\n"
         f"Original task: {it['task']}\n\nFAILURE OUTPUT:\n{errors}\n\n"
         f"Output one final line: WORKER_DONE {iid}")
-    ref = f"origin/fleet/{iid}"
-    return worker_remote(it, ref=ref, prompt_text=fix_prompt) if it["node"] == REMOTE \
-        else worker_local(it, ref=ref, prompt_text=fix_prompt)
+    return author(it, name, ref=f"origin/fleet/{iid}", prompt_text=fix_prompt)
 
 def _parse_arch(out):
     """Pull the `ARCH approve|changes — …` verdict line out of a reviewer's output. Returns
@@ -442,22 +558,26 @@ REVIEW_PROMPT = (
     "  ARCH changes — <the specific blocking issue(s) to fix>")
 
 def _claude_review(prompt):
+    """Review with claude on a claude pod (self) — or on the self pod if no claude pod is active
+    (default mode runs the whole loop on the codex machine, which also has claude installed)."""
     r = sh(["claude", "-p", prompt, "--dangerously-skip-permissions"], timeout=300)
     return _parse_arch(r.stdout)
 
 def _codex_review(iid, prompt):
-    """Run the architect review on Codex (build node), isolated in a throwaway tmp dir with
-    --skip-git-repo-check so it can't touch any worktree. The diff is embedded in the prompt, so
-    no repo access is needed. Returns (verdict|None, note)."""
+    """Review with codex on a codex pod, isolated in a throwaway tmp dir with --skip-git-repo-check
+    so it can't touch any worktree. The diff is embedded in the prompt. Returns (verdict|None, note)."""
+    name = codex_node()
+    if name is None:
+        return None, ""
     p = LOG / f"{iid}.review.prompt"; p.write_text(prompt)
-    sh(["scp", "-q", str(p), f"{REMOTE}:/tmp/fleet_{iid}.review"], check=True)
-    run = (f"{REMOTE_ENV}\nrm -rf /tmp/fleet_rev_{iid}\nmkdir -p /tmp/fleet_rev_{iid}\ncd /tmp/fleet_rev_{iid}\n"
+    put_file(name, p, f"/tmp/fleet_{iid}.review")
+    run = (f"rm -rf /tmp/fleet_rev_{iid}\nmkdir -p /tmp/fleet_rev_{iid}\ncd /tmp/fleet_rev_{iid}\n"
            f"cat /tmp/fleet_{iid}.review | $HOME/.local/bin/codex exec "
            f"--dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "
            f"-c model_reasoning_effort='high' > /tmp/fleet_{iid}.review.log 2>&1\n"
            f"echo CODEX_EXIT_$?\n")
-    r = ssh(run, timeout=600)
-    log = ssh(f"cat /tmp/fleet_{iid}.review.log").stdout
+    r = bash_on(name, run, timeout=600)
+    log = node_read(name, f"/tmp/fleet_{iid}.review.log")
     (LOG / f"{iid}.review.log").write_text(log)
     if "CODEX_EXIT_0" not in r.stdout:
         return None, ""
@@ -465,19 +585,18 @@ def _codex_review(iid, prompt):
 
 def architect_review(it):
     """Staff/principal-altitude pre-merge review of the branch diff. Returns (verdict, note).
-    INDEPENDENT reviewer: review with the model that did NOT author the item — Codex-authored work
-    is reviewed by Claude, Claude-authored work is reviewed by Codex — so no model rubber-stamps its
-    own diff. Codex-review failures fall back to Claude (degrades to the old behaviour, never blind-
-    approves)."""
+    INDEPENDENT reviewer: review with the model that did NOT author the item — codex-authored work
+    is reviewed by claude, claude-authored work is reviewed by codex — so no model rubber-stamps its
+    own diff. Codex-review failures fall back to claude (never blind-approves)."""
     iid = it["id"]
-    sh(["git", "-C", str(LOCAL_REPO), "fetch", "-q", "origin"])
-    diff = sh(["git", "-C", str(LOCAL_REPO), "diff", f"origin/master...origin/fleet/{iid}"]).stdout
+    sh(["git", "-C", str(SELF_REPO), "fetch", "-q", "origin"])
+    diff = sh(["git", "-C", str(SELF_REPO), "diff", f"origin/master...origin/fleet/{iid}"]).stdout
     if len(diff) > 60000:
         diff = diff[:60000] + "\n...[diff truncated]..."
     prompt = REVIEW_PROMPT.format(diff=diff)
-    if it.get("node") == REMOTE:                       # Codex authored → Claude reviews
+    if node_kind(it.get("node") or "") == "codex":     # codex authored → claude reviews
         verdict, note = _claude_review(prompt); reviewer = "claude"
-    else:                                              # Claude authored → Codex reviews (independence)
+    else:                                              # claude authored → codex reviews (independence)
         verdict, note = _codex_review(iid, prompt); reviewer = "codex"
         if verdict is None:                            # codex review unusable → independent fallback
             verdict, note = _claude_review(prompt); reviewer = "claude(fallback)"
@@ -487,12 +606,12 @@ def architect_review(it):
 
 def iterate(it):
     """Drive ONE PR to green + architect-approved: gate → fix → re-gate → architect → fix → … .
-    Gates serialize on the build node; authoring/fixing/review run in parallel across items."""
+    Gates serialize within a pod; authoring/fixing/review run in parallel across items and pods."""
     iid = it["id"]
     set_status(iid, "iterating")
     make_pr(iid, it["title"])
     for rnd in range(1, MAX_ROUNDS + 1):
-        ok, tail = gate(iid, it["verify"])
+        ok, tail = gate(it)
         if not ok:
             say(f"  [{iid}] gate FAIL (round {rnd}) → fix-agent")
             fixed, _ = fix_agent(it, "\n".join(tail))
@@ -514,6 +633,16 @@ def iterate(it):
 
 
 # ---------- orchestration ----------
+def _resolve_pods(both):
+    """Pick the active pod set. `--both` uses config.pods_both (default all nodes); otherwise
+    config.pods_default (default [SELF])."""
+    c = cfg()
+    if both:
+        pods = c.get("pods_both") or list(nodes_cfg().keys())
+    else:
+        pods = c.get("pods_default") or ([SELF] if SELF in nodes_cfg() else list(nodes_cfg())[:1])
+    return [p for p in pods if p in nodes_cfg()]
+
 def cmd_dispatch(args):
     q = load()
     picked = eligible(q)
@@ -521,15 +650,14 @@ def cmd_dispatch(args):
         say("dispatch: nothing eligible")
         return []
     say(f"dispatch: leasing {[i['id'] for i in picked]}")
-    for it in picked:
-        set_status(it["id"], "leased")
+    assign_pods(picked)
     return picked
 
 def merge_one(it):
     """Speculative-merge gate + auto-merge a single ready PR. Serialized by the caller."""
     iid = it["id"]
     set_status(iid, "merging")
-    verdict, tail = speculative_gate(iid, it["verify"])
+    verdict, tail = speculative_gate(it)
     if verdict == "conflict":
         say(f"  [{iid}] speculative merge CONFLICT — needs rebase"); set_status(iid, "needs-rebase"); return False
     if verdict != "ok":
@@ -539,31 +667,36 @@ def merge_one(it):
     set_status(iid, "merged" if ok else "ready"); return ok
 
 def cmd_run(args):
-    """Continuous batch loop: fill up to `batch` ready items → author in parallel → drive each PR to
-    green + architect-approved (parallel authoring/fixing, serialized gates) → merge-queue → report →
-    refill → repeat until the queue (and roadmap) are drained."""
+    """Continuous batch loop: fill up to total-builder-capacity ready items → author in parallel
+    across pods → drive each PR to green + architect-approved (parallel authoring/fixing, per-pod
+    serialized gates) → merge-queue → report → refill → repeat until the queue+roadmap are drained."""
+    global ACTIVE_PODS
+    ACTIVE_PODS = _resolve_pods(getattr(args, "both", False))
+    for p in ACTIVE_PODS:
+        gatelock(p)   # pre-create per-pod locks
     LOG.mkdir(parents=True, exist_ok=True)
-    batch_size = load()["config"].get("batch", 5)
+    cap = sum(node_builders(p) for p in ACTIVE_PODS) or 1
+    say(f"=== fleet up — self={SELF} pods={ACTIVE_PODS} builders={cap} gates={len(ACTIVE_PODS)} ===")
     batch_no = 0
     while True:
         # reflect just-merged changes locally (e.g. STATUS.md checkbox ticks) — best-effort
-        sh(["git", "-C", str(LOCAL_REPO), "fetch", "-q", "origin"])
-        sh(["git", "-C", str(LOCAL_REPO), "merge", "-q", "--ff-only", "origin/master"])
+        sh(["git", "-C", str(SELF_REPO), "fetch", "-q", "origin"])
+        sh(["git", "-C", str(SELF_REPO), "merge", "-q", "--ff-only", "origin/master"])
         say(f"roadmap: {roadmap_sync()}")            # top up from the roadmap each batch
-        picked = eligible(load(), cap=batch_size)    # up to `batch` file-disjoint ready items
+        picked = eligible(load(), cap=cap)           # up to total builder capacity, file-disjoint
         if not picked:
             say("=== queue drained — nothing ready ==="); break
         batch_no += 1
-        say(f"=== batch {batch_no}: authoring {len(picked)} in parallel → {[i['id'] for i in picked]} ===")
-        for it in picked:
-            set_status(it["id"], "leased")
+        assign_pods(picked)
+        say(f"=== batch {batch_no}: authoring {len(picked)} across pods → "
+            f"{[(i['id'], i['node']) for i in picked]} ===")
 
-        # 1) author in parallel (N sessions across Claude + Codex)
+        # 1) author in parallel across pods
         with cf.ThreadPoolExecutor(max_workers=len(picked)) as ex:
             authored = list(ex.map(run_worker, picked))
         live = [item(load(), iid) for iid, ok in authored if ok]
 
-        # 2) drive each PR to green + architect-approved (gates serialize via _gatelock)
+        # 2) drive each PR to green + architect-approved (gates serialize per-pod, parallel across)
         if live:
             with cf.ThreadPoolExecutor(max_workers=len(live)) as ex:
                 flags = list(ex.map(iterate, live))
@@ -576,46 +709,55 @@ def cmd_run(args):
         merged = [it["id"] for it in ready if merge_one(it)]
         say(f"=== batch {batch_no} done — merged {merged} ===")
         # reap worktrees for every item that reached a terminal state this batch (merged or failed)
-        # so their multi-GB `target/` dirs don't accumulate and fill the build node's disk.
+        # on its own pod, so the multi-GB target/ dirs don't accumulate and fill that machine's disk.
         for it in picked:
-            st = item(load(), it["id"]).get("status")
-            if st in ("merged", "failed"):
-                reap_worktrees(it["id"])
+            cur = item(load(), it["id"])
+            if cur.get("status") in ("merged", "failed"):
+                reap_worktrees(it["id"], cur.get("node") or it["node"])
         cmd_status(args)
     say("=== run complete ===")
 
 
 def main():
+    global SELF, ACTIVE_PODS
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("status", "dispatch", "run", "roadmap-sync"):
+    for name in ("status", "dispatch", "roadmap-sync"):
         sub.add_parser(name)
-    w = sub.add_parser("worker"); w.add_argument("id")
-    g = sub.add_parser("gate"); g.add_argument("id")
-    s = sub.add_parser("supervise"); s.add_argument("id")
+    r = sub.add_parser("run")
+    r.add_argument("--self", dest="self_pod", default=None, help="which pod this process runs on")
+    r.add_argument("--both", action="store_true", help="enlist both machines (4 builders / 2 gates)")
+    w = sub.add_parser("worker"); w.add_argument("id"); w.add_argument("--self", dest="self_pod", default=None)
+    g = sub.add_parser("gate"); g.add_argument("id"); g.add_argument("--self", dest="self_pod", default=None)
+    s = sub.add_parser("supervise"); s.add_argument("id"); s.add_argument("--self", dest="self_pod", default=None)
     u = sub.add_parser("uxgate"); u.add_argument("test", nargs="?", default=UXTEST)
+    u.add_argument("--self", dest="self_pod", default=None)
     args = ap.parse_args()
+    if getattr(args, "self_pod", None):
+        SELF = args.self_pod
 
     if args.cmd == "status":
         cmd_status(args)
     elif args.cmd == "roadmap-sync":
         print("roadmap:", roadmap_sync())
     elif args.cmd == "dispatch":
+        ACTIVE_PODS = _resolve_pods(False)
         cmd_dispatch(args)
     elif args.cmd == "run":
         cmd_run(args)
-    elif args.cmd == "worker":
-        run_worker(item(load(), args.id))
-    elif args.cmd == "gate":
-        it = item(load(), args.id)
-        ok, tail = gate(args.id, it["verify"])
-        print("GATE", "PASS" if ok else "FAIL"); [print(" |", l) for l in tail]
-    elif args.cmd == "supervise":
-        it = item(load(), args.id)
-        print(speculative_gate(args.id, it["verify"]))
-    elif args.cmd == "uxgate":
-        verdict, png = uxgate(args.test)
-        print(f"UXGATE {verdict} png={png}")
+    elif args.cmd in ("worker", "gate", "supervise", "uxgate"):
+        ACTIVE_PODS = _resolve_pods(False)
+        if args.cmd == "worker":
+            run_worker(item(load(), args.id))
+        elif args.cmd == "gate":
+            it = item(load(), args.id)
+            ok, tail = gate(it)
+            print("GATE", "PASS" if ok else "FAIL"); [print(" |", l) for l in tail]
+        elif args.cmd == "supervise":
+            print(speculative_gate(item(load(), args.id)))
+        elif args.cmd == "uxgate":
+            verdict, png = uxgate(args.test)
+            print(f"UXGATE {verdict} png={png}")
 
 if __name__ == "__main__":
     main()
