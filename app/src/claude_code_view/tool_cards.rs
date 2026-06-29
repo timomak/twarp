@@ -96,10 +96,18 @@ pub(super) fn tool_icon(name: &str) -> WarpIcon {
         "Grep" => WarpIcon::Search,
         "Glob" => WarpIcon::Folder,
         "WebFetch" | "WebSearch" => WarpIcon::Globe,
-        "Task" => WarpIcon::ArrowSplit,
+        "Task" | "Agent" => WarpIcon::ArrowSplit,
         "TodoWrite" => WarpIcon::BulletedListBlock,
         _ => WarpIcon::Tool,
     }
+}
+
+/// Whether a tool name is the sub-agent dispatch tool. Claude Code has shipped
+/// this under two names — the historical `Task` and the current `Agent`; both
+/// spawn a sub-agent whose child activity nests under the card (PRODUCT §19), so
+/// the card chrome (icon, label, live status, prose result) treats them alike.
+pub(super) fn is_subagent_tool(name: &str) -> bool {
+    matches!(name, "Task" | "Agent")
 }
 
 /// Per-tool key-input summary (PRODUCT §17). `None` for tools twarp doesn't
@@ -118,7 +126,22 @@ pub(super) fn tool_input_summary(name: &str, input: &Value) -> Option<String> {
         "Grep" | "Glob" => str_field("pattern"),
         "WebFetch" => str_field("url"),
         "WebSearch" => str_field("query"),
-        "Task" => str_field("description"),
+        "Task" | "Agent" => {
+            // The `Agent`/`Task` input carries a short `description` and the
+            // `subagent_type` it dispatches to; show "<type>: <description>" so
+            // the row says *which* agent is doing *what* (matching the Claude
+            // app), falling back to whichever field is present.
+            let desc = str_field("description");
+            let kind = input
+                .get("subagent_type")
+                .and_then(|v| v.as_str())
+                .filter(|k| !k.is_empty());
+            match (kind, desc) {
+                (Some(kind), Some(desc)) => Some(format!("{kind}: {desc}")),
+                (None, desc) => desc,
+                (Some(kind), None) => Some(kind.to_owned()),
+            }
+        }
         // Routed to the §22 task list in 7f; until then the card summarizes.
         "TodoWrite" => {
             let count = input.get("todos").and_then(|v| v.as_array()).map(Vec::len);
@@ -234,6 +257,32 @@ pub(super) fn derive_result_label(
     }
 }
 
+/// The collapsed-row status for a *running* sub-agent (PRODUCT §19, UI
+/// cleanup): the verb of the child tool it's currently running (e.g. "Read…"),
+/// the step count once children have completed, else "working…" before any
+/// child appears — so a collapsed `Agent` row still says what it's doing
+/// without expanding, the way the Claude app surfaces the sub-agent's step.
+fn subagent_running_label(children: &[TranscriptItem]) -> String {
+    let tools: Vec<&TranscriptItem> = children
+        .iter()
+        .filter(|c| matches!(c, TranscriptItem::Tool { .. }))
+        .collect();
+    if let Some(TranscriptItem::Tool {
+        name,
+        input,
+        status: ToolStatus::Running,
+        ..
+    }) = tools.last().copied()
+    {
+        let (verb, _) = tool_verb_label(name, input);
+        return format!("{verb}…");
+    }
+    match tools.len() {
+        0 => "working…".to_owned(),
+        n => format!("{n} step{}", if n == 1 { "" } else { "s" }),
+    }
+}
+
 /// Cap expanded output (PRODUCT §19). Returns the shown text and how many
 /// lines were cut.
 pub(super) fn truncate_output(text: &str) -> (String, usize) {
@@ -278,7 +327,7 @@ pub(super) fn tool_verb_label(name: &str, input: &Value) -> (Cow<'static, str>, 
         "Bash" => "Ran".into(),
         "Grep" | "Glob" | "WebSearch" => "Searched".into(),
         "WebFetch" => "Fetched".into(),
-        "Task" => "Task".into(),
+        "Task" | "Agent" => "Agent".into(),
         "TodoWrite" => "Updated".into(),
         _ => Cow::Owned(tool_display_name(name)),
     };
@@ -408,7 +457,14 @@ fn build_tool_body(
             .finish(),
         );
     }
-    column.add_child(render_footer(output, children, status, ui, app));
+    column.add_child(render_footer(
+        output,
+        children,
+        status,
+        is_subagent_tool(name),
+        ui,
+        app,
+    ));
     column.finish()
 }
 
@@ -444,13 +500,22 @@ pub(super) fn render_tool_card(
     let glyph =
         warpui::elements::Icon::new(tool_icon(name).into(), blended_colors::neutral_7(theme));
 
+    // A running sub-agent shows its current step in the cluster so the
+    // collapsed row stays legible (§19); every other card shows its result
+    // label (which is `None` while running).
+    let cluster_label = if is_subagent_tool(name) && status == ToolStatus::Running {
+        Some(subagent_running_label(children))
+    } else {
+        derive_result_label(status, output)
+    };
+
     let toggle_id = id.to_owned();
     let mut disclosure = Disclosure::new(title)
         .with_glyph(glyph)
         .expandable(expandable)
         .expanded(expanded)
         .with_cluster(RightCluster {
-            label: derive_result_label(status, output),
+            label: cluster_label,
             icon: Some(status_icon(status, appearance)),
         })
         .with_mouse_state(mouse_state)
@@ -471,6 +536,7 @@ fn render_footer(
     output: Option<&ToolOutput>,
     children: &[TranscriptItem],
     status: ToolStatus,
+    subagent: bool,
     ui: &HashMap<String, ToolCardUi>,
     app: &AppContext,
 ) -> Box<dyn Element> {
@@ -508,14 +574,17 @@ fn render_footer(
         let text = output.text.trim();
         if !text.is_empty() {
             let (shown, hidden) = truncate_output(text);
+            // A sub-agent's result is its natural-language answer, so render it
+            // in the proportional UI font as prose; every other tool's output is
+            // monospace machine text (§19).
+            let result_font = if subagent {
+                appearance.ui_font_family()
+            } else {
+                appearance.monospace_font_family()
+            };
             column.add_child(
                 Container::new(
-                    render_requested_action_body_text(
-                        Cow::Owned(shown),
-                        appearance.monospace_font_family(),
-                        app,
-                    )
-                    .finish(),
+                    render_requested_action_body_text(Cow::Owned(shown), result_font, app).finish(),
                 )
                 .with_vertical_padding(6.)
                 .finish(),
@@ -589,6 +658,16 @@ mod tests {
                 json!({"description": "explore the repo"}),
                 "explore the repo",
             ),
+            (
+                "Agent",
+                json!({"description": "explore the repo"}),
+                "explore the repo",
+            ),
+            (
+                "Agent",
+                json!({"subagent_type": "Explore", "description": "trace capture flow"}),
+                "Explore: trace capture flow",
+            ),
         ];
         for (name, input, expected) in cases {
             assert_eq!(
@@ -597,6 +676,55 @@ mod tests {
                 "summary for {name}"
             );
         }
+    }
+
+    fn running_tool(name: &str, input: Value) -> TranscriptItem {
+        TranscriptItem::Tool {
+            id: name.to_owned(),
+            name: name.to_owned(),
+            input,
+            status: ToolStatus::Running,
+            output: None,
+            children: Vec::new(),
+        }
+    }
+
+    fn done_tool(name: &str) -> TranscriptItem {
+        TranscriptItem::Tool {
+            id: format!("{name}-done"),
+            name: name.to_owned(),
+            input: Value::Null,
+            status: ToolStatus::Completed,
+            output: None,
+            children: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn subagent_running_label_reports_current_step() {
+        // Nothing started yet → generic.
+        assert_eq!(subagent_running_label(&[]), "working…");
+        // Currently running a child tool → that tool's verb.
+        assert_eq!(
+            subagent_running_label(&[
+                done_tool("Read"),
+                running_tool("Grep", json!({"pattern": "x"})),
+            ]),
+            "Searched…"
+        );
+        // Children all finished (between steps) → step count.
+        assert_eq!(
+            subagent_running_label(&[done_tool("Read"), done_tool("Grep")]),
+            "2 steps"
+        );
+        assert_eq!(subagent_running_label(&[done_tool("Read")]), "1 step");
+    }
+
+    #[test]
+    fn both_task_and_agent_count_as_subagents() {
+        assert!(is_subagent_tool("Task"));
+        assert!(is_subagent_tool("Agent"));
+        assert!(!is_subagent_tool("Bash"));
     }
 
     #[test]
