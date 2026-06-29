@@ -126,17 +126,41 @@ struct AutomationEnvelope<T> {
     error: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BrowserProfile {
+    Default,
+    Private,
+}
+
+impl BrowserProfile {
+    pub fn is_persistent(self) -> bool {
+        matches!(self, Self::Default)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Default => "Default",
+            Self::Private => "Private",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct BrowserEngine {
     window_id: WindowId,
     webview_id: BrowserWebViewId,
+    profile: BrowserProfile,
 }
 
 impl BrowserEngine {
     pub fn new(window_id: WindowId) -> Option<Self> {
+        Self::new_with_profile(window_id, BrowserProfile::Default)
+    }
+
+    pub fn new_with_profile(window_id: WindowId, profile: BrowserProfile) -> Option<Self> {
         #[cfg(target_os = "macos")]
         {
-            let webview_id = MacWindow::create_browser_webview(window_id)?;
+            let webview_id = MacWindow::create_browser_webview(window_id, profile.is_persistent())?;
             MacWindow::install_browser_webview_automation_script(
                 window_id,
                 webview_id,
@@ -145,12 +169,13 @@ impl BrowserEngine {
             Some(Self {
                 window_id,
                 webview_id,
+                profile,
             })
         }
 
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = window_id;
+            let _ = (window_id, profile);
             None
         }
     }
@@ -161,6 +186,18 @@ impl BrowserEngine {
 
     pub fn webview_id(&self) -> BrowserWebViewId {
         self.webview_id
+    }
+
+    pub fn profile(&self) -> BrowserProfile {
+        self.profile
+    }
+
+    pub fn clear_default_profile_data(window_id: WindowId) {
+        #[cfg(target_os = "macos")]
+        MacWindow::clear_browser_website_data(window_id);
+
+        #[cfg(not(target_os = "macos"))]
+        let _ = window_id;
     }
 
     pub fn load_url(&self, url: &str) {

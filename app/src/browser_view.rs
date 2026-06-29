@@ -1,12 +1,12 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use browser::BrowserEngine;
+use browser::{BrowserEngine, BrowserProfile};
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
 use url::Url;
 use warpui::elements::{
-    Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Flex,
-    MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable,
+    Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Flex, Hoverable,
+    MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
 };
 use warpui::text_layout::ClipConfig;
 use warpui::ui_components::components::{UiComponent, UiComponentStyles};
@@ -38,8 +38,11 @@ use crate::ui_components::{
 
 const BROWSER_TITLE: &str = "Browser";
 const OMNIBAR_PLACEHOLDER: &str = "Enter URL";
+const TAB_STRIP_HEIGHT: f32 = 32.;
 const TOOLBAR_HEIGHT: f32 = 36.;
 const TOOLBAR_PADDING: f32 = 6.;
+const HISTORY_PANEL_ROW_HEIGHT: f32 = 28.;
+const HISTORY_PANEL_MAX_ROWS: usize = 8;
 const LOADING_INDICATOR_HEIGHT: f32 = 2.;
 const STATE_POLL_INTERVAL: Duration = Duration::from_millis(250);
 static NEXT_BROWSER_FOCUS_SEQ: AtomicU64 = AtomicU64::new(1);
@@ -57,6 +60,13 @@ pub enum BrowserViewAction {
     Back,
     Forward,
     ReloadOrStop,
+    NewTab,
+    NewPrivateTab,
+    SelectTab(usize),
+    CloseTab(usize),
+    ToggleHistory,
+    NavigateHistory(usize),
+    ClearDefaultProfileData,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,20 +98,58 @@ struct NativeBrowserState {
     is_loading: bool,
 }
 
-pub struct BrowserView {
-    window_id: WindowId,
-    engine: Option<BrowserEngine>,
-    omnibar_editor: warpui::ViewHandle<EditorView>,
-    pane_configuration: warpui::ModelHandle<PaneConfiguration>,
-    focus_handle: Option<PaneFocusHandle>,
+struct BrowserTab {
+    engine: BrowserEngine,
     current_url: Option<String>,
     title: String,
     can_go_back: bool,
     can_go_forward: bool,
     is_loading: bool,
+    tab_mouse_state: MouseStateHandle,
+    close_button: MouseStateHandle,
+}
+
+impl BrowserTab {
+    fn new(engine: BrowserEngine) -> Self {
+        let title = match engine.profile() {
+            BrowserProfile::Default => BROWSER_TITLE.to_owned(),
+            BrowserProfile::Private => "Private Browser".to_owned(),
+        };
+        Self {
+            engine,
+            current_url: None,
+            title,
+            can_go_back: false,
+            can_go_forward: false,
+            is_loading: false,
+            tab_mouse_state: Default::default(),
+            close_button: Default::default(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct BrowserHistoryEntry {
+    url: String,
+    title: String,
+}
+
+pub struct BrowserView {
+    window_id: WindowId,
+    tabs: Vec<BrowserTab>,
+    active_tab_index: usize,
+    omnibar_editor: warpui::ViewHandle<EditorView>,
+    pane_configuration: warpui::ModelHandle<PaneConfiguration>,
+    focus_handle: Option<PaneFocusHandle>,
+    history: Vec<BrowserHistoryEntry>,
+    show_history: bool,
     back_button: MouseStateHandle,
     forward_button: MouseStateHandle,
     reload_button: MouseStateHandle,
+    new_tab_button: MouseStateHandle,
+    new_private_tab_button: MouseStateHandle,
+    history_button: MouseStateHandle,
+    clear_profile_data_button: MouseStateHandle,
     last_focus_seq: u64,
 }
 
@@ -124,22 +172,27 @@ impl BrowserView {
 
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new(BROWSER_TITLE));
         let window_id = ctx.window_id();
-        let engine = BrowserEngine::new(window_id);
+        let tabs = BrowserEngine::new(window_id)
+            .map(BrowserTab::new)
+            .into_iter()
+            .collect();
 
         let mut view = Self {
             window_id,
-            engine,
+            tabs,
+            active_tab_index: 0,
             omnibar_editor,
             pane_configuration,
             focus_handle: None,
-            current_url: None,
-            title: BROWSER_TITLE.to_owned(),
-            can_go_back: false,
-            can_go_forward: false,
-            is_loading: false,
+            history: Vec::new(),
+            show_history: false,
             back_button: Default::default(),
             forward_button: Default::default(),
             reload_button: Default::default(),
+            new_tab_button: Default::default(),
+            new_private_tab_button: Default::default(),
+            history_button: Default::default(),
+            clear_profile_data_button: Default::default(),
             last_focus_seq: 0,
         };
 
@@ -160,7 +213,7 @@ impl BrowserView {
     }
 
     pub fn snapshot_url(&self) -> Option<String> {
-        self.current_url.clone()
+        self.active_tab().and_then(|tab| tab.current_url.clone())
     }
 
     pub fn focus_omnibar(&mut self, ctx: &mut ViewContext<Self>) {
@@ -170,32 +223,63 @@ impl BrowserView {
 
     pub fn focus_webview(&mut self) {
         self.touch_focus();
-        if let Some(engine) = &self.engine {
-            engine.focus();
+        if let Some(tab) = self.active_tab() {
+            tab.engine.focus();
         }
     }
 
     pub fn destroy_webview(&mut self) {
-        if let Some(engine) = self.engine.take() {
-            engine.destroy();
+        for tab in self.tabs.drain(..) {
+            tab.engine.destroy();
         }
     }
 
     pub fn browser_engine(&self) -> Option<&BrowserEngine> {
-        self.engine.as_ref()
+        self.active_tab().map(|tab| &tab.engine)
     }
 
     pub(crate) fn automation_target(&self) -> Option<BrowserAutomationTarget> {
+        let tab = self.active_tab()?;
         Some(BrowserAutomationTarget {
-            engine: *self.engine.as_ref()?,
-            title: self.title.clone(),
-            url: self.current_url.clone(),
+            engine: tab.engine,
+            title: tab.title.clone(),
+            url: tab.current_url.clone(),
             last_focus_seq: self.last_focus_seq,
         })
     }
 
     fn touch_focus(&mut self) {
         self.last_focus_seq = NEXT_BROWSER_FOCUS_SEQ.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn active_tab(&self) -> Option<&BrowserTab> {
+        self.tabs.get(self.active_tab_index)
+    }
+
+    fn active_tab_mut(&mut self) -> Option<&mut BrowserTab> {
+        self.tabs.get_mut(self.active_tab_index)
+    }
+
+    fn active_title(&self) -> String {
+        self.active_tab()
+            .map(|tab| tab.title.clone())
+            .unwrap_or_else(|| BROWSER_TITLE.to_owned())
+    }
+
+    fn active_current_url(&self) -> Option<String> {
+        self.active_tab().and_then(|tab| tab.current_url.clone())
+    }
+
+    fn active_can_go_back(&self) -> bool {
+        self.active_tab().is_some_and(|tab| tab.can_go_back)
+    }
+
+    fn active_can_go_forward(&self) -> bool {
+        self.active_tab().is_some_and(|tab| tab.can_go_forward)
+    }
+
+    fn active_is_loading(&self) -> bool {
+        self.active_tab().is_some_and(|tab| tab.is_loading)
     }
 
     fn handle_omnibar_editor_event(
@@ -224,42 +308,108 @@ impl BrowserView {
     }
 
     fn navigate_to_normalized_url(&mut self, url: String, ctx: &mut ViewContext<Self>) {
-        if let Some(engine) = &self.engine {
-            engine.load_url(&url);
+        if let Some(tab) = self.active_tab_mut() {
+            tab.engine.load_url(&url);
+            tab.current_url = Some(url.clone());
+            tab.is_loading = true;
         }
 
-        self.current_url = Some(url.clone());
-        self.is_loading = true;
         self.set_omnibar_text(&url, ctx);
-        self.update_title_from_state(ctx);
+        self.update_pane_title(ctx);
         ctx.notify();
     }
 
     fn go_back(&mut self, ctx: &mut ViewContext<Self>) {
-        if let Some(engine) = &self.engine {
-            engine.go_back();
+        if let Some(tab) = self.active_tab_mut() {
+            tab.engine.go_back();
+            tab.is_loading = true;
         }
-        self.is_loading = true;
         ctx.notify();
     }
 
     fn go_forward(&mut self, ctx: &mut ViewContext<Self>) {
-        if let Some(engine) = &self.engine {
-            engine.go_forward();
+        if let Some(tab) = self.active_tab_mut() {
+            tab.engine.go_forward();
+            tab.is_loading = true;
         }
-        self.is_loading = true;
         ctx.notify();
     }
 
     fn reload_or_stop(&mut self, ctx: &mut ViewContext<Self>) {
-        if let Some(engine) = &self.engine {
-            if self.is_loading {
-                engine.stop_loading();
+        if let Some(tab) = self.active_tab_mut() {
+            if tab.is_loading {
+                tab.engine.stop_loading();
             } else {
-                engine.reload();
+                tab.engine.reload();
             }
+            tab.is_loading = !tab.is_loading;
         }
-        self.is_loading = !self.is_loading;
+        ctx.notify();
+    }
+
+    fn new_tab(&mut self, profile: BrowserProfile, ctx: &mut ViewContext<Self>) {
+        let Some(engine) = BrowserEngine::new_with_profile(self.window_id, profile) else {
+            return;
+        };
+
+        if let Some(tab) = self.active_tab() {
+            tab.engine.set_hidden(true);
+        }
+        self.tabs.push(BrowserTab::new(engine));
+        self.active_tab_index = self.tabs.len() - 1;
+        self.set_omnibar_text("", ctx);
+        self.update_pane_title(ctx);
+        self.focus_omnibar(ctx);
+        ctx.notify();
+    }
+
+    fn select_tab(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        if index >= self.tabs.len() || index == self.active_tab_index {
+            return;
+        }
+        if let Some(tab) = self.active_tab() {
+            tab.engine.set_hidden(true);
+        }
+        self.active_tab_index = index;
+        if let Some(tab) = self.active_tab() {
+            tab.engine.set_hidden(false);
+        }
+        self.sync_omnibar_to_current_url(ctx);
+        self.update_pane_title(ctx);
+        self.focus_webview();
+        ctx.notify();
+    }
+
+    fn close_tab(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        if self.tabs.len() <= 1 || index >= self.tabs.len() {
+            return;
+        }
+        let tab = self.tabs.remove(index);
+        tab.engine.destroy();
+        if self.active_tab_index >= self.tabs.len() {
+            self.active_tab_index = self.tabs.len() - 1;
+        } else if index < self.active_tab_index {
+            self.active_tab_index -= 1;
+        }
+        if let Some(tab) = self.active_tab() {
+            tab.engine.set_hidden(false);
+        }
+        self.sync_omnibar_to_current_url(ctx);
+        self.update_pane_title(ctx);
+        ctx.notify();
+    }
+
+    fn navigate_to_history(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        if let Some(entry) = self.history.get(index) {
+            self.navigate_to_normalized_url(entry.url.clone(), ctx);
+            self.show_history = false;
+        }
+    }
+
+    fn clear_default_profile_data(&mut self, ctx: &mut ViewContext<Self>) {
+        BrowserEngine::clear_default_profile_data(self.window_id);
+        self.history.clear();
+        self.show_history = false;
         ctx.notify();
     }
 
@@ -269,7 +419,7 @@ impl BrowserView {
                 Timer::after(STATE_POLL_INTERVAL).await;
             },
             |me, _, ctx| {
-                if me.engine.is_none() {
+                if me.tabs.is_empty() {
                     return;
                 }
 
@@ -282,54 +432,81 @@ impl BrowserView {
     }
 
     fn sync_native_state(&mut self, ctx: &mut ViewContext<Self>) -> bool {
-        let mut state = self.read_native_state();
-        if state.url.is_none() && state.is_loading {
-            state.url = self.current_url.clone();
+        let mut changed = false;
+        let mut history_to_record = None;
+        for (index, tab) in self.tabs.iter_mut().enumerate() {
+            let mut state = Self::read_native_state_for_engine(&tab.engine);
+            if state.url.is_none() && state.is_loading {
+                state.url = tab.current_url.clone();
+            }
+            let title =
+                Self::title_for_state(&state, tab.current_url.as_deref(), tab.engine.profile());
+            let tab_changed = tab.current_url != state.url
+                || tab.title != title
+                || tab.can_go_back != state.can_go_back
+                || tab.can_go_forward != state.can_go_forward
+                || tab.is_loading != state.is_loading;
+
+            tab.current_url = state.url.clone();
+            tab.title = title;
+            tab.can_go_back = state.can_go_back;
+            tab.can_go_forward = state.can_go_forward;
+            tab.is_loading = state.is_loading;
+
+            if tab_changed {
+                changed = true;
+                if index == self.active_tab_index {
+                    if let Some(url) = &tab.current_url {
+                        history_to_record = Some((url.clone(), tab.title.clone()));
+                    }
+                }
+            }
         }
-        let changed = self.current_url != state.url
-            || self.title != self.title_for_state(&state)
-            || self.can_go_back != state.can_go_back
-            || self.can_go_forward != state.can_go_forward
-            || self.is_loading != state.is_loading;
 
-        self.current_url = state.url;
-        self.can_go_back = state.can_go_back;
-        self.can_go_forward = state.can_go_forward;
-        self.is_loading = state.is_loading;
-
+        if let Some((url, title)) = history_to_record {
+            self.record_history(url, title);
+        }
         if changed {
-            self.update_title_from_state(ctx);
+            self.update_pane_title(ctx);
             if !self.omnibar_editor.as_ref(ctx).is_focused() {
                 self.sync_omnibar_to_current_url(ctx);
             }
         }
-
         changed
     }
 
-    fn read_native_state(&self) -> NativeBrowserState {
-        if let Some(engine) = &self.engine {
-            return NativeBrowserState {
-                url: engine.current_url(),
-                title: engine.title(),
-                can_go_back: engine.can_go_back(),
-                can_go_forward: engine.can_go_forward(),
-                is_loading: engine.is_loading(),
-            };
+    fn read_native_state_for_engine(engine: &BrowserEngine) -> NativeBrowserState {
+        NativeBrowserState {
+            url: engine.current_url(),
+            title: engine.title(),
+            can_go_back: engine.can_go_back(),
+            can_go_forward: engine.can_go_forward(),
+            is_loading: engine.is_loading(),
         }
-
-        NativeBrowserState::default()
     }
 
-    fn update_title_from_state(&mut self, ctx: &mut ViewContext<Self>) {
-        let state = self.read_native_state();
-        let title = self.title_for_state(&state);
-        self.title = title.clone();
+    fn update_pane_title(&mut self, ctx: &mut ViewContext<Self>) {
+        let title = self.active_title();
         self.pane_configuration
             .update(ctx, |config, ctx| config.set_title(title, ctx));
     }
 
-    fn title_for_state(&self, state: &NativeBrowserState) -> String {
+    fn record_history(&mut self, url: String, title: String) {
+        if self.history.last().is_some_and(|entry| entry.url == url) {
+            return;
+        }
+        self.history.push(BrowserHistoryEntry { url, title });
+        if self.history.len() > 100 {
+            let excess = self.history.len() - 100;
+            self.history.drain(0..excess);
+        }
+    }
+
+    fn title_for_state(
+        state: &NativeBrowserState,
+        fallback_url: Option<&str>,
+        profile: BrowserProfile,
+    ) -> String {
         state
             .title
             .as_deref()
@@ -339,14 +516,18 @@ impl BrowserView {
                 state
                     .url
                     .as_deref()
-                    .or(self.current_url.as_deref())
+                    .or(fallback_url)
                     .and_then(host_from_url)
             })
-            .unwrap_or_else(|| BROWSER_TITLE.to_owned())
+            .unwrap_or_else(|| match profile {
+                BrowserProfile::Default => BROWSER_TITLE.to_owned(),
+                BrowserProfile::Private => "Private Browser".to_owned(),
+            })
     }
 
     fn sync_omnibar_to_current_url(&self, ctx: &mut ViewContext<Self>) {
-        let text = self.current_url.as_deref().unwrap_or_default();
+        let current_url = self.active_current_url();
+        let text = current_url.as_deref().unwrap_or_default();
         self.set_omnibar_text(text, ctx);
     }
 
@@ -378,6 +559,90 @@ impl BrowserView {
         hoverable.finish()
     }
 
+    fn render_tab_strip(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let mut row = Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(4.);
+
+        for (index, tab) in self.tabs.iter().enumerate() {
+            let active = index == self.active_tab_index;
+            let background = if active {
+                theme.surface_2()
+            } else {
+                theme.background()
+            };
+            let title = if tab.engine.profile() == BrowserProfile::Private {
+                format!("Private · {}", tab.title)
+            } else {
+                tab.title.clone()
+            };
+            let title = Text::new_inline(title, appearance.ui_font_family(), 12.)
+                .with_color(theme.active_ui_text_color().into())
+                .with_clip(ClipConfig::end())
+                .finish();
+            let close_button = self.render_toolbar_button(
+                appearance,
+                icons::Icon::X,
+                self.tabs.len() > 1,
+                tab.close_button.clone(),
+                BrowserViewAction::CloseTab(index),
+            );
+            let tab_row = Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(4.)
+                .with_child(Shrinkable::new(1., title).finish())
+                .with_child(close_button)
+                .finish();
+            let tab_element = Hoverable::new(tab.tab_mouse_state.clone(), move |_| {
+                ConstrainedBox::new(
+                    Container::new(tab_row)
+                        .with_horizontal_padding(8.)
+                        .with_background(background)
+                        .with_border(Border::all(1.).with_border_fill(theme.outline()))
+                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                        .finish(),
+                )
+                .with_width(180.)
+                .with_height(24.)
+                .finish()
+            })
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(BrowserViewAction::SelectTab(index));
+            })
+            .finish();
+            row.add_child(tab_element);
+        }
+
+        row.add_child(self.render_toolbar_button(
+            appearance,
+            icons::Icon::Plus,
+            true,
+            self.new_tab_button.clone(),
+            BrowserViewAction::NewTab,
+        ));
+        row.add_child(self.render_toolbar_button(
+            appearance,
+            icons::Icon::Lock,
+            true,
+            self.new_private_tab_button.clone(),
+            BrowserViewAction::NewPrivateTab,
+        ));
+
+        ConstrainedBox::new(
+            Container::new(row.finish())
+                .with_horizontal_padding(TOOLBAR_PADDING)
+                .with_background(theme.background())
+                .with_border(Border::bottom(1.).with_border_fill(theme.outline()))
+                .finish(),
+        )
+        .with_height(TAB_STRIP_HEIGHT)
+        .finish()
+    }
+
     fn render_toolbar(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
@@ -392,11 +657,12 @@ impl BrowserView {
         .build()
         .finish();
 
-        let reload_icon = if self.is_loading {
+        let reload_icon = if self.active_is_loading() {
             icons::Icon::Stop
         } else {
             icons::Icon::RefreshCw04
         };
+        let current_url = self.active_current_url();
 
         ConstrainedBox::new(
             Container::new(
@@ -407,23 +673,37 @@ impl BrowserView {
                     .with_child(self.render_toolbar_button(
                         appearance,
                         icons::Icon::ArrowLeft,
-                        self.can_go_back,
+                        self.active_can_go_back(),
                         self.back_button.clone(),
                         BrowserViewAction::Back,
                     ))
                     .with_child(self.render_toolbar_button(
                         appearance,
                         icons::Icon::ArrowRight,
-                        self.can_go_forward,
+                        self.active_can_go_forward(),
                         self.forward_button.clone(),
                         BrowserViewAction::Forward,
                     ))
                     .with_child(self.render_toolbar_button(
                         appearance,
                         reload_icon,
-                        self.current_url.is_some() || self.is_loading,
+                        current_url.is_some() || self.active_is_loading(),
                         self.reload_button.clone(),
                         BrowserViewAction::ReloadOrStop,
+                    ))
+                    .with_child(self.render_toolbar_button(
+                        appearance,
+                        icons::Icon::History,
+                        !self.history.is_empty(),
+                        self.history_button.clone(),
+                        BrowserViewAction::ToggleHistory,
+                    ))
+                    .with_child(self.render_toolbar_button(
+                        appearance,
+                        icons::Icon::Trash,
+                        true,
+                        self.clear_profile_data_button.clone(),
+                        BrowserViewAction::ClearDefaultProfileData,
                     ))
                     .with_child(Shrinkable::new(1., text_input).finish())
                     .finish(),
@@ -437,9 +717,58 @@ impl BrowserView {
         .finish()
     }
 
+    fn render_history_panel(&self, app: &AppContext) -> Option<Box<dyn Element>> {
+        if !self.show_history {
+            return None;
+        }
+
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let mut column = Flex::column().with_main_axis_size(MainAxisSize::Max);
+        for (index, entry) in self
+            .history
+            .iter()
+            .enumerate()
+            .rev()
+            .take(HISTORY_PANEL_MAX_ROWS)
+        {
+            let label = if entry.title.trim().is_empty() {
+                entry.url.clone()
+            } else {
+                format!("{} · {}", entry.title, entry.url)
+            };
+            let text = Text::new_inline(label, appearance.ui_font_family(), 12.)
+                .with_color(theme.active_ui_text_color().into())
+                .with_clip(ClipConfig::end())
+                .finish();
+            let row = Hoverable::new(Default::default(), move |_| {
+                ConstrainedBox::new(
+                    Container::new(text)
+                        .with_horizontal_padding(TOOLBAR_PADDING)
+                        .with_background(theme.surface_1())
+                        .finish(),
+                )
+                .with_height(HISTORY_PANEL_ROW_HEIGHT)
+                .finish()
+            })
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(BrowserViewAction::NavigateHistory(index));
+            })
+            .finish();
+            column.add_child(row);
+        }
+
+        Some(
+            Container::new(column.finish())
+                .with_background(theme.surface_1())
+                .with_border(Border::bottom(1.).with_border_fill(theme.outline()))
+                .finish(),
+        )
+    }
+
     fn render_loading_indicator(&self, app: &AppContext) -> Box<dyn Element> {
         let theme = Appearance::as_ref(app).theme();
-        let fill = if self.is_loading {
+        let fill = if self.active_is_loading() {
             theme.accent()
         } else {
             Fill::Solid(pathfinder_color::ColorU::transparent_black())
@@ -471,13 +800,21 @@ impl View for BrowserView {
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
-        Flex::column()
+        let mut column = Flex::column()
             .with_main_axis_size(MainAxisSize::Max)
+            .with_child(self.render_tab_strip(app))
             .with_child(self.render_toolbar(app))
-            .with_child(self.render_loading_indicator(app))
+            .with_child(self.render_loading_indicator(app));
+        if let Some(history_panel) = self.render_history_panel(app) {
+            column.add_child(history_panel);
+        }
+        column
             .with_child(
-                Shrinkable::new(1., NativeBrowserElement::new(self.engine.as_ref()).finish())
-                    .finish(),
+                Shrinkable::new(
+                    1.,
+                    NativeBrowserElement::new(self.browser_engine()).finish(),
+                )
+                .finish(),
             )
             .finish()
     }
@@ -492,10 +829,14 @@ impl View for BrowserView {
         target_window_id: WindowId,
         ctx: &mut ViewContext<Self>,
     ) {
-        let url = self.current_url.clone();
+        let url = self.active_current_url();
         self.destroy_webview();
         self.window_id = target_window_id;
-        self.engine = BrowserEngine::new(target_window_id);
+        self.tabs = BrowserEngine::new(target_window_id)
+            .map(BrowserTab::new)
+            .into_iter()
+            .collect();
+        self.active_tab_index = 0;
         if let Some(url) = url {
             self.navigate_to_normalized_url(url, ctx);
         }
@@ -510,6 +851,16 @@ impl TypedActionView for BrowserView {
             BrowserViewAction::Back => self.go_back(ctx),
             BrowserViewAction::Forward => self.go_forward(ctx),
             BrowserViewAction::ReloadOrStop => self.reload_or_stop(ctx),
+            BrowserViewAction::NewTab => self.new_tab(BrowserProfile::Default, ctx),
+            BrowserViewAction::NewPrivateTab => self.new_tab(BrowserProfile::Private, ctx),
+            BrowserViewAction::SelectTab(index) => self.select_tab(*index, ctx),
+            BrowserViewAction::CloseTab(index) => self.close_tab(*index, ctx),
+            BrowserViewAction::ToggleHistory => {
+                self.show_history = !self.show_history;
+                ctx.notify();
+            }
+            BrowserViewAction::NavigateHistory(index) => self.navigate_to_history(*index, ctx),
+            BrowserViewAction::ClearDefaultProfileData => self.clear_default_profile_data(ctx),
         }
     }
 }
@@ -541,8 +892,8 @@ impl BackingView for BrowserView {
         _app: &AppContext,
     ) -> HeaderContent {
         HeaderContent::Standard(StandardHeader {
-            title: self.title.clone(),
-            title_secondary: self.current_url.clone(),
+            title: self.active_title(),
+            title_secondary: self.active_current_url(),
             title_style: None,
             title_clip_config: ClipConfig::start(),
             title_max_width: None,

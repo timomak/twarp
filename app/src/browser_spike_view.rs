@@ -79,7 +79,7 @@ impl BrowserSpikeView {
     fn create_webview(window_id: WindowId) -> Option<BrowserWebViewId> {
         #[cfg(target_os = "macos")]
         {
-            let webview_id = MacWindow::create_browser_webview(window_id)?;
+            let webview_id = MacWindow::create_browser_webview(window_id, true)?;
             MacWindow::load_browser_webview_url(window_id, webview_id, BROWSER_SPIKE_TEST_URL);
             Some(webview_id)
         }
