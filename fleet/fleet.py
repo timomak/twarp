@@ -422,26 +422,68 @@ def fix_agent(it, errors):
     return worker_remote(it, ref=ref, prompt_text=fix_prompt) if it["node"] == REMOTE \
         else worker_local(it, ref=ref, prompt_text=fix_prompt)
 
-def architect_review(iid):
-    """Staff/principal-altitude pre-merge review of the branch diff. Returns (verdict, note)."""
-    repo = load()["config"]["repo"]
+def _parse_arch(out):
+    """Pull the `ARCH approve|changes — …` verdict line out of a reviewer's output. Returns
+    (verdict|None, note); None means no parseable verdict (caller decides the fallback)."""
+    out = (out or "").strip()
+    line = next((l for l in out.splitlines() if l.strip().upper().startswith("ARCH")), "")
+    if not line:
+        return None, ""
+    return ("approve" if "approve" in line.lower() else "changes"), line
+
+REVIEW_PROMPT = (
+    "You are a staff/principal engineer doing a PRE-MERGE review of a twarp change at ARCHITECTURE "
+    "altitude — correctness, blast radius, fork discipline, reversibility, long-term "
+    "maintainability — NOT style nitpicks. Approve unless there's a real blocking concern. "
+    "Do NOT edit any files; only output your verdict.\n\n"
+    "Diff:\n\n{diff}\n\n"
+    "Reply with EXACTLY one line:\n"
+    "  ARCH approve — <one line: why it's safe to merge>\n"
+    "  ARCH changes — <the specific blocking issue(s) to fix>")
+
+def _claude_review(prompt):
+    r = sh(["claude", "-p", prompt, "--dangerously-skip-permissions"], timeout=300)
+    return _parse_arch(r.stdout)
+
+def _codex_review(iid, prompt):
+    """Run the architect review on Codex (build node), isolated in a throwaway tmp dir with
+    --skip-git-repo-check so it can't touch any worktree. The diff is embedded in the prompt, so
+    no repo access is needed. Returns (verdict|None, note)."""
+    p = LOG / f"{iid}.review.prompt"; p.write_text(prompt)
+    sh(["scp", "-q", str(p), f"{REMOTE}:/tmp/fleet_{iid}.review"], check=True)
+    run = (f"{REMOTE_ENV}\nrm -rf /tmp/fleet_rev_{iid}\nmkdir -p /tmp/fleet_rev_{iid}\ncd /tmp/fleet_rev_{iid}\n"
+           f"cat /tmp/fleet_{iid}.review | $HOME/.local/bin/codex exec "
+           f"--dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "
+           f"-c model_reasoning_effort='high' > /tmp/fleet_{iid}.review.log 2>&1\n"
+           f"echo CODEX_EXIT_$?\n")
+    r = ssh(run, timeout=600)
+    log = ssh(f"cat /tmp/fleet_{iid}.review.log").stdout
+    (LOG / f"{iid}.review.log").write_text(log)
+    if "CODEX_EXIT_0" not in r.stdout:
+        return None, ""
+    return _parse_arch(log)
+
+def architect_review(it):
+    """Staff/principal-altitude pre-merge review of the branch diff. Returns (verdict, note).
+    INDEPENDENT reviewer: review with the model that did NOT author the item — Codex-authored work
+    is reviewed by Claude, Claude-authored work is reviewed by Codex — so no model rubber-stamps its
+    own diff. Codex-review failures fall back to Claude (degrades to the old behaviour, never blind-
+    approves)."""
+    iid = it["id"]
     sh(["git", "-C", str(LOCAL_REPO), "fetch", "-q", "origin"])
     diff = sh(["git", "-C", str(LOCAL_REPO), "diff", f"origin/master...origin/fleet/{iid}"]).stdout
     if len(diff) > 60000:
         diff = diff[:60000] + "\n...[diff truncated]..."
-    prompt = (
-        "You are a staff/principal engineer doing a PRE-MERGE review of a twarp change at ARCHITECTURE "
-        "altitude — correctness, blast radius, fork discipline, reversibility, long-term "
-        "maintainability — NOT style nitpicks. Approve unless there's a real blocking concern.\n\n"
-        f"Diff (origin/master...fleet/{iid}):\n\n{diff}\n\n"
-        "Reply with EXACTLY one line:\n"
-        "  ARCH approve — <one line: why it's safe to merge>\n"
-        "  ARCH changes — <the specific blocking issue(s) to fix>")
-    r = sh(["claude", "-p", prompt, "--dangerously-skip-permissions"], timeout=300)
-    out = (r.stdout or "").strip()
-    line = next((l for l in out.splitlines() if l.strip().upper().startswith("ARCH")),
-                out.splitlines()[-1] if out else "")
-    return ("approve" if "approve" in line.lower() else "changes"), line
+    prompt = REVIEW_PROMPT.format(diff=diff)
+    if it.get("node") == REMOTE:                       # Codex authored → Claude reviews
+        verdict, note = _claude_review(prompt); reviewer = "claude"
+    else:                                              # Claude authored → Codex reviews (independence)
+        verdict, note = _codex_review(iid, prompt); reviewer = "codex"
+        if verdict is None:                            # codex review unusable → independent fallback
+            verdict, note = _claude_review(prompt); reviewer = "claude(fallback)"
+    if verdict is None:
+        verdict, note = "changes", "review produced no parseable verdict"
+    return verdict, f"[{reviewer}] {note}"
 
 def iterate(it):
     """Drive ONE PR to green + architect-approved: gate → fix → re-gate → architect → fix → … .
@@ -462,7 +504,7 @@ def iterate(it):
             if uv == "regression":
                 say(f"  [{iid}] UX regression (round {rnd}) → fix-agent")
                 fix_agent(it, "The UX visual gate found a regression vs the golden screenshot."); continue
-        verdict, note = architect_review(iid)
+        verdict, note = architect_review(it)
         say(f"  [{iid}] architect (round {rnd}): {note}")
         if verdict != "approve":
             fix_agent(it, f"Staff-architect review requested changes: {note}"); continue
