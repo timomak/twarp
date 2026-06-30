@@ -557,6 +557,7 @@ pub(crate) const OPEN_BROWSER_PANE_BINDING_NAME: &str = "workspace:open_browser_
 // twarp: open Claude Code in a new tab (cmd-shift-T).
 pub(crate) const OPEN_CLAUDE_CODE_TAB_BINDING_NAME: &str = "workspace:open_claude_code_tab";
 pub(crate) const NEW_TERMINAL_TAB_BINDING_NAME: &str = "workspace:new_terminal_tab";
+pub(crate) const NEW_FILE_BINDING_NAME: &str = "workspace:new_file";
 pub(crate) const NEW_AGENT_TAB_BINDING_NAME: &str = "workspace:new_agent_tab";
 pub(crate) const NEW_AMBIENT_AGENT_TAB_BINDING_NAME: &str = "workspace:new_ambient_agent_tab";
 pub(crate) const TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME: &str = "workspace:toggle_tab_configs_menu";
