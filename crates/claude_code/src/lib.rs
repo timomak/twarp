@@ -206,11 +206,15 @@ pub enum TranscriptEvent {
     /// `claude` requested permission to use a tool (PRODUCT §24, 7g). `id` is the
     /// control-protocol `request_id` the Allow/Deny answer echoes back
     /// (`driver::send_control_response`); `input` is the proposed tool input,
-    /// returned verbatim as `updatedInput` on allow.
+    /// returned verbatim as `updatedInput` on allow. `tool_use_id` ties the
+    /// request to the assistant `tool_use` block it gates — the pane uses it to
+    /// hold an `AskUserQuestion` permission open against its inline question card
+    /// so the picks ride back as the tool's answers (PRODUCT §1).
     PermissionRequest {
         id: String,
         tool: String,
         input: Value,
+        tool_use_id: Option<String>,
     },
     /// `claude` asked the user a question over the control channel (an
     /// `AskUserQuestion` `request_user_dialog`, PRODUCT §24/§1). `id` is the
@@ -223,9 +227,17 @@ pub enum TranscriptEvent {
     },
     /// The current turn (or session) ended (PRODUCT §52).
     Ended { reason: EndReason },
-    /// Token usage + context window for the turn that just completed, from the
-    /// `result` message. Drives the composer's context chip.
+    /// Per-message token usage from an `assistant` message — the live context
+    /// occupancy that drives the composer's context chip.
     Usage(Usage),
+    /// The model's context window for the turn, from the `result` message's
+    /// `modelUsage[model].contextWindow`. Emitted on its own (never folded into
+    /// a [`Usage`]) because the `result`'s own `usage` block is the turn
+    /// *aggregate* — it sums every API call in the agentic loop, so its cache
+    /// reads alone can reach millions of tokens and would wildly overstate the
+    /// chip's "context used". Only the window is trustworthy there; the token
+    /// counts come from the last per-message `assistant` usage.
+    ContextWindow(u64),
     /// Cost + timing for the turn that just completed, from the `result`
     /// message. Rendered as a per-turn metrics line (PRODUCT §48).
     Metrics(TurnMetrics),
@@ -525,6 +537,17 @@ impl Transcript {
                     ..usage
                 });
             }
+            TranscriptEvent::ContextWindow(window) => match &mut self.usage {
+                // Stamp the window onto the live per-message counts; never adopt
+                // the `result`'s aggregate token figures (see the variant docs).
+                Some(usage) => usage.context_window = Some(window),
+                None => {
+                    self.usage = Some(Usage {
+                        context_window: Some(window),
+                        ..Usage::default()
+                    })
+                }
+            },
             TranscriptEvent::Metrics(metrics) => {
                 // A turn's cost/timing line renders inline after its content
                 // (PRODUCT §48); an all-empty metric set renders nothing.
@@ -665,7 +688,12 @@ impl Transcript {
                     self.items.push(TranscriptItem::Todos(todos));
                 }
             }
-            TranscriptEvent::PermissionRequest { id, tool, input } => {
+            TranscriptEvent::PermissionRequest {
+                id,
+                tool,
+                input,
+                tool_use_id: _,
+            } => {
                 self.items.push(TranscriptItem::Permission {
                     id,
                     tool,
@@ -769,6 +797,34 @@ mod tests {
         let usage = t.usage().expect("usage stored");
         assert_eq!(usage.input_tokens, 2000);
         assert_eq!(usage.context_window, Some(1_000_000));
+    }
+
+    #[test]
+    fn context_window_stamps_window_without_clobbering_live_counts() {
+        let mut t = Transcript::new();
+        // Live per-message usage sets the real context occupancy.
+        t.apply(TranscriptEvent::Usage(Usage {
+            input_tokens: 5102,
+            cache_read_input_tokens: 180_000,
+            output_tokens: 12,
+            context_window: None,
+            ..Usage::default()
+        }));
+        // The result's window arrives separately and must only stamp the window
+        // — the aggregate token counts it carried are never adopted here.
+        t.apply(TranscriptEvent::ContextWindow(200_000));
+        let usage = t.usage().expect("usage stored");
+        assert_eq!(usage.context_used(), 5102 + 180_000);
+        assert_eq!(usage.context_window, Some(200_000));
+    }
+
+    #[test]
+    fn context_window_seeds_usage_when_none_yet() {
+        let mut t = Transcript::new();
+        t.apply(TranscriptEvent::ContextWindow(200_000));
+        let usage = t.usage().expect("usage seeded");
+        assert_eq!(usage.context_used(), 0);
+        assert_eq!(usage.context_window, Some(200_000));
     }
 
     #[test]
@@ -958,6 +1014,7 @@ mod tests {
             id: "req-1".to_string(),
             tool: "Bash".to_string(),
             input: serde_json::json!({ "command": "echo hi" }),
+            tool_use_id: Some("toolu_1".to_string()),
         });
         // The proposed input comes back so the caller can echo it as updatedInput.
         let input = t

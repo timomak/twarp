@@ -766,10 +766,19 @@ fn parse_control_request(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
                 .unwrap_or_default()
                 .to_owned();
             let input = request.get("input").cloned().unwrap_or(Value::Null);
+            // The `tool_use_id` ties this permission to the assistant `tool_use`
+            // block it gates. The pane needs it to attach a held `AskUserQuestion`
+            // permission to its inline question card (PRODUCT §1), so answers ride
+            // back on this same `can_use_tool` rather than being auto-dismissed.
+            let tool_use_id = request
+                .get("tool_use_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_owned());
             out.push_back(TranscriptEvent::PermissionRequest {
                 id: request_id.to_owned(),
                 tool,
                 input,
+                tool_use_id,
             });
         }
         Some("request_user_dialog") => {
@@ -1050,10 +1059,13 @@ fn extract_tool_result_text(content: Option<&Value>) -> String {
 }
 
 fn parse_result(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
-    // Token usage + context window land before `Ended` so the panel's context
-    // chip is up to date by the time the turn closes.
-    if let Some(usage) = parse_usage(value) {
-        out.push_back(TranscriptEvent::Usage(usage));
+    // Only the context window lands here — the `result`'s own `usage` block is
+    // the turn aggregate (it sums every API call in the loop, so its cache reads
+    // can reach millions) and would massively overstate the chip's "context
+    // used". The live token counts come from per-message `assistant` usage; this
+    // just stamps the window onto them before `Ended` closes the turn.
+    if let Some(window) = parse_context_window(value) {
+        out.push_back(TranscriptEvent::ContextWindow(window));
     }
     // Per-turn cost/timing line (PRODUCT §48), also before `Ended` so it renders
     // as the turn's last item. Omitted entirely when the result carries none.
@@ -1124,18 +1136,18 @@ fn usage_from_obj(usage: &Value, context_window: Option<u64>) -> Usage {
     }
 }
 
-/// Extract token usage from a `result` message's `usage` block, plus the
-/// context window from `modelUsage[model].contextWindow` (there is one model
-/// entry per turn). Returns `None` if the message carries no `usage`.
-fn parse_usage(value: &Value) -> Option<Usage> {
-    let usage = value.get("usage")?;
-    let context_window = value
+/// Extract the context window from a `result` message's
+/// `modelUsage[model].contextWindow` (there is one model entry per turn).
+/// Returns `None` when the result carries no model-usage block. The result's
+/// sibling `usage` block is deliberately ignored — it is the turn aggregate,
+/// not the current context occupancy (see [`TranscriptEvent::ContextWindow`]).
+fn parse_context_window(value: &Value) -> Option<u64> {
+    value
         .get("modelUsage")
         .and_then(|m| m.as_object())
         .and_then(|m| m.values().next())
         .and_then(|model| model.get("contextWindow"))
-        .and_then(|v| v.as_u64());
-    Some(usage_from_obj(usage, context_window))
+        .and_then(|v| v.as_u64())
 }
 
 #[cfg(test)]
@@ -1218,19 +1230,25 @@ mod tests {
     #[test]
     fn parses_can_use_tool_as_permission_request() {
         let v: Value = serde_json::from_str(
-            r#"{"type":"control_request","request_id":"req-1","request":{"subtype":"can_use_tool","tool_name":"Write","input":{"file_path":"/tmp/x.txt","content":"hi"}}}"#,
+            r#"{"type":"control_request","request_id":"req-1","request":{"subtype":"can_use_tool","tool_name":"Write","input":{"file_path":"/tmp/x.txt","content":"hi"},"tool_use_id":"toolu_42"}}"#,
         )
         .unwrap();
         let mut out = VecDeque::new();
         parse_event_into(&v, &mut out);
         match out.front() {
-            Some(TranscriptEvent::PermissionRequest { id, tool, input }) => {
+            Some(TranscriptEvent::PermissionRequest {
+                id,
+                tool,
+                input,
+                tool_use_id,
+            }) => {
                 assert_eq!(id, "req-1");
                 assert_eq!(tool, "Write");
                 assert_eq!(
                     input.get("file_path").and_then(|v| v.as_str()),
                     Some("/tmp/x.txt")
                 );
+                assert_eq!(tool_use_id.as_deref(), Some("toolu_42"));
             }
             other => panic!("expected PermissionRequest, got {other:?}"),
         }
@@ -1275,22 +1293,25 @@ mod tests {
     }
 
     #[test]
-    fn parses_result_usage_and_context_window() {
+    fn result_emits_only_context_window_not_aggregate_usage() {
+        // The result's `usage` is the turn aggregate (cache reads sum across the
+        // whole agentic loop); only the context window is taken from it, so the
+        // chip isn't overstated by the cumulative figure.
         let v: Value = serde_json::from_str(
-            r#"{"type":"result","subtype":"success","is_error":false,"usage":{"input_tokens":5102,"cache_read_input_tokens":15818,"cache_creation_input_tokens":5450,"output_tokens":4},"modelUsage":{"claude-fable-5[1m]":{"contextWindow":1000000}}}"#,
+            r#"{"type":"result","subtype":"success","is_error":false,"usage":{"input_tokens":5102,"cache_read_input_tokens":8500000,"cache_creation_input_tokens":5450,"output_tokens":4},"modelUsage":{"claude-fable-5[1m]":{"contextWindow":200000}}}"#,
         )
         .unwrap();
         let mut out = VecDeque::new();
         parse_event_into(&v, &mut out);
-        // Usage is emitted before Ended so the chip is fresh when the turn closes.
+        // ContextWindow is emitted before Ended so the chip is fresh on close.
         match out.front() {
-            Some(TranscriptEvent::Usage(u)) => {
-                assert_eq!(u.context_used(), 5102 + 15818 + 5450);
-                assert_eq!(u.context_window, Some(1_000_000));
-                assert_eq!(u.output_tokens, 4);
-            }
-            other => panic!("expected Usage first, got {other:?}"),
+            Some(TranscriptEvent::ContextWindow(window)) => assert_eq!(*window, 200_000),
+            other => panic!("expected ContextWindow first, got {other:?}"),
         }
+        // The aggregate token counts are never surfaced as a Usage event.
+        assert!(!out
+            .iter()
+            .any(|e| matches!(e, TranscriptEvent::Usage(_))));
         assert!(matches!(out.back(), Some(TranscriptEvent::Ended { .. })));
     }
 

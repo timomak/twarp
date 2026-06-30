@@ -543,6 +543,152 @@ def uxgate(test=UXTEST, png="after_bootstrap.png"):
     return verdict, local
 
 
+# ---------- dynamic UX gate (computer-use: drive the real app, judge vs criteria) ----------
+# Unlike uxgate() (one bootstrap screenshot vs a golden), this LAUNCHES the PR's build and lets a
+# Claude agent drive the live app — navigate to the feature, click/type, and judge it against the
+# feature's acceptance criteria. Needs the display pod's in-session injector (UidriveAgent) trusted;
+# falls back to uxgate() if injection isn't available, so a missing grant degrades, never blocks.
+def ux_inject_ready(name):
+    """True if the display pod's IN-SESSION injector holds the Accessibility grant. A fresh
+    `uidrive trusted` launched over SSH is sshd-attributed and ALWAYS false — the grant lives in the
+    UidriveAgent `serve` process running inside the GUI login session. So kick the agent to re-log its
+    state, then read the serve log's latest startup line."""
+    try:
+        bash_on(name, "launchctl kickstart -k gui/$(id -u)/com.twarp.uidrive >/dev/null 2>&1 || true\n"
+                      "sleep 1\n", timeout=30)
+        r = bash_on(name, "grep 'serve started' ~/.uidrive/log 2>/dev/null | tail -1\n", timeout=20)
+        return "trusted=true" in (r.stdout or "")
+    except Exception:
+        return False
+
+def _ux_criteria(it):
+    """What the UX agent judges against: explicit per-item `ux_criteria` wins, else the feature's
+    PRODUCT.md `## Smoke test` section, else a generic 'exercise what the diff changed'."""
+    if it.get("ux_criteria"):
+        return it["ux_criteria"]
+    feat = it.get("feature") or _active_feature()
+    if feat:
+        pm = SELF_REPO / "roadmap" / feat / "PRODUCT.md"
+        if pm.exists():
+            m = re.search(r"##\s*Smoke test\s*\n(.+?)(?:\n##\s|\Z)", pm.read_text(), re.S)
+            if m:
+                return m.group(1).strip()[:4000]
+    return ("Exercise the user-facing behavior introduced by this PR's diff and confirm it works "
+            "without visual glitches.")
+
+UX_DRIVE_PROMPT = """You are a UX QA agent debugging the twarp macOS app live, like a human tester. \
+A freshly-built twarp from this PR is running on screen. Drive it with two shell helpers (Bash tool):
+
+  {shot} <out.png>     -> captures the screen to <out.png> and prints its scale (pixels-per-point).
+                          Then use your Read tool on <out.png> to SEE the screen.
+  {act} "<command>"    -> injects input. Commands:
+                            click X Y | dblclick X Y | move X Y      (X Y in POINTS)
+                            type <text> | key <code> [cmd,shift,opt,ctrl]
+
+CRITICAL coordinate rule: screenshots are RETINA. Coordinates you read off the PNG are PIXELS; \
+DIVIDE by the printed scale (usually 2) to get POINTS before passing to {act}. E.g. a button at \
+pixel (800,460) on a scale-2 shot -> `{act} "click 400 230"`.
+
+Your job: verify the feature below actually works in the running twarp. Capture first to see the \
+state, navigate to the feature, exercise it, and inspect the result after each action. If twarp \
+isn't frontmost, click its window first. Save your final evidence screenshot to {final}.
+
+=== FEATURE / ACCEPTANCE CRITERIA ===
+{criteria}
+
+=== WHAT THIS PR CHANGED (diff excerpt) ===
+{diff}
+
+Work in at most ~12 actions. When done, reply with EXACTLY one final line:
+  VERDICT pass — <what you confirmed works>
+  VERDICT regression — <what is broken or missing>
+"""
+
+def _ux_launch(it, name):
+    """Build the item's branch as a real GUI .app bundle on the display pod and launch it via
+    LaunchServices (`open`), so it attaches to the user's GUI session and renders on the real display.
+    A plain `cargo build --bin warp-oss` does NOT work: it omits the `gui` feature and produces a bare
+    binary that fatally exits ('no asset exists at path bundled/png/local.png'). `script/run` is the
+    only correct macOS launch — it `cargo bundle`s with FEATURES=gui, stages resources, and codesigns,
+    producing target/debug/bundle/osx/WarpOss.app."""
+    iid = it["id"]; repo = node_repo(name); wt = f"{node_wt(name)}/ux-{iid}"
+    app = "target/debug/bundle/osx/WarpOss.app"
+    cmd = (fresh_worktree(name, wt, f"origin/fleet/{iid}") +
+           f"export CARGO_TARGET_DIR={wt}/target\ncd {wt}\n"   # bundle resolves assets via its own tree
+           f"./script/run --dont-open > /tmp/ux_build_{iid}.log 2>&1\necho BUILD_$?\n"
+           f"test -d {app} && echo BUNDLE_OK || echo BUNDLE_MISSING\n"
+           f"caffeinate -dimsu & echo $! > /tmp/ux_caf_{iid}\n"
+           f"open {app} > /tmp/ux_open_{iid}.log 2>&1; echo OPEN_$?\n"
+           f"sleep 12\npgrep -f 'WarpOss.app' >/dev/null && echo RUNNING || echo NOTRUNNING\n")
+    say(f"  [{iid}] UX: building GUI bundle + launching on {name}'s display (multi-min build)…")
+    with gatelock(name):                       # one cargo cache per pod
+        r = bash_on(name, cmd, timeout=3600)
+    ok = ("BUILD_0" in r.stdout and "BUNDLE_OK" in r.stdout and "RUNNING" in r.stdout)
+    (LOG / f"{iid}.uxlaunch.log").write_text(r.stdout)
+    return ok, r.stdout
+
+def _ux_teardown(it, name):
+    iid = it["id"]; wt = f"{node_wt(name)}/ux-{iid}"; repo = node_repo(name)
+    try:
+        bash_on(name, f"pkill -f 'WarpOss.app' 2>/dev/null || true\n"
+                      f"kill $(cat /tmp/ux_caf_{iid} 2>/dev/null) 2>/dev/null || true\n"
+                      f"cd {repo}\ngit worktree remove --force {wt} 2>/dev/null || true\n"
+                      f"rm -rf {wt}\ngit worktree prune\n", timeout=120)
+    except Exception as e:
+        say(f"  [{iid}] UX teardown warning on {name}: {e}")
+
+def ux_drive_gate(it):
+    """Dynamic UX gate: launch the PR's build, let a Claude agent drive the live app and judge it vs
+    acceptance criteria. Falls back to the bootstrap screenshot gate if the display pod can't inject.
+    Returns (verdict, evidence_dir) — 'regression' blocks merge; 'pass'/'error' do not."""
+    iid = it["id"]; name = display_node()
+    if not name:
+        return "error", None
+    if not ux_inject_ready(name):
+        say(f"  [{iid}] UX: injector not trusted on {name} (grant Accessibility to UidriveAgent) "
+            f"→ falling back to bootstrap screenshot gate")
+        return uxgate(it.get("ux_test", UXTEST))
+    host = node_host(name); is_self = (name == SELF)
+    LOG.mkdir(parents=True, exist_ok=True)
+    evid = LOG / f"ux_{iid}"; evid.mkdir(exist_ok=True)
+    shot = evid / "ux_shot"; act = evid / "ux_act"
+    if is_self:
+        shot.write_text('#!/bin/bash\n~/.local/bin/uishot "$1"\n')
+        act.write_text('#!/bin/bash\n~/.local/bin/uinject "$*"\n')
+    else:
+        shot.write_text(f"#!/bin/bash\ninfo=$(ssh {host} '~/.local/bin/uishot /tmp/uxframe.png')\n"
+                        f'scp -q {host}:/tmp/uxframe.png "$1"\necho "$1 $info"\n')
+        act.write_text(f'#!/bin/bash\nssh {host} "~/.local/bin/uinject \\"$*\\""\n')
+    os.chmod(shot, 0o755); os.chmod(act, 0o755)
+
+    with _screenlock:                          # one display → one UX session at a time
+        launched, ltail = _ux_launch(it, name)
+        if not launched:
+            say(f"  [{iid}] UX: app build/launch failed → bootstrap gate")
+            _ux_teardown(it, name)
+            return uxgate(it.get("ux_test", UXTEST))
+        try:
+            sh(["git", "-C", str(SELF_REPO), "fetch", "-q", "origin"])
+            diff = sh(["git", "-C", str(SELF_REPO), "diff",
+                       f"origin/master...origin/fleet/{iid}"]).stdout[:8000]
+            prompt = UX_DRIVE_PROMPT.format(shot=shot, act=act, final=evid / "final.png",
+                                            criteria=_ux_criteria(it), diff=diff or "(no diff)")
+            r = sh(["claude", "-p", prompt, "--dangerously-skip-permissions"], timeout=1200)
+        finally:
+            _ux_teardown(it, name)
+    out = (r.stdout or "").strip()
+    (evid / "transcript.txt").write_text(out)
+    line = next((l for l in out.splitlines() if "VERDICT" in l.upper()),
+                out.splitlines()[-1] if out else "")
+    say(f"  [{iid}] UX drive → {line}")
+    low = line.lower()
+    if "regression" in low or "verdict fail" in low:
+        return "regression", evid
+    if "pass" in low:
+        return "pass", evid
+    return "error", evid
+
+
 # ---------- gate (on the pod that authored) ----------
 def gate(it, ref=None):
     """Build+test `ref` (default origin/fleet/<id>) on the item's pod. Returns (ok, tail)."""
@@ -691,10 +837,11 @@ def iterate(it):
                 say(f"  [{iid}] fix produced no change — giving up"); set_status(iid, "failed"); return False
             continue
         if it.get("ux"):
-            uv, _ = uxgate(it.get("ux_test", UXTEST))
+            uv, _ = ux_drive_gate(it)        # drive the live app vs criteria; bootstrap-gate fallback
             if uv == "regression":
                 say(f"  [{iid}] UX regression (round {rnd}) → fix-agent")
-                fix_agent(it, "The UX visual gate found a regression vs the golden screenshot."); continue
+                fix_agent(it, "The UX gate drove the live app and found the feature broken or missing. "
+                              "Re-read the acceptance criteria and fix the user-facing behavior."); continue
         verdict, note = architect_review(it)
         say(f"  [{iid}] architect (round {rnd}): {note}")
         if verdict != "approve":
@@ -804,6 +951,8 @@ def main():
     s = sub.add_parser("supervise"); s.add_argument("id"); s.add_argument("--self", dest="self_pod", default=None)
     u = sub.add_parser("uxgate"); u.add_argument("test", nargs="?", default=UXTEST)
     u.add_argument("--self", dest="self_pod", default=None)
+    ud = sub.add_parser("uxdrive"); ud.add_argument("id")
+    ud.add_argument("--self", dest="self_pod", default=None)
     args = ap.parse_args()
     if getattr(args, "self_pod", None):
         SELF = args.self_pod
@@ -817,7 +966,7 @@ def main():
         cmd_dispatch(args)
     elif args.cmd == "run":
         cmd_run(args)
-    elif args.cmd in ("worker", "gate", "supervise", "uxgate"):
+    elif args.cmd in ("worker", "gate", "supervise", "uxgate", "uxdrive"):
         ACTIVE_PODS = _resolve_pods(False)
         if args.cmd == "worker":
             run_worker(item(load(), args.id))
@@ -830,6 +979,9 @@ def main():
         elif args.cmd == "uxgate":
             verdict, png = uxgate(args.test)
             print(f"UXGATE {verdict} png={png}")
+        elif args.cmd == "uxdrive":
+            verdict, evid = ux_drive_gate(item(load(), args.id))
+            print(f"UXDRIVE {verdict} evidence={evid}")
 
 if __name__ == "__main__":
     main()

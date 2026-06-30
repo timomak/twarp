@@ -129,6 +129,26 @@ fleet status
 
 `fleet.py run` → dispatch (file-disjoint, dependency-aware) → assign items across active pods →
 parallel workers (codex on other-mac / claude on local) → per-pod functional gate (parallel across
-pods) → UX vision gate for `ux:true` items (on a display pod) → opposite-model staff-architect
+pods) → **dynamic UX gate** for `ux:true` items (on a display pod) → opposite-model staff-architect
 review → bors-style speculative-merge → auto-merge (`gh` on the self pod). `config.nodes` defines
 pods; `pods_default`/`pods_both` select the active set. See `fleet/README.md`.
+
+## Dynamic UX gate (`ux:true` items)
+
+For `ux:true` items the gate doesn't just screenshot the bootstrap screen — it **builds the PR's
+`warp-oss`, launches it on the display pod's real display, and a Claude agent drives the live app
+(screenshot → reason → click/type → observe, computer-use style) to verify the feature actually
+works against acceptance criteria** (`ux_criteria` on the item, else the feature's PRODUCT.md
+`## Smoke test`). A `regression` verdict routes back to the fix-agent; evidence (screenshots +
+transcript) lands in `fleet/runs/ux_<id>/`. Code: `ux_drive_gate()` in `fleet.py`. Run it standalone
+with `python3 fleet/fleet.py uxdrive <id>`.
+
+- **Input injection on other-mac:** `~/.local/bin/uidrive` (CGEvent injector) runs in-session via the
+  `com.twarp.uidrive` LaunchAgent as the **`UidriveAgent.app`** bundle; the SSH side queues commands
+  with `uinject`, captures with `uishot`. Screenshots are Retina (scale 2) — coords are pixels,
+  divide by 2 for the point coords `uidrive` expects.
+- **One-time prerequisite (human, GUI):** Accessibility must be granted to **UidriveAgent** on the
+  display pod (System Settings → Privacy & Security → Accessibility). Verify with
+  `ssh other-mac '~/.local/bin/uidrive trusted'` → `trusted=true`. **If not granted, the gate
+  auto-falls-back to the old bootstrap-screenshot gate** (degrades, never blocks). The grant is
+  pinned to the bundle signature — don't rebuild/re-sign the binary or it silently breaks.

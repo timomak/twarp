@@ -639,12 +639,18 @@ impl RightPanelView {
         self.subscribe_to_pane_group_terminals_for_refresh(ctx);
 
         if let Some(state) = &mut self.code_review_state {
-            let active_repositories = working_directories_model.read(ctx, |model, _| {
+            let active_repositories: Vec<PathBuf> = working_directories_model.read(ctx, |model, _| {
                 model
                     .most_recent_repositories_for_pane_group(pane_group_id)
                     .map(|repos| repos.collect())
                     .unwrap_or_default()
             });
+            log::warn!(
+                "TWARP-DIAG set_active_pane_group pg={:?} read_repos={:?} prev_selected={:?}",
+                pane_group_id,
+                active_repositories,
+                state.selected_repo_path,
+            );
             state.set_available_repos(active_repositories, ctx);
         }
 
@@ -925,6 +931,12 @@ impl RightPanelView {
             .filter(|repo_path| state.available_repos.contains(repo_path));
 
         let Some(selected_repo_path) = selected_repo_path else {
+            log::warn!(
+                "TWARP-DIAG render.no_repo active_pg={:?} selected={:?} available={:?}",
+                self.active_pane_group.as_ref().map(|g| g.id()),
+                state.selected_repo_path,
+                state.available_repos,
+            );
             let simple_header = self.render_simple_header(close_button);
 
             #[cfg(feature = "local_fs")]

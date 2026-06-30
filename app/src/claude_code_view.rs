@@ -350,9 +350,10 @@ pub enum ClaudeCodeViewAction {
         multi: bool,
     },
     /// Submit the chosen answers for the `AskUserQuestion` card at this
-    /// transcript index as the next user turn. Headless `claude` auto-dismisses
-    /// the tool and ends the turn, so the answer continues the conversation as
-    /// an ordinary message rather than a tool_result.
+    /// transcript index. Primary path (PRODUCT §1): claude is holding the turn
+    /// on the question's `can_use_tool`, so the picks are sent back as the
+    /// tool's `answers` and the model continues in the same turn. Fallback (the
+    /// turn already ended): the answer is resent as the next user turn.
     SubmitQuestionAnswers(usize),
     /// Answer a `can_use_tool` permission prompt over the control channel (7g,
     /// PRODUCT §24): `request_id` is the control-protocol id; `allow` proceeds,
@@ -669,6 +670,13 @@ pub struct ClaudeCodeView {
     /// indices. A single-select question keeps one entry (radio); a
     /// multi-select toggles.
     question_selected: HashMap<usize, HashSet<usize>>,
+    /// `AskUserQuestion` permissions held open for the user to answer inline
+    /// (PRODUCT §1), keyed by the gated `tool_use_id` → the control-protocol
+    /// `request_id` to answer. `claude` blocks the turn on this `can_use_tool`
+    /// until we respond; the question card stays interactive while an entry is
+    /// present, and submitting sends the picks back as the tool's `answers` so
+    /// the model continues in the *same* turn — never auto-dismissed (§54/7m).
+    pending_question_permission: HashMap<String, String>,
     /// Stable mouse handles for the question option rows (keyed by card
     /// transcript index + flattened option index) and the per-card submit
     /// buttons (keyed by card index), created on demand.
@@ -945,6 +953,7 @@ impl ClaudeCodeView {
             plan_keep_mouse: MouseStateHandle::default(),
             session_epoch: 0,
             question_selected: HashMap::new(),
+            pending_question_permission: HashMap::new(),
             question_option_mouse: std::cell::RefCell::new(HashMap::new()),
             question_submit_mouse: std::cell::RefCell::new(HashMap::new()),
             permission_button_mouse: std::cell::RefCell::new(HashMap::new()),
@@ -2131,24 +2140,33 @@ impl ClaudeCodeView {
         ctx.notify();
     }
 
-    /// Submit the chosen answers for the `AskUserQuestion` card at `item` as the
-    /// next user turn (PRODUCT §1). Headless `claude` auto-dismisses the tool
-    /// and ends the turn, so the answer continues the conversation as an
-    /// ordinary message; the model reads the question from the transcript above.
+    /// Submit the chosen answers for the `AskUserQuestion` card at `item`
+    /// (PRODUCT §1). If claude is still holding the turn on this question's
+    /// `can_use_tool` (the common case), answer it inline with the picks as the
+    /// tool's `answers` so the model continues the same turn. Otherwise (the
+    /// turn already ended) fall back to resending the picks as the next user
+    /// turn; the model reads the question from the transcript above.
     fn submit_question_answers(&mut self, item: usize, ctx: &mut ViewContext<Self>) {
-        let parsed = {
-            let Some(TranscriptItem::Tool { name, input, .. }) = self.transcript.items().get(item)
+        let (tool_use_id, input, parsed) = {
+            let Some(TranscriptItem::Tool {
+                id, name, input, ..
+            }) = self.transcript.items().get(item)
             else {
                 return;
             };
             if name != "AskUserQuestion" {
                 return;
             }
-            parse_questions(input)
+            (id.clone(), input.clone(), parse_questions(input))
         };
         let Some(selected) = self.question_selected.get(&item) else {
             return;
         };
+        // `answers` maps each question's text → the chosen label(s) (multi-select
+        // joined by ", "), matching `AskUserQuestionInput.answers` — the field
+        // claude's "permission component" fills in. `lines` is the human form for
+        // the next-turn fallback below.
+        let mut answers = serde_json::Map::new();
         let mut lines = Vec::new();
         for question in &parsed {
             let picks: Vec<&str> = question
@@ -2160,6 +2178,10 @@ impl ClaudeCodeView {
             if picks.is_empty() {
                 continue;
             }
+            answers.insert(
+                question.question.clone(),
+                serde_json::Value::String(picks.join(", ")),
+            );
             let label = if question.header.trim().is_empty() {
                 question.question.as_str()
             } else {
@@ -2173,6 +2195,31 @@ impl ClaudeCodeView {
         // Drop the selection so the card stops offering live controls once the
         // answer is on its way.
         self.question_selected.remove(&item);
+
+        // Preferred path: a held `can_use_tool` is still parked on this question
+        // (PRODUCT §1). Answer it inline — claude reads `answers` back as the
+        // tool result and continues the *same* turn, so nothing is skipped.
+        if let Some(request_id) = self.pending_question_permission.remove(&tool_use_id) {
+            let mut updated_input = input;
+            if let Some(obj) = updated_input.as_object_mut() {
+                obj.insert("answers".to_owned(), serde_json::Value::Object(answers));
+            }
+            if let Some(tx) = &self.message_tx {
+                let _ = tx.try_send(StdinCommand::Control {
+                    request_id,
+                    response: serde_json::json!({
+                        "behavior": "allow",
+                        "updatedInput": updated_input,
+                    }),
+                });
+            }
+            ctx.notify();
+            return;
+        }
+
+        // Fallback (the turn already ended without the held permission): resend
+        // the picks as an ordinary next turn; the model reads the question from
+        // the transcript above.
         self.submit_message(OutgoingMessage::text(lines.join("\n")), Vec::new(), ctx);
     }
 
@@ -2606,17 +2653,32 @@ impl ClaudeCodeView {
         if epoch != self.session_epoch {
             return;
         }
-        // PRODUCT §1: `AskUserQuestion` must never sit behind a `can_use_tool`
-        // permission prompt. claude blocks the whole turn waiting for that
-        // answer, but the inline Question card (the §1 tool-card path) is
-        // non-interactive mid-stream — so the user has no way to pick an option
-        // and the only live control is a confusing "Allow AskUserQuestion"
-        // prompt. (Observed: a turn wedged ~2h with a dead question card until
-        // the user clicked the permission, which resolved as "user did not
-        // answer".) Auto-allow it: the tool returns immediately, the turn ends,
-        // and the live Question card lets the user answer as the next turn.
-        if let TranscriptEvent::PermissionRequest { id, tool, input } = &event {
-            if should_auto_allow_permission(tool) {
+        // PRODUCT §1: an `AskUserQuestion` arrives as a `can_use_tool` that
+        // blocks the turn until we answer. We *hold* it open and answer it with
+        // the user's picks (`submit_question_answers`) — claude reads those back
+        // as the tool's `answers` and continues in the same turn. The inline
+        // question card (the §1 tool-card path) stays interactive while the
+        // permission is pending, so the user always has a live control. This
+        // replaces the old auto-allow, which resolved as "the user did not
+        // answer the questions" and effectively skipped the question.
+        //
+        // We key the held request by its `tool_use_id` so the card can find it.
+        // If claude ever omits that id (shouldn't happen), auto-allow as a
+        // safety valve so the turn never wedges (§26: never hang).
+        if let TranscriptEvent::PermissionRequest {
+            id,
+            tool,
+            input,
+            tool_use_id,
+        } = &event
+        {
+            if should_hold_question_permission(tool) {
+                if let Some(tool_use_id) = tool_use_id {
+                    self.pending_question_permission
+                        .insert(tool_use_id.clone(), id.clone());
+                    ctx.notify();
+                    return;
+                }
                 if let Some(tx) = &self.message_tx {
                     let _ = tx.try_send(StdinCommand::Control {
                         request_id: id.clone(),
@@ -2650,6 +2712,11 @@ impl ClaudeCodeView {
         }
         if matches!(event, TranscriptEvent::Ended { .. }) {
             self.streaming = false;
+            // A turn that ended (e.g. Stop) with a question still parked can no
+            // longer have that permission answered — `claude` has released it.
+            // Drop the held requests; the idle card stays answerable as a
+            // next-turn fallback (`submit_question_answers`).
+            self.pending_question_permission.clear();
         }
         // PRODUCT §53 (7m): a turn that completed cleanly (or was interrupted —
         // the session is still alive) dispatches the next queued message.
@@ -2927,6 +2994,9 @@ impl ClaudeCodeView {
         self.tool_card_ui.clear();
         self.diff_cards.clear();
         self.thinking_ui.clear();
+        // The rebuilt transcript carries no live control requests, so drop any
+        // held question permission (its `claude` process is gone).
+        self.pending_question_permission.clear();
         for event in history {
             self.ingest_event(event, ctx);
         }
@@ -5910,13 +5980,15 @@ impl ClaudeCodeView {
             }
             // PRODUCT §1 (questions UI): an `AskUserQuestion` call renders as an
             // interactive question card (clickable options + a Send button)
-            // rather than a generic tool card — headless `claude` auto-dismisses
-            // the tool, so the user's pick is sent as the next turn.
-            TranscriptItem::Tool { name, input, .. }
-                if name == "AskUserQuestion"
-                    && input.get("questions").and_then(|v| v.as_array()).is_some() =>
+            // rather than a generic tool card. claude holds the turn on the
+            // gating `can_use_tool` while the user picks; submitting answers it
+            // inline (`tool_use_id` ties the card to the held request).
+            TranscriptItem::Tool {
+                id, name, input, ..
+            } if name == "AskUserQuestion"
+                && input.get("questions").and_then(|v| v.as_array()).is_some() =>
             {
-                self.render_question_card(index, input, appearance)
+                self.render_question_card(index, id, input, appearance)
             }
             TranscriptItem::Tool {
                 id,
@@ -6264,14 +6336,19 @@ impl ClaudeCodeView {
     fn render_question_card(
         &self,
         index: usize,
+        tool_use_id: &str,
         input: &serde_json::Value,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        // Tool-card path (PRODUCT §1): headless `claude` auto-dismisses the
-        // `AskUserQuestion` tool and ends the turn, so controls are live only
-        // while the session is idle and the pick is sent as the next turn.
+        // Tool-card path (PRODUCT §1): controls are live while claude is holding
+        // the turn on this question's `can_use_tool` (the pending permission) —
+        // submitting answers it inline. They're also live while the session is
+        // idle, so a question left unanswered when the turn somehow ended can
+        // still be replied to (sent as the next turn).
         let questions = parse_questions(input);
-        self.render_question_card_inner(index, &questions, !self.streaming, false, appearance)
+        let pending = self.pending_question_permission.contains_key(tool_use_id);
+        let interactive = pending || !self.streaming;
+        self.render_question_card_inner(index, &questions, interactive, false, appearance)
     }
 
     /// 7g (PRODUCT §24/§1): an `AskUserQuestion` raised over the *control*
@@ -6565,13 +6642,13 @@ fn permission_summary(tool: &str, input: &serde_json::Value) -> Option<String> {
     }
 }
 
-/// Whether a `can_use_tool` permission prompt for `tool` should be auto-allowed
-/// rather than surfaced as an interactive Permission card (PRODUCT §1). Only
-/// `AskUserQuestion`: gating it behind a prompt wedges the whole turn (claude
-/// blocks on the permission) while its inline Question card is non-interactive
-/// mid-stream, leaving the user no way to answer. Auto-allowing lets the tool
-/// return at once so the turn ends and the live Question card takes the pick.
-fn should_auto_allow_permission(tool: &str) -> bool {
+/// Whether a `can_use_tool` permission prompt for `tool` should be *held open*
+/// for the inline question card to answer, rather than surfaced as a generic
+/// Allow/Deny Permission card (PRODUCT §1). Only `AskUserQuestion`: claude
+/// blocks the turn on this permission, and answering it with the user's picks
+/// (as the tool's `answers`) lets the model continue in the same turn — so the
+/// question genuinely waits for the user instead of being auto-dismissed.
+fn should_hold_question_permission(tool: &str) -> bool {
     tool == "AskUserQuestion"
 }
 
@@ -7650,17 +7727,18 @@ fn format_token_count(n: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_metrics_line, queue_preview, should_auto_allow_permission};
+    use super::{format_metrics_line, queue_preview, should_hold_question_permission};
     use claude_code::TurnMetrics;
 
     #[test]
-    fn ask_user_question_permission_is_auto_allowed() {
-        // §1: AskUserQuestion must never block the turn behind a permission
-        // prompt — it is answered via the inline Question card once the turn
-        // ends. Every other tool keeps its interactive Allow/Deny card.
-        assert!(should_auto_allow_permission("AskUserQuestion"));
-        assert!(!should_auto_allow_permission("Bash"));
-        assert!(!should_auto_allow_permission("Write"));
+    fn ask_user_question_permission_is_held_for_inline_answer() {
+        // §1: AskUserQuestion's `can_use_tool` is held open so the inline
+        // Question card can answer it with the user's picks (the model then
+        // continues the same turn). Every other tool keeps its interactive
+        // Allow/Deny Permission card.
+        assert!(should_hold_question_permission("AskUserQuestion"));
+        assert!(!should_hold_question_permission("Bash"));
+        assert!(!should_hold_question_permission("Write"));
     }
 
     #[test]
