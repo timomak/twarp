@@ -541,6 +541,12 @@ impl RightPanelView {
                 pane_group_id,
                 repositories,
             } => {
+                log::warn!(
+                    "TWARP-DIAG right_panel.RepositoriesChanged event_pg={:?} active_pg={:?} repos={:?}",
+                    pane_group_id,
+                    self.active_pane_group.as_ref().map(|g| g.id()),
+                    repositories,
+                );
                 let Some(active_pane_group) = &self.active_pane_group else {
                     return;
                 };
@@ -580,6 +586,12 @@ impl RightPanelView {
                 repository_terminal_map: _,
                 focused_repo,
             } => {
+                log::warn!(
+                    "TWARP-DIAG right_panel.FocusedRepoChanged event_pg={:?} active_pg={:?} focused_repo={:?}",
+                    pane_group_id,
+                    self.active_pane_group.as_ref().map(|g| g.id()),
+                    focused_repo,
+                );
                 let Some(active_pane_group) = &self.active_pane_group else {
                     return;
                 };

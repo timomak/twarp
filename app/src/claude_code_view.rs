@@ -331,6 +331,13 @@ pub enum ClaudeCodeViewAction {
     /// Remove the queued (type-ahead) message at this index before it
     /// dispatches (PRODUCT §54, 7m).
     RemoveQueuedMessage(usize),
+    /// Toggle the full-text expansion of the queued message at this index
+    /// (clicking a queue row reveals the whole prompt, not just the preview).
+    ToggleQueuedMessage(usize),
+    /// Dispatch the queued message at this index immediately rather than
+    /// waiting for the in-flight turn to drain it: while streaming it jumps to
+    /// the front of the queue (sent next); when idle it ships right away.
+    SendQueuedMessageNow(usize),
     /// Approve a plan card (PRODUCT §56, 7n): degrades to switching the
     /// permission mode off `plan` and resuming — no one-click inline accept.
     ApprovePlan,
@@ -634,8 +641,15 @@ pub struct ClaudeCodeView {
     /// Type-ahead queue (PRODUCT §53–§54, 7m): messages sent while a turn
     /// streams wait here and dispatch in order as each turn completes.
     message_queue: Vec<OutgoingMessage>,
-    /// Stable per-row mouse handles for the removable queue rows (§54).
+    /// Stable per-row mouse handles for the expand-on-click queue rows (§54).
     queue_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Per-row mouse handles for the queue rows' "✕ remove" buttons (§54).
+    queue_remove_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Per-row mouse handles for the queue rows' "send now" buttons (§54).
+    queue_send_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Indices of queue rows currently expanded to their full prompt text.
+    /// Cleared whenever the queue is mutated so it never points at a stale row.
+    queue_expanded: std::collections::HashSet<usize>,
     /// Mouse state for the clickable model-selector pill (PRODUCT §52, 7m).
     model_pill_mouse: MouseStateHandle,
     /// Mouse state for the clickable effort-selector pill (PRODUCT §52, 7m).
@@ -922,6 +936,9 @@ impl ClaudeCodeView {
             scroll_to_bottom_button: MouseStateHandle::default(),
             message_queue: Vec::new(),
             queue_row_mouse: std::cell::RefCell::new(Vec::new()),
+            queue_remove_mouse: std::cell::RefCell::new(Vec::new()),
+            queue_send_mouse: std::cell::RefCell::new(Vec::new()),
+            queue_expanded: std::collections::HashSet::new(),
             model_pill_mouse: MouseStateHandle::default(),
             effort_pill_mouse: MouseStateHandle::default(),
             plan_approve_mouse: MouseStateHandle::default(),
@@ -1758,25 +1775,60 @@ impl ClaudeCodeView {
                 .build()
                 .finish(),
         );
+        let row_handle = |handles: &std::cell::RefCell<Vec<MouseStateHandle>>, index: usize| {
+            let mut states = handles.borrow_mut();
+            while states.len() <= index {
+                states.push(MouseStateHandle::default());
+            }
+            states[index].clone()
+        };
         for (index, message) in self.message_queue.iter().enumerate() {
-            let row_mouse = {
-                let mut states = self.queue_row_mouse.borrow_mut();
-                while states.len() <= index {
-                    states.push(MouseStateHandle::default());
-                }
-                states[index].clone()
+            let row_mouse = row_handle(&self.queue_row_mouse, index);
+            let send_mouse = row_handle(&self.queue_send_mouse, index);
+            let remove_mouse = row_handle(&self.queue_remove_mouse, index);
+            let expanded = self.queue_expanded.contains(&index);
+            // Collapsed: a one-line, length-bounded preview. Expanded (click the
+            // row): the whole prompt, wrapped to the row's full width.
+            let text = if expanded {
+                message.text.trim().to_owned()
+            } else {
+                queue_preview(&message.text)
             };
-            // One-line, length-bounded preview of the queued text.
             let label = appearance
                 .ui_builder()
-                .span(queue_preview(&message.text))
+                .span(text)
                 .with_style(UiComponentStyles {
                     font_size: Some(12.),
                     ..Default::default()
                 })
                 .build()
                 .finish();
-            let remove = appearance
+            // The label fills the row's width and toggles the full-text
+            // expansion on click; only the buttons remove or send.
+            let label_click = Hoverable::new(row_mouse, move |_| label)
+                .with_cursor(Cursor::PointingHand)
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleQueuedMessage(index));
+                })
+                .finish();
+            // ↑ send-now, sits to the left of the ✕ remove control.
+            let send_glyph = appearance
+                .ui_builder()
+                .span("\u{2191}".to_owned())
+                .with_style(UiComponentStyles {
+                    font_color: Some(muted),
+                    font_size: Some(12.5),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let send = Hoverable::new(send_mouse, move |_| send_glyph)
+                .with_cursor(Cursor::PointingHand)
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::SendQueuedMessageNow(index));
+                })
+                .finish();
+            let remove_glyph = appearance
                 .ui_builder()
                 .span("\u{2715}".to_owned())
                 .with_style(UiComponentStyles {
@@ -1786,12 +1838,19 @@ impl ClaudeCodeView {
                 })
                 .build()
                 .finish();
+            let remove = Hoverable::new(remove_mouse, move |_| remove_glyph)
+                .with_cursor(Cursor::PointingHand)
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::RemoveQueuedMessage(index));
+                })
+                .finish();
             let row = Container::new(
                 Flex::row()
                     .with_main_axis_size(MainAxisSize::Max)
-                    .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_child(ConstrainedBox::new(label).with_max_width(620.).finish())
+                    .with_spacing(8.)
+                    .with_child(Expanded::new(1., label_click).finish())
+                    .with_child(send)
                     .with_child(remove)
                     .finish(),
             )
@@ -1802,14 +1861,7 @@ impl ClaudeCodeView {
             .with_background_color(theme.surface_2().into_solid())
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
             .finish();
-            column.add_child(
-                Hoverable::new(row_mouse, move |_| row)
-                    .with_cursor(Cursor::PointingHand)
-                    .on_click(move |ctx, _, _| {
-                        ctx.dispatch_typed_action(ClaudeCodeViewAction::RemoveQueuedMessage(index));
-                    })
-                    .finish(),
-            );
+            column.add_child(row);
         }
         Some(column.finish())
     }
@@ -2224,6 +2276,7 @@ impl ClaudeCodeView {
             return;
         };
         let message = self.message_queue.remove(0);
+        self.queue_expanded.clear();
         self.transcript
             .apply(TranscriptEvent::UserMessage(message.text.clone()));
         let started = Instant::now();
@@ -2232,6 +2285,25 @@ impl ClaudeCodeView {
         self.schedule_elapsed_tick(started, ctx);
         let _ = tx.try_send(StdinCommand::Turn(message));
         ctx.notify();
+    }
+
+    /// Dispatch a specific queued message now rather than waiting for the
+    /// in-flight turn to drain it (PRODUCT §54). While a turn streams the
+    /// message jumps to the front of the queue so it's sent next; when the
+    /// session is idle it ships immediately through the normal send path.
+    fn send_queued_now(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        if index >= self.message_queue.len() {
+            return;
+        }
+        let message = self.message_queue.remove(index);
+        self.queue_expanded.clear();
+        if self.streaming {
+            self.message_queue.insert(0, message);
+            ctx.notify();
+        } else {
+            // Type-ahead image previews aren't carried through the queue.
+            self.submit_message(message, Vec::new(), ctx);
+        }
     }
 
     /// Open the given composer dropdown / popover, or close it if it's already
@@ -5566,9 +5638,21 @@ impl TypedActionView for ClaudeCodeView {
             ClaudeCodeViewAction::RemoveQueuedMessage(index) => {
                 if *index < self.message_queue.len() {
                     self.message_queue.remove(*index);
+                    // Row indices shift after a removal — drop the expansion
+                    // state rather than leave it pointing at the wrong row.
+                    self.queue_expanded.clear();
                     ctx.notify();
                 }
             }
+            ClaudeCodeViewAction::ToggleQueuedMessage(index) => {
+                if *index < self.message_queue.len() {
+                    if !self.queue_expanded.remove(index) {
+                        self.queue_expanded.insert(*index);
+                    }
+                    ctx.notify();
+                }
+            }
+            ClaudeCodeViewAction::SendQueuedMessageNow(index) => self.send_queued_now(*index, ctx),
             ClaudeCodeViewAction::ApprovePlan => self.approve_plan(ctx),
             ClaudeCodeViewAction::SelectQuestionOption {
                 item,

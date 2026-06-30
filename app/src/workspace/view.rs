@@ -12767,6 +12767,15 @@ impl Workspace {
         // back to whatever terminal repo was last active.
         let focused_directory_id = pane_group.as_ref(ctx).focused_claude_code_view_id(ctx);
 
+        log::warn!(
+            "TWARP-DIAG workspace.refresh pg={:?} terminal_cwds={:?} claude_code_cwds={:?} focused_terminal={:?} focused_directory={:?}",
+            pane_group_id,
+            terminal_cwds,
+            claude_code_cwds,
+            focused_terminal_id,
+            focused_directory_id,
+        );
+
         // twarp 07: a Claude Code pane is not a terminal, so its cwd never goes
         // through the `TerminalNavigation` repo detection that populates
         // `DetectedRepositories`. Without that, `get_root_for_path` below can't
@@ -12781,6 +12790,11 @@ impl Workspace {
             let already_known = DetectedRepositories::as_ref(ctx)
                 .get_root_for_path(std::path::Path::new(cwd))
                 .is_some();
+            log::warn!(
+                "TWARP-DIAG detection-loop cwd={:?} already_known={}",
+                cwd,
+                already_known
+            );
             if already_known {
                 continue;
             }
@@ -12788,7 +12802,13 @@ impl Workspace {
                 model.detect_possible_git_repo(cwd, RepoDetectionSource::TerminalNavigation, ctx)
             });
             let pane_group = pane_group.clone();
+            let cwd_for_log = cwd.clone();
             ctx.spawn(fut, move |me, repo_root, ctx| {
+                log::warn!(
+                    "TWARP-DIAG detection-result cwd={:?} repo_root={:?}",
+                    cwd_for_log,
+                    repo_root
+                );
                 if repo_root.is_some() {
                     me.refresh_working_directories_for_pane_group(&pane_group, ctx);
                 }

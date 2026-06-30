@@ -145,26 +145,26 @@ pub(super) const MAX_IMAGE_BYTES: u64 = 3_750_000;
 
 /// Derive the active suggestion query from the composer text (PRODUCT §15a).
 ///
-/// - A leading `/` with no whitespace yet is a slash-command query (slash
-///   commands are message-initial in `claude`; once a space is typed the
-///   command is committed and arguments are free text).
-/// - Otherwise, a trailing `@`-prefixed token is a file query.
+/// The query is always the trailing whitespace-delimited token at the cursor,
+/// keyed on its leading sigil:
+/// - a `/`-prefixed token opens the slash-command menu, and
+/// - an `@`-prefixed token opens the file-mention menu.
+///
+/// Both fire on the token wherever it sits in the draft, not just at the start
+/// — typing `/` mid-message surfaces the catalogue the same as at column zero.
 pub(super) fn suggestion_query(text: &str) -> Option<SuggestionQuery> {
-    if let Some(rest) = text.strip_prefix('/') {
-        if !rest.contains(char::is_whitespace) {
-            return Some(SuggestionQuery {
-                kind: SuggestionKind::SlashCommand,
-                query: rest.to_owned(),
-                token_range: 0..text.len(),
-            });
-        }
-        return None;
-    }
     let token_start = text
         .rfind(char::is_whitespace)
         .map(|idx| idx + text[idx..].chars().next().map_or(1, char::len_utf8))
         .unwrap_or(0);
     let token = &text[token_start..];
+    if let Some(rest) = token.strip_prefix('/') {
+        return Some(SuggestionQuery {
+            kind: SuggestionKind::SlashCommand,
+            query: rest.to_owned(),
+            token_range: token_start..text.len(),
+        });
+    }
     let rest = token.strip_prefix('@')?;
     Some(SuggestionQuery {
         kind: SuggestionKind::FileMention,
@@ -344,8 +344,14 @@ mod tests {
     }
 
     #[test]
-    fn slash_only_counts_at_message_start() {
-        assert_eq!(suggestion_query("say /compact"), None);
+    fn trailing_slash_token_is_a_slash_query_anywhere() {
+        // A `/` token mid-message opens the catalogue just like at column zero.
+        let q = suggestion_query("say /comp").expect("slash query");
+        assert_eq!(q.kind, SuggestionKind::SlashCommand);
+        assert_eq!(q.query, "comp");
+        assert_eq!(&"say /comp"[q.token_range.clone()], "/comp");
+        // Accepting splices the command in at the token, leaving the prefix.
+        assert_eq!(apply_suggestion("say /comp", &q, "compact"), "say /compact ");
     }
 
     #[test]
