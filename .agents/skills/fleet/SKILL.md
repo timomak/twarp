@@ -41,9 +41,20 @@ For the default mode, `pgrep`/`status`/`run.log` live **on other-mac** — run t
    ```bash
    python3 fleet/fleet.py roadmap-sync
    ```
-   If the active roadmap feature is `impl-pending`, this adds its next unchecked sub-phase to the
-   queue (routed to other-mac/Codex). For any other phase it pulls nothing and prints what's needed
-   (e.g. "review/merge the spec PR" — **specs stay human**). Report this line.
+   This bridge is **fully autonomous — no human gate**. It advances the active roadmap feature one
+   step per call and enqueues the matching fleet item (authored + opposite-model-reviewed +
+   auto-merged like any other item):
+   - `not-started` / `spec-pending` → a `<feat>-spec` item that writes PRODUCT.md + TECH.md (with a
+     `## Smoke test` section) and flips the feature to `impl-pending`.
+   - `impl-pending` → the next unchecked sub-phase.
+   - feature fully merged → a `<feat>-advance` item that points `Currently active:` at the next
+     `not-started` feature **in ROADMAP table order**.
+
+   The owner steers only by editing `roadmap/ROADMAP.md` — the table order and the `Currently
+   active:` pointer; the fleet never reorders the table. Note: when a feature finishes, auto-advance
+   picks the **lowest-numbered remaining `not-started`** feature, which is currently `09-rebrand`
+   (the `**`-touching barrier). To build something else next, set `Currently active:` (or reorder the
+   table) before the active feature merges. Report the printed line.
 1. **Is a run already in progress?**
    ```bash
    pgrep -fl "fleet/fleet.py run"

@@ -212,11 +212,33 @@ def _active_feature():
     m = re.search(r"\*\*Currently active:\*\*\s*`([^`]+)`", ROADMAP.read_text())
     return m.group(1) if m else None
 
+def _roadmap_features():
+    """Parse the ROADMAP.md feature table → ordered list of (slug, phase) rows, e.g.
+    ('15-computer-control', 'not-started'). Table order is authoritative for auto-advance."""
+    rows = []
+    if not ROADMAP.exists():
+        return rows
+    for line in ROADMAP.read_text().splitlines():
+        m = re.match(r"\|\s*\d+\s*\|\s*\[[^\]]+\]\(([^/)]+)/STATUS\.md\)\s*\|\s*`?([a-z-]+)`?\s*\|", line)
+        if m:
+            rows.append((m.group(1), m.group(2)))
+    return rows
+
+def _enqueue(q, it):
+    """Append an item iff one with that id isn't already present (any status). Returns True if added."""
+    if any(x["id"] == it["id"] for x in q["items"]):
+        return False
+    q["items"].append(it)
+    return True
+
 def roadmap_sync():
-    """Pull the next unchecked IMPL sub-phase of the active roadmap feature into the queue.
-    Specs are human-gated: this only acts when the feature is `impl-pending`; for any other phase it
-    pulls nothing and explains what's needed. Pulls ONE sub-phase at a time (they're sequential and
-    share files). Returns a one-line status string."""
+    """Drive the active roadmap feature one step at a time by enqueuing the right fleet item for its
+    current phase. FULLY AUTONOMOUS — no human gate: specs are authored + opposite-model-reviewed +
+    auto-merged just like impl, and a finished feature auto-advances `Currently active:` to the next
+    `not-started` feature in ROADMAP table order. The owner steers only by editing ROADMAP.md (the
+    table order / the `Currently active:` pointer); the fleet never reorders it. Each enqueued item's
+    own committed edits carry the phase/pointer transitions, so they persist via the merge queue.
+    Pulls ONE item at a time (steps are sequential and share files). Returns a one-line status."""
     feat = _active_feature()
     if not feat:
         return "no active feature in ROADMAP.md"
@@ -226,31 +248,81 @@ def roadmap_sync():
     text = status_md.read_text()
     pm = re.search(r"\*\*Phase:\*\*\s*`?([a-z-]+)`?", text)
     phase = pm.group(1) if pm else "unknown"
-    if phase != "impl-pending":
-        hint = {"spec-in-review": "review/merge the spec PR", "spec-pending": "run /twarp-next to write specs",
-                "not-started": "run /twarp-next to start specs", "impl-in-review": "review/merge the open impl PR",
-                "merged": "feature done — advance ROADMAP to the next feature"}.get(phase, "no fleet action")
-        return f"{feat}: phase={phase} — {hint}; nothing pulled (specs stay human)"
-    m = re.search(r"^- \[ \] \*\*([0-9]+[a-z]) — ([^*]+?)\.?\*\*\s*(.*)$", text, re.M)
-    if not m:
-        return f"{feat}: impl-pending but no unchecked sub-phase found"
-    sub_id, sub_title, sub_desc = m.group(1), m.group(2).strip(), m.group(3).strip()
     q = load()
-    if any(it["id"] == sub_id for it in q["items"]):
-        return f"{sub_id}: already in queue"
-    base = next((it for it in q["items"]
-                 if it["id"] == feat or it["id"].split("-")[0] == feat.split("-")[0]), None)
-    touches = (base["touches"][:] if base else ["app/**"]) + [f"roadmap/{feat}/STATUS.md"]
-    verify = base["verify"] if base else "cargo build --bin warp-oss"
-    task = (f"Implement sub-phase {sub_id} of roadmap feature {feat}. FIRST read the merged specs "
-            f"roadmap/{feat}/PRODUCT.md and roadmap/{feat}/TECH.md. Sub-phase {sub_id} — {sub_title}: "
-            f"{sub_desc}\nImplement ONLY this sub-phase, scoped to its files. When done, tick this "
-            f"sub-phase's checkbox in roadmap/{feat}/STATUS.md from `- [ ]` to `- [x]`.")
-    q["items"].append({"id": sub_id, "title": f"{feat} {sub_id}: {sub_title}", "node": None,
-                       "status": "queued", "depends_on": [], "touches": touches, "barrier": False,
-                       "task": task, "verify": verify, "ux": False})
-    save(q)
-    return f"queued {sub_id} — {sub_title}"
+
+    # ---- SPEC step: author PRODUCT.md + TECH.md, then flip phase to impl-pending ----
+    if phase in ("not-started", "spec-pending", "spec-in-review"):
+        iid = f"{feat}-spec"
+        task = (
+            f"Author the product + technical specs for roadmap feature {feat}. Read "
+            f"roadmap/{feat}/STATUS.md (and roadmap/{feat}/PLAN.md if it exists) for scope. If the "
+            f"twarp `write-product-spec` / `write-tech-spec` skills are available to you, use them.\n"
+            f"1) Write roadmap/{feat}/PRODUCT.md: detailed user-facing behavior. It MUST end with a "
+            f"`## Smoke test` section — a numbered list of concrete steps to validate against a built "
+            f"twarp binary (per-sub-phase sub-headings if the feature is sub-phased).\n"
+            f"2) Write roadmap/{feat}/TECH.md: an implementation plan grounded in the CURRENT codebase "
+            f"(files/crates to touch, constraints, a sub-phase breakdown that matches the sub-phases "
+            f"listed in STATUS.md).\n"
+            f"3) In roadmap/{feat}/STATUS.md change the `**Phase:**` line to `**Phase:** impl-pending`.\n"
+            f"Write ONLY spec/markdown — no product code.")
+        verify = (f"test -f roadmap/{feat}/PRODUCT.md && test -f roadmap/{feat}/TECH.md && "
+                  f"grep -q '## Smoke test' roadmap/{feat}/PRODUCT.md")
+        added = _enqueue(q, {"id": iid, "title": f"{feat}: author specs", "node": None,
+                             "status": "queued", "depends_on": [], "touches": [f"roadmap/{feat}/**"],
+                             "barrier": False, "task": task, "verify": verify, "ux": False})
+        if not added:
+            return f"{iid}: already in queue"
+        save(q)
+        return f"queued {iid} — author specs for {feat}"
+
+    # ---- IMPL step: next unchecked sub-phase (specs are merged) ----
+    if phase in ("impl-pending", "impl-in-review"):
+        m = re.search(r"^- \[ \] \*\*([0-9]+[a-z]) — ([^*]+?)\.?\*\*\s*(.*)$", text, re.M)
+        if m:
+            sub_id, sub_title, sub_desc = m.group(1), m.group(2).strip(), m.group(3).strip()
+            if any(it["id"] == sub_id for it in q["items"]):
+                return f"{sub_id}: already in queue"
+            base = next((it for it in q["items"]
+                         if it["id"] == feat or it["id"].split("-")[0] == feat.split("-")[0]), None)
+            touches = (base["touches"][:] if base else ["app/**"]) + [f"roadmap/{feat}/STATUS.md"]
+            verify = base["verify"] if base else "cargo build --bin warp-oss"
+            task = (f"Implement sub-phase {sub_id} of roadmap feature {feat}. FIRST read the merged "
+                    f"specs roadmap/{feat}/PRODUCT.md and roadmap/{feat}/TECH.md. Sub-phase {sub_id} — "
+                    f"{sub_title}: {sub_desc}\nImplement ONLY this sub-phase, scoped to its files. When "
+                    f"done, tick this sub-phase's checkbox in roadmap/{feat}/STATUS.md from `- [ ]` to "
+                    f"`- [x]`.")
+            _enqueue(q, {"id": sub_id, "title": f"{feat} {sub_id}: {sub_title}", "node": None,
+                         "status": "queued", "depends_on": [], "touches": touches, "barrier": False,
+                         "task": task, "verify": verify, "ux": False})
+            save(q)
+            return f"queued {sub_id} — {sub_title}"
+        # no unchecked sub-phase left → impl is done → fall through to advance
+        phase = "merged"
+
+    # ---- ADVANCE step: this feature is done → point `Currently active:` at the next not-started ----
+    if phase == "merged":
+        nxt = next((slug for slug, ph in _roadmap_features()
+                    if ph == "not-started" and slug != feat), None)
+        if not nxt:
+            return f"{feat}: merged — no `not-started` feature left; roadmap drained"
+        iid = f"{feat}-advance"
+        task = (
+            f"Roadmap bookkeeping ONLY — no product code. Feature {feat} is fully merged.\n"
+            f"1) In roadmap/ROADMAP.md set feature {feat}'s table-row Phase cell to `merged`, and "
+            f"change the `**Currently active:**` line to `{nxt}` (keep the format `` `{nxt}` ``).\n"
+            f"2) In roadmap/{feat}/STATUS.md set the `**Phase:**` line to `merged`.\n"
+            f"3) In roadmap/{nxt}/STATUS.md set the `**Phase:**` line to `spec-pending`.\n"
+            f"Make ONLY these edits. Do NOT reorder the ROADMAP table.")
+        verify = f"grep -q 'Currently active:.*{nxt}' roadmap/ROADMAP.md"
+        added = _enqueue(q, {"id": iid, "title": f"advance active feature {feat} → {nxt}", "node": None,
+                             "status": "queued", "depends_on": [], "touches": ["roadmap/**"],
+                             "barrier": False, "task": task, "verify": verify, "ux": False})
+        if not added:
+            return f"{iid}: already in queue"
+        save(q)
+        return f"queued {iid} — advance active feature {feat} → {nxt}"
+
+    return f"{feat}: phase={phase} — no fleet action"
 
 
 # ---------- dispatcher ----------
