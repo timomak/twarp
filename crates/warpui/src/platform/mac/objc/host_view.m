@@ -432,7 +432,15 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
 }
 
 - (void)applyHiddenStateToNativeWebViewEntry:(WarpNativeWebViewEntry *)entry {
-    [entry.containerView setHidden:(entry.hiddenRequested || nativeWebViewsOccluded)];
+    BOOL hidden = entry.hiddenRequested || nativeWebViewsOccluded;
+    [entry.containerView setHidden:hidden];
+    [entry.webView setHidden:hidden];
+    if (!hidden) {
+        [entry.containerView setNeedsLayout:YES];
+        [entry.webView setNeedsLayout:YES];
+        [entry.containerView setNeedsDisplay:YES];
+        [entry.webView setNeedsDisplay:YES];
+    }
 }
 
 - (void)setNativeWebViewsOccluded:(BOOL)occluded {
@@ -463,12 +471,17 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
     WKWebView *webView = [[[WKWebView alloc] initWithFrame:NSZeroRect
                                              configuration:configuration] autorelease];
     webView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    webView.wantsLayer = YES;
+    webView.layer.opaque = YES;
+    webView.layer.zPosition = 1.0;
 
     NSView *containerView = [[[NSView alloc] initWithFrame:NSZeroRect] autorelease];
     containerView.autoresizingMask = NSViewMinYMargin;
     containerView.wantsLayer = YES;
+    containerView.canDrawSubviewsIntoLayer = NO;
     containerView.layer.masksToBounds = YES;
     containerView.layer.opaque = NO;
+    containerView.layer.zPosition = 1.0;
     [containerView addSubview:webView];
 
     WarpNativeWebViewEntry *entry = [[[WarpNativeWebViewEntry alloc]
@@ -516,6 +529,10 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
 
     [entry.containerView setFrame:frame];
     [entry.webView setFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height)];
+    [entry.containerView setNeedsLayout:YES];
+    [entry.webView setNeedsLayout:YES];
+    [entry.containerView setNeedsDisplay:YES];
+    [entry.webView setNeedsDisplay:YES];
 }
 
 - (void)setNativeWebViewHidden:(NSUInteger)webViewId hidden:(BOOL)hidden {
@@ -857,6 +874,7 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
     self->asyncCallback = YES;
     self.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.wantsLayer = YES;
+    self.canDrawSubviewsIntoLayer = NO;
     self.layerContentsRedrawPolicy = NSViewLayerContentsRedrawDuringViewResize;
     return self;
 }

@@ -1055,11 +1055,8 @@ impl Window {
         unsafe {
             if let Some(window) = Self::find_window_with_id(window_id) {
                 let host_view: id = msg_send![window, contentView];
-                let ns_frame = RectF::new(
-                    transform_origin_from_rect_coord_to_frame_coord(frame.origin(), frame.size()),
-                    frame.size(),
-                )
-                .to_ns_rect();
+                let host_bounds: NSRect = msg_send![host_view, bounds];
+                let ns_frame = child_view_frame_from_rect_coord(frame, host_bounds.size.height);
                 warp_host_set_webview_frame(host_view, webview_id, ns_frame);
             }
         }
@@ -1698,10 +1695,15 @@ extern "C-unwind" fn warp_update_layer(this: &Object) {
 
     unsafe {
         let window = get_window_state(this);
-        warp_host_prepare_webviews_for_frame(this as *const Object as id);
 
         let scene = {
             if window.next_scene.borrow().is_none() {
+                // Native webviews are shown by their element's paint pass. Only
+                // reset visibility before building a fresh scene; cached Metal
+                // redraws do not repaint elements and would otherwise leave the
+                // WKWebView hidden while the page continues loading offscreen.
+                warp_host_prepare_webviews_for_frame(this as *const Object as id);
+
                 // Do this without holding a mutable borrow on
                 // window.next_scene, to ensure that we don't hit BorrowMut
                 // errors if `build_scene()` ends up invoking `request_redraw`.
@@ -2044,6 +2046,18 @@ pub fn transform_origin_from_frame_coord_to_rect_coord(
 
 fn transform_origin_from_rect_coord_to_frame_coord(origin: Vector2F, size: Vector2F) -> Vector2F {
     Vector2F::new(origin.x(), -(origin.y() + size.y()))
+}
+
+fn child_view_frame_from_rect_coord(rect: RectF, parent_height: f64) -> NSRect {
+    let size = rect.size();
+    let origin = rect.origin();
+    NSRect::new(
+        NSPoint::new(
+            origin.x() as f64,
+            parent_height - (origin.y() + size.y()) as f64,
+        ),
+        NSSize::new(size.x() as f64, size.y() as f64),
+    )
 }
 
 /// Converts an Objective-C `Object` into a `String`
