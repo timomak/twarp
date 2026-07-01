@@ -52,8 +52,7 @@ use base64::Engine as _;
 use claude_code::diff::diff_for_tool;
 use claude_code::driver::{
     interrupt, send_control_response, send_interrupt, send_user_message, spawn_session, Child,
-    OutgoingImage,
-    OutgoingMessage, PermissionMode, SpawnOptions, SpawnedSession,
+    OutgoingImage, OutgoingMessage, PermissionMode, SpawnOptions, SpawnedSession,
 };
 use claude_code::launch::LaunchOptions;
 use claude_code::{sessions, Transcript, TranscriptEvent, TranscriptItem, TurnMetrics, Usage};
@@ -65,6 +64,7 @@ use markdown_parser::{
 use parking_lot::RwLock;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
+use warp_core::features::FeatureFlag;
 use warp_editor::editor::NavigationKey;
 use warpui::assets::asset_cache::AssetSource;
 use warpui::clipboard::ClipboardContent;
@@ -103,6 +103,9 @@ use self::thinking::ThinkingUi;
 use self::tool_cards::{render_tool_card, ToolCardUi};
 use crate::appearance::Appearance;
 use crate::claude_code_session_defaults::ClaudeSessionDefaultsModel;
+use crate::computer_control::{
+    ComputerControlChrome, ComputerControlCoordinator, ComputerControlState,
+};
 use crate::editor::{
     EditorOptions, EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, TextOptions,
 };
@@ -401,6 +404,10 @@ pub enum ClaudeCodeCustomAction {
     /// Swap this pane for the raw interactive CLI (PRODUCT §39, 7i).
     /// Hidden while a turn streams (§42).
     ToggleRawCli,
+    /// twarp 15b: start or stop the feature-flagged computer-control overlay
+    /// lifecycle for this Claude session. Header chrome must route through a
+    /// pane custom action because it is rendered by the parent `PaneView`.
+    ToggleComputerControl,
     /// twarp: expand / collapse the floating background-scripts panel from the
     /// header's icon button (left of the Chat UI / Raw CLI toggle). The button
     /// lives in the parent `PaneView`'s header tree, so it routes through the
@@ -810,6 +817,14 @@ pub struct ClaudeCodeView {
     /// Mouse state for the panel header's "Clear" button (clears non-running
     /// scripts).
     background_clear_mouse: MouseStateHandle,
+    /// twarp 15b: per-Claude-session computer-control overlay lifecycle. The
+    /// native AppKit windows live outside the Warp scene, so the coordinator is
+    /// interior-mutable for render-time color refreshes when the active tab
+    /// color changes.
+    computer_control: std::cell::RefCell<ComputerControlCoordinator>,
+    /// Mouse state for the feature-flagged computer-control header entry
+    /// point.
+    computer_control_button_mouse: MouseStateHandle,
     /// Memoized [`background_scripts::collect`] output, keyed by the transcript
     /// revision it was derived from. The list is recomputed (walking the whole
     /// transcript, descending into Task children) by both the header button and
@@ -1015,6 +1030,8 @@ impl ClaudeCodeView {
             background_panel_mouse: MouseStateHandle::default(),
             background_button_mouse: MouseStateHandle::default(),
             background_clear_mouse: MouseStateHandle::default(),
+            computer_control: std::cell::RefCell::new(ComputerControlCoordinator::default()),
+            computer_control_button_mouse: MouseStateHandle::default(),
             background_scripts_memo: std::cell::RefCell::new(None),
         };
 
@@ -3185,6 +3202,163 @@ impl ClaudeCodeView {
                 }
             },
         );
+    }
+
+    fn computer_control_entrypoint_available() -> bool {
+        crate::computer_control::platform_supported() && FeatureFlag::LocalComputerUse.is_enabled()
+    }
+
+    fn computer_control_session_label(&self) -> String {
+        let short_session = self.session_id.get(..8).unwrap_or(self.session_id.as_str());
+        format!("Claude Code session {short_session}")
+    }
+
+    fn computer_control_chrome(&self, app: &AppContext) -> ComputerControlChrome {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let panel_color = crate::workspace::view::floating_panel_surface_fill(app).into_solid();
+        let panel_fill = warp_core::ui::theme::Fill::Solid(panel_color);
+
+        ComputerControlChrome {
+            panel_color,
+            text_color: theme.main_text_color(panel_fill).into_solid(),
+            muted_text_color: theme.sub_text_color(panel_fill).into_solid(),
+            glow_color: self.accent(app),
+        }
+    }
+
+    fn sync_computer_control_chrome(&self, app: &AppContext) {
+        let mut computer_control = self.computer_control.borrow_mut();
+        if !Self::computer_control_entrypoint_available() {
+            computer_control.stop();
+            return;
+        }
+
+        if computer_control.state().is_live() {
+            computer_control.update_chrome(
+                self.computer_control_session_label(),
+                self.computer_control_chrome(app),
+            );
+        }
+    }
+
+    fn toggle_computer_control(&mut self, ctx: &mut ViewContext<Self>) {
+        if !Self::computer_control_entrypoint_available() {
+            self.computer_control.borrow_mut().stop();
+            ctx.notify();
+            return;
+        }
+
+        let should_stop = self.computer_control.borrow().state().is_live();
+        if should_stop {
+            self.computer_control.borrow_mut().stop();
+            ctx.notify();
+            return;
+        }
+
+        self.computer_control.borrow_mut().start(
+            self.computer_control_session_label(),
+            self.computer_control_chrome(ctx),
+        );
+        let generation = self.computer_control.borrow().generation();
+        if matches!(
+            self.computer_control.borrow().state(),
+            ComputerControlState::Active
+        ) {
+            self.schedule_computer_control_poll(generation, ctx);
+        }
+        ctx.notify();
+    }
+
+    fn schedule_computer_control_poll(&self, generation: u64, ctx: &mut ViewContext<Self>) {
+        ctx.spawn(
+            async move {
+                Timer::after(Duration::from_millis(250)).await;
+            },
+            move |me, _, ctx| {
+                if me.computer_control.borrow_mut().poll_native_stop() {
+                    ctx.notify();
+                    return;
+                }
+
+                let should_continue = {
+                    let computer_control = me.computer_control.borrow();
+                    computer_control.generation() == generation
+                        && matches!(computer_control.state(), ComputerControlState::Active)
+                };
+                if should_continue {
+                    me.schedule_computer_control_poll(generation, ctx);
+                }
+            },
+        );
+    }
+
+    fn render_computer_control_button(&self, app: &AppContext) -> Option<Box<dyn Element>> {
+        if !Self::computer_control_entrypoint_available() {
+            return None;
+        }
+
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let state = self.computer_control.borrow().state().clone();
+        let live = state.is_live();
+        let failed = matches!(state, ComputerControlState::Failed(_));
+        let accent = self.accent(app);
+        let wash = self.accent_wash(app);
+        let text_color = if live {
+            accent
+        } else if failed {
+            warp_core::ui::theme::Fill::warn().into_solid()
+        } else {
+            theme.main_text_color(theme.background()).into_solid()
+        };
+        let label = if live {
+            "Stop control"
+        } else if failed {
+            "Retry control"
+        } else {
+            "Computer control"
+        };
+        let icon = if live {
+            crate::ui_components::icons::Icon::StopFilled
+        } else {
+            crate::ui_components::icons::Icon::Eye
+        };
+
+        let glyph = ConstrainedBox::new(Icon::new(icon.into(), text_color).finish())
+            .with_width(14.)
+            .with_height(14.)
+            .finish();
+        let content = Flex::row()
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(5.)
+            .with_child(glyph)
+            .with_child(context_segment(appearance, label.to_owned(), text_color))
+            .finish();
+
+        let mouse = self.computer_control_button_mouse.clone();
+        Some(
+            Hoverable::new(mouse, move |state| {
+                let mut body = Container::new(content)
+                    .with_padding_left(8.)
+                    .with_padding_right(8.)
+                    .with_padding_top(4.)
+                    .with_padding_bottom(4.)
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)));
+                if live || state.is_hovered() {
+                    body = body.with_background_color(wash);
+                }
+                body.finish()
+            })
+            .with_cursor(Cursor::PointingHand)
+            .on_click(|ctx, _, _| {
+                ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
+                    PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleComputerControl),
+                );
+            })
+            .finish(),
+        )
     }
 
     /// The live streaming status line (#7), shown below the last message while
@@ -5569,6 +5743,7 @@ impl View for ClaudeCodeView {
         // render tree (read via `render_accent` / `render_wash`).
         self.render_accent.set(self.accent(app));
         self.render_wash.set(self.accent_wash(app));
+        self.sync_computer_control_chrome(app);
 
         // twarp 07 (7i, PRODUCT §39/§43): raw mode — the pane IS the
         // terminal. Rendered bare (no focus-grab wrapper: the terminal owns
@@ -5700,6 +5875,12 @@ impl View for ClaudeCodeView {
                 DispatchEventResult::StopPropagation
             })
             .finish()
+    }
+}
+
+impl Drop for ClaudeCodeView {
+    fn drop(&mut self) {
+        self.computer_control.borrow_mut().stop();
     }
 }
 
@@ -5902,6 +6083,7 @@ impl BackingView for ClaudeCodeView {
     ) {
         match custom_action {
             ClaudeCodeCustomAction::ToggleRawCli => self.toggle_raw_cli(ctx),
+            ClaudeCodeCustomAction::ToggleComputerControl => self.toggle_computer_control(ctx),
             ClaudeCodeCustomAction::ToggleBackgroundPanel => {
                 self.background_scripts_expanded = !self.background_scripts_expanded;
                 ctx.notify();
@@ -5912,6 +6094,7 @@ impl BackingView for ClaudeCodeView {
     fn close(&mut self, ctx: &mut ViewContext<Self>) {
         // 7c also tears down the live `claude` process here (PRODUCT §8); 7b has
         // no driver, so closing the pane just drops the synthetic transcript.
+        self.computer_control.borrow_mut().stop();
         ctx.emit(ClaudeCodeViewEvent::Pane(PaneEvent::Close));
     }
 
@@ -5924,6 +6107,7 @@ impl BackingView for ClaudeCodeView {
         _ctx: &view::HeaderRenderContext<'_>,
         app: &AppContext,
     ) -> HeaderContent {
+        self.sync_computer_control_chrome(app);
         // PRODUCT §5: title "Claude Code" with the session cwd as a secondary
         // line. Net-new chrome (the Agent-block header was service-coupled;
         // TECH matrix marks it do-NOT-port). The header renders title and
@@ -5993,20 +6177,28 @@ impl BackingView for ClaudeCodeView {
         .finish();
         // twarp: the background-scripts icon button sits to the LEFT of the
         // toggle, opening the floating panel and badging the active run count.
-        // Present only when this chat launched a background script — widen the
-        // header control budget to fit it when it is.
+        // The computer-control entry point sits to its left when the 15b flag is
+        // on, so widen the header control budget for whichever controls are
+        // present.
+        let computer_control_button = self.render_computer_control_button(app);
+        let has_computer_control_button = computer_control_button.is_some();
         let background_button = self.render_background_button(app);
         let has_background_button = background_button.is_some();
-        let left_of_overflow: Box<dyn Element> = match background_button {
-            Some(button) => Flex::row()
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_spacing(6.)
-                .with_child(button)
-                .with_child(toggle)
-                .finish(),
-            None => toggle,
-        };
+        let mut controls = Flex::row()
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(6.);
+        if let Some(button) = computer_control_button {
+            controls = controls.with_child(button);
+        }
+        if let Some(button) = background_button {
+            controls = controls.with_child(button);
+        }
+        let left_of_overflow = controls.with_child(toggle).finish();
+        let mut control_container_width = if has_background_button { 250. } else { 210. };
+        if has_computer_control_button {
+            control_container_width += 132.;
+        }
         HeaderContent::Standard(StandardHeader {
             title: PANE_TITLE.to_owned(),
             title_secondary: cwd,
@@ -6024,7 +6216,7 @@ impl BackingView for ClaudeCodeView {
                 // off the right of the window. Reserve room for the toggle plus
                 // the close/overflow icons, and extra for the background-scripts
                 // button when it is shown.
-                control_container_width: Some(if has_background_button { 250. } else { 210. }),
+                control_container_width: Some(control_container_width),
                 ..Default::default()
             },
             // twarp: double-clicking the "Claude Code" header title renames the
