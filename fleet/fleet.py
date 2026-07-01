@@ -561,6 +561,18 @@ def ux_inject_ready(name):
     except Exception:
         return False
 
+def ux_capture_ready(name):
+    """True if the display pod's IN-SESSION capturer holds the Screen Recording grant. Same SSH-TCC
+    rule as injection: a `screencapture` over SSH is sshd-attributed and silently returns a
+    privacy-limited (desktop-only, no app windows) frame. The grant lives in the UicaptureAgent
+    `serve` process. Ask it to re-check via its `prompt` command and read the log."""
+    try:
+        bash_on(name, "printf 'prompt\\n' > ~/.uicapture/in 2>/dev/null || true\nsleep 1\n", timeout=30)
+        r = bash_on(name, "grep 'granted=' ~/.uicapture/log 2>/dev/null | tail -1\n", timeout=20)
+        return "granted=true" in (r.stdout or "")
+    except Exception:
+        return False
+
 def _ux_criteria(it):
     """What the UX agent judges against: explicit per-item `ux_criteria` wins, else the feature's
     PRODUCT.md `## Smoke test` section, else a generic 'exercise what the diff changed'."""
@@ -647,6 +659,10 @@ def ux_drive_gate(it):
     if not ux_inject_ready(name):
         say(f"  [{iid}] UX: injector not trusted on {name} (grant Accessibility to UidriveAgent) "
             f"→ falling back to bootstrap screenshot gate")
+        return uxgate(it.get("ux_test", UXTEST))
+    if not ux_capture_ready(name):
+        say(f"  [{iid}] UX: capturer not granted on {name} (grant Screen Recording to UicaptureAgent; "
+            f"else captures are privacy-limited desktop-only) → falling back to bootstrap screenshot gate")
         return uxgate(it.get("ux_test", UXTEST))
     host = node_host(name); is_self = (name == SELF)
     LOG.mkdir(parents=True, exist_ok=True)

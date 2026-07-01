@@ -143,12 +143,27 @@ works against acceptance criteria** (`ux_criteria` on the item, else the feature
 transcript) lands in `fleet/runs/ux_<id>/`. Code: `ux_drive_gate()` in `fleet.py`. Run it standalone
 with `python3 fleet/fleet.py uxdrive <id>`.
 
-- **Input injection on other-mac:** `~/.local/bin/uidrive` (CGEvent injector) runs in-session via the
-  `com.twarp.uidrive` LaunchAgent as the **`UidriveAgent.app`** bundle; the SSH side queues commands
-  with `uinject`, captures with `uishot`. Screenshots are Retina (scale 2) — coords are pixels,
-  divide by 2 for the point coords `uidrive` expects.
-- **One-time prerequisite (human, GUI):** Accessibility must be granted to **UidriveAgent** on the
-  display pod (System Settings → Privacy & Security → Accessibility). Verify with
-  `ssh other-mac '~/.local/bin/uidrive trusted'` → `trusted=true`. **If not granted, the gate
-  auto-falls-back to the old bootstrap-screenshot gate** (degrades, never blocks). The grant is
-  pinned to the bundle signature — don't rebuild/re-sign the binary or it silently breaks.
+The gate needs BOTH an inject side and a capture side on the display pod — each is an in-session
+launchd agent holding one macOS TCC grant (a process over SSH is sshd-attributed and holds neither):
+
+- **Inject (act):** `~/.local/bin/uidrive` (CGEvent injector) runs in-session via the
+  `com.twarp.uidrive` LaunchAgent as the **`UidriveAgent.app`** bundle. SSH queues commands with
+  `uinject`. Needs **Accessibility**.
+- **Capture (see):** `~/.local/bin/uicapture` runs in-session via the `com.twarp.uicapture`
+  LaunchAgent as the **`UicaptureAgent.app`** bundle; `~/.local/bin/uishot` routes captures through it
+  (writes the path to `~/.uicapture/in`, polls for the file). Needs **Screen Recording**. A bare
+  `screencapture` over SSH silently returns a privacy-limited desktop-only frame (no app windows) —
+  this is the #1 gotcha.
+- Screenshots are Retina (scale 2) — coords are pixels; divide by 2 for the point coords `uidrive`
+  wants.
+- **TWO one-time human GUI grants on the display pod** (System Settings → Privacy & Security):
+  **Accessibility → UidriveAgent** and **Screen Recording → UicaptureAgent**. Verify:
+  `ssh other-mac '~/.local/bin/uidrive trusted'` → `trusted=true`, and
+  `ssh other-mac "printf prompt > ~/.uicapture/in; sleep 1; tail -1 ~/.uicapture/log"` → `granted=true`.
+  **If either is missing the gate auto-falls-back to the bootstrap-screenshot gate** (degrades, never
+  blocks). Each grant is pinned to its bundle signature — **never rebuild/re-sign either binary after
+  granting** or the grant silently stops matching (fix: `tccutil reset <Accessibility|ScreenCapture>
+  <bundle-id>`, freeze the binary, re-fire its `prompt`, re-toggle).
+- **Startup permission dialogs:** a freshly-launched `warp-oss` bundle can block on macOS prompts
+  (e.g. *"WarpOss would like to access data from other apps"*) before showing a window — the Claude
+  driver clicks **Allow** to get past them, so this is handled by the loop, not a launch failure.
