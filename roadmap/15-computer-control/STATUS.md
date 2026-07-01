@@ -1,6 +1,6 @@
 # 15 — Computer control overlay (Claude drives the Mac)
 
-**Phase:** not-started
+**Phase:** impl-pending
 **Spec PR:** —
 **Impl PRs:** —
 
