@@ -7614,9 +7614,35 @@ impl Workspace {
                 );
             });
         } else {
-            self.right_panel_view.update(ctx, |right_panel_view, ctx| {
-                right_panel_view.close_code_review(ctx);
-            })
+            // twarp 07: `active_session_view` only sees *terminal* sessions, so a
+            // Claude Code pane (which has no terminal) resolves `context_data` to
+            // `None` here even though its cwd IS a repo. That repo is surfaced
+            // instead through the working-directories model + `FocusedRepoChanged`,
+            // which auto-selects it in the panel. Unconditionally calling
+            // `close_code_review` would null that event-driven selection (leaving
+            // `available_repos` populated but `selected_repo_path` cleared), wedging
+            // the panel on "Cannot detect diffs for this folder" until a terminal is
+            // opened. Only close when the active pane group has no detected repo at
+            // all; otherwise leave the working-directories selection intact.
+            let active_pane_group_id = self.active_tab_pane_group().id();
+            let active_pane_group_has_repo = {
+                self.working_directories_model.read(ctx, |model, _| {
+                    model
+                        .most_recent_repositories_for_pane_group(active_pane_group_id)
+                        .map(|mut repos| repos.next().is_some())
+                        .unwrap_or(false)
+                })
+            };
+            log::warn!(
+                "TWARP-DIAG setup_code_review_panel fallback active_pg={:?} has_repo={}",
+                active_pane_group_id,
+                active_pane_group_has_repo,
+            );
+            if !active_pane_group_has_repo {
+                self.right_panel_view.update(ctx, |right_panel_view, ctx| {
+                    right_panel_view.close_code_review(ctx);
+                })
+            }
         }
     }
 
@@ -12767,15 +12793,6 @@ impl Workspace {
         // back to whatever terminal repo was last active.
         let focused_directory_id = pane_group.as_ref(ctx).focused_claude_code_view_id(ctx);
 
-        log::warn!(
-            "TWARP-DIAG workspace.refresh pg={:?} terminal_cwds={:?} claude_code_cwds={:?} focused_terminal={:?} focused_directory={:?}",
-            pane_group_id,
-            terminal_cwds,
-            claude_code_cwds,
-            focused_terminal_id,
-            focused_directory_id,
-        );
-
         // twarp 07: a Claude Code pane is not a terminal, so its cwd never goes
         // through the `TerminalNavigation` repo detection that populates
         // `DetectedRepositories`. Without that, `get_root_for_path` below can't
@@ -12790,11 +12807,6 @@ impl Workspace {
             let already_known = DetectedRepositories::as_ref(ctx)
                 .get_root_for_path(std::path::Path::new(cwd))
                 .is_some();
-            log::warn!(
-                "TWARP-DIAG detection-loop cwd={:?} already_known={}",
-                cwd,
-                already_known
-            );
             if already_known {
                 continue;
             }
@@ -12802,13 +12814,7 @@ impl Workspace {
                 model.detect_possible_git_repo(cwd, RepoDetectionSource::TerminalNavigation, ctx)
             });
             let pane_group = pane_group.clone();
-            let cwd_for_log = cwd.clone();
             ctx.spawn(fut, move |me, repo_root, ctx| {
-                log::warn!(
-                    "TWARP-DIAG detection-result cwd={:?} repo_root={:?}",
-                    cwd_for_log,
-                    repo_root
-                );
                 if repo_root.is_some() {
                     me.refresh_working_directories_for_pane_group(&pane_group, ctx);
                 }

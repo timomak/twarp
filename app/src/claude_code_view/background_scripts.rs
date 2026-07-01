@@ -205,6 +205,12 @@ fn walk(items: &[TranscriptItem], scripts: &mut Vec<BackgroundScript>) {
                 let ack = output.as_ref().map(|o| o.text.as_str()).unwrap_or("");
                 let state = if *status == ToolStatus::Failed {
                     BackgroundScriptState::LaunchFailed
+                } else if poll_reports_done(ack) {
+                    // A short-lived command (a `cd`, a one-shot script) can exit
+                    // before Claude ever polls it — some builds report that in
+                    // the launch acknowledgement itself. Honor an explicit status
+                    // marker here so such scripts don't sit at "running" forever.
+                    BackgroundScriptState::Finished
                 } else {
                     BackgroundScriptState::Running
                 };
@@ -342,6 +348,14 @@ mod tests {
         let scripts = collect(&items);
         assert_eq!(scripts[0].state, BackgroundScriptState::Finished);
         assert!(scripts[0].output.contains("build ok"));
+    }
+
+    #[test]
+    fn launch_ack_reporting_done_finishes_without_a_poll() {
+        // A fast command whose launch acknowledgement already carries a status
+        // marker is finished immediately — no BashOutput poll required.
+        let items = vec![launch("t1", "cd /tmp", "started bash_1\n<status>completed</status>")];
+        assert_eq!(collect(&items)[0].state, BackgroundScriptState::Finished);
     }
 
     #[test]

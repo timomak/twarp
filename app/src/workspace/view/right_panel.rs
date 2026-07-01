@@ -202,6 +202,12 @@ impl CodeReviewState {
                 self.set_selected_repo(first_repo.clone(), ctx);
             }
         }
+        log::warn!(
+            "TWARP-DIAG set_available_repos should_clear={} available={:?} selected_after={:?}",
+            should_clear,
+            self.available_repos,
+            self.selected_repo_path,
+        );
     }
 
     #[cfg(not(feature = "local_fs"))]
@@ -541,12 +547,6 @@ impl RightPanelView {
                 pane_group_id,
                 repositories,
             } => {
-                log::warn!(
-                    "TWARP-DIAG right_panel.RepositoriesChanged event_pg={:?} active_pg={:?} repos={:?}",
-                    pane_group_id,
-                    self.active_pane_group.as_ref().map(|g| g.id()),
-                    repositories,
-                );
                 let Some(active_pane_group) = &self.active_pane_group else {
                     return;
                 };
@@ -586,12 +586,6 @@ impl RightPanelView {
                 repository_terminal_map: _,
                 focused_repo,
             } => {
-                log::warn!(
-                    "TWARP-DIAG right_panel.FocusedRepoChanged event_pg={:?} active_pg={:?} focused_repo={:?}",
-                    pane_group_id,
-                    self.active_pane_group.as_ref().map(|g| g.id()),
-                    focused_repo,
-                );
                 let Some(active_pane_group) = &self.active_pane_group else {
                     return;
                 };
@@ -639,18 +633,12 @@ impl RightPanelView {
         self.subscribe_to_pane_group_terminals_for_refresh(ctx);
 
         if let Some(state) = &mut self.code_review_state {
-            let active_repositories: Vec<PathBuf> = working_directories_model.read(ctx, |model, _| {
+            let active_repositories = working_directories_model.read(ctx, |model, _| {
                 model
                     .most_recent_repositories_for_pane_group(pane_group_id)
                     .map(|repos| repos.collect())
                     .unwrap_or_default()
             });
-            log::warn!(
-                "TWARP-DIAG set_active_pane_group pg={:?} read_repos={:?} prev_selected={:?}",
-                pane_group_id,
-                active_repositories,
-                state.selected_repo_path,
-            );
             state.set_available_repos(active_repositories, ctx);
         }
 
@@ -828,6 +816,11 @@ impl RightPanelView {
 
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     pub fn close_code_review(&mut self, ctx: &mut ViewContext<Self>) {
+        log::warn!(
+            "TWARP-DIAG close_code_review CALLED selected_before={:?} active_pg={:?}",
+            self.code_review_state.as_ref().and_then(|s| s.selected_repo_path.clone()),
+            self.active_pane_group.as_ref().map(|g| g.id()),
+        );
         self.close_active_code_review_view(ctx);
 
         // Views are cached in WorkingDirectoriesModel, so we just update the UI state
@@ -931,12 +924,6 @@ impl RightPanelView {
             .filter(|repo_path| state.available_repos.contains(repo_path));
 
         let Some(selected_repo_path) = selected_repo_path else {
-            log::warn!(
-                "TWARP-DIAG render.no_repo active_pg={:?} selected={:?} available={:?}",
-                self.active_pane_group.as_ref().map(|g| g.id()),
-                state.selected_repo_path,
-                state.available_repos,
-            );
             let simple_header = self.render_simple_header(close_button);
 
             #[cfg(feature = "local_fs")]
