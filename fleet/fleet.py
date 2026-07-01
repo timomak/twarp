@@ -51,8 +51,22 @@ def now():
 def say(msg):
     print(f"[{now()}] {msg}", flush=True)
 
+DEFAULT_VERIFY = "cargo build --bin warp-oss"   # matches the roadmap-bridge default
+
+def _normalize(it):
+    """Manual queue items follow the documented schema (id/node/touches/depends_on/task/
+    verify/ux) and may omit 'title' and 'verify' — only roadmap-bridged items set those.
+    Apply defaults on read so no worker/gate path KeyErrors on a hand-added item."""
+    it.setdefault("verify", DEFAULT_VERIFY)
+    if not it.get("title"):
+        it["title"] = it["task"].strip().splitlines()[0][:60] if it.get("task") else it["id"]
+    return it
+
 def load():
-    return json.loads(QUEUE.read_text())
+    q = json.loads(QUEUE.read_text())
+    for it in q.get("items", []):
+        _normalize(it)
+    return q
 
 def save(q):
     # Atomic replace so concurrent readers (the many lock-free node_*/load() calls in worker threads)
@@ -837,7 +851,7 @@ def ux_drive_gate(it):
 def gate(it, ref=None):
     """Build+test `ref` (default origin/fleet/<id>) on the item's pod. Returns (ok, tail)."""
     iid = it["id"]; name = it.get("node") or codex_node() or ACTIVE_PODS[0]
-    verify = it["verify"]; ref = ref or f"origin/fleet/{iid}"
+    verify = it.get("verify") or DEFAULT_VERIFY; ref = ref or f"origin/fleet/{iid}"
     repo = node_repo(name); wt = f"{node_wt(name)}/gate-{iid}"
     cmd = (fresh_worktree(name, wt, ref) +
            f"export CARGO_TARGET_DIR={repo}/target\ncd {wt}\n"
@@ -856,7 +870,7 @@ def gate(it, ref=None):
 def speculative_gate(it):
     """Merge origin/master + origin/fleet/<id> on the item's pod, gate the combination."""
     iid = it["id"]; name = it.get("node") or codex_node() or ACTIVE_PODS[0]
-    verify = it["verify"]; repo = node_repo(name); wt = f"{node_wt(name)}/spec-{iid}"
+    verify = it.get("verify") or DEFAULT_VERIFY; repo = node_repo(name); wt = f"{node_wt(name)}/spec-{iid}"
     cmd = (fresh_worktree(name, wt, "origin/master") +
            f"export CARGO_TARGET_DIR={repo}/target\ncd {wt}\n"
            f"if ! git -c user.email=fleet@local -c user.name=fleet merge --no-edit origin/fleet/{iid} > /tmp/spec_{iid}.log 2>&1; then\n"
@@ -973,6 +987,14 @@ def architect_review(it):
 def iterate(it):
     """Drive ONE PR to green + architect-approved: gate → fix → re-gate → architect → fix → … .
     Gates serialize within a pod; authoring/fixing/review run in parallel across items and pods."""
+    try:
+        return _iterate(it)
+    except Exception as e:
+        # A per-item failure must not crash the whole batch (ex.map re-raises on iteration).
+        say(f"  [{it['id']}] iterate EXC: {e}"); set_status(it["id"], "failed")
+        return False
+
+def _iterate(it):
     iid = it["id"]
     set_status(iid, "iterating")
     make_pr(iid, it["title"])
@@ -1022,6 +1044,13 @@ def cmd_dispatch(args):
 
 def merge_one(it):
     """Speculative-merge gate + auto-merge a single ready PR. Serialized by the caller."""
+    try:
+        return _merge_one(it)
+    except Exception as e:
+        say(f"  [{it['id']}] merge EXC: {e}"); set_status(it["id"], "failed")
+        return False
+
+def _merge_one(it):
     iid = it["id"]
     set_status(iid, "merging")
     verdict, tail = speculative_gate(it)
