@@ -3234,7 +3234,7 @@ impl ClaudeCodeView {
             return;
         }
 
-        if computer_control.state().is_live() {
+        if computer_control.state().needs_poll() {
             computer_control.update_chrome(
                 self.computer_control_session_label(),
                 self.computer_control_chrome(app),
@@ -3261,10 +3261,7 @@ impl ClaudeCodeView {
             self.computer_control_chrome(ctx),
         );
         let generation = self.computer_control.borrow().generation();
-        if matches!(
-            self.computer_control.borrow().state(),
-            ComputerControlState::Active
-        ) {
+        if self.computer_control.borrow().state().needs_poll() {
             self.schedule_computer_control_poll(generation, ctx);
         }
         ctx.notify();
@@ -3276,18 +3273,24 @@ impl ClaudeCodeView {
                 Timer::after(Duration::from_millis(250)).await;
             },
             move |me, _, ctx| {
-                if me.computer_control.borrow_mut().poll_native_stop() {
+                if me.computer_control.borrow_mut().poll_native_events() {
                     ctx.notify();
-                    return;
                 }
 
-                let should_continue = {
+                let next_generation = {
                     let computer_control = me.computer_control.borrow();
-                    computer_control.generation() == generation
-                        && matches!(computer_control.state(), ComputerControlState::Active)
+                    if computer_control.state().needs_poll()
+                        && computer_control.generation() == generation
+                    {
+                        Some(generation)
+                    } else if computer_control.state().needs_poll() {
+                        Some(computer_control.generation())
+                    } else {
+                        None
+                    }
                 };
-                if should_continue {
-                    me.schedule_computer_control_poll(generation, ctx);
+                if let Some(next_generation) = next_generation {
+                    me.schedule_computer_control_poll(next_generation, ctx);
                 }
             },
         );
@@ -3302,18 +3305,21 @@ impl ClaudeCodeView {
         let theme = appearance.theme();
         let state = self.computer_control.borrow().state().clone();
         let live = state.is_live();
+        let blocked = matches!(state, ComputerControlState::Blocked(_));
         let failed = matches!(state, ComputerControlState::Failed(_));
         let accent = self.accent(app);
         let wash = self.accent_wash(app);
         let text_color = if live {
             accent
-        } else if failed {
+        } else if blocked || failed {
             warp_core::ui::theme::Fill::warn().into_solid()
         } else {
             theme.main_text_color(theme.background()).into_solid()
         };
         let label = if live {
             "Stop control"
+        } else if blocked {
+            "Grant permissions"
         } else if failed {
             "Retry control"
         } else {
