@@ -670,6 +670,11 @@ pub struct ClaudeCodeView {
     /// indices. A single-select question keeps one entry (radio); a
     /// multi-select toggles.
     question_selected: HashMap<usize, HashSet<usize>>,
+    /// Question cards whose answers have been submitted, keyed by transcript
+    /// index → the chosen (flattened) option indices. Once submitted, the card
+    /// locks: it keeps the picks visibly checked (so the answer doesn't appear
+    /// to vanish) and drops its live controls while `claude` produces the reply.
+    question_submitted: HashMap<usize, HashSet<usize>>,
     /// `AskUserQuestion` permissions held open for the user to answer inline
     /// (PRODUCT §1), keyed by the gated `tool_use_id` → the control-protocol
     /// `request_id` to answer. `claude` blocks the turn on this `can_use_tool`
@@ -953,6 +958,7 @@ impl ClaudeCodeView {
             plan_keep_mouse: MouseStateHandle::default(),
             session_epoch: 0,
             question_selected: HashMap::new(),
+            question_submitted: HashMap::new(),
             pending_question_permission: HashMap::new(),
             question_option_mouse: std::cell::RefCell::new(HashMap::new()),
             question_submit_mouse: std::cell::RefCell::new(HashMap::new()),
@@ -2192,9 +2198,12 @@ impl ClaudeCodeView {
         if lines.is_empty() {
             return;
         }
-        // Drop the selection so the card stops offering live controls once the
-        // answer is on its way.
-        self.question_selected.remove(&item);
+        // Lock the card into an answered state: keep the chosen options
+        // visible (so the answer doesn't appear to vanish) and stop offering
+        // live controls now that the answer is on its way.
+        if let Some(picks) = self.question_selected.remove(&item) {
+            self.question_submitted.insert(item, picks);
+        }
 
         // Preferred path: a held `can_use_tool` is still parked on this question
         // (PRODUCT §1). Answer it inline — claude reads `answers` back as the
@@ -2213,6 +2222,16 @@ impl ClaudeCodeView {
                     }),
                 });
             }
+            // claude now continues the turn to produce its reply. Make sure the
+            // "Working…" status is live and scroll it into view so the user has a
+            // clear loading indicator instead of a card that just went quiet.
+            if !self.streaming {
+                let started = Instant::now();
+                self.streaming = true;
+                self.turn_started = Some(started);
+                self.schedule_elapsed_tick(started, ctx);
+            }
+            self.scroll_to_bottom();
             ctx.notify();
             return;
         }
@@ -2299,7 +2318,9 @@ impl ClaudeCodeView {
         // Mark the card answered (stops its live controls) and release the
         // dialog so `claude` continues, then resend the picks as a turn.
         self.transcript.answer_question(&request_id);
-        self.question_selected.remove(&item);
+        if let Some(picks) = self.question_selected.remove(&item) {
+            self.question_submitted.insert(item, picks);
+        }
         if let Some(tx) = &self.message_tx {
             let _ = tx.try_send(StdinCommand::Control {
                 request_id,
@@ -6347,7 +6368,8 @@ impl ClaudeCodeView {
         // still be replied to (sent as the next turn).
         let questions = parse_questions(input);
         let pending = self.pending_question_permission.contains_key(tool_use_id);
-        let interactive = pending || !self.streaming;
+        let answered = self.question_submitted.contains_key(&index);
+        let interactive = !answered && (pending || !self.streaming);
         self.render_question_card_inner(index, &questions, interactive, false, appearance)
     }
 
@@ -6385,7 +6407,13 @@ impl ClaudeCodeView {
         let text_color = theme.main_text_color(surface).into_solid();
         let muted = theme.nonactive_ui_text_color().into_solid();
         let accent = self.render_accent.get();
-        let selected = self.question_selected.get(&index);
+        // Once a card is answered the live selection is moved into
+        // `question_submitted`; fall back to it so the chosen options stay
+        // visibly checked after the answer is on its way.
+        let selected = self
+            .question_selected
+            .get(&index)
+            .or_else(|| self.question_submitted.get(&index));
 
         let header = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
