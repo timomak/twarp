@@ -1941,6 +1941,10 @@ const DEBOUNCE_PERIOD: Duration = Duration::from_millis(40);
 /// clipboard blocked banner.
 const OSC52_CLIPBOARD_BANNER_SUPPRESSED_KEY: &str = "Osc52ClipboardBannerSuppressed";
 
+/// Key used in user preferences to persist the "don't show again" choice for the SSH
+/// ControlMaster / "completions are not working" banner.
+const CONTROL_MASTER_BANNER_SUPPRESSED_KEY: &str = "ControlMasterBannerSuppressed";
+
 /// Which type of OSC 52 clipboard operation was blocked.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum Osc52ClipboardBlockedType {
@@ -3791,6 +3795,8 @@ pub struct TerminalView {
 
     control_master_error_banner: ViewHandle<Banner<TerminalAction>>,
     control_master_error_banner_state: ControlMasterErrorBannerState,
+    /// Whether the user has permanently dismissed the control master error banner.
+    control_master_error_banner_suppressed: bool,
 
     /// Banner to show if we detect a configuration in the user's rc files that
     /// is incompatible with Warp.
@@ -4997,7 +5003,7 @@ impl TerminalView {
         });
 
         let control_master_error_banner = ctx.add_typed_action_view(|_| {
-            Banner::new(BannerTextContent::formatted_text(vec![
+            Banner::new_permanently_dismissible(BannerTextContent::formatted_text(vec![
                 FormattedTextFragment::plain_text("Seems like your completions are not working ("),
                 FormattedTextFragment::hyperlink("more info", CONTROLMASTER_ISSUES_URL),
                 FormattedTextFragment::plain_text("). Enabling tmux warpification in "),
@@ -5101,6 +5107,13 @@ impl TerminalView {
         let osc52_clipboard_banner_suppressed = ctx
             .private_user_preferences()
             .read_value(OSC52_CLIPBOARD_BANNER_SUPPRESSED_KEY)
+            .ok()
+            .flatten()
+            .is_some_and(|v| v == "true");
+
+        let control_master_error_banner_suppressed = ctx
+            .private_user_preferences()
+            .read_value(CONTROL_MASTER_BANNER_SUPPRESSED_KEY)
             .ok()
             .flatten()
             .is_some_and(|v| v == "true");
@@ -5384,6 +5397,7 @@ impl TerminalView {
             is_emacs_bindings_banner_open: false,
             control_master_error_banner,
             control_master_error_banner_state: Default::default(),
+            control_master_error_banner_suppressed,
             osc52_clipboard_blocked_banner,
             osc52_clipboard_blocked_type: None,
             osc52_clipboard_banner_suppressed,
@@ -8998,13 +9012,6 @@ impl TerminalView {
         // probably won't happen often, but it's something that we might want to clean
         // up eventually.
         if self.control_master_error_banner_state.associated_session_id != active_session_id {
-            self.control_master_error_banner_state = ControlMasterErrorBannerState {
-                is_open: true,
-                associated_session_id: active_session_id,
-            };
-
-            ctx.notify();
-
             let has_remote_server = active_session_id.is_some_and(|session_id| {
                 self.sessions
                     .as_ref(ctx)
@@ -9019,11 +9026,29 @@ impl TerminalView {
                         )
                     })
             });
+
+            // Don't show the banner when the session already has a remote server
+            // active — the CTA to enable the SSH extension is irrelevant — or when
+            // the user has permanently dismissed it.
+            self.control_master_error_banner_state = ControlMasterErrorBannerState {
+                is_open: self.should_open_control_master_banner(has_remote_server),
+                associated_session_id: active_session_id,
+            };
+
+            ctx.notify();
+
             send_telemetry_from_ctx!(
                 TelemetryEvent::SSHControlMasterError { has_remote_server },
                 ctx
             );
         }
+    }
+
+    /// The control master / completions banner should open only when the session has no
+    /// remote server (the CTA to enable the SSH extension would be irrelevant otherwise)
+    /// and the user has not permanently dismissed it via "Don't show me again".
+    fn should_open_control_master_banner(&self, has_remote_server: bool) -> bool {
+        !has_remote_server && !self.control_master_error_banner_suppressed
     }
 
     fn read_from_clipboard(
@@ -21079,8 +21104,16 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            BannerEvent::Dismiss { .. } => {
+            BannerEvent::Dismiss(DismissalType::Temporary) => {
                 self.control_master_error_banner_state.is_open = false;
+                ctx.notify();
+            }
+            BannerEvent::Dismiss(DismissalType::Permanent) => {
+                self.control_master_error_banner_state.is_open = false;
+                self.control_master_error_banner_suppressed = true;
+                let _ = ctx
+                    .private_user_preferences()
+                    .write_value(CONTROL_MASTER_BANNER_SUPPRESSED_KEY, "true".to_owned());
                 ctx.notify();
             }
             BannerEvent::Action(_) => {
