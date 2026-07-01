@@ -73,6 +73,62 @@ def set_status(iid, status, **extra):
         it.update(extra)
         save(q)
     say(f"  {iid} -> {status}")
+    log_event(iid, "status", status=status,
+              **{k: v for k, v in extra.items() if isinstance(v, (str, int, float, bool))})
+    if status in ("merged", "failed", "exhausted", "needs-rebase"):
+        notify(f"{iid} → {status}", "info" if status == "merged" else "warn")
+
+# ---------- traceability: structured event ledger + off-box notifications ----------
+EVENTS = LOG / "events.jsonl"
+_evlock = threading.Lock()
+
+def log_event(iid, stage, **fields):
+    """Append a timestamped structured record to fleet/runs/events.jsonl — the machine-readable audit
+    trail that queue.json's in-place status overwrite can't provide (durations, gate rounds, verdicts,
+    evidence paths). Best-effort: never fails the run."""
+    rec = {"ts": round(time.time(), 3), "iid": iid, "stage": stage, **fields}
+    try:
+        LOG.mkdir(parents=True, exist_ok=True)
+        with _evlock, open(EVENTS, "a") as f:
+            f.write(json.dumps(rec) + "\n")
+    except Exception:
+        pass
+    return rec
+
+def notify(msg, level="info"):
+    """Push a run event off-box so the loop is observable when you're remote. POSTs to a Slack-style
+    incoming webhook if FLEET_WEBHOOK (env) or config.webhook is set; always mirrors to run.log. No-op
+    (never fails the run) if unconfigured."""
+    say(f"[notify:{level}] {msg}")
+    try:
+        url = os.environ.get("FLEET_WEBHOOK") or cfg().get("webhook")
+    except Exception:
+        url = None
+    if not url:
+        return
+    try:
+        import urllib.request
+        data = json.dumps({"text": f":robot_face: twarp-fleet [{level}] {msg}"}).encode()
+        urllib.request.urlopen(
+            urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}),
+            timeout=10)
+    except Exception as e:
+        say(f"  notify webhook failed: {e}")
+
+def _stamp_ux(iid, level, verdict, evid):
+    """Record HOW an item was UX-verified (live-drive / bootstrap-screenshot / none) + the verdict and
+    evidence path, on the item itself. This is the provenance that was missing when all of 14a-e merged
+    `ux:False` with nothing recording they were never actually driven."""
+    try:
+        with _qlock:
+            q = load(); it = item(q, iid)
+            it["ux_level"] = level; it["ux_verdict"] = verdict
+            it["ux_evidence"] = str(evid) if evid else None
+            save(q)
+    except Exception:
+        pass
+    log_event(iid, "ux", level=level, verdict=verdict, evidence=str(evid) if evid else None)
+    return verdict, evid
 
 def sh(cmd, cwd=None, timeout=None, check=False):
     r = subprocess.run(cmd, cwd=cwd, shell=isinstance(cmd, str),
@@ -450,8 +506,10 @@ def worker_codex(it, name, ref="origin/master", prompt_text=None):
            f"--dangerously-bypass-approvals-and-sandbox -c model_reasoning_effort='high' "
            f"> /tmp/fleet_{iid}.author.log 2>&1\n"
            f"echo CODEX_EXIT_$?\n")
+    auth_start = time.time()
     r = bash_on(name, run, timeout=1500)
     (LOG / f"{iid}.author.log").write_text(node_read(name, f"/tmp/fleet_{iid}.author.log"))
+    _collect_codex_session(iid, name, auth_start)   # structured author trace (parity with driver.jsonl)
     if "CODEX_EXIT_0" not in r.stdout:
         return False, f"codex did not exit clean: {r.stdout.strip()[-200:]}"
     commit = (f"set -e\ncd {wt}\ngit add -A\n"
@@ -624,6 +682,27 @@ Work in at most ~12 actions. When done, reply with EXACTLY one final line:
   VERDICT regression — <what is broken or missing>
 """
 
+def _collect_codex_session(iid, name, started_at):
+    """Collect the codex AUTHOR's structured session (tool calls + reasoning) into the evidence dir —
+    parity with the UX driver's driver.jsonl. Codex writes ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
+    (timestamp-named, so lexical order = chronological). Best-effort; never fails the run."""
+    try:
+        r = bash_on(name, "ls -1 ~/.codex/sessions/*/*/*/*.jsonl 2>/dev/null | tail -60", timeout=30)
+        files = [l for l in (r.stdout or "").splitlines() if l.strip()]
+        if not files:
+            return
+        newest = sorted(files)[-1]
+        mt = bash_on(name, f"stat -f %m '{newest}' 2>/dev/null || stat -c %Y '{newest}' 2>/dev/null",
+                     timeout=20).stdout.strip()
+        if mt and float(mt) < started_at - 5:   # nothing authored this run
+            return
+        content = node_read(name, newest)
+        if content:
+            (LOG / f"{iid}.author.session.jsonl").write_text(content)
+            log_event(iid, "author_session", file=newest, bytes=len(content))
+    except Exception as e:
+        say(f"  [{iid}] codex session collection warning: {e}")
+
 def _collect_driver_trace(evid, started_at):
     """Capture the UX driver's FULL conversation for later review. Claude Code persists every session
     to ~/.claude/projects/<cwd-slug>/<session-id>.jsonl, so the driver's step-by-step reasoning, every
@@ -701,15 +780,15 @@ def ux_drive_gate(it):
     Returns (verdict, evidence_dir) — 'regression' blocks merge; 'pass'/'error' do not."""
     iid = it["id"]; name = display_node()
     if not name:
-        return "error", None
+        return _stamp_ux(iid, "none", "error", None)
     if not ux_inject_ready(name):
         say(f"  [{iid}] UX: injector not trusted on {name} (grant Accessibility to UidriveAgent) "
             f"→ falling back to bootstrap screenshot gate")
-        return uxgate(it.get("ux_test", UXTEST))
+        return _stamp_ux(iid, "bootstrap", *uxgate(it.get("ux_test", UXTEST)))
     if not ux_capture_ready(name):
         say(f"  [{iid}] UX: capturer not granted on {name} (grant Screen Recording to UicaptureAgent; "
             f"else captures are privacy-limited desktop-only) → falling back to bootstrap screenshot gate")
-        return uxgate(it.get("ux_test", UXTEST))
+        return _stamp_ux(iid, "bootstrap", *uxgate(it.get("ux_test", UXTEST)))
     host = node_host(name); is_self = (name == SELF)
     LOG.mkdir(parents=True, exist_ok=True)
     evid = LOG / f"ux_{iid}"; evid.mkdir(exist_ok=True)
@@ -728,7 +807,7 @@ def ux_drive_gate(it):
         if not launched:
             say(f"  [{iid}] UX: app build/launch failed → bootstrap gate")
             _ux_teardown(it, name)
-            return uxgate(it.get("ux_test", UXTEST))
+            return _stamp_ux(iid, "bootstrap", *uxgate(it.get("ux_test", UXTEST)))
         try:
             sh(["git", "-C", str(SELF_REPO), "fetch", "-q", "origin"])
             diff = sh(["git", "-C", str(SELF_REPO), "diff",
@@ -746,11 +825,9 @@ def ux_drive_gate(it):
                 out.splitlines()[-1] if out else "")
     say(f"  [{iid}] UX drive → {line}")
     low = line.lower()
-    if "regression" in low or "verdict fail" in low:
-        return "regression", evid
-    if "pass" in low:
-        return "pass", evid
-    return "error", evid
+    verdict = ("regression" if ("regression" in low or "verdict fail" in low)
+               else "pass" if "pass" in low else "error")
+    return _stamp_ux(iid, "live", verdict, evid)
 
 
 # ---------- gate (on the pod that authored) ----------
@@ -766,7 +843,9 @@ def gate(it, ref=None):
     with gatelock(name):                  # one cargo cache per pod — serialize within the pod
         r = bash_on(name, cmd, timeout=2400)
     ok = "GATE_EXIT_0" in r.stdout
-    (LOG / f"{iid}.gate.log").write_text(r.stdout)
+    full = node_read(name, f"/tmp/gate_{iid}.log") or r.stdout   # FULL build/test output, not the -25 tail
+    (LOG / f"{iid}.gate.log").write_text(full)
+    log_event(iid, "gate", ok=ok)
     return ok, r.stdout.strip().splitlines()[-8:]
 
 
@@ -782,10 +861,12 @@ def speculative_gate(it):
            f"({verify}) >> /tmp/spec_{iid}.log 2>&1\necho SPEC_EXIT_$?\ntail -20 /tmp/spec_{iid}.log\n")
     with gatelock(name):
         r = bash_on(name, cmd, timeout=2400)
-    (LOG / f"{iid}.spec.log").write_text(r.stdout)
-    if "MERGE_CONFLICT" in r.stdout:
-        return "conflict", r.stdout.strip().splitlines()[-6:]
-    return ("ok" if "SPEC_EXIT_0" in r.stdout else "fail"), r.stdout.strip().splitlines()[-6:]
+    full = node_read(name, f"/tmp/spec_{iid}.log") or r.stdout   # FULL merge+test output, not the tail
+    (LOG / f"{iid}.spec.log").write_text(full)
+    verdict = ("conflict" if "MERGE_CONFLICT" in r.stdout
+               else "ok" if "SPEC_EXIT_0" in r.stdout else "fail")
+    log_event(iid, "spec", verdict=verdict)
+    return verdict, r.stdout.strip().splitlines()[-6:]
 
 def auto_merge(iid, title):
     repo = cfg()["repo"]
@@ -949,6 +1030,48 @@ def merge_one(it):
     say(f"  [{iid}] auto-merge {'OK' if ok else 'FAILED'}: {out.splitlines()[-1] if out else ''}")
     set_status(iid, "merged" if ok else "ready"); return ok
 
+def write_run_report():
+    """Post-run human report (report.md) + machine index (index.json) from events.jsonl + queue.json:
+    per-item final status, gate rounds, UX level+verdict+evidence, and wall-clock duration — the single
+    'what happened this run' artifact. Flags any item that merged WITHOUT a live UX drive (the 14-class
+    gap). Returns (index, risky_rows)."""
+    q = load(); items = {i["id"]: i for i in q["items"]}
+    events = []
+    if EVENTS.exists():
+        for l in EVENTS.read_text().splitlines():
+            if l.strip():
+                try: events.append(json.loads(l))
+                except Exception: pass
+    per = {}
+    for e in events:
+        d = per.setdefault(e["iid"], {"first": e["ts"], "last": e["ts"], "gate_rounds": 0})
+        d["first"] = min(d["first"], e["ts"]); d["last"] = max(d["last"], e["ts"])
+        if e["stage"] == "gate": d["gate_rounds"] += 1
+    rows = []
+    for iid, d in per.items():
+        it = items.get(iid, {})
+        rows.append({"id": iid, "status": it.get("status"), "ux": bool(it.get("ux")),
+                     "ux_level": it.get("ux_level"), "ux_verdict": it.get("ux_verdict"),
+                     "ux_evidence": it.get("ux_evidence"), "gate_rounds": d["gate_rounds"],
+                     "duration_s": round(d["last"] - d["first"], 1)})
+    rows.sort(key=lambda r: r["id"])
+    index = {"generated": round(time.time(), 3), "items": rows}
+    (LOG / "index.json").write_text(json.dumps(index, indent=2))
+    risky = [r for r in rows if r["status"] == "merged" and r["ux"] and r["ux_level"] != "live"]
+    lines = ["# fleet run report", "",
+             "| item | status | ux | ux_level | ux_verdict | gate_rounds | dur(s) | evidence |",
+             "|------|--------|----|----------|-----------|-------------|--------|----------|"]
+    for r in rows:
+        ev = f"`{r['ux_evidence']}`" if r["ux_evidence"] else "—"
+        lines.append(f"| {r['id']} | {r['status']} | {'✓' if r['ux'] else ''} | {r['ux_level'] or '—'} | "
+                     f"{r['ux_verdict'] or '—'} | {r['gate_rounds']} | {r['duration_s']} | {ev} |")
+    if risky:
+        lines += ["", "## ⚠️ merged WITHOUT a live UX drive",
+                  *[f"- **{r['id']}** (ux_level={r['ux_level'] or 'none'}) — was never driven; verify manually"
+                    for r in risky]]
+    (LOG / "report.md").write_text("\n".join(lines) + "\n")
+    return index, risky
+
 def cmd_run(args):
     """Continuous batch loop: fill up to total-builder-capacity ready items → author in parallel
     across pods → drive each PR to green + architect-approved (parallel authoring/fixing, per-pod
@@ -998,7 +1121,15 @@ def cmd_run(args):
             if cur.get("status") in ("merged", "failed"):
                 reap_worktrees(it["id"], cur.get("node") or it["node"])
         cmd_status(args)
-    say("=== run complete ===")
+    idx, risky = write_run_report()
+    merged_ids = [r["id"] for r in idx["items"] if r["status"] == "merged"]
+    failed_ids = [r["id"] for r in idx["items"]
+                  if r["status"] in ("failed", "exhausted", "needs-rebase")]
+    msg = f"run complete — merged {merged_ids or '[]'}, failed {failed_ids or '[]'}"
+    if risky:
+        msg += f", ⚠️ merged-without-live-UX {[r['id'] for r in risky]}"
+    notify(msg, "warn" if (failed_ids or risky) else "info")
+    say(f"=== run complete — report: {LOG / 'report.md'} ===")
 
 
 def main():
@@ -1017,6 +1148,7 @@ def main():
     u.add_argument("--self", dest="self_pod", default=None)
     ud = sub.add_parser("uxdrive"); ud.add_argument("id")
     ud.add_argument("--self", dest="self_pod", default=None)
+    sub.add_parser("report")   # regenerate report.md / index.json from events.jsonl + queue.json
     args = ap.parse_args()
     if getattr(args, "self_pod", None):
         SELF = args.self_pod
@@ -1025,6 +1157,11 @@ def main():
         cmd_status(args)
     elif args.cmd == "roadmap-sync":
         print("roadmap:", roadmap_sync())
+    elif args.cmd == "report":
+        idx, risky = write_run_report()
+        print(f"report: {LOG / 'report.md'}  ({len(idx['items'])} items)")
+        if risky:
+            print("⚠️ merged without a live UX drive:", [r["id"] for r in risky])
     elif args.cmd == "dispatch":
         ACTIVE_PODS = _resolve_pods(False)
         cmd_dispatch(args)
