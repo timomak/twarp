@@ -32,6 +32,7 @@ fn main() -> Result<()> {
     add_features(&target_family, &target_os);
 
     if target_os == "macos" && target_family != "wasm" {
+        println!("cargo:rustc-link-lib=framework=ApplicationServices");
         println!("cargo:rustc-link-lib=framework=MetalKit");
         println!("cargo:rustc-link-lib=framework=QuartzCore");
         println!("cargo:rustc-link-lib=framework=UserNotifications");
