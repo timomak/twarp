@@ -289,7 +289,9 @@ impl SelectableArea {
         ctx: &mut EventContext,
         app: &AppContext,
     ) -> bool {
+        let has_selectable = self.child.as_selectable_element().is_some();
         let Some(selectable_child_ref) = self.child.as_selectable_element() else {
+            log::warn!("TWARP_SEL3 BAIL as_selectable=None pos={position:?}");
             return false;
         };
         // Clear any previously existing selection on mouse down.
@@ -301,7 +303,19 @@ impl SelectableArea {
         selection_state.clear();
 
         // Only if this click was in the element, start a new selection.
-        if !is_mouse_in(self.origin, self.size, ctx, position) {
+        let in_el = is_mouse_in(self.origin, self.size, ctx, position);
+        log::warn!(
+            "TWARP_SEL3 pos={:?} in_el={} has_selectable={} origin={:?} size={:?} visible_rect={:?}",
+            position,
+            in_el,
+            has_selectable,
+            self.origin.map(|o| (o.xy(), o.z_index())),
+            self.size,
+            self.origin
+                .zip(self.size)
+                .and_then(|(o, s)| ctx.visible_rect(o, s)),
+        );
+        if !in_el {
             return false;
         }
         let Some(origin) = self.origin else {

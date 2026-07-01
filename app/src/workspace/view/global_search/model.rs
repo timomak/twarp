@@ -82,6 +82,8 @@ impl GlobalSearch {
         };
         let ignore_case = !search_config.use_case_sensitivity;
         let multiline = effective_pattern.contains('\n');
+        let includes = search_config.includes;
+        let excludes = search_config.excludes;
 
         let handle = ctx.spawn(
             async move {
@@ -91,6 +93,8 @@ impl GlobalSearch {
                     roots,
                     ignore_case,
                     multiline,
+                    includes,
+                    excludes,
                     spawner,
                 )
                 .await
@@ -115,12 +119,15 @@ impl GlobalSearch {
         self.search_handle = Some(handle);
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_warp_ripgrep_cli(
         search_id: u32,
         pattern: String,
         roots: Vec<PathBuf>,
         ignore_case: bool,
         multiline: bool,
+        includes: Vec<String>,
+        excludes: Vec<String>,
         spawner: ModelSpawner<GlobalSearch>,
     ) -> Result<usize> {
         let roots_display: Vec<_> = roots.iter().map(|r| r.display().to_string()).collect();
@@ -129,8 +136,14 @@ impl GlobalSearch {
             roots_display
         );
 
-        let stream =
-            warp_ripgrep::search::search_streaming(&[pattern], &roots, ignore_case, multiline)?;
+        let stream = warp_ripgrep::search::search_streaming(
+            &[pattern],
+            &roots,
+            ignore_case,
+            multiline,
+            &includes,
+            &excludes,
+        )?;
         futures::pin_mut!(stream);
 
         let mut total_match_count: usize = 0;

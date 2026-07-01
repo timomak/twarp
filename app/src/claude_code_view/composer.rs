@@ -5,8 +5,8 @@
 //!   commands (the `init` message's `slash_commands`, plus a small built-in
 //!   set so a fresh pane isn't empty before the first init).
 //! - **`@` file mentions** — an `@`-prefixed token fuzzy-filters the cwd's
-//!   files (gitignore-aware walk, capped). Accepting inserts the relative
-//!   path; `claude` reads mentioned files itself.
+//!   files (walk includes gitignored files but skips `.git`/dotfiles, capped).
+//!   Accepting inserts the relative path; `claude` reads mentioned files itself.
 //! - **Image attachments** — `@`-mentions that resolve to image files under
 //!   the cwd become real attachments: previewed as chips above the composer
 //!   and sent as base64 `image` content blocks (verified accepted by
@@ -211,12 +211,22 @@ pub(super) fn apply_suggestion(text: &str, query: &SuggestionQuery, accepted: &s
     new_text
 }
 
-/// Walk the cwd for mentionable files: gitignore-aware, relative paths,
-/// files only, capped at [`MAX_CWD_FILES`] (PRODUCT §15a).
+/// Walk the cwd for mentionable files: relative paths, files only, capped at
+/// [`MAX_CWD_FILES`] (PRODUCT §15a).
+///
+/// Gitignored files ARE included so they can be `@`-mentioned — the `.gitignore`
+/// / `.ignore` / global-ignore filters are all disabled. Hidden dotfiles stay
+/// excluded via `.hidden(true)`, which also keeps the `.git` internal directory
+/// out.
 pub(super) fn list_cwd_files(cwd: &Path) -> Vec<String> {
     let mut files = Vec::new();
     for entry in ignore::WalkBuilder::new(cwd)
         .hidden(true)
+        .git_ignore(false)
+        .git_global(false)
+        .git_exclude(false)
+        .ignore(false)
+        .parents(false)
         .follow_links(false)
         .build()
         .flatten()

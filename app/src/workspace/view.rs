@@ -1024,6 +1024,20 @@ pub struct Workspace {
     left_panel_views: Vec<ToolPanelView>,
     right_panel_view: ViewHandle<RightPanelView>,
     working_directories_model: ModelHandle<pane_group::WorkingDirectoriesModel>,
+    /// twarp 07: git status model for the active *Claude-only* tab's repo.
+    /// Terminal tabs each own a `GitRepoStatusModel` (see `TerminalView`), which
+    /// the top-right diff badge (`render_right_panel_button`) reads for its +N/-N
+    /// counts. A Claude Code pane has no terminal, so without this the badge is
+    /// blank on a Claude-only tab even though the pane's cwd is a repo. The
+    /// workspace holds one strong handle for the focused Claude repo (the
+    /// `GitStatusUpdateModel` cache only keeps weak refs), refreshed in
+    /// `refresh_working_directories_for_pane_group`. The `PathBuf` is the repo it
+    /// tracks, so we can skip re-subscribing when it hasn't changed.
+    #[cfg(feature = "local_fs")]
+    claude_pane_git_status: Option<(
+        PathBuf,
+        ModelHandle<crate::code_review::git_status_update::GitRepoStatusModel>,
+    )>,
     lightbox_view: Option<ViewHandle<LightboxView>>,
     hoa_onboarding_flow: Option<ViewHandle<HoaOnboardingFlow>>,
     /// Pinned position for the vertical tabs callout so it doesn't move when
@@ -2956,6 +2970,8 @@ impl Workspace {
             cloud_agent_capacity_modal,
             free_tier_limit_hit_modal,
             free_tier_limit_check_triggered: false,
+            #[cfg(feature = "local_fs")]
+            claude_pane_git_status: None,
             lightbox_view: None,
             hoa_onboarding_flow: None,
             hoa_vtabs_callout_pinned_position: None,
@@ -4456,6 +4472,12 @@ impl Workspace {
                 ctx,
             );
         });
+
+        // twarp 07: switching tabs changes which repo the top-right diff badge
+        // should track. Re-point the workspace-held Claude git status model at the
+        // now-active tab's repo (or drop it for terminal/no-repo tabs).
+        #[cfg(feature = "local_fs")]
+        self.update_claude_pane_git_status(ctx);
 
         let pane_group = self.active_tab_pane_group();
         let focused_terminal_view_id = self
@@ -7633,11 +7655,6 @@ impl Workspace {
                         .unwrap_or(false)
                 })
             };
-            log::warn!(
-                "TWARP-DIAG setup_code_review_panel fallback active_pg={:?} has_repo={}",
-                active_pane_group_id,
-                active_pane_group_has_repo,
-            );
             if !active_pane_group_has_repo {
                 self.right_panel_view.update(ctx, |right_panel_view, ctx| {
                     right_panel_view.close_code_review(ctx);
@@ -12832,6 +12849,15 @@ impl Workspace {
                 ctx,
             );
         });
+
+        // twarp 07: this refresh fires on focus/CD/detection for the active tab.
+        // If that tab is a Claude-only pane group, (re)point the workspace-held
+        // git status model at its focused repo so the top-right diff badge tracks
+        // changes without a terminal in the tab.
+        #[cfg(feature = "local_fs")]
+        if pane_group_id == self.active_tab_pane_group().id() {
+            self.update_claude_pane_git_status(ctx);
+        }
     }
 
     /// Opens the in-app network log pane as a right-split of the active pane
@@ -16417,6 +16443,81 @@ impl Workspace {
             })
     }
 
+    /// twarp 07: keep `claude_pane_git_status` pointing at the focused repo of the
+    /// active tab when that tab is a Claude-only pane group (no terminal session).
+    /// Terminals maintain their own `GitRepoStatusModel`; a Claude pane does not,
+    /// so the top-right diff badge (`render_right_panel_button`) would otherwise
+    /// have no source of +N/-N counts. We hold one strong handle (the
+    /// `GitStatusUpdateModel` cache is weak) and repaint on its `MetadataChanged`.
+    /// Called from `refresh_working_directories_for_pane_group` for the active tab,
+    /// which fires on focus/CD/detection, so the badge tracks live edits.
+    #[cfg(feature = "local_fs")]
+    fn update_claude_pane_git_status(&mut self, ctx: &mut ViewContext<Self>) {
+        let active_pane_group = self.active_tab_pane_group();
+        // Terminal tabs own their own model; nothing to hold here.
+        if active_pane_group.as_ref(ctx).active_session_view(ctx).is_some() {
+            self.claude_pane_git_status = None;
+            return;
+        }
+
+        let pane_group_id = active_pane_group.id();
+        let repo = self.working_directories_model.read(ctx, |model, _| {
+            model
+                .most_recent_repositories_for_pane_group(pane_group_id)
+                .and_then(|mut repos| repos.next())
+        });
+        let Some(repo) = repo else {
+            self.claude_pane_git_status = None;
+            return;
+        };
+
+        // Already tracking this exact repo — keep the live subscription.
+        if self
+            .claude_pane_git_status
+            .as_ref()
+            .is_some_and(|(tracked, _)| tracked == &repo)
+        {
+            return;
+        }
+
+        match crate::code_review::git_status_update::GitStatusUpdateModel::handle(ctx)
+            .update(ctx, |model, ctx| model.subscribe(&repo, ctx))
+        {
+            Ok(handle) => {
+                ctx.subscribe_to_model(&handle, |_me, _, _event, ctx| {
+                    // Diff stats changed on disk: repaint so the badge updates.
+                    ctx.notify();
+                });
+                self.claude_pane_git_status = Some((repo, handle));
+                ctx.notify();
+            }
+            Err(err) => {
+                // The repo may not be watched yet (detection still in flight); a
+                // later refresh retries. Drop any stale handle.
+                log::debug!("Claude pane git status subscribe failed: {err}");
+                self.claude_pane_git_status = None;
+            }
+        }
+    }
+
+    /// twarp 07: the active Claude-only tab's uncommitted-vs-HEAD line changes,
+    /// read from the workspace-held `GitRepoStatusModel`. Mirrors a terminal's
+    /// `current_diff_line_changes` so the top-right diff badge works without a
+    /// terminal session in the tab.
+    #[cfg(feature = "local_fs")]
+    fn claude_pane_diff_line_changes(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<crate::context_chips::display_chip::GitLineChanges> {
+        let (_, handle) = self.claude_pane_git_status.as_ref()?;
+        let metadata = handle.as_ref(ctx).metadata()?;
+        Some(
+            crate::context_chips::display_chip::GitLineChanges::from_diff_stats(
+                &metadata.stats_against_head,
+            ),
+        )
+    }
+
     fn render_right_panel_button(
         &self,
         appearance: &Appearance,
@@ -16450,6 +16551,19 @@ impl Workspace {
                 .as_ref(ctx)
                 .active_session_view(ctx)
                 .and_then(|tv| tv.as_ref(ctx).current_diff_line_changes(ctx))
+                // twarp 07: a Claude-only tab has no terminal session, so fall back
+                // to the pane's repo git status held by the workspace. Without this
+                // the badge is blank on a Claude tab even though its cwd is a repo.
+                .or_else(|| {
+                    #[cfg(feature = "local_fs")]
+                    {
+                        self.claude_pane_diff_line_changes(ctx)
+                    }
+                    #[cfg(not(feature = "local_fs"))]
+                    {
+                        None
+                    }
+                })
                 .filter(|lc| {
                     // Only show the stat badge when there are actual line-level changes
                     // (files_changed alone, e.g. mode-only changes, is not surfaced here).

@@ -2232,6 +2232,12 @@ impl ClaudeCodeView {
         if lines.is_empty() {
             return;
         }
+        log::warn!(
+            "QDIAG submit_question_answers item={item} streaming={} has_pending={} has_tx={}",
+            self.streaming,
+            self.pending_question_permission.contains_key(&tool_use_id),
+            self.message_tx.is_some(),
+        );
         // Lock the card into an answered state: keep the chosen options
         // visible (so the answer doesn't appear to vanish) and stop offering
         // live controls now that the answer is on its way.
@@ -2729,6 +2735,10 @@ impl ClaudeCodeView {
         {
             if should_hold_question_permission(tool) {
                 if let Some(tool_use_id) = tool_use_id {
+                    log::warn!(
+                        "QDIAG hold question permission tool_use_id={tool_use_id} streaming={}",
+                        self.streaming,
+                    );
                     self.pending_question_permission
                         .insert(tool_use_id.clone(), id.clone());
                     ctx.notify();
@@ -2766,6 +2776,10 @@ impl ClaudeCodeView {
             }
         }
         if matches!(event, TranscriptEvent::Ended { .. }) {
+            log::warn!(
+                "QDIAG turn Ended (streaming->false), had_pending_questions={}",
+                !self.pending_question_permission.is_empty(),
+            );
             self.streaming = false;
             // A turn that ended (e.g. Stop) with a question still parked can no
             // longer have that permission answered — `claude` has released it.
@@ -7287,11 +7301,18 @@ fn render_table(table: FormattedTable, appearance: &Appearance) -> Box<dyn Eleme
         .max(table.rows.iter().map(Vec::len).max().unwrap_or(0));
     let align_of = |col: usize| table.alignments.get(col).copied().unwrap_or_default();
 
+    // Size columns to their content rather than forcing every column to an equal
+    // share of the pane. A tiny "Built?" column no longer steals half the width
+    // from a paragraph-heavy "Reality" column, which keeps wide columns readable
+    // instead of cramming/clipping them.
+    let col_weights = table_column_weights(&table, column_count);
+
     let mut grid = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
     grid.add_child(
         Container::new(render_table_row(
             table.headers,
             column_count,
+            &col_weights,
             &align_of,
             true,
             appearance,
@@ -7316,6 +7337,7 @@ fn render_table(table: FormattedTable, appearance: &Appearance) -> Box<dyn Eleme
         grid.add_child(render_table_row(
             row,
             column_count,
+            &col_weights,
             &align_of,
             false,
             appearance,
@@ -7330,11 +7352,40 @@ fn render_table(table: FormattedTable, appearance: &Appearance) -> Box<dyn Eleme
         .finish()
 }
 
-/// One table row: `column_count` equal-width cells (missing trailing cells are
-/// padded blank so short rows still line up under the header).
+/// Per-column flex weights derived from cell content length, so wide columns get
+/// a proportional share of the pane instead of every column being forced equal.
+/// The plain-text length of each cell is a cheap proxy for how much width a
+/// column wants; weights are clamped so a one-glyph column never collapses and a
+/// single very long cell never starves its neighbours.
+fn table_column_weights(table: &FormattedTable, column_count: usize) -> Vec<f32> {
+    const MIN_WEIGHT: usize = 4;
+    const MAX_WEIGHT: usize = 60;
+
+    let inline_len = |cell: &FormattedTextInline| -> usize {
+        cell.iter().map(|frag| frag.text.chars().count()).sum()
+    };
+    let mut widths = vec![0usize; column_count];
+    let mut consider = |row: &[FormattedTextInline]| {
+        for (col, cell) in row.iter().take(column_count).enumerate() {
+            widths[col] = widths[col].max(inline_len(cell));
+        }
+    };
+    consider(&table.headers);
+    for row in &table.rows {
+        consider(row);
+    }
+    widths
+        .into_iter()
+        .map(|len| len.clamp(MIN_WEIGHT, MAX_WEIGHT) as f32)
+        .collect()
+}
+
+/// One table row: `column_count` cells whose widths follow `col_weights` (missing
+/// trailing cells are padded blank so short rows still line up under the header).
 fn render_table_row(
     mut cells: Vec<FormattedTextInline>,
     column_count: usize,
+    col_weights: &[f32],
     align_of: &impl Fn(usize) -> TableAlignment,
     header: bool,
     appearance: &Appearance,
@@ -7344,7 +7395,7 @@ fn render_table_row(
     for (col, cell) in cells.into_iter().enumerate() {
         row.add_child(
             Expanded::new(
-                1.,
+                col_weights.get(col).copied().unwrap_or(1.),
                 render_table_cell(cell, align_of(col), header, appearance),
             )
             .finish(),
@@ -7385,18 +7436,18 @@ fn render_table_cell(
     })
     .set_selectable(true)
     .finish();
-    let main_axis_alignment = match alignment {
-        TableAlignment::Left => MainAxisAlignment::Start,
-        TableAlignment::Center => MainAxisAlignment::Center,
-        TableAlignment::Right => MainAxisAlignment::End,
+    // The content must be placed so it still receives the cell's bounded width —
+    // otherwise the text is measured at unbounded width, never wraps, and the
+    // wide columns overflow and clip. A bare Container (Left) and `Align`
+    // (Center/Right) both forward the width constraint to the child; the old
+    // inner `Flex::row` did not, which is what cut off the rightmost columns.
+    let aligned: Box<dyn Element> = match alignment {
+        TableAlignment::Left => element,
+        TableAlignment::Center => Align::new(element).top_center().finish(),
+        TableAlignment::Right => Align::new(element).top_right().finish(),
     };
-    Container::new(
-        Flex::row()
-            .with_main_axis_alignment(main_axis_alignment)
-            .with_child(element)
-            .finish(),
-    )
-    .with_padding_left(10.)
+    Container::new(aligned)
+        .with_padding_left(10.)
     .with_padding_right(10.)
     .with_padding_top(6.)
     .with_padding_bottom(6.)

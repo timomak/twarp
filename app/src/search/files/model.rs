@@ -153,7 +153,17 @@ impl FileSearchModel {
             return Arc::new(Vec::new());
         };
         let contents = if repo_metadata.has_repository(&id, app) {
-            self.get_contents_from_repo(&repo_root, repo_metadata, GetContentsArgs::default(), app)
+            // Include gitignored files so they show up in the finder, but keep the
+            // `.git` internal directory out. (Files nested inside gitignored
+            // directories are still lazy — the index doesn't descend into them.)
+            let args = GetContentsArgs::default().include_ignored().with_filter(|content| {
+                let path = match content {
+                    repo_metadata::RepoContent::File(file) => file.path.to_local_path_lossy(),
+                    repo_metadata::RepoContent::Directory(dir) => dir.path.to_local_path_lossy(),
+                };
+                !repo_metadata::is_git_internal_path(&path)
+            });
+            self.get_contents_from_repo(&repo_root, repo_metadata, args, app)
         } else {
             Vec::new()
         };

@@ -6,6 +6,7 @@ use grep::{
     printer::JSONBuilder,
     searcher::{BinaryDetection, SearcherBuilder},
 };
+use ignore::overrides::OverrideBuilder;
 use ignore::{WalkBuilder, WalkState};
 use std::ops::Not;
 use string_offset::ByteOffset;
@@ -45,6 +46,8 @@ pub fn run_search_subprocess(
     paths: Vec<PathBuf>,
     ignore_case: bool,
     multiline: bool,
+    includes: &[String],
+    excludes: &[String],
     #[cfg_attr(not(unix), allow(unused_variables))] parent_pid: Option<u32>,
 ) -> anyhow::Result<()> {
     #[cfg(unix)]
@@ -70,6 +73,10 @@ pub fn run_search_subprocess(
     for path in paths.iter().skip(1) {
         walker_builder.add(path);
     }
+    // Gitignored files are searched by default (see `apply_walk_overrides`),
+    // which disables the ignore-file filters. `.hidden(true)` stays on, so the
+    // `.git` internal directory and other dotfiles are still skipped.
+    apply_walk_overrides(&mut walker_builder, &paths, includes, excludes)?;
     let walker = walker_builder.build_parallel();
 
     walker.run(|| {
@@ -136,6 +143,52 @@ pub fn run_search_subprocess(
     Ok(())
 }
 
+/// Configures the walker's gitignore behavior and applies the user's
+/// include/exclude globs (the VSCode-style "files to include / exclude"
+/// inputs).
+///
+/// Gitignored files are searched by default: every ignore-file source is turned
+/// off. `.hidden(true)` (the `WalkBuilder` default) stays on, so the `.git`
+/// internal directory and other dotfiles remain excluded.
+///
+/// `includes`/`excludes` are gitignore-style globs. When any include is given,
+/// only matching files are searched (whitelist). Excludes are applied after
+/// includes, so an exclude wins over an include on the same path — matching
+/// VSCode precedence.
+fn apply_walk_overrides(
+    builder: &mut WalkBuilder,
+    paths: &[PathBuf],
+    includes: &[String],
+    excludes: &[String],
+) -> anyhow::Result<()> {
+    builder
+        .git_ignore(false)
+        .git_global(false)
+        .git_exclude(false)
+        .ignore(false)
+        .parents(false);
+
+    if includes.is_empty() && excludes.is_empty() {
+        return Ok(());
+    }
+
+    let root = paths
+        .first()
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from("."));
+    let mut override_builder = OverrideBuilder::new(root);
+    for glob in includes {
+        override_builder.add(glob)?;
+    }
+    for glob in excludes {
+        // A leading `!` turns the glob into an exclusion under the ignore
+        // crate's override semantics (mirrors ripgrep's `-g !pattern`).
+        override_builder.add(&format!("!{glob}"))?;
+    }
+    builder.overrides(override_builder.build()?);
+    Ok(())
+}
+
 #[cfg(not(target_family = "wasm"))]
 mod process_impl {
     use std::path::PathBuf;
@@ -159,8 +212,11 @@ mod process_impl {
         paths: &[PathBuf],
         ignore_case: bool,
         multiline: bool,
+        includes: &[String],
+        excludes: &[String],
     ) -> anyhow::Result<Vec<Match>> {
-        let stream = search_streaming(patterns, paths, ignore_case, multiline)?;
+        let stream =
+            search_streaming(patterns, paths, ignore_case, multiline, includes, excludes)?;
         Ok(stream.collect().await)
     }
 
@@ -174,8 +230,11 @@ mod process_impl {
         paths: &[PathBuf],
         ignore_case: bool,
         multiline: bool,
+        includes: &[String],
+        excludes: &[String],
     ) -> anyhow::Result<impl Stream<Item = Match>> {
-        let child = spawn_search_process(patterns, paths, ignore_case, multiline)?;
+        let child =
+            spawn_search_process(patterns, paths, ignore_case, multiline, includes, excludes)?;
         Ok(match_stream_from_child(child))
     }
 
@@ -185,6 +244,8 @@ mod process_impl {
         paths: &[PathBuf],
         ignore_case: bool,
         multiline: bool,
+        includes: &[String],
+        excludes: &[String],
     ) -> Result<async_process::Child, std::io::Error> {
         let current_exe = std::env::current_exe()?;
         let mut cmd = command::r#async::Command::new(current_exe);
@@ -198,6 +259,14 @@ mod process_impl {
 
         if multiline {
             cmd.arg("--multiline");
+        }
+
+        for glob in includes {
+            cmd.arg("--include").arg(glob);
+        }
+
+        for glob in excludes {
+            cmd.arg("--exclude").arg(glob);
         }
 
         for pattern in patterns {

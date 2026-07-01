@@ -275,7 +275,24 @@
       "ux": true,
       "status": "queued",
       "task": "Fix the built-in browser: the WKWebView loads pages (tab/URL update to the page title) but NEVER renders \u2014 content area stays black through load/Reload/re-layout. The child-NSView / Metal-overlay webview must composite its page content into the pane rect. Evidence: fleet/runs/ux_14-ux-verify/ (driver.md, s24.png). See roadmap/14-builtin-browser/STATUS.md 14f.",
-      "ux_criteria": "Open a Browser pane, navigate to example.com, and confirm the page CONTENT is actually VISIBLE (the 'Example Domain' heading + paragraph render inside the pane). PASS only if live web content paints; REGRESSION if the content area is blank/black despite the tab title/URL updating."
+      "ux_criteria": "Open a Browser pane, navigate to example.com, and confirm the page CONTENT is actually VISIBLE (the 'Example Domain' heading + paragraph render inside the pane). PASS only if live web content paints; REGRESSION if the content area is blank/black despite the tab title/URL updating.",
+      "ux_level": "live",
+      "ux_verdict": "pass",
+      "ux_evidence": "/Users/thirdfacedev/Development/twarp/fleet/runs/ux_14f"
+    },
+    {
+      "id": "15-computer-control-spec",
+      "title": "15-computer-control: author specs",
+      "node": null,
+      "status": "queued",
+      "depends_on": [],
+      "touches": [
+        "roadmap/15-computer-control/**"
+      ],
+      "barrier": false,
+      "task": "Author the product + technical specs for roadmap feature 15-computer-control. Read roadmap/15-computer-control/STATUS.md (and roadmap/15-computer-control/PLAN.md if it exists) for scope. If the twarp `write-product-spec` / `write-tech-spec` skills are available to you, use them.\n1) Write roadmap/15-computer-control/PRODUCT.md: detailed user-facing behavior. It MUST end with a `## Smoke test` section \u2014 a numbered list of concrete steps to validate against a built twarp binary (per-sub-phase sub-headings if the feature is sub-phased).\n2) Write roadmap/15-computer-control/TECH.md: an implementation plan grounded in the CURRENT codebase (files/crates to touch, constraints, a sub-phase breakdown that matches the sub-phases listed in STATUS.md).\n3) In roadmap/15-computer-control/STATUS.md change the `**Phase:**` line to `**Phase:** impl-pending`.\nWrite ONLY spec/markdown \u2014 no product code.",
+      "verify": "test -f roadmap/15-computer-control/PRODUCT.md && test -f roadmap/15-computer-control/TECH.md && grep -q '## Smoke test' roadmap/15-computer-control/PRODUCT.md",
+      "ux": false
     }
   ]
 }

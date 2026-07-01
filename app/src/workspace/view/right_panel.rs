@@ -202,12 +202,6 @@ impl CodeReviewState {
                 self.set_selected_repo(first_repo.clone(), ctx);
             }
         }
-        log::warn!(
-            "TWARP-DIAG set_available_repos should_clear={} available={:?} selected_after={:?}",
-            should_clear,
-            self.available_repos,
-            self.selected_repo_path,
-        );
     }
 
     #[cfg(not(feature = "local_fs"))]
@@ -816,11 +810,6 @@ impl RightPanelView {
 
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     pub fn close_code_review(&mut self, ctx: &mut ViewContext<Self>) {
-        log::warn!(
-            "TWARP-DIAG close_code_review CALLED selected_before={:?} active_pg={:?}",
-            self.code_review_state.as_ref().and_then(|s| s.selected_repo_path.clone()),
-            self.active_pane_group.as_ref().map(|g| g.id()),
-        );
         self.close_active_code_review_view(ctx);
 
         // Views are cached in WorkingDirectoriesModel, so we just update the UI state

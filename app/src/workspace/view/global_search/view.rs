@@ -100,6 +100,8 @@ pub enum GlobalSearchAction {
     ResultsEnter,
     FocusQueryEditor,
     FocusResultsList,
+    FocusIncludeEditor,
+    FocusExcludeEditor,
     ToggleRegexSearch,
     ToggleCaseSensitivity,
 }
@@ -297,12 +299,19 @@ impl Match {
 pub struct GlobalSearchView {
     find_model: ModelHandle<GlobalSearch>,
     query_editor: ViewHandle<EditorView>,
+    /// VSCode-style "files to include" glob input (comma-separated).
+    include_editor: ViewHandle<EditorView>,
+    /// VSCode-style "files to exclude" glob input (comma-separated).
+    exclude_editor: ViewHandle<EditorView>,
     query_change_tx: Sender<()>,
     /// All terminal working directories for display grouping (preserved as-is)
     root_directories: Vec<PathBuf>,
     /// Deduplicated roots for ripgrep search (excludes nested subdirectories)
     search_roots: Vec<PathBuf>,
     last_searched_pattern: Option<String>,
+    /// The include/exclude globs used for the last dispatched search, so a
+    /// filter-only change (same pattern) still re-runs.
+    last_searched_filters: (Vec<String>, Vec<String>),
     directory_entries: Vec<DirectoryEntry>,
     directory_path_to_directory_index_entry: HashMap<PathBuf, usize>,
     selected_row: Option<RowIndex>,
@@ -467,6 +476,16 @@ impl TypedActionView for GlobalSearchView {
             GlobalSearchAction::FocusResultsList => {
                 self.enter_results_mode(ctx);
             }
+            GlobalSearchAction::FocusIncludeEditor => {
+                // Enter query mode so a filter-only edit still passes the
+                // re-run guard in `rerun_search_from_query`.
+                self.set_query_mode_state(ctx);
+                ctx.focus(&self.include_editor);
+            }
+            GlobalSearchAction::FocusExcludeEditor => {
+                self.set_query_mode_state(ctx);
+                ctx.focus(&self.exclude_editor);
+            }
             GlobalSearchAction::ToggleRegexSearch => {
                 self.regex_search_enabled = !self.regex_search_enabled;
                 self.regex_button.update(ctx, |button, ctx| {
@@ -629,6 +648,33 @@ impl GlobalSearchView {
         ]);
     }
 
+    /// Builds a single-line editor for the include/exclude glob inputs.
+    fn build_filter_editor(
+        placeholder: &str,
+        ctx: &mut ViewContext<Self>,
+    ) -> ViewHandle<EditorView> {
+        ctx.add_typed_action_view(|ctx| {
+            let appearance = Appearance::as_ref(ctx);
+            let options = EditorOptions {
+                text: TextOptions::ui_text(Some(13.), appearance),
+                select_all_on_focus: true,
+                clear_selections_on_blur: true,
+                propagate_and_no_op_vertical_navigation_keys:
+                    PropagateAndNoOpNavigationKeys::Always,
+                propagate_horizontal_navigation_keys: PropagateHorizontalNavigationKeys::Always,
+                convert_newline_to_space: true,
+                single_line: true,
+                autogrow: false,
+                soft_wrap: false,
+                ..Default::default()
+            };
+
+            let mut editor = EditorView::new(options, ctx);
+            editor.set_placeholder_text(placeholder, ctx);
+            editor
+        })
+    }
+
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let find_model = ctx.add_model(|_| GlobalSearch::new());
 
@@ -654,6 +700,10 @@ impl GlobalSearchView {
             editor.set_placeholder_text("Search in files", ctx);
             editor
         });
+
+        let include_editor = Self::build_filter_editor("files to include (e.g. src, *.rs)", ctx);
+        let exclude_editor =
+            Self::build_filter_editor("files to exclude (e.g. target, *.lock)", ctx);
 
         let (query_change_tx, query_change_rx) = async_channel::unbounded();
         ctx.spawn_stream_local(
@@ -686,6 +736,13 @@ impl GlobalSearchView {
             me.handle_query_editor_event(event, ctx);
         });
 
+        ctx.subscribe_to_view(&include_editor, |me, _handle, event, ctx| {
+            me.handle_filter_editor_event(event, ctx);
+        });
+        ctx.subscribe_to_view(&exclude_editor, |me, _handle, event, ctx| {
+            me.handle_filter_editor_event(event, ctx);
+        });
+
         ctx.subscribe_to_model(&find_model, |me, _handle, event, ctx| {
             me.handle_find_model_event(event, ctx);
         });
@@ -694,10 +751,13 @@ impl GlobalSearchView {
         GlobalSearchView {
             find_model,
             query_editor,
+            include_editor,
+            exclude_editor,
             query_change_tx,
             root_directories: Vec::new(),
             search_roots: Vec::new(),
             last_searched_pattern: None,
+            last_searched_filters: (Vec::new(), Vec::new()),
             directory_entries: Vec::new(),
             directory_path_to_directory_index_entry: HashMap::new(),
             selected_row: None,
@@ -856,6 +916,33 @@ impl GlobalSearchView {
         }
     }
 
+    /// Handles edits in the include/exclude glob editors. Filter changes are
+    /// debounced through the same channel as the query, then re-run the search
+    /// even when the pattern itself is unchanged (see `rerun_search_from_query`).
+    fn handle_filter_editor_event(&mut self, event: &EditorEvent, ctx: &mut ViewContext<Self>) {
+        match event {
+            EditorEvent::Edited(_)
+            | EditorEvent::BufferReplaced
+            | EditorEvent::BufferReinitialized => {
+                self.notify_query_changed();
+            }
+            EditorEvent::Enter => {
+                self.rerun_search_from_query(ctx, true);
+            }
+            _ => {}
+        }
+    }
+
+    /// Parses a comma-separated list of glob patterns from a filter editor,
+    /// dropping empty entries and surrounding whitespace.
+    fn parse_globs(raw: &str) -> Vec<String> {
+        raw.split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect()
+    }
+
     fn notify_query_changed(&self) {
         let _ = self.query_change_tx.try_send(());
     }
@@ -893,11 +980,15 @@ impl GlobalSearchView {
             return;
         }
 
+        let includes = Self::parse_globs(&self.include_editor.as_ref(ctx).buffer_text(ctx));
+        let excludes = Self::parse_globs(&self.exclude_editor.as_ref(ctx).buffer_text(ctx));
+        let filters = (includes.clone(), excludes.clone());
+
         let should_run_search = if force {
             true
         } else {
             match self.last_searched_pattern.as_deref() {
-                Some(last) => last != pattern,
+                Some(last) => last != pattern || self.last_searched_filters != filters,
                 None => true,
             }
         };
@@ -907,6 +998,7 @@ impl GlobalSearchView {
         }
 
         self.last_searched_pattern = Some(pattern.clone());
+        self.last_searched_filters = filters;
 
         let roots = self.search_roots.clone();
         self.find_model.update(ctx, |model, model_ctx| {
@@ -916,6 +1008,8 @@ impl GlobalSearchView {
                 SearchConfig {
                     use_regex: self.regex_search_enabled,
                     use_case_sensitivity: self.case_sensitivity_enabled,
+                    includes,
+                    excludes,
                 },
                 model_ctx,
             );
@@ -2057,9 +2151,48 @@ impl View for GlobalSearchView {
             })
             .finish();
 
+        // VSCode-style "files to include / exclude" glob inputs, styled to match
+        // the query row.
+        let build_filter_row =
+            |editor: &ViewHandle<EditorView>,
+             focus_action: GlobalSearchAction|
+             -> Box<dyn Element> {
+                let input = Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_child(
+                        Shrinkable::new(
+                            1.0,
+                            Clipped::new(ChildView::new(editor).finish()).finish(),
+                        )
+                        .finish(),
+                    )
+                    .finish();
+
+                let container = Container::new(input)
+                    .with_padding(Padding::uniform(6.))
+                    .with_border(Border::all(BORDER_WIDTH).with_border_fill(theme.surface_3()))
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(BORDER_RADIUS)))
+                    .with_margin_bottom(4.)
+                    .finish();
+
+                EventHandler::new(container)
+                    .on_left_mouse_down(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(focus_action.clone());
+                        DispatchEventResult::StopPropagation
+                    })
+                    .finish()
+            };
+
+        let include_row =
+            build_filter_row(&self.include_editor, GlobalSearchAction::FocusIncludeEditor);
+        let exclude_row =
+            build_filter_row(&self.exclude_editor, GlobalSearchAction::FocusExcludeEditor);
+
         let mut header_column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
-            .with_child(query_row);
+            .with_child(query_row)
+            .with_child(include_row)
+            .with_child(exclude_row);
 
         let files = self.unique_match_count();
         let file_word = if files == 1 { "file" } else { "files" };
@@ -2067,7 +2200,7 @@ impl View for GlobalSearchView {
         let message = if self.is_search_in_progress && self.total_match_count == 0 {
             "".to_string()
         } else if !self.is_search_in_progress && self.total_match_count == 0 {
-            "No results found. Review your gitignore files.".to_string()
+            "No results found. Try adjusting your include/exclude filters.".to_string()
         } else {
             match self.total_match_count {
                 1 => format!("1 result in {files} {file_word}"),

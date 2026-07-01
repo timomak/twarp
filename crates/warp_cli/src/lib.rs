@@ -469,6 +469,14 @@ pub enum WorkerCommand {
         ignore_case: bool,
         #[clap(long = "multiline")]
         multiline: bool,
+        /// Glob patterns of files to include (VSCode-style "files to include").
+        /// When any are given, only matching files are searched.
+        #[clap(long = "include")]
+        include: Vec<String>,
+        /// Glob patterns of files to exclude (VSCode-style "files to exclude").
+        /// Applied after includes, so an exclude wins over an include.
+        #[clap(long = "exclude")]
+        exclude: Vec<String>,
         /// Search pattern.
         pattern: String,
         /// Paths to search.

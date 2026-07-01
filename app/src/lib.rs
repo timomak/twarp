@@ -577,6 +577,8 @@ pub fn run() -> Result<()> {
                 parent,
                 ignore_case,
                 multiline,
+                include,
+                exclude,
                 pattern,
                 paths,
             }) => {
@@ -585,6 +587,8 @@ pub fn run() -> Result<()> {
                     paths.clone(),
                     *ignore_case,
                     *multiline,
+                    include,
+                    exclude,
                     parent.pid,
                 )
                 .map_err(|err| anyhow!(err.to_string()))?;
