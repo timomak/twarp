@@ -2,6 +2,20 @@ use std::ffi::CString;
 
 use pathfinder_color::ColorU;
 
+#[cfg(not(target_family = "wasm"))]
+mod mcp;
+#[cfg(not(target_family = "wasm"))]
+pub(crate) use mcp::ComputerControlMcpBridge;
+
+#[cfg(target_family = "wasm")]
+mod mcp {
+    pub(crate) fn activate_agent_session(_session_label: &str) {}
+    pub(crate) fn deactivate_agent_session(_session_label: Option<&str>) {}
+    pub(crate) fn latest_agent_status() -> String {
+        "Latest: unavailable".to_owned()
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ComputerControlChrome {
     pub panel_color: ColorU,
@@ -62,6 +76,7 @@ pub struct ComputerControlCoordinator {
     permission_panel: Option<PermissionPanelHost>,
     last_session_label: Option<String>,
     last_chrome: Option<ComputerControlChrome>,
+    last_status: Option<String>,
     permission_tracker: PermissionGrantTracker,
     generation: u64,
 }
@@ -74,6 +89,7 @@ impl Default for ComputerControlCoordinator {
             permission_panel: None,
             last_session_label: None,
             last_chrome: None,
+            last_status: None,
             permission_tracker: PermissionGrantTracker::default(),
             generation: 0,
         }
@@ -115,17 +131,22 @@ impl ComputerControlCoordinator {
             return;
         }
 
-        match OverlayHost::new(&session_label, chrome) {
+        mcp::activate_agent_session(&session_label);
+        let status = mcp::latest_agent_status();
+        match OverlayHost::new(&session_label, chrome, &status) {
             Ok(overlay) => {
                 self.permission_panel = None;
                 self.overlay = Some(overlay);
+                self.last_status = Some(status);
                 self.state = ComputerControlState::Active;
             }
             Err(error) => {
+                mcp::deactivate_agent_session(Some(&session_label));
                 self.overlay = None;
                 self.permission_panel = None;
                 self.last_session_label = None;
                 self.last_chrome = None;
+                self.last_status = None;
                 self.state = ComputerControlState::Failed(error);
             }
         }
@@ -145,8 +166,13 @@ impl ComputerControlCoordinator {
             return;
         }
 
+        let status =
+            matches!(self.state, ComputerControlState::Active).then(mcp::latest_agent_status);
         let changed = self.last_session_label.as_ref() != Some(&session_label)
-            || self.last_chrome != Some(chrome);
+            || self.last_chrome != Some(chrome)
+            || status
+                .as_ref()
+                .is_some_and(|status| self.last_status.as_ref() != Some(status));
         if changed {
             match &self.state {
                 ComputerControlState::Blocked(permissions) => {
@@ -156,7 +182,11 @@ impl ComputerControlCoordinator {
                 }
                 ComputerControlState::Starting | ComputerControlState::Active => {
                     if let Some(overlay) = self.overlay.as_mut() {
-                        overlay.update(&session_label, chrome);
+                        overlay.update(
+                            &session_label,
+                            chrome,
+                            status.as_deref().unwrap_or("Latest: waiting for Claude"),
+                        );
                     }
                 }
                 ComputerControlState::Stopped
@@ -165,6 +195,9 @@ impl ComputerControlCoordinator {
             }
             self.last_session_label = Some(session_label);
             self.last_chrome = Some(chrome);
+            if let Some(status) = status {
+                self.last_status = Some(status);
+            }
         }
     }
 
@@ -174,10 +207,12 @@ impl ComputerControlCoordinator {
         }
 
         self.state = ComputerControlState::Stopping;
+        mcp::deactivate_agent_session(self.last_session_label.as_deref());
         self.overlay.take();
         self.permission_panel.take();
         self.last_session_label = None;
         self.last_chrome = None;
+        self.last_status = None;
         self.state = ComputerControlState::Stopped;
         self.generation = self.generation.wrapping_add(1);
     }
@@ -194,6 +229,10 @@ impl ComputerControlCoordinator {
         if stopped {
             self.stop();
             return true;
+        }
+
+        if matches!(self.state, ComputerControlState::Active) {
+            self.refresh_agent_status();
         }
 
         if matches!(self.state, ComputerControlState::Blocked(_)) {
@@ -223,6 +262,22 @@ impl ComputerControlCoordinator {
         false
     }
 
+    fn refresh_agent_status(&mut self) {
+        let status = mcp::latest_agent_status();
+        if self.last_status.as_ref() == Some(&status) {
+            return;
+        }
+        let (Some(session_label), Some(chrome)) =
+            (self.last_session_label.clone(), self.last_chrome)
+        else {
+            return;
+        };
+        if let Some(overlay) = self.overlay.as_mut() {
+            overlay.update(&session_label, chrome, &status);
+        }
+        self.last_status = Some(status);
+    }
+
     fn check_permissions(&mut self, prompt_missing: bool) -> ComputerControlPermissions {
         self.permission_tracker
             .evaluate(platform::preflight_permissions(prompt_missing))
@@ -235,6 +290,7 @@ impl ComputerControlCoordinator {
         permissions: ComputerControlPermissions,
     ) {
         self.overlay = None;
+        self.last_status = None;
         self.state = ComputerControlState::Blocked(permissions);
         match PermissionPanelHost::new(&session_label, permissions, chrome) {
             Ok(panel) => {
@@ -510,6 +566,7 @@ mod platform {
         fn twarp_computer_control_permissions_panel_close(host: *mut c_void);
         fn twarp_computer_control_overlay_create(
             session_label: *const std::ffi::c_char,
+            status_label: *const std::ffi::c_char,
             panel_color: NativeColor,
             text_color: NativeColor,
             muted_text_color: NativeColor,
@@ -520,6 +577,7 @@ mod platform {
         fn twarp_computer_control_overlay_update(
             host: *mut c_void,
             session_label: *const std::ffi::c_char,
+            status_label: *const std::ffi::c_char,
             panel_color: NativeColor,
             text_color: NativeColor,
             muted_text_color: NativeColor,
@@ -563,13 +621,19 @@ mod platform {
     }
 
     impl OverlayHost {
-        pub fn new(session_label: &str, chrome: ComputerControlChrome) -> Result<Self, String> {
+        pub fn new(
+            session_label: &str,
+            chrome: ComputerControlChrome,
+            status: &str,
+        ) -> Result<Self, String> {
             let session_label = sanitized_c_string(session_label);
+            let status = sanitized_c_string(status);
             let stop_requested = Arc::new(AtomicBool::new(false));
             let stop_context = Arc::into_raw(stop_requested.clone());
             let host = unsafe {
                 twarp_computer_control_overlay_create(
                     session_label.as_ptr(),
+                    status.as_ptr(),
                     chrome.panel_color.into(),
                     chrome.text_color.into(),
                     chrome.muted_text_color.into(),
@@ -591,12 +655,14 @@ mod platform {
             })
         }
 
-        pub fn update(&mut self, session_label: &str, chrome: ComputerControlChrome) {
+        pub fn update(&mut self, session_label: &str, chrome: ComputerControlChrome, status: &str) {
             let session_label = sanitized_c_string(session_label);
+            let status = sanitized_c_string(status);
             unsafe {
                 twarp_computer_control_overlay_update(
                     self.host.as_ptr(),
                     session_label.as_ptr(),
+                    status.as_ptr(),
                     chrome.panel_color.into(),
                     chrome.text_color.into(),
                     chrome.muted_text_color.into(),
@@ -733,11 +799,21 @@ mod platform {
     pub struct OverlayHost;
 
     impl OverlayHost {
-        pub fn new(_session_label: &str, _chrome: ComputerControlChrome) -> Result<Self, String> {
+        pub fn new(
+            _session_label: &str,
+            _chrome: ComputerControlChrome,
+            _status: &str,
+        ) -> Result<Self, String> {
             Err("computer control overlay is only available on macOS".to_owned())
         }
 
-        pub fn update(&mut self, _session_label: &str, _chrome: ComputerControlChrome) {}
+        pub fn update(
+            &mut self,
+            _session_label: &str,
+            _chrome: ComputerControlChrome,
+            _status: &str,
+        ) {
+        }
 
         pub fn stop_requested(&self) -> bool {
             false

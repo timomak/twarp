@@ -390,6 +390,7 @@ static void TwarpOpenSettingsURL(NSString *value) {
 }
 
 - (instancetype)initWithSessionLabel:(NSString *)sessionLabel
+                          statusLabel:(NSString *)statusLabel
                           panelColor:(TwarpComputerControlColor)panelColor
                            textColor:(TwarpComputerControlColor)textColor
                       mutedTextColor:(TwarpComputerControlColor)mutedTextColor
@@ -397,6 +398,7 @@ static void TwarpOpenSettingsURL(NSString *value) {
                          stopCallback:(TwarpComputerControlStopCallback)stopCallback
                            stopContext:(void *)stopContext;
 - (void)updateWithSessionLabel:(NSString *)sessionLabel
+                    statusLabel:(NSString *)statusLabel
                     panelColor:(TwarpComputerControlColor)panelColor
                      textColor:(TwarpComputerControlColor)textColor
                 mutedTextColor:(TwarpComputerControlColor)mutedTextColor
@@ -408,6 +410,7 @@ static void TwarpOpenSettingsURL(NSString *value) {
 @implementation TwarpComputerControlOverlayHost
 
 - (instancetype)initWithSessionLabel:(NSString *)sessionLabel
+                          statusLabel:(NSString *)statusLabel
                           panelColor:(TwarpComputerControlColor)panelColor
                            textColor:(TwarpComputerControlColor)textColor
                       mutedTextColor:(TwarpComputerControlColor)mutedTextColor
@@ -504,7 +507,7 @@ static void TwarpOpenSettingsURL(NSString *value) {
 
     _statusLabel = TwarpLabel(
         NSMakeRect(16.0, 27.0, 286.0, 18.0),
-        @"Latest: no actions yet",
+        statusLabel ?: @"Latest: no actions yet",
         11.0,
         NO,
         muted);
@@ -559,6 +562,7 @@ static void TwarpOpenSettingsURL(NSString *value) {
 }
 
 - (void)updateWithSessionLabel:(NSString *)sessionLabel
+                    statusLabel:(NSString *)statusLabel
                     panelColor:(TwarpComputerControlColor)panelColor
                      textColor:(TwarpComputerControlColor)textColor
                 mutedTextColor:(TwarpComputerControlColor)mutedTextColor
@@ -571,6 +575,7 @@ static void TwarpOpenSettingsURL(NSString *value) {
     [_panel setBackgroundColor:panelColorValue];
     [_panelContent layer].backgroundColor = [panelColorValue CGColor];
     [_sessionLabel setStringValue:sessionLabel ?: @""];
+    [_statusLabel setStringValue:statusLabel ?: @"Latest: no actions yet"];
 
     NSColor *text = TwarpColor(textColor);
     NSColor *muted = TwarpColor(mutedTextColor);
@@ -728,6 +733,7 @@ void twarp_computer_control_permissions_panel_close(void *host) {
 
 void *twarp_computer_control_overlay_create(
     const char *session_label,
+    const char *status_label,
     TwarpComputerControlColor panel_color,
     TwarpComputerControlColor text_color,
     TwarpComputerControlColor muted_text_color,
@@ -737,6 +743,7 @@ void *twarp_computer_control_overlay_create(
     @autoreleasepool {
         TwarpComputerControlOverlayHost *host =
             [[TwarpComputerControlOverlayHost alloc] initWithSessionLabel:TwarpStringFromCString(session_label)
+                                                               statusLabel:TwarpStringFromCString(status_label)
                                                                 panelColor:panel_color
                                                                  textColor:text_color
                                                             mutedTextColor:muted_text_color
@@ -750,6 +757,7 @@ void *twarp_computer_control_overlay_create(
 void twarp_computer_control_overlay_update(
     void *host,
     const char *session_label,
+    const char *status_label,
     TwarpComputerControlColor panel_color,
     TwarpComputerControlColor text_color,
     TwarpComputerControlColor muted_text_color,
@@ -760,6 +768,7 @@ void twarp_computer_control_overlay_update(
     @autoreleasepool {
         TwarpComputerControlOverlayHost *overlay = (TwarpComputerControlOverlayHost *)host;
         [overlay updateWithSessionLabel:TwarpStringFromCString(session_label)
+                            statusLabel:TwarpStringFromCString(status_label)
                              panelColor:panel_color
                               textColor:text_color
                          mutedTextColor:muted_text_color
