@@ -67,6 +67,7 @@ mod coding_entrypoints;
 mod coding_panel_enablement_state;
 mod command_palette;
 mod completer;
+mod computer_control;
 #[allow(dead_code)]
 mod context_chips;
 #[cfg(enable_crash_recovery)]

@@ -33,6 +33,7 @@ fn main() -> Result<()> {
 
     if target_os == "macos" && target_family != "wasm" {
         println!("cargo:rustc-link-lib=framework=MetalKit");
+        println!("cargo:rustc-link-lib=framework=QuartzCore");
         println!("cargo:rustc-link-lib=framework=UserNotifications");
         build_and_link_sentry();
 
@@ -40,10 +41,13 @@ fn main() -> Result<()> {
         println!("cargo:rerun-if-changed=src/platform/mac/objc/app_bundle.m");
         println!("cargo:rerun-if-changed=src/platform/mac/objc/services.h");
         println!("cargo:rerun-if-changed=src/platform/mac/objc/services.m");
+        println!("cargo:rerun-if-changed=src/platform/mac/objc/computer_control_overlay.h");
+        println!("cargo:rerun-if-changed=src/platform/mac/objc/computer_control_overlay.m");
 
         cc::Build::new()
             .file("src/platform/mac/objc/app_bundle.m")
             .file("src/platform/mac/objc/services.m")
+            .file("src/platform/mac/objc/computer_control_overlay.m")
             .compile("warp_objc");
 
         // Build the dock tile plugin

@@ -630,7 +630,7 @@ pub(super) fn floating_panel_drop_shadow() -> warpui::elements::DropShadow {
 /// read as the same surface as the terminal (white in light themes, dark in dark
 /// themes). The cards are set apart only by their gray outline, edge gap, and
 /// soft shadow rather than a distinct fill.
-pub(super) fn floating_panel_surface_fill(app: &AppContext) -> warp_core::ui::theme::Fill {
+pub(crate) fn floating_panel_surface_fill(app: &AppContext) -> warp_core::ui::theme::Fill {
     Appearance::as_ref(app).theme().background()
 }
 
