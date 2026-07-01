@@ -1055,11 +1055,8 @@ impl Window {
         unsafe {
             if let Some(window) = Self::find_window_with_id(window_id) {
                 let host_view: id = msg_send![window, contentView];
-                let ns_frame = RectF::new(
-                    transform_origin_from_rect_coord_to_frame_coord(frame.origin(), frame.size()),
-                    frame.size(),
-                )
-                .to_ns_rect();
+                let host_bounds: NSRect = msg_send![host_view, bounds];
+                let ns_frame = child_view_frame_from_rect_coord(frame, host_bounds.size.height);
                 warp_host_set_webview_frame(host_view, webview_id, ns_frame);
             }
         }
@@ -2049,6 +2046,18 @@ pub fn transform_origin_from_frame_coord_to_rect_coord(
 
 fn transform_origin_from_rect_coord_to_frame_coord(origin: Vector2F, size: Vector2F) -> Vector2F {
     Vector2F::new(origin.x(), -(origin.y() + size.y()))
+}
+
+fn child_view_frame_from_rect_coord(rect: RectF, parent_height: f64) -> NSRect {
+    let size = rect.size();
+    let origin = rect.origin();
+    NSRect::new(
+        NSPoint::new(
+            origin.x() as f64,
+            parent_height - (origin.y() + size.y()) as f64,
+        ),
+        NSSize::new(size.x() as f64, size.y() as f64),
+    )
 }
 
 /// Converts an Objective-C `Object` into a `String`
