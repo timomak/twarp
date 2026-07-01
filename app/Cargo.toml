@@ -48,6 +48,12 @@ name = "generate_settings_schema"
 path = "src/bin/generate_settings_schema.rs"
 test = false
 
+[[bin]]
+name = "computer_control_capture_spike"
+path = "src/bin/computer_control_capture_spike.rs"
+required-features = ["local_computer_use"]
+test = false
+
 [dependencies]
 addr = "0.15.6"
 # twarp: 2c-e — `ai` workspace crate deleted.
