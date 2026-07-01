@@ -265,6 +265,17 @@
       "verify": "cargo build --bin warp-oss",
       "ux": false,
       "branch": "fleet/14e"
+    },
+    {
+      "id": "14f",
+      "node": "any",
+      "feature": "14-builtin-browser",
+      "touches": [],
+      "depends_on": [],
+      "ux": true,
+      "status": "queued",
+      "task": "Fix the built-in browser: the WKWebView loads pages (tab/URL update to the page title) but NEVER renders \u2014 content area stays black through load/Reload/re-layout. The child-NSView / Metal-overlay webview must composite its page content into the pane rect. Evidence: fleet/runs/ux_14-ux-verify/ (driver.md, s24.png). See roadmap/14-builtin-browser/STATUS.md 14f.",
+      "ux_criteria": "Open a Browser pane, navigate to example.com, and confirm the page CONTENT is actually VISIBLE (the 'Example Domain' heading + paragraph render inside the pane). PASS only if live web content paints; REGRESSION if the content area is blank/black despite the tab title/URL updating."
     }
   ]
 }

@@ -413,17 +413,7 @@ impl WorkingDirectoriesModel {
             focused_directory_id,
             detection_generation,
         );
-        let memo_hit = self.last_refresh_inputs.get(&pane_group_id) == Some(&signature);
-        log::warn!(
-            "TWARP-DIAG model.refresh pg={:?} gen={} terminal_cwds={:?} directory_cwds={:?} focused_dir={:?} memo_hit={}",
-            pane_group_id,
-            detection_generation,
-            terminal_cwds,
-            directory_cwds,
-            focused_directory_id,
-            memo_hit,
-        );
-        if memo_hit {
+        if self.last_refresh_inputs.get(&pane_group_id) == Some(&signature) {
             return;
         }
         self.last_refresh_inputs.insert(pane_group_id, signature);
@@ -605,14 +595,6 @@ impl WorkingDirectoriesModel {
             );
             self.emit_repositories_changed(pane_group_id, ctx);
         }
-
-        log::warn!(
-            "TWARP-DIAG model.refresh.result pg={:?} new_repos={:?} focused_repo={:?} (old_focused={:?})",
-            pane_group_id,
-            new_deduplicated_repos,
-            focused_repo,
-            old_focused_repo,
-        );
 
         if old_focused_repo != focused_repo {
             self.focused_repo

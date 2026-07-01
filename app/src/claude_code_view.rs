@@ -378,6 +378,11 @@ pub enum ClaudeCodeViewAction {
     /// twarp: expand / collapse one background-script row's captured output,
     /// keyed by the launching tool-use id.
     ToggleBackgroundScript(String),
+    /// twarp: clear every *non-running* background script from the panel
+    /// (finished / stopped / failed-to-start). Running scripts are left alone —
+    /// twarp only hides rows it can be sure are done, since it can't kill a
+    /// live shell. Hidden ids are remembered so they stay cleared across renders.
+    ClearBackgroundScripts,
     /// twarp: expand / collapse one server's tool list in the MCP viewer popover
     /// (feature 13). Only one server is expanded at a time; re-dispatching the
     /// open server collapses it.
@@ -786,6 +791,13 @@ pub struct ClaudeCodeView {
     /// Per-script output disclosure, keyed by the launching tool-use id. A
     /// script id is present iff the user expanded that row's captured output.
     background_expanded_rows: HashSet<String>,
+    /// twarp: launch ids the user cleared from the background-scripts panel,
+    /// keyed by the launching tool-use id. The list itself is derived read-only
+    /// from the transcript (we can't delete a tool call), so "Clear" hides rows
+    /// by remembering their ids here and filtering them out of every render.
+    /// Clear only ever adds *non-running* scripts, so a still-live script is
+    /// never accidentally hidden.
+    background_dismissed: HashSet<String>,
     /// Stable per-row mouse handles for the background-script rows, keyed by
     /// launch id and created on demand (the `sent_image_mouse` pattern) so hover
     /// state survives across renders even though the rows are derived.
@@ -795,6 +807,9 @@ pub struct ClaudeCodeView {
     /// Mouse state for the header's background-scripts icon button (left of the
     /// Chat UI / Raw CLI toggle) that opens the floating panel.
     background_button_mouse: MouseStateHandle,
+    /// Mouse state for the panel header's "Clear" button (clears non-running
+    /// scripts).
+    background_clear_mouse: MouseStateHandle,
     /// Memoized [`background_scripts::collect`] output, keyed by the transcript
     /// revision it was derived from. The list is recomputed (walking the whole
     /// transcript, descending into Task children) by both the header button and
@@ -995,9 +1010,11 @@ impl ClaudeCodeView {
             use_worktree: false,
             background_scripts_expanded: false,
             background_expanded_rows: HashSet::new(),
+            background_dismissed: HashSet::new(),
             background_row_mouse: std::cell::RefCell::new(HashMap::new()),
             background_panel_mouse: MouseStateHandle::default(),
             background_button_mouse: MouseStateHandle::default(),
+            background_clear_mouse: MouseStateHandle::default(),
             background_scripts_memo: std::cell::RefCell::new(None),
         };
 
@@ -3703,17 +3720,18 @@ impl ClaudeCodeView {
     /// still running, a small accent notification bubble overlays the glyph's
     /// top-right corner with the active count.
     ///
-    /// Returns `None` (so the header shows no button) when this chat launched
-    /// no background scripts. The button lives in the parent `PaneView`'s
+    /// The button is always present (even before this chat launches anything),
+    /// so background scripts have a stable, discoverable home rather than an
+    /// affordance that pops in and out. It lives in the parent `PaneView`'s
     /// header tree, so its click routes through
     /// [`ClaudeCodeCustomAction::ToggleBackgroundPanel`] rather than dispatching
     /// the in-pane action directly.
     fn render_background_button(&self, app: &AppContext) -> Option<Box<dyn Element>> {
         let scripts = self.background_scripts();
-        if scripts.is_empty() {
-            return None;
-        }
-        let active = scripts.iter().filter(|s| s.state.is_active()).count();
+        let active = scripts
+            .iter()
+            .filter(|s| !self.background_dismissed.contains(&s.id) && s.state.is_active())
+            .count();
 
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
@@ -3815,9 +3833,12 @@ impl ClaudeCodeView {
             return None;
         }
         let scripts = self.background_scripts();
-        if scripts.is_empty() {
-            return None;
-        }
+        // Rows the user cleared are hidden but still live in the transcript, so
+        // filter them out here (not in the memo, which stays a pure derivation).
+        let visible: Vec<&BackgroundScript> = scripts
+            .iter()
+            .filter(|s| !self.background_dismissed.contains(&s.id))
+            .collect();
 
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
@@ -3826,7 +3847,9 @@ impl ClaudeCodeView {
         let muted = theme.nonactive_ui_text_color().into_solid();
         let main = theme.main_text_color(theme.background()).into_solid();
 
-        let active = scripts.iter().filter(|s| s.state.is_active()).count();
+        let active = visible.iter().filter(|s| s.state.is_active()).count();
+        // Something is clearable iff a visible row is no longer running.
+        let clearable = visible.iter().any(|s| !s.state.is_active());
         let expanded = self.background_scripts_expanded;
 
         // Header: terminal glyph + title + a muted count, then a chevron whose
@@ -3847,13 +3870,15 @@ impl ClaudeCodeView {
             })
             .build()
             .finish();
-        let count_text = if active > 0 {
-            format!("{} · {active} running", scripts.len())
+        let count_text = if visible.is_empty() {
+            "none".to_owned()
+        } else if active > 0 {
+            format!("{} · {active} running", visible.len())
         } else {
             format!(
                 "{} script{}",
-                scripts.len(),
-                if scripts.len() == 1 { "" } else { "s" }
+                visible.len(),
+                if visible.len() == 1 { "" } else { "s" }
             )
         };
         let count = appearance
@@ -3875,15 +3900,48 @@ impl ClaudeCodeView {
             .with_width(14.)
             .with_height(14.)
             .finish();
-        let header_inner = Flex::row()
+
+        // "Clear" button — only when there's something non-running to clear. It
+        // lives inside the header row, so the header defers its click to the
+        // child (below) to keep a Clear tap from also toggling the panel.
+        let mut header_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max)
             .with_spacing(8.)
             .with_child(glyph)
             .with_child(Shrinkable::new(1., title).finish())
-            .with_child(count)
-            .with_child(chevron)
+            .with_child(count);
+        if clearable {
+            let clear_label = appearance
+                .ui_builder()
+                .span("Clear".to_owned())
+                .with_style(UiComponentStyles {
+                    font_color: Some(muted),
+                    font_size: Some(11.),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let clear = Hoverable::new(self.background_clear_mouse.clone(), move |state| {
+                let mut body = Container::new(clear_label)
+                    .with_padding_left(8.)
+                    .with_padding_right(8.)
+                    .with_padding_top(3.)
+                    .with_padding_bottom(3.)
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
+                if state.is_hovered() {
+                    body = body.with_background_color(wash);
+                }
+                body.finish()
+            })
+            .with_cursor(Cursor::PointingHand)
+            .on_click(|ctx, _, _| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::ClearBackgroundScripts);
+            })
             .finish();
+            header_row = header_row.with_child(clear);
+        }
+        let header_inner = header_row.with_child(chevron).finish();
         let header = Hoverable::new(self.background_panel_mouse.clone(), move |state| {
             let mut body = Container::new(header_inner)
                 .with_padding_left(12.)
@@ -3897,6 +3955,7 @@ impl ClaudeCodeView {
             body.finish()
         })
         .with_cursor(Cursor::PointingHand)
+        .with_defer_events_to_children()
         .on_click(|ctx, _, _| {
             ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleBackgroundPanel);
         })
@@ -3908,8 +3967,30 @@ impl ClaudeCodeView {
             .with_child(header);
 
         if expanded {
-            for script in scripts.iter() {
-                column.add_child(self.render_background_row(script, app));
+            if visible.is_empty() {
+                // Empty state: the button is always present now, so an opened
+                // panel with nothing to show says so rather than looking broken.
+                let empty = appearance
+                    .ui_builder()
+                    .span("No background scripts".to_owned())
+                    .with_style(UiComponentStyles {
+                        font_color: Some(muted),
+                        font_size: Some(11.5),
+                        ..Default::default()
+                    })
+                    .build()
+                    .finish();
+                column.add_child(
+                    Container::new(empty)
+                        .with_padding_left(12.)
+                        .with_padding_right(12.)
+                        .with_padding_bottom(10.)
+                        .finish(),
+                );
+            } else {
+                for script in visible.iter() {
+                    column.add_child(self.render_background_row(script, app));
+                }
             }
         }
 
@@ -5770,6 +5851,18 @@ impl TypedActionView for ClaudeCodeView {
             ClaudeCodeViewAction::ToggleBackgroundScript(id) => {
                 if !self.background_expanded_rows.remove(id) {
                     self.background_expanded_rows.insert(id.clone());
+                }
+                ctx.notify();
+            }
+            ClaudeCodeViewAction::ClearBackgroundScripts => {
+                // Hide every script that isn't still running. We never hide a
+                // live one — the user chose "clear non-running", and twarp can't
+                // stop a shell it didn't launch.
+                let scripts = self.background_scripts();
+                for script in scripts.iter() {
+                    if !script.state.is_active() {
+                        self.background_dismissed.insert(script.id.clone());
+                    }
                 }
                 ctx.notify();
             }

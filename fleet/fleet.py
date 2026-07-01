@@ -601,6 +601,14 @@ CRITICAL coordinate rule: screenshots are RETINA. Coordinates you read off the P
 DIVIDE by the printed scale (usually 2) to get POINTS before passing to {act}. E.g. a button at \
 pixel (800,460) on a scale-2 shot -> `{act} "click 400 230"`.
 
+KNOWN INJECTOR QUIRKS (work around these, don't fight them):
+- `key <name>` only accepts NUMERIC macOS keycodes — a word like `return` silently becomes keycode \
+0 (the 'a' key). Use numbers: Return=36, Escape=53, Tab=48, Delete=51, Space=49, arrows L/R/D/U=\
+123/124/125/126. E.g. submit a URL with `{act} "key 36"`, not `key return`.
+- `type` can DROP the first keystrokes if the field just gained focus. After typing, screenshot to \
+confirm the text landed; if it didn't, click the field again and re-issue `type`. Prefer one \
+`type <word>` then verify over many rapid calls.
+
 Your job: verify the feature below actually works in the running twarp. Capture first to see the \
 state, navigate to the feature, exercise it, and inspect the result after each action. If twarp \
 isn't frontmost, click its window first. Save your final evidence screenshot to {final}.
@@ -616,6 +624,38 @@ Work in at most ~12 actions. When done, reply with EXACTLY one final line:
   VERDICT regression — <what is broken or missing>
 """
 
+def _collect_driver_trace(evid, started_at):
+    """Capture the UX driver's FULL conversation for later review. Claude Code persists every session
+    to ~/.claude/projects/<cwd-slug>/<session-id>.jsonl, so the driver's step-by-step reasoning, every
+    ux_shot/ux_act call, and the verdict are already on disk — the gate just wasn't collecting them.
+    Copy the raw jsonl into the evidence dir and render a readable trace (driver.md) so `what worked /
+    what didn't` is reviewable without re-running. Best-effort: never let this fail the gate."""
+    try:
+        slug = str(SELF_REPO).replace("/", "-")
+        proj = Path.home() / ".claude" / "projects" / slug
+        cands = [p for p in proj.glob("*.jsonl") if p.stat().st_mtime >= started_at - 2]
+        if not cands:
+            return
+        src = max(cands, key=lambda p: p.stat().st_mtime)
+        rows = [json.loads(l) for l in src.read_text().splitlines() if l.strip()]
+        (evid / "driver.jsonl").write_text(src.read_text())
+        lines = []
+        for r in rows:
+            for b in (r.get("message", {}).get("content") or []):
+                if not isinstance(b, dict):
+                    continue
+                if b.get("type") == "text" and b.get("text", "").strip():
+                    lines.append(f"\n**reason:** {b['text'].strip()}")
+                elif b.get("type") == "tool_use":
+                    cmd = (b.get("input", {}) or {}).get("command", "")
+                    act = cmd.split("ux_act ", 1)[-1] if "ux_act" in cmd else (
+                        "screenshot" if "ux_shot" in cmd else cmd)
+                    lines.append(f"- `{act[:140]}`")
+        (evid / "driver.md").write_text(
+            f"# UX driver trace — {evid.name}\n\nSource session: `{src.name}`\n\n" + "\n".join(lines))
+    except Exception as e:
+        say(f"  UX trace collection warning: {e}")
+
 def _ux_launch(it, name):
     """Build the item's branch as a real GUI .app bundle on the display pod and launch it via
     LaunchServices (`open`), so it attaches to the user's GUI session and renders on the real display.
@@ -629,13 +669,19 @@ def _ux_launch(it, name):
            f"export CARGO_TARGET_DIR={wt}/target\ncd {wt}\n"   # bundle resolves assets via its own tree
            f"./script/run --dont-open > /tmp/ux_build_{iid}.log 2>&1\necho BUILD_$?\n"
            f"test -d {app} && echo BUNDLE_OK || echo BUNDLE_MISSING\n"
-           f"caffeinate -dimsu & echo $! > /tmp/ux_caf_{iid}\n"
+           # Detach caffeinate's fds from the ssh pipe: left running through the drive phase, an
+           # inherited stdout/stderr keeps the remote `bash -s` channel open so bash_on() never
+           # returns and the gate hangs until timeout (never reaching the driver). </dev/null too.
+           f"caffeinate -dimsu </dev/null >/dev/null 2>&1 & echo $! > /tmp/ux_caf_{iid}\n"
            f"open {app} > /tmp/ux_open_{iid}.log 2>&1; echo OPEN_$?\n"
            f"sleep 12\npgrep -f 'WarpOss.app' >/dev/null && echo RUNNING || echo NOTRUNNING\n")
     say(f"  [{iid}] UX: building GUI bundle + launching on {name}'s display (multi-min build)…")
     with gatelock(name):                       # one cargo cache per pod
         r = bash_on(name, cmd, timeout=3600)
-    ok = ("BUILD_0" in r.stdout and "BUNDLE_OK" in r.stdout and "RUNNING" in r.stdout)
+    # Gate on the app actually being up (BUNDLE_OK + RUNNING), NOT on script/run's exit code:
+    # ad-hoc codesigning flakily returns `errSecInternalComponent` (BUILD_1) while still producing a
+    # launchable, running bundle. RUNNING is the real signal; a non-zero BUILD alone must not veto it.
+    ok = ("BUNDLE_OK" in r.stdout and "RUNNING" in r.stdout)
     (LOG / f"{iid}.uxlaunch.log").write_text(r.stdout)
     return ok, r.stdout
 
@@ -689,7 +735,9 @@ def ux_drive_gate(it):
                        f"origin/master...origin/fleet/{iid}"]).stdout[:8000]
             prompt = UX_DRIVE_PROMPT.format(shot=shot, act=act, final=evid / "final.png",
                                             criteria=_ux_criteria(it), diff=diff or "(no diff)")
+            drv_start = time.time()
             r = sh(["claude", "-p", prompt, "--dangerously-skip-permissions"], timeout=1200)
+            _collect_driver_trace(evid, drv_start)   # persist the driver's full conversation for review
         finally:
             _ux_teardown(it, name)
     out = (r.stdout or "").strip()

@@ -1,8 +1,24 @@
 # 14 — Built-in browser (Claude-debuggable)
 
-**Phase:** merged
+**Phase:** impl-pending — **reopened 2026-07-01** (regression: WKWebView renders blank; see 14f below)
 **Spec PR:** [#96](https://github.com/timomak/twarp/pull/96) (merged)
 **Impl PRs:** 14a [#111](https://github.com/timomak/twarp/pull/111), 14b [#112](https://github.com/timomak/twarp/pull/112), 14c [#113](https://github.com/timomak/twarp/pull/113), 14d [#114](https://github.com/timomak/twarp/pull/114), 14e [#115](https://github.com/timomak/twarp/pull/115)
+
+## ⚠️ Reopened 2026-07-01 — feature is NOT functional
+
+A live computer-use UX drive on other-mac (evidence: `fleet/runs/ux_14-ux-verify/`, VERDICT
+**regression**) found the browser pane **loads pages but never renders them**: submitting a URL
+navigates at the state layer (tab/header/omnibar update to the fetched page's `<title>`, proving the
+WKWebView fetches + parses), but the **content area stays solid black** through load, Reload, and full
+re-layout — the webview never composites/paints into the pane. The omnibar chrome and clipping (14a)
+are correct; the compositing/paint path is broken.
+
+This slipped through because all of 14a–14e were queued with `ux: False` and only ever saw the
+bootstrap-screenshot gate, never a live drive.
+
+- [ ] **14f — Fix WKWebView paint.** The child-`NSView`/Metal-overlay webview must actually composite
+  its page content into the pane rect (not just navigate). Re-verify with a `ux:true` gate that
+  `example.com` renders visibly.
 
 Specs: [PRODUCT.md](PRODUCT.md) · [TECH.md](TECH.md) (pre-spec direction in [PLAN.md](PLAN.md)).
 

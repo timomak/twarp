@@ -668,22 +668,6 @@ impl Element for SelectableArea {
             !self.selectable_area_state.is_selecting() || self.is_current_selection_empty();
         if should_dispatch_to_child {
             let handled = self.child.as_mut().dispatch_event(event, ctx, app);
-            match event.raw_event() {
-                Event::LeftMouseDown { click_count, .. } => log::warn!(
-                    "TWARP_SEL2 down->child handled={} click_count={} dispatch_to_child={}",
-                    handled,
-                    click_count,
-                    should_dispatch_to_child,
-                ),
-                Event::LeftMouseDragged { .. } => log::warn!(
-                    "TWARP_SEL2 drag->child handled={} is_selecting={} empty={} dispatch_to_child={}",
-                    handled,
-                    self.selectable_area_state.is_selecting(),
-                    self.is_current_selection_empty(),
-                    should_dispatch_to_child,
-                ),
-                _ => {}
-            }
             if handled {
                 return true;
             }
@@ -698,13 +682,6 @@ impl Element for SelectableArea {
             } => {
                 let selection_started =
                     self.on_mouse_down(*position, modifiers, *click_count, ctx, app);
-                log::warn!(
-                    "TWARP_SEL2 on_mouse_down click_count={} started={} is_selecting={} empty={}",
-                    click_count,
-                    selection_started,
-                    self.selectable_area_state.is_selecting(),
-                    self.is_current_selection_empty(),
-                );
 
                 // Invoking the selection handler is necessary to notify parent views that we've
                 // cleared the internal selection state of the `SelectableArea`.
@@ -713,7 +690,6 @@ impl Element for SelectableArea {
             }
             Event::LeftMouseDragged { position, .. } => {
                 if !self.selectable_area_state.is_selecting() {
-                    log::warn!("TWARP_SEL2 drag-arm: NOT selecting -> bail");
                     return false;
                 }
                 let (Some(origin), Some(size)) = (self.origin, self.size) else {
@@ -721,11 +697,6 @@ impl Element for SelectableArea {
                 };
 
                 let selection_updated = self.update_selection(*position);
-                log::warn!(
-                    "TWARP_SEL2 drag-arm: update_selection={} empty_after={}",
-                    selection_updated,
-                    self.is_current_selection_empty(),
-                );
                 if !selection_updated {
                     return false;
                 }
