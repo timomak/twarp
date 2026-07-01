@@ -1698,10 +1698,15 @@ extern "C-unwind" fn warp_update_layer(this: &Object) {
 
     unsafe {
         let window = get_window_state(this);
-        warp_host_prepare_webviews_for_frame(this as *const Object as id);
 
         let scene = {
             if window.next_scene.borrow().is_none() {
+                // Native webviews are shown by their element's paint pass. Only
+                // reset visibility before building a fresh scene; cached Metal
+                // redraws do not repaint elements and would otherwise leave the
+                // WKWebView hidden while the page continues loading offscreen.
+                warp_host_prepare_webviews_for_frame(this as *const Object as id);
+
                 // Do this without holding a mutable borrow on
                 // window.next_scene, to ensure that we don't hit BorrowMut
                 // errors if `build_scene()` ends up invoking `request_redraw`.
