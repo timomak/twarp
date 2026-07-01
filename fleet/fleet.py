@@ -530,6 +530,9 @@ def author(it, name, ref="origin/master", prompt_text=None):
 
 def run_worker(it):
     name = it.get("node") or codex_node() or ACTIVE_PODS[0]
+    # Manual queue items (documented schema: id/node/touches/depends_on/task/verify) omit
+    # 'title'; only roadmap-bridged items set it. Derive one so the worker never KeyErrors.
+    it.setdefault("title", (it.get("task", "").strip().splitlines()[0][:60] if it.get("task") else it["id"]))
     try:
         set_status(it["id"], "building", node=name, branch=f"fleet/{it['id']}")
         ok, info = author(it, name)
