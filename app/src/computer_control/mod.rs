@@ -92,12 +92,18 @@ impl ComputerControlCoordinator {
     pub fn start(&mut self, session_label: String, chrome: ComputerControlChrome) {
         if matches!(
             self.state,
-            ComputerControlState::Starting | ComputerControlState::Active
+            ComputerControlState::Starting
+                | ComputerControlState::Blocked(_)
+                | ComputerControlState::Active
         ) {
             self.update_chrome(session_label, chrome);
             return;
         }
 
+        self.start_fresh(session_label, chrome);
+    }
+
+    fn start_fresh(&mut self, session_label: String, chrome: ComputerControlChrome) {
         self.state = ComputerControlState::Starting;
         self.generation = self.generation.wrapping_add(1);
         self.last_session_label = Some(session_label.clone());
@@ -250,7 +256,7 @@ impl ComputerControlCoordinator {
         };
 
         self.permission_panel.take();
-        self.start(session_label, chrome);
+        self.start_fresh(session_label, chrome);
     }
 
     fn refresh_blocked_permissions(&mut self) -> bool {
@@ -277,7 +283,7 @@ impl ComputerControlCoordinator {
             true
         } else {
             self.permission_panel.take();
-            self.start(session_label, chrome);
+            self.start_fresh(session_label, chrome);
             true
         }
     }

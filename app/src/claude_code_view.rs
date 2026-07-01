@@ -3273,17 +3273,22 @@ impl ClaudeCodeView {
                 Timer::after(Duration::from_millis(250)).await;
             },
             move |me, _, ctx| {
+                let generation_matches = {
+                    let computer_control = me.computer_control.borrow();
+                    computer_control.state().needs_poll()
+                        && computer_control.generation() == generation
+                };
+                if !generation_matches {
+                    return;
+                }
+
                 if me.computer_control.borrow_mut().poll_native_events() {
                     ctx.notify();
                 }
 
                 let next_generation = {
                     let computer_control = me.computer_control.borrow();
-                    if computer_control.state().needs_poll()
-                        && computer_control.generation() == generation
-                    {
-                        Some(generation)
-                    } else if computer_control.state().needs_poll() {
+                    if computer_control.state().needs_poll() {
                         Some(computer_control.generation())
                     } else {
                         None
