@@ -1763,6 +1763,8 @@ fn initialize_app(
     });
     #[cfg(not(target_family = "wasm"))]
     ctx.add_singleton_model(crate::browser_mcp::BrowserMcpBridge::new);
+    #[cfg(not(target_family = "wasm"))]
+    ctx.add_singleton_model(crate::computer_control::ComputerControlMcpBridge::new);
 
     app_state
 }

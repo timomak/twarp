@@ -58,6 +58,7 @@ void twarp_computer_control_permissions_panel_close(void *host);
 
 void *twarp_computer_control_overlay_create(
     const char *session_label,
+    const char *status_label,
     TwarpComputerControlColor panel_color,
     TwarpComputerControlColor text_color,
     TwarpComputerControlColor muted_text_color,
@@ -68,6 +69,7 @@ void *twarp_computer_control_overlay_create(
 void twarp_computer_control_overlay_update(
     void *host,
     const char *session_label,
+    const char *status_label,
     TwarpComputerControlColor panel_color,
     TwarpComputerControlColor text_color,
     TwarpComputerControlColor muted_text_color,

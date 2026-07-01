@@ -2582,16 +2582,7 @@ impl ClaudeCodeView {
                 .then(|| self.session_id.clone()),
             permission_mode: self.permission_mode,
             allowed_tools: Vec::new(),
-            mcp_config: {
-                #[cfg(not(target_family = "wasm"))]
-                {
-                    crate::browser_mcp::BrowserMcpBridge::as_ref(ctx).mcp_config_json()
-                }
-                #[cfg(target_family = "wasm")]
-                {
-                    None
-                }
-            },
+            mcp_config: claude_mcp_config_json(ctx),
             path_env: self.interactive_path.clone(),
         };
         ctx.spawn(
@@ -8047,6 +8038,51 @@ fn format_token_count(n: u64) -> String {
     } else {
         n.to_string()
     }
+}
+
+fn claude_mcp_config_json(app: &AppContext) -> Option<String> {
+    #[cfg(target_family = "wasm")]
+    {
+        let _ = app;
+        None
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    {
+        let mut servers = serde_json::Map::new();
+        merge_mcp_servers(
+            &mut servers,
+            crate::browser_mcp::BrowserMcpBridge::as_ref(app).mcp_config_json(),
+        );
+        if FeatureFlag::LocalComputerUse.is_enabled() {
+            merge_mcp_servers(
+                &mut servers,
+                crate::computer_control::ComputerControlMcpBridge::as_ref(app).mcp_config_json(),
+            );
+        }
+
+        (!servers.is_empty()).then(|| serde_json::json!({ "mcpServers": servers }).to_string())
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn merge_mcp_servers(
+    servers: &mut serde_json::Map<String, serde_json::Value>,
+    config: Option<String>,
+) {
+    let Some(config) = config else {
+        return;
+    };
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&config) else {
+        return;
+    };
+    let Some(config_servers) = value
+        .get_mut("mcpServers")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return;
+    };
+    servers.extend(std::mem::take(config_servers));
 }
 
 #[cfg(test)]
