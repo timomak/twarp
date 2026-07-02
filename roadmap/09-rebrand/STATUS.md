@@ -26,7 +26,7 @@ File and crate renames are the worst case for git merges; doing this last keeps 
 - [x] **9b — Workspace + crate renames.** All `warp_*` → `twarp_*`, `warpui*` → `twarpui*`. Updates `Cargo.toml` workspace + every `use` import.
 - [x] **9c — CLI binary + URL scheme.** `app/Cargo.toml` binaries (`warp` → `twarp`, `warp-oss` → `twarp-oss`); `warp://` URI scheme → `twarp://`.
 - [x] **9d — Bundle IDs + native plists.** `dev.warp.*` → `dev.twarp.*` across all 5 channels; rename `WarpDockTilePlugin.{m,h}`; update `DockTilePlugin/Info.plist`, `CLI-Info.plist`.
-- [ ] **9e — Brand assets.** Replace logo SVGs, regenerate channel icon sets, rename files (`warp-*` → `twarp-*`), update references.
+- [x] **9e — Brand assets.** Replace logo SVGs, regenerate channel icon sets, rename files (`warp-*` → `twarp-*`), update references.
 - [ ] **9f — User-facing strings.** UI labels, error messages, help text, settings, about page, onboarding copy.
 - [ ] **9g — Build scripts + installers.** Linux RPM/deb/Arch/AppImage, Windows `.iss`, macOS bundling, GitHub workflow filenames.
 - [ ] **9h — Servers + telemetry.** Stub or redirect `app.warp.dev` URLs (auto-update, login, telemetry). After 02 the surface is much smaller.

@@ -122,7 +122,7 @@
 
     // If the mapping doesn't exist, return the default icon 
     // conditional on whether this is a local, dev, or preview build.
-    return fileName ?: isLocal ? @"local" : isDev ? @"dev" : isPreview ? @"preview" : @"warp_2";
+    return fileName ?: isLocal ? @"local" : isDev ? @"dev" : isPreview ? @"preview" : @"twarp_2";
 }
 
 // Helper function to load named image from the plugin's resource bundle

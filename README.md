@@ -121,7 +121,7 @@ twarp inherits Warp's licensing unchanged: the `twarpui_core` and `twarpui` crat
 </a>
 &nbsp;
 <p align="center">
-  <a href="https://www.warp.dev"><img height="20" alt="Built with Warp" src="https://raw.githubusercontent.com/warpdotdev/brand-assets/main/Github/Built-With-Warp-Export@2x.png" /></a>
+  <a href="https://github.com/timomak/twarp"><img height="20" alt="Built with Twarp" src="images/Built-With-Twarp-Export@2x.png" /></a>
   &nbsp;
   <a href="https://oz.warp.dev"><img height="20" alt="Powered by Oz" src="https://raw.githubusercontent.com/warpdotdev/brand-assets/main/Github/Powered-By-Oz-Export@2x.png" /></a>
 </p>
