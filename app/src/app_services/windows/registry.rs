@@ -12,9 +12,9 @@ pub(super) fn register_uri_handler() {
         return;
     };
 
-    // The Windows Registry entry for Warp (assuming the channel is WarpLocal):
-    // warplocal
-    //   (Default) = "WarpLocal"
+    // The Windows Registry entry for Twarp (assuming the channel is TwarpLocal):
+    // twarp
+    //   (Default) = "TwarpLocal"
     //   URL Protocol = ""
     //   DefaultIcon
     //      (Default) = "{path_to_channel_icon},0" TODO(CORE-2860): Add icon file path here.
@@ -36,7 +36,7 @@ pub(super) fn register_uri_handler() {
             };
 
             // TODO(CORE-2861): Add the `DefaultIcon` Default value here with the file path to
-            // Warp's icon once we figure out distribution on Windows.
+            // Twarp's icon once we figure out distribution on Windows.
 
             let command_key = match parent_key.create("shell\\open\\command") {
                 Ok(command_key) => command_key,

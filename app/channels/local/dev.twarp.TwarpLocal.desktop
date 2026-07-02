@@ -4,15 +4,15 @@ Version=1.0
 
 Type=Application
 
-Name=WarpLocal
+Name=TwarpLocal
 GenericName=TerminalEmulator
 
 Exec=warp-terminal-local %U
-StartupWMClass=dev.warp.WarpLocal
+StartupWMClass=dev.twarp.TwarpLocal
 
 Keywords=shell;prompt;command;commandline;cmd;
 
-Icon=dev.warp.WarpLocal
+Icon=dev.twarp.TwarpLocal
 
 Categories=System;TerminalEmulator;
 

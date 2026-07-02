@@ -2,7 +2,7 @@
 
 ## How do migrations work?
 A sqlite database is one single file on the user's computer, and instead of being a separate process, it's a set of C functions
-that are bundled in our app. When the warp app starts, we upgrade the schema to the latest version in a transaction.
+that are bundled in our app. When the twarp app starts, we upgrade the schema to the latest version in a transaction.
 Since we don't control the machine, we need to be super careful about the migrations that we ship.
 
 TODO: C.I. and remediation of failed migrations
@@ -27,20 +27,20 @@ This will create a new folder with an up.sql and down.sql.
 ## Step 3: Run the migration + generate the schema
 ```
 cd <repo root>
-diesel migration run --database-url="/Users/$USER/Library/Application Support/dev.warp.Warp-Local/warp.sqlite"
+diesel migration run --database-url="/Users/$USER/Library/Application Support/dev.twarp.Twarp-Local/warp.sqlite"
 ```
-This will run the migration on the same warp that runs when you run the app locally. This automatically generates or updates the `crates/persistence/src/schema.rs`. We do not make manual edits to `schema.rs`.
+This will run the migration on the same twarp app that runs when you run the app locally. This automatically generates or updates the `crates/persistence/src/schema.rs`. We do not make manual edits to `schema.rs`.
 
 You can also print the schema from a database that already has the migration with:
 ```
-diesel print-schema --database-url="/Users/$USER/Library/Application Support/dev.warp.Warp-Local/warp.sqlite"
+diesel print-schema --database-url="/Users/$USER/Library/Application Support/dev.twarp.Twarp-Local/warp.sqlite"
 ```
 
 ## Reverting/redo-ing migrations
 As you are writing features and changing branches, you'll want to undo migrations to fix your database and make it compatible with older code. Redo-ing can also be helpful as you are iterating on your schema.
 ```
-diesel migration revert --database-url="/Users/$USER/Library/Application Support/dev.warp.Warp-Local/warp.sqlite"
-diesel migration redo --database-url="/Users/$USER/Library/Application Support/dev.warp.Warp-Local/warp.sqlite"
+diesel migration revert --database-url="/Users/$USER/Library/Application Support/dev.twarp.Twarp-Local/warp.sqlite"
+diesel migration redo --database-url="/Users/$USER/Library/Application Support/dev.twarp.Twarp-Local/warp.sqlite"
 ```
 
 # Schema style

@@ -1,18 +1,18 @@
-use super::is_warp_bundle;
+use super::is_twarp_bundle;
 
 #[test]
-fn is_warp_bundle_recognises_warp_channels() {
-    assert!(is_warp_bundle("dev.warp.Warp"));
-    assert!(is_warp_bundle("dev.warp.WarpDev"));
-    assert!(is_warp_bundle("dev.warp.WarpPreview"));
-    assert!(is_warp_bundle("dev.warp.WarpOss"));
+fn is_twarp_bundle_recognises_twarp_channels() {
+    assert!(is_twarp_bundle("dev.twarp.Twarp"));
+    assert!(is_twarp_bundle("dev.twarp.TwarpDev"));
+    assert!(is_twarp_bundle("dev.twarp.TwarpPreview"));
+    assert!(is_twarp_bundle("dev.twarp.TwarpOss"));
 }
 
 #[test]
-fn is_warp_bundle_rejects_other_apps() {
-    assert!(!is_warp_bundle("com.microsoft.VSCode"));
-    assert!(!is_warp_bundle("com.apple.TextEdit"));
-    assert!(!is_warp_bundle("dev.zed.Zed"));
-    assert!(!is_warp_bundle("invalid"));
-    assert!(!is_warp_bundle(""));
+fn is_twarp_bundle_rejects_other_apps() {
+    assert!(!is_twarp_bundle("com.microsoft.VSCode"));
+    assert!(!is_twarp_bundle("com.apple.TextEdit"));
+    assert!(!is_twarp_bundle("dev.zed.Zed"));
+    assert!(!is_twarp_bundle("invalid"));
+    assert!(!is_twarp_bundle(""));
 }

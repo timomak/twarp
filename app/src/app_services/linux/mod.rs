@@ -149,12 +149,12 @@ impl ApplicationService {
     }
 }
 
-// A D-Bus client for connecting to an already-running instance of Warp and
+// A D-Bus client for connecting to an already-running instance of Twarp and
 // invoking org.freedesktop.Application IPC methods.
 #[proxy(
     interface = "org.freedesktop.Application",
-    default_service = "dev.warp.WarpLocal",
-    default_path = "/dev/warp/WarpLocal",
+    default_service = "dev.twarp.TwarpLocal",
+    default_path = "/dev/twarp/TwarpLocal",
     gen_blocking = false
 )]
 trait ExistingApplication {
