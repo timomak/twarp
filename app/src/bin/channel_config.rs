@@ -84,10 +84,12 @@ pub fn load_config_from_generator(channel: &str) -> ChannelConfig {
         panic!("Config generator failed for channel '{channel}':\n{stderr}");
     }
 
-    serde_json::from_slice(&output.stdout).unwrap_or_else(|err| {
+    let config: ChannelConfig = serde_json::from_slice(&output.stdout).unwrap_or_else(|err| {
         let stdout = String::from_utf8_lossy(&output.stdout);
         panic!("Failed to parse config generator output for channel '{channel}': {err}\nOutput:\n{stdout}")
-    })
+    });
+
+    config.without_upstream_warp_services()
 }
 
 /// Deserializes a [`ChannelConfig`] from a JSON string embedded at compile time.
@@ -96,6 +98,8 @@ pub fn load_config_from_generator(channel: &str) -> ChannelConfig {
 /// is embedded at compile time instead of being generated at runtime.
 #[cfg_attr(not(feature = "release_bundle"), expect(dead_code))]
 pub fn load_config_from_embedded(json: &str) -> ChannelConfig {
-    serde_json::from_str(json)
-        .unwrap_or_else(|err| panic!("Failed to parse embedded channel config: {err}"))
+    let config: ChannelConfig = serde_json::from_str(json)
+        .unwrap_or_else(|err| panic!("Failed to parse embedded channel config: {err}"));
+
+    config.without_upstream_warp_services()
 }

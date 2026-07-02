@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use crate::AppId;
 
@@ -12,7 +13,7 @@ pub struct ChannelConfig {
     /// The name of the file to which logs should be written.
     pub logfile_name: Cow<'static, str>,
 
-    /// Configuration for talking to Warp's servers.
+    /// Configuration for talking to server APIs.
     pub server_config: WarpServerConfig,
     /// Configuration for Oz/ambient agents.
     pub oz_config: OzConfig,
@@ -25,6 +26,28 @@ pub struct ChannelConfig {
     pub crash_reporting_config: Option<CrashReportingConfig>,
     /// Configuration for statically-bundled MCP OAuth credentials.
     pub mcp_static_config: Option<McpStaticConfig>,
+}
+
+impl ChannelConfig {
+    /// Removes upstream Warp service destinations from externally generated channel configs.
+    ///
+    /// Twarp should not inherit production Warp auth/cloud, telemetry, crash reporting, or
+    /// autoupdate destinations by accident. Local/test server overrides are preserved so
+    /// development builds can still point at explicitly configured non-Warp services.
+    pub fn without_upstream_warp_services(mut self) -> Self {
+        if self.server_config.has_upstream_warp_endpoint() {
+            self.server_config = WarpServerConfig::disabled();
+        }
+        if self.oz_config.has_upstream_warp_endpoint() {
+            self.oz_config = OzConfig::disabled();
+        }
+
+        self.telemetry_config = None;
+        self.autoupdate_config = None;
+        self.crash_reporting_config = None;
+
+        self
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -41,13 +64,24 @@ pub struct WarpServerConfig {
 }
 
 impl WarpServerConfig {
-    pub fn production() -> Self {
+    pub fn disabled() -> Self {
         Self {
-            server_root_url: "https://app.warp.dev".into(),
-            rtc_server_url: "wss://rtc.app.warp.dev/graphql/v2".into(),
-            session_sharing_server_url: Some("wss://sessions.app.warp.dev".into()),
-            firebase_auth_api_key: "AIzaSyBdy3O3S9hrdayLJxJ7mriBR4qgUaUygAs".into(),
+            firebase_auth_api_key: "".into(),
+            // Use an IP in the IANA testing range, with the TCP discard port, to
+            // black-hole accidental server traffic.
+            server_root_url: "http://192.0.2.0:9".into(),
+            rtc_server_url: "ws://192.0.2.0:9/graphql/v2".into(),
+            session_sharing_server_url: None,
         }
+    }
+
+    fn has_upstream_warp_endpoint(&self) -> bool {
+        is_upstream_warp_url(&self.server_root_url)
+            || is_upstream_warp_url(&self.rtc_server_url)
+            || self
+                .session_sharing_server_url
+                .as_deref()
+                .is_some_and(is_upstream_warp_url)
     }
 }
 
@@ -63,12 +97,29 @@ pub struct OzConfig {
 }
 
 impl OzConfig {
-    pub fn production() -> Self {
+    pub fn disabled() -> Self {
         Self {
-            oz_root_url: "https://oz.warp.dev".into(),
+            // Use an IP in the IANA testing range, with the TCP discard port, to
+            // black-hole accidental Oz traffic.
+            oz_root_url: "http://192.0.2.0:9".into(),
             workload_audience_url: None,
         }
     }
+
+    fn has_upstream_warp_endpoint(&self) -> bool {
+        is_upstream_warp_url(&self.oz_root_url)
+            || self
+                .workload_audience_url
+                .as_deref()
+                .is_some_and(is_upstream_warp_url)
+    }
+}
+
+fn is_upstream_warp_url(url: &str) -> bool {
+    Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(str::to_owned))
+        .is_some_and(|host| host == "warp.dev" || host.ends_with(".warp.dev"))
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -141,4 +192,122 @@ pub struct McpOAuthProviderConfig {
     pub client_id: Cow<'static, str>,
     /// The OAuth client secret registered for this channel.
     pub client_secret: Cow<'static, str>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config_with_service_destinations(
+        server_config: WarpServerConfig,
+        oz_config: OzConfig,
+    ) -> ChannelConfig {
+        ChannelConfig {
+            app_id: AppId::new("dev", "twarp", "TwarpLocal"),
+            logfile_name: "twarp.log".into(),
+            server_config,
+            oz_config,
+            telemetry_config: Some(TelemetryConfig {
+                telemetry_file_name: "twarp-telemetry".into(),
+                rudderstack_config: Some(RudderStackConfig {
+                    write_key: "write-key".into(),
+                    root_url: "https://example-rudderstack.invalid".into(),
+                    ugc_write_key: "ugc-write-key".into(),
+                }),
+            }),
+            autoupdate_config: Some(AutoupdateConfig {
+                releases_base_url: "https://example-releases.invalid".into(),
+                show_autoupdate_menu_items: true,
+            }),
+            crash_reporting_config: Some(CrashReportingConfig {
+                sentry_url: "https://example-sentry.invalid/1".into(),
+            }),
+            mcp_static_config: None,
+        }
+    }
+
+    fn upstream_url(scheme: &str, host_prefix: &str, path: &str) -> Cow<'static, str> {
+        format!("{scheme}://{host_prefix}.{}{path}", "warp.dev").into()
+    }
+
+    #[test]
+    fn disabled_server_config_uses_blackhole_destinations() {
+        let server_config = WarpServerConfig::disabled();
+        let oz_config = OzConfig::disabled();
+
+        assert_eq!(server_config.server_root_url, "http://192.0.2.0:9");
+        assert_eq!(server_config.rtc_server_url, "ws://192.0.2.0:9/graphql/v2");
+        assert!(server_config.session_sharing_server_url.is_none());
+        assert!(server_config.firebase_auth_api_key.is_empty());
+        assert_eq!(oz_config.oz_root_url, "http://192.0.2.0:9");
+    }
+
+    #[test]
+    fn sanitizing_generated_config_disables_upstream_warp_services() {
+        let config = config_with_service_destinations(
+            WarpServerConfig {
+                server_root_url: upstream_url("https", "app", ""),
+                rtc_server_url: upstream_url("wss", "rtc.app", "/graphql/v2"),
+                session_sharing_server_url: Some(upstream_url("wss", "sessions.app", "")),
+                firebase_auth_api_key: "upstream-firebase-key".into(),
+            },
+            OzConfig {
+                oz_root_url: upstream_url("https", "oz", ""),
+                workload_audience_url: Some(upstream_url("https", "app", "")),
+            },
+        )
+        .without_upstream_warp_services();
+
+        assert_eq!(config.server_config.server_root_url, "http://192.0.2.0:9");
+        assert_eq!(
+            config.server_config.rtc_server_url,
+            "ws://192.0.2.0:9/graphql/v2"
+        );
+        assert!(config.server_config.session_sharing_server_url.is_none());
+        assert!(config.server_config.firebase_auth_api_key.is_empty());
+        assert_eq!(config.oz_config.oz_root_url, "http://192.0.2.0:9");
+        assert!(config.oz_config.workload_audience_url.is_none());
+        assert!(config.telemetry_config.is_none());
+        assert!(config.autoupdate_config.is_none());
+        assert!(config.crash_reporting_config.is_none());
+    }
+
+    #[test]
+    fn sanitizing_generated_config_preserves_explicit_local_servers() {
+        let config = config_with_service_destinations(
+            WarpServerConfig {
+                server_root_url: "http://localhost:8080".into(),
+                rtc_server_url: "ws://localhost:8081/graphql/v2".into(),
+                session_sharing_server_url: Some("ws://localhost:8082".into()),
+                firebase_auth_api_key: "local-key".into(),
+            },
+            OzConfig {
+                oz_root_url: "http://localhost:8083".into(),
+                workload_audience_url: Some("http://localhost:8080".into()),
+            },
+        )
+        .without_upstream_warp_services();
+
+        assert_eq!(
+            config.server_config.server_root_url,
+            "http://localhost:8080"
+        );
+        assert_eq!(
+            config.server_config.rtc_server_url,
+            "ws://localhost:8081/graphql/v2"
+        );
+        assert_eq!(
+            config.server_config.session_sharing_server_url.as_deref(),
+            Some("ws://localhost:8082")
+        );
+        assert_eq!(config.server_config.firebase_auth_api_key, "local-key");
+        assert_eq!(config.oz_config.oz_root_url, "http://localhost:8083");
+        assert_eq!(
+            config.oz_config.workload_audience_url.as_deref(),
+            Some("http://localhost:8080")
+        );
+        assert!(config.telemetry_config.is_none());
+        assert!(config.autoupdate_config.is_none());
+        assert!(config.crash_reporting_config.is_none());
+    }
 }
