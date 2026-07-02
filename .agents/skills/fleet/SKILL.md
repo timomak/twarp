@@ -35,12 +35,20 @@ within a pod, parallel across pods). Two modes:
 For the default mode, `pgrep`/`status`/`run.log` live **on other-mac** — run those over SSH. For
 `--both`, they're local (this Mac).
 
+**`fleet/queue.json` is machine-local runtime state, owned by whichever machine runs the loop.** The
+loop mutates it in place and it is not committed back, so the *other* machine's copy (and the one in
+git) goes stale. Always run `roadmap-sync` and `status` on the loop machine — over SSH for default
+mode — never against this Mac's copy when the loop runs elsewhere.
+
 ## Workflow for `/fleet` (no args)
 
-0. **Pull the next roadmap sub-task** (auto-bridge from the roadmap):
+0. **Pull the next roadmap sub-task** (auto-bridge from the roadmap) — on the loop machine. Default
+   mode:
    ```bash
-   python3 fleet/fleet.py roadmap-sync
+   ssh other-mac 'cd ~/Development/twarp && python3 fleet/fleet.py roadmap-sync'
    ```
+   (`--both` mode: run it locally.) The run loop also re-syncs the roadmap at the top of every
+   batch, so this step mainly surfaces what's next for the report.
    This bridge is **fully autonomous — no human gate**. It advances the active roadmap feature one
    step per call and enqueues the matching fleet item (authored + opposite-model-reviewed +
    auto-merged like any other item):
@@ -59,9 +67,9 @@ For the default mode, `pgrep`/`status`/`run.log` live **on other-mac** — run t
    ```bash
    pgrep -fl "fleet/fleet.py run"
    ```
-2. **Get the ledger:**
+2. **Get the ledger — from the loop machine** (default mode: over SSH; `--both`: locally):
    ```bash
-   python3 fleet/fleet.py status
+   ssh other-mac 'cd ~/Development/twarp && python3 fleet/fleet.py status'
    ```
    The last line shows `eligible now: [...]` — items ready to dispatch.
 3. **Decide and act:**
@@ -91,7 +99,8 @@ report. **Never start a run**, even if items are eligible.
 
 ## Reset a stuck/interrupted run
 
-If items are stranded in-flight (process died mid-run), clear them back to `queued`:
+If items are stranded in-flight (process died mid-run), clear them back to `queued` — **on the loop
+machine** (default mode: wrap this in `ssh other-mac 'cd ~/Development/twarp && …'`):
 ```bash
 python3 - <<'PY'
 import sys; sys.path.insert(0,'fleet'); from fleet import load,save,INFLIGHT
