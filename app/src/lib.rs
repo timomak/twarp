@@ -58,6 +58,7 @@ mod chip_configurator;
 // Always-on (no feature flag — acceptable on a personal fork; degrades to the
 // unavailable state when `claude` is off PATH, PRODUCT §4). See TECH.md
 // §Feature flag & rollout.
+mod claude_code_models;
 mod claude_code_session_defaults;
 mod claude_code_view;
 mod cloud_object;
