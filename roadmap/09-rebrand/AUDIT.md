@@ -187,12 +187,16 @@ Out of scope for 9i: crate/package names already owned by 9b and server endpoint
 
 | File/pattern | Current | Target | Class | Notes |
 | --- | --- | --- | --- | --- |
+| `Cargo.toml` `[workspace.package] authors` | `Warp Team <dev@warp.dev>` | `Twarp Contributors` | `replace` | Workspace package metadata should identify the fork rather than the upstream company. Per-crate authors are retained as upstream authorship/provenance unless a later licensing cleanup owns them explicitly. |
 | `LICENSE-AGPL`, `LICENSE-MIT`, third-party license files | Warp/upstream license text and copyright holders | unchanged | `keep` | Required legal attribution. |
 | Copyright notices on Warp-authored files | "Warp" as copyright holder | unchanged | `keep` | Do not rewrite authorship. |
 | `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `AGENTS.md` provenance sections | "fork of Warp", upstream repo/commit/source context | keep explicit attribution; replace current product instructions | `keep` | Nominative use is expected; avoid implying endorsement. |
 | `warpdotdev/warp@d0f045c0`, `warpdotdev/warp-proto-apis`, upstream issue/docs URLs | upstream source/dependency references | unchanged unless active user-facing docs need replacement | `keep` | External provenance and dependency URLs are not product branding. |
 | `.agents/skills/**`, old fleet/skill docs | historical Warp/twarp workflow references | mostly keep | `keep` | Internal historical docs should not block product rebrand unless they are current user instructions. |
 | `roadmap/**`, `specs/**` | historical feature specs/status references | keep unless current visible docs | `keep` | Preserve feature history. |
+| Remaining `\b[Ww]arp\b` text hits after 9j | 4,072 matching lines in 840 tracked text files | unchanged | `keep` | Manual sweep classified the remaining matches as legal/provenance, upstream URLs and support docs, historical roadmap/spec text, internal agent/fleet instructions, protocol/serialized schema names, upstream dependency names, old compatibility aliases, or comments/tests naming upstream behavior. `rg` is unavailable on this worker, so the equivalent `git grep -P '\b[Ww]arp\b' -- . ':(exclude)roadmap/09-rebrand/AUDIT.md'` was used. |
+| Remaining `\bWARP\b` text hits after 9b-9i | 20 matching lines in 11 tracked text files | unchanged | `keep` | These are historical spec references to old `WARP.md`, the OSC 9277 protocol mnemonic, example issue IDs, and compatibility/debug variables; none are current Twarp product branding. |
+| Remaining Warp-branded path hits | 769 canonical path hits; 19 after excluding Twarp-owned `twarp*` names | unchanged unless separately owned by 9b-9i | `keep` | Remaining old-name paths are skill names, current `.twarp` workflow filenames that intentionally mention upstream/local compatibility, upstream dependency type files, DB migration identities, and helper scripts such as `warp_sudo`; asset and channel filenames are Twarp-owned after 9e. |
 | Any remaining match after 9b-9i | unclassified | update to Twarp or add explicit keep reason | `replace` | 9j owns final search closure and must not leave unexplained hits. |
 
 Out of scope for 9j until the end: broad refactors that belong to 9b-9i. 9j should verify, not redo, prior phases.
