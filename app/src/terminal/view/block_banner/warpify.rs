@@ -97,8 +97,8 @@ impl WarpifyBannerState {
 
     pub fn title(&self) -> &str {
         match &self.mode {
-            WarpificationMode::Ssh { .. } => "Warpify SSH session",
-            WarpificationMode::Subshell { .. } => "Warpify subshell",
+            WarpificationMode::Ssh { .. } => "Twarpify SSH session",
+            WarpificationMode::Subshell { .. } => "Twarpify subshell",
         }
     }
 

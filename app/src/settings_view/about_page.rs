@@ -54,7 +54,7 @@ impl SettingsWidget for AboutPageWidget {
     type View = AboutPageView;
 
     fn search_terms(&self) -> &str {
-        "about warp version"
+        "about twarp version fork upstream warp"
     }
 
     fn render(
@@ -118,9 +118,23 @@ impl SettingsWidget for AboutPageWidget {
                 .with_child(version_row.finish())
                 .with_child(
                     ui_builder
-                        .span("Copyright 2026 Warp")
+                        .span("Twarp is a community fork of Warp.")
                         .build()
                         .with_margin_top(16.)
+                        .finish(),
+                )
+                .with_child(
+                    ui_builder
+                        .span("Upstream license and provenance are preserved; this is not an official Warp build.")
+                        .build()
+                        .with_margin_top(8.)
+                        .finish(),
+                )
+                .with_child(
+                    ui_builder
+                        .span("Portions copyright 2026 Warp")
+                        .build()
+                        .with_margin_top(8.)
                         .finish(),
                 )
                 .finish(),

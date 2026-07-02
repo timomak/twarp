@@ -461,9 +461,9 @@ impl View for SshInstallTmuxBlock {
         );
 
         let explanation = if self.outdated_version {
-            "In order to Warpify your SSH session, a more recent version of tmux (>=3.0) must be installed. "
+            "In order to Twarpify your SSH session, a more recent version of tmux (>=3.0) must be installed. "
         } else {
-            "In order to Warpify your SSH session, tmux must be installed. "
+            "In order to Twarpify your SSH session, tmux must be installed. "
         };
 
         let warpify_description = vec![

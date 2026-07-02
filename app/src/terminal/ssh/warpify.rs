@@ -80,7 +80,7 @@ impl Entity for SshWarpifyBlock {
 impl SshWarpifyBlock {
     fn render_title_ui(&self, theme: &WarpTheme, appearance: &Appearance) -> Box<dyn Element> {
         let icon = Icon::new(UiIcon::Warp.into(), theme.active_ui_detail());
-        warpify::render::header_row("Warpifying SSH Session...", icon, theme, appearance)
+        warpify::render::header_row("Twarpifying SSH Session...", icon, theme, appearance)
     }
 }
 
@@ -93,7 +93,7 @@ pub fn warpify_description(
 
     let description = FormattedText::new(vec![FormattedTextLine::Line(vec![
         FormattedTextFragment::plain_text(
-            "Bring Warp's features to your remote session. Blocks, full text editing, auto-complete, Oz, and more. "
+            "Bring Twarp's features to your remote session. Blocks, full text editing, auto-complete, Oz, and more. "
         ),
         FormattedTextFragment::hyperlink("Learn more", SSH_DOCS_URL),
     ])]);
