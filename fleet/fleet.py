@@ -755,22 +755,25 @@ def _collect_driver_trace(evid, started_at):
 def _ux_launch(it, name):
     """Build the item's branch as a real GUI .app bundle on the display pod and launch it via
     LaunchServices (`open`), so it attaches to the user's GUI session and renders on the real display.
-    A plain `cargo build --bin warp-oss` does NOT work: it omits the `gui` feature and produces a bare
+    A plain `cargo build --bin twarp-oss` does NOT work: it omits the `gui` feature and produces a bare
     binary that fatally exits ('no asset exists at path bundled/png/local.png'). `script/run` is the
     only correct macOS launch — it `cargo bundle`s with FEATURES=gui, stages resources, and codesigns,
-    producing target/debug/bundle/osx/WarpOss.app."""
+    producing target/debug/bundle/osx/<App>.app. The bundle name is resolved at run time (ls glob),
+    not hardcoded — 09-rebrand renames it, and a branch mid-rebrand must still gate with whatever
+    name it builds."""
     iid = it["id"]; repo = node_repo(name); wt = f"{node_wt(name)}/ux-{iid}"
-    app = "target/debug/bundle/osx/WarpOss.app"
     cmd = (fresh_worktree(name, wt, f"origin/fleet/{iid}") +
            f"export CARGO_TARGET_DIR={wt}/target\ncd {wt}\n"   # bundle resolves assets via its own tree
            f"./script/run --dont-open > /tmp/ux_build_{iid}.log 2>&1\necho BUILD_$?\n"
-           f"test -d {app} && echo BUNDLE_OK || echo BUNDLE_MISSING\n"
+           f'APP=$(ls -d target/debug/bundle/osx/*.app 2>/dev/null | head -1)\n'
+           f'test -n "$APP" && echo BUNDLE_OK || echo BUNDLE_MISSING\n'
            # Detach caffeinate's fds from the ssh pipe: left running through the drive phase, an
            # inherited stdout/stderr keeps the remote `bash -s` channel open so bash_on() never
            # returns and the gate hangs until timeout (never reaching the driver). </dev/null too.
            f"caffeinate -dimsu </dev/null >/dev/null 2>&1 & echo $! > /tmp/ux_caf_{iid}\n"
-           f"open {app} > /tmp/ux_open_{iid}.log 2>&1; echo OPEN_$?\n"
-           f"sleep 12\npgrep -f 'WarpOss.app' >/dev/null && echo RUNNING || echo NOTRUNNING\n")
+           f'open "$APP" > /tmp/ux_open_{iid}.log 2>&1; echo OPEN_$?\n'
+           # match the worktree's bundle path, not the app name — per-item precise + rename-proof
+           f"sleep 12\npgrep -f '{wt}/target/debug/bundle' >/dev/null && echo RUNNING || echo NOTRUNNING\n")
     say(f"  [{iid}] UX: building GUI bundle + launching on {name}'s display (multi-min build)…")
     with gatelock(name):                       # one cargo cache per pod
         r = bash_on(name, cmd, timeout=3600)
@@ -784,7 +787,7 @@ def _ux_launch(it, name):
 def _ux_teardown(it, name):
     iid = it["id"]; wt = f"{node_wt(name)}/ux-{iid}"; repo = node_repo(name)
     try:
-        bash_on(name, f"pkill -f 'WarpOss.app' 2>/dev/null || true\n"
+        bash_on(name, f"pkill -f '{wt}/target/debug/bundle' 2>/dev/null || true\n"
                       f"kill $(cat /tmp/ux_caf_{iid} 2>/dev/null) 2>/dev/null || true\n"
                       f"cd {repo}\ngit worktree remove --force {wt} 2>/dev/null || true\n"
                       f"rm -rf {wt}\ngit worktree prune\n", timeout=120)
@@ -1117,9 +1120,19 @@ def cmd_run(args):
     say(f"=== fleet up — self={SELF} pods={ACTIVE_PODS} builders={cap} gates={len(ACTIVE_PODS)} ===")
     batch_no = 0
     while True:
-        # reflect just-merged changes locally (e.g. STATUS.md checkbox ticks) — best-effort
+        # reflect just-merged changes locally (e.g. STATUS.md checkbox ticks). queue.json is
+        # machine-local runtime state this loop mutates in place, so it is always dirty here and a
+        # plain ff-merge silently refuses whenever an incoming commit touches it — set the checkout
+        # copy aside, merge, then restore the live ledger over whatever snapshot came in.
         sh(["git", "-C", str(SELF_REPO), "fetch", "-q", "origin"])
-        sh(["git", "-C", str(SELF_REPO), "merge", "-q", "--ff-only", "origin/master"])
+        with _qlock:
+            q = load()
+            sh(["git", "-C", str(SELF_REPO), "checkout", "-q", "--", "fleet/queue.json"])
+            r = sh(["git", "-C", str(SELF_REPO), "merge", "-q", "--ff-only", "origin/master"])
+            save(q)
+        if r.returncode != 0:
+            say(f"  WARN: ff-merge of origin/master failed — roadmap view may be stale: "
+                f"{(r.stderr or r.stdout).strip().splitlines()[0] if (r.stderr or r.stdout).strip() else '?'}")
         say(f"roadmap: {roadmap_sync()}")            # top up from the roadmap each batch
         picked = eligible(load(), cap=cap)           # up to total builder capacity, file-disjoint
         if not picked:
