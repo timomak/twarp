@@ -643,23 +643,38 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
         return;
     }
 
-    [entry.webView evaluateJavaScript:script
-                    completionHandler:^(id result, NSError *error) {
-                        if (error) {
-                            callback(context, NULL, error.localizedDescription.UTF8String);
-                            return;
-                        }
+    void (^completion)(id, NSError *) = ^(id result, NSError *error) {
+        if (error) {
+            callback(context, NULL, error.localizedDescription.UTF8String);
+            return;
+        }
 
-                        NSString *resultString = nil;
-                        if (!result || result == [NSNull null]) {
-                            resultString = @"";
-                        } else if ([result isKindOfClass:[NSString class]]) {
-                            resultString = (NSString *)result;
-                        } else {
-                            resultString = [result description];
-                        }
-                        callback(context, resultString.UTF8String, NULL);
-                    }];
+        NSString *resultString = nil;
+        if (!result || result == [NSNull null]) {
+            resultString = @"";
+        } else if ([result isKindOfClass:[NSString class]]) {
+            resultString = (NSString *)result;
+        } else {
+            resultString = [result description];
+        }
+        callback(context, resultString.UTF8String, NULL);
+    };
+
+    if (@available(macOS 11.0, *)) {
+        // The automation scripts evaluate to a Promise; the legacy
+        // evaluateJavaScript: API cannot serialize one and fails with
+        // WKErrorJavaScriptResultTypeIsUnsupported. callAsyncJavaScript
+        // awaits the Promise, but treats the source as a function *body*,
+        // so the expression must be returned explicitly.
+        NSString *body = [NSString stringWithFormat:@"return (%@);", script];
+        [entry.webView callAsyncJavaScript:body
+                                 arguments:@{}
+                                   inFrame:nil
+                            inContentWorld:WKContentWorld.pageWorld
+                         completionHandler:completion];
+    } else {
+        [entry.webView evaluateJavaScript:script completionHandler:completion];
+    }
 }
 
 - (void)takeNativeWebViewSnapshot:(NSUInteger)webViewId
