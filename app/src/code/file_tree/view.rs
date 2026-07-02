@@ -2266,7 +2266,7 @@ impl FileTreeView {
     ) {
         let settings = EditorSettings::as_ref(ctx);
         // twarp 05e: `resolve_file_target_to_open_in_warp` is the
-        // "force open in Warp" path used by the context-menu actions
+        // "force open in Twarp" path used by the context-menu actions
         // (Open in New Pane / Open in New Tab). For binary files
         // (PNG, WEBP, PDF, archives, …) Warp would just render
         // garbage, so fall through to the editor-choice resolver

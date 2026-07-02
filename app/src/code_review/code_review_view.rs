@@ -1430,7 +1430,7 @@ impl CodeReviewView {
         let init_project_button = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("Initialize codebase", NakedTheme)
                 .with_size(ButtonSize::Small)
-                .with_tooltip("Enables codebase indexing and WARP.md")
+                .with_tooltip("Enables codebase indexing and TWARP.md")
                 .with_tooltip_alignment(TooltipAlignment::Center)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(CodeReviewAction::InitProjectForCurrentDirectory)

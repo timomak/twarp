@@ -335,7 +335,7 @@ define_settings_group!(SessionSettings, settings: [
         sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
         private: false,
         toml_path: "terminal.input.honor_ps1",
-        description: "Whether to use your shell's PS1 prompt instead of the Warp prompt.",
+        description: "Whether to use your shell's PS1 prompt instead of the Twarp prompt.",
     },
     saved_prompt: SavedPrompt {
         type: PromptSelection,

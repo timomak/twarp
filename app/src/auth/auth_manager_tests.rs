@@ -37,7 +37,7 @@ fn track_invalid_state_failures(app: &mut App) -> Arc<AtomicBool> {
 }
 
 /// After a logged-in user successfully completes auth, pressing the browser's
-/// "Take me to Warp" button a second time should silently drop the stale
+/// "Take me to Twarp" button a second time should silently drop the stale
 /// redirect rather than surface an `InvalidStateParameter` error.
 #[test]
 fn test_duplicate_redirect_for_logged_in_user_is_silently_ignored() {
