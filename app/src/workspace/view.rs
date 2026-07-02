@@ -12849,10 +12849,17 @@ impl Workspace {
         // twarp 07: this refresh fires on focus/CD/detection for the active tab.
         // If that tab is a Claude-only pane group, (re)point the workspace-held
         // git status model at its focused repo so the top-right diff badge tracks
-        // changes without a terminal in the tab.
+        // changes without a terminal in the tab, and re-sync the code-review
+        // panel's repo list so a repo detected *after* the tab became active is
+        // picked up (the panel otherwise only re-syncs on tab switch /
+        // RepositoriesChanged and can miss late async detection).
         #[cfg(feature = "local_fs")]
         if pane_group_id == self.active_tab_pane_group().id() {
             self.update_claude_pane_git_status(ctx);
+            let working_directories_model = self.working_directories_model.clone();
+            self.right_panel_view.update(ctx, |right_panel, ctx| {
+                right_panel.resync_available_repos(&working_directories_model, ctx);
+            });
         }
     }
 

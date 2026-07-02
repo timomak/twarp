@@ -51,7 +51,7 @@ def now():
 def say(msg):
     print(f"[{now()}] {msg}", flush=True)
 
-DEFAULT_VERIFY = "cargo build --bin warp-oss"   # matches the roadmap-bridge default
+DEFAULT_VERIFY = "cargo build --bin twarp-oss"   # matches the roadmap-bridge default (bin renamed in 9c)
 
 def _normalize(it):
     """Manual queue items follow the documented schema (id/node/touches/depends_on/task/
@@ -355,7 +355,7 @@ def roadmap_sync():
             base = next((it for it in q["items"]
                          if it["id"] == feat or it["id"].split("-")[0] == feat.split("-")[0]), None)
             touches = (base["touches"][:] if base else ["app/**"]) + [f"roadmap/{feat}/STATUS.md"]
-            verify = base["verify"] if base else "cargo build --bin warp-oss"
+            verify = base["verify"] if base else "cargo build --bin twarp-oss"
             task = (f"Implement sub-phase {sub_id} of roadmap feature {feat}. FIRST read the merged "
                     f"specs roadmap/{feat}/PRODUCT.md and roadmap/{feat}/TECH.md. Sub-phase {sub_id} — "
                     f"{sub_title}: {sub_desc}\nImplement ONLY this sub-phase, scoped to its files. When "

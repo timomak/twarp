@@ -106,7 +106,7 @@
       ],
       "barrier": true,
       "task": "See roadmap/09-rebrand. BARRIER: renames every crate; the fleet must drain and freeze across it. Run solo.",
-      "verify": "cargo build --bin warp-oss"
+      "verify": "cargo build --bin twarp-oss"
     },
     {
       "id": "10-file-editor",
@@ -121,7 +121,7 @@
       ],
       "barrier": false,
       "task": "See roadmap/10-file-editor. Expose existing editor+LSP infra as a file-editing workflow.",
-      "verify": "cargo build --bin warp-oss"
+      "verify": "cargo build --bin twarp-oss"
     },
     {
       "id": "11-git-blame",
@@ -137,7 +137,7 @@
       ],
       "barrier": false,
       "task": "See roadmap/11-git-blame. Depends on 10 (no blame without a file surface); overlaps 10's files so cannot run concurrently with it.",
-      "verify": "cargo build --bin warp-oss"
+      "verify": "cargo build --bin twarp-oss"
     },
     {
       "id": "12-project-search-replace",
@@ -151,7 +151,7 @@
       ],
       "barrier": false,
       "task": "See roadmap/12-project-search-replace. Independent of 10/11 by file footprint.",
-      "verify": "cargo build --bin warp-oss"
+      "verify": "cargo build --bin twarp-oss"
     },
     {
       "id": "14-builtin-browser",
@@ -165,7 +165,7 @@
       ],
       "barrier": false,
       "task": "See roadmap/14-builtin-browser.",
-      "verify": "cargo build --bin warp-oss"
+      "verify": "cargo build --bin twarp-oss"
     },
     {
       "id": "15-computer-control",
@@ -179,7 +179,7 @@
       ],
       "barrier": false,
       "task": "See roadmap/15-computer-control.",
-      "verify": "cargo build --bin warp-oss"
+      "verify": "cargo build --bin twarp-oss"
     },
     {
       "id": "14a",
@@ -268,23 +268,26 @@
     },
     {
       "id": "14f",
-      "node": "any",
+      "node": "other-mac",
       "feature": "14-builtin-browser",
       "touches": [],
       "depends_on": [],
       "ux": true,
-      "status": "queued",
+      "status": "merged",
       "task": "Fix the built-in browser: the WKWebView loads pages (tab/URL update to the page title) but NEVER renders \u2014 content area stays black through load/Reload/re-layout. The child-NSView / Metal-overlay webview must composite its page content into the pane rect. Evidence: fleet/runs/ux_14-ux-verify/ (driver.md, s24.png). See roadmap/14-builtin-browser/STATUS.md 14f.",
       "ux_criteria": "Open a Browser pane, navigate to example.com, and confirm the page CONTENT is actually VISIBLE (the 'Example Domain' heading + paragraph render inside the pane). PASS only if live web content paints; REGRESSION if the content area is blank/black despite the tab title/URL updating.",
+      "title": "Fix the built-in browser: the WKWebView loads pages (tab/URL",
+      "verify": "cargo build --bin warp-oss",
+      "branch": "fleet/14f",
       "ux_level": "live",
       "ux_verdict": "pass",
-      "ux_evidence": "/Users/thirdfacedev/Development/twarp/fleet/runs/ux_14f"
+      "ux_evidence": "/Users/timofeymakhlay/Development/twarp/fleet/runs/ux_14f"
     },
     {
       "id": "15-computer-control-spec",
       "title": "15-computer-control: author specs",
-      "node": null,
-      "status": "queued",
+      "node": "other-mac",
+      "status": "merged",
       "depends_on": [],
       "touches": [
         "roadmap/15-computer-control/**"
@@ -292,6 +295,169 @@
       "barrier": false,
       "task": "Author the product + technical specs for roadmap feature 15-computer-control. Read roadmap/15-computer-control/STATUS.md (and roadmap/15-computer-control/PLAN.md if it exists) for scope. If the twarp `write-product-spec` / `write-tech-spec` skills are available to you, use them.\n1) Write roadmap/15-computer-control/PRODUCT.md: detailed user-facing behavior. It MUST end with a `## Smoke test` section \u2014 a numbered list of concrete steps to validate against a built twarp binary (per-sub-phase sub-headings if the feature is sub-phased).\n2) Write roadmap/15-computer-control/TECH.md: an implementation plan grounded in the CURRENT codebase (files/crates to touch, constraints, a sub-phase breakdown that matches the sub-phases listed in STATUS.md).\n3) In roadmap/15-computer-control/STATUS.md change the `**Phase:**` line to `**Phase:** impl-pending`.\nWrite ONLY spec/markdown \u2014 no product code.",
       "verify": "test -f roadmap/15-computer-control/PRODUCT.md && test -f roadmap/15-computer-control/TECH.md && grep -q '## Smoke test' roadmap/15-computer-control/PRODUCT.md",
+      "ux": false,
+      "branch": "fleet/15-computer-control-spec"
+    },
+    {
+      "id": "15a",
+      "title": "15-computer-control 15a: Self-excluding capture spike",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "crates/computer_use/**",
+        "app/src/overlay/**",
+        "roadmap/15-computer-control/STATUS.md"
+      ],
+      "barrier": false,
+      "task": "Implement sub-phase 15a of roadmap feature 15-computer-control. FIRST read the merged specs roadmap/15-computer-control/PRODUCT.md and roadmap/15-computer-control/TECH.md. Sub-phase 15a \u2014 Self-excluding capture spike: Corner `NSPanel` overlay + click-through glow window; prove twarp's chrome is absent from a capture (`sharingType = .none`, else a ScreenCaptureKit exclusion-filter backend). **Highest-risk gate.**\nImplement ONLY this sub-phase, scoped to its files. When done, tick this sub-phase's checkbox in roadmap/15-computer-control/STATUS.md from `- [ ]` to `- [x]`.",
+      "verify": "cargo build --bin warp-oss",
+      "ux": false,
+      "branch": "fleet/15a"
+    },
+    {
+      "id": "15b",
+      "title": "15-computer-control 15b: Overlay chrome + lifecycle",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "crates/computer_use/**",
+        "app/src/overlay/**",
+        "roadmap/15-computer-control/STATUS.md"
+      ],
+      "barrier": false,
+      "task": "Implement sub-phase 15b of roadmap feature 15-computer-control. FIRST read the merged specs roadmap/15-computer-control/PRODUCT.md and roadmap/15-computer-control/TECH.md. Sub-phase 15b \u2014 Overlay chrome + lifecycle: Non-activating, corner-pinned, all-Spaces/fullscreen-auxiliary panel; glow toggled with state and tinted to the active tab's color (reuse `floating_panel_surface_fill`), re-tinting on tab/color change; start/stop; feature flag.\nImplement ONLY this sub-phase, scoped to its files. When done, tick this sub-phase's checkbox in roadmap/15-computer-control/STATUS.md from `- [ ]` to `- [x]`.",
+      "verify": "cargo build --bin warp-oss",
+      "ux": false,
+      "branch": "fleet/15b"
+    },
+    {
+      "id": "15c",
+      "title": "15-computer-control 15c: Permissions onboarding",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "crates/computer_use/**",
+        "app/src/overlay/**",
+        "roadmap/15-computer-control/STATUS.md"
+      ],
+      "barrier": false,
+      "task": "Implement sub-phase 15c of roadmap feature 15-computer-control. FIRST read the merged specs roadmap/15-computer-control/PRODUCT.md and roadmap/15-computer-control/TECH.md. Sub-phase 15c \u2014 Permissions onboarding: Screen Recording + Accessibility TCC grants (restart-gated) with pre-flight prompts and blocked-state UI.\nImplement ONLY this sub-phase, scoped to its files. When done, tick this sub-phase's checkbox in roadmap/15-computer-control/STATUS.md from `- [ ]` to `- [x]`.",
+      "verify": "cargo build --bin warp-oss",
+      "ux": false,
+      "branch": "fleet/15c"
+    },
+    {
+      "id": "15d",
+      "title": "15-computer-control 15d: Agent loop",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "crates/computer_use/**",
+        "app/src/overlay/**",
+        "roadmap/15-computer-control/STATUS.md"
+      ],
+      "barrier": false,
+      "task": "Implement sub-phase 15d of roadmap feature 15-computer-control. FIRST read the merged specs roadmap/15-computer-control/PRODUCT.md and roadmap/15-computer-control/TECH.md. Sub-phase 15d \u2014 Agent loop: Bridge a Claude session to `computer_use::Actor`: screenshot \u2192 Claude computer-use tool \u2192 action \u2192 execute \u2192 repeat; region/downscale captures.\nImplement ONLY this sub-phase, scoped to its files. When done, tick this sub-phase's checkbox in roadmap/15-computer-control/STATUS.md from `- [ ]` to `- [x]`.",
+      "verify": "cargo build --bin warp-oss",
+      "ux": false,
+      "branch": "fleet/15d"
+    },
+    {
+      "id": "15e",
+      "title": "15-computer-control 15e: Safety + polish",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "crates/computer_use/**",
+        "app/src/overlay/**",
+        "roadmap/15-computer-control/STATUS.md"
+      ],
+      "barrier": false,
+      "task": "Implement sub-phase 15e of roadmap feature 15-computer-control. FIRST read the merged specs roadmap/15-computer-control/PRODUCT.md and roadmap/15-computer-control/TECH.md. Sub-phase 15e \u2014 Safety + polish: Always-available Stop, confirm-before-act default, action log, idle auto-stop. (Partly folded into 15b/15d.)\nImplement ONLY this sub-phase, scoped to its files. When done, tick this sub-phase's checkbox in roadmap/15-computer-control/STATUS.md from `- [ ]` to `- [x]`.",
+      "verify": "cargo build --bin warp-oss",
+      "ux": false,
+      "branch": "fleet/15e"
+    },
+    {
+      "id": "15-computer-control-advance",
+      "title": "advance active feature 15-computer-control \u2192 09-rebrand",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "roadmap/**"
+      ],
+      "barrier": false,
+      "task": "Roadmap bookkeeping ONLY \u2014 no product code. Feature 15-computer-control is fully merged.\n1) In roadmap/ROADMAP.md set feature 15-computer-control's table-row Phase cell to `merged`, and change the `**Currently active:**` line to `09-rebrand` (keep the format `` `09-rebrand` ``).\n2) In roadmap/15-computer-control/STATUS.md set the `**Phase:**` line to `merged`.\n3) In roadmap/09-rebrand/STATUS.md set the `**Phase:**` line to `spec-pending`.\nMake ONLY these edits. Do NOT reorder the ROADMAP table.",
+      "verify": "grep -q 'Currently active:.*09-rebrand' roadmap/ROADMAP.md",
+      "ux": false,
+      "branch": "fleet/15-computer-control-advance"
+    },
+    {
+      "id": "09-rebrand-spec",
+      "title": "09-rebrand: author specs",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "roadmap/09-rebrand/**"
+      ],
+      "barrier": false,
+      "task": "Author the product + technical specs for roadmap feature 09-rebrand. Read roadmap/09-rebrand/STATUS.md (and roadmap/09-rebrand/PLAN.md if it exists) for scope. If the twarp `write-product-spec` / `write-tech-spec` skills are available to you, use them.\n1) Write roadmap/09-rebrand/PRODUCT.md: detailed user-facing behavior. It MUST end with a `## Smoke test` section \u2014 a numbered list of concrete steps to validate against a built twarp binary (per-sub-phase sub-headings if the feature is sub-phased).\n2) Write roadmap/09-rebrand/TECH.md: an implementation plan grounded in the CURRENT codebase (files/crates to touch, constraints, a sub-phase breakdown that matches the sub-phases listed in STATUS.md).\n3) In roadmap/09-rebrand/STATUS.md change the `**Phase:**` line to `**Phase:** impl-pending`.\nWrite ONLY spec/markdown \u2014 no product code.",
+      "verify": "test -f roadmap/09-rebrand/PRODUCT.md && test -f roadmap/09-rebrand/TECH.md && grep -q '## Smoke test' roadmap/09-rebrand/PRODUCT.md",
+      "ux": false,
+      "branch": "fleet/09-rebrand-spec"
+    },
+    {
+      "id": "9a",
+      "title": "09-rebrand 9a: Audit doc",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "**",
+        "roadmap/09-rebrand/STATUS.md"
+      ],
+      "barrier": false,
+      "task": "Implement sub-phase 9a of roadmap feature 09-rebrand. FIRST read the merged specs roadmap/09-rebrand/PRODUCT.md and roadmap/09-rebrand/TECH.md. Sub-phase 9a \u2014 Audit doc: Enumerate every file/identifier/asset, classify each as rename / replace / keep / regenerate. Output: `roadmap/09-rebrand/AUDIT.md`. No code change. Drives 9b\u20139j.\nImplement ONLY this sub-phase, scoped to its files. When done, tick this sub-phase's checkbox in roadmap/09-rebrand/STATUS.md from `- [ ]` to `- [x]`.",
+      "verify": "cargo build --bin warp-oss",
+      "ux": false,
+      "branch": "fleet/9a"
+    },
+    {
+      "id": "9b",
+      "title": "09-rebrand 9b: Workspace + crate renames",
+      "node": "other-mac",
+      "status": "merged",
+      "depends_on": [],
+      "touches": [
+        "**",
+        "roadmap/09-rebrand/STATUS.md"
+      ],
+      "barrier": false,
+      "task": "Implement sub-phase 9b of roadmap feature 09-rebrand. FIRST read the merged specs roadmap/09-rebrand/PRODUCT.md and roadmap/09-rebrand/TECH.md. Sub-phase 9b \u2014 Workspace + crate renames: All `warp_*` \u2192 `twarp_*`, `warpui*` \u2192 `twarpui*`. Updates `Cargo.toml` workspace + every `use` import.\nImplement ONLY this sub-phase, scoped to its files. When done, tick this sub-phase's checkbox in roadmap/09-rebrand/STATUS.md from `- [ ]` to `- [x]`.",
+      "verify": "cargo build --bin warp-oss",
+      "ux": false,
+      "branch": "fleet/9b"
+    },
+    {
+      "id": "9c",
+      "title": "09-rebrand 9c: CLI binary + URL scheme",
+      "node": "other-mac",
+      "status": "queued",
+      "depends_on": [],
+      "touches": [
+        "**",
+        "roadmap/09-rebrand/STATUS.md"
+      ],
+      "barrier": false,
+      "task": "Implement sub-phase 9c of roadmap feature 09-rebrand. FIRST read the merged specs roadmap/09-rebrand/PRODUCT.md and roadmap/09-rebrand/TECH.md. Sub-phase 9c \u2014 CLI binary + URL scheme: `app/Cargo.toml` binaries (`warp` \u2192 `twarp`, `warp-oss` \u2192 `twarp-oss`); `warp://` URI scheme \u2192 `twarp://`.\nImplement ONLY this sub-phase, scoped to its files. When done, tick this sub-phase's checkbox in roadmap/09-rebrand/STATUS.md from `- [ ]` to `- [x]`.",
+      "verify": "cargo build --bin twarp-oss",
       "ux": false
     }
   ]

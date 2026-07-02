@@ -663,6 +663,14 @@ impl Element for SelectableArea {
     fn paint(&mut self, origin: Vector2F, ctx: &mut PaintContext, app: &AppContext) {
         self.origin = Some(Point::from_vec2f(origin, ctx.scene.z_index()));
         ctx.current_selection = self.get_current_selection_absolute();
+        if let Some(sel) = ctx.current_selection {
+            log::warn!(
+                "TWARP_SEL3 paint current_selection start={:?} end={:?} origin_x={}",
+                sel.start,
+                sel.end,
+                origin.x(),
+            );
+        }
         self.child.paint(origin, ctx, app);
         ctx.current_selection = None;
     }
@@ -704,13 +712,26 @@ impl Element for SelectableArea {
             }
             Event::LeftMouseDragged { position, .. } => {
                 if !self.selectable_area_state.is_selecting() {
+                    log::warn!(
+                        "TWARP_SEL3 drag BAIL not-selecting pos={:?} origin_x={:?}",
+                        position,
+                        self.origin.map(|o| o.xy().x()),
+                    );
                     return false;
                 }
                 let (Some(origin), Some(size)) = (self.origin, self.size) else {
+                    log::warn!("TWARP_SEL3 drag BAIL no-origin/size pos={position:?}");
                     return false;
                 };
 
                 let selection_updated = self.update_selection(*position);
+                log::warn!(
+                    "TWARP_SEL3 drag pos={:?} updated={} empty_after={} origin_x={}",
+                    position,
+                    selection_updated,
+                    self.is_current_selection_empty(),
+                    origin.xy.x(),
+                );
                 if !selection_updated {
                     return false;
                 }

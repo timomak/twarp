@@ -651,6 +651,45 @@ impl RightPanelView {
         ctx.notify();
     }
 
+    /// twarp 07: re-read the active pane group's repositories from the
+    /// working-directories model and re-apply them to the panel's dropdown state
+    /// (which auto-selects the first repo when nothing is selected). Unlike
+    /// [`Self::set_active_pane_group`], this does not re-subscribe — it is meant
+    /// to be called on every `refresh_working_directories_for_pane_group` for the
+    /// active tab, so a repo detected *after* the tab became active (a Claude
+    /// pane whose cwd is resolved asynchronously) is picked up. Without this the
+    /// panel only re-syncs on tab switch / `RepositoriesChanged`, so detection
+    /// that lands while the tab is already active can be missed and the panel
+    /// stays on "Cannot detect diffs for this folder".
+    #[cfg(feature = "local_fs")]
+    pub fn resync_available_repos(
+        &mut self,
+        working_directories_model: &ModelHandle<WorkingDirectoriesModel>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(pane_group) = self.active_pane_group.clone() else {
+            return;
+        };
+        let pane_group_id = pane_group.id();
+        if let Some(state) = &mut self.code_review_state {
+            let repos = working_directories_model.read(ctx, |model, _| {
+                model
+                    .most_recent_repositories_for_pane_group(pane_group_id)
+                    .map(|repos| repos.collect())
+                    .unwrap_or_default()
+            });
+            state.set_available_repos(repos, ctx);
+        }
+        let selected = self
+            .code_review_state
+            .as_ref()
+            .and_then(|s| s.selected_repo_path.clone());
+        if let Some(selected) = &selected {
+            self.ensure_code_review_view_exists(selected, ctx);
+        }
+        ctx.notify();
+    }
+
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     /// Will only update repo_path if one is not already set
     pub fn open_code_review(
