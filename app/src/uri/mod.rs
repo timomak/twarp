@@ -40,6 +40,14 @@ use twarpui::{AppContext, WindowId};
 use self::docker::open_docker_container;
 
 const DESKTOP_REDIRECT_URI_PATH: &str = "/desktop_redirect";
+const LEGACY_URI_SCHEMES: &[&str] = &[
+    "warp",
+    "warppreview",
+    "warpdev",
+    "warpintegration",
+    "warplocal",
+    "warposs",
+];
 
 /// Args for opening the MCP settings page via deeplink, with optional auto-install.
 /// The `autoinstall` value is the raw query param string; it is matched case-insensitively
@@ -56,9 +64,9 @@ pub enum UriHost {
     Action,
     /// A host prefix for all actions that involve launch configurations
     Launch,
-    /// Supports joining shared sessions via a warp:// URI.
+    /// Supports joining shared sessions via a twarp:// URI.
     SharedSession,
-    /// Supports viewing AI conversations via a warp:// URI.
+    /// Supports viewing AI conversations via a twarp:// URI.
     Conversation,
     /// Supports WD object actions
     Drive,
@@ -181,7 +189,7 @@ impl UriHost {
             }
             UriHost::SharedSession => {
                 // We expect the uri to have the ID of the session to join as the last segment.
-                // e.g. warp://shared_session/{id}
+                // e.g. twarp://shared_session/{id}
                 let session_id = url
                     .path_segments()
                     .into_iter()
@@ -217,7 +225,7 @@ impl UriHost {
             }
             UriHost::Drive => {
                 // We expect the uri to have the ID of the object we are trying to open and the object_type.
-                // e.g. warp://drive/{object_type}?id={UID}
+                // e.g. twarp://drive/{object_type}?id={UID}
                 // For folder links, we expect an additional query parameter primary_object_id which refers to the id object
                 // that should be opened
                 // When the user is directed here via the request access flow, we expect an additional query parameter invitee_email
@@ -282,12 +290,12 @@ impl UriHost {
             }
             UriHost::Settings => {
                 // We support opening different settings pages through URI:
-                // - warp://settings/teams?invite={email} - opens team settings with invite modal
-                // - warp://settings/billing_and_usage - opens billing and usage settings page
-                // - warp://settings/environments - opens environments settings page
-                // - warp://settings/mcp - opens MCP servers settings page
-                // - warp://settings/platform - opens platform settings page
-                // - warp://settings/appearance - opens appearance settings page (themes, fonts, etc.)
+                // - twarp://settings/teams?invite={email} - opens team settings with invite modal
+                // - twarp://settings/billing_and_usage - opens billing and usage settings page
+                // - twarp://settings/environments - opens environments settings page
+                // - twarp://settings/mcp - opens MCP servers settings page
+                // - twarp://settings/platform - opens platform settings page
+                // - twarp://settings/appearance - opens appearance settings page (themes, fonts, etc.)
                 let settings_sub_page: Option<String> = url
                     .path_segments()
                     .into_iter()
@@ -322,7 +330,7 @@ impl UriHost {
                             // twarp 2c-d.3: cloud environments are no longer supported.
                         }
                         "mcp" => {
-                            // warp://settings/mcp?autoinstall=<name> auto-installs a gallery MCP server.
+                            // twarp://settings/mcp?autoinstall=<name> auto-installs a gallery MCP server.
                             // The value is matched case-insensitively against gallery titles.
                             let autoinstall =
                                 query_string.get("autoinstall").map(|v| v.to_string());
@@ -795,7 +803,7 @@ impl Action {
 pub fn handle_incoming_uri(url: &Url, ctx: &mut AppContext) {
     // Non-dogfood builds must never log the full URL here: URLs routed to this
     // handler can carry secrets in their query string (for example, the
-    // Firebase `refresh_token` on `warp://auth/desktop_redirect?...`). Log
+    // Firebase `refresh_token` on `twarp://auth/desktop_redirect?...`). Log
     // only the non-sensitive components (scheme, host, path) on release
     // channels; dogfood builds retain the full URL for local debugging.
     safe_info!(
@@ -1066,9 +1074,9 @@ fn dispatch_action_in_new_or_existing_window<T: 'static>(
 
 /// Validates an incoming custom URI for security and returns the host.
 fn validate_custom_uri(url: &Url) -> Result<UriHost> {
-    // For now the only scheme we support is `[scheme_name]://[host_str]/...
-    // Ignore all other urls that don't match this scheme for security purposes.
-    if url.scheme() != ChannelState::url_scheme() {
+    // Accept the canonical `twarp://` scheme plus old Warp schemes as migration
+    // aliases. Ignore all other URLs for security purposes.
+    if !is_supported_custom_uri_scheme(url.scheme()) {
         return Err(anyhow!(
             "Received url with unexpected scheme: {} ",
             url.scheme()
@@ -1106,13 +1114,17 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
     Ok(host)
 }
 
+fn is_supported_custom_uri_scheme(scheme: &str) -> bool {
+    scheme == ChannelState::url_scheme() || LEGACY_URI_SCHEMES.contains(&scheme)
+}
+
 /// Formats the non-sensitive components of an incoming URL for logging on
 /// release channels.
 ///
 /// The returned string contains only the URL's scheme, host, and path — never
 /// its query string, fragment, or userinfo component. URLs that reach
 /// [`handle_incoming_uri`] can carry secrets in their query (for example, the
-/// Firebase refresh token in `warp://auth/desktop_redirect?refresh_token=...`),
+/// Firebase refresh token in `twarp://auth/desktop_redirect?refresh_token=...`),
 /// so this helper exists to give [`safe_info!`] a redacted representation that
 /// still preserves enough signal for triage.
 ///

@@ -12448,7 +12448,7 @@ impl TerminalView {
         ctx.notify();
     }
 
-    /// Handles an OSC 777 event with the `warp://cli-agent` sentinel title.
+    /// Handles an OSC 777 event with the `twarp://cli-agent` sentinel title.
     /// On `session_start`, creates a `CLIAgentSessionListener` that subscribes
     /// to subsequent events from this terminal's PTY.
     fn handle_cli_agent_notification(
