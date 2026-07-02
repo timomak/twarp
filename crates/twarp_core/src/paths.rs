@@ -166,7 +166,7 @@ pub fn secure_state_dir() -> Option<PathBuf> {
 
     #[cfg(target_os = "macos")]
     if let Some(app_group_root) = app_group_container_path() {
-        // The macOS project_path is the bundle ID (i.e. `dev.warp.Warp-Stable`).
+        // The macOS project_path is the bundle ID (i.e. `dev.twarp.Twarp-Stable`).
         let project_dirs = project_dirs()?;
         return Some(
             app_group_root
@@ -239,12 +239,12 @@ fn project_dirs_for_app_id(
     cfg_if::cfg_if! {
         if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
             // Adjust the base application name so that we end up with
-            // directories like "warp-terminal" and "warp-terminal-dev", to
+            // directories like "twarp-terminal" and "twarp-terminal-dev", to
             // match our Linux package name.
             let base_app_name = match app_id.application_name() {
-                "Warp" => "Warp-Terminal".to_owned(),
-                "WarpOss" => "Warp-Oss".to_owned(),
-                other if other.starts_with("Warp") => other.replace("Warp", "Warp-Terminal-"),
+                "Twarp" => "Twarp-Terminal".to_owned(),
+                "TwarpOss" => "Twarp-Oss".to_owned(),
+                other if other.starts_with("Twarp") => other.replace("Twarp", "Twarp-Terminal-"),
                 _ => app_id.application_name().to_owned(),
             };
         } else {
@@ -275,7 +275,7 @@ pub fn app_group_container_path() -> Option<PathBuf> {
 
         let fm = NSFileManager::defaultManager();
         // Keep in sync with Entitlements.plist
-        let group_id = format!("{}.dev.warp", crate::macos::APPLE_TEAM_ID);
+        let group_id = format!("{}.dev.twarp", crate::macos::APPLE_TEAM_ID);
         let group_id = NSString::from_str(&group_id);
         // containerURLForSecurityApplicationGroupIdentifier always returns a value on macOS (unlike iOS).
         // We have to double-check that the path points to a directory we can actually use. In addition to
@@ -305,11 +305,11 @@ pub fn app_group_container_path() -> Option<PathBuf> {
 ///
 /// ## Linux
 /// The resources directory is `$INSTALL_DIR/resources`, where `$INSTALL_DIR` depends on the
-/// specific package manager. For example, on Ubuntu this might be `/opt/warpdotdev/warp-terminal/resources`.
+/// specific package manager. For example, on Ubuntu this might be `/opt/twarpdev/twarp-terminal/resources`.
 ///
 /// ## Windows
 /// The resources directory is `$INSTALL_DIR/resources`, where `$INSTALL_DIR` is the directory
-/// containing the Warp executable (e.g. `C:\Program Files\WarpDev\resources`).
+/// containing the Warp executable (e.g. `C:\Program Files\TwarpDev\resources`).
 pub fn bundled_resources_dir() -> Option<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(target_os = "macos")] {

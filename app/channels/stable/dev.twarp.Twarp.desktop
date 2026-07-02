@@ -4,20 +4,20 @@ Version=1.0
 
 Type=Application
 
-Name=WarpPreview
+Name=Twarp
 GenericName=TerminalEmulator
 
-Exec=warp-terminal-preview %U
-StartupWMClass=dev.warp.WarpPreview
+Exec=warp-terminal %U
+StartupWMClass=dev.twarp.Twarp
 
 Keywords=shell;prompt;command;commandline;cmd;
 
-Icon=dev.warp.WarpPreview
+Icon=dev.twarp.Twarp
 
 Categories=System;TerminalEmulator;
 
 # Don't run this application within a terminal.
 Terminal=false
 
-# Register ourselves as the handler for warppreview:// URLs.
-MimeType=x-scheme-handler/warppreview;
+# Register ourselves as the handler for warp:// URLs.
+MimeType=x-scheme-handler/warp;
