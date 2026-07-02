@@ -15,12 +15,20 @@
 //! wire-shape parsing can be unit-tested without a window — the same split
 //! [`super::tool_cards`] uses for its formatting helpers.
 //!
+//! Current `claude` builds don't poll at all: the harness tracks the task and
+//! delivers its terminal state as a [`TaskNotification`] (a
+//! `system`/`task_notification` event live, a `<task-notification>` line in
+//! stored history), and kills go through `TaskStop`. The notification — joined
+//! back to its launch by `tool_use_id`, or by task id against the id announced
+//! in the launch acknowledgement — is what retires a script here; the
+//! `BashOutput`/`KillShell` pairing is kept for transcripts from older builds.
+//!
 //! Extraction is read-only and best-effort: twarp can observe the background
 //! scripts Claude launched, but cannot itself start, poll, or kill them (those
 //! are the model's tool calls). State that the transcript doesn't make explicit
 //! degrades to [`BackgroundScriptState::Running`] rather than guessing.
 
-use claude_code::{ToolStatus, TranscriptItem};
+use claude_code::{TaskNotification, TaskRunStatus, ToolStatus, TranscriptItem};
 use serde_json::Value;
 
 /// Run state of a background script, derived from the transcript.
@@ -31,10 +39,14 @@ pub(super) enum BackgroundScriptState {
     /// Launched and, as far as the transcript shows, still running. The default
     /// when nothing later marks it killed or finished.
     Running,
-    /// A `KillShell` / `KillBash` was issued for this shell.
+    /// A `TaskStop` / `KillShell` / `KillBash` was issued for this shell, or
+    /// its notification reported it stopped.
     Killed,
-    /// A `BashOutput` poll reported the shell completed / exited.
+    /// The task's notification (or a legacy `BashOutput` poll) reported it
+    /// completed successfully.
     Finished,
+    /// The task's notification reported it exited nonzero.
+    Failed,
 }
 
 impl BackgroundScriptState {
@@ -45,6 +57,7 @@ impl BackgroundScriptState {
             BackgroundScriptState::Running => "running",
             BackgroundScriptState::Killed => "stopped",
             BackgroundScriptState::Finished => "finished",
+            BackgroundScriptState::Failed => "failed",
         }
     }
 
@@ -95,12 +108,14 @@ fn str_field(input: &Value, key: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// The shell id a follow-up `BashOutput` / `KillShell` call targets. Claude uses
-/// `bash_id` for polls and `shell_id` for kills; accept either (plus a bare
-/// `id`) so a wire rename on one doesn't silently unmatch the rows.
+/// The shell id a follow-up `BashOutput` / `KillShell` / `TaskStop` call
+/// targets. Claude uses `bash_id` for polls, `shell_id` for legacy kills, and
+/// `task_id` for `TaskStop`; accept any (plus a bare `id`) so a wire rename on
+/// one doesn't silently unmatch the rows.
 fn referenced_shell_id(input: &Value) -> Option<String> {
     str_field(input, "bash_id")
         .or_else(|| str_field(input, "shell_id"))
+        .or_else(|| str_field(input, "task_id"))
         .or_else(|| str_field(input, "id"))
 }
 
@@ -171,12 +186,50 @@ fn append_output(script: &mut BackgroundScript, more: &str) {
 
 /// Collect every background script launched in `items` (descending into `Task`
 /// children), in launch order. A `Bash` call with `run_in_background: true` is a
-/// launch; its later `BashOutput` / `KillShell` calls — matched by shell id —
-/// refine its [`state`](BackgroundScript::state) and append to its output.
-pub(super) fn collect(items: &[TranscriptItem]) -> Vec<BackgroundScript> {
+/// launch; its later `BashOutput` / `KillShell` / `TaskStop` calls — matched by
+/// shell id — refine its [`state`](BackgroundScript::state) and append to its
+/// output, and each harness [`TaskNotification`] retires the script it belongs
+/// to (the completion signal current `claude` builds actually send).
+pub(super) fn collect(
+    items: &[TranscriptItem],
+    notifications: &[TaskNotification],
+) -> Vec<BackgroundScript> {
     let mut scripts: Vec<BackgroundScript> = Vec::new();
     walk(items, &mut scripts);
+    for notification in notifications {
+        apply_notification(&mut scripts, notification);
+    }
     scripts
+}
+
+/// Retire the script a terminal-state notification belongs to. Matched by the
+/// launch's `tool_use` id when the notification carries one (exact), else by
+/// the task id against the id parsed from the launch acknowledgement. Only a
+/// Running script transitions — a kill or launch failure already observed in
+/// the transcript is sticky — but the summary is always captured.
+fn apply_notification(scripts: &mut [BackgroundScript], notification: &TaskNotification) {
+    let by_tool_use =
+        |s: &BackgroundScript| notification.tool_use_id.as_deref() == Some(s.id.as_str());
+    let by_task_id =
+        |s: &BackgroundScript| s.shell_id.as_deref() == Some(notification.task_id.as_str());
+    let index = scripts
+        .iter()
+        .position(by_tool_use)
+        // Newest-first like `script_for_shell`, in case a task id recycles.
+        .or_else(|| scripts.iter().rposition(by_task_id));
+    let Some(script) = index.map(|i| &mut scripts[i]) else {
+        return;
+    };
+    if script.state == BackgroundScriptState::Running {
+        script.state = match notification.status {
+            TaskRunStatus::Completed => BackgroundScriptState::Finished,
+            TaskRunStatus::Failed => BackgroundScriptState::Failed,
+            TaskRunStatus::Stopped => BackgroundScriptState::Killed,
+        };
+    }
+    if let Some(summary) = &notification.summary {
+        append_output(script, summary);
+    }
 }
 
 /// Index of the script owning `shell_id`, searching newest-first so a recycled
@@ -245,7 +298,7 @@ fn walk(items: &[TranscriptItem], scripts: &mut Vec<BackgroundScript>) {
                     }
                 }
             }
-        } else if name == "KillShell" || name == "KillBash" {
+        } else if name == "KillShell" || name == "KillBash" || name == "TaskStop" {
             if let Some(shell_id) = referenced_shell_id(input) {
                 if let Some(script) = script_for_shell(scripts, &shell_id) {
                     if script.state == BackgroundScriptState::Running {
@@ -300,13 +353,13 @@ mod tests {
     #[test]
     fn foreground_bash_is_not_a_background_script() {
         let items = vec![tool("Bash", json!({ "command": "ls" }), Some("a.txt"))];
-        assert!(collect(&items).is_empty());
+        assert!(collect(&items, &[]).is_empty());
         let explicit_false = vec![tool(
             "Bash",
             json!({ "command": "ls", "run_in_background": false }),
             None,
         )];
-        assert!(collect(&explicit_false).is_empty());
+        assert!(collect(&explicit_false, &[]).is_empty());
     }
 
     #[test]
@@ -316,7 +369,7 @@ mod tests {
             "npm run dev",
             "Running in background with ID: bash_1",
         )];
-        let scripts = collect(&items);
+        let scripts = collect(&items, &[]);
         assert_eq!(scripts.len(), 1);
         assert_eq!(scripts[0].command, "npm run dev");
         assert_eq!(scripts[0].shell_id.as_deref(), Some("bash_1"));
@@ -334,7 +387,7 @@ mod tests {
             children: Vec::new(),
         }];
         assert_eq!(
-            collect(&items)[0].state,
+            collect(&items, &[])[0].state,
             BackgroundScriptState::LaunchFailed
         );
     }
@@ -345,7 +398,7 @@ mod tests {
             launch("t1", "tail -f log", "Started bash_7"),
             tool("KillShell", json!({ "shell_id": "bash_7" }), Some("killed")),
         ];
-        let scripts = collect(&items);
+        let scripts = collect(&items, &[]);
         assert_eq!(scripts.len(), 1, "kill is not its own script row");
         assert_eq!(scripts[0].state, BackgroundScriptState::Killed);
     }
@@ -360,7 +413,7 @@ mod tests {
                 Some("build ok\n<status>completed</status>"),
             ),
         ];
-        let scripts = collect(&items);
+        let scripts = collect(&items, &[]);
         assert_eq!(scripts[0].state, BackgroundScriptState::Finished);
         assert!(scripts[0].output.contains("build ok"));
     }
@@ -374,7 +427,10 @@ mod tests {
             "cd /tmp",
             "started bash_1\n<status>completed</status>",
         )];
-        assert_eq!(collect(&items)[0].state, BackgroundScriptState::Finished);
+        assert_eq!(
+            collect(&items, &[])[0].state,
+            BackgroundScriptState::Finished
+        );
     }
 
     #[test]
@@ -389,7 +445,10 @@ mod tests {
                 Some("task 3 completed, still watching…"),
             ),
         ];
-        assert_eq!(collect(&items)[0].state, BackgroundScriptState::Running);
+        assert_eq!(
+            collect(&items, &[])[0].state,
+            BackgroundScriptState::Running
+        );
     }
 
     #[test]
@@ -403,7 +462,7 @@ mod tests {
                 Some("late output"),
             ),
         ];
-        let scripts = collect(&items);
+        let scripts = collect(&items, &[]);
         assert_eq!(scripts[0].state, BackgroundScriptState::Killed);
         assert!(
             scripts[0].output.contains("late output"),
@@ -421,7 +480,7 @@ mod tests {
             output: None,
             children: vec![launch("child", "cargo watch", "bash_5")],
         }];
-        let scripts = collect(&items);
+        let scripts = collect(&items, &[]);
         assert_eq!(scripts.len(), 1);
         assert_eq!(scripts[0].command, "cargo watch");
     }
@@ -432,10 +491,139 @@ mod tests {
             launch("a", "first", "bash_1"),
             launch("b", "second", "bash_2"),
         ];
-        let scripts = collect(&items);
+        let scripts = collect(&items, &[]);
         assert_eq!(scripts.len(), 2);
         assert_eq!(scripts[0].id, "a");
         assert_eq!(scripts[1].command, "second");
+    }
+
+    /// The launch acknowledgement current `claude` builds emit — the id is a
+    /// harness task id, not a `bash_<n>` handle.
+    const MODERN_ACK: &str = "Command running in background with ID: b0nv3gmmz. \
+        Output is being written to: /tmp/tasks/b0nv3gmmz.output. \
+        You will be notified when it completes.";
+
+    fn notification(
+        task_id: &str,
+        tool_use_id: Option<&str>,
+        status: TaskRunStatus,
+        summary: Option<&str>,
+    ) -> TaskNotification {
+        TaskNotification {
+            task_id: task_id.to_owned(),
+            tool_use_id: tool_use_id.map(str::to_owned),
+            status,
+            summary: summary.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn task_notification_by_tool_use_id_finishes_script() {
+        let items = vec![launch("toolu_1", "sleep 2 && echo done", MODERN_ACK)];
+        let notes = [notification(
+            "b0nv3gmmz",
+            Some("toolu_1"),
+            TaskRunStatus::Completed,
+            Some("Background command \"…\" completed (exit code 0)"),
+        )];
+        let scripts = collect(&items, &notes);
+        assert_eq!(scripts[0].state, BackgroundScriptState::Finished);
+        assert!(
+            scripts[0].output.contains("exit code 0"),
+            "summary captured into output"
+        );
+    }
+
+    #[test]
+    fn task_notification_failure_reads_failed() {
+        let items = vec![launch("toolu_1", "exit 3", MODERN_ACK)];
+        let notes = [notification(
+            "b0nv3gmmz",
+            Some("toolu_1"),
+            TaskRunStatus::Failed,
+            Some("Background command \"…\" failed with exit code 3"),
+        )];
+        let scripts = collect(&items, &notes);
+        assert_eq!(scripts[0].state, BackgroundScriptState::Failed);
+        assert!(!scripts[0].state.is_active());
+    }
+
+    #[test]
+    fn task_notification_stop_reads_stopped() {
+        let items = vec![launch("toolu_1", "sleep 90", MODERN_ACK)];
+        let notes = [notification(
+            "b0nv3gmmz",
+            Some("toolu_1"),
+            TaskRunStatus::Stopped,
+            None,
+        )];
+        assert_eq!(
+            collect(&items, &notes)[0].state,
+            BackgroundScriptState::Killed
+        );
+    }
+
+    #[test]
+    fn task_notification_matches_by_task_id_when_tool_use_id_missing() {
+        // The modern ack's "with ID: b0nv3gmmz" parses as the shell id, so a
+        // notification lacking `tool_use_id` still finds its launch.
+        let items = vec![launch("toolu_1", "make build", MODERN_ACK)];
+        let notes = [notification(
+            "b0nv3gmmz",
+            None,
+            TaskRunStatus::Completed,
+            None,
+        )];
+        assert_eq!(
+            collect(&items, &notes)[0].state,
+            BackgroundScriptState::Finished
+        );
+    }
+
+    #[test]
+    fn task_notification_for_unknown_task_is_ignored() {
+        let items = vec![launch("toolu_1", "npm run dev", MODERN_ACK)];
+        let notes = [notification(
+            "other_task",
+            Some("toolu_other"),
+            TaskRunStatus::Completed,
+            None,
+        )];
+        assert_eq!(
+            collect(&items, &notes)[0].state,
+            BackgroundScriptState::Running,
+            "an unmatched notification must not retire someone else's script"
+        );
+    }
+
+    #[test]
+    fn task_notification_does_not_reanimate_killed_script() {
+        // The kill observed in the transcript is sticky; the (stopped)
+        // notification that follows must not flip the state, but its summary
+        // is still captured.
+        let items = vec![
+            launch("toolu_1", "server", MODERN_ACK),
+            tool("TaskStop", json!({ "task_id": "b0nv3gmmz" }), None),
+        ];
+        let notes = [notification(
+            "b0nv3gmmz",
+            Some("toolu_1"),
+            TaskRunStatus::Completed,
+            Some("late summary"),
+        )];
+        let scripts = collect(&items, &notes);
+        assert_eq!(scripts[0].state, BackgroundScriptState::Killed);
+        assert!(scripts[0].output.contains("late summary"));
+    }
+
+    #[test]
+    fn task_stop_call_marks_stopped() {
+        // Kills go through `TaskStop {task_id}` on current builds.
+        let items = vec![
+            launch("toolu_1", "sleep 90", MODERN_ACK),
+            tool("TaskStop", json!({ "task_id": "b0nv3gmmz" }), None),
+        ];
+        assert_eq!(collect(&items, &[])[0].state, BackgroundScriptState::Killed);
     }
 
     #[test]

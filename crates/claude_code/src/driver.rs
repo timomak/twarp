@@ -20,7 +20,8 @@ use futures::stream::Stream;
 use serde_json::{json, Value};
 
 use crate::{
-    EndReason, McpServerInfo, TodoItem, TodoStatus, ToolOutput, TranscriptEvent, TurnMetrics, Usage,
+    EndReason, McpServerInfo, TaskNotification, TaskRunStatus, TodoItem, TodoStatus, ToolOutput,
+    TranscriptEvent, TurnMetrics, Usage,
 };
 
 /// Permission mode passed to `claude --permission-mode`. The CLI argument
@@ -801,8 +802,19 @@ fn parse_control_request(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
 }
 
 fn parse_system(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
-    if value.get("subtype").and_then(|v| v.as_str()) != Some("init") {
-        return;
+    match value.get("subtype").and_then(|v| v.as_str()) {
+        Some("init") => {}
+        // A background task reached a terminal state. This is the *only*
+        // completion signal a `run_in_background` Bash gets from current
+        // `claude` builds (they never poll via `BashOutput`) — dropping it
+        // left the background-scripts panel showing "running" forever.
+        Some("task_notification") => {
+            if let Some(notification) = parse_task_notification_event(value) {
+                out.push_back(TranscriptEvent::TaskNotification(notification));
+            }
+            return;
+        }
+        _ => return,
     }
     let Some(session_id) = value
         .get("session_id")
@@ -939,6 +951,56 @@ fn parse_assistant(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
     }
 }
 
+/// The wire → [`TaskRunStatus`] mapping shared by the live system event and
+/// the stored `<task-notification>` line. An unknown status yields `None` —
+/// the notification is dropped rather than guessed (PRODUCT §53), leaving the
+/// script at "running".
+fn parse_task_status(status: &str) -> Option<TaskRunStatus> {
+    match status {
+        "completed" => Some(TaskRunStatus::Completed),
+        "failed" => Some(TaskRunStatus::Failed),
+        // The notification says `stopped`; the sibling `task_updated` patch
+        // says `killed` for the same transition — accept both.
+        "stopped" | "killed" => Some(TaskRunStatus::Stopped),
+        _ => None,
+    }
+}
+
+/// Parse a live `system`/`task_notification` event. `None` when the required
+/// `task_id`/`status` fields are missing or the status is unfamiliar.
+fn parse_task_notification_event(value: &Value) -> Option<TaskNotification> {
+    let str_field = |key: &str| value.get(key).and_then(|v| v.as_str());
+    Some(TaskNotification {
+        task_id: str_field("task_id")?.to_owned(),
+        tool_use_id: str_field("tool_use_id").map(str::to_owned),
+        status: parse_task_status(str_field("status")?)?,
+        summary: str_field("summary").map(str::to_owned),
+    })
+}
+
+/// Parse a stored-history `<task-notification>` user line — the on-disk twin
+/// of the live `task_notification` system event (the harness enqueues the
+/// notification as a user turn, so that's how the session file records it).
+/// `None` when the text isn't such an envelope or lacks the required tags.
+fn parse_task_notification_text(text: &str) -> Option<TaskNotification> {
+    let trimmed = text.trim_start();
+    if !trimmed.starts_with("<task-notification>") {
+        return None;
+    }
+    Some(TaskNotification {
+        task_id: tag_content(trimmed, "task-id")?.trim().to_owned(),
+        tool_use_id: tag_content(trimmed, "tool-use-id")
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned),
+        status: parse_task_status(tag_content(trimmed, "status")?.trim())?,
+        summary: tag_content(trimmed, "summary")
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned),
+    })
+}
+
 fn parse_user_event(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
     // `user` events on the way back from claude carry tool results, not user
     // turns (the user's own messages are echoed via stdin only).
@@ -1020,14 +1082,13 @@ fn parse_todos(input: &Value) -> Option<Vec<TodoItem>> {
 /// (they aren't something the user said), or the text unchanged when it isn't
 /// a command envelope.
 pub(crate) fn display_user_text(text: &str) -> Option<String> {
-    fn tag_content<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
-        let open = format!("<{tag}>");
-        let close = format!("</{tag}>");
-        let start = text.find(&open)? + open.len();
-        let end = text[start..].find(&close)? + start;
-        Some(&text[start..end])
-    }
     let trimmed = text.trim_start();
+    if trimmed.starts_with("<task-notification>") {
+        // Harness bookkeeping (a background task's completion), not something
+        // the user said — even when the envelope is too malformed to parse
+        // into a TaskNotification, never render it as a user bubble.
+        return None;
+    }
     if trimmed.starts_with("<command-") {
         if let Some(name) = tag_content(trimmed, "command-name") {
             let name = name.trim();
@@ -1044,6 +1105,15 @@ pub(crate) fn display_user_text(text: &str) -> Option<String> {
         return None;
     }
     Some(text.to_owned())
+}
+
+/// The body of the first `<tag>…</tag>` in `text`, `None` when absent.
+fn tag_content<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = text.find(&open)? + open.len();
+    let end = text[start..].find(&close)? + start;
+    Some(&text[start..end])
 }
 
 pub(crate) fn parse_history_line(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
@@ -1067,7 +1137,14 @@ pub(crate) fn parse_history_line(value: &Value, out: &mut VecDeque<TranscriptEve
                 _ => String::new(),
             };
             if !text.is_empty() {
-                if let Some(display) = display_user_text(&text) {
+                // A background task's completion is enqueued as a user turn,
+                // so the session file stores it as a `<task-notification>`
+                // envelope — replay it as the notification it is (the live
+                // stream's `system`/`task_notification`), never as user prose
+                // (`display_user_text` drops the envelope regardless).
+                if let Some(notification) = parse_task_notification_text(&text) {
+                    out.push_back(TranscriptEvent::TaskNotification(notification));
+                } else if let Some(display) = display_user_text(&text) {
                     out.push_back(TranscriptEvent::UserMessage(display));
                 }
             }
@@ -1261,6 +1338,95 @@ mod tests {
             }
             other => panic!("expected SessionInit, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_task_notification_system_event() {
+        // The live completion signal for a `run_in_background` Bash — verbatim
+        // shape (minus ids) from a captured claude 2.x stream.
+        let v: Value = serde_json::from_str(
+            r#"{"type":"system","subtype":"task_notification","task_id":"b0nv3gmmz",
+                "tool_use_id":"toolu_014j","status":"completed",
+                "output_file":"/tmp/tasks/b0nv3gmmz.output",
+                "summary":"Background command \"build\" completed (exit code 0)"}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        match out.front() {
+            Some(TranscriptEvent::TaskNotification(n)) => {
+                assert_eq!(n.task_id, "b0nv3gmmz");
+                assert_eq!(n.tool_use_id.as_deref(), Some("toolu_014j"));
+                assert_eq!(n.status, TaskRunStatus::Completed);
+                assert!(n.summary.as_deref().unwrap().contains("exit code 0"));
+            }
+            other => panic!("expected TaskNotification, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn task_notification_statuses_map_failed_and_stopped() {
+        for (wire, expected) in [
+            ("failed", TaskRunStatus::Failed),
+            ("stopped", TaskRunStatus::Stopped),
+            ("killed", TaskRunStatus::Stopped),
+        ] {
+            let v: Value = serde_json::from_str(&format!(
+                r#"{{"type":"system","subtype":"task_notification","task_id":"t1","status":"{wire}"}}"#,
+            ))
+            .unwrap();
+            let mut out = VecDeque::new();
+            parse_event_into(&v, &mut out);
+            match out.front() {
+                Some(TranscriptEvent::TaskNotification(n)) => assert_eq!(n.status, expected),
+                other => panic!("expected TaskNotification for `{wire}`, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn task_notification_with_unknown_status_is_dropped() {
+        let v: Value = serde_json::from_str(
+            r#"{"type":"system","subtype":"task_notification","task_id":"t1","status":"paused"}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_event_into(&v, &mut out);
+        assert!(out.is_empty(), "unfamiliar status dropped, not guessed");
+    }
+
+    #[test]
+    fn history_task_notification_line_replays_as_notification_not_user_turn() {
+        // The session file stores the notification as a `user` line carrying a
+        // `<task-notification>` envelope — verbatim shape from claude's jsonl.
+        let v: Value = serde_json::from_str(
+            r#"{"type":"user","message":{"role":"user","content":"<task-notification>\n<task-id>b0nv3gmmz</task-id>\n<tool-use-id>toolu_014j</tool-use-id>\n<output-file>/tmp/tasks/b0nv3gmmz.output</output-file>\n<status>completed</status>\n<summary>Background command \"build\" completed (exit code 0)</summary>\n</task-notification>"}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_history_line(&v, &mut out);
+        assert_eq!(out.len(), 1);
+        match out.front() {
+            Some(TranscriptEvent::TaskNotification(n)) => {
+                assert_eq!(n.task_id, "b0nv3gmmz");
+                assert_eq!(n.tool_use_id.as_deref(), Some("toolu_014j"));
+                assert_eq!(n.status, TaskRunStatus::Completed);
+            }
+            other => panic!("expected TaskNotification, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn malformed_task_notification_never_renders_as_user_bubble() {
+        // Even when the envelope can't be parsed (no task-id), it's harness
+        // bookkeeping — a resumed pane must not show the raw XML as a prompt.
+        let v: Value = serde_json::from_str(
+            r#"{"type":"user","message":{"role":"user","content":"<task-notification>garbled</task-notification>"}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_history_line(&v, &mut out);
+        assert!(out.is_empty());
     }
 
     #[test]

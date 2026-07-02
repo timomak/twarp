@@ -3918,7 +3918,10 @@ impl ClaudeCodeView {
                 return scripts.clone();
             }
         }
-        let scripts = std::rc::Rc::new(background_scripts::collect(self.transcript.items()));
+        let scripts = std::rc::Rc::new(background_scripts::collect(
+            self.transcript.items(),
+            self.transcript.task_notifications(),
+        ));
         *self.background_scripts_memo.borrow_mut() = Some((revision, scripts.clone()));
         scripts
     }
@@ -4235,7 +4238,9 @@ impl ClaudeCodeView {
         let status_icon: Box<dyn Element> = match script.state {
             BackgroundScriptState::Running => inline_action::running_icon(appearance).finish(),
             BackgroundScriptState::Finished => inline_action::green_check_icon(appearance).finish(),
-            BackgroundScriptState::LaunchFailed => inline_action::red_x_icon(appearance).finish(),
+            BackgroundScriptState::LaunchFailed | BackgroundScriptState::Failed => {
+                inline_action::red_x_icon(appearance).finish()
+            }
             BackgroundScriptState::Killed => {
                 Icon::new(crate::ui_components::icons::Icon::Stop.into(), muted).finish()
             }
@@ -4859,7 +4864,10 @@ impl ClaudeCodeView {
             }
         }
         if let Some(current) = self.model.as_deref() {
-            if !entries.iter().any(|(value, _)| value.as_deref() == Some(current)) {
+            if !entries
+                .iter()
+                .any(|(value, _)| value.as_deref() == Some(current))
+            {
                 entries.push((Some(current.to_owned()), prettify_model(current)));
             }
         }
