@@ -13,8 +13,8 @@
               "value" : "none"
             }
           ],
-          "image-name" : "Glyph.svg",
-          "name" : "Glyph"
+          "image-name" : "twarp-glyph.svg",
+          "name" : "twarp-glyph"
         },
         {
           "glass" : false,
@@ -23,8 +23,8 @@
         },
         {
           "fill" : "none",
-          "image-name" : "PLACE HERE.png",
-          "name" : "PLACE HERE"
+          "image-name" : "twarp-dev-overlay.png",
+          "name" : "twarp-dev-overlay"
         }
       ],
       "shadow" : {

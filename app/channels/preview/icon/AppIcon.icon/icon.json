@@ -6,8 +6,8 @@
     {
       "layers" : [
         {
-          "image-name" : "Preview.png",
-          "name" : "Preview"
+          "image-name" : "twarp-preview.png",
+          "name" : "twarp-preview"
         }
       ],
       "shadow" : {

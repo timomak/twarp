@@ -64,7 +64,7 @@ pub enum AppIcon {
     #[schemars(description = "Sticker")]
     Sticker,
     /// Previous default icon with solid blue background.
-    #[schemars(description = "Warp 1")]
+    #[schemars(description = "Twarp 1")]
     WarpOne,
 }
 
@@ -87,7 +87,7 @@ impl std::fmt::Display for AppIcon {
             AppIcon::Original => "Original",
             AppIcon::Starburst => "Starburst",
             AppIcon::Sticker => "Sticker",
-            AppIcon::WarpOne => "Warp 1",
+            AppIcon::WarpOne => "Twarp 1",
         };
         write!(f, "{value}")
     }
@@ -101,7 +101,7 @@ impl AppIconSettings {
                 Channel::Dev => "dev",
                 Channel::Preview => "preview",
                 Channel::Local => "local",
-                _ => "warp_2",
+                _ => "twarp_2",
             },
             AppIcon::Classic1 => "classic_1",
             AppIcon::Classic2 => "classic_2",
