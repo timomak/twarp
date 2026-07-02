@@ -1,6 +1,6 @@
 # 10 — File editor surface with go-to-definition
 
-**Phase:** not-started
+**Phase:** spec-pending
 **Spec PR:** —
 **Impl PRs:** —
 
