@@ -31,7 +31,7 @@ File and crate renames are the worst case for git merges; doing this last keeps 
 - [x] **9g — Build scripts + installers.** Linux RPM/deb/Arch/AppImage, Windows `.iss`, macOS bundling, GitHub workflow filenames.
 - [x] **9h — Servers + telemetry.** Stub or redirect `app.warp.dev` URLs (auto-update, login, telemetry). After 02 the surface is much smaller.
 - [x] **9i — Internal feature renames.** `warp_drive` → `twarp_drive`, `warpify` → `twarpify`, `warp_pack` → `twarp_pack`, `open_in_warp` → `open_in_twarp`. Also `.warp/` → `.twarp/`, `.warpindexingignore` → `.twarpindexingignore`, `WARP.md` → `TWARP.md`.
-- [ ] **9j — Cleanup sweep.** `rg` for any remaining `\b[Ww]arp\b`, manually classify. Update `Cargo.toml` workspace `authors`. Final pass.
+- [x] **9j — Cleanup sweep.** `rg` for any remaining `\b[Ww]arp\b`, manually classify. Update `Cargo.toml` workspace `authors`. Final pass.
 
 ## What stays "Warp"
 
