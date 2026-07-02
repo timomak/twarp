@@ -29,7 +29,7 @@ pub enum InstallOrigin {
     /// Triggered by a user gesture inside Warp (gallery card click,
     /// reinstall button, programmatic in-app flows, etc.).
     InApp,
-    /// Triggered by a `warp://settings/mcp?autoinstall=...` deeplink; must be
+    /// Triggered by a `twarp://settings/mcp?autoinstall=...` deeplink; must be
     /// gated by an explicit in-app confirmation before install or spawn.
     Deeplink,
 }

@@ -159,7 +159,7 @@ impl WebIntent {
     }
 }
 
-/// Attempts to rewrite a Warp web URL into a native desktop intent URL (warp://...).
+/// Attempts to rewrite a Warp web URL into a native desktop intent URL (twarp://...).
 /// Returns `None` if the URL is not a recognized Warp web intent.
 pub fn maybe_rewrite_web_url_to_intent(url: &Url) -> Option<Url> {
     WebIntent::try_from_url(url)

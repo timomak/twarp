@@ -12,12 +12,12 @@ use twarp_core::{
 // twarp: feature 05 (Open Changes rework) builds on top of the right-side
 // Code Review panel layout that upstream gates behind a Preview flag. The
 // rework IS the canonical layout for twarp, so enable the flag in OSS by
-// default — otherwise `cargo run` (which defaults to warp-oss) hides the
+// default — otherwise `cargo run` (which defaults to twarp-oss) hides the
 // reworked sidebar entirely.
 //
 // twarp: feature 08 (macOS UI overhaul, sub-phase 8b/8c) gates drag-a-tab-out
 // / drag-between-windows behind DragTabsToWindows, which upstream ships only in
-// DOGFOOD_FLAGS. warp-oss (the default `./script/run` binary) never enables the
+// DOGFOOD_FLAGS. twarp-oss (the default `./script/run` binary) never enables the
 // dogfood set, so without this the tab drag axis stays locked to horizontal and
 // detach-to-new-window never fires. Force-enable it for the OSS build.
 const TWARP_OSS_FLAGS: &[FeatureFlag] = &[
@@ -25,13 +25,13 @@ const TWARP_OSS_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::DragTabsToWindows,
 ];
 
-// Simple wrapper around twarp::run() for Warp OSS builds.
+// Simple wrapper around twarp::run() for Twarp OSS builds.
 fn main() -> Result<()> {
     let mut state = ChannelState::new(
         Channel::Oss,
         ChannelConfig {
             app_id: AppId::new("dev", "warp", "WarpOss"),
-            logfile_name: "warp-oss.log".into(),
+            logfile_name: "twarp-oss.log".into(),
             server_config: WarpServerConfig::production(),
             oz_config: OzConfig::production(),
             telemetry_config: None,
@@ -61,7 +61,7 @@ embed_plist::embed_info_plist_bytes!(r#"
     <key>CFBundleDisplayName</key>
     <string>WarpOss</string>
     <key>CFBundleExecutable</key>
-    <string>warp-oss</string>
+    <string>twarp-oss</string>
     <key>CFBundleIdentifier</key>
     <string>dev.warp.WarpOss</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -79,7 +79,7 @@ embed_plist::embed_info_plist_bytes!(r#"
     <key>UIDesignRequiresCompatibility</key>
     <true/>
     <key>CFBundleURLTypes</key>
-    <array><dict><key>CFBundleURLName</key><string>Custom App</string><key>CFBundleURLSchemes</key><array><string>warposs</string></array></dict></array>
+    <array><dict><key>CFBundleURLName</key><string>Custom App</string><key>CFBundleURLSchemes</key><array><string>twarp</string></array></dict></array>
     <key>NSHumanReadableCopyright</key>
     <string>© 2026, Denver Technologies, Inc</string>
     </dict>
