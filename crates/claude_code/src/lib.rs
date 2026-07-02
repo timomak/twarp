@@ -66,6 +66,35 @@ pub struct McpServerInfo {
     pub tools: Vec<String>,
 }
 
+/// Terminal status of a harness-tracked background task (a `Bash` call with
+/// `run_in_background: true`). Modern `claude` builds never poll such a task
+/// via `BashOutput`; its only completion signal is a notification — a
+/// `system`/`task_notification` event live, a `<task-notification>` user line
+/// in the stored session file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskRunStatus {
+    /// Exited zero.
+    Completed,
+    /// Exited nonzero (the summary carries the exit code).
+    Failed,
+    /// Stopped via `TaskStop` before exiting on its own.
+    Stopped,
+}
+
+/// A background task's completion notification (see [`TaskRunStatus`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskNotification {
+    /// The harness task id — the same id the launch acknowledgement announces
+    /// ("Command running in background with ID: …").
+    pub task_id: String,
+    /// The launching call's `tool_use` id, when the notification carried it —
+    /// an exact key back to the `Bash` card that started the task.
+    pub tool_use_id: Option<String>,
+    pub status: TaskRunStatus,
+    /// Human summary ("Background command … completed (exit code 0)").
+    pub summary: Option<String>,
+}
+
 /// Status of a tool-call card (PRODUCT §23: running → completed/failed).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolStatus {
@@ -241,6 +270,10 @@ pub enum TranscriptEvent {
     /// Cost + timing for the turn that just completed, from the `result`
     /// message. Rendered as a per-turn metrics line (PRODUCT §48).
     Metrics(TurnMetrics),
+    /// A background task reached a terminal state. Not a transcript item of its
+    /// own — the background-scripts view joins it back to the launching `Bash`
+    /// card to retire the script's "running" status.
+    TaskNotification(TaskNotification),
 }
 
 /// One rendered item in the transcript. The panel owns an ordered `Vec` of
@@ -326,6 +359,10 @@ pub struct Transcript {
     mcp_servers: Vec<McpServerInfo>,
     /// Latest turn's token usage + context window (from `result`).
     usage: Option<Usage>,
+    /// Terminal-state notifications for background tasks, one per task id.
+    /// Kept beside the items (not in them) because a notification is a join
+    /// key back to a `Bash` card, not a renderable transcript entry.
+    task_notifications: Vec<TaskNotification>,
     /// Bumped on every mutation (`apply` / `clear`). Lets renderers cheaply
     /// invalidate derived views (e.g. the background-scripts list) without
     /// diffing the items — equal revision ⇒ identical `items`.
@@ -442,6 +479,12 @@ impl Transcript {
         self.usage
     }
 
+    /// Background tasks' terminal-state notifications, one per task id. The
+    /// background-scripts view joins these to launching `Bash` cards.
+    pub fn task_notifications(&self) -> &[TaskNotification] {
+        &self.task_notifications
+    }
+
     /// Reset the transcript (e.g. starting a brand-new session).
     pub fn clear(&mut self) {
         self.items.clear();
@@ -452,6 +495,7 @@ impl Transcript {
         self.slash_commands.clear();
         self.mcp_servers.clear();
         self.usage = None;
+        self.task_notifications.clear();
         self.revision = self.revision.wrapping_add(1);
     }
 
@@ -712,6 +756,19 @@ impl Transcript {
                     payload,
                     answered: false,
                 });
+            }
+            TranscriptEvent::TaskNotification(notification) => {
+                // Resume renders stored history and then `--resume` re-streams
+                // the same turns, so a task can notify twice — replace by task
+                // id rather than stack.
+                let slot = self
+                    .task_notifications
+                    .iter_mut()
+                    .find(|n| n.task_id == notification.task_id);
+                match slot {
+                    Some(slot) => *slot = notification,
+                    None => self.task_notifications.push(notification),
+                }
             }
             TranscriptEvent::Ended { reason } => match reason {
                 EndReason::Completed => {}
@@ -1244,6 +1301,28 @@ mod tests {
             &t.items()[0],
             TranscriptItem::Metrics(m) if m.total_cost_usd == Some(0.01)
         ));
+    }
+
+    #[test]
+    fn task_notifications_record_and_replace_by_task_id() {
+        let mut t = Transcript::new();
+        let note = |status: TaskRunStatus| {
+            TranscriptEvent::TaskNotification(TaskNotification {
+                task_id: "b0nv3gmmz".to_string(),
+                tool_use_id: Some("toolu_1".to_string()),
+                status,
+                summary: None,
+            })
+        };
+        t.apply(note(TaskRunStatus::Completed));
+        assert!(t.is_empty(), "a notification renders no transcript item");
+        // Resume can replay the same notification (history + `--resume`
+        // re-stream): it must replace, not stack.
+        t.apply(note(TaskRunStatus::Completed));
+        assert_eq!(t.task_notifications().len(), 1);
+        assert_eq!(t.task_notifications()[0].status, TaskRunStatus::Completed);
+        t.clear();
+        assert!(t.task_notifications().is_empty());
     }
 
     #[test]
