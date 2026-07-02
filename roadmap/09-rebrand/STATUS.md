@@ -1,6 +1,6 @@
 # 09 — Rebrand to twarp
 
-**Phase:** impl-pending
+**Phase:** merged
 **Spec PR:** —
 **Impl PRs:** —
 

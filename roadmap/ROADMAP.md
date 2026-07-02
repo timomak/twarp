@@ -2,7 +2,7 @@
 
 Single source of truth for what's being built next. `/twarp-next` reads this file every invocation; the user reads it to see status at a glance.
 
-**Currently active:** `09-rebrand`
+**Currently active:** `10-file-editor`
 **Next up:** `09-rebrand` (barrier) — or owner direction
 
 ## Features
@@ -17,7 +17,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 06 | [Tab rename shortcut](06-tab-rename/STATUS.md) | merged | [#64](https://github.com/timomak/twarp/pull/64) | [#65](https://github.com/timomak/twarp/pull/65) |
 | 07 | [Claude Code panel](07-claude-code-panel/STATUS.md) | merged | [#66](https://github.com/timomak/twarp/pull/66), respec [#68](https://github.com/timomak/twarp/pull/68), main-pane respec [#70](https://github.com/timomak/twarp/pull/70), 7i amendment [#77](https://github.com/timomak/twarp/pull/77) (folded into #76), phase-2 specs [#78](https://github.com/timomak/twarp/pull/78) | 7b [#69](https://github.com/timomak/twarp/pull/69) (merged — sidebar host, superseded), 7b [#71](https://github.com/timomak/twarp/pull/71) (merged — main-pane host), 7c [#72](https://github.com/timomak/twarp/pull/72) (merged — live driver), polish [#74](https://github.com/timomak/twarp/pull/74) (merged — shell polish + metadata chips; superseded auto-closed #73), 7d [#75](https://github.com/timomak/twarp/pull/75) (merged — tool cards + review feedback), 7e–7j bundled [#76](https://github.com/timomak/twarp/pull/76) (merged), phase 2 7k–7n bundled [#79](https://github.com/timomak/twarp/pull/79) (merged — streaming, rich input, composer controls, plan rendering) |
 | 08 | [macOS-style UI overhaul](08-macos-ui/STATUS.md) | merged | #81 | #81 (spec+impl bundled, owner-directed) |
-| 09 | [Rebrand to twarp](09-rebrand/STATUS.md) | not-started | — | — |
+| 09 | [Rebrand to twarp](09-rebrand/STATUS.md) | merged | — | — |
 | 10 | [File editor with go-to-definition](10-file-editor/STATUS.md) | not-started | — | — |
 | 11 | [Git blame](11-git-blame/STATUS.md) | not-started | — | — |
 | 12 | [Project search & replace](12-project-search-replace/STATUS.md) | not-started | — | — |
