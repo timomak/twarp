@@ -1,6 +1,6 @@
 # 15 — Computer control overlay (Claude drives the Mac)
 
-**Phase:** impl-pending
+**Phase:** merged
 **Spec PR:** —
 **Impl PRs:** —
 

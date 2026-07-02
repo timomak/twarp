@@ -1,6 +1,6 @@
 # 09 — Rebrand to twarp
 
-**Phase:** not-started
+**Phase:** spec-pending
 **Spec PR:** —
 **Impl PRs:** —
 
