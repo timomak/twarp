@@ -12,8 +12,8 @@ use twarpui::ui_components::components::{UiComponent, UiComponentStyles};
 use twarpui::ui_components::text_input::TextInput;
 use twarpui::SingletonEntity;
 use twarpui::{
-    r#async::Timer, AfterLayoutContext, AppContext, Entity, EventContext, LayoutContext,
-    PaintContext, SizeConstraint, TypedActionView, View, ViewContext, WindowId,
+    r#async::Timer, zoom::Scale, AfterLayoutContext, AppContext, Entity, EventContext,
+    LayoutContext, PaintContext, SizeConstraint, TypedActionView, View, ViewContext, WindowId,
 };
 use url::Url;
 
@@ -965,10 +965,14 @@ impl Element for NativeBrowserElement {
         #[cfg(target_os = "macos")]
         if let (Some((window_id, webview_id)), Some(size)) = (self.webview, self.size) {
             if size.x() > 0.0 && size.y() > 0.0 {
+                // Paint coordinates are in zoom-scaled scene units (the scene
+                // is laid out at window_size / zoom_factor); NSView frames are
+                // in logical points, so scale back up by the zoom factor.
+                let zoom = _app.zoom_factor();
                 MacWindow::set_browser_webview_frame(
                     window_id,
                     webview_id,
-                    RectF::new(origin, size),
+                    RectF::new(origin.scale_up(zoom), size.scale_up(zoom)),
                 );
                 MacWindow::set_browser_webview_hidden(window_id, webview_id, false);
             }
