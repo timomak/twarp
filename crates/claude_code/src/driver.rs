@@ -1012,6 +1012,40 @@ fn parse_todos(input: &Value) -> Option<Vec<TodoItem>> {
 /// `file-history-snapshot`, …, skipped), meta turns (`isMeta`, skipped), and
 /// sub-agent sidechains (`isSidechain`, skipped — their product returns as the
 /// spawning Task's tool result).
+/// Map a stored user turn back to what the user typed. Slash-command turns
+/// are persisted as envelope tags (`<command-message>`, `<command-name>`,
+/// `<command-args>`) rather than the literal command line, and local commands
+/// additionally echo a `<local-command-stdout>` line. Returns the
+/// reconstructed command line (`/fleet run it`), `None` for stdout echoes
+/// (they aren't something the user said), or the text unchanged when it isn't
+/// a command envelope.
+pub(crate) fn display_user_text(text: &str) -> Option<String> {
+    fn tag_content<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
+        let open = format!("<{tag}>");
+        let close = format!("</{tag}>");
+        let start = text.find(&open)? + open.len();
+        let end = text[start..].find(&close)? + start;
+        Some(&text[start..end])
+    }
+    let trimmed = text.trim_start();
+    if trimmed.starts_with("<command-") {
+        if let Some(name) = tag_content(trimmed, "command-name") {
+            let name = name.trim();
+            let args = tag_content(trimmed, "command-args").unwrap_or("").trim();
+            let line = if args.is_empty() {
+                name.to_owned()
+            } else {
+                format!("{name} {args}")
+            };
+            return (!line.is_empty()).then_some(line);
+        }
+    }
+    if trimmed.starts_with("<local-command-stdout>") {
+        return None;
+    }
+    Some(text.to_owned())
+}
+
 pub(crate) fn parse_history_line(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
     let flag = |key: &str| value.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
     if flag("isMeta") || flag("isSidechain") {
@@ -1033,7 +1067,9 @@ pub(crate) fn parse_history_line(value: &Value, out: &mut VecDeque<TranscriptEve
                 _ => String::new(),
             };
             if !text.is_empty() {
-                out.push_back(TranscriptEvent::UserMessage(text));
+                if let Some(display) = display_user_text(&text) {
+                    out.push_back(TranscriptEvent::UserMessage(display));
+                }
             }
             // Tool results ride on `user` lines in the file exactly like the
             // live stream; reuse that path (a text-only line pushes nothing).
@@ -1309,9 +1345,7 @@ mod tests {
             other => panic!("expected ContextWindow first, got {other:?}"),
         }
         // The aggregate token counts are never surfaced as a Usage event.
-        assert!(!out
-            .iter()
-            .any(|e| matches!(e, TranscriptEvent::Usage(_))));
+        assert!(!out.iter().any(|e| matches!(e, TranscriptEvent::Usage(_))));
         assert!(matches!(out.back(), Some(TranscriptEvent::Ended { .. })));
     }
 
@@ -1571,6 +1605,56 @@ mod tests {
             out.front(),
             Some(TranscriptEvent::UserMessage(m)) if m == "fix the bug"
         ));
+    }
+
+    #[test]
+    fn history_command_envelope_becomes_typed_command_line() {
+        // Both stored orderings (message-first from the CLI, name-first with
+        // indented follow-up lines from the desktop app).
+        let v: Value = serde_json::from_str(
+            r#"{"type":"user","message":{"role":"user","content":"<command-message>fleet</command-message>\n<command-name>/fleet</command-name>\n<command-args>run it and monitor</command-args>"}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_history_line(&v, &mut out);
+        assert!(matches!(
+            out.front(),
+            Some(TranscriptEvent::UserMessage(m)) if m == "/fleet run it and monitor"
+        ));
+
+        let v: Value = serde_json::from_str(
+            r#"{"type":"user","message":{"role":"user","content":"<command-name>/model</command-name>\n            <command-message>model</command-message>"}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_history_line(&v, &mut out);
+        assert!(matches!(
+            out.front(),
+            Some(TranscriptEvent::UserMessage(m)) if m == "/model"
+        ));
+    }
+
+    #[test]
+    fn history_skips_local_command_stdout_echo() {
+        let v: Value = serde_json::from_str(
+            r#"{"type":"user","message":{"role":"user","content":"<local-command-stdout>Set model to Opus</local-command-stdout>"}}"#,
+        )
+        .unwrap();
+        let mut out = VecDeque::new();
+        parse_history_line(&v, &mut out);
+        assert!(out.is_empty(), "expected nothing, got {out:?}");
+    }
+
+    #[test]
+    fn display_user_text_leaves_plain_and_tag_quoting_text_alone() {
+        assert_eq!(
+            display_user_text("fix the bug").as_deref(),
+            Some("fix the bug")
+        );
+        // Tags mentioned mid-message (e.g. the user quoting a transcript)
+        // aren't a command envelope — only leading tags are.
+        let quoting = "why does it show <command-name>/fleet</command-name>?";
+        assert_eq!(display_user_text(quoting).as_deref(), Some(quoting));
     }
 
     #[test]

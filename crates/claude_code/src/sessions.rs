@@ -250,8 +250,13 @@ fn best_effort_title(path: &Path) -> Option<String> {
         let Some(content) = value.get("message").and_then(|m| m.get("content")) else {
             continue;
         };
+        // Slash-command envelopes become the command line the user typed;
+        // local-command stdout echoes are skipped (display_user_text → None).
         if let Some(text) = content.as_str() {
-            return Some(short_title(text));
+            if let Some(display) = crate::driver::display_user_text(text) {
+                return Some(short_title(&display));
+            }
+            continue;
         }
         if let Some(arr) = content.as_array() {
             for block in arr {
@@ -261,7 +266,9 @@ fn best_effort_title(path: &Path) -> Option<String> {
                     continue;
                 }
                 if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
-                    return Some(short_title(text));
+                    if let Some(display) = crate::driver::display_user_text(text) {
+                        return Some(short_title(&display));
+                    }
                 }
             }
         }
@@ -391,10 +398,16 @@ mod tests {
         assert!(forked.contains("\"one\""));
         assert!(forked.contains("a1"));
         assert!(forked.contains("tool_result"));
-        assert!(!forked.contains("\"two\""), "turn 2 must be dropped: {forked}");
+        assert!(
+            !forked.contains("\"two\""),
+            "turn 2 must be dropped: {forked}"
+        );
         assert!(!forked.contains("a2"));
         // Every retained line is re-stamped to the new session id.
-        assert!(!forked.contains("\"orig\""), "sessionId not rewritten: {forked}");
+        assert!(
+            !forked.contains("\"orig\""),
+            "sessionId not rewritten: {forked}"
+        );
         assert!(forked.contains("\"fork\""));
 
         // Replaying the fork yields exactly turn 1 (user + assistant).
