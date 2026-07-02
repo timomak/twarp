@@ -380,25 +380,45 @@ static void TwarpOpenSettingsURL(NSString *value) {
     NSWindow *_glowWindow;
     NSView *_panelContent;
     CALayer *_glowLayer;
+    NSTextField *_titleLabel;
     NSTextField *_sessionLabel;
     NSTextField *_modeLabel;
     NSTextField *_statusLabel;
     NSButton *_stopButton;
+    NSButton *_approveButton;
+    NSButton *_rejectButton;
+    NSButton *_logButton;
+    NSScrollView *_logScrollView;
+    NSTextView *_logTextView;
     TwarpComputerControlStopCallback _stopCallback;
     void *_stopContext;
+    TwarpComputerControlStopCallback _approveCallback;
+    void *_approveContext;
+    TwarpComputerControlStopCallback _rejectCallback;
+    void *_rejectContext;
+    BOOL _confirmationPending;
+    BOOL _logVisible;
     BOOL _closed;
 }
 
 - (instancetype)initWithSessionLabel:(NSString *)sessionLabel
                           statusLabel:(NSString *)statusLabel
+                            actionLog:(NSString *)actionLog
+                  confirmationPending:(BOOL)confirmationPending
                           panelColor:(TwarpComputerControlColor)panelColor
                            textColor:(TwarpComputerControlColor)textColor
                       mutedTextColor:(TwarpComputerControlColor)mutedTextColor
                            glowColor:(TwarpComputerControlColor)glowColor
                          stopCallback:(TwarpComputerControlStopCallback)stopCallback
-                           stopContext:(void *)stopContext;
+                           stopContext:(void *)stopContext
+                       approveCallback:(TwarpComputerControlStopCallback)approveCallback
+                        approveContext:(void *)approveContext
+                        rejectCallback:(TwarpComputerControlStopCallback)rejectCallback
+                         rejectContext:(void *)rejectContext;
 - (void)updateWithSessionLabel:(NSString *)sessionLabel
                     statusLabel:(NSString *)statusLabel
+                      actionLog:(NSString *)actionLog
+            confirmationPending:(BOOL)confirmationPending
                     panelColor:(TwarpComputerControlColor)panelColor
                      textColor:(TwarpComputerControlColor)textColor
                 mutedTextColor:(TwarpComputerControlColor)mutedTextColor
@@ -411,12 +431,18 @@ static void TwarpOpenSettingsURL(NSString *value) {
 
 - (instancetype)initWithSessionLabel:(NSString *)sessionLabel
                           statusLabel:(NSString *)statusLabel
+                            actionLog:(NSString *)actionLog
+                  confirmationPending:(BOOL)confirmationPending
                           panelColor:(TwarpComputerControlColor)panelColor
                            textColor:(TwarpComputerControlColor)textColor
                       mutedTextColor:(TwarpComputerControlColor)mutedTextColor
                            glowColor:(TwarpComputerControlColor)glowColor
                          stopCallback:(TwarpComputerControlStopCallback)stopCallback
-                           stopContext:(void *)stopContext {
+                           stopContext:(void *)stopContext
+                       approveCallback:(TwarpComputerControlStopCallback)approveCallback
+                        approveContext:(void *)approveContext
+                        rejectCallback:(TwarpComputerControlStopCallback)rejectCallback
+                         rejectContext:(void *)rejectContext {
     self = [super init];
     if (!self) {
         return nil;
@@ -424,6 +450,12 @@ static void TwarpOpenSettingsURL(NSString *value) {
 
     _stopCallback = stopCallback;
     _stopContext = stopContext;
+    _approveCallback = approveCallback;
+    _approveContext = approveContext;
+    _rejectCallback = rejectCallback;
+    _rejectContext = rejectContext;
+    _confirmationPending = confirmationPending;
+    _logVisible = NO;
 
     NSScreen *screen = [NSScreen mainScreen];
     if (!screen) {
@@ -433,7 +465,7 @@ static void TwarpOpenSettingsURL(NSString *value) {
 
     NSRect screenFrame = [screen frame];
     NSRect visibleFrame = [screen visibleFrame];
-    NSSize panelSize = NSMakeSize(318.0, 132.0);
+    NSSize panelSize = NSMakeSize(342.0, 174.0);
     CGFloat margin = 18.0;
     NSRect panelRect = NSMakeRect(
         NSMaxX(visibleFrame) - panelSize.width - margin,
@@ -481,16 +513,16 @@ static void TwarpOpenSettingsURL(NSString *value) {
     NSColor *text = TwarpColor(textColor);
     NSColor *muted = TwarpColor(mutedTextColor);
 
-    NSTextField *titleLabel = TwarpLabel(
-        NSMakeRect(16.0, 94.0, 214.0, 20.0),
+    _titleLabel = TwarpLabel(
+        NSMakeRect(16.0, 136.0, 214.0, 20.0),
         @"Claude control live",
         13.0,
         YES,
         text);
-    [_panelContent addSubview:titleLabel];
+    [_panelContent addSubview:_titleLabel];
 
     _sessionLabel = TwarpLabel(
-        NSMakeRect(16.0, 73.0, 286.0, 18.0),
+        NSMakeRect(16.0, 115.0, 310.0, 18.0),
         sessionLabel,
         11.0,
         NO,
@@ -498,7 +530,7 @@ static void TwarpOpenSettingsURL(NSString *value) {
     [_panelContent addSubview:_sessionLabel];
 
     _modeLabel = TwarpLabel(
-        NSMakeRect(16.0, 48.0, 286.0, 18.0),
+        NSMakeRect(16.0, 91.0, 310.0, 18.0),
         @"Mode: confirm before act",
         11.0,
         NO,
@@ -506,7 +538,7 @@ static void TwarpOpenSettingsURL(NSString *value) {
     [_panelContent addSubview:_modeLabel];
 
     _statusLabel = TwarpLabel(
-        NSMakeRect(16.0, 27.0, 286.0, 18.0),
+        NSMakeRect(16.0, 70.0, 310.0, 18.0),
         statusLabel ?: @"Latest: no actions yet",
         11.0,
         NO,
@@ -514,13 +546,49 @@ static void TwarpOpenSettingsURL(NSString *value) {
     [_panelContent addSubview:_statusLabel];
 
     _stopButton = [NSButton buttonWithTitle:@"Stop" target:self action:@selector(stopPressed:)];
-    [_stopButton setFrame:NSMakeRect(238.0, 89.0, 64.0, 28.0)];
+    [_stopButton setFrame:NSMakeRect(262.0, 131.0, 64.0, 28.0)];
     [_stopButton setBezelStyle:NSBezelStyleRounded];
     [_stopButton setFont:[NSFont systemFontOfSize:12.0 weight:NSFontWeightSemibold]];
     if ([_stopButton respondsToSelector:@selector(setContentTintColor:)]) {
         [_stopButton setContentTintColor:text];
     }
     [_panelContent addSubview:_stopButton];
+
+    _approveButton = [NSButton buttonWithTitle:@"Approve" target:self action:@selector(approvePressed:)];
+    [_approveButton setFrame:NSMakeRect(16.0, 34.0, 92.0, 28.0)];
+    [_approveButton setBezelStyle:NSBezelStyleRounded];
+    [_approveButton setFont:[NSFont systemFontOfSize:12.0 weight:NSFontWeightSemibold]];
+    [_approveButton setHidden:!_confirmationPending];
+    [_panelContent addSubview:_approveButton];
+
+    _rejectButton = [NSButton buttonWithTitle:@"Reject" target:self action:@selector(rejectPressed:)];
+    [_rejectButton setFrame:NSMakeRect(116.0, 34.0, 82.0, 28.0)];
+    [_rejectButton setBezelStyle:NSBezelStyleRounded];
+    [_rejectButton setFont:[NSFont systemFontOfSize:12.0 weight:NSFontWeightRegular]];
+    [_rejectButton setHidden:!_confirmationPending];
+    [_panelContent addSubview:_rejectButton];
+
+    _logButton = [NSButton buttonWithTitle:@"Log" target:self action:@selector(toggleLog:)];
+    [_logButton setFrame:NSMakeRect(258.0, 34.0, 68.0, 28.0)];
+    [_logButton setBezelStyle:NSBezelStyleRounded];
+    [_logButton setFont:[NSFont systemFontOfSize:12.0 weight:NSFontWeightRegular]];
+    [_panelContent addSubview:_logButton];
+
+    _logTextView = [[[NSTextView alloc] initWithFrame:NSMakeRect(0.0, 0.0, 294.0, 96.0)] autorelease];
+    [_logTextView setEditable:NO];
+    [_logTextView setSelectable:YES];
+    [_logTextView setDrawsBackground:NO];
+    [_logTextView setTextColor:muted];
+    [_logTextView setFont:[NSFont userFixedPitchFontOfSize:11.0]];
+    [_logTextView setString:actionLog ?: @"No computer-control actions yet."];
+
+    _logScrollView = [[[NSScrollView alloc] initWithFrame:NSMakeRect(16.0, 34.0, 310.0, 96.0)] autorelease];
+    [_logScrollView setDocumentView:_logTextView];
+    [_logScrollView setHasVerticalScroller:YES];
+    [_logScrollView setDrawsBackground:NO];
+    [_logScrollView setBorderType:NSNoBorder];
+    [_logScrollView setHidden:YES];
+    [_panelContent addSubview:_logScrollView];
 
     _glowWindow = [[NSWindow alloc] initWithContentRect:screenFrame
                                               styleMask:NSWindowStyleMaskBorderless
@@ -563,6 +631,8 @@ static void TwarpOpenSettingsURL(NSString *value) {
 
 - (void)updateWithSessionLabel:(NSString *)sessionLabel
                     statusLabel:(NSString *)statusLabel
+                      actionLog:(NSString *)actionLog
+            confirmationPending:(BOOL)confirmationPending
                     panelColor:(TwarpComputerControlColor)panelColor
                      textColor:(TwarpComputerControlColor)textColor
                 mutedTextColor:(TwarpComputerControlColor)mutedTextColor
@@ -576,12 +646,17 @@ static void TwarpOpenSettingsURL(NSString *value) {
     [_panelContent layer].backgroundColor = [panelColorValue CGColor];
     [_sessionLabel setStringValue:sessionLabel ?: @""];
     [_statusLabel setStringValue:statusLabel ?: @"Latest: no actions yet"];
+    [_logTextView setString:actionLog ?: @"No computer-control actions yet."];
+    _confirmationPending = confirmationPending;
+    [_approveButton setHidden:!_confirmationPending || _logVisible];
+    [_rejectButton setHidden:!_confirmationPending || _logVisible];
 
     NSColor *text = TwarpColor(textColor);
     NSColor *muted = TwarpColor(mutedTextColor);
     [_sessionLabel setTextColor:muted];
     [_modeLabel setTextColor:text];
     [_statusLabel setTextColor:muted];
+    [_logTextView setTextColor:muted];
     if ([_stopButton respondsToSelector:@selector(setContentTintColor:)]) {
         [_stopButton setContentTintColor:text];
     }
@@ -594,6 +669,49 @@ static void TwarpOpenSettingsURL(NSString *value) {
     if (_stopCallback) {
         _stopCallback(_stopContext);
     }
+}
+
+- (void)approvePressed:(id)sender {
+    [_approveButton setHidden:YES];
+    [_rejectButton setHidden:YES];
+    if (_approveCallback) {
+        _approveCallback(_approveContext);
+    }
+}
+
+- (void)rejectPressed:(id)sender {
+    [_approveButton setHidden:YES];
+    [_rejectButton setHidden:YES];
+    if (_rejectCallback) {
+        _rejectCallback(_rejectContext);
+    }
+}
+
+- (void)toggleLog:(id)sender {
+    _logVisible = !_logVisible;
+    [_logButton setTitle:_logVisible ? @"Hide" : @"Log"];
+    [_logScrollView setHidden:!_logVisible];
+    [_approveButton setHidden:!_confirmationPending || _logVisible];
+    [_rejectButton setHidden:!_confirmationPending || _logVisible];
+
+    CGFloat targetHeight = _logVisible ? 318.0 : 174.0;
+    NSRect frame = [_panel frame];
+    CGFloat top = NSMaxY(frame);
+    frame.origin.y = top - targetHeight;
+    frame.size.height = targetHeight;
+    [_panel setFrame:frame display:YES animate:NO];
+    [_panelContent setFrame:NSMakeRect(0.0, 0.0, frame.size.width, targetHeight)];
+
+    CGFloat offset = targetHeight - 174.0;
+    [_titleLabel setFrameOrigin:NSMakePoint(16.0, 136.0 + offset)];
+    [_stopButton setFrameOrigin:NSMakePoint(262.0, 131.0 + offset)];
+    [_sessionLabel setFrameOrigin:NSMakePoint(16.0, 115.0 + offset)];
+    [_modeLabel setFrameOrigin:NSMakePoint(16.0, 91.0 + offset)];
+    [_statusLabel setFrameOrigin:NSMakePoint(16.0, 70.0 + offset)];
+    [_approveButton setFrameOrigin:NSMakePoint(16.0, 34.0 + offset)];
+    [_rejectButton setFrameOrigin:NSMakePoint(116.0, 34.0 + offset)];
+    [_logButton setFrameOrigin:NSMakePoint(258.0, 34.0 + offset)];
+    [_logScrollView setFrame:NSMakeRect(16.0, 34.0, 310.0, 112.0)];
 }
 
 - (void)closeWindows {
@@ -734,22 +852,34 @@ void twarp_computer_control_permissions_panel_close(void *host) {
 void *twarp_computer_control_overlay_create(
     const char *session_label,
     const char *status_label,
+    const char *action_log,
+    bool confirmation_pending,
     TwarpComputerControlColor panel_color,
     TwarpComputerControlColor text_color,
     TwarpComputerControlColor muted_text_color,
     TwarpComputerControlColor glow_color,
     TwarpComputerControlStopCallback stop_callback,
-    void *stop_context) {
+    void *stop_context,
+    TwarpComputerControlStopCallback approve_callback,
+    void *approve_context,
+    TwarpComputerControlStopCallback reject_callback,
+    void *reject_context) {
     @autoreleasepool {
         TwarpComputerControlOverlayHost *host =
             [[TwarpComputerControlOverlayHost alloc] initWithSessionLabel:TwarpStringFromCString(session_label)
                                                                statusLabel:TwarpStringFromCString(status_label)
+                                                                 actionLog:TwarpStringFromCString(action_log)
+                                                       confirmationPending:confirmation_pending
                                                                 panelColor:panel_color
                                                                  textColor:text_color
                                                             mutedTextColor:muted_text_color
                                                                  glowColor:glow_color
                                                                stopCallback:stop_callback
-                                                                 stopContext:stop_context];
+                                                                 stopContext:stop_context
+                                                             approveCallback:approve_callback
+                                                              approveContext:approve_context
+                                                              rejectCallback:reject_callback
+                                                               rejectContext:reject_context];
         return host;
     }
 }
@@ -758,6 +888,8 @@ void twarp_computer_control_overlay_update(
     void *host,
     const char *session_label,
     const char *status_label,
+    const char *action_log,
+    bool confirmation_pending,
     TwarpComputerControlColor panel_color,
     TwarpComputerControlColor text_color,
     TwarpComputerControlColor muted_text_color,
@@ -769,6 +901,8 @@ void twarp_computer_control_overlay_update(
         TwarpComputerControlOverlayHost *overlay = (TwarpComputerControlOverlayHost *)host;
         [overlay updateWithSessionLabel:TwarpStringFromCString(session_label)
                             statusLabel:TwarpStringFromCString(status_label)
+                              actionLog:TwarpStringFromCString(action_log)
+                    confirmationPending:confirmation_pending
                              panelColor:panel_color
                               textColor:text_color
                          mutedTextColor:muted_text_color

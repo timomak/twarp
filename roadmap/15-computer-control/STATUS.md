@@ -30,7 +30,7 @@ low cherry-pick risk.
 - [x] **15b — Overlay chrome + lifecycle.** Non-activating, corner-pinned, all-Spaces/fullscreen-auxiliary panel; glow toggled with state and tinted to the active tab's color (reuse `floating_panel_surface_fill`), re-tinting on tab/color change; start/stop; feature flag.
 - [x] **15c — Permissions onboarding.** Screen Recording + Accessibility TCC grants (restart-gated) with pre-flight prompts and blocked-state UI.
 - [x] **15d — Agent loop.** Bridge a Claude session to `computer_use::Actor`: screenshot → Claude computer-use tool → action → execute → repeat; region/downscale captures.
-- [ ] **15e — Safety + polish.** Always-available Stop, confirm-before-act default, action log, idle auto-stop. (Partly folded into 15b/15d.)
+- [x] **15e — Safety + polish.** Always-available Stop, confirm-before-act default, action log, idle auto-stop. (Partly folded into 15b/15d.)
 
 ## What's already built
 
