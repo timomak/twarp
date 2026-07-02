@@ -24,6 +24,11 @@ use crate::{
 const SERVER_NAME: &str = "twarp-browser";
 const SSE_PATH: &str = "/sse";
 const POST_PATH: &str = "/message";
+/// How long browser_navigate waits for a freshly opened pane to register.
+const NEW_PANE_RESOLVE_TIMEOUT: Duration = Duration::from_secs(5);
+const NEW_PANE_RESOLVE_POLL_INTERVAL: Duration = Duration::from_millis(100);
+/// How long browser_navigate waits for the new pane's initial page to settle.
+const NEW_PANE_SETTLE_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub(crate) struct BrowserMcpBridge {
     server: Option<BrowserMcpRuntime>,
@@ -268,6 +273,28 @@ impl BrowserMcpServer {
             }
             None => {
                 self.open_browser_pane(url.clone()).await?;
+                // The pane (and its initial navigation) is created
+                // asynchronously on the main thread; wait for it to register
+                // and for the page to settle so follow-up tools (snapshot,
+                // type, eval) don't race the load.
+                let deadline = std::time::Instant::now() + NEW_PANE_RESOLVE_TIMEOUT;
+                let target = loop {
+                    if let Some(target) = self.resolve_target().await? {
+                        break Some(target);
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        break None;
+                    }
+                    tokio::time::sleep(NEW_PANE_RESOLVE_POLL_INTERVAL).await;
+                };
+                if let Some(target) = target {
+                    let _ = target
+                        .engine
+                        .wait(WaitSpec::NavigationSettled {
+                            timeout: NEW_PANE_SETTLE_TIMEOUT,
+                        })
+                        .await;
+                }
                 json_result(json!({
                     "target": "new Browser pane",
                     "result": { "url": url }
