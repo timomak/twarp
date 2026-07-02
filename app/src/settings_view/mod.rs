@@ -55,6 +55,7 @@ use twarp_core::{
     settings::ToggleableSetting as _, ui::theme::color::internal_colors,
 };
 use twarp_editor::editor::NavigationKey;
+use twarpify_page::{TwarpifyPageAction, TwarpifyPageView};
 use twarpui::Element;
 use twarpui::{
     elements::{
@@ -70,7 +71,6 @@ use twarpui::{
     Action, AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, UpdateView as _,
     View, ViewContext, ViewHandle,
 };
-use warpify_page::{WarpifyPageAction, WarpifyPageView};
 
 mod about_page;
 mod admin_actions;
@@ -103,8 +103,8 @@ mod tab_menu;
 // file-local AI singleton stub in this module.
 pub(crate) mod teams_page;
 mod transfer_ownership_confirmation_modal;
-mod warp_drive_page;
-mod warpify_page;
+mod twarp_drive_page;
+mod twarpify_page;
 
 pub use billing_and_usage_page::create_discount_badge;
 pub use code_page::CodeSettingsPageView;
@@ -152,7 +152,7 @@ pub enum SettingsViewEvent {
     StartResize,
     CheckForUpdate,
     LaunchNetworkLogging,
-    OpenWarpDrive,
+    OpenTwarpDrive,
     SignupAnonymousUser,
     ShowToast {
         message: String,
@@ -184,8 +184,8 @@ pub enum SettingsSection {
     Referrals,
     SharedBlocks,
     Teams,
-    WarpDrive,
-    Warpify,
+    TwarpDrive,
+    Twarpify,
     /// Custom command shortcuts (chord → terminal action sequence). Moved here
     /// from the left-panel toolbelt so the sidebar is just Files | Search | Code.
     Shortcuts,
@@ -211,7 +211,7 @@ impl Display for SettingsSection {
             SettingsSection::Keybindings => write!(f, "Keyboard shortcuts"),
             SettingsSection::SharedBlocks => write!(f, "Shared blocks"),
             SettingsSection::MCPServers => write!(f, "MCP Servers"),
-            SettingsSection::WarpDrive => write!(f, "Twarp Drive"),
+            SettingsSection::TwarpDrive => write!(f, "Twarp Drive"),
             SettingsSection::CodeIndexing => write!(f, "Indexing and projects"),
             SettingsSection::EditorAndCodeReview => write!(f, "Editor and Code Review"),
             SettingsSection::OzCloudAPIKeys => write!(f, "Oz Cloud API Keys"),
@@ -277,8 +277,8 @@ impl FromStr for SettingsSection {
             "Shared blocks" => Ok(Self::SharedBlocks),
             "Shortcuts" => Ok(Self::Shortcuts),
             "Teams" => Ok(Self::Teams),
-            "Warpify" => Ok(Self::Warpify),
-            "WarpDrive" | "Warp Drive" | "Twarp Drive" => Ok(Self::WarpDrive),
+            "Twarpify" => Ok(Self::Twarpify),
+            "TwarpDrive" | "Warp Drive" | "Twarp Drive" => Ok(Self::TwarpDrive),
             "Indexing and projects" | "CodeIndexing" => Ok(Self::CodeIndexing),
             "Editor and Code Review" | "EditorAndCodeReview" => Ok(Self::EditorAndCodeReview),
             "Oz Cloud API Keys" | "OzCloudAPIKeys" => Ok(Self::OzCloudAPIKeys),
@@ -420,7 +420,7 @@ pub mod flags {
     pub const CLI_AGENT_RICH_INPUT_OPEN: &str = "CLIAgentRichInputOpen";
     pub const CLI_AGENT_FOOTER_ENABLED: &str = "CLIAgentFooterEnabled";
     pub const CLI_AGENT_RICH_INPUT_CHIP_ENABLED: &str = "CLIAgentRichInputChipEnabled";
-    pub const ENABLE_WARP_DRIVE: &str = "EnableWarpDrive";
+    pub const ENABLE_TWARP_DRIVE: &str = "EnableTwarpDrive";
     // Tools panel settings
     pub const SHOW_CONVERSATION_HISTORY: &str = "ShowConversationHistory";
     pub const SHOW_PROJECT_EXPLORER: &str = "ShowProjectExplorer";
@@ -439,7 +439,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     main_page::init_actions_from_parent_view(app, context, builder);
     appearance_page::init_actions_from_parent_view(app, context, builder);
     features_page::init_actions_from_parent_view(app, context, builder);
-    warpify_page::init_actions_from_parent_view(app, context, builder);
+    twarpify_page::init_actions_from_parent_view(app, context, builder);
     privacy_page::init_actions_from_parent_view(app, context, builder);
     code_page::init_actions_from_parent_view(app, context, builder);
 
@@ -751,8 +751,8 @@ pub enum SettingsAction {
     FeaturesPageToggle(FeaturesPageAction),
     PrivacyPageToggle(PrivacyPageAction),
     Code(CodeSettingsPageAction),
-    WarpDrive(warp_drive_page::WarpDriveSettingsPageAction),
-    WarpifyPageToggle(WarpifyPageAction),
+    TwarpDrive(twarp_drive_page::TwarpDriveSettingsPageAction),
+    TwarpifyPageToggle(TwarpifyPageAction),
     Tab,
     Split(Direction),
     ToggleMaximizePane,
@@ -898,7 +898,7 @@ macro_rules! update_page {
             SettingsPageViewHandle::SharedBlocks(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Keybindings(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Teams(handle) => $ctx.update_view(handle, $update),
-            SettingsPageViewHandle::Warpify(handle) => $ctx.update_view(handle, $update),
+            SettingsPageViewHandle::Twarpify(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::OzCloudAPIKeys(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Privacy(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Referrals(handle) => $ctx.update_view(handle, $update),
@@ -906,7 +906,7 @@ macro_rules! update_page {
             SettingsPageViewHandle::Code(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::BillingAndUsage(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::MCPServers(handle) => $ctx.update_view(handle, $update),
-            SettingsPageViewHandle::WarpDrive(handle) => $ctx.update_view(handle, $update),
+            SettingsPageViewHandle::TwarpDrive(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Shortcuts(handle) => $ctx.update_view(handle, $update),
         }
     };
@@ -937,7 +937,7 @@ pub struct SettingsView {
     /// Mirrored from `Workspace` via [`set_settings_error_state`].
     settings_error_banner_dismissed: bool,
     /// Mouse state handles for the nav-rail footer buttons. Constructed once
-    /// per `SettingsView` per `WARP.md`'s guidance that inline
+    /// per `SettingsView` per `TWARP.md`'s guidance that inline
     /// `MouseStateHandle::default()` breaks hover/click tracking.
     footer_mouse_states: SettingsFooterMouseStates,
 }
@@ -1009,7 +1009,7 @@ impl SettingsView {
         let teams_page_handle = ctx.add_typed_action_view(TeamsPageView::new);
         ctx.subscribe_to_view(&teams_page_handle, |_, _, event, ctx| match event {
             TeamsPageViewEvent::TeamsChanged => ctx.notify(),
-            TeamsPageViewEvent::OpenWarpDrive => ctx.emit(SettingsViewEvent::OpenWarpDrive),
+            TeamsPageViewEvent::OpenTwarpDrive => ctx.emit(SettingsViewEvent::OpenTwarpDrive),
             TeamsPageViewEvent::ShowToast { message, flavor } => {
                 ctx.emit(SettingsViewEvent::ShowToast {
                     message: message.clone(),
@@ -1018,9 +1018,9 @@ impl SettingsView {
             }
         });
 
-        let warpify_page_handle = ctx.add_typed_action_view(WarpifyPageView::new);
-        ctx.subscribe_to_view(&warpify_page_handle, |me, _, event, ctx| {
-            me.handle_warpify_page_event(event, ctx);
+        let twarpify_page_handle = ctx.add_typed_action_view(TwarpifyPageView::new);
+        ctx.subscribe_to_view(&twarpify_page_handle, |me, _, event, ctx| {
+            me.handle_twarpify_page_event(event, ctx);
         });
 
         // Render the privacy page only if telemetry opt-out is enabled.
@@ -1037,10 +1037,10 @@ impl SettingsView {
         });
 
         // Warp Drive page
-        let warp_drive_page_handle =
-            ctx.add_typed_action_view(warp_drive_page::WarpDriveSettingsPageView::new);
-        ctx.subscribe_to_view(&warp_drive_page_handle, |me, _, event, ctx| {
-            me.handle_warp_drive_page_event(event, ctx);
+        let twarp_drive_page_handle =
+            ctx.add_typed_action_view(twarp_drive_page::TwarpDriveSettingsPageView::new);
+        ctx.subscribe_to_view(&twarp_drive_page_handle, |me, _, event, ctx| {
+            me.handle_twarp_drive_page_event(event, ctx);
         });
 
         let platform_page_handle = ctx.add_typed_action_view(platform_page::PlatformPageView::new);
@@ -1092,10 +1092,10 @@ impl SettingsView {
             SettingsPage::new(keybindings_handle),
             SettingsPage::new(shortcuts_page_handle),
             SettingsPage::new(platform_page_handle),
-            SettingsPage::new(warpify_page_handle),
+            SettingsPage::new(twarpify_page_handle),
             SettingsPage::new(referrals_page_handle),
             SettingsPage::new(show_blocks_view_handle),
-            SettingsPage::new(warp_drive_page_handle),
+            SettingsPage::new(twarp_drive_page_handle),
         ];
 
         settings_pages.extend(vec![
@@ -1129,10 +1129,10 @@ impl SettingsView {
             SettingsNavItem::Page(SettingsSection::Features),
             SettingsNavItem::Page(SettingsSection::Keybindings),
             SettingsNavItem::Page(SettingsSection::Shortcuts),
-            SettingsNavItem::Page(SettingsSection::Warpify),
+            SettingsNavItem::Page(SettingsSection::Twarpify),
             SettingsNavItem::Page(SettingsSection::Referrals),
             SettingsNavItem::Page(SettingsSection::SharedBlocks),
-            SettingsNavItem::Page(SettingsSection::WarpDrive),
+            SettingsNavItem::Page(SettingsSection::TwarpDrive),
             SettingsNavItem::Page(SettingsSection::Privacy),
             SettingsNavItem::Page(SettingsSection::About),
         ];
@@ -1538,7 +1538,7 @@ impl SettingsView {
         }
     }
 
-    fn handle_warpify_page_event(
+    fn handle_twarpify_page_event(
         &mut self,
         event: &SettingsPageEvent,
         ctx: &mut ViewContext<Self>,
@@ -1637,13 +1637,13 @@ impl SettingsView {
         }
     }
 
-    fn handle_warp_drive_page_event(
+    fn handle_twarp_drive_page_event(
         &mut self,
-        event: &warp_drive_page::WarpDriveSettingsPageEvent,
+        event: &twarp_drive_page::TwarpDriveSettingsPageEvent,
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            warp_drive_page::WarpDriveSettingsPageEvent::SignUp => {
+            twarp_drive_page::TwarpDriveSettingsPageEvent::SignUp => {
                 ctx.emit(SettingsViewEvent::SignupAnonymousUser)
             }
         }
@@ -1799,11 +1799,11 @@ impl SettingsView {
             SettingsPageViewHandle::About(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::OzCloudAPIKeys(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Privacy(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::Warpify(v) => v.as_ref(app).should_render(app),
+            SettingsPageViewHandle::Twarpify(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Referrals(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::MCPServers(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Code(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::WarpDrive(v) => v.as_ref(app).should_render(app),
+            SettingsPageViewHandle::TwarpDrive(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Shortcuts(v) => v.as_ref(app).should_render(app),
         }
     }
@@ -2393,20 +2393,21 @@ impl TypedActionView for SettingsView {
                     }
                 }
             }
-            SettingsAction::WarpDrive(warp_drive_action) => {
-                if let Some(warp_drive_page) = self.settings_page(SettingsSection::WarpDrive) {
-                    if let SettingsPageViewHandle::WarpDrive(view) = &warp_drive_page.view_handle {
+            SettingsAction::TwarpDrive(twarp_drive_action) => {
+                if let Some(twarp_drive_page) = self.settings_page(SettingsSection::TwarpDrive) {
+                    if let SettingsPageViewHandle::TwarpDrive(view) = &twarp_drive_page.view_handle
+                    {
                         view.update(ctx, |view, ctx| {
-                            view.handle_action(warp_drive_action, ctx);
+                            view.handle_action(twarp_drive_action, ctx);
                         })
                     }
                 }
             }
-            SettingsAction::WarpifyPageToggle(warpify_action) => {
-                if let Some(warpify_page) = self.settings_page(SettingsSection::Warpify) {
-                    if let SettingsPageViewHandle::Warpify(view) = &warpify_page.view_handle {
+            SettingsAction::TwarpifyPageToggle(twarpify_action) => {
+                if let Some(twarpify_page) = self.settings_page(SettingsSection::Twarpify) {
+                    if let SettingsPageViewHandle::Twarpify(view) = &twarpify_page.view_handle {
                         view.update(ctx, |view, ctx| {
-                            view.handle_action(warpify_action, ctx);
+                            view.handle_action(twarpify_action, ctx);
                         })
                     }
                 }

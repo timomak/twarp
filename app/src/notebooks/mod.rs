@@ -27,7 +27,7 @@ use crate::{
         UpdateCloudObjectResult,
     },
     drive::{
-        items::{notebook::WarpDriveNotebook, WarpDriveItem},
+        items::{notebook::TwarpDriveNotebook, TwarpDriveItem},
         CloudObjectTypeAndId,
     },
     persistence::ModelEvent,
@@ -190,7 +190,7 @@ impl CloudModelType for CloudNotebookModel {
             .await
     }
 
-    fn renders_in_warp_drive(&self) -> bool {
+    fn renders_in_twarp_drive(&self) -> bool {
         true
     }
 
@@ -198,13 +198,13 @@ impl CloudModelType for CloudNotebookModel {
         true
     }
 
-    fn to_warp_drive_item(
+    fn to_twarp_drive_item(
         &self,
         id: SyncId,
         _appearance: &Appearance,
         notebook: &CloudNotebook,
-    ) -> Option<Box<dyn WarpDriveItem>> {
-        Some(Box::new(WarpDriveNotebook::new(
+    ) -> Option<Box<dyn TwarpDriveItem>> {
+        Some(Box::new(TwarpDriveNotebook::new(
             self.cloud_object_type_and_id(id),
             notebook.clone(),
             notebook.model().ai_document_id.is_some(),

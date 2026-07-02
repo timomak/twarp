@@ -8,7 +8,7 @@ pub fn ai_brand_color<T>(_: T) -> twarpui::color::ColorU {
 }
 pub const ATTACH_AS_AGENT_MODE_CONTEXT_TEXT: &str = "";
 use crate::appearance::Appearance;
-use crate::drive::settings::WarpDriveSettings;
+use crate::drive::settings::TwarpDriveSettings;
 use crate::features::FeatureFlag;
 use crate::pane_group::SplitPaneState;
 use crate::settings::{
@@ -87,16 +87,16 @@ use super::shared_session::presence_manager::{
     text_selection_color, PresenceManager, MUTED_PARTICIPANT_COLOR,
 };
 use super::shared_session::render_util::SHARED_SESSION_AVATAR_DIAMETER;
+use super::twarpify::render::{draw_flag_pole, render_subshell_flag};
 use super::view::{
     BlocklistAIRenderContext, InlineBannerId, RichContentMetadata, SeparatorId,
     SharedSessionBanners, TerminalEditor, TerminalViewRenderContext, BLOCK_BANNER_HEIGHT,
 };
-use super::warpify::render::{draw_flag_pole, render_subshell_flag};
 use super::TerminalModel;
 use super::{heights_approx_eq, HEIGHT_FUDGE_FACTOR_LINES};
 use crate::terminal::blockgrid_renderer::BlockGridParams;
 use crate::terminal::model::terminal_model::BlockIndex;
-use crate::terminal::warpify::SubshellSource;
+use crate::terminal::twarpify::SubshellSource;
 
 use crate::terminal::model::escape_sequences::{
     maybe_kitty_keyboard_escape_sequence, KeystrokeWithDetails, ToEscapeSequence,
@@ -1191,7 +1191,7 @@ impl BlockListElement {
         }
 
         if FeatureFlag::BlockToolbeltSaveAsWorkflow.is_enabled()
-            && WarpDriveSettings::is_warp_drive_enabled(app)
+            && TwarpDriveSettings::is_twarp_drive_enabled(app)
         {
             let icon = Container::new(
                 ConstrainedBox::new(

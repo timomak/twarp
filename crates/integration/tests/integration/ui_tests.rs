@@ -225,7 +225,7 @@ integration_tests! {
 
     test_notebook_pane_tracking,
     test_close_notebook_tab,
-    test_open_in_warp_banner,
+    test_open_in_twarp_banner,
     test_close_notebook_window,
     test_backspace_inside_rendered_mermaid_block_is_atomic,
 

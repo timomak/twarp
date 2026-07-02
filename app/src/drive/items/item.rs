@@ -37,7 +37,7 @@ use crate::{
             DRIVE_INDEX_VIEW_POSITION_ID, FOLDER_DEPTH_INDENT, INDEX_CONTENT_MARGIN_LEFT,
             ITEM_FONT_SIZE, ITEM_MARGIN_BOTTOM, ITEM_PADDING_HORIZONTAL, ITEM_PADDING_VERTICAL,
         },
-        panel::WARP_DRIVE_POSITION_ID,
+        panel::TWARP_DRIVE_POSITION_ID,
     },
     menu::Menu,
     ui_components::{
@@ -49,9 +49,9 @@ use crate::{
         },
     },
 };
-use crate::{cloud_object::CloudObjectLocation, drive::items::WarpDriveItem};
+use crate::{cloud_object::CloudObjectLocation, drive::items::TwarpDriveItem};
 
-use super::WarpDriveItemId;
+use super::TwarpDriveItemId;
 
 pub(crate) fn tools_panel_menu_direction(app: &AppContext) -> MenuDirection {
     let config = TabSettings::as_ref(app)
@@ -76,10 +76,10 @@ pub struct ItemStates {
     pub item_sync_icon_hover_state: MouseStateHandle,
 }
 
-struct WarpDriveItemStyles {
+struct TwarpDriveItemStyles {
     // Height of each item
     item_height: f32,
-    /// Default styles of the WarpDriveItem
+    /// Default styles of the TwarpDriveItem
     default: UiComponentStyles,
     /// On top of the default styles, active contains extra styling for when the item is being dragged
     dragged: UiComponentStyles,
@@ -87,7 +87,7 @@ struct WarpDriveItemStyles {
     hovered: UiComponentStyles,
 }
 
-impl WarpDriveItemStyles {
+impl TwarpDriveItemStyles {
     fn merge(self, style: UiComponentStyles) -> Self {
         Self {
             default: self.default.merge(style),
@@ -95,11 +95,11 @@ impl WarpDriveItemStyles {
         }
     }
 
-    fn default(appearance: &Appearance) -> WarpDriveItemStyles {
+    fn default(appearance: &Appearance) -> TwarpDriveItemStyles {
         let theme = appearance.theme();
         let item_height = ITEM_FONT_SIZE * 2.0 - ITEM_MARGIN_BOTTOM;
         let background = theme.background();
-        WarpDriveItemStyles {
+        TwarpDriveItemStyles {
             item_height,
             default: UiComponentStyles::default()
                 .set_font_color(blended_colors::text_sub(theme, background))
@@ -128,9 +128,9 @@ impl WarpDriveItemStyles {
 /// a unified look for all rows in warp drive, like padding and hover states.
 ///
 /// The item-specific information like icon, name, click_action, and preview modal are abstracted as much as
-/// possible into the WarpDriveType enum.
-pub struct WarpDriveRow<'a> {
-    item: Box<dyn WarpDriveItem>,
+/// possible into the TwarpDriveType enum.
+pub struct TwarpDriveRow<'a> {
+    item: Box<dyn TwarpDriveItem>,
     space: Space,
     item_states: ItemStates,
     overflow_button: Box<dyn Element>,
@@ -139,7 +139,7 @@ pub struct WarpDriveRow<'a> {
     folder_depth: usize,
     sync_icon: Option<Box<dyn Element>>,
     can_move: bool,
-    styles: WarpDriveItemStyles,
+    styles: TwarpDriveItemStyles,
     menu_open: bool,
     share_dialog_open: bool,
     is_selected: bool,
@@ -148,10 +148,10 @@ pub struct WarpDriveRow<'a> {
     appearance: &'a Appearance,
 }
 
-impl<'a> WarpDriveRow<'a> {
+impl<'a> TwarpDriveRow<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        item: Box<dyn WarpDriveItem>,
+        item: Box<dyn TwarpDriveItem>,
         item_states: ItemStates,
         space: Space,
         folder_depth: usize,
@@ -166,7 +166,7 @@ impl<'a> WarpDriveRow<'a> {
         menu_direction: MenuDirection,
         appearance: &'a Appearance,
     ) -> Option<Self> {
-        let warp_drive_item_id = item.warp_drive_id();
+        let twarp_drive_item_id = item.twarp_drive_id();
         let overflow_button = match has_menu_items {
             true => {
                 if is_focused || item_states.draggable_state.is_dragging() {
@@ -177,7 +177,7 @@ impl<'a> WarpDriveRow<'a> {
                                 ctx.dispatch_typed_action(
                                     DriveIndexAction::ToggleItemOverflowMenu {
                                         space,
-                                        warp_drive_item_id,
+                                        twarp_drive_item_id,
                                     },
                                 );
                             },
@@ -200,7 +200,7 @@ impl<'a> WarpDriveRow<'a> {
                                 ctx.dispatch_typed_action(
                                     DriveIndexAction::ToggleItemOverflowMenu {
                                         space,
-                                        warp_drive_item_id,
+                                        twarp_drive_item_id,
                                     },
                                 );
                             },
@@ -235,7 +235,7 @@ impl<'a> WarpDriveRow<'a> {
             folder_depth,
             sync_icon,
             can_move,
-            styles: WarpDriveItemStyles::default(appearance),
+            styles: TwarpDriveItemStyles::default(appearance),
             menu_open,
             share_dialog_open,
             is_selected,
@@ -262,7 +262,7 @@ impl<'a> WarpDriveRow<'a> {
         menu_direction: MenuDirection,
         appearance: &'a Appearance,
     ) -> Option<Self> {
-        let item = object.to_warp_drive_item(appearance)?;
+        let item = object.to_twarp_drive_item(appearance)?;
         Self::new(
             item,
             item_states,
@@ -429,7 +429,7 @@ impl<'a> WarpDriveRow<'a> {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Option<Box<dyn Element>> {
-        let WarpDriveItemId::Object(object_id) = self.item.warp_drive_id() else {
+        let TwarpDriveItemId::Object(object_id) = self.item.twarp_drive_id() else {
             return None;
         };
 
@@ -607,9 +607,9 @@ impl<'a> WarpDriveRow<'a> {
     }
 
     fn render_icon(&self, style: UiComponentStyles) -> Box<dyn Element> {
-        let icon_to_render = match self.item.warp_drive_id() {
+        let icon_to_render = match self.item.twarp_drive_id() {
             // This sets the icon color of folders correctly in color contrast cases, e.g. being dragged or focused
-            WarpDriveItemId::Object(CloudObjectTypeAndId::Folder(_))
+            TwarpDriveItemId::Object(CloudObjectTypeAndId::Folder(_))
                 if style == self.styles.dragged =>
             {
                 self.item
@@ -633,8 +633,8 @@ impl<'a> WarpDriveRow<'a> {
     }
 
     fn render_secondary_icon(&self, style: UiComponentStyles) -> Box<dyn Element> {
-        let icon_to_render = match self.item.warp_drive_id() {
-            WarpDriveItemId::Object(CloudObjectTypeAndId::Folder(_)) => self
+        let icon_to_render = match self.item.twarp_drive_id() {
+            TwarpDriveItemId::Object(CloudObjectTypeAndId::Folder(_)) => self
                 .item
                 .secondary_icon(Some(style.font_color.unwrap().into())),
             _ => self.item.secondary_icon(None),
@@ -679,11 +679,11 @@ impl<'a> WarpDriveRow<'a> {
 
         let action = self.item.click_action();
         let space = self.space;
-        let warp_drive_item_id = self.item.warp_drive_id();
-        match warp_drive_item_id {
-            WarpDriveItemId::Object(_)
-            | WarpDriveItemId::AIFactCollection
-            | WarpDriveItemId::MCPServerCollection => {
+        let twarp_drive_item_id = self.item.twarp_drive_id();
+        match twarp_drive_item_id {
+            TwarpDriveItemId::Object(_)
+            | TwarpDriveItemId::AIFactCollection
+            | TwarpDriveItemId::MCPServerCollection => {
                 Hoverable::new(self.item_states.item_mouse_state.clone(), move |_| {
                     Container::new(
                         Flex::row()
@@ -705,7 +705,7 @@ impl<'a> WarpDriveRow<'a> {
                 .on_right_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(DriveIndexAction::ToggleItemOverflowMenu {
                         space,
-                        warp_drive_item_id,
+                        twarp_drive_item_id,
                     });
                 })
                 .finish()
@@ -718,7 +718,7 @@ impl<'a> WarpDriveRow<'a> {
 /// Generate a callback for calculating the Drag bounds within Warp Drive
 fn drag_bounds_callback() -> impl Fn(&PositionCache, Vector2F) -> Option<RectF> {
     move |position_cache, window: Vector2F| {
-        let drive_index = position_cache.get_position(WARP_DRIVE_POSITION_ID)?;
+        let drive_index = position_cache.get_position(TWARP_DRIVE_POSITION_ID)?;
 
         let top_left = drive_index.origin();
 
@@ -726,7 +726,7 @@ fn drag_bounds_callback() -> impl Fn(&PositionCache, Vector2F) -> Option<RectF> 
     }
 }
 
-impl UiComponent for WarpDriveRow<'_> {
+impl UiComponent for TwarpDriveRow<'_> {
     type ElementType = SavePosition;
 
     fn build(self) -> Self::ElementType {
@@ -827,8 +827,8 @@ impl UiComponent for WarpDriveRow<'_> {
         .with_cursor(Cursor::PointingHand)
         .finish();
 
-        match self.item.warp_drive_id() {
-            WarpDriveItemId::Object(item) => {
+        match self.item.twarp_drive_id() {
+            TwarpDriveItemId::Object(item) => {
                 let save_position_child = match self.can_move {
                     true => {
                         Draggable::new(self.item_states.draggable_state, hoverable_item)
@@ -922,13 +922,13 @@ impl UiComponent for WarpDriveRow<'_> {
                 };
                 SavePosition::new(
                     save_position_child,
-                    &self.item.warp_drive_id().drive_row_position_id(),
+                    &self.item.twarp_drive_id().drive_row_position_id(),
                 )
             }
-            WarpDriveItemId::AIFactCollection | WarpDriveItemId::MCPServerCollection => {
+            TwarpDriveItemId::AIFactCollection | TwarpDriveItemId::MCPServerCollection => {
                 SavePosition::new(
                     hoverable_item,
-                    &self.item.warp_drive_id().drive_row_position_id(),
+                    &self.item.twarp_drive_id().drive_row_position_id(),
                 )
             }
             _ => unreachable!(),

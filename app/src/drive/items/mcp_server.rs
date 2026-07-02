@@ -1,4 +1,4 @@
-use super::{WarpDriveItem, WarpDriveItemId};
+use super::{TwarpDriveItem, TwarpDriveItemId};
 // twarp: 2c-d — AI MCP CloudMCPServer deleted; stub.
 // twarp: 2c-d — CloudObjectMetadata isn't Default; use Option
 #[derive(Default, Clone)]
@@ -29,18 +29,18 @@ use crate::{
 use twarpui::{elements::MouseStateHandle, AppContext, Element};
 
 #[derive(Clone)]
-pub struct WarpDriveMCPServer {
+pub struct TwarpDriveMCPServer {
     id: CloudObjectTypeAndId,
     mcp_server: CloudMCPServer,
 }
 
-impl WarpDriveMCPServer {
+impl TwarpDriveMCPServer {
     pub fn new(id: CloudObjectTypeAndId, mcp_server: CloudMCPServer) -> Self {
         Self { id, mcp_server }
     }
 }
 
-impl WarpDriveItem for WarpDriveMCPServer {
+impl TwarpDriveItem for TwarpDriveMCPServer {
     fn display_name(&self) -> Option<String> {
         Some(self.mcp_server.model().string_model.name.clone())
     }
@@ -66,8 +66,8 @@ impl WarpDriveItem for WarpDriveMCPServer {
         None
     }
 
-    fn warp_drive_id(&self) -> WarpDriveItemId {
-        WarpDriveItemId::Object(self.id)
+    fn twarp_drive_id(&self) -> TwarpDriveItemId {
+        TwarpDriveItemId::Object(self.id)
     }
 
     fn sync_status_icon(
@@ -87,7 +87,7 @@ impl WarpDriveItem for WarpDriveMCPServer {
         None
     }
 
-    fn clone_box(&self) -> Box<dyn WarpDriveItem> {
+    fn clone_box(&self) -> Box<dyn TwarpDriveItem> {
         Box::new(self.clone())
     }
 }

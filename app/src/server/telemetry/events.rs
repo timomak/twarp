@@ -1567,9 +1567,9 @@ pub enum TelemetryEvent {
     /// An ssh interactive session was detected.
     SshInteractiveSessionDetected(SshInteractiveSessionDetected),
     SshTmuxWarpifyBannerDisplayed,
-    /// A SSH Warpify Block was accepted
+    /// A SSH Twarpify Block was accepted
     SshTmuxWarpifyBlockAccepted,
-    /// A SSH Warpify Block was dismissed
+    /// A SSH Twarpify Block was dismissed
     SshTmuxWarpifyBlockDismissed,
     WarpifyFooterShown {
         is_ssh: bool,
@@ -1578,7 +1578,7 @@ pub enum TelemetryEvent {
     WarpifyFooterAcceptedWarpify {
         is_ssh: bool,
     },
-    /// How long until the warpify process succeeded
+    /// How long until the twarpify process succeeded
     SshTmuxWarpificationSuccess {
         tmux_installation: Option<TmuxInstallationState>,
         duration_ms: u64,
@@ -5566,7 +5566,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ToggleTabIndicators => "Toggle Tab Indicators",
             Self::TogglePreserveActiveTabColor => "Toggle Preserve Active Tab Color",
             Self::ShowSubshellBanner => "Show Subshell Banner",
-            Self::SshTmuxWarpifyBannerDisplayed => "Show Warpify SSH Banner",
+            Self::SshTmuxWarpifyBannerDisplayed => "Show Twarpify SSH Banner",
             Self::DeclineSubshellBootstrap => "Decline Subshell Bootstrap",
             Self::TriggerSubshellBootstrap => "Trigger Subshell Bootstrap",
             Self::AddDenylistedSubshellCommand => "Add Denylisted Subshell Command",
@@ -5583,11 +5583,11 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::AddDenylistedSshTmuxWrapperHost => "Add Denylisted SSH Tmux Wrapper Host",
             Self::RemoveDenylistedSshTmuxWrapperHost => "Remove Denylisted SSH Tmux Wrapper Host",
             Self::SshInteractiveSessionDetected => "SSH Interactive Session Detected",
-            Self::SshTmuxWarpifyBlockAccepted => "SSH Tmux Warpify Block Accepted",
-            Self::SshTmuxWarpifyBlockDismissed => "SSH Tmux Warpify Block Dismissed",
-            Self::WarpifyFooterShown => "Warpify Footer Shown",
+            Self::SshTmuxWarpifyBlockAccepted => "SSH Tmux Twarpify Block Accepted",
+            Self::SshTmuxWarpifyBlockDismissed => "SSH Tmux Twarpify Block Dismissed",
+            Self::WarpifyFooterShown => "Twarpify Footer Shown",
             Self::AgentToolbarDismissed => "Agent Toolbar Dismissed",
-            Self::WarpifyFooterAcceptedWarpify => "Warpify Footer Accepted Warpify",
+            Self::WarpifyFooterAcceptedWarpify => "Twarpify Footer Accepted Twarpify",
             Self::SshTmuxWarpificationSuccess => "SSH Tmux Warpification Succeeded",
             Self::SshTmuxWarpificationErrorBlock => "SSH Tmux Warpification Error Block",
             Self::SshInstallTmuxBlockDisplayed => "SSH Install Tmux Block Displayed",
@@ -6216,28 +6216,28 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 "Enabled or disabled preserving the active tab color"
             }
             Self::ShowSubshellBanner => {
-                "Displayed the banner asking whether Warp should Warpify the current session via Warp's subshell wrapper"
+                "Displayed the banner asking whether Warp should Twarpify the current session via Warp's subshell wrapper"
             }
             Self::SshTmuxWarpifyBannerDisplayed => {
-                "Displayed the banner asking whether Warp should Warpify the current SSH session via Warp's SSH Wrapper"
+                "Displayed the banner asking whether Warp should Twarpify the current SSH session via Warp's SSH Wrapper"
             }
             Self::DeclineSubshellBootstrap => {
-                "Developer declined the Warp banner to Warpify the current session"
+                "Developer declined the Warp banner to Twarpify the current session"
             }
             Self::TriggerSubshellBootstrap => {
-                "Attempted to Warpify the current session via Warp's subshell wrapper"
+                "Attempted to Twarpify the current session via Warp's subshell wrapper"
             }
             Self::AddDenylistedSubshellCommand => {
                 "Explicitly prevent a command from being Warpified via Warp's subshell wrapper"
             }
             Self::RemoveDenylistedSubshellCommand => {
-                "Removed a command from the list of commands to IGNORE when trying to Warpify via Warp's subshell wrapper"
+                "Removed a command from the list of commands to IGNORE when trying to Twarpify via Warp's subshell wrapper"
             }
             Self::AddAddedSubshellCommand => {
                 "Added a command to be automatically Warpified via Warp's subshell wrapper"
             }
             Self::RemoveAddedSubshellCommand => {
-                "Removed a command from the list of commands to automatically Warpify via Warp's subshell wrapper"
+                "Removed a command from the list of commands to automatically Twarpify via Warp's subshell wrapper"
             }
             Self::ReceivedSubshellRcFileDcs => "Spawned a subshell to be automatically Warpified",
             Self::ToggleSshTmuxWrapper => {
@@ -6258,13 +6258,13 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             }
             Self::AgentModeRatedResponse => "User rated an Agent Mode response",
             Self::SshInteractiveSessionDetected => "An interactive SSH session was detected",
-            Self::SshTmuxWarpifyBlockAccepted => "User accepted an ssh tmux warpify block",
-            Self::SshTmuxWarpifyBlockDismissed => "User dismissed an ssh tmux warpify block",
+            Self::SshTmuxWarpifyBlockAccepted => "User accepted an ssh tmux twarpify block",
+            Self::SshTmuxWarpifyBlockDismissed => "User dismissed an ssh tmux twarpify block",
             Self::WarpifyFooterShown => {
-                "Displayed the warpify footer for a detected subshell or SSH session"
+                "Displayed the twarpify footer for a detected subshell or SSH session"
             }
             Self::AgentToolbarDismissed => "User dismissed the use-agent toolbar",
-            Self::WarpifyFooterAcceptedWarpify => "User clicked Warpify in the warpify footer",
+            Self::WarpifyFooterAcceptedWarpify => "User clicked Twarpify in the twarpify footer",
             Self::SshTmuxWarpificationSuccess => "Ssh tmux warpification succeeded",
             Self::SshTmuxWarpificationErrorBlock => "Ssh tmux warpification errored out",
             Self::SshInstallTmuxBlockDisplayed => "Displayed an ssh install tmux block",
@@ -6347,7 +6347,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::InviteTeammates => "Sent emails to invite teammates to join Warp Drive team",
             Self::CopyObjectToClipboard => "Copied an object to the user's keyboard",
             Self::OpenAndWarpifyDockerSubshell => {
-                "Warpifying a docker subshell from using the docker extension"
+                "Twarpifying a docker subshell from using the docker extension"
             }
             Self::UpdateBlockFilterQuery => "When a new filter is applied to a block",
             Self::UpdateBlockFilterQueryContextLines => {

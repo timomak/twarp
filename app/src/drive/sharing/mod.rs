@@ -33,7 +33,7 @@ pub use twarp_server_client::drive::sharing::{
 #[derive(Debug, Clone)]
 pub enum ShareableObject {
     /// A shareable Warp Drive object.
-    WarpDriveObject(ServerId),
+    TwarpDriveObject(ServerId),
     /// A shared terminal session. Shared sessions are identified by the participating terminal
     /// pane.
     Session {
@@ -50,7 +50,7 @@ impl ShareableObject {
     /// The canonical link to this object.
     pub fn link(&self, app: &AppContext) -> Option<String> {
         match self {
-            ShareableObject::WarpDriveObject(id) => CloudModel::as_ref(app)
+            ShareableObject::TwarpDriveObject(id) => CloudModel::as_ref(app)
                 .get_by_uid(&id.uid())
                 .and_then(|object| object.object_link()),
             ShareableObject::Session { session_id, .. } => Some(join_link(session_id)),

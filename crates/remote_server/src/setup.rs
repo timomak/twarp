@@ -123,22 +123,22 @@ pub fn parse_uname_output(output: &str) -> Result<RemotePlatform> {
 
 /// Returns the remote directory where the binary is installed, keyed by channel.
 ///
-/// - stable:      `~/.warp/remote-server`
-/// - preview:     `~/.warp-preview/remote-server`
-/// - dev:         `~/.warp-dev/remote-server`
-/// - local:       `~/.warp-local/remote-server`
-/// - integration: `~/.warp-dev/remote-server`
-/// - warp-oss:    `~/.warp-oss/remote-server`
+/// - stable:      `~/.twarp/remote-server`
+/// - preview:     `~/.twarp-preview/remote-server`
+/// - dev:         `~/.twarp-dev/remote-server`
+/// - local:       `~/.twarp-local/remote-server`
+/// - integration: `~/.twarp-dev/remote-server`
+/// - warp-oss:    `~/.twarp-oss/remote-server`
 pub fn remote_server_dir() -> String {
     let warp_dir = match ChannelState::channel() {
-        Channel::Stable => ".warp",
-        Channel::Preview => ".warp-preview",
-        Channel::Dev | Channel::Integration => ".warp-dev",
-        Channel::Local => ".warp-local",
+        Channel::Stable => ".twarp",
+        Channel::Preview => ".twarp-preview",
+        Channel::Dev | Channel::Integration => ".twarp-dev",
+        Channel::Local => ".twarp-local",
         Channel::Oss => {
             // TODO(alokedesai): need to figure out how remote server works with warp-oss
             // For now, return what Dev returns.
-            ".warp-dev"
+            ".twarp-dev"
         }
     };
     format!("~/{warp_dir}/remote-server")

@@ -224,7 +224,7 @@ pub enum FeatureFlag {
     KittyImages,
 
     /// Enables support for Warp Packs.
-    WarpPacks,
+    TwarpPacks,
 
     /// Enables the revised AI analytics policy banner.
     ///
@@ -637,7 +637,7 @@ pub enum FeatureFlag {
 
     /// Enables platform skills support (--skill flag) for agent runs.
     ///
-    /// Skills are loaded from `.agents/skills/`, `.warp/skills/`, `.claude/skills/`, and `.codex/skills/`
+    /// Skills are loaded from `.agents/skills/`, `.twarp/skills/`, `.claude/skills/`, and `.codex/skills/`
     /// directories to provide base prompts for agent runs.
     OzPlatformSkills,
     /// Enables Oz identity federation commands.
@@ -785,8 +785,8 @@ pub enum FeatureFlag {
     /// When enabled, solo users (not on a team) can use BYO API keys.
     SoloUserByok,
 
-    /// Replaces the in-block warpification banner with a warpify footer.
-    WarpifyFooter,
+    /// Replaces the in-block warpification banner with a twarpify footer.
+    TwarpifyFooter,
 
     /// Enables conversation retrieval via the CLI (oz run conversation get, oz run get --conversation).
     ConversationApi,

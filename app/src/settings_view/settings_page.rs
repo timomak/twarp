@@ -12,7 +12,7 @@ use super::{
     mcp_servers_page::MCPServersSettingsPageView, privacy_page::PrivacyPageView,
     referrals_page::ReferralsPageView, shortcuts_page::ShortcutsSettingsPageView,
     show_blocks_view::ShowBlocksView, teams_page::TeamsPageView,
-    warp_drive_page::WarpDriveSettingsPageView, warpify_page::WarpifyPageView, SettingsSection,
+    twarp_drive_page::TwarpDriveSettingsPageView, twarpify_page::TwarpifyPageView, SettingsSection,
 };
 use crate::{
     appearance::Appearance,
@@ -101,11 +101,11 @@ pub enum SettingsPageViewHandle {
     Teams(ViewHandle<TeamsPageView>),
     OzCloudAPIKeys(ViewHandle<super::platform_page::PlatformPageView>),
     Privacy(ViewHandle<PrivacyPageView>),
-    Warpify(ViewHandle<WarpifyPageView>),
+    Twarpify(ViewHandle<TwarpifyPageView>),
     Referrals(ViewHandle<ReferralsPageView>),
     BillingAndUsage(ViewHandle<BillingAndUsagePageView>),
     MCPServers(ViewHandle<MCPServersSettingsPageView>),
-    WarpDrive(ViewHandle<WarpDriveSettingsPageView>),
+    TwarpDrive(ViewHandle<TwarpDriveSettingsPageView>),
     Shortcuts(ViewHandle<ShortcutsSettingsPageView>),
 }
 
@@ -123,11 +123,11 @@ impl SettingsPageViewHandle {
             Teams(view_handle) => ChildView::new(view_handle).finish(),
             OzCloudAPIKeys(view_handle) => ChildView::new(view_handle).finish(),
             Privacy(view_handle) => ChildView::new(view_handle).finish(),
-            Warpify(view_handle) => ChildView::new(view_handle).finish(),
+            Twarpify(view_handle) => ChildView::new(view_handle).finish(),
             Referrals(view_handle) => ChildView::new(view_handle).finish(),
             BillingAndUsage(view_handle) => ChildView::new(view_handle).finish(),
             MCPServers(view_handle) => ChildView::new(view_handle).finish(),
-            WarpDrive(view_handle) => ChildView::new(view_handle).finish(),
+            TwarpDrive(view_handle) => ChildView::new(view_handle).finish(),
             Shortcuts(view_handle) => ChildView::new(view_handle).finish(),
         }
     }

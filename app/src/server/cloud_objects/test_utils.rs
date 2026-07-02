@@ -26,7 +26,7 @@ use crate::{
         sync_queue::SyncQueue,
         telemetry::context_provider::AppTelemetryContextProvider,
     },
-    settings::{PrivacySettings, WarpDrivePrivacySettings},
+    settings::{PrivacySettings, TwarpDrivePrivacySettings},
     workspaces::{
         team_tester::TeamTesterStatus, update_manager::TeamUpdateManager,
         user_profiles::UserProfiles, user_workspaces::UserWorkspaces,
@@ -57,7 +57,7 @@ pub fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
-    WarpDrivePrivacySettings::register(app);
+    TwarpDrivePrivacySettings::register(app);
     app.update(PrivacySettings::register_singleton);
     app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);

@@ -5,28 +5,28 @@ use crate::{
     appearance::Appearance,
     cloud_object::CloudObjectMetadata,
     drive::{
-        cloud_object_styling::warp_drive_icon_color, folders::CloudFolder, index::DriveIndexAction,
-        CloudObjectTypeAndId, DriveObjectType,
+        cloud_object_styling::twarp_drive_icon_color, folders::CloudFolder,
+        index::DriveIndexAction, CloudObjectTypeAndId, DriveObjectType,
     },
     themes::theme::Fill,
     ui_components::icons::Icon,
 };
 
-use super::{WarpDriveItem, WarpDriveItemId};
+use super::{TwarpDriveItem, TwarpDriveItemId};
 
 #[derive(Clone)]
-pub struct WarpDriveFolder {
+pub struct TwarpDriveFolder {
     id: CloudObjectTypeAndId,
     folder: CloudFolder,
 }
 
-impl WarpDriveFolder {
+impl TwarpDriveFolder {
     pub fn new(id: CloudObjectTypeAndId, folder: CloudFolder) -> Self {
         Self { id, folder }
     }
 }
 
-impl WarpDriveItem for WarpDriveFolder {
+impl TwarpDriveItem for TwarpDriveFolder {
     fn display_name(&self) -> Option<String> {
         if self.folder.model().name.is_empty() {
             None
@@ -45,8 +45,8 @@ impl WarpDriveItem for WarpDriveFolder {
 
     fn icon(&self, appearance: &Appearance, color: Option<Fill>) -> Option<Box<dyn Element>> {
         let icon_fill =
-            color.unwrap_or(warp_drive_icon_color(appearance, DriveObjectType::Folder).into());
-        let icon = if FeatureFlag::WarpPacks.is_enabled() && self.folder.model().is_warp_pack {
+            color.unwrap_or(twarp_drive_icon_color(appearance, DriveObjectType::Folder).into());
+        let icon = if FeatureFlag::TwarpPacks.is_enabled() && self.folder.model().is_twarp_pack {
             Icon::PackageCheck
         } else {
             Icon::from(DriveObjectType::Folder)
@@ -71,8 +71,8 @@ impl WarpDriveItem for WarpDriveFolder {
         None
     }
 
-    fn warp_drive_id(&self) -> WarpDriveItemId {
-        WarpDriveItemId::Object(self.id)
+    fn twarp_drive_id(&self) -> TwarpDriveItemId {
+        TwarpDriveItemId::Object(self.id)
     }
 
     fn sync_status_icon(
@@ -92,7 +92,7 @@ impl WarpDriveItem for WarpDriveFolder {
         None
     }
 
-    fn clone_box(&self) -> Box<dyn WarpDriveItem> {
+    fn clone_box(&self) -> Box<dyn TwarpDriveItem> {
         Box::new(self.clone())
     }
 }

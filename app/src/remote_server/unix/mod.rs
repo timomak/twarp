@@ -45,11 +45,11 @@ pub fn run_daemon(identity_key: String) -> anyhow::Result<()> {
         log_destination: Some(twarp_logging::LogDestination::File),
     })?;
 
-    // socket_path: ~/.warp[-channel]/remote-server/{identity_key}/server.sock
+    // socket_path: ~/.twarp[-channel]/remote-server/{identity_key}/server.sock
     //   The Unix domain socket the daemon binds on.  Proxy processes connect
     //   to it and bridge their SSH stdio channel through it.
     //
-    // pid_path:    ~/.warp[-channel]/remote-server/{identity_key}/server.pid
+    // pid_path:    ~/.twarp[-channel]/remote-server/{identity_key}/server.pid
     //   Contains the daemon's PID.  Proxy processes read it and use
     //   kill(pid, 0) to detect whether the daemon is still alive before
     //   deciding whether to start a new one.

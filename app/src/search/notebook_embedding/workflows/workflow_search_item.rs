@@ -13,7 +13,7 @@ use crate::search::result_renderer::ItemHighlightState;
 use crate::{
     appearance::Appearance,
     cloud_object::CloudObject,
-    drive::{cloud_object_styling::warp_drive_icon_color, DriveObjectType},
+    drive::{cloud_object_styling::twarp_drive_icon_color, DriveObjectType},
     search::{
         item::IconLocation,
         notebook_embedding::{
@@ -52,12 +52,12 @@ impl SearchItem for WorkflowSearchItem {
         let (icon, icon_color) = if self.cloud_workflow.model().data.is_agent_mode_workflow() {
             (
                 Icon::Prompt,
-                warp_drive_icon_color(appearance, DriveObjectType::AgentModeWorkflow),
+                twarp_drive_icon_color(appearance, DriveObjectType::AgentModeWorkflow),
             )
         } else {
             (
                 Icon::Workflow,
-                warp_drive_icon_color(appearance, DriveObjectType::Workflow),
+                twarp_drive_icon_color(appearance, DriveObjectType::Workflow),
             )
         };
 

@@ -13,8 +13,8 @@ use crate::autoupdate::{AutoupdateState, AutoupdateStateEvent};
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::{GenericStringObjectFormat, JsonObjectType, ObjectType};
 use crate::drive::export::ExportManager;
-use crate::drive::items::WarpDriveItemId;
-use crate::drive::{CloudObjectTypeAndId, OpenWarpDriveObjectArgs, OpenWarpDriveObjectSettings};
+use crate::drive::items::TwarpDriveItemId;
+use crate::drive::{CloudObjectTypeAndId, OpenTwarpDriveObjectArgs, OpenTwarpDriveObjectSettings};
 use crate::experiments::{BlockOnboarding, Experiment};
 use crate::interval_timer::IntervalTimer;
 use crate::launch_configs::launch_config;
@@ -335,11 +335,11 @@ pub fn init(app: &mut AppContext) {
 
     app.add_global_action(
         "root_view:open_drive_object_new_window",
-        open_warp_drive_object,
+        open_twarp_drive_object,
     );
     app.add_action(
         "root_view:open_drive_object_existing_window",
-        RootView::open_warp_drive_object_in_existing_window,
+        RootView::open_twarp_drive_object_in_existing_window,
     );
 
     app.add_global_action(
@@ -953,7 +953,7 @@ fn open_linear_issue_work_in_new_window(args: &LinearIssueWork, ctx: &mut AppCon
     });
 }
 
-fn open_warp_drive_object(arg: &OpenWarpDriveObjectArgs, ctx: &mut AppContext) {
+fn open_twarp_drive_object(arg: &OpenTwarpDriveObjectArgs, ctx: &mut AppContext) {
     match arg.object_type {
         ObjectType::Notebook => open_new_workspace_with_notebook_open(
             SyncId::ServerId(arg.server_id),
@@ -978,7 +978,7 @@ fn display_object_missing_error_in_window(window_id: WindowId, ctx: &mut AppCont
 
 fn open_new_workspace_with_notebook_open(
     notebook_id: SyncId,
-    settings: OpenWarpDriveObjectSettings,
+    settings: OpenTwarpDriveObjectSettings,
     ctx: &mut AppContext,
 ) {
     open_new_with_workspace_source(
@@ -992,7 +992,7 @@ fn open_new_workspace_with_notebook_open(
 
 fn open_new_workspace_with_workflow_open(
     workflow_id: SyncId,
-    settings: OpenWarpDriveObjectSettings,
+    settings: OpenTwarpDriveObjectSettings,
     ctx: &mut AppContext,
 ) {
     open_new_with_workspace_source(
@@ -1395,11 +1395,11 @@ pub enum NewWorkspaceSource {
     },
     NotebookById {
         id: SyncId,
-        settings: OpenWarpDriveObjectSettings,
+        settings: OpenTwarpDriveObjectSettings,
     },
     WorkflowById {
         id: SyncId,
-        settings: OpenWarpDriveObjectSettings,
+        settings: OpenTwarpDriveObjectSettings,
     },
     AgentSession {
         options: Box<NewTerminalOptions>,
@@ -2084,10 +2084,10 @@ impl RootView {
                 // If the user isn't logged in, only require login if the applied
                 // settings need an account (AI or Warp Drive enabled).
                 let ai_enabled = selected_settings.is_ai_enabled();
-                let warp_drive_enabled = selected_settings.is_warp_drive_enabled();
+                let twarp_drive_enabled = selected_settings.is_twarp_drive_enabled();
                 // With old onboarding, we ask user to log in before onboarding, so don't do it after onboarding completes.
                 let requires_login = !is_logged_in
-                    && (ai_enabled || warp_drive_enabled)
+                    && (ai_enabled || twarp_drive_enabled)
                     && FeatureFlag::OpenWarpNewSettingsModes.is_enabled();
 
                 if requires_login {
@@ -2411,9 +2411,9 @@ impl RootView {
         false
     }
 
-    pub fn open_warp_drive_object_in_existing_window(
+    pub fn open_twarp_drive_object_in_existing_window(
         &mut self,
-        arg: &OpenWarpDriveObjectArgs,
+        arg: &OpenTwarpDriveObjectArgs,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
         if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
@@ -2423,7 +2423,7 @@ impl RootView {
                 ObjectType::Notebook => {
                     handle.update(ctx, |workspace, ctx| {
                         let initialized_section_states =
-                            workspace.has_warp_drive_initialized_sections(ctx);
+                            workspace.has_twarp_drive_initialized_sections(ctx);
                         let notebook_id = SyncId::ServerId(arg.server_id);
                         let settings = arg.settings.clone();
                         let _ = ctx.spawn(initialized_section_states, move |workspace, _, ctx| {
@@ -2439,7 +2439,7 @@ impl RootView {
                 ObjectType::Workflow => {
                     handle.update(ctx, |workspace, ctx| {
                         let initialized_section_states =
-                            workspace.has_warp_drive_initialized_sections(ctx);
+                            workspace.has_twarp_drive_initialized_sections(ctx);
                         let workflow_id = SyncId::ServerId(arg.server_id);
                         let settings = arg.settings.clone();
                         let _ = ctx.spawn(initialized_section_states, move |workspace, _, ctx| {
@@ -2456,16 +2456,16 @@ impl RootView {
                     }
 
                     let item_id =
-                        WarpDriveItemId::Object(CloudObjectTypeAndId::from_generic_string_object(
+                        TwarpDriveItemId::Object(CloudObjectTypeAndId::from_generic_string_object(
                             GenericStringObjectFormat::Json(JsonObjectType::EnvVarCollection),
                             SyncId::ServerId(arg.server_id),
                         ));
 
                     handle.update(ctx, |workspace, ctx| {
                         let initialized_section_states =
-                            workspace.has_warp_drive_initialized_sections(ctx);
+                            workspace.has_twarp_drive_initialized_sections(ctx);
                         let _ = ctx.spawn(initialized_section_states, move |workspace, _, ctx| {
-                            workspace.view_in_and_focus_warp_drive(item_id, ctx);
+                            workspace.view_in_and_focus_twarp_drive(item_id, ctx);
                         });
                     });
                 }
@@ -2475,14 +2475,14 @@ impl RootView {
                         return false;
                     }
 
-                    let item_id = WarpDriveItemId::Object(CloudObjectTypeAndId::Folder(
+                    let item_id = TwarpDriveItemId::Object(CloudObjectTypeAndId::Folder(
                         SyncId::ServerId(arg.server_id),
                     ));
                     handle.update(ctx, |workspace, ctx| {
                         let initialized_section_states =
-                            workspace.has_warp_drive_initialized_sections(ctx);
+                            workspace.has_twarp_drive_initialized_sections(ctx);
                         let _ = ctx.spawn(initialized_section_states, move |workspace, _, ctx| {
-                            workspace.view_in_and_focus_warp_drive(item_id, ctx);
+                            workspace.view_in_and_focus_twarp_drive(item_id, ctx);
                         });
                     });
                 }
@@ -2559,7 +2559,7 @@ impl RootView {
     }
 
     /// Insert a command that should create a subshell. If we support bootstrapping AKA
-    /// "warpifying" its [`ShellType`], set a flag to automatically bootstrap it when the command's
+    /// "twarpifying" its [`ShellType`], set a flag to automatically bootstrap it when the command's
     /// block receives the [`AfterBlockStarted`] event.
     pub fn insert_subshell_command_and_bootstrap_if_supported(
         &mut self,
@@ -2591,7 +2591,7 @@ impl RootView {
             ctx.dispatch_typed_action_for_view(
                 window_id,
                 handle.id(),
-                &WorkspaceAction::OpenWarpDrive,
+                &WorkspaceAction::OpenTwarpDrive,
             );
             ctx.windows().show_window_and_focus_app(window_id);
         } else {
@@ -2854,7 +2854,7 @@ impl RootView {
                 }
             }
             AuthOverrideWarningModalEvent::BulkExport => {
-                self.export_all_warp_drive_objects(ctx);
+                self.export_all_twarp_drive_objects(ctx);
             }
         }
     }
@@ -2874,7 +2874,7 @@ impl RootView {
         ctx.notify();
     }
 
-    fn export_all_warp_drive_objects(&mut self, ctx: &mut ViewContext<Self>) {
+    fn export_all_twarp_drive_objects(&mut self, ctx: &mut ViewContext<Self>) {
         let window_id = ctx.window_id();
         let cloud_model = CloudModel::as_ref(ctx);
         let exportable_objects = cloud_model.get_all_exportable_object_ids();

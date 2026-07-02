@@ -18,15 +18,15 @@ use crate::{
     themes::theme::Fill,
 };
 
-use super::{WarpDriveItem, WarpDriveItemId};
+use super::{TwarpDriveItem, TwarpDriveItemId};
 
 #[derive(Clone)]
-pub struct WarpDriveEnvVarCollection {
+pub struct TwarpDriveEnvVarCollection {
     id: CloudObjectTypeAndId,
     env_var_collection: CloudEnvVarCollection,
 }
 
-impl WarpDriveEnvVarCollection {
+impl TwarpDriveEnvVarCollection {
     pub fn new(id: CloudObjectTypeAndId, env_var_collection: CloudEnvVarCollection) -> Self {
         Self {
             id,
@@ -35,7 +35,7 @@ impl WarpDriveEnvVarCollection {
     }
 }
 
-impl WarpDriveItem for WarpDriveEnvVarCollection {
+impl TwarpDriveItem for TwarpDriveEnvVarCollection {
     fn display_name(&self) -> Option<String> {
         self.env_var_collection.model().string_model.title.clone()
     }
@@ -155,8 +155,8 @@ impl WarpDriveItem for WarpDriveEnvVarCollection {
         Some(text.finish())
     }
 
-    fn warp_drive_id(&self) -> WarpDriveItemId {
-        WarpDriveItemId::Object(self.id)
+    fn twarp_drive_id(&self) -> TwarpDriveItemId {
+        TwarpDriveItemId::Object(self.id)
     }
 
     fn sync_status_icon(
@@ -176,7 +176,7 @@ impl WarpDriveItem for WarpDriveEnvVarCollection {
             .get_action_history_summary_for_action_type(&self.id.uid(), ObjectActionType::Execute)
     }
 
-    fn clone_box(&self) -> Box<dyn WarpDriveItem> {
+    fn clone_box(&self) -> Box<dyn TwarpDriveItem> {
         Box::new(self.clone())
     }
 }

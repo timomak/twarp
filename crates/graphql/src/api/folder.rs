@@ -10,7 +10,7 @@ pub struct Folder {
     pub metadata: ObjectMetadata,
     pub permissions: ObjectPermissions,
     #[cynic(rename = "isWarpPack")]
-    pub is_warp_pack: bool,
+    pub is_twarp_pack: bool,
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone)]

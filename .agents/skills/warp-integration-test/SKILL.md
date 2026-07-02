@@ -343,7 +343,7 @@ WARPUI_PAUSE_INTEGRATION_TEST_AT_EVERY_STEP=1 cargo run -p integration --bin int
 
 ### Video and screenshots
 
-If the task is specifically about recording a test, collecting screenshots, or validating overlay/video artifacts, also use the `integration-test-video` skill (located at `.warp/skills/integration-test-video/SKILL.md`).
+If the task is specifically about recording a test, collecting screenshots, or validating overlay/video artifacts, also use the `integration-test-video` skill (located at `.twarp/skills/integration-test-video/SKILL.md`).
 
 ### Environment variable gotcha
 

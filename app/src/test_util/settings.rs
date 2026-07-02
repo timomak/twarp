@@ -15,7 +15,7 @@ pub fn initialize_settings_for_tests_with_mode(
 ) {
     use crate::{
         // twarp: 2c-d — CloudAgentSettings removed with AI deletion.
-        drive::settings::WarpDriveSettings,
+        drive::settings::TwarpDriveSettings,
         search::command_search::settings::CommandSearchSettings,
         settings::{
             app_icon::AppIconSettings, init_and_register_user_preferences,
@@ -30,7 +30,7 @@ pub fn initialize_settings_for_tests_with_mode(
             general_settings::GeneralSettings, keys_settings::KeysSettings,
             ligature_settings::LigatureSettings, safe_mode_settings::SafeModeSettings,
             session_settings::SessionSettings, settings::TerminalSettings,
-            shared_session::settings::SharedSessionSettings, warpify::settings::WarpifySettings,
+            shared_session::settings::SharedSessionSettings, twarpify::settings::TwarpifySettings,
             BlockListSettings,
         },
         undo_close::UndoCloseSettings,
@@ -84,7 +84,7 @@ pub fn initialize_settings_for_tests_with_mode(
     ScrollSettings::register(app);
     SelectionSettings::register(app);
     app.update(|ctx| {
-        WarpifySettings::register(ctx);
+        TwarpifySettings::register(ctx);
     });
     SessionSettings::register(app);
     SshSettings::register(app);
@@ -94,7 +94,7 @@ pub fn initialize_settings_for_tests_with_mode(
     ThemeSettings::register(app);
     UndoCloseSettings::register(app);
     VimBannerSettings::register(app);
-    WarpDriveSettings::register(app);
+    TwarpDriveSettings::register(app);
     WindowSettings::register(app);
     SharedSessionSettings::register(app);
     CodeSettings::register(app);

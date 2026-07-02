@@ -8,7 +8,7 @@ fn test_data_dir_path() {
     // ChannelState, by default, is configured for Channel::Oss.
     cfg_if::cfg_if! {
         if #[cfg(target_os = "macos")] {
-            assert_eq!(data_dir(), home_dir.join(".warp-oss"));
+            assert_eq!(data_dir(), home_dir.join(".twarp-oss"));
         } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
             assert_eq!(data_dir(), home_dir.join(".local/share/twarp-oss"));
         } else if #[cfg(windows)] {
@@ -25,7 +25,7 @@ fn test_config_local_dir_path() {
     // ChannelState, by default, is configured for Channel::Oss.
     cfg_if::cfg_if! {
         if #[cfg(target_os = "macos")] {
-            assert_eq!(config_local_dir(), home_dir.join(".warp-oss"));
+            assert_eq!(config_local_dir(), home_dir.join(".twarp-oss"));
         } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
             assert_eq!(config_local_dir(), home_dir.join(".config/twarp-oss"));
         } else if #[cfg(windows)] {
@@ -37,28 +37,28 @@ fn test_config_local_dir_path() {
 }
 
 #[test]
-fn test_warp_home_config_dir_path() {
+fn test_twarp_home_config_dir_path() {
     let home_dir = home_dir().expect("Should be able to compute home directory");
     let expected_dir_name = match ChannelState::data_profile() {
-        Some(data_profile) => format!(".warp-oss-{data_profile}"),
-        None => ".warp-oss".to_string(),
+        Some(data_profile) => format!(".twarp-oss-{data_profile}"),
+        None => ".twarp-oss".to_string(),
     };
 
     assert_eq!(
-        warp_home_config_dir(),
+        twarp_home_config_dir(),
         Some(home_dir.join(expected_dir_name))
     );
 }
 
 #[test]
 fn test_warp_home_skills_and_mcp_paths() {
-    let Some(config_dir) = warp_home_config_dir() else {
+    let Some(config_dir) = twarp_home_config_dir() else {
         panic!("Should be able to compute Warp home config directory");
     };
 
-    assert_eq!(warp_home_skills_dir(), Some(config_dir.join("skills")));
+    assert_eq!(twarp_home_skills_dir(), Some(config_dir.join("skills")));
     assert_eq!(
-        warp_home_mcp_config_file_path(),
+        twarp_home_mcp_config_file_path(),
         Some(config_dir.join(".mcp.json"))
     );
 }

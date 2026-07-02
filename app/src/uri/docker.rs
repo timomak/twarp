@@ -44,7 +44,7 @@ impl Display for DockerContainerId {
 
 /// Given a Url with query parameters in the correct format, dispatch an action to create a new tab
 /// (or open a new window if there is no window), then run a command to open a subshell into the
-/// specified Docker container, and then warpify that new subshell.
+/// specified Docker container, and then twarpify that new subshell.
 pub fn open_docker_container(url: &Url, ctx: &mut AppContext) -> Result<()> {
     let query_params: HashMap<String, String> = url
         .query_pairs()

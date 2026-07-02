@@ -6,7 +6,7 @@ use twarp_util::path::LineAndColumnArg;
 
 use crate::app_state::AIConversationId;
 use crate::auth::auth_manager::LoginGatedFeature;
-use crate::drive::items::WarpDriveItemId;
+use crate::drive::items::TwarpDriveItemId;
 use crate::drive::CloudObjectTypeAndId;
 use crate::palette::PaletteMode;
 use crate::pane_group::PaneGroup;
@@ -211,7 +211,7 @@ pub enum WorkspaceAction {
     ToggleErrorUnderlining,
     ToggleSyntaxHighlighting,
     CheckForUpdate,
-    ExportAllWarpDriveObjects,
+    ExportAllTwarpDriveObjects,
     SetA11yVerbosityLevel(AccessibilityVerbosity),
     ToggleNotifications,
     ToggleTabColor {
@@ -266,10 +266,10 @@ pub enum WorkspaceAction {
     /// Warp Drive. This happens as explicit action from the user.
     ToggleLeftPanel,
     /// Toggles directly to the Warp Drive tab of the left panel in Code Mode V2
-    ToggleWarpDrive,
+    ToggleTwarpDrive,
     /// Unconditionally opens Warp Drive. This is used in the case of user lifecycle
     /// events like new user onboarding or when the user joins a team.
-    OpenWarpDrive,
+    OpenTwarpDrive,
     /// Toggles the right panel. This happens as an explicit action from the user.
     ToggleRightPanel,
     /// Opens the code review panel (right panel) without toggling. If already open,
@@ -350,7 +350,7 @@ pub enum WorkspaceAction {
     /// Moves focus to the panel on the right
     FocusRightPanel,
     /// An action to view a newly created/edited workflow in WD from the toast
-    ViewObjectInWarpDrive(WarpDriveItemId),
+    ViewObjectInTwarpDrive(TwarpDriveItemId),
     /// Open the object's sharing settings in WD.
     OpenObjectSharingSettings {
         object_id: CloudObjectTypeAndId,
@@ -761,7 +761,7 @@ impl WorkspaceAction {
             | CopyVersion(_)
             | DownloadNewVersion
             | ConfigureKeybindingSettings { .. }
-            | ExportAllWarpDriveObjects
+            | ExportAllTwarpDriveObjects
             | ShowSettings
             | ShowSettingsPage(_)
             | ShowSettingsPageWithSearch { .. }
@@ -821,8 +821,8 @@ impl WorkspaceAction {
             | DragTab { .. }
             | StartTabDrag
             | ToggleLeftPanel
-            | ToggleWarpDrive
-            | OpenWarpDrive
+            | ToggleTwarpDrive
+            | OpenTwarpDrive
             | ClosePanel
             | ToggleRightPanel
             | OpenCodeReviewPanel(..)
@@ -880,7 +880,7 @@ impl WorkspaceAction {
             | InsertInInput { .. }
             | UndoTrash(_)
             | OpenFilePath { .. }
-            | ViewObjectInWarpDrive(_)
+            | ViewObjectInTwarpDrive(_)
             | OpenObjectSharingSettings { .. }
             | TerminateApp
             | SignInAnonymousWebUser

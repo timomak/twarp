@@ -1,4 +1,4 @@
-use crate::drive::cloud_object_styling::warp_drive_icon_color;
+use crate::drive::cloud_object_styling::twarp_drive_icon_color;
 use crate::drive::DriveObjectType;
 use crate::modal::{Modal, ModalEvent};
 use crate::server::ids::ServerId;
@@ -132,14 +132,14 @@ impl SharedObjectsCreationDeniedModal {
         let (icon, icon_color) = match object_type {
             DriveObjectType::Notebook { is_ai_document } => (
                 Some(Icon::Notebook),
-                Some(Fill::Solid(warp_drive_icon_color(
+                Some(Fill::Solid(twarp_drive_icon_color(
                     appearance,
                     DriveObjectType::Notebook { is_ai_document },
                 ))),
             ),
             DriveObjectType::Workflow => (
                 Some(Icon::Workflow),
-                Some(Fill::Solid(warp_drive_icon_color(
+                Some(Fill::Solid(twarp_drive_icon_color(
                     appearance,
                     DriveObjectType::Workflow,
                 ))),

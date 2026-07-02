@@ -53,7 +53,7 @@ use crate::ui_components::item_highlight::{ImageOrIcon, ItemHighlightState};
 use crate::util::file::external_editor::EditorSettings;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::{
-    is_binary_file, resolve_file_target_to_open_in_warp, resolve_file_target_with_editor_choice,
+    is_binary_file, resolve_file_target_to_open_in_twarp, resolve_file_target_with_editor_choice,
 };
 use crate::util::openable_file_type::{is_file_content_binary, EditorLayout, FileTarget};
 use crate::{
@@ -2265,7 +2265,7 @@ impl FileTreeView {
         ctx: &mut ViewContext<Self>,
     ) {
         let settings = EditorSettings::as_ref(ctx);
-        // twarp 05e: `resolve_file_target_to_open_in_warp` is the
+        // twarp 05e: `resolve_file_target_to_open_in_twarp` is the
         // "force open in Twarp" path used by the context-menu actions
         // (Open in New Pane / Open in New Tab). For binary files
         // (PNG, WEBP, PDF, archives, …) Warp would just render
@@ -2275,7 +2275,7 @@ impl FileTreeView {
         // opens via NSWorkspace (macOS Preview / Quick Look / etc.).
         let force_warp = editor_layout.is_some() && !is_binary_file(path);
         let target = if force_warp {
-            resolve_file_target_to_open_in_warp(path, settings, editor_layout)
+            resolve_file_target_to_open_in_twarp(path, settings, editor_layout)
         } else {
             resolve_file_target_with_editor_choice(
                 path,

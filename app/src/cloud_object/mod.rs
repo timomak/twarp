@@ -22,8 +22,8 @@ use crate::{
     channel::ChannelState,
     drive::{
         folders::{CloudFolderModel, FolderId},
-        items::WarpDriveItem,
-        CloudObjectTypeAndId, OpenWarpDriveObjectArgs, OpenWarpDriveObjectSettings,
+        items::TwarpDriveItem,
+        CloudObjectTypeAndId, OpenTwarpDriveObjectArgs, OpenTwarpDriveObjectSettings,
     },
     env_vars::CloudEnvVarCollectionModel,
     notebooks::{CloudNotebookModel, NotebookId},
@@ -181,7 +181,7 @@ pub trait CloudObject: Debug {
     fn update_object_queue_item(&self, revision_ts: Option<Revision>) -> QueueItem;
 
     /// Returns whether this model type should render as a warp drive item.
-    fn renders_in_warp_drive(&self) -> bool;
+    fn renders_in_twarp_drive(&self) -> bool;
 
     /// Returns whether this model type should show update toasts in the UI.
     fn should_show_activity_toasts(&self) -> bool {
@@ -190,7 +190,7 @@ pub trait CloudObject: Debug {
 
     /// Creates a new Warp Drive item for this object.  Returns None if this
     /// object is not rendered in Warp Drive.
-    fn to_warp_drive_item(&self, appearance: &Appearance) -> Option<Box<dyn WarpDriveItem>>;
+    fn to_twarp_drive_item(&self, appearance: &Appearance) -> Option<Box<dyn TwarpDriveItem>>;
 
     /// Returns the web link of this object. Will return none if we do not support web links
     /// for this particular object (i.e. if it's not yet sync'd to the server, or if we don't
@@ -462,7 +462,7 @@ pub trait CloudModelType: Debug + Clone + Send + Sync {
     fn object_type(&self) -> ObjectType;
 
     /// Returns whether this model type should render as a warp drive item.
-    fn renders_in_warp_drive(&self) -> bool;
+    fn renders_in_twarp_drive(&self) -> bool;
 
     /// Returns whether this model type should show update toasts in the UI.
     fn should_show_activity_toasts(&self) -> bool {
@@ -477,12 +477,12 @@ pub trait CloudModelType: Debug + Clone + Send + Sync {
 
     /// Creates a new warp drive item for this model type. Returns None
     /// if this object does not render in Warp Drive.
-    fn to_warp_drive_item(
+    fn to_twarp_drive_item(
         &self,
         id: SyncId,
         appearance: &Appearance,
         object: &Self::CloudObjectType,
-    ) -> Option<Box<dyn WarpDriveItem>>;
+    ) -> Option<Box<dyn TwarpDriveItem>>;
 
     /// Returns the display name for this model (e.g. to show in the Warp Drive index)
     fn display_name(&self) -> String;
@@ -789,12 +789,12 @@ where
         self.model.update_object_queue_item(revision_ts, self)
     }
 
-    fn renders_in_warp_drive(&self) -> bool {
-        self.model.renders_in_warp_drive()
+    fn renders_in_twarp_drive(&self) -> bool {
+        self.model.renders_in_twarp_drive()
     }
 
-    fn to_warp_drive_item(&self, appearance: &Appearance) -> Option<Box<dyn WarpDriveItem>> {
-        self.model.to_warp_drive_item(self.id, appearance, self)
+    fn to_twarp_drive_item(&self, appearance: &Appearance) -> Option<Box<dyn TwarpDriveItem>> {
+        self.model.to_twarp_drive_item(self.id, appearance, self)
     }
 
     fn can_export(&self) -> bool {
@@ -931,9 +931,9 @@ where
 /// Extracts the server id and object type from a (caller validated) Drive link.
 /// Intended use is deriving metadata from links such that Warp objects
 /// can be opened natively in Warp with no web interaction.
-pub fn extract_server_id_and_object_type_from_warp_drive_link(
+pub fn extract_server_id_and_object_type_from_twarp_drive_link(
     url: &Url,
-) -> Option<OpenWarpDriveObjectArgs> {
+) -> Option<OpenTwarpDriveObjectArgs> {
     let server_id = url
         .path_segments()
         .and_then(|mut segments| segments.next_back())
@@ -956,13 +956,13 @@ pub fn extract_server_id_and_object_type_from_warp_drive_link(
 
     let invitee_email: Option<String> = query_string.get("invitee_email").map(|s| s.to_string());
 
-    Some(OpenWarpDriveObjectArgs {
+    Some(OpenTwarpDriveObjectArgs {
         object_type,
         server_id: match server_id {
             Some(server_id) => server_id.try_into().ok()?,
             _ => return None,
         },
-        settings: OpenWarpDriveObjectSettings {
+        settings: OpenTwarpDriveObjectSettings {
             focused_folder_id,
             invitee_email,
         },
@@ -1388,12 +1388,12 @@ impl ServerFolder {
         name: Option<String>,
         metadata: ServerMetadata,
         permissions: ServerPermissions,
-        is_warp_pack: bool,
+        is_twarp_pack: bool,
     ) -> Result<Self> {
         match name {
             Some(name) => Ok(Self {
                 id: SyncId::ServerId(uid),
-                model: CloudFolderModel::new(&name, is_warp_pack),
+                model: CloudFolderModel::new(&name, is_twarp_pack),
                 metadata,
                 permissions,
             }),

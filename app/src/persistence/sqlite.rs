@@ -76,7 +76,7 @@ use crate::cloud_object::{
 };
 use crate::code::editor_management::CodeSource;
 use crate::drive::folders::{CloudFolder, CloudFolderModel, FolderId};
-use crate::drive::OpenWarpDriveObjectSettings;
+use crate::drive::OpenTwarpDriveObjectSettings;
 use crate::env_vars::{CloudEnvVarCollection, CloudEnvVarCollectionModel};
 use crate::features::FeatureFlag;
 use crate::notebooks::{CloudNotebook, NotebookId};
@@ -851,7 +851,7 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                 universal_search_width: window.universal_search_width,
                 warp_ai_width: window.warp_ai_width,
                 voltron_width: window.voltron_width,
-                warp_drive_index_width: window.warp_drive_index_width,
+                twarp_drive_index_width: window.twarp_drive_index_width,
                 left_panel_open: Some(window.left_panel_open),
                 vertical_tabs_panel_open: Some(window.vertical_tabs_panel_open),
                 fullscreen_state: window.fullscreen_state as i32,
@@ -2274,7 +2274,7 @@ fn upsert_folders(
             let folder_clone = cloud_folder.clone();
             let folder_name = cloud_folder.model().name.clone();
             let folder_is_open = cloud_folder.model().is_open;
-            let folder_is_warp_pack = cloud_folder.model().is_warp_pack;
+            let folder_is_twarp_pack = cloud_folder.model().is_twarp_pack;
             upsert_cloud_object(
                 conn,
                 ObjectType::Folder,
@@ -2285,7 +2285,7 @@ fn upsert_folders(
                     let new_folder = NewFolder {
                         name: folder_name,
                         is_open: folder_is_open,
-                        is_warp_pack: folder_is_warp_pack,
+                        is_twarp_pack: folder_is_twarp_pack,
                     };
                     diesel::insert_into(schema::folders::dsl::folders)
                         .values(new_folder)
@@ -2301,7 +2301,7 @@ fn upsert_folders(
                         .set((
                             name.eq(folder_clone.model().name.clone()),
                             is_open.eq(folder_clone.model().is_open),
-                            is_warp_pack.eq(folder_clone.model().is_warp_pack),
+                            is_warp_pack.eq(folder_clone.model().is_twarp_pack),
                         ))
                         .execute(conn)?;
                     Ok(())
@@ -2412,7 +2412,7 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                         Some(path) => NotebookPaneSnapshot::LocalFileNotebook { path: Some(path) },
                         None => NotebookPaneSnapshot::CloudNotebook {
                             notebook_id,
-                            settings: OpenWarpDriveObjectSettings::default(),
+                            settings: OpenTwarpDriveObjectSettings::default(),
                         },
                     })
                 }
@@ -2430,7 +2430,7 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
 
                     LeafContents::Workflow(WorkflowPaneSnapshot::CloudWorkflow {
                         workflow_id,
-                        settings: OpenWarpDriveObjectSettings::default(),
+                        settings: OpenTwarpDriveObjectSettings::default(),
                     })
                 }
                 CODE_PANE_KIND => {
@@ -2774,7 +2774,7 @@ fn read_sqlite_data(
                 universal_search_width: window.universal_search_width,
                 warp_ai_width: window.warp_ai_width,
                 voltron_width: window.voltron_width,
-                warp_drive_index_width: window.warp_drive_index_width,
+                twarp_drive_index_width: window.twarp_drive_index_width,
                 left_panel_open: window_left_panel_open,
                 vertical_tabs_panel_open: window.vertical_tabs_panel_open.unwrap_or(false),
                 fullscreen_state: fullscreen_state_val,
@@ -2904,7 +2904,7 @@ fn read_sqlite_data(
                                 CloudFolderModel {
                                     name: folder.name.clone(),
                                     is_open: folder.is_open,
-                                    is_warp_pack: folder.is_warp_pack,
+                                    is_twarp_pack: folder.is_twarp_pack,
                                 },
                                 to_cloud_object_metadata(metadata),
                                 cloud_object_permissions,

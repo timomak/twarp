@@ -190,7 +190,7 @@ fn set_context_flags_from_url(url: Url) {
     match WebIntent::try_from_url(&url) {
         Ok(WebIntent::SessionView(_)) => ContextFlag::set_shared_session_only(),
         Ok(WebIntent::ConversationView(_)) => ContextFlag::set_conversation_only(),
-        Ok(WebIntent::DriveObject(_)) => ContextFlag::set_warp_drive_link_only(),
+        Ok(WebIntent::DriveObject(_)) => ContextFlag::set_twarp_drive_link_only(),
         Ok(WebIntent::SettingsView(_)) => ContextFlag::set_settings_link_only(),
         Ok(WebIntent::Home(_)) => ContextFlag::set_warp_home_link_only(),
         Ok(WebIntent::Action(_)) => {} // No special context flag for actions

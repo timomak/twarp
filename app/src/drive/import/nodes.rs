@@ -1,5 +1,5 @@
 use crate::{
-    drive::{cloud_object_styling::warp_drive_icon_color, DriveObjectType},
+    drive::{cloud_object_styling::twarp_drive_icon_color, DriveObjectType},
     notebooks::post_process_notebook,
     workflows::{
         export_workflow::export_deserialize, workflow::Workflow, workflow_enum::WorkflowEnum,
@@ -328,7 +328,7 @@ impl FolderNode {
             .render_status_icon(sync_queue_dequeueing, appearance);
 
         let icon_color =
-            override_color.unwrap_or(warp_drive_icon_color(appearance, DriveObjectType::Folder));
+            override_color.unwrap_or(twarp_drive_icon_color(appearance, DriveObjectType::Folder));
         let icon = ConstrainedBox::new(
             Icon::Folder
                 .to_warpui_icon(Fill::Solid(icon_color))
@@ -554,12 +554,12 @@ impl FileNode {
         let icon_element = match &self.file_type {
             FileType::Workflow => Icon::Workflow
                 .to_warpui_icon(Fill::Solid(override_color.unwrap_or(
-                    warp_drive_icon_color(appearance, DriveObjectType::Workflow),
+                    twarp_drive_icon_color(appearance, DriveObjectType::Workflow),
                 )))
                 .finish(),
             FileType::Notebook => Icon::Notebook
                 .to_warpui_icon(Fill::Solid(override_color.unwrap_or(
-                    warp_drive_icon_color(
+                    twarp_drive_icon_color(
                         appearance,
                         DriveObjectType::Notebook {
                             is_ai_document: false,

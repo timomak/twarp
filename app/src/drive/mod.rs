@@ -88,7 +88,7 @@ impl fmt::Display for DriveObjectType {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
-pub struct OpenWarpDriveObjectSettings {
+pub struct OpenTwarpDriveObjectSettings {
     /// The folder that should be focused in the Warp Drive when the object is opened.
     pub focused_folder_id: Option<ServerId>,
     /// The email of the user to invite to the object, if the object is being opened via the request access flow.
@@ -96,10 +96,10 @@ pub struct OpenWarpDriveObjectSettings {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct OpenWarpDriveObjectArgs {
+pub struct OpenTwarpDriveObjectArgs {
     pub object_type: ObjectType,
     pub server_id: ServerId,
-    pub settings: OpenWarpDriveObjectSettings,
+    pub settings: OpenTwarpDriveObjectSettings,
 }
 
 /// Enum to use to pass down type and id between actions to avoid multiplying actions whenever we
@@ -227,7 +227,7 @@ impl CloudObjectTypeAndId {
     }
 
     pub fn drive_row_position_id(self) -> String {
-        format!("WarpDriveRow_{}", self.uid())
+        format!("TwarpDriveRow_{}", self.uid())
     }
 
     pub fn from_generic_string_object(object_type: GenericStringObjectFormat, id: SyncId) -> Self {

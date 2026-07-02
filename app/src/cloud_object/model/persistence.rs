@@ -884,7 +884,7 @@ impl CloudModel {
 
             folder.set_model(CloudFolderModel {
                 is_open,
-                is_warp_pack: folder.model.is_warp_pack,
+                is_twarp_pack: folder.model.is_twarp_pack,
                 name: folder.model.name.clone(),
             });
 
@@ -1088,7 +1088,7 @@ impl CloudModel {
     pub fn num_visible_errored_objects(&self) -> usize {
         self.objects_by_id
             .values()
-            .filter(|object| object.renders_in_warp_drive() && object.metadata().is_errored())
+            .filter(|object| object.renders_in_twarp_drive() && object.metadata().is_errored())
             .count()
     }
 

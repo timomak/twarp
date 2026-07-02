@@ -2746,7 +2746,7 @@ type RootQuery {
 
 type RootSubscription {
   """Equivalent to GetCloudObjectUpdates in v1."""
-  warpDriveUpdates: WarpDriveUpdate!
+  warpDriveUpdates: TwarpDriveUpdate!
 }
 
 type RoutingHostConfig {
@@ -3886,7 +3886,7 @@ type WarpAiPolicy {
   isUnlimitedSuggestedCodeDiffs: Boolean!
   isUnlimitedVoice: Boolean!
   isVoiceEnabled: Boolean!
-  isWarpDriveObjectIndexingEnabled: Boolean!
+  isTwarpDriveObjectIndexingEnabled: Boolean!
   limit: Int!
   passiveSuggestionsSpendLimitCents: Float!
   requestPoolingType: PoolingType!
@@ -3900,7 +3900,7 @@ type WarpBasicPolicy {
   enabled: Boolean!
 }
 
-union WarpDriveUpdate = AmbientTaskUpdated | ObjectActionOccurred | ObjectContentUpdated | ObjectDeleted | ObjectMetadataUpdated | ObjectPermissionsUpdated | TeamMembershipsChanged
+union TwarpDriveUpdate = AmbientTaskUpdated | ObjectActionOccurred | ObjectContentUpdated | ObjectDeleted | ObjectMetadataUpdated | ObjectPermissionsUpdated | TeamMembershipsChanged
 
 type Workflow {
   data: String!

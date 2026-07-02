@@ -26,7 +26,7 @@ pub enum UseCache {
     No,
 }
 
-/// Singleton model that loads and caches local (non-WarpDrive) workflows.
+/// Singleton model that loads and caches local (non-TwarpDrive) workflows.
 pub struct LocalWorkflows {
     app_workflows: Vec<Workflow>,
 
@@ -82,7 +82,7 @@ impl LocalWorkflows {
         })
     }
 
-    /// Returns an iterator over file-based workflows loaded from the `.warp/workflows` directory in
+    /// Returns an iterator over file-based workflows loaded from the `.twarp/workflows` directory in
     /// the `working_directory`.
     ///
     /// The loaded workflows vector is cached.
@@ -184,7 +184,7 @@ pub(super) fn load_project_workflows(path: &Path) -> Vec<Workflow> {
     match git2::Repository::discover(path) {
         Ok(repository) => repository.workdir().map_or(Vec::new(), |workdir| {
             load_workflows(&workflows_dir(
-                workdir.join(twarp_core::paths::WARP_CONFIG_DIR),
+                workdir.join(twarp_core::paths::TWARP_CONFIG_DIR),
             ))
         }),
         Err(_) => Vec::new(),

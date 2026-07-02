@@ -259,6 +259,7 @@ use super::{
         SharedSessionStatus,
     },
     shell::ShellType,
+    twarpify::SubshellSource,
     // twarp: 2c-d — universal_developer_input + ambient_agent deleted; stubs at file bottom
     view::{
         inline_banner::{
@@ -268,7 +269,6 @@ use super::{
         ExecuteCommandEvent, SyncInputType, TerminalAction,
         PADDING_LEFT as TERMINAL_VIEW_PADDING_LEFT,
     },
-    warpify::SubshellSource,
     History,
     HistoryEntry,
     SizeInfo,
@@ -14281,7 +14281,7 @@ impl Input {
                                 .cloned(),
                             workflow_selection_source: selected_workflow_state
                                 .workflow_selection_source,
-                            // This is only `Some()` for WarpDrive workflows; we don't track
+                            // This is only `Some()` for TwarpDrive workflows; we don't track
                             // ID for execution of local workflows because they have no such
                             // unique ID.
                             workflow_id: selected_workflow_state.workflow_type.server_id(),

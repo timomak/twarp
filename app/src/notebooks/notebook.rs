@@ -48,8 +48,8 @@ use crate::{
     cmd_or_ctrl_shift,
     drive::{
         drive_helpers::has_feature_gated_anonymous_user_reached_notebook_limit,
-        export::ExportManager, items::WarpDriveItemId, sharing::ShareableObject,
-        CloudObjectTypeAndId, OpenWarpDriveObjectSettings,
+        export::ExportManager, items::TwarpDriveItemId, sharing::ShareableObject,
+        CloudObjectTypeAndId, OpenTwarpDriveObjectSettings,
     },
     editor::{
         EditOrigin, EditorView, Event as EditorEvent, InteractionState,
@@ -269,7 +269,7 @@ pub enum NotebookEvent {
         source: WorkflowSource,
     },
     EditWorkflow(SyncId),
-    ViewInWarpDrive(WarpDriveItemId),
+    ViewInTwarpDrive(TwarpDriveItemId),
     Pane(PaneEvent),
     MoveToSpace {
         cloud_object_type_and_id: CloudObjectTypeAndId,
@@ -299,7 +299,7 @@ pub enum NotebookAction {
     ResetFontSize,
     ConflictResolutionBannerRefreshClicked,
     FocusTerminalInput,
-    ViewInWarpDrive(WarpDriveItemId),
+    ViewInTwarpDrive(TwarpDriveItemId),
     ContextMenu(ContextMenuAction), // right click context menu
     MoveToSpace {
         cloud_object_type_and_id: CloudObjectTypeAndId,
@@ -610,7 +610,7 @@ impl NotebookView {
                 {
                     self.pane_configuration.update(ctx, |pane_config, ctx| {
                         pane_config
-                            .set_shareable_object(Some(ShareableObject::WarpDriveObject(id)), ctx);
+                            .set_shareable_object(Some(ShareableObject::TwarpDriveObject(id)), ctx);
                     })
                 }
             }
@@ -1190,8 +1190,8 @@ impl NotebookView {
         });
     }
 
-    fn view_in_warp_drive(&mut self, id: WarpDriveItemId, ctx: &mut ViewContext<Self>) {
-        ctx.emit(NotebookEvent::ViewInWarpDrive(id));
+    fn view_in_twarp_drive(&mut self, id: TwarpDriveItemId, ctx: &mut ViewContext<Self>) {
+        ctx.emit(NotebookEvent::ViewInTwarpDrive(id));
     }
 
     fn move_to_team_owner(
@@ -1499,7 +1499,7 @@ impl NotebookView {
     pub fn wait_for_initial_load_then_load(
         &mut self,
         notebook_id: SyncId,
-        settings: &OpenWarpDriveObjectSettings,
+        settings: &OpenTwarpDriveObjectSettings,
         window_id: WindowId,
         ctx: &mut ViewContext<Self>,
     ) {
@@ -1538,7 +1538,7 @@ impl NotebookView {
     fn fetch_and_load_notebook(
         &mut self,
         notebook_id: ServerId,
-        settings: &OpenWarpDriveObjectSettings,
+        settings: &OpenTwarpDriveObjectSettings,
         window_id: WindowId,
         ctx: &mut ViewContext<Self>,
     ) {
@@ -1582,7 +1582,7 @@ impl NotebookView {
     pub fn load(
         &mut self,
         notebook: CloudNotebook,
-        settings: &OpenWarpDriveObjectSettings,
+        settings: &OpenTwarpDriveObjectSettings,
         ctx: &mut ViewContext<Self>,
     ) -> SpawnedFutureHandle {
         self.set_title(&notebook.model().title, ctx);
@@ -1592,7 +1592,7 @@ impl NotebookView {
             self.pane_configuration
                 .update(ctx, |pane_configuration, ctx| {
                     pane_configuration.set_shareable_object(
-                        Some(ShareableObject::WarpDriveObject(server_id)),
+                        Some(ShareableObject::TwarpDriveObject(server_id)),
                         ctx,
                     );
                 });
@@ -1671,8 +1671,8 @@ impl NotebookView {
                 source: SharingDialogSource::InviteeRequest,
             });
         } else if let Some(focused_folder_id) = settings.focused_folder_id.map(SyncId::ServerId) {
-            self.view_in_warp_drive(
-                WarpDriveItemId::Object(CloudObjectTypeAndId::Folder(focused_folder_id)),
+            self.view_in_twarp_drive(
+                TwarpDriveItemId::Object(CloudObjectTypeAndId::Folder(focused_folder_id)),
                 ctx,
             );
         }
@@ -1826,7 +1826,7 @@ impl NotebookView {
         if let Some(notebook) = CloudModel::as_ref(ctx).get_notebook(&id) {
             self.load(
                 notebook.clone(),
-                &OpenWarpDriveObjectSettings::default(),
+                &OpenTwarpDriveObjectSettings::default(),
                 ctx,
             );
         }
@@ -2265,7 +2265,7 @@ impl TypedActionView for NotebookView {
             NotebookAction::ResetFontSize => {
                 self.apply_font_size_to_setting(NotebookFontSize::default_value(), ctx)
             }
-            NotebookAction::ViewInWarpDrive(id) => self.view_in_warp_drive(*id, ctx),
+            NotebookAction::ViewInTwarpDrive(id) => self.view_in_twarp_drive(*id, ctx),
             NotebookAction::FocusTerminalInput => {
                 ctx.emit(NotebookEvent::Pane(PaneEvent::FocusActiveSession))
             }

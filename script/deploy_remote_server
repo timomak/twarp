@@ -112,7 +112,7 @@ esac
 FEATURES="release_bundle,crash_reporting,standalone,agent_mode_debug"
 WARP_BIN="warp"
 BINARY_NAME="oz-local"
-REMOTE_DIR=".warp-local/remote-server"
+REMOTE_DIR=".twarp-local/remote-server"
 
 # Determine the output directory
 CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$WORKSPACE_ROOT/target}"
@@ -152,7 +152,7 @@ echo ""
 echo "==> Build complete ($BINARY_SIZE)"
 
 # Resolve $HOME on the remote so our upload lands in the same directory the
-# Warp client checks. The client runs `test -x ~/.warp-local/...` and lets
+# Warp client checks. The client runs `test -x ~/.twarp-local/...` and lets
 # the remote login shell expand `~` to $HOME, while rsync's remote path
 # expansion can differ (e.g. on Namespace devboxes, the initial directory
 # is /workspaces but $HOME is elsewhere). Using an absolute path derived

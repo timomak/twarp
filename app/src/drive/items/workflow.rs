@@ -17,21 +17,21 @@ use crate::{
     workflows::{CloudWorkflow, WorkflowViewMode},
 };
 
-use super::{WarpDriveItem, WarpDriveItemId};
+use super::{TwarpDriveItem, TwarpDriveItemId};
 
 #[derive(Clone)]
-pub struct WarpDriveWorkflow {
+pub struct TwarpDriveWorkflow {
     id: CloudObjectTypeAndId,
     workflow: CloudWorkflow,
 }
 
-impl WarpDriveWorkflow {
+impl TwarpDriveWorkflow {
     pub fn new(id: CloudObjectTypeAndId, workflow: CloudWorkflow) -> Self {
         Self { id, workflow }
     }
 }
 
-impl WarpDriveItem for WarpDriveWorkflow {
+impl TwarpDriveItem for TwarpDriveWorkflow {
     fn display_name(&self) -> Option<String> {
         if self.workflow.model().data.name().is_empty() {
             None
@@ -111,8 +111,8 @@ impl WarpDriveItem for WarpDriveWorkflow {
         Some(modal.finish())
     }
 
-    fn warp_drive_id(&self) -> WarpDriveItemId {
-        WarpDriveItemId::Object(self.id)
+    fn twarp_drive_id(&self) -> TwarpDriveItemId {
+        TwarpDriveItemId::Object(self.id)
     }
 
     fn sync_status_icon(
@@ -133,12 +133,12 @@ impl WarpDriveItem for WarpDriveWorkflow {
             .get_action_history_summary_for_action_type(&self.id.uid(), ObjectActionType::Execute)
     }
 
-    fn clone_box(&self) -> Box<dyn WarpDriveItem> {
+    fn clone_box(&self) -> Box<dyn TwarpDriveItem> {
         Box::new(self.clone())
     }
 }
 
-impl WarpDriveWorkflow {
+impl TwarpDriveWorkflow {
     fn render_workflow_name(&self, appearance: &Appearance) -> Box<dyn Element> {
         appearance
             .ui_builder()
