@@ -8,7 +8,7 @@ set -e
 # don't do it (to avoid doing it more than once).
 warp_sudo apt update -y
 
-# Install all dependencies needed to build, run, and test Warp.
+# Install all dependencies needed to build, run, and test Twarp.
 "$PWD"/script/linux/install_test_deps
 
 # Install linuxdeploy.

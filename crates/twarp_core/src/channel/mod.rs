@@ -18,7 +18,7 @@ pub enum Channel {
     /// The internal-only HEAD build.
     Local,
 
-    /// The open-source build of Warp.
+    /// The open-source build of Twarp.
     Oss,
 
     /// The integration test build.
@@ -50,12 +50,12 @@ impl Channel {
     /// Returns the CLI command name corresponding to this channel.
     pub fn cli_command_name(&self) -> &'static str {
         match self {
-            Channel::Stable => "oz",
-            Channel::Dev => "oz-dev",
-            Channel::Preview => "oz-preview",
-            Channel::Local => "oz-local",
-            Channel::Integration => "oz-integration",
-            Channel::Oss => "warp-oss",
+            Channel::Stable => "twarp",
+            Channel::Dev => "twarp-dev",
+            Channel::Preview => "twarp-preview",
+            Channel::Local => "twarp-local",
+            Channel::Integration => "twarp-integration",
+            Channel::Oss => "twarp-oss",
         }
     }
 }
@@ -68,7 +68,7 @@ impl fmt::Display for Channel {
             Channel::Dev => "dev",
             Channel::Integration => "integration",
             Channel::Local => "local",
-            Channel::Oss => "warp-oss",
+            Channel::Oss => "twarp-oss",
         })
     }
 }

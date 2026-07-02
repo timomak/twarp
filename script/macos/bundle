@@ -70,7 +70,7 @@ cleanup_dmg_files() {
         find "$target_dir" -name "rw.*.dmg" -type f -delete
     fi
     # Also check if any volumes are mounted and unmount them
-    hdiutil info | grep "/Volumes/Warp.*" | awk '{print $1}' | while read -r disk; do
+    hdiutil info | grep "/Volumes/Twarp.*" | awk '{print $1}' | while read -r disk; do
         echo "Unmounting disk image: $disk"
         hdiutil detach "$disk" -force || true
     done
@@ -136,7 +136,7 @@ while (( "$#" )); do
       SELFSIGN=false
       shift
       ;;
-    # Sign with a local Apple Development cert instead of the official Warp cert.
+# Sign with a local Apple Development cert instead of the official Twarp cert.
     # Useful for local debug builds when you don't have access to the company signing key.
     # Falls back to ad-hoc signing if no Apple Development cert is found.
     --selfsign)
@@ -269,7 +269,7 @@ if [[ "$CARGO_PROFILE" == "dev" ]]; then
 fi
 
 if [[ $RELEASE_CHANNEL = "local" ]]; then
-    WARP_BIN="warp"
+    WARP_BIN="twarp"
     BUNDLE_ID="dev.twarp.Twarp-Local"
     WARP_APP_NAME="TwarpLocal"
     WARP_SCHEME_NAME="warplocal"
@@ -303,9 +303,9 @@ elif [[ $RELEASE_CHANNEL = "stable" ]]; then
     WARP_BIN="stable"
     BUNDLE_ID="dev.twarp.Twarp-Stable"
     WARP_APP_NAME="Twarp"
-    WARP_SCHEME_NAME="warp"
+    WARP_SCHEME_NAME="twarp"
 elif [[ $RELEASE_CHANNEL = "oss" ]]; then
-    WARP_BIN="warp-oss"
+    WARP_BIN="twarp-oss"
     BUNDLE_ID="dev.twarp.TwarpOss"
     WARP_APP_NAME="TwarpOss"
     WARP_SCHEME_NAME="warposs"
@@ -529,11 +529,11 @@ if [[ "$ARTIFACT" == "app" ]]; then
   # Determine CLI wrapper script path based on release channel.  Each channel's
   # value here must match `Channel::cli_command_name` in the Rust source.
   if [[ $RELEASE_CHANNEL = "stable" ]]; then
-    CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/oz"
+    CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/twarp"
   elif [[ $RELEASE_CHANNEL = "oss" ]]; then
-    CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/warp-oss"
+    CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/twarp-oss"
   else
-    CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/oz-$RELEASE_CHANNEL"
+    CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/twarp-$RELEASE_CHANNEL"
   fi
 
   echo "Creating Resources/bin directory and CLI wrapper script..."
@@ -610,7 +610,7 @@ fi
 if [[ $CODESIGN = true ]]; then
   # TODO - does this need to change per user?  Seems like it's tied to the WARP_NOTARIZATION_PASSWORD password.
   APPLE_TEAM_ID="2BBY89MBSN"
-  CODESIGN_KEYCHAIN_NAME="warp-codesign-keychain"
+  CODESIGN_KEYCHAIN_NAME="twarp-codesign-keychain"
 
   echo "Starting codesigning..."
 
@@ -694,13 +694,13 @@ fi
 ########################
 
 if [[ "$ARTIFACT" = app ]]; then
-  function create_warp_dmg() {
+  function create_twarp_dmg() {
     echo "Creating $DMG_DIR/$DMG_NAME..."
     rm "$DMG_DIR/$DMG_NAME" || true
     local source_folder="$1"
 
     local args=(
-      --volname Warp
+      --volname Twarp
       # For --no-internet-enable, see https://github.com/create-dmg/create-dmg/issues/179
       --no-internet-enable
       --background app/assets/resources/mac/twarp_install_image.png
@@ -739,7 +739,7 @@ if [[ "$ARTIFACT" = app ]]; then
     mkdir -p "$DMG_DIR"
     cp -R "$BUNDLE_DIR/$WARP_APP_NAME.app" "$DMG_DIR"
 
-    create_warp_dmg "$DMG_DIR"
+    create_twarp_dmg "$DMG_DIR"
 
     echo "Codesigning $DMG_DIR/$DMG_NAME..."
     codesign -s "$APPLE_TEAM_ID" --timestamp "$DMG_DIR/$DMG_NAME"
@@ -753,7 +753,7 @@ if [[ "$ARTIFACT" = app ]]; then
     echo "Cleaning up any existing DMG files before creating new ones..."
     cleanup_dmg_files "$DMG_DIR"
 
-    create_warp_dmg "$BUNDLE_DIR"
+    create_twarp_dmg "$BUNDLE_DIR"
   fi
 fi
 

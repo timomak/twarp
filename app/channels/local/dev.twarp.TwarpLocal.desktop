@@ -7,7 +7,7 @@ Type=Application
 Name=TwarpLocal
 GenericName=TerminalEmulator
 
-Exec=warp-terminal-local %U
+Exec=twarp-terminal-local %U
 StartupWMClass=dev.twarp.TwarpLocal
 
 Keywords=shell;prompt;command;commandline;cmd;

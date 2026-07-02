@@ -7,7 +7,7 @@ Type=Application
 Name=TwarpDev
 GenericName=TerminalEmulator
 
-Exec=warp-terminal-dev %U
+Exec=twarp-terminal-dev %U
 StartupWMClass=dev.twarp.TwarpDev
 
 Keywords=shell;prompt;command;commandline;cmd;

@@ -7,7 +7,7 @@ Type=Application
 Name=TwarpPreview
 GenericName=TerminalEmulator
 
-Exec=warp-terminal-preview %U
+Exec=twarp-terminal-preview %U
 StartupWMClass=dev.twarp.TwarpPreview
 
 Keywords=shell;prompt;command;commandline;cmd;

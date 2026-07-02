@@ -2,20 +2,14 @@
 # Package Spec
 ###############################################################################
 
-Summary:     The orchestration platform for cloud agents.
-Name:        oz@@CHANNEL_SUFFIX@@
+Summary:     Twarp command-line interface.
+Name:        twarp-cli@@CHANNEL_SUFFIX@@
 Version:     @@VERSION@@
 Release:     @@RELEASE@@
 Vendor:      Denver Technologies, Inc.
-Url:         https://warp.dev
-Packager:    Warp Linux Maintainers <linux-maintainers@warp.dev>
-License:     https://warp.dev/terms-of-service
-Obsoletes:   warp-cli@@CHANNEL_SUFFIX@@ < %{version}
-Obsoletes:   oz = v0.2026.02.09.06.06.stable_00
-Obsoletes:   oz = v0.2026.02.09.06.06.stable_02
-Obsoletes:   oz = v0.2026.02.10.11.37.stable_00
-Obsoletes:   oz = v0.2026.02.10.11.37.stable_01
-Obsoletes:   oz = v0.2026.02.11.08.23.stable_00
+Url:         https://twarp.dev
+Packager:    Twarp Linux Maintainers <linux-maintainers@twarp.dev>
+License:     AGPL-3.0-only
 
 
 # The prefix specifies where the majority of the application files are,
@@ -31,12 +25,7 @@ prefix:      /opt
 ###############################################################################
 
 %description
-The Oz CLI is a tool for running, managing, and orchestrating coding agents at scale.
-Use the CLI to:
-* Launch and inspect cloud agents
-* Schedule cloud agents to run in the future
-* Manage the environments that cloud agents run in
-* Upload secrets to Oz's secure storage
+The Twarp CLI provides command-line access to Twarp features for this channel.
 
 ###############################################################################
 # Build rule - how does the package get built?
@@ -54,11 +43,11 @@ Use the CLI to:
 # Populate the buildroot directory with the package contents, in the
 # appropriate locations.
 mkdir -p %{buildroot}
-OPT_DIR="%{prefix}/warpdotdev/%{name}" @@WORKSPACEROOT@@/script/linux/bundle_install %{buildroot}
+OPT_DIR="%{prefix}/twarpdev/%{name}" @@WORKSPACEROOT@@/script/linux/bundle_install %{buildroot}
 
 # Set up a symlink from the system's bin dir to our installed executable.
 mkdir -p %{buildroot}%{_bindir}
-ln -s %{prefix}/warpdotdev/%{name}/@@BINARY_NAME@@ %{buildroot}%{_bindir}/@@BINARY_NAME@@
+ln -s %{prefix}/twarpdev/%{name}/@@BINARY_NAME@@ %{buildroot}%{_bindir}/@@BINARY_NAME@@
 
 ###############################################################################
 # Files listing - what files will end up in the package?
@@ -66,7 +55,7 @@ ln -s %{prefix}/warpdotdev/%{name}/@@BINARY_NAME@@ %{buildroot}%{_bindir}/@@BINA
 %files
 
 # Most things go into this directory.
-%{prefix}/warpdotdev/%{name}
+%{prefix}/twarpdev/%{name}
 
 # We also install a symlink in the system bin directory.
 %{_bindir}/@@BINARY_NAME@@
@@ -79,7 +68,7 @@ ln -s %{prefix}/warpdotdev/%{name}/@@BINARY_NAME@@ %{buildroot}%{_bindir}/@@BINA
 
 # Install the signing key to the standard location for RPM GPG keys.
 mkdir -p /etc/pki/rpm-gpg
-install -m 644 /dev/stdin /etc/pki/rpm-gpg/RPM-GPG-KEY-@@REPO_NAME@@ << 'WARP_SIGNING_KEY_EOF'
+install -m 644 /dev/stdin /etc/pki/rpm-gpg/RPM-GPG-KEY-@@REPO_NAME@@ << 'TWARP_SIGNING_KEY_EOF'
 -----BEGIN PGP PUBLIC KEY BLOCK-----
 
 mQINBGXJOCwBEADBfryUo8Yx7sbp6KRk08YqKQBVGA7VmNhC/3dRQvK4hbL49KxvicOyIQXykuKrgZ68
@@ -150,7 +139,7 @@ eStX9QCdaf+T1uUMGtaxnbrV76Hb2EHPEa3YMn1bUJDAfUVs5+8wJ6x5QChEQQtCcd4nWVhVWnoGWziA
 39zmImytKo0uyVov+w2F6dMAOZk23ZsjCTqrSBVoDQ2HGig6N0c/V6M/l9CkcGCmLmjx10thsW3BTaBa
 Qh6Vm3FbRCkKqx2FzF6lCwA=
 -----END PGP PUBLIC KEY BLOCK-----
-WARP_SIGNING_KEY_EOF
+TWARP_SIGNING_KEY_EOF
 
 # Helper function to set up a yum repo.
 install_yum() {
@@ -158,7 +147,7 @@ install_yum() {
 	REPO_FILE="$REPO_DIR/@@REPO_NAME@@.repo"
 	if [ -f "$REPO_FILE" ]; then
 		# Migrate existing repo file to use local key instead of URL.
-		sed -i 's|^gpgkey=https://releases.warp.dev/linux/keys/warp.asc$|gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-@@REPO_NAME@@|' "$REPO_FILE"
+		sed -i 's|^gpgkey=https://releases.twarp.dev/linux/keys/twarp.asc$|gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-@@REPO_NAME@@|' "$REPO_FILE"
 		return
 	fi
 
@@ -166,7 +155,7 @@ install_yum() {
 		cat >"$REPO_FILE" <<EOF
 [@@REPO_NAME@@]
 name=@@REPO_NAME@@
-baseurl=https://releases.warp.dev/linux/rpm/@@RELEASE_CHANNEL@@
+baseurl=https://releases.twarp.dev/linux/rpm/@@RELEASE_CHANNEL@@
 enabled=1
 gpgcheck=1
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-@@REPO_NAME@@
@@ -180,7 +169,7 @@ install_zypp() {
 	REPO_FILE="$REPO_DIR/@@REPO_NAME@@.repo"
 	if [ -f "$REPO_FILE" ]; then
 		# Migrate existing repo file to use local key instead of URL.
-		sed -i 's|^gpgkey=https://releases.warp.dev/linux/keys/warp.asc$|gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-@@REPO_NAME@@|' "$REPO_FILE"
+		sed -i 's|^gpgkey=https://releases.twarp.dev/linux/keys/twarp.asc$|gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-@@REPO_NAME@@|' "$REPO_FILE"
 		return
 	fi
 
@@ -189,7 +178,7 @@ install_zypp() {
 [@@REPO_NAME@@]
 name=@@REPO_NAME@@
 type=rpm-md
-baseurl=https://releases.warp.dev/linux/rpm/@@RELEASE_CHANNEL@@
+baseurl=https://releases.twarp.dev/linux/rpm/@@RELEASE_CHANNEL@@
 enabled=1
 autorefresh=1
 gpgcheck=1

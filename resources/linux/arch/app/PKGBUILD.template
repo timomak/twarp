@@ -1,9 +1,9 @@
-pkgname=warp-terminal@@CHANNEL_SUFFIX@@
+pkgname=twarp-terminal@@CHANNEL_SUFFIX@@
 pkgver=@@VERSION@@
 pkgrel=@@RELEASE@@
-pkgdesc="Warp, the Rust-based terminal for developers and teams"
+pkgdesc="Twarp, the community fork of the Rust-based Warp terminal"
 arch=('@@ARCH@@')
-url="https://warp.dev"
+url="https://twarp.dev"
 license=('custom')
 depends=(
 	'curl'
