@@ -7,10 +7,10 @@ use crate::cloud_object::{GenericStringObjectUniqueKey, UniquePer};
 use crate::server::ids::{HashedSqliteId, ObjectUid, ServerId, SyncId};
 
 impl From<GenericStringObjectUniqueKey>
-    for warp_graphql::generic_string_object::GenericStringObjectUniqueKey
+    for twarp_graphql::generic_string_object::GenericStringObjectUniqueKey
 {
     fn from(key: GenericStringObjectUniqueKey) -> Self {
-        use warp_graphql::generic_string_object::GenericStringObjectUniqueKey as GraphQLFormat;
+        use twarp_graphql::generic_string_object::GenericStringObjectUniqueKey as GraphQLFormat;
         GraphQLFormat {
             key: key.key,
             unique_per: key.unique_per.into(),
@@ -18,40 +18,40 @@ impl From<GenericStringObjectUniqueKey>
     }
 }
 
-impl From<UniquePer> for warp_graphql::generic_string_object::UniquePer {
+impl From<UniquePer> for twarp_graphql::generic_string_object::UniquePer {
     fn from(unique_per: UniquePer) -> Self {
-        use warp_graphql::generic_string_object::UniquePer as GraphQLUniquePer;
+        use twarp_graphql::generic_string_object::UniquePer as GraphQLUniquePer;
         match unique_per {
             UniquePer::User => GraphQLUniquePer::User,
         }
     }
 }
 
-impl From<ObjectActionType> for warp_graphql::object_actions::ActionType {
+impl From<ObjectActionType> for twarp_graphql::object_actions::ActionType {
     fn from(action: ObjectActionType) -> Self {
         match action {
-            ObjectActionType::Execute => warp_graphql::object_actions::ActionType::Executed,
+            ObjectActionType::Execute => twarp_graphql::object_actions::ActionType::Executed,
         }
     }
 }
 
 /// Converts the graphql action type ("EXECUTED", etc) to ObjectActionType.
 fn try_into_object_action_type(
-    action_type: warp_graphql::object_actions::ActionType,
+    action_type: twarp_graphql::object_actions::ActionType,
 ) -> Result<ObjectActionType, anyhow::Error> {
     match action_type {
-        warp_graphql::object_actions::ActionType::Executed => Ok(ObjectActionType::Execute),
+        twarp_graphql::object_actions::ActionType::Executed => Ok(ObjectActionType::Execute),
     }
 }
 
 /// Converts the graphql action entry (SingleAction, BundledActions) into its ObjectAction corollary.
 fn try_into_object_action(
-    record: &warp_graphql::object_actions::ActionRecord,
+    record: &twarp_graphql::object_actions::ActionRecord,
     uid: ObjectUid,
     hashed_sqlite_id: HashedSqliteId,
 ) -> Result<ObjectAction, anyhow::Error> {
     match record {
-        warp_graphql::object_actions::ActionRecord::SingleAction(s) => Ok(ObjectAction {
+        twarp_graphql::object_actions::ActionRecord::SingleAction(s) => Ok(ObjectAction {
             action_type: try_into_object_action_type(s.action_type)?,
             action_subtype: ObjectActionSubtype::SingleAction {
                 timestamp: s.timestamp.utc(),
@@ -62,7 +62,7 @@ fn try_into_object_action(
             uid,
             hashed_sqlite_id,
         }),
-        warp_graphql::object_actions::ActionRecord::BundledActions(b) => Ok(ObjectAction {
+        twarp_graphql::object_actions::ActionRecord::BundledActions(b) => Ok(ObjectAction {
             action_type: try_into_object_action_type(b.action_type)?,
             action_subtype: ObjectActionSubtype::BundledActions {
                 count: b.count,
@@ -73,7 +73,7 @@ fn try_into_object_action(
             uid,
             hashed_sqlite_id,
         }),
-        warp_graphql::object_actions::ActionRecord::Unknown => {
+        twarp_graphql::object_actions::ActionRecord::Unknown => {
             Err(anyhow!("Unknown object action subtype"))
         }
     }
@@ -81,7 +81,7 @@ fn try_into_object_action(
 
 /// Converts the graphql action history type into an ObjectActionHistory, requires converting
 /// the individual actions, action types, and action subtypes.
-impl TryInto<ObjectActionHistory> for warp_graphql::object_actions::ObjectActionHistory {
+impl TryInto<ObjectActionHistory> for twarp_graphql::object_actions::ObjectActionHistory {
     type Error = anyhow::Error;
     fn try_into(self) -> Result<ObjectActionHistory, Self::Error> {
         let uid: ObjectUid = self.uid.into_inner();

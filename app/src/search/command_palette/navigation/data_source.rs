@@ -8,7 +8,7 @@ use crate::search::mixer::DataSourceRunErrorWrapper;
 use crate::search::SyncDataSource;
 use crate::session_management::{SessionNavigationData, SessionSource};
 use crate::workspace::PaneViewLocator;
-use warpui::{AppContext, Entity, ModelHandle};
+use twarpui::{AppContext, Entity, ModelHandle};
 
 /// Data source that produces possible running sessions a user could navigate to.
 pub struct DataSource {
@@ -18,7 +18,7 @@ pub struct DataSource {
 impl DataSource {
     #[cfg(not(target_family = "wasm"))]
     pub fn new(active_session_handle: ModelHandle<SessionSource>) -> Self {
-        if warp_core::features::FeatureFlag::UseTantivySearch.is_enabled() {
+        if twarp_core::features::FeatureFlag::UseTantivySearch.is_enabled() {
             Self::new_full_text(active_session_handle)
         } else {
             Self::new_fuzzy(active_session_handle)

@@ -1,13 +1,13 @@
 //! Shared message producers for displaying attached blocks/text context.
 
-use warp_core::features::FeatureFlag;
-use warpui::keymap::Keystroke;
+use twarp_core::features::FeatureFlag;
+use twarpui::keymap::Keystroke;
 
 // twarp: 2c-d — AI agent view / blocklist deleted; stubs.
 #[derive(Default)]
 pub struct AgentMessageBarMouseStates {
     // twarp: 2c-d — fields used by callers
-    pub clear_attached_context: warpui::elements::MouseStateHandle,
+    pub clear_attached_context: twarpui::elements::MouseStateHandle,
 }
 pub use crate::terminal::input::{AgentViewController, BlocklistAIContextModel};
 // twarp: 2c-d — re-export from input for type unification.

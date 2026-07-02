@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, time::Duration};
 
 use settings::{Setting, ToggleableSetting};
-use warpui::{
+use twarpui::{
     elements::{
         Container, CrossAxisAlignment, Flex, MainAxisAlignment, MouseStateHandle, ParentElement,
         Text,
@@ -213,7 +213,7 @@ impl View for UndoCloseView {
 impl TypedActionView for UndoCloseView {
     type Action = Action;
 
-    fn handle_action(&mut self, action: &Self::Action, ctx: &mut warpui::ViewContext<Self>) {
+    fn handle_action(&mut self, action: &Self::Action, ctx: &mut twarpui::ViewContext<Self>) {
         match action {
             Action::ToggleUndoCloseEnabled => {
                 UndoCloseSettings::handle(ctx).update(ctx, |settings, ctx| {

@@ -5,17 +5,17 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use warp_core::channel::ChannelState;
-use warp_core::safe_error;
-use warp_core::SessionId;
-use warp_util::standardized_path::StandardizedPath;
-use warpui::platform::TerminationMode;
-use warpui::r#async::{Spawnable, SpawnableOutput, SpawnedFutureHandle};
-use warpui::{Entity, ModelContext, SingletonEntity};
+use twarp_core::channel::ChannelState;
+use twarp_core::safe_error;
+use twarp_core::SessionId;
+use twarp_util::standardized_path::StandardizedPath;
+use twarpui::platform::TerminationMode;
+use twarpui::r#async::{Spawnable, SpawnableOutput, SpawnedFutureHandle};
+use twarpui::{Entity, ModelContext, SingletonEntity};
 
-use warp_files::{FileModel, FileModelEvent};
-use warp_util::content_version::ContentVersion;
-use warp_util::file::FileId;
+use twarp_files::{FileModel, FileModelEvent};
+use twarp_util::content_version::ContentVersion;
+use twarp_util::file::FileId;
 
 use super::proto::{
     client_message, delete_file_response, run_command_response, server_message,

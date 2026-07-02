@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use anyhow::Result;
 use itertools::{peek_nth, Either, PeekNth};
 use string_offset::CharOffset;
-use warpui::text::{words::is_default_word_boundary, TextBuffer};
+use twarpui::text::{words::is_default_word_boundary, TextBuffer};
 
 use crate::vim::{Direction, WordBound, WordType};
 

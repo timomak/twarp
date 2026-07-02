@@ -25,7 +25,7 @@ use tantivy::tokenizer::{Token, TokenStream, Tokenizer};
 use tantivy::{
     snippet::SnippetGenerator, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term,
 };
-use warpui::r#async::{block_on, executor::Background, Timer};
+use twarpui::r#async::{block_on, executor::Background, Timer};
 
 pub type FullTextSearchDocumentEntry = HashMap<String, FullTextSearchFieldValue>;
 

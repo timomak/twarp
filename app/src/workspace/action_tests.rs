@@ -5,7 +5,7 @@ use crate::workspace::tab_settings::{
     VerticalTabsViewMode,
 };
 use crate::workspace::PaneViewLocator;
-use warpui::EntityId;
+use twarpui::EntityId;
 
 #[test]
 fn vertical_tabs_view_mode_change_does_not_save_workspace_state() {

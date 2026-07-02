@@ -7,8 +7,8 @@ use crate::terminal::available_shells::AvailableShells;
 use crate::terminal::session_settings::{NewSessionSource, SessionSettings};
 use crate::terminal::ShellLaunchData;
 use std::path::PathBuf;
-use warpui::SingletonEntity;
-use warpui::{AppContext, ViewContext, WindowId};
+use twarpui::SingletonEntity;
+use twarpui::{AppContext, ViewContext, WindowId};
 
 impl Workspace {
     /// Helper function to compute the initial directory for a new session

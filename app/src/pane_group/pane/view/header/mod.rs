@@ -29,8 +29,8 @@ use pathfinder_geometry::{
     rect::RectF,
     vector::{vec2f, Vector2F},
 };
-use warp_core::{features::FeatureFlag, settings::Setting};
-use warpui::{
+use twarp_core::{features::FeatureFlag, settings::Setting};
+use twarpui::{
     elements::{
         AcceptedByDropTarget, Align, Border, ChildAnchor, Clipped, ConstrainedBox, Container,
         CornerRadius, CrossAxisAlignment, Dismiss, Draggable, DraggableState, Empty, Flex,
@@ -675,7 +675,7 @@ impl<P: BackingView> PaneHeader<P> {
                             self.mouse_state_handles.title_double_click_handle.clone(),
                             move |_| title_inner,
                         )
-                        .with_cursor(warpui::platform::Cursor::PointingHand)
+                        .with_cursor(twarpui::platform::Cursor::PointingHand)
                         .on_double_click(move |ctx, _, _| on_double_click(ctx))
                         .finish()
                     } else {
@@ -792,7 +792,7 @@ impl<P: BackingView> View for PaneHeader<P> {
         let element = match header_content {
             HeaderContent::Standard(mut header) => {
                 // On mobile devices, always show icons since hover effects don't work with touch
-                if warpui::platform::is_mobile_device() {
+                if twarpui::platform::is_mobile_device() {
                     header.options.always_show_icons = true;
                 }
                 self.render_standard_header(header, app)

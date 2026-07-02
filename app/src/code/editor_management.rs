@@ -11,8 +11,8 @@ pub enum SkillOpenOrigin {
 // twarp: 2c-e — SkillReference is now a stub in `crate::app_state`.
 use crate::app_state::SkillReference;
 use serde::{Deserialize, Serialize};
-use warp_util::path::LineAndColumnArg;
-use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity, ViewHandle, WindowId};
+use twarp_util::path::LineAndColumnArg;
+use twarpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity, ViewHandle, WindowId};
 
 // twarp: 2c-d — AI agent action id deleted; stub.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

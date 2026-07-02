@@ -7,8 +7,8 @@ use std::{
 };
 
 use settings::manager::SettingsManager;
-use warp_core::execution_mode::{AppExecutionMode, ExecutionMode};
-use warpui::{App, ModelHandle, SingletonEntity};
+use twarp_core::execution_mode::{AppExecutionMode, ExecutionMode};
+use twarpui::{App, ModelHandle, SingletonEntity};
 
 use crate::{
     auth::{auth_manager::AuthManager, AuthStateProvider},

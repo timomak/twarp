@@ -3,10 +3,10 @@ use super::{blended_colors, BORDER_RADIUS};
 use crate::appearance::Appearance;
 use crate::themes::theme::Fill;
 use crate::themes::theme::WarpTheme;
-use warpui::elements::Radius;
-use warpui::elements::{CornerRadius, MouseStateHandle};
-use warpui::ui_components::button::Button;
-use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use twarpui::elements::Radius;
+use twarpui::elements::{CornerRadius, MouseStateHandle};
+use twarpui::ui_components::button::Button;
+use twarpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 
 const ICON_BUTTON_PADDING: f32 = 4.;
 

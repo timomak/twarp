@@ -1,7 +1,7 @@
 use crate::terminal::model::session::Session;
 use smol_str::SmolStr;
 use std::sync::Arc;
-use warp_completer::parsers::simple::all_parsed_commands;
+use twarp_completer::parsers::simple::all_parsed_commands;
 
 /// Contains information about an aliased command.
 #[derive(Clone, Debug, Eq, PartialEq)]

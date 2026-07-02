@@ -4,12 +4,12 @@
 use std::collections::HashMap;
 
 use settings::Setting as _;
-use warp::{
+use twarp::{
     features::FeatureFlag,
     integration_testing::terminal::wait_until_bootstrapped_single_pane_for_tab,
     settings::{BlockVisibilitySettings, ScrollSettings},
 };
-use warpui::{async_assert, async_assert_eq, integration::AssertionOutcome, SingletonEntity};
+use twarpui::{async_assert, async_assert_eq, integration::AssertionOutcome, SingletonEntity};
 
 use super::{new_builder, Builder};
 
@@ -66,7 +66,7 @@ pub fn test_settings_file_migration_from_native_store() -> Builder {
                 .add_named_assertion(
                     "TOML settings file should contain the migrated settings",
                     move |_app, _window_id| {
-                        let toml_path = warp::settings::user_preferences_toml_file_path();
+                        let toml_path = twarp::settings::user_preferences_toml_file_path();
                         let contents = match std::fs::read_to_string(&toml_path) {
                             Ok(c) => c,
                             Err(err) => {

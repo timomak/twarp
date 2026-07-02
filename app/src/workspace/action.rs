@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use warp_util::path::LineAndColumnArg;
+use twarp_util::path::LineAndColumnArg;
 
 use crate::app_state::AIConversationId;
 use crate::auth::auth_manager::LoginGatedFeature;
@@ -27,12 +27,12 @@ use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::PaneViewLocator;
 use session_sharing_protocol::common::SessionId;
 
+use twarpui::accessibility::AccessibilityVerbosity;
+use twarpui::geometry::rect::RectF;
+use twarpui::geometry::vector::Vector2F;
+use twarpui::platform::Cursor;
+use twarpui::{EntityId, WeakViewHandle, WindowId};
 use ui_components::lightbox;
-use warpui::accessibility::AccessibilityVerbosity;
-use warpui::geometry::rect::RectF;
-use warpui::geometry::vector::Vector2F;
-use warpui::platform::Cursor;
-use warpui::{EntityId, WeakViewHandle, WindowId};
 
 use super::global_actions::{ForkFromExchange, ForkedConversationDestination};
 use super::tab_settings::{

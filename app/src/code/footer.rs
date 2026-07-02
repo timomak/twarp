@@ -6,30 +6,30 @@ use lsp::{
     LanguageId, LanguageServerId, LspManagerModel, LspManagerModelEvent, LspServerModel,
     LspState as LspModelState,
 };
-use warp_core::send_telemetry_from_ctx;
+use twarp_core::send_telemetry_from_ctx;
 
 use crate::code::lsp_telemetry::{LspControlActionType, LspEnablementSource, LspTelemetryEvent};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use warp_core::ui::theme::color::internal_colors;
-use warp_core::ui::theme::{Fill as ThemeFill, WarpTheme};
-use warp_core::ui::{appearance::Appearance, Icon};
-use warpui::elements::{
+use twarp_core::ui::theme::color::internal_colors;
+use twarp_core::ui::theme::{Fill as ThemeFill, WarpTheme};
+use twarp_core::ui::{appearance::Appearance, Icon};
+use twarpui::elements::{
     ChildAnchor, ChildView, Dismiss, Empty, Hoverable, MainAxisSize, MouseStateHandle,
     ParentAnchor, ParentOffsetBounds, Rect, Shrinkable,
 };
-use warpui::platform::Cursor;
-use warpui::ui_components::components::{UiComponent, UiComponentStyles};
-use warpui::{
+use twarpui::platform::Cursor;
+use twarpui::ui_components::components::{UiComponent, UiComponentStyles};
+use twarpui::{
     elements::{
         Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Fill, Flex,
         MainAxisAlignment, OffsetPositioning, Padding, ParentElement, Radius, Stack,
     },
     AppContext, Element, Entity, ModelHandle, SingletonEntity, View, WeakModelHandle,
 };
-use warpui::{TypedActionView, ViewContext, ViewHandle};
+use twarpui::{TypedActionView, ViewContext, ViewHandle};
 
-use warp_core::ui::theme::AnsiColorIdentifier;
+use twarp_core::ui::theme::AnsiColorIdentifier;
 
 // twarp: 2c-d — replaced crate::ai::persisted_workspace types with local stub. The real
 // PersistedWorkspace lived in the AI module and tracked LSP installation state. The stubs

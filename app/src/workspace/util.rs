@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use warpui::{
+use twarpui::{
     elements::MouseStateHandle, AppContext, EntityId, SingletonEntity, ViewContext, ViewHandle,
     WindowId,
 };
@@ -371,7 +371,7 @@ pub fn get_context_target_terminal_view(
 pub fn get_terminal_background_fill(
     window_id: WindowId,
     app: &AppContext,
-) -> warpui::elements::Fill {
+) -> twarpui::elements::Fill {
     let theme = Appearance::as_ref(app).theme();
     let terminal_opacity = get_terminal_background_opacity(window_id, app);
     theme.background().with_opacity(terminal_opacity).into()

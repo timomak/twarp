@@ -31,11 +31,11 @@ use session_sharing_protocol::common::SessionId;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use twarpui::notification::UserNotification;
+use twarpui::{platform::TerminationMode, SingletonEntity as _, TypedActionView};
 use url::Url;
-use warpui::notification::UserNotification;
-use warpui::{platform::TerminationMode, SingletonEntity as _, TypedActionView};
 
-use warpui::{AppContext, WindowId};
+use twarpui::{AppContext, WindowId};
 
 use self::docker::open_docker_container;
 

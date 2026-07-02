@@ -1,6 +1,6 @@
 // twarp: 2c-d — AI agent icon / query history deleted; stubs.
-pub fn render_ai_agent_mode_icon<A, B>(_: A, _: B) -> Box<dyn warpui::Element> {
-    warpui::elements::Empty::new().finish()
+pub fn render_ai_agent_mode_icon<A, B>(_: A, _: B) -> Box<dyn twarpui::Element> {
+    twarpui::elements::Empty::new().finish()
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AIQueryHistory {
@@ -18,8 +18,8 @@ pub enum AIQueryHistoryOutputStatus {
 }
 #[allow(dead_code)]
 impl AIQueryHistoryOutputStatus {
-    pub fn icon(&self) -> warp_core::ui::Icon {
-        warp_core::ui::Icon::Terminal
+    pub fn icon(&self) -> twarp_core::ui::Icon {
+        twarp_core::ui::Icon::Terminal
     }
     pub fn display_text(&self) -> &'static str {
         ""
@@ -35,18 +35,17 @@ use pathfinder_geometry::vector::vec2f;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::{cmp, ops::Range, vec};
-use warp_command_signatures::IconType;
-use warp_completer::completer::{
+use twarp_completer::completer::{
     MatchType, PathSeparators, Suggestion, SuggestionResults, SuggestionType,
 };
-use warp_core::features::FeatureFlag;
-use warp_core::ui::theme::AnsiColorIdentifier;
-use warpui::elements::{
+use twarp_core::features::FeatureFlag;
+use twarp_core::ui::theme::AnsiColorIdentifier;
+use twarpui::elements::{
     ChildAnchor, DispatchEventResult, Expanded, Hoverable, MouseStateHandle, ParentAnchor,
     ParentOffsetBounds, ScrollbarWidth,
 };
-use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
-use warpui::{
+use twarpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use twarpui::{
     accessibility::{AccessibilityContent, WarpA11yRole},
     elements::{
         Align, AnchorPair, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
@@ -59,6 +58,7 @@ use warpui::{
     fonts::{Cache, Properties, Weight},
     AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, WeakViewHandle,
 };
+use warp_command_signatures::IconType;
 
 use crate::appearance::Appearance;
 use crate::terminal::history::LinkedWorkflowData;
@@ -836,7 +836,7 @@ impl InputSuggestions {
                                     Properties::default()
                                         .weight(appearance.monospace_font_weight()),
                                 )
-                                .autosize_text(warp_core::ui::builder::MIN_FONT_SIZE)
+                                .autosize_text(twarp_core::ui::builder::MIN_FONT_SIZE)
                                 .with_color(main_text);
 
                                 let matches = item.matches.clone();

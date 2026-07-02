@@ -28,12 +28,12 @@ use crate::{
 use anyhow::Result;
 use regex::Regex;
 use std::sync::Arc;
-use warp_core::{
+use twarp_core::{
     features::FeatureFlag,
     settings::{ChangeEventReason, Setting},
 };
-use warp_graphql::workspace::FeatureModelChoice;
-use warpui::{AppContext, Entity, ModelContext, SingletonEntity, Tracked};
+use twarp_graphql::workspace::FeatureModelChoice;
+use twarpui::{AppContext, Entity, ModelContext, SingletonEntity, Tracked};
 
 #[cfg(test)]
 use crate::server::server_api::{team::MockTeamClient, workspace::MockWorkspaceClient};
@@ -121,7 +121,7 @@ pub struct WorkspacesMetadataResponse {
 // independent queries.
 pub struct WorkspacesMetadataWithPricing {
     pub metadata: WorkspacesMetadataResponse,
-    pub pricing_info: Option<warp_graphql::billing::PricingInfo>,
+    pub pricing_info: Option<twarp_graphql::billing::PricingInfo>,
 }
 
 pub struct CreateTeamResponse {

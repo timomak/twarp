@@ -3,7 +3,7 @@
 // twarp: 2c-e — CommentSide is now a stub in `crate::app_state`.
 use crate::app_state::CommentSide;
 use num_traits::SaturatingSub;
-use warp_editor::render::model::LineCount;
+use twarp_editor::render::model::LineCount;
 
 use crate::{
     code::editor::line::EditorLineLocation,

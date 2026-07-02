@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::path::PathBuf;
-use warp_core::ui::color::pick_foreground_color;
-use warpui::assets::asset_cache::AssetSource;
-use warpui::{
+use twarp_core::ui::color::pick_foreground_color;
+use twarpui::assets::asset_cache::AssetSource;
+use twarpui::{
     color::ColorU,
     elements::{
         Align, Border, ConstrainedBox, Container, Element, Empty, Flex, ParentElement, Rect,
@@ -17,8 +17,8 @@ use warpui::{
 
 use super::theme_creator::{pick_accent_color_from_options, top_colors_for_image};
 
-pub use warp_core::ui::color::blend::Blend;
-pub use warp_core::ui::theme::*;
+pub use twarp_core::ui::color::blend::Blend;
+pub use twarp_core::ui::theme::*;
 
 const THUMBNAIL_MARGIN: f32 = 10.;
 
@@ -517,9 +517,9 @@ pub fn render_preview(
         thumbnail.add_child(
             Shrinkable::new(
                 1.,
-                warpui::elements::Image::new(
+                twarpui::elements::Image::new(
                     background_image.source(),
-                    warpui::elements::CacheOption::BySize,
+                    twarpui::elements::CacheOption::BySize,
                 )
                 .cover()
                 .finish(),

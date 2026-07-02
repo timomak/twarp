@@ -4,8 +4,8 @@
 
 use std::path::Path;
 
-use warp_core::ui::appearance::Appearance;
-use warpui::{
+use twarp_core::ui::appearance::Appearance;
+use twarpui::{
     elements::{
         ChildView, ClippedScrollStateHandle, Container, CornerRadius, CrossAxisAlignment, Element,
         Flex, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Text,

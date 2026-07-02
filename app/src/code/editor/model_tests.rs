@@ -1,10 +1,10 @@
 use futures::channel::oneshot;
 use std::path::Path;
+use twarp_editor::content::buffer::{InitialBufferState, SelectionOffsets};
+use twarp_editor::multiline::MultilineString;
+use twarp_util::content_version::ContentVersion;
+use twarpui::App;
 use vec1::vec1;
-use warp_editor::content::buffer::{InitialBufferState, SelectionOffsets};
-use warp_editor::multiline::MultilineString;
-use warp_util::content_version::ContentVersion;
-use warpui::App;
 
 use crate::{
     code::editor::line::EditorLineLocation, code::editor::view::code_text_styles,

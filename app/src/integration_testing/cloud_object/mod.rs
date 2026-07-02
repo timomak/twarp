@@ -5,7 +5,7 @@ use futures::{future::join_all, FutureExt};
 use itertools::Itertools;
 use std::future::Future;
 use std::pin::Pin;
-use warpui::{App, SingletonEntity};
+use twarpui::{App, SingletonEntity};
 
 use crate::{
     cloud_object::{model::persistence::CloudModel, Space},

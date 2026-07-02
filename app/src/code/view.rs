@@ -24,20 +24,20 @@ use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::vec2f;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use warp_core::channel::{Channel, ChannelState};
-use warp_core::features::FeatureFlag;
-use warp_core::ui::appearance::Appearance;
-use warp_core::ui::icons::ICON_DIMENSIONS;
-use warp_editor::render::element::VerticalExpansionBehavior;
-use warp_util::path::LineAndColumnArg;
-use warpui::elements::Rect;
-use warpui::fonts::Style;
-use warpui::text::point::Point;
-use warpui::text_layout::ClipConfig;
+use twarp_core::channel::{Channel, ChannelState};
+use twarp_core::features::FeatureFlag;
+use twarp_core::ui::appearance::Appearance;
+use twarp_core::ui::icons::ICON_DIMENSIONS;
+use twarp_editor::render::element::VerticalExpansionBehavior;
+use twarp_util::path::LineAndColumnArg;
+use twarpui::elements::Rect;
+use twarpui::fonts::Style;
+use twarpui::text::point::Point;
+use twarpui::text_layout::ClipConfig;
 
 #[cfg(feature = "local_fs")]
-use warpui::clipboard::ClipboardContent;
-use warpui::{
+use twarpui::clipboard::ClipboardContent;
+use twarpui::{
     elements::{
         AcceptedByDropTarget, Align, Border, ChildAnchor, ChildView, Clipped, ConstrainedBox,
         Container, CornerRadius, CrossAxisAlignment, Draggable, DraggableState, DropTarget, Empty,
@@ -420,8 +420,8 @@ impl CodeView {
                             ctx,
                         )
                         .with_horizontal_scrollbar_appearance(
-                            warpui::elements::new_scrollable::ScrollableAppearance::new(
-                                warpui::elements::ScrollbarWidth::Auto,
+                            twarpui::elements::new_scrollable::ScrollableAppearance::new(
+                                twarpui::elements::ScrollbarWidth::Auto,
                                 true,
                             ),
                         )
@@ -461,8 +461,8 @@ impl CodeView {
                 ctx,
             )
             .with_horizontal_scrollbar_appearance(
-                warpui::elements::new_scrollable::ScrollableAppearance::new(
-                    warpui::elements::ScrollbarWidth::Auto,
+                twarpui::elements::new_scrollable::ScrollableAppearance::new(
+                    twarpui::elements::ScrollbarWidth::Auto,
                     true,
                 ),
             )
@@ -1545,8 +1545,8 @@ impl CodeView {
         // pane is read-only. Sized to the existing language-icon slot
         // so the row layout stays the same.
         if read_only {
-            let lock =
-                warpui::elements::Icon::new(warp_core::ui::Icon::Lock.into(), text_color).finish();
+            let lock = twarpui::elements::Icon::new(twarp_core::ui::Icon::Lock.into(), text_color)
+                .finish();
             row.add_child(
                 Container::new(
                     ConstrainedBox::new(lock)
@@ -1988,7 +1988,7 @@ impl CodeView {
                     let theme = appearance.theme();
                     let lock_color = blended_colors::text_sub(theme, theme.background());
                     let lock_icon =
-                        warpui::elements::Icon::new(warp_core::ui::Icon::Lock.into(), lock_color)
+                        twarpui::elements::Icon::new(twarp_core::ui::Icon::Lock.into(), lock_color)
                             .finish();
                     Flex::row()
                         .with_cross_axis_alignment(CrossAxisAlignment::Center)

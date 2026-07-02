@@ -6,9 +6,9 @@ use crate::integration_testing::terminal::util::ExpectedExitStatus;
 use crate::integration_testing::view_getters::single_terminal_view_for_tab;
 use crate::terminal::model::terminal_model::BlockIndex;
 use std::time::Duration;
-use warpui::integration::AssertionCallback;
-use warpui::integration::TestStep;
-use warpui::{async_assert, async_assert_eq};
+use twarpui::integration::AssertionCallback;
+use twarpui::integration::TestStep;
+use twarpui::{async_assert, async_assert_eq};
 
 /// This test case covers the creates the following output grid:
 /// -----------

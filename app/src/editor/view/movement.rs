@@ -1,6 +1,6 @@
 use super::{DisplayMap, DisplayPoint};
 use anyhow::Result;
-use warpui::AppContext;
+use twarpui::AppContext;
 
 pub fn left(
     map: &DisplayMap,

@@ -1,4 +1,4 @@
-use warpui::{AppContext, ModelHandle, View, ViewContext, ViewHandle};
+use twarpui::{AppContext, ModelHandle, View, ViewContext, ViewHandle};
 
 use crate::app_state::LeafContents;
 use crate::browser_spike_view::{BrowserSpikeView, BrowserSpikeViewEvent};

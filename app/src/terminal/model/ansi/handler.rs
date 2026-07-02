@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::io;
 
-use warp_terminal::model::ansi::control_sequence_parameters::*;
-use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
-use warpui::color::ColorU;
+use twarp_terminal::model::ansi::control_sequence_parameters::*;
+use twarp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
+use twarpui::color::ColorU;
 
 use super::dcs_hooks::*;
 use super::ProcessorInput;

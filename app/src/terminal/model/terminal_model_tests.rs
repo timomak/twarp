@@ -6,11 +6,11 @@ use crate::terminal::model::grid::Dimensions as _;
 use crate::terminal::model::index::Side;
 use crate::terminal::model::selection::ExpandedSelectionRange;
 use chrono::{DateTime, Local};
+use twarp_core::command::ExitCode;
+use twarp_terminal::model::ansi::ClearMode;
+use twarpui::text::str_to_byte_vec;
+use twarpui::text::SelectionType;
 use vec1::vec1;
-use warp_core::command::ExitCode;
-use warp_terminal::model::ansi::ClearMode;
-use warpui::text::str_to_byte_vec;
-use warpui::text::SelectionType;
 
 /// Helper function to create a SerializedBlock with default values,
 /// including the new is_local field.

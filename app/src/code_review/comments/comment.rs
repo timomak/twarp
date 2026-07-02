@@ -2,7 +2,7 @@ use crate::code::editor::{line::EditorLineLocation, EditorReviewComment};
 use chrono::{DateTime, Local};
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
-use warp_editor::render::model::LineCount;
+use twarp_editor::render::model::LineCount;
 use warp_multi_agent_api::{self as api};
 
 // twarp 2c-d: stubs for the removed AI types these structs used to carry. They

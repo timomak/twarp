@@ -8,23 +8,23 @@ use crate::ui_components::icons::Icon as UiIcon;
 use markdown_parser::FormattedText;
 use markdown_parser::FormattedTextFragment;
 use markdown_parser::FormattedTextLine;
-use warp_core::channel::ChannelState;
-use warp_core::ui::theme::WarpTheme;
-use warpui::elements::HighlightedHyperlink;
-use warpui::elements::Hoverable;
-use warpui::elements::Icon;
-use warpui::elements::MainAxisAlignment;
-use warpui::elements::MainAxisSize;
-use warpui::elements::MouseStateHandle;
-use warpui::keymap::FixedBinding;
-use warpui::platform::Cursor;
-use warpui::ui_components::button::ButtonVariant;
-use warpui::ui_components::components::UiComponent;
-use warpui::ui_components::components::UiComponentStyles;
-use warpui::AppContext;
-use warpui::BlurContext;
-use warpui::FocusContext;
-use warpui::{
+use twarp_core::channel::ChannelState;
+use twarp_core::ui::theme::WarpTheme;
+use twarpui::elements::HighlightedHyperlink;
+use twarpui::elements::Hoverable;
+use twarpui::elements::Icon;
+use twarpui::elements::MainAxisAlignment;
+use twarpui::elements::MainAxisSize;
+use twarpui::elements::MouseStateHandle;
+use twarpui::keymap::FixedBinding;
+use twarpui::platform::Cursor;
+use twarpui::ui_components::button::ButtonVariant;
+use twarpui::ui_components::components::UiComponent;
+use twarpui::ui_components::components::UiComponentStyles;
+use twarpui::AppContext;
+use twarpui::BlurContext;
+use twarpui::FocusContext;
+use twarpui::{
     elements::{Border, Container, CrossAxisAlignment, Flex, ParentElement},
     Element, Entity, SingletonEntity, TypedActionView, View, ViewContext,
 };
@@ -118,7 +118,7 @@ pub struct SshErrorBlock {
 }
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([
         FixedBinding::new(

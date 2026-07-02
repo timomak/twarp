@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use session_sharing_protocol::common::SessionId;
 
-use warpui::{
+use twarpui::{
     AppContext, Entity, EntityId, ModelContext, SingletonEntity, ViewHandle, WeakViewHandle,
     WindowId,
 };

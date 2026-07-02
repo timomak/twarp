@@ -4,7 +4,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use instant::Instant;
-use warpui::{Entity, ModelContext, SingletonEntity};
+use twarpui::{Entity, ModelContext, SingletonEntity};
 
 #[derive(Default, Clone)]
 pub struct OpenedFilesInRepo(HashMap<PathBuf, Instant>);

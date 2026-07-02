@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use warpui::{keymap::Keystroke, AppContext};
+use twarpui::{keymap::Keystroke, AppContext};
 
 pub mod tip_view;
 pub use tip_view::{TipsEvent, TipsView};

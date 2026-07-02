@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::workspace::view::global_search::view::GlobalSearchEvent;
 use crate::workspace::view::global_search::SearchConfig;
-use warpui::{Entity, ModelContext};
+use twarpui::{Entity, ModelContext};
 
 pub struct GlobalSearch {}
 

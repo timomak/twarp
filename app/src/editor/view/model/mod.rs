@@ -28,16 +28,16 @@ use std::{
 
 use num_traits::SaturatingSub;
 use string_offset::{ByteOffset, CharOffset};
-use vec1::{vec1, Vec1};
-use warpui::{
+use twarpui::{
     accessibility::{AccessibilityContent, WarpA11yRole},
     text_layout::TextStyle,
     AppContext, Entity, ModelAsRef, ModelContext, ModelHandle,
 };
-use warpui::{
+use twarpui::{
     text::{point::Point, word_boundaries::WordBoundariesPolicy, TextBuffer},
     SingletonEntity,
 };
+use vec1::{vec1, Vec1};
 
 use crate::{editor::RangeExt, vim_registers::VimRegisters};
 

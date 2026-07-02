@@ -5,7 +5,7 @@ use std::{
 
 use bytes::Bytes;
 use mermaid_to_svg::MermaidTheme;
-use warpui::{
+use twarpui::{
     AppContext, SingletonEntity,
     assets::asset_cache::{AssetCache, AssetSource, AssetState, AsyncAssetId, AsyncAssetType},
     image_cache::ImageType,

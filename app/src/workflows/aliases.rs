@@ -3,11 +3,11 @@ use std::collections::{HashMap, HashSet};
 use anyhow::Error;
 use serde::{Deserialize, Serialize};
 use settings_value::SettingsValue;
-use warp_core::{
+use twarp_core::{
     define_settings_group,
     settings::{RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud},
 };
-use warpui::{AppContext, ModelContext, SingletonEntity};
+use twarpui::{AppContext, ModelContext, SingletonEntity};
 
 use crate::{
     cloud_object::{

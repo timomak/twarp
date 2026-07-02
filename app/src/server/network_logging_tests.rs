@@ -1,5 +1,5 @@
 use super::{NetworkLogItem, NetworkLogModel, NETWORK_LOGGING_MAX_ITEMS};
-use warpui::App;
+use twarpui::App;
 
 #[test]
 fn empty_snapshot_is_empty_string() {

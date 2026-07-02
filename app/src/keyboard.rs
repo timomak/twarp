@@ -2,11 +2,11 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 #[cfg(not(test))]
 use std::env::var_os;
-use vec1::{vec1, Vec1};
-use warpui::keymap::Keystroke;
+use twarpui::keymap::Keystroke;
 #[cfg(not(test))]
-use warpui::keymap::Trigger;
-use warpui::AppContext;
+use twarpui::keymap::Trigger;
+use twarpui::AppContext;
+use vec1::{vec1, Vec1};
 
 use anyhow::Context;
 
@@ -95,7 +95,7 @@ where
 
 #[cfg(not(test))]
 pub fn keybinding_file_path() -> std::path::PathBuf {
-    warp_core::paths::config_local_dir().join(KEYBINDINGS_FILE_NAME)
+    twarp_core::paths::config_local_dir().join(KEYBINDINGS_FILE_NAME)
 }
 
 /// Save the custom keybindings map to disk.

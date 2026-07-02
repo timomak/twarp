@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
+use twarpui::{clipboard::ClipboardContent, AppContext, Entity, ModelContext, SingletonEntity};
 use vim::vim::MotionType;
-use warpui::{clipboard::ClipboardContent, AppContext, Entity, ModelContext, SingletonEntity};
 
 use crate::settings::AppEditorSettings;
 use settings::Setting as _;

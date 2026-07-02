@@ -3,9 +3,9 @@
 use std::cmp;
 
 use fuzzy_match::{match_indices_case_insensitive, FuzzyMatchResult};
-use warp_core::ui::theme::Fill;
-use warp_editor::editor::NavigationKey;
-use warpui::{
+use twarp_core::ui::theme::Fill;
+use twarp_editor::editor::NavigationKey;
+use twarpui::{
     color::ColorU,
     elements::{
         Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss,
@@ -415,7 +415,7 @@ impl CodeReviewDiffMenu {
             ScrollbarWidth::None,
             theme.nonactive_ui_detail().into(),
             theme.active_ui_detail().into(),
-            warpui::elements::Fill::None,
+            twarpui::elements::Fill::None,
         )
         .with_padding_end(0.)
         .with_padding_start(0.);

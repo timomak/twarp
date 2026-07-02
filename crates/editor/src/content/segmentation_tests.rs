@@ -1,14 +1,14 @@
 use itertools::Itertools;
 use markdown_parser::parse_markdown;
 use string_offset::CharOffset;
-use warp_core::features::FeatureFlag;
+use twarp_core::features::FeatureFlag;
 
 use crate::content::{
     buffer::{Buffer, EditOrigin},
     selection_model::BufferSelectionModel,
     text::IndentBehavior,
 };
-use warpui::{
+use twarpui::{
     App,
     text::{TextBuffer, point::Point, word_boundaries::WordBoundariesPolicy},
 };

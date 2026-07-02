@@ -2,7 +2,7 @@
 mod channel_config;
 
 use anyhow::Result;
-use warp_core::{
+use twarp_core::{
     channel::{Channel, ChannelState},
     features,
 };
@@ -22,7 +22,7 @@ fn main() -> Result<()> {
 
     ChannelState::set(state);
 
-    warp::run()
+    twarp::run()
 }
 
 // If we're not using an external plist, embed the following as the Info.plist.

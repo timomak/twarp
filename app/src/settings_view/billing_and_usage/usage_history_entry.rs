@@ -7,9 +7,9 @@ use crate::{
     ui_components::{blended_colors, icons::Icon},
 };
 use chrono::Local;
-use warp_core::ui::appearance::Appearance;
-use warp_graphql::queries::get_conversation_usage::ConversationUsage;
-use warpui::{
+use twarp_core::ui::appearance::Appearance;
+use twarp_graphql::queries::get_conversation_usage::ConversationUsage;
+use twarpui::{
     elements::{
         Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex,
         Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius,

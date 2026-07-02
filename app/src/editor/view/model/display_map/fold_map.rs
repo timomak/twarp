@@ -10,8 +10,8 @@ use std::{
 };
 use string_offset::CharOffset;
 use sum_tree::{self, Cursor, Dimension, SeekBias, SumTree};
-use warpui::text_layout::TextStyle;
-use warpui::{AppContext, ModelHandle};
+use twarpui::text_layout::TextStyle;
+use twarpui::{AppContext, ModelHandle};
 
 pub struct FoldMap {
     buffer: ModelHandle<Buffer>,

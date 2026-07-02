@@ -1,7 +1,7 @@
 use super::{new_builder, Builder};
 use regex::Regex;
 
-use warp::{
+use twarp::{
     integration_testing::{
         goto_line::{
             assert_cursor_at_line, assert_cursor_at_line_and_column,
@@ -14,7 +14,7 @@ use warp::{
     },
     workspace::WorkspaceAction,
 };
-use warpui::{async_assert_eq, App};
+use twarpui::{async_assert_eq, App};
 
 use crate::util::write_all_rc_files_for_test;
 

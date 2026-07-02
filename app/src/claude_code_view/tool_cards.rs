@@ -29,7 +29,7 @@ use std::collections::HashMap;
 
 use claude_code::{ToolOutput, ToolStatus, TranscriptItem};
 use serde_json::Value;
-use warpui::{
+use twarpui::{
     elements::{
         Clipped, Container, CrossAxisAlignment, Flex, MainAxisSize, MouseStateHandle,
         ParentElement, Shrinkable, Text,
@@ -37,7 +37,7 @@ use warpui::{
     AppContext, Element, SingletonEntity,
 };
 
-use warp_core::ui::theme::AnsiColorIdentifier;
+use twarp_core::ui::theme::AnsiColorIdentifier;
 
 use super::inline_action::{
     green_check_icon, red_x_icon, render_requested_action_body_text, running_icon, Disclosure,
@@ -307,7 +307,7 @@ fn is_expandable(output: Option<&ToolOutput>, children: &[TranscriptItem]) -> bo
     !children.is_empty() || output.is_some_and(|o| !o.text.trim().is_empty())
 }
 
-pub(super) fn status_icon(status: ToolStatus, appearance: &Appearance) -> warpui::elements::Icon {
+pub(super) fn status_icon(status: ToolStatus, appearance: &Appearance) -> twarpui::elements::Icon {
     match status {
         ToolStatus::Running => running_icon(appearance),
         ToolStatus::Completed => green_check_icon(appearance),
@@ -496,9 +496,14 @@ pub(super) fn render_tool_card(
             .unwrap_or_else(|| default_expanded(status, !children.is_empty()));
 
     let (verb, arg) = tool_verb_label(name, input);
-    let title = verb_title_row(&verb, arg.as_deref(), status == ToolStatus::Failed, appearance);
+    let title = verb_title_row(
+        &verb,
+        arg.as_deref(),
+        status == ToolStatus::Failed,
+        appearance,
+    );
     let glyph =
-        warpui::elements::Icon::new(tool_icon(name).into(), blended_colors::neutral_7(theme));
+        twarpui::elements::Icon::new(tool_icon(name).into(), blended_colors::neutral_7(theme));
 
     // A running sub-agent shows its current step in the cluster so the
     // collapsed row stays legible (§19); every other card shows its result
@@ -524,8 +529,9 @@ pub(super) fn render_tool_card(
             ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleToolCard(toggle_id.clone()));
         });
     if expanded {
-        disclosure =
-            disclosure.with_body(build_tool_body(name, input, output, children, status, ui, app));
+        disclosure = disclosure.with_body(build_tool_body(
+            name, input, output, children, status, ui, app,
+        ));
     }
     disclosure.render(app)
 }

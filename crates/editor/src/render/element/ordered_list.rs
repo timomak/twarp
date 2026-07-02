@@ -8,8 +8,8 @@ use crate::{
         model::{BlockItem, RenderState, viewport::ViewportItem},
     },
 };
-use warpui::elements::ListIndentLevel;
-use warpui::{geometry::vector::vec2f, text_layout::TextFrame};
+use twarpui::elements::ListIndentLevel;
+use twarpui::{geometry::vector::vec2f, text_layout::TextFrame};
 
 use super::{
     RenderableBlock,
@@ -44,8 +44,8 @@ impl RenderableBlock for RenderableOrderedListItem {
     fn layout(
         &mut self,
         model: &RenderState,
-        ctx: &mut warpui::LayoutContext,
-        app: &warpui::AppContext,
+        ctx: &mut twarpui::LayoutContext,
+        app: &twarpui::AppContext,
     ) {
         let text_layout = TextLayout::from_layout_context(ctx, app, model);
         let block_style = BufferBlockStyle::OrderedList {
@@ -75,7 +75,7 @@ impl RenderableBlock for RenderableOrderedListItem {
             });
     }
 
-    fn paint(&mut self, model: &RenderState, ctx: &mut RenderContext, _app: &warpui::AppContext) {
+    fn paint(&mut self, model: &RenderState, ctx: &mut RenderContext, _app: &twarpui::AppContext) {
         let content = model.content();
         let paragraph = extract_block!(self.viewport_item, content, (block, BlockItem::OrderedList{ paragraph: inner, ..}) => block.ordered_list(inner));
 

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use serde_yaml::Value;
-use warpui::keymap::Keystroke;
+use twarpui::keymap::Keystroke;
 
 use crate::pane_group::Direction;
 use crate::shortcuts::action::{Action, KeyName};

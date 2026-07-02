@@ -2,10 +2,10 @@ use std::ops::Range;
 
 // twarp: 2c-e — DiffType is now a stub in `crate::app_state`.
 use crate::app_state::DiffType;
-use warp_editor::render::element::VerticalExpansionBehavior;
-use warpui::elements::new_scrollable::ScrollableAppearance;
-use warpui::elements::ScrollbarWidth;
-use warpui::{AppContext, View, ViewContext, ViewHandle};
+use twarp_editor::render::element::VerticalExpansionBehavior;
+use twarpui::elements::new_scrollable::ScrollableAppearance;
+use twarpui::elements::ScrollbarWidth;
+use twarpui::{AppContext, View, ViewContext, ViewHandle};
 
 use super::editor::scroll::ScrollWheelBehavior;
 use super::editor::view::CodeEditorView;

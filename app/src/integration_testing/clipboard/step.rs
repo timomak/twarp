@@ -1,5 +1,5 @@
 use super::assert_clipboard_contains_string;
-use warpui::{clipboard::ClipboardContent, integration::TestStep};
+use twarpui::{clipboard::ClipboardContent, integration::TestStep};
 
 pub fn write_to_clipboard(text: String) -> TestStep {
     let expected = text.clone();

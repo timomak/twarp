@@ -1,7 +1,7 @@
 use num_traits::SaturatingSub;
 use std::ops::Range;
+use twarpui::{AppContext, Entity, ModelAsRef, ModelContext, ModelHandle, units::Pixels};
 use vec1::Vec1;
-use warpui::{AppContext, Entity, ModelAsRef, ModelContext, ModelHandle, units::Pixels};
 
 use crate::{
     content::{
@@ -16,7 +16,7 @@ use crate::{
     render::model::{RenderState, SoftWrapPoint},
 };
 use string_offset::CharOffset;
-use warpui::text::{TextBuffer, point::Point, word_boundaries::WordBoundariesPolicy};
+use twarpui::text::{TextBuffer, point::Point, word_boundaries::WordBoundariesPolicy};
 
 #[cfg(test)]
 #[path = "selection_tests.rs"]

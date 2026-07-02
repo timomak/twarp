@@ -3,8 +3,8 @@
 //! This module provides the infrastructure for backing views to declaratively
 //! specify their header content without worrying about draggable behavior.
 
-use warp_core::ui::theme::Fill;
-use warpui::{
+use twarp_core::ui::theme::Fill;
+use twarpui::{
     elements::{DraggableState, MouseStateHandle},
     fonts::Properties,
     text_layout::ClipConfig,
@@ -100,7 +100,7 @@ pub struct StandardHeader {
     /// twarp: optional double-click handler for the title text. When set, the
     /// title becomes a pointer/double-click target (e.g. the Claude session pane
     /// double-clicks its header to rename the tab). `None` leaves it inert.
-    pub title_on_double_click: Option<Box<dyn Fn(&mut warpui::EventContext)>>,
+    pub title_on_double_click: Option<Box<dyn Fn(&mut twarpui::EventContext)>>,
 }
 
 /// Content that a backing view can return for its pane header.

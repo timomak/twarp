@@ -15,7 +15,7 @@ use super::{
 };
 use header::PaneHeader;
 
-use warpui::{
+use twarpui::{
     elements::{
         Border, Container, DropTarget, DropTargetData, Flex, MainAxisSize, ParentElement,
         SavePosition, Shrinkable,
@@ -37,7 +37,7 @@ pub use header_content::{
 const HAS_SHARED_OBJECT_CONTEXT_KEY: &str = "PaneView_HasSharedObject";
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_editable_bindings([EditableBinding::new(
         "pane:share_pane_contents",
@@ -425,7 +425,7 @@ impl<P: BackingView> View for PaneView<P> {
         .finish()
     }
 
-    fn keymap_context(&self, ctx: &AppContext) -> warpui::keymap::Context {
+    fn keymap_context(&self, ctx: &AppContext) -> twarpui::keymap::Context {
         let mut keymap_context = Self::default_keymap_context();
         if self.header.as_ref(ctx).is_sharing_dialog_enabled(ctx) {
             keymap_context.set.insert(HAS_SHARED_OBJECT_CONTEXT_KEY);

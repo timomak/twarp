@@ -1,6 +1,6 @@
 use chrono::Utc;
 use itertools::Itertools;
-use warpui::{AddSingletonModel, App};
+use twarpui::{AddSingletonModel, App};
 
 use crate::{
     auth::AuthManager,

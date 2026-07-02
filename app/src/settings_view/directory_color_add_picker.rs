@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 // the `ai` crate. File-local stubs preserve the surface area used here so the
 // settings page still compiles; the codebase index is permanently empty.
 pub struct CodebaseIndexManager;
-impl warpui::Entity for CodebaseIndexManager {
+impl twarpui::Entity for CodebaseIndexManager {
     type Event = CodebaseIndexManagerEvent;
 }
-impl warpui::SingletonEntity for CodebaseIndexManager {}
+impl twarpui::SingletonEntity for CodebaseIndexManager {}
 #[allow(dead_code)]
 impl CodebaseIndexManager {
     pub fn get_codebase_paths(&self) -> std::iter::Empty<&std::path::PathBuf> {
@@ -26,8 +26,8 @@ pub enum CodebaseIndexManagerEvent {
     RetrievalRequestFailed,
 }
 use settings::Setting;
-use warp_util::path::user_friendly_path;
-use warpui::{
+use twarp_util::path::user_friendly_path;
+use twarpui::{
     elements::{
         Border, ChildView, ConstrainedBox, Container, CrossAxisAlignment, Flex, Hoverable,
         MainAxisSize, MouseStateHandle, ParentElement, Text,
@@ -38,10 +38,10 @@ use warpui::{
 
 // twarp: 2c-d — persisted_workspace deleted; stubs.
 pub struct PersistedWorkspace;
-impl warpui::Entity for PersistedWorkspace {
+impl twarpui::Entity for PersistedWorkspace {
     type Event = PersistedWorkspaceEvent;
 }
-impl warpui::SingletonEntity for PersistedWorkspace {}
+impl twarpui::SingletonEntity for PersistedWorkspace {}
 #[allow(dead_code)]
 impl PersistedWorkspace {
     // twarp: 2c-e — `ai::workspace::WorkspaceMetadata` is now `crate::app_state::CodeWorkspaceMetadata`.

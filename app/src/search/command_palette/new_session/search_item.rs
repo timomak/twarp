@@ -10,7 +10,7 @@ use crate::search::result_renderer::ItemHighlightState;
 
 use ordered_float::OrderedFloat;
 use std::sync::Arc;
-use warpui::{AppContext, Element, SingletonEntity};
+use twarpui::{AppContext, Element, SingletonEntity};
 
 #[derive(Debug)]
 pub struct SearchItem {

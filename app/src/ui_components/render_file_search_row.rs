@@ -14,17 +14,17 @@
 
 use fuzzy_match::FuzzyMatchResult;
 use std::path::Path;
-use warp_core::ui::theme::Fill;
-use warpui::elements::{
+use twarp_core::ui::theme::Fill;
+use twarpui::elements::{
     Container, CrossAxisAlignment, Flex, Highlight, MainAxisSize, ParentElement, Shrinkable, Text,
 };
-use warpui::fonts::{Properties, Weight};
-use warpui::text_layout::{ClipConfig, ClipDirection, ClipStyle};
-use warpui::{AppContext, Element};
+use twarpui::fonts::{Properties, Weight};
+use twarpui::text_layout::{ClipConfig, ClipDirection, ClipStyle};
+use twarpui::{AppContext, Element};
 
 use crate::appearance::Appearance;
 use crate::search::ItemHighlightState;
-use warpui::SingletonEntity;
+use twarpui::SingletonEntity;
 
 // twarp: 2c-d.4 — inlined from deleted ai_context_menu::safe_truncate
 fn safe_truncate(s: &mut String, new_len: usize) {

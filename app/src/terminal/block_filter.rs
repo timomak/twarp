@@ -1,11 +1,11 @@
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use regex_automata::hybrid::BuildError;
-use warp_editor::editor::NavigationKey;
-use warpui::elements::{Align, Dash};
-use warpui::ui_components::components::UiComponent;
-use warpui::FocusContext;
-use warpui::{
+use twarp_editor::editor::NavigationKey;
+use twarpui::elements::{Align, Dash};
+use twarpui::ui_components::components::UiComponent;
+use twarpui::FocusContext;
+use twarpui::{
     accessibility::{AccessibilityContent, WarpA11yRole},
     elements::{
         Border, ChildAnchor, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,

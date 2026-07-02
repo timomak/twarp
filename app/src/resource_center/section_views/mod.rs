@@ -2,14 +2,14 @@ pub mod feature_section;
 pub use feature_section::FeatureSectionView;
 pub mod content_section;
 pub use content_section::ContentSectionView;
-use warp_core::features::FeatureFlag;
+use twarp_core::features::FeatureFlag;
 pub mod changelog_section;
 use crate::{
     appearance::Appearance,
     resource_center::{section_views::feature_section::FeatureSection, TipAction},
 };
 pub use changelog_section::ChangelogSectionView;
-use warpui::{
+use twarpui::{
     elements::{
         Align, Border, ConstrainedBox, Container, CrossAxisAlignment, Element, Flex, Hoverable,
         Icon, MouseStateHandle, ParentElement, ScrollbarWidth, Shrinkable,

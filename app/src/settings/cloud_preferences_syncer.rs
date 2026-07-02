@@ -7,11 +7,11 @@ use std::{
 use lazy_static::lazy_static;
 use settings::{Setting as _, SyncToCloud};
 use std::time::Duration;
-use warp_core::settings::ChangeEventReason;
-use warp_core::user_preferences::GetUserPreferences;
-use warpui::r#async::Timer;
-use warpui::{Entity, ModelContext, SingletonEntity};
-use warpui_extras::user_preferences::toml_backed::TomlBackedUserPreferences;
+use twarp_core::settings::ChangeEventReason;
+use twarp_core::user_preferences::GetUserPreferences;
+use twarpui::r#async::Timer;
+use twarpui::{Entity, ModelContext, SingletonEntity};
+use twarpui_extras::user_preferences::toml_backed::TomlBackedUserPreferences;
 
 use crate::{
     auth::auth_state::AuthState,
@@ -39,7 +39,7 @@ use crate::{
     workspaces::user_workspaces::UserWorkspaces,
 };
 
-use warp_core::execution_mode::AppExecutionMode;
+use twarp_core::execution_mode::AppExecutionMode;
 
 use super::{
     cloud_preferences::{CloudPreferencesSettings, CloudPreferencesSettingsChangedEvent},

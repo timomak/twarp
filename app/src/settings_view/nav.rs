@@ -1,7 +1,7 @@
 use crate::appearance::Appearance;
 use crate::ui_components::icons::Icon;
 use pathfinder_geometry::vector::vec2f;
-use warpui::{
+use twarpui::{
     elements::{Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle},
     ui_components::{
         button::{ButtonVariant, TextAndIcon, TextAndIconAlignment},

@@ -27,7 +27,7 @@ mod tab_metadata;
 mod testing;
 mod tooltips;
 
-use warpui::clipboard_utils::get_image_filepaths_from_paths;
+use twarpui::clipboard_utils::get_image_filepaths_from_paths;
 
 use std::ops::Deref as _;
 
@@ -100,11 +100,11 @@ use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
 use session_sharing_protocol::common::LongRunningCommandAgentInteractionState;
 use session_sharing_protocol::sharer::{RoleUpdateReason, SessionEndedReason, SessionSourceType};
 use ssh_file_upload::{FileUpload, FileUploadEvent};
+use twarp_core::channel::ChannelState;
+use twarpui::elements::{shimmering_text::ShimmeringTextStateHandle, Border, ChildView};
+use twarpui::fonts::Properties;
+use twarpui::{ViewHandle, WeakModelHandle};
 use uuid::Uuid;
-use warp_core::channel::ChannelState;
-use warpui::elements::{shimmering_text::ShimmeringTextStateHandle, Border, ChildView};
-use warpui::fonts::Properties;
-use warpui::{ViewHandle, WeakModelHandle};
 
 // twarp: 2c-d — crate::ai::* imports gone; stubs at top of file
 // Original imports below are commented out for reference:
@@ -292,8 +292,8 @@ pub enum AgentModeSetupSpeedbumpBannerAction {
     SetupAgentMode,
 }
 #[allow(dead_code)]
-fn render_agent_mode_setup_banner<A, B>(_: A, _: B) -> Box<dyn warpui::Element> {
-    warpui::elements::Empty::new().finish()
+fn render_agent_mode_setup_banner<A, B>(_: A, _: B) -> Box<dyn twarpui::Element> {
+    twarpui::elements::Empty::new().finish()
 }
 
 // twarp: 2c-d — Anonymous user AI banner stubs (deleted from inline_banner)
@@ -306,9 +306,9 @@ impl AnonymousUserAISignUpBannerState {
     fn new<A>(_: A) -> Self {
         Self { id: 0 }
     }
-    fn render<A>(&self, _: A) -> Box<dyn warpui::Element> {
-        use warpui::Element as _;
-        warpui::elements::Empty::new().finish()
+    fn render<A>(&self, _: A) -> Box<dyn twarpui::Element> {
+        use twarpui::Element as _;
+        twarpui::elements::Empty::new().finish()
     }
 }
 #[derive(Debug, Clone)]
@@ -397,7 +397,7 @@ struct AgentViewEntryBlockParams {
     pub is_restored: bool,
     pub is_new: bool,
     pub conversation_id: crate::app_state::AIConversationId,
-    pub agent_view_controller: warpui::ModelHandle<AgentViewController>,
+    pub agent_view_controller: twarpui::ModelHandle<AgentViewController>,
 }
 // twarp: 2c-d — re-export canonical AgentViewEntryOrigin from app_state
 pub use crate::app_state::AgentViewEntryOrigin;
@@ -410,16 +410,16 @@ impl crate::view_components::action_button::ActionButtonTheme for AgentViewHeade
         &self,
         _hovered: bool,
         _appearance: &Appearance,
-    ) -> Option<warp_core::ui::theme::Fill> {
+    ) -> Option<twarp_core::ui::theme::Fill> {
         None
     }
     fn text_color(
         &self,
         _hovered: bool,
-        _background: Option<warp_core::ui::theme::Fill>,
+        _background: Option<twarp_core::ui::theme::Fill>,
         _appearance: &Appearance,
-    ) -> warpui::color::ColorU {
-        warpui::color::ColorU::new(0, 0, 0, 0)
+    ) -> twarpui::color::ColorU {
+        twarpui::color::ColorU::new(0, 0, 0, 0)
     }
 }
 impl crate::view_components::action_button::ActionButtonTheme for AgentViewHeaderDisabledTheme {
@@ -427,16 +427,16 @@ impl crate::view_components::action_button::ActionButtonTheme for AgentViewHeade
         &self,
         _hovered: bool,
         _appearance: &Appearance,
-    ) -> Option<warp_core::ui::theme::Fill> {
+    ) -> Option<twarp_core::ui::theme::Fill> {
         None
     }
     fn text_color(
         &self,
         _hovered: bool,
-        _background: Option<warp_core::ui::theme::Fill>,
+        _background: Option<twarp_core::ui::theme::Fill>,
         _appearance: &Appearance,
-    ) -> warpui::color::ColorU {
-        warpui::color::ColorU::new(0, 0, 0, 0)
+    ) -> twarpui::color::ColorU {
+        twarpui::color::ColorU::new(0, 0, 0, 0)
     }
 }
 #[allow(dead_code)]
@@ -482,8 +482,8 @@ impl InlineAgentViewHeader {
 #[allow(dead_code)]
 const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration = std::time::Duration::ZERO;
 #[allow(dead_code)]
-pub fn agent_view_bg_fill<C>(_: C) -> warpui::color::ColorU {
-    warpui::color::ColorU::new(0, 0, 0, 0)
+pub fn agent_view_bg_fill<C>(_: C) -> twarpui::color::ColorU {
+    twarpui::color::ColorU::new(0, 0, 0, 0)
 }
 #[allow(dead_code)]
 fn fork_from_last_known_good_state_exchange_id<A, B>(_: A, _: B) -> Option<()> {
@@ -610,12 +610,12 @@ pub enum CLISubagentEvent {
     ControlHandedBackAfterTransfer,
     FinishedSubagent {
         task_id: crate::app_state::AmbientAgentTaskId,
-        block_id: warp_terminal::model::BlockId,
+        block_id: twarp_terminal::model::BlockId,
         conversation_id: crate::app_state::AIConversationId,
     },
     SpawnedSubagent {
         task_id: crate::app_state::AmbientAgentTaskId,
-        block_id: warp_terminal::model::BlockId,
+        block_id: twarp_terminal::model::BlockId,
         conversation_id: crate::app_state::AIConversationId,
         initial_requested_command_action_id: Option<AIAgentActionId>,
     },
@@ -676,8 +676,8 @@ pub struct AIDocumentEntryStub {
     pub version: crate::app_state::AIDocumentVersion,
 }
 #[allow(dead_code)]
-fn shimmering_warp_loading_text<A, B, C, D>(_: A, _: B, _: C, _: D) -> Box<dyn warpui::Element> {
-    warpui::elements::Empty::new().finish()
+fn shimmering_warp_loading_text<A, B, C, D>(_: A, _: B, _: C, _: D) -> Box<dyn twarpui::Element> {
+    twarpui::elements::Empty::new().finish()
 }
 
 pub use crate::app_state::ServerConversationToken;
@@ -758,9 +758,9 @@ impl CodebaseIndexSpeedbumpBannerState {
     pub fn show_indexing_banner(&self) -> bool {
         false
     }
-    pub fn render_codebase_index_speedbump_banner<A>(&self, _: A) -> Box<dyn warpui::Element> {
-        use warpui::Element as _;
-        warpui::elements::Empty::new().finish()
+    pub fn render_codebase_index_speedbump_banner<A>(&self, _: A) -> Box<dyn twarpui::Element> {
+        use twarpui::Element as _;
+        twarpui::elements::Empty::new().finish()
     }
 }
 #[allow(dead_code)]
@@ -913,10 +913,10 @@ impl CLIAgentSessionStatus {
 pub struct CLIAgentSessionsModel;
 #[allow(dead_code)]
 impl CLIAgentSessionsModel {
-    fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSession> {
+    fn session(&self, _: twarpui::EntityId) -> Option<&CLIAgentSession> {
         None
     }
-    fn is_input_open(&self, _: warpui::EntityId) -> bool {
+    fn is_input_open(&self, _: twarpui::EntityId) -> bool {
         false
     }
     // twarp: 2c-d — bulk stubs
@@ -941,30 +941,30 @@ impl CLIAgentSessionsModel {
 #[allow(dead_code)]
 pub enum CLIAgentSessionsModelEvent {
     Ended {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
     },
     // twarp: 2c-d — bulk variants for AI-removed CLIAgentSessionsModelEvent
     Started {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
         cli_agent: crate::app_state::CLIAgent,
     },
     StatusChanged {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
         status: CLIAgentSessionStatus,
         agent: crate::app_state::CLIAgent,
         session_context: CLIAgentSessionContext,
     },
     SessionUpdated {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
     },
     InputSessionChanged {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
         new_input_state: CLIAgentInputState,
     },
 }
 #[allow(dead_code)]
 impl CLIAgentSessionsModelEvent {
-    fn terminal_view_id(&self) -> warpui::EntityId {
+    fn terminal_view_id(&self) -> twarpui::EntityId {
         match self {
             Self::Ended { terminal_view_id }
             | Self::Started {
@@ -1072,10 +1072,10 @@ pub enum PassiveSuggestionResultType {
     Prompt { prompt: String },
 }
 #[allow(dead_code)]
-fn ai_brand_color<C>(_: C) -> warpui::color::ColorU {
-    warpui::color::ColorU::new(0, 0, 0, 0)
+fn ai_brand_color<C>(_: C) -> twarpui::color::ColorU {
+    twarpui::color::ColorU::new(0, 0, 0, 0)
 }
-// twarp: 2c-d — ElementPositionId removed from warpui; stub returns ()
+// twarp: 2c-d — ElementPositionId removed from twarpui; stub returns ()
 #[allow(dead_code)]
 fn get_ai_block_overflow_menu_element_position_id<C>(_: C) -> String {
     String::new()
@@ -1131,7 +1131,7 @@ impl BlocklistAIActionModel {
         _: C,
         _: D,
         _: E,
-        ctx: &mut warpui::ModelContext<Self>,
+        ctx: &mut twarpui::ModelContext<Self>,
     ) -> Self {
         Self {
             shell_command_executor: ctx.add_model(|_| ShellCommandExecutor),
@@ -1193,23 +1193,23 @@ impl BlocklistAIHistoryModel {
     }
     fn last_conversation_id(
         &self,
-        _: warpui::EntityId,
+        _: twarpui::EntityId,
     ) -> Option<crate::app_state::AIConversationId> {
         None
     }
-    pub fn active_conversation(&self, _: warpui::EntityId) -> Option<&AIConversation> {
+    pub fn active_conversation(&self, _: twarpui::EntityId) -> Option<&AIConversation> {
         None
     }
     fn all_live_conversations_for_terminal_view(
         &self,
-        _: warpui::EntityId,
+        _: twarpui::EntityId,
     ) -> Vec<crate::app_state::AIConversationId> {
         Vec::new()
     }
     fn conversation_id_for_action<A>(
         &self,
         _: A,
-        _: warpui::EntityId,
+        _: twarpui::EntityId,
     ) -> Option<crate::app_state::AIConversationId> {
         None
     }
@@ -1379,7 +1379,7 @@ enum AskAIType {
         populate_input_box: bool,
     },
     FromBlock {
-        block_index: warp_terminal::model::BlockIndex,
+        block_index: twarp_terminal::model::BlockIndex,
         query: Option<String>,
         populate_input_box: bool,
         input: Arc<String>,
@@ -1387,7 +1387,7 @@ enum AskAIType {
         exit_code: Option<i32>,
     },
     FromBlocks {
-        block_indices: std::collections::HashSet<warp_terminal::model::BlockIndex>,
+        block_indices: std::collections::HashSet<twarp_terminal::model::BlockIndex>,
     },
     FromAICommandSearch {
         query: String,
@@ -1538,7 +1538,7 @@ macro_rules! twarp_stub_view_impl {
 pub struct TwarpStubAction;
 macro_rules! twarp_stub_typed_action_view_impl {
     ($t:ty) => {
-        impl warpui::TypedActionView for $t {
+        impl twarpui::TypedActionView for $t {
             type Action = TwarpStubAction;
         }
     };
@@ -1611,36 +1611,36 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 use sum_tree::SeekBias;
-use vec1::vec1;
-use warp_core::context_flag::ContextFlag;
-use warp_core::user_preferences::GetUserPreferences as _;
+use twarp_core::context_flag::ContextFlag;
+use twarp_core::user_preferences::GetUserPreferences as _;
 #[cfg(feature = "local_fs")]
-use warp_util::path::LineAndColumnArg;
-use warp_util::path::ShellFamily;
-use warpui::clipboard::ClipboardContent;
-use warpui::elements::new_scrollable::{
+use twarp_util::path::LineAndColumnArg;
+use twarp_util::path::ShellFamily;
+use twarpui::clipboard::ClipboardContent;
+use twarpui::elements::new_scrollable::{
     AxisConfiguration, ClippedAxisConfiguration, DualAxisConfig, NewScrollableElement,
     ScrollableAppearance, SingleAxisConfig,
 };
-use warpui::elements::{
+use twarpui::elements::{
     get_rich_content_position_id, ChildAnchor, ClippedScrollStateHandle, Container,
     CrossAxisAlignment, DispatchEventResult, DropTarget, DropTargetData, Empty, EventHandler,
     Expanded, Flex, NewScrollable, OffsetPositioning, ParentAnchor, ParentElement,
     ParentOffsetBounds, PositionedElementAnchor, PositionedElementOffsetBounds, Radius,
     ScrollableElement, ScrollbarWidth, Shrinkable, Text,
 };
-use warpui::event::ModifiersState;
-use warpui::keymap::Keystroke;
-use warpui::notification::{NotificationSendError, RequestPermissionsOutcome, UserNotification};
-use warpui::platform::{Cursor, OperatingSystem};
-use warpui::r#async::executor::Background;
-use warpui::r#async::{SpawnedFutureHandle, Timer};
-use warpui::windowing::WindowManager;
+use twarpui::event::ModifiersState;
+use twarpui::keymap::Keystroke;
+use twarpui::notification::{NotificationSendError, RequestPermissionsOutcome, UserNotification};
+use twarpui::platform::{Cursor, OperatingSystem};
+use twarpui::r#async::executor::Background;
+use twarpui::r#async::{SpawnedFutureHandle, Timer};
+use twarpui::windowing::WindowManager;
+use vec1::vec1;
 
-use warpui::assets::asset_cache::{AssetCache, AssetCacheEvent};
-use warpui::image_cache::ImageType;
-use warpui::units::{IntoLines, IntoPixels, Lines, Pixels};
-use warpui::{
+use twarpui::assets::asset_cache::{AssetCache, AssetCacheEvent};
+use twarpui::image_cache::ImageType;
+use twarpui::units::{IntoLines, IntoPixels, Lines, Pixels};
+use twarpui::{
     accessibility::{AccessibilityContent, ActionAccessibilityContent, WarpA11yRole},
     elements::SavePosition,
     elements::{
@@ -1652,14 +1652,16 @@ use warpui::{
     AccessibilityData, AppContext, BlurContext, Element, Entity, FocusContext, ModelHandle,
     TypedActionView, UpdateView, View, ViewAsRef, ViewContext, WeakViewHandle,
 };
-use warpui::{
+use twarpui::{
     elements::Stack,
     end_trace_after_next,
     geometry::vector::{vec2f, Vector2F},
     record_trace_event, WindowId,
 };
 
-use warpui::{windowing, CursorInfo, EntityId, EventContext, ModelAsRef, SingletonEntity, Tracked};
+use twarpui::{
+    windowing, CursorInfo, EntityId, EventContext, ModelAsRef, SingletonEntity, Tracked,
+};
 
 // twarp: 2c-d — ask_ai_type deleted; stub at top
 use crate::appearance::{Appearance, AppearanceEvent};
@@ -1743,8 +1745,8 @@ use crate::terminal::{
 };
 use crate::view_components::find::{Event as FindEvent, Find, FindDirection, FindWithinBlockState};
 use settings::{Setting, ToggleableSetting};
-use warp_core::semantic_selection::SemanticSelection;
-use warpui::text::SelectionType;
+use twarp_core::semantic_selection::SemanticSelection;
+use twarpui::text::SelectionType;
 
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
 use crate::server::telemetry::{BlockLatencyInfo, BootstrappingInfo};
@@ -1812,7 +1814,7 @@ use inline_banner::{
     ByoLlmAuthBannerSessionState, OpenInWarpBannerState, SSHBannerAction, SSHBannerState,
     VimModeBannerAction,
 };
-use warp_core::command::ExitCode;
+use twarp_core::command::ExitCode;
 
 lazy_static! {
     // A set of commands that perform minimal work that we use as a baseline to measure the latency of blocks.
@@ -3809,14 +3811,14 @@ pub struct TerminalView {
     ///   2. Whether this View's window is the active window.
     ///
     /// We need to derive and cache this state on this View in order to correctly implement focus
-    /// reporting. Because focus is window-scoped, i.e. warpui does not consider activating a
+    /// reporting. Because focus is window-scoped, i.e. twarpui does not consider activating a
     /// different window as blurring the focused View in the previously active window, we cannot
-    /// simply rely on the warpui::View::on_blur and on_focus methods to report focus-in/out to the
+    /// simply rely on the twarpui::View::on_blur and on_focus methods to report focus-in/out to the
     /// PTY, as those methods will not trigger when changing active windows. The singleton model
-    /// [`warpui::windowing::State`] will allow us to subscribe to active window change. So, we can
+    /// [`twarpui::windowing::State`] will allow us to subscribe to active window change. So, we can
     /// subscribe to that and have that callback also report focus-in/out. However, that will still
     /// leave cases for potential double-reporting, as a single click can trigger both
-    /// [`warpui::View::on_focus`] and emit a [`warpui::windowing::StateEvent`]. This field will
+    /// [`twarpui::View::on_focus`] and emit a [`twarpui::windowing::StateEvent`]. This field will
     /// guard against that double- reporting case, though it needs to be kept in sync with the
     /// focused view and active window.
     is_focused_and_active: bool,
@@ -3992,9 +3994,9 @@ pub struct TerminalView {
     /// Mouse state handle for the cloud mode details panel toggle button in the pane header.
     /// Only available on non-WASM platforms (WASM uses a per-window button instead).
     #[cfg(not(target_arch = "wasm32"))]
-    cloud_mode_details_panel_toggle_mouse_state: warpui::elements::MouseStateHandle,
+    cloud_mode_details_panel_toggle_mouse_state: twarpui::elements::MouseStateHandle,
     /// Mouse state handle for the ambient agent cancel button in the pane header.
-    ambient_agent_cancel_mouse_state: warpui::elements::MouseStateHandle,
+    ambient_agent_cancel_mouse_state: twarpui::elements::MouseStateHandle,
 
     /// First-time cloud agent setup view (full-screen overlay for creating initial environment).
     first_time_cloud_agent_setup_view: ViewHandle<ambient_agent::FirstTimeCloudAgentSetupView>,
@@ -7402,7 +7404,7 @@ impl TerminalView {
     }
 
     #[cfg(any(test, feature = "integration_tests"))]
-    pub fn sessions<'a, A: warpui::ModelAsRef>(&self, ctx: &'a A) -> &'a Sessions {
+    pub fn sessions<'a, A: twarpui::ModelAsRef>(&self, ctx: &'a A) -> &'a Sessions {
         self.sessions.as_ref(ctx)
     }
 
@@ -8364,7 +8366,7 @@ impl TerminalView {
         });
     }
 
-    /// Receiving the warpui::Event::KeyDown event from a child element.
+    /// Receiving the twarpui::Event::KeyDown event from a child element.
     /// Generally, this should be control characters rather than printable characters.
     fn keydown_on_terminal(&mut self, characters: &str, ctx: &mut ViewContext<Self>) {
         if self.is_long_running() {
@@ -8408,7 +8410,7 @@ impl TerminalView {
 
         was_bootstrap_script_echoed || is_shared_session_executor
     }
-    /// Receiving a warpui::Event::TypedCharacters event from a child element.
+    /// Receiving a twarpui::Event::TypedCharacters event from a child element.
     /// We can assume `characters` consists of all printable characters, and therefore,
     /// can go into the input box.
     fn typed_characters_on_terminal(&mut self, characters: &str, ctx: &mut ViewContext<Self>) {
@@ -9746,7 +9748,7 @@ impl TerminalView {
         let trigger = banner_state.trigger.clone();
         let should_start_new_conversation = suggestion.should_start_new_conversation;
         let conversation_id = banner_state.conversation_id;
-        let trigger_block_id: Option<warp_terminal::model::BlockId> =
+        let trigger_block_id: Option<twarp_terminal::model::BlockId> =
             trigger.as_ref().and_then(|t| t.block_id());
         log::debug!(
             "[passive-suggestions] accepting prompt suggestion: trigger={}, trigger_block_id={}",
@@ -10811,7 +10813,7 @@ impl TerminalView {
         };
         let escape_char = session.shell_family().escape_char();
         let Some(top_level_command) =
-            warp_completer::parsers::simple::top_level_command(command, escape_char)
+            twarp_completer::parsers::simple::top_level_command(command, escape_char)
         else {
             return false;
         };
@@ -11482,7 +11484,7 @@ impl TerminalView {
                 if self.is_login_shell_bootstrapped {
                     let _ = ctx.spawn(
                         async move {
-                            warpui::r#async::Timer::after(EXECUTE_PENDING_COMMAND_DELAY).await;
+                            twarpui::r#async::Timer::after(EXECUTE_PENDING_COMMAND_DELAY).await;
                         },
                         Self::execute_pending_command,
                     );
@@ -12023,7 +12025,7 @@ impl TerminalView {
 
                 ctx.spawn(
                     async {
-                        warpui::r#async::Timer::after(*TRIGGER_RC_FILE_SUBSHELL_BOOTSTRAP_DELAY)
+                        twarpui::r#async::Timer::after(*TRIGGER_RC_FILE_SUBSHELL_BOOTSTRAP_DELAY)
                             .await
                     },
                     move |me, _, ctx| {
@@ -13529,8 +13531,8 @@ impl TerminalView {
         false
     }
     #[allow(dead_code)]
-    fn render_ambient_agent_progress<A, B>(&self, _: A, _: B) -> Box<dyn warpui::Element> {
-        warpui::elements::Empty::new().finish()
+    fn render_ambient_agent_progress<A, B>(&self, _: A, _: B) -> Box<dyn twarpui::Element> {
+        twarpui::elements::Empty::new().finish()
     }
     // twarp: 2c-d — stub for integration test: load_conversation_from_tasks.
     pub fn load_conversation_from_tasks<A, C>(&mut self, _: A, _: &mut C) {}
@@ -14574,7 +14576,7 @@ impl TerminalView {
     fn start_bootstrap_timer(&self, duration: Duration, ctx: &mut ViewContext<Self>) {
         let _ = ctx.spawn(
             async move {
-                warpui::r#async::Timer::after(duration).await;
+                twarpui::r#async::Timer::after(duration).await;
             },
             Self::on_bootstrap_failed_timer_complete,
         );
@@ -23681,7 +23683,7 @@ impl TerminalView {
                 && session.shell_family() == ShellFamily::Posix
                 && is_in_long_running_command;
             if is_msys2_long_running {
-                let input = warpui::clipboard_utils::escaped_paths_str(paths, None);
+                let input = twarpui::clipboard_utils::escaped_paths_str(paths, None);
                 self.typed_characters_on_terminal(&input, ctx);
                 return;
             }
@@ -23692,7 +23694,7 @@ impl TerminalView {
             let paths = if session.is_wsl() {
                 paths_converted = paths
                     .iter()
-                    .map(|p| warp_util::path::convert_windows_path_to_wsl(p))
+                    .map(|p| twarp_util::path::convert_windows_path_to_wsl(p))
                     .collect::<Vec<_>>();
                 paths_converted.as_slice()
             } else {
@@ -23700,7 +23702,7 @@ impl TerminalView {
             };
 
             let input =
-                warpui::clipboard_utils::escaped_paths_str(paths, Some(self.shell_family(ctx)));
+                twarpui::clipboard_utils::escaped_paths_str(paths, Some(self.shell_family(ctx)));
             self.typed_characters_on_terminal(&input, ctx);
         }
     }
@@ -23843,7 +23845,7 @@ impl TerminalView {
                 let active_block_id = self.model.lock().block_list().active_block_id().clone();
                 ctx.spawn(
                     async {
-                        warpui::r#async::Timer::after(Duration::from_secs(3)).await;
+                        twarpui::r#async::Timer::after(Duration::from_secs(3)).await;
                         active_block_id
                     },
                     move |terminal_view, active_block_id, _| {
@@ -25748,7 +25750,7 @@ impl View for TerminalView {
                 appearance
                     .ui_builder()
                     .button(
-                        warpui::ui_components::button::ButtonVariant::Outlined,
+                        twarpui::ui_components::button::ButtonVariant::Outlined,
                         mouse_state.clone(),
                     )
                     .with_text_label("← Claude Code".to_owned())
@@ -25869,7 +25871,7 @@ impl View for TerminalView {
 
             Container::new(
                 Flex::row()
-                    .with_main_axis_size(warpui::elements::MainAxisSize::Max)
+                    .with_main_axis_size(twarpui::elements::MainAxisSize::Max)
                     .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                     .with_child(Shrinkable::new(1., final_element).finish())
                     .with_child(panel_with_background)
@@ -25908,7 +25910,7 @@ impl View for TerminalView {
         }
     }
 
-    fn keymap_context(&self, app: &AppContext) -> warpui::keymap::Context {
+    fn keymap_context(&self, app: &AppContext) -> twarpui::keymap::Context {
         let mut context = Self::default_keymap_context();
         context.map.insert(
             "TerminalView_BlockSelectionCardinality",

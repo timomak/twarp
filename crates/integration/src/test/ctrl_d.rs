@@ -1,6 +1,6 @@
 //! Integration tests for CTRL-D / EOT behaviour.
 
-use warp::{
+use twarp::{
     integration_testing::{
         step::new_step_with_default_assertions,
         terminal::{
@@ -15,7 +15,7 @@ use warp::{
     terminal::{model::bootstrap::BootstrapStage, shell::ShellType, TerminalView},
     workspace::Workspace,
 };
-use warpui::integration::TestStep;
+use twarpui::integration::TestStep;
 
 use super::{new_builder, Builder};
 use crate::util::write_all_rc_files_for_test;

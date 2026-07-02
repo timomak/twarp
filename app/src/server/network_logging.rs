@@ -3,7 +3,7 @@ use std::fmt;
 use bounded_vec_deque::BoundedVecDeque;
 use chrono::{DateTime, FixedOffset};
 use enclose::enclose;
-use warpui::{Entity, ModelContext, SingletonEntity};
+use twarpui::{Entity, ModelContext, SingletonEntity};
 
 use crate::server::datetime_ext::DateTimeExt;
 use crate::server::server_api::ServerApiProvider;

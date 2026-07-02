@@ -8,18 +8,18 @@ use std::path::PathBuf;
 #[cfg(feature = "local_fs")]
 use std::time::Duration;
 
-use warp_completer::completer::{
+use twarp_completer::completer::{
     self, expand_command_aliases, AliasExpansionResult, CompleterOptions,
     CompletionsFallbackStrategy, MatchStrategy,
 };
-use warp_completer::meta::Spanned;
+use twarp_completer::meta::Spanned;
 #[cfg(feature = "local_fs")]
-use warp_completer::parsers::hir::ArgType;
-use warp_completer::parsers::hir::{Command, Expression, FlagType};
-use warp_completer::parsers::ParsedExpression;
-use warp_core::features::FeatureFlag;
+use twarp_completer::parsers::hir::ArgType;
+use twarp_completer::parsers::hir::{Command, Expression, FlagType};
+use twarp_completer::parsers::ParsedExpression;
+use twarp_core::features::FeatureFlag;
 #[cfg(feature = "local_fs")]
-use warpui::r#async::FutureExt;
+use twarpui::r#async::FutureExt;
 
 use crate::completer::SessionContext;
 use crate::terminal::HistoryEntry;

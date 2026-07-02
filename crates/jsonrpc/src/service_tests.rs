@@ -4,7 +4,7 @@ mod service_tests {
     use async_trait::async_trait;
     use std::sync::Arc;
     use std::sync::Mutex;
-    use warpui::r#async::executor::Background;
+    use twarpui::r#async::executor::Background;
 
     #[derive(Debug, Clone)]
     struct MockTransport {

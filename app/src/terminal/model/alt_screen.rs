@@ -31,11 +31,11 @@ use num_traits::Float as _;
 use parking_lot::Mutex;
 use pathfinder_color::ColorU;
 use std::sync::Arc;
+use twarp_core::semantic_selection::SemanticSelection;
+use twarp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
+use twarpui::text::SelectionType;
+use twarpui::units::Lines;
 use vec1::Vec1;
-use warp_core::semantic_selection::SemanticSelection;
-use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
-use warpui::text::SelectionType;
-use warpui::units::Lines;
 
 pub struct AltScreen {
     grid_handler: GridHandler,

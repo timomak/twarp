@@ -19,7 +19,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::FromRawHandle as _;
 use std::path::PathBuf;
 use thiserror::Error;
-use warpui::{AppContext, SingletonEntity};
+use twarpui::{AppContext, SingletonEntity};
 use windows::core::{HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{HANDLE, WAIT_OBJECT_0};
 use windows::Win32::System::Console::{COORD, HPCON};

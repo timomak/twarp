@@ -8,11 +8,11 @@ use std::{collections::HashMap, path::PathBuf};
 use lsp::ReferenceLocation;
 use pathfinder_geometry::vector::Vector2F;
 use string_offset::CharOffset;
-use warp_core::ui::{
+use twarp_core::ui::{
     appearance::Appearance, icons::Icon as WarpIcon, theme::color::internal_colors,
 };
-use warp_files::FileModel;
-use warpui::{
+use twarp_files::FileModel;
+use twarpui::{
     elements::{
         Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ClippedScrollable,
         ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Fill, Flex, Hoverable,
@@ -26,14 +26,14 @@ use warpui::{
 };
 
 use crate::search::result_renderer::ItemHighlightState;
-use warpui::ui_components::components::UiComponent;
+use twarpui::ui_components::components::UiComponent;
 
 use super::{
     editor::view::{CodeEditorRenderOptions, CodeEditorView},
     global_buffer_model::GlobalBufferModel,
 };
 use crate::editor::InteractionState;
-use warp_editor::{
+use twarp_editor::{
     content::buffer::InitialBufferState, render::element::VerticalExpansionBehavior,
 };
 
@@ -43,7 +43,7 @@ pub const FIND_REFERENCES_CARD_MAX_HEIGHT: f32 = 300.;
 const HAS_REFERENCES: &str = "HasReferences";
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([
         FixedBinding::new(
@@ -322,15 +322,15 @@ impl FindReferencesView {
             .with_can_show_diff_ui(false)
             .with_show_line_numbers(false)
             .with_horizontal_scrollbar_appearance(
-                warpui::elements::new_scrollable::ScrollableAppearance::new(
-                    warpui::elements::ScrollbarWidth::None,
+                twarpui::elements::new_scrollable::ScrollableAppearance::new(
+                    twarpui::elements::ScrollbarWidth::None,
                     false,
                 ),
             );
 
             editor_view.set_vertical_scrollbar_appearance(
-                warpui::elements::new_scrollable::ScrollableAppearance::new(
-                    warpui::elements::ScrollbarWidth::None,
+                twarpui::elements::new_scrollable::ScrollableAppearance::new(
+                    twarpui::elements::ScrollbarWidth::None,
                     false,
                 ),
             );
@@ -403,7 +403,7 @@ impl View for FindReferencesView {
         "FindReferencesView"
     }
 
-    fn keymap_context(&self, _app: &AppContext) -> warpui::keymap::Context {
+    fn keymap_context(&self, _app: &AppContext) -> twarpui::keymap::Context {
         let mut context = Self::default_keymap_context();
         if !self.references.is_empty() {
             context.set.insert(HAS_REFERENCES);
@@ -413,7 +413,7 @@ impl View for FindReferencesView {
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         if self.references.is_empty() {
-            return warpui::elements::Empty::new().finish();
+            return twarpui::elements::Empty::new().finish();
         }
 
         let appearance = Appearance::handle(app).as_ref(app);
@@ -520,7 +520,7 @@ fn render_header(
     let icon_color = theme.sub_text_color(theme.background());
     let close_button = Hoverable::new(back_mouse_state, move |state| {
         let close_icon = ConstrainedBox::new(
-            warpui::elements::Icon::new(WarpIcon::X.into(), icon_color).finish(),
+            twarpui::elements::Icon::new(WarpIcon::X.into(), icon_color).finish(),
         )
         .with_width(16.)
         .with_height(16.)

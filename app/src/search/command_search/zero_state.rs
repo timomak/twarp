@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use lazy_static::lazy_static;
-use warp_core::features::FeatureFlag;
-use warp_core::ui::theme::color::internal_colors;
-use warpui::elements::Wrap;
-use warpui::{
+use twarp_core::features::FeatureFlag;
+use twarp_core::ui::theme::color::internal_colors;
+use twarpui::elements::Wrap;
+use twarpui::{
     elements::{
         Container, CornerRadius, Flex, Hoverable, MouseStateHandle, ParentElement, Radius, Text,
     },
@@ -191,7 +191,7 @@ impl View for CommandSearchZeroStateView {
         "CommandSearchZeroStateView"
     }
 
-    fn render(&self, app: &AppContext) -> Box<dyn warpui::Element> {
+    fn render(&self, app: &AppContext) -> Box<dyn twarpui::Element> {
         let appearance = Appearance::as_ref(app);
 
         let command_search_text = Container::new(

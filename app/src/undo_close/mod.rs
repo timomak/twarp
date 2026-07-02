@@ -3,7 +3,7 @@ pub mod settings;
 // file-local AI singleton stubs in this module.
 pub(crate) mod stack;
 
-use warpui::{keymap::EditableBinding, AppContext};
+use twarpui::{keymap::EditableBinding, AppContext};
 
 use crate::{util::bindings::CustomAction, workspace::WorkspaceAction};
 

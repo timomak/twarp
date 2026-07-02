@@ -24,7 +24,7 @@ use crate::{
 };
 use pathfinder_geometry::vector::vec2f;
 use settings::Setting;
-use warpui::{
+use twarpui::{
     elements::{
         Border, ChildAnchor, ChildView, Clipped, Container, DropTarget, Element, Empty, Flex,
         Hoverable, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,

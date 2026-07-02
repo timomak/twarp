@@ -1,8 +1,8 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use chrono::{Duration, Utc};
-use warp_graphql::scalars::time::ServerTimestamp;
-use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
+use twarp_graphql::scalars::time::ServerTimestamp;
+use twarpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use crate::{
     auth::{AuthStateProvider, UserUid},

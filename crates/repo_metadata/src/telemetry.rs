@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 use strum_macros::{EnumDiscriminants, EnumIter};
-use warp_core::{
+use twarp_core::{
     register_telemetry_event,
     telemetry::{EnablementState, TelemetryEvent, TelemetryEventDesc},
 };
@@ -39,7 +39,7 @@ impl TelemetryEvent for RepoMetadataTelemetryEvent {
     }
 
     fn event_descs() -> impl Iterator<Item = Box<dyn TelemetryEventDesc>> {
-        warp_core::telemetry::enum_events::<Self>()
+        twarp_core::telemetry::enum_events::<Self>()
     }
 }
 

@@ -2,7 +2,7 @@ use super::*;
 use crate::editor::tests::{sample_text, RandomCharIter};
 use crate::editor::EditOrigin;
 use tests::buffer::RangesWhenEditing;
-use warpui::App;
+use twarpui::App;
 
 #[test]
 fn test_basic_folds() -> Result<()> {

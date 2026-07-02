@@ -2,10 +2,10 @@ use std::fs;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::{SeedableRng, rngs::StdRng};
-use warp_editor::content::{
+use twarp_editor::content::{
     buffer::Buffer, selection_model::BufferSelectionModel, text::IndentBehavior,
 };
-use warpui::{App, ModelHandle};
+use twarpui::{App, ModelHandle};
 
 const EDIT_SAMPLE_SIZE: usize = 10;
 const MAX_EDIT_REPLACEMENT_LENGTH: usize = 20;

@@ -1,5 +1,5 @@
 use ordered_float::OrderedFloat;
-use warpui::{
+use twarpui::{
     elements::{ConstrainedBox, Container, Highlight, Text},
     fonts::{Properties, Weight},
     AppContext, Element, SingletonEntity,

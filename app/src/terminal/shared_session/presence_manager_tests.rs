@@ -11,8 +11,8 @@ use itertools::Itertools;
 use session_sharing_protocol::common::{
     ParticipantId, ParticipantInfo, ParticipantList, ProfileData, Role, Selection, Sharer, Viewer,
 };
-use warp_core::command::ExitCode;
-use warpui::App;
+use twarp_core::command::ExitCode;
+use twarpui::App;
 
 #[test]
 fn test_choosing_preset_colors() {

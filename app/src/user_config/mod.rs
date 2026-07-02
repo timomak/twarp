@@ -14,8 +14,8 @@ use lazy_static::lazy_static;
 #[cfg(feature = "local_fs")]
 use std::path::Path;
 use std::path::PathBuf;
-use warp_core::ui::theme::WarpTheme;
-use warpui::{Entity, ModelContext, SingletonEntity};
+use twarp_core::ui::theme::WarpTheme;
+use twarpui::{Entity, ModelContext, SingletonEntity};
 
 #[cfg(test)]
 pub(crate) use imp::load_tab_configs;
@@ -48,7 +48,7 @@ lazy_static! {
 #          commands:
 #            - exec: code .
 ",
-        warp_core::paths::home_relative_path(&crate::user_config::launch_configs_dir())
+        twarp_core::paths::home_relative_path(&crate::user_config::launch_configs_dir())
     );
 }
 
@@ -168,12 +168,12 @@ impl WarpConfig {
 
 /// Returns the base directory in which all of the user's data is stored.
 fn base_dir() -> PathBuf {
-    warp_core::paths::data_dir()
+    twarp_core::paths::data_dir()
 }
 
 /// Returns the path to the directory containing the user's custom themes.
 pub fn themes_dir() -> PathBuf {
-    warp_core::paths::themes_dir()
+    twarp_core::paths::themes_dir()
 }
 
 /// Returns the path to the directory containing the user's custom workflows.

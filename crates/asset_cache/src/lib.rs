@@ -7,7 +7,7 @@ use async_fs::{OpenOptions, create_dir_all};
 use bytes::Bytes;
 use futures::AsyncWriteExt;
 use reqwest::Url;
-use warpui_core::assets::asset_cache::{
+use twarpui_core::assets::asset_cache::{
     Asset, AssetCache, AssetSource, AssetState, AsyncAssetId, AsyncAssetType,
 };
 

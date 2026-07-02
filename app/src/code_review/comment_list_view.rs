@@ -25,17 +25,17 @@ use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use std::path::PathBuf;
 use string_offset::CharOffset;
+use twarp_core::features::FeatureFlag;
+use twarp_core::ui::color::blend::Blend;
+use twarp_editor::model::CoreEditorModel;
 use vec1::vec1;
-use warp_core::features::FeatureFlag;
-use warp_core::ui::color::blend::Blend;
-use warp_editor::model::CoreEditorModel;
 
-use warp_core::ui::theme::color::internal_colors::{
+use twarp_core::ui::theme::color::internal_colors::{
     accent_overlay_2, accent_overlay_3, neutral_1, neutral_3, neutral_4, neutral_6, text_main,
     text_sub,
 };
-use warp_core::ui::theme::Fill;
-use warpui::{
+use twarp_core::ui::theme::Fill;
+use twarpui::{
     clipboard::ClipboardContent,
     elements::{
         new_scrollable::{NewScrollable, ScrollableAppearance, SingleAxisConfig},
@@ -594,7 +594,7 @@ impl CommentListView {
             },
             theme.nonactive_ui_detail().into(),
             theme.active_ui_detail().into(),
-            warpui::elements::Fill::None,
+            twarpui::elements::Fill::None,
         )
         .with_vertical_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Auto, false))
         .with_propagate_mousewheel_if_not_handled(true)
@@ -683,7 +683,7 @@ impl CommentListView {
                 };
 
                 let icon_element = icon
-                    .to_warpui_icon(warp_core::ui::theme::Fill::Solid(text_sub(
+                    .to_warpui_icon(twarp_core::ui::theme::Fill::Solid(text_sub(
                         theme,
                         neutral_1(theme),
                     )))
@@ -765,7 +765,7 @@ impl CommentListView {
                         false, /* bottom */
                         true,  /* right */
                     )
-                    .with_border_fill(warp_core::ui::theme::Fill::Solid(neutral_4(theme))),
+                    .with_border_fill(twarp_core::ui::theme::Fill::Solid(neutral_4(theme))),
             )
             .finish()
     }
@@ -827,7 +827,7 @@ impl CommentListView {
                 };
 
                 let icon_element = icon
-                    .to_warpui_icon(warp_core::ui::theme::Fill::Solid(text_sub(
+                    .to_warpui_icon(twarp_core::ui::theme::Fill::Solid(text_sub(
                         theme,
                         neutral_3(theme),
                     )))
@@ -1146,8 +1146,8 @@ impl View for CommentListView {
 
             Resizable::new(self.view_state.resizable_state.clone(), panel)
                 .with_dragbar_side(DragBarSide::Top)
-                .with_dragbar_color(warpui::elements::Fill::Solid(
-                    warpui::color::ColorU::transparent_black(),
+                .with_dragbar_color(twarpui::elements::Fill::Solid(
+                    twarpui::color::ColorU::transparent_black(),
                 ))
                 .with_bounds_callback(Box::new(|window_size| (100.0, window_size.y() * 0.8)))
                 .on_resize(|ctx, _| {

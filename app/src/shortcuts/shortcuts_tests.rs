@@ -15,7 +15,7 @@ use crate::pane_group::Direction;
 use crate::shortcuts::action::{Action, KeyName};
 use crate::shortcuts::config::{parse_shortcuts_yaml, serialize_shortcuts, Shortcut};
 use crate::shortcuts::key_to_bytes::bytes_for;
-use warpui::keymap::Keystroke;
+use twarpui::keymap::Keystroke;
 
 #[track_caller]
 fn assert_error(yaml: &str, expected: &str) {

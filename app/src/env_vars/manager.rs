@@ -12,7 +12,7 @@ use crate::{
     PaneViewLocator, WindowId,
 };
 use std::collections::{hash_map::Entry, HashMap};
-use warpui::{Entity, EntityId, ModelContext, SingletonEntity, WeakViewHandle};
+use twarpui::{Entity, EntityId, ModelContext, SingletonEntity, WeakViewHandle};
 
 pub struct EnvVarCollectionManager {
     panes_by_hashed_id: HashMap<String, EnvVarCollectionPaneData>,

@@ -1,4 +1,4 @@
-use warpui::{
+use twarpui::{
     AppContext, Element, SizeConstraint,
     elements::{Border, CornerRadius, Empty, Radius},
     geometry::vector::vec2f,
@@ -48,7 +48,7 @@ impl RenderableBlock for RenderableRunnableCommand {
         &self.viewport_item
     }
 
-    fn layout(&mut self, _model: &RenderState, ctx: &mut warpui::LayoutContext, app: &AppContext) {
+    fn layout(&mut self, _model: &RenderState, ctx: &mut twarpui::LayoutContext, app: &AppContext) {
         self.footer.layout(
             SizeConstraint::strict(vec2f(
                 self.viewport_item.content_size.x(),
@@ -87,7 +87,9 @@ impl RenderableBlock for RenderableRunnableCommand {
 
         // Place the button at a higher z-index for event handling. See the comment on
         // `RichTextElement::content_z_index` for context.
-        ctx.paint.scene.start_layer(warpui::ClipBounds::ActiveLayer);
+        ctx.paint
+            .scene
+            .start_layer(twarpui::ClipBounds::ActiveLayer);
 
         // Position the block footer right below the content area, flush with its right-hand edge.
         // This gives the footer some padding relative to the visible area with a background.
@@ -102,15 +104,15 @@ impl RenderableBlock for RenderableRunnableCommand {
         ctx.paint.scene.stop_layer();
     }
 
-    fn after_layout(&mut self, ctx: &mut warpui::AfterLayoutContext, app: &warpui::AppContext) {
+    fn after_layout(&mut self, ctx: &mut twarpui::AfterLayoutContext, app: &twarpui::AppContext) {
         self.footer.after_layout(ctx, app);
     }
 
     fn dispatch_event(
         &mut self,
         _model: &crate::render::model::RenderState,
-        event: &warpui::event::DispatchedEvent,
-        ctx: &mut warpui::EventContext,
+        event: &twarpui::event::DispatchedEvent,
+        ctx: &mut twarpui::EventContext,
         app: &AppContext,
     ) -> bool {
         self.footer.dispatch_event(event, ctx, app)

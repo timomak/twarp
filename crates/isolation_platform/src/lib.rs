@@ -2,7 +2,7 @@ use std::{io, process::ExitStatus, sync::OnceLock, time::Duration};
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use warp_core::channel::{Channel, ChannelState};
+use twarp_core::channel::{Channel, ChannelState};
 
 #[cfg(not(target_family = "wasm"))]
 mod docker;

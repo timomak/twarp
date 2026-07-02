@@ -1,10 +1,10 @@
 // twarp: 2c-d — AI agent view / blocklist deleted; stubs.
-pub fn agent_view_bg_fill<C>(_: C) -> warpui::elements::Fill {
-    warpui::elements::Fill::None
+pub fn agent_view_bg_fill<C>(_: C) -> twarpui::elements::Fill {
+    twarpui::elements::Fill::None
 }
 pub use crate::terminal::model::block::AgentViewState;
-pub fn ai_brand_color<T>(_: T) -> warpui::color::ColorU {
-    warpui::color::ColorU::new(0, 0, 0, 0)
+pub fn ai_brand_color<T>(_: T) -> twarpui::color::ColorU {
+    twarpui::color::ColorU::new(0, 0, 0, 0)
 }
 pub const ATTACH_AS_AGENT_MODE_CONTEXT_TEXT: &str = "";
 use crate::appearance::Appearance;
@@ -32,13 +32,13 @@ use crate::util::color::Opacity;
 use enum_iterator::Sequence;
 use itertools::Itertools;
 use parking_lot::FairMutex;
+use twarp_core::semantic_selection::SemanticSelection;
+use twarp_core::ui::builder::UiBuilder;
+use twarp_core::ui::theme::AnsiColorIdentifier;
+use twarp_util::user_input::UserInput;
+use twarpui::platform::Cursor;
+use twarpui::text::SelectionType;
 use vec1::Vec1;
-use warp_core::semantic_selection::SemanticSelection;
-use warp_core::ui::builder::UiBuilder;
-use warp_core::ui::theme::AnsiColorIdentifier;
-use warp_util::user_input::UserInput;
-use warpui::platform::Cursor;
-use warpui::text::SelectionType;
 
 use pathfinder_color::ColorU;
 use session_sharing_protocol::common::{ParticipantId, Selection};
@@ -49,25 +49,25 @@ use std::ops::{Deref, Range, RangeInclusive};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
-use warpui::elements::new_scrollable::{NewScrollableElement, ScrollableAxis};
-use warpui::elements::{
+use twarpui::elements::new_scrollable::{NewScrollableElement, ScrollableAxis};
+use twarpui::elements::{
     Axis, Border, ChildAnchor, ClippedScrollStateHandle, ConstrainedBox, Container, CornerRadius,
     Hoverable, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement,
     ParentOffsetBounds, Point, Radius, ScrollData, ScrollableElement, Stack, Text, ZIndex,
 };
-use warpui::event::{KeyState, ModifiersState};
-use warpui::fonts::{FamilyId, Properties, Weight};
-use warpui::geometry::rect::RectF;
-use warpui::geometry::vector::{vec2f, Vector2F};
-use warpui::platform::keyboard::KeyCode;
-use warpui::ui_components::components::UiComponent;
-use warpui::units::{IntoLines, IntoPixels, Lines, Pixels};
-use warpui::{elements::Icon, ClipBounds};
-use warpui::{
+use twarpui::event::{KeyState, ModifiersState};
+use twarpui::fonts::{FamilyId, Properties, Weight};
+use twarpui::geometry::rect::RectF;
+use twarpui::geometry::vector::{vec2f, Vector2F};
+use twarpui::platform::keyboard::KeyCode;
+use twarpui::ui_components::components::UiComponent;
+use twarpui::units::{IntoLines, IntoPixels, Lines, Pixels};
+use twarpui::{elements::Icon, ClipBounds};
+use twarpui::{
     elements::SavePosition, event::DispatchedEvent, AfterLayoutContext, AppContext, Element, Event,
     EventContext, LayoutContext, PaintContext, SizeConstraint,
 };
-use warpui::{EntityId, ModelHandle, SingletonEntity as _};
+use twarpui::{EntityId, ModelHandle, SingletonEntity as _};
 
 use super::block_list_viewport::{ClampingMode, InputMode, ScrollPosition, ViewportState};
 use super::blockgrid_renderer::GridRenderParams;
@@ -1271,7 +1271,7 @@ impl BlockListElement {
     }
 
     /// We only want to process control characters here and return `false` for everything else.
-    /// That way, we'll receive a `warpui::Event::TypedCharacters` event for printable characters.
+    /// That way, we'll receive a `twarpui::Event::TypedCharacters` event for printable characters.
     /// So `TerminalAction::KeyDown` is for control characters only while
     /// `TerminalAction::TypedCharacters` is for characters that can go into the editor.
     fn key_down(&mut self, chars: &str, ctx: &mut EventContext) -> bool {
@@ -1565,7 +1565,7 @@ impl BlockListElement {
                                 .is_some_and(|block| block.is_active_and_long_running());
 
                             // On mobile, request soft keyboard so users can input
-                            if warpui::platform::is_mobile_device() && on_long_running_block {
+                            if twarpui::platform::is_mobile_device() && on_long_running_block {
                                 ctx.request_soft_keyboard();
                             }
 
@@ -4074,7 +4074,7 @@ impl Element for BlockListElement {
                                 None => 0.,
                             },
                             // Otherwise, we need to measure the prompt grid(s). Grids
-                            // aren't warpui::Elements, and hence their width isn't
+                            // aren't twarpui::Elements, and hence their width isn't
                             // straightforward to measure. We'll use the column index of the
                             // right-most non-empty cell as a proxy for width.
                             None => {

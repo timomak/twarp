@@ -1,6 +1,6 @@
 use crate::integration_testing::view_getters::workspace_view;
-use warpui::async_assert;
-use warpui::integration::AssertionCallback;
+use twarpui::async_assert;
+use twarpui::integration::AssertionCallback;
 
 pub fn assert_workflow_modal_is_open() -> AssertionCallback {
     Box::new(move |app, window_id| {

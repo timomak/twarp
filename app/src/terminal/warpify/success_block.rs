@@ -13,8 +13,8 @@ pub fn render_runnable_code_snippet<A, B, C, D, E, F>(
     _: D,
     _: E,
     _: F,
-) -> Box<dyn warpui::Element> {
-    warpui::elements::Empty::new().finish()
+) -> Box<dyn twarpui::Element> {
+    twarpui::elements::Empty::new().finish()
 }
 #[derive(Default, Clone)]
 pub struct CodeSnippetButtonHandles;
@@ -26,14 +26,14 @@ use crate::ui_components::icons::Icon as UiIcon;
 use crate::workspace::WorkspaceAction;
 use channel_versions::overrides::TargetOS;
 use parking_lot::RwLock;
-use warp_core::semantic_selection::SemanticSelection;
-use warp_core::ui::theme::WarpTheme;
-use warpui::elements::{
+use twarp_core::semantic_selection::SemanticSelection;
+use twarp_core::ui::theme::WarpTheme;
+use twarpui::elements::{
     CrossAxisAlignment, Icon, MainAxisAlignment, MainAxisSize, MouseStateHandle, SelectableArea,
     SelectionHandle, Text,
 };
-use warpui::ui_components::components::{UiComponent, UiComponentStyles};
-use warpui::{
+use twarpui::ui_components::components::{UiComponent, UiComponentStyles};
+use twarpui::{
     elements::{Border, Container, Flex, ParentElement},
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext,
 };
@@ -262,7 +262,7 @@ impl WarpifySuccessBlock {
                 None
             },
             Some(Box::new({
-                move |code_snippet: String, ctx: &mut warpui::EventContext| {
+                move |code_snippet: String, ctx: &mut twarpui::EventContext| {
                     ctx.dispatch_typed_action(WorkspaceAction::RunCommand(
                         code_snippet.to_string(),
                     ));
@@ -271,7 +271,7 @@ impl WarpifySuccessBlock {
                 }
             })),
             Some(Box::new({
-                move |code_snippet: String, ctx: &mut warpui::EventContext| {
+                move |code_snippet: String, ctx: &mut twarpui::EventContext| {
                     ctx.dispatch_typed_action(WorkspaceAction::CopyTextToClipboard(code_snippet));
                 }
             })),

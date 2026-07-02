@@ -15,7 +15,7 @@ use reqwest::IntoUrl;
 use reqwest_eventsource::RequestBuilderExt;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use warp_core::{
+use twarp_core::{
     channel::{Channel, ChannelState},
     execution_mode,
     operating_system_info::OperatingSystemInfo,

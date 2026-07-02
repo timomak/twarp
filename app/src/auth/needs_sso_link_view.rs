@@ -1,9 +1,9 @@
 use super::auth_manager::AuthManager;
 use crate::{appearance::Appearance, auth::login_error_modal::LoginErrorModal};
-use warpui::elements::{Align, MouseStateHandle, Shrinkable};
-use warpui::ui_components::button::ButtonVariant;
-use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
-use warpui::{AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext};
+use twarpui::elements::{Align, MouseStateHandle, Shrinkable};
+use twarpui::ui_components::button::ButtonVariant;
+use twarpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use twarpui::{AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext};
 
 #[derive(Debug)]
 pub enum NeedsSsoLinkViewAction {

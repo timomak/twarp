@@ -3,12 +3,11 @@ use crate::model::OnboardingStateModel;
 use crate::slides::{bottom_nav, layout, slide_content};
 use crate::telemetry::OnboardingEvent;
 use crate::OnboardingIntention;
-use ui_components::{button, Component as _, Options as _};
-use warp_core::send_telemetry_from_ctx;
-use warp_core::ui::theme::Fill;
-use warp_core::ui::{appearance::Appearance, theme::color::internal_colors, Icon};
-use warpui::prelude::Align;
-use warpui::{
+use twarp_core::send_telemetry_from_ctx;
+use twarp_core::ui::theme::Fill;
+use twarp_core::ui::{appearance::Appearance, theme::color::internal_colors, Icon};
+use twarpui::prelude::Align;
+use twarpui::{
     elements::{
         Border, ClippedScrollStateHandle, ConstrainedBox, Container, CornerRadius,
         CrossAxisAlignment, DropShadow, Flex, FormattedTextElement, Hoverable, MainAxisAlignment,
@@ -23,6 +22,7 @@ use warpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity as _, TypedActionView, View,
     ViewContext,
 };
+use ui_components::{button, Component as _, Options as _};
 
 const SUBSCRIBE_ITEMS: &[&str] = &[
     "1,500 credits per month",
@@ -162,7 +162,7 @@ impl FreeUserNoAiSlide {
         &self,
         appearance: &Appearance,
         text: String,
-        text_color: warpui::color::ColorU,
+        text_color: twarpui::color::ColorU,
         border_color: Fill,
     ) -> Box<dyn Element> {
         let label = appearance
@@ -415,15 +415,15 @@ impl FreeUserNoAiSlide {
                     .with_main_axis_alignment(MainAxisAlignment::Center)
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_child(
-                        warpui::elements::Text::new_inline(
+                        twarpui::elements::Text::new_inline(
                             "Subscribe",
                             appearance.ui_font_family(),
                             14.,
                         )
                         .with_color(fg_color)
-                        .with_style(warpui::fonts::Properties {
+                        .with_style(twarpui::fonts::Properties {
                             weight: Weight::Semibold,
-                            style: warpui::fonts::Style::Normal,
+                            style: twarpui::fonts::Style::Normal,
                         })
                         .with_selectable(false)
                         .finish(),

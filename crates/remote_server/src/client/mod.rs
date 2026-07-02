@@ -7,7 +7,7 @@ use std::time::Duration;
 use dashmap::DashMap;
 use futures::channel::oneshot;
 use futures::io::{AsyncRead, AsyncWrite};
-use warpui::r#async::{executor, FutureExt as _};
+use twarpui::r#async::{executor, FutureExt as _};
 
 use crate::proto::{
     client_message, server_message, Abort, Authenticate, ClientMessage, DeleteFile, ErrorCode,
@@ -18,9 +18,9 @@ use crate::proto::{
 
 use crate::protocol::{self, ProtocolError, RequestId};
 
-use warp_core::SessionId;
-use warp_core::{safe_error, safe_warn};
-use warpui::r#async::TransportStream;
+use twarp_core::SessionId;
+use twarp_core::{safe_error, safe_warn};
+use twarpui::r#async::TransportStream;
 
 /// Default request timeout (2 minutes).
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);

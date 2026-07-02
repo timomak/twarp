@@ -7,9 +7,9 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use vec1::Vec1;
 
-use warp_graphql::managed_secrets::{ManagedSecret, ManagedSecretConfig, ManagedSecretType};
+use twarp_graphql::managed_secrets::{ManagedSecret, ManagedSecretConfig, ManagedSecretType};
 
-pub use warp_graphql::queries::task_secrets::ManagedSecretValue;
+pub use twarp_graphql::queries::task_secrets::ManagedSecretValue;
 
 /// An OIDC identity token issued for a task workload.
 #[derive(Debug, Clone)]

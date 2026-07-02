@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use warpui::{
+use twarpui::{
     async_assert,
     integration::{AssertionOutcome, TestStep},
     Event, SingletonEntity,
@@ -235,7 +235,7 @@ fn switch_to_terminal_mode_and_type_command(
     pane_idx: usize,
     was_ai_mode: Arc<AtomicBool>,
     command: String,
-) -> impl Fn(&mut warpui::App, warpui::WindowId) -> Event + 'static {
+) -> impl Fn(&mut twarpui::App, twarpui::WindowId) -> Event + 'static {
     move |app, window_id| {
         let tv = terminal_view(app, window_id, tab_idx, pane_idx);
         let is_ai = tv.read(app, |view, ctx| {
@@ -264,7 +264,7 @@ fn restore_ai_mode_if_needed(
     tab_idx: usize,
     pane_idx: usize,
     was_ai_mode: Arc<AtomicBool>,
-) -> impl Fn(&mut warpui::App, warpui::WindowId) + 'static {
+) -> impl Fn(&mut twarpui::App, twarpui::WindowId) + 'static {
     move |app, window_id| {
         if was_ai_mode.load(Ordering::SeqCst) {
             let tv = terminal_view(app, window_id, tab_idx, pane_idx);
@@ -286,7 +286,7 @@ fn execute_command_step(
     tab_idx: usize,
     pane_idx: usize,
     command: String,
-    validate_output_fn: impl FnMut(&mut warpui::App, warpui::WindowId) -> AssertionOutcome + 'static,
+    validate_output_fn: impl FnMut(&mut twarpui::App, twarpui::WindowId) -> AssertionOutcome + 'static,
 ) -> TestStep {
     let was_ai_mode = Arc::new(AtomicBool::new(false));
     let was_ai_mode_for_restore = was_ai_mode.clone();

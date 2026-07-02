@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use serde::{Serialize, Serializer};
 
-use warpui::{platform::Cursor, ViewContext};
+use twarpui::{platform::Cursor, ViewContext};
 
 use crate::{
     send_telemetry_from_ctx,
@@ -27,8 +27,8 @@ cfg_if::cfg_if! {
             util::openable_file_type::FileTarget,
         };
         use std::path::PathBuf;
-        use warp_util::path::CleanPathResult;
-        use warp_util::path::LineAndColumnArg;
+        use twarp_util::path::CleanPathResult;
+        use twarp_util::path::LineAndColumnArg;
     }
 }
 

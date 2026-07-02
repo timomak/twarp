@@ -1,19 +1,19 @@
 use std::sync::Arc;
 
 use pathfinder_geometry::vector::Vector2F;
+use twarpui::assets::asset_cache::{AssetCache, AssetSource, AssetState};
+use twarpui::image_cache::ImageType;
+use twarpui::keymap::{FixedBinding, Keystroke};
+use twarpui::prelude::*;
+use twarpui::{AppContext, BlurContext, Element, Entity, SingletonEntity, View, ViewContext};
 use ui_components::{lightbox, Component as _};
-use warpui::assets::asset_cache::{AssetCache, AssetSource, AssetState};
-use warpui::image_cache::ImageType;
-use warpui::keymap::{FixedBinding, Keystroke};
-use warpui::prelude::*;
-use warpui::{AppContext, BlurContext, Element, Entity, SingletonEntity, View, ViewContext};
 
 use crate::appearance::Appearance;
 
 pub use lightbox::LightboxImage;
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
     let view_id = id!(LightboxView::ui_name());
     app.register_fixed_bindings([
         FixedBinding::new("escape", LightboxViewAction::Dismiss, view_id.clone()),

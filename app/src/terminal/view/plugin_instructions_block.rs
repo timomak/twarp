@@ -1,19 +1,19 @@
 use std::iter;
 
 use pathfinder_geometry::vector::vec2f;
-use warpui::clipboard::ClipboardContent;
-use warpui::elements::{
+use twarpui::clipboard::ClipboardContent;
+use twarpui::elements::{
     Border, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
     Empty, Expanded, Flex, HyperlinkLens, MainAxisAlignment, MainAxisSize, OffsetPositioning,
     ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Stack, Text,
 };
-use warpui::fonts::{Properties, Weight};
-use warpui::{
+use twarpui::fonts::{Properties, Weight};
+use twarpui::{
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
-use warpui::elements::FormattedTextElement;
+use twarpui::elements::FormattedTextElement;
 
 // twarp: 2c-d — AI code block / plugin / cli agent deleted; stubs.
 use crate::app_state::CLIAgent;
@@ -25,17 +25,17 @@ pub fn render_code_block_plain<A, B, C, D, E>(
     _: C,
     _: D,
     _: E,
-) -> Box<dyn warpui::Element> {
-    warpui::elements::Empty::new().finish()
+) -> Box<dyn twarpui::Element> {
+    twarpui::elements::Empty::new().finish()
 }
 #[derive(Default)]
 pub struct CodeBlockOptions {
     // twarp: 2c-d — fields used by callers
     pub on_open: Option<()>,
-    pub on_execute: Option<Box<dyn Fn(String, &mut warpui::EventContext)>>,
-    pub on_copy: Option<Box<dyn Fn(String, &mut warpui::EventContext)>>,
+    pub on_execute: Option<Box<dyn Fn(String, &mut twarpui::EventContext)>>,
+    pub on_copy: Option<Box<dyn Fn(String, &mut twarpui::EventContext)>>,
     pub on_insert: Option<()>,
-    pub footer_element: Option<Box<dyn warpui::Element>>,
+    pub footer_element: Option<Box<dyn twarpui::Element>>,
     pub mouse_handles: Option<CodeSnippetButtonHandles>,
     pub file_path: Option<std::path::PathBuf>,
 }

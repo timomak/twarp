@@ -13,7 +13,7 @@ use super::block::Block;
 use super::blocks::BlockList;
 use super::selection::ScrollDelta;
 use super::session::SessionInfo;
-use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
+use twarp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
 
 #[cfg(test)]
 #[path = "early_output_tests.rs"]
@@ -148,8 +148,8 @@ impl EarlyOutput {
                 full: ("Matched {ch:?} as typeahead")
             );
 
-            if warp_core::channel::ChannelState::channel()
-                == warp_core::channel::Channel::Integration
+            if twarp_core::channel::ChannelState::channel()
+                == twarp_core::channel::Channel::Integration
             {
                 log::info!(
                     "Sending input-matched typeahead event for {:?}",
@@ -168,8 +168,8 @@ impl EarlyOutput {
     /// internal count is then updated to match the new typeahead length.
     pub fn advance_typeahead(&mut self) -> Option<(&str, CharOffset)> {
         if self.typeahead.is_empty() {
-            if warp_core::channel::ChannelState::channel()
-                == warp_core::channel::Channel::Integration
+            if twarp_core::channel::ChannelState::channel()
+                == twarp_core::channel::Channel::Integration
             {
                 log::warn!("Tried to advance typeahead, but it was empty");
             }
@@ -316,8 +316,8 @@ impl ansi::Handler for EarlyOutputHandler<'_> {
     /// information, such as when the shell reports its input buffer.
     fn input_buffer(&mut self, data: ansi::InputBufferValue) {
         if data.buffer.is_empty() {
-            if warp_core::channel::ChannelState::channel()
-                == warp_core::channel::Channel::Integration
+            if twarp_core::channel::ChannelState::channel()
+                == twarp_core::channel::Channel::Integration
             {
                 log::info!("Ignoring empty input buffer");
             }
@@ -338,8 +338,8 @@ impl ansi::Handler for EarlyOutputHandler<'_> {
         let me = self.inner();
         if me.mode == TypeaheadMode::ShellReported {
             me.typeahead = data.buffer;
-            if warp_core::channel::ChannelState::channel()
-                == warp_core::channel::Channel::Integration
+            if twarp_core::channel::ChannelState::channel()
+                == twarp_core::channel::Channel::Integration
             {
                 log::info!(
                     "Sending shell-reported typeahead event for {:?}",

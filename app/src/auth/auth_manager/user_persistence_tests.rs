@@ -81,7 +81,7 @@ fn test_serialize_persisted_user() {
 }
 
 /// Test serializing and deserializing persisted user data.
-/// See warpui_extras::secure_storage::linux_test.rs for Linux-specific tests.
+/// See twarpui_extras::secure_storage::linux_test.rs for Linux-specific tests.
 #[cfg(target_os = "windows")]
 #[cfg_attr(windows, ignore = "passes locally but not in CI on Windows")]
 #[test]
@@ -93,9 +93,9 @@ fn test_windows_user_persistence() {
     };
     use crate::ServerApiProvider;
     use chrono::DateTime;
-    use warp_core::channel::ChannelState;
-    use warpui::{App, SingletonEntity};
-    use warpui_extras::secure_storage;
+    use twarp_core::channel::ChannelState;
+    use twarpui::{App, SingletonEntity};
+    use twarpui_extras::secure_storage;
 
     App::test((), |mut app| async move {
         app.add_singleton_model(|_ctx| ServerApiProvider::new_for_test());
@@ -104,7 +104,7 @@ fn test_windows_user_persistence() {
         app.add_singleton_model(|ctx| {
             secure_storage::register_with_dir(
                 ChannelState::data_domain().as_str(),
-                warp_core::paths::state_dir(),
+                twarp_core::paths::state_dir(),
                 ctx,
             );
             AuthManager::new_for_test(ctx)

@@ -7,7 +7,7 @@ use ordered_float::OrderedFloat;
 
 use super::{fuzzy_match_saved_prompts, SavedPromptCandidate, SavedPromptsSnapshot};
 
-const TEST_FONT_FAMILY: warpui::fonts::FamilyId = warpui::fonts::FamilyId(0);
+const TEST_FONT_FAMILY: twarpui::fonts::FamilyId = twarpui::fonts::FamilyId(0);
 
 fn test_candidate(name: &str, query: &str) -> SavedPromptCandidate {
     SavedPromptCandidate {

@@ -1,5 +1,5 @@
 // The code in this file is adapted from the alacritty_terminal crate under the
-// Apache license; see: crates/warp_terminal/src/model/LICENSE-ALACRITTY.
+// Apache license; see: crates/twarp_terminal/src/model/LICENSE-ALACRITTY.
 
 #[path = "ansi_handler.rs"]
 mod ansi_handler;
@@ -25,18 +25,18 @@ use std::{
 use bounded_vec_deque::BoundedVecDeque;
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use twarp_core::features::FeatureFlag;
+use twarp_core::semantic_selection::{SemanticSelection, SMART_SELECT_MATCH_WINDOW_LIMIT};
+use twarp_core::{safe_assert, safe_assert_eq};
+use twarp_terminal::model::grid::CellType;
+use twarp_terminal::model::grid::FlatStorage;
+pub use twarp_terminal::model::TermMode;
+use twarp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
+use twarp_util::path::CleanPathResult;
+use twarpui::color::ColorU;
 use unicode_general_category::{get_general_category, GeneralCategory};
 use unicode_width::UnicodeWidthChar;
 use urlocator::{UrlLocation, UrlLocator};
-use warp_core::features::FeatureFlag;
-use warp_core::semantic_selection::{SemanticSelection, SMART_SELECT_MATCH_WINDOW_LIMIT};
-use warp_core::{safe_assert, safe_assert_eq};
-use warp_terminal::model::grid::CellType;
-use warp_terminal::model::grid::FlatStorage;
-pub use warp_terminal::model::TermMode;
-use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
-use warp_util::path::CleanPathResult;
-use warpui::color::ColorU;
 
 use crate::terminal::event_listener::ChannelEventListener;
 use crate::terminal::model::ansi::{self, Color, CursorStyle, Handler, NamedColor};
@@ -2511,7 +2511,7 @@ impl GridHandler {
     /// appropriately.
     #[cfg(test)]
     pub(super) fn input_at_cursor(&mut self, text: &str) {
-        use warp_terminal::model::VisiblePoint;
+        use twarp_terminal::model::VisiblePoint;
 
         let columns = self.columns();
         let mut last_row = self.grid.cursor.point.row;

@@ -15,7 +15,7 @@ use futures::FutureExt as _;
 use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use warpui::{AppContext, SingletonEntity as _};
+use twarpui::{AppContext, SingletonEntity as _};
 
 use super::shell::DirectShellStarter;
 use crate::{
@@ -46,7 +46,7 @@ const DOCKER_SANDBOX_NAME_PREFIX: &str = "warp-sandbox";
 ///
 /// Layout: `<cache_dir>/docker-sandbox/{init,workspace}/<sandbox_id>/`.
 fn docker_sandbox_host_root() -> PathBuf {
-    warp_core::paths::cache_dir().join("docker-sandbox")
+    twarp_core::paths::cache_dir().join("docker-sandbox")
 }
 
 /// Resolves the absolute path to the `sbx` CLI binary using the Warp

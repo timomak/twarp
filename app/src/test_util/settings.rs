@@ -1,16 +1,16 @@
 #[cfg(test)]
-use warpui::App;
+use twarpui::App;
 
 #[cfg(test)]
 pub fn initialize_settings_for_tests(app: &mut App) {
-    use warp_core::execution_mode::ExecutionMode;
+    use twarp_core::execution_mode::ExecutionMode;
     initialize_settings_for_tests_with_mode(app, ExecutionMode::App, false);
 }
 
 #[cfg(test)]
 pub fn initialize_settings_for_tests_with_mode(
     app: &mut App,
-    mode: warp_core::execution_mode::ExecutionMode,
+    mode: twarp_core::execution_mode::ExecutionMode,
     is_sandboxed: bool,
 ) {
     use crate::{
@@ -38,7 +38,7 @@ pub fn initialize_settings_for_tests_with_mode(
         window_settings::WindowSettings,
         workspace::tab_settings::TabSettings,
     };
-    use warp_core::{execution_mode::AppExecutionMode, semantic_selection::SemanticSelection};
+    use twarp_core::{execution_mode::AppExecutionMode, semantic_selection::SemanticSelection};
     app.add_singleton_model(|ctx| AppExecutionMode::new(mode, is_sandboxed, ctx));
 
     app.update(init_and_register_user_preferences);
@@ -102,7 +102,7 @@ pub fn initialize_settings_for_tests_with_mode(
 
     app.update(|ctx| {
         // Register a no-op secure storage provider for testing.
-        warpui_extras::secure_storage::register_noop("test", ctx);
+        twarpui_extras::secure_storage::register_noop("test", ctx);
         // twarp: 2c-d — ai::api_keys::ApiKeyManager removed with AI deletion.
     });
 }

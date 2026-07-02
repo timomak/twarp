@@ -5,7 +5,7 @@ use http::StatusCode;
 use instant::Duration;
 use reqwest::header::CONTENT_TYPE;
 use serde::{de::DeserializeOwned, Serialize};
-use warp_core::{channel::ChannelState, operating_system_info::OperatingSystemInfo};
+use twarp_core::{channel::ChannelState, operating_system_info::OperatingSystemInfo};
 
 use crate::{
     error::{UserFacingError, UserFacingErrorInterface},

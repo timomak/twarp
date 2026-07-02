@@ -11,18 +11,18 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::{cmp, mem};
-use warp_core::platform::SessionPlatform;
-use warp_core::send_telemetry_from_ctx;
-use warp_core::ui::theme::Fill;
-use warp_editor::content::anchor::Anchor;
-use warp_editor::content::edit::EditDelta;
-use warp_editor::content::find::{SearchConfig, SearchResults};
-use warp_editor::content::selection_model::BufferSelectionModel;
-use warp_editor::content::version::BufferVersion;
-use warp_editor::multiline::{AnyMultilineString, MultilineString, LF};
-use warp_editor::render::model::{AutoScrollMode, LineCount, StyleUpdateAction};
-use warp_editor::selection::TextDirection;
-use warpui::units::{IntoPixels, Pixels};
+use twarp_core::platform::SessionPlatform;
+use twarp_core::send_telemetry_from_ctx;
+use twarp_core::ui::theme::Fill;
+use twarp_editor::content::anchor::Anchor;
+use twarp_editor::content::edit::EditDelta;
+use twarp_editor::content::find::{SearchConfig, SearchResults};
+use twarp_editor::content::selection_model::BufferSelectionModel;
+use twarp_editor::content::version::BufferVersion;
+use twarp_editor::multiline::{AnyMultilineString, MultilineString, LF};
+use twarp_editor::render::model::{AutoScrollMode, LineCount, StyleUpdateAction};
+use twarp_editor::selection::TextDirection;
+use twarpui::units::{IntoPixels, Pixels};
 
 use crate::util::link_detection::get_word_range_at_offset;
 use crate::{
@@ -37,20 +37,9 @@ use languages::{language_by_filename, language_by_name, Language};
 use line_ending::LineEnding;
 use string_offset::CharOffset;
 use syntax_tree::{ColorMap, DecorationStateEvent, SyntaxTreeState};
-use vec1::{vec1, Vec1};
-use vim::vim::{
-    BracketChar, CharacterMotion, Direction, FindCharMotion, FirstNonWhitespaceMotion,
-    InsertPosition, LineMotion, MotionType, TextObjectInclusion, TextObjectType, VimOperator,
-    VimTextObject, WordBound, WordMotion, WordType,
-};
-use vim::{
-    find_next_paragraph_end, find_previous_paragraph_start, vim_a_block, vim_a_paragraph,
-    vim_a_quote, vim_a_word, vim_find_char_on_line, vim_find_matching_bracket, vim_inner_block,
-    vim_inner_paragraph, vim_inner_quote, vim_inner_word, vim_word_iterator_from_offset,
-};
-use warp_core::semantic_selection::SemanticSelection;
-use warp_editor::content::buffer::{ShouldAutoscroll, VimInsertPoint};
-use warp_editor::{
+use twarp_core::semantic_selection::SemanticSelection;
+use twarp_editor::content::buffer::{ShouldAutoscroll, VimInsertPoint};
+use twarp_editor::{
     content::{
         buffer::{
             AutoScrollBehavior, Buffer, BufferEditAction, BufferEvent, BufferSelectAction,
@@ -68,12 +57,23 @@ use warp_editor::{
     },
     selection::{SelectionMode, SelectionModel, TextUnit},
 };
-use warpui::elements::{
+use twarpui::elements::{
     AnchorPair, OffsetPositioning, OffsetType, PositionedElementOffsetBounds, PositioningAxis,
     XAxisAnchor, YAxisAnchor,
 };
-use warpui::text::{point::Point, TextBuffer};
-use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
+use twarpui::text::{point::Point, TextBuffer};
+use twarpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
+use vec1::{vec1, Vec1};
+use vim::vim::{
+    BracketChar, CharacterMotion, Direction, FindCharMotion, FirstNonWhitespaceMotion,
+    InsertPosition, LineMotion, MotionType, TextObjectInclusion, TextObjectType, VimOperator,
+    VimTextObject, WordBound, WordMotion, WordType,
+};
+use vim::{
+    find_next_paragraph_end, find_previous_paragraph_start, vim_a_block, vim_a_paragraph,
+    vim_a_quote, vim_a_word, vim_find_char_on_line, vim_find_matching_bracket, vim_inner_block,
+    vim_inner_paragraph, vim_inner_quote, vim_inner_word, vim_word_iterator_from_offset,
+};
 
 use super::super::DiffResult;
 use super::comments::{EditorCommentsModel, PendingComment, PendingCommentEvent};
@@ -559,7 +559,7 @@ impl CodeEditorModel {
     // Set the following line ranges to be hidden in the editor.
     pub fn set_hidden_lines(
         &mut self,
-        ranges: RangeSet<warp_editor::content::text::LineCount>,
+        ranges: RangeSet<twarp_editor::content::text::LineCount>,
         ctx: &mut ModelContext<Self>,
     ) {
         self.hidden_lines.update(ctx, |model, ctx| {
@@ -574,7 +574,7 @@ impl CodeEditorModel {
     // Set the following hidden line ranges to be visible. This is no-op if the lines are already visible.
     pub fn set_visible_line_range(
         &mut self,
-        range: Range<warp_editor::content::text::LineCount>,
+        range: Range<twarp_editor::content::text::LineCount>,
         ctx: &mut ModelContext<Self>,
     ) {
         let version = self.content().as_ref(ctx).buffer_version();
@@ -1315,7 +1315,7 @@ impl CodeEditorModel {
             let line_count = self.line_count(ctx);
 
             // Calculate the visible line ranges (with context)
-            let mut visible_ranges: RangeSet<warp_editor::content::text::LineCount> =
+            let mut visible_ranges: RangeSet<twarp_editor::content::text::LineCount> =
                 RangeSet::new();
 
             // Add ranges for diffs
@@ -1333,14 +1333,14 @@ impl CodeEditorModel {
             }
 
             // Calculate hidden ranges as the complement of visible ranges
-            let all_lines: Range<warp_editor::content::text::LineCount> =
-                warp_editor::content::text::LineCount::from(0)
-                    ..warp_editor::content::text::LineCount::from(line_count);
+            let all_lines: Range<twarp_editor::content::text::LineCount> =
+                twarp_editor::content::text::LineCount::from(0)
+                    ..twarp_editor::content::text::LineCount::from(line_count);
 
             // Find gaps in the visible ranges
             let hidden_ranges = visible_ranges
                 .gaps(&all_lines)
-                .collect::<RangeSet<warp_editor::content::text::LineCount>>();
+                .collect::<RangeSet<twarp_editor::content::text::LineCount>>();
 
             self.set_hidden_lines(hidden_ranges, ctx);
         }
@@ -2107,10 +2107,10 @@ impl CodeEditorModel {
                 self.update_content(
                     |mut content, ctx| {
                         content.apply_edit(
-                        warp_editor::content::buffer::BufferEditAction::InsertForEachSelection {
+                        twarp_editor::content::buffer::BufferEditAction::InsertForEachSelection {
                             texts: &texts,
                         },
-                        warp_editor::content::buffer::EditOrigin::UserTyped,
+                        twarp_editor::content::buffer::EditOrigin::UserTyped,
                         selection_model,
                         ctx,
                     );
@@ -2141,10 +2141,10 @@ impl CodeEditorModel {
             self.update_content(
                 |mut content, ctx| {
                     content.apply_edit(
-                        warp_editor::content::buffer::BufferEditAction::InsertAtCharOffsetRanges {
+                        twarp_editor::content::buffer::BufferEditAction::InsertAtCharOffsetRanges {
                             edits: &edits,
                         },
-                        warp_editor::content::buffer::EditOrigin::UserTyped,
+                        twarp_editor::content::buffer::EditOrigin::UserTyped,
                         selection_model,
                         ctx,
                     );
@@ -3743,10 +3743,10 @@ impl CoreEditorModel for CodeEditorModel {
     }
 
     // TODO(kevin): Add validation to the content model.
-    fn validate(&self, _ctx: &impl warpui::ModelAsRef) {}
+    fn validate(&self, _ctx: &impl twarpui::ModelAsRef) {}
 
     // Since this is a plain text editor, there is no text styles.
-    fn active_text_style(&self) -> warp_editor::content::text::TextStyles {
+    fn active_text_style(&self) -> twarp_editor::content::text::TextStyles {
         Default::default()
     }
 

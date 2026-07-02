@@ -14,7 +14,7 @@ use std::any::Any;
 
 use std::sync::Arc;
 
-use warpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WeakViewHandle, WindowId};
+use twarpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WeakViewHandle, WindowId};
 
 // twarp: 2c-d — AI active/agent/blocklist/llms deleted; reuse shared_handlers stubs to keep types unified.
 use crate::app_state::ConversationStatus;
@@ -22,7 +22,7 @@ pub use crate::terminal::shared_session::shared_handlers::{
     AgentViewController, BlocklistAIContextModel, BlocklistAIHistoryModel,
 };
 pub struct ActiveAgentViewsModel;
-impl warpui::Entity for ActiveAgentViewsModel {
+impl twarpui::Entity for ActiveAgentViewsModel {
     type Event = ();
 }
 impl SingletonEntity for ActiveAgentViewsModel {}
@@ -61,14 +61,14 @@ use crate::terminal::session_settings::SessionSettings;
 // twarp: 2c-d — cli agent sessions deleted; stubs.
 pub use crate::terminal::view::CLIAgentInputState;
 pub struct CLIAgentSessionsModel;
-impl warpui::Entity for CLIAgentSessionsModel {
+impl twarpui::Entity for CLIAgentSessionsModel {
     type Event = CLIAgentSessionsModelEvent;
 }
 impl SingletonEntity for CLIAgentSessionsModel {}
 #[allow(dead_code)]
 impl CLIAgentSessionsModel {
     // twarp: 2c-d — bulk stubs
-    pub fn session(&self, _: warpui::EntityId) -> Option<&crate::terminal::view::CLIAgentSession> {
+    pub fn session(&self, _: twarpui::EntityId) -> Option<&crate::terminal::view::CLIAgentSession> {
         None
     }
 }
@@ -90,7 +90,7 @@ use super::network::{
 };
 use crate::app_state::AmbientAgentTaskId;
 // twarp: 2c-d — ambient agent helper deleted; stub.
-fn is_cloud_agent_pre_first_exchange<A, B>(_: A, _: B, _: &warpui::AppContext) -> bool {
+fn is_cloud_agent_pre_first_exchange<A, B>(_: A, _: B, _: &twarpui::AppContext) -> bool {
     false
 }
 use crate::terminal::view::ExecuteCommandEvent;

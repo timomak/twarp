@@ -3,7 +3,7 @@ use std::{env, fs, time::Duration};
 use base64::prelude::{BASE64_URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Utc};
 use command::r#async::Command;
-use warp_core::channel::ChannelState;
+use twarp_core::channel::ChannelState;
 
 use crate::{IsolationPlatformError, WorkloadToken};
 

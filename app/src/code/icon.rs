@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use warp_core::ui::appearance::Appearance;
-use warpui::{
+use twarp_core::ui::appearance::Appearance;
+use twarpui::{
     assets::asset_cache::AssetSource,
     elements::{CacheOption, Icon, Image},
     Element,

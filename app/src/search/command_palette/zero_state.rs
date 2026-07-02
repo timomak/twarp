@@ -1,7 +1,7 @@
 mod items;
 pub use items::Items;
-use warp_core::context_flag::ContextFlag;
-use warp_core::features::FeatureFlag;
+use twarp_core::context_flag::ContextFlag;
+use twarp_core::features::FeatureFlag;
 
 use crate::appearance::Appearance;
 use crate::search::command_palette::FilterChipRenderer;
@@ -11,8 +11,8 @@ use crate::search::QueryFilter;
 use crate::settings::AISettings;
 use crate::workspace::Workspace;
 use std::collections::HashMap;
-use warpui::elements::{Container, Flex, MouseStateHandle, ParentElement, Shrinkable, Wrap};
-use warpui::{
+use twarpui::elements::{Container, Flex, MouseStateHandle, ParentElement, Shrinkable, Wrap};
+use twarpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     WindowId,
 };

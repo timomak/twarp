@@ -8,7 +8,7 @@ use core_foundation::{
     string::{CFString, CFStringRef},
 };
 use objc::{class, msg_send, sel, sel_impl};
-use warp_core::channel::{Channel, ChannelState};
+use twarp_core::channel::{Channel, ChannelState};
 
 // Launch Services constants
 type LSRolesMask = u32;

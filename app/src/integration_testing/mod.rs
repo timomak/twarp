@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use warpui::{App, AssetProvider, View, ViewHandle, WindowId};
+use twarpui::{App, AssetProvider, View, ViewHandle, WindowId};
 
 // twarp: 2c-d — agent_mode module deleted; re-export AgentViewState from terminal::model::block.
 pub mod agent_mode {

@@ -11,8 +11,8 @@ use pathfinder_color::ColorU;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use serde_yaml::{Mapping, Value};
+use twarpui::{App, AppContext, ModelContext, ModelHandle, ReadModel};
 use vec1::{Vec1, vec1};
-use warpui::{App, AppContext, ModelContext, ModelHandle, ReadModel};
 
 use crate::content::buffer::{
     AutoScrollBehavior, BufferEditAction, BufferSelectAction, EditOrigin, EmbeddedItemConversion,
@@ -39,8 +39,8 @@ use crate::render::model::{
 };
 use string_offset::ByteOffset;
 use string_offset::CharOffset;
-use warpui::elements::ListIndentLevel;
-use warpui::text::point::Point;
+use twarpui::elements::ListIndentLevel;
+use twarpui::text::point::Point;
 
 use crate::content::buffer::{Buffer, StyledBufferRun};
 

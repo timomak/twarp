@@ -1,7 +1,7 @@
 use std::ops::{Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo};
 
-use warp_terminal::model::grid::cell::Cell;
-use warp_terminal::model::grid::row::Row;
+use twarp_terminal::model::grid::cell::Cell;
+use twarp_terminal::model::grid::row::Row;
 
 use crate::terminal::model::{
     grid::Dimensions as _,

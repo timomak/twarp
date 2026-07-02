@@ -47,7 +47,7 @@ use std::{
 use itertools::Itertools as _;
 use line_ending::LineEnding;
 
-use warp_core::platform::SessionPlatform;
+use twarp_core::platform::SessionPlatform;
 
 /// A line ending format. This is the compile-time equivalent to [`LineEnding`].
 pub trait LineFormat {

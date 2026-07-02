@@ -9,7 +9,7 @@ pub(super) mod grapheme_cursor;
 #[cfg(test)]
 mod tests;
 
-pub use warp_terminal::model::grid::row;
+pub use twarp_terminal::model::grid::row;
 
 pub use displayed_output::RespectDisplayedOutput;
 pub use grid_storage::*;

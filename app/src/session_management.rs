@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use chrono::NaiveDateTime;
 
-use warpui::{AppContext, Entity, EntityId, WindowId};
+use twarpui::{AppContext, Entity, EntityId, WindowId};
 
 use crate::context_chips::prompt_snapshot::PromptSnapshot;
 use crate::pane_group::PaneGroup;

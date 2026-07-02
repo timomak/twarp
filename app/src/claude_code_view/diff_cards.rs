@@ -23,10 +23,10 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
 
-use warp_editor::content::buffer::InitialBufferState;
-use warp_editor::render::element::VerticalExpansionBehavior;
-use warp_util::standardized_path::StandardizedPath;
-use warpui::{
+use twarp_editor::content::buffer::InitialBufferState;
+use twarp_editor::render::element::VerticalExpansionBehavior;
+use twarp_util::standardized_path::StandardizedPath;
+use twarpui::{
     elements::{ConstrainedBox, Container, CrossAxisAlignment, Flex, MainAxisSize, ParentElement},
     presenter::ChildView,
     AppContext, Element, SingletonEntity, ViewContext, ViewHandle,
@@ -180,7 +180,7 @@ pub(super) fn render_diff_card(
         .map(str::to_owned);
     let title = verb_title_row(verb, arg.as_deref(), failed, appearance);
     let glyph =
-        warpui::elements::Icon::new(WarpIcon::Pencil.into(), blended_colors::neutral_7(theme));
+        twarpui::elements::Icon::new(WarpIcon::Pencil.into(), blended_colors::neutral_7(theme));
 
     let toggle_id = id.to_owned();
     let mut disclosure = Disclosure::new(title)

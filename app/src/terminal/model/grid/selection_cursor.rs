@@ -1,4 +1,4 @@
-use warp_terminal::model::grid::CellType;
+use twarp_terminal::model::grid::CellType;
 
 use crate::terminal::model::index::Point;
 

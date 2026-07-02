@@ -10,8 +10,8 @@ use crate::workspaces::workspace::{ActionPermission, WriteToPtyPermission};
 use onboarding::slides::{AgentAutonomy, AgentDevelopmentSettings};
 use onboarding::{SelectedSettings, SessionDefault, UICustomizationSettings};
 use settings::Setting as _;
-use warp_core::features::FeatureFlag;
-use warpui::{AppContext, SingletonEntity as _};
+use twarp_core::features::FeatureFlag;
+use twarpui::{AppContext, SingletonEntity as _};
 
 /// Applies onboarding settings based on the user's selected mode.
 ///

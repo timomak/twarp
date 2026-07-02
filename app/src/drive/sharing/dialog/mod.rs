@@ -4,10 +4,10 @@ use std::borrow::Cow;
 // twarp: 2c-d — re-export canonical
 pub use crate::terminal::input::BlocklistAIHistoryEvent;
 pub struct BlocklistAIHistoryModel;
-impl warpui::Entity for BlocklistAIHistoryModel {
+impl twarpui::Entity for BlocklistAIHistoryModel {
     type Event = BlocklistAIHistoryEvent;
 }
-impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+impl twarpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
     pub fn can_conversation_be_shared(&self, _: &crate::app_state::AIConversationId) -> bool {
@@ -45,12 +45,12 @@ pub struct ServerConversationPermissionsStub {
 }
 
 pub struct LinkSharingStub {
-    pub access_level: warp_graphql::object_permissions::AccessLevel,
+    pub access_level: twarp_graphql::object_permissions::AccessLevel,
 }
 
 pub struct GuestStub {
     pub subject: crate::cloud_object::ServerGuestSubject,
-    pub access_level: warp_graphql::object_permissions::AccessLevel,
+    pub access_level: twarp_graphql::object_permissions::AccessLevel,
 }
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;
@@ -87,21 +87,21 @@ use inheritance::{InheritanceDetails, InheritanceState};
 use itertools::Itertools;
 use pathfinder_geometry::vector::vec2f;
 use session_sharing_protocol::common::{Guest, PendingGuest, SessionId, TeamAclData};
-use warp_core::ui::appearance::Appearance;
-use warp_editor::editor::NavigationKey;
-use warpui::elements::{
+use twarp_core::ui::appearance::Appearance;
+use twarp_editor::editor::NavigationKey;
+use twarpui::elements::{
     Align, ChildAnchor, ChildView, Fill, Highlight, MainAxisSize, MouseStateHandle,
     OffsetPositioning, ParentAnchor, PositionedElementAnchor, PositionedElementOffsetBounds,
     SavePosition, ScrollStateHandle, Scrollable, ScrollableElement, ScrollbarWidth, Shrinkable,
     Stack, UniformList, UniformListState,
 };
-use warpui::fonts::{Properties, Weight};
-use warpui::platform::Cursor;
-use warpui::ui_components::button::{ButtonVariant, TextAndIcon, TextAndIconAlignment};
-use warpui::ui_components::components::Coords;
-use warpui::FocusContext;
-use warpui::WeakViewHandle;
-use warpui::{
+use twarpui::fonts::{Properties, Weight};
+use twarpui::platform::Cursor;
+use twarpui::ui_components::button::{ButtonVariant, TextAndIcon, TextAndIconAlignment};
+use twarpui::ui_components::components::Coords;
+use twarpui::FocusContext;
+use twarpui::WeakViewHandle;
+use twarpui::{
     clipboard::ClipboardContent,
     elements::{
         Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss, Empty, Flex,
@@ -249,7 +249,7 @@ pub enum SharingDialogAction {
 }
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([FixedBinding::new(
         "escape",

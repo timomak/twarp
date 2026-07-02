@@ -1,5 +1,5 @@
-use warp_editor::editor::NavigationKey;
-use warpui::{
+use twarp_editor::editor::NavigationKey;
+use twarpui::{
     elements::{
         Align, ConstrainedBox, Container, Flex, ParentElement, SavePosition, Shrinkable, Stack,
     },

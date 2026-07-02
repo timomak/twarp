@@ -6,8 +6,8 @@ use vec1::{Vec1, vec1};
 
 use crate::content::text::BufferBlockStyle;
 use ordered_float::OrderedFloat;
-use warpui::elements::ListIndentLevel;
-use warpui::{
+use twarpui::elements::ListIndentLevel;
+use twarpui::{
     color::ColorU,
     elements::{Border, Fill},
     fonts::{FamilyId, Weight},
@@ -241,7 +241,7 @@ pub fn layout(text: &str, styles: &RichTextStyles, max_width: impl IntoPixels) -
                 width: line_width.as_f32(),
                 trailing_whitespace_width: 0.,
                 runs: vec![Run {
-                    font_id: warpui::fonts::FontId(0),
+                    font_id: twarpui::fonts::FontId(0),
                     styles: Default::default(),
                     glyphs: mem::take(&mut glyphs_acc),
                     width: line_width.as_f32(),
@@ -280,7 +280,7 @@ pub fn layout(text: &str, styles: &RichTextStyles, max_width: impl IntoPixels) -
             width: line_width.as_f32(),
             trailing_whitespace_width: 0.,
             runs: vec![Run {
-                font_id: warpui::fonts::FontId(0),
+                font_id: twarpui::fonts::FontId(0),
                 styles: Default::default(),
                 glyphs: glyphs_acc,
                 width: line_width.as_f32(),
@@ -316,7 +316,7 @@ pub fn init_logging() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
         env_logger::builder()
-            .parse_filters("warp_editor=trace")
+            .parse_filters("twarp_editor=trace")
             .is_test(true)
             .init();
     });

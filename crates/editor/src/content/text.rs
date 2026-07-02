@@ -30,11 +30,11 @@ use std::{
 };
 use string_offset::{ByteOffset, CharOffset, impl_offset};
 use sum_tree::{Cursor, SeekBias, SumTree};
-use warp_core::features::FeatureFlag;
-use warpui::elements::ListIndentLevel;
-use warpui::text::BlockHeaderSize as HeaderSize;
-use warpui::text::point::Point;
-use warpui::{
+use twarp_core::features::FeatureFlag;
+use twarpui::elements::ListIndentLevel;
+use twarpui::text::BlockHeaderSize as HeaderSize;
+use twarpui::text::point::Point;
+use twarpui::{
     AppContext,
     fonts::{Properties, Style, Weight},
 };

@@ -6,15 +6,15 @@ use std::collections::HashMap;
 use std::ops::Range;
 use string_offset::CharOffset;
 #[cfg(not(target_family = "wasm"))]
-use warp_core::channel::ChannelState;
-use warp_core::send_telemetry_from_ctx;
+use twarp_core::channel::ChannelState;
+use twarp_core::send_telemetry_from_ctx;
 #[cfg(not(target_family = "wasm"))]
-use warp_editor::content::find::SearchConfig;
+use twarp_editor::content::find::SearchConfig;
 #[cfg(not(target_family = "wasm"))]
-use warp_editor::search::Searcher;
-use warp_editor::search::{RestorableSearchResults, SelectedResult};
-use warpui::WeakViewHandle;
-use warpui::{
+use twarp_editor::search::Searcher;
+use twarp_editor::search::{RestorableSearchResults, SelectedResult};
+use twarpui::WeakViewHandle;
+use twarpui::{
     r#async::SpawnedFutureHandle, AppContext, Entity, EntityId, ModelContext, ViewHandle,
 };
 
@@ -222,7 +222,7 @@ impl CodeReviewFindModel {
         &self,
         editor_id: EntityId,
         ctx: &AppContext,
-    ) -> Option<warpui::ModelHandle<Searcher>> {
+    ) -> Option<twarpui::ModelHandle<Searcher>> {
         let view = self.weak_view_handle.upgrade(ctx);
         if view.is_none() {
             if ChannelState::enable_debug_features() {

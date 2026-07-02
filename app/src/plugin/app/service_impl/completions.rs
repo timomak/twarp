@@ -3,7 +3,7 @@
 use std::{fmt, sync::Arc};
 
 use async_trait::async_trait;
-use warp_completer::signatures::CommandRegistry;
+use twarp_completer::signatures::CommandRegistry;
 
 use crate::plugin::service::{
     RegisterCommandSignatureRequest, RegisterCommandSignatureResponse,

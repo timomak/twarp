@@ -3,21 +3,21 @@ use std::collections::HashMap;
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use cynic::{MutationBuilder, QueryBuilder};
-use warp_graphql::mutations::issue_task_identity_token::{
+use twarp_graphql::mutations::issue_task_identity_token::{
     IssueTaskIdentityToken, IssueTaskIdentityTokenInput, IssueTaskIdentityTokenResult,
     IssueTaskIdentityTokenVariables,
 };
-use warp_graphql::object_permissions::OwnerType;
-use warp_graphql::queries::list_managed_secrets::{
+use twarp_graphql::object_permissions::OwnerType;
+use twarp_graphql::queries::list_managed_secrets::{
     ListManagedSecrets, ListManagedSecretsVariables, ManagedSecretsInput, ManagedSecretsResult,
 };
-use warp_graphql::queries::managed_secret_config::{
+use twarp_graphql::queries::managed_secret_config::{
     GetManagedSecretConfig, GetManagedSecretConfigVariables, UserResult,
 };
-use warp_graphql::queries::task_secrets::{
+use twarp_graphql::queries::task_secrets::{
     ManagedSecretValue, TaskSecrets, TaskSecretsInput, TaskSecretsResult, TaskSecretsVariables,
 };
-use warp_graphql::{
+use twarp_graphql::{
     managed_secrets::{ManagedSecret, ManagedSecretType},
     mutations::{
         create_managed_secret::{
@@ -35,12 +35,12 @@ use warp_graphql::{
     },
     object_permissions::Owner,
 };
-use warp_managed_secrets::client::{SecretOwner, TaskIdentityToken};
+use twarp_managed_secrets::client::{SecretOwner, TaskIdentityToken};
 
 use super::ServerApi;
 use crate::server::graphql::{get_request_context, get_user_facing_error_message};
 
-pub use warp_managed_secrets::client::{ManagedSecretConfigs, ManagedSecretsClient};
+pub use twarp_managed_secrets::client::{ManagedSecretConfigs, ManagedSecretsClient};
 
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
@@ -254,7 +254,7 @@ impl ManagedSecretsClient for ServerApi {
 
     async fn issue_task_identity_token(
         &self,
-        options: warp_managed_secrets::client::IdentityTokenOptions,
+        options: twarp_managed_secrets::client::IdentityTokenOptions,
     ) -> Result<TaskIdentityToken> {
         let requested_duration_seconds = options
             .requested_duration

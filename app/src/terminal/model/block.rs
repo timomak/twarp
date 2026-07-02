@@ -3,7 +3,7 @@ mod serialized_block;
 
 pub use interaction_mode::*;
 pub use serialized_block::*;
-use warp_core::features::FeatureFlag;
+use twarp_core::features::FeatureFlag;
 
 use super::grid::grid_handler::{GridHandler, PerformResetGridChecks};
 use super::grid::{Cursor, RespectDisplayedOutput};
@@ -16,7 +16,7 @@ use super::selection::ScrollDelta;
 use super::session::{command_executor, Sessions};
 pub use super::BlockId;
 use super::{bootstrap::BootstrapStage, find::RegexDFAs};
-use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
+use twarp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
 
 // twarp: 2c-d — AI agent view / redaction deleted; stubs unified across modules.
 use crate::app_state::AIConversationId;
@@ -115,11 +115,11 @@ use hex;
 use instant::Instant;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::Vector2F;
-use warp_core::command::ExitCode;
-use warp_terminal::model::grid::Dimensions as _;
-use warp_util::path::user_friendly_path;
-use warpui::units::{IntoLines, Lines};
-use warpui::{r#async::executor::Background, record_trace_event};
+use twarp_core::command::ExitCode;
+use twarp_terminal::model::grid::Dimensions as _;
+use twarp_util::path::user_friendly_path;
+use twarpui::units::{IntoLines, Lines};
+use twarpui::{r#async::executor::Background, record_trace_event};
 
 use enum_iterator::all;
 use lazy_static::lazy_static;
@@ -2236,7 +2236,7 @@ impl Block {
         let escape_char = session.shell_family().escape_char();
 
         // Parse the raw command string to get the top-level command.
-        let command = warp_completer::parsers::simple::top_level_command(
+        let command = twarp_completer::parsers::simple::top_level_command(
             self.command_to_string(),
             escape_char,
         )?;
@@ -2246,7 +2246,7 @@ impl Block {
             .alias_value(command.as_str())
             .map(|s| s.to_owned())
             // An alias can technically expand into an entire command (e.g. "gl" => "PAGER=0 git log").
-            .and_then(|s| warp_completer::parsers::simple::top_level_command(s, escape_char))
+            .and_then(|s| twarp_completer::parsers::simple::top_level_command(s, escape_char))
             // If alias expansion didn't work, then just return the original top-level command.
             .or(Some(command))
     }
@@ -2564,7 +2564,7 @@ impl Block {
 
         self.background_executor
             .spawn(async move {
-                warpui::r#async::Timer::after(std::time::Duration::from_millis(delay_ms)).await;
+                twarpui::r#async::Timer::after(std::time::Duration::from_millis(delay_ms)).await;
                 ready_to_render.store(true, Ordering::Relaxed);
                 event_proxy.send_wakeup_event();
             })
@@ -2885,7 +2885,7 @@ impl Block {
     }
 
     pub fn grid_storage_lines(&self) -> usize {
-        use warp_terminal::model::grid::Dimensions as _;
+        use twarp_terminal::model::grid::Dimensions as _;
 
         self.all_grids_iter()
             .map(|grid| grid.grid_storage().total_rows())

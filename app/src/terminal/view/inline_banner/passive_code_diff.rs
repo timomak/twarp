@@ -1,5 +1,5 @@
-use warpui::elements::{Border, ChildView, Container};
-use warpui::{AppContext, Element, Entity, SingletonEntity, View, ViewHandle};
+use twarpui::elements::{Border, ChildView, Container};
+use twarpui::{AppContext, Element, Entity, SingletonEntity, View, ViewHandle};
 
 // twarp: 2c-d — code diff view / inline action header deleted; stubs.
 pub struct CodeDiffView;
@@ -11,7 +11,7 @@ impl View for CodeDiffView {
         "CodeDiffView/twarp-stub"
     }
     fn render(&self, _: &AppContext) -> Box<dyn Element> {
-        warpui::elements::Empty::new().finish()
+        twarpui::elements::Empty::new().finish()
     }
 }
 pub const INLINE_ACTION_HORIZONTAL_PADDING: f32 = 12.0;

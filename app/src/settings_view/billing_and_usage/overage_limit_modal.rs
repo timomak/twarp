@@ -1,4 +1,4 @@
-use warpui::{
+use twarpui::{
     elements::{Align, Clipped},
     ui_components::components::{Coords, UiComponentStyles},
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
@@ -8,7 +8,7 @@ use crate::{
     editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions, TextOptions},
     Appearance,
 };
-use warpui::{
+use twarpui::{
     elements::{
         Border, ChildView, Container, CornerRadius, CrossAxisAlignment, Expanded, Flex,
         MouseStateHandle, Padding, ParentElement, Radius, Text,

@@ -2,14 +2,14 @@ use std::{cmp::Ordering, collections::HashMap};
 
 use anyhow::Error;
 use pathfinder_geometry::vector::vec2f;
-use warp_core::{
+use twarp_core::{
     features::FeatureFlag,
     ui::{
         appearance::Appearance,
         theme::{color::internal_colors::neutral_4, Fill},
     },
 };
-use warpui::{
+use twarpui::{
     elements::{
         ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss, Flex, Hoverable,
         MainAxisAlignment, MainAxisSize, MouseState, MouseStateHandle, ParentElement, Radius,

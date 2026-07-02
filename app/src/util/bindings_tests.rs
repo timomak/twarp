@@ -1,5 +1,5 @@
-use warpui::platform::OperatingSystem;
-use warpui::{
+use twarpui::platform::OperatingSystem;
+use twarpui::{
     keymap::{EditableBinding, Keystroke, Trigger},
     App,
 };

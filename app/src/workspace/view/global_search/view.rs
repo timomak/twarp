@@ -10,8 +10,8 @@ use crate::coding_panel_enablement_state::CodingPanelEnablementState;
 use async_channel::Sender;
 use pathfinder_geometry::vector::vec2f;
 use string_offset::{ByteOffset, CharCounter};
-use warp_editor::editor::NavigationKey;
-use warp_ripgrep::search::{Match as RipgrepMatch, Submatch};
+use twarp_editor::editor::NavigationKey;
+use twarp_ripgrep::search::{Match as RipgrepMatch, Submatch};
 
 use crate::code::icon_from_file_path;
 use crate::debounce::debounce;
@@ -28,12 +28,12 @@ use crate::view_components::action_button::{ActionButton, ButtonSize, NakedTheme
 use crate::workspace::view::global_search::model::GlobalSearch;
 use crate::workspace::view::global_search::SearchConfig;
 use crate::TelemetryEvent;
-use warp_core::send_telemetry_from_ctx;
-use warp_core::ui::appearance::Appearance;
-use warp_core::ui::theme::color::internal_colors;
-use warp_core::ui::theme::{AnsiColorIdentifier, Fill as ThemeFill};
-use warp_core::ui::Icon;
-use warpui::elements::{
+use twarp_core::send_telemetry_from_ctx;
+use twarp_core::ui::appearance::Appearance;
+use twarp_core::ui::theme::color::internal_colors;
+use twarp_core::ui::theme::{AnsiColorIdentifier, Fill as ThemeFill};
+use twarp_core::ui::Icon;
+use twarpui::elements::{
     Border, ChildAnchor, ChildView, Clipped, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, DispatchEventResult, Empty, EventHandler, Fill, Flex, FormattedTextElement,
     Highlight, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
@@ -41,13 +41,13 @@ use warpui::elements::{
     Scrollable, ScrollableElement, ScrollbarWidth, Shrinkable, Stack, Text, UniformList,
     UniformListState,
 };
-use warpui::fonts::{Properties, Weight};
-use warpui::keymap::FixedBinding;
-use warpui::platform::Cursor;
-use warpui::text_layout::{TextAlignment, TextStyle};
-use warpui::ui_components::components::{UiComponent as _, UiComponentStyles};
-use warpui::ui_components::text::Span;
-use warpui::{
+use twarpui::fonts::{Properties, Weight};
+use twarpui::keymap::FixedBinding;
+use twarpui::platform::Cursor;
+use twarpui::text_layout::{TextAlignment, TextStyle};
+use twarpui::ui_components::components::{UiComponent as _, UiComponentStyles};
+use twarpui::ui_components::text::Span;
+use twarpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle, WeakViewHandle,
 };
@@ -617,7 +617,7 @@ impl GlobalSearchView {
     }
 
     pub fn init(app: &mut AppContext) {
-        use warpui::keymap::macros::*;
+        use twarpui::keymap::macros::*;
 
         app.register_fixed_bindings([
             FixedBinding::new(
@@ -1078,7 +1078,7 @@ impl GlobalSearchView {
         // Ancestor-dedup search roots so we don't search the same file twice
         // when terminal directories are nested (e.g. `~/code` + `~/code/a`).
         // Shared with `FileTreeView` for consistency.
-        self.search_roots = warp_util::path::group_roots_by_common_ancestor(&roots).roots;
+        self.search_roots = twarp_util::path::group_roots_by_common_ancestor(&roots).roots;
         self.root_directories = roots;
     }
 
@@ -1168,7 +1168,7 @@ impl GlobalSearchView {
         directory_path: &Path,
         matched_path: &MatchedPath,
         appearance: &Appearance,
-        theme: &warp_core::ui::theme::WarpTheme,
+        theme: &twarp_core::ui::theme::WarpTheme,
         app: &AppContext,
     ) -> Box<dyn Element> {
         let is_selected = self.is_row_at_index_selected(index);
@@ -1343,7 +1343,7 @@ impl GlobalSearchView {
         matched: &Match,
         match_index: usize,
         appearance: &Appearance,
-        theme: &warp_core::ui::theme::WarpTheme,
+        theme: &twarp_core::ui::theme::WarpTheme,
     ) -> Box<dyn Element> {
         let is_selected = self.is_row_at_index_selected(index);
         let line_number = matched.line_number;
@@ -1947,7 +1947,7 @@ impl GlobalSearchView {
         index: usize,
         dir_entry: &DirectoryEntry,
         appearance: &Appearance,
-        theme: &warp_core::ui::theme::WarpTheme,
+        theme: &twarp_core::ui::theme::WarpTheme,
     ) -> Box<dyn Element> {
         let is_selected = self.is_row_at_index_selected(index);
         let mouse_state = dir_entry.mouse_state.clone();
@@ -2153,35 +2153,31 @@ impl View for GlobalSearchView {
 
         // VSCode-style "files to include / exclude" glob inputs, styled to match
         // the query row.
-        let build_filter_row =
-            |editor: &ViewHandle<EditorView>,
-             focus_action: GlobalSearchAction|
-             -> Box<dyn Element> {
-                let input = Flex::row()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_child(
-                        Shrinkable::new(
-                            1.0,
-                            Clipped::new(ChildView::new(editor).finish()).finish(),
-                        )
+        let build_filter_row = |editor: &ViewHandle<EditorView>,
+                                focus_action: GlobalSearchAction|
+         -> Box<dyn Element> {
+            let input = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(
+                    Shrinkable::new(1.0, Clipped::new(ChildView::new(editor).finish()).finish())
                         .finish(),
-                    )
-                    .finish();
+                )
+                .finish();
 
-                let container = Container::new(input)
-                    .with_padding(Padding::uniform(6.))
-                    .with_border(Border::all(BORDER_WIDTH).with_border_fill(theme.surface_3()))
-                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(BORDER_RADIUS)))
-                    .with_margin_bottom(4.)
-                    .finish();
+            let container = Container::new(input)
+                .with_padding(Padding::uniform(6.))
+                .with_border(Border::all(BORDER_WIDTH).with_border_fill(theme.surface_3()))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(BORDER_RADIUS)))
+                .with_margin_bottom(4.)
+                .finish();
 
-                EventHandler::new(container)
-                    .on_left_mouse_down(move |ctx, _, _| {
-                        ctx.dispatch_typed_action(focus_action.clone());
-                        DispatchEventResult::StopPropagation
-                    })
-                    .finish()
-            };
+            EventHandler::new(container)
+                .on_left_mouse_down(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(focus_action.clone());
+                    DispatchEventResult::StopPropagation
+                })
+                .finish()
+        };
 
         let include_row =
             build_filter_row(&self.include_editor, GlobalSearchAction::FocusIncludeEditor);

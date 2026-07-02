@@ -8,23 +8,23 @@ use bimap::BiMap;
 use futures_util::stream::AbortHandle;
 use lsp::types::TextDocumentContentChangeEvent;
 use lsp::{LspManagerModel, LspServerLogLevel, LspServerModel};
+use twarp_core::features::FeatureFlag;
+use twarp_editor::content::buffer::Buffer;
+use twarp_editor::content::diff::{text_diff, TextDiff};
+use twarp_editor::content::edit::PreciseDelta;
+use twarp_editor::content::version::BufferVersion;
+use twarp_util::content_version::ContentVersion;
+use twarp_util::file::{FileId, FileLoadError, FileSaveError};
+use twarpui::{Entity, ModelContext, ModelHandle, SingletonEntity, WeakModelHandle};
 use vec1::vec1;
-use warp_core::features::FeatureFlag;
-use warp_editor::content::buffer::Buffer;
-use warp_editor::content::diff::{text_diff, TextDiff};
-use warp_editor::content::edit::PreciseDelta;
-use warp_editor::content::version::BufferVersion;
-use warp_util::content_version::ContentVersion;
-use warp_util::file::{FileId, FileLoadError, FileSaveError};
-use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity, WeakModelHandle};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
         use lsp::LspManagerModelEvent;
-        use warp_files::{FileModelEvent, FileModel};
-        use warp_editor::content::text::IndentBehavior;
-        use warp_editor::content::text::IndentUnit;
-        use warp_editor::content::buffer::EditOrigin;
+        use twarp_files::{FileModelEvent, FileModel};
+        use twarp_editor::content::text::IndentBehavior;
+        use twarp_editor::content::text::IndentUnit;
+        use twarp_editor::content::buffer::EditOrigin;
     }
 }
 
@@ -682,7 +682,7 @@ impl GlobalBufferModel {
         // Subscribe to buffer events for LSP sync.
         let path_clone = path.clone();
         ctx.subscribe_to_model(&buffer, move |me, event, ctx| {
-            use warp_editor::content::buffer::BufferEvent;
+            use twarp_editor::content::buffer::BufferEvent;
 
             let Some(state) = me.buffers.get(&file_id) else {
                 return;
@@ -787,7 +787,7 @@ impl GlobalBufferModel {
 
         let path_clone = path.to_path_buf();
         ctx.subscribe_to_model(&buffer, move |me, event, ctx| {
-            use warp_editor::content::buffer::BufferEvent;
+            use twarp_editor::content::buffer::BufferEvent;
 
             let Some(state) = me.buffers.get(&file_id) else {
                 me.log_lsp_sync_debug(
@@ -920,7 +920,7 @@ impl GlobalBufferModel {
         line_numbers: Vec<usize>,
         ctx: &mut ModelContext<Self>,
     ) -> Option<Vec<(usize, String)>> {
-        use warp_editor::content::text::LineCount;
+        use twarp_editor::content::text::LineCount;
 
         if line_numbers.is_empty() {
             return Some(Vec::new());

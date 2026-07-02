@@ -9,12 +9,12 @@ use anyhow::Result;
 use sha2::Digest;
 use std::path::{Path, PathBuf};
 use std::{env, fs, process::Command};
-use walkdir::WalkDir;
-use warp_util::assets::{
+use twarp_util::assets::{
     ASSETS_DIR, ASYNC_ASSETS_DIR, CONPTY_DLL_FILE, DXCOMPILER_DLL_FILE, DXIL_DLL_FILE,
     OPEN_CONSOLE_EXE_FILE, REMOTE_ASSETS_DIR, WINDOWS_ASSETS_DIR,
 };
-use warp_util::path::app_target_dir;
+use twarp_util::path::app_target_dir;
+use walkdir::WalkDir;
 
 fn main() -> Result<()> {
     cfg_aliases! {
@@ -390,7 +390,7 @@ fn copy_async_assets() {
                 let mut hasher = sha2::Sha256::new();
                 hasher.update(&contents);
                 let hash: [u8; 32] = hasher.finalize().into();
-                let new_relative_path = warp_util::assets::hashed_asset_path(
+                let new_relative_path = twarp_util::assets::hashed_asset_path(
                     asset_path
                         .strip_prefix(&asset_dir)
                         .expect("asset in unexpected location"),

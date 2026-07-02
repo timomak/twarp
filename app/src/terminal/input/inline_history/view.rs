@@ -2,11 +2,11 @@
 use std::collections::HashSet;
 
 use pathfinder_color::ColorU;
-use warp_core::ui::appearance::Appearance;
-use warp_core::ui::theme::color::internal_colors;
-use warp_core::ui::theme::Fill;
-use warpui::elements::ChildView;
-use warpui::{AppContext, Element, Entity, EntityId, ModelHandle, View, ViewContext, ViewHandle};
+use twarp_core::ui::appearance::Appearance;
+use twarp_core::ui::theme::color::internal_colors;
+use twarp_core::ui::theme::Fill;
+use twarpui::elements::ChildView;
+use twarpui::{AppContext, Element, Entity, EntityId, ModelHandle, View, ViewContext, ViewHandle};
 
 use crate::app_state::AIConversationId;
 // twarp: 2c-d — AI agent view deleted; re-export from input.
@@ -521,7 +521,7 @@ impl View for InlineHistoryMenuView {
         "InlineHistoryMenuView"
     }
 
-    fn render(&self, _app: &warpui::AppContext) -> Box<dyn Element> {
+    fn render(&self, _app: &twarpui::AppContext) -> Box<dyn Element> {
         ChildView::new(&self.menu_view).finish()
     }
 }

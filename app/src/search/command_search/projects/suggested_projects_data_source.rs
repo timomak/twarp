@@ -3,7 +3,7 @@ use fuzzy_match::match_indices_case_insensitive;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
+use twarpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::command_search::projects::{os_probably_case_sensitive, ProjectSearchItem};

@@ -7,8 +7,8 @@ use pathfinder_geometry::vector::Vector2F;
 use crate::search::mixer::AddAsyncSourceOptions;
 use lazy_static::lazy_static;
 use std::{collections::HashSet, ops::Range, sync::Arc, time::Duration};
-use warp_core::features::FeatureFlag;
-use warpui::{
+use twarp_core::features::FeatureFlag;
+use twarpui::{
     accessibility::{AccessibilityContent, WarpA11yRole},
     elements::{
         resizable_state_handle, Align, AnchorPair, Border, ConstrainedBox, Container, CornerRadius,
@@ -63,7 +63,7 @@ impl crate::search::mixer::SyncDataSource for AIQueriesDataSource {
     fn run_query(
         &self,
         _query: &crate::search::data_source::Query,
-        _app: &warpui::AppContext,
+        _app: &twarpui::AppContext,
     ) -> Result<
         Vec<crate::search::data_source::QueryResult<Self::Action>>,
         crate::search::mixer::DataSourceRunErrorWrapper,
@@ -581,7 +581,7 @@ impl CommandSearchView {
             .build()
             .finish();
         let row = Flex::row()
-            .with_main_axis_size(warpui::elements::MainAxisSize::Max)
+            .with_main_axis_size(twarpui::elements::MainAxisSize::Max)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(Shrinkable::new(1., text).finish());
 
@@ -644,7 +644,7 @@ impl CommandSearchView {
 
         Container::new(
             Flex::row()
-                .with_main_axis_size(warpui::elements::MainAxisSize::Max)
+                .with_main_axis_size(twarpui::elements::MainAxisSize::Max)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_child(Shrinkable::new(1., text).finish())
                 .finish(),
@@ -663,7 +663,7 @@ impl CommandSearchView {
         user_id: UserUid,
     ) -> Box<dyn Element> {
         let mut row = Flex::row()
-            .with_main_axis_size(warpui::elements::MainAxisSize::Max)
+            .with_main_axis_size(twarpui::elements::MainAxisSize::Max)
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         let upgrade_link = team_uid
@@ -992,7 +992,7 @@ impl View for CommandSearchView {
         ))
     }
 
-    fn render(&self, app: &AppContext) -> Box<dyn warpui::Element> {
+    fn render(&self, app: &AppContext) -> Box<dyn twarpui::Element> {
         let appearance = Appearance::as_ref(app);
         let mixer = self.mixer.as_ref(app);
 
@@ -1104,7 +1104,7 @@ impl CommandSearchView {
 pub mod styles {
     use lazy_static::lazy_static;
     use pathfinder_color::ColorU;
-    use warpui::elements::{Border, DropShadow, ScrollbarWidth};
+    use twarpui::elements::{Border, DropShadow, ScrollbarWidth};
 
     use crate::{appearance::Appearance, themes::theme::Fill};
 

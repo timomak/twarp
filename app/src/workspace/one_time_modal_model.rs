@@ -8,8 +8,8 @@ use crate::settings::cloud_preferences_syncer::{
 use crate::settings::{AISettings, CodeSettings};
 use crate::terminal::general_settings::GeneralSettings;
 use settings::Setting as _;
-use warp_core::features::FeatureFlag;
-use warpui::{Entity, ModelContext, SingletonEntity, WindowId};
+use twarp_core::features::FeatureFlag;
+use twarpui::{Entity, ModelContext, SingletonEntity, WindowId};
 
 /// A generic model for managing one-time modals that should be shown to users only once.
 ///

@@ -12,16 +12,16 @@ pub(crate) use modal_shell::{
 
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::vec2f;
-use warp_core::ui::theme::Fill;
-use warpui::elements::{
+use twarp_core::ui::theme::Fill;
+use twarpui::elements::{
     Border, ConstrainedBox, Container, CrossAxisAlignment, Dash, DispatchEventResult, Draggable,
     DraggableState, Element, Empty, EventHandler, Flex, Hoverable, MouseStateHandle,
     OffsetPositioning, ParentElement, ParentOffsetBounds, SavePosition, Stack, Text, Wrap,
 };
-use warpui::fonts::Properties;
-use warpui::platform::Cursor;
-use warpui::ui_components::components::UiComponent;
-use warpui::{Action, View, ViewContext};
+use twarpui::fonts::Properties;
+use twarpui::platform::Cursor;
+use twarpui::ui_components::components::UiComponent;
+use twarpui::{Action, View, ViewContext};
 
 // twarp 2c-d: stub replacement for the removed AI agent toolbar item kind. The chip
 // configurator was originally generic over `AgentToolbarItemKind`; with the AI feature
@@ -288,8 +288,8 @@ impl ControlItemRenderer {
                 OffsetPositioning::offset_from_parent(
                     vec2f(0., -2.5 * font_size),
                     ParentOffsetBounds::Unbounded,
-                    warpui::elements::ParentAnchor::Center,
-                    warpui::elements::ChildAnchor::Center,
+                    twarpui::elements::ParentAnchor::Center,
+                    twarpui::elements::ChildAnchor::Center,
                 ),
             );
             stack.finish()

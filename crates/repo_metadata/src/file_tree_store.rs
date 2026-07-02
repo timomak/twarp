@@ -4,8 +4,8 @@ use crate::file_tree_store::file_tree_state::FileTreeMapStore;
 use crate::{BuildTreeError, Entry, FileId, FileMetadata, Repository};
 use ignore::gitignore::Gitignore;
 use std::sync::Arc;
-use warp_util::standardized_path::StandardizedPath;
-use warpui::ModelHandle;
+use twarp_util::standardized_path::StandardizedPath;
+use twarpui::ModelHandle;
 
 #[derive(Debug, Clone)]
 pub struct FileTreeEntry {

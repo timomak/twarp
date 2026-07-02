@@ -1,5 +1,5 @@
-use warp_core::{context_flag::ContextFlag, features::FeatureFlag};
-use warpui::ViewContext;
+use twarp_core::{context_flag::ContextFlag, features::FeatureFlag};
+use twarpui::ViewContext;
 
 use super::{
     ContentItem, ContentSectionData, FeatureItem, FeatureSection, FeatureSectionData,

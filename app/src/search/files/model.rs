@@ -8,7 +8,7 @@ use std::{
     collections::HashSet,
     path::{Path, PathBuf},
 };
-use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
+use twarpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
@@ -156,13 +156,17 @@ impl FileSearchModel {
             // Include gitignored files so they show up in the finder, but keep the
             // `.git` internal directory out. (Files nested inside gitignored
             // directories are still lazy — the index doesn't descend into them.)
-            let args = GetContentsArgs::default().include_ignored().with_filter(|content| {
-                let path = match content {
-                    repo_metadata::RepoContent::File(file) => file.path.to_local_path_lossy(),
-                    repo_metadata::RepoContent::Directory(dir) => dir.path.to_local_path_lossy(),
-                };
-                !repo_metadata::is_git_internal_path(&path)
-            });
+            let args = GetContentsArgs::default()
+                .include_ignored()
+                .with_filter(|content| {
+                    let path = match content {
+                        repo_metadata::RepoContent::File(file) => file.path.to_local_path_lossy(),
+                        repo_metadata::RepoContent::Directory(dir) => {
+                            dir.path.to_local_path_lossy()
+                        }
+                    };
+                    !repo_metadata::is_git_internal_path(&path)
+                });
             self.get_contents_from_repo(&repo_root, repo_metadata, args, app)
         } else {
             Vec::new()

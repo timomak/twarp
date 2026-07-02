@@ -10,15 +10,15 @@
 use crate::app_state::{AIConversationId, ConversationStatus};
 pub use crate::terminal::input::AgentViewController;
 pub struct BlocklistAIHistoryModel;
-impl warpui::Entity for BlocklistAIHistoryModel {
+impl twarpui::Entity for BlocklistAIHistoryModel {
     type Event = crate::terminal::input::BlocklistAIHistoryEvent;
 }
-impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+impl twarpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
     pub fn all_live_conversations_for_terminal_view(
         &self,
-        _: warpui::EntityId,
+        _: twarpui::EntityId,
     ) -> Vec<crate::app_state::AIConversationId> {
         Vec::new()
     }
@@ -38,7 +38,7 @@ use crate::terminal::model::session::SessionId;
 use chrono::{DateTime, Local};
 use fuzzy_match::FuzzyMatchResult;
 use ordered_float::OrderedFloat;
-use warpui::{AppContext, Entity, EntityId, ModelHandle, SingletonEntity};
+use twarpui::{AppContext, Entity, EntityId, ModelHandle, SingletonEntity};
 
 #[derive(Clone, Debug)]
 pub enum AcceptHistoryItem {

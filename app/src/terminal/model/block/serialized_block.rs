@@ -16,7 +16,7 @@ use crate::util::extensions::TrimStringExt;
 use chrono::{DateTime, Local, TimeZone as _};
 use serde::{Deserialize, Serialize};
 use serde_bytes_repr::{ByteFmtDeserializer, ByteFmtSerializer};
-use warp_core::command::ExitCode;
+use twarp_core::command::ExitCode;
 
 use super::AgentInteractionMetadata;
 

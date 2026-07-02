@@ -11,8 +11,8 @@ use std::sync::Arc;
 use std::{fs, io};
 use std::{io::Write as _, time::Duration};
 use tempfile::TempPath;
-use warp_core::channel::{Channel, ChannelState};
-use warpui::AppContext;
+use twarp_core::channel::{Channel, ChannelState};
+use twarpui::AppContext;
 
 use super::{release_assets_directory_url, DownloadReady};
 use crate::util::windows::install_dir;
@@ -74,7 +74,7 @@ pub(super) async fn download_update_and_cleanup(
 const UPDATE_LOG_FILENAME: &str = "warp_update.log";
 
 fn autoupdate_log_file() -> Result<PathBuf> {
-    warp_logging::log_directory().map(|dir| dir.join(UPDATE_LOG_FILENAME))
+    twarp_logging::log_directory().map(|dir| dir.join(UPDATE_LOG_FILENAME))
 }
 
 /// Parses the taskkill exit code from an Inno Setup log containing a

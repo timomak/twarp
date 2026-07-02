@@ -17,10 +17,10 @@ pub fn find_secrets_in_text(_text: &str) -> Vec<()> {
     Vec::new()
 }
 pub struct AIRequestUsageModel;
-impl warpui::Entity for AIRequestUsageModel {
+impl twarpui::Entity for AIRequestUsageModel {
     type Event = ();
 }
-impl warpui::SingletonEntity for AIRequestUsageModel {}
+impl twarpui::SingletonEntity for AIRequestUsageModel {}
 pub enum GeneratedCommandMetadataError {
     Other,
     RateLimited,
@@ -104,9 +104,9 @@ use crate::{
     FeatureFlag, UserWorkspaces,
 };
 
-use warp_core::{context_flag::ContextFlag, settings::Setting, ui::theme::AnsiColorIdentifier};
-use warp_editor::editor::NavigationKey;
-use warpui::{
+use twarp_core::{context_flag::ContextFlag, settings::Setting, ui::theme::AnsiColorIdentifier};
+use twarp_editor::editor::NavigationKey;
+use twarpui::{
     clipboard::ClipboardContent,
     elements::{
         Align, Border, ChildAnchor, ChildView, Clipped, ClippedScrollStateHandle,
@@ -142,7 +142,7 @@ pub mod env_var_selector;
 mod syntax_highlightable;
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::id;
+    use twarpui::keymap::macros::id;
     app.register_editable_bindings([EditableBinding::new(
         "workflowview:save",
         "Save workflow",
@@ -3087,7 +3087,7 @@ impl View for WorkflowView {
                 SCROLLBAR_WIDTH,
                 theme.nonactive_ui_detail().into(),
                 theme.active_ui_detail().into(),
-                warpui::elements::Fill::None,
+                twarpui::elements::Fill::None,
             )
             .finish(),
         );

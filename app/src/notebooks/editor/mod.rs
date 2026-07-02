@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use markdown_parser::markdown_parser::CODE_BLOCK_DEFAULT_MARKDOWN_LANG;
 use pathfinder_color::ColorU;
-use warp_core::ui::{builder::CHECK_SVG_PATH, theme::color::internal_colors};
-use warp_editor::{
+use twarp_core::ui::{builder::CHECK_SVG_PATH, theme::color::internal_colors};
+use twarp_editor::{
     content::text::{
         BlockHeaderSize, BlockType as ContentBlockType, BufferBlockStyle, CodeBlockType,
     },
@@ -14,8 +14,8 @@ use warp_editor::{
         ParagraphStyles, RichTextStyles, TableStyle, PARAGRAPH_MIN_HEIGHT,
     },
 };
-use warp_util::user_input::UserInput;
-use warpui::{elements::Border, fonts::FamilyId, ui_components::checkbox::HOVER_BACKGROUND_COLOR};
+use twarp_util::user_input::UserInput;
+use twarpui::{elements::Border, fonts::FamilyId, ui_components::checkbox::HOVER_BACKGROUND_COLOR};
 
 use crate::{
     appearance::Appearance,
@@ -40,7 +40,7 @@ mod omnibar;
 pub mod view;
 
 pub use block_insertion_menu::BlockInsertionSource;
-use warpui::elements::ListIndentLevel;
+use twarpui::elements::ListIndentLevel;
 
 const NOTEBOOK_LINE_HEIGHT_RATIO: f32 = 1.6;
 const NOTEBOOK_BASELINE_RATIO: f32 = 0.7;

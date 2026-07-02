@@ -7,11 +7,11 @@ pub use view::*;
 
 // twarp: 2c-e — SkillReference is now a stub in `crate::app_state`.
 use crate::app_state::SkillReference;
-use warp_core::features::FeatureFlag;
-use warp_core::send_telemetry_from_ctx;
-use warp_core::ui::appearance::Appearance;
-use warpui::clipboard::ClipboardContent;
-use warpui::{SingletonEntity, ViewContext};
+use twarp_core::features::FeatureFlag;
+use twarp_core::send_telemetry_from_ctx;
+use twarp_core::ui::appearance::Appearance;
+use twarpui::clipboard::ClipboardContent;
+use twarpui::{SingletonEntity, ViewContext};
 
 // twarp: 2c-d — AI agent view / blocklist deleted; stubs.
 use crate::app_state::AgentViewEntryOrigin;
@@ -29,10 +29,10 @@ impl EphemeralMessage {
 pub const ENTER_OR_EXIT_CONFIRMATION_WINDOW: std::time::Duration =
     std::time::Duration::from_secs(0);
 pub struct BlocklistAIHistoryModel;
-impl warpui::Entity for BlocklistAIHistoryModel {
+impl twarpui::Entity for BlocklistAIHistoryModel {
     type Event = crate::terminal::input::BlocklistAIHistoryEvent;
 }
-impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+impl twarpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
     pub fn conversation<I>(&self, _: I) -> Option<crate::app_state::AIConversationId> {
@@ -40,7 +40,7 @@ impl BlocklistAIHistoryModel {
     }
     pub fn active_conversation(
         &self,
-        _: warpui::EntityId,
+        _: twarpui::EntityId,
     ) -> Option<crate::app_state::AIConversationId> {
         None
     }
@@ -475,7 +475,7 @@ impl Input {
                 match argument {
                     Some(args) if !args.is_empty() => {
                         use shellexpand::tilde;
-                        use warp_util::path::CleanPathResult;
+                        use twarp_util::path::CleanPathResult;
 
                         let Some(session_id) = self.active_block_session_id() else {
                             return false;

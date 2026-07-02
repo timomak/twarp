@@ -146,9 +146,14 @@ fn parse_shell_id(ack: &str) -> Option<String> {
 /// happens to contain the word "completed" doesn't falsely retire a live script.
 fn poll_reports_done(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
-    ["<status>completed", "<status>killed", "status: completed", "status: killed"]
-        .iter()
-        .any(|marker| lower.contains(marker))
+    [
+        "<status>completed",
+        "<status>killed",
+        "status: completed",
+        "status: killed",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
 }
 
 /// Append captured output to a script, keeping a blank-line separator between
@@ -296,14 +301,21 @@ mod tests {
     fn foreground_bash_is_not_a_background_script() {
         let items = vec![tool("Bash", json!({ "command": "ls" }), Some("a.txt"))];
         assert!(collect(&items).is_empty());
-        let explicit_false =
-            vec![tool("Bash", json!({ "command": "ls", "run_in_background": false }), None)];
+        let explicit_false = vec![tool(
+            "Bash",
+            json!({ "command": "ls", "run_in_background": false }),
+            None,
+        )];
         assert!(collect(&explicit_false).is_empty());
     }
 
     #[test]
     fn background_launch_starts_running_with_command() {
-        let items = vec![launch("t1", "npm run dev", "Running in background with ID: bash_1")];
+        let items = vec![launch(
+            "t1",
+            "npm run dev",
+            "Running in background with ID: bash_1",
+        )];
         let scripts = collect(&items);
         assert_eq!(scripts.len(), 1);
         assert_eq!(scripts[0].command, "npm run dev");
@@ -321,7 +333,10 @@ mod tests {
             output: None,
             children: Vec::new(),
         }];
-        assert_eq!(collect(&items)[0].state, BackgroundScriptState::LaunchFailed);
+        assert_eq!(
+            collect(&items)[0].state,
+            BackgroundScriptState::LaunchFailed
+        );
     }
 
     #[test]
@@ -354,7 +369,11 @@ mod tests {
     fn launch_ack_reporting_done_finishes_without_a_poll() {
         // A fast command whose launch acknowledgement already carries a status
         // marker is finished immediately — no BashOutput poll required.
-        let items = vec![launch("t1", "cd /tmp", "started bash_1\n<status>completed</status>")];
+        let items = vec![launch(
+            "t1",
+            "cd /tmp",
+            "started bash_1\n<status>completed</status>",
+        )];
         assert_eq!(collect(&items)[0].state, BackgroundScriptState::Finished);
     }
 
@@ -378,11 +397,18 @@ mod tests {
         let items = vec![
             launch("t1", "server", "bash_2"),
             tool("KillShell", json!({ "shell_id": "bash_2" }), None),
-            tool("BashOutput", json!({ "bash_id": "bash_2" }), Some("late output")),
+            tool(
+                "BashOutput",
+                json!({ "bash_id": "bash_2" }),
+                Some("late output"),
+            ),
         ];
         let scripts = collect(&items);
         assert_eq!(scripts[0].state, BackgroundScriptState::Killed);
-        assert!(scripts[0].output.contains("late output"), "output still captured");
+        assert!(
+            scripts[0].output.contains("late output"),
+            "output still captured"
+        );
     }
 
     #[test]
@@ -415,10 +441,16 @@ mod tests {
     #[test]
     fn parse_shell_id_handles_phrasings() {
         // The conventional `bash_<n>` handle is found wherever it sits.
-        assert_eq!(parse_shell_id("Command running with ID: bash_42").as_deref(), Some("bash_42"));
+        assert_eq!(
+            parse_shell_id("Command running with ID: bash_42").as_deref(),
+            Some("bash_42")
+        );
         assert_eq!(parse_shell_id("started bash_7").as_deref(), Some("bash_7"));
         // A labeled, separator-delimited id is the fallback.
-        assert_eq!(parse_shell_id("shell-id: abc123").as_deref(), Some("abc123"));
+        assert_eq!(
+            parse_shell_id("shell-id: abc123").as_deref(),
+            Some("abc123")
+        );
         assert_eq!(parse_shell_id("ID=xyz-9").as_deref(), Some("xyz-9"));
         // Prose without a `bash_` handle or a labeled id yields nothing, rather
         // than latching onto a stray word ("id is abc" must not return "is").

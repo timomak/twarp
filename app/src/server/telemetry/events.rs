@@ -10,14 +10,14 @@ use session_sharing_protocol::common::SessionId as SharedSessionId;
 use session_sharing_protocol::sharer::SessionEndedReason;
 use strum_macros::EnumDiscriminants;
 use strum_macros::EnumIter;
-use warp_completer::completer::MatchType;
-use warp_core::command::ExitCode;
-use warp_core::telemetry::EnablementState;
-use warp_core::telemetry::TelemetryEvent as TelemetryEventTrait;
-use warp_core::telemetry::TelemetryEventDesc;
-use warpui::keymap::Keystroke;
-use warpui::notification::{NotificationSendError, RequestPermissionsOutcome};
-use warpui::rendering::ThinStrokes;
+use twarp_completer::completer::MatchType;
+use twarp_core::command::ExitCode;
+use twarp_core::telemetry::EnablementState;
+use twarp_core::telemetry::TelemetryEvent as TelemetryEventTrait;
+use twarp_core::telemetry::TelemetryEventDesc;
+use twarpui::keymap::Keystroke;
+use twarpui::notification::{NotificationSendError, RequestPermissionsOutcome};
+use twarpui::rendering::ThinStrokes;
 
 // twarp: 2c-d — AI types from deleted modules replaced with local stubs.
 // Variant *definitions* are 2d-scope (kept). Field types referencing deleted
@@ -90,7 +90,7 @@ use crate::workspace::tab_settings::TabCloseButtonPosition;
 use crate::workspace::tab_settings::WorkspaceDecorationVisibility;
 use crate::workspace::TabMovement;
 use session_sharing_protocol::sharer::SessionSourceType;
-use warp_core::interval_timer::TimingDataPoint;
+use twarp_core::interval_timer::TimingDataPoint;
 
 // twarp: stub types replacing deleted AI types referenced by remaining
 // telemetry variants. These preserve schema shape for variants that still
@@ -2481,7 +2481,7 @@ pub enum TelemetryEvent {
     },
     /// Detected that Warp is running in an isolated sandbox.
     DetectedIsolationPlatform {
-        platform: warp_isolation_platform::IsolationPlatformType,
+        platform: twarp_isolation_platform::IsolationPlatformType,
     },
 
     AgentTipShown {
@@ -2704,7 +2704,7 @@ impl TelemetryEventTrait for TelemetryEvent {
     }
 
     fn event_descs() -> impl Iterator<Item = Box<dyn TelemetryEventDesc>> {
-        warp_core::telemetry::enum_events::<Self>()
+        twarp_core::telemetry::enum_events::<Self>()
     }
 }
 
@@ -4815,7 +4815,7 @@ impl TelemetryEvent {
         // We initialize the feature flags so that we can determine which telemetry events to print.
         crate::init_feature_flags();
 
-        let events: serde_json::Map<String, Value> = warp_core::telemetry::all_events()
+        let events: serde_json::Map<String, Value> = twarp_core::telemetry::all_events()
             .filter_map(|event| {
                 if !event.enablement_state().is_enabled() {
                     return None;
@@ -6430,7 +6430,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ObjectLinkCopied => "The web link to an object has been copied.",
             Self::FileTreeToggled => "Opened the file tree/project explorer",
             Self::GlobalSearchOpened => "Opened the global search view",
-            Self::GlobalSearchQueryStarted => "Started a global search (warp_ripgrep) search",
+            Self::GlobalSearchQueryStarted => "Started a global search (twarp_ripgrep) search",
             Self::FileTreeItemAttachedAsContext => {
                 "Attached a file or directory as context from the file tree"
             }
@@ -6734,7 +6734,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
     }
 }
 
-warp_core::register_telemetry_event!(TelemetryEvent);
+twarp_core::register_telemetry_event!(TelemetryEvent);
 
 #[cfg(test)]
 #[path = "events_tests.rs"]

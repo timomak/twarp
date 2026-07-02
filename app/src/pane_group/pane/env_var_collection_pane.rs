@@ -1,5 +1,5 @@
 use anyhow::Context;
-use warpui::{AppContext, ModelHandle, SingletonEntity, ViewContext, ViewHandle};
+use twarpui::{AppContext, ModelHandle, SingletonEntity, ViewContext, ViewHandle};
 
 use crate::{
     app_state::{EnvVarCollectionPaneSnapshot, LeafContents},

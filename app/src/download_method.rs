@@ -4,7 +4,7 @@ use crate::{
     server::telemetry::{DownloadSource, TelemetryEvent},
 };
 use std::sync::Arc;
-use warpui::r#async::executor::Background;
+use twarpui::r#async::executor::Background;
 
 /// Determine the Warp download method (if possible) and send a telemetry event reporting that
 /// method

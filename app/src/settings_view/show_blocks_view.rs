@@ -17,10 +17,10 @@ use anyhow::Result;
 use chrono::{DateTime, FixedOffset, Local};
 use pathfinder_geometry::vector::vec2f;
 use std::sync::Arc;
-use warp_core::ui::theme::color::internal_colors;
-use warpui::ui_components::button::ButtonVariant;
-use warpui::ui_components::components::{UiComponent, UiComponentStyles};
-use warpui::{
+use twarp_core::ui::theme::color::internal_colors;
+use twarpui::ui_components::button::ButtonVariant;
+use twarpui::ui_components::components::{UiComponent, UiComponentStyles};
+use twarpui::{
     clipboard::ClipboardContent,
     elements::{
         Align, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
@@ -30,9 +30,9 @@ use warpui::{
         ScrollableElement, Shrinkable, Stack, UniformList, UniformListState,
     },
 };
-use warpui::{color::ColorU, elements::Radius};
-use warpui::{elements::ScrollbarWidth, fonts::Weight};
-use warpui::{
+use twarpui::{color::ColorU, elements::Radius};
+use twarpui::{elements::ScrollbarWidth, fonts::Weight};
+use twarpui::{
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 

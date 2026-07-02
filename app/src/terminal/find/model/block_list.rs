@@ -2,7 +2,7 @@
 use std::{collections::HashMap, iter, ops::RangeInclusive};
 
 use itertools::Itertools;
-use warpui::{units::Lines, AppContext, EntityId};
+use twarpui::{units::Lines, AppContext, EntityId};
 
 use crate::terminal::{
     model::{

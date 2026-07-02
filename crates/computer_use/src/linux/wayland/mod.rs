@@ -12,7 +12,7 @@ mod session;
 
 use async_trait::async_trait;
 use pathfinder_geometry::vector::Vector2I;
-use warpui::r#async::Timer;
+use twarpui::r#async::Timer;
 
 use crate::{Action, ActionResult, Options};
 

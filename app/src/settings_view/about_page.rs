@@ -9,7 +9,7 @@ use crate::{
     appearance::Appearance, channel::ChannelState, themes::theme::ColorScheme,
     workspace::WorkspaceAction,
 };
-use warpui::{
+use twarpui::{
     assets::asset_cache::AssetSource,
     elements::{
         Align, CacheOption, ConstrainedBox, Container, CrossAxisAlignment, Element, Flex, Image,

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use warpui::{
+use twarpui::{
     platform::WindowStyle, presenter::ChildView, App, Element, Entity, TypedActionView, View,
     ViewHandle, WindowId,
 };
@@ -45,7 +45,7 @@ impl View for TestView {
         "CommentEditorTestView"
     }
 
-    fn render(&self, _app: &warpui::AppContext) -> Box<dyn warpui::Element> {
+    fn render(&self, _app: &twarpui::AppContext) -> Box<dyn twarpui::Element> {
         ChildView::new(&self.editor).finish()
     }
 }

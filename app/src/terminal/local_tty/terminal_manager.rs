@@ -46,10 +46,10 @@ use session_sharing_protocol::common::{
     UniversalDeveloperInputContext,
 };
 use settings::Setting as _;
-use warpui::r#async::executor::Background;
-use warpui::{AppContext, ModelContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
+use twarpui::r#async::executor::Background;
+use twarpui::{AppContext, ModelContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
 
-use warp_core::execution_mode::AppExecutionMode;
+use twarp_core::execution_mode::AppExecutionMode;
 
 // twarp: 2c-d — removed crate::ai::* imports (ActiveAgentViewsModel, AIConversation,
 // AgentViewController*, BlocklistAI*, InputConfig, SerializedBlockListItem)
@@ -1964,7 +1964,7 @@ pub fn get_shell_starter(
     // TODO(alokedesai): Further refactor this function to make it clear that it's expensive.
     shell_starter_or_wsl_name
         .and_then(|starter| {
-            warpui::r#async::block_on(async { starter.to_shell_starter_source().await })
+            twarpui::r#async::block_on(async { starter.to_shell_starter_source().await })
         })
         .map(|starter_source| {
             get_shell_starter_internal(

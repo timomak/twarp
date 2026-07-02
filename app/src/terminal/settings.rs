@@ -4,7 +4,7 @@ use crate::settings::{AISettings, InputSettings, TerminalSpacing};
 use settings::{
     macros::define_settings_group, RespectUserSyncSetting, SupportedPlatforms, SyncToCloud,
 };
-use warpui::{units::Pixels, AppContext, SingletonEntity};
+use twarpui::{units::Pixels, AppContext, SingletonEntity};
 
 #[derive(
     Clone,

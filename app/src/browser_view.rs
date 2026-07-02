@@ -3,22 +3,22 @@ use std::time::Duration;
 
 use browser::{BrowserEngine, BrowserProfile};
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
-use url::Url;
-use warpui::elements::{
+use twarpui::elements::{
     Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Flex, Hoverable,
     MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
 };
-use warpui::text_layout::ClipConfig;
-use warpui::ui_components::components::{UiComponent, UiComponentStyles};
-use warpui::ui_components::text_input::TextInput;
-use warpui::SingletonEntity;
-use warpui::{
+use twarpui::text_layout::ClipConfig;
+use twarpui::ui_components::components::{UiComponent, UiComponentStyles};
+use twarpui::ui_components::text_input::TextInput;
+use twarpui::SingletonEntity;
+use twarpui::{
     r#async::Timer, AfterLayoutContext, AppContext, Entity, EventContext, LayoutContext,
     PaintContext, SizeConstraint, TypedActionView, View, ViewContext, WindowId,
 };
+use url::Url;
 
 #[cfg(target_os = "macos")]
-use warpui::platform::mac::{BrowserWebViewId, Window as MacWindow};
+use twarpui::platform::mac::{BrowserWebViewId, Window as MacWindow};
 
 use crate::appearance::Appearance;
 use crate::editor::{
@@ -138,8 +138,8 @@ pub struct BrowserView {
     window_id: WindowId,
     tabs: Vec<BrowserTab>,
     active_tab_index: usize,
-    omnibar_editor: warpui::ViewHandle<EditorView>,
-    pane_configuration: warpui::ModelHandle<PaneConfiguration>,
+    omnibar_editor: twarpui::ViewHandle<EditorView>,
+    pane_configuration: twarpui::ModelHandle<PaneConfiguration>,
     focus_handle: Option<PaneFocusHandle>,
     history: Vec<BrowserHistoryEntry>,
     show_history: bool,
@@ -208,7 +208,7 @@ impl BrowserView {
         Self::new(url, ctx)
     }
 
-    pub fn pane_configuration(&self) -> warpui::ModelHandle<PaneConfiguration> {
+    pub fn pane_configuration(&self) -> twarpui::ModelHandle<PaneConfiguration> {
         self.pane_configuration.clone()
     }
 
@@ -284,7 +284,7 @@ impl BrowserView {
 
     fn handle_omnibar_editor_event(
         &mut self,
-        _handle: warpui::ViewHandle<EditorView>,
+        _handle: twarpui::ViewHandle<EditorView>,
         event: &EditorEvent,
         ctx: &mut ViewContext<Self>,
     ) {
@@ -916,7 +916,7 @@ impl BackingView for BrowserView {
 struct NativeBrowserElement {
     webview: Option<(WindowId, BrowserWebViewId)>,
     size: Option<Vector2F>,
-    origin: Option<warpui::elements::Point>,
+    origin: Option<twarpui::elements::Point>,
 }
 
 impl NativeBrowserElement {
@@ -957,7 +957,7 @@ impl Element for NativeBrowserElement {
     }
 
     fn paint(&mut self, origin: Vector2F, ctx: &mut PaintContext, _app: &AppContext) {
-        self.origin = Some(warpui::elements::Point::from_vec2f(
+        self.origin = Some(twarpui::elements::Point::from_vec2f(
             origin,
             ctx.scene.z_index(),
         ));
@@ -979,7 +979,7 @@ impl Element for NativeBrowserElement {
 
     fn dispatch_event(
         &mut self,
-        _event: &warpui::event::DispatchedEvent,
+        _event: &twarpui::event::DispatchedEvent,
         _ctx: &mut EventContext,
         _app: &AppContext,
     ) -> bool {
@@ -990,7 +990,7 @@ impl Element for NativeBrowserElement {
         self.size
     }
 
-    fn origin(&self) -> Option<warpui::elements::Point> {
+    fn origin(&self) -> Option<twarpui::elements::Point> {
         self.origin
     }
 }

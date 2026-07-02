@@ -18,28 +18,28 @@ pub mod web_handoff;
 
 // twarp: 2c-d — AI conversations / blocklist / execution profiles deleted; stubs.
 pub struct AgentConversationsModel;
-impl warpui::Entity for AgentConversationsModel {
+impl twarpui::Entity for AgentConversationsModel {
     type Event = ();
 }
-impl warpui::SingletonEntity for AgentConversationsModel {}
+impl twarpui::SingletonEntity for AgentConversationsModel {}
 #[allow(dead_code)]
 impl AgentConversationsModel {
     pub fn reset(&mut self) {}
 }
 pub struct BlocklistAIHistoryModel;
-impl warpui::Entity for BlocklistAIHistoryModel {
+impl twarpui::Entity for BlocklistAIHistoryModel {
     type Event = crate::terminal::input::BlocklistAIHistoryEvent;
 }
-impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+impl twarpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
     pub fn reset(&mut self) {}
 }
 pub struct AIExecutionProfilesModel;
-impl warpui::Entity for AIExecutionProfilesModel {
+impl twarpui::Entity for AIExecutionProfilesModel {
     type Event = ();
 }
-impl warpui::SingletonEntity for AIExecutionProfilesModel {}
+impl twarpui::SingletonEntity for AIExecutionProfilesModel {}
 #[allow(dead_code)]
 impl AIExecutionProfilesModel {
     pub fn reset(&mut self) {}
@@ -57,11 +57,11 @@ pub use auth_manager::AuthManager;
 pub use auth_state::AuthStateProvider;
 use itertools::Itertools;
 pub use login_failure_notification::LoginFailureReason;
+use twarpui::modals::{AlertDialogWithCallbacks, ModalButton};
 pub use user_uid::UserUid;
-use warpui::modals::{AlertDialogWithCallbacks, ModalButton};
 
-use warp_core::user_preferences::GetUserPreferences as _;
-use warpui::{AppContext, SingletonEntity};
+use twarp_core::user_preferences::GetUserPreferences as _;
+use twarpui::{AppContext, SingletonEntity};
 
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::focus_running_window_and_show_native_modal;

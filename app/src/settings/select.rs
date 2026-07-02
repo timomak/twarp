@@ -1,6 +1,6 @@
 use std::ops::Not;
 
-use warpui::{clipboard::ClipboardContent, AppContext};
+use twarpui::{clipboard::ClipboardContent, AppContext};
 
 use settings::{
     macros::define_settings_group, RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud,

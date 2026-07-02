@@ -1,6 +1,6 @@
 use pathfinder_geometry::vector::Vector2F;
-use warpui::integration::TestStep;
-use warpui::{windowing::WindowManager, SingletonEntity};
+use twarpui::integration::TestStep;
+use twarpui::{windowing::WindowManager, SingletonEntity};
 
 use crate::{
     integration_testing::{

@@ -2,8 +2,8 @@
 use crate::app_state::SkillReference;
 // twarp: 2c-d — use canonical InputType from terminal::input.
 use crate::terminal::input::InputType;
-use warp_core::features::FeatureFlag;
-use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
+use twarp_core::features::FeatureFlag;
+use twarpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
 // twarp: 2c-d — AI blocklist / skills deleted; re-export from input.
 use crate::search::slash_command_menu::StaticCommand;

@@ -20,7 +20,7 @@ mod tests;
 
 use std::path::PathBuf;
 
-use warpui::{AppContext, Entity, SingletonEntity};
+use twarpui::{AppContext, Entity, SingletonEntity};
 
 use crate::shortcuts::config::{parse_shortcuts_yaml, Shortcut};
 
@@ -98,7 +98,7 @@ impl SingletonEntity for ShortcutsModel {}
 
 #[cfg(feature = "local_fs")]
 pub fn shortcuts_file_path() -> PathBuf {
-    warp_core::paths::config_local_dir().join(SHORTCUTS_FILE_NAME)
+    twarp_core::paths::config_local_dir().join(SHORTCUTS_FILE_NAME)
 }
 
 #[cfg(not(feature = "local_fs"))]

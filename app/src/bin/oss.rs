@@ -3,7 +3,7 @@
 #![cfg_attr(feature = "release_bundle", windows_subsystem = "windows")]
 
 use anyhow::Result;
-use warp_core::{
+use twarp_core::{
     channel::{Channel, ChannelConfig, ChannelState, OzConfig, WarpServerConfig},
     features::FeatureFlag,
     AppId,
@@ -25,7 +25,7 @@ const TWARP_OSS_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::DragTabsToWindows,
 ];
 
-// Simple wrapper around warp::run() for Warp OSS builds.
+// Simple wrapper around twarp::run() for Warp OSS builds.
 fn main() -> Result<()> {
     let mut state = ChannelState::new(
         Channel::Oss,
@@ -41,12 +41,12 @@ fn main() -> Result<()> {
         },
     );
     if cfg!(debug_assertions) {
-        state = state.with_additional_features(warp_core::features::DEBUG_FLAGS);
+        state = state.with_additional_features(twarp_core::features::DEBUG_FLAGS);
     }
     state = state.with_additional_features(TWARP_OSS_FLAGS);
     ChannelState::set(state);
 
-    warp::run()
+    twarp::run()
 }
 
 // If we're not using an external plist, embed the following as the Info.plist.

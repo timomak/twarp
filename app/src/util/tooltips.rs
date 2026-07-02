@@ -3,7 +3,7 @@
 #[cfg(feature = "local_fs")]
 use std::path::Path;
 
-use warpui::{
+use twarpui::{
     elements::{
         Border, Container, CornerRadius, Flex, MouseStateHandle, ParentElement, Radius, Text,
     },
@@ -249,7 +249,7 @@ pub fn should_show_open_in_warp_link(path: &Path, app: &AppContext) -> bool {
         notebooks::file::is_markdown_file,
         util::file::external_editor::{settings::EditorChoice, EditorSettings},
     };
-    use warpui::SingletonEntity;
+    use twarpui::SingletonEntity;
 
     let settings = EditorSettings::as_ref(app);
 

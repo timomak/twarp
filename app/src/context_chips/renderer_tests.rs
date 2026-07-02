@@ -1,5 +1,5 @@
 use pathfinder_color::ColorU;
-use warpui::fonts::Properties;
+use twarpui::fonts::Properties;
 
 use crate::context_chips::{ChipAvailability, ChipDisabledReason, ContextChipKind};
 

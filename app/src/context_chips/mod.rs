@@ -21,7 +21,7 @@ use std::time::Duration;
 use context_chip::PromptGenerator;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
-use warpui::{
+use twarpui::{
     color::ColorU,
     elements::Text,
     fonts::{Properties, Weight},

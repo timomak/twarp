@@ -1,5 +1,5 @@
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
-use warpui::{
+use twarpui::{
     elements::{
         AcceptedByDropTarget, Border, ChildAnchor, ConstrainedBox, Container, CornerRadius,
         CrossAxisAlignment, Draggable, DraggableState, DropShadow, Empty, Flex, Hoverable,
@@ -110,7 +110,7 @@ impl WarpDriveItemStyles {
                 .set_font_size(ITEM_FONT_SIZE)
                 .set_font_color(theme.foreground().into())
                 .set_background(
-                    warp_core::ui::theme::color::internal_colors::fg_overlay_4(theme).into(),
+                    twarp_core::ui::theme::color::internal_colors::fg_overlay_4(theme).into(),
                 )
                 .set_border_color(theme.accent().into()),
             hovered: UiComponentStyles::default()
@@ -118,7 +118,7 @@ impl WarpDriveItemStyles {
                 .set_font_size(ITEM_FONT_SIZE)
                 .set_font_color(blended_colors::text_main(theme, background))
                 .set_background(
-                    warp_core::ui::theme::color::internal_colors::fg_overlay_2(theme).into(),
+                    twarp_core::ui::theme::color::internal_colors::fg_overlay_2(theme).into(),
                 ),
         }
     }

@@ -6,31 +6,31 @@ use crate::util::bindings::CustomAction;
 use anyhow::{anyhow, Result};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
+use twarp_core::errors::ErrorExt;
+use twarp_core::features::FeatureFlag;
+use twarpui::elements::ChildAnchor;
+use twarpui::elements::Container;
+use twarpui::elements::Fill;
+use twarpui::elements::HighlightedHyperlink;
+use twarpui::elements::MouseStateHandle;
+use twarpui::elements::OffsetPositioning;
+use twarpui::elements::ParentAnchor;
+use twarpui::elements::ParentElement;
+use twarpui::elements::ParentOffsetBounds;
+use twarpui::elements::Stack;
+use twarpui::keymap::FixedBinding;
+use twarpui::AppContext;
+use twarpui::FocusContext;
+use twarpui::SingletonEntity;
+use twarpui::TypedActionView;
 use url::Url;
-use warp_core::errors::ErrorExt;
-use warp_core::features::FeatureFlag;
-use warpui::elements::ChildAnchor;
-use warpui::elements::Container;
-use warpui::elements::Fill;
-use warpui::elements::HighlightedHyperlink;
-use warpui::elements::MouseStateHandle;
-use warpui::elements::OffsetPositioning;
-use warpui::elements::ParentAnchor;
-use warpui::elements::ParentElement;
-use warpui::elements::ParentOffsetBounds;
-use warpui::elements::Stack;
-use warpui::keymap::FixedBinding;
-use warpui::AppContext;
-use warpui::FocusContext;
-use warpui::SingletonEntity;
-use warpui::TypedActionView;
 
 use crate::auth::auth_view_body::AuthViewBody;
 use crate::modal::Modal;
 use std::collections::HashMap;
-use warpui::elements::ChildView;
-use warpui::ui_components::components::{Coords, UiComponentStyles};
-use warpui::{Element, Entity, View, ViewContext, ViewHandle};
+use twarpui::elements::ChildView;
+use twarpui::ui_components::components::{Coords, UiComponentStyles};
+use twarpui::{Element, Entity, View, ViewContext, ViewHandle};
 
 use super::auth_manager::AuthManager;
 use super::auth_manager::AuthManagerEvent;
@@ -39,10 +39,10 @@ use super::auth_view_body::AuthViewBodyEvent;
 use super::credentials::RefreshToken;
 use super::login_failure_notification::{self, LoginFailureReason};
 use super::UserUid;
-use warpui::actions::StandardAction;
+use twarpui::actions::StandardAction;
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([
         // Bindings for paste require the StandardAction and CustomAction binding to work on all platforms.

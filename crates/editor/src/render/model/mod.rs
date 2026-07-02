@@ -19,13 +19,11 @@ use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Mapping;
 use sum_tree::{SeekBias, SumTree};
-use vec1::Vec1;
-use vim::vim::{MotionType, VimMode};
-use warp_core::{
+use twarp_core::{
     channel::ChannelState,
     ui::{Icon, theme::Fill as ThemeFill},
 };
-use warpui::{
+use twarpui::{
     AppContext, Entity, EntityId, ModelContext, ModelHandle,
     assets::asset_cache::AssetSource,
     color::ColorU,
@@ -44,6 +42,8 @@ use warpui::{
     },
     units::{IntoPixels, Pixels},
 };
+use vec1::Vec1;
+use vim::vim::{MotionType, VimMode};
 
 pub use self::location::{HitTestOptions, Location};
 pub use self::offset_map::{OffsetMap, SelectableTextRun};
@@ -69,7 +69,7 @@ use crate::{
     render::model::debug::Describe,
 };
 use string_offset::{CharOffset, impl_offset};
-use warpui::elements::ListIndentLevel;
+use twarpui::elements::ListIndentLevel;
 
 use super::{
     BLOCK_FOOTER_HEIGHT,
@@ -751,7 +751,7 @@ impl LineCount {
 }
 
 /// A character offset within a [`TextFrame`]. These offsets count characters in the Rust string
-/// passed to [`warpui::text_layout::LayoutCache::layout_text()`].
+/// passed to [`twarpui::text_layout::LayoutCache::layout_text()`].
 ///
 /// Frame offsets often, but not always, correspond to glyph indices and caret positions. However,
 /// they do not line up 1:1 if a glyph or grapheme contains multiple characters
@@ -4470,7 +4470,7 @@ impl<'a> Positioned<'a, Paragraph> {
                 vec2f(underline_width, UNDERLINE_THICKNESS),
             );
 
-            let dash = warpui::scene::Dash {
+            let dash = twarpui::scene::Dash {
                 dash_length: DASHED_UNDERLINE_DASH_LENGTH,
                 gap_length: DASHED_UNDERLINE_GAP_LENGTH,
                 force_consistent_gap_length: true,
@@ -4479,7 +4479,7 @@ impl<'a> Positioned<'a, Paragraph> {
                 .scene
                 .draw_rect_without_hit_recording(underline_rect)
                 .with_border(
-                    warpui::scene::Border::bottom(UNDERLINE_THICKNESS)
+                    twarpui::scene::Border::bottom(UNDERLINE_THICKNESS)
                         .with_dashed_border(dash)
                         .with_border_color(color),
                 );

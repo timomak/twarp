@@ -6,57 +6,57 @@ use crate::workspaces::workspace::Workspace;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cynic::{MutationBuilder, QueryBuilder};
-use warp_graphql::mutations::add_invite_link_domain_restriction::{
+use twarp_graphql::mutations::add_invite_link_domain_restriction::{
     AddInviteLinkDomainRestriction, AddInviteLinkDomainRestrictionInput,
     AddInviteLinkDomainRestrictionResult, AddInviteLinkDomainRestrictionVariables,
 };
-use warp_graphql::mutations::create_team::{
+use twarp_graphql::mutations::create_team::{
     CreateTeam, CreateTeamInput, CreateTeamResult, CreateTeamVariables,
 };
-use warp_graphql::mutations::delete_invite_link_domain_restriction::{
+use twarp_graphql::mutations::delete_invite_link_domain_restriction::{
     DeleteInviteLinkDomainRestriction, DeleteInviteLinkDomainRestrictionInput,
     DeleteInviteLinkDomainRestrictionResult, DeleteInviteLinkDomainRestrictionVariables,
 };
-use warp_graphql::mutations::delete_team_invite::{
+use twarp_graphql::mutations::delete_team_invite::{
     DeleteTeamInvite, DeleteTeamInviteInput, DeleteTeamInviteResult, DeleteTeamInviteVariables,
 };
-use warp_graphql::mutations::join_team_with_team_discovery::{
+use twarp_graphql::mutations::join_team_with_team_discovery::{
     JoinTeamWithTeamDiscovery, JoinTeamWithTeamDiscoveryInput, JoinTeamWithTeamDiscoveryResult,
     JoinTeamWithTeamDiscoveryVariables, TeamDiscoveryEntrypoint,
 };
-use warp_graphql::mutations::remove_user_from_team::{
+use twarp_graphql::mutations::remove_user_from_team::{
     RemoveUserFromTeam, RemoveUserFromTeamInput, RemoveUserFromTeamResult,
     RemoveUserFromTeamVariables,
 };
-use warp_graphql::mutations::rename_team::{
+use twarp_graphql::mutations::rename_team::{
     RenameTeam, RenameTeamInput, RenameTeamResult, RenameTeamVariables,
 };
-use warp_graphql::mutations::reset_invite_links::{
+use twarp_graphql::mutations::reset_invite_links::{
     ResetInviteLinks, ResetInviteLinksInput, ResetInviteLinksResult, ResetInviteLinksVariables,
 };
-use warp_graphql::mutations::send_team_invite_email::{
+use twarp_graphql::mutations::send_team_invite_email::{
     SendTeamInviteEmail, SendTeamInviteEmailInput, SendTeamInviteEmailResult,
     SendTeamInviteEmailVariables,
 };
-use warp_graphql::mutations::set_is_invite_link_enabled::{
+use twarp_graphql::mutations::set_is_invite_link_enabled::{
     SetIsInviteLinkEnabled, SetIsInviteLinkEnabledInput, SetIsInviteLinkEnabledResult,
     SetIsInviteLinkEnabledVariables,
 };
-use warp_graphql::mutations::set_team_discoverability::{
+use twarp_graphql::mutations::set_team_discoverability::{
     SetTeamDiscoverability, SetTeamDiscoverabilityInput, SetTeamDiscoverabilityResult,
     SetTeamDiscoverabilityVariables,
 };
-use warp_graphql::mutations::set_team_member_role::{
+use twarp_graphql::mutations::set_team_member_role::{
     SetTeamMemberRole, SetTeamMemberRoleInput, SetTeamMemberRoleResult, SetTeamMemberRoleVariables,
 };
-use warp_graphql::mutations::transfer_team_ownership::{
+use twarp_graphql::mutations::transfer_team_ownership::{
     TransferTeamOwnership, TransferTeamOwnershipInput, TransferTeamOwnershipResult,
     TransferTeamOwnershipVariables,
 };
-use warp_graphql::queries::get_discoverable_teams::{
+use twarp_graphql::queries::get_discoverable_teams::{
     GetDiscoverableTeams, GetDiscoverableTeamsVariables,
 };
-use warp_graphql::queries::get_workspaces_metadata_for_user::{
+use twarp_graphql::queries::get_workspaces_metadata_for_user::{
     GetWorkspacesMetadataForUser, GetWorkspacesMetadataForUserVariables, PricingInfoResult,
 };
 
@@ -175,10 +175,10 @@ impl TeamClient for ServerApi {
         let response = self.send_graphql_request(operation, None).await?;
 
         let metadata = match response.user {
-            warp_graphql::queries::get_workspaces_metadata_for_user::UserResult::UserOutput(
+            twarp_graphql::queries::get_workspaces_metadata_for_user::UserResult::UserOutput(
                 user_output,
             ) => user_output.user.into(),
-            warp_graphql::queries::get_workspaces_metadata_for_user::UserResult::Unknown => {
+            twarp_graphql::queries::get_workspaces_metadata_for_user::UserResult::Unknown => {
                 return Err(anyhow!("Unable to fetch workspaces metadata"));
             }
         };
@@ -502,7 +502,7 @@ impl TeamClient for ServerApi {
         let result = self.send_graphql_request(operation, None).await?;
 
         match result.user {
-            warp_graphql::queries::get_discoverable_teams::UserResult::UserOutput(user_output) => {
+            twarp_graphql::queries::get_discoverable_teams::UserResult::UserOutput(user_output) => {
                 Ok(user_output
                     .user
                     .discoverable_teams
@@ -510,10 +510,10 @@ impl TeamClient for ServerApi {
                     .map(|gql_team_data| Ok(gql_team_data.into()))
                     .collect::<Result<Vec<DiscoverableTeam>>>()?)
             }
-            warp_graphql::queries::get_discoverable_teams::UserResult::UserFacingError(
+            twarp_graphql::queries::get_discoverable_teams::UserResult::UserFacingError(
                 user_facing_error,
             ) => Err(anyhow!(get_user_facing_error_message(user_facing_error))),
-            warp_graphql::queries::get_discoverable_teams::UserResult::Unknown => {
+            twarp_graphql::queries::get_discoverable_teams::UserResult::Unknown => {
                 Err(anyhow!("unknown error while getting discoverable teams"))
             }
         }

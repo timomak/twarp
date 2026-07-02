@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 use futures::{io::BufReader, AsyncRead, AsyncWrite};
-use warpui::r#async::executor::{Background, BackgroundTask};
+use twarpui::r#async::executor::{Background, BackgroundTask};
 
 use crate::{
     platform::server::{ConnectionImpl, ConnectionListenerImpl},

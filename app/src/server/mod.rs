@@ -13,4 +13,4 @@ pub mod sync_queue;
 pub mod telemetry;
 pub(crate) mod telemetry_ext;
 
-pub use warp_core::operating_system_info::OperatingSystemInfo;
+pub use twarp_core::operating_system_info::OperatingSystemInfo;

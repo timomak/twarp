@@ -1,5 +1,5 @@
-use warp_core::ui::builder::UiBuilder;
-use warpui::{
+use twarp_core::ui::builder::UiBuilder;
+use twarpui::{
     accessibility::{AccessibilityContent, WarpA11yRole},
     elements::{Align, Container, Element, Flex, MouseStateHandle, ParentElement},
     keymap::FixedBinding,
@@ -37,7 +37,7 @@ const BUTTON_MARGIN_BOTTOM: f32 = 14.;
 const ACCESSIBILITY_HELP: &str = "Press enter to open the theme chooser or escape to dismiss.";
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([FixedBinding::new(
         "enter",

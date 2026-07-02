@@ -1,19 +1,19 @@
 // twarp: 2c-d — agent_view_bg_color deleted; stub.
-pub fn agent_view_bg_color<C>(_: C) -> warpui::color::ColorU {
-    warpui::color::ColorU::new(0, 0, 0, 0)
+pub fn agent_view_bg_color<C>(_: C) -> twarpui::color::ColorU {
+    twarpui::color::ColorU::new(0, 0, 0, 0)
 }
 use pathfinder_color::ColorU;
-use warp_core::ui::appearance::Appearance;
-use warp_core::ui::theme::Fill;
-use warp_core::ui::Icon;
-use warpui::elements::{
+use twarp_core::ui::appearance::Appearance;
+use twarp_core::ui::theme::Fill;
+use twarp_core::ui::Icon;
+use twarpui::elements::{
     Border, CacheOption, Clipped, Container, CornerRadius, Element, Hoverable, Image,
     ParentElement, Radius,
 };
-use warpui::platform::Cursor;
-use warpui::prelude::{Align, ConstrainedBox, CrossAxisAlignment, Flex, Text};
-use warpui::ui_components::keyboard_shortcut::keystroke_to_keys;
-use warpui::{AppContext, SingletonEntity};
+use twarpui::platform::Cursor;
+use twarpui::prelude::{Align, ConstrainedBox, CrossAxisAlignment, Flex, Text};
+use twarpui::ui_components::keyboard_shortcut::keystroke_to_keys;
+use twarpui::{AppContext, SingletonEntity};
 
 // twarp: 2c-d — render_keystroke_with_color_overrides deleted; stub.
 pub fn render_keystroke_with_color_overrides<A, B, C, D>(
@@ -21,8 +21,8 @@ pub fn render_keystroke_with_color_overrides<A, B, C, D>(
     _: B,
     _: C,
     _: D,
-) -> Box<dyn warpui::Element> {
-    warpui::elements::Empty::new().finish()
+) -> Box<dyn twarpui::Element> {
+    twarpui::elements::Empty::new().finish()
 }
 use crate::terminal;
 use crate::terminal::input::message_bar::{ChipHorizontalAlignment, Message, MessageItem};
@@ -40,7 +40,7 @@ pub fn render_standard_message_bar(
     right_element: Option<Box<dyn Element>>,
     app: &AppContext,
 ) -> Box<dyn Element> {
-    use warpui::prelude::{MainAxisAlignment, MainAxisSize};
+    use twarpui::prelude::{MainAxisAlignment, MainAxisSize};
 
     let (left_items, right_chips): (Vec<_>, Vec<_>) = message.items.into_iter().partition(|item| {
         !matches!(
@@ -480,8 +480,8 @@ pub fn disableable_message_item_color_overrides(
 
 pub mod styles {
     use pathfinder_color::ColorU;
-    use warp_core::ui::appearance::Appearance;
-    use warpui::{AppContext, SingletonEntity};
+    use twarp_core::ui::appearance::Appearance;
+    use twarpui::{AppContext, SingletonEntity};
 
     use crate::ui_components::blended_colors;
 

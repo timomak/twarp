@@ -6,9 +6,9 @@ use crate::search::result_renderer::ItemHighlightState;
 use crate::session_management::TabNavigationData;
 use crate::ui_components::icons::Icon;
 use ordered_float::OrderedFloat;
-use warpui::elements::{ConstrainedBox, Container, Flex, ParentElement, Text};
-use warpui::fonts::{Properties, Weight};
-use warpui::{AppContext, Element, SingletonEntity};
+use twarpui::elements::{ConstrainedBox, Container, Flex, ParentElement, Text};
+use twarpui::fonts::{Properties, Weight};
+use twarpui::{AppContext, Element, SingletonEntity};
 
 /// These items appear in the ctrl-tab palette only, not the main command palette.
 /// Scoring matches against queries is not supported since only ranking by recency is needed.

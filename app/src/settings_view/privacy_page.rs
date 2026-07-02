@@ -6,28 +6,28 @@ use std::time::Duration;
 
 use pathfinder_geometry::vector::vec2f;
 
-use warp_core::ui::theme::color::internal_colors;
-use warpui::r#async::{SpawnedFutureHandle, Timer};
+use twarp_core::ui::theme::color::internal_colors;
+use twarpui::r#async::{SpawnedFutureHandle, Timer};
 
 use regex::Regex;
 use settings::Setting as _;
-use warp_core::context_flag::ContextFlag;
-use warp_core::features::FeatureFlag;
-use warp_core::ui::theme::WarpTheme;
-use warpui::elements::{
+use twarp_core::context_flag::ContextFlag;
+use twarp_core::features::FeatureFlag;
+use twarp_core::ui::theme::WarpTheme;
+use twarpui::elements::{
     Align, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
     Empty, Expanded, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
     OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Rect, Shrinkable,
     Stack, Text,
 };
-use warpui::keymap::ContextPredicate;
-use warpui::platform::Cursor;
-use warpui::ui_components::button::{ButtonVariant, TextAndIcon, TextAndIconAlignment};
-use warpui::ui_components::{
+use twarpui::keymap::ContextPredicate;
+use twarpui::platform::Cursor;
+use twarpui::ui_components::button::{ButtonVariant, TextAndIcon, TextAndIconAlignment};
+use twarpui::ui_components::{
     components::{Coords, UiComponent, UiComponentStyles},
     switch::{SwitchStateHandle, TooltipConfig},
 };
-use warpui::{
+use twarpui::{
     Action, AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView,
     UpdateModel, View, ViewContext, ViewHandle,
 };
@@ -69,7 +69,7 @@ use super::{
 };
 
 use crate::modal::{Modal, ModalEvent, ModalViewState};
-use warpui::fonts::Weight;
+use twarpui::fonts::Weight;
 
 const FONT_SIZE: f32 = 12.;
 
@@ -2040,6 +2040,6 @@ mod styles {
     pub const DESCRIPTION_LINE_MARGIN_BOTTOM: f32 = 6.;
 }
 
-fn description_text_color(theme: &WarpTheme) -> warp_core::ui::theme::Fill {
+fn description_text_color(theme: &WarpTheme) -> twarp_core::ui::theme::Fill {
     theme.sub_text_color(theme.surface_2())
 }

@@ -10,7 +10,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use anyhow::Result;
-use warpui::r#async::executor;
+use twarpui::r#async::executor;
 
 use remote_server::auth::RemoteServerAuthContext;
 use remote_server::client::RemoteServerClient;
@@ -364,7 +364,7 @@ async fn scp_install_fallback(socket_path: &Path) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use warpui::r#async::BoxFuture;
+    use twarpui::r#async::BoxFuture;
     fn static_auth_context() -> Arc<RemoteServerAuthContext> {
         Arc::new(RemoteServerAuthContext::new(
             || -> BoxFuture<'static, Option<String>> { Box::pin(async { None }) },

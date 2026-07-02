@@ -1,5 +1,5 @@
-use warp_core::ui::appearance::Appearance;
-use warpui::{
+use twarp_core::ui::appearance::Appearance;
+use twarpui::{
     elements::{
         Border, Container, CrossAxisAlignment, Element, Empty, Fill, Flex, MouseStateHandle,
         ParentElement,
@@ -36,7 +36,7 @@ pub fn render_tab_selector<F>(
 where
     // The on select function will take in the click event context and the selected label,
     // and will then presumably change the passed in selected label.
-    F: Fn(&str, &mut warpui::EventContext) + 'static + Clone,
+    F: Fn(&str, &mut twarpui::EventContext) + 'static + Clone,
 {
     let mut tabs_row = Flex::row()
         .with_spacing(12.)

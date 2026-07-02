@@ -1,4 +1,4 @@
-use warp::{
+use twarp::{
     cmd_or_ctrl_shift,
     features::FeatureFlag,
     integration_testing::{
@@ -20,7 +20,7 @@ use warp::{
         window::{add_and_save_window, close_window, save_active_window_id},
     },
 };
-use warpui::integration::TestStep;
+use twarpui::integration::TestStep;
 
 use super::{new_builder, Builder};
 

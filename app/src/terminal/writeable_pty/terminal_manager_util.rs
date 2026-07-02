@@ -14,7 +14,7 @@ use async_channel::Receiver;
 use parking_lot::FairMutex;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
-use warpui::{AppContext, ModelHandle, ViewHandle};
+use twarpui::{AppContext, ModelHandle, ViewHandle};
 
 /// Wires up bi-directional communication between the PtyController and the TerminalView.
 /// Note that this interaction can't live in the TerminalView because the view must be manager-agnostic.

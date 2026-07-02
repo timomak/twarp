@@ -6,8 +6,8 @@ use crate::{
     workspaces::user_workspaces::UserWorkspaces,
 };
 use pathfinder_geometry::vector::vec2f;
-use warp_core::ui::theme::Fill;
-use warpui::{
+use twarp_core::ui::theme::Fill;
+use twarpui::{
     elements::{
         Align, Border, ChildAnchor, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox,
         Container, CornerRadius, CrossAxisAlignment, Flex, Highlight, MouseStateHandle,

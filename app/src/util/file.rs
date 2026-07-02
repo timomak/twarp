@@ -4,8 +4,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 #[cfg(windows)]
-use warp_util::path::is_network_resource;
-use warp_util::path::{CleanPathResult, LineAndColumnArg};
+use twarp_util::path::is_network_resource;
+use twarp_util::path::{CleanPathResult, LineAndColumnArg};
 
 use crate::terminal::model::grid::grid_handler::{ContainsPoint, Link};
 use crate::terminal::model::index::Point;

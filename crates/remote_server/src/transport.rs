@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 
 use async_channel::Receiver;
-use warpui::r#async::executor;
+use twarpui::r#async::executor;
 
 use crate::client::{ClientEvent, RemoteServerClient};
 use crate::manager::RemoteServerExitStatus;

@@ -91,11 +91,11 @@ use std::path::Path;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
+use twarp_core::context_flag::ContextFlag;
+use twarp_core::user_preferences::GetUserPreferences as _;
+use twarpui::keymap::{EditableBinding, FixedBinding};
+use twarpui::windowing::WindowManager;
 use url::Url;
-use warp_core::context_flag::ContextFlag;
-use warp_core::user_preferences::GetUserPreferences as _;
-use warpui::keymap::{EditableBinding, FixedBinding};
-use warpui::windowing::WindowManager;
 
 // twarp: 2c-d — AI llms / onboarding deleted; stubs re-exported from input.
 pub use crate::terminal::input::{LLMPreferences, LLMPreferencesEvent};
@@ -114,19 +114,19 @@ pub fn current_onboarding_auth_state<C>(_: &C) -> onboarding::OnboardingAuthStat
     onboarding::OnboardingAuthState::LoggedOut
 }
 use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};
-use warp_graphql::billing::StripeSubscriptionPlan;
+use twarp_graphql::billing::StripeSubscriptionPlan;
 
-use warpui::elements::{
+use twarpui::elements::{
     Border, ChildAnchor, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Stack,
 };
-use warpui::rendering::OnGPUDeviceSelected;
-use warpui::{id, AddWindowOptions, DisplayId, EntityId, SingletonEntity};
-use warpui::{
+use twarpui::rendering::OnGPUDeviceSelected;
+use twarpui::{id, AddWindowOptions, DisplayId, EntityId, SingletonEntity};
+use twarpui::{
     platform::{WindowBounds, WindowStyle},
     presenter::ChildView,
     AppContext, Element, Entity, TypedActionView, View, ViewContext, ViewHandle, WindowId,
 };
-use warpui::{FocusContext, NextNewWindowsHasThisWindowsBoundsUponClose};
+use twarpui::{FocusContext, NextNewWindowsHasThisWindowsBoundsUponClose};
 
 #[cfg(target_family = "wasm")]
 use crate::auth::web_handoff::{WebHandoffEvent, WebHandoffView};
@@ -1273,7 +1273,7 @@ fn toggle_quake_mode_window(global_resource_handles: &GlobalResourceHandles, ctx
                     background_blur_texture: *window_settings.background_blur_texture,
                     // Ignore the quake window for positioning the next window
                     anchor_new_windows_from_closed_position:
-                        warpui::NextNewWindowsHasThisWindowsBoundsUponClose::No,
+                        twarpui::NextNewWindowsHasThisWindowsBoundsUponClose::No,
                     on_gpu_driver_selected: on_gpu_driver_selected_callback(),
                     window_instance: Some(ChannelState::app_id().to_string() + "-hotkey"),
                     ..Default::default()
@@ -1643,7 +1643,7 @@ impl RootView {
                 // the default if it's not already set and the user is logging in.
                 #[cfg(target_os = "macos")]
                 {
-                    use warpui_extras::user_preferences::UserPreferences;
+                    use twarpui_extras::user_preferences::UserPreferences;
 
                     // Make sure we're interacting with user defaults instead
                     // of some other preferences store.  Apple implements some
@@ -1651,7 +1651,7 @@ impl RootView {
                     // defaults (like press-and-hold being either accented
                     // characters or key repeat), so we need to make sure we're
                     // interacting with the user defaults system.
-                    let user_defaults = warpui_extras::user_preferences::user_defaults::UserDefaultsPreferencesStorage::new(None);
+                    let user_defaults = twarpui_extras::user_preferences::user_defaults::UserDefaultsPreferencesStorage::new(None);
                     if user_defaults
                         .read_value("ApplePressAndHoldEnabled")
                         .unwrap_or_default()
@@ -3107,7 +3107,7 @@ impl View for RootView {
         stack.finish()
     }
 
-    fn keymap_context(&self, app: &AppContext) -> warpui::keymap::Context {
+    fn keymap_context(&self, app: &AppContext) -> twarpui::keymap::Context {
         let mut context = Self::default_keymap_context();
         if quake_mode_window_is_open() {
             context.set.insert(flags::QUAKE_WINDOW_OPEN_FLAG);

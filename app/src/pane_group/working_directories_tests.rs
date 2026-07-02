@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use repo_metadata::repositories::DetectedRepositories;
-use warpui::{App, EntityId};
+use twarpui::{App, EntityId};
 
 use crate::pane_group::WorkingDirectoriesModel;
 
@@ -21,14 +21,14 @@ fn refresh_working_directories_collapses_subroots_to_nearest_repo_root() {
         fs::create_dir_all(&repo_a).expect("create repo/a");
         fs::create_dir_all(&repo_b).expect("create repo/b");
 
-        // Use dunce::canonicalize to match the behavior of warp_util::standardized_path::StandardizedPath and normalize_cwd,
+        // Use dunce::canonicalize to match the behavior of twarp_util::standardized_path::StandardizedPath and normalize_cwd,
         // which strip the Windows extended-length path prefix (\\?\) for consistent comparison.
         let canonical_repo_root = dunce::canonicalize(&repo_root).expect("canonical repo root");
 
         // Seed DetectedRepositories so get_root_for_path resolves to this repo.
         detected_repos_handle.update(&mut app, |repos, _ctx| {
             let canonical =
-                warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                twarp_util::standardized_path::StandardizedPath::from_local_canonicalized(
                     canonical_repo_root.as_path(),
                 )
                 .expect("canonicalized path");
@@ -140,7 +140,7 @@ fn refresh_working_directories_treats_directory_cwds_as_roots() {
 
         detected_repos_handle.update(&mut app, |repos, _ctx| {
             let canonical =
-                warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                twarp_util::standardized_path::StandardizedPath::from_local_canonicalized(
                     canonical_repo_root.as_path(),
                 )
                 .expect("canonicalized path");
@@ -213,21 +213,22 @@ fn refresh_picks_up_repo_detected_after_a_prior_identical_refresh() {
         let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
 
         // First refresh: repo NOT yet detected, so no repo root resolves.
-        let repos_before: Vec<PathBuf> = working_directories_handle.update(&mut app, |model, ctx| {
-            model.refresh_working_directories_for_pane_group(
-                pane_group_id,
-                vec![],
-                vec![],
-                vec![(claude_pane, repo_sub.to_string_lossy().to_string())],
-                None,
-                Some(claude_pane),
-                ctx,
-            );
-            model
-                .most_recent_repositories_for_pane_group(pane_group_id)
-                .map(|iter| iter.collect())
-                .unwrap_or_default()
-        });
+        let repos_before: Vec<PathBuf> =
+            working_directories_handle.update(&mut app, |model, ctx| {
+                model.refresh_working_directories_for_pane_group(
+                    pane_group_id,
+                    vec![],
+                    vec![],
+                    vec![(claude_pane, repo_sub.to_string_lossy().to_string())],
+                    None,
+                    Some(claude_pane),
+                    ctx,
+                );
+                model
+                    .most_recent_repositories_for_pane_group(pane_group_id)
+                    .map(|iter| iter.collect())
+                    .unwrap_or_default()
+            });
         assert!(
             repos_before.is_empty(),
             "no repo should be listed before detection completes"
@@ -236,7 +237,7 @@ fn refresh_picks_up_repo_detected_after_a_prior_identical_refresh() {
         // Detection completes and registers the repo root (bumps generation).
         detected_repos_handle.update(&mut app, |repos, _ctx| {
             let canonical =
-                warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                twarp_util::standardized_path::StandardizedPath::from_local_canonicalized(
                     canonical_repo_root.as_path(),
                 )
                 .expect("canonicalized path");
@@ -245,21 +246,22 @@ fn refresh_picks_up_repo_detected_after_a_prior_identical_refresh() {
 
         // Second refresh with IDENTICAL cwds must NOT be memoized away — it has
         // to re-resolve and surface the now-detected repo root.
-        let repos_after: Vec<PathBuf> = working_directories_handle.update(&mut app, |model, ctx| {
-            model.refresh_working_directories_for_pane_group(
-                pane_group_id,
-                vec![],
-                vec![],
-                vec![(claude_pane, repo_sub.to_string_lossy().to_string())],
-                None,
-                Some(claude_pane),
-                ctx,
-            );
-            model
-                .most_recent_repositories_for_pane_group(pane_group_id)
-                .map(|iter| iter.collect())
-                .unwrap_or_default()
-        });
+        let repos_after: Vec<PathBuf> =
+            working_directories_handle.update(&mut app, |model, ctx| {
+                model.refresh_working_directories_for_pane_group(
+                    pane_group_id,
+                    vec![],
+                    vec![],
+                    vec![(claude_pane, repo_sub.to_string_lossy().to_string())],
+                    None,
+                    Some(claude_pane),
+                    ctx,
+                );
+                model
+                    .most_recent_repositories_for_pane_group(pane_group_id)
+                    .map(|iter| iter.collect())
+                    .unwrap_or_default()
+            });
         assert_eq!(
             repos_after,
             vec![canonical_repo_root],
@@ -283,7 +285,7 @@ fn refresh_working_directories_focuses_focused_claude_pane_repo() {
 
         detected_repos_handle.update(&mut app, |repos, _ctx| {
             let canonical =
-                warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                twarp_util::standardized_path::StandardizedPath::from_local_canonicalized(
                     canonical_repo_root.as_path(),
                 )
                 .expect("canonicalized path");

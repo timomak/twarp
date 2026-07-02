@@ -5,10 +5,10 @@ use pathfinder_geometry::vector::vec2f;
 #[cfg(feature = "local_fs")]
 use repo_metadata::RepoMetadataModel;
 use repo_metadata::{repositories::DetectedRepositories, watcher::DirectoryWatcher};
-use warp_core::ui::appearance::Appearance;
+use twarp_core::ui::appearance::Appearance;
 #[cfg(feature = "local_fs")]
-use warp_files::FileModel;
-use warpui::{platform::WindowStyle, App, SingletonEntity, View};
+use twarp_files::FileModel;
+use twarpui::{platform::WindowStyle, App, SingletonEntity, View};
 
 use crate::server::server_api::team::MockTeamClient;
 use crate::server::server_api::workspace::MockWorkspaceClient;

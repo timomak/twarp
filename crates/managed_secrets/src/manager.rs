@@ -2,9 +2,9 @@ use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
 
 use vec1::vec1;
 
-use warp_core::features::FeatureFlag;
-use warp_graphql::managed_secrets::ManagedSecret;
-use warpui::{Entity, SingletonEntity};
+use twarp_core::features::FeatureFlag;
+use twarp_graphql::managed_secrets::ManagedSecret;
+use twarpui::{Entity, SingletonEntity};
 
 use crate::{
     ManagedSecretValue,
@@ -15,7 +15,7 @@ use crate::{
     envelope::UploadKey,
     gcp::{self, GcpWorkloadIdentityFederationError, GcpWorkloadIdentityFederationToken},
 };
-use warp_graphql::queries::task_secrets::ManagedSecretValue as GqlManagedSecretValue;
+use twarp_graphql::queries::task_secrets::ManagedSecretValue as GqlManagedSecretValue;
 
 /// Singleton model for working with Warp-managed secrets.
 pub struct ManagedSecretManager {
@@ -165,7 +165,8 @@ impl ManagedSecretManager {
         async move {
             // We only need the workload token for the duration of the request.
             let workload_token =
-                warp_isolation_platform::issue_workload_token(Some(Duration::from_mins(5))).await?;
+                twarp_isolation_platform::issue_workload_token(Some(Duration::from_mins(5)))
+                    .await?;
             let gql_secrets = client
                 .get_task_secrets(task_id, workload_token.token)
                 .await?;

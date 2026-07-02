@@ -1,5 +1,5 @@
-use warp_util::path::user_friendly_path;
-use warpui::{
+use twarp_util::path::user_friendly_path;
+use twarpui::{
     elements::{
         Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, MainAxisSize,
         MouseStateHandle, ParentElement, Radius, Text,
@@ -95,9 +95,9 @@ pub(crate) fn render_action_sidecar(
     let primary_text_color = theme.main_text_color(theme.surface_2());
     let button_style = UiComponentStyles {
         font_size: Some(12.),
-        font_weight: Some(warpui::fonts::Weight::Bold),
+        font_weight: Some(twarpui::fonts::Weight::Bold),
         font_color: Some(primary_text_color.into()),
-        padding: Some(warpui::ui_components::components::Coords {
+        padding: Some(twarpui::ui_components::components::Coords {
             top: 4.,
             bottom: 4.,
             left: 8.,
@@ -156,7 +156,7 @@ pub(crate) fn render_action_sidecar(
             .with_style(button_style)
             .build()
             .with_cursor(Cursor::PointingHand)
-            .on_click(move |ctx: &mut warpui::elements::EventContext, _, _| {
+            .on_click(move |ctx: &mut twarpui::elements::EventContext, _, _| {
                 ctx.dispatch_typed_action(make_default_action.clone())
             })
             .finish()
@@ -178,7 +178,7 @@ pub(crate) fn render_action_sidecar(
                 .with_style(button_style)
                 .build()
                 .with_cursor(Cursor::PointingHand)
-                .on_click(move |ctx: &mut warpui::elements::EventContext, _, _| {
+                .on_click(move |ctx: &mut twarpui::elements::EventContext, _, _| {
                     ctx.dispatch_typed_action(WorkspaceAction::TabConfigSidecarEditConfig {
                         path: edit_path.clone(),
                     })
@@ -213,7 +213,7 @@ pub(crate) fn render_action_sidecar(
                 })
                 .build()
                 .with_cursor(Cursor::PointingHand)
-                .on_click(move |ctx: &mut warpui::elements::EventContext, _, _| {
+                .on_click(move |ctx: &mut twarpui::elements::EventContext, _, _| {
                     ctx.dispatch_typed_action(WorkspaceAction::TabConfigSidecarRemoveConfig {
                         name: remove_name.clone(),
                         path: remove_path.clone(),

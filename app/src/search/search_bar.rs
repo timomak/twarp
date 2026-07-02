@@ -1,12 +1,12 @@
 use itertools::{Either, Itertools};
-use warp_editor::editor::NavigationKey;
-use warpui::elements::ConstrainedBox;
-use warpui::FocusContext;
+use twarp_editor::editor::NavigationKey;
+use twarpui::elements::ConstrainedBox;
+use twarpui::FocusContext;
 
 use std::collections::HashSet;
 
-use warpui::fonts::FamilyId;
-use warpui::{
+use twarpui::fonts::FamilyId;
+use twarpui::{
     accessibility::{AccessibilityContent, WarpA11yRole},
     elements::{Clipped, Container, CrossAxisAlignment, Flex, ParentElement, Shrinkable, Text},
     fonts::{Properties, Style, Weight},

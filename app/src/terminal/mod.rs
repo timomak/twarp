@@ -9,13 +9,13 @@ use serde::{Deserialize, Serialize};
 use std::cmp::max;
 mod package_installers;
 pub(crate) use history::UpArrowHistoryConfig;
+pub use twarp_terminal::shell::{self, ShellLaunchData};
+use twarpui::geometry::vector::Vector2F;
+use twarpui::units::{IntoPixels, Lines, Pixels};
+use twarpui::AppContext;
+use twarpui::WindowId;
 pub use view::Event;
 pub use view::TerminalView;
-pub use warp_terminal::shell::{self, ShellLaunchData};
-use warpui::geometry::vector::Vector2F;
-use warpui::units::{IntoPixels, Lines, Pixels};
-use warpui::AppContext;
-use warpui::WindowId;
 pub use {history::History, history::HistoryEntry, history::HistoryEvent, history::ShellHost};
 mod block_list_settings;
 

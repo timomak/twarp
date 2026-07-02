@@ -1,6 +1,6 @@
 use pathfinder_color::ColorU;
-use warp_editor::editor::NavigationKey;
-use warpui::{
+use twarp_editor::editor::NavigationKey;
+use twarpui::{
     elements::{
         ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, MainAxisAlignment,
         MainAxisSize, MouseStateHandle, ParentElement, Radius, Wrap, WrapFill,

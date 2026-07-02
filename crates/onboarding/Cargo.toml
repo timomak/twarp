@@ -12,7 +12,7 @@ path = "src/bin/main.rs"
 required-features = ["bin"]
 
 [features]
-bin = ["warpui/log_named_telemetry_events"]
+bin = ["twarpui/log_named_telemetry_events"]
 
 [dependencies]
 # twarp: 2c-e — `ai` workspace crate deleted.
@@ -29,6 +29,6 @@ serde_json.workspace = true
 strum.workspace = true
 strum_macros.workspace = true
 uuid.workspace = true
-warp_core = { workspace = true }
-warpui.workspace = true
-warp_logging.workspace = true
+twarp_core = { workspace = true }
+twarpui.workspace = true
+twarp_logging.workspace = true

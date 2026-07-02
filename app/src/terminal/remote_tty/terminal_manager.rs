@@ -21,7 +21,7 @@ use parking_lot::FairMutex;
 use pathfinder_geometry::vector::Vector2F;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
-use warpui::{AppContext, ModelHandle, ViewHandle, WindowId};
+use twarpui::{AppContext, ModelHandle, ViewHandle, WindowId};
 
 type PtyController = writeable_pty::PtyController<Sender<Message>>;
 

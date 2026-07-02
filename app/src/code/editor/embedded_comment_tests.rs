@@ -4,8 +4,8 @@ use super::{
 };
 use crate::code_review::comments::CommentId;
 use serde_yaml::{Mapping, Value};
-use warp_editor::content::markdown::MarkdownStyle;
-use warpui::{EntityId, WindowId};
+use twarp_editor::content::markdown::MarkdownStyle;
+use twarpui::{EntityId, WindowId};
 
 #[test]
 fn test_comment_embedded_item_conversion_valid_input() {

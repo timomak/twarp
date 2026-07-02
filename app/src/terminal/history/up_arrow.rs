@@ -1,14 +1,14 @@
 use std::collections::HashSet;
 
-use warp_core::features::FeatureFlag;
-use warpui::{AppContext, EntityId, SingletonEntity};
+use twarp_core::features::FeatureFlag;
+use twarpui::{AppContext, EntityId, SingletonEntity};
 
 // twarp: 2c-d — BlocklistAIHistoryModel deleted; stub.
 pub struct BlocklistAIHistoryModel;
-impl warpui::Entity for BlocklistAIHistoryModel {
+impl twarpui::Entity for BlocklistAIHistoryModel {
     type Event = crate::terminal::input::BlocklistAIHistoryEvent;
 }
-impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+impl twarpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
     pub fn all_ai_queries<I>(

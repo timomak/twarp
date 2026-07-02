@@ -40,7 +40,7 @@ use crate::uri::browser_url_handler::update_browser_url;
 use crate::util::openable_file_type::FileTarget;
 use crate::view_components::ToastFlavor;
 use crate::workflows::workflow::Workflow;
-use warp_terminal::shell::{ShellName, ShellType};
+use twarp_terminal::shell::{ShellName, ShellType};
 
 use std::any::Any;
 use std::cell::RefCell;
@@ -62,28 +62,28 @@ use session_sharing_protocol::common::{
     ParticipantId, Role, RoleRequestId, RoleRequestRejectedReason, RoleRequestResponse, SessionId,
 };
 use tree::DEFAULT_FLEX_VALUE;
-use typed_path::TypedPath;
-use url::Url;
-use uuid::Uuid;
-use warp_core::command::ExitCode;
-use warp_core::context_flag::ContextFlag;
-use warp_core::HostId;
-use warp_util::path::convert_wsl_to_windows_host_path;
+use twarp_core::command::ExitCode;
+use twarp_core::context_flag::ContextFlag;
+use twarp_core::HostId;
+use twarp_util::path::convert_wsl_to_windows_host_path;
 #[cfg(feature = "local_fs")]
-use warp_util::path::LineAndColumnArg;
-use warpui::elements::{
+use twarp_util::path::LineAndColumnArg;
+use twarpui::elements::{
     Clipped, CrossAxisAlignment, DispatchEventResult, EventHandler, Flex, MainAxisSize, Shrinkable,
     Stack,
 };
-use warpui::keymap::{Context, EditableBinding, FixedBinding};
-use warpui::notification::NotificationSendError;
+use twarpui::keymap::{Context, EditableBinding, FixedBinding};
+use twarpui::notification::NotificationSendError;
+use typed_path::TypedPath;
+use url::Url;
+use uuid::Uuid;
 
-use warpui::windowing::WindowManager;
-use warpui::{
+use twarpui::windowing::WindowManager;
+use twarpui::{
     elements::{ChildView, Element, ParentElement},
     AppContext, Entity, EntityId, ModelHandle, TypedActionView, View, ViewHandle, WindowId,
 };
-use warpui::{SingletonEntity, ViewContext};
+use twarpui::{SingletonEntity, ViewContext};
 
 // twarp: 2c-d.4 — SerializedBlockListItem now from crate::app_state
 #[cfg(feature = "local_fs")]
@@ -325,7 +325,7 @@ enum PaneRemovalReason {
 }
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
     app.register_binding_validator::<PaneGroup>(is_binding_pty_compliant);
 
     self::pane::init(app);
@@ -758,7 +758,7 @@ pub enum Event {
     // twarp: 2c-d.4 — OpenPluginInstructionsPane removed (CLIAgent + PluginModalKind were AI-only)
     // twarp: 2c-d — bulk variants for AI-removed pane_group::Event
     OpenCodeDiff {
-        view: warpui::ViewHandle<crate::terminal::view::CodeDiffView>,
+        view: twarpui::ViewHandle<crate::terminal::view::CodeDiffView>,
     },
     OpenPluginInstructionsPane(
         crate::app_state::CLIAgent,
@@ -5885,7 +5885,7 @@ impl PaneGroup {
     pub fn code_diff_views(
         &self,
         _ctx: &AppContext,
-    ) -> Vec<warpui::ViewHandle<crate::workspace::view::AIFactViewStub>> {
+    ) -> Vec<twarpui::ViewHandle<crate::workspace::view::AIFactViewStub>> {
         Vec::new()
     }
 

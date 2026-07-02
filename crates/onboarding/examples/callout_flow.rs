@@ -7,12 +7,12 @@ use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use rust_embed::RustEmbed;
 use std::borrow::Cow;
-use warp_core::ui::appearance::Appearance;
-use warp_core::ui::theme::{AnsiColor, AnsiColors, Details, Fill, TerminalColors, WarpTheme};
-use warpui::fonts::{Cache, FamilyId, Weight};
-use warpui::platform;
-use warpui::prelude::CrossAxisAlignment;
-use warpui::{
+use twarp_core::ui::appearance::Appearance;
+use twarp_core::ui::theme::{AnsiColor, AnsiColors, Details, Fill, TerminalColors, WarpTheme};
+use twarpui::fonts::{Cache, FamilyId, Weight};
+use twarpui::platform;
+use twarpui::prelude::CrossAxisAlignment;
+use twarpui::{
     elements::{
         ChildAnchor, ChildView, ConstrainedBox, Container, Flex, MainAxisAlignment, MainAxisSize,
         OffsetPositioning, ParentElement, PositionedElementAnchor, PositionedElementOffsetBounds,
@@ -172,7 +172,7 @@ impl TypedActionView for OnboardingExampleView {
 
 fn main() -> Result<()> {
     // Initialize logging for the onboarding binary.
-    warp_logging::init(warp_logging::LogConfig {
+    twarp_logging::init(twarp_logging::LogConfig {
         is_cli: false,
         log_destination: None,
     })?;

@@ -19,18 +19,17 @@ use markdown_parser::FormattedText;
 use num_traits::SaturatingSub;
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
 use string_offset::CharOffset;
-use vec1::Vec1;
-use warp_core::{features::FeatureFlag, ui::appearance::Appearance};
-use warp_editor::{
+use twarp_core::{features::FeatureFlag, ui::appearance::Appearance};
+use twarp_editor::{
     content::{buffer::InitialBufferState, text::IndentUnit},
     render::model::{Decoration, LineCount},
 };
-use warp_util::{
+use twarp_util::{
     content_version::ContentVersion,
     file::{FileId, FileLoadError, FileSaveError},
     path::to_relative_path,
 };
-use warpui::{
+use twarpui::{
     elements::{
         Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container,
         CornerRadius, CrossAxisAlignment, DropShadow, Flex, Hoverable, MainAxisAlignment,
@@ -46,7 +45,8 @@ use warpui::{
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
     WindowId,
 };
-use warpui::{platform::SaveFilePickerConfiguration, ModelHandle};
+use twarpui::{platform::SaveFilePickerConfiguration, ModelHandle};
+use vec1::Vec1;
 
 use crate::menu::{Event, Menu, MenuItem, MenuItemFields};
 
@@ -69,8 +69,8 @@ use crate::{
 // twarp: 2c-e — DiffType is now a stub in `crate::app_state`.
 use crate::app_state::DiffType;
 use pathfinder_color::ColorU;
+use twarp_core::ui::icons::Icon;
 use vim::vim::{MotionType, VimMode};
-use warp_core::ui::icons::Icon;
 
 // twarp: 2c-d — PersistedWorkspace deleted with AI; LSP install hooks become no-ops.
 use crate::workspace::WorkspaceAction;
@@ -99,7 +99,7 @@ use super::find_references_view::{FindReferencesView, FindReferencesViewEvent};
 use super::language_server_extension::ProcessedDiagnostic;
 use super::lsp_telemetry::LspTelemetryEvent;
 use super::ImmediateSaveError;
-use warp_core::send_telemetry_from_ctx;
+use twarp_core::send_telemetry_from_ctx;
 
 type SaveCallback =
     Box<dyn FnOnce(SaveOutcome, &mut ViewContext<LocalCodeEditorView>) + Send + Sync + 'static>;
@@ -693,7 +693,7 @@ impl LocalCodeEditorView {
                 let window_id = ctx.window_id();
 
                 // Create the on-click action based on whether we have a definition
-                let on_click: Box<dyn Fn(&mut warpui::AppContext)> = if has_different_definition {
+                let on_click: Box<dyn Fn(&mut twarpui::AppContext)> = if has_different_definition {
                     let target_location = definition_locations.first().unwrap().target.clone();
                     Box::new(move |app| {
                         app.dispatch_typed_action_for_view(
@@ -2051,13 +2051,13 @@ impl View for LocalCodeEditorView {
         "LocalCodeEditorView"
     }
 
-    fn on_focus(&mut self, focus_ctx: &warpui::FocusContext, ctx: &mut ViewContext<Self>) {
+    fn on_focus(&mut self, focus_ctx: &twarpui::FocusContext, ctx: &mut ViewContext<Self>) {
         if focus_ctx.is_self_focused() {
             self.editor.update(ctx, |editor, ctx| editor.focus(ctx));
         }
     }
 
-    fn render(&self, app: &AppContext) -> Box<dyn warpui::Element> {
+    fn render(&self, app: &AppContext) -> Box<dyn twarpui::Element> {
         // Rendering the version conflict banner.
         let base: Box<dyn Element> = if self.has_version_conflicts(app) {
             let appearance = Appearance::as_ref(app);

@@ -4,11 +4,11 @@ use std::{
     sync::Arc,
 };
 
-use warp_util::path::ShellFamily;
-use warp_workflows::workflows as global_workflows;
+use twarp_util::path::ShellFamily;
 #[cfg(not(target_family = "wasm"))]
-use warpui::platform::OperatingSystem;
-use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
+use twarpui::platform::OperatingSystem;
+use twarpui::{AppContext, Entity, ModelContext, SingletonEntity};
+use warp_workflows::workflows as global_workflows;
 
 #[cfg(feature = "local_fs")]
 use crate::user_config::load_workflows;
@@ -184,7 +184,7 @@ pub(super) fn load_project_workflows(path: &Path) -> Vec<Workflow> {
     match git2::Repository::discover(path) {
         Ok(repository) => repository.workdir().map_or(Vec::new(), |workdir| {
             load_workflows(&workflows_dir(
-                workdir.join(warp_core::paths::WARP_CONFIG_DIR),
+                workdir.join(twarp_core::paths::WARP_CONFIG_DIR),
             ))
         }),
         Err(_) => Vec::new(),
@@ -210,7 +210,7 @@ pub fn tail_command_for_shell(shell_family: ShellFamily, path: &PathBuf) -> Stri
 
 #[cfg(not(target_family = "wasm"))]
 pub fn prompt_chip_logging_workflow(shell_family: ShellFamily) -> Option<Workflow> {
-    if !warp_core::channel::ChannelState::enable_debug_features() {
+    if !twarp_core::channel::ChannelState::enable_debug_features() {
         return None;
     }
     let log_file_path = crate::context_chips::logging::log_file_path().ok()?;

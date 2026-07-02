@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use warp_util::path::LineAndColumnArg;
-use warpui::{
+use twarp_util::path::LineAndColumnArg;
+use twarpui::{
     elements::{DraggableState, Empty, MouseStateHandle},
     AppContext, Element, Entity, ModelHandle, TypedActionView, View, ViewContext, ViewHandle,
 };

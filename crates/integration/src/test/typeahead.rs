@@ -1,4 +1,4 @@
-use warp::{
+use twarp::{
     integration_testing::{
         agent_mode::AgentViewState,
         step::new_step_with_default_assertions,
@@ -15,7 +15,7 @@ use warp::{
         shell::{Shell, ShellType},
     },
 };
-use warpui::{
+use twarpui::{
     async_assert, async_assert_eq,
     integration::{AssertionCallback, AssertionOutcome, TestStep},
 };
@@ -212,7 +212,7 @@ pub fn test_input_reporting_powershell() -> Builder {
 pub fn test_background_output() -> Builder {
     use regex::Regex;
     use std::{fs::OpenOptions, io::Write, os::unix::prelude::OpenOptionsExt};
-    use warp::integration_testing::{
+    use twarp::integration_testing::{
         block::assert_background_output,
         terminal::{execute_command_for_single_terminal_in_tab, util::ExpectedExitStatus},
     };

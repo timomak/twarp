@@ -45,21 +45,21 @@ impl PromptAlertView {
         true
     }
 }
-impl warpui::Entity for PromptAlertView {
+impl twarpui::Entity for PromptAlertView {
     type Event = PromptAlertEvent;
 }
-impl warpui::View for PromptAlertView {
+impl twarpui::View for PromptAlertView {
     fn ui_name() -> &'static str {
         "PromptAlertView/twarp-stub"
     }
-    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
-        warpui::elements::Empty::new().finish()
+    fn render(&self, _: &twarpui::AppContext) -> Box<dyn twarpui::Element> {
+        twarpui::elements::Empty::new().finish()
     }
 }
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct PromptAlertAction;
-impl warpui::TypedActionView for PromptAlertView {
+impl twarpui::TypedActionView for PromptAlertView {
     type Action = PromptAlertAction;
 }
 use crate::server::telemetry::InteractionSource;
@@ -67,26 +67,26 @@ use crate::settings::InputSettings;
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
 use crate::util::bindings::keybinding_name_to_keystroke;
 use pathfinder_geometry::vector::vec2f;
-use warpui::elements::{
+use twarpui::elements::{
     ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
     Fill, Flex, HighlightedHyperlink, Hoverable, Icon, MainAxisAlignment, MainAxisSize,
     OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Shrinkable, Stack,
     Text,
 };
-use warpui::keymap::Keystroke;
-use warpui::platform::Cursor;
-use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
-use warpui::{elements::MouseStateHandle, Element};
-use warpui::{
+use twarpui::keymap::Keystroke;
+use twarpui::platform::Cursor;
+use twarpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use twarpui::{elements::MouseStateHandle, Element};
+use twarpui::{
     AppContext, Entity, EventContext, ModelHandle, TypedActionView, ViewContext, ViewHandle,
 };
-use warpui::{SingletonEntity, View};
+use twarpui::{SingletonEntity, View};
 
 use crate::terminal::view::{ContextMenuAction, InputType, PromptSuggestion};
 use crate::ui_components::blended_colors;
 use crate::{appearance::Appearance, terminal::view::TerminalAction};
-use warp_core::channel::ChannelState;
-use warp_core::ui::theme::color::internal_colors::{neutral_2, neutral_3};
+use twarp_core::channel::ChannelState;
+use twarp_core::ui::theme::color::internal_colors::{neutral_2, neutral_3};
 
 use crate::ui_components::icons::Icon as WarpUIIcon;
 
@@ -98,7 +98,7 @@ pub enum PassiveSuggestionTrigger {
 }
 #[allow(dead_code)]
 impl PassiveSuggestionTrigger {
-    pub fn block_id(&self) -> Option<warp_terminal::model::BlockId> {
+    pub fn block_id(&self) -> Option<twarp_terminal::model::BlockId> {
         None
     }
 }
@@ -111,12 +111,12 @@ pub struct ShellCommandCompletedTrigger {
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct ExecutedShellCommandStub {
-    pub id: warp_terminal::model::BlockId,
+    pub id: twarp_terminal::model::BlockId,
 }
 impl From<String> for ExecutedShellCommandStub {
     fn from(_: String) -> Self {
         Self {
-            id: warp_terminal::model::BlockId::new(),
+            id: twarp_terminal::model::BlockId::new(),
         }
     }
 }
@@ -504,7 +504,7 @@ impl View for PromptSuggestionsView {
                     0,
                     keybinding_name_to_keystroke(ACCEPT_PROMPT_SUGGESTION_KEYBINDING, app),
                     banner_state.accept_button_mouse_state.clone(),
-                    Rc::new(move |ctx: &mut warpui::EventContext<'_>| {
+                    Rc::new(move |ctx: &mut twarpui::EventContext<'_>| {
                         ctx.dispatch_typed_action(TerminalAction::ResolvePromptSuggestion(
                             PromptSuggestionResolution::Accept {
                                 interaction_source: InteractionSource::Button,

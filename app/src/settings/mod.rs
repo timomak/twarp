@@ -63,8 +63,8 @@ pub use scroll::*;
 pub use select::*;
 pub use ssh::*;
 pub use theme::*;
+use twarp_core::user_preferences::GetUserPreferences as _;
 pub use vim_banner::*;
-use warp_core::user_preferences::GetUserPreferences as _;
 
 /// Describes errors encountered when loading settings from `settings.toml`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -127,8 +127,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use settings::Setting as _;
 use std::{collections::HashMap, ops::Mul, path::PathBuf};
-use warp_core::features::FeatureFlag;
-use warpui::{
+use twarp_core::features::FeatureFlag;
+use twarpui::{
     elements::DEFAULT_UI_LINE_HEIGHT_RATIO, keymap::Keystroke, AppContext, DisplayIdx,
     SingletonEntity,
 };
@@ -585,10 +585,10 @@ pub struct ExtraMetaKeysChangedArg {
 
 /// Returns the path to the user preferences file.
 pub fn user_preferences_file_path() -> PathBuf {
-    warp_core::paths::config_local_dir().join("user_preferences.json")
+    twarp_core::paths::config_local_dir().join("user_preferences.json")
 }
 
 /// Returns the path to the TOML settings file.
 pub fn user_preferences_toml_file_path() -> PathBuf {
-    warp_core::paths::config_local_dir().join("settings.toml")
+    twarp_core::paths::config_local_dir().join("settings.toml")
 }

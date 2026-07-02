@@ -1,4 +1,4 @@
-use warp::{
+use twarp::{
     cmd_or_ctrl_shift,
     integration_testing::{
         step::new_step_with_default_assertions,
@@ -12,7 +12,7 @@ use warp::{
     },
     workspace::WorkspaceAction,
 };
-use warpui::{async_assert, async_assert_eq, integration::TestStep};
+use twarpui::{async_assert, async_assert_eq, integration::TestStep};
 
 use crate::util::{get_input_buffer, skip_if_powershell_core_2303};
 

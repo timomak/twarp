@@ -1,6 +1,6 @@
 use pathfinder_color::ColorU;
-use warp_core::ui::theme::color::internal_colors;
-use warpui::{
+use twarp_core::ui::theme::color::internal_colors;
+use twarpui::{
     elements::{
         Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, Icon,
         MainAxisSize, ParentElement, Radius, Shrinkable,

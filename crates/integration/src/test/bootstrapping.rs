@@ -1,8 +1,7 @@
 //! Integration tests for bootstrapping logic.
 
 use settings::Setting as _;
-use version_compare::Cmp;
-use warp::{
+use twarp::{
     cmd_or_ctrl_shift,
     integration_testing::{
         input::{
@@ -24,9 +23,10 @@ use warp::{
     terminal::shell::{self, ShellType},
     workspace::Workspace,
 };
-use warpui::{
+use twarpui::{
     async_assert, async_assert_eq, clipboard::ClipboardContent, integration::TestStep, ViewHandle,
 };
+use version_compare::Cmp;
 
 use crate::util::{write_all_rc_files_for_test, write_rc_files_for_test, ShellRcType};
 

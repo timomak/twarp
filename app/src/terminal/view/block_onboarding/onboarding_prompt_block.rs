@@ -12,7 +12,7 @@ use crate::terminal::view::block_onboarding::util;
 use crate::terminal::SizeInfo;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use settings::Setting as _;
-use warpui::{
+use twarpui::{
     elements::{
         Align, Border, Clipped, ConstrainedBox, Container, CornerRadius, Flex,
         FormattedTextElement, HighlightedHyperlink, Hoverable, HyperlinkUrl, MainAxisAlignment,
@@ -108,7 +108,7 @@ impl OnboardingPromptBlock {
         let mut confirm_button = appearance
             .ui_builder()
             .button(
-                warpui::ui_components::button::ButtonVariant::Accent,
+                twarpui::ui_components::button::ButtonVariant::Accent,
                 self.mouse_state_handle_confirm.clone(),
             )
             .with_style(UiComponentStyles {

@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 // twarp: 2c-d — AI blocklist inline action types deleted; stubs.
-use warpui::keymap::Keystroke;
+use twarpui::keymap::Keystroke;
 pub const ENTER_KEYSTROKE: Keystroke = Keystroke {
     cmd: false,
     shift: false,
@@ -19,8 +19,8 @@ pub const ESCAPE_KEYSTROKE: Keystroke = Keystroke {
     key: String::new(),
 };
 pub mod requested_script {
-    use warpui::elements::Empty;
-    use warpui::Element;
+    use twarpui::elements::Empty;
+    use twarpui::Element;
     #[derive(Default)]
     pub struct RequestedScriptMouseStates;
     #[derive(Clone, PartialEq, Eq)]
@@ -83,18 +83,18 @@ use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon as UiIcon;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 pub use requested_script::{RequestedScriptMouseStates, RequestedScriptStatus, TitledScript};
-use warp_core::ui::theme::WarpTheme;
-use warpui::elements::{
+use twarp_core::ui::theme::WarpTheme;
+use twarpui::elements::{
     FormattedTextElement, HighlightedHyperlink, Hoverable, Icon, MainAxisAlignment, MainAxisSize,
     MouseStateHandle,
 };
-use warpui::keymap::FixedBinding;
-use warpui::ui_components::toggle_menu::ToggleMenuStateHandle;
-use warpui::{
+use twarpui::keymap::FixedBinding;
+use twarpui::ui_components::toggle_menu::ToggleMenuStateHandle;
+use twarpui::{
     elements::{Border, Container, CrossAxisAlignment, Flex, ParentElement},
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext,
 };
-use warpui::{BlurContext, FocusContext};
+use twarpui::{BlurContext, FocusContext};
 
 pub const WHY_INSTALL_TMUX_URL: &str =
     "https://docs.warp.dev/terminal/warpify/ssh#why-do-i-need-tmux-on-the-remote-machine";
@@ -185,7 +185,7 @@ pub struct SystemInstallState {
 }
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([
         FixedBinding::new(
@@ -340,13 +340,13 @@ impl SshInstallTmuxBlock {
             self.script_status.clone(),
             self.is_collapsed,
             self.show_tmux_install_block,
-            move |ctx: &mut warpui::ViewContext<Self>, _: (), _: ()| {
+            move |ctx: &mut twarpui::ViewContext<Self>, _: (), _: ()| {
                 ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::ToggleVisibility)
             },
-            |ctx: &mut warpui::ViewContext<Self>| {
+            |ctx: &mut twarpui::ViewContext<Self>| {
                 ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::InstallTmux)
             },
-            |ctx: &mut warpui::ViewContext<Self>| {
+            |ctx: &mut twarpui::ViewContext<Self>| {
                 ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::Cancel)
             },
             &ENTER_KEYSTROKE,
@@ -354,7 +354,7 @@ impl SshInstallTmuxBlock {
             &self.requested_script_mouse_states,
             toggle_menu_mouse_states.clone(),
             toggle_menu_state_handle.clone(),
-            Rc::new(move |ctx: &mut warpui::ViewContext<Self>, _: (), _: ()| {
+            Rc::new(move |ctx: &mut twarpui::ViewContext<Self>, _: (), _: ()| {
                 ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::OnToggleInstallScriptChoice)
             }),
             self.is_focused,
@@ -377,13 +377,13 @@ impl SshInstallTmuxBlock {
             self.script_status.clone(),
             self.is_collapsed,
             self.show_tmux_install_block,
-            move |ctx: &mut warpui::ViewContext<Self>, _: (), _: ()| {
+            move |ctx: &mut twarpui::ViewContext<Self>, _: (), _: ()| {
                 ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::ToggleVisibility)
             },
-            |ctx: &mut warpui::ViewContext<Self>| {
+            |ctx: &mut twarpui::ViewContext<Self>| {
                 ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::InstallTmux)
             },
-            |ctx: &mut warpui::ViewContext<Self>| {
+            |ctx: &mut twarpui::ViewContext<Self>| {
                 ctx.dispatch_typed_action(&SshInstallTmuxBlockAction::Cancel)
             },
             &ENTER_KEYSTROKE,
@@ -595,7 +595,7 @@ impl TypedActionView for SshInstallTmuxBlock {
 #[allow(unused_variables)]
 pub fn install_tmux_script(system: &SystemDetails, app: &AppContext) -> Option<String> {
     use asset_macro::bundled_asset;
-    use warpui::assets::asset_cache::{AssetCache, AssetState};
+    use twarpui::assets::asset_cache::{AssetCache, AssetState};
 
     let asset_source = match (
         system.operating_system.as_str(),
@@ -633,7 +633,7 @@ pub fn install_root_tmux_script(
     can_run_sudo: bool,
 ) -> Option<String> {
     use asset_macro::bundled_asset;
-    use warpui::assets::asset_cache::{AssetCache, AssetState};
+    use twarpui::assets::asset_cache::{AssetCache, AssetState};
 
     let asset_source = match (
         system.operating_system.as_str(),

@@ -48,8 +48,8 @@ use cynic::{MutationBuilder, QueryBuilder, SubscriptionBuilder};
 #[cfg(test)]
 use mockall::{automock, predicate::*};
 use std::collections::HashMap;
-use warp_core::report_error;
-use warp_graphql::{
+use twarp_core::report_error;
+use twarp_graphql::{
     error::UserFacingErrorInterface,
     generic_string_object::GenericStringObjectInput,
     mutations::{
@@ -985,7 +985,7 @@ impl ObjectClient for ServerApi {
                         };
 
                         match gso.format {
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonEnvVarCollection => {
+                            twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonEnvVarCollection => {
                                 parse_server_gso::<EnvVarCollection, JsonSerializer>(
                                     &mut updated_generic_string_objects,
                                     GenericStringObjectFormat::Json(JsonObjectType::EnvVarCollection),
@@ -995,7 +995,7 @@ impl ObjectClient for ServerApi {
                                     gso.serialized_model,
                                 );
                             }
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonPreference => {
+                            twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonPreference => {
                                 parse_server_gso::<Preference, JsonSerializer>(
                                     &mut updated_generic_string_objects,
                                     GenericStringObjectFormat::Json(JsonObjectType::Preference),
@@ -1005,7 +1005,7 @@ impl ObjectClient for ServerApi {
                                     gso.serialized_model,
                                 );
                             }
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonWorkflowEnum => {
+                            twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonWorkflowEnum => {
                                 parse_server_gso::<WorkflowEnum, JsonSerializer>(
                                     &mut updated_generic_string_objects,
                                     GenericStringObjectFormat::Json(JsonObjectType::WorkflowEnum),
@@ -1016,14 +1016,14 @@ impl ObjectClient for ServerApi {
                                 );
                             }
                             // twarp: 2c-d — AI cloud objects deleted; ignore these variants.
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact
-                            | warp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer
-                            | warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile
-                            | warp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer
-                            | warp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
+                            twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact
+                            | twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer
+                            | twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile
+                            | twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer
+                            | twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
                                 // No-op for deleted AI cloud objects.
                             }
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
+                            twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
                                 // CloudEnvironment objects are no longer materialized client-side.
                             }
                         }
@@ -1246,7 +1246,7 @@ impl ObjectClient for ServerApi {
         let response = self.send_graphql_request(operation, None).await?;
 
         let result = match response.untrash_object {
-            warp_graphql::mutations::untrash_object::UntrashObjectResult::UntrashObjectOutput(
+            twarp_graphql::mutations::untrash_object::UntrashObjectResult::UntrashObjectOutput(
                 output,
             ) => {
                 if output.success {

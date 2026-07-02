@@ -105,7 +105,7 @@ use crate::workspace::view::openwarp_launch_modal::{
 #[cfg(all(target_os = "macos", feature = "crash_reporting"))]
 use sentry::protocol::{Attachment, AttachmentType};
 use serde_json;
-use warpui::notification::NotificationSendError;
+use twarpui::notification::NotificationSendError;
 
 use super::hoa_onboarding::{
     mark_hoa_onboarding_completed, HoaOnboardingFlow, HoaOnboardingFlowEvent, HoaOnboardingStep,
@@ -279,7 +279,7 @@ use crate::terminal::{self, SizeInfo, TerminalView};
 use crate::workspace::cli_install;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use ::settings::{Setting, ToggleableSetting};
-use warp_core::features::FeatureFlag;
+use twarp_core::features::FeatureFlag;
 
 use crate::search::{self, QueryFilter};
 use crate::terminal::view::{
@@ -337,23 +337,23 @@ use std::convert::TryFrom;
 use std::time::Duration;
 #[cfg(target_os = "macos")]
 use std::time::{SystemTime, UNIX_EPOCH};
-use warp_core::context_flag::ContextFlag;
-use warp_core::execution_mode::AppExecutionMode;
-use warp_core::semantic_selection::SemanticSelection;
-use warp_util::path::{user_friendly_path, LineAndColumnArg};
-use warpui::fonts::Weight;
-use warpui::modals::{AlertDialogWithCallbacks, AppModalCallback};
-use warpui::windowing::{StateEvent, WindowManager};
+use twarp_core::context_flag::ContextFlag;
+use twarp_core::execution_mode::AppExecutionMode;
+use twarp_core::semantic_selection::SemanticSelection;
+use twarp_util::path::{user_friendly_path, LineAndColumnArg};
+use twarpui::fonts::Weight;
+use twarpui::modals::{AlertDialogWithCallbacks, AppModalCallback};
+use twarpui::windowing::{StateEvent, WindowManager};
 
-use warpui::clipboard::ClipboardContent;
+use twarpui::clipboard::ClipboardContent;
 #[cfg(target_family = "wasm")]
-use warpui::elements::Percentage;
-use warpui::elements::{
+use twarpui::elements::Percentage;
+use twarpui::elements::{
     CacheOption, DispatchEventResult, DraggableState, DropTarget, EventHandler, Image,
     MouseInBehavior, Rect,
 };
-use warpui::ui_components::button::{Button, ButtonVariant};
-use warpui::{elements::MouseStateHandle, fonts::Properties};
+use twarpui::ui_components::button::{Button, ButtonVariant};
+use twarpui::{elements::MouseStateHandle, fonts::Properties};
 
 use crate::{autoupdate, channel::ChannelState};
 
@@ -429,17 +429,17 @@ use std::path::PathBuf;
 use std::process;
 use std::sync::{mpsc, Mutex};
 use std::{cmp::Ordering, sync::Arc};
-use warp_core::ui::theme::{color::internal_colors, phenomenon::PhenomenonStyle, Fill};
-use warp_core::ui::{color::coloru_with_opacity, Icon};
-use warp_editor::editor::NavigationKey;
-use warpui::keymap::Context;
-use warpui::notification::{RequestPermissionsOutcome, UserNotification};
-use warpui::platform::{
+use twarp_core::ui::theme::{color::internal_colors, phenomenon::PhenomenonStyle, Fill};
+use twarp_core::ui::{color::coloru_with_opacity, Icon};
+use twarp_editor::editor::NavigationKey;
+use twarpui::keymap::Context;
+use twarpui::notification::{RequestPermissionsOutcome, UserNotification};
+use twarpui::platform::{
     Cursor, FilePickerConfiguration, FullscreenState, SystemTheme, TerminationMode,
 };
-use warpui::text_layout::ClipConfig;
-use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
-use warpui::{
+use twarpui::text_layout::ClipConfig;
+use twarpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use twarpui::{
     accessibility::{
         AccessibilityContent, AccessibilityVerbosity, ActionAccessibilityContent, WarpA11yRole,
     },
@@ -454,7 +454,7 @@ use warpui::{
     geometry::vector::{vec2f, Vector2F},
     AppContext, Entity, TypedActionView, UpdateView, View, ViewContext, ViewHandle,
 };
-use warpui::{
+use twarpui::{
     EntityId, FocusContext, ModelHandle, SingletonEntity, UpdateModel, ViewAsRef, WeakViewHandle,
     WindowId,
 };
@@ -617,9 +617,9 @@ pub(super) fn floating_panel_corner_radius() -> CornerRadius {
     CornerRadius::with_all(Radius::Pixels(10.))
 }
 
-pub(super) fn floating_panel_drop_shadow() -> warpui::elements::DropShadow {
-    warpui::elements::DropShadow {
-        color: warpui::color::ColorU::new(0, 0, 0, 24),
+pub(super) fn floating_panel_drop_shadow() -> twarpui::elements::DropShadow {
+    twarpui::elements::DropShadow {
+        color: twarpui::color::ColorU::new(0, 0, 0, 24),
         offset: pathfinder_geometry::vector::vec2f(0., 2.),
         blur_radius: 10.,
         spread_radius: 0.,
@@ -630,7 +630,7 @@ pub(super) fn floating_panel_drop_shadow() -> warpui::elements::DropShadow {
 /// read as the same surface as the terminal (white in light themes, dark in dark
 /// themes). The cards are set apart only by their gray outline, edge gap, and
 /// soft shadow rather than a distinct fill.
-pub(crate) fn floating_panel_surface_fill(app: &AppContext) -> warp_core::ui::theme::Fill {
+pub(crate) fn floating_panel_surface_fill(app: &AppContext) -> twarp_core::ui::theme::Fill {
     Appearance::as_ref(app).theme().background()
 }
 
@@ -889,7 +889,7 @@ impl View for AIFactViewStub {
         "AIFactViewStub/twarp-stub"
     }
     fn render(&self, _: &AppContext) -> Box<dyn Element> {
-        warpui::elements::Empty::new().finish()
+        twarpui::elements::Empty::new().finish()
     }
 }
 #[allow(dead_code)]
@@ -1067,10 +1067,10 @@ pub struct Workspace {
     tab_config_action_sidecar_mouse_states: crate::tab_configs::action_sidecar::SidecarMouseStates,
     remove_tab_config_confirmation_dialog: ViewHandle<RemoveTabConfigConfirmationDialog>,
     // twarp: 2c-d — fields for AI-removed callers (typed as ViewHandle of unit-stub view)
-    suggested_rule_modal: warpui::ViewHandle<TwarpStubView>,
-    suggested_agent_mode_workflow_modal: warpui::ViewHandle<TwarpStubView>,
-    rewind_confirmation_dialog: warpui::ViewHandle<TwarpStubView>,
-    ai_fact_view: warpui::ViewHandle<AIFactViewStub>,
+    suggested_rule_modal: twarpui::ViewHandle<TwarpStubView>,
+    suggested_agent_mode_workflow_modal: twarpui::ViewHandle<TwarpStubView>,
+    rewind_confirmation_dialog: twarpui::ViewHandle<TwarpStubView>,
+    ai_fact_view: twarpui::ViewHandle<AIFactViewStub>,
     /// State for the currently in-flight custom-shortcut sequence on this
     /// workspace. `None` when nothing is running; gates the
     /// `flags::SHORTCUT_RUNNING` context flag (Escape cancel) and PRODUCT
@@ -1086,15 +1086,15 @@ pub struct Workspace {
 
 // twarp: 2c-d — generic stub view for several AI-removed dialog/modal handles.
 pub struct TwarpStubView;
-impl warpui::Entity for TwarpStubView {
+impl twarpui::Entity for TwarpStubView {
     type Event = ();
 }
-impl warpui::View for TwarpStubView {
+impl twarpui::View for TwarpStubView {
     fn ui_name() -> &'static str {
         "TwarpStubView/twarp-stub"
     }
-    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
-        warpui::elements::Empty::new().finish()
+    fn render(&self, _: &twarpui::AppContext) -> Box<dyn twarpui::Element> {
+        twarpui::elements::Empty::new().finish()
     }
 }
 
@@ -3023,7 +3023,7 @@ impl Workspace {
 
     // twarp: 2c-d — removed pub fn ai_fact_view (returned ViewHandle<AIFactView>);
     // returns a stub handle so integration tests can call .read() without panic.
-    pub fn ai_fact_view(&self) -> warpui::ViewHandle<AIFactViewStub> {
+    pub fn ai_fact_view(&self) -> twarpui::ViewHandle<AIFactViewStub> {
         self.ai_fact_view.clone()
     }
 
@@ -3738,7 +3738,7 @@ impl Workspace {
                             .ambient_agent_task_id();
                         if task_id.is_some() {
                             // Open the details panel for shared ambient agent sessions (unless on mobile)
-                            if !warpui::platform::wasm::is_mobile_device() {
+                            if !twarpui::platform::wasm::is_mobile_device() {
                                 me.current_workspace_state.is_transcript_details_panel_open = true;
                                 me.transcript_info_button.update(ctx, |button, ctx| {
                                     button.set_active(true, ctx);
@@ -4626,11 +4626,7 @@ impl Workspace {
         // Make the choice stick to the tab's folder so new tabs / `cd`s here
         // re-apply it. Toggling the active color off records the folder as
         // explicitly uncolored.
-        self.persist_directory_color_for_tab(
-            index,
-            if is_same { None } else { Some(color) },
-            ctx,
-        );
+        self.persist_directory_color_for_tab(index, if is_same { None } else { Some(color) }, ctx);
         ctx.notify();
     }
 
@@ -4868,7 +4864,7 @@ impl Workspace {
                     }
                 }
                 Action::Wait(duration) => {
-                    let timer = warpui::r#async::Timer::after(duration);
+                    let timer = twarpui::r#async::Timer::after(duration);
                     ctx.spawn(timer, move |me, _, ctx| {
                         if me.shortcut_runner.as_ref().is_some_and(|r| !r.cancelled) {
                             me.execute_next_shortcut_action(ctx);
@@ -5765,7 +5761,7 @@ impl Workspace {
     #[cfg(not(target_family = "wasm"))]
     fn view_logs(&mut self, ctx: &mut ViewContext<Self>) {
         ctx.spawn(
-            async { tokio::task::spawn_blocking(warp_logging::create_log_bundle_zip).await },
+            async { tokio::task::spawn_blocking(twarp_logging::create_log_bundle_zip).await },
             |me, result, ctx| match result {
                 Ok(Ok(path)) => {
                     ctx.open_file_path_in_explorer(&path);
@@ -7224,13 +7220,13 @@ impl Workspace {
     }
 
     /// Find an active session and pre-fill the input editor the Warp executable with the
-    /// [`warp_cli::Command::DumpDebugInfo`] subcommand.
+    /// [`twarp_cli::Command::DumpDebugInfo`] subcommand.
     fn dump_debug_info(&mut self, ctx: &mut ViewContext<Self>) {
         if let Some(exec) = std::env::current_exe()
             .ok()
             .map(|path| path.to_string_lossy().into_owned())
         {
-            let command = format!("{exec} {}", warp_cli::dump_debug_info_flag());
+            let command = format!("{exec} {}", twarp_cli::dump_debug_info_flag());
             // Get the active session for this tab if it exists.
             let mut active_session_handle = self
                 .active_tab_pane_group()
@@ -8318,7 +8314,7 @@ impl Workspace {
                     .finish()
                 })
                 .with_cursor(Cursor::PointingHand)
-                .on_click(|ctx: &mut warpui::elements::EventContext, _, _| {
+                .on_click(|ctx: &mut twarpui::elements::EventContext, _, _| {
                     ctx.dispatch_typed_action(WorkspaceAction::OpenWorktreeAddRepoPicker);
                     ctx.dispatch_typed_action(crate::menu::MenuAction::Close(true));
                 })
@@ -8708,7 +8704,7 @@ impl Workspace {
                     });
                 });
             },
-            warpui::platform::FilePickerConfiguration::new().folders_only(),
+            twarpui::platform::FilePickerConfiguration::new().folders_only(),
         );
     }
 
@@ -8782,7 +8778,7 @@ impl Workspace {
             .map(crate::util::git::list_local_branches_sync)
             .unwrap_or_default();
         let branch_refs: HashSet<&str> = branches.iter().map(|s| s.as_str()).collect();
-        Some(warp_util::worktree_names::generate_worktree_branch_name(
+        Some(twarp_util::worktree_names::generate_worktree_branch_name(
             &branch_refs,
         ))
     }
@@ -8822,7 +8818,7 @@ impl Workspace {
         } else {
             let branches = crate::util::git::list_local_branches_sync(Path::new(repo));
             let branch_refs: HashSet<&str> = branches.iter().map(|s| s.as_str()).collect();
-            warp_util::worktree_names::generate_worktree_branch_name(&branch_refs)
+            twarp_util::worktree_names::generate_worktree_branch_name(&branch_refs)
         };
 
         let toml_content = crate::tab_configs::build_worktree_config_toml(
@@ -8906,7 +8902,7 @@ impl Workspace {
                     });
                 });
             },
-            warpui::platform::FilePickerConfiguration::new().folders_only(),
+            twarpui::platform::FilePickerConfiguration::new().folders_only(),
         );
     }
 
@@ -8927,7 +8923,7 @@ impl Workspace {
         };
         let branches = crate::util::git::list_local_branches_sync(Path::new(&repo_path));
         let branch_refs: HashSet<&str> = branches.iter().map(|s| s.as_str()).collect();
-        let branch_name = warp_util::worktree_names::generate_worktree_branch_name(&branch_refs);
+        let branch_name = twarp_util::worktree_names::generate_worktree_branch_name(&branch_refs);
         let repo_display_name = Path::new(&repo_path)
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
@@ -9006,7 +9002,7 @@ impl Workspace {
                 let _path_buf: PathBuf = path.into();
                 let _ = ctx;
             },
-            warpui::platform::FilePickerConfiguration::new().folders_only(),
+            twarpui::platform::FilePickerConfiguration::new().folders_only(),
         );
     }
 
@@ -11963,7 +11959,7 @@ impl Workspace {
 
     #[cfg(target_os = "macos")]
     pub fn sync_window_button_visibility(&self, ctx: &mut ViewContext<Self>) {
-        use warpui::platform::mac::WindowExt;
+        use twarpui::platform::mac::WindowExt;
         let show = if FeatureFlag::FullScreenZenMode.is_enabled()
             && TabSettings::as_ref(ctx)
                 .workspace_decoration_visibility
@@ -13579,7 +13575,7 @@ impl Workspace {
                 host_id,
                 indexed_path,
             } => {
-                use warp_util::standardized_path::StandardizedPath;
+                use twarp_util::standardized_path::StandardizedPath;
 
                 if let Ok(std_path) = StandardizedPath::try_new(indexed_path) {
                     let remote_id = RemoteRepositoryIdentifier::new(host_id.clone(), std_path);
@@ -16455,7 +16451,11 @@ impl Workspace {
     fn update_claude_pane_git_status(&mut self, ctx: &mut ViewContext<Self>) {
         let active_pane_group = self.active_tab_pane_group();
         // Terminal tabs own their own model; nothing to hold here.
-        if active_pane_group.as_ref(ctx).active_session_view(ctx).is_some() {
+        if active_pane_group
+            .as_ref(ctx)
+            .active_session_view(ctx)
+            .is_some()
+        {
             self.claude_pane_git_status = None;
             return;
         }
@@ -16783,7 +16783,7 @@ impl Workspace {
             // Left: Warp logo - clickable to link to warp.dev
             let warp_logo = Hoverable::new(self.mouse_states.warp_logo.clone(), |_state| {
                 ConstrainedBox::new(
-                    warp_core::ui::Icon::Warp
+                    twarp_core::ui::Icon::Warp
                         .to_warpui_icon(appearance.theme().foreground())
                         .finish(),
                 )
@@ -16839,7 +16839,7 @@ impl Workspace {
             }
 
             // Hide "Open in Warp" button on mobile devices
-            if !warpui::platform::wasm::is_mobile_device() {
+            if !twarpui::platform::wasm::is_mobile_device() {
                 right_row.add_child(ChildView::new(&self.open_in_warp_button).finish());
             }
             tab_bar.add_child(right_row.finish());
@@ -18589,7 +18589,7 @@ impl Workspace {
         }
 
         #[cfg(target_family = "wasm")]
-        if !warpui::platform::wasm::is_mobile_device()
+        if !twarpui::platform::wasm::is_mobile_device()
             && self
                 .current_workspace_state
                 .is_transcript_details_panel_open
@@ -18657,7 +18657,7 @@ impl Workspace {
                 )
             }
             HeaderToolbarItemKind::ToolsPanel => {
-                if !pane_group.left_panel_open || warpui::platform::is_mobile_device() {
+                if !pane_group.left_panel_open || twarpui::platform::is_mobile_device() {
                     return None;
                 }
                 Some(ChildView::new(&self.left_panel_view).finish())
@@ -20235,7 +20235,7 @@ impl TypedActionView for Workspace {
                 // Blocking is ok here only because this action is only registered in dev and local
                 // builds to aid in debugging and development.
                 let access_token =
-                    warpui::r#async::block_on(self.server_api.get_or_refresh_access_token());
+                    twarpui::r#async::block_on(self.server_api.get_or_refresh_access_token());
                 if let Ok(token) = access_token {
                     if let Some(bearer) = token.bearer_token() {
                         ctx.clipboard().write(ClipboardContent::plain_text(bearer));
@@ -21071,7 +21071,7 @@ impl View for Workspace {
         self.sync_window_button_visibility(ctx);
     }
 
-    fn keymap_context(&self, app: &AppContext) -> warpui::keymap::Context {
+    fn keymap_context(&self, app: &AppContext) -> twarpui::keymap::Context {
         let mut context = Self::default_keymap_context();
 
         if NetworkStatus::as_ref(app).is_online() {
@@ -21309,7 +21309,7 @@ impl View for Workspace {
         #[cfg(target_family = "wasm")]
         {
             let pane_group = self.active_tab_pane_group().as_ref(app);
-            if warpui::platform::wasm::is_mobile_device() && pane_group.left_panel_open {
+            if twarpui::platform::wasm::is_mobile_device() && pane_group.left_panel_open {
                 let scrim = Rect::new()
                     .with_background(Fill::Solid(ColorU::new(
                         0,
@@ -21413,7 +21413,7 @@ impl View for Workspace {
 
         // Transcript details panel overlay (right side, mobile only)
         #[cfg(target_family = "wasm")]
-        if warpui::platform::wasm::is_mobile_device()
+        if twarpui::platform::wasm::is_mobile_device()
             && self
                 .current_workspace_state
                 .is_transcript_details_panel_open
@@ -22095,7 +22095,7 @@ impl View for Workspace {
         // twarp: 2c-d — delete_conversation_confirmation_dialog field deleted; branch gutted.
         if false {
             stack.add_positioned_overlay_child(
-                warpui::elements::Empty::new().finish(),
+                twarpui::elements::Empty::new().finish(),
                 OffsetPositioning::offset_from_parent(
                     Vector2F::zero(),
                     ParentOffsetBounds::WindowByPosition,
@@ -22357,7 +22357,7 @@ fn render_cross_window_ghost_chip(
     appearance: &Appearance,
     app: &AppContext,
 ) -> Box<dyn Element> {
-    use warpui::elements::DropShadow;
+    use twarpui::elements::DropShadow;
 
     let theme = appearance.theme();
 

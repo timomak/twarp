@@ -11,10 +11,10 @@ use crate::watcher::{DirectoryWatcher, TaskQueue};
 use crate::{CanonicalizedPath, RepoMetadataError, Repository, RepositoryUpdate};
 use futures::channel::mpsc;
 use futures::StreamExt as _;
+use twarp_util::standardized_path::StandardizedPath;
+use twarpui::r#async::Timer;
+use twarpui::{App, ModelContext, ModelHandle};
 use virtual_fs::{Stub, VirtualFS};
-use warp_util::standardized_path::StandardizedPath;
-use warpui::r#async::Timer;
-use warpui::{App, ModelContext, ModelHandle};
 
 #[test]
 fn test_add_repository_success() {

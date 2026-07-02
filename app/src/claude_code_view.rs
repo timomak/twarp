@@ -64,18 +64,18 @@ use markdown_parser::{
 use parking_lot::RwLock;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use warp_core::features::FeatureFlag;
-use warp_editor::editor::NavigationKey;
-use warpui::assets::asset_cache::AssetSource;
-use warpui::clipboard::ClipboardContent;
-use warpui::elements::shimmering_text::{
+use twarp_core::features::FeatureFlag;
+use twarp_editor::editor::NavigationKey;
+use twarpui::assets::asset_cache::AssetSource;
+use twarpui::clipboard::ClipboardContent;
+use twarpui::elements::shimmering_text::{
     ShimmerConfig, ShimmeringTextElement, ShimmeringTextStateHandle,
 };
-use warpui::platform::FilePickerConfiguration;
-use warpui::r#async::Timer;
-use warpui::ui_components::button::ButtonVariant;
-use warpui::ui_components::slider::SliderStateHandle;
-use warpui::{
+use twarpui::platform::FilePickerConfiguration;
+use twarpui::r#async::Timer;
+use twarpui::ui_components::button::ButtonVariant;
+use twarpui::ui_components::slider::SliderStateHandle;
+use twarpui::{
     elements::{
         Align, Border, CacheOption, ChildAnchor, Clipped, ClippedScrollStateHandle,
         ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss,
@@ -3222,7 +3222,7 @@ impl ClaudeCodeView {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         let panel_color = crate::workspace::view::floating_panel_surface_fill(app).into_solid();
-        let panel_fill = warp_core::ui::theme::Fill::Solid(panel_color);
+        let panel_fill = twarp_core::ui::theme::Fill::Solid(panel_color);
 
         ComputerControlChrome {
             panel_color,
@@ -3322,7 +3322,7 @@ impl ClaudeCodeView {
         let text_color = if live {
             accent
         } else if blocked || failed {
-            warp_core::ui::theme::Fill::warn().into_solid()
+            twarp_core::ui::theme::Fill::warn().into_solid()
         } else {
             theme.main_text_color(theme.background()).into_solid()
         };
@@ -4226,7 +4226,7 @@ impl ClaudeCodeView {
             .finish();
 
         let command = tool_cards::format_command_text(&script.command);
-        let command_text = warpui::elements::Text::new_inline(
+        let command_text = twarpui::elements::Text::new_inline(
             command,
             appearance.monospace_font_family(),
             appearance.monospace_font_size() - 1.,
@@ -4398,7 +4398,7 @@ impl ClaudeCodeView {
         // which carry their real painted bounds. An earlier arrangement nested the
         // `SelectableArea` *inside* the `ClippedScrollable`; that compiled but
         // never selected at runtime — this is the proven outside-wrapping pattern
-        // (see `warpui` `table-sample` and `NewScrollable`). The selected text is
+        // (see `twarpui` `table-sample` and `NewScrollable`). The selected text is
         // mirrored into `transcript_selection`; Copy is handled in
         // `handle_editor_event` (an empty composer surfaces Cmd+C as
         // `EditorEvent::Copy`).
@@ -7084,7 +7084,7 @@ fn render_message_row(
         // hugs its content and is pushed to the right edge of the transcript.
         // No avatar glyph — like the sender's own bubble in Messages.
         let text_color = theme
-            .main_text_color(warp_core::ui::theme::Fill::Solid(accent))
+            .main_text_color(twarp_core::ui::theme::Fill::Solid(accent))
             .into_solid();
         let bubble = Container::new(render_markdown_body(text, text_color, appearance))
             .with_padding(Padding::uniform(10.).with_left(14.).with_right(14.))
@@ -7439,10 +7439,10 @@ fn render_table_cell(
     };
     Container::new(aligned)
         .with_padding_left(10.)
-    .with_padding_right(10.)
-    .with_padding_top(6.)
-    .with_padding_bottom(6.)
-    .finish()
+        .with_padding_right(10.)
+        .with_padding_top(6.)
+        .with_padding_bottom(6.)
+        .finish()
 }
 
 /// Port of `ai_assistant::transcript`'s code-block branch, minus the Warp-AI
@@ -7835,7 +7835,7 @@ fn menu_action_row(
     label: &str,
     color: ColorU,
     mouse: MouseStateHandle,
-    on_click: impl Fn(&mut warpui::EventContext) + 'static,
+    on_click: impl Fn(&mut twarpui::EventContext) + 'static,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let row = Container::new(context_segment(appearance, label.to_owned(), color))
@@ -7969,7 +7969,7 @@ fn render_context_menu_pill(
     bg: ColorU,
     mouse_state: MouseStateHandle,
     position_id: &str,
-    on_click: impl Fn(&mut warpui::EventContext) + 'static,
+    on_click: impl Fn(&mut twarpui::EventContext) + 'static,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let pill = render_context_pill(format!("{label} ▾"), color, bg, appearance);
@@ -7986,7 +7986,7 @@ fn render_context_menu_pill(
 fn render_clickable_pill(
     label: &str,
     mouse_state: MouseStateHandle,
-    on_click: impl Fn(&mut warpui::EventContext) + 'static,
+    on_click: impl Fn(&mut twarpui::EventContext) + 'static,
     bg: ColorU,
     position_id: &str,
     appearance: &Appearance,

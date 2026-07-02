@@ -10,8 +10,8 @@ use onboarding::{ProjectOnboardingSettings, SelectedSettings};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use warp_core::execution_mode::AppExecutionMode;
-use warpui::{SingletonEntity as _, ViewContext};
+use twarp_core::execution_mode::AppExecutionMode;
+use twarpui::{SingletonEntity as _, ViewContext};
 
 /// Configuration for starting the agent onboarding tutorial.
 #[derive(Debug, Clone)]

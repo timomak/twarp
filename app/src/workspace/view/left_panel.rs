@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use warp_core::ui::theme::color::internal_colors;
-use warp_core::{send_telemetry_from_ctx, ui::Icon};
-use warp_util::path::LineAndColumnArg;
-use warpui::{
+use twarp_core::ui::theme::color::internal_colors;
+use twarp_core::{send_telemetry_from_ctx, ui::Icon};
+use twarp_util::path::LineAndColumnArg;
+use twarpui::{
     elements::{
         new_scrollable::{NewScrollable, ScrollableAppearance, SingleAxisConfig},
         resizable_state_handle, Border, ChildView, ConstrainedBox, Container, CornerRadius,
@@ -75,29 +75,29 @@ use crate::editor::{
 // surface itself is theme-driven rather than a fixed light fill).
 
 /// Primary sidebar text (session titles, active pill icon).
-fn sidebar_text(appearance: &Appearance) -> warpui::color::ColorU {
+fn sidebar_text(appearance: &Appearance) -> twarpui::color::ColorU {
     let theme = appearance.theme();
     theme.main_text_color(theme.background()).into_solid()
 }
 
 /// Muted secondary text (section headers, timestamps, inactive pill icons).
-fn sidebar_subtext(appearance: &Appearance) -> warpui::color::ColorU {
+fn sidebar_subtext(appearance: &Appearance) -> twarpui::color::ColorU {
     let theme = appearance.theme();
     theme.sub_text_color(theme.background()).into_solid()
 }
 
 /// Soft row hover/selection highlight, layered over the sidebar surface.
-fn sidebar_row_highlight(appearance: &Appearance) -> warpui::color::ColorU {
+fn sidebar_row_highlight(appearance: &Appearance) -> twarpui::color::ColorU {
     appearance.theme().surface_overlay_2().into_solid()
 }
 
 /// Raised chip for the active tool-switcher pill (stands out from the track).
-fn sidebar_pill_active(appearance: &Appearance) -> warpui::color::ColorU {
+fn sidebar_pill_active(appearance: &Appearance) -> twarpui::color::ColorU {
     appearance.theme().surface_3().into_solid()
 }
 
 /// Recessed track behind the segmented tool switcher (and the search border).
-fn sidebar_pill_track(appearance: &Appearance) -> warpui::color::ColorU {
+fn sidebar_pill_track(appearance: &Appearance) -> twarpui::color::ColorU {
     appearance.theme().surface_1().into_solid()
 }
 
@@ -218,7 +218,7 @@ pub enum ToolPanelView {
 /// `active_view_state::set`, which handles necessary side effects.
 mod active_view_state {
     use super::ToolPanelView;
-    use warpui::ViewContext;
+    use twarpui::ViewContext;
 
     pub struct ActiveViewState(ToolPanelView);
 
@@ -249,9 +249,9 @@ mod active_view_state {
 }
 
 pub struct ToolbeltButtonConfig {
-    pub icon: warp_core::ui::Icon,
+    pub icon: twarp_core::ui::Icon,
     /// Optional icon to use when the given toolbelt option is in an active state.
-    pub active_icon: Option<warp_core::ui::Icon>,
+    pub active_icon: Option<twarp_core::ui::Icon>,
     /// Short label shown next to the icon in the toolbelt segment (e.g.
     /// "Files", "Search", "Code").
     pub label: String,
@@ -298,7 +298,7 @@ pub struct LeftPanelView {
     timeline_resizable_handle: ResizableStateHandle,
     timeline_header_mouse_state: MouseStateHandle,
     timeline_load_more_mouse_state: MouseStateHandle,
-    timeline_scroll_state: warpui::elements::ClippedScrollStateHandle,
+    timeline_scroll_state: twarpui::elements::ClippedScrollStateHandle,
     /// Per-entry stable mouse states. Grown lazily inside `render_*`
     /// since `Hoverable::on_click` requires the same handle across
     /// renders to detect click cycles.
@@ -316,7 +316,7 @@ pub struct LeftPanelView {
     claude_session_row_mouse_states: std::cell::RefCell<Vec<MouseStateHandle>>,
     /// twarp: vertical scroll state for the sessions list so a long list scrolls
     /// instead of overflowing the panel (same pattern as the Timeline).
-    claude_sessions_scroll_state: warpui::elements::ClippedScrollStateHandle,
+    claude_sessions_scroll_state: twarpui::elements::ClippedScrollStateHandle,
     /// twarp 08e (PRODUCT §17–§20): live search field over the Claude sessions
     /// list. A single-line `EditorView`; the panel reads its `buffer_text` each
     /// render and case-insensitive substring-filters `claude_sessions` by
@@ -526,15 +526,15 @@ impl LeftPanelView {
             timeline_expanded: false,
             // Default height = 220px when expanded; bounded to
             // (60, 70% of window) in the Resizable callback.
-            timeline_resizable_handle: warpui::elements::resizable_state_handle(220.0),
+            timeline_resizable_handle: twarpui::elements::resizable_state_handle(220.0),
             timeline_header_mouse_state: MouseStateHandle::default(),
             timeline_load_more_mouse_state: MouseStateHandle::default(),
-            timeline_scroll_state: warpui::elements::ClippedScrollStateHandle::default(),
+            timeline_scroll_state: twarpui::elements::ClippedScrollStateHandle::default(),
             timeline_entry_mouse_states: std::cell::RefCell::new(Vec::new()),
             claude_sessions: Vec::new(),
             has_claude_sessions: false,
             claude_session_row_mouse_states: std::cell::RefCell::new(Vec::new()),
-            claude_sessions_scroll_state: warpui::elements::ClippedScrollStateHandle::default(),
+            claude_sessions_scroll_state: twarpui::elements::ClippedScrollStateHandle::default(),
             claude_sessions_search,
             claude_sessions_clear_mouse_state: MouseStateHandle::default(),
         };
@@ -689,7 +689,7 @@ impl LeftPanelView {
 
     fn get_or_create_global_search_view_for_pane_group(
         &mut self,
-        pane_group_id: warpui::EntityId,
+        pane_group_id: twarpui::EntityId,
         ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<GlobalSearchView> {
         if let Some(view) = self
@@ -715,7 +715,7 @@ impl LeftPanelView {
 
     fn get_or_create_file_tree_view_for_pane_group(
         &mut self,
-        pane_group_id: warpui::EntityId,
+        pane_group_id: twarpui::EntityId,
         ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<FileTreeView> {
         if let Some(view) = self
@@ -1470,7 +1470,7 @@ impl LeftPanelView {
             let mut container =
                 Container::new(text).with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
             if state.is_hovered() {
-                container = container.with_background(warp_core::ui::theme::Fill::Solid(hover_bg));
+                container = container.with_background(twarp_core::ui::theme::Fill::Solid(hover_bg));
             }
             container.finish()
         })
@@ -1520,7 +1520,7 @@ impl LeftPanelView {
             },
             theme.nonactive_ui_detail().into(),
             theme.active_ui_detail().into(),
-            warpui::elements::Fill::None,
+            twarpui::elements::Fill::None,
         )
         .with_vertical_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Auto, false))
         .finish()
@@ -1676,7 +1676,7 @@ impl LeftPanelView {
                 .with_horizontal_padding(8.)
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
             if state.is_hovered() {
-                container = container.with_background(warp_core::ui::theme::Fill::Solid(hover_bg));
+                container = container.with_background(twarp_core::ui::theme::Fill::Solid(hover_bg));
             }
             container.finish()
         })
@@ -1790,7 +1790,7 @@ impl LeftPanelView {
                 .with_horizontal_padding(8.)
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
             if state.is_hovered() {
-                container = container.with_background(warp_core::ui::theme::Fill::Solid(neutral));
+                container = container.with_background(twarp_core::ui::theme::Fill::Solid(neutral));
             }
             container.finish()
         })
@@ -2069,23 +2069,24 @@ impl LeftPanelView {
         // Search page (radius 6, 1px surface_3 border, uniform 6 padding) so
         // the two side-panel search bars match.
         // twarp: when the query is non-empty, an inline X button clears it.
-        let editor_cell = Shrinkable::new(
-            1.0,
-            ChildView::new(&self.claude_sessions_search).finish(),
-        )
-        .finish();
+        let editor_cell =
+            Shrinkable::new(1.0, ChildView::new(&self.claude_sessions_search).finish()).finish();
         let mut search_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max)
             .with_spacing(6.0)
             .with_child(editor_cell);
         if has_query {
-            let clear_fill = appearance.theme().sub_text_color(appearance.theme().background());
+            let clear_fill = appearance
+                .theme()
+                .sub_text_color(appearance.theme().background());
             let clear_button = Hoverable::new(
                 self.claude_sessions_clear_mouse_state.clone(),
                 move |state| {
                     let fill = if state.is_hovered() {
-                        appearance.theme().main_text_color(appearance.theme().background())
+                        appearance
+                            .theme()
+                            .main_text_color(appearance.theme().background())
                     } else {
                         clear_fill
                     };
@@ -2159,7 +2160,7 @@ impl LeftPanelView {
                 },
                 theme.nonactive_ui_detail().into(),
                 theme.active_ui_detail().into(),
-                warpui::elements::Fill::None,
+                twarpui::elements::Fill::None,
             )
             .with_vertical_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Auto, false))
             .finish()
@@ -2523,7 +2524,7 @@ impl LeftPanelView {
 
     fn deactivate_file_tree_view_for_pane_group(
         &self,
-        pane_group_id: warpui::EntityId,
+        pane_group_id: twarpui::EntityId,
         ctx: &mut ViewContext<Self>,
     ) {
         if let Some(view) = self
@@ -2775,7 +2776,7 @@ impl View for LeftPanelView {
         .with_padding_bottom(SIDEBAR_BOTTOM_INSET)
         .finish();
 
-        if warpui::platform::is_mobile_device() {
+        if twarpui::platform::is_mobile_device() {
             return Container::new(panel_content)
                 .with_uniform_margin(super::FLOATING_PANEL_MARGIN)
                 .finish();

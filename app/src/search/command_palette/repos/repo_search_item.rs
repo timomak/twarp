@@ -5,8 +5,8 @@ use crate::app_state::CodeWorkspaceMetadata as WorkspaceMetadata;
 use fuzzy_match::FuzzyMatchResult;
 use ordered_float::OrderedFloat;
 use std::path::Path;
-use warp_core::ui::theme::Fill;
-use warpui::{
+use twarp_core::ui::theme::Fill;
+use twarpui::{
     elements::{Align, ConstrainedBox, Flex, Highlight, ParentElement, Shrinkable, Text},
     fonts::{Properties, Weight},
     AppContext, Element, SingletonEntity,

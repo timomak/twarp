@@ -6,8 +6,8 @@ use crate::proto::{
     InitializeResponse, RunCommandResponse, RunCommandSuccess, ServerMessage,
 };
 use crate::protocol;
-use warp_core::SessionId;
-use warpui::r#async::executor;
+use twarp_core::SessionId;
+use twarpui::r#async::executor;
 
 use super::*;
 

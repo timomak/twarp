@@ -9,21 +9,21 @@ use async_channel::{self, Receiver, Sender};
 use async_trait::async_trait;
 use chrono::DateTime;
 use parking_lot::{Mutex, MutexGuard};
-use warp_core::command::ExitCode;
-use warp_terminal::model::Point;
-use warpui::r#async::block_on;
+use twarp_core::command::ExitCode;
+use twarp_terminal::model::Point;
+use twarpui::r#async::block_on;
 
 use crate::safe_info;
 use crate::server::datetime_ext::DateTimeExt;
 use crate::terminal::event::ExecutedExecutorCommandEvent;
 use crate::terminal::shell::{Shell, ShellType};
-use warp_util::on_cancel::OnCancelFutureExt;
+use twarp_util::on_cancel::OnCancelFutureExt;
 
 use crate::terminal::model::session::command_executor::{
     shared, CommandExecutor, ExecutorCommandEvent,
 };
 use crate::terminal::SizeInfo;
-use warp_completer::completer::{CommandExitStatus, CommandOutput};
+use twarp_completer::completer::{CommandExitStatus, CommandOutput};
 
 use super::ExecuteCommandOptions;
 

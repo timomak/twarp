@@ -1,11 +1,11 @@
 use super::blended_colors;
 use crate::appearance::Appearance;
-use warpui::elements::{
+use twarpui::elements::{
     Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss, Element, Flex,
     MainAxisAlignment, MainAxisSize, ParentElement, Shrinkable, Text,
 };
-use warpui::fonts::{Properties, Weight};
-use warpui::ui_components::components::{UiComponent, UiComponentStyles};
+use twarpui::fonts::{Properties, Weight};
+use twarpui::ui_components::components::{UiComponent, UiComponentStyles};
 
 const DIALOG_PADDING: f32 = 20.;
 
@@ -35,10 +35,12 @@ pub fn dialog_styles(appearance: &Appearance) -> UiComponentStyles {
         font_family_id: Some(appearance.header_font_family()),
         font_size: Some(16.),
         font_color: Some(blended_colors::text_main(theme, background)),
-        font_weight: Some(warpui::fonts::Weight::Bold),
+        font_weight: Some(twarpui::fonts::Weight::Bold),
         background: Some(background.into()),
         border_color: Some(theme.surface_3().into()),
-        border_radius: Some(CornerRadius::with_all(warpui::elements::Radius::Pixels(8.))),
+        border_radius: Some(CornerRadius::with_all(twarpui::elements::Radius::Pixels(
+            8.,
+        ))),
         border_width: Some(1.),
         ..Default::default()
     }

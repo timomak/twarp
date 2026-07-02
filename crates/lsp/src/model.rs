@@ -31,10 +31,10 @@ use jsonrpc::ServerNotificationEvent;
 #[cfg(not(target_arch = "wasm32"))]
 use simple_logger::manager::LogManager;
 #[cfg(not(target_arch = "wasm32"))]
-use warp_core::features::FeatureFlag;
+use twarp_core::features::FeatureFlag;
 #[cfg(not(target_arch = "wasm32"))]
-use warpui::SingletonEntity;
-use warpui::{r#async::executor::Background, Entity, ModelContext};
+use twarpui::SingletonEntity;
+use twarpui::{r#async::executor::Background, Entity, ModelContext};
 
 static NEXT_LANGUAGE_SERVER_ID: AtomicUsize = AtomicUsize::new(0);
 

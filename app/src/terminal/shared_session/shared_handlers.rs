@@ -9,7 +9,7 @@ use session_sharing_protocol::common::{
     CLIAgentSessionState, InputMode, SelectedAgentModel, SelectedConversation,
     UniversalDeveloperInputContextUpdate,
 };
-use warpui::{AppContext, ModelHandle, WeakViewHandle};
+use twarpui::{AppContext, ModelHandle, WeakViewHandle};
 
 use crate::terminal::TerminalView;
 
@@ -19,35 +19,35 @@ pub use crate::terminal::input::AgentViewController;
 pub use crate::terminal::input::BlocklistAIContextModel;
 /// Stub for the deleted `BlocklistAIHistoryModel`.
 pub struct BlocklistAIHistoryModel;
-impl warpui::Entity for BlocklistAIHistoryModel {
+impl twarpui::Entity for BlocklistAIHistoryModel {
     type Event = crate::terminal::input::BlocklistAIHistoryEvent;
 }
-impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+impl twarpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
     // twarp: 2c-d — bulk stubs
     pub fn all_live_conversations_for_terminal_view(
         &self,
-        _: warpui::EntityId,
+        _: twarpui::EntityId,
     ) -> Vec<crate::app_state::AIConversationId> {
         Vec::new()
     }
     pub fn conversation_id_for_action<A>(
         &self,
         _: A,
-        _: warpui::EntityId,
+        _: twarpui::EntityId,
     ) -> Option<crate::app_state::AIConversationId> {
         None
     }
     pub fn active_conversation_id(
         &self,
-        _: warpui::EntityId,
+        _: twarpui::EntityId,
     ) -> Option<crate::app_state::AIConversationId> {
         None
     }
     pub fn active_conversation(
         &self,
-        _: warpui::EntityId,
+        _: twarpui::EntityId,
     ) -> Option<crate::app_state::AIConversationId> {
         None
     }
@@ -57,7 +57,7 @@ impl BlocklistAIHistoryModel {
 
 #[allow(dead_code)]
 pub(crate) fn apply_selected_agent_model_update(
-    _terminal_view_id: warpui::EntityId,
+    _terminal_view_id: twarpui::EntityId,
     _selected_model: &SelectedAgentModel,
     _guard: &ActiveRemoteUpdate,
     _ctx: &mut AppContext,

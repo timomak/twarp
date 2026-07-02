@@ -1,4 +1,4 @@
-use warpui::{async_assert, async_assert_eq, integration::AssertionCallback};
+use twarpui::{async_assert, async_assert_eq, integration::AssertionCallback};
 
 use crate::{
     integration_testing::view_getters::{input_view, single_input_view_for_tab},

@@ -9,7 +9,7 @@ use parking_lot::FairMutex;
 use serde::Serialize;
 use std::io;
 use std::sync::Arc;
-use warpui::{Entity, ModelContext, SingletonEntity};
+use twarpui::{Entity, ModelContext, SingletonEntity};
 use websocket::{Message, Sink, Stream, WebSocket, WebsocketMessage as _};
 
 const CREATE_SESSION_ENDPOINT: &str = "ws://127.0.0.1:3030/create";

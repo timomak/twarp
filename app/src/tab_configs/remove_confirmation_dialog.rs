@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use pathfinder_geometry::vector::vec2f;
-use warp_core::ui::theme::Fill;
-use warpui::{
+use twarp_core::ui::theme::Fill;
+use twarpui::{
     elements::{
         Align, ChildAnchor, ChildView, Container, OffsetPositioning, ParentAnchor,
         ParentOffsetBounds, Stack,
@@ -21,7 +21,7 @@ use crate::{
 };
 
 pub(crate) fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([
         FixedBinding::new(
@@ -98,7 +98,7 @@ impl View for RemoveTabConfigConfirmationDialog {
         "RemoveTabConfigConfirmationDialog"
     }
 
-    fn on_focus(&mut self, _focus_ctx: &warpui::FocusContext, ctx: &mut ViewContext<Self>) {
+    fn on_focus(&mut self, _focus_ctx: &twarpui::FocusContext, ctx: &mut ViewContext<Self>) {
         ctx.focus_self();
     }
 

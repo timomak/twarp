@@ -35,13 +35,13 @@ use model::{EditorModel, EditorModelEvent, Edits};
 use pathfinder_color::ColorU;
 use settings::Setting as _;
 use snapshot::{EditorHeightShrinkDelay, ViewSnapshot};
+use twarp_core::{safe_error, send_telemetry_from_ctx};
+use twarp_util::{path::ShellFamily, user_input::UserInput};
+use twarpui::platform::keyboard::KeyCode;
+use twarpui::ui_components::button::ButtonTooltipPosition;
+use twarpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use twarpui::{elements, ViewHandle};
 use vec1::{vec1, Vec1};
-use warp_core::{safe_error, send_telemetry_from_ctx};
-use warp_util::{path::ShellFamily, user_input::UserInput};
-use warpui::platform::keyboard::KeyCode;
-use warpui::ui_components::button::ButtonTooltipPosition;
-use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
-use warpui::{elements, ViewHandle};
 
 // twarp: 2c-d — AI agent / blocklist / context menu deleted; stubs.
 pub struct ImageContext {
@@ -110,20 +110,20 @@ impl AIContextMenu {
         false
     }
 }
-impl warpui::Entity for AIContextMenu {
+impl twarpui::Entity for AIContextMenu {
     type Event = AIContextMenuEvent;
 }
-impl warpui::View for AIContextMenu {
+impl twarpui::View for AIContextMenu {
     fn ui_name() -> &'static str {
         "AIContextMenu/twarp-stub"
     }
-    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
-        warpui::elements::Empty::new().finish()
+    fn render(&self, _: &twarpui::AppContext) -> Box<dyn twarpui::Element> {
+        twarpui::elements::Empty::new().finish()
     }
 }
 #[derive(Clone, Debug)]
 pub struct AIContextMenuAction;
-impl warpui::TypedActionView for AIContextMenu {
+impl twarpui::TypedActionView for AIContextMenu {
     type Action = AIContextMenuAction;
 }
 #[derive(Debug, Clone, Copy)]
@@ -195,6 +195,7 @@ use crate::workspace::Workspace;
 use anyhow::Result;
 use core::f32;
 use std::path::Path;
+use twarp_core::semantic_selection::SemanticSelection;
 use vim::vim::{
     BracketChar, CharacterMotion, Direction, FindCharMotion, FirstNonWhitespaceMotion,
     InsertPosition, LineMotion, ModeTransition, MotionType, TextObjectInclusion, TextObjectType,
@@ -205,7 +206,6 @@ use vim::{
     vim_a_block, vim_a_paragraph, vim_a_quote, vim_a_word, vim_inner_block, vim_inner_paragraph,
     vim_inner_quote, vim_inner_word, vim_word_iterator_from_offset,
 };
-use warp_core::semantic_selection::SemanticSelection;
 
 use num_traits::SaturatingSub;
 use parking_lot::Mutex;
@@ -222,31 +222,31 @@ use std::{
     time::Duration,
 };
 use string_offset::{ByteOffset, CharOffset};
-use warp_completer::completer::Description;
-use warp_editor::editor::NavigationKey;
-use warpui::actions::StandardAction;
-use warpui::clipboard::ClipboardContent;
-use warpui::elements::{
+use twarp_completer::completer::Description;
+use twarp_editor::editor::NavigationKey;
+use twarpui::actions::StandardAction;
+use twarpui::clipboard::ClipboardContent;
+use twarpui::elements::{
     ChildView, Container, CornerRadius, CrossAxisAlignment, Flex, Hoverable, MainAxisSize,
     ParentElement, Shrinkable, DEFAULT_UI_LINE_HEIGHT_RATIO,
 };
-use warpui::elements::{MouseStateHandle, Radius};
-use warpui::fonts::{FamilyId, Properties, Weight};
-use warpui::keymap::{Keystroke, PerPlatformKeystroke};
-use warpui::platform::{Cursor, FilePickerConfiguration, OperatingSystem};
-use warpui::r#async::{SpawnedFutureHandle, Timer};
-use warpui::text::word_boundaries::WordBoundariesPolicy;
-use warpui::text::TextBuffer;
-use warpui::text_layout::TextStyle;
-use warpui::windowing::WindowManager;
-use warpui::{
+use twarpui::elements::{MouseStateHandle, Radius};
+use twarpui::fonts::{FamilyId, Properties, Weight};
+use twarpui::keymap::{Keystroke, PerPlatformKeystroke};
+use twarpui::platform::{Cursor, FilePickerConfiguration, OperatingSystem};
+use twarpui::r#async::{SpawnedFutureHandle, Timer};
+use twarpui::text::word_boundaries::WordBoundariesPolicy;
+use twarpui::text::TextBuffer;
+use twarpui::text_layout::TextStyle;
+use twarpui::windowing::WindowManager;
+use twarpui::{
     accessibility::{AccessibilityContent, ActionAccessibilityContent, WarpA11yRole},
     fonts::Cache as FontCache,
     keymap::{EditableBinding, FixedBinding},
     AppContext, Element, Entity, ModelAsRef, ModelHandle, View, ViewContext, WindowId,
 };
-use warpui::{windowing, BlurContext, EntityId, FocusContext};
-use warpui::{CursorInfo, ModelContext, SingletonEntity, TypedActionView};
+use twarpui::{windowing, BlurContext, EntityId, FocusContext};
+use twarpui::{CursorInfo, ModelContext, SingletonEntity, TypedActionView};
 
 const CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(500);
 const DEFAULT_TAB_SIZE: usize = 4;
@@ -257,7 +257,7 @@ pub const VOICE_ERROR_TOAST_TEXT: &str = "An error occurred while processing you
 
 pub const MAX_IMAGES_PER_CONVERSATION: usize = 200;
 
-use warpui::clipboard_utils::CLIPBOARD_IMAGE_MIME_TYPES;
+use twarpui::clipboard_utils::CLIPBOARD_IMAGE_MIME_TYPES;
 
 #[derive(Clone, Copy)]
 pub enum AutosuggestionLocation {
@@ -299,7 +299,7 @@ pub const SELECT_UP_ACTION_NAME: &str = "editor_view:select_up";
 pub const SELECT_DOWN_ACTION_NAME: &str = "editor_view:select_down";
 
 pub fn init(ctx: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     ctx.register_fixed_bindings(vec![
         // Below are default bindings that are similar to the behavior in all other text editors.
@@ -1490,7 +1490,7 @@ type RenderDecoratorElementsFn = Box<dyn Fn(&AppContext) -> EditorDecoratorEleme
 
 /// Type alias for a closure that allows parent views to add flags to the EditorView's keymap context.
 /// The closure takes the context by mutable reference and can insert additional flags.
-pub type KeymapContextModifierFn = Box<dyn Fn(&mut warpui::keymap::Context, &AppContext)>;
+pub type KeymapContextModifierFn = Box<dyn Fn(&mut twarpui::keymap::Context, &AppContext)>;
 
 /// Enum to choose between different methods of computing the baseline offset for text.
 #[derive(Clone, Debug)]
@@ -7878,7 +7878,7 @@ impl EditorView {
         // from the filesystem (the path transformer, if any, only applies to text insertion).
         let paths_as_strings: Vec<String> = paths.iter().map(|path| path.to_string()).collect();
         let image_filepaths =
-            warpui::clipboard_utils::get_image_filepaths_from_paths(&paths_as_strings);
+            twarpui::clipboard_utils::get_image_filepaths_from_paths(&paths_as_strings);
 
         // If we have image file paths, emit event for parent to handle terminal-specific processing
         let num_image_files = image_filepaths.len();
@@ -7897,7 +7897,7 @@ impl EditorView {
         };
 
         let input =
-            warpui::clipboard_utils::escaped_paths_str(&transformed_paths, self.shell_family);
+            twarpui::clipboard_utils::escaped_paths_str(&transformed_paths, self.shell_family);
 
         self.user_insert(&input, ctx);
     }
@@ -8608,7 +8608,7 @@ impl View for EditorView {
         }
     }
 
-    fn keymap_context(&self, ctx: &AppContext) -> warpui::keymap::Context {
+    fn keymap_context(&self, ctx: &AppContext) -> twarpui::keymap::Context {
         let mut context = Self::default_keymap_context();
 
         if self.single_cursor_at_buffer_end(false /* respect_line_cap */, ctx) {

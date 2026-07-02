@@ -361,7 +361,10 @@ mod tests {
         assert_eq!(q.query, "comp");
         assert_eq!(&"say /comp"[q.token_range.clone()], "/comp");
         // Accepting splices the command in at the token, leaving the prefix.
-        assert_eq!(apply_suggestion("say /comp", &q, "compact"), "say /compact ");
+        assert_eq!(
+            apply_suggestion("say /comp", &q, "compact"),
+            "say /compact "
+        );
     }
 
     #[test]

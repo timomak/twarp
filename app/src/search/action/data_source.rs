@@ -1,7 +1,7 @@
 use fuzzy_match::{match_indices_case_insensitive, FuzzyMatchResult};
 use std::collections::HashMap;
 use std::sync::Arc;
-use warpui::{AppContext, Entity, ModelContext, ModelHandle};
+use twarpui::{AppContext, Entity, ModelContext, ModelHandle};
 
 use crate::search::action::search_item::MatchedBinding;
 use crate::search::command_palette::mixer::CommandPaletteItemAction;
@@ -11,7 +11,7 @@ use crate::search::mixer::{DataSourceRunErrorWrapper, SyncDataSource};
 use crate::util::bindings::CommandBinding;
 
 use crate::search::binding_source::BindingSource;
-use warpui::keymap::{BindingId, DescriptionContext};
+use twarpui::keymap::{BindingId, DescriptionContext};
 
 /// Data source for [`CommandBinding`]s. Produces a list of in-app actions a user can currently
 /// perform.
@@ -22,7 +22,7 @@ pub struct CommandBindingDataSource {
 impl CommandBindingDataSource {
     #[cfg(not(target_family = "wasm"))]
     pub fn new(binding_source: ModelHandle<BindingSource>, ctx: &mut ModelContext<Self>) -> Self {
-        if warp_core::features::FeatureFlag::UseTantivySearch.is_enabled() {
+        if twarp_core::features::FeatureFlag::UseTantivySearch.is_enabled() {
             Self::new_full_text(binding_source, ctx)
         } else {
             Self::new_fuzzy(binding_source, ctx)
@@ -196,7 +196,7 @@ mod full_text_searcher {
     use fuzzy_match::FuzzyMatchResult;
     use std::collections::HashMap;
     use std::sync::Arc;
-    use warpui::keymap::{BindingId, DescriptionContext};
+    use twarpui::keymap::{BindingId, DescriptionContext};
 
     define_search_schema!(
         schema_name: ACTION_SEARCH_SCHEMA,

@@ -1,13 +1,13 @@
 use std::collections::HashSet;
 
 use pathfinder_color::ColorU;
-use warp_core::ui::appearance::Appearance;
-use warp_core::ui::theme::color::internal_colors;
-use warp_core::ui::theme::Fill;
-use warpui::elements::{
+use twarp_core::ui::appearance::Appearance;
+use twarp_core::ui::theme::color::internal_colors;
+use twarp_core::ui::theme::Fill;
+use twarpui::elements::{
     Align, Border, ConstrainedBox, Container, CornerRadius, DropShadow, Radius, Text,
 };
-use warpui::{
+use twarpui::{
     AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, View, ViewContext,
     ViewHandle,
 };

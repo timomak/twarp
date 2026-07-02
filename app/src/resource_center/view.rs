@@ -1,6 +1,5 @@
-use vec1::{vec1, Vec1};
-use warp_core::{features::FeatureFlag, ui::builder::AnimatedButtonOptions};
-use warpui::{
+use twarp_core::{features::FeatureFlag, ui::builder::AnimatedButtonOptions};
+use twarpui::{
     elements::{
         Align, Border, ConstrainedBox, Container, CrossAxisAlignment, Element, Flex, Icon,
         MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, SavePosition, Shrinkable,
@@ -16,6 +15,7 @@ use warpui::{
     AppContext, Entity, EntityId, FocusContext, ModelHandle, SingletonEntity, TypedActionView,
     View, ViewContext, ViewHandle, WindowId,
 };
+use vec1::{vec1, Vec1};
 
 use super::{
     keybindings_page::KeybindingsEvent,

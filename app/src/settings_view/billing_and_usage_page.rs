@@ -7,11 +7,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 use thousands::Separable;
-use warp_core::ui::theme::Fill;
-use warp_core::{features::FeatureFlag, ui::appearance::Appearance};
-use warp_graphql::billing::AddonCreditsOption;
-use warpui::prelude::ChildView;
-use warpui::{
+use twarp_core::ui::theme::Fill;
+use twarp_core::{features::FeatureFlag, ui::appearance::Appearance};
+use twarp_graphql::billing::AddonCreditsOption;
+use twarpui::prelude::ChildView;
+use twarpui::{
     elements::{
         Align, Border, ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
         Empty, Flex, FormattedTextElement, HighlightedHyperlink, Hoverable, HyperlinkUrl,
@@ -33,10 +33,10 @@ use settings::Setting;
 
 // twarp: 2c-d — AI usage deleted; stub.
 pub struct AIRequestUsageModel;
-impl warpui::Entity for AIRequestUsageModel {
+impl twarpui::Entity for AIRequestUsageModel {
     type Event = ();
 }
-impl warpui::SingletonEntity for AIRequestUsageModel {}
+impl twarpui::SingletonEntity for AIRequestUsageModel {}
 #[allow(dead_code)]
 impl AIRequestUsageModel {
     pub fn refresh_request_usage_async<C>(&mut self, _: &mut C) {}
@@ -1631,10 +1631,10 @@ impl UsageWidget {
                             fragment.text,
                             None,
                             maybe_action.map(|act| {
-                                Box::new(move |ctx: &mut warpui::EventContext| {
+                                Box::new(move |ctx: &mut twarpui::EventContext| {
                                     ctx.dispatch_typed_action(act.clone());
                                 })
-                                    as Box<dyn Fn(&mut warpui::EventContext)>
+                                    as Box<dyn Fn(&mut twarpui::EventContext)>
                             }),
                             self.exceed_limit_link_mouse_state.clone(),
                         )
@@ -1761,10 +1761,10 @@ impl UsageWidget {
                     .with_hyperlink_font_color(theme.accent().into_solid())
                     .register_default_click_handlers_with_action_support(
                         |hyperlink_lens, event, ctx| match hyperlink_lens {
-                            warpui::elements::HyperlinkLens::Url(url) => {
+                            twarpui::elements::HyperlinkLens::Url(url) => {
                                 ctx.open_url(url);
                             }
-                            warpui::elements::HyperlinkLens::Action(action_ref) => {
+                            twarpui::elements::HyperlinkLens::Action(action_ref) => {
                                 if let Some(action) = action_ref
                                     .as_any()
                                     .downcast_ref::<BillingAndUsagePageAction>()
@@ -2309,7 +2309,7 @@ impl UsageWidget {
         workspace_is_delinquent_due_to_payment_issue: bool,
         appearance: &Appearance,
         prorated_request_limits_info: Option<ProratedRequestLimitsInfo>,
-    ) -> Box<dyn warpui::Element> {
+    ) -> Box<dyn twarpui::Element> {
         let mut row = Flex::row();
 
         let show_alert = workspace_is_delinquent_due_to_payment_issue
@@ -2403,7 +2403,7 @@ impl UsageWidget {
         workspace_is_delinquent_due_to_payment_issue: bool,
         appearance: &Appearance,
         prorated_request_limits_info: Option<ProratedRequestLimitsInfo>,
-    ) -> Box<dyn warpui::Element> {
+    ) -> Box<dyn twarpui::Element> {
         let request_usage_details = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::End)
             .with_child(self.render_request_usage_count(
@@ -3288,10 +3288,10 @@ impl UsageWidget {
         } else {
             upgrade_cta = upgrade_cta.register_default_click_handlers_with_action_support(
                 |hyperlink_lens, event, ctx| match hyperlink_lens {
-                    warpui::elements::HyperlinkLens::Url(url) => {
+                    twarpui::elements::HyperlinkLens::Url(url) => {
                         ctx.open_url(url);
                     }
-                    warpui::elements::HyperlinkLens::Action(action_ref) => {
+                    twarpui::elements::HyperlinkLens::Action(action_ref) => {
                         if let Some(action) = action_ref
                             .as_any()
                             .downcast_ref::<BillingAndUsagePageAction>()

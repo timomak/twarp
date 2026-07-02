@@ -6,7 +6,7 @@
 //! to surface warnings *before* save so users see the consequence of their
 //! chosen chord.
 
-use warpui::keymap::Keystroke;
+use twarpui::keymap::Keystroke;
 
 use crate::shortcuts::config::Shortcut;
 

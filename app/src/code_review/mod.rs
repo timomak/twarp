@@ -27,7 +27,7 @@ pub(crate) mod file_invalidation_queue;
 
 use code_review_view::CodeReviewAction;
 use std::path::{Path, PathBuf};
-use warpui::{
+use twarpui::{
     id,
     keymap::{EditableBinding, FixedBinding},
     AppContext, Entity, EntityId, ModelContext, SingletonEntity, WeakViewHandle, WindowId,

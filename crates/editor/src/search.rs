@@ -3,8 +3,8 @@ use std::ops::Range;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use pathfinder_color::ColorU;
-use warp_core::ui::theme::Fill;
-use warpui::{Entity, ModelContext, ModelHandle, r#async::SpawnedFutureHandle};
+use twarp_core::ui::theme::Fill;
+use twarpui::{Entity, ModelContext, ModelHandle, r#async::SpawnedFutureHandle};
 
 use crate::{
     content::{
@@ -276,7 +276,7 @@ impl Searcher {
     #[cfg(test)]
     pub fn search_finished(
         &self,
-        ctx: &mut warpui::AppContext,
+        ctx: &mut twarpui::AppContext,
     ) -> impl std::future::Future<Output = ()> + use<> {
         let maybe_search = self
             .search_handle

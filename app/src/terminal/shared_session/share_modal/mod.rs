@@ -10,16 +10,16 @@ use std::sync::Arc;
 
 use parking_lot::FairMutex;
 use style::{DENIED_MODAL_WIDTH, MODAL_HEIGHT, MODAL_WIDTH};
-use warp_core::ui::appearance::Appearance;
-use warpui::keymap::FixedBinding;
-use warpui::EntityId;
+use twarp_core::ui::appearance::Appearance;
+use twarpui::keymap::FixedBinding;
+use twarpui::EntityId;
 
-use warpui::presenter::ChildView;
-use warpui::ui_components::components::UiComponentStyles;
-use warpui::AppContext;
-use warpui::SingletonEntity;
-use warpui::ViewHandle;
-use warpui::{Element, Entity, TypedActionView, View, ViewContext};
+use twarpui::presenter::ChildView;
+use twarpui::ui_components::components::UiComponentStyles;
+use twarpui::AppContext;
+use twarpui::SingletonEntity;
+use twarpui::ViewHandle;
+use twarpui::{Element, Entity, TypedActionView, View, ViewContext};
 
 // twarp: 2c-d — visibility raised to pub(crate) so lib.rs can register the
 // file-local AI singleton stub in this module.
@@ -62,7 +62,7 @@ pub enum ShareSessionModalEvent {
 }
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([FixedBinding::new(
         "escape",

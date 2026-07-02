@@ -1,5 +1,5 @@
 use std::time::Duration;
-use warpui::RetryOption;
+use twarpui::RetryOption;
 
 use crate::server::server_api::presigned_upload::HttpStatusError;
 

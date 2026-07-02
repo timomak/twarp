@@ -6,8 +6,8 @@ use std::{
 
 use command::blocking::Command;
 
-use warp::features::FeatureFlag;
-use warp::{
+use twarp::features::FeatureFlag;
+use twarp::{
     integration_testing::{
         code_review::{
             assert_code_review_anchor, assert_code_review_line_text, assert_code_review_loaded,
@@ -20,7 +20,7 @@ use warp::{
     },
     workspace::WorkspaceAction,
 };
-use warpui::{
+use twarpui::{
     async_assert,
     integration::{AssertionCallback, TestStep},
     App, WindowId,

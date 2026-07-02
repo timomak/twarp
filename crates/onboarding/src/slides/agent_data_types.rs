@@ -9,7 +9,7 @@
 // twarp: 2c-e — `ai` crate deleted; use the local `LLMId` substitute defined in
 // the onboarding crate root.
 use crate::LLMId;
-use warp_core::ui::icons::Icon;
+use twarp_core::ui::icons::Icon;
 
 /// Information about a model that was previously displayed on the onboarding
 /// agent slide.

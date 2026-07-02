@@ -1,13 +1,13 @@
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
-use warpui::elements::Point;
-use warpui::text_layout::ClipConfig;
-use warpui::{
+use twarpui::elements::Point;
+use twarpui::text_layout::ClipConfig;
+use twarpui::{
     AfterLayoutContext, AppContext, Element, Entity, EventContext, LayoutContext, PaintContext,
     SizeConstraint, TypedActionView, View, ViewContext, WindowId,
 };
 
 #[cfg(target_os = "macos")]
-use warpui::platform::mac::{BrowserWebViewId, Window as MacWindow};
+use twarpui::platform::mac::{BrowserWebViewId, Window as MacWindow};
 
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::{
@@ -35,7 +35,7 @@ pub enum BrowserSpikeViewCustomAction {}
 pub struct BrowserSpikeView {
     window_id: WindowId,
     webview_id: Option<BrowserWebViewId>,
-    pane_configuration: warpui::ModelHandle<PaneConfiguration>,
+    pane_configuration: twarpui::ModelHandle<PaneConfiguration>,
     focus_handle: Option<PaneFocusHandle>,
 }
 
@@ -53,7 +53,7 @@ impl BrowserSpikeView {
         }
     }
 
-    pub fn pane_configuration(&self) -> warpui::ModelHandle<PaneConfiguration> {
+    pub fn pane_configuration(&self) -> twarpui::ModelHandle<PaneConfiguration> {
         self.pane_configuration.clone()
     }
 
@@ -246,7 +246,7 @@ impl Element for NativeBrowserElement {
 
     fn dispatch_event(
         &mut self,
-        _event: &warpui::event::DispatchedEvent,
+        _event: &twarpui::event::DispatchedEvent,
         _ctx: &mut EventContext,
         _app: &AppContext,
     ) -> bool {

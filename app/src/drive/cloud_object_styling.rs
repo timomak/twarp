@@ -1,5 +1,5 @@
 use pathfinder_color::ColorU;
-use warp_core::ui::{
+use twarp_core::ui::{
     appearance::Appearance,
     color::{contrast::MinimumAllowedContrast, ContrastingColor},
     theme::Fill,

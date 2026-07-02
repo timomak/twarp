@@ -14,20 +14,20 @@ use crate::{
     workspaces::user_workspaces::UserWorkspaces,
 };
 use std::sync::Arc;
-use unindent::Unindent;
-use vim::vim::{MotionType, VimMode};
-use warp_core::{features::FeatureFlag, settings::Setting, ui::appearance::Appearance};
-use warp_editor::model::CoreEditorModel;
-use warp_editor::{
+use twarp_core::{features::FeatureFlag, settings::Setting, ui::appearance::Appearance};
+use twarp_editor::model::CoreEditorModel;
+use twarp_editor::{
     content::buffer::{InitialBufferState, ToBufferCharOffset, ToBufferPoint},
     render::element::VerticalExpansionBehavior,
 };
-use warp_util::user_input::UserInput;
-use warpui::text::point::Point;
-use warpui::{
+use twarp_util::user_input::UserInput;
+use twarpui::text::point::Point;
+use twarpui::{
     keymap::Keystroke, platform::WindowStyle, App, SingletonEntity, TypedActionView, UpdateModel,
     ViewHandle,
 };
+use unindent::Unindent;
+use vim::vim::{MotionType, VimMode};
 
 // Await render/layout completion for a CodeEditorView in tests.
 async fn layout_editor_view(app: &mut App, editor: &ViewHandle<CodeEditorView>) {

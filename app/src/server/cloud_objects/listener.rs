@@ -22,12 +22,12 @@ use super::update_manager::UpdateManager;
 use chrono::{DateTime, Utc};
 use futures_util::stream::AbortHandle;
 use std::time::Duration;
-use warpui::r#async::Timer;
+use twarpui::r#async::Timer;
 
 use async_channel::Sender;
 
 use std::sync::Arc;
-use warpui::{Entity, ModelContext, RequestState, SingletonEntity};
+use twarpui::{Entity, ModelContext, RequestState, SingletonEntity};
 
 use instant::Instant;
 

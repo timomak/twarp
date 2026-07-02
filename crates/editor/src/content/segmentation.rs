@@ -4,7 +4,7 @@
 
 use anyhow::anyhow;
 use string_offset::CharOffset;
-use warpui::text::{TextBuffer, point::Point, word_boundaries::WordBoundariesPolicy};
+use twarpui::text::{TextBuffer, point::Point, word_boundaries::WordBoundariesPolicy};
 
 use super::{
     buffer::{Buffer, ToBufferCharOffset, ToBufferPoint},

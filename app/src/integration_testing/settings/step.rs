@@ -1,5 +1,5 @@
 use settings::Setting;
-use warpui::{async_assert, integration::TestStep, windowing::WindowManager, SingletonEntity};
+use twarpui::{async_assert, integration::TestStep, windowing::WindowManager, SingletonEntity};
 
 use crate::{
     integration_testing::{

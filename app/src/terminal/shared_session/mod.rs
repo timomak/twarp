@@ -3,7 +3,7 @@ use instant::Duration;
 use serde::{Deserialize, Serialize};
 use session_sharing_protocol::common::{Role, Scrollback, ScrollbackBlock, SessionId};
 use session_sharing_protocol::sharer::SessionSourceType;
-use warpui::{id, keymap::ContextPredicate, AppContext};
+use twarpui::{id, keymap::ContextPredicate, AppContext};
 
 use crate::{
     channel::{Channel, ChannelState},
@@ -265,7 +265,7 @@ impl SharedSessionScrollbackType {
 #[cfg(not(test))]
 pub fn max_session_size(ctx: &AppContext) -> Byte {
     use crate::workspaces::user_workspaces::UserWorkspaces;
-    use warpui::SingletonEntity;
+    use twarpui::SingletonEntity;
 
     UserWorkspaces::as_ref(ctx)
         .current_team()

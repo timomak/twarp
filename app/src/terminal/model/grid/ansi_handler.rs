@@ -1,5 +1,5 @@
 // The code in this file is adapted from the alacritty_terminal crate under the
-// Apache license; see: crates/warp_terminal/src/model/LICENSE-ALACRITTY.
+// Apache license; see: crates/twarp_terminal/src/model/LICENSE-ALACRITTY.
 
 // path attribute needed due to current non-fs-based nesting of ansi_handler
 // under grid_handler.
@@ -16,13 +16,13 @@ use base64::Engine as _;
 use bounded_vec_deque::BoundedVecDeque;
 use pathfinder_geometry::vector::Vector2F;
 use rand::Rng;
+use twarp_core::channel::ChannelState;
+use twarp_core::features::FeatureFlag;
+use twarp_terminal::model::ansi::CharsetIndex;
+use twarp_terminal::model::grid::cell;
+use twarp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
+use twarpui::image_cache::{resize_dimensions, FitType};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
-use warp_core::channel::ChannelState;
-use warp_core::features::FeatureFlag;
-use warp_terminal::model::ansi::CharsetIndex;
-use warp_terminal::model::grid::cell;
-use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
-use warpui::image_cache::{resize_dimensions, FitType};
 
 use crate::server::telemetry::ImageProtocol;
 use crate::terminal::event::Event;
@@ -1136,7 +1136,7 @@ impl ansi::Handler for GridHandler {
         self.grid.cursor.charsets[index] = charset;
     }
 
-    fn set_color(&mut self, _: usize, _: warpui::color::ColorU) {
+    fn set_color(&mut self, _: usize, _: twarpui::color::ColorU) {
         log::error!("Handler method GridHandler::set_color should never be called. This should be handled by TerminalModel.");
     }
 

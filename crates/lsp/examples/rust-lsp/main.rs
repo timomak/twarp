@@ -20,7 +20,7 @@ use lsp::{
     LspServiceInitializationResult,
 };
 use lsp_types::Position;
-use warpui::r#async::{executor::Background, Timer};
+use twarpui::r#async::{executor::Background, Timer};
 
 fn init_logging() {
     let mut base_logger = env_logger::builder();
@@ -114,7 +114,7 @@ fn main() -> anyhow::Result<()> {
         }
     });
 
-    warpui::r#async::block_on(task)?;
+    twarpui::r#async::block_on(task)?;
     Ok(())
 }
 

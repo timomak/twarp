@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use string_offset::CharOffset;
-use warp_editor::model::CoreEditorModel;
-use warpui::{
+use twarp_editor::model::CoreEditorModel;
+use twarpui::{
     async_assert, integration::TestStep, windowing::WindowManager, App, SingletonEntity,
     ViewHandle, WindowId,
 };

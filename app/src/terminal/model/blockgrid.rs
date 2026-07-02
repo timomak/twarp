@@ -27,7 +27,7 @@ use super::image_map::StoredImageMetadata;
 use super::kitty::{KittyAction, KittyResponse};
 use super::secrets::RespectObfuscatedSecrets;
 use super::selection::ScrollDelta;
-use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
+use twarp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
 
 #[derive(Clone)]
 pub struct BlockGrid {

@@ -3,17 +3,17 @@ use std::sync::Arc;
 
 use parking_lot::FairMutex;
 use pathfinder_geometry::vector::Vector2F;
-use warpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
+use twarpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
 
 // twarp: 2c-d — AI active_agent / blocklist deleted; stubs.
 pub struct ActiveAgentViewsModel;
-impl warpui::Entity for ActiveAgentViewsModel {
+impl twarpui::Entity for ActiveAgentViewsModel {
     type Event = ();
 }
-impl warpui::SingletonEntity for ActiveAgentViewsModel {}
+impl twarpui::SingletonEntity for ActiveAgentViewsModel {}
 #[allow(dead_code)]
 impl ActiveAgentViewsModel {
-    pub fn unregister_ambient_session<C>(&mut self, _: warpui::EntityId, _: &mut C) {}
+    pub fn unregister_ambient_session<C>(&mut self, _: twarpui::EntityId, _: &mut C) {}
 }
 use crate::app_state::SerializedBlockListItem;
 use crate::{
@@ -143,7 +143,7 @@ impl TerminalManager for MockTerminalManager {
 
 #[cfg(test)]
 mod testing {
-    use warpui::{platform::WindowStyle, App, Element, SingletonEntity};
+    use twarpui::{platform::WindowStyle, App, Element, SingletonEntity};
 
     use crate::{
         server::server_api::ServerApiProvider,
@@ -159,21 +159,21 @@ mod testing {
         terminal_view: ViewHandle<TerminalView>,
     }
 
-    impl warpui::Entity for TerminalRootView {
+    impl twarpui::Entity for TerminalRootView {
         type Event = ();
     }
 
-    impl warpui::View for TerminalRootView {
+    impl twarpui::View for TerminalRootView {
         fn ui_name() -> &'static str {
             "TerminalRootView"
         }
 
-        fn render(&self, _app: &warpui::AppContext) -> Box<dyn warpui::Element> {
-            warpui::elements::ChildView::new(&self.terminal_view).finish()
+        fn render(&self, _app: &twarpui::AppContext) -> Box<dyn twarpui::Element> {
+            twarpui::elements::ChildView::new(&self.terminal_view).finish()
         }
     }
 
-    impl warpui::TypedActionView for TerminalRootView {
+    impl twarpui::TypedActionView for TerminalRootView {
         type Action = ();
     }
 

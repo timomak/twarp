@@ -3,7 +3,7 @@ use std::ops::Range;
 
 use rangemap::RangeSet;
 use string_offset::CharOffset;
-use warpui::{AppContext, Entity, ModelContext, ModelHandle};
+use twarpui::{AppContext, Entity, ModelContext, ModelHandle};
 
 use crate::content::edit::EditDelta;
 use crate::content::selection_model::BufferSelectionModel;

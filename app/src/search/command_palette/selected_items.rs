@@ -1,6 +1,6 @@
 use crate::search::command_palette::mixer::ItemSummary;
 use bounded_vec_deque::BoundedVecDeque;
-use warpui::{Entity, SingletonEntity};
+use twarpui::{Entity, SingletonEntity};
 
 /// Maximum number of elements to store. Per the [`BoundedVecDeque`] docs, it is recommended that
 /// this is one less than the power of two to avoid unnecessary allocations.

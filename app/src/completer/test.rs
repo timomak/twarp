@@ -3,13 +3,13 @@ use std::iter::FromIterator;
 use std::sync::Arc;
 
 use itertools::Itertools;
+use twarp_completer::completer::PathCompletionContext;
+use twarp_completer::completer::{CompletionContext, EngineDirEntry};
+use twarp_completer::signatures::CommandRegistry;
+use twarpui::App;
 use typed_path::TypedPathBuf;
 #[cfg(windows)]
 use typed_path::{UnixComponent, WindowsComponent, WindowsPrefix};
-use warp_completer::completer::PathCompletionContext;
-use warp_completer::completer::{CompletionContext, EngineDirEntry};
-use warp_completer::signatures::CommandRegistry;
-use warpui::App;
 
 use crate::completer::SessionContext;
 use crate::terminal::model::session::Session;
@@ -120,7 +120,7 @@ pub fn test_session_context_top_level_commands_includes_external_commands() {
             SessionInfo::new_for_test(),
             Arc::new(TestCommandExecutor::default()),
         );
-        warpui::r#async::block_on(session.load_external_commands());
+        twarpui::r#async::block_on(session.load_external_commands());
 
         let ctx = test_session_context(session, working_directory(), &app);
 
@@ -160,7 +160,7 @@ pub fn test_session_context_lists_directory_entries_locally() {
                 sandbox.touch(vec![
                     Stub::EmptyFile("Cargo.toml"),
                     Stub::EmptyFile("src/app/mod.rs"),
-                    Stub::EmptyFile("target/debug/warpui"),
+                    Stub::EmptyFile("target/debug/twarpui"),
                 ]);
 
                 let tests_dir = TypedPathBuf::from(dirs.tests().to_string_lossy().as_bytes());
@@ -172,7 +172,7 @@ pub fn test_session_context_lists_directory_entries_locally() {
 
                 assert_eq!(
                     HashSet::<EngineDirEntry>::from_iter(Arc::unwrap_or_clone(
-                        warpui::r#async::block_on(ctx.list_directory_entries(tests_dir))
+                        twarpui::r#async::block_on(ctx.list_directory_entries(tests_dir))
                     )),
                     HashSet::from_iter([
                         EngineDirEntry::test_dir(".hidden"),
@@ -235,7 +235,7 @@ pub fn test_session_context_lists_directory_entries_remotely() {
                     Stub::EmptyFile("control_path.socket"),
                     Stub::EmptyFile("Cargo.toml"),
                     Stub::EmptyFile("src/app/mod.rs"),
-                    Stub::EmptyFile("target/debug/warpui"),
+                    Stub::EmptyFile("target/debug/twarpui"),
                 ]);
 
                 let cwd = TypedPathBuf::from(dirs.tests().to_string_lossy().as_bytes());
@@ -256,7 +256,7 @@ pub fn test_session_context_lists_directory_entries_remotely() {
                 let ctx = test_session_context(Session::test_remote(), cwd.clone(), &app);
 
                 let mut entries = HashSet::<EngineDirEntry>::from_iter(Arc::unwrap_or_clone(
-                    warpui::r#async::block_on(ctx.list_directory_entries(cwd)),
+                    twarpui::r#async::block_on(ctx.list_directory_entries(cwd)),
                 ));
                 // TODO(CORE-2000): The ls script we use to list entries in remote
                 // sessions adds a spurious "." directory when run in the VirtualFS.
@@ -322,7 +322,7 @@ fn perform_special_characters_in_path_test(session: Session, file_names: Vec<&st
                 let ctx = test_session_context(session, test_dir.clone(), &app);
 
                 let mut entries = HashSet::<EngineDirEntry>::from_iter(Arc::unwrap_or_clone(
-                    warpui::r#async::block_on(ctx.list_directory_entries(test_dir)),
+                    twarpui::r#async::block_on(ctx.list_directory_entries(test_dir)),
                 ));
                 // TODO(CORE-2000): The ls script we use to list entries in remote
                 // sessions adds a spurious "." directory when run in the VirtualFS.

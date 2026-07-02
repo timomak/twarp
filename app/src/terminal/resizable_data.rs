@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use warpui::elements::resizable_state_handle;
-use warpui::elements::ResizableStateHandle;
-use warpui::Entity;
-use warpui::SingletonEntity;
-use warpui::WindowId;
+use twarpui::elements::resizable_state_handle;
+use twarpui::elements::ResizableStateHandle;
+use twarpui::Entity;
+use twarpui::SingletonEntity;
+use twarpui::WindowId;
 
 use crate::app_state::WindowSnapshot;
 

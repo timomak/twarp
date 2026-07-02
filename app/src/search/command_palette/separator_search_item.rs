@@ -2,7 +2,7 @@ use crate::search::item::SearchItem;
 use crate::search::result_renderer::ItemHighlightState;
 use crate::{appearance::Appearance, search::command_palette::mixer::CommandPaletteItemAction};
 use ordered_float::OrderedFloat;
-use warpui::{
+use twarpui::{
     elements::{Empty, Text},
     AppContext, Element, SingletonEntity,
 };

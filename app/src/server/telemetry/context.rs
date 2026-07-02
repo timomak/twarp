@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use std::sync::OnceLock;
 
 #[cfg(target_family = "wasm")]
-use warpui::platform::wasm;
+use twarpui::platform::wasm;
 
 static TELEMETRY_CONTEXT: OnceLock<TelemetryContext> = OnceLock::new();
 

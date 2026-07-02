@@ -2,16 +2,16 @@ use fuzzy_match::FuzzyMatchResult;
 use ordered_float::OrderedFloat;
 use std::fmt::Debug;
 use std::path::PathBuf;
-use warp_util::path::LineAndColumnArg;
+use twarp_util::path::LineAndColumnArg;
 
 use crate::appearance::Appearance;
 use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::command_palette::styles;
 use crate::search::item::{IconLocation, SearchItem};
 use crate::search::result_renderer::ItemHighlightState;
-use warpui::elements::{Align, ConstrainedBox, Container, Flex, Icon, ParentElement, Text};
-use warpui::fonts::{Properties, Weight};
-use warpui::{AppContext, Element, SingletonEntity};
+use twarpui::elements::{Align, ConstrainedBox, Container, Flex, Icon, ParentElement, Text};
+use twarpui::fonts::{Properties, Weight};
+use twarpui::{AppContext, Element, SingletonEntity};
 
 use crate::search::files::icon::icon_from_file_path;
 use crate::ui_components::render_file_search_row::{render_file_search_row, FileSearchRowOptions};

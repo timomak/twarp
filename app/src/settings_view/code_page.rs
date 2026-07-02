@@ -32,10 +32,10 @@ impl LspRepoStatus {
     }
 }
 pub struct PersistedWorkspace;
-impl warpui::Entity for PersistedWorkspace {
+impl twarpui::Entity for PersistedWorkspace {
     type Event = PersistedWorkspaceEvent;
 }
-impl warpui::SingletonEntity for PersistedWorkspace {}
+impl twarpui::SingletonEntity for PersistedWorkspace {}
 #[allow(dead_code)]
 impl PersistedWorkspace {
     pub fn total_lsp_server_count(&self, _: bool) -> usize {
@@ -102,15 +102,15 @@ use crate::{
 // to type-check against these names.
 #[allow(dead_code)]
 pub struct CodebaseIndexManager;
-impl warpui::Entity for CodebaseIndexManager {
+impl twarpui::Entity for CodebaseIndexManager {
     type Event = CodebaseIndexManagerEvent;
 }
-impl warpui::SingletonEntity for CodebaseIndexManager {}
+impl twarpui::SingletonEntity for CodebaseIndexManager {}
 #[allow(dead_code)]
 impl CodebaseIndexManager {
     pub fn get_codebase_index_statuses(
         &self,
-        _ctx: &warpui::AppContext,
+        _ctx: &twarpui::AppContext,
     ) -> std::iter::Empty<(std::path::PathBuf, CodebaseIndexStatus)> {
         std::iter::empty()
     }
@@ -198,10 +198,10 @@ pub enum SyncProgress {
 
 #[allow(dead_code)]
 pub struct ProjectContextModel;
-impl warpui::Entity for ProjectContextModel {
+impl twarpui::Entity for ProjectContextModel {
     type Event = ProjectContextModelEvent;
 }
-impl warpui::SingletonEntity for ProjectContextModel {}
+impl twarpui::SingletonEntity for ProjectContextModel {}
 #[allow(dead_code)]
 impl ProjectContextModel {
     pub fn rules_for_workspace<P>(&self, _path: P) -> Vec<std::path::PathBuf> {
@@ -225,14 +225,14 @@ use pathfinder_color::ColorU;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use warp_core::{
+use twarp_core::{
     features::FeatureFlag,
     report_if_error,
     settings::ToggleableSetting as _,
     ui::theme::{AnsiColorIdentifier, Fill as ThemeFill},
 };
-use warp_util::path::user_friendly_path;
-use warpui::{
+use twarp_util::path::user_friendly_path;
+use twarpui::{
     elements::{
         ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Empty,
         Expanded, Fill, Flex, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement,
@@ -1486,15 +1486,15 @@ impl CodePageWidget {
                     ..Default::default()
                 })
                 .with_text_and_icon_label(
-                    warpui::ui_components::button::TextAndIcon::new(
-                        warpui::ui_components::button::TextAndIconAlignment::IconFirst,
+                    twarpui::ui_components::button::TextAndIcon::new(
+                        twarpui::ui_components::button::TextAndIconAlignment::IconFirst,
                         "Open project rules",
-                        warpui::elements::Icon::new(
+                        twarpui::elements::Icon::new(
                             "bundled/svg/file-code-02.svg",
                             theme.foreground(),
                         ),
-                        warpui::elements::MainAxisSize::Min,
-                        warpui::elements::MainAxisAlignment::Center,
+                        twarpui::elements::MainAxisSize::Min,
+                        twarpui::elements::MainAxisAlignment::Center,
                         pathfinder_geometry::vector::vec2f(14., 14.),
                     )
                     .with_inner_padding(4.),
@@ -1967,7 +1967,7 @@ impl CodePageWidget {
         &self,
         workspace_path: &Path,
         server_type: LSPServerType,
-        server_model: Option<&warpui::ModelHandle<LspServerModel>>,
+        server_model: Option<&twarpui::ModelHandle<LspServerModel>>,
         is_enabled: bool,
         mouse_states: LspServerRowMouseStates,
         appearance: &Appearance,
@@ -2156,9 +2156,9 @@ impl CodePageWidget {
     /// Gets the status color and text for an LSP server.
     fn get_lsp_status_info(
         &self,
-        server_model: Option<&warpui::ModelHandle<LspServerModel>>,
+        server_model: Option<&twarpui::ModelHandle<LspServerModel>>,
         app: &AppContext,
-        theme: &warp_core::ui::theme::WarpTheme,
+        theme: &twarp_core::ui::theme::WarpTheme,
     ) -> (ColorU, &'static str) {
         match server_model {
             Some(model) => {

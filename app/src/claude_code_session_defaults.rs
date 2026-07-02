@@ -12,7 +12,7 @@
 //! [`is_seeded`]: ClaudeSessionDefaultsModel::is_seeded
 
 use claude_code::driver::PermissionMode;
-use warpui::{Entity, ModelContext, SingletonEntity};
+use twarpui::{Entity, ModelContext, SingletonEntity};
 
 use crate::persistence::{ModelEvent, PersistedClaudeSessionDefaults};
 use crate::GlobalResourceHandlesProvider;

@@ -13,10 +13,10 @@ use super::{
 
 // twarp: 2c-d — AIRequestUsageModel deleted; stub.
 pub struct AIRequestUsageModel;
-impl warpui::Entity for AIRequestUsageModel {
+impl twarpui::Entity for AIRequestUsageModel {
     type Event = ();
 }
-impl warpui::SingletonEntity for AIRequestUsageModel {}
+impl twarpui::SingletonEntity for AIRequestUsageModel {}
 #[allow(dead_code)]
 impl AIRequestUsageModel {
     pub fn total_current_workspace_bonus_credits_remaining<W>(&self, _: W) -> i32 {
@@ -70,10 +70,10 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::{cmp::Ordering, collections::HashSet};
-use warp_core::ui::theme::color::internal_colors;
-use warpui::FocusContext;
+use twarp_core::ui::theme::color::internal_colors;
+use twarpui::FocusContext;
 
-use warpui::{
+use twarpui::{
     clipboard::ClipboardContent,
     elements::{
         Align, Border, ChildAnchor, ClippedScrollStateHandle, ConstrainedBox, Container,

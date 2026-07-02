@@ -1,7 +1,7 @@
 use crate::terminal::{model::session::ExecuteCommandOptions, shell::ShellType};
 
 use super::*;
-use warpui::App;
+use twarpui::App;
 
 async fn execute_test_command<F>(
     executor: Arc<TmuxCommandExecutor>,

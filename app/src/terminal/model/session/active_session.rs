@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use warpui::{AppContext, Entity, ModelContext, ModelHandle};
+use twarpui::{AppContext, Entity, ModelContext, ModelHandle};
 
 // twarp: 2c-d — WarpAiExecutionContext deleted; stub.
 pub struct WarpAiExecutionContext;

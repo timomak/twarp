@@ -6,10 +6,10 @@ use std::sync::{
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, Utc};
 use parking_lot::RwLock;
+use twarp_core::channel::{Channel, ChannelState};
+use twarp_graphql::object_permissions::OwnerType;
+use twarpui::{AppContext, Entity, SingletonEntity};
 use uuid::Uuid;
-use warp_core::channel::{Channel, ChannelState};
-use warp_graphql::object_permissions::OwnerType;
-use warpui::{AppContext, Entity, SingletonEntity};
 
 use crate::{
     cloud_object::{GenericStringObjectFormat, JsonObjectType, ObjectType},
@@ -466,8 +466,8 @@ impl AuthState {
     }
 }
 
-// Adapter for the [`warp_managed_secrets`] crate, which needs to access the current user.
-impl warp_managed_secrets::ActorProvider for AuthState {
+// Adapter for the [`twarp_managed_secrets`] crate, which needs to access the current user.
+impl twarp_managed_secrets::ActorProvider for AuthState {
     fn actor_uid(&self) -> Option<String> {
         self.user_id().map(|uid| uid.as_string())
     }

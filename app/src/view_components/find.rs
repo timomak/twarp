@@ -11,16 +11,16 @@ use serde::Serialize;
 
 use crate::themes::theme::Fill;
 use pathfinder_color::ColorU;
-use warpui::elements::{ChildAnchor, OffsetPositioning, Radius, SavePosition, Shrinkable};
-use warpui::keymap::EditableBinding;
-use warpui::ui_components::components::UiComponent;
-pub use warpui::{
+use twarpui::elements::{ChildAnchor, OffsetPositioning, Radius, SavePosition, Shrinkable};
+use twarpui::keymap::EditableBinding;
+use twarpui::ui_components::components::UiComponent;
+pub use twarpui::{
     accessibility::{AccessibilityContent, WarpA11yRole},
     elements::{ParentElement as _, Stack},
     geometry::vector::vec2f,
     AppContext,
 };
-use warpui::{
+use twarpui::{
     elements::{
         Align, Border, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
         DropShadow, Element, Flex, Hoverable, MouseStateHandle, ParentAnchor, ParentOffsetBounds,
@@ -28,8 +28,8 @@ use warpui::{
     },
     Entity, SingletonEntity, TypedActionView, View,
 };
-use warpui::{presenter::ChildView, ViewContext, ViewHandle};
-use warpui::{FocusContext, ModelHandle};
+use twarpui::{presenter::ChildView, ViewContext, ViewHandle};
+use twarpui::{FocusContext, ModelHandle};
 
 pub const FIND_BAR_WIDTH: f32 = 500.;
 const ICON_PADDING: f32 = 4.;
@@ -125,7 +125,7 @@ pub enum FindAction {
 }
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_editable_bindings([
         EditableBinding::new(

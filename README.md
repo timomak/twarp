@@ -110,7 +110,7 @@ twarp is a fork of [Warp](https://github.com/warpdotdev/warp), open-sourced by W
 
 ## Licensing
 
-twarp inherits Warp's licensing unchanged: the `warpui_core` and `warpui` crates are MIT, the rest of the tree is AGPL v3. See [LICENSE-MIT](LICENSE-MIT) and [LICENSE-AGPL](LICENSE-AGPL).
+twarp inherits Warp's licensing unchanged: the `twarpui_core` and `twarpui` crates are MIT, the rest of the tree is AGPL v3. See [LICENSE-MIT](LICENSE-MIT) and [LICENSE-AGPL](LICENSE-AGPL).
 
 ---
 
@@ -165,7 +165,7 @@ Explore [build.warp.dev](https://build.warp.dev) to:
 
 ## Licensing
 
-Warp's UI framework (the `warpui_core` and `warpui` crates) are licensed under the [MIT license](LICENSE-MIT).
+Warp's UI framework (the `twarpui_core` and `twarpui` crates) are licensed under the [MIT license](LICENSE-MIT).
 
 The rest of the code in this repository is licensed under the [AGPL v3](LICENSE-AGPL).
 
