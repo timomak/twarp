@@ -393,11 +393,19 @@ impl BrowserEngine {
     async fn wait_for_selector(&self, selector: &str, timeout: Duration) -> Result<()> {
         let deadline = Instant::now() + timeout;
         loop {
-            let found: bool = self
-                .call_automation("hasSelector", vec![json!(selector)])
-                .await?;
-            if found {
-                return Ok(());
+            // A page that is still loading hasn't run the injected automation
+            // script yet; treat that as "selector not found yet" and keep
+            // polling instead of failing the wait.
+            match self
+                .call_automation::<bool>("hasSelector", vec![json!(selector)])
+                .await
+            {
+                Ok(true) => return Ok(()),
+                Ok(false) => {}
+                Err(BrowserError::AutomationUnavailable) => {}
+                Err(BrowserError::JavaScript(message))
+                    if message.contains("__twarpBrowserAutomation") => {}
+                Err(err) => return Err(err),
             }
             if Instant::now() >= deadline {
                 return Err(BrowserError::Timeout("selector to appear"));
