@@ -1,19 +1,22 @@
 use std::{
+    collections::VecDeque,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::{mpsc, Arc, Mutex},
+    sync::{Arc, Mutex, mpsc},
     time::Duration,
 };
 
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use computer_use::{
     Action, MouseButton, Options, Screenshot, ScreenshotParams, ScreenshotRegion, ScrollDirection,
     ScrollDistance, Vector2I,
 };
+use instant::Instant;
 use once_cell::sync::Lazy;
 use rmcp::{
+    ErrorData as McpError, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{CallToolResult, Content, Implementation, ServerCapabilities, ServerInfo},
-    schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
+    schemars, tool, tool_handler, tool_router,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -28,6 +31,9 @@ const DEFAULT_MAX_TOTAL_PX: usize = 1_000_000;
 const MAX_WAIT_MS: u64 = 10_000;
 const MAX_TYPED_TEXT_CHARS: usize = 4_000;
 const MAX_SCROLL_DISTANCE: i32 = 20_000;
+const ACTION_LOG_CAPACITY: usize = 80;
+const CONFIRM_POLL_INTERVAL: Duration = Duration::from_millis(200);
+const IDLE_AUTO_STOP_TIMEOUT: Duration = Duration::from_secs(60);
 
 static AGENT_STATE: Lazy<Arc<Mutex<AgentState>>> =
     Lazy::new(|| Arc::new(Mutex::new(AgentState::default())));
@@ -39,6 +45,11 @@ struct AgentState {
     active_session_label: Option<String>,
     latest_status: String,
     latest_capture: Option<CaptureBounds>,
+    pending_confirmation: Option<PendingConfirmation>,
+    next_confirmation_id: u64,
+    action_log: VecDeque<ActionLogEntry>,
+    held_inputs: HeldInputs,
+    last_activity: Option<Instant>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -51,23 +62,233 @@ struct CaptureBounds {
     screen_height: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConfirmationDecision {
+    Pending,
+    Approved,
+    Rejected,
+}
+
+#[derive(Clone, Debug)]
+struct PendingConfirmation {
+    id: u64,
+    summary: String,
+    decision: ConfirmationDecision,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ActionLogEntry {
+    sequence: u64,
+    label: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct HeldInputs {
+    mouse_buttons: Vec<MouseButton>,
+    keys: Vec<computer_use::Key>,
+}
+
+impl AgentState {
+    fn push_log(&mut self, label: impl Into<String>) {
+        let sequence = self
+            .action_log
+            .back()
+            .map_or(1, |entry| entry.sequence.saturating_add(1));
+        self.action_log.push_back(ActionLogEntry {
+            sequence,
+            label: label.into(),
+        });
+        while self.action_log.len() > ACTION_LOG_CAPACITY {
+            self.action_log.pop_front();
+        }
+    }
+
+    fn mark_activity(&mut self) {
+        self.last_activity = Some(Instant::now());
+    }
+
+    fn idle_timed_out(&self) -> bool {
+        self.active_session_label.is_some()
+            && self
+                .last_activity
+                .is_some_and(|activity| activity.elapsed() >= IDLE_AUTO_STOP_TIMEOUT)
+    }
+
+    fn log_text(&self) -> String {
+        if self.action_log.is_empty() {
+            return "No computer-control actions yet.".to_owned();
+        }
+
+        self.action_log
+            .iter()
+            .map(|entry| format!("{}. {}", entry.sequence, entry.label))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn begin_confirmation(&mut self, summary: String) -> u64 {
+        self.next_confirmation_id = self.next_confirmation_id.wrapping_add(1);
+        let id = self.next_confirmation_id;
+        self.pending_confirmation = Some(PendingConfirmation {
+            id,
+            summary: summary.clone(),
+            decision: ConfirmationDecision::Pending,
+        });
+        self.latest_status = format!("Latest: awaiting approval for {summary}");
+        self.push_log(format!("Proposed action: {summary}"));
+        self.mark_activity();
+        id
+    }
+
+    fn decide_pending_confirmation(&mut self, decision: ConfirmationDecision) -> Option<String> {
+        let pending = self.pending_confirmation.as_mut()?;
+        if pending.decision != ConfirmationDecision::Pending {
+            return None;
+        }
+        pending.decision = decision;
+        let summary = pending.summary.clone();
+        self.mark_activity();
+        Some(summary)
+    }
+
+    fn take_release_actions(&mut self) -> Vec<Action> {
+        self.held_inputs.take_release_actions()
+    }
+}
+
+impl HeldInputs {
+    fn apply_confirmed_actions(&mut self, actions: &[Action]) {
+        for action in actions {
+            match action {
+                Action::MouseDown { button, .. } => {
+                    if !self.mouse_buttons.contains(button) {
+                        self.mouse_buttons.push(button.clone());
+                    }
+                }
+                Action::MouseUp { button } => {
+                    self.mouse_buttons.retain(|held| held != button);
+                }
+                Action::KeyDown { key } => {
+                    if !self.keys.contains(key) {
+                        self.keys.push(key.clone());
+                    }
+                }
+                Action::KeyUp { key } => {
+                    self.keys.retain(|held| held != key);
+                }
+                Action::Wait(_)
+                | Action::MouseMove { .. }
+                | Action::MouseWheel { .. }
+                | Action::TypeText { .. } => {}
+            }
+        }
+    }
+
+    fn take_release_actions(&mut self) -> Vec<Action> {
+        let mut actions = Vec::with_capacity(self.mouse_buttons.len() + self.keys.len());
+        for button in self.mouse_buttons.drain(..) {
+            actions.push(Action::MouseUp { button });
+        }
+        for key in self.keys.drain(..) {
+            actions.push(Action::KeyUp { key });
+        }
+        actions
+    }
+}
+
 pub(crate) fn activate_agent_session(session_label: &str) {
     let mut state = AGENT_STATE.lock().expect("computer-control state poisoned");
     state.active_session_label = Some(session_label.to_owned());
     state.latest_capture = None;
+    state.pending_confirmation = None;
+    state.action_log.clear();
+    state.held_inputs = HeldInputs::default();
+    state.mark_activity();
     state.latest_status = "Latest: waiting for Claude".to_owned();
+    state.push_log(format!("Started computer control for {session_label}"));
 }
 
 pub(crate) fn deactivate_agent_session(session_label: Option<&str>) {
-    let mut state = AGENT_STATE.lock().expect("computer-control state poisoned");
-    if let Some(label) = session_label {
-        if state.active_session_label.as_deref() != Some(label) {
-            return;
+    deactivate_agent_session_with_status(
+        session_label,
+        "Latest: stopped",
+        "Stopped computer control",
+    );
+}
+
+pub(crate) fn deactivate_agent_session_for_idle_timeout(session_label: Option<&str>) {
+    deactivate_agent_session_with_status(
+        session_label,
+        "Latest: stopped due to idleness",
+        "Stopped automatically after idle timeout",
+    );
+}
+
+fn deactivate_agent_session_with_status(
+    session_label: Option<&str>,
+    status: &'static str,
+    log_entry: &'static str,
+) {
+    let release_actions = {
+        let mut state = AGENT_STATE.lock().expect("computer-control state poisoned");
+        if let Some(label) = session_label {
+            if state.active_session_label.as_deref() != Some(label) {
+                return;
+            }
         }
-    }
-    state.active_session_label = None;
-    state.latest_capture = None;
-    state.latest_status = "Latest: stopped".to_owned();
+        state.active_session_label = None;
+        state.latest_capture = None;
+        state.pending_confirmation = None;
+        state.latest_status = status.to_owned();
+        state.last_activity = None;
+        state.push_log(log_entry);
+        state.take_release_actions()
+    };
+
+    release_held_inputs_best_effort(release_actions);
+}
+
+pub(crate) fn approve_pending_action() -> bool {
+    let mut state = AGENT_STATE.lock().expect("computer-control state poisoned");
+    let Some(summary) = state.decide_pending_confirmation(ConfirmationDecision::Approved) else {
+        return false;
+    };
+    state.latest_status = format!("Latest: approved {summary}");
+    state.push_log(format!("Approved action: {summary}"));
+    true
+}
+
+pub(crate) fn reject_pending_action() -> bool {
+    let mut state = AGENT_STATE.lock().expect("computer-control state poisoned");
+    let Some(summary) = state.decide_pending_confirmation(ConfirmationDecision::Rejected) else {
+        return false;
+    };
+    state.latest_status = format!("Latest: rejected {summary}");
+    state.push_log(format!("Rejected action: {summary}"));
+    true
+}
+
+pub(crate) fn pending_action_requires_confirmation() -> bool {
+    AGENT_STATE
+        .lock()
+        .expect("computer-control state poisoned")
+        .pending_confirmation
+        .as_ref()
+        .is_some_and(|pending| pending.decision == ConfirmationDecision::Pending)
+}
+
+pub(crate) fn latest_action_log() -> String {
+    AGENT_STATE
+        .lock()
+        .expect("computer-control state poisoned")
+        .log_text()
+}
+
+pub(crate) fn idle_timeout_elapsed() -> bool {
+    AGENT_STATE
+        .lock()
+        .expect("computer-control state poisoned")
+        .idle_timed_out()
 }
 
 pub(crate) fn latest_agent_status() -> String {
@@ -83,6 +304,20 @@ fn set_status(status: impl Into<String>) {
         .lock()
         .expect("computer-control state poisoned")
         .latest_status = status.into();
+}
+
+fn record_activity() {
+    AGENT_STATE
+        .lock()
+        .expect("computer-control state poisoned")
+        .mark_activity();
+}
+
+fn push_log(label: impl Into<String>) {
+    AGENT_STATE
+        .lock()
+        .expect("computer-control state poisoned")
+        .push_log(label);
 }
 
 fn require_active_session() -> Result<String, McpError> {
@@ -111,6 +346,105 @@ fn update_capture(bounds: CaptureBounds) {
         .lock()
         .expect("computer-control state poisoned")
         .latest_capture = Some(bounds);
+}
+
+async fn confirm_action(summary: &str) -> Result<(), McpError> {
+    let confirmation_id = {
+        let mut state = AGENT_STATE.lock().expect("computer-control state poisoned");
+        if state.active_session_label.is_none() {
+            return Err(inactive_session_error());
+        }
+        state.begin_confirmation(summary.to_owned())
+    };
+
+    loop {
+        tokio::time::sleep(CONFIRM_POLL_INTERVAL).await;
+        let decision = {
+            let mut state = AGENT_STATE.lock().expect("computer-control state poisoned");
+            if state.active_session_label.is_none() {
+                return Err(McpError::invalid_request(
+                    "Computer control stopped before the pending action was approved.",
+                    None,
+                ));
+            }
+            let Some(pending) = state.pending_confirmation.as_ref() else {
+                return Err(McpError::invalid_request(
+                    "Computer control confirmation is no longer pending.",
+                    None,
+                ));
+            };
+            if pending.id != confirmation_id {
+                return Err(McpError::invalid_request(
+                    "Computer control received a newer pending action before this one completed.",
+                    None,
+                ));
+            }
+            match pending.decision {
+                ConfirmationDecision::Pending => None,
+                decision => {
+                    state.pending_confirmation = None;
+                    Some(decision)
+                }
+            }
+        };
+
+        match decision {
+            None => {}
+            Some(ConfirmationDecision::Approved) => return Ok(()),
+            Some(ConfirmationDecision::Rejected) => {
+                return Err(McpError::invalid_request(
+                    "The user rejected the proposed computer-control action.",
+                    None,
+                ));
+            }
+            Some(ConfirmationDecision::Pending) => unreachable!(),
+        }
+    }
+}
+
+fn inactive_session_error() -> McpError {
+    McpError::invalid_request(
+        "Computer control is not active. The user must start computer control from the Claude pane first.",
+        None,
+    )
+}
+
+fn release_held_inputs_best_effort(actions: Vec<Action>) {
+    if actions.is_empty() {
+        return;
+    }
+
+    std::thread::Builder::new()
+        .name("computer-control-release-held-inputs".to_owned())
+        .spawn(move || {
+            let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+            else {
+                log::warn!("Failed to create runtime for computer-control held-input release");
+                return;
+            };
+            runtime.block_on(async move {
+                let mut actor = ACTOR.lock().await;
+                if actor.is_none() {
+                    *actor = Some(computer_use::create_actor());
+                }
+                if let Some(actor) = actor.as_mut() {
+                    if let Err(error) = actor
+                        .perform_actions(
+                            &actions,
+                            Options {
+                                screenshot_params: None,
+                            },
+                        )
+                        .await
+                    {
+                        log::warn!("Failed to release held computer-control input: {error}");
+                    }
+                }
+            });
+        })
+        .ok();
 }
 
 pub(crate) struct ComputerControlMcpBridge {
@@ -320,9 +654,16 @@ impl ComputerControlMcpServer {
         Parameters(params): Parameters<ScreenshotToolParams>,
     ) -> Result<CallToolResult, McpError> {
         let session = require_active_session()?;
+        record_activity();
         let screenshot_params = params.screenshot_params()?;
         set_status("Latest: taking screenshot");
-        let result = perform_actor_actions(Vec::new(), screenshot_params).await?;
+        push_log("Screenshot requested");
+        let result = perform_actor_actions(Vec::new(), screenshot_params)
+            .await
+            .inspect_err(|_| {
+                set_status("Latest: screenshot failed");
+                push_log("Screenshot failed");
+            })?;
         let screenshot = result
             .screenshot
             .ok_or_else(|| McpError::internal_error("computer_use returned no screenshot", None))?;
@@ -330,6 +671,10 @@ impl ComputerControlMcpServer {
         update_capture(bounds);
         set_status(format!(
             "Latest: screenshot {}x{}",
+            screenshot.width, screenshot.height
+        ));
+        push_log(format!(
+            "Screenshot captured: {}x{}",
             screenshot.width, screenshot.height
         ));
         screenshot_result(session, screenshot, bounds, result.cursor_position)
@@ -344,6 +689,7 @@ impl ComputerControlMcpServer {
         Parameters(params): Parameters<ComputerActionParams>,
     ) -> Result<CallToolResult, McpError> {
         let session = require_active_session()?;
+        record_activity();
         let screenshot_params = params
             .screenshot
             .as_ref()
@@ -352,21 +698,33 @@ impl ComputerControlMcpServer {
             .unwrap_or_else(default_screenshot_params);
         let summary = action_summary(&params);
         set_status(format!("Latest: proposed {summary}"));
-        let actions = validate_action(&params)?;
+        let actions = validate_action(&params).inspect_err(|_| {
+            set_status(format!("Latest: rejected malformed {summary}"));
+            push_log(format!("Failed proposal: malformed {summary}"));
+        })?;
+        confirm_action(&summary).await?;
         require_active_session()?;
         set_status(format!("Latest: executing {summary}"));
+        push_log(format!("Executing action: {summary}"));
         let result = perform_actor_actions(actions, screenshot_params)
             .await
             .inspect_err(|_| {
                 set_status(format!("Latest: failed {summary}"));
+                push_log(format!("Failed action: {summary}"));
             })?;
         let screenshot = result.screenshot.ok_or_else(|| {
             set_status(format!("Latest: failed {summary}"));
+            push_log(format!("Failed action: {summary}: no screenshot returned"));
             McpError::internal_error("computer_use returned no screenshot after action", None)
         })?;
         let bounds = capture_bounds(&screenshot, screenshot_params);
         update_capture(bounds);
         set_status(format!("Latest: executed {summary}"));
+        push_log(format!("Executed action: {summary}"));
+        push_log(format!(
+            "Screenshot captured: {}x{}",
+            screenshot.width, screenshot.height
+        ));
         screenshot_result(session, screenshot, bounds, result.cursor_position)
     }
 }
@@ -413,7 +771,7 @@ async fn perform_actor_actions(
     if actor.is_none() {
         *actor = Some(computer_use::create_actor());
     }
-    actor
+    let result = actor
         .as_mut()
         .expect("actor initialized above")
         .perform_actions(
@@ -423,7 +781,15 @@ async fn perform_actor_actions(
             },
         )
         .await
-        .map_err(|error| McpError::internal_error(error, None))
+        .map_err(|error| McpError::internal_error(error, None));
+    if result.is_ok() && !actions.is_empty() {
+        AGENT_STATE
+            .lock()
+            .expect("computer-control state poisoned")
+            .held_inputs
+            .apply_confirmed_actions(&actions);
+    }
+    result
 }
 
 fn default_screenshot_params() -> ScreenshotParams {
@@ -463,8 +829,7 @@ fn screenshot_result(
         screen_origin_y: bounds.origin_y,
         screen_width: bounds.screen_width,
         screen_height: bounds.screen_height,
-        coordinate_note:
-            "Use image pixel coordinates for computer_action by default; set coordinate_space=screen only for physical screen pixels.",
+        coordinate_note: "Use image pixel coordinates for computer_action by default; set coordinate_space=screen only for physical screen pixels.",
         cursor_x: cursor_position.map(|p| p.x()),
         cursor_y: cursor_position.map(|p| p.y()),
     };
@@ -837,5 +1202,93 @@ mod tests {
             screenshot: None,
         });
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn action_log_is_bounded_and_ordered() {
+        let mut state = AgentState::default();
+        for index in 0..(ACTION_LOG_CAPACITY + 5) {
+            state.push_log(format!("event {index}"));
+        }
+
+        assert_eq!(state.action_log.len(), ACTION_LOG_CAPACITY);
+        assert_eq!(state.action_log.front().unwrap().sequence, 6);
+        assert_eq!(
+            state.action_log.back().unwrap().label,
+            format!("event {}", ACTION_LOG_CAPACITY + 4)
+        );
+    }
+
+    #[test]
+    fn confirmation_decision_is_explicit() {
+        let mut state = AgentState::default();
+        let id = state.begin_confirmation("click at 10,20".to_owned());
+
+        assert_eq!(id, 1);
+        assert!(matches!(
+            state
+                .pending_confirmation
+                .as_ref()
+                .map(|pending| pending.decision),
+            Some(ConfirmationDecision::Pending)
+        ));
+        assert_eq!(
+            state.decide_pending_confirmation(ConfirmationDecision::Approved),
+            Some("click at 10,20".to_owned())
+        );
+        assert_eq!(
+            state
+                .pending_confirmation
+                .as_ref()
+                .map(|pending| pending.decision),
+            Some(ConfirmationDecision::Approved)
+        );
+        assert_eq!(
+            state.decide_pending_confirmation(ConfirmationDecision::Rejected),
+            None
+        );
+    }
+
+    #[test]
+    fn idle_timeout_requires_active_session() {
+        let mut state = AgentState::default();
+        state.last_activity =
+            Some(Instant::now() - IDLE_AUTO_STOP_TIMEOUT - Duration::from_secs(1));
+        assert!(!state.idle_timed_out());
+
+        state.active_session_label = Some("Claude".to_owned());
+        assert!(state.idle_timed_out());
+
+        state.mark_activity();
+        assert!(!state.idle_timed_out());
+    }
+
+    #[test]
+    fn held_inputs_generate_best_effort_releases() {
+        let mut held = HeldInputs::default();
+        held.apply_confirmed_actions(&[
+            Action::MouseDown {
+                button: MouseButton::Left,
+                at: Vector2I::new(1, 2),
+            },
+            Action::KeyDown {
+                key: computer_use::Key::Char('a'),
+            },
+        ]);
+
+        let releases = held.take_release_actions();
+        assert!(held.mouse_buttons.is_empty());
+        assert!(held.keys.is_empty());
+        assert_eq!(
+            releases,
+            vec![
+                Action::MouseUp {
+                    button: MouseButton::Left
+                },
+                Action::KeyUp {
+                    key: computer_use::Key::Char('a')
+                }
+            ]
+        );
     }
 }

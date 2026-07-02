@@ -11,6 +11,22 @@ pub(crate) use mcp::ComputerControlMcpBridge;
 mod mcp {
     pub(crate) fn activate_agent_session(_session_label: &str) {}
     pub(crate) fn deactivate_agent_session(_session_label: Option<&str>) {}
+    pub(crate) fn deactivate_agent_session_for_idle_timeout(_session_label: Option<&str>) {}
+    pub(crate) fn approve_pending_action() -> bool {
+        false
+    }
+    pub(crate) fn reject_pending_action() -> bool {
+        false
+    }
+    pub(crate) fn pending_action_requires_confirmation() -> bool {
+        false
+    }
+    pub(crate) fn latest_action_log() -> String {
+        "No computer-control actions yet.".to_owned()
+    }
+    pub(crate) fn idle_timeout_elapsed() -> bool {
+        false
+    }
     pub(crate) fn latest_agent_status() -> String {
         "Latest: unavailable".to_owned()
     }
@@ -77,6 +93,8 @@ pub struct ComputerControlCoordinator {
     last_session_label: Option<String>,
     last_chrome: Option<ComputerControlChrome>,
     last_status: Option<String>,
+    last_action_log: Option<String>,
+    last_pending_confirmation: bool,
     permission_tracker: PermissionGrantTracker,
     generation: u64,
 }
@@ -90,6 +108,8 @@ impl Default for ComputerControlCoordinator {
             last_session_label: None,
             last_chrome: None,
             last_status: None,
+            last_action_log: None,
+            last_pending_confirmation: false,
             permission_tracker: PermissionGrantTracker::default(),
             generation: 0,
         }
@@ -138,6 +158,8 @@ impl ComputerControlCoordinator {
                 self.permission_panel = None;
                 self.overlay = Some(overlay);
                 self.last_status = Some(status);
+                self.last_action_log = Some(mcp::latest_action_log());
+                self.last_pending_confirmation = false;
                 self.state = ComputerControlState::Active;
             }
             Err(error) => {
@@ -147,6 +169,8 @@ impl ComputerControlCoordinator {
                 self.last_session_label = None;
                 self.last_chrome = None;
                 self.last_status = None;
+                self.last_action_log = None;
+                self.last_pending_confirmation = false;
                 self.state = ComputerControlState::Failed(error);
             }
         }
@@ -168,11 +192,19 @@ impl ComputerControlCoordinator {
 
         let status =
             matches!(self.state, ComputerControlState::Active).then(mcp::latest_agent_status);
+        let action_log =
+            matches!(self.state, ComputerControlState::Active).then(mcp::latest_action_log);
+        let pending_confirmation = matches!(self.state, ComputerControlState::Active)
+            && mcp::pending_action_requires_confirmation();
         let changed = self.last_session_label.as_ref() != Some(&session_label)
             || self.last_chrome != Some(chrome)
             || status
                 .as_ref()
-                .is_some_and(|status| self.last_status.as_ref() != Some(status));
+                .is_some_and(|status| self.last_status.as_ref() != Some(status))
+            || action_log
+                .as_ref()
+                .is_some_and(|action_log| self.last_action_log.as_ref() != Some(action_log))
+            || self.last_pending_confirmation != pending_confirmation;
         if changed {
             match &self.state {
                 ComputerControlState::Blocked(permissions) => {
@@ -186,6 +218,10 @@ impl ComputerControlCoordinator {
                             &session_label,
                             chrome,
                             status.as_deref().unwrap_or("Latest: waiting for Claude"),
+                            action_log
+                                .as_deref()
+                                .unwrap_or("No computer-control actions yet."),
+                            pending_confirmation,
                         );
                     }
                 }
@@ -198,21 +234,35 @@ impl ComputerControlCoordinator {
             if let Some(status) = status {
                 self.last_status = Some(status);
             }
+            if let Some(action_log) = action_log {
+                self.last_action_log = Some(action_log);
+            }
+            self.last_pending_confirmation = pending_confirmation;
         }
     }
 
     pub fn stop(&mut self) {
+        self.stop_with_idle_timeout(false);
+    }
+
+    fn stop_with_idle_timeout(&mut self, idle_timeout: bool) {
         if matches!(self.state, ComputerControlState::Stopped) {
             return;
         }
 
         self.state = ComputerControlState::Stopping;
-        mcp::deactivate_agent_session(self.last_session_label.as_deref());
+        if idle_timeout {
+            mcp::deactivate_agent_session_for_idle_timeout(self.last_session_label.as_deref());
+        } else {
+            mcp::deactivate_agent_session(self.last_session_label.as_deref());
+        }
         self.overlay.take();
         self.permission_panel.take();
         self.last_session_label = None;
         self.last_chrome = None;
         self.last_status = None;
+        self.last_action_log = None;
+        self.last_pending_confirmation = false;
         self.state = ComputerControlState::Stopped;
         self.generation = self.generation.wrapping_add(1);
     }
@@ -232,6 +282,31 @@ impl ComputerControlCoordinator {
         }
 
         if matches!(self.state, ComputerControlState::Active) {
+            let approved = self
+                .overlay
+                .as_ref()
+                .is_some_and(OverlayHost::take_approve_requested);
+            if approved {
+                mcp::approve_pending_action();
+                self.refresh_agent_status();
+                return true;
+            }
+
+            let rejected = self
+                .overlay
+                .as_ref()
+                .is_some_and(OverlayHost::take_reject_requested);
+            if rejected {
+                mcp::reject_pending_action();
+                self.refresh_agent_status();
+                return true;
+            }
+
+            if mcp::idle_timeout_elapsed() {
+                self.stop_with_idle_timeout(true);
+                return true;
+            }
+
             self.refresh_agent_status();
         }
 
@@ -264,7 +339,12 @@ impl ComputerControlCoordinator {
 
     fn refresh_agent_status(&mut self) {
         let status = mcp::latest_agent_status();
-        if self.last_status.as_ref() == Some(&status) {
+        let action_log = mcp::latest_action_log();
+        let pending_confirmation = mcp::pending_action_requires_confirmation();
+        if self.last_status.as_ref() == Some(&status)
+            && self.last_action_log.as_ref() == Some(&action_log)
+            && self.last_pending_confirmation == pending_confirmation
+        {
             return;
         }
         let (Some(session_label), Some(chrome)) =
@@ -273,9 +353,17 @@ impl ComputerControlCoordinator {
             return;
         };
         if let Some(overlay) = self.overlay.as_mut() {
-            overlay.update(&session_label, chrome, &status);
+            overlay.update(
+                &session_label,
+                chrome,
+                &status,
+                &action_log,
+                pending_confirmation,
+            );
         }
         self.last_status = Some(status);
+        self.last_action_log = Some(action_log);
+        self.last_pending_confirmation = pending_confirmation;
     }
 
     fn check_permissions(&mut self, prompt_missing: bool) -> ComputerControlPermissions {
@@ -443,15 +531,15 @@ mod platform {
     use std::ffi::c_void;
     use std::ptr::NonNull;
     use std::sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     };
 
     use pathfinder_color::ColorU;
 
     use super::{
-        sanitized_c_string, ComputerControlChrome, ComputerControlPermissions,
-        NativePermissionGrant, NativePermissionProbe, PermissionGrantState, PermissionSnapshot,
+        ComputerControlChrome, ComputerControlPermissions, NativePermissionGrant,
+        NativePermissionProbe, PermissionGrantState, PermissionSnapshot, sanitized_c_string,
     };
 
     #[repr(C)]
@@ -567,17 +655,25 @@ mod platform {
         fn twarp_computer_control_overlay_create(
             session_label: *const std::ffi::c_char,
             status_label: *const std::ffi::c_char,
+            action_log: *const std::ffi::c_char,
+            confirmation_pending: bool,
             panel_color: NativeColor,
             text_color: NativeColor,
             muted_text_color: NativeColor,
             glow_color: NativeColor,
             stop_callback: extern "C" fn(*mut c_void),
             stop_context: *mut c_void,
+            approve_callback: extern "C" fn(*mut c_void),
+            approve_context: *mut c_void,
+            reject_callback: extern "C" fn(*mut c_void),
+            reject_context: *mut c_void,
         ) -> *mut c_void;
         fn twarp_computer_control_overlay_update(
             host: *mut c_void,
             session_label: *const std::ffi::c_char,
             status_label: *const std::ffi::c_char,
+            action_log: *const std::ffi::c_char,
+            confirmation_pending: bool,
             panel_color: NativeColor,
             text_color: NativeColor,
             muted_text_color: NativeColor,
@@ -618,6 +714,10 @@ mod platform {
         host: NonNull<c_void>,
         stop_requested: Arc<AtomicBool>,
         stop_context: *const AtomicBool,
+        approve_requested: Arc<AtomicBool>,
+        approve_context: *const AtomicBool,
+        reject_requested: Arc<AtomicBool>,
+        reject_context: *const AtomicBool,
     }
 
     impl OverlayHost {
@@ -628,23 +728,36 @@ mod platform {
         ) -> Result<Self, String> {
             let session_label = sanitized_c_string(session_label);
             let status = sanitized_c_string(status);
+            let action_log = sanitized_c_string(&super::mcp::latest_action_log());
             let stop_requested = Arc::new(AtomicBool::new(false));
             let stop_context = Arc::into_raw(stop_requested.clone());
+            let approve_requested = Arc::new(AtomicBool::new(false));
+            let approve_context = Arc::into_raw(approve_requested.clone());
+            let reject_requested = Arc::new(AtomicBool::new(false));
+            let reject_context = Arc::into_raw(reject_requested.clone());
             let host = unsafe {
                 twarp_computer_control_overlay_create(
                     session_label.as_ptr(),
                     status.as_ptr(),
+                    action_log.as_ptr(),
+                    false,
                     chrome.panel_color.into(),
                     chrome.text_color.into(),
                     chrome.muted_text_color.into(),
                     chrome.glow_color.into(),
                     record_stop_request,
                     stop_context as *mut c_void,
+                    record_retry_request,
+                    approve_context as *mut c_void,
+                    record_dismiss_request,
+                    reject_context as *mut c_void,
                 )
             };
             let Some(host) = NonNull::new(host) else {
                 unsafe {
                     drop(Arc::from_raw(stop_context));
+                    drop(Arc::from_raw(approve_context));
+                    drop(Arc::from_raw(reject_context));
                 }
                 return Err("failed to create computer-control overlay windows".to_owned());
             };
@@ -652,17 +765,31 @@ mod platform {
                 host,
                 stop_requested,
                 stop_context,
+                approve_requested,
+                approve_context,
+                reject_requested,
+                reject_context,
             })
         }
 
-        pub fn update(&mut self, session_label: &str, chrome: ComputerControlChrome, status: &str) {
+        pub fn update(
+            &mut self,
+            session_label: &str,
+            chrome: ComputerControlChrome,
+            status: &str,
+            action_log: &str,
+            confirmation_pending: bool,
+        ) {
             let session_label = sanitized_c_string(session_label);
             let status = sanitized_c_string(status);
+            let action_log = sanitized_c_string(action_log);
             unsafe {
                 twarp_computer_control_overlay_update(
                     self.host.as_ptr(),
                     session_label.as_ptr(),
                     status.as_ptr(),
+                    action_log.as_ptr(),
+                    confirmation_pending,
                     chrome.panel_color.into(),
                     chrome.text_color.into(),
                     chrome.muted_text_color.into(),
@@ -673,6 +800,14 @@ mod platform {
 
         pub fn stop_requested(&self) -> bool {
             self.stop_requested.load(Ordering::SeqCst)
+        }
+
+        pub fn take_approve_requested(&self) -> bool {
+            self.approve_requested.swap(false, Ordering::SeqCst)
+        }
+
+        pub fn take_reject_requested(&self) -> bool {
+            self.reject_requested.swap(false, Ordering::SeqCst)
         }
     }
 
@@ -771,6 +906,8 @@ mod platform {
             unsafe {
                 twarp_computer_control_overlay_close(self.host.as_ptr());
                 drop(Arc::from_raw(self.stop_context));
+                drop(Arc::from_raw(self.approve_context));
+                drop(Arc::from_raw(self.reject_context));
             }
         }
     }
@@ -812,10 +949,20 @@ mod platform {
             _session_label: &str,
             _chrome: ComputerControlChrome,
             _status: &str,
+            _action_log: &str,
+            _confirmation_pending: bool,
         ) {
         }
 
         pub fn stop_requested(&self) -> bool {
+            false
+        }
+
+        pub fn take_approve_requested(&self) -> bool {
+            false
+        }
+
+        pub fn take_reject_requested(&self) -> bool {
             false
         }
     }

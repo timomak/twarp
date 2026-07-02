@@ -59,17 +59,25 @@ void twarp_computer_control_permissions_panel_close(void *host);
 void *twarp_computer_control_overlay_create(
     const char *session_label,
     const char *status_label,
+    const char *action_log,
+    bool confirmation_pending,
     TwarpComputerControlColor panel_color,
     TwarpComputerControlColor text_color,
     TwarpComputerControlColor muted_text_color,
     TwarpComputerControlColor glow_color,
     TwarpComputerControlStopCallback stop_callback,
-    void *stop_context);
+    void *stop_context,
+    TwarpComputerControlStopCallback approve_callback,
+    void *approve_context,
+    TwarpComputerControlStopCallback reject_callback,
+    void *reject_context);
 
 void twarp_computer_control_overlay_update(
     void *host,
     const char *session_label,
     const char *status_label,
+    const char *action_log,
+    bool confirmation_pending,
     TwarpComputerControlColor panel_color,
     TwarpComputerControlColor text_color,
     TwarpComputerControlColor muted_text_color,
