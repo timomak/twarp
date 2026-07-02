@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Install all dependencies required to build Warp on Linux.
+# Install all dependencies required to build Twarp on Linux.
 
 set -e
 

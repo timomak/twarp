@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Builds a Warp binary and bundles it up for distribution.
+# Builds a Twarp binary and bundles it up for distribution.
 
 set -e
 
@@ -115,9 +115,9 @@ mkdir -p "$EXTRAS_DIR"
 # Update parameters based on the target release channel.
 #
 # WARP_BIN is the name of the binary produced by cargo.
-# N.B. The bundled outputs will always be warp.js and warp_bg.wasm.
+# N.B. The bundled outputs will always be twarp.js and twarp_bg.wasm.
 if [[ $RELEASE_CHANNEL = "local" ]]; then
-  WARP_BIN="warp"
+  WARP_BIN="twarp"
   FEATURES="$FEATURES,remote_tty"
 elif [[ $RELEASE_CHANNEL = "dev" ]]; then
   WARP_BIN="dev"
@@ -127,7 +127,7 @@ elif [[ $RELEASE_CHANNEL = "preview" ]]; then
 elif [[ $RELEASE_CHANNEL = "stable" ]]; then
   WARP_BIN="stable"
 elif [[ $RELEASE_CHANNEL = "oss" ]]; then
-  WARP_BIN="warp-oss"
+  WARP_BIN="twarp-oss"
 fi
 
 if [ -n "${FEATURES_OVERRIDE+x}" ]; then
@@ -143,15 +143,15 @@ if [[ "$CHECK_ONLY" == "true" ]]; then
 fi
 
 # Build the wasm binary.
-echo "Building and bundling Warp for channel $RELEASE_CHANNEL"
+echo "Building and bundling Twarp for channel $RELEASE_CHANNEL"
 ASSET_TARGET_DIR="$ASSET_TARGET_DIR" cargo build --target wasm32-unknown-unknown --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --features "$FEATURES"
 
 # Generate linked JS and wasm files that can be run in the browser.
 echo "Running wasm-bindgen on $CARGO_TARGET_OUTPUT_DIR/$WARP_BIN.wasm"
-wasm-bindgen --target web --out-dir "$OUT_DIR" --out-name "warp" --keep-debug --no-typescript "$CARGO_TARGET_OUTPUT_DIR/$WARP_BIN.wasm"
+wasm-bindgen --target web --out-dir "$OUT_DIR" --out-name "twarp" --keep-debug --no-typescript "$CARGO_TARGET_OUTPUT_DIR/$WARP_BIN.wasm"
 
-WASM_BINARY_OUT="${OUT_DIR}/warp_bg.wasm"
-WASM_BINARY_DEBUG="${EXTRAS_DIR}/warp_bg.debug.wasm"
+WASM_BINARY_OUT="${OUT_DIR}/twarp_bg.wasm"
+WASM_BINARY_DEBUG="${EXTRAS_DIR}/twarp_bg.debug.wasm"
 
 if [[ "$NO_SPLIT" != "true" ]]; then
   # Run Sentry's wasm-split binary to separate out debug information from the

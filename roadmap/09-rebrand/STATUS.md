@@ -28,7 +28,7 @@ File and crate renames are the worst case for git merges; doing this last keeps 
 - [x] **9d — Bundle IDs + native plists.** `dev.warp.*` → `dev.twarp.*` across all 5 channels; rename `WarpDockTilePlugin.{m,h}`; update `DockTilePlugin/Info.plist`, `CLI-Info.plist`.
 - [x] **9e — Brand assets.** Replace logo SVGs, regenerate channel icon sets, rename files (`warp-*` → `twarp-*`), update references.
 - [x] **9f — User-facing strings.** UI labels, error messages, help text, settings, about page, onboarding copy.
-- [ ] **9g — Build scripts + installers.** Linux RPM/deb/Arch/AppImage, Windows `.iss`, macOS bundling, GitHub workflow filenames.
+- [x] **9g — Build scripts + installers.** Linux RPM/deb/Arch/AppImage, Windows `.iss`, macOS bundling, GitHub workflow filenames.
 - [ ] **9h — Servers + telemetry.** Stub or redirect `app.warp.dev` URLs (auto-update, login, telemetry). After 02 the surface is much smaller.
 - [ ] **9i — Internal feature renames.** `warp_drive` → `twarp_drive`, `warpify` → `twarpify`, `warp_pack` → `twarp_pack`, `open_in_warp` → `open_in_twarp`. Also `.warp/` → `.twarp/`, `.warpindexingignore` → `.twarpindexingignore`, `WARP.md` → `TWARP.md`.
 - [ ] **9j — Cleanup sweep.** `rg` for any remaining `\b[Ww]arp\b`, manually classify. Update `Cargo.toml` workspace `authors`. Final pass.

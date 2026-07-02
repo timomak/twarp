@@ -218,7 +218,7 @@ jobs:
         uses: google-github-actions/upload-cloud-storage@e95a15f226403ed658d3e65f40205649f342ba2c # v1
         with:
           path: ${{ steps.bundle_app.outputs.dmg_path }}
-          destination: warp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
+          destination: twarp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
           headers: |-
             cache-control: ${{ steps.get-config.outputs.gcs_cache_control_value }}
 
@@ -393,7 +393,7 @@ jobs:
         uses: google-github-actions/upload-cloud-storage@e95a15f226403ed658d3e65f40205649f342ba2c # v1
         with:
           path: ${{ steps.bundle_app.outputs.dmg_path }}
-          destination: warp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
+          destination: twarp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
           # IMPORTANT: both the key and value of the cache-control header must be all lowercase;
           # uppercase values will not be respected by Cloud CDN and using "Cache-Control" will be
           # ignored by the upload-cloud-storage action.
@@ -463,15 +463,15 @@ jobs:
 
       - name: Package CLI binary
         run: |
-          mv ${{ steps.bundle_cli.outputs.binary_path }} oz-${{ steps.get-config.outputs.channel }}
-          tar czf oz-${{ steps.get-config.outputs.channel }}-macos-${{ matrix.arch }}.tar.gz oz-${{ steps.get-config.outputs.channel }} -C "$(dirname "${{ steps.bundle_cli.outputs.bundled_resources_dir }}")" resources
+          mv ${{ steps.bundle_cli.outputs.binary_path }} twarp-${{ steps.get-config.outputs.channel }}
+          tar czf twarp-${{ steps.get-config.outputs.channel }}-macos-${{ matrix.arch }}.tar.gz twarp-${{ steps.get-config.outputs.channel }} -C "$(dirname "${{ steps.bundle_cli.outputs.bundled_resources_dir }}")" resources
 
       - name: Add CLI to GitHub release assets
         if: ${{ needs.prepare_release.outputs.should_publish == 'true' }}
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
-          files: oz-${{ steps.get-config.outputs.channel }}-macos-${{ matrix.arch }}.tar.gz
+          files: twarp-${{ steps.get-config.outputs.channel }}-macos-${{ matrix.arch }}.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -483,8 +483,8 @@ jobs:
         if: ${{ needs.prepare_release.outputs.should_publish == 'true' }}
         uses: google-github-actions/upload-cloud-storage@e95a15f226403ed658d3e65f40205649f342ba2c # v1
         with:
-          path: oz-${{ steps.get-config.outputs.channel }}-macos-${{ matrix.arch }}.tar.gz
-          destination: warp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}/cli/macos/${{ matrix.arch }}
+          path: twarp-${{ steps.get-config.outputs.channel }}-macos-${{ matrix.arch }}.tar.gz
+          destination: twarp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}/cli/macos/${{ matrix.arch }}
           headers: |-
             cache-control: ${{ steps.get-config.outputs.gcs_cache_control_value }}
 
@@ -493,7 +493,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: release-macos-cli-${{ matrix.arch }}-${{ steps.get-config.outputs.channel }}
-          path: oz-${{ steps.get-config.outputs.channel }}-macos-${{ matrix.arch }}.tar.gz
+          path: twarp-${{ steps.get-config.outputs.channel }}-macos-${{ matrix.arch }}.tar.gz
 
       - name: Set up Sentry CLI
         if: ${{ needs.prepare_release.outputs.should_publish == 'true' }}
@@ -655,7 +655,7 @@ jobs:
           # Only upload the files from within `packages_dir`, don't include the
           # (parent) folder itself.
           parent: false
-          destination: warp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
+          destination: twarp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
           # IMPORTANT: both the key and value of the cache-control header must be all lowercase;
           # uppercase values will not be respected by Cloud CDN and using "Cache-Control" will be
           # ignored by the upload-cloud-storage action.
@@ -760,8 +760,8 @@ jobs:
 
       - name: Package CLI tar.gz
         run: |
-          cp ${{ steps.bundle_cli.outputs.executable_path }} oz-${{ steps.get-config.outputs.channel }}
-          tar czf oz-${{ steps.get-config.outputs.channel }}-linux-x86_64.tar.gz oz-${{ steps.get-config.outputs.channel }} -C "$(dirname "${{ steps.bundle_cli.outputs.bundled_resources_dir }}")" resources
+          cp ${{ steps.bundle_cli.outputs.executable_path }} twarp-${{ steps.get-config.outputs.channel }}
+          tar czf twarp-${{ steps.get-config.outputs.channel }}-linux-x86_64.tar.gz twarp-${{ steps.get-config.outputs.channel }} -C "$(dirname "${{ steps.bundle_cli.outputs.bundled_resources_dir }}")" resources
 
       - name: Bundle Arch Linux CLI package
         uses: ./.github/actions/bundle_arch_package
@@ -811,7 +811,7 @@ jobs:
           # Only upload the files from within `packages_dir`, don't include the
           # (parent) folder itself.
           parent: false
-          destination: warp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
+          destination: twarp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
           # IMPORTANT: both the key and value of the cache-control header must be all lowercase;
           # uppercase values will not be respected by Cloud CDN and using "Cache-Control" will be
           # ignored by the upload-cloud-storage action.
@@ -823,15 +823,15 @@ jobs:
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
-          files: oz-${{ steps.get-config.outputs.channel }}-linux-x86_64.tar.gz
+          files: twarp-${{ steps.get-config.outputs.channel }}-linux-x86_64.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload CLI tar.gz to Google Cloud Storage
         if: ${{ needs.prepare_release.outputs.should_publish == 'true' }}
         uses: google-github-actions/upload-cloud-storage@e95a15f226403ed658d3e65f40205649f342ba2c # v1
         with:
-          path: oz-${{ steps.get-config.outputs.channel }}-linux-x86_64.tar.gz
-          destination: warp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}/cli/linux/x86_64
+          path: twarp-${{ steps.get-config.outputs.channel }}-linux-x86_64.tar.gz
+          destination: twarp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}/cli/linux/x86_64
           headers: |-
             cache-control: ${{ steps.get-config.outputs.gcs_cache_control_value }}
 
@@ -842,7 +842,7 @@ jobs:
           name: release-linux-cli-x86_64-${{ steps.get-config.outputs.channel }}
           path: |
             ${{ steps.bundle_cli.outputs.packages_dir }}
-            oz-${{ steps.get-config.outputs.channel }}-linux-x86_64.tar.gz
+            twarp-${{ steps.get-config.outputs.channel }}-linux-x86_64.tar.gz
 
   build_linux_arm_binaries:
     name: Build Release (Linux ARM)
@@ -1180,8 +1180,8 @@ jobs:
 
       - name: Package CLI tar.gz
         run: |
-          cp ${{ steps.bundle_cli.outputs.executable_path }} oz-${{ steps.get-config.outputs.channel }}
-          tar czf oz-${{ steps.get-config.outputs.channel }}-linux-aarch64.tar.gz oz-${{ steps.get-config.outputs.channel }} -C "$(dirname "${{ steps.bundle_cli.outputs.bundled_resources_dir }}")" resources
+          cp ${{ steps.bundle_cli.outputs.executable_path }} twarp-${{ steps.get-config.outputs.channel }}
+          tar czf twarp-${{ steps.get-config.outputs.channel }}-linux-aarch64.tar.gz twarp-${{ steps.get-config.outputs.channel }} -C "$(dirname "${{ steps.bundle_cli.outputs.bundled_resources_dir }}")" resources
 
       - name: Bundle Arch Linux CLI package
         uses: ./.github/actions/bundle_arch_package
@@ -1232,7 +1232,7 @@ jobs:
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
-          files: oz-${{ steps.get-config.outputs.channel }}-linux-aarch64.tar.gz
+          files: twarp-${{ steps.get-config.outputs.channel }}-linux-aarch64.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload app packages to Google Cloud Storage
@@ -1241,7 +1241,7 @@ jobs:
         with:
           path: ${{ steps.bundle_app.outputs.packages_dir }}
           parent: false
-          destination: warp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
+          destination: twarp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
           # IMPORTANT: both the key and value of the cache-control header must be all lowercase;
           # uppercase values will not be respected by Cloud CDN and using "Cache-Control" will be
           # ignored by the upload-cloud-storage action.
@@ -1254,7 +1254,7 @@ jobs:
         with:
           path: ${{ steps.bundle_cli.outputs.packages_dir }}
           parent: false
-          destination: warp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
+          destination: twarp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
           # IMPORTANT: both the key and value of the cache-control header must be all lowercase;
           # uppercase values will not be respected by Cloud CDN and using "Cache-Control" will be
           # ignored by the upload-cloud-storage action.
@@ -1265,8 +1265,8 @@ jobs:
         if: ${{ needs.prepare_release.outputs.should_publish == 'true' }}
         uses: google-github-actions/upload-cloud-storage@e95a15f226403ed658d3e65f40205649f342ba2c # v1
         with:
-          path: oz-${{ steps.get-config.outputs.channel }}-linux-aarch64.tar.gz
-          destination: warp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}/cli/linux/aarch64
+          path: twarp-${{ steps.get-config.outputs.channel }}-linux-aarch64.tar.gz
+          destination: twarp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}/cli/linux/aarch64
           headers: |-
             cache-control: ${{ steps.get-config.outputs.gcs_cache_control_value }}
 
@@ -1277,7 +1277,7 @@ jobs:
           name: release-linux-arm64-${{ steps.get-config.outputs.channel }}
           path: |
             ${{ steps.bundle_app.outputs.packages_dir }}
-            oz-${{ steps.get-config.outputs.channel }}-linux-aarch64.tar.gz
+            twarp-${{ steps.get-config.outputs.channel }}-linux-aarch64.tar.gz
 
   release_web:
     name: Build Release (Web)
@@ -1408,8 +1408,8 @@ jobs:
             runner: windows-latest-large
     env:
       TRUSTED_SIGNING_ENDPOINT: https://eus.codesigning.azure.net/
-      TRUSTED_SIGNING_ACCOUNT: warpdotdev
-      TRUSTED_SIGNING_CERT_PROFILE: warpterminal
+      TRUSTED_SIGNING_ACCOUNT: twarpdev
+      TRUSTED_SIGNING_CERT_PROFILE: twarpterminal
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -1542,7 +1542,7 @@ jobs:
         uses: google-github-actions/upload-cloud-storage@e95a15f226403ed658d3e65f40205649f342ba2c # v1
         with:
           path: ${{ steps.bundle_app.outputs.installer_path }}
-          destination: warp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
+          destination: twarp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
           # IMPORTANT: both the key and value of the cache-control header must be all lowercase;
           # uppercase values will not be respected by Cloud CDN and using "Cache-Control" will be
           # ignored by the upload-cloud-storage action.
@@ -1763,4 +1763,4 @@ jobs:
         uses: google-github-actions/upload-cloud-storage@e95a15f226403ed658d3e65f40205649f342ba2c # v1
         with:
           path: changelog.json
-          destination: warp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
+          destination: twarp-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
