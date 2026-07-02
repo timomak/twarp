@@ -22,7 +22,7 @@ File and crate renames are the worst case for git merges; doing this last keeps 
 
 ## Sub-phases
 
-- [ ] **9a — Audit doc.** Enumerate every file/identifier/asset, classify each as rename / replace / keep / regenerate. Output: `roadmap/09-rebrand/AUDIT.md`. No code change. Drives 9b–9j.
+- [x] **9a — Audit doc.** Enumerate every file/identifier/asset, classify each as rename / replace / keep / regenerate. Output: `roadmap/09-rebrand/AUDIT.md`. No code change. Drives 9b–9j.
 - [ ] **9b — Workspace + crate renames.** All `warp_*` → `twarp_*`, `warpui*` → `twarpui*`. Updates `Cargo.toml` workspace + every `use` import.
 - [ ] **9c — CLI binary + URL scheme.** `app/Cargo.toml` binaries (`warp` → `twarp`, `warp-oss` → `twarp-oss`); `warp://` URI scheme → `twarp://`.
 - [ ] **9d — Bundle IDs + native plists.** `dev.warp.*` → `dev.twarp.*` across all 5 channels; rename `WarpDockTilePlugin.{m,h}`; update `DockTilePlugin/Info.plist`, `CLI-Info.plist`.
