@@ -8,7 +8,7 @@ use twarpui::elements::{
     MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
 };
 use twarpui::text_layout::ClipConfig;
-use twarpui::ui_components::components::{UiComponent, UiComponentStyles};
+use twarpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use twarpui::ui_components::text_input::TextInput;
 use twarpui::SingletonEntity;
 use twarpui::{
@@ -652,7 +652,10 @@ impl BrowserView {
                 .set_background(theme.surface_1().into())
                 .set_border_color(theme.outline().into())
                 .set_border_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-                .set_height(24.),
+                .set_height(24.)
+                // Center the single UI-font line inside the 24pt capsule and
+                // keep the text off the rounded left edge.
+                .set_padding(Coords::default().top(4.).left(6.).right(6.)),
         )
         .build()
         .finish();
@@ -893,7 +896,12 @@ impl BackingView for BrowserView {
     ) -> HeaderContent {
         HeaderContent::Standard(StandardHeader {
             title: self.active_title(),
-            title_secondary: self.active_current_url(),
+            // The header renders the secondary inline after the title, so the
+            // separator lives in the string (same convention as the Claude
+            // pane's cwd secondary).
+            title_secondary: self
+                .active_current_url()
+                .map(|url| format!(" — {url}")),
             title_style: None,
             title_clip_config: ClipConfig::start(),
             title_max_width: None,
