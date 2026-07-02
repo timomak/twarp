@@ -5,7 +5,7 @@ use std::sync::mpsc::SyncSender;
 
 use url::Url;
 
-use warpui::{
+use twarpui::{
     AppContext, EntityId, ModelHandle, SingletonEntity, ViewContext, ViewHandle, WindowId,
 };
 
@@ -35,7 +35,7 @@ use super::{
     DetachType, PaneConfiguration, PaneContent, PaneId, PaneStackEvent, PaneView, ShareableLink,
     ShareableLinkError, TerminalPaneId,
 };
-use warp_core::execution_mode::AppExecutionMode;
+use twarp_core::execution_mode::AppExecutionMode;
 
 pub type TerminalPaneView = PaneView<TerminalView>;
 

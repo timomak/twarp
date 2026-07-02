@@ -7,8 +7,8 @@ use std::cmp::min;
 use std::io::Read;
 #[cfg(feature = "local_fs")]
 use std::{env, fs, str};
-use warpui::image_cache::{resize_dimensions, FitType};
-use warpui::{
+use twarpui::image_cache::{resize_dimensions, FitType};
+use twarpui::{
     assets::asset_cache::Asset,
     image_cache::{CustomHeaderCreationError, CustomImageFormat, CustomImageHeader, ImageType},
     util::{parse_i32, parse_u32},

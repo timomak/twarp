@@ -1,8 +1,8 @@
-use warp_core::ui::appearance::Appearance;
-use warpui::elements::Element;
-use warpui::prelude::Container;
-use warpui::scene::Border;
-use warpui::{AppContext, Entity, ModelHandle, SingletonEntity, View, ViewContext};
+use twarp_core::ui::appearance::Appearance;
+use twarpui::elements::Element;
+use twarpui::prelude::Container;
+use twarpui::scene::Border;
+use twarpui::{AppContext, Entity, ModelHandle, SingletonEntity, View, ViewContext};
 
 // twarp: 2c-d — AI agent view deleted; re-export from input.
 use crate::terminal::input::inline_menu::model::InlineMenuModel;

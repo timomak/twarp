@@ -1,5 +1,5 @@
 use settings::Setting;
-use warpui::{App, SingletonEntity};
+use twarpui::{App, SingletonEntity};
 
 use crate::{
     terminal::{

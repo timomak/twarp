@@ -2,7 +2,7 @@ use std::sync::mpsc::SyncSender;
 use std::{collections::HashMap, path::PathBuf};
 
 use chrono::Utc;
-use warpui::{Entity, ModelContext, SingletonEntity};
+use twarpui::{Entity, ModelContext, SingletonEntity};
 
 use crate::persistence::{model::Project, ModelEvent};
 

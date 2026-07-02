@@ -1,4 +1,4 @@
-use warpui::{elements::Text, Element};
+use twarpui::{elements::Text, Element};
 
 use crate::appearance::Appearance;
 

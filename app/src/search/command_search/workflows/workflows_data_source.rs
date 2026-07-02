@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use std::collections::HashMap;
-use warpui::AppContext;
+use twarpui::AppContext;
 
 use crate::completer::SessionContext;
 use crate::search::command_search::settings::CommandSearchSettings;
@@ -10,7 +10,7 @@ use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workflows::local_workflows::UseCache;
 use crate::workflows::workflow::Workflow;
 use crate::workflows::{WorkflowSource, WorkflowType};
-use warpui::SingletonEntity;
+use twarpui::SingletonEntity;
 
 use super::{WorkflowIdentity, WorkflowSearchItem};
 use crate::search::command_search::searcher::CommandSearchItemAction;

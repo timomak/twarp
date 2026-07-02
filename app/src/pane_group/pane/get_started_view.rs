@@ -1,6 +1,6 @@
 use pathfinder_geometry::vector::vec2f;
-use warp_core::ui::{self, appearance::Appearance, color::blend::Blend as _};
-use warpui::{
+use twarp_core::ui::{self, appearance::Appearance, color::blend::Blend as _};
+use twarpui::{
     elements::{
         Align, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, Icon,
         MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement as _, Radius,
@@ -34,7 +34,7 @@ use crate::{
 };
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_editable_bindings([EditableBinding::new(
         "workspace:new_tab",

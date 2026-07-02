@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use warpui::{Entity, ModelContext, SingletonEntity};
+use twarpui::{Entity, ModelContext, SingletonEntity};
 
 use crate::util::sync::Condition;
 

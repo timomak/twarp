@@ -1,9 +1,9 @@
 #![cfg_attr(target_family = "wasm", allow(dead_code, unused_imports))]
 // Adding this file level gate as some of the code around editability is not used in WASM yet.
 
-use warp_core::ui::{appearance::Appearance, theme::Fill};
-use warp_editor::model::CoreEditorModel;
-use warpui::{
+use twarp_core::ui::{appearance::Appearance, theme::Fill};
+use twarp_editor::model::CoreEditorModel;
+use twarpui::{
     elements::{
         Align, Border, ConstrainedBox, Container, CrossAxisAlignment, Flex, MouseStateHandle,
         ParentElement, Shrinkable,

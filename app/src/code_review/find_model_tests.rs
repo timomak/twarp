@@ -20,22 +20,22 @@ use repo_metadata::repositories::DetectedRepositories;
 use std::path::PathBuf;
 use std::sync::Arc;
 use string_offset::CharOffset;
-use warp_core::ui::appearance::Appearance;
-use warp_editor::content::buffer::InitialBufferState;
-use warp_editor::render::element::VerticalExpansionBehavior;
-use warpui::elements::Empty;
-use warpui::platform::WindowStyle;
-use warpui::{App, Element as _, ModelHandle, ViewHandle};
+use twarp_core::ui::appearance::Appearance;
+use twarp_editor::content::buffer::InitialBufferState;
+use twarp_editor::render::element::VerticalExpansionBehavior;
+use twarpui::elements::Empty;
+use twarpui::platform::WindowStyle;
+use twarpui::{App, Element as _, ModelHandle, ViewHandle};
 
 #[derive(Default)]
 struct TestView;
 
-impl warpui::Entity for TestView {
+impl twarpui::Entity for TestView {
     type Event = ();
 }
 
-impl warpui::View for TestView {
-    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+impl twarpui::View for TestView {
+    fn render(&self, _: &twarpui::AppContext) -> Box<dyn twarpui::Element> {
         Empty::new().finish()
     }
 
@@ -44,7 +44,7 @@ impl warpui::View for TestView {
     }
 }
 
-impl warpui::TypedActionView for TestView {
+impl twarpui::TypedActionView for TestView {
     type Action = ();
 }
 

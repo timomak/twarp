@@ -10,7 +10,7 @@ use crate::auth::{
 };
 use crate::server::server_api::auth::UserAuthenticationError;
 use crate::ServerApiProvider;
-use warpui::{App, SingletonEntity};
+use twarpui::{App, SingletonEntity};
 
 fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_ctx| ServerApiProvider::new_for_test());
@@ -181,7 +181,7 @@ fn test_log_out_clears_pending_auth_state() {
         // routes to `PersistedUser::remove_from_secure_storage`. That requires
         // a `SecureStorage` singleton, so register a no-op one for this test.
         app.update(|ctx| {
-            warpui_extras::secure_storage::register_noop("warp_test", ctx);
+            twarpui_extras::secure_storage::register_noop("warp_test", ctx);
         });
 
         AuthManager::handle(&app).update(&mut app, |auth_manager, ctx| {

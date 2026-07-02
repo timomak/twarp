@@ -4,10 +4,10 @@ use instant::Instant;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use thiserror::Error;
-use warpui::{r#async::Timer, WindowId};
+use twarpui::{r#async::Timer, WindowId};
 
 #[cfg(target_os = "macos")]
-use warpui::platform::mac::{BrowserWebViewId, Window as MacWindow};
+use twarpui::platform::mac::{BrowserWebViewId, Window as MacWindow};
 
 #[cfg(not(target_os = "macos"))]
 pub type BrowserWebViewId = usize;

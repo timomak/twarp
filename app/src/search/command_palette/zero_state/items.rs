@@ -3,10 +3,10 @@ use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::result_renderer::QueryResultRenderer;
 use crate::search::search_bar::SelectionUpdate;
 
-use warpui::elements::{Container, Flex, ParentElement};
-use warpui::ui_components::components::{UiComponent, UiComponentStyles};
-use warpui::ui_components::text::WrappableText;
-use warpui::{AppContext, Element, Entity, ModelContext, SingletonEntity};
+use twarpui::elements::{Container, Flex, ParentElement};
+use twarpui::ui_components::components::{UiComponent, UiComponentStyles};
+use twarpui::ui_components::text::WrappableText;
+use twarpui::{AppContext, Element, Entity, ModelContext, SingletonEntity};
 
 /// List of items shown within the zero state. "Recent" items are shown first followed by
 /// "Suggested" items.

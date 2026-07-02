@@ -3,7 +3,7 @@ use crate::features::FeatureFlag;
 use settings::{
     macros::define_settings_group, RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud,
 };
-use warpui::{AppContext, SingletonEntity};
+use twarpui::{AppContext, SingletonEntity};
 
 define_settings_group!(LigatureSettings, settings: [
     ligature_rendering_enabled: LigatureRenderingEnabled {

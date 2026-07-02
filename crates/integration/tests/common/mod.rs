@@ -1,7 +1,7 @@
 use command::blocking::Command;
 use std::env;
 use std::process::Stdio;
-use warpui::integration::RERUN_EXIT_CODE;
+use twarpui::integration::RERUN_EXIT_CODE;
 
 const MAX_TEST_RUNS: usize = 10;
 

@@ -16,10 +16,10 @@ use std::{cell::Cell, sync::Arc};
 use string_offset::CharOffset;
 
 use sum_tree::SumTree;
-use warpui::assets::asset_cache::AssetSource;
-use warpui::fonts::FamilyId;
-use warpui::text_layout::{CaretPosition, TextFrame};
-use warpui::units::IntoPixels;
+use twarpui::assets::asset_cache::AssetSource;
+use twarpui::fonts::FamilyId;
+use twarpui::text_layout::{CaretPosition, TextFrame};
+use twarpui::units::IntoPixels;
 
 fn test_table_layout() -> LaidOutTable {
     let source = "aaa\tbbb\nccc\tddd\n";

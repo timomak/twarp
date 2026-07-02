@@ -1,7 +1,7 @@
 //! Context chips built into Warp
 
 use chrono::Local;
-use warp_util::path::user_friendly_path;
+use twarp_util::path::user_friendly_path;
 
 use crate::terminal::shell::ShellType;
 

@@ -11,15 +11,15 @@ pub enum DiffSessionType {
 // twarp: 2c-e — DiffType is now a stub in `crate::app_state`.
 use crate::app_state::DiffType;
 #[cfg(not(target_family = "wasm"))]
-use warp_files::{FileModel, FileModelEvent};
-use warp_util::file::FileId;
+use twarp_files::{FileModel, FileModelEvent};
+use twarp_util::file::FileId;
 #[cfg(not(target_family = "wasm"))]
-use warp_util::file::FileSaveError;
-use warp_util::standardized_path::StandardizedPath;
-use warpui::elements::ChildView;
+use twarp_util::file::FileSaveError;
+use twarp_util::standardized_path::StandardizedPath;
+use twarpui::elements::ChildView;
 #[cfg(not(target_family = "wasm"))]
-use warpui::SingletonEntity;
-use warpui::{AppContext, Element, Entity, TypedActionView, View, ViewContext, ViewHandle};
+use twarpui::SingletonEntity;
+use twarpui::{AppContext, Element, Entity, TypedActionView, View, ViewContext, ViewHandle};
 
 use super::diff_viewer::DiffViewer;
 use super::diff_viewer::DisplayMode;
@@ -153,7 +153,7 @@ impl InlineDiffView {
             }
             DiffSessionType::Remote(host_id) => {
                 // twarp: 2c-d — DiffSessionType::Remote payload is now a String; wrap in HostId.
-                let host_id = warp_core::host_id::HostId::new(host_id.clone());
+                let host_id = twarp_core::host_id::HostId::new(host_id.clone());
                 let remote_path = file_path.clone();
                 file_model.update(ctx, |file_model, _ctx| {
                     file_model.register_remote_file(host_id, remote_path)

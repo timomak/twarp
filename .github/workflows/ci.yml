@@ -122,7 +122,7 @@ jobs:
             runner: windows-latest-large
             # We don't (yet) have any self-hosted Windows runners.
             is_self_hosted: false
-            extra_test_args: "--exclude command-signatures-v2 --exclude warp_js"
+            extra_test_args: "--exclude command-signatures-v2 --exclude twarp_js"
     runs-on: ${{ matrix.runner }}
     needs: params
     # Make sure an ID token is created with the necessary permissions to use
@@ -427,7 +427,7 @@ jobs:
         if: success() || failure()
         run: cargo test ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} --doc
 
-        # Run warp_completer tests with the "v2" (completions-on-js) flag enabled. We do this to
+        # Run twarp_completer tests with the "v2" (completions-on-js) flag enabled. We do this to
         # ensure that the v2 completions implementation doesn't regress/rot while it's development
         # is paused.
       - name: Run completions-on-js tests
@@ -435,7 +435,7 @@ jobs:
         if: matrix.os != 'windows' && (success() || failure())
         uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
         with:
-          run: cargo nextest run --locked -p warp_completer --features v2
+          run: cargo nextest run --locked -p twarp_completer --features v2
 
     # This is longer than we like and temporary until we speed up integration tests
     # The maximum timeout for the entire job is 6 hours:
@@ -480,7 +480,7 @@ jobs:
             runner: ${{ fromJSON(needs.params.outputs.macos-runner) }}
             is_self_hosted: ${{ contains(fromJSON(needs.params.outputs.macos-runner), 'self-hosted') }}
             null_device: "/dev/null"
-            clippy_excludes: "--exclude warp_completer"
+            clippy_excludes: "--exclude twarp_completer"
 
           - os: "linux"
             name: "Linux"
@@ -490,7 +490,7 @@ jobs:
             # We don't (yet) have any self-hosted Linux runners.
             is_self_hosted: false
             null_device: "/dev/null"
-            clippy_excludes: "--exclude warp_completer"
+            clippy_excludes: "--exclude twarp_completer"
 
           - os: "windows"
             name: "Windows"
@@ -498,7 +498,7 @@ jobs:
             # We don't (yet) have any self-hosted Windows runners.
             is_self_hosted: false
             null_device: "NUL"
-            clippy_excludes: "--exclude warp_js --exclude command-signatures-v2"
+            clippy_excludes: "--exclude twarp_js --exclude command-signatures-v2"
     runs-on: ${{ matrix.runner }}
     needs: params
     #    if: ${{ needs.params.outputs.affects-rust-sources == 'true' }}
@@ -527,9 +527,9 @@ jobs:
           else
             # TODO(vorporeal): Re-enable the `all-features` flag once we've fixed things.
             cargo clippy --locked --workspace ${{ matrix.clippy_excludes }} --all-targets --tests -- -D warnings
-            # Run clippy on warp_completer with default, rather than all features enabled, because there is
+            # Run clippy on twarp_completer with default, rather than all features enabled, because there is
             # feature-gated logic for the WIP completions-on-js implementation.
-            cargo clippy --locked -p warp_completer --all-targets --tests -- -D warnings
+            cargo clippy --locked -p twarp_completer --all-targets --tests -- -D warnings
           fi
         env:
           # Attach the GitHub auth token so that requests to the GitHub API
@@ -543,7 +543,7 @@ jobs:
           if [[ ! -d $(brew --prefix clang-format) ]]; then
             brew install clang-format
           fi
-          ./script/run-clang-format.py -r --extensions 'c,h,cpp,m' ./crates/warpui/src/ ./app/src/
+          ./script/run-clang-format.py -r --extensions 'c,h,cpp,m' ./crates/twarpui/src/ ./app/src/
 
   general-lint:
     name: Miscellaneous checks

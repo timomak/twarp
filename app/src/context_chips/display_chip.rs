@@ -16,21 +16,21 @@ impl PlanAndTodoListView {
         Self
     }
 }
-impl warpui::Entity for PlanAndTodoListView {
+impl twarpui::Entity for PlanAndTodoListView {
     type Event = PlanAndTodoListEvent;
 }
-impl warpui::View for PlanAndTodoListView {
+impl twarpui::View for PlanAndTodoListView {
     fn ui_name() -> &'static str {
         "PlanAndTodoListView/twarp-stub"
     }
-    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
-        warpui::elements::Empty::new().finish()
+    fn render(&self, _: &twarpui::AppContext) -> Box<dyn twarpui::Element> {
+        twarpui::elements::Empty::new().finish()
     }
 }
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct PlanAndTodoListAction;
-impl warpui::TypedActionView for PlanAndTodoListView {
+impl twarpui::TypedActionView for PlanAndTodoListView {
     type Action = PlanAndTodoListAction;
 }
 #[allow(dead_code)]
@@ -67,14 +67,14 @@ use crate::view_components::{FeaturePopup, NewFeaturePopupEvent, NewFeaturePopup
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::{vec2f, Vector2F};
 use std::path::PathBuf;
-use warp_core::ui::theme::Fill;
-use warp_core::{features::FeatureFlag, ui::theme::color::internal_colors};
-use warpui::elements::Empty;
-use warpui::keymap::Keystroke;
-use warpui::platform::Cursor;
-use warpui::ui_components::components::UiComponentStyles;
-use warpui::ui_components::components::{Coords, UiComponent};
-use warpui::{
+use twarp_core::ui::theme::Fill;
+use twarp_core::{features::FeatureFlag, ui::theme::color::internal_colors};
+use twarpui::elements::Empty;
+use twarpui::keymap::Keystroke;
+use twarpui::platform::Cursor;
+use twarpui::ui_components::components::UiComponentStyles;
+use twarpui::ui_components::components::{Coords, UiComponent};
+use twarpui::{
     elements::{
         Border, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius,
         CrossAxisAlignment, Flex, Hoverable, MouseStateHandle, OffsetPositioning, ParentAnchor,

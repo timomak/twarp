@@ -6,8 +6,8 @@ use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::{vec2f, Vector2F};
 use serde_yaml::Mapping;
 use string_offset::ByteOffset;
-use warp_core::ui::appearance::Appearance;
-use warp_editor::{
+use twarp_core::ui::appearance::Appearance;
+use twarp_editor::{
     content::{markdown::MarkdownStyle, text::TextStylesWithMetadata},
     editor::EmbeddedItemModel,
     extract_block,
@@ -22,11 +22,11 @@ use warp_editor::{
         BLOCK_FOOTER_HEIGHT,
     },
 };
-use warpui::{
+use twarpui::{
     elements::{Border, Empty},
     SingletonEntity,
 };
-use warpui::{
+use twarpui::{
     elements::{ConstrainedBox, CornerRadius, Margin, Padding, Radius},
     text_layout::TextFrame,
     units::{IntoPixels, Pixels},
@@ -616,7 +616,9 @@ impl RenderableBlock for RenderableEmbeddedWorkflow {
             );
         }
 
-        ctx.paint.scene.start_layer(warpui::ClipBounds::ActiveLayer);
+        ctx.paint
+            .scene
+            .start_layer(twarpui::ClipBounds::ActiveLayer);
 
         // Position the block footer right below the content area, flush with its right-hand edge.
         // This gives the footer some padding relative to the visible area with a background.
@@ -631,15 +633,15 @@ impl RenderableBlock for RenderableEmbeddedWorkflow {
         ctx.paint.scene.stop_layer();
     }
 
-    fn after_layout(&mut self, ctx: &mut warpui::AfterLayoutContext, app: &warpui::AppContext) {
+    fn after_layout(&mut self, ctx: &mut twarpui::AfterLayoutContext, app: &twarpui::AppContext) {
         self.footer.after_layout(ctx, app);
     }
 
     fn dispatch_event(
         &mut self,
-        _model: &warp_editor::render::model::RenderState,
-        event: &warpui::event::DispatchedEvent,
-        ctx: &mut warpui::EventContext,
+        _model: &twarp_editor::render::model::RenderState,
+        event: &twarpui::event::DispatchedEvent,
+        ctx: &mut twarpui::EventContext,
         app: &AppContext,
     ) -> bool {
         self.footer.dispatch_event(event, ctx, app)

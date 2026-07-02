@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use command::r#async::Command;
-use warpui::r#async::FutureExt as _;
+use twarpui::r#async::FutureExt as _;
 
 /// Timeout for `ssh -O exit`. The command only talks to the local
 /// ControlMaster over a Unix socket, so it should return almost

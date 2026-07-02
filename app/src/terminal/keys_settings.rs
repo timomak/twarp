@@ -1,7 +1,7 @@
 use settings::{
     macros::define_settings_group, RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud,
 };
-use warpui::{keymap::Keystroke, AppContext, DisplayIdx, ModelContext};
+use twarpui::{keymap::Keystroke, AppContext, DisplayIdx, ModelContext};
 
 use crate::{
     report_if_error,

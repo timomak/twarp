@@ -35,11 +35,11 @@ use object::ObjectClient;
 use prost::Message;
 use referral::ReferralsClient;
 use team::TeamClient;
+use twarp_core::context_flag::ContextFlag;
+use twarp_core::errors::{register_error, AnyhowErrorExt, ErrorExt};
+use twarp_managed_secrets::client::ManagedSecretsClient;
+use twarpui::{r#async::BoxFuture, ModelContext};
 use url::Url;
-use warp_core::context_flag::ContextFlag;
-use warp_core::errors::{register_error, AnyhowErrorExt, ErrorExt};
-use warp_managed_secrets::client::ManagedSecretsClient;
-use warpui::{r#async::BoxFuture, ModelContext};
 use workspace::WorkspaceClient;
 
 use crate::server::telemetry::TelemetryApi;
@@ -60,9 +60,9 @@ use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use warp_core::telemetry::TelemetryEvent;
-use warpui::Entity;
-use warpui::SingletonEntity;
+use twarp_core::telemetry::TelemetryEvent;
+use twarpui::Entity;
+use twarpui::SingletonEntity;
 
 use super::experiments::ServerExperiment;
 use super::experiments::ServerExperiments;
@@ -403,7 +403,7 @@ pub struct ServerApi {
     // We technically use OAuth2 for headless device authentication.
     oauth_client: self::auth::OAuth2Client,
     /// Cached ambient workload token for requests from ambient agents.
-    ambient_workload_token: Arc<Mutex<Option<warp_isolation_platform::WorkloadToken>>>,
+    ambient_workload_token: Arc<Mutex<Option<twarp_isolation_platform::WorkloadToken>>>,
 
     #[cfg(feature = "agent_mode_evals")]
     eval_user_id: Option<i32>,
@@ -485,7 +485,7 @@ impl ServerApi {
             .set_device_authorization_url(oauth2::DeviceAuthorizationUrl::from_url(device_url))
     }
 
-    pub fn send_graphql_request<'a, QF, O: warp_graphql::client::Operation<QF> + Send + 'a>(
+    pub fn send_graphql_request<'a, QF, O: twarp_graphql::client::Operation<QF> + Send + 'a>(
         &'a self,
         operation: O,
         timeout: Option<Duration>,
@@ -519,7 +519,7 @@ impl ServerApi {
                 headers.insert(name.to_string(), value);
             }
 
-            let options = warp_graphql::client::RequestOptions {
+            let options = twarp_graphql::client::RequestOptions {
                 auth_token: auth_token.bearer_token(),
                 timeout,
                 headers,

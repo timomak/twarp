@@ -1,6 +1,6 @@
 use async_io::block_on;
+use twarp_core::ui::{color::hex_color::coloru_from_hex_string, theme::AnsiColor};
 use virtual_fs::{Stub, VirtualFS};
-use warp_core::ui::{color::hex_color::coloru_from_hex_string, theme::AnsiColor};
 
 use crate::settings::import::config::{ParseableConfig, ThemeType};
 

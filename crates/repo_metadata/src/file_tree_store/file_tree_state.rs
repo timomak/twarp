@@ -5,7 +5,7 @@ use ignore::gitignore::Gitignore;
 use std::collections::{HashMap, HashSet};
 use std::iter;
 use std::sync::Arc;
-use warp_util::standardized_path::StandardizedPath;
+use twarp_util::standardized_path::StandardizedPath;
 
 #[derive(Debug, Clone)]
 pub(super) struct FileTreeMapStore {

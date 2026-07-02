@@ -3,9 +3,9 @@ use std::sync::Arc;
 use chrono::{Duration, Utc};
 use futures_util::future::BoxFuture;
 use itertools::Itertools;
-use warp_core::ui::appearance::Appearance;
-use warp_editor::editor::EditorView;
-use warpui::{
+use twarp_core::ui::appearance::Appearance;
+use twarp_editor::editor::EditorView;
+use twarpui::{
     platform::WindowStyle, presenter::ChildView, r#async::Timer, telemetry::EventPayload,
     AddSingletonModel, App, AppContext, Element, Entity, SingletonEntity, TypedActionView, View,
     ViewHandle, WindowId,
@@ -390,7 +390,7 @@ fn test_focus_tracking() {
 #[ignore]
 fn test_edit_telemetry() {
     fn edit_events() -> Vec<serde_json::Value> {
-        warpui::telemetry::flush_events()
+        twarpui::telemetry::flush_events()
             .into_iter()
             .filter_map(|event| match event.payload {
                 EventPayload::NamedEvent { name, value, .. } if name == "Notebook Edited" => value,

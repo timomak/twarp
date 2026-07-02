@@ -1,11 +1,11 @@
 // The code in this file is adapted from the alacritty_terminal crate under the
-// Apache license; see: crates/warp_terminal/src/model/LICENSE-ALACRITTY.
+// Apache license; see: crates/twarp_terminal/src/model/LICENSE-ALACRITTY.
 
 use std::ops::BitOrAssign;
 
-use warp_terminal::model::char_or_str::CharOrStr;
-use warp_util::path::LineAndColumnArg;
-use warpui::text::words::is_default_word_boundary;
+use twarp_terminal::model::char_or_str::CharOrStr;
+use twarp_util::path::LineAndColumnArg;
+use twarpui::text::words::is_default_word_boundary;
 
 use crate::terminal::model::secrets::{ObfuscateSecrets, SecretLevel};
 use crate::terminal::model::{blockgrid::BlockGrid, secrets::IsObfuscated};

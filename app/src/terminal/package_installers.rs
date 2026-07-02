@@ -3,8 +3,8 @@
 use crate::completer::SessionContext;
 use crate::terminal::alias::is_expandable_alias;
 use string_offset::ByteOffset;
-use warp_completer::parsers::simple::command_at_cursor_position;
-use warp_util::path::ShellFamily;
+use twarp_completer::parsers::simple::command_at_cursor_position;
+use twarp_util::path::ShellFamily;
 
 /// Returns true if the command at the cursor position is likely a package installer command that would allow `@` at the start of the package name.
 /// This excludes package managers like Rust or Go that do not allow `@` at the start of the package name.

@@ -1,4 +1,4 @@
-use warpui::{async_assert, integration::AssertionCallback};
+use twarpui::{async_assert, integration::AssertionCallback};
 
 use crate::integration_testing::{terminal::util::ExpectedOutput, view_getters::pane_group_view};
 

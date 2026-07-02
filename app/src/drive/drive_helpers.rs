@@ -1,4 +1,4 @@
-use warpui::{SingletonEntity, ViewContext};
+use twarpui::{SingletonEntity, ViewContext};
 
 use crate::{
     auth::{auth_manager::AuthManager, AuthStateProvider},
@@ -8,7 +8,7 @@ use crate::{
     },
 };
 
-pub fn has_feature_gated_anonymous_user_reached_notebook_limit<V: warpui::View>(
+pub fn has_feature_gated_anonymous_user_reached_notebook_limit<V: twarpui::View>(
     ctx: &mut ViewContext<V>,
 ) -> bool {
     let count = CloudModel::handle(ctx).read(ctx, |model, ctx| {
@@ -31,7 +31,7 @@ pub fn has_feature_gated_anonymous_user_reached_notebook_limit<V: warpui::View>(
     false
 }
 
-pub fn has_feature_gated_anonymous_user_reached_workflow_limit<V: warpui::View>(
+pub fn has_feature_gated_anonymous_user_reached_workflow_limit<V: twarpui::View>(
     ctx: &mut ViewContext<V>,
 ) -> bool {
     let count = CloudModel::handle(ctx).read(ctx, |model, ctx| {
@@ -54,7 +54,7 @@ pub fn has_feature_gated_anonymous_user_reached_workflow_limit<V: warpui::View>(
     false
 }
 
-pub fn has_feature_gated_anonymous_user_reached_env_var_limit<V: warpui::View>(
+pub fn has_feature_gated_anonymous_user_reached_env_var_limit<V: twarpui::View>(
     ctx: &mut ViewContext<V>,
 ) -> bool {
     let count = CloudModel::handle(ctx).read(ctx, |model, ctx| {

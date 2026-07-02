@@ -7,15 +7,15 @@ use crate::ui_components::icons::Icon;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::workspaces::workspace::CustomerType;
 use std::default::Default;
-use warp_core::ui::appearance::Appearance;
-use warpui::fonts::Weight;
-use warpui::keymap::FixedBinding;
-use warpui::presenter::ChildView;
-use warpui::ui_components::components::{Coords, UiComponentStyles};
-use warpui::AppContext;
-use warpui::SingletonEntity;
-use warpui::ViewHandle;
-use warpui::{Element, Entity, TypedActionView, View, ViewContext};
+use twarp_core::ui::appearance::Appearance;
+use twarpui::fonts::Weight;
+use twarpui::keymap::FixedBinding;
+use twarpui::presenter::ChildView;
+use twarpui::ui_components::components::{Coords, UiComponentStyles};
+use twarpui::AppContext;
+use twarpui::SingletonEntity;
+use twarpui::ViewHandle;
+use twarpui::{Element, Entity, TypedActionView, View, ViewContext};
 
 use super::shared_objects_creation_denied_body::{
     SharedObjectsCreationDeniedBody, SharedObjectsCreationDeniedBodyEvent,
@@ -39,7 +39,7 @@ pub enum SharedObjectsCreationDeniedModalEvent {
 }
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([FixedBinding::new(
         "escape",

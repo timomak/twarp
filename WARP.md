@@ -25,7 +25,7 @@ Environment variables:
 
 ### Testing
 - `cargo nextest run --no-fail-fast --workspace --exclude command-signatures-v2` - Run tests with nextest
-- `cargo nextest run -p warp_completer --features v2` - Run completer tests with v2 features
+- `cargo nextest run -p twarp_completer --features v2` - Run completer tests with v2 features
 - `cargo test --doc` - Run doc tests
 - `cargo test` - Run standard tests for individual packages
 
@@ -33,7 +33,7 @@ Environment variables:
 - `./script/presubmit` - Run all presubmit checks (fmt, clippy, tests)
 - `cargo fmt` - Format code
 - `cargo clippy --workspace --all-targets --all-features --tests -- -D warnings` - Run clippy
-- `./script/run-clang-format.py -r --extensions 'c,h,cpp,m' ./crates/warpui/src/ ./app/src/` - Format C/C++/Obj-C code
+- `./script/run-clang-format.py -r --extensions 'c,h,cpp,m' ./crates/twarpui/src/ ./app/src/` - Format C/C++/Obj-C code
 - `find . -name "*.wgsl" -exec wgslfmt --check {} +` - Check WGSL shader formatting
 
 ### Platform Setup
@@ -64,9 +64,9 @@ This is a Rust-based terminal emulator with a custom UI framework called **WarpU
 - Workspace and session management (`workspace/`)
 
 **Core Libraries**:
-- `crates/warp_core/` - Core utilities and platform abstractions
+- `crates/twarp_core/` - Core utilities and platform abstractions
 - `crates/editor/` - Text editing functionality
-- `crates/warpui/` and `crates/warpui_core/` - Custom UI framework
+- `crates/twarpui/` and `crates/twarpui_core/` - Custom UI framework
 - `crates/ipc/` - Inter-process communication
 - `crates/graphql/` - GraphQL client and schema
 
@@ -81,7 +81,7 @@ This is a Rust-based terminal emulator with a custom UI framework called **WarpU
 
 **Workspace Structure**:
 - This is a Cargo workspace with 60+ member crates
-- Main binary is in `app/`, UI framework in `crates/warpui/`
+- Main binary is in `app/`, UI framework in `crates/twarpui/`
 - Platform-specific code is conditionally compiled
 - Integration tests are in `crates/integration/`
 
@@ -136,7 +136,7 @@ This is a Rust-based terminal emulator with a custom UI framework called **WarpU
 - Schema defined in `crates/persistence/src/schema.rs`
 
 **GraphQL**:
-- Schema and client code generation from `crates/warp_graphql_schema/api/schema.graphql`
+- Schema and client code generation from `crates/twarp_graphql_schema/api/schema.graphql`
 - TypeScript types generated for frontend integration
 
 ### Feature Flags
@@ -144,7 +144,7 @@ This is a Rust-based terminal emulator with a custom UI framework called **WarpU
 Warp uses compile-time feature flags with a small runtime plumbing layer.
 
 How to add a feature flag:
-- Add a new variant to `warp_core/src/features.rs` in the `FeatureFlag` enum
+- Add a new variant to `twarp_core/src/features.rs` in the `FeatureFlag` enum
 - (Optional) Enable it by default for dogfood builds by listing it in `DOGFOOD_FLAGS`
 - Gate code paths with `FeatureFlag::YourFlag.is_enabled()`
 - For preview or release rollout, add to `PREVIEW_FLAGS` or `RELEASE_FLAGS` respectively (as appropriate)

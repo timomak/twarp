@@ -4,7 +4,7 @@ use cocoa::{
     base::{id, nil, BOOL},
     foundation::NSAutoreleasePool,
 };
-use warpui::platform::mac::make_nsstring;
+use twarpui::platform::mac::make_nsstring;
 
 use super::*;
 

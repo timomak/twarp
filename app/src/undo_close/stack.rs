@@ -1,8 +1,8 @@
-use uuid::Uuid;
-use warpui::{
+use twarpui::{
     r#async::SpawnedFutureHandle, AppContext, ClosedWindowData, Entity, EntityId, ModelContext,
     ModelHandle, SingletonEntity, ViewHandle, WeakViewHandle, WindowId,
 };
+use uuid::Uuid;
 
 // twarp: 2c-d — AI active agent views / blocklist history deleted; stubs.
 pub struct ActiveAgentViewsModel;
@@ -379,7 +379,7 @@ impl UndoCloseStack {
         let id = ItemId::new();
         let grace_period = *settings.grace_period;
         let task_handle = ctx.spawn_abortable(
-            warpui::r#async::Timer::after(grace_period),
+            twarpui::r#async::Timer::after(grace_period),
             move |me, _, ctx| {
                 let initial_len = me.stack.len();
                 if let Some(pos) = me.stack.iter().position(|item| item.expiry_data.id == id) {

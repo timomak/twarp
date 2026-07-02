@@ -1,5 +1,5 @@
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
-use warpui::{
+use twarpui::{
     elements::{
         Border, ConstrainedBox, Container, CrossAxisAlignment, Flex, FormattedTextElement,
         HighlightedHyperlink, Icon, MouseStateHandle, ParentElement, Shrinkable,
@@ -151,7 +151,7 @@ pub fn render<A: Action + Clone>(
 }
 
 mod styles {
-    use warpui::elements::{CornerRadius, Radius};
+    use twarpui::elements::{CornerRadius, Radius};
 
     pub const NOTIFICATION_CONTAINER_PADDING: f32 = 8.;
     pub const NOTIFICATION_CONTAINER_CORNER_RADIUS: CornerRadius =

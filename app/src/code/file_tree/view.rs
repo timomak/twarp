@@ -13,22 +13,22 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use warp_util::path::LineAndColumnArg;
-use warp_util::standardized_path::StandardizedPath;
+use twarp_util::path::LineAndColumnArg;
+use twarp_util::standardized_path::StandardizedPath;
 
 use repo_metadata::repositories::DetectedRepositories;
-use warp_core::send_telemetry_from_ctx;
-use warpui::elements::{
+use twarp_core::send_telemetry_from_ctx;
+use twarpui::elements::{
     AcceptedByDropTarget, Align, Clipped, ConstrainedBox, Container, Dismiss, Draggable,
     DraggableState, Empty, FormattedTextElement, MainAxisAlignment, Percentage, Rect, SavePosition,
     Scrollable, Shrinkable,
 };
-use warpui::fonts::Style;
-use warpui::keymap::FixedBinding;
-use warpui::platform::Cursor;
-use warpui::text_layout::TextAlignment;
-use warpui::{clipboard::ClipboardContent, id, ViewContext, WeakViewHandle};
-use warpui::{
+use twarpui::fonts::Style;
+use twarpui::keymap::FixedBinding;
+use twarpui::platform::Cursor;
+use twarpui::text_layout::TextAlignment;
+use twarpui::{clipboard::ClipboardContent, id, ViewContext, WeakViewHandle};
+use twarpui::{
     elements::{
         ChildAnchor, ChildView, CrossAxisAlignment, Flex, Hoverable, MainAxisSize,
         MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
@@ -39,7 +39,7 @@ use warpui::{
     AppContext, Element, Entity, EventContext, SingletonEntity as _, TypedActionView, View,
     ViewHandle,
 };
-use warpui::{BlurContext, ModelHandle};
+use twarpui::{BlurContext, ModelHandle};
 
 use crate::code::active_file::{ActiveFileEvent, ActiveFileModel};
 use crate::coding_panel_enablement_state::CodingPanelEnablementState;
@@ -64,10 +64,10 @@ use crate::{
     view_components::DismissibleToast,
     workspace::ToastStack,
 };
-use warp_core::features::FeatureFlag;
-use warp_core::ui::theme::{color::internal_colors, Fill};
-use warp_core::HostId;
-use warpui::ui_components::components::UiComponent;
+use twarp_core::features::FeatureFlag;
+use twarp_core::ui::theme::{color::internal_colors, Fill};
+use twarp_core::HostId;
+use twarpui::ui_components::components::UiComponent;
 
 mod editing;
 mod render;
@@ -1029,8 +1029,8 @@ impl FileTreeView {
             .collect();
 
         // Ancestor-dedup only local inputs. Shared with `GlobalSearchView`
-        // via `warp_util::path::group_roots_by_common_ancestor`.
-        let grouping = warp_util::path::group_roots_by_common_ancestor(&local_inputs);
+        // via `twarp_util::path::group_roots_by_common_ancestor`.
+        let grouping = twarp_util::path::group_roots_by_common_ancestor(&local_inputs);
 
         // Final displayed order: local surviving roots (in input order),
         // followed by preserved remote roots (in their existing order).
@@ -2724,7 +2724,7 @@ impl FileTreeView {
                         ScrollbarWidth::Auto,
                         theme.nonactive_ui_detail().into(),
                         theme.active_ui_detail().into(),
-                        warpui::elements::Fill::None,
+                        twarpui::elements::Fill::None,
                     )
                     .with_overlayed_scrollbar()
                     .finish(),
@@ -2839,7 +2839,7 @@ impl FileTreeView {
 
         // Create loading icon
         let loading_icon = Icon::Loading
-            .to_warpui_icon(warp_core::ui::theme::Fill::Solid(
+            .to_warpui_icon(twarp_core::ui::theme::Fill::Solid(
                 internal_colors::neutral_6(theme),
             ))
             .finish();
@@ -2861,7 +2861,7 @@ impl FileTreeView {
         header_row.add_child(loading_icon);
 
         let folder_icon = Icon::Folder
-            .to_warpui_icon(warp_core::ui::theme::Fill::Solid(
+            .to_warpui_icon(twarp_core::ui::theme::Fill::Solid(
                 internal_colors::neutral_6(theme),
             ))
             .finish();

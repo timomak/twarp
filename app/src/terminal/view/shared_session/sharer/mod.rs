@@ -2,7 +2,7 @@ pub mod inactivity_modal;
 use inactivity_modal::InactivityModal;
 
 use async_channel::Sender;
-use warpui::{
+use twarpui::{
     elements::MouseStateHandle, r#async::SpawnedFutureHandle, SingletonEntity, ViewContext,
     ViewHandle,
 };

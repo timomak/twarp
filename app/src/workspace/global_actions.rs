@@ -6,7 +6,7 @@ use crate::terminal::alt_screen_reporting::AltScreenReporting;
 use crate::terminal::general_settings::GeneralSettings;
 use crate::{app_state::get_app_state, server::server_api::ServerApiProvider};
 use ::settings::ToggleableSetting;
-use warp_core::execution_mode::AppExecutionMode;
+use twarp_core::execution_mode::AppExecutionMode;
 
 use crate::root_view::OpenPath;
 use crate::undo_close::UndoCloseStack;
@@ -16,9 +16,9 @@ use crate::GlobalResourceHandlesProvider;
 use std::cell::Cell;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
-use warp_graphql::mutations::create_anonymous_user::AnonymousUserType;
-use warpui::windowing::WindowManager;
-use warpui::{AppContext, SingletonEntity, TypedActionView};
+use twarp_graphql::mutations::create_anonymous_user::AnonymousUserType;
+use twarpui::windowing::WindowManager;
+use twarpui::{AppContext, SingletonEntity, TypedActionView};
 
 /// Specifies where a forked conversation should be opened.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -199,7 +199,7 @@ fn create_anonymous_user(_: &(), ctx: &mut AppContext) {
     let anonymous_user_type = AnonymousUserType::NativeClientAnonymousUser;
     let server_api = ServerApiProvider::handle(ctx).read(ctx, |provider, _ctx| provider.get());
     let result =
-        warpui::r#async::block_on(server_api.create_anonymous_user(None, anonymous_user_type));
+        twarpui::r#async::block_on(server_api.create_anonymous_user(None, anonymous_user_type));
     match result {
         Ok(user) => log::info!("Successfully created anonymous user {user:?}"),
         Err(err) => log::error!("Failed to create anonymous user: {err:?}"),

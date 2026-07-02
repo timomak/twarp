@@ -1,4 +1,4 @@
-use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
+use twarpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use crate::{
     app_state::AIDocumentId,

@@ -29,7 +29,7 @@ use chrono::Utc;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, path::PathBuf};
-use warp_graphql::billing::{AddonCreditAutoReloadStatus, ServiceAgreement, ServiceAgreementType};
+use twarp_graphql::billing::{AddonCreditAutoReloadStatus, ServiceAgreement, ServiceAgreementType};
 
 use super::team::{MembershipRole, Team};
 
@@ -178,7 +178,7 @@ impl Workspace {
     /// Returns None if auto-reload is not configured or if the denomination can't be found in pricing options.
     pub fn get_auto_reload_price_cents(
         &self,
-        addon_credits_options: &[warp_graphql::billing::AddonCreditsOption],
+        addon_credits_options: &[twarp_graphql::billing::AddonCreditsOption],
     ) -> Option<i32> {
         let selected_credits = self
             .settings

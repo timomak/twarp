@@ -10,11 +10,11 @@ use std::path::Path;
 use futures::future::ready;
 #[cfg(feature = "local_fs")]
 use ignore::gitignore::Gitignore;
-use warp_util::standardized_path::StandardizedPath;
-use warpui::r#async::{BoxFuture, SpawnedFutureHandle};
+use twarp_util::standardized_path::StandardizedPath;
+use twarpui::r#async::{BoxFuture, SpawnedFutureHandle};
 #[cfg(feature = "local_fs")]
-use warpui::SingletonEntity;
-use warpui::{Entity, ModelContext, ModelHandle};
+use twarpui::SingletonEntity;
+use twarpui::{Entity, ModelContext, ModelHandle};
 
 #[cfg(feature = "local_fs")]
 use crate::watcher::DirectoryWatcher;
@@ -459,7 +459,7 @@ where
                                 let st = state.lock().unwrap();
                                 st.version
                             };
-                            warpui::r#async::Timer::after(wait).await;
+                            twarpui::r#async::Timer::after(wait).await;
 
                             // If version unchanged, we're quiet; flush pending and exit loop.
                             let maybe_merged = {

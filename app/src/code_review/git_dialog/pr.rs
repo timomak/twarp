@@ -6,8 +6,8 @@
 
 use std::path::Path;
 
-use warp_core::ui::appearance::Appearance;
-use warpui::{
+use twarp_core::ui::appearance::Appearance;
+use twarpui::{
     elements::{
         ClippedScrollStateHandle, Container, Element, Flex, MouseStateHandle, ParentElement, Text,
     },

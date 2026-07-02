@@ -1,7 +1,7 @@
 use asset_macro::bundled_asset;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
-use warp_core::ui::theme::WarpTheme;
-use warpui::assets::asset_cache::{AssetCache, AssetState};
+use twarp_core::ui::theme::WarpTheme;
+use twarpui::assets::asset_cache::{AssetCache, AssetState};
 
 // twarp: 2c-d — RenderableAction deleted; stub.
 pub struct RenderableAction;
@@ -13,8 +13,8 @@ impl RenderableAction {
     pub fn with_background_color<C>(self, _: C) -> Self {
         self
     }
-    pub fn render<A>(self, _: A) -> warpui::elements::Empty {
-        warpui::elements::Empty::new()
+    pub fn render<A>(self, _: A) -> twarpui::elements::Empty {
+        twarpui::elements::Empty::new()
     }
 }
 use crate::appearance::Appearance;
@@ -22,10 +22,10 @@ use crate::terminal::shell::ShellType;
 use crate::terminal::warpify;
 use crate::terminal::warpify::render::SSH_DOCS_URL;
 use crate::ui_components::icons::Icon as UiIcon;
-use warpui::elements::{HighlightedHyperlink, Hoverable, Icon, MouseStateHandle};
-use warpui::keymap::FixedBinding;
-use warpui::AppContext;
-use warpui::{
+use twarpui::elements::{HighlightedHyperlink, Hoverable, Icon, MouseStateHandle};
+use twarpui::keymap::FixedBinding;
+use twarpui::AppContext;
+use twarpui::{
     elements::{Border, Container, CrossAxisAlignment, Flex, ParentElement},
     Element, Entity, SingletonEntity, TypedActionView, View, ViewContext,
 };
@@ -49,7 +49,7 @@ pub struct SshWarpifyBlock {
 }
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([FixedBinding::new(
         "ctrl-c",

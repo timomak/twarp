@@ -3,7 +3,7 @@ use crate::server::server_api::{ServerApiEvent, ServerApiProvider};
 #[cfg(not(target_family = "wasm"))]
 use remote_server::manager::RemoteServerManager;
 #[cfg(not(target_family = "wasm"))]
-use warpui::SingletonEntity;
+use twarpui::SingletonEntity;
 // Re-export everything from the `remote_server` crate so existing
 // `crate::remote_server::*` imports in `app` continue to work.
 pub use remote_server::*;
@@ -54,16 +54,16 @@ pub fn run_daemon(_identity_key: String) -> anyhow::Result<()> {
 /// ```
 #[cfg(not(target_family = "wasm"))]
 pub(super) fn run_daemon_app(
-    server_model_init: impl FnOnce(&mut warpui::ModelContext<server_model::ServerModel>) -> server_model::ServerModel
+    server_model_init: impl FnOnce(&mut twarpui::ModelContext<server_model::ServerModel>) -> server_model::ServerModel
         + 'static,
 ) -> anyhow::Result<()> {
-    use warpui::platform::app::AppCallbacks;
-    use warpui::platform::AppBuilder;
+    use twarpui::platform::app::AppCallbacks;
+    use twarpui::platform::AppBuilder;
 
     AppBuilder::new_headless(AppCallbacks::default(), Box::new(()), None).run(|ctx| {
         // Rotate log files from the previous daemon invocation in the background.
         ctx.background_executor()
-            .spawn(warp_logging::rotate_log_files())
+            .spawn(twarp_logging::rotate_log_files())
             .detach();
 
         use crate::server::telemetry::context_provider::NoopTelemetryContextProvider;
@@ -82,7 +82,7 @@ pub(super) fn run_daemon_app(
         ctx.add_singleton_model(DirectoryWatcher::new);
         ctx.add_singleton_model(|_ctx| DetectedRepositories::default());
         ctx.add_singleton_model(RepoMetadataModel::new_with_incremental_updates);
-        ctx.add_singleton_model(warp_files::FileModel::new);
+        ctx.add_singleton_model(twarp_files::FileModel::new);
         ctx.add_singleton_model(server_model_init);
     })?;
     Ok(())
@@ -90,7 +90,7 @@ pub(super) fn run_daemon_app(
 
 /// Forwards app auth-token rotation events to the remote-server manager.
 #[cfg(not(target_family = "wasm"))]
-pub fn wire_auth_token_rotation(ctx: &mut warpui::AppContext) {
+pub fn wire_auth_token_rotation(ctx: &mut twarpui::AppContext) {
     let server_api = ServerApiProvider::handle(ctx);
     let manager = RemoteServerManager::handle(ctx);
     ctx.subscribe_to_model(&server_api, move |_, event, ctx| {

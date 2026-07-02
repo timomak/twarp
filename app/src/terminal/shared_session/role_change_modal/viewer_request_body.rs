@@ -1,7 +1,9 @@
 use crate::{appearance::Appearance, ui_components::blended_colors};
 use session_sharing_protocol::common::Role;
-use warpui::elements::{Container, Flex, MainAxisAlignment, MouseStateHandle, ParentElement, Text};
-use warpui::{
+use twarpui::elements::{
+    Container, Flex, MainAxisAlignment, MouseStateHandle, ParentElement, Text,
+};
+use twarpui::{
     elements::CrossAxisAlignment,
     fonts::Weight,
     platform::Cursor,

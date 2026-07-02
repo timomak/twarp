@@ -31,14 +31,14 @@ use session_sharing_protocol::sharer::{
 };
 use session_sharing_protocol::sharer::{FailedToInitializeSessionReason, SessionEndedReason};
 use std::collections::HashMap;
-use warp_core::features::FeatureFlag;
+use twarp_core::features::FeatureFlag;
 
 use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use warpui::r#async::Timer;
-use warpui::{Entity, ModelContext, ModelHandle, RequestState, RetryOption, SingletonEntity};
+use twarpui::r#async::Timer;
+use twarpui::{Entity, ModelContext, ModelHandle, RequestState, RetryOption, SingletonEntity};
 use websocket::{Message, Sink, Stream, WebSocket, WebsocketMessage as _};
 
 use crate::editor::CrdtOperation;
@@ -225,7 +225,7 @@ impl Network {
         active_prompt: ActivePrompt,
         selection: Selection,
         input_replica_id: ReplicaId,
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
         universal_developer_input_context: UniversalDeveloperInputContext,
         lifetime: Lifetime,
         source_type: SessionSourceType,
@@ -586,7 +586,7 @@ impl Network {
         window_size: WindowSize,
         init_block_id: BlockId,
         input_replica_id: ReplicaId,
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
         universal_developer_input_context: UniversalDeveloperInputContext,
         lifetime: Lifetime,
         source_type: SessionSourceType,

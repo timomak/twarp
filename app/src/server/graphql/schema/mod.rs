@@ -18,7 +18,7 @@ use crate::{
 };
 
 use anyhow::{bail, Result};
-use warp_graphql::{
+use twarp_graphql::{
     generic_string_object::GenericStringObjectFormat,
     mutations::update_generic_string_object::{
         GenericStringObjectUpdate, UpdateGenericStringObjectResult,

@@ -6,7 +6,7 @@ use url::Url;
 use uuid::Uuid;
 
 #[cfg(target_family = "wasm")]
-use warp_core::context_flag::ContextFlag;
+use twarp_core::context_flag::ContextFlag;
 
 #[derive(Debug)]
 /// Represents an intent parsed from a web url

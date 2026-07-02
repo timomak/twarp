@@ -1,5 +1,5 @@
 use serde::Serialize;
-use warpui::{elements::MouseStateHandle, Element};
+use twarpui::{elements::MouseStateHandle, Element};
 
 use crate::{
     appearance::Appearance,
@@ -11,7 +11,7 @@ use super::{
     InlineBannerContent, InlineBannerStyle, InlineBannerTextButton, InlineBannerTextButtonVariant,
 };
 
-use warpui::notification::NotificationSendError;
+use twarpui::notification::NotificationSendError;
 
 #[derive(Clone, Copy, Debug, Serialize)]
 pub enum NotificationsErrorBannerAction {

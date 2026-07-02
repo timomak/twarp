@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use regex::Regex;
-use warp_core::features::FeatureFlag;
-use warp_core::report_if_error;
-use warpui::{AppContext, Entity, ModelContext, SingletonEntity, UpdateModel};
+use twarp_core::features::FeatureFlag;
+use twarp_core::report_if_error;
+use twarpui::{AppContext, Entity, ModelContext, SingletonEntity, UpdateModel};
 
 // twarp: 2c-d — AI telemetry banner deleted; stub.
 pub fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool {

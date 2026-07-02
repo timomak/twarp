@@ -3,13 +3,13 @@ use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::Vector2F;
 use std::collections::HashSet;
 use std::{fmt, iter, mem};
-use warpui::elements::{
+use twarpui::elements::{
     ChildAnchor, Container, DispatchEventResult, Empty, OffsetPositioning, ParentAnchor,
     ParentOffsetBounds, PositionedElementAnchor, PositionedElementOffsetBounds, SavePosition,
     Stack,
 };
-use warpui::AppContext;
-use warpui::{
+use twarpui::AppContext;
+use twarpui::{
     elements::{
         ConstrainedBox, Element, EventHandler, Flex, Hoverable, MouseStateHandle, ParentElement,
         Rect, Shrinkable,
@@ -21,7 +21,7 @@ use warpui::{
 use super::{ActivationReason, PaneGroup, PaneId};
 use crate::pane_group::{get_minimum_pane_size, DraggedBorder, PaneGroupAction};
 use crate::themes::theme::WarpTheme;
-use warp_core::features::FeatureFlag;
+use twarp_core::features::FeatureFlag;
 
 #[cfg(test)]
 #[path = "tree_tests.rs"]

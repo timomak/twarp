@@ -2,10 +2,10 @@ use std::ops::Range;
 
 use itertools::{Either, Itertools};
 use line_ending::LineEnding;
-use vec1::{Vec1, vec1};
-use warpui::{
+use twarpui::{
     AppContext, Entity, ModelAsRef, ModelContext, ModelHandle, clipboard::ClipboardContent,
 };
+use vec1::{Vec1, vec1};
 
 use crate::{
     content::{
@@ -22,7 +22,7 @@ use crate::{
     selection::{SelectionMode, SelectionModel, TextDirection, TextUnit},
 };
 use string_offset::{ByteOffset, CharOffset};
-use warpui::elements::ListIndentLevel;
+use twarpui::elements::ListIndentLevel;
 
 /// A wrapper for a buffer that provides access to its internal update_content method.
 /// It's important this is only returned from `CoreEditorModel::update_content` method

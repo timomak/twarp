@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use warpui::elements::{ChildView, Flex, ParentElement, SavePosition};
-use warpui::{Action, Element, TypedActionView, View, ViewContext, ViewHandle};
+use twarpui::elements::{ChildView, Flex, ParentElement, SavePosition};
+use twarpui::{Action, Element, TypedActionView, View, ViewContext, ViewHandle};
 
 use crate::view_components::action_button::AdjoinedSide;
 use crate::view_components::compactible_action_button::RenderCompactibleActionButton;

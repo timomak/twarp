@@ -7,8 +7,10 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use warp_graphql::scalars::time::ServerTimestamp;
-use warpui::{r#async::FutureId, Entity, ModelContext, RequestState, RetryOption, SingletonEntity};
+use twarp_graphql::scalars::time::ServerTimestamp;
+use twarpui::{
+    r#async::FutureId, Entity, ModelContext, RequestState, RetryOption, SingletonEntity,
+};
 
 use lazy_static::lazy_static;
 use uuid::Uuid;

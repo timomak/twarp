@@ -15,7 +15,7 @@ use std::{
     collections::HashSet,
     pin::{pin, Pin},
 };
-use warpui::{color::ColorU, App, ModelHandle};
+use twarpui::{color::ColorU, App, ModelHandle};
 
 fn visible_text_styles(buffer: &Buffer) -> Vec<Option<TextStyle>> {
     buffer

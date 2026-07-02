@@ -8,8 +8,8 @@ use repo_metadata::file_tree_store::FileTreeEntryState;
 use repo_metadata::{FileMetadata, FileTreeEntry};
 use std::cmp::Ordering;
 use std::sync::Arc;
-use warp_util::standardized_path::StandardizedPath;
-use warpui::{elements::MouseStateHandle, ViewContext};
+use twarp_util::standardized_path::StandardizedPath;
+use twarpui::{elements::MouseStateHandle, ViewContext};
 
 use super::{FileTreeIdentifier, FileTreeItem, FileTreeView};
 use crate::{
@@ -108,7 +108,7 @@ impl FileTreeView {
                 metadata: FileMetadata::from_standardized(path.join("new_file"), false).into(),
                 depth: depth + 1,
                 mouse_state_handle: MouseStateHandle::default(),
-                draggable_state: warpui::elements::DraggableState::default(),
+                draggable_state: twarpui::elements::DraggableState::default(),
             },
         );
 

@@ -1,9 +1,9 @@
 // twarp: 2c-d — AIRequestUsageModel deleted; stubs.
 pub struct AIRequestUsageModel;
-impl warpui::Entity for AIRequestUsageModel {
+impl twarpui::Entity for AIRequestUsageModel {
     type Event = AIRequestUsageModelEvent;
 }
-impl warpui::SingletonEntity for AIRequestUsageModel {}
+impl twarpui::SingletonEntity for AIRequestUsageModel {}
 pub enum AIRequestUsageModelEvent {
     Other,
     RequestUsageUpdated,
@@ -20,22 +20,22 @@ use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use thousands::Separable;
-use warp_core::send_telemetry_from_ctx;
-use warp_core::ui::appearance::Appearance;
-use warp_core::ui::theme::{Fill, WarpTheme};
-use warp_graphql::billing::{PlanPricing, StripeSubscriptionPlan};
-use warpui::elements::{
+use twarp_core::send_telemetry_from_ctx;
+use twarp_core::ui::appearance::Appearance;
+use twarp_core::ui::theme::{Fill, WarpTheme};
+use twarp_graphql::billing::{PlanPricing, StripeSubscriptionPlan};
+use twarpui::elements::{
     Align, Border, CacheOption, ChildAnchor, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, DropShadow, Flex, FormattedTextElement, HighlightedHyperlink, Image,
     MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, ParentAnchor,
     ParentElement, ParentOffsetBounds, Radius, Stack,
 };
-use warpui::fonts::Weight;
-use warpui::keymap::FixedBinding;
-use warpui::platform::Cursor;
-use warpui::ui_components::button::ButtonVariant;
-use warpui::ui_components::components::{UiComponent, UiComponentStyles};
-use warpui::{AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext};
+use twarpui::fonts::Weight;
+use twarpui::keymap::FixedBinding;
+use twarpui::platform::Cursor;
+use twarpui::ui_components::button::ButtonVariant;
+use twarpui::ui_components::components::{UiComponent, UiComponentStyles};
+use twarpui::{AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext};
 
 const BUTTON_DIAMETER: f32 = 20.;
 const MODAL_HEIGHT: f32 = 440.;
@@ -43,7 +43,7 @@ const LEFT_PANEL_WIDTH: f32 = 360.;
 const RIGHT_PANEL_WIDTH: f32 = 360.;
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([FixedBinding::new(
         "escape",

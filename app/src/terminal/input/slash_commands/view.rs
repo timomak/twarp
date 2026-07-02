@@ -3,9 +3,9 @@ use std::collections::HashSet;
 // twarp: 2c-e — SkillReference is now a stub in `crate::app_state`.
 use crate::app_state::SkillReference;
 use lazy_static::lazy_static;
-use warpui::elements::ChildView;
-use warpui::{AppContext, Element, ViewContext};
-use warpui::{Entity, ModelHandle, View, ViewHandle};
+use twarpui::elements::ChildView;
+use twarpui::{AppContext, Element, ViewContext};
+use twarpui::{Entity, ModelHandle, View, ViewHandle};
 
 // twarp: 2c-d — AgentViewController deleted; re-export from input.
 use crate::search::data_source::{Query, QueryFilter};
@@ -270,7 +270,7 @@ impl View for InlineSlashCommandView {
         "InlineSlashCommandView"
     }
 
-    fn render(&self, _app: &warpui::AppContext) -> Box<dyn Element> {
+    fn render(&self, _app: &twarpui::AppContext) -> Box<dyn Element> {
         ChildView::new(&self.menu_view).finish()
     }
 }

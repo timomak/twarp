@@ -1,5 +1,5 @@
-use warpui::integration::AssertionCallback;
-use warpui::{async_assert, integration::AssertionOutcome, App, ViewHandle, WindowId};
+use twarpui::integration::AssertionCallback;
+use twarpui::{async_assert, integration::AssertionOutcome, App, ViewHandle, WindowId};
 
 use crate::integration_testing::view_getters::workspace_view;
 use crate::palette::PaletteMode;

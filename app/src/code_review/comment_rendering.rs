@@ -18,20 +18,20 @@ use crate::editor::InteractionState;
 use crate::notebooks::editor::view::RichTextEditorView;
 use crate::util::time_format::human_readable_approx_duration;
 use pathfinder_color::ColorU;
-use warp_core::ui::theme::color::internal_colors::{neutral_1, neutral_2, text_sub};
-use warp_core::ui::theme::Fill;
-use warp_editor::content::buffer::InitialBufferState;
-use warp_editor::render::element::VerticalExpansionBehavior;
-use warpui::elements::new_scrollable::ScrollableAppearance;
-use warpui::elements::ScrollbarWidth;
-use warpui::elements::{
+use twarp_core::ui::theme::color::internal_colors::{neutral_1, neutral_2, text_sub};
+use twarp_core::ui::theme::Fill;
+use twarp_editor::content::buffer::InitialBufferState;
+use twarp_editor::render::element::VerticalExpansionBehavior;
+use twarpui::elements::new_scrollable::ScrollableAppearance;
+use twarpui::elements::ScrollbarWidth;
+use twarpui::elements::{
     Border, ChildView, Container, CornerRadius, CrossAxisAlignment, Flex, Hoverable,
     MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
 };
-use warpui::platform::Cursor;
-use warpui::text_layout::ClipConfig;
-use warpui::units::Pixels;
-use warpui::{AppContext, Element, EventContext, SingletonEntity, View, ViewContext, ViewHandle};
+use twarpui::platform::Cursor;
+use twarpui::text_layout::ClipConfig;
+use twarpui::units::Pixels;
+use twarpui::{AppContext, Element, EventContext, SingletonEntity, View, ViewContext, ViewHandle};
 
 /// Configuration for making the comment header clickable.
 pub(crate) struct HeaderClickHandler {
@@ -43,7 +43,7 @@ pub(crate) struct HeaderClickHandler {
 /// (rounded corners, neutral background, outline border).
 fn comment_card_container(
     content: Box<dyn Element>,
-    theme: &warp_core::ui::theme::WarpTheme,
+    theme: &twarp_core::ui::theme::WarpTheme,
 ) -> Box<dyn Element> {
     Container::new(content)
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))

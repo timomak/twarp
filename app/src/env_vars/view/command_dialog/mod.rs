@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use warpui::ViewContext;
+use twarpui::ViewContext;
 
 use super::env_var_collection::{EnvVarCollectionView, VariableRowIndex};
 use crate::env_vars::{active_env_var_collection_data::SavingStatus, EnvVarValue};

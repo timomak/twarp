@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use warp_editor::model::CoreEditorModel;
-use warp_editor::render::model::{
+use twarp_editor::model::CoreEditorModel;
+use twarp_editor::render::model::{
     BlockItem, HitTestOptions, LineCount, Location, RenderLineLocation,
 };
-use warpui::{units::Pixels, AppContext, ViewContext};
+use twarpui::{units::Pixels, AppContext, ViewContext};
 
 use super::{CodeReviewView, CodeReviewViewState, FILE_HEADER_HEIGHT};
 use crate::code::editor::line::EditorLineLocation;

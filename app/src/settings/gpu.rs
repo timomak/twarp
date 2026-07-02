@@ -1,5 +1,5 @@
 use settings::{macros::define_settings_group, SupportedPlatforms, SyncToCloud};
-use warpui::platform::GraphicsBackend;
+use twarpui::platform::GraphicsBackend;
 
 define_settings_group!(GPUSettings, settings: [
    prefer_low_power_gpu: PreferLowPowerGPU {

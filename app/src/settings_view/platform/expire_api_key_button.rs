@@ -1,6 +1,6 @@
 use crate::server::{ids::ApiKeyUid, server_api::auth::AuthClient};
-use warp_core::ui::appearance::Appearance;
-use warpui::{
+use twarp_core::ui::appearance::Appearance;
+use twarpui::{
     elements::MouseStateHandle, ui_components::components::UiComponent, AppContext, Element,
     Entity, SingletonEntity, TypedActionView, View, ViewContext,
 };
@@ -51,7 +51,7 @@ impl ExpireApiKeyButton {
             async move { server_api.expire_api_key(&uid_for_req).await },
             move |me, res, ctx| match res {
                 Ok(
-                    warp_graphql::mutations::expire_api_key::ExpireApiKeyResult::ExpireApiKeyOutput(
+                    twarp_graphql::mutations::expire_api_key::ExpireApiKeyResult::ExpireApiKeyOutput(
                         _output,
                     ),
                 ) => {
@@ -62,14 +62,14 @@ impl ExpireApiKeyButton {
                     ctx.notify();
                 }
                 Ok(
-                    warp_graphql::mutations::expire_api_key::ExpireApiKeyResult::UserFacingError(e),
+                    twarp_graphql::mutations::expire_api_key::ExpireApiKeyResult::UserFacingError(e),
                 ) => {
-                    let _msg = warp_graphql::client::get_user_facing_error_message(e);
+                    let _msg = twarp_graphql::client::get_user_facing_error_message(e);
                     me.request_state = RequestState::Idle;
                     ctx.emit(ExpireApiKeyButtonEvent::ExpireApiKeyFailed { message: _msg });
                     ctx.notify();
                 }
-                Ok(warp_graphql::mutations::expire_api_key::ExpireApiKeyResult::Unknown)
+                Ok(twarp_graphql::mutations::expire_api_key::ExpireApiKeyResult::Unknown)
                 | Err(_) => {
                     me.request_state = RequestState::Idle;
                     ctx.emit(ExpireApiKeyButtonEvent::ExpireApiKeyFailed {

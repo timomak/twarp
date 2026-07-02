@@ -6,8 +6,8 @@ use crate::{
         ActionButton, ActionButtonTheme, AdjoinedSide, ButtonSize, KeystrokeSource,
     },
 };
-use warp_core::ui::appearance::Appearance;
-use warpui::{
+use twarp_core::ui::appearance::Appearance;
+use twarpui::{
     elements::{
         ChildView, ConstrainedBox, Container, CrossAxisAlignment, Flex, MainAxisAlignment,
         MainAxisSize, ParentElement,
@@ -217,7 +217,7 @@ pub fn render_expansion_icon(
     app: &AppContext,
 ) -> Box<dyn Element> {
     ConstrainedBox::new(
-        warpui::elements::Icon::new(
+        twarpui::elements::Icon::new(
             if expanded {
                 if expands_upwards {
                     Icon::ChevronUp.into()

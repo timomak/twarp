@@ -16,10 +16,10 @@ use crate::search::mixer::AddAsyncSourceOptions;
 use crate::search::QueryFilter;
 use crate::session_management::SessionSource;
 use crate::settings::AISettings;
-use warp_core::context_flag::ContextFlag;
-use warp_core::features::FeatureFlag;
-use warpui::keymap::BindingId;
-use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
+use twarp_core::context_flag::ContextFlag;
+use twarp_core::features::FeatureFlag;
+use twarpui::keymap::BindingId;
+use twarpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
 // twarp: 2c-d — conversations submodule deleted; stubs.
 mod conversations {
@@ -36,7 +36,7 @@ mod conversations {
             Vec::new()
         }
     }
-    impl warpui::Entity for DataSource {
+    impl twarpui::Entity for DataSource {
         type Event = ();
     }
 }

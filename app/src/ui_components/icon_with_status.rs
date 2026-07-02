@@ -1,9 +1,9 @@
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use warp_core::ui::icons::Icon as WarpIcon;
-use warp_core::ui::theme::color::internal_colors;
-use warp_core::ui::theme::{Fill as WarpThemeFill, WarpTheme};
-use warpui::elements::{
+use twarp_core::ui::icons::Icon as WarpIcon;
+use twarp_core::ui::theme::color::internal_colors;
+use twarp_core::ui::theme::{Fill as WarpThemeFill, WarpTheme};
+use twarpui::elements::{
     ChildAnchor, ConstrainedBox, Container, CornerRadius, Element, OffsetPositioning, ParentAnchor,
     ParentElement, ParentOffsetBounds, Radius, Stack,
 };
@@ -118,7 +118,7 @@ pub(crate) fn render_icon_with_status(
             // twarp: 2c-d — agent.icon() now Option; fallback to Terminal.
             let icon_element = agent
                 .icon()
-                .unwrap_or(warp_core::ui::Icon::Terminal)
+                .unwrap_or(twarp_core::ui::Icon::Terminal)
                 .to_warpui_icon(WarpThemeFill::Solid(icon_color))
                 .finish();
             let inner = ConstrainedBox::new(icon_element)

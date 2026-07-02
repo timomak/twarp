@@ -1,5 +1,5 @@
 use settings::{RespectUserSyncSetting, SyncToCloud};
-use warp::{
+use twarp::{
     features::FeatureFlag,
     integration_testing::{
         self,
@@ -23,7 +23,7 @@ use warp::{
     },
     workspace::Workspace,
 };
-use warpui::{
+use twarpui::{
     async_assert_eq,
     integration::{AssertionOutcome, TestStep},
     SingletonEntity, ViewHandle,

@@ -26,32 +26,32 @@ use lazy_static::lazy_static;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use std::sync::{Arc, Mutex};
-use warp_core::features::FeatureFlag;
-use warp_core::ui::icons::Icon;
-use warp_core::{channel::ChannelState, context_flag::ContextFlag};
-use warpui::{
+use twarp_core::features::FeatureFlag;
+use twarp_core::ui::icons::Icon;
+use twarp_core::{channel::ChannelState, context_flag::ContextFlag};
+use twarpui::{
     assets::asset_cache::AssetSource,
     elements::{Border, Empty, MainAxisAlignment, MainAxisSize},
     id,
     platform::Cursor,
     ui_components::switch::SwitchStateHandle,
 };
-use warpui::{
+use twarpui::{
     elements::{
         Align, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Flex,
         MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
     },
     Action, AppContext,
 };
-use warpui::{
+use twarpui::{
     elements::{CacheOption, Image},
     ui_components::{
         button::{ButtonVariant, TextAndIcon, TextAndIconAlignment},
         components::{Coords, UiComponent, UiComponentStyles},
     },
 };
-use warpui::{fonts::Weight, keymap::ContextPredicate};
-use warpui::{
+use twarpui::{fonts::Weight, keymap::ContextPredicate};
+use twarpui::{
     Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
@@ -621,7 +621,7 @@ impl SettingsWidget for AccountWidget {
             self.render_anonymous_account_info(view.auth_state.as_ref(), appearance)
         } else {
             let profile_image_source = view.auth_state.user_photo_url().map(|url| {
-                asset_cache::url_source_with_persistence(url, &warp_core::paths::cache_dir())
+                asset_cache::url_source_with_persistence(url, &twarp_core::paths::cache_dir())
             });
             self.render_account_info(
                 profile_image_source.as_ref(),

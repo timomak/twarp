@@ -1,11 +1,11 @@
-use ui_components::Component;
-use warp_core::ui::appearance::Appearance;
-use warpui::{
+use twarp_core::ui::appearance::Appearance;
+use twarpui::{
     elements::Empty,
     keymap::{macros::*, FixedBinding, Keystroke},
     AppContext, Element, Entity, EventContext, ModelHandle, SingletonEntity, TypedActionView, View,
     ViewContext,
 };
+use ui_components::Component;
 
 /// Display strings for keybindings shown in the onboarding callout.
 #[derive(Clone, Debug)]

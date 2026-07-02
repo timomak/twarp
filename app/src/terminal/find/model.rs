@@ -14,7 +14,7 @@ use std::{collections::HashMap, sync::Arc};
 use alt_screen::{run_find_on_alt_screen, AltScreenFindRun};
 use parking_lot::FairMutex;
 use settings::Setting as _;
-use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity, ViewHandle};
+use twarpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity, ViewHandle};
 
 use crate::{
     settings::InputModeSettings,

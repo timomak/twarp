@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::Range;
 use string_offset::CharOffset;
-use warp_editor::{
+use twarp_editor::{
     content::version::BufferVersion,
     editor::{EmbeddedItemModel, RunnableCommandModel, TextDecoration},
     model::{CoreEditorModel, PlainTextEditorModel},
@@ -28,8 +28,8 @@ use warp_editor::{
     },
     selection::{TextDirection, TextUnit},
 };
-use warp_util::user_input::UserInput;
-use warpui::{
+use twarp_util::user_input::UserInput;
+use twarpui::{
     actions::StandardAction,
     elements::Axis,
     event::ModifiersState,
@@ -48,7 +48,7 @@ lazy_static! {
 }
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     let text_entry = id!("CodeEditorView") & !id!("IMEOpen");
     // We use this to disable some keybindings that would conflict with the Agent Mode embedded editor.
@@ -710,13 +710,13 @@ pub enum CodeEditorViewAction {
     /// it, and marks the editor as "selecting in a temp block" so
     /// subsequent drags are routed here.
     TempBlockClicked {
-        hit: warp_editor::render::model::TempBlockHit,
+        hit: twarp_editor::render::model::TempBlockHit,
     },
     /// twarp 05: drag inside a temp block while a click anchor is
     /// active. Updates the selection's end to the drag position
     /// (anchor stays at the original click offset).
     TempBlockDragged {
-        hit: warp_editor::render::model::TempBlockHit,
+        hit: twarp_editor::render::model::TempBlockHit,
     },
     /// twarp 05: mouse-up clears the "selecting in a temp block"
     /// flag so the next click can start a fresh temp-block selection
@@ -1032,7 +1032,7 @@ impl TypedActionView for CodeEditorView {
                 if let Some(text) = temp_block_text {
                     if !text.is_empty() {
                         ctx.clipboard()
-                            .write(warpui::clipboard::ClipboardContent::plain_text(text));
+                            .write(twarpui::clipboard::ClipboardContent::plain_text(text));
                         return;
                     }
                 }
@@ -1184,7 +1184,7 @@ impl TypedActionView for CodeEditorView {
                 let hit = hit.clone();
                 self.is_selecting_temp_block = true;
                 self.temp_block_click_anchor = Some(hit.char_offset);
-                let selection = warp_editor::render::model::TempBlockSelection {
+                let selection = twarp_editor::render::model::TempBlockSelection {
                     anchor: hit.anchor,
                     text: hit.text,
                     block_content_start: hit.block_content_start,
@@ -1208,7 +1208,7 @@ impl TypedActionView for CodeEditorView {
                 let Some(anchor) = self.temp_block_click_anchor else {
                     return;
                 };
-                let selection = warp_editor::render::model::TempBlockSelection {
+                let selection = twarp_editor::render::model::TempBlockSelection {
                     anchor: hit.anchor,
                     text: hit.text,
                     block_content_start: hit.block_content_start,
@@ -1231,7 +1231,7 @@ impl TypedActionView for CodeEditorView {
     }
 }
 
-impl warp_editor::editor::EditorView for CodeEditorView {
+impl twarp_editor::editor::EditorView for CodeEditorView {
     type RichTextAction = CodeEditorViewAction;
 
     fn runnable_command_at<'a>(
@@ -1438,7 +1438,7 @@ impl RichTextAction<CodeEditorView> for CodeEditorViewAction {
     }
 
     fn temp_block_clicked(
-        hit: warp_editor::render::model::TempBlockHit,
+        hit: twarp_editor::render::model::TempBlockHit,
         _modifiers: ModifiersState,
         _parent_view: &WeakViewHandle<CodeEditorView>,
         _ctx: &AppContext,
@@ -1447,7 +1447,7 @@ impl RichTextAction<CodeEditorView> for CodeEditorViewAction {
     }
 
     fn temp_block_dragged(
-        hit: warp_editor::render::model::TempBlockHit,
+        hit: twarp_editor::render::model::TempBlockHit,
         _modifiers: ModifiersState,
         parent_view: &WeakViewHandle<CodeEditorView>,
         ctx: &AppContext,

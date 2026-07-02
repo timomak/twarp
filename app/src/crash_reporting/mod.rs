@@ -11,8 +11,8 @@ use std::ops::DerefMut;
 
 use lazy_static::lazy_static;
 use sentry::{ClientInitGuard, IntoDsn, SessionMode};
-use warp_core::channel::Channel;
-use warpui::{r#async::block_on, AppContext, SingletonEntity};
+use twarp_core::channel::Channel;
+use twarpui::{r#async::block_on, AppContext, SingletonEntity};
 
 use crate::antivirus::{AntivirusInfo, AntivirusInfoEvent};
 use crate::auth::anonymous_id::get_or_create_anonymous_id;
@@ -24,9 +24,9 @@ use parking_lot::{Mutex, RwLock};
 use regex::Regex;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
-use warpui::rendering::GPUDeviceInfo;
-use warpui::windowing::state::ApplicationStage;
-use warpui::windowing::{self, StateEvent, WindowManager};
+use twarpui::rendering::GPUDeviceInfo;
+use twarpui::windowing::state::ApplicationStage;
+use twarpui::windowing::{self, StateEvent, WindowManager};
 
 #[cfg(linux_or_windows)]
 pub use sentry_minidump::run_server as run_minidump_server;

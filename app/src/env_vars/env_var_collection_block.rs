@@ -5,9 +5,9 @@ use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use settings::Setting as _;
 use std::sync::Arc;
-use warp_core::semantic_selection::SemanticSelection;
-use warp_core::{features::FeatureFlag, ui::Icon};
-use warpui::{
+use twarp_core::semantic_selection::SemanticSelection;
+use twarp_core::{features::FeatureFlag, ui::Icon};
+use twarpui::{
     elements::{
         get_rich_content_position_id, Border, Clipped, Container, CornerRadius, CrossAxisAlignment,
         Flex, FormattedTextElement, MouseStateHandle, ParentElement, Radius, SavePosition,
@@ -111,7 +111,7 @@ pub struct EnvVarCollectionBlock {
 }
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([
         FixedBinding::new(
@@ -249,7 +249,7 @@ impl EnvVarCollectionBlock {
 
     // twarp: 2c-d — env var collection header rendered as Empty (AI inline-action UI deleted).
     fn render_header(&self, _app: &AppContext) -> Box<dyn Element> {
-        warpui::elements::Empty::new().finish()
+        twarpui::elements::Empty::new().finish()
     }
 }
 

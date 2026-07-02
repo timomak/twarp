@@ -5,7 +5,7 @@ use crate::ui_components::icons::Icon;
 use crate::workspace::tab_settings::TabSettings;
 
 use settings::Setting as _;
-use warpui::{AppContext, SingletonEntity};
+use twarpui::{AppContext, SingletonEntity};
 
 /// A configurable item in the vertical tabs header toolbar.
 ///

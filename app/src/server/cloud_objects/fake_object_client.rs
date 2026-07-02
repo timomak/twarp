@@ -23,7 +23,7 @@ use anyhow::{anyhow, Result};
 use async_channel::Sender;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use warp_graphql::object_permissions::AccessLevel;
+use twarp_graphql::object_permissions::AccessLevel;
 
 use crate::{
     cloud_object::{

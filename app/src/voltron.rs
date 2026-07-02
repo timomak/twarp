@@ -28,22 +28,22 @@ use crate::workflows::categories::CategoriesView;
 use enclose::enclose;
 use pathfinder_geometry::vector::Vector2F;
 use std::path::PathBuf;
-use vec1::Vec1;
-use warpui::accessibility::AccessibilityContent;
-use warpui::elements::{
+use twarpui::accessibility::AccessibilityContent;
+use twarpui::elements::{
     resizable_state_handle, Border, ChildAnchor, ChildView, Clipped, ConstrainedBox, Container,
     CornerRadius, CrossAxisAlignment, Dismiss, DispatchEventResult, Element, EventHandler, Flex,
     Icon, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, ParentAnchor,
     ParentElement, ParentOffsetBounds, Radius, Resizable, ResizableStateHandle, Shrinkable, Stack,
 };
-use warpui::geometry::vector::vec2f;
-use warpui::keymap::{Context, FixedBinding};
-use warpui::ui_components::button::{ButtonVariant, TextAndIcon, TextAndIconAlignment};
-use warpui::ui_components::components::UiComponent;
-use warpui::{
+use twarpui::geometry::vector::vec2f;
+use twarpui::keymap::{Context, FixedBinding};
+use twarpui::ui_components::button::{ButtonVariant, TextAndIcon, TextAndIconAlignment};
+use twarpui::ui_components::components::UiComponent;
+use twarpui::{
     AppContext, Entity, FocusContext, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
 };
+use vec1::Vec1;
 
 const DROPDOWN_BUTTON_WIDTH: f32 = 200.;
 const DROPDOWN_PADDING: f32 = 6.;
@@ -55,7 +55,7 @@ const VOLTRON_RIGHT_PADDING: f32 = 15.;
 const EDITOR_PADDING_LEFT: f32 = 14.;
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([FixedBinding::new(
         "escape",
@@ -491,7 +491,7 @@ impl View for Voltron {
         }
     }
 
-    fn render(&self, app: &AppContext) -> Box<dyn warpui::Element> {
+    fn render(&self, app: &AppContext) -> Box<dyn twarpui::Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         let current_feature = self

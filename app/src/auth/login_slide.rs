@@ -15,30 +15,30 @@ use crate::{send_telemetry_from_ctx, send_telemetry_sync_from_ctx};
 use onboarding::slides::{layout, slide_content};
 use onboarding::{OnboardingIntention, AI_FEATURES, WARP_DRIVE_FEATURES};
 use pathfinder_color::ColorU;
-use ui_components::{button, Component as _, Options as _};
-use warp_core::features::FeatureFlag;
-use warp_core::ui::theme::color::internal_colors;
-use warp_core::ui::Icon;
-use warpui::clipboard::ClipboardContent;
-use warpui::elements::{
+use twarp_core::features::FeatureFlag;
+use twarp_core::ui::theme::color::internal_colors;
+use twarp_core::ui::Icon;
+use twarpui::clipboard::ClipboardContent;
+use twarpui::elements::{
     Align, Border, CacheOption, ClippedScrollStateHandle, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, Dismiss, Fill, Flex, FormattedTextElement, HighlightedHyperlink, Image,
     MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, ParentElement, Radius,
     Shrinkable, Stack,
 };
-use warpui::fonts::Weight;
-use warpui::keymap::{FixedBinding, Keystroke};
-use warpui::text_layout::TextAlignment;
-use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
-use warpui::{
+use twarpui::fonts::Weight;
+use twarpui::keymap::{FixedBinding, Keystroke};
+use twarpui::text_layout::TextAlignment;
+use twarpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use twarpui::{
     actions::StandardAction, AppContext, Element, Entity, FocusContext, SingletonEntity,
     TypedActionView, UpdateModel, View, ViewContext, ViewHandle,
 };
+use ui_components::{button, Component as _, Options as _};
 
 use std::cell::Cell;
 
 use pathfinder_geometry::vector::vec2f;
-use warpui::elements::{ChildAnchor, ParentAnchor, ParentOffsetBounds};
+use twarpui::elements::{ChildAnchor, ParentAnchor, ParentOffsetBounds};
 
 const TOS_URL: &str = "https://www.warp.dev/terms-of-service";
 
@@ -47,7 +47,7 @@ const TOS_URL: &str = "https://www.warp.dev/terms-of-service";
 // ---------------------------------------------------------------------------
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([
         FixedBinding::new(
@@ -744,7 +744,7 @@ impl LoginSlideView {
             } else {
                 // First call (narrow layout fallback): placeholder.
                 editor_rendered.set(true);
-                Container::new(warpui::elements::Empty::new().finish())
+                Container::new(twarpui::elements::Empty::new().finish())
                     .with_padding_top(12.)
                     .with_padding_bottom(12.)
                     .with_padding_left(16.)
@@ -1098,13 +1098,13 @@ impl View for LoginSlideView {
             );
             let overlay_opacity = (100u8).saturating_sub(img.opacity);
             stack.add_child(
-                warpui::elements::Rect::new()
+                twarpui::elements::Rect::new()
                     .with_background(theme.background().with_opacity(overlay_opacity))
                     .finish(),
             );
         } else {
             stack.add_child(
-                Container::new(warpui::elements::Empty::new().finish())
+                Container::new(twarpui::elements::Empty::new().finish())
                     .with_background(theme.background())
                     .finish(),
             );

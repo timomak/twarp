@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt, sync::Arc};
 use channel_versions::{Changelog, MarkdownSection};
 use itertools::Itertools;
 use markdown_parser::{parse_markdown, FormattedText};
-use warpui::{
+use twarpui::{
     assets::asset_cache::{AssetCache, AssetSource},
     image_cache::ImageType,
     Entity, ModelContext, SingletonEntity,

@@ -12,7 +12,7 @@ pub use block_onboarding_layer::{BlockOnboarding, BLOCK_ONBOARDING_LAYER};
 pub use free_tier_default_model_layer::FREE_TIER_DEFAULT_MODEL_LAYER;
 pub use improved_palette_search_layer::{ImprovedPaletteSearch, IMPROVED_PALETTE_SEARCH_LAYER};
 pub use login_layer::{AuthFlowInstructions, LOGIN_LAYER};
-use warp_core::user_preferences::GetUserPreferences as _;
+use twarp_core::user_preferences::GetUserPreferences as _;
 
 use crate::auth::auth_state::AuthStateProvider;
 use crate::channel::{Channel, ChannelState};
@@ -25,7 +25,7 @@ use std::ops::Range;
 use std::str::FromStr;
 use std::{collections::HashMap, hash::Hasher};
 
-use warpui::{AppContext, SingletonEntity};
+use twarpui::{AppContext, SingletonEntity};
 
 use crate::send_telemetry_sync_from_app_ctx;
 

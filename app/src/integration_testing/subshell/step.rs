@@ -1,6 +1,6 @@
 use regex::Regex;
 use std::time::Duration;
-use warpui::{
+use twarpui::{
     async_assert, async_assert_eq,
     integration::{AssertionOutcome, TestStep},
 };

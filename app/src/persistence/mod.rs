@@ -34,11 +34,11 @@ pub enum EnablementState {
 }
 use chrono::{DateTime, Local, Utc};
 use lsp::supported_servers::LSPServerType;
+use twarp_core::command::ExitCode;
+use twarp_graphql::scalars::time::ServerTimestamp;
+use twarpui::{AppContext, Entity, SingletonEntity};
 use uuid::Uuid;
-use warp_core::command::ExitCode;
-use warp_graphql::scalars::time::ServerTimestamp;
 use warp_multi_agent_api as api;
-use warpui::{AppContext, Entity, SingletonEntity};
 
 // twarp: 2c-d — PersistedAIInput / TemplatableMCPServerInstallation deleted; stub locally.
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]

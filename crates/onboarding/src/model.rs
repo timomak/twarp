@@ -3,8 +3,8 @@ use crate::telemetry::OnboardingEvent;
 use crate::OnboardingIntention;
 // twarp: 2c-e — `ai` crate deleted; use the local `LLMId` substitute.
 use crate::LLMId;
-use warp_core::send_telemetry_from_ctx;
-use warpui::{Entity, ModelContext};
+use twarp_core::send_telemetry_from_ctx;
+use twarpui::{Entity, ModelContext};
 
 /// UI customization settings chosen during the "Customize your UI" onboarding slide.
 #[derive(Clone, Debug)]
@@ -186,7 +186,7 @@ impl OnboardingStateModel {
     }
 
     pub(crate) fn settings(&self) -> SelectedSettings {
-        use warp_core::features::FeatureFlag;
+        use twarp_core::features::FeatureFlag;
         let ui_customization = if FeatureFlag::OpenWarpNewSettingsModes.is_enabled() {
             Some(self.ui_customization.clone())
         } else {
@@ -489,7 +489,7 @@ impl OnboardingStateModel {
         default_model_id: LLMId,
         ctx: &mut ModelContext<Self>,
     ) {
-        use warp_core::features::FeatureFlag;
+        use twarp_core::features::FeatureFlag;
 
         // If the user is past the agent slide, don't change the agent model from underneath them.
         // When the new settings modes flag is on, ThemePicker comes after the agent slides
@@ -580,7 +580,7 @@ impl OnboardingStateModel {
     }
 
     pub(crate) fn back(&mut self, ctx: &mut ModelContext<Self>) {
-        use warp_core::features::FeatureFlag;
+        use twarp_core::features::FeatureFlag;
         let theme_picker_last = FeatureFlag::OpenWarpNewSettingsModes.is_enabled();
 
         // twarp: post-2c-a there is no `OnboardingStep::Agent` to land on,
@@ -613,7 +613,7 @@ impl OnboardingStateModel {
     }
 
     pub(crate) fn next(&mut self, ctx: &mut ModelContext<Self>) {
-        use warp_core::features::FeatureFlag;
+        use twarp_core::features::FeatureFlag;
         let theme_picker_last = FeatureFlag::OpenWarpNewSettingsModes.is_enabled();
 
         let is_last_step = if theme_picker_last {

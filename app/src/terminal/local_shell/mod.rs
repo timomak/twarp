@@ -10,7 +10,7 @@ use crate::terminal::available_shells::AvailableShells;
 use crate::terminal::local_tty::shell::ShellStarterSourceOrWslName;
 #[cfg(feature = "local_tty")]
 use command::r#async::Command;
-use warpui::{Entity, ModelContext, SingletonEntity};
+use twarpui::{Entity, ModelContext, SingletonEntity};
 
 #[derive(Debug)]
 pub enum LocalShellState {
@@ -214,10 +214,13 @@ impl LocalShellState {
 #[cfg(feature = "local_tty")]
 pub fn resolve_executable_via_login_shell(
     program: &str,
-    ctx: &warpui::AppContext,
+    ctx: &twarpui::AppContext,
 ) -> Option<PathBuf> {
     use crate::util::path::{resolve_executable, resolve_executable_in_path};
-    match LocalShellState::as_ref(ctx).login_shell_path_env().as_deref() {
+    match LocalShellState::as_ref(ctx)
+        .login_shell_path_env()
+        .as_deref()
+    {
         Some(path) => resolve_executable_in_path(program, std::ffi::OsStr::new(path)),
         None => resolve_executable(program),
     }

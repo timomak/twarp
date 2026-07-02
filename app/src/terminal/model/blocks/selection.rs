@@ -1,14 +1,14 @@
 use std::{cmp::max, fmt::Debug, mem, ops::RangeInclusive};
 
 use sum_tree::SeekBias;
-use vec1::{vec1, Vec1};
-use warp_core::semantic_selection::SemanticSelection;
-use warp_terminal::model::grid::CellType;
-use warpui::{
+use twarp_core::semantic_selection::SemanticSelection;
+use twarp_terminal::model::grid::CellType;
+use twarpui::{
     text::{IsRect, SelectionType},
     units::{IntoLines as _, Lines},
     AppContext, EntityId, ViewAsRef as _,
 };
+use vec1::{vec1, Vec1};
 
 // twarp: 2c-d — AIBlock deleted; stub.
 pub struct AIBlock;
@@ -18,17 +18,17 @@ impl AIBlock {
         None
     }
 }
-impl warpui::Entity for AIBlock {
+impl twarpui::Entity for AIBlock {
     type Event = ();
 }
-impl warpui::View for AIBlock {
+impl twarpui::View for AIBlock {
     fn ui_name() -> &'static str {
         "AIBlock/twarp-stub"
     }
-    fn render(&self, _: &AppContext) -> Box<dyn warpui::Element> {
+    fn render(&self, _: &AppContext) -> Box<dyn twarpui::Element> {
         // twarp: 2c-d — bring Element trait into scope for finish()
-        use warpui::Element as _;
-        warpui::elements::Empty::new().finish()
+        use twarpui::Element as _;
+        twarpui::elements::Empty::new().finish()
     }
 }
 use crate::{

@@ -180,11 +180,11 @@ use std::{
     time::Duration,
 };
 use string_offset::CharOffset;
+use twarp_completer::util::parse_current_commands_and_tokens;
 use vec1::Vec1;
 use vim::vim::{VimHandler, VimMode};
-use warp_completer::util::parse_current_commands_and_tokens;
 
-use warp_completer::{
+use twarp_completer::{
     completer::{
         self, CompleterOptions, CompletionContext, CompletionsFallbackStrategy, Description, Match,
         MatchStrategy, MatchType, PathSeparators, SuggestionResults,
@@ -193,14 +193,14 @@ use warp_completer::{
     parsers::{simple::command_at_cursor_position, LiteCommand},
     signatures::CommandRegistry,
 };
-use warp_core::user_preferences::GetUserPreferences as _;
-use warp_core::{
+use twarp_core::user_preferences::GetUserPreferences as _;
+use twarp_core::{
     context_flag::ContextFlag,
     ui::theme::{color::internal_colors, AnsiColorIdentifier},
 };
-use warp_editor::editor::NavigationKey;
-use warp_util::path::ShellFamily;
-use warpui::{
+use twarp_editor::editor::NavigationKey;
+use twarp_util::path::ShellFamily;
+use twarpui::{
     accessibility::{AccessibilityContent, ActionAccessibilityContent, WarpA11yRole},
     clipboard::{ClipboardContent, ImageData},
     clipboard_utils::CLIPBOARD_IMAGE_MIME_TYPES,
@@ -228,7 +228,7 @@ use warpui::{
     AppContext, Entity, EntityId, FocusContext, ModelAsRef, ModelHandle, SingletonEntity,
     TypedActionView, View, ViewContext, ViewHandle, WeakViewHandle,
 };
-pub use warpui::{
+pub use twarpui::{
     elements::{ParentElement as _, Stack},
     geometry::vector::{vec2f, Vector2F},
     WindowId,
@@ -383,7 +383,7 @@ impl BlocklistAIStatusBar {
     #[allow(dead_code)]
     pub fn summarization_cancel_dialog_handle(
         &self,
-    ) -> warpui::ViewHandle<crate::terminal::view::SummarizationCancelDialog> {
+    ) -> twarpui::ViewHandle<crate::terminal::view::SummarizationCancelDialog> {
         unimplemented!("twarp: 2c-d - SummarizationCancelDialog removed")
     }
     pub fn should_show_summarization_cancel_dialog<C>(&self, _: &C) -> bool {
@@ -393,7 +393,7 @@ impl BlocklistAIStatusBar {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct BlocklistAIStatusBarAction;
-impl warpui::TypedActionView for BlocklistAIStatusBar {
+impl twarpui::TypedActionView for BlocklistAIStatusBar {
     type Action = BlocklistAIStatusBarAction;
 }
 
@@ -401,8 +401,8 @@ impl warpui::TypedActionView for BlocklistAIStatusBar {
 // `subscribe_to_model` on the executor handles without panicking.
 #[allow(dead_code)]
 pub struct BlocklistAIActionModel {
-    pub shell_command_executor: warpui::ModelHandle<crate::terminal::view::ShellCommandExecutor>,
-    pub start_agent_executor: warpui::ModelHandle<crate::terminal::view::StartAgentExecutor>,
+    pub shell_command_executor: twarpui::ModelHandle<crate::terminal::view::ShellCommandExecutor>,
+    pub start_agent_executor: twarpui::ModelHandle<crate::terminal::view::StartAgentExecutor>,
 }
 
 #[allow(dead_code)]
@@ -426,7 +426,7 @@ pub enum SlashCommandRequest {
 #[allow(dead_code)]
 pub struct AIExecutionProfilesModel;
 impl AIExecutionProfilesModel {
-    fn active_profile<C>(&self, _: Option<warpui::EntityId>, _: &C) -> AIExecutionProfile {
+    fn active_profile<C>(&self, _: Option<twarpui::EntityId>, _: &C) -> AIExecutionProfile {
         AIExecutionProfile
     }
     fn set_base_model<P, M, C>(&mut self, _: P, _: Option<M>, _: &mut C) {}
@@ -512,13 +512,13 @@ pub use crate::terminal::view::CLIAgentInputState;
 pub struct CLIAgentSessionsModel;
 #[allow(dead_code)]
 impl CLIAgentSessionsModel {
-    fn is_input_open(&self, _: warpui::EntityId) -> bool {
+    fn is_input_open(&self, _: twarpui::EntityId) -> bool {
         false
     }
-    pub fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSessionStub> {
+    pub fn session(&self, _: twarpui::EntityId) -> Option<&CLIAgentSessionStub> {
         None
     }
-    fn take_draft(&mut self, _: warpui::EntityId) -> Option<String> {
+    fn take_draft(&mut self, _: twarpui::EntityId) -> Option<String> {
         None
     }
 }
@@ -561,9 +561,9 @@ enum InlineConversationMenuEvent {
 #[allow(dead_code)]
 struct ConversationNavigationData {
     pub id: AIConversationId,
-    pub window_id: Option<warpui::WindowId>,
+    pub window_id: Option<twarpui::WindowId>,
     pub pane_view_locator: Option<crate::workspace::util::PaneViewLocator>,
-    pub terminal_view_id: Option<warpui::EntityId>,
+    pub terminal_view_id: Option<twarpui::EntityId>,
 }
 
 #[allow(dead_code)]
@@ -663,7 +663,7 @@ impl InlinePromptsMenuView {
 enum InlinePromptsMenuEvent {
     SelectedPrompt {
         prompt: String,
-        id: warp_server_client::ids::SyncId,
+        id: twarp_server_client::ids::SyncId,
     },
 }
 
@@ -878,7 +878,7 @@ pub enum BlocklistAIContextEvent {
     UpdatedPendingContext {
         added: Vec<()>,
         removed: Vec<()>,
-        previous_block_ids: Vec<warp_terminal::model::BlockId>,
+        previous_block_ids: Vec<twarp_terminal::model::BlockId>,
         requires_block_resync: bool,
         requires_text_resync: bool,
     },
@@ -938,7 +938,7 @@ impl BlocklistAIContextModel {
     }
     pub fn pending_context_block_ids(
         &self,
-    ) -> std::collections::HashSet<warp_terminal::model::BlockId> {
+    ) -> std::collections::HashSet<twarp_terminal::model::BlockId> {
         std::collections::HashSet::new()
     }
     pub fn pending_context_selected_text(&self) -> Option<String> {
@@ -1054,7 +1054,7 @@ pub use crate::terminal::view::BlocklistAIControllerEvent;
 #[allow(dead_code)]
 impl BlocklistAIHistoryEvent {
     // twarp: 2c-d — terminal_view_id getter for event types
-    pub fn terminal_view_id(&self) -> Option<warpui::EntityId> {
+    pub fn terminal_view_id(&self) -> Option<twarpui::EntityId> {
         None
     }
 }
@@ -1064,7 +1064,7 @@ impl BlocklistAIHistoryEvent {
 pub enum BlocklistAIHistoryEvent {
     // twarp: 2c-d — struct variants; { terminal_view_id } pattern needed by callers
     AppendedExchange {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
         exchange_id: crate::app_state::AIConversationId,
         task_id: crate::app_state::AmbientAgentTaskId,
         conversation_id: crate::app_state::AIConversationId,
@@ -1072,66 +1072,66 @@ pub enum BlocklistAIHistoryEvent {
         response_stream_id: crate::app_state::AIConversationId,
     },
     ClearedActiveConversation {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
         conversation_id: crate::app_state::AIConversationId,
     },
     ClearedConversationsInTerminalView {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
         active_conversation_id: crate::app_state::AIConversationId,
     },
     ConversationServerTokenAssigned {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
     },
     CreatedSubtask {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
     },
     DeletedConversation {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
     },
     ReassignedExchange {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
         exchange_id: crate::app_state::AIConversationId,
         new_conversation_id: crate::app_state::AIConversationId,
     },
     RemoveConversation {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
     },
     RestoredConversations {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
     },
     SetActiveConversation {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
     },
     SplitConversation {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
     },
     StartedNewConversation {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
         new_conversation_id: crate::app_state::AIConversationId,
     },
     UpdatedAutoexecuteOverride {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
     },
     UpdatedConversationArtifacts {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
     },
     UpdatedConversationMetadata {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
         conversation_id: crate::app_state::AIConversationId,
     },
     UpdatedConversationStatus {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
         conversation_id: crate::app_state::AIConversationId,
         is_restored: bool,
     },
     UpdatedStreamingExchange {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
     },
     UpdatedTodoList {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
     },
     UpgradedTask {
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
     },
     Other,
 }
@@ -1139,13 +1139,13 @@ pub enum BlocklistAIHistoryEvent {
 #[allow(dead_code)]
 pub struct BlocklistAIHistoryModel;
 impl BlocklistAIHistoryModel {
-    pub fn active_conversation(&self, _: warpui::EntityId) -> Option<AIConversationStub> {
+    pub fn active_conversation(&self, _: twarpui::EntityId) -> Option<AIConversationStub> {
         None
     }
     fn conversation_id_for_action<I>(
         &self,
         _: I,
-        _: warpui::EntityId,
+        _: twarpui::EntityId,
     ) -> Option<crate::app_state::AIConversationId> {
         None
     }
@@ -1155,7 +1155,7 @@ impl BlocklistAIHistoryModel {
     // twarp: 2c-d — bulk stubs
     fn all_live_conversations_for_terminal_view(
         &self,
-        _: warpui::EntityId,
+        _: twarpui::EntityId,
     ) -> Vec<crate::app_state::AIConversationId> {
         Vec::new()
     }
@@ -1332,8 +1332,9 @@ pub struct LLMHostConfigStub {
     pub enabled: bool,
 }
 impl LLMPreferences {
-    pub fn update_preferred_agent_mode_llm<I, C>(&mut self, _: I, _: warpui::EntityId, _: &mut C) {}
-    pub fn vision_supported<C>(&self, _: &C, _: Option<warpui::EntityId>) -> bool {
+    pub fn update_preferred_agent_mode_llm<I, C>(&mut self, _: I, _: twarpui::EntityId, _: &mut C) {
+    }
+    pub fn vision_supported<C>(&self, _: &C, _: Option<twarpui::EntityId>) -> bool {
         false
     }
     // twarp: 2c-d — bulk stubs
@@ -1346,7 +1347,7 @@ impl LLMPreferences {
     pub fn get_llm_info<A>(&self, _: A) -> Option<LLMInfoStub> {
         None
     }
-    pub fn get_active_base_model<C>(&self, _: &C, _: Option<warpui::EntityId>) -> LLMInfoStub {
+    pub fn get_active_base_model<C>(&self, _: &C, _: Option<twarpui::EntityId>) -> LLMInfoStub {
         LLMInfoStub {
             id: "".into(),
             provider: String::new(),
@@ -1595,7 +1596,7 @@ impl AgentViewController {
     ) -> Result<(), ()> {
         Err(())
     }
-    pub fn pane_group_id(&self) -> Option<warpui::EntityId> {
+    pub fn pane_group_id(&self) -> Option<twarpui::EntityId> {
         None
     }
 }
@@ -1705,7 +1706,7 @@ impl Entity for UserQueryMenuView {
 impl Entity for TemplatableMCPServerManager {
     type Event = ();
 }
-impl warpui::SingletonEntity for TemplatableMCPServerManager {}
+impl twarpui::SingletonEntity for TemplatableMCPServerManager {}
 impl Entity for PromptAlertView {
     type Event = PromptAlertEvent;
 }
@@ -1735,21 +1736,21 @@ impl Entity for AgentInputFooter {
     type Event = AgentInputFooterEvent;
 }
 // twarp: 2c-d — TypedActionView stubs (View comes from twarp_stub_view_impl macro below)
-impl warpui::TypedActionView for AgentInputFooter {
+impl twarpui::TypedActionView for AgentInputFooter {
     type Action = ();
-    fn handle_action(&mut self, _: &Self::Action, _: &mut warpui::ViewContext<Self>) {}
+    fn handle_action(&mut self, _: &Self::Action, _: &mut twarpui::ViewContext<Self>) {}
 }
-impl warpui::TypedActionView for UniversalDeveloperInputButtonBar {
+impl twarpui::TypedActionView for UniversalDeveloperInputButtonBar {
     type Action = ();
-    fn handle_action(&mut self, _: &Self::Action, _: &mut warpui::ViewContext<Self>) {}
+    fn handle_action(&mut self, _: &Self::Action, _: &mut twarpui::ViewContext<Self>) {}
 }
-impl warpui::TypedActionView for HarnessSelector {
+impl twarpui::TypedActionView for HarnessSelector {
     type Action = ();
-    fn handle_action(&mut self, _: &Self::Action, _: &mut warpui::ViewContext<Self>) {}
+    fn handle_action(&mut self, _: &Self::Action, _: &mut twarpui::ViewContext<Self>) {}
 }
-impl warpui::TypedActionView for HostSelector {
+impl twarpui::TypedActionView for HostSelector {
     type Action = ();
-    fn handle_action(&mut self, _: &Self::Action, _: &mut warpui::ViewContext<Self>) {}
+    fn handle_action(&mut self, _: &Self::Action, _: &mut twarpui::ViewContext<Self>) {}
 }
 impl Entity for AgentViewController {
     type Event = AgentViewControllerEvent;
@@ -3164,7 +3165,7 @@ impl DeferredRemoteOperations {
 }
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     if cfg!(feature = "integration_tests") {
         app.register_fixed_bindings([
@@ -7280,14 +7281,14 @@ impl Input {
             .read(ctx, |editor, _| editor.shell_family())
             .unwrap_or(ShellFamily::Posix)
             .escape_char();
-        warp_completer::parsers::simple::top_level_command(command, escape_char)?;
+        twarp_completer::parsers::simple::top_level_command(command, escape_char)?;
 
         // Recover the effective program from the first command's tokens,
         // skipping leading env-var assignments (`VAR=value`) and the wrappers
         // above. A full path (`/usr/bin/claude`) keeps its separators and so
         // never matches the bare `claude` token (PRODUCT §3).
         let first =
-            warp_completer::parsers::simple::all_parsed_commands(command, escape_char).next()?;
+            twarp_completer::parsers::simple::all_parsed_commands(command, escape_char).next()?;
         let original: Vec<&str> = first.parts.iter().map(|part| part.as_str()).collect();
 
         // twarp 07: the user's literally-typed tokens (alias NOT expanded) — the
@@ -7324,26 +7325,26 @@ impl Input {
         let mut owned_tokens: Vec<String> = Vec::new();
         let effective_tokens: Vec<&str> = match original.first() {
             Some(first_token) => {
-                let alias_value: Option<String> =
-                    self.active_block_session_id().and_then(|id| {
-                        // Resolve and own the alias value inside the closure: the
-                        // `Sessions`/`Session` borrows are temporaries that end
-                        // here, so the expanded flags must be copied out before
-                        // returning.
-                        let session = self.sessions.as_ref(ctx).get(id)?;
-                        let value = session.alias_value(first_token)?;
-                        crate::terminal::alias::is_expandable_alias(first_token, value)
-                            .then(|| value.to_owned())
-                    });
+                let alias_value: Option<String> = self.active_block_session_id().and_then(|id| {
+                    // Resolve and own the alias value inside the closure: the
+                    // `Sessions`/`Session` borrows are temporaries that end
+                    // here, so the expanded flags must be copied out before
+                    // returning.
+                    let session = self.sessions.as_ref(ctx).get(id)?;
+                    let value = session.alias_value(first_token)?;
+                    crate::terminal::alias::is_expandable_alias(first_token, value)
+                        .then(|| value.to_owned())
+                });
                 match alias_value {
                     Some(value) => {
-                        if let Some(cmd) = warp_completer::parsers::simple::all_parsed_commands(
+                        if let Some(cmd) = twarp_completer::parsers::simple::all_parsed_commands(
                             &value,
                             escape_char,
                         )
                         .next()
                         {
-                            owned_tokens.extend(cmd.parts.iter().map(|part| part.as_str().to_owned()));
+                            owned_tokens
+                                .extend(cmd.parts.iter().map(|part| part.as_str().to_owned()));
                         }
                         owned_tokens.extend(original[1..].iter().map(|t| (*t).to_owned()));
                         owned_tokens.iter().map(String::as_str).collect()
@@ -7385,7 +7386,8 @@ impl Input {
         // previous session (`ClaudeCodeView::new`). Before the first run the
         // store is empty, so the alias still seeds the defaults (PRODUCT §2).
         let store_seeded =
-            crate::claude_code_session_defaults::ClaudeSessionDefaultsModel::as_ref(ctx).is_seeded();
+            crate::claude_code_session_defaults::ClaudeSessionDefaultsModel::as_ref(ctx)
+                .is_seeded();
         let args = if store_seeded {
             typed_args
         } else {
@@ -7422,7 +7424,7 @@ impl Input {
             .unwrap_or(ShellFamily::Posix)
             .escape_char();
         let cmd =
-            warp_completer::parsers::simple::all_parsed_commands(&value, escape_char).next()?;
+            twarp_completer::parsers::simple::all_parsed_commands(&value, escape_char).next()?;
         // Drop leading env assignments + program wrappers, then the `claude`
         // program token itself; what remains is the flag list the pane maps
         // onto its spawn options. (An alias has no positional prompt, so
@@ -10358,7 +10360,8 @@ impl Input {
                             // the completions finish quickly, since that causes a jittery UX.
                             let _ = ctx.spawn(
                                 async move {
-                                    warpui::r#async::Timer::after(Duration::from_millis(750)).await;
+                                    twarpui::r#async::Timer::after(Duration::from_millis(750))
+                                        .await;
                                     old_buffer_text_original
                                 },
                                 move |input, old_buffer_text_original, ctx| {
@@ -10977,7 +10980,7 @@ impl Input {
                                             .map(|session| session.is_wsl())
                                             .unwrap_or(false);
 
-                                        let relative_path = warp_util::path::to_relative_path(
+                                        let relative_path = twarp_util::path::to_relative_path(
                                             is_wsl,
                                             &absolute_path,
                                             Path::new(pwd),
@@ -11054,7 +11057,7 @@ impl Input {
                         None => image_filepaths.clone(),
                     };
                     let paths_str =
-                        warpui::clipboard_utils::escaped_paths_str(&transformed, shell_family);
+                        twarpui::clipboard_utils::escaped_paths_str(&transformed, shell_family);
 
                     self.editor.update(ctx, |editor, ctx| {
                         editor.user_insert(&paths_str, ctx);
@@ -11100,7 +11103,7 @@ impl Input {
 
         // Check if we should insert clipboard text in advance
         let mut already_inserted_text = false;
-        if warpui::clipboard::should_insert_text_on_paste(&content) {
+        if twarpui::clipboard::should_insert_text_on_paste(&content) {
             self.insert_clipboard_text_content(ctx, content.clone());
             already_inserted_text = true;
         }
@@ -11112,7 +11115,7 @@ impl Input {
             self.handle_pasted_image_data(content.clone(), ctx) == 0
         } else if content.num_paths() > 0 {
             // Else, we check the pasted file paths for any images.
-            let image_filepaths = warpui::clipboard_utils::get_image_filepaths_from_paths(
+            let image_filepaths = twarpui::clipboard_utils::get_image_filepaths_from_paths(
                 content.paths.as_deref().unwrap_or(&[]),
             );
             let num_images_expected = image_filepaths.len();
@@ -15124,7 +15127,7 @@ impl View for Input {
         }
     }
 
-    fn keymap_context(&self, app: &AppContext) -> warpui::keymap::Context {
+    fn keymap_context(&self, app: &AppContext) -> twarpui::keymap::Context {
         let mut ctx = Self::default_keymap_context();
         let ai_settings = AISettings::as_ref(app);
 
@@ -15471,17 +15474,17 @@ impl Input {
     }
     fn update_cli_agent_editor_text_colors<C>(&mut self, _: &mut C) {}
     // twarp: 2c-d — bulk stubs for AI-removed Input methods (render functions)
-    fn render_cli_agent_input<C>(&self, _: &C) -> Box<dyn warpui::Element> {
-        use warpui::Element as _;
-        warpui::elements::Empty::new().finish()
+    fn render_cli_agent_input<C>(&self, _: &C) -> Box<dyn twarpui::Element> {
+        use twarpui::Element as _;
+        twarpui::elements::Empty::new().finish()
     }
-    fn render_ambient_agent_status_footer<C>(&self, _: &C) -> Box<dyn warpui::Element> {
-        use warpui::Element as _;
-        warpui::elements::Empty::new().finish()
+    fn render_ambient_agent_status_footer<C>(&self, _: &C) -> Box<dyn twarpui::Element> {
+        use twarpui::Element as _;
+        twarpui::elements::Empty::new().finish()
     }
-    fn render_agent_input<C>(&self, _: &C) -> Box<dyn warpui::Element> {
-        use warpui::Element as _;
-        warpui::elements::Empty::new().finish()
+    fn render_agent_input<C>(&self, _: &C) -> Box<dyn twarpui::Element> {
+        use twarpui::Element as _;
+        twarpui::elements::Empty::new().finish()
     }
 }
 

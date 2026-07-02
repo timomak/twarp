@@ -6,8 +6,8 @@ use super::{
     LocalOnlyIconState, SettingsSection, ToggleState,
 };
 use crate::{appearance::Appearance, auth::AuthStateProvider, drive::settings::WarpDriveSettings};
-use warp_core::{features::FeatureFlag, report_if_error, settings::ToggleableSetting as _};
-use warpui::{
+use twarp_core::{features::FeatureFlag, report_if_error, settings::ToggleableSetting as _};
+use twarpui::{
     elements::{Container, Element, Flex, MouseStateHandle, ParentElement, Shrinkable, Text},
     fonts::Weight,
     ui_components::{
@@ -160,8 +160,8 @@ impl SettingsWidget for WarpDriveHeaderWidget {
                 .with_style(UiComponentStyles {
                     font_size: Some(14.),
                     font_weight: Some(Weight::Semibold),
-                    border_radius: Some(warpui::elements::CornerRadius::with_all(
-                        warpui::elements::Radius::Pixels(4.),
+                    border_radius: Some(twarpui::elements::CornerRadius::with_all(
+                        twarpui::elements::Radius::Pixels(4.),
                     )),
                     padding: Some(Coords {
                         top: 8.,
@@ -182,7 +182,7 @@ impl SettingsWidget for WarpDriveHeaderWidget {
 
         Container::new(
             Flex::row()
-                .with_cross_axis_alignment(warpui::elements::CrossAxisAlignment::Center)
+                .with_cross_axis_alignment(twarpui::elements::CrossAxisAlignment::Center)
                 .with_child(Shrinkable::new(1., message).finish())
                 .with_child(button)
                 .finish(),

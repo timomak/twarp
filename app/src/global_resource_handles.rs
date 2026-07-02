@@ -3,7 +3,7 @@ use crate::{
     resource_center::TipsCompleted, settings::SettingsFileError,
 };
 use std::sync::mpsc::SyncSender;
-use warpui::{Entity, ModelHandle, SingletonEntity};
+use twarpui::{Entity, ModelHandle, SingletonEntity};
 
 /// Interfaces that allow us to interact with global resources owned by the main
 /// thread that exist throughout the app including Model handles, channel senders,
@@ -56,7 +56,7 @@ pub struct GlobalResourceHandles {
 
 impl GlobalResourceHandles {
     #[cfg(any(test, feature = "integration_tests"))]
-    pub fn mock(app: &mut warpui::App) -> Self {
+    pub fn mock(app: &mut twarpui::App) -> Self {
         let referral_theme_status = app.add_model(ReferralThemeStatus::new);
         let user_default_shell_unsupported_banner_model_handle =
             app.add_model(|_| BannerState::default());

@@ -15,8 +15,8 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
-use warp_util::path::CleanPathResult;
-use warpui::{AppContext, Entity, SingletonEntity};
+use twarp_util::path::CleanPathResult;
+use twarpui::{AppContext, Entity, SingletonEntity};
 
 const MAX_RESULTS: usize = 100;
 

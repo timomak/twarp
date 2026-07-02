@@ -6,7 +6,7 @@ use settings::{
     macros::define_settings_group, RespectUserSyncSetting, Setting as _, SupportedPlatforms,
     SyncToCloud,
 };
-use warpui::ModelContext;
+use twarpui::ModelContext;
 
 #[derive(
     Clone,

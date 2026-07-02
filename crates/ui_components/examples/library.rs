@@ -3,13 +3,8 @@ use std::{borrow::Cow, sync::Arc, time::Duration};
 use anyhow::{Result, anyhow};
 use pathfinder_geometry::vector::Vector2F;
 use rust_embed::RustEmbed;
-use ui_components::{
-    Component as _, Options, button, dialog,
-    lightbox::{self, LightboxImage, LightboxImageSource, NavigationDirection},
-    switch, tooltip,
-};
-use warp_core::ui::{Icon, appearance::Appearance, theme::color::internal_colors};
-use warpui::{
+use twarp_core::ui::{Icon, appearance::Appearance, theme::color::internal_colors};
+use twarpui::{
     AssetProvider, SingletonEntity, Tracked,
     assets::asset_cache::{AssetCache, AssetSource, AssetState},
     r#async::Timer,
@@ -18,6 +13,11 @@ use warpui::{
     keymap::FixedBinding,
     platform,
     prelude::*,
+};
+use ui_components::{
+    Component as _, Options, button, dialog,
+    lightbox::{self, LightboxImage, LightboxImageSource, NavigationDirection},
+    switch, tooltip,
 };
 
 #[derive(Clone, Copy, RustEmbed)]
@@ -37,7 +37,7 @@ impl AssetProvider for Assets {
     }
 }
 
-fn main() -> warpui::platform::app::TerminationResult {
+fn main() -> twarpui::platform::app::TerminationResult {
     // Initialize the TLS provider so reqwest can make HTTPS requests.
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
@@ -54,7 +54,7 @@ fn main() -> warpui::platform::app::TerminationResult {
             "Noto Sans".to_string()
         };
 
-        let font_family = warpui::fonts::Cache::handle(ctx).update(ctx, |cache, _ctx| {
+        let font_family = twarpui::fonts::Cache::handle(ctx).update(ctx, |cache, _ctx| {
             cache.load_system_font(&font_name).unwrap()
         });
         ctx.add_singleton_model(|ctx| {
@@ -64,7 +64,7 @@ fn main() -> warpui::platform::app::TerminationResult {
         });
 
         {
-            use warpui::keymap::macros::*;
+            use twarpui::keymap::macros::*;
             let lightbox_open = id!("RootView") & id!("RootView_LightboxOpen");
             ctx.register_fixed_bindings([
                 FixedBinding::new(
@@ -82,7 +82,7 @@ fn main() -> warpui::platform::app::TerminationResult {
             ]);
         }
 
-        ctx.add_window(warpui::AddWindowOptions::default(), RootView::new);
+        ctx.add_window(twarpui::AddWindowOptions::default(), RootView::new);
     })
 }
 
@@ -174,7 +174,7 @@ impl View for RootView {
         "RootView"
     }
 
-    fn keymap_context(&self, _: &AppContext) -> warpui::keymap::Context {
+    fn keymap_context(&self, _: &AppContext) -> twarpui::keymap::Context {
         let mut context = Self::default_keymap_context();
         if *self.dialog_open {
             context.set.insert("RootView_DialogOpen");
@@ -240,7 +240,7 @@ impl RootView {
                 options: switch::Options {
                     hover_border_size: Some(10.),
                     label: Some(Box::new(move |appearance: &Appearance| {
-                        warpui::elements::Text::new(
+                        twarpui::elements::Text::new(
                             "Switch",
                             appearance.ui_font_family(),
                             appearance.ui_font_size(),
@@ -260,7 +260,7 @@ impl RootView {
             tooltip::Params {
                 label: "Tooltip label".into(),
                 options: tooltip::Options {
-                    keyboard_shortcut: Some(warpui::keymap::Keystroke {
+                    keyboard_shortcut: Some(twarpui::keymap::Keystroke {
                         ctrl: true,
                         key: "k".to_string(),
                         ..Default::default()
@@ -282,7 +282,7 @@ impl RootView {
                         content: button::Content::Label("Primary".into()),
                         theme: &button::themes::Primary,
                         options: button::Options {
-                            keystroke: Some(warpui::keymap::Keystroke {
+                            keystroke: Some(twarpui::keymap::Keystroke {
                                 ctrl: true,
                                 key: "k".to_string(),
                                 ..Default::default()
@@ -304,7 +304,7 @@ impl RootView {
                         content: button::Content::Label("Secondary".into()),
                         theme: &button::themes::Secondary,
                         options: button::Options {
-                            keystroke: Some(warpui::keymap::Keystroke {
+                            keystroke: Some(twarpui::keymap::Keystroke {
                                 cmd: true,
                                 key: "enter".to_string(),
                                 ..Default::default()
@@ -327,7 +327,7 @@ impl RootView {
                         theme: &button::themes::Primary,
                         options: button::Options {
                             disabled: true,
-                            keystroke: Some(warpui::keymap::Keystroke {
+                            keystroke: Some(twarpui::keymap::Keystroke {
                                 shift: true,
                                 key: "d".to_string(),
                                 ..Default::default()
@@ -368,7 +368,7 @@ impl RootView {
                         theme: &button::themes::Primary,
                         options: button::Options {
                             size: button::Size::Small,
-                            keystroke: Some(warpui::keymap::Keystroke {
+                            keystroke: Some(twarpui::keymap::Keystroke {
                                 ctrl: true,
                                 key: "k".to_string(),
                                 ..Default::default()
@@ -391,7 +391,7 @@ impl RootView {
                         theme: &button::themes::Secondary,
                         options: button::Options {
                             size: button::Size::Small,
-                            keystroke: Some(warpui::keymap::Keystroke {
+                            keystroke: Some(twarpui::keymap::Keystroke {
                                 cmd: true,
                                 key: "enter".to_string(),
                                 ..Default::default()
@@ -415,7 +415,7 @@ impl RootView {
                         options: button::Options {
                             disabled: true,
                             size: button::Size::Small,
-                            keystroke: Some(warpui::keymap::Keystroke {
+                            keystroke: Some(twarpui::keymap::Keystroke {
                                 shift: true,
                                 key: "d".to_string(),
                                 ..Default::default()
@@ -438,7 +438,7 @@ impl RootView {
                         theme: &button::themes::Secondary,
                         options: button::Options {
                             size: button::Size::Small,
-                            keystroke: Some(warpui::keymap::Keystroke {
+                            keystroke: Some(twarpui::keymap::Keystroke {
                                 key: "escape".to_string(),
                                 ..Default::default()
                             }),
@@ -498,7 +498,7 @@ impl RootView {
                     on_dismiss: Some(Arc::new(|ctx, _app| {
                         ctx.dispatch_typed_action(Action::CloseDialog);
                     })),
-                    dismiss_keystroke: Some(warpui::keymap::Keystroke {
+                    dismiss_keystroke: Some(twarpui::keymap::Keystroke {
                         key: "escape".to_string(),
                         ..Default::default()
                     }),
@@ -564,7 +564,7 @@ impl RootView {
                 }),
                 current_image_native_size,
                 options: lightbox::Options {
-                    dismiss_keystroke: Some(warpui::keymap::Keystroke {
+                    dismiss_keystroke: Some(twarpui::keymap::Keystroke {
                         key: "escape".to_string(),
                         ..Default::default()
                     }),
@@ -597,7 +597,7 @@ impl RootView {
                 }),
                 current_image_native_size,
                 options: lightbox::Options {
-                    dismiss_keystroke: Some(warpui::keymap::Keystroke {
+                    dismiss_keystroke: Some(twarpui::keymap::Keystroke {
                         key: "escape".to_string(),
                         ..Default::default()
                     }),

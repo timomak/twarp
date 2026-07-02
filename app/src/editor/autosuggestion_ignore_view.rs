@@ -4,15 +4,15 @@ use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
 use pathfinder_geometry::vector::vec2f;
-use warp_core::ui::theme::Fill;
-use warpui::elements::{
+use twarp_core::ui::theme::Fill;
+use twarpui::elements::{
     ChildAnchor, ConstrainedBox, Container, CornerRadius, Element, Hoverable, MouseStateHandle,
     OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Stack,
 };
-use warpui::platform::Cursor;
-use warpui::ui_components::components::UiComponent;
-use warpui::{Entity, TypedActionView, View};
-use warpui::{SingletonEntity, ViewContext};
+use twarpui::platform::Cursor;
+use twarpui::ui_components::components::UiComponent;
+use twarpui::{Entity, TypedActionView, View};
+use twarpui::{SingletonEntity, ViewContext};
 
 use super::EditorElement;
 
@@ -77,7 +77,7 @@ impl View for AutosuggestionIgnore {
         "AutosuggestionIgnore"
     }
 
-    fn render(&self, ctx: &warpui::AppContext) -> Box<dyn Element> {
+    fn render(&self, ctx: &twarpui::AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(ctx);
         // Because the icon's origin is NOT the top of the line but the top of the cursor,
         // we should render it with line height ratio no larger than DEFAULT_UI_LINE_HEIGHT_RATIO.
@@ -85,7 +85,7 @@ impl View for AutosuggestionIgnore {
         // But we do need to account for smaller line height ratios so the text can be rendered in the smaller space.
         let line_height_ratio = appearance
             .line_height_ratio()
-            .min(warpui::elements::DEFAULT_UI_LINE_HEIGHT_RATIO);
+            .min(twarpui::elements::DEFAULT_UI_LINE_HEIGHT_RATIO);
         // We want the ignore icon to be the same height as the cursor in the input.
         let height =
             EditorElement::cursor_height(appearance.monospace_font_size(), line_height_ratio)
@@ -122,7 +122,7 @@ impl View for AutosuggestionIgnore {
             let mut ignore_button = Container::new(close_icon)
                 .with_uniform_padding(2.)
                 .with_border(
-                    warpui::elements::Border::all(border_width).with_border_color(disabled_color),
+                    twarpui::elements::Border::all(border_width).with_border_color(disabled_color),
                 )
                 .with_corner_radius(CornerRadius::with_all(Radius::Percentage(25.)));
 

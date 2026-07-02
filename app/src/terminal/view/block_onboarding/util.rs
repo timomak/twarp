@@ -2,11 +2,11 @@ use crate::appearance::Appearance;
 use crate::editor::EditorView;
 use crate::ui_components::icons::Icon;
 use pathfinder_color::ColorU;
-use warp_core::ui::theme::Fill;
-use warpui::elements::{Flex, ParentElement};
-use warpui::ui_components::components::Coords;
-use warpui::ui_components::text_input::TextInput;
-use warpui::{
+use twarp_core::ui::theme::Fill;
+use twarpui::elements::{Flex, ParentElement};
+use twarpui::ui_components::components::Coords;
+use twarpui::ui_components::text_input::TextInput;
+use twarpui::{
     elements::{
         ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, MouseStateHandle, Radius,
         Shrinkable,
@@ -19,7 +19,7 @@ use warpui::{
     },
     Action, AppContext, Element,
 };
-use warpui::{SingletonEntity, ViewHandle};
+use twarpui::{SingletonEntity, ViewHandle};
 
 pub const INPUT_BOX_FONT_SIZE: f32 = 14.;
 pub const TEAM_BLOCK_INITIAL_HEIGHT: f32 = 92.;

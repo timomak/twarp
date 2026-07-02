@@ -6,7 +6,7 @@ use crate::{
     ui_components::icons::Icon,
 };
 use pathfinder_geometry::vector::vec2f;
-use warpui::{
+use twarpui::{
     elements::{
         Border, ChildAnchor, ConstrainedBox, CornerRadius, CrossAxisAlignment, Flex,
         Icon as WarpUiIcon, MainAxisAlignment, MouseStateHandle, OffsetPositioning, ParentElement,

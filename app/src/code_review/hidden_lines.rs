@@ -3,8 +3,8 @@ use std::ops::Range;
 // twarp: 2c-e — DiffDelta is now a stub in `crate::app_state`.
 use crate::app_state::DiffDelta;
 use rangemap::RangeSet;
-use warp_editor::content::text::LineCount;
-use warp_editor::render::model::LineCount as RenderLineCount;
+use twarp_editor::content::text::LineCount;
+use twarp_editor::render::model::LineCount as RenderLineCount;
 
 /// The number of context lines to show before and after each change
 const CONTEXT_LINES: usize = 4;

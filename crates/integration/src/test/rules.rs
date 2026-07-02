@@ -1,4 +1,4 @@
-use warp::integration_testing::{
+use twarp::integration_testing::{
     rules::{
         assert_rule_count, assert_rule_exists, assert_rule_pane_open, create_a_personal_rule,
         open_rule_pane, update_rule_content,

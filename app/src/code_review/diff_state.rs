@@ -24,8 +24,8 @@ cfg_if::cfg_if! {
     }
 }
 #[cfg(not(target_arch = "wasm32"))]
-use warpui::AppContext;
-use warpui::{r#async::SpawnedFutureHandle, ModelContext};
+use twarpui::AppContext;
+use twarpui::{r#async::SpawnedFutureHandle, ModelContext};
 
 use crate::code_review::diff_size_limits::DiffSize;
 use crate::code_review::porcelain_v2::{
@@ -45,8 +45,8 @@ use crate::code_review::CodeReviewTelemetryEvent;
 #[cfg(feature = "local_fs")]
 use crate::throttle::throttle;
 #[cfg(not(target_family = "wasm"))]
-use warp_core::channel::ChannelState;
-use warp_core::{safe_warn, send_telemetry_from_ctx};
+use twarp_core::channel::ChannelState;
+use twarp_core::{safe_warn, send_telemetry_from_ctx};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
@@ -56,7 +56,7 @@ cfg_if::cfg_if! {
             RepoMetadataError, Repository, RepositoryUpdate,
         };
         use async_channel::Sender;
-        use warpui::{ModelHandle, SingletonEntity};
+        use twarpui::{ModelHandle, SingletonEntity};
     }
 }
 #[cfg(all(feature = "local_fs", feature = "local_tty"))]
@@ -628,7 +628,7 @@ impl DiffStateModel {
     }
 
     #[cfg(not(feature = "local_fs"))]
-    pub fn is_git_operation_blocked(&self, _app: &warpui::AppContext) -> bool {
+    pub fn is_git_operation_blocked(&self, _app: &twarpui::AppContext) -> bool {
         false
     }
     /// Get comprehensive git diff information including uncommitted stats, main branch stats, and main branch name
@@ -681,7 +681,7 @@ impl DiffStateModel {
     }
 
     #[cfg(not(feature = "local_fs"))]
-    fn active_repository_path(&self, _app: &warpui::AppContext) -> Option<PathBuf> {
+    fn active_repository_path(&self, _app: &twarpui::AppContext) -> Option<PathBuf> {
         None
     }
 
@@ -1773,7 +1773,7 @@ impl DiffStateModel {
         let n = file.read(&mut buffer)?;
         buffer.truncate(n);
 
-        if warp_util::file_type::is_buffer_binary(&buffer) {
+        if twarp_util::file_type::is_buffer_binary(&buffer) {
             return Ok(None);
         }
         file.rewind()?;
@@ -3217,7 +3217,7 @@ pub enum DiffStateModelEvent {
     DiffModeChanged { should_fetch_base: bool },
 }
 
-impl warpui::Entity for DiffStateModel {
+impl twarpui::Entity for DiffStateModel {
     type Event = DiffStateModelEvent;
 }
 

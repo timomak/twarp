@@ -1,6 +1,6 @@
 use hex;
-use warp_core::command::ExitCode;
-use warpui::color::ColorU;
+use twarp_core::command::ExitCode;
+use twarpui::color::ColorU;
 
 use super::*;
 use crate::terminal::model::index::VisibleRow;

@@ -1,5 +1,5 @@
-use warpui::elements::Empty;
-use warpui::{
+use twarpui::elements::Empty;
+use twarpui::{
     prelude::ChildView, AppContext, Element, Entity, EntityId, View, ViewContext, ViewHandle,
 };
 
@@ -103,11 +103,11 @@ impl crate::terminal::find::FindableRichContentView for AIBlock {
     fn run_find(
         &mut self,
         _options: &crate::terminal::find::model::FindOptions,
-        _ctx: &mut warpui::ViewContext<Self>,
+        _ctx: &mut twarpui::ViewContext<Self>,
     ) -> Vec<crate::terminal::find::RichContentMatchId> {
         Vec::new()
     }
-    fn clear_matches(&mut self, _ctx: &mut warpui::ViewContext<Self>) {}
+    fn clear_matches(&mut self, _ctx: &mut twarpui::ViewContext<Self>) {}
 }
 #[allow(dead_code)]
 impl AIBlock {
@@ -215,8 +215,8 @@ impl AIBlock {
     pub fn status<C>(&self, _: &C) -> crate::terminal::view::AIBlockOutputStatus {
         crate::terminal::view::AIBlockOutputStatus::Failed {}
     }
-    pub fn selection_type(&self) -> warpui::text::SelectionType {
-        warpui::text::SelectionType::default()
+    pub fn selection_type(&self) -> twarpui::text::SelectionType {
+        twarpui::text::SelectionType::default()
     }
     pub fn try_steal_focus<C>(&mut self, _: &mut C) -> bool {
         false

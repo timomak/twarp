@@ -1,11 +1,11 @@
 use std::{
     collections::VecDeque,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::{Arc, Mutex, mpsc},
+    sync::{mpsc, Arc, Mutex},
     time::Duration,
 };
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use computer_use::{
     Action, MouseButton, Options, Screenshot, ScreenshotParams, ScreenshotRegion, ScrollDirection,
     ScrollDistance, Vector2I,
@@ -13,15 +13,14 @@ use computer_use::{
 use instant::Instant;
 use once_cell::sync::Lazy;
 use rmcp::{
-    ErrorData as McpError, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{CallToolResult, Content, Implementation, ServerCapabilities, ServerInfo},
-    schemars, tool, tool_handler, tool_router,
+    schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
-use warpui::{Entity, ModelContext, SingletonEntity};
+use twarpui::{Entity, ModelContext, SingletonEntity};
 
 const SERVER_NAME: &str = "twarp-computer-control";
 const SSE_PATH: &str = "/sse";

@@ -6,8 +6,8 @@ use crate::{
     server::server_api::referral::{ReferralInfo, ReferralsClient},
 };
 use serde::{Deserialize, Serialize};
-use warp_core::user_preferences::GetUserPreferences as _;
-use warpui::{Entity, ModelContext, SingletonEntity};
+use twarp_core::user_preferences::GetUserPreferences as _;
+use twarpui::{Entity, ModelContext, SingletonEntity};
 
 // Note: The name of this key is from before this model was created. For consistency, it should
 // remain the same value

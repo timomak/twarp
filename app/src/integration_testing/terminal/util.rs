@@ -3,9 +3,9 @@ use command::blocking::Command;
 use std::borrow::Cow;
 use std::iter;
 use std::path::{Path, PathBuf};
-use warp_core::command::ExitCode;
+use twarp_core::command::ExitCode;
 #[cfg(windows)]
-use warp_core::paths::base_config_dir;
+use twarp_core::paths::base_config_dir;
 
 use rand::Rng;
 use rand::{distributions::Alphanumeric, thread_rng};

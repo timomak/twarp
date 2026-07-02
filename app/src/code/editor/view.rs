@@ -40,10 +40,8 @@ use std::rc::Rc;
 use std::{collections::HashMap, ops::Range};
 use std::{collections::HashSet, path::Path};
 use string_offset::CharOffset;
-use vec1::{vec1, Vec1};
-use vim::vim::{Direction, InsertPosition, VimMode, VimModel, VimState, VimSubscriber};
-use warp_core::platform::SessionPlatform;
-use warp_editor::{
+use twarp_core::platform::SessionPlatform;
+use twarp_editor::{
     content::{
         buffer::{
             Buffer, BufferEditAction, EditOrigin, InitialBufferState, ToBufferCharOffset as _,
@@ -66,8 +64,8 @@ use warp_editor::{
     },
     search::{SearchEvent, Searcher, MATCH_FILL, SELECTED_MATCH_FILL},
 };
-use warp_util::content_version::ContentVersion;
-use warpui::{
+use twarp_util::content_version::ContentVersion;
+use twarpui::{
     elements::{
         new_scrollable::{
             AxisConfiguration, DualAxisConfig, NewScrollableElement, ScrollableAppearance,
@@ -85,6 +83,8 @@ use warpui::{
     AppContext, BlurContext, CursorInfo, Element, Entity, FocusContext, ModelHandle,
     SingletonEntity, View, ViewContext, ViewHandle, WeakViewHandle, WindowId,
 };
+use vec1::{vec1, Vec1};
+use vim::vim::{Direction, InsertPosition, VimMode, VimModel, VimState, VimSubscriber};
 
 mod actions;
 pub use actions::init;
@@ -441,11 +441,11 @@ impl CodeEditorView {
                 // from truncating space for the code editor. We should not render it as an overlay
                 // for small code editors.
                 horizontal_scrollbar_appearance: ScrollableAppearance::new(
-                    warpui::elements::ScrollbarWidth::Auto,
+                    twarpui::elements::ScrollbarWidth::Auto,
                     false,
                 ),
                 vertical_scrollbar_appearance: ScrollableAppearance::new(
-                    warpui::elements::ScrollbarWidth::Auto,
+                    twarpui::elements::ScrollbarWidth::Auto,
                     false,
                 ),
                 gutter_hover_target: GutterHoverTarget::GutterElement,
@@ -985,21 +985,21 @@ impl CodeEditorView {
         let hidden_section_end = line_range.end.as_usize();
         let lines_to_unhide = match expansion_type {
             ExpansionType::Both => {
-                warp_editor::content::text::LineCount::from(hidden_section_start)
-                    ..warp_editor::content::text::LineCount::from(hidden_section_end)
+                twarp_editor::content::text::LineCount::from(hidden_section_start)
+                    ..twarp_editor::content::text::LineCount::from(hidden_section_end)
             }
             ExpansionType::ExpandDown => {
                 let end = hidden_section_end
                     .min(hidden_section_start + CODE_EDITOR_HIDDEN_SECTION_EXPANSION_LINES);
-                warp_editor::content::text::LineCount::from(hidden_section_start)
-                    ..warp_editor::content::text::LineCount::from(end)
+                twarp_editor::content::text::LineCount::from(hidden_section_start)
+                    ..twarp_editor::content::text::LineCount::from(end)
             }
             ExpansionType::ExpandUp => {
                 let start = hidden_section_start.max(
                     hidden_section_end.saturating_sub(CODE_EDITOR_HIDDEN_SECTION_EXPANSION_LINES),
                 );
-                warp_editor::content::text::LineCount::from(start)
-                    ..warp_editor::content::text::LineCount::from(hidden_section_end)
+                twarp_editor::content::text::LineCount::from(start)
+                    ..twarp_editor::content::text::LineCount::from(hidden_section_end)
             }
         };
         self.model.update(ctx, |model, ctx| {
@@ -1105,25 +1105,26 @@ impl CodeEditorView {
                 if let Some(results) = self.searcher.as_ref(ctx).results() {
                     if !results.matches.is_empty() {
                         // Convert all match ranges to selection offsets
-                        let selection_offsets: Vec<warp_editor::content::buffer::SelectionOffsets> =
-                            results
-                                .matches
-                                .iter()
-                                .map(|match_result| {
-                                    warp_editor::content::buffer::SelectionOffsets {
-                                        head: match_result.end,
-                                        tail: match_result.start,
-                                    }
-                                })
-                                .collect();
+                        let selection_offsets: Vec<
+                            twarp_editor::content::buffer::SelectionOffsets,
+                        > = results
+                            .matches
+                            .iter()
+                            .map(
+                                |match_result| twarp_editor::content::buffer::SelectionOffsets {
+                                    head: match_result.end,
+                                    tail: match_result.start,
+                                },
+                            )
+                            .collect();
 
                         // Set multiple selections on the editor to highlight all matches
                         if let Ok(selections) = vec1::Vec1::try_from_vec(selection_offsets) {
                             self.model.update(ctx, |model, ctx| {
                                 model.selection().update(ctx, |selection_model, ctx| {
                                     selection_model.update_selection(
-                                        warp_editor::content::buffer::BufferSelectAction::SetSelectionOffsets { selections },
-                                        warp_editor::content::buffer::AutoScrollBehavior::Selection,
+                                        twarp_editor::content::buffer::BufferSelectAction::SetSelectionOffsets { selections },
+                                        twarp_editor::content::buffer::AutoScrollBehavior::Selection,
                                         ctx,
                                     );
                                 });
@@ -1149,7 +1150,7 @@ impl CodeEditorView {
                     self.model.update(ctx, |model, ctx| {
                         model.update_content( |mut content_model, ctx| {
                             content_model.apply_edit(
-                                warp_editor::content::buffer::BufferEditAction::InsertAtCharOffsetRanges { edits: &edits },
+                                twarp_editor::content::buffer::BufferEditAction::InsertAtCharOffsetRanges { edits: &edits },
                                 EditOrigin::UserInitiated,
                                 selection_model,
                                 ctx,
@@ -1201,7 +1202,7 @@ impl CodeEditorView {
                                 self.model.update(ctx, |model, ctx| {
                                     model.update_content(|mut content_model, ctx| {
                                         content_model.apply_edit(
-                                            warp_editor::content::buffer::BufferEditAction::InsertAtCharOffsetRanges { edits: &edits },
+                                            twarp_editor::content::buffer::BufferEditAction::InsertAtCharOffsetRanges { edits: &edits },
                                             EditOrigin::UserInitiated,
                                             selection_model,
                                             ctx,
@@ -2135,8 +2136,8 @@ impl CodeEditorView {
                                 self.model.update(ctx, |model, ctx| {
                                     model.selection_model().update(ctx, |selection, ctx| {
                                         selection.update_selection(
-                                            warp_editor::content::buffer::BufferSelectAction::MoveRight,
-                                            warp_editor::content::buffer::AutoScrollBehavior::Selection,
+                                            twarp_editor::content::buffer::BufferSelectAction::MoveRight,
+                                            twarp_editor::content::buffer::AutoScrollBehavior::Selection,
                                             ctx,
                                         );
                                     });
@@ -2482,7 +2483,7 @@ impl View for CodeEditorView {
         }
     }
 
-    fn keymap_context(&self, app: &AppContext) -> warpui::keymap::Context {
+    fn keymap_context(&self, app: &AppContext) -> twarpui::keymap::Context {
         let mut context = Self::default_keymap_context();
 
         if self.interaction_state(app) != InteractionState::Editable {

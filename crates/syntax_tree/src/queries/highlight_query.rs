@@ -4,11 +4,11 @@ use arborium::tree_sitter::{Node, Query, QueryCursor, TextProvider, Tree};
 use rangemap::RangeMap;
 use streaming_iterator::StreamingIterator;
 use string_offset::{ByteOffset, CharOffset};
-use warp_editor::content::{
+use twarp_editor::content::{
     buffer::{Buffer, ToBufferByteOffset, ToBufferCharOffset},
     text::Bytes,
 };
-use warpui::color::ColorU;
+use twarpui::color::ColorU;
 
 /// Color mapping from parsed syntax token name to its corresponding highlighting color.
 #[derive(Clone, Copy)]

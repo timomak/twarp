@@ -7,9 +7,9 @@ use num_traits::SaturatingSub;
 use regex::escape;
 use std::path::PathBuf;
 use string_offset::ByteOffset;
-use warp_ripgrep::search::{Match as RipgrepMatch, Submatch};
-use warpui::r#async::SpawnedFutureHandle;
-use warpui::{Entity, ModelContext, ModelSpawner};
+use twarp_ripgrep::search::{Match as RipgrepMatch, Submatch};
+use twarpui::r#async::SpawnedFutureHandle;
+use twarpui::{Entity, ModelContext, ModelSpawner};
 
 const START_BATCH_AFTER_COUNT: usize = 50;
 const MAX_BATCH_SIZE: usize = 512;
@@ -107,7 +107,7 @@ impl GlobalSearch {
                     });
                 }
                 Err(err) => {
-                    log::error!("GlobalSearch: warp_ripgrep CLI search failed or aborted: {err}");
+                    log::error!("GlobalSearch: twarp_ripgrep CLI search failed or aborted: {err}");
                     ctx.emit(GlobalSearchEvent::Failed {
                         search_id,
                         error: "Global search failed.".to_string(),
@@ -132,11 +132,11 @@ impl GlobalSearch {
     ) -> Result<usize> {
         let roots_display: Vec<_> = roots.iter().map(|r| r.display().to_string()).collect();
         log::info!(
-            "GlobalSearch: starting warp_ripgrep CLI search with pattern={pattern}, roots={:?}",
+            "GlobalSearch: starting twarp_ripgrep CLI search with pattern={pattern}, roots={:?}",
             roots_display
         );
 
-        let stream = warp_ripgrep::search::search_streaming(
+        let stream = twarp_ripgrep::search::search_streaming(
             &[pattern],
             &roots,
             ignore_case,

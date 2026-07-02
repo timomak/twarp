@@ -27,9 +27,9 @@ use crate::{
 };
 use itertools::Itertools;
 
-use warp_core::ui::theme::color::internal_colors;
-use warpui::{elements::Wrap, units::Pixels};
-use warpui::{
+use twarp_core::ui::theme::color::internal_colors;
+use twarpui::{elements::Wrap, units::Pixels};
+use twarpui::{
     elements::{
         Align, Border, ClippedScrollStateHandle, ClippedScrollable, Container, CornerRadius, Empty,
         EventHandler, Fill, Flex, Hoverable, MouseState, MouseStateHandle, ParentElement, Radius,
@@ -40,11 +40,11 @@ use warpui::{
     ui_components::components::{Coords, UiComponent, UiComponentStyles},
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
-use warpui::{
+use twarpui::{
     elements::{ConstrainedBox, DispatchEventResult},
     presenter::ChildView,
 };
-use warpui::{
+use twarpui::{
     elements::{CrossAxisAlignment, Text},
     keymap::DescriptionContext,
 };
@@ -376,7 +376,7 @@ impl KeybindingRow {
                                 .with_margin_right(CLEAR_CANCEL_BUTTONS_SPACING)
                                 .finish(),
                         )
-                        .with_cross_axis_alignment(warpui::elements::CrossAxisAlignment::Center)
+                        .with_cross_axis_alignment(twarpui::elements::CrossAxisAlignment::Center)
                         .finish(),
                 )
                 .finish(),

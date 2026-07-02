@@ -14,7 +14,7 @@ use session_sharing_protocol::common::{
 };
 
 use asset_cache::AssetCacheExt as _;
-use warpui::{
+use twarpui::{
     assets::asset_cache::{AssetCache, AssetState},
     image_cache::ImageType,
     r#async::SpawnedFutureHandle,

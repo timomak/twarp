@@ -10,7 +10,7 @@ pub use super::ContextChipKind;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use settings::Setting as _;
-use warpui::{Entity, GetSingletonModelHandle, ModelContext, SingletonEntity, UpdateModel};
+use twarpui::{Entity, GetSingletonModelHandle, ModelContext, SingletonEntity, UpdateModel};
 
 #[cfg(test)]
 #[path = "prompt_tests.rs"]

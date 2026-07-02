@@ -14,8 +14,8 @@ use aho_corasick::{AhoCorasick, MatchKind};
 use anyhow::{anyhow, Context};
 #[cfg(feature = "local_fs")]
 use futures::AsyncWriteExt;
-use warp_util::path::ShellFamily;
-use warpui::{
+use twarp_util::path::ShellFamily;
+use twarpui::{
     platform::{file_picker::FilePickerError, FilePickerConfiguration, OperatingSystem},
     r#async::SpawnedFutureHandle,
     AppContext, Entity, ModelContext, SingletonEntity, WindowId,

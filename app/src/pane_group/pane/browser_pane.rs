@@ -1,4 +1,4 @@
-use warpui::{AppContext, ModelHandle, View, ViewContext, ViewHandle};
+use twarpui::{AppContext, ModelHandle, View, ViewContext, ViewHandle};
 
 use crate::app_state::{BrowserPaneSnapshot, LeafContents};
 use crate::browser_view::{BrowserView, BrowserViewEvent};

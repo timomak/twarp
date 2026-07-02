@@ -16,17 +16,17 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use typed_path::{TypedPath, TypedPathBuf, WindowsPath};
-use warp_util::path::{
+use twarp_util::path::{
     convert_msys2_to_windows_native_path, convert_wsl_to_windows_host_path, msys2_exe_to_root,
     ShellFamily,
 };
+use typed_path::{TypedPath, TypedPathBuf, WindowsPath};
 
-use version_compare::Version;
-use warp_completer::completer::{
+use twarp_completer::completer::{
     CommandExitStatus, CommandOutput, PathSeparators, TopLevelCommandCaseSensitivity,
 };
-use warpui::{platform::OperatingSystem, Entity, ModelContext, SingletonEntity};
+use twarpui::{platform::OperatingSystem, Entity, ModelContext, SingletonEntity};
+use version_compare::Version;
 
 #[cfg(feature = "local_tty")]
 use crate::features::FeatureFlag;
@@ -69,8 +69,8 @@ pub enum ReadHistoryContentsError {
     AsyncFsError(std::io::Error),
 }
 
-// SessionId is defined in warp_core and re-exported here for backward compatibility.
-pub use warp_core::SessionId;
+// SessionId is defined in twarp_core and re-exported here for backward compatibility.
+pub use twarp_core::SessionId;
 
 /// Information about the sessions within a given terminal pane/top-level
 /// shell.
@@ -850,7 +850,7 @@ pub enum SessionType {
     /// `RemoteServerManager` has completed the connection handshake. It is
     /// `None` when the feature flag is off or the connection hasn't been
     /// established yet.
-    WarpifiedRemote { host_id: Option<warp_core::HostId> },
+    WarpifiedRemote { host_id: Option<twarp_core::HostId> },
 }
 
 impl From<BootstrapSessionType> for SessionType {
@@ -926,7 +926,7 @@ impl Session {
 
     /// Updates the `host_id` on a `WarpifiedRemote` session type after the
     /// remote server handshake completes (or clears it on disconnect).
-    pub fn set_remote_host_id(&self, host_id: Option<warp_core::HostId>) {
+    pub fn set_remote_host_id(&self, host_id: Option<twarp_core::HostId>) {
         let mut st = self.session_type.lock();
         if let SessionType::WarpifiedRemote { host_id: ref mut h } = *st {
             *h = host_id;
@@ -954,7 +954,7 @@ impl Session {
 
     pub fn home_dir(&self) -> Option<&str> {
         if cfg!(test) {
-            return warp_util::path::TEST_SESSION_HOME_DIR.as_deref();
+            return twarp_util::path::TEST_SESSION_HOME_DIR.as_deref();
         }
 
         self.info.home_dir.as_deref()
@@ -997,9 +997,9 @@ impl Session {
     /// representation, or `None` when no conversion is appropriate.
     pub fn windows_path_converter(&self) -> Option<fn(&str) -> String> {
         if self.is_wsl() {
-            Some(warp_util::path::convert_windows_path_to_wsl)
+            Some(twarp_util::path::convert_windows_path_to_wsl)
         } else if self.is_msys2() {
-            Some(warp_util::path::convert_windows_path_to_msys2)
+            Some(twarp_util::path::convert_windows_path_to_msys2)
         } else {
             None
         }

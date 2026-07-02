@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
-use warp_core::{features::FeatureFlag, settings::Setting};
-use warpui::{
+use twarp_core::{features::FeatureFlag, settings::Setting};
+use twarpui::{
     elements::{
         self, Align, Border, Clipped, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox,
         Container, CornerRadius, CrossAxisAlignment, DropShadow, Flex, Highlight, Icon,
@@ -34,10 +34,10 @@ use crate::{
 };
 use crate::{terminal::input::InputAction, ui_components::buttons::icon_button};
 
-use warpui::color::ColorU;
-use warpui::keymap::Keystroke;
-use warpui::text_layout::TextStyle;
-use warpui::ui_components::components::{UiComponent, UiComponentStyles};
+use twarpui::color::ColorU;
+use twarpui::keymap::Keystroke;
+use twarpui::text_layout::TextStyle;
+use twarpui::ui_components::components::{UiComponent, UiComponentStyles};
 
 use super::{
     command_parser::{compute_workflow_display_data, WorkflowArgumentIndex, WorkflowDisplayData},
@@ -262,7 +262,7 @@ impl WorkflowsMoreInfoView {
             icons::Icon::Rename,
             Some(label.to_owned()),
             self.button_mouse_states.edit_cloud_workflow.clone(),
-            move |ctx: &mut warpui::EventContext<'_>, _, _| {
+            move |ctx: &mut twarpui::EventContext<'_>, _, _| {
                 ctx.dispatch_typed_action(TerminalAction::OpenWorkflowModalWithCloudWorkflow(
                     workflow.id,
                 ))

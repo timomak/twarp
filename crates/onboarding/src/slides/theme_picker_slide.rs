@@ -5,11 +5,10 @@ use crate::telemetry::OnboardingEvent;
 use crate::visuals::theme_picker_visual;
 use crate::OnboardingIntention;
 use pathfinder_color::ColorU;
-use ui_components::{button, Component as _, Options as _};
-use warp_core::features::FeatureFlag;
-use warp_core::send_telemetry_from_ctx;
-use warp_core::ui::{appearance::Appearance, theme::color::internal_colors, theme::WarpTheme};
-use warpui::{
+use twarp_core::features::FeatureFlag;
+use twarp_core::send_telemetry_from_ctx;
+use twarp_core::ui::{appearance::Appearance, theme::color::internal_colors, theme::WarpTheme};
+use twarpui::{
     elements::{
         Border, ClippedScrollStateHandle, ConstrainedBox, Container, CornerRadius,
         CrossAxisAlignment, Empty, Flex, FormattedTextElement, Hoverable, MainAxisAlignment,
@@ -22,6 +21,7 @@ use warpui::{
     ui_components::components::{UiComponent, UiComponentStyles},
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
 };
+use ui_components::{button, Component as _, Options as _};
 
 #[derive(Debug, Clone)]
 pub enum ThemePickerSlideEvent {

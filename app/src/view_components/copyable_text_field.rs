@@ -3,17 +3,17 @@
 
 use instant::Instant;
 use std::time::Duration;
-use warpui::elements::{
+use twarpui::elements::{
     ConstrainedBox, Container, CrossAxisAlignment, Element, Expanded, Flex, MouseStateHandle,
     ParentElement, Shrinkable, Text,
 };
-use warpui::text_layout::ClipConfig;
-use warpui::ui_components::components::UiComponent;
-use warpui::{AppContext, SingletonEntity};
+use twarpui::text_layout::ClipConfig;
+use twarpui::ui_components::components::UiComponent;
+use twarpui::{AppContext, SingletonEntity};
 
 use crate::appearance::Appearance;
 use crate::ui_components::icons::Icon;
-use warpui::color::ColorU;
+use twarpui::color::ColorU;
 
 /// Duration to show the checkmark after copying.
 pub const COPY_FEEDBACK_DURATION: Duration = Duration::from_secs(2);
@@ -145,7 +145,7 @@ pub fn render_copyable_text_field<F>(
     app: &AppContext,
 ) -> Box<dyn Element>
 where
-    F: FnMut(&mut warpui::EventContext) + 'static,
+    F: FnMut(&mut twarpui::EventContext) + 'static,
 {
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
@@ -169,7 +169,7 @@ where
 
     let copy_button: Box<dyn Element> = if show_checkmark {
         // Show green checkmark
-        let check_icon = warpui::elements::Icon::new(Icon::Check.into(), theme.ansi_fg_green());
+        let check_icon = twarpui::elements::Icon::new(Icon::Check.into(), theme.ansi_fg_green());
         ConstrainedBox::new(check_icon.finish())
             .with_width(config.icon_size)
             .with_height(config.icon_size)

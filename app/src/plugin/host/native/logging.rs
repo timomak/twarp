@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use warpui::r#async::{block_on, executor::Background};
+use twarpui::r#async::{block_on, executor::Background};
 
 use crate::plugin::service::{LogService, LogServiceRequest};
 

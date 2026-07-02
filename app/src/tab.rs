@@ -1,7 +1,7 @@
 // twarp: 2c-d — AI conversation status / status UI deleted; stubs.
 use crate::app_state::ConversationStatus;
-pub fn render_status_element<A, B, C>(_: A, _: B, _: C) -> Box<dyn warpui::Element> {
-    warpui::elements::Empty::new().finish()
+pub fn render_status_element<A, B, C>(_: A, _: B, _: C) -> Box<dyn twarpui::Element> {
+    twarpui::elements::Empty::new().finish()
 }
 pub const STATUS_ELEMENT_PADDING: f32 = 0.0;
 use crate::appearance::Appearance;
@@ -40,11 +40,11 @@ pub use crate::terminal::input::BlocklistAIHistoryModel;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use serde::{Deserialize, Serialize};
-use warp_core::context_flag::ContextFlag;
-use warp_core::ui::builder::UiBuilder;
-use warp_core::ui::theme::color::internal_colors;
-use warp_core::ui::theme::AnsiColors;
-use warpui::elements::{
+use twarp_core::context_flag::ContextFlag;
+use twarp_core::ui::builder::UiBuilder;
+use twarp_core::ui::theme::color::internal_colors;
+use twarp_core::ui::theme::AnsiColors;
+use twarpui::elements::{
     Align, Border, ChildAnchor, Clipped, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, DragAxis, Draggable, DraggableState, DropTarget, Element, Empty, Fill,
     Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, Padding,
@@ -52,11 +52,11 @@ use warpui::elements::{
     PositionedElementOffsetBounds, Radius, Rect, SavePosition, Shrinkable, SizeConstraintCondition,
     SizeConstraintSwitch, Stack, Text,
 };
-use warpui::fonts::Weight;
-use warpui::text_layout::ClipConfig;
-use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
-use warpui::ui_components::text_input::TextInput;
-use warpui::{AppContext, SingletonEntity, ViewHandle};
+use twarpui::fonts::Weight;
+use twarpui::text_layout::ClipConfig;
+use twarpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use twarpui::ui_components::text_input::TextInput;
+use twarpui::{AppContext, SingletonEntity, ViewHandle};
 
 pub const TAB_BAR_BORDER_HEIGHT: f32 = 1.0;
 const TAB_INDICATOR_HEIGHT: f32 = 14.0;
@@ -1512,7 +1512,7 @@ impl<'a> TabComponent<'a> {
             let mut flex_row = Flex::row()
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_main_axis_alignment(MainAxisAlignment::Center)
-                .with_cross_axis_alignment(warpui::elements::CrossAxisAlignment::Center);
+                .with_cross_axis_alignment(twarpui::elements::CrossAxisAlignment::Center);
             if let Some(indicator) = self.render_indicator() {
                 flex_row.add_child(indicator);
             }
@@ -1549,7 +1549,7 @@ impl<'a> TabComponent<'a> {
             Flex::row()
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_main_axis_alignment(MainAxisAlignment::Center)
-                .with_cross_axis_alignment(warpui::elements::CrossAxisAlignment::Center)
+                .with_cross_axis_alignment(twarpui::elements::CrossAxisAlignment::Center)
                 .with_child(
                     ConstrainedBox::new(compact_icon)
                         .with_max_width(TAB_INDICATOR_HEIGHT)

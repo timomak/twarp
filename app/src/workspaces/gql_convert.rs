@@ -41,8 +41,8 @@ use crate::{
 use anyhow::{anyhow, bail};
 use regex::Regex;
 use std::path::PathBuf;
-use warp_graphql::workspace::AddonCreditsSettings as GqlAddonCreditsSettings;
-use warp_graphql::{
+use twarp_graphql::workspace::AddonCreditsSettings as GqlAddonCreditsSettings;
+use twarp_graphql::{
     billing::{
         AiAutonomyPolicy as GqlAiAutonomyPolicy, AmbientAgentsPolicy as GqlAmbientAgentsPolicy,
         BillingMetadata as GqlBillingMetadata, ByoApiKeyPolicy as GqlByoApiKeyPolicy,
@@ -608,9 +608,9 @@ impl ToPathBufs for Vec<String> {
         self.into_iter().map(PathBuf::from).collect()
     }
 }
-impl From<warp_graphql::workspace::LlmModelHost> for crate::workspaces::workspace::LLMModelHost {
-    fn from(gql_host: warp_graphql::workspace::LlmModelHost) -> Self {
-        use warp_graphql::workspace::LlmModelHost as GqlLlmModelHost;
+impl From<twarp_graphql::workspace::LlmModelHost> for crate::workspaces::workspace::LLMModelHost {
+    fn from(gql_host: twarp_graphql::workspace::LlmModelHost) -> Self {
+        use twarp_graphql::workspace::LlmModelHost as GqlLlmModelHost;
         match gql_host {
             GqlLlmModelHost::DirectApi => Self::DirectApi,
             GqlLlmModelHost::AwsBedrock => Self::AwsBedrock,
@@ -624,8 +624,8 @@ impl From<warp_graphql::workspace::LlmModelHost> for crate::workspaces::workspac
     }
 }
 
-impl From<warp_graphql::workspace::LlmHostSettings> for super::workspace::LlmHostSettings {
-    fn from(gql_settings: warp_graphql::workspace::LlmHostSettings) -> Self {
+impl From<twarp_graphql::workspace::LlmHostSettings> for super::workspace::LlmHostSettings {
+    fn from(gql_settings: twarp_graphql::workspace::LlmHostSettings) -> Self {
         Self {
             enabled: gql_settings.enabled,
             enablement_setting: gql_settings
@@ -636,8 +636,8 @@ impl From<warp_graphql::workspace::LlmHostSettings> for super::workspace::LlmHos
     }
 }
 
-impl From<warp_graphql::workspace::LlmSettings> for LlmSettings {
-    fn from(gql_settings: warp_graphql::workspace::LlmSettings) -> Self {
+impl From<twarp_graphql::workspace::LlmSettings> for LlmSettings {
+    fn from(gql_settings: twarp_graphql::workspace::LlmSettings) -> Self {
         let mut host_configs = std::collections::HashMap::new();
         for entry in gql_settings.host_configs {
             let host: crate::workspaces::workspace::LLMModelHost = entry.host.into();
@@ -998,10 +998,10 @@ impl TryFrom<WarpDriveUpdate> for ObjectUpdateMessage {
     }
 }
 
-impl TryFrom<warp_graphql::folder::Folder> for ServerFolder {
+impl TryFrom<twarp_graphql::folder::Folder> for ServerFolder {
     type Error = anyhow::Error;
 
-    fn try_from(folder: warp_graphql::folder::Folder) -> Result<Self, Self::Error> {
+    fn try_from(folder: twarp_graphql::folder::Folder) -> Result<Self, Self::Error> {
         ServerFolder::try_from_graphql_fields(
             ServerId::from_string_lossy(folder.metadata.uid.inner()),
             Some(folder.name),
@@ -1012,10 +1012,10 @@ impl TryFrom<warp_graphql::folder::Folder> for ServerFolder {
     }
 }
 
-impl TryFrom<warp_graphql::notebook::Notebook> for ServerNotebook {
+impl TryFrom<twarp_graphql::notebook::Notebook> for ServerNotebook {
     type Error = anyhow::Error;
 
-    fn try_from(notebook: warp_graphql::notebook::Notebook) -> Result<Self, Self::Error> {
+    fn try_from(notebook: twarp_graphql::notebook::Notebook) -> Result<Self, Self::Error> {
         ServerNotebook::try_from_graphql_fields(
             ServerId::from_string_lossy(notebook.metadata.uid.inner()),
             Some(notebook.title),
@@ -1027,10 +1027,10 @@ impl TryFrom<warp_graphql::notebook::Notebook> for ServerNotebook {
     }
 }
 
-impl TryFrom<warp_graphql::workflow::Workflow> for ServerWorkflow {
+impl TryFrom<twarp_graphql::workflow::Workflow> for ServerWorkflow {
     type Error = anyhow::Error;
 
-    fn try_from(workflow: warp_graphql::workflow::Workflow) -> Result<Self, Self::Error> {
+    fn try_from(workflow: twarp_graphql::workflow::Workflow) -> Result<Self, Self::Error> {
         ServerWorkflow::try_from_graphql_fields(
             ServerId::from_string_lossy(workflow.metadata.uid.inner()),
             workflow.data,
@@ -1040,11 +1040,11 @@ impl TryFrom<warp_graphql::workflow::Workflow> for ServerWorkflow {
     }
 }
 
-impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for ServerEnvVarCollection {
+impl TryFrom<twarp_graphql::generic_string_object::GenericStringObject> for ServerEnvVarCollection {
     type Error = anyhow::Error;
 
     fn try_from(
-        gso: warp_graphql::generic_string_object::GenericStringObject,
+        gso: twarp_graphql::generic_string_object::GenericStringObject,
     ) -> Result<Self, Self::Error> {
         ServerEnvVarCollection::try_from_graphql_fields(
             ServerId::from_string_lossy(gso.metadata.uid.inner()),
@@ -1055,11 +1055,11 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
     }
 }
 
-impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for ServerWorkflowEnum {
+impl TryFrom<twarp_graphql::generic_string_object::GenericStringObject> for ServerWorkflowEnum {
     type Error = anyhow::Error;
 
     fn try_from(
-        gso: warp_graphql::generic_string_object::GenericStringObject,
+        gso: twarp_graphql::generic_string_object::GenericStringObject,
     ) -> Result<Self, Self::Error> {
         ServerWorkflowEnum::try_from_graphql_fields(
             ServerId::from_string_lossy(gso.metadata.uid.inner()),
@@ -1073,11 +1073,11 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
 // twarp: 2c-d — TryFrom impls for ServerAIFact / ServerAIExecutionProfile / ServerMCPServer /
 // ServerTemplatableMCPServer removed (Server*AI types are now `()` stubs)
 
-impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for ServerPreference {
+impl TryFrom<twarp_graphql::generic_string_object::GenericStringObject> for ServerPreference {
     type Error = anyhow::Error;
 
     fn try_from(
-        gso: warp_graphql::generic_string_object::GenericStringObject,
+        gso: twarp_graphql::generic_string_object::GenericStringObject,
     ) -> Result<Self, Self::Error> {
         ServerPreference::try_from_graphql_fields(
             ServerId::from_string_lossy(gso.metadata.uid.inner()),
@@ -1090,67 +1090,67 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
 
 // twarp: 2c-d — TryFrom impl for ServerScheduledAmbientAgent removed
 
-impl TryFrom<warp_graphql::object::CloudObject> for ServerCloudObject {
+impl TryFrom<twarp_graphql::object::CloudObject> for ServerCloudObject {
     type Error = anyhow::Error;
 
-    fn try_from(value: warp_graphql::object::CloudObject) -> Result<Self, Self::Error> {
+    fn try_from(value: twarp_graphql::object::CloudObject) -> Result<Self, Self::Error> {
         match value {
-            warp_graphql::object::CloudObject::AIConversation(_) => Err(anyhow::anyhow!(
+            twarp_graphql::object::CloudObject::AIConversation(_) => Err(anyhow::anyhow!(
                 "AIConversation is not a supported object type for this operation"
             )),
-            warp_graphql::object::CloudObject::Folder(folder) => {
+            twarp_graphql::object::CloudObject::Folder(folder) => {
                 Ok(ServerCloudObject::Folder(folder.try_into()?))
             }
-            warp_graphql::object::CloudObject::GenericStringObject(gso) => {
+            twarp_graphql::object::CloudObject::GenericStringObject(gso) => {
                 match gso.format {
-                    warp_graphql::generic_string_object::GenericStringObjectFormat::JsonEnvVarCollection => {
+                    twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonEnvVarCollection => {
                         Ok(ServerCloudObject::EnvVarCollection(gso.try_into()?))
                     }
-                    warp_graphql::generic_string_object::GenericStringObjectFormat::JsonPreference => {
+                    twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonPreference => {
                         Ok(ServerCloudObject::Preference(gso.try_into()?))
                     }
-                    warp_graphql::generic_string_object::GenericStringObjectFormat::JsonWorkflowEnum => {
+                    twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonWorkflowEnum => {
                         Ok(ServerCloudObject::WorkflowEnum(gso.try_into()?))
                     }
-                    warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact => {
+                    twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact => {
                         // twarp: 2c-d — AI fact deleted; map to stub unit variant.
                         let _ = gso;
                         Ok(ServerCloudObject::AIFact(()))
                     }
-                    warp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer => {
+                    twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer => {
                         // twarp: 2c-d — AI MCP server deleted; map to stub unit variant.
                         let _ = gso;
                         Ok(ServerCloudObject::MCPServer(()))
                     }
-                    warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile => {
+                    twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile => {
                         // twarp: 2c-d — AI execution profile deleted; map to stub unit variant.
                         let _ = gso;
                         Ok(ServerCloudObject::AIExecutionProfile(()))
                     }
-                    warp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer => {
+                    twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer => {
                         // twarp: 2c-d — templatable MCP server deleted; map to stub unit variant.
                         let _ = gso;
                         Ok(ServerCloudObject::TemplatableMCPServer(()))
                     }
-                    warp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
+                    twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
                         Err(anyhow::anyhow!(
                             "CloudEnvironment objects are no longer supported client-side"
                         ))
                     }
-                    warp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
+                    twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
                         // twarp: 2c-d — scheduled ambient agent deleted; map to stub unit variant.
                         let _ = gso;
                         Ok(ServerCloudObject::ScheduledAmbientAgent(()))
                     }
                 }
             }
-            warp_graphql::object::CloudObject::Notebook(notebook) => {
+            twarp_graphql::object::CloudObject::Notebook(notebook) => {
                 Ok(ServerCloudObject::Notebook(notebook.try_into()?))
             }
-            warp_graphql::object::CloudObject::Workflow(workflow) => {
+            twarp_graphql::object::CloudObject::Workflow(workflow) => {
                 Ok(ServerCloudObject::Workflow(Box::new(workflow.try_into()?)))
             }
-            warp_graphql::object::CloudObject::Unknown => {
+            twarp_graphql::object::CloudObject::Unknown => {
                 Err(anyhow::anyhow!("Unable to convert cloud object type"))
             }
         }
@@ -1169,38 +1169,38 @@ impl TryFrom<CloudObjectWithDescendants> for ServerCloudObject {
                 Ok(ServerCloudObject::Folder(fwd.folder.try_into()?))
             }
             CloudObjectWithDescendants::GenericStringObject(gso) => match gso.format {
-                warp_graphql::generic_string_object::GenericStringObjectFormat::JsonEnvVarCollection => {
+                twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonEnvVarCollection => {
                     Ok(ServerCloudObject::EnvVarCollection(gso.try_into()?))
                 }
-                warp_graphql::generic_string_object::GenericStringObjectFormat::JsonPreference => {
+                twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonPreference => {
                     Ok(ServerCloudObject::Preference(gso.try_into()?))
                 }
-                warp_graphql::generic_string_object::GenericStringObjectFormat::JsonWorkflowEnum => {
+                twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonWorkflowEnum => {
                     Ok(ServerCloudObject::WorkflowEnum(gso.try_into()?))
                 }
                 // twarp: 2c-d — AI cloud object types deleted; map to stub unit variants.
-                warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact => {
+                twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact => {
                     let _ = gso;
                     Ok(ServerCloudObject::AIFact(()))
                 }
-                warp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer => {
+                twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer => {
                     let _ = gso;
                     Ok(ServerCloudObject::MCPServer(()))
                 }
-                warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile => {
+                twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile => {
                     let _ = gso;
                     Ok(ServerCloudObject::AIExecutionProfile(()))
                 }
-                warp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer => {
+                twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer => {
                     let _ = gso;
                     Ok(ServerCloudObject::TemplatableMCPServer(()))
                 }
-                warp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
+                twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
                     Err(anyhow::anyhow!(
                         "CloudEnvironment objects are no longer supported client-side"
                     ))
                 }
-                warp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
+                twarp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
                     let _ = gso;
                     Ok(ServerCloudObject::ScheduledAmbientAgent(()))
                 }

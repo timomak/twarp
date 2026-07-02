@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use warp_terminal::model::{grid::Dimensions, Point};
+use twarp_terminal::model::{grid::Dimensions, Point};
 
 // twarp: 2c-d — AI agent / blocklist deleted; stubs (use crate::app_state where present).
 use crate::app_state::AIConversationId;

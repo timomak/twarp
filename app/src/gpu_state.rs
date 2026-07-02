@@ -1,4 +1,4 @@
-use warpui::{Entity, ModelContext, SingletonEntity};
+use twarpui::{Entity, ModelContext, SingletonEntity};
 
 /// Singleton model that tracks GPU state.
 #[derive(Debug, Default, Clone)]

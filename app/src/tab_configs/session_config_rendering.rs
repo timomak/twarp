@@ -3,20 +3,20 @@ use std::sync::Arc;
 
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use warpui::elements::{
+use twarpui::elements::{
     Border, ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Expanded,
     Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
     ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Stack, Text,
 };
-use warpui::fonts::{Properties, Weight};
-use warpui::geometry::vector::Vector2F;
-use warpui::platform::Cursor;
-use warpui::ui_components::components::UiComponent;
-use warpui::Element;
-use warpui::EventContext;
+use twarpui::fonts::{Properties, Weight};
+use twarpui::geometry::vector::Vector2F;
+use twarpui::platform::Cursor;
+use twarpui::ui_components::components::UiComponent;
+use twarpui::Element;
+use twarpui::EventContext;
 
-use warp_core::ui::theme::Fill;
-use warp_core::ui::theme::WarpTheme;
+use twarp_core::ui::theme::Fill;
+use twarp_core::ui::theme::WarpTheme;
 
 use crate::appearance::Appearance;
 use crate::tab_configs::session_config::SessionType;
@@ -241,7 +241,7 @@ where
     let home_dir = dirs::home_dir();
     let raw_path = selected_directory.to_string_lossy();
     let dir_display =
-        warp_util::path::user_friendly_path(&raw_path, home_dir.as_ref().and_then(|h| h.to_str()))
+        twarp_util::path::user_friendly_path(&raw_path, home_dir.as_ref().and_then(|h| h.to_str()))
             .into_owned();
 
     let dir_text = Text::new_inline(dir_display, appearance.ui_font_family(), 14.)
@@ -320,7 +320,7 @@ pub fn render_worktree_checkbox_with_background<F>(
     appearance: &Appearance,
 ) -> Box<dyn Element>
 where
-    F: Fn(&mut warpui::EventContext, warpui::geometry::vector::Vector2F) + 'static,
+    F: Fn(&mut twarpui::EventContext, twarpui::geometry::vector::Vector2F) + 'static,
 {
     let disabled = !is_git_repo;
     let on_accent_bg = bg.is_some();

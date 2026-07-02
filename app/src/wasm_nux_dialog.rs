@@ -7,12 +7,12 @@ use crate::settings::{NativePreferenceSettings, UserNativePreference};
 use crate::ui_components::dialog::{dialog_styles, Dialog};
 use crate::uri::web_intent_parser::{self, WebIntent};
 use settings::Setting as _;
-use warpui::elements::{Align, CrossAxisAlignment, Flex};
-use warpui::ui_components::{
+use twarpui::elements::{Align, CrossAxisAlignment, Flex};
+use twarpui::ui_components::{
     button::ButtonVariant,
     components::{Coords, UiComponent, UiComponentStyles},
 };
-use warpui::{
+use twarpui::{
     elements::{MainAxisSize, MouseStateHandle, ParentElement as _},
     fonts::Weight,
     platform::Cursor,
@@ -80,7 +80,7 @@ impl WasmNUXDialog {
     /// behavior: if Warp is installed, redirect to it; otherwise stay on the web.
     pub fn should_display(app: &AppContext) -> bool {
         // Don't show on mobile devices - they can't use the desktop app
-        if warpui::platform::wasm::is_mobile_device() {
+        if twarpui::platform::wasm::is_mobile_device() {
             return false;
         }
 

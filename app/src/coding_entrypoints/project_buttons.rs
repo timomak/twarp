@@ -2,11 +2,11 @@ use std::borrow::Cow;
 
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::Vector2F;
-use warp_core::{
+use twarp_core::{
     features::FeatureFlag,
     ui::{appearance::Appearance, color::blend::Blend as _, theme::color::internal_colors, Icon},
 };
-use warpui::{
+use twarpui::{
     elements::{
         ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DropShadow,
         Expanded, Flex, Hoverable, MouseStateHandle, OffsetPositioning, ParentAnchor,
@@ -24,7 +24,7 @@ use crate::util::bindings::{keybinding_name_to_display_string, BindingGroup, Cus
 const BUTTON_MIN_WIDTH: f32 = 149.;
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_editable_bindings([
         EditableBinding::new(

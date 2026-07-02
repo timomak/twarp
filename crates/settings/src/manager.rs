@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use std::ops::Deref;
 
 use anyhow::{Result, anyhow};
-use warp_features::FeatureFlag;
-use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
-use warpui_extras::user_preferences::UserPreferences;
+use twarp_features::FeatureFlag;
+use twarpui::{AppContext, Entity, ModelContext, SingletonEntity};
+use twarpui_extras::user_preferences::UserPreferences;
 
 use super::PrivatePreferences;
 

@@ -1,7 +1,7 @@
 use super::{Event, Heartbeat};
 use std::time::Duration;
-use warpui::r#async::Timer;
-use warpui::App;
+use twarpui::r#async::Timer;
+use twarpui::App;
 
 #[test]
 #[ignore = "Flakes in CI"]
@@ -65,7 +65,7 @@ fn test_idle_timeout() {
         // Reset the idle timeout.
         heartbeat.update(
             &mut app,
-            |heartbeat, ctx: &mut warpui::ModelContext<Heartbeat>| {
+            |heartbeat, ctx: &mut twarpui::ModelContext<Heartbeat>| {
                 heartbeat.reset_idle_timeout(ctx)
             },
         );

@@ -10,7 +10,7 @@
 //! In-flight `ShortcutRunner`s are unaffected by reload — 4a's runner
 //! captures the action list by value at start.
 
-use warpui::{Entity, ModelContext, SingletonEntity};
+use twarpui::{Entity, ModelContext, SingletonEntity};
 
 #[cfg(not(target_family = "wasm"))]
 use std::path::PathBuf;
@@ -22,7 +22,7 @@ use std::time::Duration;
 #[cfg(not(target_family = "wasm"))]
 use notify_debouncer_full::notify::{RecursiveMode, WatchFilter};
 #[cfg(not(target_family = "wasm"))]
-use warpui::ModelHandle;
+use twarpui::ModelHandle;
 #[cfg(not(target_family = "wasm"))]
 use watcher::{BulkFilesystemWatcher, BulkFilesystemWatcherEvent};
 

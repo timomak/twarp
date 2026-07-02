@@ -6,7 +6,7 @@ use serde_json::json;
 use serde_with::SerializeDisplay;
 use std::fmt::Display;
 use strum_macros::{EnumDiscriminants, EnumIter};
-use warp_core::telemetry::{EnablementState, TelemetryEvent, TelemetryEventDesc};
+use twarp_core::telemetry::{EnablementState, TelemetryEvent, TelemetryEventDesc};
 
 /// Identifies which git button the user clicked in the code review header.
 /// Each variant maps to one of the primary action button / dropdown items.
@@ -404,7 +404,7 @@ impl TelemetryEvent for CodeReviewTelemetryEvent {
     }
 
     fn event_descs() -> impl Iterator<Item = Box<dyn TelemetryEventDesc>> {
-        warp_core::telemetry::enum_events::<Self>()
+        twarp_core::telemetry::enum_events::<Self>()
     }
 }
 
@@ -494,4 +494,4 @@ impl TelemetryEventDesc for CodeReviewTelemetryEventDiscriminants {
     }
 }
 
-warp_core::register_telemetry_event!(CodeReviewTelemetryEvent);
+twarp_core::register_telemetry_event!(CodeReviewTelemetryEvent);

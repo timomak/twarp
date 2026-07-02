@@ -6,11 +6,11 @@ use super::telemetry::secret_redaction::redact_secrets_in_value;
 use crate::auth::UserUid;
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
-use warp_core::{
+use twarp_core::{
     channel::{Channel, ChannelState},
     execution_mode,
 };
-use warpui::telemetry::EventPayload;
+use twarpui::telemetry::EventPayload;
 
 use super::telemetry::telemetry_context;
 
@@ -18,7 +18,7 @@ pub trait TelemetryExt {
     fn to_rudder_batch_message(self) -> RudderBatchMessage;
 }
 
-impl TelemetryExt for warpui::telemetry::Event {
+impl TelemetryExt for twarpui::telemetry::Event {
     fn to_rudder_batch_message(self) -> RudderBatchMessage {
         let message = match self.payload {
             EventPayload::IdentifyUser {

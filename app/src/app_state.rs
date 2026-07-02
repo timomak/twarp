@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use warpui::platform::FullscreenState;
+use twarpui::platform::FullscreenState;
 
-use warpui::AppContext;
+use twarpui::AppContext;
 
 // twarp: 2c-d.4 — local stubs for deleted AI types referenced by persisted snapshots
 // and various consumer files. These stubs keep code compiling; consumer call sites
@@ -444,13 +444,13 @@ impl std::fmt::Display for ConversationStatus {
 }
 #[allow(dead_code)]
 impl ConversationStatus {
-    pub fn render_icon<A>(&self, _: A) -> warpui::elements::Empty {
-        warpui::elements::Empty::new()
+    pub fn render_icon<A>(&self, _: A) -> twarpui::elements::Empty {
+        twarpui::elements::Empty::new()
     }
-    pub fn status_icon_and_color<T>(&self, _: T) -> (warp_core::ui::Icon, warpui::color::ColorU) {
+    pub fn status_icon_and_color<T>(&self, _: T) -> (twarp_core::ui::Icon, twarpui::color::ColorU) {
         (
-            warp_core::ui::Icon::Terminal,
-            warpui::color::ColorU::new(0, 0, 0, 0),
+            twarp_core::ui::Icon::Terminal,
+            twarpui::color::ColorU::new(0, 0, 0, 0),
         )
     }
     // twarp: 2c-d — predicate stubs
@@ -562,12 +562,12 @@ impl CLIAgent {
         &[]
     }
     // twarp: 2c-d — stub: AI agent icon deleted.
-    pub fn icon(&self) -> Option<warp_core::ui::Icon> {
+    pub fn icon(&self) -> Option<twarp_core::ui::Icon> {
         None
     }
     // twarp: 2c-d — stub: AI brand colors deleted.
-    pub fn brand_icon_color(&self) -> warpui::color::ColorU {
-        warpui::color::ColorU::new(0, 0, 0, 0)
+    pub fn brand_icon_color(&self) -> twarpui::color::ColorU {
+        twarpui::color::ColorU::new(0, 0, 0, 0)
     }
     pub fn serialized_name(&self) -> &'static str {
         match self {
@@ -578,8 +578,8 @@ impl CLIAgent {
         }
     }
     // twarp: 2c-d — additional bulk stubs for CLIAgent
-    pub fn brand_color(&self) -> warpui::color::ColorU {
-        warpui::color::ColorU::new(0, 0, 0, 0)
+    pub fn brand_color(&self) -> twarpui::color::ColorU {
+        twarpui::color::ColorU::new(0, 0, 0, 0)
     }
     pub fn display_name(&self) -> &'static str {
         self.serialized_name()

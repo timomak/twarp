@@ -4,11 +4,10 @@ use crate::model::{OnboardingStateEvent, OnboardingStateModel, UICustomizationSe
 use crate::slides::{bottom_nav, layout, slide_content};
 use crate::visuals::{intention_terminal_visual, intention_visual};
 use crate::OnboardingIntention;
-use ui_components::{button, Component as _, Options as _};
-use warp_core::features::FeatureFlag;
-use warp_core::ui::{appearance::Appearance, theme::color::internal_colors};
-use warpui::prelude::Align;
-use warpui::{
+use twarp_core::features::FeatureFlag;
+use twarp_core::ui::{appearance::Appearance, theme::color::internal_colors};
+use twarpui::prelude::Align;
+use twarpui::{
     elements::{
         ClippedScrollStateHandle, Container, CrossAxisAlignment, Flex, FormattedTextElement,
         MainAxisSize, MouseStateHandle, ParentElement,
@@ -20,6 +19,7 @@ use warpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity as _, TypedActionView, View,
     ViewContext,
 };
+use ui_components::{button, Component as _, Options as _};
 
 /// Which setting card is currently selected (expanded).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

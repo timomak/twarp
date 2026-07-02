@@ -21,8 +21,8 @@ use crate::{
 use chrono::{DateTime, Utc};
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use std::collections::HashMap;
-use warp_core::features::FeatureFlag;
-use warpui::{
+use twarp_core::features::FeatureFlag;
+use twarpui::{
     elements::{
         Align, Border, ChildView, ConstrainedBox, Container, CrossAxisAlignment, Element, Empty,
         Expanded, Flex, FormattedTextElement, HighlightedHyperlink, MainAxisSize, MouseStateHandle,
@@ -85,10 +85,10 @@ impl PlatformPageView {
                                 let uid = gql_key.uid.into_inner();
                                 me.ensure_expire_button_for_key(ctx, uid.clone());
                                 let scope = match gql_key.owner_type {
-                                    warp_graphql::object_permissions::OwnerType::User => {
+                                    twarp_graphql::object_permissions::OwnerType::User => {
                                         ApiKeyScope::Personal
                                     }
-                                    warp_graphql::object_permissions::OwnerType::Team => {
+                                    twarp_graphql::object_permissions::OwnerType::Team => {
                                         ApiKeyScope::Team
                                     }
                                 };
@@ -141,7 +141,7 @@ impl PlatformPageView {
                         right: 24.,
                     }),
                     font_size: Some(16.),
-                    font_weight: Some(warpui::fonts::Weight::Bold),
+                    font_weight: Some(twarpui::fonts::Weight::Bold),
                     ..Default::default()
                 })
                 .with_body_style(UiComponentStyles {
@@ -212,8 +212,8 @@ impl PlatformPageView {
                 self.ensure_expire_button_for_key(ctx, uid.clone());
 
                 let scope = match api_key.owner_type {
-                    warp_graphql::object_permissions::OwnerType::User => ApiKeyScope::Personal,
-                    warp_graphql::object_permissions::OwnerType::Team => ApiKeyScope::Team,
+                    twarp_graphql::object_permissions::OwnerType::User => ApiKeyScope::Personal,
+                    twarp_graphql::object_permissions::OwnerType::Team => ApiKeyScope::Team,
                 };
                 let ui_key = APIKeyProperties::new(
                     uid,

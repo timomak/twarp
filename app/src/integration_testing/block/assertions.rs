@@ -1,5 +1,5 @@
 use settings::Setting as _;
-use warpui::{
+use twarpui::{
     async_assert, async_assert_eq,
     integration::{AssertionCallback, AssertionOutcome},
     units::{IntoPixels, Lines},

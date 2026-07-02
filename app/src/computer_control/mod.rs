@@ -531,15 +531,15 @@ mod platform {
     use std::ffi::c_void;
     use std::ptr::NonNull;
     use std::sync::{
-        Arc,
         atomic::{AtomicBool, Ordering},
+        Arc,
     };
 
     use pathfinder_color::ColorU;
 
     use super::{
-        ComputerControlChrome, ComputerControlPermissions, NativePermissionGrant,
-        NativePermissionProbe, PermissionGrantState, PermissionSnapshot, sanitized_c_string,
+        sanitized_c_string, ComputerControlChrome, ComputerControlPermissions,
+        NativePermissionGrant, NativePermissionProbe, PermissionGrantState, PermissionSnapshot,
     };
 
     #[repr(C)]

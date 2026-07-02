@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use warpui::{
+use twarpui::{
     elements::{Container, CrossAxisAlignment, Flex, ParentElement, Shrinkable},
     presenter::ChildView,
     ui_components::components::{Coords, UiComponent, UiComponentStyles},
@@ -126,7 +126,7 @@ impl View for WorkingDirectoryView {
         "WorkingDirectoryView"
     }
 
-    fn render(&self, app: &warpui::AppContext) -> Box<dyn warpui::Element> {
+    fn render(&self, app: &twarpui::AppContext) -> Box<dyn twarpui::Element> {
         let appearance = Appearance::as_ref(app);
         let ui_builder = appearance.ui_builder();
 

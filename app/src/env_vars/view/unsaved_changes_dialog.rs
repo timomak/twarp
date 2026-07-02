@@ -1,5 +1,5 @@
-use warp_core::ui::appearance::Appearance;
-use warpui::{
+use twarp_core::ui::appearance::Appearance;
+use twarpui::{
     elements::{Container, MouseStateHandle},
     fonts::Weight,
     platform::Cursor,

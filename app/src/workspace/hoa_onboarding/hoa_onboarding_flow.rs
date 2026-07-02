@@ -3,24 +3,24 @@ use std::path::PathBuf;
 use markdown_parser::{
     FormattedText, FormattedTextFragment, FormattedTextLine, FormattedTextStyles, Hyperlink,
 };
-use warpui::elements::{
+use twarpui::elements::{
     Align, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex,
     FormattedTextElement, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius,
     Text,
 };
-use warpui::fonts::{Properties, Weight};
-use warpui::geometry::vector::Vector2F;
-use warpui::keymap::{FixedBinding, Keystroke};
-use warpui::platform::file_picker::{FilePickerConfiguration, FilePickerError};
-use warpui::platform::Cursor;
-use warpui::ui_components::components::UiComponent;
-use warpui::{
+use twarpui::fonts::{Properties, Weight};
+use twarpui::geometry::vector::Vector2F;
+use twarpui::keymap::{FixedBinding, Keystroke};
+use twarpui::platform::file_picker::{FilePickerConfiguration, FilePickerError};
+use twarpui::platform::Cursor;
+use twarpui::ui_components::components::UiComponent;
+use twarpui::{
     AppContext, Element, Entity, EventContext, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
 };
 
 use pathfinder_color::ColorU;
-use warp_core::ui::theme::{phenomenon::PhenomenonStyle, Fill};
+use twarp_core::ui::theme::{phenomenon::PhenomenonStyle, Fill};
 
 use crate::appearance::Appearance;
 use crate::settings::AISettings;
@@ -120,8 +120,8 @@ impl HoaOnboardingStep {
     }
 }
 
-pub fn init(app: &mut warpui::AppContext) {
-    use warpui::keymap::macros::*;
+pub fn init(app: &mut twarpui::AppContext) {
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([FixedBinding::new(
         "enter",
@@ -570,7 +570,7 @@ impl View for HoaOnboardingFlow {
         "HoaOnboardingFlow"
     }
 
-    fn on_focus(&mut self, _focus_ctx: &warpui::FocusContext, ctx: &mut ViewContext<Self>) {
+    fn on_focus(&mut self, _focus_ctx: &twarpui::FocusContext, ctx: &mut ViewContext<Self>) {
         ctx.focus_self();
     }
 

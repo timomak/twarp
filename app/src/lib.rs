@@ -154,7 +154,7 @@ mod workspaces;
 //
 // If you feel the need to export a module so that a type or function within it
 // can be used by an integration test, you should define a new assertion function
-// in the warp::integration_testing::assertions module (or a sub-module).  These
+// in the twarp::integration_testing::assertions module (or a sub-module).  These
 // functions will allow us to keep types internal to this crate and expose a
 // simpler API for integration tests to consume.
 pub mod appearance;
@@ -188,8 +188,8 @@ use server::network_logging::NetworkLogModel;
 use server::telemetry::context_provider::AppTelemetryContextProvider;
 #[cfg(feature = "local_fs")]
 use settings::import::model::ImportedConfigModel;
-use warp_cli::GlobalOptions;
-use warp_cli::{agent::AgentCommand, CliCommand};
+use twarp_cli::GlobalOptions;
+use twarp_cli::{agent::AgentCommand, CliCommand};
 
 #[cfg(feature = "local_fs")]
 use repo_metadata::{
@@ -211,13 +211,13 @@ pub mod workspace;
 pub use persistence::testing as sqlite_testing;
 
 use ::settings::{Setting, ToggleableSetting};
-pub use warp_core::errors::{report_error, report_if_error};
+pub use twarp_core::errors::{report_error, report_if_error};
 
 #[cfg(feature = "plugin_host")]
 pub use plugin::{run_plugin_host, PLUGIN_HOST_FLAG};
-use warp_core::user_preferences::GetUserPreferences as _;
-use warpui::modals::{AlertDialogWithCallbacks, AppModalCallback};
-use warpui::platform::app::ApproveTerminateResult;
+use twarp_core::user_preferences::GetUserPreferences as _;
+use twarpui::modals::{AlertDialogWithCallbacks, AppModalCallback};
+use twarpui::platform::app::ApproveTerminateResult;
 use window_settings::WindowSettings;
 use workflows::manager::WorkflowManager;
 
@@ -281,12 +281,12 @@ use std::ops::Deref;
 use std::sync::Arc;
 use terminal::input;
 use terminal::session_settings::SessionSettings;
+use twarp_core::execution_mode::{AppExecutionMode, ExecutionMode};
+use twarp_managed_secrets::ManagedSecretManager;
 use url::Url;
-use warp_core::execution_mode::{AppExecutionMode, ExecutionMode};
-use warp_managed_secrets::ManagedSecretManager;
 use workspace::sync_inputs::SyncedInputState;
 
-use warpui::{integration::TestDriver, App, AssetProvider, Event};
+use twarpui::{integration::TestDriver, App, AssetProvider, Event};
 
 use self::features::FeatureFlag;
 use crate::app_state::AppState;
@@ -308,21 +308,21 @@ use crate::util::bindings::is_binding_cross_platform;
 use crate::workspace::{PaneViewLocator, Workspace, WorkspaceAction};
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::UserWorkspaces;
-use warp_logging::LogDestination;
+use twarp_logging::LogDestination;
 
 // Re-export the send_telemetry_from_ctx macro at the crate root level
-pub use warp_core::send_telemetry_from_app_ctx;
-pub use warp_core::send_telemetry_from_ctx;
+pub use twarp_core::send_telemetry_from_app_ctx;
+pub use twarp_core::send_telemetry_from_ctx;
 
 // Re-export the safe logging macros at the crate root level for backwards compatibility
-pub use warp_core::{safe_debug, safe_error, safe_info, safe_warn};
+pub use twarp_core::{safe_debug, safe_error, safe_info, safe_warn};
 
 use crate::antivirus::AntivirusInfo;
 #[cfg(feature = "local_fs")]
-use warp_files::FileModel;
-use warpui::platform::TerminationMode;
-use warpui::windowing::state::ApplicationStage;
-use warpui::{AppContext, SingletonEntity, WindowId};
+use twarp_files::FileModel;
+use twarpui::platform::TerminationMode;
+use twarpui::windowing::state::ApplicationStage;
+use twarpui::{AppContext, SingletonEntity, WindowId};
 
 #[derive(Clone, Copy, RustEmbed)]
 #[folder = "assets"]
@@ -344,7 +344,7 @@ pub static ASSETS: Assets = Assets;
 pub enum LaunchMode {
     /// Run the regular GUI application.
     App {
-        args: warp_cli::AppArgs,
+        args: twarp_cli::AppArgs,
         /// API key for server authentication, if provided via `--api-key` or `WARP_API_KEY`.
         /// Only used on dogfood channels.
         api_key: Option<String>,
@@ -352,7 +352,7 @@ pub enum LaunchMode {
 
     /// Run the Warp command-line SDK.
     CommandLine {
-        command: warp_cli::CliCommand,
+        command: twarp_cli::CliCommand,
         global_options: GlobalOptions,
         debug: bool,
         /// Whether this CLI invocation is running in a sandboxed environment.
@@ -368,10 +368,10 @@ pub enum LaunchMode {
 }
 
 impl LaunchMode {
-    fn args(&self) -> Cow<'_, warp_cli::AppArgs> {
+    fn args(&self) -> Cow<'_, twarp_cli::AppArgs> {
         match self {
             LaunchMode::App { args, .. } => Cow::Borrowed(args),
-            _ => Cow::Owned(warp_cli::AppArgs::default()),
+            _ => Cow::Owned(twarp_cli::AppArgs::default()),
         }
     }
 
@@ -506,7 +506,7 @@ pub fn run() -> Result<()> {
     init_feature_flags();
 
     // Parse command-line arguments.
-    let args = warp_cli::Args::from_env();
+    let args = twarp_cli::Args::from_env();
 
     // Server URL overrides are only honored on internal dev channels. Release channels silently
     // ignore `--server-root-url` / `--ws-server-url` / `--session-sharing-server-url` (and their
@@ -536,11 +536,11 @@ pub fn run() -> Result<()> {
         #[cfg(windows)]
         if command.prints_to_stdout() {
             // We attach a console to ensure that all standard output gets printed correctly.
-            warp_util::windows::attach_to_parent_console();
+            twarp_util::windows::attach_to_parent_console();
         }
         match command {
             #[cfg(all(feature = "local_tty", unix))]
-            warp_cli::Command::Worker(warp_cli::WorkerCommand::TerminalServer(args)) => {
+            twarp_cli::Command::Worker(twarp_cli::WorkerCommand::TerminalServer(args)) => {
                 // If we were asked to run as a terminal server (as opposed to the main
                 // GUI application), do so immediately.  Ideally, the terminal server would
                 // be a separate binary, but it's much easier to distribute a single binary,
@@ -550,11 +550,13 @@ pub fn run() -> Result<()> {
                 return Ok(());
             }
             #[cfg(feature = "plugin_host")]
-            warp_cli::Command::Worker(warp_cli::WorkerCommand::PluginHost { .. }) => {
+            twarp_cli::Command::Worker(twarp_cli::WorkerCommand::PluginHost { .. }) => {
                 return crate::run_plugin_host();
             }
             #[cfg(feature = "local_tty")]
-            warp_cli::Command::Worker(warp_cli::WorkerCommand::MinidumpServer { socket_name }) => {
+            twarp_cli::Command::Worker(twarp_cli::WorkerCommand::MinidumpServer {
+                socket_name,
+            }) => {
                 cfg_if::cfg_if! {
                     if #[cfg(all(linux_or_windows, feature = "crash_reporting"))] {
                         return crate::crash_reporting::run_minidump_server(socket_name);
@@ -565,15 +567,15 @@ pub fn run() -> Result<()> {
                 }
             }
             #[cfg(not(target_family = "wasm"))]
-            warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerProxy(args)) => {
+            twarp_cli::Command::Worker(twarp_cli::WorkerCommand::RemoteServerProxy(args)) => {
                 return crate::remote_server::run_proxy(args.identity_key.clone());
             }
             #[cfg(not(target_family = "wasm"))]
-            warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerDaemon(args)) => {
+            twarp_cli::Command::Worker(twarp_cli::WorkerCommand::RemoteServerDaemon(args)) => {
                 return crate::remote_server::run_daemon(args.identity_key.clone());
             }
             #[cfg(not(target_family = "wasm"))]
-            warp_cli::Command::Worker(warp_cli::WorkerCommand::RipgrepSearch {
+            twarp_cli::Command::Worker(twarp_cli::WorkerCommand::RipgrepSearch {
                 parent,
                 ignore_case,
                 multiline,
@@ -582,7 +584,7 @@ pub fn run() -> Result<()> {
                 pattern,
                 paths,
             }) => {
-                warp_ripgrep::search::run_search_subprocess(
+                twarp_ripgrep::search::run_search_subprocess(
                     std::slice::from_ref(pattern),
                     paths.clone(),
                     *ignore_case,
@@ -599,23 +601,25 @@ pub fn run() -> Result<()> {
                 feature = "plugin_host",
                 not(target_family = "wasm")
             )))]
-            warp_cli::Command::Worker(worker) => {
+            twarp_cli::Command::Worker(worker) => {
                 // Need this case to handle platforms where there are no enum variants in
-                // warp_cli::WorkerCommand, as we still need to check Command::Worker.
+                // twarp_cli::WorkerCommand, as we still need to check Command::Worker.
 
                 // On wasm, specifically, we should fail spectacularly if we get here.
                 #[cfg(target_family = "wasm")]
                 panic!("Worker process not supported on WASM: {worker:?}")
             }
-            warp_cli::Command::Completions { shell } => {
-                return warp_cli::completions::generate_to_stdout(*shell);
+            twarp_cli::Command::Completions { shell } => {
+                return twarp_cli::completions::generate_to_stdout(*shell);
             }
-            warp_cli::Command::CommandLine(cmd) => {
+            twarp_cli::Command::CommandLine(cmd) => {
                 let (is_sandboxed, computer_use_override) = match cmd.as_ref() {
-                    warp_cli::CliCommand::Agent(warp_cli::agent::AgentCommand::Run(run_args)) => (
-                        run_args.sandboxed,
-                        run_args.computer_use.computer_use_override(),
-                    ),
+                    twarp_cli::CliCommand::Agent(twarp_cli::agent::AgentCommand::Run(run_args)) => {
+                        (
+                            run_args.sandboxed,
+                            run_args.computer_use.computer_use_override(),
+                        )
+                    }
                     _ => (false, None),
                 };
 
@@ -630,11 +634,11 @@ pub fn run() -> Result<()> {
                     computer_use_override,
                 });
             }
-            warp_cli::Command::DumpDebugInfo => {
+            twarp_cli::Command::DumpDebugInfo => {
                 return debug_dump::run();
             }
             #[cfg(not(target_family = "wasm"))]
-            warp_cli::Command::PrintTelemetryEvents => {
+            twarp_cli::Command::PrintTelemetryEvents => {
                 return TelemetryEvent::print_telemetry_events_json();
             }
         }
@@ -643,10 +647,10 @@ pub fn run() -> Result<()> {
     // If running as a standalone CLI binary or invoked as "oz", print help
     // instead of launching the GUI app.
     let is_cli_binary = cfg!(feature = "standalone")
-        || warp_cli::binary_name().is_some_and(|name| name.starts_with("oz"))
+        || twarp_cli::binary_name().is_some_and(|name| name.starts_with("oz"))
         || std::env::var_os("WARP_CLI_MODE").is_some();
     if is_cli_binary {
-        warp_cli::Args::clap_command().print_help()?;
+        twarp_cli::Args::clap_command().print_help()?;
         return Ok(());
     }
 
@@ -708,12 +712,12 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
     cfg_if::cfg_if! {
         if #[cfg(enable_crash_recovery)] {
             if crash_recovery::is_crash_recovery_process(launch_mode.args().as_ref()) {
-                warp_logging::init_for_crash_recovery_process()?;
+                twarp_logging::init_for_crash_recovery_process()?;
             } else {
-                warp_logging::init(warp_logging::LogConfig { is_cli, log_destination })?;
+                twarp_logging::init(twarp_logging::LogConfig { is_cli, log_destination })?;
             }
         } else {
-            warp_logging::init(warp_logging::LogConfig { is_cli, log_destination })?;
+            twarp_logging::init(twarp_logging::LogConfig { is_cli, log_destination })?;
         }
     }
 
@@ -822,7 +826,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         not(any(enable_crash_recovery, any(target_os = "linux", target_os = "freebsd"))),
         expect(unused)
     )]
-    let prefs_for_public_settings: &dyn warpui_extras::user_preferences::UserPreferences =
+    let prefs_for_public_settings: &dyn twarpui_extras::user_preferences::UserPreferences =
         if FeatureFlag::SettingsFile.is_enabled() {
             public_preferences.as_ref()
         } else {
@@ -842,13 +846,13 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         terminal::local_tty::spawner::PtySpawner::new().context("Failed to create pty spawner")?;
 
     let mut app_builder = if launch_mode.is_headless() {
-        warpui::platform::AppBuilder::new_headless(
+        twarpui::platform::AppBuilder::new_headless(
             app_callbacks(launch_mode.is_integration_test()),
             Box::new(ASSETS),
             launch_mode.take_test_driver(),
         )
     } else {
-        warpui::platform::AppBuilder::new(
+        twarpui::platform::AppBuilder::new(
             app_callbacks(launch_mode.is_integration_test()),
             Box::new(ASSETS),
             launch_mode.take_test_driver(),
@@ -857,7 +861,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
 
     #[cfg(target_os = "macos")]
     {
-        use warpui::platform::mac::AppExt;
+        use twarpui::platform::mac::AppExt;
 
         let activate_on_launch = !launch_mode.is_integration_test()
             || std::env::var("WARPUI_USE_REAL_DISPLAY_IN_INTEGRATION_TESTS").is_ok();
@@ -873,7 +877,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     {
         use crate::settings::ForceX11;
-        use warpui::platform::linux::{self, AppBuilderExt};
+        use twarpui::platform::linux::{self, AppBuilderExt};
 
         app_builder.set_window_class(ChannelState::app_id().to_string());
 
@@ -886,7 +890,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
 
     #[cfg(target_os = "windows")]
     {
-        use warpui::platform::windows::AppBuilderExt;
+        use twarpui::platform::windows::AppBuilderExt;
         app_builder.set_app_user_model_id(ChannelState::app_id().to_string());
 
         // Only use DXC for DirectX shader compilation if we're not running in a Parallels VM
@@ -894,7 +898,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         let is_parallels_vm = crate::util::vm_detection::is_running_in_windows_parallels_vm();
         if !is_parallels_vm {
             log::info!("Using DXC for DirectX shader compilation");
-            use warpui::platform::windows::DXCPath;
+            use twarpui::platform::windows::DXCPath;
 
             app_builder.use_dxc_for_directx_shader_compilation(DXCPath {
                 dxc_path: "dxcompiler.dll".to_string(),
@@ -923,7 +927,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         #[cfg(not(target_family = "wasm"))]
         // Rotate the log files in the background.
         ctx.background_executor()
-            .spawn(warp_logging::rotate_log_files())
+            .spawn(twarp_logging::rotate_log_files())
             .detach();
 
         ctx.add_singleton_model(|ctx| {
@@ -977,8 +981,8 @@ pub struct UpdateQuakeModeEventArg {
 fn initialize_app(
     launch_mode: &LaunchMode,
     mut timer: IntervalTimer,
-    startup_toml_parse_error: Option<warpui_extras::user_preferences::Error>,
-    ctx: &mut warpui::AppContext,
+    startup_toml_parse_error: Option<twarpui_extras::user_preferences::Error>,
+    ctx: &mut twarpui::AppContext,
     _pre_sentry_errors: impl IntoIterator<Item = anyhow::Error>,
 ) -> Option<AppState> {
     // WARNING: Errors that happen here before crash_reporting::init will not be collected in
@@ -989,13 +993,13 @@ fn initialize_app(
     // Register an implementation of the secure storage service.
     cfg_if::cfg_if! {
         if #[cfg(feature = "integration_tests")] {
-            warpui_extras::secure_storage::register_noop(&data_domain, ctx);
+            twarpui_extras::secure_storage::register_noop(&data_domain, ctx);
         } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
-            warpui_extras::secure_storage::register_with_fallback(&data_domain, warp_core::paths::state_dir(), ctx)
+            twarpui_extras::secure_storage::register_with_fallback(&data_domain, twarp_core::paths::state_dir(), ctx)
         } else if #[cfg(target_os = "windows")] {
-            warpui_extras::secure_storage::register_with_dir(&data_domain, warp_core::paths::state_dir(), ctx)
+            twarpui_extras::secure_storage::register_with_dir(&data_domain, twarp_core::paths::state_dir(), ctx)
         } else {
-            warpui_extras::secure_storage::register(&data_domain, ctx);
+            twarpui_extras::secure_storage::register(&data_domain, ctx);
         }
     }
 
@@ -1312,7 +1316,7 @@ fn initialize_app(
 
             GPUState::handle(ctx).update(ctx, |gpu_state, ctx| {
                 gpu_state
-                    .set_has_lower_power_gpu(warpui::rendering::is_low_power_gpu_available(), ctx);
+                    .set_has_lower_power_gpu(twarpui::rendering::is_low_power_gpu_available(), ctx);
             });
 
             for window_id in ctx.window_ids().collect_vec() {
@@ -1358,7 +1362,7 @@ fn initialize_app(
         let imported_config_model = ctx.add_singleton_model(ImportedConfigModel::new);
 
         if FeatureFlag::SettingsImport.is_enabled()
-            && ChannelState::channel() != warp_core::channel::Channel::Integration
+            && ChannelState::channel() != twarp_core::channel::Channel::Integration
         {
             imported_config_model.update(ctx, |model, ctx| {
                 model.search_for_settings_to_import(ctx);
@@ -1773,8 +1777,8 @@ fn initialize_app(
     app_state
 }
 
-fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
-    warpui::platform::AppCallbacks {
+fn app_callbacks(is_integration_test: bool) -> twarpui::platform::AppCallbacks {
+    twarpui::platform::AppCallbacks {
         on_internet_reachability_changed: Some(Box::new(move |reachable, ctx| {
             NetworkStatus::handle(ctx)
                 .update(ctx, move |me, ctx| me.reachability_changed(reachable, ctx));
@@ -2193,7 +2197,7 @@ fn on_close_window_cancelled(
     }
 }
 
-fn launch(ctx: &mut warpui::AppContext, app_state: Option<AppState>, launch_mode: LaunchMode) {
+fn launch(ctx: &mut twarpui::AppContext, app_state: Option<AppState>, launch_mode: LaunchMode) {
     IntervalTimer::handle(ctx).update(ctx, |timer, _ctx| {
         timer.mark_interval_end("APP_LAUNCHED");
     });
@@ -2281,7 +2285,7 @@ fn launch(ctx: &mut warpui::AppContext, app_state: Option<AppState>, launch_mode
 #[cfg(test)]
 fn init_logging_for_unit_tests_glue() {
     // Initialize terminal-friendly logging for tests from the shared logger crate.
-    warp_logging::init_logging_for_unit_tests();
+    twarp_logging::init_logging_for_unit_tests();
 }
 
 /// Mark all features which should be enabled on the current channel as enabled.
@@ -2618,7 +2622,7 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AgentView,
         #[cfg(feature = "agent_view_block_context")]
         FeatureFlag::AgentViewBlockContext,
-        #[cfg(feature = "warp_managed_secrets")]
+        #[cfg(feature = "twarp_managed_secrets")]
         FeatureFlag::WarpManagedSecrets,
         #[cfg(feature = "v4a_file_diffs")]
         FeatureFlag::V4AFileDiffs,

@@ -30,18 +30,18 @@ use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::icon_button_with_color;
 use crate::ui_components::icons;
 use settings::Setting as _;
-use warp_core::context_flag::ContextFlag;
-use warpui::elements::{
+use twarp_core::context_flag::ContextFlag;
+use twarpui::elements::{
     ChildAnchor, ConstrainedBox, CrossAxisAlignment, Flex, MainAxisAlignment, MainAxisSize,
     OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Shrinkable, Stack,
 };
-use warpui::prelude::{vec2f, ChildView, Container, Hoverable};
-use warpui::text_layout::ClipConfig;
-use warpui::ui_components::components::UiComponent;
+use twarpui::prelude::{vec2f, ChildView, Container, Hoverable};
+use twarpui::text_layout::ClipConfig;
+use twarpui::ui_components::components::UiComponent;
 #[cfg(not(target_arch = "wasm32"))]
-use warpui::ui_components::components::UiComponentStyles;
-use warpui::WeakModelHandle;
-use warpui::{AppContext, Element, ModelHandle, SingletonEntity, TypedActionView, ViewContext};
+use twarpui::ui_components::components::UiComponentStyles;
+use twarpui::WeakModelHandle;
+use twarpui::{AppContext, Element, ModelHandle, SingletonEntity, TypedActionView, ViewContext};
 
 impl TerminalView {
     /// Returns a reference to the focus handle if one has been set.
@@ -193,7 +193,7 @@ impl TerminalView {
     /// Renders the back button for the pane header, or an empty element if the
     /// back button should not be shown.
     fn maybe_render_header_back_button(&self, app: &AppContext) -> Box<dyn Element> {
-        if !FeatureFlag::AgentView.is_enabled() || warpui::platform::is_mobile_device() {
+        if !FeatureFlag::AgentView.is_enabled() || twarpui::platform::is_mobile_device() {
             return Flex::row().finish();
         }
 
@@ -716,7 +716,7 @@ impl TerminalView {
         _is_long_running: bool,
         _app: &AppContext,
     ) -> Box<dyn Element> {
-        warpui::elements::Empty::new().finish()
+        twarpui::elements::Empty::new().finish()
     }
 
     /// Render the indicator for terminal mode (no conversation selected).

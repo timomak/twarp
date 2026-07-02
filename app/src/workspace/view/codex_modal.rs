@@ -4,19 +4,19 @@ use crate::view_components::action_button::{ActionButton, ActionButtonTheme};
 use asset_macro::bundled_or_fetched_asset;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use warp_core::ui::appearance::Appearance;
-use warp_core::ui::theme::Fill;
-use warpui::elements::{
+use twarp_core::ui::appearance::Appearance;
+use twarp_core::ui::theme::Fill;
+use twarpui::elements::{
     Align, Border, CacheOption, ChildAnchor, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, DropShadow, Flex, FormattedTextElement, Image, MainAxisAlignment,
     MainAxisSize, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement,
     ParentOffsetBounds, Radius, Stack, Text,
 };
-use warpui::fonts::Weight;
-use warpui::keymap::FixedBinding;
-use warpui::presenter::ChildView;
-use warpui::ui_components::components::UiComponent;
-use warpui::{
+use twarpui::fonts::Weight;
+use twarpui::keymap::FixedBinding;
+use twarpui::presenter::ChildView;
+use twarpui::ui_components::components::UiComponent;
+use twarpui::{
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
@@ -48,7 +48,7 @@ const LEFT_PANEL_WIDTH: f32 = 330.;
 const RIGHT_PANEL_WIDTH: f32 = 325.;
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([FixedBinding::new(
         "escape",

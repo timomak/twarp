@@ -1,5 +1,5 @@
-use warp_core::ui::appearance::Appearance;
-use warpui::{platform::WindowStyle, App, ViewHandle};
+use twarp_core::ui::appearance::Appearance;
+use twarpui::{platform::WindowStyle, App, ViewHandle};
 
 use crate::auth::AuthStateProvider;
 use crate::{

@@ -2,7 +2,7 @@ use crate::terminal::package_installers::command_at_cursor_has_common_package_in
 
 #[test]
 fn test_command_at_cursor_has_common_package_installer_prefix_basic_prefixes() {
-    use warp_util::path::ShellFamily;
+    use twarp_util::path::ShellFamily;
 
     // A representative subset of prefixes from is_common_package_installer_prefix
     let prefixes = vec![
@@ -50,10 +50,10 @@ fn test_command_at_cursor_has_common_package_installer_prefix_with_alias_expansi
     use std::collections::HashMap;
     use std::sync::Arc;
 
+    use twarp_completer::signatures::CommandRegistry;
+    use twarp_util::path::ShellFamily;
+    use twarpui::App;
     use typed_path::TypedPathBuf;
-    use warp_completer::signatures::CommandRegistry;
-    use warp_util::path::ShellFamily;
-    use warpui::App;
 
     use crate::completer::SessionContext;
     use crate::terminal::model::session::{
@@ -95,7 +95,7 @@ fn test_command_at_cursor_has_common_package_installer_prefix_with_alias_expansi
 
 #[test]
 fn test_command_at_cursor_has_common_package_installer_prefix_negative_cases() {
-    use warp_util::path::ShellFamily;
+    use twarp_util::path::ShellFamily;
 
     let cases = vec!["git add @", "echo @", "cargo run @"];
 
@@ -117,7 +117,7 @@ fn test_command_at_cursor_has_common_package_installer_prefix_negative_cases() {
 
 #[test]
 fn test_command_at_cursor_has_common_package_installer_prefix_multi_segment_commands() {
-    use warp_util::path::ShellFamily;
+    use twarp_util::path::ShellFamily;
 
     // Test cases with multi-segment commands and different cursor positions
     let test_cases = vec![

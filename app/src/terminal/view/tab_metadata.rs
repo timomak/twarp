@@ -1,7 +1,7 @@
 use crate::context_chips::display_chip::GitLineChanges;
 use crate::context_chips::{git_line_changes_from_chips, ContextChipKind};
 use crate::terminal::TerminalView;
-use warpui::AppContext;
+use twarpui::AppContext;
 
 impl TerminalView {
     fn prompt_chip_value(&self, chip_kind: &ContextChipKind, ctx: &AppContext) -> Option<String> {
@@ -20,7 +20,7 @@ impl TerminalView {
             .active_block_session_id()
             .and_then(|session_id| self.sessions.as_ref(ctx).get(session_id))
             .and_then(|session| session.home_dir().map(str::to_owned));
-        Some(warp_util::path::user_friendly_path(&raw, home_dir.as_deref()).to_string())
+        Some(twarp_util::path::user_friendly_path(&raw, home_dir.as_deref()).to_string())
     }
 
     pub fn terminal_title_from_shell(&self) -> String {

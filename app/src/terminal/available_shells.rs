@@ -9,8 +9,8 @@ use std::sync::Arc;
 #[cfg(feature = "local_tty")]
 use settings::Setting as _;
 #[cfg(feature = "local_tty")]
-use warpui::{AppContext, ModelContext};
-use warpui::{Entity, SingletonEntity};
+use twarpui::{AppContext, ModelContext};
+use twarpui::{Entity, SingletonEntity};
 
 #[cfg(feature = "local_tty")]
 use crate::util::path::file_exists_and_is_executable;
@@ -606,7 +606,7 @@ impl AvailableShells {
         ctx: &mut ModelContext<Self>,
     ) -> anyhow::Result<()> {
         use super::session_settings::SessionSettings;
-        use warp_core::features::FeatureFlag;
+        use twarp_core::features::FeatureFlag;
         SessionSettings::handle(ctx).update(ctx, |settings, ctx| {
             if FeatureFlag::ShellSelector.is_enabled() {
                 settings
@@ -624,7 +624,7 @@ impl AvailableShells {
         paths_to_search: &[PathBuf],
         fallback_path: Option<&Path>,
     ) -> Vec<AvailableShell> {
-        use warp_core::features::FeatureFlag;
+        use twarp_core::features::FeatureFlag;
 
         if !FeatureFlag::ShellSelector.is_enabled() {
             return vec![
@@ -722,7 +722,7 @@ impl AvailableShells {
     fn locate_msys2_executables() -> Vec<PathBuf> {
         use std::env;
 
-        use warp_core::features::FeatureFlag;
+        use twarp_core::features::FeatureFlag;
 
         let mut paths = Vec::new();
 
@@ -982,7 +982,7 @@ impl Entity for AvailableShells {
 impl SingletonEntity for AvailableShells {}
 
 #[cfg(feature = "local_tty")]
-pub fn register(app: &mut impl warpui::AddSingletonModel) {
+pub fn register(app: &mut impl twarpui::AddSingletonModel) {
     #[cfg(windows)]
     app.add_singleton_model(super::wsl::WslInfo::new);
     app.add_singleton_model(AvailableShells::new);

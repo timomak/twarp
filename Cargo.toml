@@ -16,10 +16,10 @@ default-members = [
   "crates/graphql",
   "crates/markdown_parser",
   "crates/sum_tree",
-  "crates/warpui",
-  "crates/warp_completer",
-  "crates/warp_terminal",
-  "crates/warp_util",
+  "crates/twarpui",
+  "crates/twarp_completer",
+  "crates/twarp_terminal",
+  "crates/twarp_util",
 ]
 
 [workspace.package]
@@ -66,28 +66,28 @@ syntax_tree = { path = "crates/syntax_tree" }
 ui_components = { path = "crates/ui_components" }
 vim = { path = "crates/vim" }
 virtual-fs = { path = "crates/virtual_fs" }
-warp = { path = "app" }
-warp_cli = { path = "crates/warp_cli" }
-warp_completer = { path = "crates/warp_completer" }
-warp_core = { path = "crates/warp_core" }
-warp_editor = { path = "crates/editor" }
-warp_features = { path = "crates/warp_features" }
+twarp = { path = "app" }
+twarp_cli = { path = "crates/twarp_cli" }
+twarp_completer = { path = "crates/twarp_completer" }
+twarp_core = { path = "crates/twarp_core" }
+twarp_editor = { path = "crates/editor" }
+twarp_features = { path = "crates/twarp_features" }
 remote_server = { path = "crates/remote_server" }
-warp_files = { path = "crates/warp_files" }
-warp_graphql = { path = "crates/graphql" }
-warp_graphql_schema = { path = "crates/warp_graphql_schema" }
-warp_isolation_platform = { path = "crates/isolation_platform" }
-warp_js = { path = "crates/warp_js" }
-warp_logging = { path = "crates/warp_logging" }
-warp_managed_secrets = { path = "crates/managed_secrets" }
-warp_ripgrep = { path = "crates/warp_ripgrep" }
-warp_server_client = { path = "crates/warp_server_client" }
-warp_terminal = { path = "crates/warp_terminal" }
-warp_util = { path = "crates/warp_util" }
-warp_web_event_bus = { path = "crates/warp_web_event_bus" }
-warpui = { path = "crates/warpui" }
-warpui_core = { path = "crates/warpui_core" }
-warpui_extras = { path = "crates/warpui_extras", default-features = false }
+twarp_files = { path = "crates/twarp_files" }
+twarp_graphql = { path = "crates/graphql" }
+twarp_graphql_schema = { path = "crates/twarp_graphql_schema" }
+twarp_isolation_platform = { path = "crates/isolation_platform" }
+twarp_js = { path = "crates/twarp_js" }
+twarp_logging = { path = "crates/twarp_logging" }
+twarp_managed_secrets = { path = "crates/managed_secrets" }
+twarp_ripgrep = { path = "crates/twarp_ripgrep" }
+twarp_server_client = { path = "crates/twarp_server_client" }
+twarp_terminal = { path = "crates/twarp_terminal" }
+twarp_util = { path = "crates/twarp_util" }
+twarp_web_event_bus = { path = "crates/twarp_web_event_bus" }
+twarpui = { path = "crates/twarpui" }
+twarpui_core = { path = "crates/twarpui_core" }
+twarpui_extras = { path = "crates/twarpui_extras", default-features = false }
 watcher = { path = "crates/watcher" }
 websocket = { path = "crates/websocket" }
 

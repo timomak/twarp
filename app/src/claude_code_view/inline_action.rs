@@ -36,7 +36,7 @@ use std::borrow::Cow;
 use std::rc::Rc;
 
 use pathfinder_color::ColorU;
-use warpui::{
+use twarpui::{
     elements::{
         Align, Border, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
         Expanded, Flex, FormattedTextElement, Hoverable, MainAxisAlignment, MainAxisSize,
@@ -117,7 +117,7 @@ pub(super) enum InteractionMode {
 pub(super) struct HeaderConfig {
     pub title: Cow<'static, str>,
     pub font_family: FamilyId,
-    pub icon: Option<warpui::elements::Icon>,
+    pub icon: Option<twarpui::elements::Icon>,
     pub right_cluster: RightCluster,
     pub interaction_mode: Option<InteractionMode>,
     pub is_text_selectable: bool,
@@ -139,7 +139,7 @@ impl HeaderConfig {
         }
     }
 
-    pub fn with_icon(mut self, icon: warpui::elements::Icon) -> Self {
+    pub fn with_icon(mut self, icon: twarpui::elements::Icon) -> Self {
         self.icon = Some(icon);
         self
     }

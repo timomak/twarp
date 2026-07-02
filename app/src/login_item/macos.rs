@@ -7,7 +7,7 @@
 use crate::report_if_error;
 use crate::terminal::general_settings::GeneralSettings;
 use ::settings::Setting;
-use warpui::{AppContext, SingletonEntity};
+use twarpui::{AppContext, SingletonEntity};
 
 #[allow(deprecated)]
 pub(super) fn maybe_register_app_as_login_item(ctx: &mut AppContext) {

@@ -24,10 +24,10 @@ pub mod view;
 // twarp: 2c-d — AI blocklist / skills / usage deleted; stubs.
 pub const NEW_AGENT_PANE_LABEL: &str = "New agent pane";
 pub struct SkillManager;
-impl warpui::Entity for SkillManager {
+impl twarpui::Entity for SkillManager {
     type Event = ();
 }
-impl warpui::SingletonEntity for SkillManager {}
+impl twarpui::SingletonEntity for SkillManager {}
 #[allow(dead_code)]
 impl SkillManager {
     pub fn active_bundled_skill<C>(&self, _: &str, _: &C) -> Option<()> {
@@ -35,10 +35,10 @@ impl SkillManager {
     }
 }
 pub struct AIRequestUsageModel;
-impl warpui::Entity for AIRequestUsageModel {
+impl twarpui::Entity for AIRequestUsageModel {
     type Event = ();
 }
-impl warpui::SingletonEntity for AIRequestUsageModel {}
+impl twarpui::SingletonEntity for AIRequestUsageModel {}
 #[allow(dead_code)]
 impl AIRequestUsageModel {
     pub fn has_any_ai_remaining<C>(&self, _: &C) -> bool {
@@ -57,7 +57,7 @@ use crate::settings::AISettings;
 use crate::settings_view::{self, flags, SettingsSection};
 use crate::tab::uses_vertical_tabs;
 use crate::tab_configs;
-use warpui::SingletonEntity;
+use twarpui::SingletonEntity;
 
 use crate::channel::ChannelState;
 
@@ -65,13 +65,13 @@ use crate::util::bindings::{self, cmd_or_ctrl_shift, is_binding_pty_compliant, C
 
 use crate::palette::PaletteMode;
 use serde::{Deserialize, Serialize};
-use warp_core::context_flag::ContextFlag;
-use warp_core::ui::theme::AnsiColorIdentifier;
-use warpui::accessibility::AccessibilityVerbosity;
-use warpui::elements::DropTargetData;
-use warpui::keymap::FixedBinding;
-use warpui::keymap::{BindingDescription, EditableBinding};
-use warpui::AppContext;
+use twarp_core::context_flag::ContextFlag;
+use twarp_core::ui::theme::AnsiColorIdentifier;
+use twarpui::accessibility::AccessibilityVerbosity;
+use twarpui::elements::DropTargetData;
+use twarpui::keymap::FixedBinding;
+use twarpui::keymap::{BindingDescription, EditableBinding};
+use twarpui::AppContext;
 
 pub use action::{
     CommandSearchOptions, InitContent, RestoreConversationLayout, TabContextMenuAnchor,
@@ -88,8 +88,8 @@ pub use view::{
 };
 
 // Helper function to access panel header corner radius from other modules
-pub fn panel_header_corner_radius() -> warpui::elements::CornerRadius {
-    warpui::elements::CornerRadius::with_top(warpui::elements::Radius::Pixels(8.))
+pub fn panel_header_corner_radius() -> twarpui::elements::CornerRadius {
+    twarpui::elements::CornerRadius::with_top(twarpui::elements::Radius::Pixels(8.))
 }
 
 /// Returns `true` when `WorkspaceAction::SendFeedback` will launch the guided
@@ -124,7 +124,7 @@ pub use toast_stack::ToastStack;
 pub fn init(app: &mut AppContext) {
     app.add_singleton_model(|_| WorkspaceRegistry::new());
     app.add_singleton_model(|_| cross_window_tab_drag::CrossWindowTabDrag::new());
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
     app.register_binding_validator::<Workspace>(is_binding_pty_compliant);
 
     modal::init(app);
@@ -1479,7 +1479,7 @@ pub fn init(app: &mut AppContext) {
 }
 
 fn add_open_setting_pages_as_editable_binding(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     // Add the ability to open setting modals to the command palette.
     app.register_editable_bindings([
@@ -1610,7 +1610,7 @@ fn add_open_setting_pages_as_editable_binding(app: &mut AppContext) {
 }
 
 fn add_overflow_menu_items_as_editable_binding(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     // Add the ability to open all overflow menu items to the command palette.
     app.register_editable_bindings([
@@ -1692,12 +1692,12 @@ impl DropTargetData for VerticalTabsPaneDropTargetData {
 ///
 /// Custom bindings are registered after the built-in workspace bindings so
 /// they take precedence on a chord collision (PRODUCT §16, see
-/// `crates/warpui_core/src/keymap.rs:439-440`).
+/// `crates/twarpui_core/src/keymap.rs:439-440`).
 ///
 /// Names are leaked to `&'static str` because `EditableBinding::new` stores
 /// the name by reference and the binding lives for the app's lifetime.
 pub fn register_shortcut_bindings(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     let registry: Vec<(usize, String, String)> = {
         let model_handle = crate::shortcuts::ShortcutsModel::handle(app);

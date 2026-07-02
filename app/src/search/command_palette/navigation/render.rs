@@ -17,14 +17,14 @@ use crate::terminal::model::grid::Dimensions;
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
 use crate::terminal::SizeInfo;
 use pathfinder_geometry::vector::vec2f;
-use warpui::elements::{
+use twarpui::elements::{
     Align, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, Highlight,
     ParentElement, Radius, Shrinkable, Wrap,
 };
-use warpui::fonts::{Properties, Weight};
-use warpui::ui_components::components::{UiComponent, UiComponentStyles};
-use warpui::units::IntoPixels;
-use warpui::{AppContext, Element, SingletonEntity};
+use twarpui::fonts::{Properties, Weight};
+use twarpui::ui_components::components::{UiComponent, UiComponentStyles};
+use twarpui::units::IntoPixels;
+use twarpui::{AppContext, Element, SingletonEntity};
 
 /// Renders a navigation session.
 pub fn render_navigation_session(

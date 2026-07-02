@@ -3,7 +3,7 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::*;
-use warp_core::platform::SessionPlatform;
+use twarp_core::platform::SessionPlatform;
 
 #[test]
 fn test_infer_line_ending_empty_file() {

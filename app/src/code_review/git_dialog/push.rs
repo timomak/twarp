@@ -7,8 +7,8 @@
 
 use std::collections::HashMap;
 
-use warp_core::ui::appearance::Appearance;
-use warpui::{
+use twarp_core::ui::appearance::Appearance;
+use twarpui::{
     elements::{
         Border, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container,
         CornerRadius, CrossAxisAlignment, Element, Flex, Hoverable, MainAxisAlignment,
@@ -31,7 +31,7 @@ use crate::{
     ui_components::icons::Icon,
     util::git::{Commit, FileChangeEntry},
 };
-use warp_core::send_telemetry_from_ctx;
+use twarp_core::send_telemetry_from_ctx;
 
 /// Push-specific sub-actions, dispatched wrapped in `GitDialogAction::Push`.
 #[derive(Clone, Debug, PartialEq)]
@@ -376,7 +376,7 @@ fn render_commits_section(state: &PushState, appearance: &Appearance) -> Box<dyn
             ScrollbarWidth::Auto,
             theme.nonactive_ui_detail().into(),
             theme.active_ui_detail().into(),
-            warpui::elements::Fill::None,
+            twarpui::elements::Fill::None,
         )
         .finish(),
     )

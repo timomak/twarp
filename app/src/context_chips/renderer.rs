@@ -1,16 +1,16 @@
 //! The renderer for a single context chip.
 
 use pathfinder_color::ColorU;
-use warp_core::ui::theme::Fill;
-use warpui::elements::{
+use twarp_core::ui::theme::Fill;
+use twarpui::elements::{
     ConstrainedBox, DraggableState, Hoverable, MouseStateHandle, OffsetPositioning, ParentElement,
     ParentOffsetBounds, Stack,
 };
-use warpui::fonts::{Properties, Weight};
-use warpui::platform::Cursor;
-use warpui::ui_components::components::UiComponent;
-use warpui::Action;
-use warpui::{
+use twarpui::fonts::{Properties, Weight};
+use twarpui::platform::Cursor;
+use twarpui::ui_components::components::UiComponent;
+use twarpui::Action;
+use twarpui::{
     elements::{Container, CrossAxisAlignment, Flex, Text},
     Element,
 };
@@ -214,8 +214,8 @@ impl Renderer {
                 OffsetPositioning::offset_from_parent(
                     vec2f(0., -2.5 * font_size),
                     ParentOffsetBounds::Unbounded,
-                    warpui::elements::ParentAnchor::Center,
-                    warpui::elements::ChildAnchor::Center,
+                    twarpui::elements::ParentAnchor::Center,
+                    twarpui::elements::ChildAnchor::Center,
                 ),
             );
             stack.finish()

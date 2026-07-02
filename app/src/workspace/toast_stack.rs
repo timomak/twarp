@@ -1,4 +1,4 @@
-use warpui::{Entity, ModelContext, SingletonEntity, WindowId};
+use twarpui::{Entity, ModelContext, SingletonEntity, WindowId};
 
 use crate::{
     view_components::{DismissibleToast, ToastType},

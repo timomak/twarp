@@ -1,6 +1,6 @@
 use super::*;
 use itertools::Itertools;
-use warpui::keymap::BindingId;
+use twarpui::keymap::BindingId;
 
 #[test]
 fn test_enqueue_new_item() {

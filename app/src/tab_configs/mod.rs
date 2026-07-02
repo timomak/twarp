@@ -10,7 +10,7 @@ pub mod session_config_rendering;
 pub mod tab_config;
 pub mod telemetry;
 
-use warp_core::ui::theme::Fill;
+use twarp_core::ui::theme::Fill;
 
 pub use new_worktree_modal::{NewWorktreeModal, NewWorktreeModalEvent};
 pub use params_modal::{TabConfigParamsModal, TabConfigParamsModalEvent};

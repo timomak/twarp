@@ -90,7 +90,7 @@ No. Warp does not use contributions to this repository, or the discussion around
 
 ### Is Warp fully open source?
 
-The Warp **client** is open source: the app and most crates are licensed under [AGPL v3](LICENSE-AGPL), and the UI framework crates (`warpui_core`, `warpui`) are licensed under [MIT](LICENSE-MIT). The **server**, the **Warp Drive backend**, and **Oz** (our agent orchestration layer) are not in this repository and remain proprietary today.
+The Warp **client** is open source: the app and most crates are licensed under [AGPL v3](LICENSE-AGPL), and the UI framework crates (`twarpui_core`, `twarpui`) are licensed under [MIT](LICENSE-MIT). The **server**, the **Warp Drive backend**, and **Oz** (our agent orchestration layer) are not in this repository and remain proprietary today.
 
 ### What lives in this repo and what doesn't?
 
@@ -114,7 +114,7 @@ We wanted two different things from each part of the codebase, so we picked two 
 
 For the **client app**, we chose [AGPL v3](LICENSE-AGPL) because we wanted modifications to stay open. A permissive license like MIT or Apache 2.0 would let someone fork the client, make changes, and ship a closed-source product back to users — that's a pattern we've seen burn end-user-facing open source projects, and it's not the ecosystem we want to seed. AGPL closes the network-use loophole that GPL leaves open, so a hosted derivative of the client is also covered. The trade-off is that AGPL is stricter than what some companies are comfortable embedding into proprietary products, and we accept that — the client isn't where we expect that kind of reuse.
 
-For the **UI framework crates** (`warpui_core`, `warpui`), we chose [MIT](LICENSE-MIT) because they're general-purpose infrastructure that's useful well outside Warp. We want people building unrelated apps in Rust to be able to pick them up without the friction AGPL introduces. Keeping that layer permissive is good for the framework's reach and good for upstream contributions back to it.
+For the **UI framework crates** (`twarpui_core`, `twarpui`), we chose [MIT](LICENSE-MIT) because they're general-purpose infrastructure that's useful well outside Warp. We want people building unrelated apps in Rust to be able to pick them up without the friction AGPL introduces. Keeping that layer permissive is good for the framework's reach and good for upstream contributions back to it.
 
 In short: AGPL where we want derivatives to stay open, MIT where we want maximum reuse.
 

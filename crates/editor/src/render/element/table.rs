@@ -1,6 +1,6 @@
 use std::ops::Range;
 use string_offset::CharOffset;
-use warpui::{
+use twarpui::{
     AppContext, ClipBounds, Event, EventContext,
     elements::{
         Axis, CornerRadius, DEFAULT_SCROLL_WHEEL_PIXELS_PER_LINE, Radius, ScrollData,
@@ -121,7 +121,7 @@ impl RenderableBlock for RenderableTable {
         &self.viewport_item
     }
 
-    fn layout(&mut self, _: &RenderState, _: &mut warpui::LayoutContext, _: &AppContext) {}
+    fn layout(&mut self, _: &RenderState, _: &mut twarpui::LayoutContext, _: &AppContext) {}
 
     fn paint(&mut self, model: &RenderState, ctx: &mut RenderContext, _app: &AppContext) {
         let content = model.content();

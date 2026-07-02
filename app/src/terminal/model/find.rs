@@ -7,7 +7,7 @@ use regex_automata::nfa::thompson;
 use regex_automata::util::pool::Pool;
 use regex_automata::util::syntax::Config;
 use regex_automata::{Anchored, Input};
-use warp_terminal::model::grid::CellType;
+use twarp_terminal::model::grid::CellType;
 
 use crate::terminal::model::index::Direction;
 use crate::terminal::model::index::Point;

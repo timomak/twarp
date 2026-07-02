@@ -5,7 +5,7 @@ use crate::{
     settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier},
     themes::theme::Fill,
 };
-use warpui::{
+use twarpui::{
     elements::{
         Align, ConstrainedBox, Container, CrossAxisAlignment, Element, Flex, Hoverable, Icon,
         MouseState, MouseStateHandle, ParentElement, Shrinkable,

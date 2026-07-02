@@ -1,5 +1,5 @@
-use warp_core::features::FeatureFlag;
-use warpui::{SingletonEntity, ViewContext};
+use twarp_core::features::FeatureFlag;
+use twarpui::{SingletonEntity, ViewContext};
 
 // twarp: 2c-d — AI agent / blocklist deleted; stubs.
 use crate::app_state::AIConversationId;
@@ -23,22 +23,22 @@ impl PendingUserQueryBlock {
         Self
     }
 }
-impl warpui::Entity for PendingUserQueryBlock {
+impl twarpui::Entity for PendingUserQueryBlock {
     type Event = PendingUserQueryBlockEvent;
 }
-impl warpui::View for PendingUserQueryBlock {
+impl twarpui::View for PendingUserQueryBlock {
     fn ui_name() -> &'static str {
         "PendingUserQueryBlock/twarp-stub"
     }
-    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
-        use warpui::Element as _;
-        warpui::elements::Empty::new().finish()
+    fn render(&self, _: &twarpui::AppContext) -> Box<dyn twarpui::Element> {
+        use twarpui::Element as _;
+        twarpui::elements::Empty::new().finish()
     }
 }
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct PendingUserQueryBlockAction;
-impl warpui::TypedActionView for PendingUserQueryBlock {
+impl twarpui::TypedActionView for PendingUserQueryBlock {
     type Action = PendingUserQueryBlockAction;
 }
 pub enum PendingUserQueryBlockEvent {

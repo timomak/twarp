@@ -1,7 +1,7 @@
 //! Support for displaying inherited ACLs.
 
-use warp_core::ui::appearance::Appearance;
-use warpui::{
+use twarp_core::ui::appearance::Appearance;
+use twarpui::{
     elements::{CrossAxisAlignment, Flex, MouseStateHandle, ParentElement as _},
     ui_components::components::UiComponent as _,
     AppContext, Element, SingletonEntity as _,

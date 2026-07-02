@@ -4,7 +4,7 @@
 use crate::app_state::CodeWorkspaceMetadata as WorkspaceMetadata;
 use fuzzy_match::{match_indices_case_insensitive, FuzzyMatchResult};
 use itertools::Itertools;
-use warpui::{AppContext, Entity, SingletonEntity};
+use twarpui::{AppContext, Entity, SingletonEntity};
 
 use super::RepoSearchItem;
 // twarp: 2c-d — PersistedWorkspace deleted; stub.

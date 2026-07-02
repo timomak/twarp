@@ -17,8 +17,8 @@
 //! Dismissing the block (on click of either option, or when the session is
 //! deregistered) is the parent's responsibility.
 use settings::Setting;
-use warp_core::ui::theme::color::internal_colors;
-use warpui::{
+use twarp_core::ui::theme::color::internal_colors;
+use twarpui::{
     elements::{
         Border, ChildView, Container, CornerRadius, CrossAxisAlignment, Flex, Hoverable,
         MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Text,
@@ -36,8 +36,8 @@ pub fn rich_navigation_button<A, B, C, D, E>(
     _: C,
     _: D,
     _: E,
-) -> Box<dyn warpui::Element> {
-    warpui::elements::Empty::new().finish()
+) -> Box<dyn twarpui::Element> {
+    twarpui::elements::Empty::new().finish()
 }
 pub struct KeyboardNavigableButtons;
 #[allow(dead_code)]
@@ -46,21 +46,21 @@ impl KeyboardNavigableButtons {
         Self
     }
 }
-impl warpui::Entity for KeyboardNavigableButtons {
+impl twarpui::Entity for KeyboardNavigableButtons {
     type Event = ();
 }
-impl warpui::View for KeyboardNavigableButtons {
+impl twarpui::View for KeyboardNavigableButtons {
     fn ui_name() -> &'static str {
         "KeyboardNavigableButtons/twarp-stub"
     }
-    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
-        warpui::elements::Empty::new().finish()
+    fn render(&self, _: &twarpui::AppContext) -> Box<dyn twarpui::Element> {
+        twarpui::elements::Empty::new().finish()
     }
 }
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct KeyboardNavigableButtonsAction;
-impl warpui::TypedActionView for KeyboardNavigableButtons {
+impl twarpui::TypedActionView for KeyboardNavigableButtons {
     type Action = KeyboardNavigableButtonsAction;
 }
 pub struct HeaderConfig;
@@ -72,8 +72,8 @@ impl HeaderConfig {
     pub fn with_corner_radius_override<C>(self, _: C) -> Self {
         self
     }
-    pub fn render_header<A, B>(self, _: A, _: B) -> Box<dyn warpui::Element> {
-        warpui::elements::Empty::new().finish()
+    pub fn render_header<A, B>(self, _: A, _: B) -> Box<dyn twarpui::Element> {
+        twarpui::elements::Empty::new().finish()
     }
 }
 pub const INLINE_ACTION_HORIZONTAL_PADDING: f32 = 12.0;

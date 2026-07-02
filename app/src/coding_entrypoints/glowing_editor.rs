@@ -1,7 +1,7 @@
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::Vector2F;
-use warp_core::ui::{appearance::Appearance, Icon};
-use warpui::{
+use twarp_core::ui::{appearance::Appearance, Icon};
+use twarpui::{
     elements::{
         Align, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DropShadow, Flex,
         MainAxisAlignment, ParentElement as _, Radius, Shrinkable,

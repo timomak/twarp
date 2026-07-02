@@ -13,7 +13,7 @@ mod linux_only {
     pub(super) use pathfinder_color::ColorU;
     pub(super) use pathfinder_geometry::vector::vec2f;
     pub(super) use std::sync::Arc;
-    pub(super) use warpui::elements::{
+    pub(super) use twarpui::elements::{
         Align, Border, ChildAnchor, ConstrainedBox, Container, CornerRadius, Flex, Hoverable, Icon,
         OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Rect, Stack,
     };
@@ -27,8 +27,8 @@ mod windows_only {
     pub(super) use crate::ui_components::icons::Icon as IconComponent;
     pub(super) use pathfinder_color::ColorU;
     pub(super) use pathfinder_geometry::vector::vec2f;
-    pub(super) use warp_core::ui::theme;
-    pub(super) use warpui::elements::{
+    pub(super) use twarp_core::ui::theme;
+    pub(super) use twarpui::elements::{
         Align, Border, ChildAnchor, ConstrainedBox, Container, CornerRadius, Hoverable,
         OffsetPositioning, ParentAnchor, ParentOffsetBounds, Radius, Rect, Stack,
     };
@@ -47,12 +47,12 @@ mod windows_only {
 use windows_only::*;
 
 #[cfg(not(target_os = "windows"))]
-use warpui::elements::Empty;
+use twarpui::elements::Empty;
 
 use crate::themes::theme::WarpTheme;
-use warpui::elements::MouseStateHandle;
-use warpui::platform::FullscreenState;
-use warpui::{AppContext, Element, WindowId};
+use twarpui::elements::MouseStateHandle;
+use twarpui::platform::FullscreenState;
+use twarpui::{AppContext, Element, WindowId};
 
 #[cfg(any(target_os = "windows", any(target_os = "linux", target_os = "freebsd")))]
 const BUTTON_ICON_SIZE: f32 = 22.;
@@ -137,7 +137,7 @@ impl TrafficLightData {
     /// Horizontal space needed for the traffic light buttons.
     ///
     /// Normally, we don't need to manually adjust any sizes based on zoom level as it is handled
-    /// by warpui. However, native traffic light buttons (e.g. on macOS) don't scale with zoom, so
+    /// by twarpui. However, native traffic light buttons (e.g. on macOS) don't scale with zoom, so
     /// we need to divide by the zoom factor to keep the padding constant.
     pub fn width(&self, zoom_factor: f32) -> f32 {
         if self.scales_with_zoom {

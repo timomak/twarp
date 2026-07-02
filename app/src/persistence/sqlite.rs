@@ -30,10 +30,10 @@ use libsqlite3_sys as sqlite3;
 use num_traits::FromPrimitive;
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
 use persistence::model::{AMBIENT_AGENT_PANE_KIND, BROWSER_PANE_KIND, CLAUDE_CODE_PANE_KIND};
+use twarp_graphql::scalars::time::ServerTimestamp;
+use twarpui::platform::FullscreenState;
+use twarpui::{AppContext, SingletonEntity};
 use uuid::Uuid;
-use warp_graphql::scalars::time::ServerTimestamp;
-use warpui::platform::FullscreenState;
-use warpui::{AppContext, SingletonEntity};
 
 // twarp: 2c-d — agent persistence helpers deleted with the rest of AI; AI persisted state
 // is dropped silently on first launch per the spec.
@@ -130,7 +130,7 @@ diesel::define_sql_function! {
 const CHANNEL_SIZE: usize = 1024;
 const COMMANDS_COUNT_LIMIT: i64 = 10000;
 
-use warp_server_client::persistence::{upsert_cloud_object, CloudObjectId};
+use twarp_server_client::persistence::{upsert_cloud_object, CloudObjectId};
 
 const WARP_SQLITE_FILE_NAME: &str = "warp.sqlite";
 
@@ -340,7 +340,7 @@ pub(super) fn init_db() -> Result<SqliteConnection> {
     }
 
     // Migrate old SQLite files into the secure application container.
-    let old_db_path = warp_core::paths::state_dir().join(WARP_SQLITE_FILE_NAME);
+    let old_db_path = twarp_core::paths::state_dir().join(WARP_SQLITE_FILE_NAME);
     if old_db_path != db_path && old_db_path.exists() && !db_path.exists() {
         match std::fs::rename(&old_db_path, &db_path) {
             Ok(_) => {
@@ -405,8 +405,8 @@ fn setup_database(database_path: &Path) -> Result<SqliteConnection> {
 /// Integration tests that initialize the database with known data should use
 /// this function to determine where to create the database file.
 pub fn database_file_path() -> PathBuf {
-    warp_core::paths::secure_state_dir()
-        .unwrap_or_else(warp_core::paths::state_dir)
+    twarp_core::paths::secure_state_dir()
+        .unwrap_or_else(twarp_core::paths::state_dir)
         .join(WARP_SQLITE_FILE_NAME)
 }
 

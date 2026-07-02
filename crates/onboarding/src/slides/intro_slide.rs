@@ -4,10 +4,9 @@ use crate::OnboardingEvent;
 use super::OnboardingSlide;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use ui_components::{button, Component as _, Options as _};
-use warp_core::send_telemetry_from_ctx;
-use warp_core::ui::{appearance::Appearance, theme::color::internal_colors, Icon};
-use warpui::{
+use twarp_core::send_telemetry_from_ctx;
+use twarp_core::ui::{appearance::Appearance, theme::color::internal_colors, Icon};
+use twarpui::{
     elements::{
         shimmering_text::{ShimmerConfig, ShimmeringTextElement, ShimmeringTextStateHandle},
         Align, ChildAnchor, ConstrainedBox, Container, CrossAxisAlignment, Flex,
@@ -20,6 +19,7 @@ use warpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity as _, TypedActionView, View,
     ViewContext,
 };
+use ui_components::{button, Component as _, Options as _};
 
 #[derive(Clone, Debug)]
 pub enum IntroSlideEvent {

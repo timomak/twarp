@@ -4,17 +4,17 @@ use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::Vector2F;
-use warp_core::ui::appearance::Appearance;
-use warp_core::ui::theme::{Fill, WarpTheme};
-use warpui::elements::{
+use twarp_core::ui::appearance::Appearance;
+use twarp_core::ui::theme::{Fill, WarpTheme};
+use twarpui::elements::{
     Align, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, FormattedTextElement,
     HighlightedHyperlink, Icon, MouseStateHandle, ParentElement, Radius, Rect, Shrinkable, Stack,
     Text,
 };
-use warpui::fonts::{FamilyId, Properties, Weight};
-use warpui::ui_components::components::UiComponent as _;
-use warpui::ui_components::components::UiComponentStyles;
-use warpui::{AppContext, Element, EventContext, PaintContext, SingletonEntity as _};
+use twarpui::fonts::{FamilyId, Properties, Weight};
+use twarpui::ui_components::components::UiComponent as _;
+use twarpui::ui_components::components::UiComponentStyles;
+use twarpui::{AppContext, Element, EventContext, PaintContext, SingletonEntity as _};
 
 use super::settings::WarpifySettings;
 use super::SubshellSource;
@@ -88,8 +88,8 @@ pub fn header_row(
 
 fn green_check_icon(appearance: &Appearance, size: f32) -> Box<dyn Element> {
     use crate::themes::theme::AnsiColorIdentifier;
-    let icon = warpui::elements::Icon::new(
-        warp_core::ui::Icon::Check.into(),
+    let icon = twarpui::elements::Icon::new(
+        twarp_core::ui::Icon::Check.into(),
         AnsiColorIdentifier::Green.to_ansi_color(&appearance.theme().terminal_colors().normal),
     )
     .finish();
@@ -237,7 +237,7 @@ pub fn draw_flag_pole(
 /// Implementation should match `[draw_subshell_flag_pole]`.
 pub fn render_subshell_flag_pole(
     max_height: f32,
-    fill: impl Into<warpui::elements::Fill>,
+    fill: impl Into<twarpui::elements::Fill>,
 ) -> Box<dyn Element> {
     ConstrainedBox::new(Rect::new().with_background(fill.into()).finish())
         .with_width(LEFT_STRIPE_WIDTH)

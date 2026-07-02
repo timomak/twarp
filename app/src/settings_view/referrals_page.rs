@@ -24,7 +24,7 @@ use crate::{
     ui_components::blended_colors,
     view_components::ToastFlavor,
 };
-use warpui::{
+use twarpui::{
     clipboard::ClipboardContent,
     elements::{
         Align, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Fill,

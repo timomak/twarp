@@ -1,4 +1,4 @@
-use warpui::{elements::MouseStateHandle, Element};
+use twarpui::{elements::MouseStateHandle, Element};
 
 use crate::{appearance::Appearance, terminal::view::TerminalAction};
 
@@ -65,7 +65,7 @@ pub fn render_aws_cli_not_installed_banner(
         mouse_state_handle: state.dismiss_button_mouse_state.clone(),
     });
 
-    let description_text = warpui::elements::Text::new(
+    let description_text = twarpui::elements::Text::new(
         "The AWS CLI is required to authenticate with your organization's AWS Bedrock. Install it to continue.",
         appearance.ui_font_family(),
         appearance.monospace_font_size() - 2.,

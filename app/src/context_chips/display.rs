@@ -20,8 +20,8 @@ pub use crate::terminal::input::BlocklistAIHistoryEvent;
 // twarp: 2c-d — re-export canonical
 pub use crate::terminal::input::BlocklistAIInputEvent;
 use std::path::PathBuf;
-use warp_core::features::FeatureFlag;
-use warpui::{
+use twarp_core::features::FeatureFlag;
+use twarpui::{
     elements::{
         ChildView, Clipped, Container, CrossAxisAlignment, Element, Flex, MainAxisAlignment,
         MainAxisSize, ParentElement, Wrap,

@@ -5,8 +5,8 @@
 //! when text is added/removed/scrolled on the screen. The selection should
 //! also be cleared if the user clicks off of the selection.
 use std::fmt::Debug;
+use twarp_terminal::model::grid::cell;
 use vec1::Vec1;
-use warp_terminal::model::grid::cell;
 
 use crate::terminal::model::ansi::CursorShape;
 use crate::terminal::model::cell::Flags;
@@ -19,9 +19,9 @@ use std::cmp::{max, min};
 use std::mem;
 use std::ops::RangeInclusive;
 pub use std::ops::{Range, RangeBounds};
-use warp_core::semantic_selection::SemanticSelection;
-use warpui::text::SelectionType;
-use warpui::units::Lines;
+use twarp_core::semantic_selection::SemanticSelection;
+use twarpui::text::SelectionType;
+use twarpui::units::Lines;
 
 use super::index::{Direction, VisibleRow};
 

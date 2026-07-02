@@ -2,11 +2,11 @@ use std::{fmt::Write, time::Duration};
 
 use async_channel::Sender;
 use pathfinder_geometry::vector::vec2f;
-use warp_editor::{
+use twarp_editor::{
     render::model::{AutoScrollMode, Decoration},
     search::{SearchEvent, Searcher},
 };
-use warpui::{
+use twarpui::{
     accessibility::{AccessibilityContent, ActionAccessibilityContent, WarpA11yRole},
     elements::{
         Border, ChildAnchor, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
@@ -356,7 +356,7 @@ impl View for FindBar {
         "FindBar"
     }
 
-    fn render(&self, app: &warpui::AppContext) -> Box<dyn warpui::Element> {
+    fn render(&self, app: &twarpui::AppContext) -> Box<dyn twarpui::Element> {
         let appearance = Appearance::as_ref(app);
         let searcher = self.searcher.as_ref(app);
         let theme = appearance.theme();

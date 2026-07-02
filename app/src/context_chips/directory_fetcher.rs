@@ -2,10 +2,10 @@ use std::cmp::Ordering;
 
 use crate::completer::SessionContext;
 use crate::ui_components::icons::Icon;
+use twarp_completer::completer::{EngineDirEntry, EngineFileType, PathCompletionContext};
+use twarp_util::file_type::is_binary_file;
+use twarpui::{r#async::SpawnedFutureHandle, AppContext, Entity, ModelContext};
 use typed_path::TypedPathBuf;
-use warp_completer::completer::{EngineDirEntry, EngineFileType, PathCompletionContext};
-use warp_util::file_type::is_binary_file;
-use warpui::{r#async::SpawnedFutureHandle, AppContext, Entity, ModelContext};
 
 use super::display_menu::GenericMenuItem;
 

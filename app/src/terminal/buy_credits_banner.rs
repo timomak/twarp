@@ -5,20 +5,20 @@ use itertools::Itertools as _;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use warp_core::ui::appearance::Appearance;
-use warp_core::ui::Icon;
-use warp_graphql::billing::AddonCreditsOption;
-use warpui::elements::{
+use twarp_core::ui::appearance::Appearance;
+use twarp_core::ui::Icon;
+use twarp_graphql::billing::AddonCreditsOption;
+use twarpui::elements::{
     Align, Border, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, DropShadow, Expanded, Flex, FormattedTextElement, HighlightedHyperlink,
     Hoverable, Icon as WarpUiIcon, MainAxisAlignment, MainAxisSize, MouseStateHandle,
     OffsetPositioning, ParentAnchor, ParentElement as _, ParentOffsetBounds, Radius, Shrinkable,
     SizeConstraintCondition, SizeConstraintSwitch, Stack, Text,
 };
-use warpui::fonts::Weight;
-use warpui::ui_components::button::ButtonVariant;
-use warpui::ui_components::components::{Coords, UiComponent as _, UiComponentStyles};
-use warpui::{AppContext, Element, Entity, SingletonEntity, View, ViewContext, ViewHandle};
+use twarpui::fonts::Weight;
+use twarpui::ui_components::button::ButtonVariant;
+use twarpui::ui_components::components::{Coords, UiComponent as _, UiComponentStyles};
+use twarpui::{AppContext, Element, Entity, SingletonEntity, View, ViewContext, ViewHandle};
 
 // twarp: 2c-d — AI request usage deleted; stubs.
 pub struct AIRequestUsageModel;
@@ -57,7 +57,7 @@ use crate::server::telemetry::{OutOfCreditsBannerAction, TelemetryEvent};
 use crate::settings_view::create_discount_badge;
 use crate::view_components::Dropdown;
 use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
-use warp_graphql::error::BudgetExceededError;
+use twarp_graphql::error::BudgetExceededError;
 
 #[derive(Default)]
 struct MouseStates {
@@ -603,8 +603,8 @@ impl BuyCreditsBanner {
                 .with_hyperlink_font_color(theme.accent().into_solid())
                 .register_default_click_handlers_with_action_support(
                     |hyperlink_lens, event, _ctx| match hyperlink_lens {
-                        warpui::elements::HyperlinkLens::Url(_url) => {}
-                        warpui::elements::HyperlinkLens::Action(action_ref) => {
+                        twarpui::elements::HyperlinkLens::Url(_url) => {}
+                        twarpui::elements::HyperlinkLens::Action(action_ref) => {
                             if let Some(action) = action_ref.as_any().downcast_ref::<Action>() {
                                 event.dispatch_typed_action(action.clone());
                             }
@@ -842,7 +842,7 @@ impl View for BuyCreditsBanner {
 
         match display_state {
             BuyCreditsBannerDisplayState::Hidden => {
-                Container::new(warpui::elements::Empty::new().finish()).finish()
+                Container::new(twarpui::elements::Empty::new().finish()).finish()
             }
             BuyCreditsBannerDisplayState::OutOfCredits => {
                 self.render_out_of_credits(appearance, app)
@@ -851,7 +851,7 @@ impl View for BuyCreditsBanner {
                 self.render_auto_reload_blocked(appearance, app)
             }
             BuyCreditsBannerDisplayState::Other => {
-                Container::new(warpui::elements::Empty::new().finish()).finish()
+                Container::new(twarpui::elements::Empty::new().finish()).finish()
             }
         }
     }
@@ -866,7 +866,7 @@ pub enum Action {
     ToggleAutoReload,
 }
 
-impl warpui::TypedActionView for BuyCreditsBanner {
+impl twarpui::TypedActionView for BuyCreditsBanner {
     type Action = Action;
 
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {

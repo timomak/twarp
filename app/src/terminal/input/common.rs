@@ -6,15 +6,15 @@ pub fn is_using_api_key_for_provider<A, B>(_: A, _: B) -> bool {
 }
 pub use crate::terminal::input::LLMPreferences;
 pub struct AIRequestUsageModel;
-impl warpui::Entity for AIRequestUsageModel {
+impl twarpui::Entity for AIRequestUsageModel {
     type Event = ();
 }
-impl warpui::SingletonEntity for AIRequestUsageModel {}
+impl twarpui::SingletonEntity for AIRequestUsageModel {}
 #[allow(dead_code)]
 impl AIRequestUsageModel {
     pub fn compute_buy_addon_credits_banner_display_state(
         &self,
-        _: &warpui::AppContext,
+        _: &twarpui::AppContext,
     ) -> BuyCreditsBannerDisplayState {
         BuyCreditsBannerDisplayState::Hidden
     }
@@ -36,10 +36,9 @@ use crate::{
     workspaces::user_workspaces::UserWorkspaces,
 };
 use pathfinder_geometry::vector::vec2f;
-use vim::vim::{VimMode, VimState};
-use warp_completer::completer::Description;
-use warp_core::features::FeatureFlag;
-use warpui::{
+use twarp_completer::completer::Description;
+use twarp_core::features::FeatureFlag;
+use twarpui::{
     elements::{
         AnchorPair, Border, ChildAnchor, ConstrainedBox, Container, CornerRadius,
         CrossAxisAlignment, DispatchEventResult, Element, EventHandler, Flex, OffsetPositioning,
@@ -51,6 +50,7 @@ use warpui::{
     ui_components::components::{UiComponent, UiComponentStyles},
     AppContext, EntityId, SingletonEntity, ViewHandle,
 };
+use vim::vim::{VimMode, VimState};
 
 /// Whether the terminal input message bar should be shown.
 ///

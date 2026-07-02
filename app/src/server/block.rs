@@ -5,7 +5,7 @@ use crate::terminal::model::{
 };
 use chrono::{DateTime, FixedOffset, Utc};
 use serde::{Deserialize, Serialize};
-use warp_graphql::mutations::share_block::DisplaySetting as GqlDisplaySetting;
+use twarp_graphql::mutations::share_block::DisplaySetting as GqlDisplaySetting;
 
 // These are pixel heights of various parts of an embedded block.
 pub const TITLE_HEIGHT: u32 = 34;

@@ -3,7 +3,7 @@ use super::FileSearchModel;
 use fuzzy_match::FuzzyMatchResult;
 use repo_metadata::repositories::DetectedRepositories;
 use repo_metadata::RepoMetadataModel;
-use warpui::{App, SingletonEntity};
+use twarpui::{App, SingletonEntity};
 
 #[cfg(test)]
 mod file_search_model_tests {

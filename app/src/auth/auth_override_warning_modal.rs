@@ -1,20 +1,20 @@
 use pathfinder_color::ColorU;
 
-use warp_core::ui::appearance::Appearance;
-use warpui::elements::Container;
-use warpui::elements::Fill;
-use warpui::FocusContext;
-use warpui::SingletonEntity;
-use warpui::TypedActionView;
+use twarp_core::ui::appearance::Appearance;
+use twarpui::elements::Container;
+use twarpui::elements::Fill;
+use twarpui::FocusContext;
+use twarpui::SingletonEntity;
+use twarpui::TypedActionView;
 
 use crate::auth::auth_override_warning_body::AuthOverrideWarningBody;
 use crate::auth::auth_view_modal::AuthRedirectPayload;
 use crate::modal::Modal;
 use crate::root_view::unthemed_window_border;
 
-use warpui::elements::ChildView;
-use warpui::ui_components::components::{Coords, UiComponentStyles};
-use warpui::{AppContext, Element, Entity, View, ViewContext, ViewHandle};
+use twarpui::elements::ChildView;
+use twarpui::ui_components::components::{Coords, UiComponentStyles};
+use twarpui::{AppContext, Element, Entity, View, ViewContext, ViewHandle};
 
 use super::auth_manager::AuthManager;
 use super::auth_manager::AuthManagerEvent;

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use warpui::{
+use twarpui::{
     elements::{Border, ChildView, Container, Hoverable, MouseStateHandle, Text},
     platform::Cursor,
     ui_components::components::UiComponentStyles,
@@ -9,10 +9,10 @@ use warpui::{
 
 // twarp: 2c-d — persisted_workspace deleted; stubs.
 pub struct PersistedWorkspace;
-impl warpui::Entity for PersistedWorkspace {
+impl twarpui::Entity for PersistedWorkspace {
     type Event = PersistedWorkspaceEvent;
 }
-impl warpui::SingletonEntity for PersistedWorkspace {}
+impl twarpui::SingletonEntity for PersistedWorkspace {}
 #[allow(dead_code)]
 impl PersistedWorkspace {
     // twarp: 2c-e — `ai::workspace::WorkspaceMetadata` is now `crate::app_state::CodeWorkspaceMetadata`.

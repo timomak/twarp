@@ -9,8 +9,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use warp_core::{safe_warn, send_telemetry_from_ctx};
-use warpui::ModelHandle;
+use twarp_core::{safe_warn, send_telemetry_from_ctx};
+use twarpui::ModelHandle;
 
 /// Represents either a file or directory in a repository.
 #[derive(Debug, Clone)]
@@ -19,7 +19,7 @@ pub enum RepoContent<'a> {
     Directory(&'a FileTreeDirectoryEntryState),
 }
 
-use warp_util::standardized_path::StandardizedPath;
+use twarp_util::standardized_path::StandardizedPath;
 
 use crate::{
     entry::{Entry, FileId, IgnoredPathStrategy},
@@ -34,7 +34,7 @@ cfg_if::cfg_if! {
         use notify_debouncer_full::notify::{RecursiveMode, WatchFilter};
         use crate::repositories::{DetectedRepositories, DetectedRepositoriesEvent};
         use watcher::{BulkFilesystemWatcher, BulkFilesystemWatcherEvent};
-        use warpui::SingletonEntity as _;
+        use twarpui::SingletonEntity as _;
 
         /// Duration between filesystem watch events in seconds
         const FILESYSTEM_WATCHER_DEBOUNCE_SECS: u64 = 1;
@@ -50,7 +50,7 @@ use crate::file_tree_update::{
     RepoMetadataUpdate, RepoNodeMetadata,
 };
 use ignore::gitignore::Gitignore;
-use warpui::ModelContext;
+use twarpui::ModelContext;
 
 /// Maximum depth to traverse when building file trees
 const MAX_TREE_DEPTH: usize = 200;
@@ -979,7 +979,7 @@ impl LocalRepoMetadataModel {
     }
 }
 
-impl warpui::Entity for LocalRepoMetadataModel {
+impl twarpui::Entity for LocalRepoMetadataModel {
     type Event = RepositoryMetadataEvent;
 }
 

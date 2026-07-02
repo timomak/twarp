@@ -1,8 +1,8 @@
 use std::time::Duration;
 
-use warp::integration_testing::terminal::util::current_shell_starter_and_version;
-use warp::terminal::shell::ShellType;
-use warp::{
+use twarp::integration_testing::terminal::util::current_shell_starter_and_version;
+use twarp::terminal::shell::ShellType;
+use twarp::{
     features::FeatureFlag,
     integration_testing::{
         clipboard::write_to_clipboard,
@@ -18,7 +18,7 @@ use warp::{
         view_getters::{single_input_view_for_tab, single_terminal_view_for_tab},
     },
 };
-use warpui::{async_assert_eq, integration::TestStep, Event};
+use twarpui::{async_assert_eq, integration::TestStep, Event};
 
 use crate::Builder;
 

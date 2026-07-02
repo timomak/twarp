@@ -7,7 +7,7 @@ use crate::terminal::model::terminal_model::SubshellInitializationInfo;
 use crate::terminal::shell::ShellType;
 use crate::ASSETS;
 use channel_versions::overrides::TargetOS;
-use warpui::AssetProvider;
+use twarpui::AssetProvider;
 
 #[derive(Debug)]
 pub enum WarpificationSource {

@@ -8,14 +8,14 @@
 
 mod warpify;
 
-pub use warpify::*;
-use warpui::{
+use twarpui::{
     elements::{
         ConstrainedBox, Container, CornerRadius, Hoverable, MouseState, MouseStateHandle,
         ParentElement, Radius, Stack,
     },
     Element,
 };
+pub use warpify::*;
 
 use crate::themes::theme::WarpTheme;
 

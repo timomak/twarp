@@ -2,7 +2,7 @@ use super::{BucketRange, Experiment, Layer};
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::str::FromStr;
-use warpui::AppContext;
+use twarpui::AppContext;
 
 lazy_static! {
     pub static ref FREE_TIER_DEFAULT_MODEL_LAYER: Layer = Layer {

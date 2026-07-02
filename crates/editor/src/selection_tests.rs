@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use serde_yaml::Value;
 use sum_tree::SumTree;
+use twarp_core::features::FeatureFlag;
+use twarpui::{App, ModelAsRef, units::IntoPixels};
 use vec1::vec1;
-use warp_core::features::FeatureFlag;
-use warpui::{App, ModelAsRef, units::IntoPixels};
 
 use crate::{
     content::{
@@ -22,8 +22,8 @@ use crate::{
     selection::SelectionMode,
 };
 use string_offset::CharOffset;
-use warpui::assets::asset_cache::AssetSource;
-use warpui::text::word_boundaries::WordBoundariesPolicy;
+use twarpui::assets::asset_cache::AssetSource;
+use twarpui::text::word_boundaries::WordBoundariesPolicy;
 
 use super::{SelectionModel, TextDirection, TextUnit};
 
@@ -37,7 +37,7 @@ impl SelectionModel {
     }
 }
 
-fn selection_model_with_rendered_mermaid(app: &mut App) -> warpui::ModelHandle<SelectionModel> {
+fn selection_model_with_rendered_mermaid(app: &mut App) -> twarpui::ModelHandle<SelectionModel> {
     app.add_model(|ctx| {
         let buffer = ctx.add_model(|_| Buffer::new(Box::new(|_, _| IndentBehavior::Ignore)));
         let buffer_selection = ctx.add_model(|_| BufferSelectionModel::new(buffer.clone()));

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::Builder;
 use regex::Regex;
 use settings::Setting as _;
-use warp::{
+use twarp::{
     features::FeatureFlag,
     integration_testing::{
         step::new_step_with_default_assertions,
@@ -28,7 +28,7 @@ use warp::{
         shell::ShellType,
     },
 };
-use warpui::{
+use twarpui::{
     async_assert, async_assert_eq,
     integration::{AssertionCallback, AssertionOutcome, TestStep},
 };

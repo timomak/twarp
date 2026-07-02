@@ -19,8 +19,8 @@ pub use section_views::{ChangelogSectionView, ContentSectionView, FeatureSection
 pub mod sections;
 mod view;
 use serde::{Deserialize, Serialize};
+use twarpui::{keymap::Keystroke, AppContext, Entity, SingletonEntity};
 pub use view::{ResourceCenterAction, ResourceCenterEvent, ResourceCenterPage, ResourceCenterView};
-use warpui::{keymap::Keystroke, AppContext, Entity, SingletonEntity};
 
 use self::section_views::feature_section::FeatureSection;
 

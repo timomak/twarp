@@ -1,6 +1,6 @@
 use itertools::Itertools;
-use warp_editor::editor::NavigationKey;
-use warpui::{
+use twarp_editor::editor::NavigationKey;
+use twarpui::{
     elements::{
         ConstrainedBox, Container, DispatchEventResult, Element, Fill, Flex, ParentElement,
         ScrollStateHandle, Scrollable, ScrollableElement, ScrollbarWidth, Shrinkable, Text,
@@ -29,17 +29,17 @@ use std::ops::Deref;
 #[cfg(feature = "local_fs")]
 use std::path::PathBuf;
 use std::sync::Arc;
-use warp_core::ui::builder::UiBuilder;
-use warp_core::ui::theme::color::internal_colors;
-use warp_workflows::workflows as global_workflows;
-use warpui::accessibility::{AccessibilityContent, WarpA11yRole};
-use warpui::color::ColorU;
-use warpui::elements::{
+use twarp_core::ui::builder::UiBuilder;
+use twarp_core::ui::theme::color::internal_colors;
+use twarpui::accessibility::{AccessibilityContent, WarpA11yRole};
+use twarpui::color::ColorU;
+use twarpui::elements::{
     Align, CrossAxisAlignment, EventHandler, Highlight, Hoverable, MainAxisSize, MouseStateHandle,
 };
-use warpui::keymap::FixedBinding;
-use warpui::text_layout::TextStyle;
-use warpui::ui_components::components::{UiComponent, UiComponentStyles};
+use twarpui::keymap::FixedBinding;
+use twarpui::text_layout::TextStyle;
+use twarpui::ui_components::components::{UiComponent, UiComponentStyles};
+use warp_workflows::workflows as global_workflows;
 
 use super::{workflow::Workflow, WorkflowSource};
 
@@ -54,7 +54,7 @@ const WORKFLOW_LIST_PADDING_MIDDLE: f32 = 5.;
 pub const WORKFLOW_SUBTEXT_FONT_SIZE: f32 = 14.0;
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings(vec![
         FixedBinding::new("up", WorkflowsViewAction::Up, id!("WorkflowsView")),

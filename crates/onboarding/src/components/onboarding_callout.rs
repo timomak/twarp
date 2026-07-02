@@ -2,15 +2,12 @@ use std::borrow::Cow;
 
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use ui_components::{
-    button, button::Button as ButtonComponent, Component, MouseEventHandler, Options as _,
-};
-use warp_core::ui::{
+use twarp_core::ui::{
     appearance::Appearance,
     color::{coloru_with_opacity, contrast::relative_luminance},
     theme::{phenomenon::PhenomenonStyle, Fill},
 };
-use warpui::{
+use twarpui::{
     elements::{
         Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DropShadow, Flex,
         MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Rect,
@@ -20,6 +17,9 @@ use warpui::{
     prelude::*,
     ui_components::checkbox::Checkbox as WarpCheckbox,
     ui_components::components::{UiComponent as _, UiComponentStyles},
+};
+use ui_components::{
+    button, button::Button as ButtonComponent, Component, MouseEventHandler, Options as _,
 };
 
 const CALLOUT_WIDTH: f32 = 480.;

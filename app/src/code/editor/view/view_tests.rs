@@ -1,7 +1,7 @@
 use std::sync::Arc;
-use warp_core::ui::appearance::Appearance;
-use warp_editor::render::element::VerticalExpansionBehavior;
-use warpui::{
+use twarp_core::ui::appearance::Appearance;
+use twarp_editor::render::element::VerticalExpansionBehavior;
+use twarpui::{
     elements::{new_scrollable::ScrollableAppearance, ScrollbarWidth},
     platform::WindowStyle,
     App, TypedActionView, ViewHandle, WindowId,
@@ -21,7 +21,7 @@ use crate::{
 };
 
 use super::{CodeEditorRenderOptions, CodeEditorView, CodeEditorViewAction};
-use warp_util::user_input::UserInput;
+use twarp_util::user_input::UserInput;
 
 fn initialize_editor(app: &mut App) -> (WindowId, ViewHandle<CodeEditorView>) {
     initialize_settings_for_tests(app);

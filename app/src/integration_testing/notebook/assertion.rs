@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use string_offset::CharOffset;
-use warp_editor::render::model::BlockItem;
-use warpui::{
+use twarp_editor::render::model::BlockItem;
+use twarpui::{
     async_assert, async_assert_eq,
     integration::{AssertionCallback, AssertionOutcome, AssertionWithDataCallback},
     App, ViewHandle,

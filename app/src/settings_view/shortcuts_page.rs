@@ -22,7 +22,7 @@ use crate::view_components::{
     ClickableTextInput, ClickableTextInputAction, ClickableTextInputEvent,
 };
 use crate::workspace::WorkspaceAction;
-use warpui::{
+use twarpui::{
     elements::{
         ChildView, Container, CrossAxisAlignment, DispatchEventResult, Element, EventHandler, Flex,
         Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Shrinkable,
@@ -107,7 +107,7 @@ fn kind_param_is_freetext(kind: EditingActionKind) -> bool {
 struct EditingAction {
     kind: EditingActionKind,
     /// Free-text parameter (used when `kind` is `Type` / `Wait`). Backed by a
-    /// `ClickableTextInput` child view so it round-trips through warpui's editor
+    /// `ClickableTextInput` child view so it round-trips through twarpui's editor
     /// without us managing focus by hand.
     param_text: String,
     param_text_input: Option<ViewHandle<ClickableTextInput>>,
@@ -873,7 +873,9 @@ impl ShortcutsSettingsPageView {
                 kind_label,
                 None,
                 Some(Box::new(move |ctx| {
-                    ctx.dispatch_typed_action(ShortcutsSettingsPageAction::EditActionCycleKind(idx));
+                    ctx.dispatch_typed_action(ShortcutsSettingsPageAction::EditActionCycleKind(
+                        idx,
+                    ));
                 })),
                 row.kind_button_mouse.clone(),
             )

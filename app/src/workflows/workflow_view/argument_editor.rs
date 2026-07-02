@@ -2,9 +2,9 @@ use std::cmp::Ordering;
 
 use itertools::Itertools;
 use pathfinder_color::ColorU;
-use warp_core::{features::FeatureFlag, ui::appearance::Appearance};
-use warp_editor::editor::NavigationKey;
-use warpui::{
+use twarp_core::{features::FeatureFlag, ui::appearance::Appearance};
+use twarp_editor::editor::NavigationKey;
+use twarpui::{
     elements::{
         ChildView, ConstrainedBox, Container, CrossAxisAlignment, Fill, Flex, MainAxisAlignment,
         MainAxisSize, ParentElement, Shrinkable,

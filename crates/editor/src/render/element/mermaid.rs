@@ -1,4 +1,4 @@
-use warpui::{
+use twarpui::{
     AppContext, Element, SizeConstraint,
     elements::{Align, CacheOption, CornerRadius, Image, Radius, Text},
     geometry::vector::vec2f,
@@ -33,7 +33,7 @@ impl RenderableBlock for RenderableMermaidDiagram {
         &self.viewport_item
     }
 
-    fn layout(&mut self, model: &RenderState, ctx: &mut warpui::LayoutContext, app: &AppContext) {
+    fn layout(&mut self, model: &RenderState, ctx: &mut twarpui::LayoutContext, app: &AppContext) {
         let content = model.content();
         let (asset_source, config) = extract_block!(
             self.viewport_item,
@@ -111,7 +111,7 @@ impl RenderableBlock for RenderableMermaidDiagram {
         }
     }
 
-    fn after_layout(&mut self, ctx: &mut warpui::AfterLayoutContext, app: &warpui::AppContext) {
+    fn after_layout(&mut self, ctx: &mut twarpui::AfterLayoutContext, app: &twarpui::AppContext) {
         if let Some(ref mut image_element) = self.image_element {
             image_element.after_layout(ctx, app);
         }

@@ -1,4 +1,4 @@
-use warpui::{App, SingletonEntity};
+use twarpui::{App, SingletonEntity};
 
 use crate::{
     auth::UserUid,

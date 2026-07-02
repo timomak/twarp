@@ -29,7 +29,7 @@ use lsp_types::{
 use serde_json::Value;
 #[cfg(not(target_arch = "wasm32"))]
 use simple_logger::SimpleLogger;
-use warp_util::on_cancel::OnCancelFutureExt;
+use twarp_util::on_cancel::OnCancelFutureExt;
 
 /// Tracks the sync state for an open document.
 #[derive(Debug, Clone)]
@@ -360,7 +360,7 @@ impl WatchedFilesRegistry {
             return false;
         };
 
-        let path_relative = warp_util::path::normalize_relative_path_for_glob(path_relative);
+        let path_relative = twarp_util::path::normalize_relative_path_for_glob(path_relative);
 
         self.registrations
             .values()
@@ -418,7 +418,7 @@ impl WatchedFilesRegistry {
         };
 
         // Normalize to forward slashes so glob patterns and event paths are comparable across platforms (esp. Windows).
-        let prefix = warp_util::path::normalize_relative_path_for_glob(base_relative);
+        let prefix = twarp_util::path::normalize_relative_path_for_glob(base_relative);
 
         if prefix.is_empty() {
             Some(pattern)

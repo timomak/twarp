@@ -1,7 +1,7 @@
 use crate::ui_components::blended_colors;
 use crate::{appearance::Appearance, themes::theme::Fill, ui_components::icons};
 use pathfinder_geometry::vector::vec2f;
-use warpui::{
+use twarpui::{
     color::ColorU,
     elements::{
         Align, Border, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius,
@@ -92,7 +92,7 @@ pub enum ModalAction {
 }
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings(vec![FixedBinding::new(
         "escape",

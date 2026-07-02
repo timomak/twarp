@@ -9,7 +9,7 @@ use super::{
 };
 use instant::Instant;
 use pathfinder_color::ColorU;
-use warpui::units::{IntoLines as _, Lines};
+use twarpui::units::{IntoLines as _, Lines};
 
 use crate::terminal::event::Event;
 
@@ -25,7 +25,7 @@ use super::{
     ObfuscateSecrets, RespectObfuscatedSecrets,
 };
 use crate::terminal::{event_listener::ChannelEventListener, SizeInfo};
-use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
+use twarp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
 
 macro_rules! delegate {
     ($self:ident.$method:ident( $( $arg:expr ),* )) => {

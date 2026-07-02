@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use warpui::{
+use twarpui::{
     AppContext, LayoutContext,
     geometry::vector::{Vector2F, vec2f},
     text_layout::Line,

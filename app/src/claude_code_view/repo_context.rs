@@ -156,15 +156,11 @@ pub(super) fn parse(output: &str, folder: Option<String>) -> RepoContext {
             _ => match section {
                 "branch" => branch_lines.push(line),
                 "default" => default_lines.push(line),
-                "branches" if !line.trim().is_empty() => {
-                    branch_list.push(line.trim().to_owned())
-                }
+                "branches" if !line.trim().is_empty() => branch_list.push(line.trim().to_owned()),
                 "remote" if remote_line.is_none() && !line.trim().is_empty() => {
                     remote_line = Some(line)
                 }
-                "diff" if diff_line.is_none() && !line.trim().is_empty() => {
-                    diff_line = Some(line)
-                }
+                "diff" if diff_line.is_none() && !line.trim().is_empty() => diff_line = Some(line),
                 "pr" => {
                     pr_json.push_str(line);
                     pr_json.push('\n');
@@ -204,10 +200,7 @@ pub(super) fn parse(output: &str, folder: Option<String>) -> RepoContext {
     // matches the PR the way GitHub shows it.
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(pr_json.trim()) {
         context.pr_number = value.get("number").and_then(|v| v.as_u64());
-        context.pr_url = value
-            .get("url")
-            .and_then(|v| v.as_str())
-            .map(str::to_owned);
+        context.pr_url = value.get("url").and_then(|v| v.as_str()).map(str::to_owned);
         if let Some(additions) = value.get("additions").and_then(|v| v.as_u64()) {
             context.added = Some(additions as usize);
         }
@@ -264,8 +257,9 @@ fn classify_check(check: &serde_json::Value) -> CiState {
         .and_then(|v| v.as_str())
         .map(str::to_ascii_uppercase);
     match conclusion.as_deref().or(state.as_deref()) {
-        Some("FAILURE" | "TIMED_OUT" | "ERROR" | "CANCELLED" | "STARTUP_FAILURE"
-        | "ACTION_REQUIRED") => CiState::Failing,
+        Some(
+            "FAILURE" | "TIMED_OUT" | "ERROR" | "CANCELLED" | "STARTUP_FAILURE" | "ACTION_REQUIRED",
+        ) => CiState::Failing,
         Some("SUCCESS" | "NEUTRAL" | "SKIPPED") => CiState::Passing,
         _ if status.as_deref() == Some("COMPLETED") => CiState::Passing,
         _ => CiState::Pending,
@@ -397,7 +391,10 @@ mod tests {
     fn parses_pr_url_and_individual_checks() {
         let output = "@@BRANCH@@\nfeat/x\n@@DIFF@@\n@@PR@@\n{\"number\":12,\"url\":\"https://github.com/o/r/pull/12\",\"additions\":3,\"deletions\":1,\"statusCheckRollup\":[{\"name\":\"build\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\",\"detailsUrl\":\"https://ci/1\"},{\"context\":\"lint\",\"state\":\"FAILURE\",\"targetUrl\":\"https://ci/2\"}]}\n";
         let context = parse(output, None);
-        assert_eq!(context.pr_url.as_deref(), Some("https://github.com/o/r/pull/12"));
+        assert_eq!(
+            context.pr_url.as_deref(),
+            Some("https://github.com/o/r/pull/12")
+        );
         assert_eq!(context.ci, Some(CiState::Failing));
         assert_eq!(context.ci_checks.len(), 2);
         assert_eq!(context.ci_checks[0].name, "build");

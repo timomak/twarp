@@ -7,7 +7,7 @@ use crate::{
     config::LanguageId, model::LanguageServerId, supported_servers::LSPServerType, LspEvent,
     LspServerConfig, LspServerModel,
 };
-use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
+use twarpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
 #[derive(Debug)]
 pub enum LspManagerModelEvent {

@@ -1,7 +1,7 @@
 use super::*;
 use crate::test_util::settings::initialize_settings_for_tests;
 use settings::Setting;
-use warpui::{App, SingletonEntity};
+use twarpui::{App, SingletonEntity};
 
 #[test]
 fn color_for_directory_uses_longest_prefix_color_match() {

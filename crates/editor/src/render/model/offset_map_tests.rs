@@ -76,7 +76,7 @@ fn test_offset_map_placeholders() {
 fn test_end_to_end() {
     // Group imports here so they don't cause "unused import" warnings on other targets.
 
-    use warpui::{
+    use twarpui::{
         App, color::ColorU, elements::Fill, fonts::Cache as FontCache, text_layout::LayoutCache,
     };
 
@@ -97,7 +97,7 @@ fn test_end_to_end() {
     };
 
     App::test((), |mut app| async move {
-        let mut font_cache = FontCache::new(Box::new(warpui::platform::current::FontDB::new()));
+        let mut font_cache = FontCache::new(Box::new(twarpui::platform::current::FontDB::new()));
         let layout_cache = LayoutCache::new();
         let paragraph_styles = ParagraphStyles {
             font_family: font_cache

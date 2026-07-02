@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use warpui::{elements::MouseStateHandle, fonts::Weight, Element, EntityId};
+use twarpui::{elements::MouseStateHandle, fonts::Weight, Element, EntityId};
 
 use crate::{
     appearance::Appearance,

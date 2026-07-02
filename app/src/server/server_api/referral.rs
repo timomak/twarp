@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use cynic::{MutationBuilder, QueryBuilder};
 #[cfg(test)]
 use mockall::{automock, predicate::*};
-use warp_core::channel::ChannelState;
-use warp_graphql::{
+use twarp_core::channel::ChannelState;
+use twarp_graphql::{
     mutations::send_referral_invite_emails::{
         SendReferralInviteEmails, SendReferralInviteEmailsResult, SendReferralInviteEmailsVariables,
     },
@@ -47,7 +47,7 @@ impl ReferralsClient for ServerApi {
         let response = self.send_graphql_request(operation, None).await?;
 
         match response.user {
-            warp_graphql::queries::get_referral_info::UserResult::UserOutput(user_output) => {
+            twarp_graphql::queries::get_referral_info::UserResult::UserOutput(user_output) => {
                 Ok(ReferralInfo {
                     url: format!(
                         "{}/referral/{}",
@@ -60,7 +60,7 @@ impl ReferralsClient for ServerApi {
                     is_referred: user_output.user.referrals.is_referred,
                 })
             }
-            warp_graphql::queries::get_referral_info::UserResult::Unknown => {
+            twarp_graphql::queries::get_referral_info::UserResult::Unknown => {
                 Err(anyhow!("Unable to fetch referral info"))
             }
         }
@@ -68,7 +68,7 @@ impl ReferralsClient for ServerApi {
 
     async fn send_invite(&self, emails: Vec<String>) -> Result<Vec<String>> {
         let variables = SendReferralInviteEmailsVariables {
-            input: warp_graphql::mutations::send_referral_invite_emails::SendReferralInviteEmailsInput {
+            input: twarp_graphql::mutations::send_referral_invite_emails::SendReferralInviteEmailsInput {
                 emails,
             },
             request_context: get_request_context(),

@@ -18,8 +18,8 @@
 
 use std::rc::Rc;
 
-use warp_core::ui::theme::AnsiColorIdentifier;
-use warpui::{
+use twarp_core::ui::theme::AnsiColorIdentifier;
+use twarpui::{
     elements::{
         Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Expanded, Flex,
         Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius,
@@ -58,24 +58,24 @@ pub(crate) fn icon_size(app: &AppContext) -> f32 {
 }
 
 /// Status icon for a running tool (port of `agent::icons::yellow_running_icon`).
-pub(crate) fn running_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(
+pub(crate) fn running_icon(appearance: &Appearance) -> twarpui::elements::Icon {
+    twarpui::elements::Icon::new(
         WarpIcon::Circle.into(),
         AnsiColorIdentifier::Yellow.to_ansi_color(&appearance.theme().terminal_colors().normal),
     )
 }
 
 /// Status icon for a completed tool (port of `green_check_icon`).
-pub(crate) fn green_check_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(
+pub(crate) fn green_check_icon(appearance: &Appearance) -> twarpui::elements::Icon {
+    twarpui::elements::Icon::new(
         WarpIcon::Check.into(),
         AnsiColorIdentifier::Green.to_ansi_color(&appearance.theme().terminal_colors().normal),
     )
 }
 
 /// Status icon for a failed tool (port of `red_x_icon`).
-pub(crate) fn red_x_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(
+pub(crate) fn red_x_icon(appearance: &Appearance) -> twarpui::elements::Icon {
+    twarpui::elements::Icon::new(
         WarpIcon::X.into(),
         AnsiColorIdentifier::Red.to_ansi_color(&appearance.theme().terminal_colors().normal),
     )
@@ -89,7 +89,7 @@ pub(crate) type OnToggleExpandedCallback = Rc<dyn Fn(&mut EventContext) + 'stati
 #[derive(Default)]
 pub(crate) struct RightCluster {
     pub label: Option<String>,
-    pub icon: Option<warpui::elements::Icon>,
+    pub icon: Option<twarpui::elements::Icon>,
 }
 
 impl RightCluster {
@@ -137,7 +137,7 @@ impl RightCluster {
 /// each file change in the Open Changes panel — so they all read the same.
 pub(crate) struct Disclosure {
     title: Box<dyn Element>,
-    glyph: Option<warpui::elements::Icon>,
+    glyph: Option<twarpui::elements::Icon>,
     expanded: bool,
     expandable: bool,
     /// Result label + status icon — rendered in the row's trailing cluster only
@@ -182,7 +182,7 @@ impl Disclosure {
         }
     }
 
-    pub(crate) fn with_glyph(mut self, glyph: warpui::elements::Icon) -> Self {
+    pub(crate) fn with_glyph(mut self, glyph: twarpui::elements::Icon) -> Self {
         self.glyph = Some(glyph);
         self
     }
@@ -282,7 +282,11 @@ impl Disclosure {
             }
         }
         if let Some(action) = self.trailing_action {
-            trailing.add_child(Container::new(action).with_margin_right(ICON_MARGIN).finish());
+            trailing.add_child(
+                Container::new(action)
+                    .with_margin_right(ICON_MARGIN)
+                    .finish(),
+            );
         }
         if self.expandable {
             trailing.add_child(

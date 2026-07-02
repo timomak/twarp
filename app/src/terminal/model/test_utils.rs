@@ -8,8 +8,8 @@
 
 use std::{io::sink, sync::Arc};
 
-use warp_core::command::ExitCode;
-use warpui::r#async::executor::Background;
+use twarp_core::command::ExitCode;
+use twarpui::r#async::executor::Background;
 
 use crate::app_state::SerializedBlockListItem;
 use crate::terminal::{
@@ -51,7 +51,7 @@ fn block_padding() -> BlockPadding {
 /// prompt:
 ///
 /// ```no_run
-/// # use warp::terminal::model::test_utils::TestBlockListBuilder;
+/// # use twarp::terminal::model::test_utils::TestBlockListBuilder;
 /// let block_list = TestBlockListBuilder::new()
 ///     .with_honor_ps1(true)
 ///     .build();
@@ -63,10 +63,10 @@ fn block_padding() -> BlockPadding {
 /// the channel event proxy:
 ///
 /// ```no_run
-/// # use warp::terminal::event::{BlockType, Event};
-/// # use warp::terminal::event_listener::ChannelEventListener;
-/// # use warp::terminal::model::block::SerializedBlock;
-/// # use warp::terminal::model::test_utils::TestBlockListBuilder;
+/// # use twarp::terminal::event::{BlockType, Event};
+/// # use twarp::terminal::event_listener::ChannelEventListener;
+/// # use twarp::terminal::model::block::SerializedBlock;
+/// # use twarp::terminal::model::test_utils::TestBlockListBuilder;
 ///
 /// let (events_tx, events_rx) = async_channel::unbounded();
 /// let channel_event_proxy = ChannelEventListener::builder_for_test()
@@ -157,7 +157,7 @@ impl Default for TestBlockListBuilder<'_> {
 /// For example, to create a [`Block`] that respects the user's custom prompt:
 ///
 /// ```no_run
-/// # use warp::terminal::model::test_utils::TestBlockBuilder;
+/// # use twarp::terminal::model::test_utils::TestBlockBuilder;
 /// let block = TestBlockBuilder::new()
 ///     .with_honor_ps1(true)
 ///     .build();

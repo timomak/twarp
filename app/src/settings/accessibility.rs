@@ -1,7 +1,7 @@
 use settings::{
     macros::define_settings_group, RespectUserSyncSetting, SupportedPlatforms, SyncToCloud,
 };
-use warpui::accessibility::AccessibilityVerbosity;
+use twarpui::accessibility::AccessibilityVerbosity;
 
 define_settings_group!(AccessibilitySettings, settings: [
     a11y_verbosity: AccessibilityVerbosityState {

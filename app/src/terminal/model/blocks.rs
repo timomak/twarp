@@ -36,13 +36,13 @@ use std::ops::{AddAssign, Range, RangeInclusive};
 use std::sync::Arc;
 use std::time::Duration;
 use sum_tree::{Dimension, Item, SeekBias, SumTree};
-use warp_core::features::FeatureFlag;
-use warpui::color::ColorU;
-use warpui::r#async::executor::Background;
-use warpui::record_trace_event;
+use twarp_core::features::FeatureFlag;
+use twarpui::color::ColorU;
+use twarpui::r#async::executor::Background;
+use twarpui::record_trace_event;
 
 use std::collections::{HashMap, HashSet};
-use warpui::{
+use twarpui::{
     units::{IntoLines, IntoPixels, Lines},
     AppContext, EntityId, ViewHandle,
 };
@@ -62,17 +62,17 @@ use super::terminal_model::RangeInModel;
 use super::{ansi::Handler, grid::grid_handler::Link};
 // twarp: 2c-d — AIBlock deleted; stub.
 pub struct AIBlock;
-impl warpui::Entity for AIBlock {
+impl twarpui::Entity for AIBlock {
     type Event = ();
 }
-impl warpui::View for AIBlock {
+impl twarpui::View for AIBlock {
     fn ui_name() -> &'static str {
         "AIBlock/twarp-stub"
     }
-    fn render(&self, _: &warpui::AppContext) -> Box<dyn warpui::Element> {
+    fn render(&self, _: &twarpui::AppContext) -> Box<dyn twarpui::Element> {
         // twarp: 2c-d — bring Element trait into scope for finish()
-        use warpui::Element as _;
-        warpui::elements::Empty::new().finish()
+        use twarpui::Element as _;
+        twarpui::elements::Empty::new().finish()
     }
 }
 #[allow(dead_code)]
@@ -83,7 +83,7 @@ impl AIBlock {
     pub fn pending_unit_test_suggestion<C>(
         &self,
         _: &C,
-    ) -> Option<warpui::ViewHandle<crate::workspace::view::AIFactViewStub>> {
+    ) -> Option<twarpui::ViewHandle<crate::workspace::view::AIFactViewStub>> {
         None
     }
     // twarp: 2c-d — bulk stubs
@@ -99,7 +99,7 @@ use crate::terminal::model::blockgrid::BlockGrid;
 use crate::terminal::model::grid::Dimensions;
 use crate::terminal::model::secrets::ObfuscateSecrets;
 use crate::terminal::model::terminal_model::{BlockIndex, WithinBlock};
-use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
+use twarp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
 
 use selection::BlockListSelection;
 pub use selection::SelectionRange;

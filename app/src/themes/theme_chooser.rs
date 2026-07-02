@@ -1,7 +1,7 @@
 use pathfinder_color::ColorU;
 use settings::Setting as _;
-use warp_editor::editor::NavigationKey;
-use warpui::{
+use twarp_editor::editor::NavigationKey;
+use twarpui::{
     accessibility::{AccessibilityContent, WarpA11yRole},
     elements::{
         Align, ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
@@ -150,7 +150,7 @@ pub struct ThemeChooser {
     search_editor: ViewHandle<EditorView>,
     referral_theme_status: ModelHandle<ReferralThemeStatus>,
     tips_completed: ModelHandle<TipsCompleted>,
-    window_id: warpui::WindowId,
+    window_id: twarpui::WindowId,
 }
 
 #[derive(Debug)]
@@ -165,7 +165,7 @@ pub enum ThemeChooserAction {
 }
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings(vec![
         FixedBinding::new("up", ThemeChooserAction::Up, id!("ThemeChooser")),

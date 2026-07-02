@@ -3,15 +3,15 @@
 //! This module provides common styling functions used across all inline menu
 //! implementations (models, slash commands, conversations) to ensure consistent
 //! visual design matching the Figma specifications.
-use warp_core::ui::appearance::Appearance;
-use warp_core::ui::color::blend::Blend;
-use warp_core::ui::theme::{Fill, WarpTheme};
-use warpui::color::ColorU;
-use warpui::{AppContext, SingletonEntity};
+use twarp_core::ui::appearance::Appearance;
+use twarp_core::ui::color::blend::Blend;
+use twarp_core::ui::theme::{Fill, WarpTheme};
+use twarpui::color::ColorU;
+use twarpui::{AppContext, SingletonEntity};
 
 // twarp: 2c-d — agent_view_bg_fill deleted; stub.
-pub fn agent_view_bg_fill<C>(_: C) -> warpui::color::ColorU {
-    warpui::color::ColorU::new(0, 0, 0, 0)
+pub fn agent_view_bg_fill<C>(_: C) -> twarpui::color::ColorU {
+    twarpui::color::ColorU::new(0, 0, 0, 0)
 }
 use crate::search::result_renderer::ItemHighlightState;
 
@@ -34,10 +34,10 @@ pub const HEADER_BORDER: f32 = 1.;
 pub fn menu_background_color(app: &AppContext) -> ColorU {
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
-    // twarp: 2c-d — Fill is warp_core::ui::theme::Fill; use Solid variant on theme module.
+    // twarp: 2c-d — Fill is twarp_core::ui::theme::Fill; use Solid variant on theme module.
     theme
         .background()
-        .blend(&warp_core::ui::theme::Fill::Solid(agent_view_bg_fill(app)))
+        .blend(&twarp_core::ui::theme::Fill::Solid(agent_view_bg_fill(app)))
         .into()
 }
 

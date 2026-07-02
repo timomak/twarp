@@ -1,5 +1,5 @@
 use chrono::{Local, TimeZone};
-use warpui::{App, ModelHandle, ReadModel, UpdateModel};
+use twarpui::{App, ModelHandle, ReadModel, UpdateModel};
 
 use crate::{
     auth::{AuthManager, AuthStateProvider},
@@ -8,7 +8,7 @@ use crate::{
     },
 };
 
-use warp_core::execution_mode::{AppExecutionMode, ExecutionMode};
+use twarp_core::execution_mode::{AppExecutionMode, ExecutionMode};
 
 use super::*;
 

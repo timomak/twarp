@@ -1,5 +1,5 @@
 //! Module for test-only convenience methods on `TerminalView`.
-use warpui::ModelHandle;
+use twarpui::ModelHandle;
 
 use crate::terminal::find::TerminalFindModel;
 cfg_if::cfg_if! {
@@ -7,7 +7,7 @@ cfg_if::cfg_if! {
         use std::sync::Arc;
 
         use parking_lot::FairMutex;
-        use warpui::{ViewContext};
+        use twarpui::{ViewContext};
 
         use crate::{
             // twarp: 2c-d — SerializedBlockListItem moved to app_state stub.
@@ -35,7 +35,7 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         use pathfinder_geometry::vector::vec2f;
-        use warpui::units::{IntoPixels as _, Pixels};
+        use twarpui::units::{IntoPixels as _, Pixels};
 
         use crate::{
             server::server_api::ServerApiProvider,

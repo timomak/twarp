@@ -51,14 +51,14 @@ use crate::{
     workflows::workflow_view::WorkflowView,
 };
 use serde::{Deserialize, Serialize};
-use url::Url;
-use warp_core::HostId;
-use warpui::{
+use twarp_core::HostId;
+use twarpui::{
     elements::{DispatchEventResult, EventHandler, MouseInBehavior},
     presenter::ChildView,
     Action, AppContext, Element, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity,
     View, ViewContext, ViewHandle, WeakModelHandle,
 };
+use url::Url;
 
 pub use self::view::PaneHeaderAction;
 pub use self::view::PaneHeaderCustomAction;
@@ -359,7 +359,7 @@ impl PaneId {
     pub(super) fn deferred_placeholder_pane_id() -> Self {
         Self(IPaneId {
             pane_type: IPaneType::DeferredPlaceholder,
-            pane_view_id: warpui::EntityId::new(),
+            pane_view_id: twarpui::EntityId::new(),
         })
     }
 
@@ -368,7 +368,7 @@ impl PaneId {
     pub fn dummy_pane_id() -> Self {
         Self(IPaneId {
             pane_type: IPaneType::Dummy,
-            pane_view_id: warpui::EntityId::new(),
+            pane_view_id: twarpui::EntityId::new(),
         })
     }
 
@@ -450,7 +450,7 @@ impl PaneId {
             }
             IPaneType::CodeDiff => {
                 // twarp: 2c-d — CodeDiffView removed (AI)
-                warpui::elements::Empty::new().finish()
+                twarpui::elements::Empty::new().finish()
             }
             IPaneType::EnvVarCollection => {
                 ChildView::<PaneView<EnvVarCollectionView>>::with_id(self.0.pane_view_id).finish()
@@ -463,15 +463,15 @@ impl PaneId {
             }
             IPaneType::AIFact => {
                 // twarp: 2c-d — AIFactView removed
-                warpui::elements::Empty::new().finish()
+                twarpui::elements::Empty::new().finish()
             }
             IPaneType::AIDocument => {
                 // twarp: 2c-d — AIDocumentView removed
-                warpui::elements::Empty::new().finish()
+                twarpui::elements::Empty::new().finish()
             }
             IPaneType::ExecutionProfileEditor => {
                 // twarp: 2c-d — ExecutionProfileEditorView removed
-                warpui::elements::Empty::new().finish()
+                twarpui::elements::Empty::new().finish()
             }
             IPaneType::GetStarted => {
                 ChildView::<PaneView<GetStartedView>>::with_id(self.0.pane_view_id).finish()
@@ -482,9 +482,9 @@ impl PaneId {
             IPaneType::Welcome => {
                 ChildView::<PaneView<WelcomeView>>::with_id(self.0.pane_view_id).finish()
             }
-            IPaneType::DeferredPlaceholder => warpui::elements::Empty::new().finish(),
+            IPaneType::DeferredPlaceholder => twarpui::elements::Empty::new().finish(),
             #[cfg(test)]
-            IPaneType::Dummy => warpui::elements::Empty::new().finish(),
+            IPaneType::Dummy => twarpui::elements::Empty::new().finish(),
         };
         if *PaneSettings::as_ref(app).focus_panes_on_hover {
             element = EventHandler::new(element)

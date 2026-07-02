@@ -1,8 +1,8 @@
 //! Shared context menu implementation for notebooks.
 
 use pathfinder_geometry::vector::Vector2F;
-use warp_core::context_flag::ContextFlag;
-use warpui::{
+use twarp_core::context_flag::ContextFlag;
+use twarpui::{
     elements::{ChildAnchor, OffsetPositioning, ParentAnchor, ParentOffsetBounds, Stack},
     keymap::Trigger,
     presenter::ChildView,
@@ -248,7 +248,7 @@ where
 
     #[cfg(test)]
     /// List out the context menu items by name.
-    pub fn item_names<'a>(&self, ctx: &'a impl warpui::ViewAsRef) -> Vec<&'a str> {
+    pub fn item_names<'a>(&self, ctx: &'a impl twarpui::ViewAsRef) -> Vec<&'a str> {
         self.menu
             .as_ref(ctx)
             .items()

@@ -1,7 +1,7 @@
 use crate::integration_testing::command_palette::open_command_palette_and_run_action;
 use crate::integration_testing::view_getters::workspace_view;
-use warpui::async_assert;
-use warpui::integration::TestStep;
+use twarpui::async_assert;
+use twarpui::integration::TestStep;
 
 pub fn open_theme_picker() -> Vec<TestStep> {
     let mut steps = open_command_palette_and_run_action("Open Theme Picker");

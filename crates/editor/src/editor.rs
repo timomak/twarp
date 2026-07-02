@@ -6,7 +6,7 @@ use std::{any::Any, cell::Ref, ops::Range};
 use num_traits::SaturatingSub;
 use pathfinder_color::ColorU;
 use rangemap::{RangeMap, RangeSet};
-use warpui::{
+use twarpui::{
     Action, AppContext, Element, TypedActionView, View, elements::Border,
     text_layout::PaintStyleOverride,
 };

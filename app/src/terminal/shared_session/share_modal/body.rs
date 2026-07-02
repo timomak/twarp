@@ -1,14 +1,14 @@
 // twarp: 2c-d — BlocklistAIHistoryModel deleted; stub.
 pub struct BlocklistAIHistoryModel;
-impl warpui::Entity for BlocklistAIHistoryModel {
+impl twarpui::Entity for BlocklistAIHistoryModel {
     type Event = crate::terminal::input::BlocklistAIHistoryEvent;
 }
-impl warpui::SingletonEntity for BlocklistAIHistoryModel {}
+impl twarpui::SingletonEntity for BlocklistAIHistoryModel {}
 #[allow(dead_code)]
 impl BlocklistAIHistoryModel {
     pub fn all_live_conversations_for_terminal_view(
         &self,
-        _: warpui::EntityId,
+        _: twarpui::EntityId,
     ) -> std::vec::IntoIter<crate::app_state::AIConversationId> {
         Vec::new().into_iter()
     }
@@ -23,24 +23,24 @@ use crate::terminal::shared_session::{
 };
 use crate::terminal::TerminalModel;
 use byte_unit::Byte;
-use warp_core::features::FeatureFlag;
+use twarp_core::features::FeatureFlag;
 
 use std::default::Default;
 use std::sync::Arc;
 
 use parking_lot::FairMutex;
 
-use warpui::elements::{
+use twarpui::elements::{
     Container, Flex, MainAxisSize, MouseStateHandle, ParentElement, Shrinkable, Text,
 };
-use warpui::ui_components::button::ButtonVariant;
-use warpui::ui_components::components::UiComponent;
-use warpui::ui_components::radio_buttons::{
+use twarpui::ui_components::button::ButtonVariant;
+use twarpui::ui_components::components::UiComponent;
+use twarpui::ui_components::radio_buttons::{
     RadioButtonItem, RadioButtonLayout, RadioButtonStateHandle,
 };
 
 use super::style::{self, BUTTON_GAP, MODAL_MARGIN};
-use warpui::{
+use twarpui::{
     platform::Cursor, AppContext, Element, Entity, SingletonEntity, TypedActionView, View,
     ViewContext,
 };
@@ -96,7 +96,7 @@ impl Body {
     /// during session initialization. This is important because these events count toward
     /// the session size quota, but are separate from the scrollback blocks.
     fn calculate_agent_conversations_size(
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
         ctx: &ViewContext<Self>,
     ) -> Byte {
         let conversations: Vec<_> = BlocklistAIHistoryModel::as_ref(ctx)
@@ -118,7 +118,7 @@ impl Body {
         &mut self,
         open_source: SharedSessionActionSource,
         model: Arc<FairMutex<TerminalModel>>,
-        terminal_view_id: warpui::EntityId,
+        terminal_view_id: twarpui::EntityId,
         ctx: &mut ViewContext<Self>,
     ) {
         let model = model.lock();

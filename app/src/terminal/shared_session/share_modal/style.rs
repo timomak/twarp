@@ -1,5 +1,5 @@
-use warp_core::ui::appearance::Appearance;
-use warpui::{
+use twarp_core::ui::appearance::Appearance;
+use twarpui::{
     fonts::Weight,
     ui_components::components::{Coords, UiComponentStyles},
 };

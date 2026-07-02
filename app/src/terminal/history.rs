@@ -6,8 +6,8 @@ use std::{
     sync::Arc,
 };
 
-use warp_core::command::ExitCode;
-use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
+use twarp_core::command::ExitCode;
+use twarpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use super::{
     model::block::{AgentInteractionMetadata, Block, SerializedAIMetadata, SerializedBlock},

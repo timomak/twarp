@@ -1,7 +1,7 @@
 use instant::Instant;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
-use warp_core::features::FeatureFlag;
-use warpui::{
+use twarp_core::features::FeatureFlag;
+use twarpui::{
     elements::{
         Border, CacheOption, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element,
         Flex, FormattedTextElement, HighlightedHyperlink, Icon, Image, MouseStateHandle,

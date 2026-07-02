@@ -2,7 +2,7 @@
 use crate::code_review::code_review_view::DiffSetHunk;
 use crate::code_review::diff_state::{DiffLineType, FileDiff};
 use std::collections::HashMap;
-use warp_editor::render::model::LineCount;
+use twarp_editor::render::model::LineCount;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
@@ -11,7 +11,7 @@ cfg_if::cfg_if! {
         // twarp: 2c-d — re-export canonical BlocklistAIContextModel from terminal::input
         pub use crate::terminal::input::BlocklistAIContextModel;
         use crate::code_review::{diff_state::DiffMode, DiffSetScope};
-        use warpui::{AppContext, ModelHandle};
+        use twarpui::{AppContext, ModelHandle};
     }
 }
 

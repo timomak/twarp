@@ -7,7 +7,7 @@ use crate::user_config::{WarpConfig, WarpConfigUpdateEvent};
 use fuzzy_match::match_indices_case_insensitive;
 use std::collections::HashMap;
 use std::sync::Arc;
-use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
+use twarpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 /// Datasource that searches against `LaunchConfig`s.
 pub struct DataSource {
@@ -17,7 +17,7 @@ pub struct DataSource {
 impl DataSource {
     #[cfg(not(target_family = "wasm"))]
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
-        if warp_core::features::FeatureFlag::UseTantivySearch.is_enabled() {
+        if twarp_core::features::FeatureFlag::UseTantivySearch.is_enabled() {
             Self::new_full_text(ctx)
         } else {
             Self::new_fuzzy(ctx)
@@ -126,8 +126,8 @@ mod full_text_searcher {
     use fuzzy_match::FuzzyMatchResult;
     use std::collections::HashMap;
     use std::sync::Arc;
-    use warpui::r#async::executor::Background;
-    use warpui::{AppContext, SingletonEntity};
+    use twarpui::r#async::executor::Background;
+    use twarpui::{AppContext, SingletonEntity};
 
     // The name of the launch configs are duplicated to ensure that the searcher
     // hashes the name to uniquely identify the launch config.

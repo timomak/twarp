@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use warpui::{AppContext, ModelHandle, View, ViewContext, ViewHandle};
+use twarpui::{AppContext, ModelHandle, View, ViewContext, ViewHandle};
 
 use crate::{
     app_state::LeafContents,
@@ -58,7 +58,7 @@ impl PaneContent for WelcomePane {
         &self,
         _group: &PaneGroup,
         _detach_type: super::DetachType,
-        ctx: &mut warpui::ViewContext<PaneGroup>,
+        ctx: &mut twarpui::ViewContext<PaneGroup>,
     ) {
         let child = self.view.as_ref(ctx).child(ctx);
         ctx.unsubscribe_to_view(&child);
@@ -76,11 +76,11 @@ impl PaneContent for WelcomePane {
         }
     }
 
-    fn has_application_focus(&self, ctx: &mut warpui::ViewContext<PaneGroup>) -> bool {
+    fn has_application_focus(&self, ctx: &mut twarpui::ViewContext<PaneGroup>) -> bool {
         self.view.is_self_or_child_focused(ctx)
     }
 
-    fn focus(&self, ctx: &mut warpui::ViewContext<PaneGroup>) {
+    fn focus(&self, ctx: &mut twarpui::ViewContext<PaneGroup>) {
         self.view
             .as_ref(ctx)
             .child(ctx)

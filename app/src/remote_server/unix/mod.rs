@@ -16,7 +16,7 @@ mod proxy;
 use super::server_model::{ConnectionId, ServerModel};
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
-use warpui::r#async::executor;
+use twarpui::r#async::executor;
 
 /// Run the `remote-server-proxy` subcommand.
 ///
@@ -40,9 +40,9 @@ pub fn run_daemon(identity_key: String) -> anyhow::Result<()> {
     // The file is written to the same directory as client logs (~/Library/Logs
     // on macOS, ~/.local/share/warp-terminal on Linux). Since the daemon runs
     // on the remote host, there is no conflict with client-side log files.
-    warp_logging::init(warp_logging::LogConfig {
+    twarp_logging::init(twarp_logging::LogConfig {
         is_cli: true,
-        log_destination: Some(warp_logging::LogDestination::File),
+        log_destination: Some(twarp_logging::LogDestination::File),
     })?;
 
     // socket_path: ~/.warp[-channel]/remote-server/{identity_key}/server.sock
@@ -137,7 +137,7 @@ pub fn run_daemon(identity_key: String) -> anyhow::Result<()> {
 pub(super) async fn handle_daemon_connection(
     conn_id: ConnectionId,
     stream: async_io::Async<std::os::unix::net::UnixStream>,
-    spawner: warpui::ModelSpawner<ServerModel>,
+    spawner: twarpui::ModelSpawner<ServerModel>,
     exec: std::sync::Arc<executor::Background>,
 ) {
     use futures::io::{AsyncWriteExt, BufReader, BufWriter};

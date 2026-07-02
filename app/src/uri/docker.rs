@@ -4,9 +4,9 @@ use crate::{
     send_telemetry_from_app_ctx, server::telemetry::TelemetryEvent, terminal::shell::ShellType,
 };
 use regex::Regex;
+use twarp_util::path::{is_posix_portable_pathname, ShellFamily};
+use twarpui::AppContext;
 use url::Url;
-use warp_util::path::{is_posix_portable_pathname, ShellFamily};
-use warpui::AppContext;
 
 use crate::root_view::SubshellCommandArg;
 

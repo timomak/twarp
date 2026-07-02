@@ -1,10 +1,10 @@
-use warp_core::ui::builder::MIN_FONT_SIZE;
-use warpui::{fonts::Weight, rendering::ThinStrokes, AppContext, SingletonEntity};
+use twarp_core::ui::builder::MIN_FONT_SIZE;
+use twarpui::{fonts::Weight, rendering::ThinStrokes, AppContext, SingletonEntity};
 
 use settings::{
     macros::define_settings_group, RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud,
 };
-use warpui::elements::DEFAULT_UI_LINE_HEIGHT_RATIO;
+use twarpui::elements::DEFAULT_UI_LINE_HEIGHT_RATIO;
 
 use super::EnforceMinimumContrast as EnforceMinimumContrastEnum;
 

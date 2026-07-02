@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use super::ServerExperiment;
 use crate::{persistence::ModelEvent, report_if_error, GlobalResourceHandlesProvider};
 use anyhow::Context;
-use warpui::{Entity, ModelContext, SingletonEntity};
+use twarpui::{Entity, ModelContext, SingletonEntity};
 
 #[cfg(test)]
 pub use tests::TestModel;

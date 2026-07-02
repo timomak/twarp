@@ -18,9 +18,9 @@ use queries::{
 };
 use rangemap::{RangeMap, RangeSet};
 use string_offset::{ByteOffset, CharOffset};
-use warpui::{color::ColorU, AppContext, Entity, ModelContext, WeakModelHandle};
+use twarpui::{color::ColorU, AppContext, Entity, ModelContext, WeakModelHandle};
 
-use warp_editor::{
+use twarp_editor::{
     content::{
         buffer::{Buffer, BufferSnapshot},
         edit::PreciseDelta,
@@ -29,7 +29,7 @@ use warp_editor::{
     },
     decoration::DecorationLayer,
 };
-use warpui::text::point::Point;
+use twarpui::text::point::Point;
 
 const MAX_SYNTAX_TREES: usize = 3;
 

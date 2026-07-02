@@ -43,10 +43,10 @@ use pathfinder_geometry::{
 };
 use serde::Serialize;
 use std::{ops::RangeInclusive, sync::Arc};
-use warp_core::features::FeatureFlag;
-use warp_core::ui::theme::Fill;
-use warpui::r#async::SpawnedFutureHandle;
-use warpui::{
+use twarp_core::features::FeatureFlag;
+use twarp_core::ui::theme::Fill;
+use twarpui::r#async::SpawnedFutureHandle;
+use twarpui::{
     clipboard::ClipboardContent,
     elements::{
         try_rect_with_z, Align, Border, ConstrainedBox, Container, CornerRadius,
@@ -163,7 +163,7 @@ pub enum ShareBlockModalAction {
 }
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings(vec![
         FixedBinding::custom(

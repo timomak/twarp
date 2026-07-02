@@ -3,11 +3,11 @@ use async_recursion::async_recursion;
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::{env, io::ErrorKind, path::PathBuf};
-use warp_core::ui::{
+use twarp_core::ui::{
     color::hex_color::coloru_from_hex_string,
     theme::{AnsiColor, AnsiColors, TerminalColors, WarpTheme},
 };
-use warpui::fonts::FontInfo;
+use twarpui::fonts::FontInfo;
 
 use super::config::{
     calculate_accent_color, Config, ConfigError, ImportableSetting, ParseableConfig, SettingType,

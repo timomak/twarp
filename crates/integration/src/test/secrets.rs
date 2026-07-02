@@ -1,7 +1,7 @@
-use warp::integration_testing::terminal::{
+use twarp::integration_testing::terminal::{
     initialize_secret_regexes, open_context_menu_for_selected_block,
 };
-use warp::{
+use twarp::{
     integration_testing::{
         clipboard::assert_clipboard_contains_string,
         secret_redaction::{assert_secret_tooltip_open, assert_secrets_redacted_for_ai},
@@ -17,7 +17,7 @@ use warp::{
     settings_view::{PrivacyPageAction, SettingsAction},
     terminal::model::{index::Point, terminal_model::WithinModel},
 };
-use warpui::{async_assert, integration::TestStep};
+use twarpui::{async_assert, integration::TestStep};
 
 use crate::util::skip_if_powershell_core_2303;
 

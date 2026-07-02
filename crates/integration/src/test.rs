@@ -73,7 +73,7 @@ use pathfinder_geometry::{rect::RectF, vector::Vector2F};
 use rust_embed::RustEmbed;
 use settings::Setting as _;
 use shell::ShellType;
-use warpui::{
+use twarpui::{
     async_assert, async_assert_eq,
     integration::{AssertionOutcome, StepData, TestStep},
     keymap::{Keystroke, Trigger},
@@ -82,11 +82,11 @@ use warpui::{
     AssetProvider, Event, SingletonEntity, UpdateView, ViewHandle,
 };
 
-use warp::{terminal::find::TerminalFindModel, util::bindings::CustomAction, AgentModeEntrypoint};
+use twarp::{terminal::find::TerminalFindModel, util::bindings::CustomAction, AgentModeEntrypoint};
 
 use sysinfo::{Pid, ProcessesToUpdate, System};
+use twarpui::units::Lines;
 use version_compare::Cmp;
-use warpui::units::Lines;
 
 use crate::util::{skip_if_powershell_core_2303, ShellRcType};
 
@@ -94,19 +94,19 @@ use crate::builder::cargo_target_tmpdir;
 use crate::user_defaults;
 use crate::Builder;
 use sum_tree::SeekBias;
-use warp::integration_testing::terminal::assert_focused_editor_in_tab;
-use warp::integration_testing::{
+use twarp::integration_testing::terminal::assert_focused_editor_in_tab;
+use twarp::integration_testing::{
     settings::assert_theme_chooser_contains,
     tab::{assert_pane_title, assert_tab_title},
 };
-use warp::settings::CtrlTabBehavior;
-use warp::terminal::keys_settings::KeysSettings;
-use warp::terminal::{
+use twarp::settings::CtrlTabBehavior;
+use twarp::terminal::keys_settings::KeysSettings;
+use twarp::terminal::{
     model::{blocks::BlockHeightSummary, terminal_model::BlockIndex},
     view::TerminalViewState,
 };
-use warp::workflows::categories::CategoriesView;
-use warp::{
+use twarp::workflows::categories::CategoriesView;
+use twarp::{
     appearance::Appearance,
     cmd_or_ctrl_shift,
     integration_testing::{
@@ -166,8 +166,8 @@ use warp::{
     },
 };
 
-use warp::terminal::view::ALIAS_EXPANSION_BANNER_SEEN_KEY;
-use warp::{
+use twarp::terminal::view::ALIAS_EXPANSION_BANNER_SEEN_KEY;
+use twarp::{
     features::FeatureFlag,
     integration_testing::{
         find::{Find, FindWithinBlockState},
@@ -178,13 +178,13 @@ use warp::{
         window::add_and_save_window,
     },
 };
-use warp::{
+use twarp::{
     integration_testing::warp_drive::{
         assert_is_left_panel_open, assert_warp_drive_is_closed, assert_warp_drive_is_open,
     },
     settings::CompletionsOpenWhileTyping,
 };
-use warp::{
+use twarp::{
     integration_testing::{
         self,
         input::{input_contains_string, input_is_empty},
@@ -194,11 +194,11 @@ use warp::{
     },
     settings::MonospaceFontSize,
 };
-use warp::{
+use twarp::{
     integration_testing::{assertions::join_a_workspace, view_getters::single_terminal_view},
     terminal::view::TerminalAction,
 };
-use warp::{
+use twarp::{
     integration_testing::{
         command_palette::{
             close_command_palette, open_command_palette, open_command_palette_and_run_action,
@@ -208,11 +208,11 @@ use warp::{
     },
     pane_group::AGENT_MODE_PANE_DEFAULT_MINIMUM_WIDTH,
 };
-use warp::{
+use twarp::{
     integration_testing::{terminal::util::ExactLine, workspace::assert_tab_count},
     terminal::available_shells::AvailableShells,
 };
-use warp::{
+use twarp::{
     integration_testing::{
         terminal::{
             assert_active_block_output, assert_alt_grid_active, assert_alt_screen_output,
@@ -223,8 +223,8 @@ use warp::{
     },
     workspace::WorkspaceAction,
 };
-use warp::{settings_view::SettingsAction, terminal::block_list_viewport::ScrollLines};
-use warp::{
+use twarp::{settings_view::SettingsAction, terminal::block_list_viewport::ScrollLines};
+use twarp::{
     settings_view::{keybindings::KeybindingsView, SettingsSection, SettingsView},
     terminal::{
         input::{Input, InputSuggestionsMode},
@@ -237,9 +237,9 @@ use warp::{
     },
     workspace::{Workspace, NEW_SESSION_MENU_BUTTON_POSITION_ID, NEW_TAB_BUTTON_POSITION_ID},
 };
-use warpui::event::KeyState;
-use warpui::keymap::PerPlatformKeystroke;
-use warpui::platform::keyboard::KeyCode;
+use twarpui::event::KeyState;
+use twarpui::keymap::PerPlatformKeystroke;
+use twarpui::platform::keyboard::KeyCode;
 
 const ADD_NEXT_OCCURRENCE_KEYBINDING: &str = "ctrl-g";
 
@@ -2051,7 +2051,7 @@ pub fn test_add_and_close_session() -> Builder {
                                     .expect("pane at index 0 is a terminal pane")
                                     .as_ref(ctx)
                                     .as_any()
-                                    .downcast_ref::<warp::terminal::local_tty::TerminalManager>()
+                                    .downcast_ref::<twarp::terminal::local_tty::TerminalManager>()
                                     .expect("terminal pane at index 0 contains a local session")
                                     .pid()
                                     .expect("shell should be spawned")

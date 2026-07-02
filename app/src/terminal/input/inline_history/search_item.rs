@@ -1,7 +1,7 @@
 // twarp: 2c-d — AI conversation / status UI deleted; stubs.
 use crate::app_state::{AIConversationId, ConversationStatus};
-pub fn render_status_element<A, B, C>(_: A, _: B, _: C) -> Box<dyn warpui::Element> {
-    warpui::elements::Empty::new().finish()
+pub fn render_status_element<A, B, C>(_: A, _: B, _: C) -> Box<dyn twarpui::Element> {
+    twarpui::elements::Empty::new().finish()
 }
 pub const STATUS_ELEMENT_PADDING: f32 = 0.0;
 use crate::appearance::Appearance;
@@ -13,15 +13,15 @@ use crate::util::time_format::format_approx_duration_from_now_utc;
 use chrono::{DateTime, Local};
 use fuzzy_match::FuzzyMatchResult;
 use ordered_float::OrderedFloat;
-use warp_core::ui::color::coloru_with_opacity;
-use warp_core::ui::theme::Fill;
-use warp_core::ui::Icon;
-use warpui::elements::{ConstrainedBox, Container, Highlight, ParentElement, Shrinkable, Text};
-use warpui::fonts::{Properties, Weight};
-use warpui::prelude::{Align, CrossAxisAlignment, Flex, MainAxisAlignment, MainAxisSize};
-use warpui::scene::{CornerRadius, Radius};
-use warpui::text_layout::ClipConfig;
-use warpui::{AppContext, Element, SingletonEntity};
+use twarp_core::ui::color::coloru_with_opacity;
+use twarp_core::ui::theme::Fill;
+use twarp_core::ui::Icon;
+use twarpui::elements::{ConstrainedBox, Container, Highlight, ParentElement, Shrinkable, Text};
+use twarpui::fonts::{Properties, Weight};
+use twarpui::prelude::{Align, CrossAxisAlignment, Flex, MainAxisAlignment, MainAxisSize};
+use twarpui::scene::{CornerRadius, Radius};
+use twarpui::text_layout::ClipConfig;
+use twarpui::{AppContext, Element, SingletonEntity};
 
 #[derive(Debug, Clone)]
 pub struct InlineHistoryItem {

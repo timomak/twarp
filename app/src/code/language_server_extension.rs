@@ -2,15 +2,15 @@ use lsp::{HoverContents, LspServerLogLevel, MarkupKind};
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use num_traits::SaturatingSub;
 use string_offset::CharOffset;
-use warp_core::ui::{
+use twarp_core::ui::{
     appearance::Appearance,
     theme::{color::internal_colors, WarpTheme},
 };
-use warp_editor::{
+use twarp_editor::{
     content::buffer::InitialBufferState,
     render::{element::VerticalExpansionBehavior, model::Decoration},
 };
-use warpui::{
+use twarpui::{
     elements::{
         Border, ChildView, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container,
         CornerRadius, CrossAxisAlignment, Flex, FormattedTextElement, HighlightedHyperlink,
@@ -27,7 +27,7 @@ use crate::editor::InteractionState;
 
 use super::editor::view::{CodeEditorRenderOptions, CodeEditorView};
 use super::lsp_telemetry::LspTelemetryEvent;
-use warp_core::send_telemetry_from_ctx;
+use twarp_core::send_telemetry_from_ctx;
 
 /// A processed diagnostic with its converted offset range.
 /// Stored on LocalCodeEditorView and used for both decoration and hover display.
@@ -549,7 +549,7 @@ impl LocalCodeEditorView {
             ScrollbarWidth::Auto,
             theme.disabled_ui_text_color().into(),
             theme.active_ui_text_color().into(),
-            warpui::elements::Fill::None,
+            twarpui::elements::Fill::None,
         )
         .finish();
 

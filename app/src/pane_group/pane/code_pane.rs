@@ -1,5 +1,5 @@
-use warp_util::path::LineAndColumnArg;
-use warpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle};
+use twarp_util::path::LineAndColumnArg;
+use twarpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle};
 
 use crate::{
     app_state::{CodePaneSnapShot, CodePaneTabSnapshot, LeafContents},

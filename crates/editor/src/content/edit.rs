@@ -12,10 +12,8 @@ use markdown_parser::{Hyperlink, TableAlignment};
 use num_traits::SaturatingSub;
 use rangemap::RangeSet;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
-use urlocator::{UrlLocation, UrlLocator};
-use vec1::Vec1;
-use warp_core::{features::FeatureFlag, ui::theme::Fill as ThemeFill};
-use warpui::{
+use twarp_core::{features::FeatureFlag, ui::theme::Fill as ThemeFill};
+use twarpui::{
     AppContext,
     assets::asset_cache::AssetSource,
     fonts::Weight,
@@ -23,6 +21,8 @@ use warpui::{
     text_layout::{StyleAndFont, TextAlignment},
     units::{IntoPixels, Pixels},
 };
+use urlocator::{UrlLocation, UrlLocator};
+use vec1::Vec1;
 
 use crate::{
     parallel_util::Last,
@@ -39,7 +39,7 @@ use crate::{
     },
 };
 use string_offset::{ByteOffset, CharOffset};
-use warpui::text::char_slice;
+use twarpui::text::char_slice;
 
 use super::{
     buffer::{StyledBufferBlock, StyledBufferRun, StyledTextBlock},

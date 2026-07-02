@@ -15,8 +15,8 @@ use crate::{
 };
 use std::path::Path;
 use string_offset::CharOffset;
-use warp_core::features::FeatureFlag;
-use warpui::{
+use twarp_core::features::FeatureFlag;
+use twarpui::{
     App, SingletonEntity,
     assets::asset_cache::{AssetCache, AssetSource, AssetState},
     fonts::{Properties, Style, Weight},

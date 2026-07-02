@@ -2,7 +2,7 @@ use anyhow::Context;
 use std::sync::Arc;
 use url::Url;
 
-use warpui::{AppContext, ModelHandle, SingletonEntity, ViewContext, ViewHandle};
+use twarpui::{AppContext, ModelHandle, SingletonEntity, ViewContext, ViewHandle};
 
 use crate::{
     app_state::{LeafContents, NotebookPaneSnapshot},

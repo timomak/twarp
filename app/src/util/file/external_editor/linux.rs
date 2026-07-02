@@ -7,8 +7,8 @@ use std::{
 
 use command::blocking::Command;
 use freedesktop_desktop_entry::DesktopEntry;
-use warp_util::path::LineAndColumnArg;
-use warpui::AppContext;
+use twarp_util::path::LineAndColumnArg;
+use twarpui::AppContext;
 
 use super::Editor;
 
@@ -78,7 +78,7 @@ impl EditorMetadata {
     ///
     /// ```ignore
     /// use std::path::PathBuf;
-    /// use warp::util::file::external_editor::linux::EditorMetadata;
+    /// use twarp::util::file::external_editor::linux::EditorMetadata;
     ///
     /// let desktop_file_path = PathBuf::from("/var/lib/snapd/desktop/applications/webstorm_webstorm.desktop");
     /// let metadata = EditorMetadata::try_new(desktop_file_path)?;

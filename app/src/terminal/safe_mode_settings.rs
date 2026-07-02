@@ -1,7 +1,7 @@
 use settings::{
     macros::define_settings_group, RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud,
 };
-use warpui::{AppContext, SingletonEntity};
+use twarpui::{AppContext, SingletonEntity};
 
 use crate::{terminal::model::ObfuscateSecrets, workspaces::user_workspaces::UserWorkspaces};
 

@@ -2,8 +2,8 @@
 
 use std::ops::Range;
 
-use warp_core::ui::appearance::DEFAULT_UI_FONT_SIZE;
-use warpui::{
+use twarp_core::ui::appearance::DEFAULT_UI_FONT_SIZE;
+use twarpui::{
     PaintContext,
     elements::{CornerRadius, Point, Radius},
     geometry::{

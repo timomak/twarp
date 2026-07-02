@@ -3,7 +3,7 @@ use crate::search::command_palette::tabs::SearchItem;
 use crate::search::data_source::{Query, QueryResult};
 use crate::search::mixer::{DataSourceRunErrorWrapper, SyncDataSource};
 use crate::session_management::TabNavigationData;
-use warpui::{AppContext, Entity};
+use twarpui::{AppContext, Entity};
 
 /// Data source that produces tabs sorted by MRU order for the Ctrl+Tab palette.
 ///

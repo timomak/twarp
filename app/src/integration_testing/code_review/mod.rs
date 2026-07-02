@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use warpui::{
+use twarpui::{
     async_assert,
     integration::{AssertionCallback, AssertionOutcome, TestStep},
     App, ViewHandle, WindowId,

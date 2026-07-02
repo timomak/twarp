@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::{env, path};
 
-use warpui::{AppContext, SingletonEntity};
+use twarpui::{AppContext, SingletonEntity};
 
 use crate::system::SystemInfo;
 use crate::util::path::{file_exists_and_is_executable, resolve_executable};

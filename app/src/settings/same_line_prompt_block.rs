@@ -1,5 +1,5 @@
 use settings::{RespectUserSyncSetting, SupportedPlatforms, SyncToCloud};
-use warp_core::define_settings_group;
+use twarp_core::define_settings_group;
 
 use serde::{Deserialize, Serialize};
 

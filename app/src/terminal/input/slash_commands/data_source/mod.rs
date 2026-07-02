@@ -4,7 +4,7 @@ mod zero_state;
 // twarp: 2c-e — SkillProvider is now a stub in `crate::app_state`.
 use crate::app_state::SkillProvider;
 pub(crate) use saved_prompts::*;
-use warp_core::features::FeatureFlag;
+use twarp_core::features::FeatureFlag;
 pub use zero_state::*;
 
 use std::collections::HashMap;
@@ -12,9 +12,9 @@ use std::path::PathBuf;
 
 use fuzzy_match::FuzzyMatchResult;
 use ordered_float::OrderedFloat;
-use warp_core::ui::appearance::Appearance;
-use warpui::fonts::FamilyId;
-use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
+use twarp_core::ui::appearance::Appearance;
+use twarpui::fonts::FamilyId;
+use twarpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 // twarp: 2c-d — AI history / skills / agent view / CLI subagent / cli agent sessions deleted; stubs.
 use crate::context_chips::display::BlocklistAIHistoryModel;
@@ -24,7 +24,7 @@ use crate::search::mixer::DataSourceRunErrorWrapper;
 use crate::search::slash_command_menu::fuzzy_match::SlashCommandFuzzyMatchResult;
 use crate::search::slash_command_menu::static_commands::Availability;
 use crate::terminal::model::session::SessionType;
-use warp_core::ui::Icon as WarpIcon;
+use twarp_core::ui::Icon as WarpIcon;
 
 #[derive(Clone)]
 pub struct SkillDescriptor {
@@ -34,22 +34,22 @@ pub struct SkillDescriptor {
     pub reference: crate::app_state::SkillReference,
     pub provider: crate::app_state::SkillProvider,
     pub description: String,
-    pub icon_override: Option<warp_core::ui::Icon>,
+    pub icon_override: Option<twarp_core::ui::Icon>,
 }
 // twarp: 2c-d — re-export SkillManager from input for type unification.
 pub use crate::terminal::input::SkillManager;
 pub use crate::terminal::view::CLIAgentInputState;
 pub struct CLIAgentSessionsModel;
-impl warpui::Entity for CLIAgentSessionsModel {
+impl twarpui::Entity for CLIAgentSessionsModel {
     type Event = CLIAgentSessionsModelEvent;
 }
-impl warpui::SingletonEntity for CLIAgentSessionsModel {}
+impl twarpui::SingletonEntity for CLIAgentSessionsModel {}
 #[allow(dead_code)]
 impl CLIAgentSessionsModel {
-    pub fn is_input_open(&self, _: warpui::EntityId) -> bool {
+    pub fn is_input_open(&self, _: twarpui::EntityId) -> bool {
         false
     }
-    pub fn session(&self, _: warpui::EntityId) -> Option<&CLIAgentSession> {
+    pub fn session(&self, _: twarpui::EntityId) -> Option<&CLIAgentSession> {
         None
     }
 }
@@ -58,7 +58,7 @@ pub struct CLIAgentSession {
     pub agent: crate::app_state::CLIAgent,
 }
 pub enum CLIAgentSessionsModelEvent {
-    InputSessionChanged { terminal_view_id: warpui::EntityId },
+    InputSessionChanged { terminal_view_id: twarpui::EntityId },
     Other,
 }
 pub use crate::terminal::input::{
@@ -314,7 +314,7 @@ impl SyncDataSource for SlashCommandDataSource {
     fn run_query(
         &self,
         query: &Query,
-        app: &warpui::AppContext,
+        app: &twarpui::AppContext,
     ) -> Result<Vec<QueryResult<Self::Action>>, DataSourceRunErrorWrapper> {
         if query.text.is_empty() {
             return Ok(vec![]);

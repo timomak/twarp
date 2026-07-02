@@ -2,12 +2,12 @@
 use std::sync::mpsc::SyncSender;
 
 #[cfg(feature = "local_tty")]
-use warpui::geometry::vector::Vector2F;
+use twarpui::geometry::vector::Vector2F;
 #[cfg(feature = "local_tty")]
-use warpui::ModelHandle;
-use warpui::ViewContext;
+use twarpui::ModelHandle;
+use twarpui::ViewContext;
 #[cfg(not(target_family = "wasm"))]
-use warpui::{SingletonEntity, View, ViewHandle};
+use twarpui::{SingletonEntity, View, ViewHandle};
 
 #[cfg(feature = "local_tty")]
 use crate::pane_group::TerminalViewResources;
@@ -24,16 +24,16 @@ use crate::terminal::TerminalManager;
 #[cfg(not(target_family = "wasm"))]
 pub struct TerminalDriver;
 #[cfg(not(target_family = "wasm"))]
-impl warpui::Entity for TerminalDriver {
+impl twarpui::Entity for TerminalDriver {
     type Event = ();
 }
 #[cfg(not(target_family = "wasm"))]
 #[allow(dead_code)]
 impl TerminalDriver {
-    pub fn create_from_existing_view<P: warpui::View>(
-        _: warpui::ViewHandle<TerminalView>,
-        ctx: &mut warpui::ViewContext<P>,
-    ) -> warpui::ModelHandle<TerminalDriver> {
+    pub fn create_from_existing_view<P: twarpui::View>(
+        _: twarpui::ViewHandle<TerminalView>,
+        ctx: &mut twarpui::ViewContext<P>,
+    ) -> twarpui::ModelHandle<TerminalDriver> {
         ctx.add_model(|_| TerminalDriver)
     }
     pub fn wait_for_session_bootstrapped(&mut self) -> futures::future::Ready<Result<(), ()>> {
@@ -48,7 +48,7 @@ use crate::server::cloud_objects::update_manager::UpdateManager;
 #[cfg(feature = "remote_tty")]
 use crate::terminal::remote_tty::TerminalManager as RemoteTtyTerminalManager;
 #[cfg(not(target_family = "wasm"))]
-use warpui::r#async::FutureExt;
+use twarpui::r#async::FutureExt;
 
 use super::TerminalView;
 

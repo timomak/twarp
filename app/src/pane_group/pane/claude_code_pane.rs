@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 
 use claude_code::launch::LaunchOptions;
-use warpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle};
+use twarpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle};
 
 use crate::app_state::LeafContents;
 use crate::claude_code_view::{ClaudeCodeView, ClaudeCodeViewEvent, ResumeSession};
@@ -71,9 +71,8 @@ impl ClaudeCodePane {
         cwd: Option<PathBuf>,
         ctx: &mut ViewContext<V>,
     ) -> Self {
-        let view = ctx.add_typed_action_view(move |ctx| {
-            ClaudeCodeView::new(launch, cwd, Some(resume), ctx)
-        });
+        let view = ctx
+            .add_typed_action_view(move |ctx| ClaudeCodeView::new(launch, cwd, Some(resume), ctx));
         Self::from_view(view, ctx)
     }
 
@@ -163,9 +162,7 @@ impl PaneContent for ClaudeCodePane {
                         let persisted = cwd
                             .clone()
                             .or_else(|| std::env::current_dir().ok())
-                            .and_then(|cwd| {
-                                claude_code::sessions::session_file(&cwd, session_id)
-                            })
+                            .and_then(|cwd| claude_code::sessions::session_file(&cwd, session_id))
                             .is_some_and(|path| path.exists());
                         let session_arg = if persisted {
                             format!("--resume {session_id}")

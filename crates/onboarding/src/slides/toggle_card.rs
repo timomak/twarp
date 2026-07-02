@@ -1,8 +1,8 @@
 use pathfinder_geometry::vector::Vector2F;
-use warp_core::ui::theme::Fill;
-use warp_core::ui::{appearance::Appearance, theme::color::internal_colors};
-use warpui::prelude::Align;
-use warpui::{
+use twarp_core::ui::theme::Fill;
+use twarp_core::ui::{appearance::Appearance, theme::color::internal_colors};
+use twarpui::prelude::Align;
+use twarpui::{
     elements::{
         Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex,
         FormattedTextElement, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,

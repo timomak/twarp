@@ -1,6 +1,6 @@
 use enum_iterator::Sequence;
 use serde::{Deserialize, Serialize};
-use warp_core::{
+use twarp_core::{
     channel::{Channel, ChannelState},
     settings::{macros::define_settings_group, SupportedPlatforms, SyncToCloud},
 };

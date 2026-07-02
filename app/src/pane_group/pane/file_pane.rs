@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::Arc};
 
-use warpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle};
+use twarpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle};
 
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;

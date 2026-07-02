@@ -1,7 +1,7 @@
 use anyhow::{Context as AnyhowContext, Result};
 use async_channel::Receiver;
 use rquickjs::{Context, Function, Runtime};
-use warp_js::JsFunctionId;
+use twarp_js::JsFunctionId;
 
 use super::{
     js_api,

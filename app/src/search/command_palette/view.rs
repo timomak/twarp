@@ -16,16 +16,16 @@ use crate::themes::theme::WarpTheme;
 use crate::view_components::DismissibleToast;
 use crate::ToastStack;
 use lazy_static::lazy_static;
-use warp_core::send_telemetry_from_app_ctx;
-use warp_util::path::LineAndColumnArg;
+use twarp_core::send_telemetry_from_app_ctx;
+use twarp_util::path::LineAndColumnArg;
 
 use crate::search::action::search_item::MatchedBinding;
 use itertools::Itertools;
-use warpui::elements::DispatchEventResult;
-use warpui::elements::EventHandler;
-use warpui::event::KeyState;
-use warpui::platform::keyboard::KeyCode;
-use warpui::FocusContext;
+use twarpui::elements::DispatchEventResult;
+use twarpui::elements::EventHandler;
+use twarpui::event::KeyState;
+use twarpui::platform::keyboard::KeyCode;
+use twarpui::FocusContext;
 
 use crate::search::command_palette::zero_state::{self, Event as ZeroStateEvent, ZeroState};
 use crate::search::data_source::QueryResult;
@@ -41,14 +41,14 @@ use crate::search::command_palette::data_sources::DataSourceStore;
 use crate::server::ids::SyncId;
 use crate::session_management::SessionSource;
 use crate::workspace::{active_terminal_in_window, ForkedConversationDestination, WorkspaceAction};
-use warpui::elements::{
+use twarpui::elements::{
     Align, Border, ChildView, Clipped, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox,
     Container, CornerRadius, Dismiss, Empty, Fill, Flex, ParentElement, Radius, SavePosition,
     Shrinkable,
 };
-use warpui::keymap::BindingId;
-use warpui::units::{IntoPixels, Pixels};
-use warpui::{
+use twarpui::keymap::BindingId;
+use twarpui::units::{IntoPixels, Pixels};
+use twarpui::{
     AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView,
     ViewContext, ViewHandle, WindowId,
 };
@@ -170,7 +170,7 @@ impl TypedActionView for View {
     }
 }
 
-impl warpui::View for View {
+impl twarpui::View for View {
     fn ui_name() -> &'static str {
         "CommandPaletteView"
     }
@@ -1021,11 +1021,11 @@ impl View {
         self.close(ctx, Some(result_action.result_type()));
     }
 
-    /// Dispatches `action` to the correct window and [`warpui::View`] by using the current state of
+    /// Dispatches `action` to the correct window and [`twarpui::View`] by using the current state of
     /// the [`BindingSource`] model.
     fn dispatch_typed_action_on_view(
         &self,
-        action: &dyn warpui::Action,
+        action: &dyn twarpui::Action,
         ctx: &mut ViewContext<Self>,
     ) {
         send_telemetry_from_ctx!(

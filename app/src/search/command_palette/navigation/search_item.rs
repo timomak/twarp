@@ -9,8 +9,8 @@ use crate::search::result_renderer::ItemHighlightState;
 use crate::session_management::SessionNavigationData;
 use crate::ui_components::icons::Icon;
 use ordered_float::OrderedFloat;
-use warpui::elements::Container;
-use warpui::{AppContext, Element, SingletonEntity};
+use twarpui::elements::Container;
+use twarpui::{AppContext, Element, SingletonEntity};
 
 /// Search item to render a session within the command palette.
 pub struct SearchItem {

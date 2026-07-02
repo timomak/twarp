@@ -19,10 +19,10 @@
 
 use claude_code::{TodoItem, TodoStatus};
 
-use warp_core::ui::theme::AnsiColorIdentifier;
-use warpui::fonts::Properties;
-use warpui::text_layout::TextStyle;
-use warpui::{
+use twarp_core::ui::theme::AnsiColorIdentifier;
+use twarpui::fonts::Properties;
+use twarpui::text_layout::TextStyle;
+use twarpui::{
     elements::{
         ConstrainedBox, Container, CrossAxisAlignment, Flex, Highlight, MainAxisSize,
         MouseStateHandle, ParentElement, Shrinkable, Text,
@@ -30,41 +30,39 @@ use warpui::{
     AppContext, Element, SingletonEntity,
 };
 
-use super::inline_action::{
-    icon_size, Disclosure, RightCluster, INLINE_ACTION_HORIZONTAL_PADDING,
-};
+use super::inline_action::{icon_size, Disclosure, RightCluster, INLINE_ACTION_HORIZONTAL_PADDING};
 use super::ClaudeCodeViewAction;
 use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon as WarpIcon;
 
 /// Port of `agent::icons::todo_list_icon`.
-fn todo_list_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(
+fn todo_list_icon(appearance: &Appearance) -> twarpui::elements::Icon {
+    twarpui::elements::Icon::new(
         WarpIcon::BulletedListBlock.into(),
         blended_colors::neutral_7(appearance.theme()),
     )
 }
 
 /// Port of `agent::icons::pending_icon`.
-fn pending_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(
+fn pending_icon(appearance: &Appearance) -> twarpui::elements::Icon {
+    twarpui::elements::Icon::new(
         WarpIcon::Queued.into(),
         blended_colors::neutral_5(appearance.theme()),
     )
 }
 
 /// Port of `agent::icons::in_progress_icon`.
-fn in_progress_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(
+fn in_progress_icon(appearance: &Appearance) -> twarpui::elements::Icon {
+    twarpui::elements::Icon::new(
         WarpIcon::Circle.into(),
         AnsiColorIdentifier::Magenta.to_ansi_color(&appearance.theme().terminal_colors().normal),
     )
 }
 
 /// Port of `agent::icons::succeeded_icon`.
-fn succeeded_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(
+fn succeeded_icon(appearance: &Appearance) -> twarpui::elements::Icon {
+    twarpui::elements::Icon::new(
         WarpIcon::Check.into(),
         AnsiColorIdentifier::Green.to_ansi_color(&appearance.theme().terminal_colors().normal),
     )
@@ -93,7 +91,7 @@ pub(super) fn render_todos(
     let theme = appearance.theme();
 
     if todos.is_empty() {
-        return warpui::elements::Empty::new().finish();
+        return twarpui::elements::Empty::new().finish();
     }
 
     let title = Text::new_inline(

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use warpui::{
+use twarpui::{
     elements::{
         Border, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element,
         Fill as ElementFill, Flex, MainAxisAlignment, MainAxisSize, MouseStateHandle, Padding,
@@ -19,7 +19,7 @@ use warpui::{
 
 /// Registers keybindings for the new-worktree modal (ESC to close).
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
     app.register_fixed_bindings(vec![FixedBinding::new(
         "escape",
         NewWorktreeModalAction::Escape,
@@ -27,12 +27,12 @@ pub fn init(app: &mut AppContext) {
     )]);
 }
 
-use warp_core::ui::theme::color::internal_colors;
+use twarp_core::ui::theme::color::internal_colors;
 
 // twarp: 2c-d — PersistedWorkspace deleted; stub.
 pub struct PersistedWorkspace;
 impl PersistedWorkspace {
-    pub fn as_ref(_app: &warpui::AppContext) -> &Self {
+    pub fn as_ref(_app: &twarpui::AppContext) -> &Self {
         static EMPTY: PersistedWorkspace = PersistedWorkspace;
         &EMPTY
     }
@@ -375,7 +375,7 @@ impl View for NewWorktreeModal {
 
             // X close icon
             let close_icon = ConstrainedBox::new(
-                warp_core::ui::Icon::X
+                twarp_core::ui::Icon::X
                     .to_warpui_icon(theme.sub_text_color(theme.background()))
                     .finish(),
             )
@@ -390,7 +390,7 @@ impl View for NewWorktreeModal {
                 .with_child(esc_badge)
                 .finish();
 
-            let close_hoverable = warpui::elements::Hoverable::new(
+            let close_hoverable = twarpui::elements::Hoverable::new(
                 self.close_button_mouse_state.clone(),
                 move |_state| close_button,
             )

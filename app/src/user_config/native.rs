@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use repo_metadata::RepositoryUpdate;
-use warpui::{ModelContext, SingletonEntity};
+use twarpui::{ModelContext, SingletonEntity};
 
 use crate::features::FeatureFlag;
 use crate::launch_configs::launch_config::LaunchConfig;

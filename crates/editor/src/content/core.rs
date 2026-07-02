@@ -23,7 +23,7 @@ use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use std::ops::Range;
 use string_offset::CharOffset;
 use sum_tree::SumTree;
-use warpui::elements::ListIndentLevel;
+use twarpui::elements::ListIndentLevel;
 
 #[derive(Debug, Clone)]
 pub struct CoreEditorAction {

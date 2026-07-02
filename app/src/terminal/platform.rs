@@ -21,7 +21,7 @@ mod mac {
         str,
     };
 
-    use warpui::platform::mac::utils::nsstring_as_str;
+    use twarpui::platform::mac::utils::nsstring_as_str;
 
     const FALLBACK_LOCALE: &str = "UTF-8";
 

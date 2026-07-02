@@ -5,10 +5,10 @@ use std::{
 };
 
 use pathfinder_geometry::vector::vec2f;
-use warp_util::path::user_friendly_path;
+use twarp_util::path::user_friendly_path;
 #[cfg(feature = "local_fs")]
-use warpui::clipboard::ClipboardContent;
-use warpui::{
+use twarpui::clipboard::ClipboardContent;
+use twarpui::{
     accessibility::{AccessibilityContent, WarpA11yRole},
     elements::{
         Align, Container, CrossAxisAlignment, DispatchEventResult, Empty, EventHandler, Flex,
@@ -64,12 +64,12 @@ use super::{
 use crate::code::editor_management::CodeSource;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::FileTarget;
-use warp_core::ui::icons::ICON_DIMENSIONS;
-use warp_editor::model::CoreEditorModel;
+use twarp_core::ui::icons::ICON_DIMENSIONS;
+use twarp_editor::model::CoreEditorModel;
 #[cfg(feature = "local_fs")]
-use warp_files::{FileModel, FileModelEvent};
+use twarp_files::{FileModel, FileModelEvent};
 #[cfg(feature = "local_fs")]
-use warp_util::file::FileId;
+use twarp_util::file::FileId;
 
 pub use crate::util::openable_file_type::is_markdown_file;
 
@@ -120,7 +120,7 @@ pub enum FileNotebookEvent {
     OpenFileWithTarget {
         path: PathBuf,
         target: FileTarget,
-        line_col: Option<warp_util::path::LineAndColumnArg>,
+        line_col: Option<twarp_util::path::LineAndColumnArg>,
     },
 }
 
@@ -153,7 +153,7 @@ impl From<ContextMenuAction> for FileNotebookAction {
 }
 
 /// Information about the notebook's backing file.
-// TODO: This should probably build on the `warp_files` abstractions.
+// TODO: This should probably build on the `twarp_files` abstractions.
 #[derive(Debug, Clone)]
 enum SourceFile {
     Local {
@@ -214,7 +214,7 @@ impl FileState {
 }
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_editable_bindings([
         EditableBinding::new(
@@ -1024,7 +1024,7 @@ impl BackingView for FileNotebookView {
             let title_text = render_pane_header_title_text(
                 title,
                 appearance,
-                warpui::text_layout::ClipConfig::start(),
+                twarpui::text_layout::ClipConfig::start(),
             );
 
             view::HeaderContent::Custom {
@@ -1047,7 +1047,7 @@ impl BackingView for FileNotebookView {
                 title,
                 title_secondary: None,
                 title_style: None,
-                title_clip_config: warpui::text_layout::ClipConfig::start(),
+                title_clip_config: twarpui::text_layout::ClipConfig::start(),
                 title_max_width: None,
                 left_of_title: None,
                 right_of_title: None,

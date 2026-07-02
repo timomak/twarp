@@ -1,4 +1,4 @@
-use warpui::{elements::MouseStateHandle, AppContext, Element};
+use twarpui::{elements::MouseStateHandle, AppContext, Element};
 
 use crate::{
     appearance::Appearance,

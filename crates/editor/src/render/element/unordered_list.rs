@@ -3,8 +3,8 @@ use crate::{
     extract_block,
     render::model::{BlockItem, RenderState, RichTextStyles, bounds, viewport::ViewportItem},
 };
-use warpui::elements::ListIndentLevel;
-use warpui::{
+use twarpui::elements::ListIndentLevel;
+use twarpui::{
     Element, SizeConstraint,
     elements::{Border, CornerRadius, Radius, Rect},
     geometry::vector::vec2f,
@@ -67,8 +67,8 @@ impl RenderableBlock for RenderableBulletList {
     fn layout(
         &mut self,
         model: &RenderState,
-        ctx: &mut warpui::LayoutContext,
-        app: &warpui::AppContext,
+        ctx: &mut twarpui::LayoutContext,
+        app: &twarpui::AppContext,
     ) {
         self.bullet_point.layout(
             SizeConstraint::strict(vec2f(self.bullet_size, self.bullet_size)),
@@ -88,7 +88,7 @@ impl RenderableBlock for RenderableBulletList {
             })
     }
 
-    fn paint(&mut self, model: &RenderState, ctx: &mut RenderContext, app: &warpui::AppContext) {
+    fn paint(&mut self, model: &RenderState, ctx: &mut RenderContext, app: &twarpui::AppContext) {
         let content = model.content();
         let unordered_list = extract_block!(self.viewport_item, content, (block, BlockItem::UnorderedList{ paragraph: inner, ..}) => block.unordered_list(inner));
 

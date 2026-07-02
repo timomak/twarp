@@ -1,4 +1,4 @@
-use warpui::{Entity, ModelContext, ModelHandle};
+use twarpui::{Entity, ModelContext, ModelHandle};
 
 use crate::app_state::AIConversationId;
 use crate::terminal::input::buffer_model::InputBufferModel;

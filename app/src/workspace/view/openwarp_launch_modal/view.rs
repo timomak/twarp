@@ -3,17 +3,17 @@ use markdown_parser::{
 };
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use warp_core::ui::theme::{phenomenon::PhenomenonStyle, Fill};
-use warpui::assets::asset_cache::AssetSource;
-use warpui::elements::{
+use twarp_core::ui::theme::{phenomenon::PhenomenonStyle, Fill};
+use twarpui::assets::asset_cache::AssetSource;
+use twarpui::elements::{
     Align, CacheOption, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, Expanded, Flex, FormattedTextElement, HighlightedHyperlink, Image,
     MainAxisSize, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius,
     Stack, Text,
 };
-use warpui::fonts::{Properties, Weight};
-use warpui::keymap::FixedBinding;
-use warpui::{
+use twarpui::fonts::{Properties, Weight};
+use twarpui::keymap::FixedBinding;
+use twarpui::{
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
@@ -69,7 +69,7 @@ const FEATURE_ITEMS: &[FeatureItem] = &[
 ];
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
+    use twarpui::keymap::macros::*;
 
     app.register_fixed_bindings([FixedBinding::new(
         "escape",
@@ -370,7 +370,7 @@ impl View for OpenWarpLaunchModal {
         "OpenWarpLaunchModal"
     }
 
-    fn on_focus(&mut self, _focus_ctx: &warpui::FocusContext, ctx: &mut ViewContext<Self>) {
+    fn on_focus(&mut self, _focus_ctx: &twarpui::FocusContext, ctx: &mut ViewContext<Self>) {
         ctx.focus_self();
     }
 
