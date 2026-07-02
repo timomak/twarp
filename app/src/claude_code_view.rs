@@ -192,11 +192,11 @@ const SENT_IMAGE_SIZE: f32 = 120.;
 const PILL_CORNER_RADIUS: f32 = 6.;
 const HEADING_FONT_SIZE: f32 = 20.;
 
-/// The model selector's cycle (PRODUCT §52, 7m). The first entry, "default",
-/// maps to passing no `--model` (let `claude` choose); the rest are the
-/// `--model` aliases the CLI accepts. Cycling reuses the §25 detach→`--resume`
-/// mechanism so the conversation continues under the new model.
-const MODEL_CYCLE: &[&str] = &["default", "opus", "sonnet", "haiku"];
+// The model selector's entries (PRODUCT §52, 7m) are no longer a hardcoded
+// cycle: see [`crate::claude_code_models`] (Models-API discovery with an alias
+// fallback) and [`ClaudeCodeView::model_menu_entries`]. Selecting one reuses
+// the §25 detach→`--resume` mechanism so the conversation continues under the
+// new model.
 
 /// The effort selector's cycle (PRODUCT §52, 7m). `--effort` is a verified
 /// `claude` flag (launch.rs maps it; `--effort max` confirmed on 2.1.173); the
@@ -1040,6 +1040,11 @@ impl ClaudeCodeView {
         // (launchd-minimal) launch. Resolves asynchronously and re-renders.
         Self::capture_interactive_path(ctx);
 
+        // Kick off the once-per-app-run model discovery so the model dropdown
+        // lists what the account can actually use. Best-effort: no key or no
+        // network just leaves the alias fallback in place.
+        Self::discover_models(ctx);
+
         // PRODUCT §36: a resumed pane renders the stored history up front —
         // through the same ingest path as live events so tool/diff/thinking
         // card state exists — and continues live on the next message.
@@ -1213,6 +1218,21 @@ impl ClaudeCodeView {
 
     #[cfg(not(all(feature = "local_fs", feature = "local_tty")))]
     fn capture_interactive_path(_ctx: &mut ViewContext<Self>) {}
+
+    /// Fetch the account's model list from the Anthropic Models API once per
+    /// app run (first pane wins the claim) and re-render when it lands, so the
+    /// model dropdown auto-includes newly launched models without a rebuild.
+    fn discover_models(ctx: &mut ViewContext<Self>) {
+        if !crate::claude_code_models::claim_fetch() {
+            return;
+        }
+        ctx.spawn(crate::claude_code_models::fetch(), |_me, models, ctx| {
+            if let Some(models) = models {
+                crate::claude_code_models::store(models);
+                ctx.notify();
+            }
+        });
+    }
 
     /// Refresh the composer context bar (#11): run `git`/`gh` in the user's
     /// login shell (so they resolve and the right repo/PR are visible) and store
@@ -4818,8 +4838,37 @@ impl ClaudeCodeView {
         column.finish()
     }
 
-    /// The model dropdown (#13): one row per `MODEL_CYCLE` entry, the active one
-    /// highlighted; clicking sets the model and closes the menu.
+    /// Rows for the model dropdown: "Default" (no `--model`, let the CLI
+    /// choose) first, then either the models discovered from the Anthropic
+    /// Models API (full IDs, newest first) or — until/unless discovery
+    /// succeeds — the built-in alias fallback. A current selection that isn't
+    /// in the list (an alias picked before discovery landed, or a launch-flag
+    /// model) gets its own row so it stays visible and re-selectable.
+    fn model_menu_entries(&self) -> Vec<(Option<String>, String)> {
+        let mut entries = vec![(None, "Default".to_owned())];
+        match crate::claude_code_models::discovered() {
+            Some(models) => {
+                for model in models {
+                    entries.push((Some(model.id.clone()), model.display_name.clone()));
+                }
+            }
+            None => {
+                for alias in crate::claude_code_models::FALLBACK_MODEL_ALIASES {
+                    entries.push((Some((*alias).to_owned()), prettify_model(alias)));
+                }
+            }
+        }
+        if let Some(current) = self.model.as_deref() {
+            if !entries.iter().any(|(value, _)| value.as_deref() == Some(current)) {
+                entries.push((Some(current.to_owned()), prettify_model(current)));
+            }
+        }
+        entries
+    }
+
+    /// The model dropdown (#13): one row per [`Self::model_menu_entries`]
+    /// entry, the active one highlighted; clicking sets the model and closes
+    /// the menu.
     fn render_model_menu(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
         let text_color = theme.main_text_color(theme.surface_2()).into_solid();
@@ -4831,9 +4880,7 @@ impl ClaudeCodeView {
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(2.)
             .with_child(menu_header("Model", muted, appearance));
-        for (index, name) in MODEL_CYCLE.iter().enumerate() {
-            // The first entry ("default") maps to no `--model` flag (None).
-            let value: Option<String> = (*name != MODEL_CYCLE[0]).then(|| (*name).to_owned());
+        for (index, (value, label)) in self.model_menu_entries().into_iter().enumerate() {
             let selected = current == value.as_deref();
             let mouse = {
                 let mut pool = self.model_menu_row_mouse.borrow_mut();
@@ -4841,11 +4888,6 @@ impl ClaudeCodeView {
                     pool.push(MouseStateHandle::default());
                 }
                 pool[index].clone()
-            };
-            let label = if *name == MODEL_CYCLE[0] {
-                "Default".to_owned()
-            } else {
-                prettify_model(name)
             };
             let mut row = Container::new(context_segment(
                 appearance,
