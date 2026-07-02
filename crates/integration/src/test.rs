@@ -179,8 +179,8 @@ use twarp::{
     },
 };
 use twarp::{
-    integration_testing::warp_drive::{
-        assert_is_left_panel_open, assert_warp_drive_is_closed, assert_warp_drive_is_open,
+    integration_testing::twarp_drive::{
+        assert_is_left_panel_open, assert_twarp_drive_is_closed, assert_twarp_drive_is_open,
     },
     settings::CompletionsOpenWhileTyping,
 };
@@ -6669,20 +6669,20 @@ pub fn test_create_folder_from_command_palette() -> Builder {
         .with_step(go_offline())
         .with_steps(
             open_command_palette_and_run_action("Create a New Team Folder")
-                .add_assertion(assert_warp_drive_is_closed()),
+                .add_assertion(assert_twarp_drive_is_closed()),
         )
         .with_steps(
             open_command_palette_and_run_action("Create a New Personal Folder")
-                .add_assertion(assert_warp_drive_is_closed()),
+                .add_assertion(assert_twarp_drive_is_closed()),
         )
         .with_step(go_online())
         .with_steps(
             open_command_palette_and_run_action("Create a New Team Folder")
-                .add_assertion(assert_warp_drive_is_open()),
+                .add_assertion(assert_twarp_drive_is_open()),
         )
         .with_steps(
             open_command_palette_and_run_action("Create a New Personal Folder")
-                .add_assertion(assert_warp_drive_is_open()),
+                .add_assertion(assert_twarp_drive_is_open()),
         )
 }
 

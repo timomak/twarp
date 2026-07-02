@@ -32,7 +32,7 @@ use crate::{
         CloudObjectEventEntrypoint, Owner,
     },
     drive::{
-        items::WarpDriveItemId,
+        items::TwarpDriveItemId,
         sharing::{ContentEditability, ShareableObject},
     },
     editor::EditorView,
@@ -320,7 +320,7 @@ pub struct EnvVarCollectionView {
 pub enum EnvVarCollectionEvent {
     Pane(PaneEvent),
     UpdatedEnvVarCollection(SyncId),
-    ViewInWarpDrive(WarpDriveItemId),
+    ViewInTwarpDrive(TwarpDriveItemId),
     Invoke(EnvVarCollectionType),
 }
 #[derive(Debug, Clone)]
@@ -356,7 +356,7 @@ pub enum EnvVarCollectionAction {
     ForceClose,
     CloseUnsavedChangesDialog,
     // Breadcrumbs action
-    ViewInWarpDrive(WarpDriveItemId),
+    ViewInTwarpDrive(TwarpDriveItemId),
 }
 
 /// Defines the view for a collection of environment variables
@@ -678,7 +678,7 @@ impl EnvVarCollectionView {
         if let Some(server_id) = env_var_collection.id.into_server() {
             self.pane_configuration.update(ctx, |pane_config, ctx| {
                 pane_config
-                    .set_shareable_object(Some(ShareableObject::WarpDriveObject(server_id)), ctx);
+                    .set_shareable_object(Some(ShareableObject::TwarpDriveObject(server_id)), ctx);
             });
         }
 
@@ -974,7 +974,7 @@ impl EnvVarCollectionView {
                 self.update_breadcrumbs(ctx);
                 self.pane_configuration.update(ctx, |pane_config, ctx| {
                     pane_config.set_shareable_object(
-                        Some(ShareableObject::WarpDriveObject(*server_id)),
+                        Some(ShareableObject::TwarpDriveObject(*server_id)),
                         ctx,
                     );
                 });
@@ -1109,8 +1109,8 @@ impl EnvVarCollectionView {
             });
     }
 
-    fn view_in_warp_drive(&mut self, id: WarpDriveItemId, ctx: &mut ViewContext<Self>) {
-        ctx.emit(EnvVarCollectionEvent::ViewInWarpDrive(id));
+    fn view_in_twarp_drive(&mut self, id: TwarpDriveItemId, ctx: &mut ViewContext<Self>) {
+        ctx.emit(EnvVarCollectionEvent::ViewInTwarpDrive(id));
     }
 
     // This is a public re-export of close since it's a trait method
@@ -1320,9 +1320,11 @@ impl View for EnvVarCollectionView {
                             self.breadcrumbs.clone(),
                             appearance,
                             |ctx, _, breadcrumb| {
-                                ctx.dispatch_typed_action(EnvVarCollectionAction::ViewInWarpDrive(
-                                    breadcrumb.kind.into_item_id(),
-                                ));
+                                ctx.dispatch_typed_action(
+                                    EnvVarCollectionAction::ViewInTwarpDrive(
+                                        breadcrumb.kind.into_item_id(),
+                                    ),
+                                );
                             },
                         ))
                         .with_horizontal_margin(CORE_HORIZONATAL_MARGIN)
@@ -1550,7 +1552,7 @@ impl TypedActionView for EnvVarCollectionView {
                 self.update_open_modal_state(ctx);
                 ctx.notify();
             }
-            EnvVarCollectionAction::ViewInWarpDrive(id) => self.view_in_warp_drive(*id, ctx),
+            EnvVarCollectionAction::ViewInTwarpDrive(id) => self.view_in_twarp_drive(*id, ctx),
         }
     }
 }

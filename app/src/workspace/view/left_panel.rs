@@ -43,8 +43,8 @@ use crate::workspace::view::global_search::view::{
 };
 use crate::workspace::view::{
     LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME, LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME,
-    LEFT_PANEL_WARP_DRIVE_BINDING_NAME, OPEN_GLOBAL_SEARCH_BINDING_NAME,
-    TOGGLE_PROJECT_EXPLORER_BINDING_NAME, TOGGLE_WARP_DRIVE_BINDING_NAME,
+    LEFT_PANEL_TWARP_DRIVE_BINDING_NAME, OPEN_GLOBAL_SEARCH_BINDING_NAME,
+    TOGGLE_PROJECT_EXPLORER_BINDING_NAME, TOGGLE_TWARP_DRIVE_BINDING_NAME,
 };
 use crate::{
     appearance::Appearance,
@@ -126,7 +126,7 @@ pub enum LeftPanelAction {
     GlobalSearch {
         entry_focus: GlobalSearchEntryFocus,
     },
-    WarpDrive,
+    TwarpDrive,
     // twarp: the Shortcuts panel + its inline editor actions moved to
     // Settings > Shortcuts (see settings_view::shortcuts_page).
     /// twarp 07 (7h, PRODUCT §35): switch the panel to the Claude Code
@@ -161,7 +161,7 @@ pub enum LeftPanelAction {
 pub enum LeftPanelEvent {
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     FileTree(pane_group::Event),
-    WarpDrive(DrivePanelEvent),
+    TwarpDrive(DrivePanelEvent),
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     OpenFileWithTarget {
         path: PathBuf,
@@ -200,7 +200,7 @@ pub enum ToolPanelView {
     GlobalSearch {
         entry_focus: GlobalSearchEntryFocus,
     },
-    WarpDrive,
+    TwarpDrive,
     /// Custom command shortcuts panel (PRODUCT 04 §26). The full GUI lives
     /// in a future sub-phase; 4c renders the tab plus a placeholder so the
     /// integration lights up.
@@ -272,7 +272,7 @@ pub struct ToolbeltButtonConfig {
 pub struct LeftPanelView {
     resizable_state_handle: ResizableStateHandle,
     mouse_state_handles: MouseStateHandles,
-    warp_drive_view: ViewHandle<DrivePanel>,
+    twarp_drive_view: ViewHandle<DrivePanel>,
     // twarp: 2c-d — conversation_list_view removed
     active_view: active_view_state::ActiveViewState,
     toolbelt_buttons: Vec<ToolbeltButtonConfig>,
@@ -401,15 +401,15 @@ impl LeftPanelView {
                 resizable_state_handle(600.0)
             }
         };
-        let warp_drive_view = ctx.add_typed_action_view(DrivePanel::new);
+        let twarp_drive_view = ctx.add_typed_action_view(DrivePanel::new);
 
-        ctx.subscribe_to_view(&warp_drive_view, |_me, _, event, ctx| {
-            ctx.emit(LeftPanelEvent::WarpDrive(event.clone()));
+        ctx.subscribe_to_view(&twarp_drive_view, |_me, _, event, ctx| {
+            ctx.emit(LeftPanelEvent::TwarpDrive(event.clone()));
         });
 
         // twarp: 2c-d — conversation_list_view subscription removed
 
-        let active_view = views.first().copied().unwrap_or(ToolPanelView::WarpDrive);
+        let active_view = views.first().copied().unwrap_or(ToolPanelView::TwarpDrive);
         let toolbelt_buttons = views
             .iter()
             .map(|view| Self::create_toolbelt_button_config(view, ctx))
@@ -513,7 +513,7 @@ impl LeftPanelView {
         let mut view = Self {
             resizable_state_handle,
             mouse_state_handles: Default::default(),
-            warp_drive_view,
+            twarp_drive_view,
             // twarp: 2c-d — conversation_list_view removed
             active_view: active_view_state::new(active_view),
             toolbelt_buttons,
@@ -628,18 +628,18 @@ impl LeftPanelView {
                     tooltip_keybinding_names,
                 }
             }
-            ToolPanelView::WarpDrive => {
+            ToolPanelView::TwarpDrive => {
                 let tooltip_keybinding_names = vec![
-                    LEFT_PANEL_WARP_DRIVE_BINDING_NAME,
-                    TOGGLE_WARP_DRIVE_BINDING_NAME,
+                    LEFT_PANEL_TWARP_DRIVE_BINDING_NAME,
+                    TOGGLE_TWARP_DRIVE_BINDING_NAME,
                 ];
 
                 ToolbeltButtonConfig {
-                    icon: Icon::WarpDrive,
+                    icon: Icon::TwarpDrive,
                     active_icon: None,
                     label: "Twarp Drive".to_string(),
                     tooltip_text: "Twarp Drive".to_string(),
-                    action: LeftPanelAction::WarpDrive,
+                    action: LeftPanelAction::TwarpDrive,
                     render_with_active_state: false,
                     tooltip_keybinding: toolbelt_tooltip_keybinding(&tooltip_keybinding_names, ctx),
                     tooltip_keybinding_names,
@@ -769,16 +769,16 @@ impl LeftPanelView {
         self.active_view.get()
     }
 
-    pub fn is_warp_drive_active(&self) -> bool {
-        self.active_view.get() == ToolPanelView::WarpDrive
+    pub fn is_twarp_drive_active(&self) -> bool {
+        self.active_view.get() == ToolPanelView::TwarpDrive
     }
 
     pub fn is_file_tree_active(&self) -> bool {
         self.active_view.get() == ToolPanelView::ProjectExplorer
     }
 
-    pub fn warp_drive_view(&self) -> &ViewHandle<DrivePanel> {
-        &self.warp_drive_view
+    pub fn twarp_drive_view(&self) -> &ViewHandle<DrivePanel> {
+        &self.twarp_drive_view
     }
 
     pub(crate) fn auto_expand_active_file_tree_to_most_recent_directory(
@@ -968,10 +968,10 @@ impl LeftPanelView {
                     ctx,
                 );
             }
-            ToolPanelView::WarpDrive => {
-                ctx.focus(&self.warp_drive_view);
-                self.warp_drive_view.update(ctx, |view, ctx| {
-                    view.reset_focused_index_in_warp_drive(true, ctx);
+            ToolPanelView::TwarpDrive => {
+                ctx.focus(&self.twarp_drive_view);
+                self.twarp_drive_view.update(ctx, |view, ctx| {
+                    view.reset_focused_index_in_twarp_drive(true, ctx);
                 });
             }
             // 4c stub: Shortcuts panel has no internal child view to focus
@@ -2020,7 +2020,7 @@ impl LeftPanelView {
                 LeftPanelAction::GlobalSearch { .. } => {
                     matches!(self.active_view.get(), ToolPanelView::GlobalSearch { .. })
                 }
-                LeftPanelAction::WarpDrive => self.active_view.get() == ToolPanelView::WarpDrive,
+                LeftPanelAction::TwarpDrive => self.active_view.get() == ToolPanelView::TwarpDrive,
                 LeftPanelAction::ClaudeSessions => {
                     self.active_view.get() == ToolPanelView::ClaudeSessions
                 }
@@ -2442,8 +2442,8 @@ impl LeftPanelView {
                     send_telemetry_from_ctx!(TelemetryEvent::GlobalSearchOpened, ctx);
                 }
             }
-            LeftPanelAction::WarpDrive => {
-                active_view_state::set(self, ToolPanelView::WarpDrive, ctx);
+            LeftPanelAction::TwarpDrive => {
+                active_view_state::set(self, ToolPanelView::TwarpDrive, ctx);
                 if force_open {
                     send_telemetry_from_ctx!(
                         TelemetryEvent::WarpDriveOpened {
@@ -2591,7 +2591,7 @@ impl View for LeftPanelView {
                         ctx.focus(&view);
                     }
                 }
-                ToolPanelView::WarpDrive => ctx.focus(&self.warp_drive_view),
+                ToolPanelView::TwarpDrive => ctx.focus(&self.twarp_drive_view),
                 // 4c stub: no internal view to focus yet.
                 ToolPanelView::Shortcuts => {}
                 // twarp 07 (7h): plain list, no internal view to focus.
@@ -2694,9 +2694,9 @@ impl View for LeftPanelView {
                     Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()
                 }
             }
-            ToolPanelView::WarpDrive => Shrinkable::new(
+            ToolPanelView::TwarpDrive => Shrinkable::new(
                 1.0,
-                Container::new(ChildView::new(&self.warp_drive_view).finish())
+                Container::new(ChildView::new(&self.twarp_drive_view).finish())
                     .with_padding_left(SIDEBAR_CONTENT_INSET)
                     .with_padding_right(SIDEBAR_CONTENT_INSET)
                     .finish(),

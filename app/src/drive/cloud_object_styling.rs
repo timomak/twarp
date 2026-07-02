@@ -8,7 +8,7 @@ use twarp_core::ui::{
 use super::DriveObjectType;
 use crate::ui_components::blended_colors;
 
-pub fn warp_drive_icon_color(
+pub fn twarp_drive_icon_color(
     appearance: &Appearance,
     cloud_object_type: DriveObjectType,
 ) -> ColorU {

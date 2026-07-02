@@ -19,7 +19,7 @@ pub fn test_preview_config_dir_migration() -> Builder {
     Builder::new()
         .with_setup(|utils| {
             let home = utils.test_dir();
-            let old_dir = home.join(".warp");
+            let old_dir = home.join(".twarp");
 
             // Populate the old config directory with representative entries.
             fs::create_dir_all(old_dir.join("themes")).expect("create themes dir");
@@ -36,7 +36,7 @@ pub fn test_preview_config_dir_migration() -> Builder {
             // Run the migration. We call the inner helper directly because the
             // integration channel is Integration, not Preview, so the public
             // entry point would no-op.
-            let new_dir = home.join(".warp-preview");
+            let new_dir = home.join(".twarp-preview");
             twarp::integration_testing::preview_config_migration::run_config_dir_symlink_migration(
                 &old_dir, &new_dir,
             );
@@ -47,11 +47,11 @@ pub fn test_preview_config_dir_migration() -> Builder {
                 .add_named_assertion(
                     "new directory exists and is a real directory",
                     |_app, _window_id| {
-                        let new_dir = home_dir().join(".warp-preview");
+                        let new_dir = home_dir().join(".twarp-preview");
 
                         if !new_dir.is_dir() {
                             return AssertionOutcome::failure(
-                                ".warp-preview should be a directory".to_string(),
+                                ".twarp-preview should be a directory".to_string(),
                             );
                         }
                         // It should be a real directory, not a symlink.
@@ -61,7 +61,7 @@ pub fn test_preview_config_dir_migration() -> Builder {
                             .unwrap_or(false);
                         if is_symlink {
                             return AssertionOutcome::failure(
-                                ".warp-preview should not itself be a symlink".to_string(),
+                                ".twarp-preview should not itself be a symlink".to_string(),
                             );
                         }
                         AssertionOutcome::Success
@@ -71,8 +71,8 @@ pub fn test_preview_config_dir_migration() -> Builder {
                     "expected entries are symlinks pointing to old dir",
                     |_app, _window_id| {
                         let home = home_dir();
-                        let old_dir = home.join(".warp");
-                        let new_dir = home.join(".warp-preview");
+                        let old_dir = home.join(".twarp");
+                        let new_dir = home.join(".twarp-preview");
 
                         for name in ["keybindings.yaml", "themes", "workflows", ".mcp.json"] {
                             let link = new_dir.join(name);
@@ -110,7 +110,7 @@ pub fn test_preview_config_dir_migration() -> Builder {
                     },
                 )
                 .add_named_assertion("excluded files were not symlinked", |_app, _window_id| {
-                    let new_dir = home_dir().join(".warp-preview");
+                    let new_dir = home_dir().join(".twarp-preview");
 
                     for name in [".DS_Store", "._somefile", "settings.toml"] {
                         if new_dir.join(name).exists() {

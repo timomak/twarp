@@ -13,16 +13,16 @@ use crate::{
     themes::theme::Fill,
 };
 
-use super::{WarpDriveItem, WarpDriveItemId};
+use super::{TwarpDriveItem, TwarpDriveItemId};
 
 #[derive(Clone)]
-pub struct WarpDriveNotebook {
+pub struct TwarpDriveNotebook {
     id: CloudObjectTypeAndId,
     notebook: CloudNotebook,
     is_ai_document: bool,
 }
 
-impl WarpDriveNotebook {
+impl TwarpDriveNotebook {
     pub fn new(id: CloudObjectTypeAndId, notebook: CloudNotebook, is_ai_document: bool) -> Self {
         Self {
             id,
@@ -32,7 +32,7 @@ impl WarpDriveNotebook {
     }
 }
 
-impl WarpDriveItem for WarpDriveNotebook {
+impl TwarpDriveItem for TwarpDriveNotebook {
     fn display_name(&self) -> Option<String> {
         if self.notebook.model().title.is_empty() {
             None
@@ -86,8 +86,8 @@ impl WarpDriveItem for WarpDriveNotebook {
         Some(Flex::column().with_child(title).finish())
     }
 
-    fn warp_drive_id(&self) -> WarpDriveItemId {
-        WarpDriveItemId::Object(self.id)
+    fn twarp_drive_id(&self) -> TwarpDriveItemId {
+        TwarpDriveItemId::Object(self.id)
     }
 
     fn sync_status_icon(
@@ -107,7 +107,7 @@ impl WarpDriveItem for WarpDriveNotebook {
         None
     }
 
-    fn clone_box(&self) -> Box<dyn WarpDriveItem> {
+    fn clone_box(&self) -> Box<dyn TwarpDriveItem> {
         Box::new(self.clone())
     }
 }

@@ -295,8 +295,8 @@ pub trait Handler {
     /// assisted auto-update.
     fn finish_update(&mut self, _data: FinishUpdateValue) {}
 
-    /// Callback emitted from the warpify_ssh_session script if it's discovered
-    /// that we can't warpify the remote session.
+    /// Callback emitted from the twarpify_ssh_session script if it's discovered
+    /// that we can't twarpify the remote session.
     fn remote_warpification_is_unavailable(&mut self, _data: WarpificationUnavailableReason) {}
 
     /// How tmux was installed.

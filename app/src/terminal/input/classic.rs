@@ -18,8 +18,8 @@ use crate::{
             get_input_box_top_border_width, InputDropTargetData,
         },
         settings::{SpacingMode, TerminalSettings},
+        twarpify::render::{render_subshell_flag, render_subshell_flag_pole},
         view::TerminalAction,
-        warpify::render::{render_subshell_flag, render_subshell_flag_pole},
     },
 };
 use pathfinder_geometry::vector::vec2f;

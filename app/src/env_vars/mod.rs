@@ -17,7 +17,7 @@ use crate::{
         GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
         JsonObjectType, Revision, ServerCloudObject,
     },
-    drive::items::{env_var_collection::WarpDriveEnvVarCollection, WarpDriveItem},
+    drive::items::{env_var_collection::TwarpDriveEnvVarCollection, TwarpDriveItem},
     external_secrets::ExternalSecret,
     server::{ids::SyncId, sync_queue::QueueItem},
     terminal::shell::ShellType,
@@ -203,7 +203,7 @@ impl StringModel for EnvVarCollection {
         true
     }
 
-    fn renders_in_warp_drive(&self) -> bool {
+    fn renders_in_twarp_drive(&self) -> bool {
         true
     }
 
@@ -215,13 +215,13 @@ impl StringModel for EnvVarCollection {
         true
     }
 
-    fn to_warp_drive_item(
+    fn to_twarp_drive_item(
         &self,
         id: SyncId,
         _appearance: &Appearance,
         env_var_collection: &CloudEnvVarCollection,
-    ) -> Option<Box<dyn WarpDriveItem>> {
-        Some(Box::new(WarpDriveEnvVarCollection::new(
+    ) -> Option<Box<dyn TwarpDriveItem>> {
+        Some(Box::new(TwarpDriveEnvVarCollection::new(
             CloudObjectTypeAndId::GenericStringObject {
                 object_type: GenericStringObjectFormat::Json(JsonObjectType::EnvVarCollection),
                 id,

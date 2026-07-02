@@ -38,7 +38,7 @@ pub struct Window {
     pub universal_search_width: Option<f32>,
     pub warp_ai_width: Option<f32>,
     pub voltron_width: Option<f32>,
-    pub warp_drive_index_width: Option<f32>,
+    pub twarp_drive_index_width: Option<f32>,
     pub fullscreen_state: i32,
     pub agent_management_filters: Option<String>,
     pub left_panel_open: Option<bool>,
@@ -92,7 +92,8 @@ pub struct Folder {
     pub id: i32,
     pub name: String,
     pub is_open: bool,
-    pub is_warp_pack: bool,
+    #[diesel(column_name = is_warp_pack)]
+    pub is_twarp_pack: bool,
 }
 
 #[derive(Insertable)]
@@ -100,7 +101,8 @@ pub struct Folder {
 pub struct NewFolder {
     pub name: String,
     pub is_open: bool,
-    pub is_warp_pack: bool,
+    #[diesel(column_name = is_warp_pack)]
+    pub is_twarp_pack: bool,
 }
 
 #[derive(Identifiable, Insertable, Queryable)]
@@ -335,7 +337,7 @@ pub struct NewWindow {
     pub universal_search_width: Option<f32>,
     pub warp_ai_width: Option<f32>,
     pub voltron_width: Option<f32>,
-    pub warp_drive_index_width: Option<f32>,
+    pub twarp_drive_index_width: Option<f32>,
     pub fullscreen_state: i32,
     pub agent_management_filters: Option<String>,
     pub left_panel_open: Option<bool>,

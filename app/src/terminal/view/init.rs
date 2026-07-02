@@ -104,8 +104,8 @@ pub fn init(app: &mut AppContext) {
     app.register_binding_validator::<TerminalView>(is_binding_pty_compliant);
 
     init_overlapping_keybindings(app);
-    // Register input mode bindings before warpify bindings so ctrl-i warpifies
-    // instead of opening inline agent when a warpify banner is visible.
+    // Register input mode bindings before twarpify bindings so ctrl-i warpifies
+    // instead of opening inline agent when a twarpify banner is visible.
     register_input_mode_bindings(app);
 
     app.register_fixed_bindings([
@@ -341,8 +341,8 @@ pub fn init(app: &mut AppContext) {
                 & id!(flags::CLI_AGENT_RICH_INPUT_CHIP_ENABLED),
         ),
         EditableBinding::new(
-            "terminal:warpify_subshell",
-            "Warpify subshell",
+            "terminal:twarpify_subshell",
+            "Twarpify subshell",
             TerminalAction::TriggerSubshellBootstrap,
         )
         .with_key_binding("ctrl-i")
@@ -350,9 +350,9 @@ pub fn init(app: &mut AppContext) {
             id!("Terminal") & !id!("IMEOpen") & id!("LongRunningCommand") & id!("SubshellBanner"),
         ),
         EditableBinding::new(
-            "terminal:warpify_ssh_session",
-            "Warpify ssh session",
-            TerminalAction::WarpifySSHSession,
+            "terminal:twarpify_ssh_session",
+            "Twarpify ssh session",
+            TerminalAction::TwarpifySSHSession,
         )
         .with_key_binding("ctrl-i")
         .with_context_predicate(

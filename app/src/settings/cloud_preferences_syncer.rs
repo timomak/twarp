@@ -463,7 +463,7 @@ impl CloudPreferencesSyncer {
 
         PrivacySettings::handle(ctx).update(ctx, |privacy_settings, ctx| {
             // Note that this also blocks on update_manager.initial_load_complete()
-            privacy_settings.maybe_sync_with_warp_drive_prefs(ctx);
+            privacy_settings.maybe_sync_with_twarp_drive_prefs(ctx);
         });
     }
 

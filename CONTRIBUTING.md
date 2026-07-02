@@ -113,7 +113,7 @@ After you push changes that address Oz's feedback, comment `/oz-review` on the P
 
 ## Using a Coding Agent
 
-You can use **any coding agent** to implement a contribution — for example, Warp's built-in agent, Claude Code, Codex, Gemini CLI, or others — or no agent at all. This repository ships agent-readable context (skills under [`.agents/skills/`](.agents/skills/), specs under [`specs/`](specs/), and [`WARP.md`](WARP.md)) that any harness supporting these formats can pick up.
+You can use **any coding agent** to implement a contribution — for example, Warp's built-in agent, Claude Code, Codex, Gemini CLI, or others — or no agent at all. This repository ships agent-readable context (skills under [`.agents/skills/`](.agents/skills/), specs under [`specs/`](specs/), and [`TWARP.md`](TWARP.md)) that any harness supporting these formats can pick up.
 
 If you'd rather have an **Oz cloud agent** implement a ready issue for you, mention **@oss-maintainers** on the issue to request it. Approved requests run **for free** on complimentary Oz credits — you don't need to set up your own Oz account or pay for compute.
 
@@ -128,7 +128,7 @@ You do not need to manually request reviewers at any stage. After pushing change
 
 ## Development Setup
 
-See [README.md](README.md) and [WARP.md](WARP.md) for the full engineering guide. Quick start:
+See [README.md](README.md) and [TWARP.md](TWARP.md) for the full engineering guide. Quick start:
 
 ```bash
 ./script/bootstrap   # platform-specific setup
@@ -143,7 +143,7 @@ Tests are required for most code changes:
 ### Manual Testing
 Manual testing is required for changes that can be manually tested, and almost all changes can be manually tested. If your change can be manually tested, please include screenshots or a screen recording that show it working end to end in the PR description. 
 
-You can run the app locally using `./script/run` - see [WARP.md](WARP.md) for more details on how to get set up.
+You can run the app locally using `./script/run` - see [TWARP.md](TWARP.md) for more details on how to get set up.
 
 ### Automated Tests
 - **Bug fixes** should include a regression test that would have caught the bug.
@@ -156,7 +156,7 @@ Run unit tests with `cargo nextest run`.
 
 - `cargo fmt` and `cargo clippy --workspace --all-targets --all-features --tests -- -D warnings` must pass.
 - Prefer imports over path qualifiers, inline format args (`println!("{x}")`), and exhaustive `match` over `_` wildcards.
-- See [WARP.md](WARP.md) for the full style guide, including WarpUI patterns and terminal model locking rules.
+- See [TWARP.md](TWARP.md) for the full style guide, including WarpUI patterns and terminal model locking rules.
 
 ## Commit and Branch Conventions
 

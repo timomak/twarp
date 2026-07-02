@@ -8,14 +8,14 @@ use std::sync::Arc;
 use twarp_core::SessionId;
 use twarpui::{Entity, ModelContext, ModelHandle, SingletonEntity, WeakModelHandle};
 
-use crate::terminal::warpify::settings::SshExtensionInstallMode;
+use crate::terminal::twarpify::settings::SshExtensionInstallMode;
 
 use crate::remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
 use crate::remote_server::ssh_transport::SshTransport;
 use crate::server::server_api::ServerApiProvider;
 use crate::terminal::model::session::{IsLegacySSHSession, SessionInfo};
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
-use crate::terminal::warpify::settings::WarpifySettings;
+use crate::terminal::twarpify::settings::TwarpifySettings;
 use crate::{send_telemetry_from_ctx, TelemetryEvent};
 use remote_server::setup::RemotePlatform;
 
@@ -251,7 +251,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                 });
             }
             Ok(false) => {
-                let install_mode = *WarpifySettings::as_ref(ctx)
+                let install_mode = *TwarpifySettings::as_ref(ctx)
                     .ssh_extension_install_mode
                     .value();
                 match install_mode {

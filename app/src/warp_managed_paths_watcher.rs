@@ -47,17 +47,17 @@ pub(crate) fn ensure_warp_watch_roots_exist() {
 }
 
 #[cfg_attr(target_family = "wasm", allow(dead_code))]
-pub(crate) fn warp_home_config_dir() -> Option<PathBuf> {
-    twarp_core::paths::warp_home_config_dir()
+pub(crate) fn twarp_home_config_dir() -> Option<PathBuf> {
+    twarp_core::paths::twarp_home_config_dir()
 }
 
-pub(crate) fn warp_home_skills_dir() -> Option<PathBuf> {
-    twarp_core::paths::warp_home_skills_dir()
+pub(crate) fn twarp_home_skills_dir() -> Option<PathBuf> {
+    twarp_core::paths::twarp_home_skills_dir()
 }
 
 #[cfg_attr(target_family = "wasm", allow(dead_code))]
-pub(crate) fn warp_home_mcp_config_file_path() -> Option<PathBuf> {
-    twarp_core::paths::warp_home_mcp_config_file_path()
+pub(crate) fn twarp_home_mcp_config_file_path() -> Option<PathBuf> {
+    twarp_core::paths::twarp_home_mcp_config_file_path()
 }
 
 #[cfg_attr(target_family = "wasm", allow(dead_code))]
@@ -68,14 +68,14 @@ pub(crate) struct WarpMcpConfigPath {
 }
 
 pub(crate) fn warp_managed_skill_dirs() -> Vec<PathBuf> {
-    warp_home_skills_dir().into_iter().collect()
+    twarp_home_skills_dir().into_iter().collect()
 }
 
 #[cfg_attr(target_family = "wasm", allow(dead_code))]
 pub(crate) fn warp_managed_mcp_config_path() -> Option<WarpMcpConfigPath> {
     Some(WarpMcpConfigPath {
         root_path: home_dir()?,
-        config_path: warp_home_mcp_config_file_path()?,
+        config_path: twarp_home_mcp_config_file_path()?,
     })
 }
 
@@ -262,34 +262,34 @@ impl WarpManagedPathsWatcher {
                     "Warp config directory",
                 );
             }
-            if let Some(warp_home_skills_dir) = warp_home_skills_dir() {
-                if warp_home_skills_dir.exists()
-                    && !warp_home_skills_dir.starts_with(&data_dir)
+            if let Some(twarp_home_skills_dir) = twarp_home_skills_dir() {
+                if twarp_home_skills_dir.exists()
+                    && !twarp_home_skills_dir.starts_with(&data_dir)
                     && (!should_register_config_local_dir
-                        || !warp_home_skills_dir.starts_with(&config_local_dir))
+                        || !twarp_home_skills_dir.starts_with(&config_local_dir))
                 {
                     Self::register_path(
                         ctx,
                         &watcher,
-                        warp_home_skills_dir,
+                        twarp_home_skills_dir,
                         WatchFilter::accept_all(),
                         RecursiveMode::Recursive,
                         "Warp home skills directory",
                     );
                 }
             }
-            if let (Some(warp_home_config_dir), Some(warp_home_mcp_config_path)) =
-                (warp_home_config_dir(), warp_home_mcp_config_file_path())
+            if let (Some(twarp_home_config_dir), Some(warp_home_mcp_config_path)) =
+                (twarp_home_config_dir(), twarp_home_mcp_config_file_path())
             {
-                if warp_home_config_dir.exists()
-                    && !warp_home_config_dir.starts_with(&data_dir)
+                if twarp_home_config_dir.exists()
+                    && !twarp_home_config_dir.starts_with(&data_dir)
                     && (!should_register_config_local_dir
-                        || !warp_home_config_dir.starts_with(&config_local_dir))
+                        || !twarp_home_config_dir.starts_with(&config_local_dir))
                 {
                     Self::register_path(
                         ctx,
                         &watcher,
-                        warp_home_config_dir,
+                        twarp_home_config_dir,
                         WatchFilter::with_filter(Arc::new(move |path| {
                             path == warp_home_mcp_config_path
                         })),
@@ -365,15 +365,15 @@ mod tests {
     use repo_metadata::{RepositoryUpdate, TargetFile};
 
     use super::{
-        filter_repository_update_by_prefix, warp_home_mcp_config_file_path, warp_home_skills_dir,
+        filter_repository_update_by_prefix, twarp_home_mcp_config_file_path, twarp_home_skills_dir,
         warp_managed_mcp_config_path, warp_managed_skill_dirs,
     };
 
     #[test]
     fn warp_managed_skill_dirs_contains_only_warp_home_path() {
         let dirs = warp_managed_skill_dirs();
-        match warp_home_skills_dir() {
-            Some(warp_home_skills_dir) => assert_eq!(dirs, vec![warp_home_skills_dir]),
+        match twarp_home_skills_dir() {
+            Some(twarp_home_skills_dir) => assert_eq!(dirs, vec![twarp_home_skills_dir]),
             None => assert!(dirs.is_empty()),
         }
     }
@@ -382,7 +382,7 @@ mod tests {
     fn warp_managed_mcp_config_path_contains_only_warp_home_path() {
         match (
             home_dir(),
-            warp_home_mcp_config_file_path(),
+            twarp_home_mcp_config_file_path(),
             warp_managed_mcp_config_path(),
         ) {
             (Some(home_dir), Some(warp_home_mcp_config_path), Some(path)) => {
@@ -396,8 +396,8 @@ mod tests {
 
     #[test]
     fn filter_repository_update_by_prefix_keeps_only_matching_paths() {
-        let skills_dir = PathBuf::from("/tmp/.warp-local/skills");
-        let other_dir = PathBuf::from("/tmp/.warp-local/worktrees/repo");
+        let skills_dir = PathBuf::from("/tmp/.twarp-local/skills");
+        let other_dir = PathBuf::from("/tmp/.twarp-local/worktrees/repo");
         let skill_file = skills_dir.join("deploy").join("SKILL.md");
         let other_file = other_dir.join("README.md");
 
@@ -422,9 +422,9 @@ mod tests {
 
     #[test]
     fn filter_repository_update_by_prefix_converts_cross_boundary_moves() {
-        let skills_dir = PathBuf::from("/tmp/.warp-local/skills");
+        let skills_dir = PathBuf::from("/tmp/.twarp-local/skills");
         let skill_file = skills_dir.join("deploy").join("SKILL.md");
-        let ignored_file = PathBuf::from("/tmp/.warp-local/worktrees/repo/SKILL.md");
+        let ignored_file = PathBuf::from("/tmp/.twarp-local/worktrees/repo/SKILL.md");
 
         let update = RepositoryUpdate {
             added: HashSet::new(),

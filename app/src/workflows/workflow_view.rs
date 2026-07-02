@@ -44,9 +44,9 @@ use crate::{
         CloudObject, CloudObjectEventEntrypoint, ObjectType, Owner, Revision, Space,
     },
     drive::{
-        cloud_object_styling::warp_drive_icon_color,
+        cloud_object_styling::twarp_drive_icon_color,
         drive_helpers::has_feature_gated_anonymous_user_reached_workflow_limit,
-        items::WarpDriveItemId,
+        items::TwarpDriveItemId,
         sharing::{ContentEditability, ShareableObject, SharingAccessLevel},
         // twarp: 2c-d — ai_assist deleted; stub.
         workflows::{
@@ -57,7 +57,7 @@ use crate::{
         },
         CloudObjectTypeAndId,
         DriveObjectType,
-        OpenWarpDriveObjectSettings,
+        OpenTwarpDriveObjectSettings,
     },
     editor::{
         EditorOptions, EditorView, EnterAction, EnterSettings, Event as EditorEvent,
@@ -247,7 +247,7 @@ impl WorkflowEditorErrorState {
 
 #[derive(Debug, Clone)]
 pub enum WorkflowAction {
-    ViewInWarpDrive(WarpDriveItemId),
+    ViewInTwarpDrive(TwarpDriveItemId),
     AddArgument,
     ToggleViewMode,
     RunWorkflow,
@@ -271,7 +271,7 @@ pub enum WorkflowViewEvent {
     Pane(PaneEvent),
     CreatedWorkflow(SyncId),
     UpdatedWorkflow(SyncId),
-    ViewInWarpDrive(WarpDriveItemId),
+    ViewInTwarpDrive(TwarpDriveItemId),
     OpenDriveObjectShareDialog {
         cloud_object_type_and_id: CloudObjectTypeAndId,
         invitee_email: Option<String>,
@@ -613,7 +613,7 @@ impl WorkflowView {
                 {
                     self.load(
                         workflow.clone(),
-                        &OpenWarpDriveObjectSettings::default(),
+                        &OpenTwarpDriveObjectSettings::default(),
                         self.workflow_view_mode,
                         ctx,
                     );
@@ -633,7 +633,7 @@ impl WorkflowView {
                 {
                     self.load(
                         workflow,
-                        &OpenWarpDriveObjectSettings::default(),
+                        &OpenTwarpDriveObjectSettings::default(),
                         self.workflow_view_mode,
                         ctx,
                     );
@@ -651,7 +651,7 @@ impl WorkflowView {
         if let Some(workflow) = cloud_workflow {
             self.load(
                 workflow,
-                &OpenWarpDriveObjectSettings::default(),
+                &OpenTwarpDriveObjectSettings::default(),
                 self.workflow_view_mode,
                 ctx,
             );
@@ -661,7 +661,7 @@ impl WorkflowView {
     pub fn wait_for_initial_load_then_load(
         &mut self,
         workflow_id: SyncId,
-        settings: &OpenWarpDriveObjectSettings,
+        settings: &OpenTwarpDriveObjectSettings,
         mode: WorkflowViewMode,
         window_id: WindowId,
         ctx: &mut ViewContext<Self>,
@@ -702,7 +702,7 @@ impl WorkflowView {
     fn fetch_and_load_workflow(
         &mut self,
         workflow_id: ServerId,
-        settings: &OpenWarpDriveObjectSettings,
+        settings: &OpenTwarpDriveObjectSettings,
         mode: WorkflowViewMode,
         window_id: WindowId,
         ctx: &mut ViewContext<Self>,
@@ -740,7 +740,7 @@ impl WorkflowView {
     pub fn load(
         &mut self,
         workflow: CloudWorkflow,
-        settings: &OpenWarpDriveObjectSettings,
+        settings: &OpenTwarpDriveObjectSettings,
         mode: WorkflowViewMode,
         ctx: &mut ViewContext<Self>,
     ) {
@@ -785,7 +785,7 @@ impl WorkflowView {
                 pane_config.set_title(workflow_name, ctx);
                 if let Some(server_id) = workflow.id.into_server() {
                     pane_config.set_shareable_object(
-                        Some(ShareableObject::WarpDriveObject(server_id)),
+                        Some(ShareableObject::TwarpDriveObject(server_id)),
                         ctx,
                     );
                 }
@@ -871,8 +871,8 @@ impl WorkflowView {
         self.refresh_pane_overflow_menu(ctx);
 
         if let Some(focused_folder_id) = settings.focused_folder_id.map(SyncId::ServerId) {
-            self.view_in_warp_drive(
-                WarpDriveItemId::Object(CloudObjectTypeAndId::Folder(focused_folder_id)),
+            self.view_in_twarp_drive(
+                TwarpDriveItemId::Object(CloudObjectTypeAndId::Folder(focused_folder_id)),
                 ctx,
             );
         }
@@ -2087,7 +2087,7 @@ impl WorkflowView {
                     Icon::Workflow
                 }
                 .to_warpui_icon(
-                    warp_drive_icon_color(
+                    twarp_drive_icon_color(
                         appearance,
                         if self.is_for_agent_mode {
                             DriveObjectType::AgentModeWorkflow
@@ -2629,8 +2629,8 @@ impl WorkflowView {
         })
     }
 
-    fn view_in_warp_drive(&mut self, id: WarpDriveItemId, ctx: &mut ViewContext<Self>) {
-        ctx.emit(WorkflowViewEvent::ViewInWarpDrive(id));
+    fn view_in_twarp_drive(&mut self, id: TwarpDriveItemId, ctx: &mut ViewContext<Self>) {
+        ctx.emit(WorkflowViewEvent::ViewInTwarpDrive(id));
     }
 
     fn issue_request(&mut self, _ctx: &mut ViewContext<Self>) {
@@ -2994,7 +2994,7 @@ impl View for WorkflowView {
                     self.breadcrumbs.clone(),
                     appearance,
                     |ctx, _, breadcrumb| {
-                        ctx.dispatch_typed_action(WorkflowAction::ViewInWarpDrive(
+                        ctx.dispatch_typed_action(WorkflowAction::ViewInTwarpDrive(
                             breadcrumb.kind.into_item_id(),
                         ));
                     },
@@ -3158,7 +3158,7 @@ impl TypedActionView for WorkflowView {
 
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
-            WorkflowAction::ViewInWarpDrive(id) => self.view_in_warp_drive(*id, ctx),
+            WorkflowAction::ViewInTwarpDrive(id) => self.view_in_twarp_drive(*id, ctx),
             WorkflowAction::AddArgument => self.add_argument(ctx),
             WorkflowAction::ToggleViewMode => self.toggle_view_mode(ctx),
             WorkflowAction::CloseUnsavedDialog => self.hide_unsaved_changes_dialog(ctx),

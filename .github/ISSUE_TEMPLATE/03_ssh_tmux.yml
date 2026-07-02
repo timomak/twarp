@@ -1,4 +1,4 @@
-name: SSH Warpify Issues? Use this template
+name: SSH Twarpify Issues? Use this template
 description: "Issue template specialized for the circumstances where SSH Warpification with tmux fails"
 labels: ["bug","area:ssh"]
 body:

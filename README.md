@@ -102,7 +102,7 @@ Baseline (the state we forked from): `warpdotdev/warp@d0f045c0` (2026-04-28).
 
 ## Building twarp
 
-Build process is unchanged from upstream Warp. See the original Warp README below for `./script/bootstrap`, `./script/run`, and `./script/presubmit`, and [WARP.md](WARP.md) for the full engineering guide.
+Build process is unchanged from upstream Warp. See the original Warp README below for `./script/bootstrap`, `./script/run`, and `./script/presubmit`, and [TWARP.md](TWARP.md) for the full engineering guide.
 
 ## Acknowledgements
 
@@ -192,7 +192,7 @@ To build and run Warp from source:
 ./script/presubmit   # fmt, clippy, and tests
 ```
 
-See [WARP.md](WARP.md) for the full engineering guide, including coding style, testing, and platform-specific notes.
+See [TWARP.md](TWARP.md) for the full engineering guide, including coding style, testing, and platform-specific notes.
 
 ## Joining the Team
 

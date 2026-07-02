@@ -41,7 +41,7 @@ impl TerminalDriver {
     }
 }
 #[cfg(not(target_family = "wasm"))]
-pub const WARP_DRIVE_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(0);
+pub const TWARP_DRIVE_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(0);
 #[cfg(not(target_family = "wasm"))]
 use crate::server::cloud_objects::update_manager::UpdateManager;
 #[cfg(not(target_family = "wasm"))]
@@ -224,7 +224,7 @@ impl TerminalView {
                 // Wait for Warp Drive initial sync so environment lookup succeeds.
 
                 if sync_future
-                    .with_timeout(WARP_DRIVE_SYNC_TIMEOUT)
+                    .with_timeout(TWARP_DRIVE_SYNC_TIMEOUT)
                     .await
                     .is_err()
                 {

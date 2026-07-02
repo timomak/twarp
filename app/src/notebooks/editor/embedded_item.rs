@@ -35,7 +35,7 @@ use twarpui::{
 
 use crate::{
     cloud_object::{model::persistence::CloudModel, CloudObject},
-    drive::{cloud_object_styling::warp_drive_icon_color, DriveObjectType},
+    drive::{cloud_object_styling::twarp_drive_icon_color, DriveObjectType},
     server::ids::{HashableId, ToServerId},
     ui_components::icons::Icon,
     workflows::{workflow::Workflow, CloudWorkflow, WorkflowId},
@@ -458,12 +458,12 @@ impl RenderableEmbeddedWorkflow {
         let (icon, icon_color) = if is_agent_mode_prompt {
             (
                 Icon::Prompt,
-                warp_drive_icon_color(appearance, DriveObjectType::AgentModeWorkflow),
+                twarp_drive_icon_color(appearance, DriveObjectType::AgentModeWorkflow),
             )
         } else {
             (
                 Icon::Workflow,
-                warp_drive_icon_color(appearance, DriveObjectType::Workflow),
+                twarp_drive_icon_color(appearance, DriveObjectType::Workflow),
             )
         };
         let workflow_icon = ConstrainedBox::new(

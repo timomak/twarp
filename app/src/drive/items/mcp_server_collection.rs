@@ -8,14 +8,14 @@ use crate::{
     themes::theme::Fill,
 };
 
-use super::{WarpDriveItem, WarpDriveItemId};
+use super::{TwarpDriveItem, TwarpDriveItemId};
 
 #[derive(Clone)]
-pub struct WarpDriveMCPServerCollection {
+pub struct TwarpDriveMCPServerCollection {
     id: ClientId,
 }
 
-impl WarpDriveMCPServerCollection {
+impl TwarpDriveMCPServerCollection {
     pub fn new(id: ClientId) -> Self {
         Self { id }
     }
@@ -25,7 +25,7 @@ impl WarpDriveMCPServerCollection {
     }
 }
 
-impl WarpDriveItem for WarpDriveMCPServerCollection {
+impl TwarpDriveItem for TwarpDriveMCPServerCollection {
     fn display_name(&self) -> Option<String> {
         Some("MCP Servers".to_string())
     }
@@ -50,8 +50,8 @@ impl WarpDriveItem for WarpDriveMCPServerCollection {
         None
     }
 
-    fn warp_drive_id(&self) -> WarpDriveItemId {
-        WarpDriveItemId::MCPServerCollection
+    fn twarp_drive_id(&self) -> TwarpDriveItemId {
+        TwarpDriveItemId::MCPServerCollection
     }
 
     fn sync_status_icon(
@@ -67,7 +67,7 @@ impl WarpDriveItem for WarpDriveMCPServerCollection {
         None
     }
 
-    fn clone_box(&self) -> Box<dyn WarpDriveItem> {
+    fn clone_box(&self) -> Box<dyn TwarpDriveItem> {
         Box::new(self.clone())
     }
 }

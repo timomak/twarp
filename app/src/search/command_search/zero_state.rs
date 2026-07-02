@@ -13,7 +13,7 @@ use twarpui::{
 };
 
 use crate::appearance::Appearance;
-use crate::drive::settings::{WarpDriveSettings, WarpDriveSettingsChangedEvent};
+use crate::drive::settings::{TwarpDriveSettings, TwarpDriveSettingsChangedEvent};
 use crate::search::FilterChipRenderer;
 use crate::search::QueryFilter;
 use crate::settings::{AISettings, AISettingsChangedEvent};
@@ -60,8 +60,8 @@ impl CommandSearchZeroStateView {
             }
         });
 
-        ctx.subscribe_to_model(&WarpDriveSettings::handle(ctx), |_, _, event, ctx| {
-            if let WarpDriveSettingsChangedEvent::EnableWarpDrive { .. } = event {
+        ctx.subscribe_to_model(&TwarpDriveSettings::handle(ctx), |_, _, event, ctx| {
+            if let TwarpDriveSettingsChangedEvent::EnableTwarpDrive { .. } = event {
                 ctx.notify();
             }
         });
@@ -299,7 +299,7 @@ fn valid_query_filters(app: &AppContext) -> Vec<QueryFilter> {
         filters.push(QueryFilter::PromptHistory);
     }
 
-    if WarpDriveSettings::is_warp_drive_enabled(app) {
+    if TwarpDriveSettings::is_twarp_drive_enabled(app) {
         filters.extend([QueryFilter::Workflows, QueryFilter::Notebooks]);
 
         filters.push(QueryFilter::EnvironmentVariables);

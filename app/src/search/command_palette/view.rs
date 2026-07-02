@@ -102,7 +102,7 @@ pub enum Event {
     /// Open a notebook identified by `id`.
     OpenNotebook { id: SyncId },
     /// View the relevant object in the Warp Drive sidebar.
-    ViewInWarpDrive { id: CloudObjectTypeAndId },
+    ViewInTwarpDrive { id: CloudObjectTypeAndId },
     /// Open a file at the given path.
     OpenFile {
         path: String,
@@ -402,7 +402,7 @@ impl View {
                 | (PaletteMode::LaunchConfig, QueryFilter::LaunchConfigurations)
                 | (PaletteMode::Files, QueryFilter::Files)
                 | (PaletteMode::Conversations, QueryFilter::Conversations)
-                | (PaletteMode::WarpDrive, QueryFilter::Drive)
+                | (PaletteMode::TwarpDrive, QueryFilter::Drive)
         )
     }
 
@@ -907,8 +907,8 @@ impl View {
                 ctx.emit(Event::InvokeEnvironmentVariables { id })
             }
             CommandPaletteItemAction::OpenNotebook { id } => ctx.emit(Event::OpenNotebook { id }),
-            CommandPaletteItemAction::ViewInWarpDrive { id } => {
-                ctx.emit(Event::ViewInWarpDrive { id })
+            CommandPaletteItemAction::ViewInTwarpDrive { id } => {
+                ctx.emit(Event::ViewInTwarpDrive { id })
             }
             CommandPaletteItemAction::NewSession { source } => {
                 self.dispatch_typed_action_on_view(source.action().deref(), ctx);

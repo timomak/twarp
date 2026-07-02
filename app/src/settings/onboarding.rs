@@ -1,5 +1,5 @@
 // twarp: 2c-d — AI execution profiles deleted; re-export for type unification.
-use crate::drive::settings::WarpDriveSettings;
+use crate::drive::settings::TwarpDriveSettings;
 use crate::report_if_error;
 use crate::settings::ai::DefaultSessionMode;
 use crate::settings::{AISettings, CodeSettings};
@@ -74,10 +74,10 @@ fn apply_ui_customization_settings(
             .set_value(ui.show_code_review_button, ctx));
     });
 
-    WarpDriveSettings::handle(app).update(app, |settings, ctx| {
+    TwarpDriveSettings::handle(app).update(app, |settings, ctx| {
         report_if_error!(settings
-            .enable_warp_drive
-            .set_value(ui.show_warp_drive, ctx));
+            .enable_twarp_drive
+            .set_value(ui.show_twarp_drive, ctx));
     });
 
     CodeSettings::handle(app).update(app, |settings, ctx| {

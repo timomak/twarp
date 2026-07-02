@@ -1092,13 +1092,13 @@ define_settings_group!(AISettings, settings: [
         description: "Whether the agent uses your saved rules during requests.",
     }
     // Whether warp drive context should be included in AI requests
-    warp_drive_context_enabled: WarpDriveContextEnabled {
+    twarp_drive_context_enabled: TwarpDriveContextEnabled {
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
         sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
         private: false,
-        toml_path: "agents.knowledge.warp_drive_context_enabled",
+        toml_path: "agents.knowledge.twarp_drive_context_enabled",
         description: "Whether Twarp Drive context is included in AI requests.",
     }
 
@@ -1394,7 +1394,7 @@ define_settings_group!(AISettings, settings: [
     }
 
     // Whether file-based MCP servers from third-party AI tools (e.g. Claude, Codex) should
-    // be automatically detected and spawned. Warp-native config files (.warp/.mcp.json) are
+    // be automatically detected and spawned. Warp-native config files (.twarp/.mcp.json) are
     // always detected and spawned, regardless of this setting.
     file_based_mcp_enabled: FileBasedMcpEnabled {
         type: bool,
@@ -1629,8 +1629,8 @@ impl AISettings {
         self.is_any_ai_enabled(app) && *self.memory_enabled
     }
 
-    pub fn is_warp_drive_context_enabled(&self, app: &twarpui::AppContext) -> bool {
-        self.is_any_ai_enabled(app) && *self.warp_drive_context_enabled
+    pub fn is_twarp_drive_context_enabled(&self, app: &twarpui::AppContext) -> bool {
+        self.is_any_ai_enabled(app) && *self.twarp_drive_context_enabled
     }
 
     pub fn is_file_based_mcp_enabled(&self, app: &twarpui::AppContext) -> bool {

@@ -40,8 +40,8 @@ use crate::{
         CloudObject, CloudObjectEventEntrypoint, ObjectType, Owner, Revision,
     },
     drive::{
-        cloud_object_styling::warp_drive_icon_color, items::WarpDriveItemId, CloudObjectTypeAndId,
-        DriveObjectType,
+        cloud_object_styling::twarp_drive_icon_color, items::TwarpDriveItemId,
+        CloudObjectTypeAndId, DriveObjectType,
     },
     editor::{
         EditorOptions, EditorView, EnterAction, EnterSettings, Event as EditorEvent,
@@ -169,7 +169,7 @@ pub struct WorkflowModal {
     pub(super) ai_metadata_assist_state: AiAssistState,
     breadcrumbs: Option<Vec<BreadcrumbState<ContainingObject>>>,
     /// ID of the breadcrumb space/folder a user clicked on before the unsaved dialog popped up
-    clicked_breadcrumb: Option<WarpDriveItemId>,
+    clicked_breadcrumb: Option<TwarpDriveItemId>,
     menu: ViewHandle<Menu<WorkflowModalAction>>,
     menu_open: bool,
     arguments_clipped_scroll_state: ClippedScrollStateHandle,
@@ -187,7 +187,7 @@ pub enum WorkflowModalAction {
     CloseUnsavedChangesDialog,
     ForceClose,
     AiAssist,
-    ViewInWarpDrive(WarpDriveItemId),
+    ViewInTwarpDrive(TwarpDriveItemId),
     OpenOverflowMenu,
     CopyObjectToClipboard,
     TrashObject,
@@ -198,7 +198,7 @@ pub enum WorkflowModalEvent {
     UpdatedWorkflow(SyncId),
     AiAssistError(String),
     AiAssistUpgradeError(Option<ServerId>, UserUid),
-    ViewInWarpDrive(WarpDriveItemId),
+    ViewInTwarpDrive(TwarpDriveItemId),
 }
 
 /// A grouping of various error states the modal can be in. Any of these being
@@ -617,8 +617,8 @@ impl WorkflowModal {
         title_is_empty && description_is_empty && content_is_empty
     }
 
-    fn view_in_warp_drive(&mut self, id: WarpDriveItemId, ctx: &mut ViewContext<Self>) {
-        ctx.emit(WorkflowModalEvent::ViewInWarpDrive(id));
+    fn view_in_twarp_drive(&mut self, id: TwarpDriveItemId, ctx: &mut ViewContext<Self>) {
+        ctx.emit(WorkflowModalEvent::ViewInTwarpDrive(id));
         self.close(false /* force */, ctx);
         self.clicked_breadcrumb = None;
     }
@@ -1416,7 +1416,7 @@ impl WorkflowModal {
             ConstrainedBox::new(
                 Icon::from(DriveObjectType::Workflow)
                     .to_warpui_icon(
-                        warp_drive_icon_color(appearance, DriveObjectType::Workflow).into(),
+                        twarp_drive_icon_color(appearance, DriveObjectType::Workflow).into(),
                     )
                     .finish(),
             )
@@ -1459,10 +1459,10 @@ impl WorkflowModal {
                 appearance,
                 |ctx, _, object| {
                     let item_id = match object.kind {
-                        ContainingObjectKind::Object(id) => WarpDriveItemId::Object(id),
-                        ContainingObjectKind::Space(space) => WarpDriveItemId::Space(space),
+                        ContainingObjectKind::Object(id) => TwarpDriveItemId::Object(id),
+                        ContainingObjectKind::Space(space) => TwarpDriveItemId::Space(space),
                     };
-                    ctx.dispatch_typed_action(WorkflowModalAction::ViewInWarpDrive(item_id));
+                    ctx.dispatch_typed_action(WorkflowModalAction::ViewInTwarpDrive(item_id));
                 },
             );
 
@@ -1932,17 +1932,17 @@ impl TypedActionView for WorkflowModal {
             WorkflowModalAction::ForceClose => {
                 self.close(true, ctx);
                 if let Some(id) = self.clicked_breadcrumb {
-                    self.view_in_warp_drive(id, ctx);
+                    self.view_in_twarp_drive(id, ctx);
                 }
             }
             WorkflowModalAction::AiAssist => self.issue_request(ctx),
-            WorkflowModalAction::ViewInWarpDrive(id) => {
+            WorkflowModalAction::ViewInTwarpDrive(id) => {
                 if self.should_show_unsaved_changes_dialog(ctx) {
                     self.clicked_breadcrumb = Some(*id);
                     self.show_unsaved_changes_dialog(ctx);
                     return;
                 }
-                self.view_in_warp_drive(*id, ctx)
+                self.view_in_twarp_drive(*id, ctx)
             }
             WorkflowModalAction::OpenOverflowMenu => self.open_overflow_menu(ctx),
             WorkflowModalAction::CopyObjectToClipboard => self.copy_object_to_clipboard(ctx),

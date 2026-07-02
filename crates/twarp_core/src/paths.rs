@@ -27,8 +27,8 @@ use crate::{
 /// The name of the directory in which to put non-global Warp-specific files.
 ///
 /// This should be used, for example, as the base directory under which
-/// repository workflows would be stored (in "./.warp/workflows").
-pub const WARP_CONFIG_DIR: &str = ".warp";
+/// repository workflows would be stored (in "./.twarp/workflows").
+pub const TWARP_CONFIG_DIR: &str = ".twarp";
 
 /// The name of the folder that stores Warp execution logs and network logs.
 /// This is currently only used on Windows to maintain backwards compatibility.
@@ -37,19 +37,19 @@ pub const WARP_LOGS_DIR: &str = "logs";
 fn base_warp_config_dir_name() -> String {
     match ChannelState::channel() {
         // Preview shares the same directory as Stable for backward
-        // compatibility — existing users already have config in `.warp`.
-        Channel::Stable | Channel::Preview => WARP_CONFIG_DIR.to_owned(),
-        Channel::Oss => format!("{WARP_CONFIG_DIR}-oss"),
-        Channel::Dev => format!("{WARP_CONFIG_DIR}-dev"),
-        Channel::Integration => format!("{WARP_CONFIG_DIR}-integration"),
-        Channel::Local => format!("{WARP_CONFIG_DIR}-local"),
+        // compatibility — existing users already have config in `.twarp`.
+        Channel::Stable | Channel::Preview => TWARP_CONFIG_DIR.to_owned(),
+        Channel::Oss => format!("{TWARP_CONFIG_DIR}-oss"),
+        Channel::Dev => format!("{TWARP_CONFIG_DIR}-dev"),
+        Channel::Integration => format!("{TWARP_CONFIG_DIR}-integration"),
+        Channel::Local => format!("{TWARP_CONFIG_DIR}-local"),
     }
 }
 /// Returns the home-relative Warp config directory name for the current channel and data profile.
 ///
-/// This preserves the historical `.warp*` directory shape while still isolating dev, local,
+/// This preserves the historical `.twarp*` directory shape while still isolating dev, local,
 /// integration, oss, and optional development profiles.
-pub fn warp_home_config_dir_name() -> String {
+pub fn twarp_home_config_dir_name() -> String {
     let base_dir_name = base_warp_config_dir_name();
 
     if let Some(data_profile) = ChannelState::data_profile() {
@@ -62,36 +62,36 @@ pub fn warp_home_config_dir_name() -> String {
 /// Returns the home-relative Warp config directory for the current channel and data profile.
 ///
 /// Unlike [`data_dir`] and [`config_local_dir`] on non-macOS platforms, this intentionally keeps
-/// Warp-authored, user-facing config under a `.warp*` directory in the home directory instead of
+/// Warp-authored, user-facing config under a `.twarp*` directory in the home directory instead of
 /// using the platform XDG/AppData project directories.
-pub fn warp_home_config_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|home_dir| home_dir.join(warp_home_config_dir_name()))
+pub fn twarp_home_config_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|home_dir| home_dir.join(twarp_home_config_dir_name()))
 }
 
-pub fn warp_home_skills_dir() -> Option<PathBuf> {
-    warp_home_config_dir().map(|warp_config_dir| warp_config_dir.join("skills"))
+pub fn twarp_home_skills_dir() -> Option<PathBuf> {
+    twarp_home_config_dir().map(|warp_config_dir| warp_config_dir.join("skills"))
 }
 
-pub fn warp_home_mcp_config_file_path() -> Option<PathBuf> {
-    warp_home_config_dir().map(|warp_config_dir| warp_config_dir.join(".mcp.json"))
+pub fn twarp_home_mcp_config_file_path() -> Option<PathBuf> {
+    twarp_home_config_dir().map(|warp_config_dir| warp_config_dir.join(".mcp.json"))
 }
 
 /// Returns the macOS config directory name for the current channel.
 ///
-/// Stable uses `.warp`, while other channels include a channel suffix
-/// (e.g., `.warp-dev`, `.warp-local`).
+/// Stable uses `.twarp`, while other channels include a channel suffix
+/// (e.g., `.twarp-dev`, `.twarp-local`).
 ///
 /// These suffixes are persisted on disk as directory names and must not be
 /// changed once established, or existing user data will be orphaned.
 #[cfg(target_os = "macos")]
 fn macos_config_dir_name() -> String {
     match ChannelState::channel() {
-        Channel::Stable => WARP_CONFIG_DIR.to_owned(),
-        Channel::Preview => format!("{WARP_CONFIG_DIR}-preview"),
-        Channel::Oss => format!("{WARP_CONFIG_DIR}-oss"),
-        Channel::Dev => format!("{WARP_CONFIG_DIR}-dev"),
-        Channel::Integration => format!("{WARP_CONFIG_DIR}-integration"),
-        Channel::Local => format!("{WARP_CONFIG_DIR}-local"),
+        Channel::Stable => TWARP_CONFIG_DIR.to_owned(),
+        Channel::Preview => format!("{TWARP_CONFIG_DIR}-preview"),
+        Channel::Oss => format!("{TWARP_CONFIG_DIR}-oss"),
+        Channel::Dev => format!("{TWARP_CONFIG_DIR}-dev"),
+        Channel::Integration => format!("{TWARP_CONFIG_DIR}-integration"),
+        Channel::Local => format!("{TWARP_CONFIG_DIR}-local"),
     }
 }
 

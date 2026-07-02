@@ -41,7 +41,7 @@ use command_executor::remote_server_executor::RemoteServerCommandExecutor;
 use parking_lot::{Mutex, RwLock};
 
 use crate::terminal::shell::{Shell, ShellType};
-use crate::terminal::warpify::SubshellSource;
+use crate::terminal::twarpify::SubshellSource;
 use crate::terminal::History;
 
 use super::ansi::{BootstrappedValue, InitShellValue, SSHValue};
@@ -844,7 +844,7 @@ pub enum SessionType {
     Local,
 
     /// The session host is a different host from where Warp is running.
-    /// Note that we only know this for sure when we Warpify a block.
+    /// Note that we only know this for sure when we Twarpify a block.
     ///
     /// `host_id` is `Some` when the remote server feature flag is enabled and
     /// `RemoteServerManager` has completed the connection handshake. It is
@@ -1513,7 +1513,7 @@ impl Session {
         // - warpified zsh --> unix
 
         // If the host architecture is unix, we can infer unix file paths. This would break
-        // if we supported warpifying a powershell-on-windows SSH session.
+        // if we supported twarpifying a powershell-on-windows SSH session.
         if cfg!(unix) {
             return TypedPathBuf::from_unix(pwd);
         }

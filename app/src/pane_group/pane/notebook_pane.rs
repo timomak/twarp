@@ -7,7 +7,7 @@ use twarpui::{AppContext, ModelHandle, SingletonEntity, ViewContext, ViewHandle}
 use crate::{
     app_state::{LeafContents, NotebookPaneSnapshot},
     cloud_object::Space,
-    drive::{items::WarpDriveItemId, CloudObjectTypeAndId, OpenWarpDriveObjectSettings},
+    drive::{items::TwarpDriveItemId, CloudObjectTypeAndId, OpenTwarpDriveObjectSettings},
     notebooks::{
         link::{LinkEvent, NotebookLinks},
         manager::{NotebookManager, NotebookSource},
@@ -47,7 +47,7 @@ impl NotebookPane {
     /// Restore a notebook pane given its cloud notebook ID.
     pub fn restore(
         notebook_id: Option<SyncId>,
-        settings: &OpenWarpDriveObjectSettings,
+        settings: &OpenTwarpDriveObjectSettings,
         ctx: &mut ViewContext<PaneGroup>,
     ) -> anyhow::Result<Self> {
         let window_id = ctx.window_id();
@@ -81,7 +81,7 @@ impl PaneContent for NotebookPane {
         let notebook_id = self.notebook_view(app).as_ref(app).notebook_id(app);
         LeafContents::Notebook(NotebookPaneSnapshot::CloudNotebook {
             notebook_id,
-            settings: OpenWarpDriveObjectSettings::default(),
+            settings: OpenTwarpDriveObjectSettings::default(),
         })
     }
 
@@ -183,10 +183,10 @@ pub(super) fn subscribe_to_link_model(
                 session: session.clone(),
             })
         }
-        LinkEvent::OpenWarpDriveLink {
-            open_warp_drive_args,
-        } => ctx.emit(crate::pane_group::Event::OpenWarpDriveLink {
-            open_warp_drive_args: open_warp_drive_args.clone(),
+        LinkEvent::OpenTwarpDriveLink {
+            open_twarp_drive_args,
+        } => ctx.emit(crate::pane_group::Event::OpenTwarpDriveLink {
+            open_twarp_drive_args: open_twarp_drive_args.clone(),
         }),
         LinkEvent::StartLocalSession { path } => {
             pane_group.add_session_in_directory(
@@ -230,7 +230,7 @@ fn handle_notebook_event(
         NotebookEvent::EditWorkflow(id) => {
             ctx.emit(crate::pane_group::Event::OpenCloudWorkflowForEdit(*id))
         }
-        NotebookEvent::ViewInWarpDrive(id) => view_in_warp_drive(*id, ctx),
+        NotebookEvent::ViewInTwarpDrive(id) => view_in_twarp_drive(*id, ctx),
         NotebookEvent::MoveToSpace {
             cloud_object_type_and_id,
             new_space,
@@ -270,8 +270,8 @@ fn run_notebook_workflow(
     });
 }
 
-fn view_in_warp_drive(id: WarpDriveItemId, ctx: &mut ViewContext<PaneGroup>) {
-    ctx.emit(crate::pane_group::Event::ViewInWarpDrive(id))
+fn view_in_twarp_drive(id: TwarpDriveItemId, ctx: &mut ViewContext<PaneGroup>) {
+    ctx.emit(crate::pane_group::Event::ViewInTwarpDrive(id))
 }
 
 fn move_to_space(

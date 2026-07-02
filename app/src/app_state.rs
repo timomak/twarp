@@ -622,7 +622,7 @@ impl std::fmt::Display for ClientProfileId {
 }
 // twarp: 2c-d — LLMId Display impl provided by crates/ai.
 use crate::code::editor_management::CodeSource;
-use crate::drive::OpenWarpDriveObjectSettings;
+use crate::drive::OpenTwarpDriveObjectSettings;
 use crate::root_view::quake_mode_window_id;
 use crate::server::ids::SyncId;
 use crate::settings_view::SettingsSection;
@@ -653,7 +653,7 @@ pub struct WindowSnapshot {
     pub universal_search_width: Option<f32>,
     pub warp_ai_width: Option<f32>,
     pub voltron_width: Option<f32>,
-    pub warp_drive_index_width: Option<f32>,
+    pub twarp_drive_index_width: Option<f32>,
     pub left_panel_open: bool,
     pub vertical_tabs_panel_open: bool,
     pub left_panel_width: Option<f32>,
@@ -854,7 +854,7 @@ pub enum NotebookPaneSnapshot {
         ///    server ID.
         notebook_id: Option<SyncId>,
         // Settings for the notebook pane when it's opened (such as a folder to focus upon opening)
-        settings: OpenWarpDriveObjectSettings,
+        settings: OpenTwarpDriveObjectSettings,
     },
     LocalFileNotebook {
         /// The path to the local file that was open in this pane. This may be `None` if
@@ -893,7 +893,7 @@ pub enum WorkflowPaneSnapshot {
     CloudWorkflow {
         workflow_id: Option<SyncId>,
         // Settings for the workflow pane when it's opened (such as a folder to focus upon opening)
-        settings: OpenWarpDriveObjectSettings,
+        settings: OpenTwarpDriveObjectSettings,
     },
 }
 
@@ -931,7 +931,7 @@ pub enum CodeReviewPaneSnapshot {
 pub enum LeftPanelDisplayedTab {
     FileTree,
     GlobalSearch,
-    WarpDrive,
+    TwarpDrive,
     Shortcuts,
     /// twarp 07 (7h): the read-only Claude Code session list (PRODUCT §35).
     /// The chat itself is a main-content pane (re-spec #70), never a sidebar
@@ -945,7 +945,7 @@ impl From<ToolPanelView> for LeftPanelDisplayedTab {
         match view {
             ToolPanelView::ProjectExplorer => LeftPanelDisplayedTab::FileTree,
             ToolPanelView::GlobalSearch { .. } => LeftPanelDisplayedTab::GlobalSearch,
-            ToolPanelView::WarpDrive => LeftPanelDisplayedTab::WarpDrive,
+            ToolPanelView::TwarpDrive => LeftPanelDisplayedTab::TwarpDrive,
             ToolPanelView::Shortcuts => LeftPanelDisplayedTab::Shortcuts,
             ToolPanelView::ClaudeSessions => LeftPanelDisplayedTab::ClaudeSessions,
             ToolPanelView::ConversationListView => LeftPanelDisplayedTab::ConversationListView,

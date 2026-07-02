@@ -488,7 +488,7 @@ default = [
     "rect_selection",
     "reload_stale_conversation_files",
     "loginless_conversion",
-    "warp_packs",
+    "twarp_packs",
     "ai_rules",
     "suggested_rules",
     "default_waterfall_mode",
@@ -616,7 +616,7 @@ default = [
     "revert_to_checkpoints",
     "rewind_slash_command",
     "hoa_code_review",
-    "warpify_footer",
+    "twarpify_footer",
     "agent_toolbar_editor",
     "configurable_toolbar",
     "transfer_control_tool",
@@ -808,7 +808,7 @@ drive_objects_as_context = []
 iterm_images = []
 validate_autosuggestions = []
 autoupdate_ui_revamp = []
-warp_packs = []
+twarp_packs = []
 suggested_rules = []
 command_correction_key = []
 full_source_code_embedding = []
@@ -930,7 +930,7 @@ transfer_control_tool = []
 skip_firebase_anonymous_user = []
 solo_user_byok = []
 configurable_toolbar = []
-warpify_footer = []
+twarpify_footer = []
 hoa_onboarding_flow = []
 git_operations_in_code_review = []
 hoa_remote_control = []

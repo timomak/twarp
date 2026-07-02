@@ -4902,7 +4902,7 @@ impl SettingsWidget for SSHWrapperWidget {
             Some(AdditionalInfo {
                 mouse_state: self.additional_info_link.clone(),
                 on_click_action: Some(FeaturesPageAction::OpenUrl(
-                    "https://docs.warp.dev/terminal/warpify/ssh-legacy#implementation".into(),
+                    "https://docs.warp.dev/terminal/twarpify/ssh-legacy#implementation".into(),
                 )),
                 secondary_text: if view.ssh_wrapper_toggled {
                     Some("This change will take effect in new sessions".to_string())

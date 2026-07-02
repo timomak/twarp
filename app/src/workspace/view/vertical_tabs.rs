@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use crate::appearance::Appearance;
 use crate::context_chips::display_chip::GitLineChanges;
 use crate::context_chips::github_pr_display_text_from_url;
-use crate::drive::{cloud_object_styling::warp_drive_icon_color, DriveObjectType};
+use crate::drive::{cloud_object_styling::twarp_drive_icon_color, DriveObjectType};
 use crate::editor::EditorView;
 use crate::pane_group::pane::IPaneType;
 use crate::pane_group::TerminalPane;
@@ -1298,9 +1298,9 @@ fn render_detail_kind_badge_icon(
             .unwrap_or_else(|| WarpIcon::Code2.to_warpui_icon(sub_text).finish()),
         typed => {
             let fill = typed
-                .warp_drive_object_type()
+                .twarp_drive_object_type()
                 .map(|object_type| {
-                    WarpThemeFill::Solid(warp_drive_icon_color(appearance, object_type))
+                    WarpThemeFill::Solid(twarp_drive_icon_color(appearance, object_type))
                 })
                 .unwrap_or(sub_text);
             typed.icon().to_warpui_icon(fill).finish()
@@ -2342,7 +2342,7 @@ fn resolve_icon_with_status_variant(
     let sub_text = theme.sub_text_color(theme.background());
 
     let drive_color = |object_type: DriveObjectType| -> WarpThemeFill {
-        WarpThemeFill::Solid(warp_drive_icon_color(appearance, object_type))
+        WarpThemeFill::Solid(twarp_drive_icon_color(appearance, object_type))
     };
 
     match typed {
@@ -2581,13 +2581,13 @@ impl TypedPane<'_> {
         }
     }
 
-    fn warp_drive_object_type(&self) -> Option<DriveObjectType> {
-        typed_pane_warp_drive_object_type(self)
+    fn twarp_drive_object_type(&self) -> Option<DriveObjectType> {
+        typed_pane_twarp_drive_object_type(self)
     }
 
     fn supports_vertical_tabs_detail_sidecar(&self) -> bool {
         matches!(self, TypedPane::Terminal(_) | TypedPane::Code(_))
-            || self.warp_drive_object_type().is_some()
+            || self.twarp_drive_object_type().is_some()
     }
     fn kind_label(&self) -> &'static str {
         match self {
@@ -3770,7 +3770,7 @@ fn summary_pane_kind_icon(
     let main_text = theme.main_text_color(theme.background());
     let sub_text = theme.sub_text_color(theme.background());
     let drive_color = |object_type: DriveObjectType| -> WarpThemeFill {
-        WarpThemeFill::Solid(warp_drive_icon_color(appearance, object_type))
+        WarpThemeFill::Solid(twarp_drive_icon_color(appearance, object_type))
     };
 
     match kind {
@@ -5579,7 +5579,7 @@ fn render_code_detail_section(
         .finish()
 }
 
-fn render_warp_drive_object_detail_section(
+fn render_twarp_drive_object_detail_section(
     props: &PaneProps<'_>,
     appearance: &Appearance,
     app: &AppContext,
@@ -5614,7 +5614,7 @@ fn code_detail_kind_label(file_name: &str) -> Option<String> {
     language_by_filename(Path::new(file_name)).map(|language| language.display_name().to_string())
 }
 
-fn typed_pane_warp_drive_object_type(typed: &TypedPane<'_>) -> Option<DriveObjectType> {
+fn typed_pane_twarp_drive_object_type(typed: &TypedPane<'_>) -> Option<DriveObjectType> {
     match typed {
         TypedPane::Notebook { is_plan } => Some(DriveObjectType::Notebook {
             is_ai_document: *is_plan,
@@ -5655,7 +5655,7 @@ fn render_detail_section(
         | TypedPane::Workflow { .. }
         | TypedPane::EnvVarCollection
         | TypedPane::AIFact
-        | TypedPane::AIDocument => render_warp_drive_object_detail_section(props, appearance, app),
+        | TypedPane::AIDocument => render_twarp_drive_object_detail_section(props, appearance, app),
         TypedPane::CodeDiff
         | TypedPane::File
         | TypedPane::Settings

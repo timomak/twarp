@@ -41,9 +41,9 @@ pub enum OpenableFileType {
 /// The target application or viewer to use when opening a file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileTarget {
-    /// Open in Warp's Markdown viewer.
+    /// Open in Twarp's Markdown viewer.
     MarkdownViewer(EditorLayout),
-    /// Open in Warp's Code Editor.
+    /// Open in Twarp's Code Editor.
     CodeEditor(EditorLayout),
     /// Open in an external editor (e.g. VS Code, Emacs).
     #[cfg(feature = "local_fs")]
@@ -174,7 +174,7 @@ pub fn is_file_openable_in_warp(path: &Path) -> Option<OpenableFileType> {
 /// This would also force any binary file to be opened in Warp's Code Editor, so you should likely check
 /// `is_file_openable_in_warp` before rendering any such UI Elements.
 #[cfg(feature = "local_fs")]
-pub fn resolve_file_target_to_open_in_warp(
+pub fn resolve_file_target_to_open_in_twarp(
     path: &Path,
     settings: &EditorSettings,
     layout: Option<EditorLayout>,

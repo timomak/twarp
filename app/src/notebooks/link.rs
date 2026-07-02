@@ -21,7 +21,7 @@ use crate::util::file::external_editor::EditorSettings;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::{is_supported_image_file, resolve_file_target, FileTarget};
 use crate::{
-    drive::OpenWarpDriveObjectArgs,
+    drive::OpenTwarpDriveObjectArgs,
     terminal::model::session::Session,
     uri::parse_url_paths::{get_item_data_from_warp_link, WarpWebLink},
     workspace::ActiveSession,
@@ -266,8 +266,8 @@ impl NotebookLinks {
         match link {
             LinkTarget::Url(url) => {
                 if let Some(WarpWebLink::DriveObject(args)) = get_item_data_from_warp_link(&url) {
-                    return ctx.emit(LinkEvent::OpenWarpDriveLink {
-                        open_warp_drive_args: *args,
+                    return ctx.emit(LinkEvent::OpenTwarpDriveLink {
+                        open_twarp_drive_args: *args,
                     });
                 }
 
@@ -409,8 +409,8 @@ pub enum LinkEvent {
         path: PathBuf,
         session: Arc<Session>,
     },
-    OpenWarpDriveLink {
-        open_warp_drive_args: OpenWarpDriveObjectArgs,
+    OpenTwarpDriveLink {
+        open_twarp_drive_args: OpenTwarpDriveObjectArgs,
     },
     /// This event tells the parent pane group to open a new terminal session in the given
     /// directory.

@@ -400,7 +400,7 @@ fn make_new_view_menu(ctx: &AppContext) -> Menu {
         // (see the `cfg(target_os = "macos")` branch in `app::run`, lib.rs). Without
         // this item the accelerator is never installed and `cmd-b` does nothing.
         updateable_custom_item_without_checkmark(CustomAction::ToggleLeftPanel, ctx),
-        updateable_custom_item_without_checkmark(CustomAction::ToggleWarpDrive, ctx),
+        updateable_custom_item_without_checkmark(CustomAction::ToggleTwarpDrive, ctx),
         MenuItem::Separator,
         updateable_custom_item_without_checkmark(CustomAction::CommandPalette, ctx),
         updateable_custom_item_without_checkmark(CustomAction::NavigationPalette, ctx),
@@ -630,7 +630,7 @@ fn make_new_drive_menu(ctx: &AppContext) -> Menu {
     ));
     items.extend([
         MenuItem::Separator,
-        updateable_custom_item_without_checkmark(CustomAction::ToggleWarpDrive, ctx),
+        updateable_custom_item_without_checkmark(CustomAction::ToggleTwarpDrive, ctx),
         updateable_custom_item_without_checkmark(CustomAction::SearchDrive, ctx),
         updateable_custom_item_without_checkmark(CustomAction::OpenTeamSettings, ctx),
         updateable_custom_item_without_checkmark(CustomAction::OpenAIFactCollection, ctx),

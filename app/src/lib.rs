@@ -1005,7 +1005,7 @@ fn initialize_app(
     }
 
     // One-time migration: give Preview its own config directory by
-    // symlinking contents from the shared ~/.warp location. Must run
+    // symlinking contents from the shared ~/.twarp location. Must run
     // before ensure_warp_watch_roots_exist() creates the new directory.
     #[cfg(target_os = "macos")]
     preview_config_migration::migrate_preview_config_dir_if_needed();
@@ -1452,7 +1452,7 @@ fn initialize_app(
     drive::sharing::dialog::init(ctx);
     env_vars::env_var_collection_block::init(ctx);
     terminal::ssh::install_tmux::init(ctx);
-    terminal::ssh::warpify::init(ctx);
+    terminal::ssh::twarpify::init(ctx);
     terminal::ssh::error::init(ctx);
     context_chips::display_menu::init(ctx);
     context_chips::node_version_popup::init(ctx);
@@ -2413,8 +2413,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AutoupdateUIRevamp,
         #[cfg(all(not(windows), feature = "kitty_images"))]
         FeatureFlag::KittyImages,
-        #[cfg(feature = "warp_packs")]
-        FeatureFlag::WarpPacks,
+        #[cfg(feature = "twarp_packs")]
+        FeatureFlag::TwarpPacks,
         #[cfg(feature = "global_ai_analytics_banner")]
         FeatureFlag::GlobalAIAnalyticsBanner,
         #[cfg(feature = "global_ai_analytics_collection")]
@@ -2735,8 +2735,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::CLIAgentRichInput,
         #[cfg(feature = "transfer_control_tool")]
         FeatureFlag::TransferControlTool,
-        #[cfg(feature = "warpify_footer")]
-        FeatureFlag::WarpifyFooter,
+        #[cfg(feature = "twarpify_footer")]
+        FeatureFlag::TwarpifyFooter,
         #[cfg(feature = "solo_user_byok")]
         FeatureFlag::SoloUserByok,
         #[cfg(feature = "skip_firebase_anonymous_user")]

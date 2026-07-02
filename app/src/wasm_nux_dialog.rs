@@ -154,12 +154,12 @@ impl View for WasmNUXDialog {
 
         let dialog = if self.requested_download {
             Dialog::new(
-                "Open in Warp Desktop?".to_string(),
+                "Open in Twarp Desktop?".to_string(),
                 Some("Future links will automatically open on desktop.".to_string()),
                 dialog_styles,
             )
             .with_bottom_row_child(Self::render_dialog_button(
-                "Open in Warp",
+                "Open in Twarp",
                 WasmNUXDialogAction::OpenNativeAndClose,
                 &self.confirm_mouse_state,
                 appearance,

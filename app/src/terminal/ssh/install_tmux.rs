@@ -77,8 +77,8 @@ pub mod requested_script {
 use crate::appearance::Appearance;
 use crate::terminal::model::ansi::SystemDetails;
 use crate::terminal::model::escape_sequences;
-use crate::terminal::warpify::render;
-use crate::terminal::warpify::settings::WarpifySettings;
+use crate::terminal::twarpify::render;
+use crate::terminal::twarpify::settings::TwarpifySettings;
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon as UiIcon;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
@@ -97,7 +97,7 @@ use twarpui::{
 use twarpui::{BlurContext, FocusContext};
 
 pub const WHY_INSTALL_TMUX_URL: &str =
-    "https://docs.warp.dev/terminal/warpify/ssh#why-do-i-need-tmux-on-the-remote-machine";
+    "https://docs.warp.dev/terminal/twarpify/ssh#why-do-i-need-tmux-on-the-remote-machine";
 
 #[derive(Debug, Clone)]
 pub struct TmuxInstallMethod {
@@ -107,7 +107,7 @@ pub struct TmuxInstallMethod {
 
 #[derive(Debug, Clone)]
 pub enum SshInstallTmuxBlockEvent {
-    InstallTmuxAndWarpify(TmuxInstallMethod),
+    InstallTmuxAndTwarpify(TmuxInstallMethod),
     ToggleScriptVisibility,
     Cancel,
     Interrupt,
@@ -161,14 +161,14 @@ impl SshKeyEvent {
 pub struct SshInstallTmuxBlock {
     requested_script_mouse_states: RequestedScriptMouseStates,
     why_install_tmux_highlight_index: HighlightedHyperlink,
-    never_warpify_mouse_state_handle: MouseStateHandle,
+    never_twarpify_mouse_state_handle: MouseStateHandle,
     block_mouse_state: MouseStateHandle,
     is_focused: bool,
     is_collapsed: bool,
     show_tmux_install_block: bool,
     script_status: RequestedScriptStatus,
     system_details: SystemDetails,
-    /// The script to install tmux locally, in a ~/.warp directory
+    /// The script to install tmux locally, in a ~/.twarp directory
     tmux_local_install_script: String,
     ssh_host: Option<String>,
     ssh_command: String,
@@ -239,7 +239,7 @@ impl SshInstallTmuxBlock {
         Self {
             requested_script_mouse_states: Default::default(),
             why_install_tmux_highlight_index: Default::default(),
-            never_warpify_mouse_state_handle: Default::default(),
+            never_twarpify_mouse_state_handle: Default::default(),
             block_mouse_state: Default::default(),
             is_focused: false,
             is_collapsed: true,
@@ -292,7 +292,7 @@ impl SshInstallTmuxBlock {
         ctx: &mut ViewContext<Self>,
     ) {
         self.script_status = RequestedScriptStatus::Running;
-        ctx.emit(SshInstallTmuxBlockEvent::InstallTmuxAndWarpify(
+        ctx.emit(SshInstallTmuxBlockEvent::InstallTmuxAndTwarpify(
             install_method,
         ));
         ctx.notify()
@@ -333,7 +333,7 @@ impl SshInstallTmuxBlock {
                 content: tmux_system_install_script.to_string(),
             },
             TitledScript {
-                title: "Install to ~/.warp".to_string(),
+                title: "Install to ~/.twarp".to_string(),
                 content: self.tmux_local_install_script.clone(),
             },
             *is_first_script_active,
@@ -415,11 +415,11 @@ impl SshInstallTmuxBlock {
 
         let right_hand_size = is_awaiting_action
             .then(|| {
-                render::render_never_warpify_ssh_link(
+                render::render_never_twarpify_ssh_link(
                     &self.ssh_host,
                     app,
                     appearance,
-                    self.never_warpify_mouse_state_handle.clone(),
+                    self.never_twarpify_mouse_state_handle.clone(),
                     move |ctx, ssh_host| {
                         ctx.dispatch_typed_action(SshInstallTmuxBlockAction::AddSshHostToDenylist(
                             ssh_host.to_owned(),
@@ -466,7 +466,7 @@ impl View for SshInstallTmuxBlock {
             "In order to Twarpify your SSH session, tmux must be installed. "
         };
 
-        let warpify_description = vec![
+        let twarpify_description = vec![
             FormattedTextFragment::plain_text(explanation),
             FormattedTextFragment::hyperlink("Why do I need tmux?", WHY_INSTALL_TMUX_URL),
         ];
@@ -474,8 +474,8 @@ impl View for SshInstallTmuxBlock {
         let text_color =
             blended_colors::text_sub(appearance.theme(), appearance.theme().surface_1());
 
-        let warpify_description = FormattedTextElement::new(
-            FormattedText::new([FormattedTextLine::Line(warpify_description)]),
+        let twarpify_description = FormattedTextElement::new(
+            FormattedText::new([FormattedTextLine::Line(twarpify_description)]),
             appearance.monospace_font_size(),
             appearance.monospace_font_family(),
             appearance.monospace_font_family(),
@@ -489,7 +489,7 @@ impl View for SshInstallTmuxBlock {
         .finish();
 
         content
-            .add_child(render::apply_spacing_styles(Container::new(warpify_description)).finish());
+            .add_child(render::apply_spacing_styles(Container::new(twarpify_description)).finish());
 
         if let Some(root_install_state) = &self.system_install_state {
             content.add_child(self.render_system_install_ui(root_install_state, app));
@@ -574,9 +574,9 @@ impl TypedActionView for SshInstallTmuxBlock {
                 ctx.emit(SshInstallTmuxBlockEvent::Interrupt);
             }
             (SshInstallTmuxBlockAction::AddSshHostToDenylist(ssh_host), true) => {
-                let settings = WarpifySettings::handle(ctx);
-                settings.update(ctx, |warpify, ctx| {
-                    warpify.denylist_ssh_host(ssh_host, ctx);
+                let settings = TwarpifySettings::handle(ctx);
+                settings.update(ctx, |twarpify, ctx| {
+                    twarpify.denylist_ssh_host(ssh_host, ctx);
                 });
                 ctx.emit(SshInstallTmuxBlockEvent::Cancel);
                 ctx.notify();
@@ -603,16 +603,16 @@ pub fn install_tmux_script(system: &SystemDetails, app: &AppContext) -> Option<S
         system.shell.as_str(),
     ) {
         ("Linux", _, "bash" | "zsh") => {
-            bundled_asset!("ssh/bash_zsh/install_tmux_and_warpify_linux.sh")
+            bundled_asset!("ssh/bash_zsh/install_tmux_and_twarpify_linux.sh")
         }
         ("Linux", _, "fish") => {
-            bundled_asset!("ssh/fish/install_tmux_and_warpify_linux.sh")
+            bundled_asset!("ssh/fish/install_tmux_and_twarpify_linux.sh")
         }
         ("Darwin", "homebrew", "bash" | "zsh") => {
-            bundled_asset!("ssh/bash_zsh/install_tmux_and_warpify_brew.sh")
+            bundled_asset!("ssh/bash_zsh/install_tmux_and_twarpify_brew.sh")
         }
         ("Darwin", "homebrew", "fish") => {
-            bundled_asset!("ssh/fish/install_tmux_and_warpify_brew.sh")
+            bundled_asset!("ssh/fish/install_tmux_and_twarpify_brew.sh")
         }
         _ => return None,
     };
@@ -641,19 +641,19 @@ pub fn install_root_tmux_script(
         system.shell.as_str(),
     ) {
         ("Linux", "apt", "bash" | "zsh") => {
-            bundled_asset!("ssh/bash_zsh/root/install_tmux_and_warpify_apt.sh")
+            bundled_asset!("ssh/bash_zsh/root/install_tmux_and_twarpify_apt.sh")
         }
         ("Linux", "dnf", "bash" | "zsh") => {
-            bundled_asset!("ssh/bash_zsh/root/install_tmux_and_warpify_dnf.sh")
+            bundled_asset!("ssh/bash_zsh/root/install_tmux_and_twarpify_dnf.sh")
         }
         ("Linux", "pacman", "bash" | "zsh") => {
-            bundled_asset!("ssh/bash_zsh/root/install_tmux_and_warpify_pacman.sh")
+            bundled_asset!("ssh/bash_zsh/root/install_tmux_and_twarpify_pacman.sh")
         }
         ("Linux", "yum", "bash" | "zsh") => {
-            bundled_asset!("ssh/bash_zsh/root/install_tmux_and_warpify_yum.sh")
+            bundled_asset!("ssh/bash_zsh/root/install_tmux_and_twarpify_yum.sh")
         }
         ("Linux", "zypper", "bash" | "zsh") => {
-            bundled_asset!("ssh/bash_zsh/root/install_tmux_and_warpify_zypper.sh")
+            bundled_asset!("ssh/bash_zsh/root/install_tmux_and_twarpify_zypper.sh")
         }
         _ => return None,
     };

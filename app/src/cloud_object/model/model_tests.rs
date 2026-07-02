@@ -259,7 +259,7 @@ fn mock_cloud_folder(id: SyncId, name: String, folder_id: Option<SyncId>) -> Clo
         CloudFolderModel {
             name,
             is_open: true,
-            is_warp_pack: false,
+            is_twarp_pack: false,
         },
         CloudObjectMetadata {
             pending_changes_statuses: CloudObjectStatuses {

@@ -368,7 +368,7 @@ pub struct SystemDetails {
 }
 
 /// The reason that warpification was not available when the user tried
-/// to warpify.
+/// to twarpify.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all(serialize = "snake_case"))]
 pub enum WarpificationUnavailableReason {

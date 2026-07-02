@@ -31,7 +31,7 @@ use crate::{
         AuthStateProvider, UserUid,
     },
     completer::SessionContext,
-    drive::settings::WarpDriveSettings,
+    drive::settings::TwarpDriveSettings,
     search::{
         command_search::searcher::{CommandSearchItemAction, CommandSearchMixer},
         result_renderer::{QueryResultRenderer, QueryResultRendererStyles},
@@ -247,7 +247,7 @@ impl CommandSearchView {
             // Add data sources in lowest->highest priority order.  If results from two
             // data sources produce the same ranking score, the data source added first
             // will show up higher in the list (i.e.: further away from the input).
-            if WarpDriveSettings::is_warp_drive_enabled(ctx) {
+            if TwarpDriveSettings::is_twarp_drive_enabled(ctx) {
                 mixer.add_sync_source(
                     WorkflowsDataSource::new(session_context.as_ref(), ctx),
                     HashSet::from([QueryFilter::Workflows]),

@@ -300,7 +300,7 @@ fn collect_normalized_unique_summary_texts(
 }
 
 #[test]
-fn detail_sidecar_supports_terminal_code_and_warp_drive_object_panes() {
+fn detail_sidecar_supports_terminal_code_and_twarp_drive_object_panes() {
     assert!(pane_type_supports_vertical_tabs_detail_sidecar(
         IPaneType::Terminal
     ));

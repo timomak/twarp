@@ -5,7 +5,7 @@ pub mod web_intent_parser;
 #[cfg(target_family = "wasm")]
 pub mod browser_url_handler;
 
-use crate::drive::OpenWarpDriveObjectSettings;
+use crate::drive::OpenTwarpDriveObjectSettings;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::linear::{LinearAction, LinearIssueWork};
 use crate::root_view::{open_new_window_get_handles, OpenLaunchConfigArg};
@@ -16,7 +16,7 @@ use crate::util::openable_file_type::{
 };
 use crate::workspace::{Workspace, WorkspaceAction, WorkspaceRegistry};
 use crate::{cloud_object::ObjectType, workspace::ToastStack};
-use crate::{drive::OpenWarpDriveObjectArgs, view_components::DismissibleToast};
+use crate::{drive::OpenTwarpDriveObjectArgs, view_components::DismissibleToast};
 use crate::{features::FeatureFlag, workspace::active_terminal_in_window};
 
 use crate::settings_view::{OpenTeamsSettingsModalArgs, SettingsSection};
@@ -253,10 +253,10 @@ impl UriHost {
                         ctx.root_view_id(window_id)
                             .map(|view_id| (window_id, view_id))
                     });
-                    let args = OpenWarpDriveObjectArgs {
+                    let args = OpenTwarpDriveObjectArgs {
                         object_type,
                         server_id,
-                        settings: OpenWarpDriveObjectSettings {
+                        settings: OpenTwarpDriveObjectSettings {
                             focused_folder_id,
                             invitee_email,
                         },
@@ -877,7 +877,7 @@ fn get_primary_window(
 enum OpenFileAction {
     /// Open in the markdown notebook pane.
     Notebook,
-    /// Open in Warp's code/text editor pane.
+    /// Open in Twarp's code/text editor pane.
     Editor,
     /// Open a session at the parent directory and queue the file as the pending command,
     /// or just open a session at the directory path if `path` is a directory.
@@ -936,12 +936,12 @@ fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
             use crate::root_view::{open_new_with_workspace_source, NewWorkspaceSource};
             use crate::util::{
                 file::external_editor::EditorSettings,
-                openable_file_type::resolve_file_target_to_open_in_warp,
+                openable_file_type::resolve_file_target_to_open_in_twarp,
             };
 
             // Open text/code files in Warp's code editor, respecting the user's layout preference.
             let editor_settings = EditorSettings::as_ref(ctx);
-            let target = resolve_file_target_to_open_in_warp(&path, editor_settings, None);
+            let target = resolve_file_target_to_open_in_twarp(&path, editor_settings, None);
 
             let window_id = if let Some((wid, _)) = primary_window_and_view {
                 wid

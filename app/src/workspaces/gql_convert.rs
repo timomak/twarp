@@ -62,7 +62,7 @@ use twarp_graphql::{
     },
     object::CloudObjectWithDescendants,
     queries::get_workspaces_metadata_for_user::User as GqlUser,
-    subscriptions::get_warp_drive_updates::WarpDriveUpdate,
+    subscriptions::get_twarp_drive_updates::TwarpDriveUpdate,
     user::{DiscoverableTeamData as GqlDiscoverableTeamData, PublicUserProfile},
     workspace::{
         AdminEnablementSetting as GqlAdminEnablementSetting, AiAutonomyValue as GqlAiAutonomyValue,
@@ -946,17 +946,17 @@ impl From<PublicUserProfile> for UserProfileWithUID {
     }
 }
 
-impl TryFrom<WarpDriveUpdate> for ObjectUpdateMessage {
+impl TryFrom<TwarpDriveUpdate> for ObjectUpdateMessage {
     type Error = anyhow::Error;
 
-    fn try_from(value: WarpDriveUpdate) -> Result<Self, Self::Error> {
+    fn try_from(value: TwarpDriveUpdate) -> Result<Self, Self::Error> {
         match value {
-            WarpDriveUpdate::ObjectActionOccurred(message) => {
+            TwarpDriveUpdate::ObjectActionOccurred(message) => {
                 Ok(ObjectUpdateMessage::ObjectActionOccurred {
                     history: message.history.try_into()?,
                 })
             }
-            WarpDriveUpdate::ObjectContentUpdated(message) => {
+            TwarpDriveUpdate::ObjectContentUpdated(message) => {
                 let server_object = message.object.try_into()?;
                 let last_editor = message.last_editor.map(|e| e.into());
                 Ok(ObjectUpdateMessage::ObjectContentChanged {
@@ -964,15 +964,15 @@ impl TryFrom<WarpDriveUpdate> for ObjectUpdateMessage {
                     last_editor,
                 })
             }
-            WarpDriveUpdate::ObjectDeleted(message) => Ok(ObjectUpdateMessage::ObjectDeleted {
+            TwarpDriveUpdate::ObjectDeleted(message) => Ok(ObjectUpdateMessage::ObjectDeleted {
                 object_uid: ServerId::from_string_lossy(message.object_uid.inner()),
             }),
-            WarpDriveUpdate::ObjectMetadataUpdated(message) => {
+            TwarpDriveUpdate::ObjectMetadataUpdated(message) => {
                 Ok(ObjectUpdateMessage::ObjectMetadataChanged {
                     metadata: message.metadata.try_into()?,
                 })
             }
-            WarpDriveUpdate::ObjectPermissionsUpdated(message) => {
+            TwarpDriveUpdate::ObjectPermissionsUpdated(message) => {
                 Ok(ObjectUpdateMessage::ObjectPermissionsChangedV2 {
                     object_uid: ServerId::from_string_lossy(message.object_uid.inner()),
                     user_profiles: message
@@ -984,16 +984,16 @@ impl TryFrom<WarpDriveUpdate> for ObjectUpdateMessage {
                     permissions: message.permissions.try_into()?,
                 })
             }
-            WarpDriveUpdate::TeamMembershipsChanged(_) => {
+            TwarpDriveUpdate::TeamMembershipsChanged(_) => {
                 Ok(ObjectUpdateMessage::TeamMembershipsChanged)
             }
-            WarpDriveUpdate::AmbientTaskUpdated(message) => {
+            TwarpDriveUpdate::AmbientTaskUpdated(message) => {
                 Ok(ObjectUpdateMessage::AmbientTaskUpdated {
                     task_id: message.task_id.inner().to_string(),
                     timestamp: message.task_updated_ts.utc(),
                 })
             }
-            WarpDriveUpdate::Unknown => bail!("Unexpected WarpDriveUpdate variant"),
+            TwarpDriveUpdate::Unknown => bail!("Unexpected TwarpDriveUpdate variant"),
         }
     }
 }
@@ -1007,7 +1007,7 @@ impl TryFrom<twarp_graphql::folder::Folder> for ServerFolder {
             Some(folder.name),
             folder.metadata.try_into()?,
             folder.permissions.try_into()?,
-            folder.is_warp_pack,
+            folder.is_twarp_pack,
         )
     }
 }

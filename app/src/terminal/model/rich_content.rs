@@ -4,7 +4,7 @@
 pub enum RichContentType {
     AIBlock,
     EnterAgentView,
-    WarpifySuccessBlock,
+    TwarpifySuccessBlock,
     InlineAgentViewHeader,
     AgentViewZeroState,
     TerminalViewZeroState,

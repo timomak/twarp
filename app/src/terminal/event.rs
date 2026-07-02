@@ -179,9 +179,9 @@ pub enum TerminalMode {
 #[derive(Clone, Debug)]
 pub enum SshLoginStatus {
     /// We have some evidence login is complete but should check again.
-    RecheckBeforeWarpifying,
+    RecheckBeforeTwarpifying,
     /// We have high confidence login is complete.
-    ReadyToWarpify,
+    ReadyToTwarpify,
 }
 
 #[derive(Clone, Debug)]

@@ -359,12 +359,12 @@ impl ObjectClient for FakeObjectClient {
         unimplemented!("FakeObjectClient::give_up_notebook_edit_access")
     }
 
-    async fn get_warp_drive_updates(
+    async fn get_twarp_drive_updates(
         &self,
         _message_sender: Sender<ObjectUpdateMessage>,
         _stream_ready_sender: Sender<()>,
     ) -> Result<()> {
-        unimplemented!("FakeObjectClient::get_warp_drive_updates")
+        unimplemented!("FakeObjectClient::get_twarp_drive_updates")
     }
 
     async fn fetch_single_cloud_object(&self, _id: ServerId) -> Result<GetCloudObjectResponse> {

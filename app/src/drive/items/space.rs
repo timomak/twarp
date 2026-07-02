@@ -7,21 +7,21 @@ use crate::{
     themes::theme::Fill,
 };
 
-use super::{WarpDriveItem, WarpDriveItemId};
+use super::{TwarpDriveItem, TwarpDriveItemId};
 
 #[derive(Clone)]
-pub struct WarpDriveSpace {
+pub struct TwarpDriveSpace {
     space: Space,
 }
 
-impl WarpDriveSpace {
+impl TwarpDriveSpace {
     #[allow(dead_code)]
     pub fn new(space: Space) -> Self {
         Self { space }
     }
 }
 
-impl WarpDriveItem for WarpDriveSpace {
+impl TwarpDriveItem for TwarpDriveSpace {
     fn display_name(&self) -> Option<String> {
         None
     }
@@ -46,8 +46,8 @@ impl WarpDriveItem for WarpDriveSpace {
         None
     }
 
-    fn warp_drive_id(&self) -> WarpDriveItemId {
-        WarpDriveItemId::Space(self.space)
+    fn twarp_drive_id(&self) -> TwarpDriveItemId {
+        TwarpDriveItemId::Space(self.space)
     }
 
     fn sync_status_icon(
@@ -59,7 +59,7 @@ impl WarpDriveItem for WarpDriveSpace {
         None
     }
 
-    fn clone_box(&self) -> Box<dyn WarpDriveItem> {
+    fn clone_box(&self) -> Box<dyn TwarpDriveItem> {
         Box::new(self.clone())
     }
 

@@ -243,7 +243,7 @@ where
 /// - Whether this file is openable in Warp (skips binary files and directories)
 /// - Whether Warp is an OS-level default editor (skips Markdown files)
 #[cfg(feature = "local_fs")]
-pub fn should_show_open_in_warp_link(path: &Path, app: &AppContext) -> bool {
+pub fn should_show_open_in_twarp_link(path: &Path, app: &AppContext) -> bool {
     use crate::{
         code::view::is_binary_file,
         notebooks::file::is_markdown_file,
@@ -261,6 +261,6 @@ pub fn should_show_open_in_warp_link(path: &Path, app: &AppContext) -> bool {
 }
 
 #[cfg(not(feature = "local_fs"))]
-pub fn should_show_open_in_warp_link(_path: &std::path::Path, _app: &AppContext) -> bool {
+pub fn should_show_open_in_twarp_link(_path: &std::path::Path, _app: &AppContext) -> bool {
     false
 }

@@ -60,7 +60,7 @@ twarp is a long-lived fork of `warpdotdev/warp`. Every line that diverges from u
 - Is the change reversible, or does it bake in a one-way decision (data format, public-ish API, user-visible contract) that's expensive to walk back?
 
 ### 5. Long-term maintainability
-- Does it follow `WARP.md` Rust conventions: no needless type annotations, imports over long path qualifiers, `ctx` named and placed last, no `_`-prefixed unused params (remove them), inline format args, exhaustive matches over wildcard `_` arms?
+- Does it follow `TWARP.md` Rust conventions: no needless type annotations, imports over long path qualifiers, `ctx` named and placed last, no `_`-prefixed unused params (remove them), inline format args, exhaustive matches over wildcard `_` arms?
 - For WarpUI code: no inline `MouseStateHandle::default()` during render/event handling (construct once, clone/reference). Remember WarpUI is Metal-based, not GPUI/native — macOS look is *emulated*.
 - Is the test strategy right for the risk? Don't demand tests that only vary struct fields; do flag a genuinely untested new code path or edge case. Integration-level UI/terminal behavior belongs in `warp-integration-test`.
 - Naming and product terminology consistent across UI, comments, telemetry, and errors?
