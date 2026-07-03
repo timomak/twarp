@@ -61,3 +61,20 @@ fn cpp_header_extensions_resolve_to_cpp_language() {
         assert_eq!(language.display_name(), "C++");
     }
 }
+
+/// `.md` and `.markdown` should resolve to the Markdown language so the editor applies
+/// syntax highlighting to Markdown source files.
+#[test]
+fn markdown_extensions_resolve_to_markdown() {
+    for filename in ["README.md", "notes.markdown"] {
+        let path = StandardizedPath::try_new(&format!("/tmp/{filename}"))
+            .expect("test path should be absolute");
+        let language = language_by_filename(&path)
+            .unwrap_or_else(|| panic!("expected {filename} to resolve to a language"));
+        assert_eq!(
+            language.display_name(),
+            "Markdown",
+            "{filename} should resolve to Markdown",
+        );
+    }
+}
