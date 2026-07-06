@@ -2,8 +2,8 @@
 
 Single source of truth for what's being built next. `/twarp-next` reads this file every invocation; the user reads it to see status at a glance.
 
-**Currently active:** `10-file-editor`
-**Next up:** `09-rebrand` (barrier) — or owner direction
+**Currently active:** `16-agent-settings` (owner-directed 2026-07-06, pulled ahead; spec-in-review — impl starts when the spec PR merges)
+**Next up:** `10-file-editor` (resumes) — or owner direction
 
 ## Features
 
