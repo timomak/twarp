@@ -959,13 +959,20 @@ REVIEW_PROMPT = (
     "  ARCH approve — <one line: why it's safe to merge>\n"
     "  ARCH changes — <the specific blocking issue(s) to fix>")
 
+_LIMIT_RE = re.compile(r"session limit|usage limit|rate.?limit|quota|overloaded|resets \d", re.I)
+
 def _claude_review(prompt, iid=None):
     """Review with claude on a claude pod (self) — or on the self pod if no claude pod is active
-    (default mode runs the whole loop on the codex machine, which also has claude installed)."""
+    (default mode runs the whole loop on the codex machine, which also has claude installed).
+    Returns ('unavailable', why) when claude is quota/rate-limited — that is NOT a changes verdict."""
     r = sh(["claude", "-p", prompt, "--dangerously-skip-permissions"], timeout=300)
+    out = (r.stdout or "") + (r.stderr or "")
     if iid:
-        (LOG / f"{iid}.review.claude.log").write_text((r.stdout or "") + (r.stderr or ""))
-    return _parse_arch(r.stdout)
+        (LOG / f"{iid}.review.claude.log").write_text(out)
+    verdict, note = _parse_arch(r.stdout)
+    if verdict is None and _LIMIT_RE.search(out):
+        return "unavailable", out.strip()[:160]
+    return verdict, note
 
 def _codex_review(iid, prompt):
     """Review with codex on a codex pod, isolated in a throwaway tmp dir with --skip-git-repo-check
@@ -1006,7 +1013,7 @@ def architect_review(it):
             verdict, note = _claude_review(prompt, iid); reviewer = "claude(fallback)"
     if verdict is None:
         verdict, note = "changes", "review produced no parseable verdict"
-    return verdict, f"[{reviewer}] {note}"
+    return verdict, f"[{reviewer}] {note}"  # verdict ∈ {approve, changes, unavailable}
 
 def iterate(it):
     """Drive ONE PR to green + architect-approved: gate → fix → re-gate → architect → fix → … .
@@ -1037,6 +1044,18 @@ def _iterate(it):
                 fix_agent(it, "The UX gate drove the live app and found the feature broken or missing. "
                               "Re-read the acceptance criteria and fix the user-facing behavior."); continue
         verdict, note = architect_review(it)
+        # Reviewer quota-limited is not a code problem: wait for the window to reset instead of
+        # burning author fix-rounds on a bogus 'changes'. Cap ~5h, then park the item as failed
+        # (requeue-able) rather than merging with no independent review.
+        waits = 0
+        while verdict == "unavailable" and waits < 20:
+            waits += 1
+            say(f"  [{iid}] architect reviewer unavailable ({note}) — retry {waits}/20 in 15 min")
+            time.sleep(900)
+            verdict, note = architect_review(it)
+        if verdict == "unavailable":
+            say(f"  [{iid}] reviewer still unavailable after ~5h — parking as failed")
+            set_status(iid, "failed"); return False
         say(f"  [{iid}] architect (round {rnd}): {note}")
         if verdict != "approve":
             fix_agent(it, f"Staff-architect review requested changes: {note}"); continue
