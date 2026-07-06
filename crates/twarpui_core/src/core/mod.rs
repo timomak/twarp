@@ -435,7 +435,20 @@ impl RefCounts {
     }
 
     fn take_dropped(&mut self) -> DroppedItems {
-        mem::take(&mut self.dropped)
+        let mut dropped = mem::take(&mut self.dropped);
+        // An entity can be resurrected between hitting refcount zero and this
+        // flush: `WeakModelHandle::upgrade` (or cloning another surviving
+        // handle path) re-increments the count, but the id already sits in the
+        // dropped queue. Removing it anyway would leave live strong handles
+        // pointing at nothing, which panics as a "circular model reference" on
+        // the next read. Only entities that are still dead get flushed.
+        dropped
+            .models
+            .retain(|id| !self.entity_counts.contains_key(id));
+        dropped
+            .views
+            .retain(|(_, id)| !self.entity_counts.contains_key(id));
+        dropped
     }
 }
 
