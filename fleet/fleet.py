@@ -860,6 +860,10 @@ def ux_drive_gate(it):
     line = next((l for l in out.splitlines() if "VERDICT" in l.upper()),
                 out.splitlines()[-1] if out else "")
     say(f"  [{iid}] UX drive → {line}")
+    if "VERDICT" not in out.upper() and _LIMIT_RE.search(out):
+        # The driver itself is quota-limited — that's not a pass and not an app error; the caller
+        # waits and re-drives rather than letting the item merge un-verified.
+        return _stamp_ux(iid, "live", "unavailable", evid)
     low = line.lower()
     verdict = ("regression" if ("regression" in low or "verdict fail" in low)
                else "pass" if "pass" in low else "error")
@@ -1025,6 +1029,19 @@ def iterate(it):
         say(f"  [{it['id']}] iterate EXC: {e}"); set_status(it["id"], "failed")
         return False
 
+def _retry_while_unavailable(iid, what, fn):
+    """claude quota-limited ('unavailable') is not a code problem: wait for the window to reset
+    (15-min retries, cap ~5h) instead of burning author fix-rounds or waving work through. Returns
+    the final (verdict, extra); the caller parks the item if it is STILL 'unavailable'."""
+    verdict, extra = fn()
+    waits = 0
+    while verdict == "unavailable" and waits < 20:
+        waits += 1
+        say(f"  [{iid}] {what} unavailable (claude quota-limited) — retry {waits}/20 in 15 min")
+        time.sleep(900)
+        verdict, extra = fn()
+    return verdict, extra
+
 def _iterate(it):
     iid = it["id"]
     set_status(iid, "iterating")
@@ -1038,21 +1055,16 @@ def _iterate(it):
                 say(f"  [{iid}] fix produced no change — giving up"); set_status(iid, "failed"); return False
             continue
         if it.get("ux"):
-            uv, _ = ux_drive_gate(it)        # drive the live app vs criteria; bootstrap-gate fallback
+            # drive the live app vs criteria; bootstrap-gate fallback
+            uv, _ = _retry_while_unavailable(iid, "UX driver", lambda: ux_drive_gate(it))
+            if uv == "unavailable":
+                say(f"  [{iid}] UX driver still unavailable after ~5h — parking as failed")
+                set_status(iid, "failed"); return False
             if uv == "regression":
                 say(f"  [{iid}] UX regression (round {rnd}) → fix-agent")
                 fix_agent(it, "The UX gate drove the live app and found the feature broken or missing. "
                               "Re-read the acceptance criteria and fix the user-facing behavior."); continue
-        verdict, note = architect_review(it)
-        # Reviewer quota-limited is not a code problem: wait for the window to reset instead of
-        # burning author fix-rounds on a bogus 'changes'. Cap ~5h, then park the item as failed
-        # (requeue-able) rather than merging with no independent review.
-        waits = 0
-        while verdict == "unavailable" and waits < 20:
-            waits += 1
-            say(f"  [{iid}] architect reviewer unavailable ({note}) — retry {waits}/20 in 15 min")
-            time.sleep(900)
-            verdict, note = architect_review(it)
+        verdict, note = _retry_while_unavailable(iid, "architect reviewer", lambda: architect_review(it))
         if verdict == "unavailable":
             say(f"  [{iid}] reviewer still unavailable after ~5h — parking as failed")
             set_status(iid, "failed"); return False
