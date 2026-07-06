@@ -1,6 +1,6 @@
 # 16 — Agent settings — STATUS
 
-**Phase:** **spec-in-review** — PRODUCT.md + TECH.md drafted 2026-07-01 (expanded same day per owner Q&A). The spec files reached master via fleet wip commit `1f5f2db34` (no reviewed spec PR exists), so the **activation PR that carries this note is the sign-off gate**: the owner merging it = specs approved → phase `impl-pending`, starting with 16a. Owner directed 16 active 2026-07-06 (pulled ahead; 10-file-editor resumes after). No implementation yet.
+**Phase:** impl-pending — specs approved 2026-07-06 via the merged activation PR #154 (that merge was the documented sign-off gate; PRODUCT.md + TECH.md drafted 2026-07-01, expanded same day per owner Q&A, landed on master via fleet wip commit `1f5f2db34`). Owner directed 16 active 2026-07-06 (pulled ahead; 10-file-editor resumes after). Implementation starts with 16a.
 
 **Owner-confirmed decisions (2026-07-01):**
 - Provider scope: **independent per action** (chat / terminal-suggest / reply-suggest each get their own provider+model+effort).
@@ -16,12 +16,12 @@ A new **Agent** settings page (backend selector, local-auth reuse or API key via
 
 ## Sub-phases (see TECH.md §Sub-phase plan)
 
-- [ ] **16a** — Agent page scaffold + unified authoritative Chat config seeding the spawn seam.
-- [ ] **16b** — Auth status probe + API-key storage in the OS keychain.
-- [ ] **16c** — Per-action matrix (terminal + reply rows) + enable toggles.
-- [ ] **16d** — Provider-abstraction hardening (capability model + adapter seam; Claude-only impl).
-- [ ] **16e** — Chat reply suggestions (ghost text in the composer) via `SuggestionProvider`.
-- [ ] **16f** — Terminal AI command suggestions (fallback below instant history) via `SuggestionProvider`.
+- [ ] **16a — Agent page scaffold.** Agent settings page scaffold + unified authoritative Chat config seeding the spawn seam.
+- [ ] **16b — Auth probe and keychain.** Auth status probe + API-key storage in the OS keychain.
+- [ ] **16c — Per-action matrix.** Per-action model matrix (terminal + reply rows) + enable toggles.
+- [ ] **16d — Provider abstraction hardening.** Capability model + adapter seam; Claude-only impl.
+- [ ] **16e — Chat reply suggestions.** Ghost text in the composer via `SuggestionProvider`.
+- [ ] **16f — Terminal AI command suggestions.** Fallback below instant history via `SuggestionProvider`.
 
 ## Key constraints carried into the specs
 

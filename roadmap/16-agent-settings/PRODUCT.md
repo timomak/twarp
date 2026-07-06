@@ -130,3 +130,43 @@ Grouped by area, annotated with the delivering sub-phase (16a–16f, defined in 
 
 - Recommended order within 16: **16a → 16b → 16c** (config + auth land first, immediately useful for chat) → **16d** (provider hardening) → **16e** (reply ghost-text) → **16f** (terminal suggestions). The generators depend on the matrix + auth being in place.
 - **Codex/Gemini adapters** remain a Phase-2 follow-on; this feature only requires the schema + disabled selector entries.
+
+## Smoke test
+
+Steps to validate against a built twarp binary. Each sub-phase's PR is gated on its own sub-heading only.
+
+### 16a — Agent page scaffold
+
+1. Launch twarp, open Settings, and confirm an **Agent** entry appears in the settings navigation sidebar.
+2. Click it: a dedicated Agent page opens with a **Backend** control listing Claude (enabled, selected by default) and Codex / Gemini (visible but disabled, "coming soon").
+3. Click a disabled backend: nothing changes (no selection, no crash), and the "coming soon" affordance is visible.
+4. In the **Chat & history** row, change the model and permission mode, quit and relaunch twarp: the choices persist.
+5. Open a new Claude Code pane (run `claude` in a terminal tab): its composer pills start at exactly the Chat row's model/effort/permission-mode, regardless of what a previous pane's pills were set to.
+
+### 16b — Auth probe and keychain
+
+1. On the Agent page, the Claude auth-status row resolves (after a brief "checking…") to **Logged in (local CLI)** on a machine with an authenticated `claude` CLI.
+2. Save an API key: the row flips to **Using API key**, and the field shows a masked "key set" indicator with Replace/Remove — the key text is never displayed back.
+3. Remove the key: the row falls back to **Logged in (local CLI)**. The key never appears in any plaintext settings file (`grep` the settings store for it).
+
+### 16c — Per-action matrix
+
+1. The **Models by action** section shows three rows: Chat & history, Terminal suggestions, Chat reply suggestions — each with its own provider/model (and effort where supported).
+2. Set the Terminal suggestions row to an explicit provider and the Reply row to "Default": the Reply row indicates it inherits the Chat backend.
+3. Each row shows its auth source; pointing a row at an unauthenticated provider shows an inline warning, not an error dialog.
+
+### 16d — Provider abstraction hardening
+
+1. With Claude selected, all of permission-mode / model / effort controls render; the page renders capability-aware (no control for a capability the backend lacks).
+2. Corrupt or delete the agent config from the settings store, relaunch: the page loads safe defaults (Claude, hardcoded model/effort/mode, rows on "Default", generators off) without crashing.
+
+### 16e — Chat reply suggestions
+
+1. The "Suggest a reply after each response" toggle exists on the Agent page and is **off by default**; with it off, no ghost text ever appears in the Claude pane composer.
+2. Enable it, complete a short Claude turn, leave the composer empty: dim ghost text with a suggested reply appears; **Tab** accepts it into the composer as editable text (it is not auto-sent); typing any other character dismisses it.
+
+### 16f — Terminal AI command suggestions
+
+1. The "AI command suggestions in the terminal" toggle exists on the Agent page and is **off by default**.
+2. Enable it, type a prefix with no history match in a terminal, pause: after the debounce, a ghost-text command suggestion appears and is accepted with the existing accept-autosuggestion key; it never auto-runs.
+3. Type a prefix that **does** match history: the instant history suggestion appears as before (the AI layer is only a fallback).
