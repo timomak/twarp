@@ -316,7 +316,8 @@ def roadmap_sync():
     if not status_md.exists():
         return f"{feat}: no STATUS.md"
     text = status_md.read_text()
-    pm = re.search(r"\*\*Phase:\*\*\s*`?([a-z-]+)`?", text)
+    # Tolerate authors bolding or backticking the phase value: `**Phase:** **impl-pending**` etc.
+    pm = re.search(r"\*\*Phase:\*\*\s*(?:\*\*)?`?([a-z-]+)`?(?:\*\*)?", text)
     phase = pm.group(1) if pm else "unknown"
     q = load()
 
@@ -347,9 +348,17 @@ def roadmap_sync():
 
     # ---- IMPL step: next unchecked sub-phase (specs are merged) ----
     if phase in ("impl-pending", "impl-in-review"):
+        # Two checkbox formats appear in STATUS.md files:
+        #   A: `- [ ] **16a — Title.** description`   (bold spans id + title)
+        #   B: `- [ ] **16a** — Title text.`          (bold id only, no separate description)
         m = re.search(r"^- \[ \] \*\*([0-9]+[a-z]) — ([^*]+?)\.?\*\*\s*(.*)$", text, re.M)
         if m:
             sub_id, sub_title, sub_desc = m.group(1), m.group(2).strip(), m.group(3).strip()
+        else:
+            m = re.search(r"^- \[ \] \*\*([0-9]+[a-z])\*\*\s*—\s*(.+?)\s*$", text, re.M)
+            if m:
+                sub_id, sub_title, sub_desc = m.group(1), m.group(2).strip().rstrip("."), ""
+        if m:
             if any(it["id"] == sub_id for it in q["items"]):
                 return f"{sub_id}: already in queue"
             base = next((it for it in q["items"]
@@ -361,9 +370,11 @@ def roadmap_sync():
                     f"{sub_title}: {sub_desc}\nImplement ONLY this sub-phase, scoped to its files. When "
                     f"done, tick this sub-phase's checkbox in roadmap/{feat}/STATUS.md from `- [ ]` to "
                     f"`- [x]`.")
+            # Impl sub-phases get the dynamic UX gate: criteria come from the feature PRODUCT.md's
+            # `## Smoke test` section (the gate degrades to the screenshot fallback, never blocks).
             _enqueue(q, {"id": sub_id, "title": f"{feat} {sub_id}: {sub_title}", "node": None,
                          "status": "queued", "depends_on": [], "touches": touches, "barrier": False,
-                         "task": task, "verify": verify, "ux": False})
+                         "task": task, "verify": verify, "ux": True})
             save(q)
             return f"queued {sub_id} — {sub_title}"
         # no unchecked sub-phase left → impl is done → fall through to advance
@@ -659,7 +670,12 @@ def _ux_criteria(it):
         if pm.exists():
             m = re.search(r"##\s*Smoke test\s*\n(.+?)(?:\n##\s|\Z)", pm.read_text(), re.S)
             if m:
-                return m.group(1).strip()[:4000]
+                sec = m.group(1)
+                # A sub-phase item (id like `16a`) with its own `### 16a — …` sub-heading is judged
+                # on that subsection only — not on sibling sub-phases that aren't built yet.
+                sm = re.search(rf"###[^\n]*\b{re.escape(it['id'])}\b[^\n]*\n(.+?)(?:\n###\s|\Z)",
+                               sec, re.S)
+                return (sm.group(1) if sm else sec).strip()[:4000]
     return ("Exercise the user-facing behavior introduced by this PR's diff and confirm it works "
             "without visual glitches.")
 

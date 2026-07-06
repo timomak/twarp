@@ -2,7 +2,7 @@
 
 Single source of truth for what's being built next. `/twarp-next` reads this file every invocation; the user reads it to see status at a glance.
 
-**Currently active:** `16-agent-settings` (owner-directed 2026-07-06, pulled ahead; spec-in-review — impl starts when the spec PR merges)
+**Currently active:** `16-agent-settings` (owner-directed 2026-07-06, pulled ahead; impl-pending — specs approved via merged activation PR #154)
 **Next up:** `10-file-editor` (resumes) — or owner direction
 
 ## Features
@@ -24,7 +24,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 13 | [MCP viewer in Claude pane](13-mcp-viewer/STATUS.md) | merged | [#91](https://github.com/timomak/twarp/pull/91) | 13a [#95](https://github.com/timomak/twarp/pull/95) |
 | 14 | [Built-in browser (Claude-debuggable)](14-builtin-browser/STATUS.md) | reopened (14f) | [#96](https://github.com/timomak/twarp/pull/96) | 14a [#111](https://github.com/timomak/twarp/pull/111), 14b [#112](https://github.com/timomak/twarp/pull/112), 14c [#113](https://github.com/timomak/twarp/pull/113), 14d [#114](https://github.com/timomak/twarp/pull/114), 14e [#115](https://github.com/timomak/twarp/pull/115) — **14f: WKWebView renders blank, reopened 2026-07-01** |
 | 15 | [Computer control overlay (Claude drives the Mac)](15-computer-control/STATUS.md) | merged | — | — |
-| 16 | [Agent settings page](16-agent-settings/STATUS.md) | spec-in-review | — | — |
+| 16 | [Agent settings page](16-agent-settings/STATUS.md) | impl-pending | — | — |
 
 ## Phases
 
