@@ -611,6 +611,17 @@ fn test_open_file_rust_source_still_opens_in_editor() {
 }
 
 #[test]
+fn test_open_file_raster_image_routes_to_editor() {
+    // Raster images go through the editor route, which resolves them to the
+    // in-app image viewer pane (`FileTarget::ImageViewer`).
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("photo.png");
+    // A minimal PNG header is enough: routing is extension-based.
+    std::fs::write(&p, b"\x89PNG\r\n\x1a\n").unwrap();
+    assert_eq!(classify_open_file_action(&p), OpenFileAction::Editor);
+}
+
+#[test]
 fn test_open_file_directory_routes_to_session() {
     let dir = tempfile::tempdir().unwrap();
     assert_eq!(

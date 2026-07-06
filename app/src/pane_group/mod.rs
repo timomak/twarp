@@ -214,6 +214,7 @@ pub use pane::claude_code_pane::ClaudeCodePane; // twarp 07 (7b)
 pub use pane::code_pane::CodePane;
 pub use pane::env_var_collection_pane::EnvVarCollectionPane;
 pub use pane::file_pane::FilePane;
+pub use pane::image_pane::ImagePane;
 pub use pane::network_log_pane::NetworkLogPane;
 pub use pane::notebook_pane::NotebookPane;
 pub use pane::settings_pane::SettingsPane;
@@ -1655,13 +1656,27 @@ impl PaneGroup {
                         notebook_id,
                         settings,
                     } => Box::new(NotebookPane::restore(notebook_id, &settings, ctx)?),
-                    NotebookPaneSnapshot::LocalFileNotebook { path } => Box::new(FilePane::new(
-                        path,
-                        None,
-                        #[cfg(feature = "local_fs")]
-                        None,
-                        ctx,
-                    )),
+                    NotebookPaneSnapshot::LocalFileNotebook { path } => {
+                        // The snapshot only records the path; the viewer is
+                        // re-resolved by file type, mirroring open-time
+                        // routing. Raster images restore into the image
+                        // viewer pane (which also snapshots as a local file
+                        // notebook), everything else into a file notebook.
+                        match path {
+                            Some(path)
+                                if crate::util::openable_file_type::is_image_viewer_file(&path) =>
+                            {
+                                Box::new(ImagePane::new(path, ctx))
+                            }
+                            path => Box::new(FilePane::new(
+                                path,
+                                None,
+                                #[cfg(feature = "local_fs")]
+                                None,
+                                ctx,
+                            )),
+                        }
+                    }
                 };
 
                 let pane_id = pane.as_pane().id();

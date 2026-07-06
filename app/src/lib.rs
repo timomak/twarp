@@ -89,6 +89,9 @@ mod external_secrets;
 mod font_fallback;
 mod global_resource_handles;
 mod gpu_state;
+// twarp: in-app image viewer pane (opening a raster image file renders it
+// instead of handing off to macOS Preview).
+mod image_view;
 // twarp: 2c-f — `input_classifier` module deleted along with the crate.
 mod interval_timer;
 mod linear;
