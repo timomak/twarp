@@ -1,6 +1,6 @@
 # 16 — Agent settings — STATUS
 
-**Phase:** **spec-in-review** — PRODUCT.md + TECH.md drafted 2026-07-01 (expanded same day per owner Q&A), spec PR pending. No implementation yet.
+**Phase:** **spec-in-review** — PRODUCT.md + TECH.md drafted 2026-07-01 (expanded same day per owner Q&A). The spec files reached master via fleet wip commit `1f5f2db34` (no reviewed spec PR exists), so the **activation PR that carries this note is the sign-off gate**: the owner merging it = specs approved → phase `impl-pending`, starting with 16a. Owner directed 16 active 2026-07-06 (pulled ahead; 10-file-editor resumes after). No implementation yet.
 
 **Owner-confirmed decisions (2026-07-01):**
 - Provider scope: **independent per action** (chat / terminal-suggest / reply-suggest each get their own provider+model+effort).
