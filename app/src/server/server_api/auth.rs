@@ -132,7 +132,6 @@ pub trait AuthClient: 'static + Send + Sync {
     /// to interact with particular features.
     async fn create_anonymous_user(
         &self,
-        referral_code: Option<String>,
         anonymous_user_type: AnonymousUserType,
     ) -> Result<CreateAnonymousUserResult>;
 
@@ -227,14 +226,15 @@ pub trait AuthClient: 'static + Send + Sync {
 impl AuthClient for ServerApi {
     async fn create_anonymous_user(
         &self,
-        referral_code: Option<String>,
         anonymous_user_type: AnonymousUserType,
     ) -> Result<CreateAnonymousUserResult> {
         let variables = CreateAnonymousUserVariables {
             input: twarp_graphql::mutations::create_anonymous_user::CreateAnonymousUserInput {
                 anonymous_user_type,
                 expiration_type: twarp_graphql::mutations::create_anonymous_user::AnonymousUserExpirationType::NoExpiration,
-                referral_code,
+                // twarp: de-cloud — the referral program was removed; the GraphQL
+                // mutation still accepts a code, so always send None.
+                referral_code: None,
             },
             request_context: get_request_context(),
         };

@@ -64,7 +64,6 @@ use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
 use crate::{
     app_state::{AppState, PaneUuid, WindowSnapshot},
     autoupdate::{RequestType, UpdateReady},
-    changelog_model::ChangelogRequestType,
     pane_group::{NewTerminalOptions, PanesLayout},
     send_telemetry_from_ctx,
     server::{server_api::ServerTime, telemetry::TelemetryEvent},
@@ -1630,12 +1629,8 @@ impl RootView {
         };
 
         match &root_view.auth_onboarding_state {
-            AuthOnboardingState::Terminal(workspace) if FeatureFlag::Changelog.is_enabled() => {
-                // Only show the changelog if we aren't about to launch the authentication flow
-                workspace.update(ctx, |workspace, ctx| {
-                    workspace.check_for_changelog(ChangelogRequestType::WindowLaunch, ctx);
-                })
-            }
+            // twarp: de-cloud — changelog check on window launch removed.
+            AuthOnboardingState::Terminal(_) => {}
             AuthOnboardingState::Auth(_) => {
                 // ApplePressAndHoldEnabled is the setting for whether or not the accent
                 // menu is shown when a key is held. If "false", we repeat the character

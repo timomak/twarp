@@ -26,7 +26,6 @@ pub(super) struct WorkspaceMouseStates {
     pub(super) banner_button: MouseStateHandle,
     pub(super) banner_secondary_button: MouseStateHandle,
     pub(super) more_info_banner_button: MouseStateHandle,
-    pub(super) resource_center_icon: MouseStateHandle,
     pub(super) left_panel_icon: MouseStateHandle,
     pub(super) settings_icon: MouseStateHandle,
     pub(super) dismiss_banner_button: MouseStateHandle,
@@ -89,11 +88,8 @@ pub struct WorkspaceState {
     pub is_theme_chooser_open: bool,
     pub is_theme_creator_modal_open: bool,
     pub is_theme_deletion_modal_open: bool,
-    pub is_changelog_modal_open: bool,
     pub is_tab_being_dragged: bool,
-    pub is_reward_modal_open: bool,
     pub is_launch_config_save_modal_open: bool,
-    pub is_resource_center_open: bool,
     pub is_command_search_open: bool,
     pub is_twarp_drive_open: bool,
     pub is_agent_management_popup_open: bool,
@@ -150,10 +146,8 @@ impl WorkspaceState {
     pub fn is_any_non_palette_modal_open(&self, app: &AppContext) -> bool {
         self.is_theme_creator_modal_open
             || self.is_theme_deletion_modal_open
-            || self.is_changelog_modal_open
             || self.tab_being_renamed.is_some()
             || self.pane_being_renamed.is_some()
-            || self.is_reward_modal_open
             || self.is_launch_config_save_modal_open
             || self.is_command_search_open
             || self.is_prompt_editor_open
@@ -191,10 +185,8 @@ impl WorkspaceState {
         self.is_ctrl_tab_palette_open = false;
         self.is_theme_creator_modal_open = false;
         self.is_theme_deletion_modal_open = false;
-        self.is_changelog_modal_open = false;
         self.tab_being_renamed = None;
         self.pane_being_renamed = None;
-        self.is_reward_modal_open = false;
         self.is_launch_config_save_modal_open = false;
         self.is_command_search_open = false;
         self.is_workflow_modal_open = false;
@@ -215,10 +207,6 @@ impl WorkspaceState {
         self.is_session_config_modal_open = false;
         self.is_new_worktree_modal_open = false;
         self.is_remove_tab_config_dialog_open = false;
-    }
-
-    pub fn is_right_panel_open(&self) -> bool {
-        self.is_resource_center_open
     }
 
     pub fn is_left_panel_open(&self) -> bool {
