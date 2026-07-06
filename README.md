@@ -1,224 +1,64 @@
-# twarp
+<p align="center">
+  <img src="images/twarp-logo.png" width="420" alt="twarp logo" />
+</p>
 
-**Tidier Warp** — a community fork of [Warp](https://github.com/warpdotdev/warp) for people who want a fast, modern terminal without the AI overlay, plus a few quality-of-life additions for keyboard-driven workflows and git review.
+<h1 align="center">twarp</h1>
 
-> **Status:** planning / pre-alpha. Forked from `warpdotdev/warp@d0f045c0` on 2026-04-29. None of the differences below are implemented yet — this README is the roadmap.
+<p align="center">
+  A personal, unofficial fork of the open-source <a href="https://github.com/warpdotdev/warp">Warp</a> terminal —<br/>
+  the built-in AI removed, your own CLI agent (Claude Code) wired in as a first-class pane instead.
+</p>
 
-## Why fork?
+> [!IMPORTANT]
+> **twarp is an independent community fork. It is not affiliated with, endorsed by, or supported by Warp (warp.dev).**
+> "Warp" is a trademark of its respective owner; twarp uses the name only to describe its origin as a fork.
+> Please **do not report twarp bugs to the upstream Warp repository** or ask the Warp team for help with this fork — file issues [here](https://github.com/timomak/twarp/issues) instead. For the official product, go to [warp.dev](https://www.warp.dev).
 
-Warp is an excellent terminal. twarp aims to be a leaner, AI-free distribution of it with a few focused additions. If you want an agent in your terminal, run one yourself (e.g., `claude`) — but the terminal itself shouldn't be an AI.
+## What is twarp?
+
+Warp open-sourced its client in April 2026. twarp forks that codebase with a different opinion: the terminal itself shouldn't ship an AI — but it should be a great *host* for the agent you already run. So twarp removes Warp's built-in agentic mode, cloud-agent surfaces, and LLM-backed suggestions, and instead builds a native panel around the local `claude` CLI running on your own subscription. No LLM client in the app, no AI billing, no cloud sync of your conversations.
+
+It's a personal side project, developed largely by AI agents against written specs, and it's macOS-first. Use at your own risk.
 
 ## What's different from Warp
 
-### 1. No AI tools
+**Removed**
+- All built-in AI: agent mode, cloud agents, inline AI suggestions, AI command palette, and the telemetry that existed only to support them.
 
-twarp removes Warp's AI features — the agentic mode, cloud-agent surfaces, in-line AI suggestions, AI command help, anything that calls out to an LLM from inside the terminal. The terminal is the terminal.
+**Added**
+- **Claude Code pane** — type `claude` and it opens as a rendered main-pane chat (streaming output, tool cards, plan rendering, permission prompts, session resume after restart), with a toggle back to the raw CLI. Runs your local `claude` binary; twarp is just the UI.
+- **Built-in browser pane** — a WKWebView pane whose live DOM, console, and network are exposed to your Claude session over MCP, so the agent can debug the same tab you're looking at.
+- **Computer-control overlay** — lets a Claude session see and drive the Mac (screenshot → action loop), with an on-screen indicator while capture is live.
+- **VS Code-style Open Changes panel** — working/staged diffs, hunk-level stage/unstage, commit and push without leaving the terminal.
+- **macOS-style UI pass** — Chrome-style tabs with drag between windows, macOS-style sidebar, theme-following panels.
+- **Quality-of-life** — tab color shortcuts, tab rename shortcut, custom command shortcuts (bind a keystroke to "open a tab, type this, press enter…"), markdown files rendered by default.
 
-In practice this means ripping out the agent UI, the cloud-mode codepaths, the AI command palette, and any LLM-backed completion. Telemetry that exists solely to support those features goes with them.
+**In progress** — an IDE pivot (file editor with go-to-definition via the existing LSP infrastructure, git blame, project search & replace) and a multi-provider agent settings page. Current status always lives in [`roadmap/ROADMAP.md`](roadmap/ROADMAP.md).
 
-Build progress for all five sections below is tracked in [`roadmap/ROADMAP.md`](roadmap/ROADMAP.md).
+## Building from source
 
-### 2. Tab color shortcuts
+macOS is the supported platform. There are no prebuilt releases — you build it yourself:
 
-A keyboard shortcut to assign a color to the active tab — useful for visually distinguishing workflows at a glance ("red tab is prod, green tab is local").
-
-Tentative defaults (configurable):
-
-| Shortcut | Color |
-|---|---|
-| `⌘⌥1` | Red |
-| `⌘⌥2` | Orange |
-| `⌘⌥3` | Yellow |
-| `⌘⌥4` | Green |
-| `⌘⌥5` | Blue |
-| `⌘⌥6` | Purple |
-| `⌘⌥7` | Pink |
-| `⌘⌥8` | Gray |
-| `⌘⌥0` | Reset |
-
-Upstream is already exploring per-tab color indication on `oz-agent/APP-4321-active-tab-color-indication` — twarp will likely build on top of that work rather than re-invent it.
-
-### 3. Tab rename shortcut
-
-`⌘⌥R` triggers the same rename flow that double-clicking a tab title invokes — focus the active tab's title, enter inline edit mode, commit on Enter / cancel on Escape. The rename interaction already exists; this just adds a keyboard path into it so you don't have to reach for the trackpad to rename a tab.
-
-### 4. Custom command shortcuts
-
-A declarative way to bind a keyboard shortcut to a sequence of terminal actions: open a new tab, type text, press keys, wait, type more. Lets you turn frequent multi-step workflows into one keystroke.
-
-Two driving examples:
-
-- **`⌘⇧D`** — open a new tab and auto-type `claude` (with enter).
-- **`⌘⇧A`** — open a new tab, type `claude` and enter, wait a couple of seconds, then type `/address-code-review-comments ultrathink` and enter.
-
-Sketch of the config format (final shape TBD):
-
-```yaml
-shortcuts:
-  - keys: cmd+shift+d
-    actions:
-      - new_tab
-      - type: "claude"
-      - press: enter
-
-  - keys: cmd+shift+a
-    actions:
-      - new_tab
-      - type: "claude"
-      - press: enter
-      - wait: 2s
-      - type: "/address-code-review-comments ultrathink"
-      - press: enter
+```bash
+./script/bootstrap              # platform setup
+./script/run                    # build and run (debug)
+./script/run --release --install  # build TwarpOss.app and install it
+./script/presubmit              # fmt, clippy, tests
 ```
 
-The intent is for the shortcut system to be powerful enough that "open Claude in a fresh tab and feed it a slash command" is one keystroke, and small enough that the config stays readable.
+The bundle is `TwarpOss.app` with its own bundle ID, so it installs alongside official Warp without touching it. See [TWARP.md](TWARP.md) for the full engineering guide.
 
-### 5. Open Changes panel (VS Code-style git review)
+## Relationship to upstream
 
-A built-in side panel for reviewing the current repo's changes — modeled directly on **VS Code's Source Control view**, behavior-for-behavior where it makes sense.
+- twarp tracks `warpdotdev/warp` by **selective cherry-pick**, not bulk merges — perf, rendering, and fixes come across; AI-related commits are skipped.
+- Forked from `warpdotdev/warp@d0f045c0` (2026-04-28).
+- twarp does not use Warp's brand assets, connect to Warp's cloud services for AI features, or misrepresent itself as Warp. The app is branded twarp/TwarpOss throughout.
+- If something here would be useful upstream, it belongs there as a proper contribution through [Warp's contribution process](https://github.com/warpdotdev/warp/blob/main/CONTRIBUTING.md) — not as pressure on this fork's maintainer to ship it.
 
-Goals:
+## License
 
-- See **working-tree changes and staged changes separately**, with file counts at each level.
-- Click a file to view the diff inline.
-- Stage / unstage / discard at file or hunk level.
-- Show the **git Timeline** (file history) for the focused file.
-- Commit message input + commit / push / pull from the same panel.
-
-The aim is parity with VS Code's panel for the operations a terminal user already does dozens of times a day, so you don't need to switch out of the terminal to review changes before committing.
-
-## Tracking upstream Warp
-
-twarp keeps `warpdotdev/warp` as `upstream` and **cherry-picks selectively** rather than bulk-merging. We deliberately don't run `git merge upstream/master`, because that re-fights the AI-deletion every cycle.
-
-Workflow:
-
-1. `git fetch upstream` periodically.
-2. `git log upstream/master ^HEAD --oneline` to see what's new.
-3. `git cherry-pick <sha>` for individual commits worth taking — perf, rendering, fixes, non-AI features. Skip AI-related commits.
-4. Record integrated commits in `UPSTREAM_CHANGELOG.md` so we don't re-pick them.
-
-Baseline (the state we forked from): `warpdotdev/warp@d0f045c0` (2026-04-28).
-
-## Building twarp
-
-Build process is unchanged from upstream Warp. See the original Warp README below for `./script/bootstrap`, `./script/run`, and `./script/presubmit`, and [TWARP.md](TWARP.md) for the full engineering guide.
+twarp inherits Warp's licensing unchanged: the UI framework crates (`twarpui_core`, `twarpui` — Warp's `warpui`) are [MIT](LICENSE-MIT); everything else is [AGPL v3](LICENSE-AGPL). The complete corresponding source for every twarp build is this repository.
 
 ## Acknowledgements
 
-twarp is a fork of [Warp](https://github.com/warpdotdev/warp), open-sourced by Warp Inc. on 2026-04-28. All upstream credit goes to the Warp team — twarp's modifications are limited to the four areas above.
-
-## Licensing
-
-twarp inherits Warp's licensing unchanged: the `twarpui_core` and `twarpui` crates are MIT, the rest of the tree is AGPL v3. See [LICENSE-MIT](LICENSE-MIT) and [LICENSE-AGPL](LICENSE-AGPL).
-
----
-
-> The section below is the **original Warp README, preserved unchanged** as part of the fork. Statements about Warp AI, OpenAI sponsorship, and GPT-powered agents describe upstream Warp, not twarp.
-
-<a href="https://www.warp.dev">
-    <img width="1024" alt="Warp Agentic Development Environment product preview" src="https://github.com/user-attachments/assets/9976b2da-2edd-4604-a36c-8fd53719c6d4" />
-</a>
-&nbsp;
-<p align="center">
-  <a href="https://github.com/timomak/twarp"><img height="20" alt="Built with Twarp" src="images/Built-With-Twarp-Export@2x.png" /></a>
-  &nbsp;
-  <a href="https://oz.warp.dev"><img height="20" alt="Powered by Oz" src="https://raw.githubusercontent.com/warpdotdev/brand-assets/main/Github/Powered-By-Oz-Export@2x.png" /></a>
-</p>
-
-<p align="center">
-  <a href="https://www.warp.dev">Website</a>
-  ·
-  <a href="https://www.warp.dev/code">Code</a>
-  ·
-  <a href="https://www.warp.dev/agents">Agents</a>
-  ·
-  <a href="https://www.warp.dev/terminal">Terminal</a>
-  ·
-  <a href="https://www.warp.dev/drive">Drive</a>
-  ·
-  <a href="https://docs.warp.dev">Docs</a>
-  ·
-  <a href="https://www.warp.dev/blog/how-warp-works">How Warp Works</a>
-</p>
-
-> [!NOTE]
-> OpenAI is the founding sponsor of the new, open-source Warp repository, and the new agentic management workflows are powered by GPT models.
-
-<h1></h1>
-
-## About
-
-[Warp](https://www.warp.dev) is an agentic development environment, born out of the terminal. Use Warp's built-in coding agent, or bring your own CLI agent (Claude Code, Codex, Gemini CLI, and others).
-
-## Installation
-
-You can [download Warp](https://www.warp.dev/download) and [read our docs](https://docs.warp.dev/) for platform-specific instructions.
-
-## Warp Contributions Overview Dashboard
-
-Explore [build.warp.dev](https://build.warp.dev) to:
-- Watch thousands of Oz agents triage issues, write specs, implement changes, and review PRs
-- View top contributors and in-flight features
-- Track your own issues with GitHub sign-in
-- Click into active agent sessions in a web-compiled Warp terminal
-
-## Licensing
-
-Warp's UI framework (the `twarpui_core` and `twarpui` crates) are licensed under the [MIT license](LICENSE-MIT).
-
-The rest of the code in this repository is licensed under the [AGPL v3](LICENSE-AGPL).
-
-## Open Source & Contributing
-
-Warp's client codebase is open source and lives in this repository. We welcome community contributions and have designed a lightweight workflow to help new contributors get started. For the full contribution flow, read our [CONTRIBUTING.md](CONTRIBUTING.md) guide.
-
-> [!TIP]
-> **Chat with contributors and the Warp team** in the [`#oss-contributors`](https://warpcommunity.slack.com/archives/C0B0LM8N4DB) Slack channel — a good place for ad-hoc questions, design discussion, and pairing with maintainers. New here? [Join the Warp Slack community](https://go.warp.dev/join-preview) first, then jump into `#oss-contributors`.
-
-### Issue to PR
-
-Before filing, [search existing issues](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc) for your bug or feature request. If nothing exists, [file an issue](https://github.com/warpdotdev/warp/issues/new/choose) using our templates. Security vulnerabilities should be reported privately as described in [CONTRIBUTING.md](CONTRIBUTING.md#reporting-security-issues).
-
-Once filed, a Warp maintainer reviews the issue and may apply a readiness label: [`ready-to-spec`](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+label%3Aready-to-spec) signals the design is open for contributors to spec out, and [`ready-to-implement`](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+label%3Aready-to-implement) signals the design is settled and code PRs are welcome. Anyone can pick up a labeled issue — mention **@oss-maintainers** on an issue if you'd like it considered for a readiness label.
-
-### Building the Repo Locally
-
-To build and run Warp from source:
-
-```bash
-./script/bootstrap   # platform-specific setup
-./script/run         # build and run Warp
-./script/presubmit   # fmt, clippy, and tests
-```
-
-See [TWARP.md](TWARP.md) for the full engineering guide, including coding style, testing, and platform-specific notes.
-
-## Joining the Team
-
-Interested in joining the team? See our [open roles](https://www.warp.dev/careers).
-
-## Support and Questions
-
-1. See our [docs](https://docs.warp.dev/) for a comprehensive guide to Warp's features.
-2. Join our [Slack Community](https://go.warp.dev/join-preview) to connect with other users and get help from the Warp team — contributors hang out in [`#oss-contributors`](https://warpcommunity.slack.com/archives/C0B0LM8N4DB).
-3. Try our [Preview build](https://www.warp.dev/download-preview) to test the latest experimental features.
-4. Mention **@oss-maintainers** on any issue to escalate to the team — for example, if you encounter problems with the automated agents.
-
-## Code of Conduct
-
-We ask everyone to be respectful and empathetic. Warp follows the [Code of Conduct](CODE_OF_CONDUCT.md). To report violations, email warp-coc at warp.dev.
-
-## Open Source Dependencies
-
-We'd like to call out a few of the [open source dependencies](https://docs.warp.dev/help/licenses) that have helped Warp to get off the ground:
-
-- [Tokio](https://github.com/tokio-rs/tokio)
-- [NuShell](https://github.com/nushell/nushell)
-- [Fig Completion Specs](https://github.com/withfig/autocomplete)
-- [Warp Server Framework](https://github.com/seanmonstar/warp)
-- [Alacritty](https://github.com/alacritty/alacritty)
-- [Hyper HTTP library](https://github.com/hyperium/hyper)
-- [FontKit](https://github.com/servo/font-kit)
-- [Core-foundation](https://github.com/servo/core-foundation-rs)
-- [Smol](https://github.com/smol-rs/smol)
+twarp exists because the Warp team built an excellent terminal and open-sourced it. All credit for the foundation — the Rust codebase, the custom Metal UI framework, the terminal emulation — goes to them. Among the many open-source projects Warp builds on: [Tokio](https://github.com/tokio-rs/tokio), [Alacritty](https://github.com/alacritty/alacritty), [NuShell](https://github.com/nushell/nushell), [Hyper](https://github.com/hyperium/hyper), and [Smol](https://github.com/smol-rs/smol).
