@@ -22,8 +22,6 @@ pub struct ChannelConfig {
     pub telemetry_config: Option<TelemetryConfig>,
     /// Configuration for autoupdate functionality.
     pub autoupdate_config: Option<AutoupdateConfig>,
-    /// Configuration for crash reporting.
-    pub crash_reporting_config: Option<CrashReportingConfig>,
     /// Configuration for statically-bundled MCP OAuth credentials.
     pub mcp_static_config: Option<McpStaticConfig>,
 }
@@ -31,7 +29,7 @@ pub struct ChannelConfig {
 impl ChannelConfig {
     /// Removes upstream Warp service destinations from externally generated channel configs.
     ///
-    /// Twarp should not inherit production Warp auth/cloud, telemetry, crash reporting, or
+    /// Twarp should not inherit production Warp auth/cloud, telemetry, or
     /// autoupdate destinations by accident. Local/test server overrides are preserved so
     /// development builds can still point at explicitly configured non-Warp services.
     pub fn without_upstream_warp_services(mut self) -> Self {
@@ -44,7 +42,6 @@ impl ChannelConfig {
 
         self.telemetry_config = None;
         self.autoupdate_config = None;
-        self.crash_reporting_config = None;
 
         self
     }
@@ -167,12 +164,6 @@ pub struct AutoupdateConfig {
     pub show_autoupdate_menu_items: bool,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct CrashReportingConfig {
-    /// The URL/DSN for sending error logs and crash reports to Sentry.
-    pub sentry_url: Cow<'static, str>,
-}
-
 /// Configuration for statically-bundled MCP OAuth credentials.
 ///
 /// These are credentials for OAuth providers where dynamic client registration
@@ -218,9 +209,6 @@ mod tests {
             autoupdate_config: Some(AutoupdateConfig {
                 releases_base_url: "https://example-releases.invalid".into(),
                 show_autoupdate_menu_items: true,
-            }),
-            crash_reporting_config: Some(CrashReportingConfig {
-                sentry_url: "https://example-sentry.invalid/1".into(),
             }),
             mcp_static_config: None,
         }
@@ -269,7 +257,6 @@ mod tests {
         assert!(config.oz_config.workload_audience_url.is_none());
         assert!(config.telemetry_config.is_none());
         assert!(config.autoupdate_config.is_none());
-        assert!(config.crash_reporting_config.is_none());
     }
 
     #[test]
@@ -308,6 +295,5 @@ mod tests {
         );
         assert!(config.telemetry_config.is_none());
         assert!(config.autoupdate_config.is_none());
-        assert!(config.crash_reporting_config.is_none());
     }
 }

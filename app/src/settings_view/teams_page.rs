@@ -988,7 +988,7 @@ impl TeamsPageView {
                 ctx.notify();
             }
             UserWorkspacesEvent::FetchDiscoverableTeamsRejected(e) => {
-                // Don't show toast, only log to sentry
+                // Don't show toast, only log
                 log::error!("Failed to fetch discoverable teams: {e:?}");
             }
             UserWorkspacesEvent::TransferTeamOwnershipSuccess => {
@@ -1317,7 +1317,7 @@ impl TeamsPageView {
         let message = error_msg.into();
         self.show_toast(message.clone(), ToastFlavor::Error, ctx);
 
-        // Log error to sentry
+        // Log error
         if let Some(error) = error {
             log::error!("{message}: {error:#}");
         } else {

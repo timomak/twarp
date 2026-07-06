@@ -23141,7 +23141,7 @@ impl TerminalView {
                     {
                         *request_outcome = Some(outcome.clone());
                     }
-                    // Log to sentry if unknown error
+                    // Log if unknown error
                     if let RequestPermissionsOutcome::OtherError { error_message } = &outcome {
                         log::error!(
                             "Unknown error when requesting notification permissions. error_msg: {error_message}"

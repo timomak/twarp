@@ -200,7 +200,6 @@ pub struct AppStartupInfo {
     /// launched.  Should be set to None if we do not know for sure.
     pub is_screen_reader_enabled: Option<bool>,
     pub from_relaunch: bool,
-    pub is_crash_reporting_enabled: bool,
     pub timing_data: Vec<TimingDataPoint>,
 }
 

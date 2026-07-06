@@ -290,9 +290,6 @@ pub enum WorkspaceAction {
     /// token to the system clipboard to aid debugging and development.
     CopyAccessTokenToClipboard,
     DismissWorkspaceBanner(WorkspaceBanner),
-    /// An action only registered in dev and local builds, which crashes the
-    /// app (via a Sentry helper method) immediately when called.
-    Crash,
     /// An action only registered in dev and local builds, which triggers a
     /// panic immediately when called.
     Panic,
@@ -837,7 +834,6 @@ impl WorkspaceAction {
             | OpenNewWorktreeRepoPicker
             | OpenWorktreeInRepo { .. }
             | OpenWorktreeAddRepoPicker
-            | Crash
             | Panic
             | DumpHeapProfile
             | OpenViewTreeDebugWindow

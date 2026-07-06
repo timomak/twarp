@@ -169,7 +169,7 @@ impl Log for WasmLogger {
                             .line()
                             .map_or_else(|| "[Unknown]".to_string(), |line| line.to_string()),
                     );
-                    // Send error logs to Sentry.
+                    // Surface error logs on the web event bus.
                     twarp_web_event_bus::emit_event(twarp_web_event_bus::WarpEvent::ErrorLogged {
                         error,
                     });

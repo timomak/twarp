@@ -108,7 +108,6 @@ const AMBIENT_WORKLOAD_TOKEN_DURATION: Duration = Duration::from_secs(3 * 60 * 6
 #[derive(Copy, Clone, Debug, Default)]
 pub struct SyncedUserSettings {
     pub is_cloud_conversation_storage_enabled: bool,
-    pub is_crash_reporting_enabled: bool,
     pub is_telemetry_enabled: bool,
 }
 
@@ -181,8 +180,6 @@ pub trait AuthClient: 'static + Send + Sync {
     ) -> Result<Vec<ConversationUsage>>;
 
     async fn set_is_telemetry_enabled(&self, value: bool) -> Result<()>;
-
-    async fn set_is_crash_reporting_enabled(&self, value: bool) -> Result<()>;
 
     async fn set_is_cloud_conversation_storage_enabled(&self, value: bool) -> Result<()>;
 
@@ -409,7 +406,6 @@ impl AuthClient for ServerApi {
                     Some(user_settings) => Ok(Some(SyncedUserSettings {
                         is_cloud_conversation_storage_enabled: user_settings
                             .is_cloud_conversation_storage_enabled,
-                        is_crash_reporting_enabled: user_settings.is_crash_reporting_enabled,
                         is_telemetry_enabled: user_settings.is_telemetry_enabled,
                     })),
                     None => Ok(None),
@@ -465,32 +461,6 @@ impl AuthClient for ServerApi {
         }
     }
 
-    async fn set_is_crash_reporting_enabled(&self, value: bool) -> Result<()> {
-        let variables = UpdateUserSettingsVariables {
-            input: UpdateUserSettingsInput {
-                crash_reporting_enabled: Some(value),
-                ..Default::default()
-            },
-            request_context: get_request_context(),
-        };
-
-        let operation = UpdateUserSettings::build(variables);
-        let result = self
-            .send_graphql_request(operation, None)
-            .await?
-            .update_user_settings;
-
-        match result {
-            UpdateUserSettingsResult::UpdateUserSettingsOutput(_) => Ok(()),
-            UpdateUserSettingsResult::UserFacingError(user_facing_error) => {
-                Err(anyhow!(get_user_facing_error_message(user_facing_error)))
-            }
-            UpdateUserSettingsResult::Unknown => {
-                Err(anyhow!("failed to set crash reporting enabled"))
-            }
-        }
-    }
-
     async fn set_is_cloud_conversation_storage_enabled(&self, value: bool) -> Result<()> {
         let variables = UpdateUserSettingsVariables {
             input: UpdateUserSettingsInput {
@@ -521,7 +491,6 @@ impl AuthClient for ServerApi {
         let variables = UpdateUserSettingsVariables {
             input: UpdateUserSettingsInput {
                 telemetry_enabled: Some(settings_snapshot.is_telemetry_enabled()),
-                crash_reporting_enabled: Some(settings_snapshot.is_crash_reporting_enabled()),
                 cloud_conversation_storage_enabled: settings_snapshot
                     .cloud_conversation_storage_enabled(),
             },

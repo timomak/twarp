@@ -72,8 +72,6 @@ mod computer_control;
 mod context_chips;
 #[cfg(enable_crash_recovery)]
 mod crash_recovery;
-#[cfg(feature = "crash_reporting")]
-mod crash_reporting;
 mod debounce;
 mod debug_dump;
 mod default_terminal;
@@ -553,14 +551,8 @@ pub fn run() -> Result<()> {
             twarp_cli::Command::Worker(twarp_cli::WorkerCommand::MinidumpServer {
                 socket_name,
             }) => {
-                cfg_if::cfg_if! {
-                    if #[cfg(all(linux_or_windows, feature = "crash_reporting"))] {
-                        return crate::crash_reporting::run_minidump_server(socket_name);
-                    } else {
-                        let _ = socket_name;
-                        panic!("The minidump server is not supported on this platform");
-                    }
-                }
+                let _ = socket_name;
+                panic!("The minidump server is not supported on this platform");
             }
             #[cfg(not(target_family = "wasm"))]
             twarp_cli::Command::Worker(twarp_cli::WorkerCommand::RemoteServerProxy(args)) => {
@@ -680,15 +672,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
 
     let mut timer = IntervalTimer::new();
 
-    #[cfg(feature = "crash_reporting")]
-    {
-        // Ensure that the main/root Sentry hub is initialized on the main
-        // thread.  PtySpawner creates a background thread to receive logs from
-        // the terminal server process, and we don't want it to be the host of
-        // the primary sentry::Hub.
-        sentry::Hub::main();
-    }
-
     tracing::init()?;
 
     let is_cli = matches!(launch_mode, LaunchMode::CommandLine { .. });
@@ -738,16 +721,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         web_intent_parser::set_context_flags_from_current_url();
     }
 
-    // Collect errors that occur in run_internal() before the Sentry client is initialized,
-    // so they can be replayed to Sentry once it's ready.
-    #[cfg_attr(
-        not(all(
-            feature = "release_bundle",
-            any(windows, any(target_os = "linux", target_os = "freebsd"))
-        )),
-        expect(unused_mut)
-    )]
-    let mut pre_sentry_errors: Vec<anyhow::Error> = Vec::new();
 
     #[cfg(all(
         feature = "release_bundle",
@@ -770,7 +743,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             Err(err) => {
                 let err = anyhow::Error::from(err).context("Failed to forward startup args");
                 log::error!("{err:#}");
-                pre_sentry_errors.push(err);
             }
         }
     }
@@ -793,7 +765,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             Err(err) => {
                 let err = anyhow::Error::from(err).context("Failed to forward startup args");
                 log::error!("{err:#}");
-                pre_sentry_errors.push(err);
             }
         }
     }
@@ -933,9 +904,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
                 ctx,
             )
         });
-        #[cfg(feature = "crash_reporting")]
-        crate::crash_reporting::set_client_type_tag(launch_mode.execution_mode().client_id());
-
         // Add the terminal server singleton to the application.
         #[cfg(feature = "local_tty")]
         ctx.add_singleton_model(move |_ctx| pty_spawner);
@@ -959,7 +927,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             timer,
             startup_toml_parse_error,
             ctx,
-            pre_sentry_errors,
         );
 
         if ImprovedPaletteSearch::improved_search_enabled(ctx) {
@@ -979,11 +946,7 @@ fn initialize_app(
     mut timer: IntervalTimer,
     startup_toml_parse_error: Option<twarpui_extras::user_preferences::Error>,
     ctx: &mut twarpui::AppContext,
-    _pre_sentry_errors: impl IntoIterator<Item = anyhow::Error>,
 ) -> Option<AppState> {
-    // WARNING: Errors that happen here before crash_reporting::init will not be collected in
-    // Sentry. Only the dependencies of crash_reporting should be initialized here. Avoid adding
-    // any other stuff here, as failures will be silent. Push them to pre_sentry_errors instead.
     let data_domain = ChannelState::data_domain();
 
     // Register an implementation of the secure storage service.
@@ -1172,19 +1135,6 @@ fn initialize_app(
 
     ctx.add_singleton_model(AntivirusInfo::new);
 
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "crash_reporting")] {
-            let is_crash_reporting_enabled = crash_reporting::init(ctx);
-        } else {
-            let is_crash_reporting_enabled = false;
-        }
-    }
-    // Send buffered pre-init errors to Sentry now that the client is ready.
-    #[cfg(feature = "crash_reporting")]
-    for err in _pre_sentry_errors {
-        sentry::integrations::anyhow::capture_anyhow(&err);
-    }
-    timer.mark_interval_end("INIT_CRASH_REPORTING");
 
     if let LaunchMode::App { .. } = launch_mode {
         autoupdate::check_and_report_update_errors(ctx);
@@ -1304,7 +1254,6 @@ fn initialize_app(
                 is_session_restoration_on: user_defaults_on_startup.should_restore_session,
                 is_screen_reader_enabled,
                 from_relaunch,
-                is_crash_reporting_enabled,
                 timing_data,
             });
 
@@ -1874,11 +1823,6 @@ fn app_callbacks(is_integration_test: bool) -> twarpui::platform::AppCallbacks {
             crash_recovery::CrashRecovery::handle(ctx).update(ctx, |crash_recovery, _ctx| {
                 crash_recovery.teardown();
             });
-
-            // Tear down crash reporting as the last thing we do before the application
-            // terminates.
-            #[cfg(feature = "crash_reporting")]
-            crash_reporting::uninit_sentry();
         })),
         on_should_close_window: Some(Box::new(move |window_id, ctx| {
             let general_settings = GeneralSettings::as_ref(ctx);
@@ -2304,12 +2248,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::Autoupdate,
         #[cfg(feature = "changelog")]
         FeatureFlag::Changelog,
-        #[cfg(feature = "cocoa_sentry")]
-        FeatureFlag::CocoaSentry,
-        #[cfg(feature = "crash_reporting")]
-        FeatureFlag::CrashReporting,
-        #[cfg(feature = "log_expensive_frames_in_sentry")]
-        FeatureFlag::LogExpensiveFramesInSentry,
         #[cfg(feature = "record_app_active_events")]
         FeatureFlag::RecordAppActiveEvents,
         #[cfg(feature = "runtime_feature_flags")]
