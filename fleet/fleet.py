@@ -941,10 +941,13 @@ def _parse_arch(out):
     """Pull the `ARCH approve|changes — …` verdict line out of a reviewer's output. Returns
     (verdict|None, note); None means no parseable verdict (caller decides the fallback)."""
     out = (out or "").strip()
-    line = next((l for l in out.splitlines() if l.strip().upper().startswith("ARCH")), "")
+    # Reviewers wrap the verdict in markdown ("**ARCH approve** — …", "`ARCH changes`…"), so match
+    # the token pair anywhere in a line instead of requiring the line to start with ARCH.
+    pat = re.compile(r"\bARCH\b\W{0,4}(approve|changes)", re.I)
+    line = next((l.strip() for l in out.splitlines() if pat.search(l)), "")
     if not line:
         return None, ""
-    return ("approve" if "approve" in line.lower() else "changes"), line
+    return pat.search(line).group(1).lower(), line
 
 REVIEW_PROMPT = (
     "You are a staff/principal engineer doing a PRE-MERGE review of a twarp change at ARCHITECTURE "
@@ -956,10 +959,12 @@ REVIEW_PROMPT = (
     "  ARCH approve — <one line: why it's safe to merge>\n"
     "  ARCH changes — <the specific blocking issue(s) to fix>")
 
-def _claude_review(prompt):
+def _claude_review(prompt, iid=None):
     """Review with claude on a claude pod (self) — or on the self pod if no claude pod is active
     (default mode runs the whole loop on the codex machine, which also has claude installed)."""
     r = sh(["claude", "-p", prompt, "--dangerously-skip-permissions"], timeout=300)
+    if iid:
+        (LOG / f"{iid}.review.claude.log").write_text((r.stdout or "") + (r.stderr or ""))
     return _parse_arch(r.stdout)
 
 def _codex_review(iid, prompt):
@@ -994,11 +999,11 @@ def architect_review(it):
         diff = diff[:60000] + "\n...[diff truncated]..."
     prompt = REVIEW_PROMPT.format(diff=diff)
     if node_kind(it.get("node") or "") == "codex":     # codex authored → claude reviews
-        verdict, note = _claude_review(prompt); reviewer = "claude"
+        verdict, note = _claude_review(prompt, iid); reviewer = "claude"
     else:                                              # claude authored → codex reviews (independence)
         verdict, note = _codex_review(iid, prompt); reviewer = "codex"
         if verdict is None:                            # codex review unusable → independent fallback
-            verdict, note = _claude_review(prompt); reviewer = "claude(fallback)"
+            verdict, note = _claude_review(prompt, iid); reviewer = "claude(fallback)"
     if verdict is None:
         verdict, note = "changes", "review produced no parseable verdict"
     return verdict, f"[{reviewer}] {note}"
