@@ -468,6 +468,9 @@ diesel::table! {
         universal_search_width -> Nullable<Float>,
         warp_ai_width -> Nullable<Float>,
         voltron_width -> Nullable<Float>,
+        // The on-disk column keeps its pre-rebrand name: it was created by the
+        // 2023-03-21 migration, which has already run on every existing DB.
+        #[sql_name = "warp_drive_index_width"]
         twarp_drive_index_width -> Nullable<Float>,
         fullscreen_state -> Integer,
         agent_management_filters -> Nullable<Text>,
