@@ -1,64 +1,80 @@
 <p align="center">
-  <img src="images/twarp-logo.png" width="420" alt="twarp logo" />
+  <img src="images/twarp-logo.png" width="460" alt="twarp logo" />
 </p>
 
 <h1 align="center">twarp</h1>
 
+<p align="center"><b>The terminal-first IDE. Built in Rust. GPU-rendered. Fast AF.</b></p>
+
 <p align="center">
-  A personal, unofficial fork of the open-source <a href="https://github.com/warpdotdev/warp">Warp</a> terminal —<br/>
-  the built-in AI removed, your own CLI agent (Claude Code) wired in as a first-class pane instead.
+  Your agents live in tabs. Your tabs are isolated worlds. Drag one out and it's a window.<br/>
+  No Electron. No web views pretending to be an app. One Metal drawable, all the way down.
 </p>
 
 > [!IMPORTANT]
-> **twarp is an independent community fork. It is not affiliated with, endorsed by, or supported by Warp (warp.dev).**
+> **twarp is an independent community fork of the open-source [Warp](https://github.com/warpdotdev/warp) terminal. It is not affiliated with, endorsed by, or supported by Warp (warp.dev).**
 > "Warp" is a trademark of its respective owner; twarp uses the name only to describe its origin as a fork.
-> Please **do not report twarp bugs to the upstream Warp repository** or ask the Warp team for help with this fork — file issues [here](https://github.com/timomak/twarp/issues) instead. For the official product, go to [warp.dev](https://www.warp.dev).
+> **Do not report twarp bugs upstream** — file issues [here](https://github.com/timomak/twarp/issues). For the official product, go to [warp.dev](https://www.warp.dev).
 
-## What is twarp?
+---
 
-Warp open-sourced its client in April 2026. twarp forks that codebase with a different opinion: the terminal itself shouldn't ship an AI — but it should be a great *host* for the agent you already run. So twarp removes Warp's built-in agentic mode, cloud-agent surfaces, and LLM-backed suggestions, and instead builds a native panel around the local `claude` CLI running on your own subscription. No LLM client in the app, no AI billing, no cloud sync of your conversations.
+## The pitch
 
-It's a personal side project, developed largely by AI agents against written specs, and it's macOS-first. Use at your own risk.
+Every IDE bolted an AI into a sidebar. twarp did the opposite: it took the fastest terminal codebase ever open-sourced, **ripped the built-in AI out by the roots**, and rebuilt the whole app around the agent *you* already pay for — the `claude` CLI, running locally, on your subscription.
 
-## What's different from Warp
+Type `claude` in any tab. It doesn't scroll by as text — it opens as a **full native chat pane**: streaming responses, tool cards, diffs, plan rendering, permission prompts, session resume after a crash. The terminal is the IDE. The agent is the workflow. And the whole thing renders like a video game because it *is* rendered like a video game.
 
-**Removed**
-- All built-in AI: agent mode, cloud agents, inline AI suggestions, AI command palette, and the telemetry that existed only to support them.
+## Why twarp over cmux / Zed / VS Code?
 
-**Added**
-- **Claude Code pane** — type `claude` and it opens as a rendered main-pane chat (streaming output, tool cards, plan rendering, permission prompts, session resume after restart), with a toggle back to the raw CLI. Runs your local `claude` binary; twarp is just the UI.
-- **Built-in browser pane** — a WKWebView pane whose live DOM, console, and network are exposed to your Claude session over MCP, so the agent can debug the same tab you're looking at.
-- **Computer-control overlay** — lets a Claude session see and drive the Mac (screenshot → action loop), with an on-screen indicator while capture is live.
-- **VS Code-style Open Changes panel** — working/staged diffs, hunk-level stage/unstage, commit and push without leaving the terminal.
-- **macOS-style UI pass** — Chrome-style tabs with drag between windows, macOS-style sidebar, theme-following panels.
-- **Quality-of-life** — tab color shortcuts, tab rename shortcut, custom command shortcuts (bind a keystroke to "open a tab, type this, press enter…"), markdown files rendered by default.
+**🧊 Tab isolation is the whole game.** Every tab is a sealed world: its own shell, its own working directory, its own Claude session, its own color. Red tab = prod. Green tab = local. Purple tab = the agent refactoring a worktree while you work in the next tab over. Run **multiple Claude sessions side by side** — one per tab, one per pane, zero crosstalk. This is what multi-agent work actually looks like when the UI was built for it instead of retrofitted.
 
-**In progress** — an IDE pivot (file editor with go-to-definition via the existing LSP infrastructure, git blame, project search & replace) and a multi-provider agent settings page. Current status always lives in [`roadmap/ROADMAP.md`](roadmap/ROADMAP.md).
+**🪟 Drag a tab out — it's a window.** Chrome-style tabs, for real: grab one, tear it off, drop it on your other monitor. Drag it back into another window's tab strip. Your agent session, your shell, your scrollback — all of it moves with the tab. Try that in a terminal multiplexer.
 
-## Building from source
+**🦀 Rust + Metal, no Electron tax.** VS Code is a browser wearing a trench coat. cmux is web tech in a native frame. twarp is a Cargo workspace of 60+ crates drawing every pixel through its own GPU UI framework — text rendering, scrolling, and input latency in the same class as Zed, except the *terminal* is the first-class citizen, not a panel under the editor.
 
-macOS is the supported platform. There are no prebuilt releases — you build it yourself:
+**⌨️ Terminal-first, not terminal-included.** Zed and VS Code are editors that ship a terminal in the basement. twarp inverts it: you live in the shell, and the IDE surfaces come to *you* — a VS Code-style **Open Changes panel** (stage hunks, commit, push without leaving the terminal), markdown rendered in place, and a file editor with LSP go-to-definition rolling out now.
+
+**🕶️ Your agent can see what you see.** The built-in browser pane exposes its **live DOM, console, and network to your Claude session over MCP** — the agent debugs the exact tab you're looking at, not a headless clone. And the computer-control overlay lets a session drive the whole Mac in a screenshot → action loop, with a glow border so you always know when it's live.
+
+**🔒 No middleman on your AI.** No LLM client in the app. No AI billing. No cloud sync of your conversations. twarp renders your local `claude` process — your keys, your subscription, your machine. The fork's first act was deleting every line that phoned an LLM from inside the terminal.
+
+## The arsenal
+
+- 🤖 **Claude Code pane** — native streaming chat UI over the local `claude` CLI, with raw-CLI toggle, MCP server viewer, and post-crash session resume
+- 🌐 **Agent-debuggable browser** — WKWebView pane wired to your Claude session via MCP
+- 🖱️ **Computer control** — Claude sees and drives the Mac, with visible capture indicator
+- 🎨 **Tab colors on keystrokes** — `⌘⌥1..8`, instant visual context isolation
+- 🔀 **Chrome-style tab tear-off** — tabs → windows → tabs, drag both ways
+- 📝 **Open Changes panel** — VS Code-grade git staging, diffs, commit & push, in-terminal
+- ⚡ **Custom command shortcuts** — bind one keystroke to "new tab, type `claude`, enter, run my slash command"
+- 📄 **Markdown rendered by default** — `.md` files display, not dump
+- 🍎 **macOS-native feel** — macOS-style sidebar, theme-following panels, all emulated in the GPU framework
+
+**Shipping next:** the full IDE pivot — file editor with LSP go-to-definition, git blame, project-wide search & replace, and a multi-provider agent settings page. Live status: [`roadmap/ROADMAP.md`](roadmap/ROADMAP.md).
+
+## Build it
+
+macOS, from source, no prebuilt releases — this is enthusiast hardware:
 
 ```bash
-./script/bootstrap              # platform setup
-./script/run                    # build and run (debug)
-./script/run --release --install  # build TwarpOss.app and install it
-./script/presubmit              # fmt, clippy, tests
+./script/bootstrap                # platform setup
+./script/run                      # build and run (debug)
+./script/run --release --install  # build TwarpOss.app → /Applications
+./script/presubmit                # fmt, clippy, tests
 ```
 
-The bundle is `TwarpOss.app` with its own bundle ID, so it installs alongside official Warp without touching it. See [TWARP.md](TWARP.md) for the full engineering guide.
+Installs as `TwarpOss.app` with its own bundle ID — lives peacefully next to official Warp. Full engineering guide in [TWARP.md](TWARP.md).
 
 ## Relationship to upstream
 
-- twarp tracks `warpdotdev/warp` by **selective cherry-pick**, not bulk merges — perf, rendering, and fixes come across; AI-related commits are skipped.
-- Forked from `warpdotdev/warp@d0f045c0` (2026-04-28).
-- twarp does not use Warp's brand assets, connect to Warp's cloud services for AI features, or misrepresent itself as Warp. The app is branded twarp/TwarpOss throughout.
-- If something here would be useful upstream, it belongs there as a proper contribution through [Warp's contribution process](https://github.com/warpdotdev/warp/blob/main/CONTRIBUTING.md) — not as pressure on this fork's maintainer to ship it.
+- Tracks `warpdotdev/warp` by **selective cherry-pick** — perf, rendering, and fixes come across; AI commits are skipped. Forked from `warpdotdev/warp@d0f045c0` (2026-04-28).
+- twarp doesn't use Warp's brand assets, doesn't touch Warp's cloud AI services, and doesn't misrepresent itself as Warp.
+- Want a twarp feature in Warp? Take it upstream through [their contribution process](https://github.com/warpdotdev/warp/blob/main/CONTRIBUTING.md).
 
 ## License
 
-twarp inherits Warp's licensing unchanged: the UI framework crates (`twarpui_core`, `twarpui` — Warp's `warpui`) are [MIT](LICENSE-MIT); everything else is [AGPL v3](LICENSE-AGPL). The complete corresponding source for every twarp build is this repository.
+Inherited from Warp unchanged: the UI framework crates (`twarpui_core`, `twarpui`) are [MIT](LICENSE-MIT); everything else is [AGPL v3](LICENSE-AGPL). The complete corresponding source for every twarp build is this repository.
 
-## Acknowledgements
+## Standing on giants
 
-twarp exists because the Warp team built an excellent terminal and open-sourced it. All credit for the foundation — the Rust codebase, the custom Metal UI framework, the terminal emulation — goes to them. Among the many open-source projects Warp builds on: [Tokio](https://github.com/tokio-rs/tokio), [Alacritty](https://github.com/alacritty/alacritty), [NuShell](https://github.com/nushell/nushell), [Hyper](https://github.com/hyperium/hyper), and [Smol](https://github.com/smol-rs/smol).
+twarp exists because the Warp team built an outrageously good terminal and open-sourced it — the Rust codebase, the custom Metal UI framework, the terminal emulation are theirs. Shout-outs down the stack: [Tokio](https://github.com/tokio-rs/tokio), [Alacritty](https://github.com/alacritty/alacritty), [NuShell](https://github.com/nushell/nushell), [Hyper](https://github.com/hyperium/hyper), [Smol](https://github.com/smol-rs/smol).
