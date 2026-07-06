@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/twarp-logo.png" width="460" alt="twarp logo" />
+  <img src="images/twarp-box.jpg" width="712" alt="'t Warp retro software box" />
 </p>
 
 <h1 align="center">twarp</h1>
