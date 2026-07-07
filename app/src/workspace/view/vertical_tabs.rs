@@ -3209,6 +3209,8 @@ impl PaneGroup {
             // twarp 07 (7b): the Claude Code pane has no vertical-tab-specific
             // row content; treat it like the other simple panes.
             | IPaneType::ClaudeCode
+            // The image viewer pane has no vertical-tab-specific row content.
+            | IPaneType::Image
             | IPaneType::Welcome
             | IPaneType::DeferredPlaceholder => TypedPane::Other,
             #[cfg(test)]

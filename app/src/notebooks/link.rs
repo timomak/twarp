@@ -19,7 +19,9 @@ use url::Url;
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
 #[cfg(feature = "local_fs")]
-use crate::util::openable_file_type::{is_supported_image_file, resolve_file_target, FileTarget};
+use crate::util::openable_file_type::{
+    is_image_viewer_file, is_supported_image_file, resolve_file_target, FileTarget,
+};
 use crate::{
     drive::OpenTwarpDriveObjectArgs,
     terminal::model::session::Session,
@@ -373,8 +375,11 @@ fn open_file(
 ) {
     #[cfg(feature = "local_fs")]
     {
-        // Images are safe to open with the system default viewer.
-        if is_supported_image_file(&path) {
+        // SVG links keep opening in the system viewer for a rendered preview
+        // (the editor-choice resolver would route them to the text editor).
+        // Images are safe to open with the system default viewer. Raster
+        // images resolve normally, which routes them to the in-app viewer.
+        if is_supported_image_file(&path) && !is_image_viewer_file(&path) {
             ctx.emit(LinkEvent::OpenFileWithTarget {
                 path,
                 target: FileTarget::SystemGeneric,
@@ -388,6 +393,7 @@ fn open_file(
         match target {
             // Safe targets: open in a viewer/editor that won't execute the file.
             FileTarget::MarkdownViewer(_)
+            | FileTarget::ImageViewer(_)
             | FileTarget::CodeEditor(_)
             | FileTarget::ExternalEditor(_)
             | FileTarget::EnvEditor => {

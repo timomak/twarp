@@ -18,6 +18,8 @@ pub(super) mod env_var_collection_pane;
 pub(super) mod file_pane;
 pub(super) mod get_started_pane;
 pub(super) mod get_started_view;
+// twarp: the in-app image viewer pane.
+pub(super) mod image_pane;
 // twarp: 2c-d — local_harness_launch deleted (AI ai_client only function, no callers)
 pub(super) mod network_log_pane;
 pub(super) mod notebook_pane;
@@ -41,13 +43,14 @@ use crate::{
     code::view::CodeView,
     drive::sharing::ShareableObject,
     env_vars::view::env_var_collection::EnvVarCollectionView,
+    image_view::ImageView,
     menu::MenuItem,
     notebooks::{file::FileNotebookView, notebook::NotebookView},
     server::network_log_view::NetworkLogView,
     server::telemetry::SharingDialogSource,
     settings::PaneSettings,
     settings_view::SettingsView,
-    terminal::{available_shells::AvailableShell, TerminalView},
+    terminal::{available_shells::AvailableShell, view::BlockNotification, TerminalView},
     workflows::workflow_view::WorkflowView,
 };
 use serde::{Deserialize, Serialize};
@@ -145,6 +148,8 @@ pub(crate) enum IPaneType {
     BrowserSpike,
     CodeDiff,
     EnvVarCollection,
+    /// The in-app image viewer pane.
+    Image,
     Workflow,
     Settings,
     AIFact,
@@ -171,6 +176,7 @@ impl Display for IPaneType {
             IPaneType::BrowserSpike => write!(f, "Browser Spike"),
             IPaneType::CodeDiff => write!(f, "Code Diff"),
             IPaneType::EnvVarCollection => write!(f, "Environment Variable Collection"),
+            IPaneType::Image => write!(f, "Image"),
             IPaneType::Workflow => write!(f, "Workflow"),
             IPaneType::Settings => write!(f, "Settings"),
             IPaneType::AIFact => write!(f, "AI Fact"),
@@ -269,6 +275,11 @@ impl PaneId {
         Self::new_from_ctx(IPaneType::NetworkLog, ctx)
     }
 
+    /// Creates a [`PaneId`] from a [`ViewContext<PaneView<ImageView>>`].
+    pub fn from_image_pane_ctx(ctx: &ViewContext<PaneView<ImageView>>) -> Self {
+        Self::new_from_ctx(IPaneType::Image, ctx)
+    }
+
     /// Creates a [`PaneId`] from a [`PaneView<TerminalView>`] entity ID.
     pub fn from_terminal_pane_view(
         terminal_pane_view: &ViewHandle<terminal_pane::TerminalPaneView>,
@@ -353,6 +364,11 @@ impl PaneId {
         network_log_pane_view: &ViewHandle<PaneView<NetworkLogView>>,
     ) -> Self {
         Self::new(IPaneType::NetworkLog, network_log_pane_view)
+    }
+
+    /// Creates a [`PaneId`] from a [`PaneView<ImageView>`] entity ID.
+    pub fn from_image_pane_view(image_pane_view: &ViewHandle<PaneView<ImageView>>) -> Self {
+        Self::new(IPaneType::Image, image_pane_view)
     }
 
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
@@ -478,6 +494,9 @@ impl PaneId {
             }
             IPaneType::NetworkLog => {
                 ChildView::<PaneView<NetworkLogView>>::with_id(self.0.pane_view_id).finish()
+            }
+            IPaneType::Image => {
+                ChildView::<PaneView<ImageView>>::with_id(self.0.pane_view_id).finish()
             }
             IPaneType::Welcome => {
                 ChildView::<PaneView<WelcomeView>>::with_id(self.0.pane_view_id).finish()
@@ -1090,6 +1109,11 @@ pub enum PaneEvent {
     AppStateChanged,
     /// Repo for this pane's terminal has changed
     RepoChanged,
+    /// twarp 07 (7p): ask the workspace to fire a desktop notification for
+    /// this pane (e.g. a Claude turn finished or needs permission while the
+    /// user is away). Routed through the pane group to the workspace's
+    /// existing `send_desktop_notification` handler.
+    SendNotification(BlockNotification),
     /// A remote server resolved the repo root for a session in this pane.
     RemoteRepoNavigated {
         host_id: HostId,

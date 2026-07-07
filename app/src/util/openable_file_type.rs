@@ -43,6 +43,8 @@ pub enum OpenableFileType {
 pub enum FileTarget {
     /// Open in Twarp's Markdown viewer.
     MarkdownViewer(EditorLayout),
+    /// Open in Twarp's image viewer.
+    ImageViewer(EditorLayout),
     /// Open in Twarp's Code Editor.
     CodeEditor(EditorLayout),
     /// Open in an external editor (e.g. VS Code, Emacs).
@@ -93,6 +95,13 @@ pub fn is_supported_image_file(path: impl AsRef<Path>) -> bool {
             )
         })
         .unwrap_or(false)
+}
+
+/// Checks if a file should open in Twarp's image viewer pane. This is the
+/// raster subset of [`is_supported_image_file`]: SVG is text and stays
+/// editable in the code editor, so it is deliberately excluded.
+pub fn is_image_viewer_file(path: impl AsRef<Path>) -> bool {
+    is_supported_image_file(&path) && is_binary_file(path.as_ref())
 }
 
 /// Returns true if `path` looks like a shell script the user intends to run when
@@ -186,6 +195,9 @@ pub fn resolve_file_target_to_open_in_twarp(
     if is_markdown && *settings.prefer_markdown_viewer {
         return FileTarget::MarkdownViewer(layout);
     }
+    if is_image_viewer_file(path) {
+        return FileTarget::ImageViewer(layout);
+    }
     FileTarget::CodeEditor(layout)
 }
 
@@ -233,8 +245,12 @@ pub fn resolve_file_target_with_editor_choice(
         return FileTarget::EnvEditor;
     }
 
-    // 4. Binary files -> System Default
+    // 4. Binary files -> in-app image viewer for raster images, otherwise
+    //    System Default
     if !is_openable_in_warp {
+        if is_image_viewer_file(path) {
+            return FileTarget::ImageViewer(layout);
+        }
         return FileTarget::SystemGeneric;
     }
 
@@ -359,7 +375,7 @@ mod tests {
     #[cfg(feature = "local_fs")]
     fn test_resolve_file_target_binary_is_system_generic() {
         let target = resolve_file_target_with_editor_choice(
-            Path::new("image.png"),
+            Path::new("video.mp4"),
             EditorChoice::Warp,
             true, /* prefer_markdown_viewer */
             EditorLayout::SplitPane,
@@ -367,6 +383,43 @@ mod tests {
         );
 
         assert_eq!(target, FileTarget::SystemGeneric);
+    }
+
+    // Raster images route to the in-app image viewer regardless of the
+    // configured editor choice (they are binary, so no editor applies).
+    #[test]
+    #[cfg(feature = "local_fs")]
+    fn test_resolve_file_target_image_is_image_viewer() {
+        for choice in [
+            EditorChoice::Warp,
+            EditorChoice::SystemDefault,
+            EditorChoice::ExternalEditor(Editor::VSCode),
+        ] {
+            let target = resolve_file_target_with_editor_choice(
+                Path::new("image.png"),
+                choice,
+                true, /* prefer_markdown_viewer */
+                EditorLayout::SplitPane,
+                None,
+            );
+            assert_eq!(target, FileTarget::ImageViewer(EditorLayout::SplitPane));
+        }
+    }
+
+    // SVG is a text file: it stays editable in the code editor rather than
+    // being hijacked by the image viewer.
+    #[test]
+    #[cfg(feature = "local_fs")]
+    fn test_resolve_file_target_svg_is_code_editor() {
+        let target = resolve_file_target_with_editor_choice(
+            Path::new("icon.svg"),
+            EditorChoice::Warp,
+            true, /* prefer_markdown_viewer */
+            EditorLayout::SplitPane,
+            None,
+        );
+
+        assert_eq!(target, FileTarget::CodeEditor(EditorLayout::SplitPane));
     }
 
     #[test]
@@ -496,6 +549,17 @@ mod tests {
         assert!(!is_supported_code_file(Path::new("source")));
         assert!(!is_supported_code_file(Path::new("main.unknown")));
         assert!(!is_supported_code_file(Path::new(".rs")));
+    }
+
+    #[test]
+    fn test_is_image_viewer_file_raster_only() {
+        assert!(is_image_viewer_file(Path::new("image.png")));
+        assert!(is_image_viewer_file(Path::new("image.JPG")));
+        assert!(is_image_viewer_file(Path::new("anim.gif")));
+        assert!(is_image_viewer_file(Path::new("pic.webp")));
+        // SVG is text — the code editor keeps it.
+        assert!(!is_image_viewer_file(Path::new("icon.svg")));
+        assert!(!is_image_viewer_file(Path::new("notes.txt")));
     }
 
     #[test]

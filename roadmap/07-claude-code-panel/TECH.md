@@ -258,6 +258,15 @@ graph TD
 - **Subscription billing change 2026-06-15.** **Mitigation:** surface `claude`'s own errors verbatim (§30); meter nothing.
 - **Schema drift.** **Mitigation:** defensive parsing (§29), catch-alls, version pin + golden fixtures (in the kept crate).
 
+## 7p — attention signals (amendment 2026-07-07)
+
+**No new pipelines.** Every hop reuses the Warp notification/tab machinery that survived features 02 and de-cloud:
+
+- **Fire path:** `ClaudeCodeView::maybe_send_attention_notification` (in `on_transcript_event`'s `Ended{Completed|Error}` arm, the held-`AskUserQuestion` branch, and the pass-through `PermissionRequest` arm) → `ClaudeCodeViewEvent::Pane(PaneEvent::SendNotification(BlockNotification))` (new `PaneEvent` variant) → `PaneGroup::handle_pane_event` re-emits the existing `pane_group::Event::SendNotification` → the workspace handler (`workspace/view.rs`) that already owns `send_desktop_notification`, the sound setting, and the permission-failure banner. Notification content is built by the existing `NotificationsTrigger::{AgentTaskCompleted, NeedsAttention}::create_notification_content` (title = `derived_tab_title()`, the same first-user-message snippet the tab shows).
+- **Gates:** `is_supported_on_current_platform()`, `NotificationsMode::Enabled` (no `Unset` discovery banner — that's a terminal-view inline surface), the pre-existing (previously orphaned) `is_agent_task_completed_enabled` / `is_needs_attention_enabled` toggles, and a window-level `is_navigated_away_from_window` check mirroring the terminal's.
+- **Tab dot:** `ClaudeCodeView::tab_status()` (streaming + `Transcript::has_pending_prompt()` [new, current-turn-only] + a new `tab_attention: Option<bool>` outcome flag cleared in `on_focus`) → `PaneGroup::claude_code_tab_status()` (max urgency across the group's Claude panes) → a `claude_code_indicator` branch in `TabComponent::new` returning the existing `Indicator::Agent { conversation_status }` — the exact Warp Agent Mode dot rendering (`render_status_element`), tooltips degrade to `None` (they resolve via terminal-only `focused_session_view`). Tab-bar repaints ride a new `ClaudeCodeViewEvent::TabStatusChanged` forwarded by `ClaudeCodePane` as `pane_group::Event::TerminalViewStateChanged` (already `ctx.notify()`s the workspace).
+- **Non-goals honored:** no `SelectedTabColor` writes (feature 01 / directory colors own the tint); no telemetry additions (de-cloud removes that pipeline); `TaskNotification` fires nothing (§62).
+
 ## Follow-ups
 
 - Split-pane / replace-the-terminal placement if "new tab" feels wrong (PRODUCT §load-bearing-2).

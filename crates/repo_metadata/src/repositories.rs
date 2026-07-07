@@ -67,6 +67,16 @@ impl DetectedRepositories {
                 return Either::Right(ready(None));
             };
 
+            // Fast path: the root is cached AND the DirectoryWatcher still has a
+            // live entry for it. `repository_roots` is append-only for the app's
+            // lifetime, but the watcher entry is refcounted by subscribers and is
+            // removed when the last one (e.g. a closed code-review panel's
+            // DiffStateModel) unsubscribes. Callers like DiffStateModel require a
+            // *watched* repo, so a cached-but-unwatched root must fall through to
+            // the full detection below, which re-registers the watcher via
+            // `add_directory_with_git_dir`. Early-returning the bare path here
+            // left the code-review / Open Changes panel stuck on its loading
+            // skeleton forever in Claude-only tabs.
             if let Some(repository) = self.repository_roots.get(&path) {
                 if let Some(local_path) = repository.to_local_path() {
                     if let Some(repository) =
@@ -76,9 +86,9 @@ impl DetectedRepositories {
                             repository: repository.clone(),
                             source,
                         });
+                        return Either::Right(ready(Some(local_path)));
                     }
                 }
-                return Either::Right(ready(repository.to_local_path()));
             };
 
             let local_path_for_search = path.to_local_path();

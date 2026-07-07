@@ -111,6 +111,12 @@ impl PaneContent for ClaudeCodePane {
                 ClaudeCodeViewEvent::Pane(pane_event) => {
                     pane_group.handle_pane_event(pane_id, pane_event, ctx)
                 }
+                // twarp 07 (7p): the tab status dot reads this view's session
+                // state, but the tab bar lives in the workspace — bubble a
+                // repaint request the same way terminal state changes do.
+                ClaudeCodeViewEvent::TabStatusChanged => {
+                    ctx.emit(crate::pane_group::Event::TerminalViewStateChanged)
+                }
                 // twarp 07 (7i, PRODUCT §39): the pane group creates a real
                 // terminal session (it owns the session resources) and hands
                 // it to the view, which embeds it in place of the chat — the

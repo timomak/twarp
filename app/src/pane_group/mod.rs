@@ -214,6 +214,7 @@ pub use pane::claude_code_pane::ClaudeCodePane; // twarp 07 (7b)
 pub use pane::code_pane::CodePane;
 pub use pane::env_var_collection_pane::EnvVarCollectionPane;
 pub use pane::file_pane::FilePane;
+pub use pane::image_pane::ImagePane;
 pub use pane::network_log_pane::NetworkLogPane;
 pub use pane::notebook_pane::NotebookPane;
 pub use pane::settings_pane::SettingsPane;
@@ -1660,13 +1661,27 @@ impl PaneGroup {
                         notebook_id,
                         settings,
                     } => Box::new(NotebookPane::restore(notebook_id, &settings, ctx)?),
-                    NotebookPaneSnapshot::LocalFileNotebook { path } => Box::new(FilePane::new(
-                        path,
-                        None,
-                        #[cfg(feature = "local_fs")]
-                        None,
-                        ctx,
-                    )),
+                    NotebookPaneSnapshot::LocalFileNotebook { path } => {
+                        // The snapshot only records the path; the viewer is
+                        // re-resolved by file type, mirroring open-time
+                        // routing. Raster images restore into the image
+                        // viewer pane (which also snapshots as a local file
+                        // notebook), everything else into a file notebook.
+                        match path {
+                            Some(path)
+                                if crate::util::openable_file_type::is_image_viewer_file(&path) =>
+                            {
+                                Box::new(ImagePane::new(path, ctx))
+                            }
+                            path => Box::new(FilePane::new(
+                                path,
+                                None,
+                                #[cfg(feature = "local_fs")]
+                                None,
+                                ctx,
+                            )),
+                        }
+                    }
                 };
 
                 let pane_id = pane.as_pane().id();
@@ -3997,6 +4012,15 @@ impl PaneGroup {
             PaneEvent::SplitDown(chosen_shell) => {
                 self.insert_terminal_pane(Direction::Down, pane_id, chosen_shell.clone(), ctx);
             }
+            PaneEvent::SendNotification(notification) => {
+                // twarp 07 (7p): same hop the terminal pane's completion
+                // notifications take — the workspace handler owns the settings
+                // read, the platform call, and the failure banner.
+                ctx.emit(Event::SendNotification {
+                    notification: notification.clone(),
+                    pane_id,
+                });
+            }
             PaneEvent::ToggleMaximized => {
                 // The toggled pane might not be the active pane -- focus it first.
                 self.focus_pane_by_id(pane_id, ctx);
@@ -5944,6 +5968,30 @@ impl PaneGroup {
                 .map(|p| p.display().to_string());
             (id, local_path)
         })
+    }
+
+    /// The tab-indicator status of this group's Claude Code panes (twarp 07,
+    /// 7p): the highest-urgency session state across every Claude pane in the
+    /// tab, so a split with one blocked pane shows blocked. `None` when the
+    /// tab has no Claude pane or nothing worth signalling.
+    pub fn claude_code_tab_status(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<crate::app_state::ConversationStatus> {
+        use crate::app_state::ConversationStatus;
+        // Blocked outranks everything (the session is waiting on the user),
+        // then a failure, then in-progress, then a quiet "finished".
+        fn urgency(status: &ConversationStatus) -> u8 {
+            match status {
+                ConversationStatus::Blocked {} => 3,
+                ConversationStatus::Error => 2,
+                ConversationStatus::InProgress => 1,
+                _ => 0,
+            }
+        }
+        self.panes_of::<ClaudeCodePane>()
+            .filter_map(|pane| pane.claude_code_view(ctx).as_ref(ctx).tab_status())
+            .max_by_key(urgency)
     }
 
     /// Working directories of the Claude Code panes in this group (twarp

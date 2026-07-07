@@ -143,6 +143,14 @@ impl DirectoryWatcher {
         self.directories.contains_key(path)
     }
 
+    /// Test-only: drop a directory registration, simulating a root that was
+    /// detected (cached in `DetectedRepositories`) but never successfully
+    /// registered here (e.g. `add_directory_with_git_dir` failed).
+    #[cfg(test)]
+    pub(crate) fn remove_directory_for_test(&mut self, path: &StandardizedPath) {
+        self.directories.remove(path);
+    }
+
     /// Find repositories affected by a git directory change using three-tier
     /// scope-aware routing:
     ///

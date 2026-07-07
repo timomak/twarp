@@ -2307,11 +2307,13 @@ impl FileTreeView {
         // twarp 05e: `resolve_file_target_to_open_in_twarp` is the
         // "force open in Twarp" path used by the context-menu actions
         // (Open in New Pane / Open in New Tab). For binary files
-        // (PNG, WEBP, PDF, archives, …) Warp would just render
-        // garbage, so fall through to the editor-choice resolver
-        // even when a layout was passed — it routes binaries to
-        // `FileTarget::SystemGeneric`, which the workspace handler
-        // opens via NSWorkspace (macOS Preview / Quick Look / etc.).
+        // (PDF, archives, …) Warp would just render garbage, so fall
+        // through to the editor-choice resolver even when a layout was
+        // passed — it routes binaries to `FileTarget::SystemGeneric`,
+        // which the workspace handler opens via NSWorkspace (macOS
+        // Preview / Quick Look / etc.). Raster images (PNG, WEBP, …)
+        // are the exception: both resolvers route them to the in-app
+        // image viewer pane (`FileTarget::ImageViewer`).
         let force_warp = editor_layout.is_some() && !is_binary_file(path);
         let target = if force_warp {
             resolve_file_target_to_open_in_twarp(path, settings, editor_layout)

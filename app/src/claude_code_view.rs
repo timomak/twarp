@@ -33,6 +33,7 @@
 //! view in the responder chain. There is **no** `WorkspaceAction` forwarder —
 //! that was the #67 symptom-fix and is deleted.
 
+mod agents;
 mod background_scripts;
 mod composer;
 mod diff_cards;
@@ -64,6 +65,7 @@ use markdown_parser::{
 use parking_lot::RwLock;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
+use settings::Setting;
 use twarp_core::features::FeatureFlag;
 use twarp_editor::editor::NavigationKey;
 use twarpui::assets::asset_cache::AssetSource;
@@ -95,12 +97,14 @@ use twarpui::{
     ViewContext, ViewHandle, WindowId,
 };
 
+use self::agents::{AgentRun, AgentRunState};
 use self::background_scripts::{BackgroundScript, BackgroundScriptState};
 use self::composer::{SuggestionKind, SuggestionQuery};
 use self::diff_cards::DiffCard;
 use self::repo_context::{CiState, RepoContext};
 use self::thinking::ThinkingUi;
 use self::tool_cards::{render_tool_card, ToolCardUi};
+use crate::app_state::ConversationStatus;
 use crate::appearance::Appearance;
 use crate::claude_code_session_defaults::ClaudeSessionDefaultsModel;
 use crate::computer_control::{
@@ -116,7 +120,11 @@ use crate::pane_group::{
 };
 #[cfg(all(feature = "local_fs", feature = "local_tty"))]
 use crate::terminal::local_shell::LocalShellState;
-use crate::terminal::{view::Event as TerminalViewEvent, TerminalManager, TerminalView};
+use crate::terminal::{
+    session_settings::{NotificationsMode, SessionSettings},
+    view::{Event as TerminalViewEvent, NotificationsTrigger},
+    TerminalManager, TerminalView,
+};
 use crate::util::path::{resolve_executable, resolve_executable_in_path};
 use crate::workspace::{WorkspaceAction, WorkspaceRegistry};
 
@@ -155,6 +163,10 @@ const COMPOSER_MAX_WIDTH: f32 = 760.;
 /// card pinned to the pane's top-right, narrow enough to clear the centered
 /// reading column behind it.
 const BACKGROUND_PANEL_MAX_WIDTH: f32 = 360.;
+/// Width cap for the floating agents panel (twarp): the background panel's
+/// twin, pinned to the same top-right anchor (only one of the two is open at
+/// a time).
+const AGENTS_PANEL_MAX_WIDTH: f32 = 360.;
 /// Width cap for a composer pill's dropdown popover (permission / model /
 /// effort / context / branch / CI / PR). Keeps the menu a compact card anchored
 /// to its pill rather than stretching to the pane edge (issue #1).
@@ -212,6 +224,11 @@ const EFFORT_CYCLE: &[&str] = &["default", "low", "medium", "high", "max"];
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClaudeCodeViewEvent {
     Pane(PaneEvent),
+    /// twarp 07 (7p): the session state the tab indicator reads (working /
+    /// blocked / finished) changed. The pane host forwards this to the
+    /// workspace so the tab bar repaints — the view's own `notify()` only
+    /// redraws the pane body.
+    TabStatusChanged,
     /// twarp 07 (7i, PRODUCT §39): swap this pane for the raw interactive
     /// `claude` CLI resuming `session_id` — handled by the pane group as a
     /// temporary pane replacement.
@@ -386,6 +403,18 @@ pub enum ClaudeCodeViewAction {
     /// twarp only hides rows it can be sure are done, since it can't kill a
     /// live shell. Hidden ids are remembered so they stay cleared across renders.
     ClearBackgroundScripts,
+    /// twarp: expand / collapse the floating agents panel — the background
+    /// panel's twin listing this chat's sub-agent (`Task`/`Agent`) launches.
+    /// Opening it closes the background-scripts panel (they share the anchor).
+    ToggleAgentsPanel,
+    /// twarp: expand / collapse one agent row's returned result, keyed by the
+    /// launching tool-use id.
+    ToggleAgentRow(String),
+    /// twarp: clear every *non-running* agent from the panel (finished /
+    /// failed / stopped). Running agents are left alone — twarp only hides
+    /// rows it can be sure are done, since it can't stop an agent it didn't
+    /// launch. Hidden ids are remembered so they stay cleared across renders.
+    ClearAgents,
     /// twarp: expand / collapse one server's tool list in the MCP viewer popover
     /// (feature 13). Only one server is expanded at a time; re-dispatching the
     /// open server collapses it.
@@ -414,6 +443,10 @@ pub enum ClaudeCodeCustomAction {
     /// pane framework rather than dispatching the in-pane
     /// [`ClaudeCodeViewAction::ToggleBackgroundPanel`] directly.
     ToggleBackgroundPanel,
+    /// twarp: expand / collapse the floating agents panel from the header's
+    /// icon button (left of the background-scripts button). Routed the same
+    /// way as [`ClaudeCodeCustomAction::ToggleBackgroundPanel`].
+    ToggleAgentsPanel,
 }
 
 /// Which composer dropdown / popover is open (#13). The model picker, the
@@ -567,6 +600,12 @@ pub struct ClaudeCodeView {
     /// `Interrupted` so it shows the "Interrupted." notice instead of a spurious
     /// error and keeps the session resumable.
     interrupt_pending: bool,
+    /// The last turn's outcome, for the tab status dot (7p): `Some(true)`
+    /// finished cleanly, `Some(false)` failed. Cleared when the user comes
+    /// back to the pane (focus) — so a background tab keeps its ✓/✗ until
+    /// revisited — and masked by the in-progress/blocked states while the
+    /// next turn runs. Stop (`Interrupted`) sets nothing: the user did it.
+    tab_attention: Option<bool>,
     /// Stable mouse-state handles kept across renders so a click's
     /// mousedown/mouseup hit the same handle.
     submit_button: MouseStateHandle,
@@ -817,6 +856,31 @@ pub struct ClaudeCodeView {
     /// Mouse state for the panel header's "Clear" button (clears non-running
     /// scripts).
     background_clear_mouse: MouseStateHandle,
+    /// twarp: whether the floating agents panel is expanded. The panel lists
+    /// this chat's sub-agent (`Task`/`Agent`) launches, derived from the
+    /// transcript each render via [`agents::collect`] — the background-scripts
+    /// panel's twin, sharing its top-right anchor (only one is open at a time).
+    agents_panel_expanded: bool,
+    /// Per-agent result disclosure, keyed by the launching tool-use id. An id
+    /// is present iff the user expanded that row's returned result.
+    agent_expanded_rows: HashSet<String>,
+    /// twarp: agent launch ids the user cleared from the agents panel. The
+    /// list is derived read-only from the transcript, so "Clear" hides rows by
+    /// remembering their ids here — only ever *non-running* agents.
+    agents_dismissed: HashSet<String>,
+    /// Stable per-row mouse handles for the agent rows, keyed by launch id and
+    /// created on demand (the `background_row_mouse` pattern).
+    agent_row_mouse: std::cell::RefCell<HashMap<String, MouseStateHandle>>,
+    /// Mouse state for the agents panel's header (the collapse/expand toggle).
+    agents_panel_mouse: MouseStateHandle,
+    /// Mouse state for the header's agents icon button (left of the
+    /// background-scripts button) that opens the floating panel.
+    agents_button_mouse: MouseStateHandle,
+    /// Mouse state for the agents panel header's "Clear" button.
+    agents_clear_mouse: MouseStateHandle,
+    /// Memoized [`agents::collect`] output, keyed by the transcript revision
+    /// it was derived from — same rationale as [`Self::background_scripts_memo`].
+    agents_memo: std::cell::RefCell<Option<(u64, std::rc::Rc<Vec<agents::AgentRun>>)>>,
     /// twarp 15b: per-Claude-session computer-control overlay lifecycle. The
     /// native AppKit windows live outside the Warp scene, so the coordinator is
     /// interior-mutable for render-time color refreshes when the active tab
@@ -946,6 +1010,7 @@ impl ClaudeCodeView {
             child: None,
             message_tx: None,
             streaming: false,
+            tab_attention: None,
             interrupt_pending: false,
             submit_button: MouseStateHandle::default(),
             refresh_button: MouseStateHandle::default(),
@@ -1030,6 +1095,14 @@ impl ClaudeCodeView {
             background_panel_mouse: MouseStateHandle::default(),
             background_button_mouse: MouseStateHandle::default(),
             background_clear_mouse: MouseStateHandle::default(),
+            agents_panel_expanded: false,
+            agent_expanded_rows: HashSet::new(),
+            agents_dismissed: HashSet::new(),
+            agent_row_mouse: std::cell::RefCell::new(HashMap::new()),
+            agents_panel_mouse: MouseStateHandle::default(),
+            agents_button_mouse: MouseStateHandle::default(),
+            agents_clear_mouse: MouseStateHandle::default(),
+            agents_memo: std::cell::RefCell::new(None),
             computer_control: std::cell::RefCell::new(ComputerControlCoordinator::default()),
             computer_control_button_mouse: MouseStateHandle::default(),
             background_scripts_memo: std::cell::RefCell::new(None),
@@ -1071,6 +1144,7 @@ impl ClaudeCodeView {
                 .apply(TranscriptEvent::UserMessage(prompt.clone()));
             let started = Instant::now();
             view.streaming = true;
+            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
             view.turn_started = Some(started);
             view.schedule_elapsed_tick(started, ctx);
             view.begin_session(Some(OutgoingMessage::text(prompt)), ctx);
@@ -2145,6 +2219,7 @@ impl ClaudeCodeView {
         }
         let started = Instant::now();
         self.streaming = true;
+        ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         self.turn_started = Some(started);
         self.schedule_elapsed_tick(started, ctx);
         match &self.message_tx {
@@ -2288,6 +2363,7 @@ impl ClaudeCodeView {
             if !self.streaming {
                 let started = Instant::now();
                 self.streaming = true;
+                ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
                 self.turn_started = Some(started);
                 self.schedule_elapsed_tick(started, ctx);
             }
@@ -2409,6 +2485,7 @@ impl ClaudeCodeView {
             .apply(TranscriptEvent::UserMessage(message.text.clone()));
         let started = Instant::now();
         self.streaming = true;
+        ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         self.turn_started = Some(started);
         self.schedule_elapsed_tick(started, ctx);
         let _ = tx.try_send(StdinCommand::Turn(message));
@@ -2752,6 +2829,14 @@ impl ClaudeCodeView {
                     );
                     self.pending_question_permission
                         .insert(tool_use_id.clone(), id.clone());
+                    // 7p: the turn is now parked on the user. Notify if
+                    // they're away, and flip the tab dot to blocked.
+                    self.maybe_send_attention_notification(
+                        NotificationsTrigger::NeedsAttention,
+                        "Claude is asking you a question".to_string(),
+                        ctx,
+                    );
+                    ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
                     ctx.notify();
                     return;
                 }
@@ -2786,7 +2871,19 @@ impl ClaudeCodeView {
                 self.interrupt_pending = false;
             }
         }
-        if matches!(event, TranscriptEvent::Ended { .. }) {
+        // 7p: a regular permission request (the Allow/Deny card) also parks
+        // the turn on the user — notify if they're away. The tab flips to
+        // blocked once the card lands in the transcript below. The held
+        // AskUserQuestion path notified above and returned.
+        if let TranscriptEvent::PermissionRequest { tool, .. } = &event {
+            self.maybe_send_attention_notification(
+                NotificationsTrigger::NeedsAttention,
+                format!("Claude needs permission to use {tool}"),
+                ctx,
+            );
+            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+        }
+        if let TranscriptEvent::Ended { reason } = &event {
             log::warn!(
                 "QDIAG turn Ended (streaming->false), had_pending_questions={}",
                 !self.pending_question_permission.is_empty(),
@@ -2797,6 +2894,32 @@ impl ClaudeCodeView {
             // Drop the held requests; the idle card stays answerable as a
             // next-turn fallback (`submit_question_answers`).
             self.pending_question_permission.clear();
+            // 7p: mark the tab with the turn's outcome and notify an
+            // away user. Interrupted/Exited stay quiet — the user caused
+            // the former, and the latter is either a mode-change restart
+            // or follows an Error that already reported.
+            match reason {
+                claude_code::EndReason::Completed => {
+                    self.tab_attention = Some(true);
+                    let body = self.last_assistant_text().unwrap_or_default();
+                    self.maybe_send_attention_notification(
+                        NotificationsTrigger::AgentTaskCompleted(true),
+                        body,
+                        ctx,
+                    );
+                }
+                claude_code::EndReason::Error(message) => {
+                    self.tab_attention = Some(false);
+                    let message = message.clone();
+                    self.maybe_send_attention_notification(
+                        NotificationsTrigger::AgentTaskCompleted(false),
+                        message,
+                        ctx,
+                    );
+                }
+                claude_code::EndReason::Interrupted | claude_code::EndReason::Exited => {}
+            }
+            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         }
         // PRODUCT §53 (7m): a turn that completed cleanly (or was interrupted —
         // the session is still alive) dispatches the next queued message.
@@ -2898,6 +3021,8 @@ impl ClaudeCodeView {
             return;
         }
         self.streaming = false;
+        // 7p: the working spinner in the tab must stop with the stream.
+        ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         self.interrupt_pending = false;
         self.child = None;
         self.message_tx = None;
@@ -3189,8 +3314,16 @@ impl ClaudeCodeView {
     /// `set_title` no-ops when unchanged, so calling this on each new turn is
     /// cheap.
     fn update_pane_title(&self, ctx: &mut ViewContext<Self>) {
-        let title = self
-            .transcript
+        let title = self.derived_tab_title();
+        self.pane_configuration
+            .update(ctx, |config, ctx| config.set_title(title, ctx));
+    }
+
+    /// The tab title derived from the conversation — the first user message,
+    /// or the generic pane title before one exists. Also the desktop
+    /// notification's title (7p), so the notification names the tab to look at.
+    fn derived_tab_title(&self) -> String {
+        self.transcript
             .items()
             .iter()
             .find_map(|item| match item {
@@ -3198,9 +3331,98 @@ impl ClaudeCodeView {
                 _ => None,
             })
             .filter(|title| !title.is_empty())
-            .unwrap_or_else(|| PANE_TITLE.to_owned());
-        self.pane_configuration
-            .update(ctx, |config, ctx| config.set_title(title, ctx));
+            .unwrap_or_else(|| PANE_TITLE.to_owned())
+    }
+
+    /// The session state the tab indicator shows (7p), reusing the agent
+    /// indicator's status set: blocked-on-the-user outranks working, and an
+    /// idle pane shows the last turn's outcome until the user comes back to
+    /// it. `None` renders no indicator (a fresh or revisited idle pane).
+    pub fn tab_status(&self) -> Option<ConversationStatus> {
+        if self.streaming
+            && (!self.pending_question_permission.is_empty()
+                || self.transcript.has_pending_prompt())
+        {
+            return Some(ConversationStatus::Blocked {});
+        }
+        if self.streaming {
+            return Some(ConversationStatus::InProgress);
+        }
+        self.tab_attention.map(|succeeded| {
+            if succeeded {
+                ConversationStatus::Success
+            } else {
+                ConversationStatus::Error
+            }
+        })
+    }
+
+    /// Drop the ✓/✗ attention dot once the user has seen the pane (7p).
+    fn clear_tab_attention(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.tab_attention.take().is_some() {
+            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+            ctx.notify();
+        }
+    }
+
+    /// The tail of the assistant's latest prose, as the completion
+    /// notification's body (7p) — the end of the reply is what the user
+    /// missed (`create_notification_content` truncates from the front).
+    fn last_assistant_text(&self) -> Option<String> {
+        self.transcript
+            .items()
+            .iter()
+            .rev()
+            .find_map(|item| match item {
+                TranscriptItem::Assistant { text, .. } if !text.trim().is_empty() => {
+                    Some(text.clone())
+                }
+                _ => None,
+            })
+    }
+
+    /// Same gate as the terminal's `is_navigated_away_from_window` (7p):
+    /// desktop notifications only fire while this pane's window isn't the
+    /// active one — if the user is in the app, the pane itself is the signal.
+    fn is_navigated_away_from_window(&self, ctx: &mut ViewContext<Self>) -> bool {
+        Some(ctx.window_id()) != ctx.windows().active_window()
+    }
+
+    /// Fire a desktop notification titled with the pane's tab title (7p),
+    /// through the same workspace handler as the terminal's command-completion
+    /// notifications (sound setting, permission-failure banner). Mirrors
+    /// `send_agent_desktop_notification_or_show_banner`'s setting gates, minus
+    /// the discovery banner — that's a terminal-view inline banner the chat
+    /// pane has no host for, so `NotificationsMode::Unset` is simply a no-op
+    /// here (the terminal flow is where the setting gets discovered).
+    fn maybe_send_attention_notification(
+        &mut self,
+        trigger: NotificationsTrigger,
+        body: String,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let session_settings = SessionSettings::as_ref(ctx);
+        if !session_settings
+            .notifications
+            .is_supported_on_current_platform()
+        {
+            return;
+        }
+        let settings = session_settings.notifications.value().clone();
+        if !matches!(settings.mode, NotificationsMode::Enabled) {
+            return;
+        }
+        let enabled = match trigger {
+            NotificationsTrigger::AgentTaskCompleted(_) => settings.is_agent_task_completed_enabled,
+            _ => settings.is_needs_attention_enabled,
+        };
+        if !enabled || !self.is_navigated_away_from_window(ctx) {
+            return;
+        }
+        let content = trigger.create_notification_content(self.derived_tab_title(), body);
+        ctx.emit(ClaudeCodeViewEvent::Pane(PaneEvent::SendNotification(
+            content,
+        )));
     }
 
     /// Drive the "Working · <elapsed>" counter (#7) on a steady 1 s cadence.
@@ -4021,6 +4243,420 @@ impl ClaudeCodeView {
         })
         .finish();
         Some(button)
+    }
+
+    /// twarp: the per-chat agents list, derived from the transcript via
+    /// [`agents::collect`] and memoized on the transcript's revision — the
+    /// [`Self::background_scripts`] twin. Both the header button and the
+    /// floating panel read it each render.
+    fn agent_runs(&self) -> std::rc::Rc<Vec<agents::AgentRun>> {
+        let revision = self.transcript.revision();
+        if let Some((rev, agents)) = self.agents_memo.borrow().as_ref() {
+            if *rev == revision {
+                return agents.clone();
+            }
+        }
+        let runs = std::rc::Rc::new(agents::collect(
+            self.transcript.items(),
+            self.transcript.task_notifications(),
+        ));
+        *self.agents_memo.borrow_mut() = Some((revision, runs.clone()));
+        runs
+    }
+
+    /// twarp: the header's **agents icon button** — the arrow-split glyph
+    /// (the transcript's sub-agent card icon) sitting to the left of the
+    /// background-scripts button, opening the floating
+    /// [`render_agents_panel`](Self::render_agents_panel). While any of this
+    /// chat's agents are still running, an accent notification bubble overlays
+    /// the glyph's top-right corner with the active count — the exact
+    /// composition of [`render_background_button`](Self::render_background_button).
+    fn render_agents_button(&self, app: &AppContext) -> Option<Box<dyn Element>> {
+        let agent_runs = self.agent_runs();
+        let active = agent_runs
+            .iter()
+            .filter(|a| !self.agents_dismissed.contains(&a.id) && a.state.is_active())
+            .count();
+
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let accent = self.accent(app);
+        let wash = self.accent_wash(app);
+        let expanded = self.agents_panel_expanded;
+
+        let glyph = ConstrainedBox::new(
+            Icon::new(crate::ui_components::icons::Icon::ArrowSplit.into(), accent).finish(),
+        )
+        .with_width(15.)
+        .with_height(15.)
+        .finish();
+
+        let mut stack = Stack::new();
+        stack.add_child(
+            Container::new(glyph)
+                .with_padding(Padding::uniform(1.))
+                .finish(),
+        );
+        if active > 0 {
+            let label = appearance
+                .ui_builder()
+                .span(active.to_string())
+                .with_style(UiComponentStyles {
+                    font_color: Some(ColorU::white()),
+                    font_size: Some(9.),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let sized = ConstrainedBox::new(Align::new(label).finish())
+                .with_min_width(13.)
+                .with_min_height(13.)
+                .finish();
+            let badge = Container::new(sized)
+                .with_padding_left(2.)
+                .with_padding_right(2.)
+                .with_background_color(accent)
+                .with_border(Border::all(1.).with_border_fill(theme.background()))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(7.)))
+                .finish();
+            stack.add_positioned_child(
+                badge,
+                OffsetPositioning::offset_from_parent(
+                    vec2f(5., -5.),
+                    ParentOffsetBounds::ParentBySize,
+                    ParentAnchor::TopRight,
+                    ChildAnchor::Center,
+                ),
+            );
+        }
+
+        let inner = stack.finish();
+        let button = Hoverable::new(self.agents_button_mouse.clone(), move |state| {
+            let mut body = Container::new(inner)
+                .with_padding(Padding::uniform(4.))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)));
+            if expanded || state.is_hovered() {
+                body = body.with_background_color(wash);
+            }
+            body.finish()
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
+                PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleAgentsPanel),
+            );
+        })
+        .finish();
+        Some(button)
+    }
+
+    /// twarp: the floating **agents** panel — the background-scripts panel's
+    /// twin, listing the sub-agents (`Task`/`Agent` tool calls) Claude
+    /// launched in this session. Derived fresh from the transcript each render
+    /// via [`agents::collect`] — twarp keeps no separate model — so it stays
+    /// in lock-step with the conversation. Read-only: twarp can observe an
+    /// agent (type, description, state, returned result) but can't spawn or
+    /// stop one; those are Claude's tool calls.
+    ///
+    /// Opened from the header's
+    /// [`render_agents_button`](Self::render_agents_button); floats nothing
+    /// unless expanded. It shares the background panel's top-right anchor —
+    /// the toggle handlers keep at most one of the two open.
+    fn render_agents_panel(&self, app: &AppContext) -> Option<Box<dyn Element>> {
+        if !self.agents_panel_expanded {
+            return None;
+        }
+        let agent_runs = self.agent_runs();
+        // Rows the user cleared are hidden but still live in the transcript,
+        // so filter them out here (not in the memo, which stays a pure
+        // derivation).
+        let visible: Vec<&AgentRun> = agent_runs
+            .iter()
+            .filter(|a| !self.agents_dismissed.contains(&a.id))
+            .collect();
+
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let accent = self.render_accent.get();
+        let wash = self.render_wash.get();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let main = theme.main_text_color(theme.background()).into_solid();
+
+        let active = visible.iter().filter(|a| a.state.is_active()).count();
+        let clearable = visible.iter().any(|a| !a.state.is_active());
+
+        // Header: arrow-split glyph + title + a muted count, then a chevron.
+        // The whole row toggles the panel — the background panel's chrome.
+        let glyph = ConstrainedBox::new(
+            Icon::new(crate::ui_components::icons::Icon::ArrowSplit.into(), accent).finish(),
+        )
+        .with_width(15.)
+        .with_height(15.)
+        .finish();
+        let title = appearance
+            .ui_builder()
+            .span("Agents".to_owned())
+            .with_style(UiComponentStyles {
+                font_color: Some(main),
+                font_size: Some(12.5),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+        let count_text = if visible.is_empty() {
+            "none".to_owned()
+        } else if active > 0 {
+            format!("{} · {active} running", visible.len())
+        } else {
+            format!(
+                "{} agent{}",
+                visible.len(),
+                if visible.len() == 1 { "" } else { "s" }
+            )
+        };
+        let count = appearance
+            .ui_builder()
+            .span(count_text)
+            .with_style(UiComponentStyles {
+                font_color: Some(muted),
+                font_size: Some(11.),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+        let chevron = ConstrainedBox::new(
+            Icon::new(crate::ui_components::icons::Icon::ChevronUp.into(), muted).finish(),
+        )
+        .with_width(14.)
+        .with_height(14.)
+        .finish();
+
+        let mut header_row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_spacing(8.)
+            .with_child(glyph)
+            .with_child(Shrinkable::new(1., title).finish())
+            .with_child(count);
+        if clearable {
+            let clear_label = appearance
+                .ui_builder()
+                .span("Clear".to_owned())
+                .with_style(UiComponentStyles {
+                    font_color: Some(muted),
+                    font_size: Some(11.),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let clear = Hoverable::new(self.agents_clear_mouse.clone(), move |state| {
+                let mut body = Container::new(clear_label)
+                    .with_padding_left(8.)
+                    .with_padding_right(8.)
+                    .with_padding_top(3.)
+                    .with_padding_bottom(3.)
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
+                if state.is_hovered() {
+                    body = body.with_background_color(wash);
+                }
+                body.finish()
+            })
+            .with_cursor(Cursor::PointingHand)
+            .on_click(|ctx, _, _| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::ClearAgents);
+            })
+            .finish();
+            header_row = header_row.with_child(clear);
+        }
+        let header_inner = header_row.with_child(chevron).finish();
+        let header = Hoverable::new(self.agents_panel_mouse.clone(), move |state| {
+            let mut body = Container::new(header_inner)
+                .with_padding_left(12.)
+                .with_padding_right(12.)
+                .with_padding_top(9.)
+                .with_padding_bottom(9.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(10.)));
+            if state.is_hovered() {
+                body = body.with_background_color(wash);
+            }
+            body.finish()
+        })
+        .with_cursor(Cursor::PointingHand)
+        .with_defer_events_to_children()
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleAgentsPanel);
+        })
+        .finish();
+
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_child(header);
+
+        if visible.is_empty() {
+            // Empty state: the button is always present, so an opened panel
+            // with nothing to show says so rather than looking broken.
+            let empty = appearance
+                .ui_builder()
+                .span("No agents".to_owned())
+                .with_style(UiComponentStyles {
+                    font_color: Some(muted),
+                    font_size: Some(11.5),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            column.add_child(
+                Container::new(empty)
+                    .with_padding_left(12.)
+                    .with_padding_right(12.)
+                    .with_padding_bottom(10.)
+                    .finish(),
+            );
+        } else {
+            for agent in visible.iter() {
+                column.add_child(self.render_agent_row(agent, app));
+            }
+        }
+
+        let card = Container::new(column.finish())
+            .with_background_color(theme.surface_1().into_solid())
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(12.)))
+            .with_drop_shadow(DropShadow::default())
+            .finish();
+        Some(
+            ConstrainedBox::new(card)
+                .with_max_width(AGENTS_PANEL_MAX_WIDTH)
+                .finish(),
+        )
+    }
+
+    /// One agent row in the expanded panel: a status glyph + "<type>:
+    /// <description>" + the state label, expanding on click into the agent's
+    /// returned result — the background-script row's chrome.
+    fn render_agent_row(&self, agent: &AgentRun, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let main = theme.main_text_color(theme.background()).into_solid();
+        let wash = self.render_wash.get();
+
+        let status_icon: Box<dyn Element> = match agent.state {
+            AgentRunState::Running => inline_action::running_icon(appearance).finish(),
+            AgentRunState::Finished => inline_action::green_check_icon(appearance).finish(),
+            AgentRunState::Failed => inline_action::red_x_icon(appearance).finish(),
+            AgentRunState::Stopped => {
+                Icon::new(crate::ui_components::icons::Icon::Stop.into(), muted).finish()
+            }
+        };
+        let status_icon = ConstrainedBox::new(status_icon)
+            .with_width(13.)
+            .with_height(13.)
+            .finish();
+
+        let title_text = appearance
+            .ui_builder()
+            .span(agent.title())
+            .with_style(UiComponentStyles {
+                font_color: Some(main),
+                font_size: Some(11.5),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+        let state_label = appearance
+            .ui_builder()
+            .span(agent.state.label().to_owned())
+            .with_style(UiComponentStyles {
+                font_color: Some(muted),
+                font_size: Some(10.5),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+
+        let row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_spacing(8.)
+            .with_child(status_icon)
+            .with_child(Shrinkable::new(1., Clipped::new(title_text).finish()).finish())
+            .with_child(state_label)
+            .finish();
+
+        let row_mouse = {
+            let mut states = self.agent_row_mouse.borrow_mut();
+            states
+                .entry(agent.id.clone())
+                .or_insert_with(MouseStateHandle::default)
+                .clone()
+        };
+        let id = agent.id.clone();
+        let header = Hoverable::new(row_mouse, move |state| {
+            let mut body = Container::new(row)
+                .with_padding_left(12.)
+                .with_padding_right(12.)
+                .with_padding_top(7.)
+                .with_padding_bottom(7.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)));
+            if state.is_hovered() {
+                body = body.with_background_color(wash);
+            }
+            body.finish()
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleAgentRow(id.clone()));
+        })
+        .finish();
+
+        // The returned result, revealed on click. Capped the same way
+        // tool-card results are so a verbose agent can't stall layout.
+        let result_open =
+            self.agent_expanded_rows.contains(&agent.id) && !agent.result.trim().is_empty();
+        if !result_open {
+            return header;
+        }
+        let (shown, hidden) = tool_cards::truncate_output(agent.result.trim());
+        let mut body = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_child(header);
+        body.add_child(
+            Container::new(
+                inline_action::render_requested_action_body_text(
+                    std::borrow::Cow::Owned(shown),
+                    appearance.monospace_font_family(),
+                    app,
+                )
+                .finish(),
+            )
+            .with_padding_left(28.)
+            .with_padding_right(12.)
+            .with_padding_bottom(6.)
+            .finish(),
+        );
+        if hidden > 0 {
+            body.add_child(
+                Container::new(
+                    appearance
+                        .ui_builder()
+                        .span(format!("… {hidden} more lines"))
+                        .with_style(UiComponentStyles {
+                            font_color: Some(muted),
+                            font_size: Some(10.5),
+                            ..Default::default()
+                        })
+                        .build()
+                        .finish(),
+                )
+                .with_padding_left(28.)
+                .with_padding_bottom(6.)
+                .finish(),
+            );
+        }
+        body.finish()
     }
 
     /// twarp: the floating **background-scripts** panel — a per-chat status
@@ -5781,6 +6417,9 @@ impl View for ClaudeCodeView {
         // In raw mode the embedded terminal owns the keyboard instead (§43).
         if focus_ctx.is_self_focused() {
             self.focus(ctx);
+            // 7p: the user is looking at the pane — the ✓/✗ tab dot has
+            // served its purpose.
+            self.clear_tab_attention(ctx);
         }
         // #13: tell the pane group this pane is now the focused pane (it doesn't
         // watch editor focus itself), so Cmd+W / maximize / Open Changes target
@@ -5893,6 +6532,20 @@ impl View for ClaudeCodeView {
             // Claude launched stays visible while the conversation scrolls under
             // it. `None` (and so nothing floated) until this chat launches one.
             if let Some(panel) = self.render_background_panel(app) {
+                stack.add_positioned_child(
+                    panel,
+                    OffsetPositioning::offset_from_parent(
+                        vec2f(-12., 12.),
+                        ParentOffsetBounds::ParentBySize,
+                        ParentAnchor::TopRight,
+                        ChildAnchor::TopRight,
+                    ),
+                );
+            }
+            // twarp: the floating agents panel — the background panel's twin,
+            // sharing its top-right anchor. The toggle handlers keep at most
+            // one of the two expanded, so they never overlap.
+            if let Some(panel) = self.render_agents_panel(app) {
                 stack.add_positioned_child(
                     panel,
                     OffsetPositioning::offset_from_parent(
@@ -6093,6 +6746,11 @@ impl TypedActionView for ClaudeCodeView {
             ClaudeCodeViewAction::ForkConversation(index) => self.fork_conversation(*index, ctx),
             ClaudeCodeViewAction::ToggleBackgroundPanel => {
                 self.background_scripts_expanded = !self.background_scripts_expanded;
+                // The agents panel shares the top-right anchor; keep at most
+                // one of the two open.
+                if self.background_scripts_expanded {
+                    self.agents_panel_expanded = false;
+                }
                 ctx.notify();
             }
             ClaudeCodeViewAction::ToggleBackgroundScript(id) => {
@@ -6109,6 +6767,33 @@ impl TypedActionView for ClaudeCodeView {
                 for script in scripts.iter() {
                     if !script.state.is_active() {
                         self.background_dismissed.insert(script.id.clone());
+                    }
+                }
+                ctx.notify();
+            }
+            ClaudeCodeViewAction::ToggleAgentsPanel => {
+                self.agents_panel_expanded = !self.agents_panel_expanded;
+                // The background panel shares the top-right anchor; keep at
+                // most one of the two open.
+                if self.agents_panel_expanded {
+                    self.background_scripts_expanded = false;
+                }
+                ctx.notify();
+            }
+            ClaudeCodeViewAction::ToggleAgentRow(id) => {
+                if !self.agent_expanded_rows.remove(id) {
+                    self.agent_expanded_rows.insert(id.clone());
+                }
+                ctx.notify();
+            }
+            ClaudeCodeViewAction::ClearAgents => {
+                // Hide every agent that isn't still running. We never hide a
+                // live one — the user chose "clear non-running", and twarp
+                // can't stop an agent it didn't launch.
+                let agent_runs = self.agent_runs();
+                for agent in agent_runs.iter() {
+                    if !agent.state.is_active() {
+                        self.agents_dismissed.insert(agent.id.clone());
                     }
                 }
                 ctx.notify();
@@ -6152,6 +6837,16 @@ impl BackingView for ClaudeCodeView {
             ClaudeCodeCustomAction::ToggleComputerControl => self.toggle_computer_control(ctx),
             ClaudeCodeCustomAction::ToggleBackgroundPanel => {
                 self.background_scripts_expanded = !self.background_scripts_expanded;
+                if self.background_scripts_expanded {
+                    self.agents_panel_expanded = false;
+                }
+                ctx.notify();
+            }
+            ClaudeCodeCustomAction::ToggleAgentsPanel => {
+                self.agents_panel_expanded = !self.agents_panel_expanded;
+                if self.agents_panel_expanded {
+                    self.background_scripts_expanded = false;
+                }
                 ctx.notify();
             }
         }
@@ -6250,6 +6945,10 @@ impl BackingView for ClaudeCodeView {
         let has_computer_control_button = computer_control_button.is_some();
         let background_button = self.render_background_button(app);
         let has_background_button = background_button.is_some();
+        // twarp: the agents icon button sits to the LEFT of the
+        // background-scripts button — same chrome, badging running agents.
+        let agents_button = self.render_agents_button(app);
+        let has_agents_button = agents_button.is_some();
         let mut controls = Flex::row()
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -6257,11 +6956,17 @@ impl BackingView for ClaudeCodeView {
         if let Some(button) = computer_control_button {
             controls = controls.with_child(button);
         }
+        if let Some(button) = agents_button {
+            controls = controls.with_child(button);
+        }
         if let Some(button) = background_button {
             controls = controls.with_child(button);
         }
         let left_of_overflow = controls.with_child(toggle).finish();
         let mut control_container_width = if has_background_button { 250. } else { 210. };
+        if has_agents_button {
+            control_container_width += 40.;
+        }
         if has_computer_control_button {
             control_container_width += 132.;
         }
