@@ -19,7 +19,9 @@ use url::Url;
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
 #[cfg(feature = "local_fs")]
-use crate::util::openable_file_type::{is_supported_image_file, resolve_file_target, FileTarget};
+use crate::util::openable_file_type::{
+    is_image_viewer_file, is_supported_image_file, resolve_file_target, FileTarget,
+};
 use crate::{
     drive::OpenTwarpDriveObjectArgs,
     terminal::model::session::Session,
@@ -352,7 +354,11 @@ fn open_file(
 ) {
     #[cfg(feature = "local_fs")]
     {
-        let target = if is_supported_image_file(&path) {
+        // SVG links keep opening in the system viewer for a rendered preview
+        // (the editor-choice resolver would route them to the text editor).
+        // Raster images resolve normally, which routes them to the in-app
+        // image viewer.
+        let target = if is_supported_image_file(&path) && !is_image_viewer_file(&path) {
             FileTarget::SystemGeneric
         } else {
             let settings = EditorSettings::as_ref(ctx);
