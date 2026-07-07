@@ -98,6 +98,8 @@ impl SecureStorage {
                 // We can use whatever super duper foolproof secure key we want here.
                 // Here we are specifically choosing a value that will look inconspicuous
                 // in case someone chooses to scan our binary for strings.
+                // twarp: de-cloud — this URL is only used as obfuscated key material (never
+                // fetched); changing it would break decryption of existing stored secrets.
                 let mut key_bytes = Vec::from("https://releases.warp.dev/channel_versions.json");
                 key_bytes.resize(aead::AES_256_GCM.key_len(), 0);
                 match aead::UnboundKey::new(&aead::AES_256_GCM, key_bytes.as_slice()) {

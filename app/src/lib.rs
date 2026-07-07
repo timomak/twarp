@@ -44,7 +44,6 @@ mod app_menus;
 mod app_services;
 mod app_state;
 mod auth;
-mod autoupdate;
 mod banner;
 mod billing;
 #[cfg(not(target_family = "wasm"))]
@@ -217,7 +216,6 @@ use twarpui::platform::app::ApproveTerminateResult;
 use window_settings::WindowSettings;
 use workflows::manager::WorkflowManager;
 
-use crate::autoupdate::{AutoupdateState, RelaunchModel};
 use crate::cloud_object::model::actions::ObjectActions;
 use crate::cloud_object::model::view::CloudViewModel;
 use crate::code::global_buffer_model::GlobalBufferModel;
@@ -1136,23 +1134,9 @@ fn initialize_app(
     ctx.add_singleton_model(AntivirusInfo::new);
 
 
-    if let LaunchMode::App { .. } = launch_mode {
-        autoupdate::check_and_report_update_errors(ctx);
-    }
-
     ctx.set_fallback_font_source_provider(|url| ::asset_cache::url_source(url));
 
     ctx.set_default_binding_validator(is_binding_cross_platform);
-
-    if FeatureFlag::Autoupdate.is_enabled() {
-        // Attempt to clean up any old executable, whether or not we were
-        // explicitly launched as part of the auto-update process.  We may have
-        // failed to remove the executable on a previous launch of the app and
-        // should try again.
-        if let Err(e) = autoupdate::remove_old_executable() {
-            log::error!("Failed to remove old executable: {e:?}");
-        }
-    }
 
     experiments::init(ctx);
 
@@ -1406,7 +1390,6 @@ fn initialize_app(
     let display_count = ctx.windows().display_count();
     ctx.add_singleton_model(|_| DisplayCount(display_count));
 
-    ctx.add_singleton_model(|_| RelaunchModel::new());
     ctx.add_singleton_model(|_| NetworkStatus::new());
     ctx.add_singleton_model(|_| SystemStats::new());
     ctx.add_singleton_model(|_| KeybindingChangedNotifier::new());
@@ -1657,8 +1640,6 @@ fn initialize_app(
     ctx.add_singleton_model(EnvVarCollectionManager::new);
     ctx.add_singleton_model(WorkflowManager::new);
 
-    AutoupdateState::register(ctx, server_api.clone());
-
     ctx.add_singleton_model(LocalWorkflows::new);
 
     timer.mark_interval_end("SINGLETON_MODELS_REGISTERED");
@@ -1796,9 +1777,8 @@ fn app_callbacks(is_integration_test: bool) -> twarpui::platform::AppCallbacks {
                 manager.terminate(ctx);
             });
 
-            // We want to tear down the terminal server before relaunching for
-            // autoupdate, to ensure we're not running any extra Warp processes
-            // when we bring up the new process.  Additionally, this must occur
+            // Tear down the terminal server before exit, to ensure we're not
+            // running any extra Warp processes.  Additionally, this must occur
             // after terminating the persistence writer, so we don't keep track
             // of the fact that the shell sessions terminated.
             #[cfg(feature = "local_tty")]
@@ -1813,7 +1793,6 @@ fn app_callbacks(is_integration_test: bool) -> twarpui::platform::AppCallbacks {
             // ensure that the new process doesn't find the old process while
             // attempting to enforce our single-instance policy on Linux.
             app_services::teardown(ctx);
-            autoupdate::spawn_child_if_necessary(ctx);
 
             // Tear down any application profilers that are running, writing
             // results to disk.
@@ -1877,18 +1856,6 @@ fn app_callbacks(is_integration_test: bool) -> twarpui::platform::AppCallbacks {
                 },
                 ctx
             );
-
-            // If there's a pending autoupdate, apply that before showing the unsaved changes
-            // dialog. We apply the update first so that the dialog can force-terminate.
-            let applying_update = autoupdate::apply_pending_update(ctx, |ctx| {
-                // Once the deferred update is applied, re-terminate the app. This termination is
-                // cancellable so that we still show the unsaved changes dialog.
-                log::info!("Deferred autoupdate applied, terminating app");
-                ctx.terminate_app(TerminationMode::Cancellable, None);
-            });
-            if applying_update {
-                return ApproveTerminateResult::Cancel;
-            }
 
             let summary = UnsavedStateSummary::for_app(ctx);
             // Don't show dialog on integration test. Machine can't press buttons.
@@ -2037,8 +2004,6 @@ fn focus_running_window_and_show_native_modal(
 }
 
 fn on_close_app_cancelled(open_navigation_palette: bool, ctx: &mut AppContext) {
-    autoupdate::cancel_relaunch(ctx);
-
     send_telemetry_from_app_ctx!(
         TelemetryEvent::QuitModalCancel {
             nav_palette: open_navigation_palette,
@@ -2244,8 +2209,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
     }
 
     flags.extend([
-        #[cfg(feature = "autoupdate")]
-        FeatureFlag::Autoupdate,
         #[cfg(feature = "changelog")]
         FeatureFlag::Changelog,
         #[cfg(feature = "record_app_active_events")]
@@ -2338,8 +2301,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::PromptSuggestionsViaMAA,
         #[cfg(feature = "clear_autosuggestion_on_escape")]
         FeatureFlag::ClearAutosuggestionOnEscape,
-        #[cfg(feature = "autoupdate_ui_revamp")]
-        FeatureFlag::AutoupdateUIRevamp,
         #[cfg(all(not(windows), feature = "kitty_images"))]
         FeatureFlag::KittyImages,
         #[cfg(feature = "twarp_packs")]

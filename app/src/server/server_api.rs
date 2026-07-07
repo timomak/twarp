@@ -28,7 +28,6 @@ use auth::{AuthClient, AMBIENT_WORKLOAD_TOKEN_HEADER};
 use base64::prelude::BASE64_URL_SAFE;
 use base64::Engine;
 use block::BlockClient;
-use channel_versions::ChannelVersions;
 use futures::StreamExt;
 use object::ObjectClient;
 use prost::Message;
@@ -66,7 +65,6 @@ use super::experiments::ServerExperiment;
 use super::experiments::ServerExperiments;
 use super::graphql::GraphQLError;
 
-pub const FETCH_CHANNEL_VERSIONS_TIMEOUT: std::time::Duration = Duration::from_secs(60);
 
 const EXPERIMENT_ID_HEADER: &str = "X-Warp-Experiment-Id";
 
@@ -1044,57 +1042,6 @@ impl ServerApi {
                 Err(anyhow!(payload).context("fetching time from server failed"))
             }
         }
-    }
-
-    /// Fetches updated Warp Channel Versions from Warp Server. If it is the first such request of
-    /// the current calendar day, first attempts to call the '/client_version/daily'. If that call
-    /// fails or if it not the first request of the calendar day, returns the result of a call to
-    /// `/client_version'. The caller can specify whether or not changelog information should be
-    /// included in the response based on whether or not it will be used.
-    pub async fn fetch_channel_versions(
-        &self,
-        include_changelogs: bool,
-        is_daily: bool,
-    ) -> Result<ChannelVersions> {
-        let mut url = Url::parse(&ChannelState::server_root_url())
-            .expect("Should not fail to parse server root URL");
-        if is_daily {
-            url.set_path("/client_version/daily");
-        } else {
-            url.set_path("/client_version");
-        }
-        url.query_pairs_mut()
-            .append_pair("include_changelogs", &include_changelogs.to_string());
-
-        if include_changelogs {
-            log::info!("Fetching channel versions and changelogs from Warp server");
-        } else {
-            log::info!("Fetching channel versions (without changelogs) from Warp server");
-        }
-
-        let mut request_builder = self
-            .client
-            .get(url.as_str())
-            .timeout(FETCH_CHANNEL_VERSIONS_TIMEOUT)
-            .header(EXPERIMENT_ID_HEADER, self.auth_state.anonymous_id());
-
-        // Authorization for /client_version is optional. Attach authorization header if an access
-        // token is present. First, try to get a valid token. If our cached one is expired, try to
-        // refresh. Failing that, send the expired token.
-        let auth_token = self
-            .get_or_refresh_access_token()
-            .await
-            .ok()
-            .and_then(|token| token.bearer_token())
-            .or_else(|| self.auth_state.get_access_token_ignoring_validity());
-        if let Some(token_str) = auth_token {
-            request_builder = request_builder.bearer_auth(token_str);
-        }
-
-        let response = request_builder.send().await?;
-        let versions: ChannelVersions = response.json().await?;
-        log::info!("Received channel versions from Warp server: {versions}");
-        Ok(versions)
     }
 }
 

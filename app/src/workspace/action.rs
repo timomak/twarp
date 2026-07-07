@@ -164,11 +164,8 @@ pub enum WorkspaceAction {
         is_vertical_tabs: bool,
     },
     SelectNewSessionMenuItem(NewSessionMenuItem),
-    AutoupdateFailureLink,
-    ApplyUpdate,
     LogOut,
     CopyVersion(&'static str),
-    DownloadNewVersion,
     ConfigureKeybindingSettings {
         keybinding_name: Option<String>,
     },
@@ -208,7 +205,6 @@ pub enum WorkspaceAction {
     ToggleBlockSnackbar,
     ToggleErrorUnderlining,
     ToggleSyntaxHighlighting,
-    CheckForUpdate,
     ExportAllTwarpDriveObjects,
     SetA11yVerbosityLevel(AccessibilityVerbosity),
     ToggleNotifications,
@@ -750,10 +746,7 @@ impl WorkspaceAction {
             | OpenRepository { .. }
             | SelectTabConfig(_)
             | ToggleVerticalTabsPanel => true,
-            AutoupdateFailureLink
-            | ApplyUpdate
-            | CopyVersion(_)
-            | DownloadNewVersion
+            CopyVersion(_)
             | ConfigureKeybindingSettings { .. }
             | ExportAllTwarpDriveObjects
             | ShowSettings
@@ -786,7 +779,6 @@ impl WorkspaceAction {
             | ToggleNewSessionMenu { .. }
             | SelectNewSessionMenuItem(_)
             | ToggleTabBarOverflowMenu
-            | CheckForUpdate
             | SetA11yVerbosityLevel(_)
             | ToggleNotifications
             | DispatchToSettingsTab { .. }

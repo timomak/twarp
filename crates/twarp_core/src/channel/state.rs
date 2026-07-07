@@ -47,7 +47,6 @@ impl ChannelState {
                 server_config: WarpServerConfig::disabled(),
                 oz_config: OzConfig::disabled(),
                 telemetry_config: None,
-                autoupdate_config: None,
                 mcp_static_config: None,
             },
         }
@@ -188,16 +187,6 @@ impl ChannelState {
         CHANNEL_STATE.lock().config.telemetry_config.is_some()
     }
 
-    pub fn releases_base_url() -> Cow<'static, str> {
-        CHANNEL_STATE
-            .lock()
-            .config
-            .autoupdate_config
-            .as_ref()
-            .map(|ac| ac.releases_base_url.clone())
-            .unwrap_or_default()
-    }
-
     pub fn firebase_api_key() -> Cow<'static, str> {
         CHANNEL_STATE
             .lock()
@@ -324,16 +313,6 @@ impl ChannelState {
     #[cfg(not(feature = "test-util"))]
     pub fn app_version() -> Option<&'static str> {
         option_env!("GIT_RELEASE_TAG")
-    }
-
-    pub fn show_autoupdate_menu_items() -> bool {
-        CHANNEL_STATE
-            .lock()
-            .config
-            .autoupdate_config
-            .as_ref()
-            .map(|ac| ac.show_autoupdate_menu_items)
-            .unwrap_or_default()
     }
 
     /// Returns the MCP OAuth provider config matching the given client ID, if any.

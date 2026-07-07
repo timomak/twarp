@@ -20,8 +20,6 @@ pub struct ChannelConfig {
     /// Configuration for telemetry sending, or [`None`] if telemetry should be
     /// disabled for this build.
     pub telemetry_config: Option<TelemetryConfig>,
-    /// Configuration for autoupdate functionality.
-    pub autoupdate_config: Option<AutoupdateConfig>,
     /// Configuration for statically-bundled MCP OAuth credentials.
     pub mcp_static_config: Option<McpStaticConfig>,
 }
@@ -29,8 +27,8 @@ pub struct ChannelConfig {
 impl ChannelConfig {
     /// Removes upstream Warp service destinations from externally generated channel configs.
     ///
-    /// Twarp should not inherit production Warp auth/cloud, telemetry, or
-    /// autoupdate destinations by accident. Local/test server overrides are preserved so
+    /// Twarp should not inherit production Warp auth/cloud or telemetry
+    /// destinations by accident. Local/test server overrides are preserved so
     /// development builds can still point at explicitly configured non-Warp services.
     pub fn without_upstream_warp_services(mut self) -> Self {
         if self.server_config.has_upstream_warp_endpoint() {
@@ -41,7 +39,6 @@ impl ChannelConfig {
         }
 
         self.telemetry_config = None;
-        self.autoupdate_config = None;
 
         self
     }
@@ -156,14 +153,6 @@ pub struct RudderStackDestination {
     pub write_key: Cow<'static, str>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct AutoupdateConfig {
-    /// The base URL for fetching autoupdate versions and updated release bundles.
-    pub releases_base_url: Cow<'static, str>,
-    /// Whether or not to display menu items relating to autoupdate.
-    pub show_autoupdate_menu_items: bool,
-}
-
 /// Configuration for statically-bundled MCP OAuth credentials.
 ///
 /// These are credentials for OAuth providers where dynamic client registration
@@ -205,10 +194,6 @@ mod tests {
                     root_url: "https://example-rudderstack.invalid".into(),
                     ugc_write_key: "ugc-write-key".into(),
                 }),
-            }),
-            autoupdate_config: Some(AutoupdateConfig {
-                releases_base_url: "https://example-releases.invalid".into(),
-                show_autoupdate_menu_items: true,
             }),
             mcp_static_config: None,
         }
@@ -256,7 +241,6 @@ mod tests {
         assert_eq!(config.oz_config.oz_root_url, "http://192.0.2.0:9");
         assert!(config.oz_config.workload_audience_url.is_none());
         assert!(config.telemetry_config.is_none());
-        assert!(config.autoupdate_config.is_none());
     }
 
     #[test]
@@ -294,6 +278,5 @@ mod tests {
             Some("http://localhost:8080")
         );
         assert!(config.telemetry_config.is_none());
-        assert!(config.autoupdate_config.is_none());
     }
 }
