@@ -281,6 +281,11 @@ impl Listener {
     }
 
     fn start_listener(&mut self, ctx: &mut ModelContext<Self>) {
+        // twarp: de-cloud — without an account there is never an access token, so the
+        // websocket would just fail and retry forever. Don't start it while logged out.
+        if !crate::auth::AuthStateProvider::as_ref(ctx).get().is_logged_in() {
+            return;
+        }
         if !self.should_subscribe_to_updates {
             self.should_subscribe_to_updates = true;
             self.get_twarp_drive_updates(ctx);
