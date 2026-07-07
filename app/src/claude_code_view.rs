@@ -65,6 +65,7 @@ use markdown_parser::{
 use parking_lot::RwLock;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
+use settings::Setting;
 use twarp_core::features::FeatureFlag;
 use twarp_editor::editor::NavigationKey;
 use twarpui::assets::asset_cache::AssetSource;
@@ -103,6 +104,7 @@ use self::diff_cards::DiffCard;
 use self::repo_context::{CiState, RepoContext};
 use self::thinking::ThinkingUi;
 use self::tool_cards::{render_tool_card, ToolCardUi};
+use crate::app_state::ConversationStatus;
 use crate::appearance::Appearance;
 use crate::claude_code_session_defaults::ClaudeSessionDefaultsModel;
 use crate::computer_control::{
@@ -118,7 +120,11 @@ use crate::pane_group::{
 };
 #[cfg(all(feature = "local_fs", feature = "local_tty"))]
 use crate::terminal::local_shell::LocalShellState;
-use crate::terminal::{view::Event as TerminalViewEvent, TerminalManager, TerminalView};
+use crate::terminal::{
+    session_settings::{NotificationsMode, SessionSettings},
+    view::{Event as TerminalViewEvent, NotificationsTrigger},
+    TerminalManager, TerminalView,
+};
 use crate::util::path::{resolve_executable, resolve_executable_in_path};
 use crate::workspace::{WorkspaceAction, WorkspaceRegistry};
 
@@ -218,6 +224,11 @@ const EFFORT_CYCLE: &[&str] = &["default", "low", "medium", "high", "max"];
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClaudeCodeViewEvent {
     Pane(PaneEvent),
+    /// twarp 07 (7p): the session state the tab indicator reads (working /
+    /// blocked / finished) changed. The pane host forwards this to the
+    /// workspace so the tab bar repaints — the view's own `notify()` only
+    /// redraws the pane body.
+    TabStatusChanged,
     /// twarp 07 (7i, PRODUCT §39): swap this pane for the raw interactive
     /// `claude` CLI resuming `session_id` — handled by the pane group as a
     /// temporary pane replacement.
@@ -589,6 +600,12 @@ pub struct ClaudeCodeView {
     /// `Interrupted` so it shows the "Interrupted." notice instead of a spurious
     /// error and keeps the session resumable.
     interrupt_pending: bool,
+    /// The last turn's outcome, for the tab status dot (7p): `Some(true)`
+    /// finished cleanly, `Some(false)` failed. Cleared when the user comes
+    /// back to the pane (focus) — so a background tab keeps its ✓/✗ until
+    /// revisited — and masked by the in-progress/blocked states while the
+    /// next turn runs. Stop (`Interrupted`) sets nothing: the user did it.
+    tab_attention: Option<bool>,
     /// Stable mouse-state handles kept across renders so a click's
     /// mousedown/mouseup hit the same handle.
     submit_button: MouseStateHandle,
@@ -993,6 +1010,7 @@ impl ClaudeCodeView {
             child: None,
             message_tx: None,
             streaming: false,
+            tab_attention: None,
             interrupt_pending: false,
             submit_button: MouseStateHandle::default(),
             refresh_button: MouseStateHandle::default(),
@@ -1126,6 +1144,7 @@ impl ClaudeCodeView {
                 .apply(TranscriptEvent::UserMessage(prompt.clone()));
             let started = Instant::now();
             view.streaming = true;
+            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
             view.turn_started = Some(started);
             view.schedule_elapsed_tick(started, ctx);
             view.begin_session(Some(OutgoingMessage::text(prompt)), ctx);
@@ -2200,6 +2219,7 @@ impl ClaudeCodeView {
         }
         let started = Instant::now();
         self.streaming = true;
+        ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         self.turn_started = Some(started);
         self.schedule_elapsed_tick(started, ctx);
         match &self.message_tx {
@@ -2343,6 +2363,7 @@ impl ClaudeCodeView {
             if !self.streaming {
                 let started = Instant::now();
                 self.streaming = true;
+                ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
                 self.turn_started = Some(started);
                 self.schedule_elapsed_tick(started, ctx);
             }
@@ -2464,6 +2485,7 @@ impl ClaudeCodeView {
             .apply(TranscriptEvent::UserMessage(message.text.clone()));
         let started = Instant::now();
         self.streaming = true;
+        ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         self.turn_started = Some(started);
         self.schedule_elapsed_tick(started, ctx);
         let _ = tx.try_send(StdinCommand::Turn(message));
@@ -2807,6 +2829,14 @@ impl ClaudeCodeView {
                     );
                     self.pending_question_permission
                         .insert(tool_use_id.clone(), id.clone());
+                    // 7p: the turn is now parked on the user. Notify if
+                    // they're away, and flip the tab dot to blocked.
+                    self.maybe_send_attention_notification(
+                        NotificationsTrigger::NeedsAttention,
+                        "Claude is asking you a question".to_string(),
+                        ctx,
+                    );
+                    ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
                     ctx.notify();
                     return;
                 }
@@ -2841,7 +2871,19 @@ impl ClaudeCodeView {
                 self.interrupt_pending = false;
             }
         }
-        if matches!(event, TranscriptEvent::Ended { .. }) {
+        // 7p: a regular permission request (the Allow/Deny card) also parks
+        // the turn on the user — notify if they're away. The tab flips to
+        // blocked once the card lands in the transcript below. The held
+        // AskUserQuestion path notified above and returned.
+        if let TranscriptEvent::PermissionRequest { tool, .. } = &event {
+            self.maybe_send_attention_notification(
+                NotificationsTrigger::NeedsAttention,
+                format!("Claude needs permission to use {tool}"),
+                ctx,
+            );
+            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+        }
+        if let TranscriptEvent::Ended { reason } = &event {
             log::warn!(
                 "QDIAG turn Ended (streaming->false), had_pending_questions={}",
                 !self.pending_question_permission.is_empty(),
@@ -2852,6 +2894,32 @@ impl ClaudeCodeView {
             // Drop the held requests; the idle card stays answerable as a
             // next-turn fallback (`submit_question_answers`).
             self.pending_question_permission.clear();
+            // 7p: mark the tab with the turn's outcome and notify an
+            // away user. Interrupted/Exited stay quiet — the user caused
+            // the former, and the latter is either a mode-change restart
+            // or follows an Error that already reported.
+            match reason {
+                claude_code::EndReason::Completed => {
+                    self.tab_attention = Some(true);
+                    let body = self.last_assistant_text().unwrap_or_default();
+                    self.maybe_send_attention_notification(
+                        NotificationsTrigger::AgentTaskCompleted(true),
+                        body,
+                        ctx,
+                    );
+                }
+                claude_code::EndReason::Error(message) => {
+                    self.tab_attention = Some(false);
+                    let message = message.clone();
+                    self.maybe_send_attention_notification(
+                        NotificationsTrigger::AgentTaskCompleted(false),
+                        message,
+                        ctx,
+                    );
+                }
+                claude_code::EndReason::Interrupted | claude_code::EndReason::Exited => {}
+            }
+            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         }
         // PRODUCT §53 (7m): a turn that completed cleanly (or was interrupted —
         // the session is still alive) dispatches the next queued message.
@@ -2953,6 +3021,8 @@ impl ClaudeCodeView {
             return;
         }
         self.streaming = false;
+        // 7p: the working spinner in the tab must stop with the stream.
+        ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         self.interrupt_pending = false;
         self.child = None;
         self.message_tx = None;
@@ -3244,8 +3314,16 @@ impl ClaudeCodeView {
     /// `set_title` no-ops when unchanged, so calling this on each new turn is
     /// cheap.
     fn update_pane_title(&self, ctx: &mut ViewContext<Self>) {
-        let title = self
-            .transcript
+        let title = self.derived_tab_title();
+        self.pane_configuration
+            .update(ctx, |config, ctx| config.set_title(title, ctx));
+    }
+
+    /// The tab title derived from the conversation — the first user message,
+    /// or the generic pane title before one exists. Also the desktop
+    /// notification's title (7p), so the notification names the tab to look at.
+    fn derived_tab_title(&self) -> String {
+        self.transcript
             .items()
             .iter()
             .find_map(|item| match item {
@@ -3253,9 +3331,98 @@ impl ClaudeCodeView {
                 _ => None,
             })
             .filter(|title| !title.is_empty())
-            .unwrap_or_else(|| PANE_TITLE.to_owned());
-        self.pane_configuration
-            .update(ctx, |config, ctx| config.set_title(title, ctx));
+            .unwrap_or_else(|| PANE_TITLE.to_owned())
+    }
+
+    /// The session state the tab indicator shows (7p), reusing the agent
+    /// indicator's status set: blocked-on-the-user outranks working, and an
+    /// idle pane shows the last turn's outcome until the user comes back to
+    /// it. `None` renders no indicator (a fresh or revisited idle pane).
+    pub fn tab_status(&self) -> Option<ConversationStatus> {
+        if self.streaming
+            && (!self.pending_question_permission.is_empty()
+                || self.transcript.has_pending_prompt())
+        {
+            return Some(ConversationStatus::Blocked {});
+        }
+        if self.streaming {
+            return Some(ConversationStatus::InProgress);
+        }
+        self.tab_attention.map(|succeeded| {
+            if succeeded {
+                ConversationStatus::Success
+            } else {
+                ConversationStatus::Error
+            }
+        })
+    }
+
+    /// Drop the ✓/✗ attention dot once the user has seen the pane (7p).
+    fn clear_tab_attention(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.tab_attention.take().is_some() {
+            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+            ctx.notify();
+        }
+    }
+
+    /// The tail of the assistant's latest prose, as the completion
+    /// notification's body (7p) — the end of the reply is what the user
+    /// missed (`create_notification_content` truncates from the front).
+    fn last_assistant_text(&self) -> Option<String> {
+        self.transcript
+            .items()
+            .iter()
+            .rev()
+            .find_map(|item| match item {
+                TranscriptItem::Assistant { text, .. } if !text.trim().is_empty() => {
+                    Some(text.clone())
+                }
+                _ => None,
+            })
+    }
+
+    /// Same gate as the terminal's `is_navigated_away_from_window` (7p):
+    /// desktop notifications only fire while this pane's window isn't the
+    /// active one — if the user is in the app, the pane itself is the signal.
+    fn is_navigated_away_from_window(&self, ctx: &mut ViewContext<Self>) -> bool {
+        Some(ctx.window_id()) != ctx.windows().active_window()
+    }
+
+    /// Fire a desktop notification titled with the pane's tab title (7p),
+    /// through the same workspace handler as the terminal's command-completion
+    /// notifications (sound setting, permission-failure banner). Mirrors
+    /// `send_agent_desktop_notification_or_show_banner`'s setting gates, minus
+    /// the discovery banner — that's a terminal-view inline banner the chat
+    /// pane has no host for, so `NotificationsMode::Unset` is simply a no-op
+    /// here (the terminal flow is where the setting gets discovered).
+    fn maybe_send_attention_notification(
+        &mut self,
+        trigger: NotificationsTrigger,
+        body: String,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let session_settings = SessionSettings::as_ref(ctx);
+        if !session_settings
+            .notifications
+            .is_supported_on_current_platform()
+        {
+            return;
+        }
+        let settings = session_settings.notifications.value().clone();
+        if !matches!(settings.mode, NotificationsMode::Enabled) {
+            return;
+        }
+        let enabled = match trigger {
+            NotificationsTrigger::AgentTaskCompleted(_) => settings.is_agent_task_completed_enabled,
+            _ => settings.is_needs_attention_enabled,
+        };
+        if !enabled || !self.is_navigated_away_from_window(ctx) {
+            return;
+        }
+        let content = trigger.create_notification_content(self.derived_tab_title(), body);
+        ctx.emit(ClaudeCodeViewEvent::Pane(PaneEvent::SendNotification(
+            content,
+        )));
     }
 
     /// Drive the "Working · <elapsed>" counter (#7) on a steady 1 s cadence.
@@ -6250,6 +6417,9 @@ impl View for ClaudeCodeView {
         // In raw mode the embedded terminal owns the keyboard instead (§43).
         if focus_ctx.is_self_focused() {
             self.focus(ctx);
+            // 7p: the user is looking at the pane — the ✓/✗ tab dot has
+            // served its purpose.
+            self.clear_tab_attention(ctx);
         }
         // #13: tell the pane group this pane is now the focused pane (it doesn't
         // watch editor focus itself), so Cmd+W / maximize / Open Changes target

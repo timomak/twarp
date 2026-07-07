@@ -436,6 +436,25 @@ impl Transcript {
         None
     }
 
+    /// True while the current turn is parked on a user-facing prompt — a
+    /// `Permission` card awaiting Allow/Deny or a `Question` awaiting answers
+    /// (7p). Only the items after the last user turn count: an unanswered card
+    /// from an earlier, already-ended turn is stale (its `can_use_tool` request
+    /// died with the turn) and must not report the session as blocked.
+    pub fn has_pending_prompt(&self) -> bool {
+        for item in self.items.iter().rev() {
+            match item {
+                TranscriptItem::User(_) => return false,
+                TranscriptItem::Permission { decision: None, .. } => return true,
+                TranscriptItem::Question {
+                    answered: false, ..
+                } => return true,
+                _ => {}
+            }
+        }
+        false
+    }
+
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
@@ -1087,6 +1106,31 @@ mod tests {
         }
         // Answering twice is a no-op (the control_response was already sent).
         assert!(t.answer_permission("req-1", false).is_none());
+    }
+
+    #[test]
+    fn has_pending_prompt_tracks_current_turn_only() {
+        let mut t = Transcript::new();
+        assert!(!t.has_pending_prompt());
+        t.apply(TranscriptEvent::PermissionRequest {
+            id: "req-1".to_string(),
+            tool: "Bash".to_string(),
+            input: serde_json::json!({ "command": "echo hi" }),
+            tool_use_id: Some("toolu_1".to_string()),
+        });
+        assert!(t.has_pending_prompt());
+        t.answer_permission("req-1", true);
+        assert!(!t.has_pending_prompt());
+        // A stale unanswered card from a previous turn stops counting once a
+        // new user turn starts.
+        t.apply(TranscriptEvent::QuestionRequest {
+            id: "req-2".to_string(),
+            dialog_kind: "question".to_string(),
+            payload: serde_json::json!({ "questions": [] }),
+        });
+        assert!(t.has_pending_prompt());
+        t.apply(TranscriptEvent::UserMessage("next turn".to_string()));
+        assert!(!t.has_pending_prompt());
     }
 
     #[test]
