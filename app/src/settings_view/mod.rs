@@ -334,7 +334,6 @@ pub mod flags {
     pub const ERROR_UNDERLINING_FLAG: &str = "error_underlining";
     pub const SYNTAX_HIGHLIGHTING_FLAG: &str = "syntax_highlighting";
     pub const SAME_LINE_PROMPT: &str = "Same_Line_Prompt_Enabled";
-    pub const TELEMETRY_FLAG: &str = "telemetry";
     pub const SETTINGS_SYNC_FLAG: &str = "settings_sync";
     pub const SAFE_MODE_FLAG: &str = "safe_mode";
     pub const DIM_INACTIVE_PANES_FLAG: &str = "Dim_Inactive_Panes";

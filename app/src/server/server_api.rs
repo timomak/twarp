@@ -39,7 +39,6 @@ use twarpui::{r#async::BoxFuture, ModelContext};
 use url::Url;
 use workspace::WorkspaceClient;
 
-use crate::server::telemetry::TelemetryApi;
 use crate::settings::PrivacySettingsSnapshot;
 use crate::settings_view;
 
@@ -54,7 +53,6 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use twarp_core::telemetry::TelemetryEvent;
@@ -393,8 +391,6 @@ pub struct ServerApi {
     client: Arc<http_client::Client>,
     auth_state: Arc<AuthState>,
     event_sender: async_channel::Sender<ServerApiEvent>,
-    // TODO(jeff): Make `TelemetryApi` another type of client, and move it off `ServerApi`.
-    telemetry_api: TelemetryApi,
     last_server_time: Arc<Mutex<Option<ServerTime>>>,
     // We technically use OAuth2 for headless device authentication.
     oauth_client: self::auth::OAuth2Client,
@@ -423,7 +419,6 @@ impl ServerApi {
             client: Arc::new(http_client::Client::new()),
             auth_state,
             event_sender,
-            telemetry_api: TelemetryApi::new(),
             last_server_time: Arc::new(Mutex::new(None)),
             oauth_client,
             ambient_workload_token: Arc::new(Mutex::new(None)),
@@ -442,7 +437,6 @@ impl ServerApi {
             client: Arc::new(http_client::Client::new_for_test()),
             auth_state: Arc::new(AuthState::new_for_test()),
             event_sender: tx,
-            telemetry_api: TelemetryApi::new(),
             last_server_time: Arc::new(Mutex::new(None)),
             oauth_client,
             ambient_workload_token: Arc::new(Mutex::new(None)),
@@ -847,57 +841,16 @@ impl ServerApi {
         }
     }
 
-    /// Synchronously sends a [`TelemetryEvent`] to the Rudderstack API. Prefer not to call this
-    /// directly, use the macros defined in crate::server::telemetry::macros. If telemetry is
-    /// disabled, this is a no-op.
+    /// twarp: de-cloud — telemetry pipeline deleted; events are dropped.
+    ///
+    /// The signature is kept so the `send_telemetry_sync_*` macros and direct
+    /// call sites compile unchanged.
     pub async fn send_telemetry_event(
         &self,
-        event: impl TelemetryEvent,
-        settings_snapshot: PrivacySettingsSnapshot,
+        _event: impl TelemetryEvent,
+        _settings_snapshot: PrivacySettingsSnapshot,
     ) -> Result<()> {
-        let user_id = self.auth_state.user_id();
-        let anonymous_id = self.auth_state.anonymous_id();
-        self.telemetry_api
-            .send_telemetry_event(user_id, anonymous_id, event, settings_snapshot)
-            .await
-    }
-
-    /// Drains all queued [`TelemetryEvent`]s into Rudderstack requests containing the corresponding
-    /// batch of events. Events are queued using the [`send_telemetry_from_ctx`] or
-    /// [`send_telemetry_from_app_ctx`] macros. If telemetry is disabled for the user, this flushes
-    /// the UI framework event queue and does nothing with them (no request is made).
-    ///
-    /// Returns the number of events that were flushed.
-    pub async fn flush_telemetry_events(
-        &self,
-        settings_snapshot: PrivacySettingsSnapshot,
-    ) -> Result<usize> {
-        self.telemetry_api.flush_events(settings_snapshot).await
-    }
-
-    /// Sends a batched Rudder request containing events written to the file at `path`. This is a
-    /// no-op if telemetry is disabled.
-    pub async fn flush_persisted_events_to_rudder(
-        &self,
-        path: &Path,
-        settings_snapshot: PrivacySettingsSnapshot,
-    ) -> Result<()> {
-        self.telemetry_api
-            .flush_persisted_events_to_rudder(path, settings_snapshot)
-            .await
-    }
-
-    /// Writes all queued [`TelemetryEvent`]s to a file, limiting the number of written
-    /// events to `max_events`. Events are queued using the [`send_telemetry_from_ctx`] or
-    /// [`send_telemetry_from_app_ctx`] macros. If telemetry is disabled, no events are written to
-    /// disk.
-    pub fn persist_telemetry_events(
-        &self,
-        max_event_count: usize,
-        settings_snapshot: PrivacySettingsSnapshot,
-    ) -> Result<()> {
-        self.telemetry_api
-            .flush_and_persist_events(max_event_count, settings_snapshot)
+        Ok(())
     }
 
     // twarp: 2c-d — get_relevant_files removed (AI deleted).
@@ -1061,11 +1014,8 @@ impl ServerApiProvider {
 
         if ContextFlag::NetworkLogConsole.is_enabled() {
             super::network_logging::init(
-                [
-                    Arc::get_mut(&mut server_api.client)
-                        .expect("guaranteed there is only one copy of client"),
-                    &mut server_api.telemetry_api.client,
-                ],
+                [Arc::get_mut(&mut server_api.client)
+                    .expect("guaranteed there is only one copy of client")],
                 ctx,
             );
         }

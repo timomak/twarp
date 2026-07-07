@@ -1,5 +1,4 @@
 use pathfinder_color::ColorU;
-use twarp_core::channel::ChannelState;
 use twarp_core::features::FeatureFlag;
 use twarp_core::ui::{
     appearance::Appearance,
@@ -26,7 +25,6 @@ use twarpui::{
 use crate::settings::PrivacySettings;
 use crate::themes::theme::ThemeKind;
 
-const PRIVACY_URL: &str = "https://warp.dev/privacy";
 
 pub const AUTH_MODAL_GAP: f32 = 16.;
 const MODAL_CORNER_RADIUS: Radius = Radius::Pixels(8.);
@@ -319,15 +317,12 @@ pub fn render_overlay(overlay_body: Box<dyn Element>, appearance: &Appearance) -
 /// Handles needed to render the privacy settings overlay.
 #[derive(Default)]
 pub struct PrivacySettingsHandles {
-    pub telemetry_switch: SwitchStateHandle,
     pub cloud_conversation_storage_switch: SwitchStateHandle,
     pub close_button_mouse: MouseStateHandle,
-    pub telemetry_docs_mouse: MouseStateHandle,
 }
 
 /// Actions dispatched by the privacy settings overlay toggles.
 pub struct PrivacySettingsActions<A: Action + Clone> {
-    pub toggle_telemetry: A,
     pub toggle_cloud_conversation_storage: A,
     pub hide_overlay: A,
 }
@@ -447,51 +442,6 @@ pub fn render_privacy_settings_toggles<A: Action + Clone + 'static>(
             .finish()
     }
 
-    let toggle_telemetry = actions.toggle_telemetry.clone();
-    let telemetry_toggle = Flex::row()
-        .with_main_axis_size(MainAxisSize::Max)
-        .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-        .with_child(
-            Shrinkable::new(
-                1.,
-                render_privacy_settings_section_header("Help improve Twarp", appearance).finish(),
-            )
-            .finish(),
-        )
-        .with_child(
-            appearance
-                .ui_builder()
-                .switch(handles.telemetry_switch.clone())
-                .check(PrivacySettings::as_ref(app).is_telemetry_enabled)
-                .build()
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(toggle_telemetry.clone());
-                })
-                .finish(),
-        )
-        .finish();
-
-    let telemetry_description = render_description(
-        appearance,
-        "High-level feature usage data helps Twarp's product team prioritize the roadmap.".into(),
-    );
-
-    let telemetry_link = Flex::row()
-        .with_child(
-            appearance
-                .ui_builder()
-                .link(
-                    "Learn more".into(),
-                    Some(PRIVACY_URL.into()),
-                    None,
-                    handles.telemetry_docs_mouse.clone(),
-                )
-                .soft_wrap(false)
-                .build()
-                .finish(),
-        )
-        .finish();
-
     let toggle_cloud = actions.toggle_cloud_conversation_storage.clone();
     let cloud_conversation_storage_toggle = Flex::row()
         .with_main_axis_size(MainAxisSize::Max)
@@ -532,23 +482,7 @@ pub fn render_privacy_settings_toggles<A: Action + Clone + 'static>(
 
     let mut col = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
 
-    // Builds without a telemetry config (e.g. OpenWarp) cannot ship the
-    // corresponding events, so the toggle would be a no-op. Hide it based on
-    // whether its backing config is present.
-    if ChannelState::is_telemetry_available() && !FeatureFlag::GlobalAIAnalyticsBanner.is_enabled()
-    {
-        col.add_children(vec![
-            Container::new(telemetry_toggle)
-                .with_margin_bottom(AUTH_MODAL_GAP)
-                .finish(),
-            Container::new(telemetry_description)
-                .with_margin_bottom(AUTH_MODAL_GAP)
-                .finish(),
-            Container::new(telemetry_link)
-                .with_margin_bottom(AUTH_MODAL_GAP)
-                .finish(),
-        ]);
-    }
+    // twarp: de-cloud — telemetry toggle deleted from the privacy overlay.
 
     // Hide the cloud conversation storage toggle entirely when AI is disabled:
     // the setting has no effect without AI, and showing it is confusing.

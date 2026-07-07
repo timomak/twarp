@@ -9,9 +9,6 @@ pub use overrides::{get_overrides, set_overrides};
 pub enum FeatureFlag {
     Changelog,
     DebugMode,
-    WithSandboxTelemetry,
-    RecordAppActiveEvents,
-
     WelcomeTips,
     ThinStrokes,
     WelcomeBlock,
@@ -360,9 +357,6 @@ pub enum FeatureFlag {
 
     /// Enables the tabbed file viewer
     TabbedEditorView,
-
-    /// Enables sending telemetry data to a file in addition to the server
-    SendTelemetryToFile,
 
     /// Enables multiple agent profiles in settings for managing different AI agent configurations.
     MultiProfile,

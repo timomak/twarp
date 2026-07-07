@@ -70,9 +70,7 @@ use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::sync_queue::SyncQueue;
 use crate::server::telemetry::{PaletteSource, TelemetryEvent};
 use crate::session_management::{RunningSessionSummary, SessionNavigationData};
-use crate::settings::{
-    CloudPreferencesSettings, PrivacySettings, TELEMETRY_ENABLED_DEFAULTS_KEY,
-};
+use crate::settings::{CloudPreferencesSettings, PrivacySettings};
 use crate::terminal::shared_session::manager::Manager as SharedSessionManager;
 use crate::workspace::{Workspace, WorkspaceAction};
 use crate::workspaces::update_manager::TeamUpdateManager;
@@ -315,13 +313,6 @@ fn remove_cloud_persisted_settings(app: &mut AppContext) {
                 log::error!("Failed to remove cloud synced setting from user defaults: {e:?}");
             }
         });
-    }
-
-    if let Err(e) = app
-        .private_user_preferences()
-        .remove_value(TELEMETRY_ENABLED_DEFAULTS_KEY)
-    {
-        log::error!("Failed to remove Telemetry Enabled Defaults Key from user defaults: {e:?}");
     }
 
     // Reset the Privacy Settings in the login screen to default values.

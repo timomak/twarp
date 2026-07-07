@@ -34,7 +34,6 @@ fn main() -> Result<()> {
             logfile_name: "twarp-oss.log".into(),
             server_config: WarpServerConfig::disabled(),
             oz_config: OzConfig::disabled(),
-            telemetry_config: None,
             mcp_static_config: None,
         },
     );

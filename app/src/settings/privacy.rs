@@ -3,14 +3,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use regex::Regex;
-use twarp_core::features::FeatureFlag;
 use twarp_core::report_if_error;
 use twarpui::{AppContext, Entity, ModelContext, SingletonEntity, UpdateModel};
 
-// twarp: 2c-d — AI telemetry banner deleted; stub.
-pub fn should_collect_ai_ugc_telemetry<A, B>(_: A, _: B) -> bool {
-    false
-}
 use crate::auth::auth_state::AuthState;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;
@@ -37,7 +32,6 @@ pub trait RegexDisplayInfo {
     fn name(&self) -> Option<&str>;
 }
 
-pub const TELEMETRY_ENABLED_DEFAULTS_KEY: &str = "TelemetryEnabled";
 pub const CLOUD_CONVERSATION_STORAGE_ENABLED_DEFAULTS_KEY: &str = "CloudConversationStorageEnabled";
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -95,16 +89,6 @@ impl PartialEq for CustomSecretRegex {
 impl settings_value::SettingsValue for CustomSecretRegex {}
 
 define_settings_group!(TwarpDrivePrivacySettings, settings: [
-    is_telemetry_enabled: IsTelemetryEnabled {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
-        private: false,
-        storage_key: "TelemetryEnabled",
-        toml_path: "privacy.telemetry_enabled",
-        description: "Whether anonymous usage telemetry is collected.",
-    },
     is_cloud_conversation_storage_enabled: IsCloudConversationStorageEnabled {
         type: bool,
         default: true,
@@ -135,12 +119,10 @@ maybe_define_setting!(HasInitializedDefaultSecretRegexes, group: PrivacySettings
     private: true,
 });
 
-/// Singleton model for managing the user's privacy settings (whether the user has enabled
-/// telemetry).
+/// Singleton model for managing the user's privacy settings.
 pub struct PrivacySettings {
     auth_state: Arc<AuthState>,
     auth_client: Arc<dyn AuthClient>,
-    pub is_telemetry_enabled: bool,
     pub is_cloud_conversation_storage_enabled: bool,
     pub has_initialized_default_secret_regexes: HasInitializedDefaultSecretRegexes,
     /// List of user defined secret regexes.
@@ -151,10 +133,6 @@ pub struct PrivacySettings {
     /// List of enterprise-level secret regexes provided by the organization.
     /// These are kept separate from user-level secrets to support additive behavior.
     pub enterprise_secret_regex_list: Vec<CustomSecretRegex>,
-    /// Whether or not the user's organization has forced telemetry on, in which case we ignore any
-    /// user local/cloud settings. If false, we fall back to the user's settings.
-    /// This is populated by the server when teams data is fetched.
-    pub is_telemetry_force_enabled: bool,
     /// Whether or not the user's organization has enabled enterprise secret redaction.
     /// This is populated by the server when teams data is fetched.
     pub is_enterprise_secret_redaction_enabled: bool,
@@ -163,9 +141,6 @@ pub struct PrivacySettings {
 /// A snapshot of a user's [`PrivacySettings`] settings at some point in time.
 #[derive(Clone, Copy)]
 pub struct PrivacySettingsSnapshot {
-    is_telemetry_enabled: bool,
-    is_telemetry_force_enabled: bool,
-    should_collect_ai_ugc_telemetry: bool,
     // This is an option so that, if a user has not set this value (and it's set to its default value of true),
     // the default value won't override a value that the user previously set on a different device.
     // This is set to a non-option once the user manually changes this setting.
@@ -177,32 +152,10 @@ impl PrivacySettingsSnapshot {
         self.cloud_conversation_storage_enabled
     }
 
-    pub fn is_telemetry_enabled(&self) -> bool {
-        self.is_telemetry_enabled
-    }
-
-    pub fn is_telemetry_force_enabled(&self) -> bool {
-        self.is_telemetry_force_enabled
-    }
-
-    pub fn should_disable_telemetry(&self) -> bool {
-        // If a user has opted in to the agent mode analytics experiment, telemetry must be enabled.
-        !self.is_telemetry_enabled
-            && !self.is_telemetry_force_enabled
-            && !FeatureFlag::AgentModeAnalytics.is_enabled()
-    }
-
-    pub fn should_collect_ai_ugc_telemetry(&self) -> bool {
-        self.should_collect_ai_ugc_telemetry
-    }
-
     #[cfg(test)]
     pub fn mock() -> Self {
         Self {
             cloud_conversation_storage_enabled: None,
-            is_telemetry_enabled: true,
-            is_telemetry_force_enabled: true,
-            should_collect_ai_ugc_telemetry: true,
         }
     }
 }
@@ -235,7 +188,6 @@ impl PrivacySettings {
         // Initialize from `TwarpDrivePrivacySettings`, which is the source of truth for these
         // booleans.
         let twarp_drive_privacy = TwarpDrivePrivacySettings::as_ref(ctx);
-        let is_telemetry_enabled = *twarp_drive_privacy.is_telemetry_enabled.value();
         let is_cloud_conversation_storage_enabled = *twarp_drive_privacy
             .is_cloud_conversation_storage_enabled
             .value();
@@ -244,12 +196,6 @@ impl PrivacySettings {
         ctx.subscribe_to_model(&TwarpDrivePrivacySettings::handle(ctx), |me, event, ctx| {
             let privacy_settings = TwarpDrivePrivacySettings::as_ref(ctx);
             match event {
-                TwarpDrivePrivacySettingsChangedEvent::IsTelemetryEnabled { .. } => {
-                    me.set_is_telemetry_enabled(
-                        *privacy_settings.is_telemetry_enabled.value(),
-                        ctx,
-                    );
-                }
                 TwarpDrivePrivacySettingsChangedEvent::IsCloudConversationStorageEnabled {
                     ..
                 } => {
@@ -271,22 +217,12 @@ impl PrivacySettings {
         Self {
             auth_state,
             auth_client,
-            is_telemetry_enabled,
             is_cloud_conversation_storage_enabled,
             user_secret_regex_list,
             has_initialized_default_secret_regexes,
-            is_telemetry_force_enabled: false,
             is_enterprise_secret_redaction_enabled: false,
             enterprise_secret_regex_list: Vec::new(),
         }
-    }
-
-    pub fn is_telemetry_force_enabled(&self) -> bool {
-        self.is_telemetry_force_enabled
-    }
-
-    pub fn set_is_telemetry_force_enabled(&mut self, is_telemetry_force_enabled: bool) {
-        self.is_telemetry_force_enabled = is_telemetry_force_enabled;
     }
 
     pub fn is_enterprise_secret_redaction_enabled(&self) -> bool {
@@ -340,9 +276,7 @@ impl PrivacySettings {
 
     pub fn refresh_to_default(&mut self) {
         // TODO(zach): this seems incorrect - should we also update the values on disk?
-        self.is_telemetry_enabled = true;
         self.is_cloud_conversation_storage_enabled = true;
-        self.is_telemetry_force_enabled = false;
         self.is_enterprise_secret_redaction_enabled = false;
     }
 
@@ -365,14 +299,10 @@ impl PrivacySettings {
     ) {
         match fetched_settings {
             Ok(Some(fetched_settings)) => {
-                // Until the login experience stops hiding the telemetry settings,
-                // we assume that locally enabled telemetry is unintentional.
-                // As such, where settings differ, we respect whichever setting that is disabled.
+                // Where settings differ, we respect whichever setting that is disabled.
                 self.overwrite_local_settings_if_cloud_disabled(fetched_settings, ctx);
                 // If any local setting is disabled, we have to update the server.
-                if !self.is_telemetry_enabled
-                    || !self.is_cloud_conversation_storage_enabled
-                {
+                if !self.is_cloud_conversation_storage_enabled {
                     self.update_server_with_local_settings(ctx);
                 }
             }
@@ -395,15 +325,9 @@ impl PrivacySettings {
         ctx: &mut ModelContext<Self>,
     ) {
         // For now, only overwrite the user's locally stored setting if the cloud version
-        // has is_telemetry_enabled disabled. Until we implement a more reliable retry
+        // has the setting disabled. Until we implement a more reliable retry
         // mechanism for update settings requests, in addition to possibly a UI for the
         // user to resolve the conflicting settings themselves, default to "safe" behavior.
-        // Namely, we want to avoid incidentally overwriting is_telemetry_enabled to
-        // `true`.
-        if self.is_telemetry_enabled && !fetched_settings.is_telemetry_enabled {
-            self.set_is_telemetry_enabled(fetched_settings.is_telemetry_enabled, ctx);
-        }
-
         if self.is_cloud_conversation_storage_enabled
             && !fetched_settings.is_cloud_conversation_storage_enabled
         {
@@ -420,11 +344,9 @@ impl PrivacySettings {
         Self {
             auth_state: Arc::new(AuthState::new_for_test()),
             auth_client: Arc::new(MockAuthClient::new()),
-            is_telemetry_enabled: true,
             is_cloud_conversation_storage_enabled: true,
             user_secret_regex_list: CustomSecretRegexList::new(None),
             has_initialized_default_secret_regexes: HasInitializedDefaultSecretRegexes::new(None),
-            is_telemetry_force_enabled: false,
             is_enterprise_secret_redaction_enabled: false,
             enterprise_secret_regex_list: Vec::new(),
         }
@@ -434,50 +356,10 @@ impl PrivacySettings {
     ///
     /// The returned snapshot is not stateful, thus its values should be used shortly after the
     /// snapshot is returned.
-    pub fn get_snapshot(&self, app: &AppContext) -> PrivacySettingsSnapshot {
+    pub fn get_snapshot(&self, _app: &AppContext) -> PrivacySettingsSnapshot {
         PrivacySettingsSnapshot {
             cloud_conversation_storage_enabled: (!self.is_cloud_conversation_storage_enabled)
                 .then_some(false),
-            is_telemetry_enabled: self.is_telemetry_enabled,
-            is_telemetry_force_enabled: self.is_telemetry_force_enabled,
-            should_collect_ai_ugc_telemetry: should_collect_ai_ugc_telemetry(
-                app,
-                self.is_telemetry_enabled,
-            ),
-        }
-    }
-
-    /// Sets `is_telemetry_enabled` to the given value.
-    ///
-    /// Additionally, this writes the given value to the user's local defaults, and additionally
-    /// sends a request to update the user's `is_telemetry_enabled` value stored server-side.
-    /// Finally, emits a `PrivacySettingsEvent::UpdateIsTelemetryEnabled` event.
-    pub fn set_is_telemetry_enabled(
-        &mut self,
-        new_value: bool,
-        ctx: &mut ModelContext<PrivacySettings>,
-    ) {
-        let old_value = self.is_telemetry_enabled;
-        if new_value != old_value {
-            self.is_telemetry_enabled = new_value;
-
-            TwarpDrivePrivacySettings::handle(ctx).update(ctx, |settings, ctx| {
-                log::info!("Setting is_telemetry_enabled to {new_value}");
-                let _ = settings.is_telemetry_enabled.set_value(new_value, ctx);
-            });
-
-            if self.auth_state.is_logged_in() {
-                let auth_client = self.auth_client.clone();
-                let _ = ctx.spawn(
-                    async move { auth_client.set_is_telemetry_enabled(new_value).await },
-                    |_, _, _| (),
-                );
-            }
-            ctx.emit(PrivacySettingsChangedEvent::UpdateIsTelemetryEnabled {
-                old_value,
-                new_value,
-            });
-            ctx.notify();
         }
     }
 
@@ -619,12 +501,12 @@ impl PrivacySettings {
     }
 
     /// We wait until warp drive prefs have loaded and then either
-    /// 1) use them as the data store for is_telemetry_enabled, if those
+    /// 1) use them as the data store for privacy settings, if those
     ///    values are set in warp drive, or
     /// 2) update the warp drive prefs to match the values from the legacy user_settings endpoint so
     ///    that we can use warp drive prefs going forward.
     pub fn maybe_sync_with_twarp_drive_prefs(&mut self, ctx: &mut ModelContext<Self>) {
-        // Wait for cloud objects to load, and, if telemetry settings are synced to warp drive
+        // Wait for cloud objects to load, and, if privacy settings are synced to warp drive
         // initialize from the warp drive values.
         let update_manager = UpdateManager::as_ref(ctx);
         ctx.spawn(
@@ -635,21 +517,11 @@ impl PrivacySettings {
 
     fn handle_twarp_drive_objects_loaded(&mut self, _: (), ctx: &mut ModelContext<Self>) {
         self.initialize_default_regexes_once(ctx);
-        // Check if the warp drive preferences are set. If they are, and telemetry settings
-        // are set as warp drive prefs, then use those.  Otherwise, update the warp drive prefs to match
+        // Check if the warp drive preferences are set. If they are, then use those.
+        // Otherwise, update the warp drive prefs to match
         // the values from the legacy user_settings endpoint so that we can use warp drive prefs going forward.
         let cloud_model = CloudModel::as_ref(ctx);
         let cloud_prefs = cloud_model.get_all_cloud_preferences_by_storage_key();
-        let cloud_telemetry_value =
-            cloud_prefs
-                .get(IsTelemetryEnabled::storage_key())
-                .map(|pref| {
-                    pref.model()
-                        .string_model
-                        .value
-                        .as_bool()
-                        .unwrap_or_default()
-                });
         let cloud_conversation_storage_value = cloud_prefs
             .get(IsCloudConversationStorageEnabled::storage_key())
             .map(|pref| {
@@ -660,52 +532,37 @@ impl PrivacySettings {
                     .unwrap_or_default()
             });
 
-        match (
-            cloud_telemetry_value,
-            cloud_conversation_storage_value,
-        ) {
-            (
-                Some(is_telemetry_enabled),
-                Some(is_cloud_conversation_storage_enabled),
-            ) => {
+        match cloud_conversation_storage_value {
+            Some(is_cloud_conversation_storage_enabled) => {
                 log::info!(
-                    "Warp Drive privacy preferences are set, using those for telemetry={is_telemetry_enabled}, \
+                    "Warp Drive privacy preferences are set, using those for \
                     cloud_conversation_storage={is_cloud_conversation_storage_enabled}"
                 );
-                self.set_is_telemetry_enabled(is_telemetry_enabled, ctx);
                 self.set_is_cloud_conversation_storage_enabled(
                     is_cloud_conversation_storage_enabled,
                     ctx,
                 );
             }
-            _ => {
+            None => {
                 log::info!(
                     "Warp Drive privacy preferences are not set, syncing local PrivacySettings values to \
-                    TwarpDrivePrivacySettings and cloud. telemetry={}, \
-                    cloud_conversation_storage={}",
-                    self.is_telemetry_enabled,
+                    TwarpDrivePrivacySettings and cloud. cloud_conversation_storage={}",
                     self.is_cloud_conversation_storage_enabled
                 );
                 // First, ensure TwarpDrivePrivacySettings (the define_settings_group model)
                 // reflects the actual PrivacySettings in-memory values. These may differ
-                // because TwarpDrivePrivacySettings defaults to `true` for all three settings,
+                // because TwarpDrivePrivacySettings defaults to `true`,
                 // while the user may have changed them to `false` via PrivacySettings before
                 // signing up. Without this step, maybe_sync_local_prefs_to_cloud would read
                 // the stale TwarpDrivePrivacySettings defaults and push those to the cloud.
                 TwarpDrivePrivacySettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings
-                        .is_telemetry_enabled
-                        .set_value(self.is_telemetry_enabled, ctx));
                     report_if_error!(settings
                         .is_cloud_conversation_storage_enabled
                         .set_value(self.is_cloud_conversation_storage_enabled, ctx));
                 });
                 CloudPreferencesSyncer::handle(ctx).update(ctx, |syncer, ctx| {
                     syncer.maybe_sync_local_prefs_to_cloud(
-                        vec![
-                            IsTelemetryEnabled::storage_key().to_string(),
-                            IsCloudConversationStorageEnabled::storage_key().to_string(),
-                        ],
+                        vec![IsCloudConversationStorageEnabled::storage_key().to_string()],
                         ctx,
                     );
                 });
@@ -717,10 +574,6 @@ impl PrivacySettings {
 /// Events emitted when PrivacySettings is updated.
 #[derive(Clone, Copy)]
 pub enum PrivacySettingsChangedEvent {
-    UpdateIsTelemetryEnabled {
-        old_value: bool,
-        new_value: bool,
-    },
     UpdateIsCloudConversationStorageEnabled {
         old_value: bool,
         new_value: bool,

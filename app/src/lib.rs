@@ -294,7 +294,7 @@ use crate::root_view::{
 pub use crate::server::telemetry::{
     AgentModeEntrypoint, AgentModeEntrypointSelectionType, TelemetryEvent,
 };
-use crate::server::telemetry::{AppStartupInfo, CloseTarget, PaletteSource, TelemetryCollector};
+use crate::server::telemetry::{AppStartupInfo, CloseTarget, PaletteSource};
 use crate::terminal::CustomSecretRegexUpdater;
 use crate::util::bindings::is_binding_cross_platform;
 use crate::workspace::{PaneViewLocator, Workspace, WorkspaceAction};
@@ -1337,14 +1337,7 @@ fn initialize_app(
 
     ctx.add_singleton_model(CustomSecretRegexUpdater::new);
 
-    // Register the `TelemetryCollection` singleton model.
-    let server_api_clone = server_api.clone();
-    ctx.add_singleton_model(|ctx| {
-        let telemetry_collector = TelemetryCollector::new(server_api_clone);
-        telemetry_collector.initialize_telemetry_collection(ctx);
-        telemetry_collector
-    });
-    timer.mark_interval_end("INITIALIZE_TELEMETRY_COLLECTION");
+    // twarp: de-cloud — TelemetryCollector (RudderStack batching/upload) deleted.
 
     // Register initial keybindings prior to creating menus
     app_services::init(ctx);
@@ -1768,10 +1761,6 @@ fn app_callbacks(is_integration_test: bool) -> twarpui::platform::AppCallbacks {
                 auth_state.user_id().map(|uid| uid.as_string()),
                 auth_state.anonymous_id(),
             );
-            TelemetryCollector::handle(ctx).update(ctx, |telemetry_collector, ctx| {
-                telemetry_collector.flush_telemetry_events_for_shutdown(ctx);
-            });
-
             // Shutdown all LSP servers gracefully before app termination
             lsp::LspManagerModel::handle(ctx).update(ctx, |manager, ctx| {
                 manager.terminate(ctx);
@@ -2211,8 +2200,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
     flags.extend([
         #[cfg(feature = "changelog")]
         FeatureFlag::Changelog,
-        #[cfg(feature = "record_app_active_events")]
-        FeatureFlag::RecordAppActiveEvents,
         #[cfg(feature = "runtime_feature_flags")]
         FeatureFlag::RuntimeFeatureFlags,
         #[cfg(feature = "sequential_storage")]
@@ -2409,8 +2396,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::LinkedCodeBlocks,
         #[cfg(feature = "tabbed_editor_view")]
         FeatureFlag::TabbedEditorView,
-        #[cfg(feature = "send_telemetry_to_file")]
-        FeatureFlag::SendTelemetryToFile,
         #[cfg(feature = "undo_closed_panes")]
         FeatureFlag::UndoClosedPanes,
         #[cfg(feature = "multi_profile")]

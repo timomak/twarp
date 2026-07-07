@@ -5008,17 +5008,6 @@ impl TerminalView {
         let ligature_handle = LigatureSettings::handle(ctx);
         ctx.subscribe_to_model(&ligature_handle, |_, _, _, ctx| ctx.notify());
 
-        let privacy_settings_handle = PrivacySettings::handle(ctx);
-        ctx.subscribe_to_model(
-            &privacy_settings_handle,
-            |me, privacy_settings_handle, event, ctx| {
-                if let PrivacySettingsChangedEvent::UpdateIsTelemetryEnabled { .. } = event {
-                    me.privacy_settings_snapshot =
-                        privacy_settings_handle.as_ref(ctx).get_snapshot(ctx)
-                }
-            },
-        );
-
         let block_visibility_settings_handle = BlockVisibilitySettings::handle(ctx);
         ctx.subscribe_to_model(
             &block_visibility_settings_handle,
@@ -5283,7 +5272,7 @@ impl TerminalView {
             file_link_scanning_join_handle: None,
             last_focus_ts: None,
             tips_completed: resources.tips_completed.clone(),
-            privacy_settings_snapshot: privacy_settings_handle.as_ref(ctx).get_snapshot(ctx),
+            privacy_settings_snapshot: PrivacySettings::as_ref(ctx).get_snapshot(ctx),
             was_ever_visible: false,
             view_id: ctx.view_id(),
             current_state: TerminalViewStateChange::default(),
@@ -14135,9 +14124,8 @@ impl TerminalView {
                     return;
                 }
 
-                let telemetry_enabled = PrivacySettings::as_ref(ctx).is_telemetry_enabled;
                 let (query_string, block_command) =
-                    if should_collect_ai_ugc_telemetry(&*ctx, telemetry_enabled) {
+                    if should_collect_ai_ugc_telemetry(&*ctx, ()) {
                         (Some(suggestion.prompt.to_string()), Some(command))
                     } else {
                         (None, None)

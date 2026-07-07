@@ -108,7 +108,6 @@ const AMBIENT_WORKLOAD_TOKEN_DURATION: Duration = Duration::from_secs(3 * 60 * 6
 #[derive(Copy, Clone, Debug, Default)]
 pub struct SyncedUserSettings {
     pub is_cloud_conversation_storage_enabled: bool,
-    pub is_telemetry_enabled: bool,
 }
 
 /// Results of an attempt to fetch the current user.
@@ -178,8 +177,6 @@ pub trait AuthClient: 'static + Send + Sync {
         limit: Option<i32>,
         last_updated_end_timestamp: Option<twarp_graphql::scalars::Time>,
     ) -> Result<Vec<ConversationUsage>>;
-
-    async fn set_is_telemetry_enabled(&self, value: bool) -> Result<()>;
 
     async fn set_is_cloud_conversation_storage_enabled(&self, value: bool) -> Result<()>;
 
@@ -406,7 +403,6 @@ impl AuthClient for ServerApi {
                     Some(user_settings) => Ok(Some(SyncedUserSettings {
                         is_cloud_conversation_storage_enabled: user_settings
                             .is_cloud_conversation_storage_enabled,
-                        is_telemetry_enabled: user_settings.is_telemetry_enabled,
                     })),
                     None => Ok(None),
                 }
@@ -434,30 +430,6 @@ impl AuthClient for ServerApi {
         match response.user {
             UserResult::UserOutput(out) => Ok(out.user.conversation_usage),
             UserResult::Unknown => Err(anyhow!("Unable to fetch conversation usage")),
-        }
-    }
-
-    async fn set_is_telemetry_enabled(&self, value: bool) -> Result<()> {
-        let variables = UpdateUserSettingsVariables {
-            input: UpdateUserSettingsInput {
-                telemetry_enabled: Some(value),
-                ..Default::default()
-            },
-            request_context: get_request_context(),
-        };
-
-        let operation = UpdateUserSettings::build(variables);
-        let result = self
-            .send_graphql_request(operation, None)
-            .await?
-            .update_user_settings;
-
-        match result {
-            UpdateUserSettingsResult::UpdateUserSettingsOutput(_) => Ok(()),
-            UpdateUserSettingsResult::UserFacingError(user_facing_error) => {
-                Err(anyhow!(get_user_facing_error_message(user_facing_error)))
-            }
-            UpdateUserSettingsResult::Unknown => Err(anyhow!("failed to set telemetry enabled")),
         }
     }
 
@@ -490,7 +462,8 @@ impl AuthClient for ServerApi {
     async fn update_user_settings(&self, settings_snapshot: PrivacySettingsSnapshot) -> Result<()> {
         let variables = UpdateUserSettingsVariables {
             input: UpdateUserSettingsInput {
-                telemetry_enabled: Some(settings_snapshot.is_telemetry_enabled()),
+                // twarp: de-cloud — telemetry deleted; never touch the server-side flag.
+                telemetry_enabled: None,
                 cloud_conversation_storage_enabled: settings_snapshot
                     .cloud_conversation_storage_enabled(),
             },
