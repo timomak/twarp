@@ -11192,49 +11192,31 @@ impl TerminalView {
                     }
                 };
                 if is_done_bootstrapping && should_run_detection {
-                    // Derive locality directly from the incoming block's
-                    // session_id. We cannot use `active_session_is_local(ctx)`
-                    // here because `active_block_metadata` was just consumed
-                    // via `take()` above, so it would always return `None`
-                    // and misclassify every local session as Remote.
-                    //
-                    // `session_is_local` keeps the shared-session viewer /
-                    // conversation-transcript guard intact.
-                    let session_id = block_metadata.session_id();
-                    let session_type = session_id.map(|sid| {
-                        if self.session_is_local(sid, ctx) {
-                            RepoDetectionSessionType::Local
-                        } else {
-                            RepoDetectionSessionType::Remote { session_id: sid }
-                        }
-                    });
-                    if let Some(session_type) = session_type {
-                        let is_local = matches!(session_type, RepoDetectionSessionType::Local);
-
-                        // For local sessions, convert the shell-native CWD
-                        // (e.g. "/c/Users/..." for Git Bash/MSYS2) to a
-                        // Windows-native path before repo detection.
-                        let directory_for_detection = if is_local {
-                            block_metadata
-                                .session_id()
-                                .and_then(|sid| self.sessions.as_ref(ctx).get(sid))
-                                .and_then(|session| {
-                                    session.launch_data().and_then(|data| {
-                                        data.maybe_convert_absolute_path(active_directory)
-                                    })
+                    #[cfg(feature = "local_fs")]
+                    {
+                        // Convert the shell-native CWD (e.g. "/c/Users/..."
+                        // for Git Bash/MSYS2) to a Windows-native path before
+                        // repo detection, which requires an OS-native path.
+                        let native_directory = block_metadata
+                            .session_id()
+                            .and_then(|sid| self.sessions.as_ref(ctx).get(sid))
+                            .and_then(|session| {
+                                session.launch_data().and_then(|data| {
+                                    data.maybe_convert_absolute_path(active_directory)
                                 })
-                                .map(|path| path.to_string_lossy().into_owned())
-                                .unwrap_or_else(|| active_directory.to_string())
-                        } else {
-                            active_directory.to_string()
-                        };
+                            })
+                            .map(|path| path.to_string_lossy().into_owned());
+                        let directory_for_detection =
+                            native_directory.as_deref().unwrap_or(active_directory);
 
-                        let fut = detect_possible_git_repo(
-                            session_type,
-                            &directory_for_detection,
-                            RepoDetectionSource::TerminalNavigation,
-                            ctx,
-                        );
+                        let fut =
+                            DetectedRepositories::handle(ctx).update(ctx, |updater, ctx| {
+                                updater.detect_possible_git_repo(
+                                    directory_for_detection,
+                                    RepoDetectionSource::TerminalNavigation,
+                                    ctx,
+                                )
+                            });
 
                         ctx.spawn(fut, move |me, repo_path_opt, ctx| {
                             let old_repo_path = me.current_repo_path.clone();
@@ -11260,34 +11242,7 @@ impl TerminalView {
                             }
 
                             match &repo_path_opt {
-                                Some(LocalOrRemotePath::Remote(remote_path)) => {
-                                    #[cfg(not(target_family = "wasm"))]
-                                    DetectedRepositories::handle(ctx).update(
-                                        ctx,
-                                        |repos, _| {
-                                            repos.register_remote_repo_root(remote_path.clone());
-                                        },
-                                    );
-
-                                    // Remote sessions can only materialize their working
-                                    // directory after repo detection has resolved the host.
-                                    // Re-run app-state propagation now that the remote path
-                                    // is known so the active session's working directory catches up.
-                                    ctx.emit(Event::AppStateChanged);
-
-                                    if FeatureFlag::AIContextMenuEnabled.is_enabled() {
-                                        me.input.update(ctx, |input, ctx| {
-                                            input
-                                                .check_and_update_ai_context_menu_disabled_state(
-                                                    ctx,
-                                                );
-                                        });
-                                    }
-                                    ctx.emit(Event::Pane(PaneEvent::RemoteRepoNavigated {
-                                        remote_path: remote_path.clone(),
-                                    }));
-                                }
-                                Some(LocalOrRemotePath::Local(repo_path)) => {
+                                Some(repo_path) => {
                                     #[cfg(feature = "local_fs")]
                                     {
                                         let Some(active_directory) =
@@ -11322,11 +11277,7 @@ impl TerminalView {
                                             },
                                         );
 
-                                        if old_repo_path
-                                            .as_ref()
-                                            .and_then(|p| p.to_local_path())
-                                            != Some(repo_path.as_path())
-                                        {
+                                        if old_repo_path.as_ref() != Some(repo_path) {
                                             me.git_repo_status = None;
                                             me.update_git_status_subscription(ctx);
                                         }
