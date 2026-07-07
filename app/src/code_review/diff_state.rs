@@ -394,6 +394,18 @@ impl DiffMetadataAgainstBase {
 pub struct DiffStateModel {
     #[cfg(feature = "local_fs")]
     repository: Option<ModelHandle<Repository>>,
+    /// The repo path this model was created for. Kept so repo binding can be
+    /// retried after the fact: the one-shot detection in `new` can lose a
+    /// startup race (workspace restore creates the model before repo
+    /// detection has a watched `Repository` for the path), and without a
+    /// retry every subsequent `load_diffs_for_current_repo` silently no-ops —
+    /// the code-review / Open Changes panel then sits on its loading skeleton
+    /// forever while the (separately computed) diff badge keeps working.
+    #[cfg(feature = "local_fs")]
+    repo_path: Option<String>,
+    /// Guards against spawning concurrent repo-binding detections.
+    #[cfg(feature = "local_fs")]
+    repo_binding_in_flight: bool,
     #[cfg(feature = "local_fs")]
     subscriber_id: Option<SubscriberId>,
     state: InternalDiffState,
@@ -444,8 +456,10 @@ struct GitNumStatMetadata {
 impl DiffStateModel {
     #[cfg(feature = "local_fs")]
     pub fn new(repo_path: Option<String>, ctx: &mut ModelContext<Self>) -> Self {
-        let model = Self {
+        let mut model = Self {
             repository: None,
+            repo_path,
+            repo_binding_in_flight: false,
             state: InternalDiffState::default(),
             subscriber_id: None,
             mode: DiffMode::default(),
@@ -457,26 +471,49 @@ impl DiffStateModel {
             metadata_refresh_enabled: false,
         };
 
-        if let Some(repo_path) = &repo_path {
-            let fut = DetectedRepositories::handle(ctx).update(ctx, |model, ctx| {
-                model.detect_possible_git_repo(
-                    repo_path,
-                    RepoDetectionSource::CodeReviewInitialization,
-                    ctx,
-                )
-            });
-
-            ctx.spawn(fut, move |me, repo_path, ctx| {
-                if let Some(repo_path) = &repo_path {
-                    if let Some(repo_handle) =
-                        DetectedRepositories::as_ref(ctx).get_watched_repo_for_path(repo_path, ctx)
-                    {
-                        me.set_active_repository(repo_handle, ctx);
-                    }
-                }
-            });
-        }
+        model.bind_repository(ctx);
         model
+    }
+
+    /// Kicks off repo detection for `repo_path` and, once a watched
+    /// `Repository` exists for it, adopts it via `set_active_repository`.
+    /// Safe to call repeatedly: no-ops while a detection is already in flight
+    /// or once a repository is bound.
+    #[cfg(feature = "local_fs")]
+    fn bind_repository(&mut self, ctx: &mut ModelContext<Self>) {
+        if self.repository.is_some() || self.repo_binding_in_flight {
+            return;
+        }
+        let Some(repo_path) = &self.repo_path else {
+            return;
+        };
+
+        self.repo_binding_in_flight = true;
+        let fut = DetectedRepositories::handle(ctx).update(ctx, |model, ctx| {
+            model.detect_possible_git_repo(
+                repo_path,
+                RepoDetectionSource::CodeReviewInitialization,
+                ctx,
+            )
+        });
+
+        ctx.spawn(fut, move |me, repo_path, ctx| {
+            me.repo_binding_in_flight = false;
+            if me.repository.is_some() {
+                return;
+            }
+            if let Some(repo_path) = &repo_path {
+                if let Some(repo_handle) =
+                    DetectedRepositories::as_ref(ctx).get_watched_repo_for_path(repo_path, ctx)
+                {
+                    me.set_active_repository(repo_handle, ctx);
+                } else {
+                    log::warn!(
+                        "DiffStateModel: repo detected but not watched; code review panel cannot load diffs yet"
+                    );
+                }
+            }
+        });
     }
 
     #[cfg(not(feature = "local_fs"))]
@@ -719,6 +756,11 @@ impl DiffStateModel {
         }
 
         let Some(current_repository) = &self.repository else {
+            // No repository bound (the one-shot detection in `new` lost a
+            // startup race or transiently failed). Retry the binding instead
+            // of silently no-oping forever — `set_active_repository` will
+            // load metadata and re-trigger diff loading once bound.
+            self.bind_repository(ctx);
             return;
         };
         let current_repository_path = current_repository
@@ -3280,6 +3322,10 @@ impl DiffStateModel {
         Self {
             #[cfg(feature = "local_fs")]
             repository: None,
+            #[cfg(feature = "local_fs")]
+            repo_path: None,
+            #[cfg(feature = "local_fs")]
+            repo_binding_in_flight: false,
             state: InternalDiffState::default(),
             #[cfg(feature = "local_fs")]
             subscriber_id: None,
