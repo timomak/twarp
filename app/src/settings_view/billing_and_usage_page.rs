@@ -74,7 +74,7 @@ impl AIRequestUsageModel {
 }
 use crate::{
     auth::{
-        auth_manager::LoginGatedFeature, auth_state::AuthState, auth_view_modal::AuthViewVariant,
+        auth_manager::LoginGatedFeature, auth_state::AuthState,
         AuthManager, AuthStateProvider, UserUid,
     },
     menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields},
@@ -799,11 +799,7 @@ impl TypedActionView for BillingAndUsagePageView {
             && action.blocked_for_anonymous_user()
         {
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                auth_manager.attempt_login_gated_feature(
-                    action.into(),
-                    AuthViewVariant::RequireLoginCloseable,
-                    ctx,
-                )
+                auth_manager.attempt_login_gated_feature(action.into(), ctx)
             });
             return;
         }
@@ -833,11 +829,7 @@ impl TypedActionView for BillingAndUsagePageView {
             }
             BillingAndUsagePageAction::AttemptLoginGatedUpgrade => {
                 AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                    auth_manager.attempt_login_gated_feature(
-                        action.into(),
-                        AuthViewVariant::RequireLoginCloseable,
-                        ctx,
-                    )
+                    auth_manager.attempt_login_gated_feature(action.into(), ctx)
                 });
             }
             BillingAndUsagePageAction::OpenUrl(url) => {
@@ -3405,7 +3397,6 @@ pub(crate) fn sort_user_items_in_place<T>(
 #[derive(Default)]
 struct PlanWidgetStateHandles {
     upgrade_link: MouseStateHandle,
-    anonymous_user_sign_up_button: MouseStateHandle,
     enterprise_contact_us_link: MouseStateHandle,
     stripe_billing_portal_link: MouseStateHandle,
     admin_panel_link: MouseStateHandle,
@@ -3422,32 +3413,20 @@ impl PlanWidget {
         auth_state: &AuthState,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        let button_styles = UiComponentStyles {
-            font_size: Some(14.),
-            font_weight: Some(Weight::Semibold),
-            border_radius: Some(CornerRadius::with_all(Radius::Pixels(4.))),
-            padding: Some(Coords {
-                top: 12.,
-                bottom: 12.,
-                left: 40.,
-                right: 40.,
-            }),
-            ..Default::default()
-        };
-
-        let user_info = appearance
-            .ui_builder()
-            .button(
-                ButtonVariant::Accent,
-                self.ui_state_handles.anonymous_user_sign_up_button.clone(),
-            )
-            .with_style(button_styles)
-            .with_text_label("Sign up".to_owned())
-            .build()
-            .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(BillingAndUsagePageAction::SignupAnonymousUser);
-            })
-            .finish();
+        // twarp: de-cloud (2b) — the "Sign up" button was deleted; there is no
+        // sign-up. Show a plain local-only label instead.
+        let user_info = Text::new_inline(
+            "Local-only — no account".to_string(),
+            appearance.ui_font_family(),
+            14.,
+        )
+        .with_color(
+            appearance
+                .theme()
+                .sub_text_color(appearance.theme().surface_2())
+                .into_solid(),
+        )
+        .finish();
 
         let mut plan_info = Flex::column()
             .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)

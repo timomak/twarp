@@ -353,31 +353,18 @@ cfg_if::cfg_if! {
 /// Most errors should be handled in callbacks to individual APIs, rather than sent over the
 /// server API channel.
 #[derive(Clone)]
+// twarp: de-cloud (2b) — NeedsReauth / UserAccountDisabled / AccessTokenRefreshed
+// variants deleted with the Firebase auth client; there are no credentials to
+// refresh or accounts to disable.
 pub enum ServerApiEvent {
     /// We made a staging API call that was blocked, which may indicate a firewall misconfiguration.
     StagingAccessBlocked,
-    /// The user's access token was invalid, so they need to reauth before they can make
-    /// requests to warp-server.
-    NeedsReauth,
-    /// The user's account has been disabled.
-    UserAccountDisabled,
-    /// The current bearer token was refreshed.
-    AccessTokenRefreshed {
-        #[cfg_attr(target_family = "wasm", allow(dead_code))]
-        token: String,
-    },
 }
 
 impl fmt::Debug for ServerApiEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::StagingAccessBlocked => f.write_str("StagingAccessBlocked"),
-            Self::NeedsReauth => f.write_str("NeedsReauth"),
-            Self::UserAccountDisabled => f.write_str("UserAccountDisabled"),
-            Self::AccessTokenRefreshed { .. } => f
-                .debug_struct("AccessTokenRefreshed")
-                .field("token", &"<redacted>")
-                .finish(),
         }
     }
 }
@@ -392,8 +379,6 @@ pub struct ServerApi {
     auth_state: Arc<AuthState>,
     event_sender: async_channel::Sender<ServerApiEvent>,
     last_server_time: Arc<Mutex<Option<ServerTime>>>,
-    // We technically use OAuth2 for headless device authentication.
-    oauth_client: self::auth::OAuth2Client,
     /// Cached ambient workload token for requests from ambient agents.
     ambient_workload_token: Arc<Mutex<Option<twarp_isolation_platform::WorkloadToken>>>,
 
@@ -413,14 +398,11 @@ impl ServerApi {
             Some(EVAL_USER_IDS[rand::thread_rng().gen_range(0..EVAL_USER_IDS.len())])
         };
 
-        let oauth_client = Self::create_oauth_client();
-
         Self {
             client: Arc::new(http_client::Client::new()),
             auth_state,
             event_sender,
             last_server_time: Arc::new(Mutex::new(None)),
-            oauth_client,
             ambient_workload_token: Arc::new(Mutex::new(None)),
             #[cfg(feature = "agent_mode_evals")]
             eval_user_id,
@@ -431,14 +413,11 @@ impl ServerApi {
     fn new_for_test() -> Self {
         let (tx, _) = async_channel::unbounded();
 
-        let oauth_client = Self::create_oauth_client();
-
         Self {
             client: Arc::new(http_client::Client::new_for_test()),
             auth_state: Arc::new(AuthState::new_for_test()),
             event_sender: tx,
             last_server_time: Arc::new(Mutex::new(None)),
-            oauth_client,
             ambient_workload_token: Arc::new(Mutex::new(None)),
             #[cfg(feature = "agent_mode_evals")]
             eval_user_id: None,
@@ -458,22 +437,7 @@ impl ServerApi {
             .collect())
     }
 
-    fn create_oauth_client() -> self::auth::OAuth2Client {
-        let server_root =
-            Url::parse(&ChannelState::server_root_url()).expect("Server root URL must be valid");
-
-        let token_url = server_root
-            .join("/api/v1/oauth/token")
-            .expect("Invalid token URL");
-
-        let device_url = server_root
-            .join("/api/v1/oauth/device/auth")
-            .expect("Invalid device URL");
-
-        oauth2::basic::BasicClient::new(oauth2::ClientId::new("warp-cli".to_string()))
-            .set_token_uri(oauth2::TokenUrl::from_url(token_url))
-            .set_device_authorization_url(oauth2::DeviceAuthorizationUrl::from_url(device_url))
-    }
+    // twarp: de-cloud (2b) — create_oauth_client deleted with the CLI device-auth flow.
 
     pub fn send_graphql_request<'a, QF, O: twarp_graphql::client::Operation<QF> + Send + 'a>(
         &'a self,
@@ -531,17 +495,8 @@ impl ServerApi {
                     full: ("graphql response for {:?} had errors {:?}", operation_name, errors)
                 );
 
-                // "User not in context: Not found" comes from warp-server as an error when attempting
-                // to get a required user for some gql field. If we see that, since we have already
-                // successfully refreshed the user's access token earlier in this function, we know
-                // that this error is the result of the user's account being disabled/deleted.
-                if errors
-                    .iter()
-                    .any(|error| error.message.contains("User not in context: Not found"))
-                {
-                    log::error!("GraphQL request failed due to unauthenticated user");
-                    let _ = event_sender.try_send(ServerApiEvent::UserAccountDisabled);
-                }
+                // twarp: de-cloud (2b) — the "User not in context" → UserAccountDisabled
+                // → forced-logout chain was deleted; there are no accounts to disable.
             }
 
             response.data.ok_or_else(|| {
@@ -812,34 +767,7 @@ impl ServerApi {
         }
     }
 
-    /// Sends an authenticated empty POST request to /client/login, which signals to the server
-    /// that the user is logged in.
-    pub async fn notify_login(&self) {
-        match self.get_or_refresh_access_token().await {
-            Ok(auth_token) => {
-                let url = format!("{}/client/login", ChannelState::server_root_url());
-                let mut request = self.client.post(&url);
-                if let Some(token) = auth_token.as_bearer_token() {
-                    request = request.bearer_auth(token);
-                }
-                request = request
-                    // Set the content-length header to 0 because the request has no body.
-                    // Otherwise, the server will return a 411 error. (In other cases, setting
-                    // content-type is sufficient (elides the content-length requirement), but
-                    // since this request has no body, it makes more sense to set content-length.
-                    .header(CONTENT_LENGTH, 0)
-                    .header(EXPERIMENT_ID_HEADER, self.auth_state.anonymous_id());
-
-                let response = request.send().await;
-                if let Err(err) = response {
-                    log::error!("Failed to send POST request to /client/login: {err:?}");
-                }
-            }
-            Err(err) => {
-                log::error!("Could not retrieve access token for notifying user login: {err:?}");
-            }
-        }
-    }
+    // twarp: de-cloud (2b) — notify_login (/client/login ping) deleted; logins no longer happen.
 
     /// twarp: de-cloud — telemetry pipeline deleted; events are dropped.
     ///
@@ -1023,28 +951,10 @@ impl ServerApiProvider {
         ctx.spawn_stream_local(
             event_receiver,
             move |_, event, ctx| {
-                match event {
-                    ServerApiEvent::UserAccountDisabled => {
-                        // We dispatch a global action here because the log out code requires
-                        // `server_api`, causing a circular model reference panic when it calls
-                        // `ServerApiProvider` to get access.
-                        // TODO: We should remove this pattern where `ServerApiProvider` responds
-                        // to events; it's prone to these sorts of circular reference issues.
-                        ctx.dispatch_global_action("app:log_out", ());
-                    }
-                    ServerApiEvent::NeedsReauth => {
-                        // AuthManager depends on a reference to ServerApi, so ServerApi can't easily
-                        // hold a ref to AuthManager. To get around this, we emit an event on ServerApi
-                        // and handle calling the AuthManager here instead.
-                        AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                            auth_manager.set_needs_reauth(true, ctx);
-                        });
-                    }
-                    // Re-emit the event for subscribers.
-                    // TODO: we probably want a different type for the event emitted to subscribers
-                    // from the one that's used for the async channel.
-                    _ => ctx.emit(event),
-                }
+                // twarp: de-cloud (2b) — the UserAccountDisabled → log-out and
+                // NeedsReauth → AuthManager handlers were deleted with the auth flows.
+                // Re-emit the event for subscribers.
+                ctx.emit(event);
             },
             |_, _| {},
         );

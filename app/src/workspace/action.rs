@@ -164,7 +164,6 @@ pub enum WorkspaceAction {
         is_vertical_tabs: bool,
     },
     SelectNewSessionMenuItem(NewSessionMenuItem),
-    LogOut,
     CopyVersion(&'static str),
     ConfigureKeybindingSettings {
         keybinding_name: Option<String>,
@@ -313,7 +312,7 @@ pub enum WorkspaceAction {
     ShowHeaderToolbarContextMenu {
         position: Vector2F,
     },
-    Reauth,
+    // twarp: de-cloud (2b) — Reauth and LogOut actions deleted with the login flow.
     SignupAnonymousUser,
     SignInAnonymousWebUser,
     OpenLink(String),
@@ -840,9 +839,7 @@ impl WorkspaceAction {
             | OpenCLIAgentToolbarEditor
             | OpenHeaderToolbarEditor
             | ShowHeaderToolbarContextMenu { .. }
-            | Reauth
             | SignupAnonymousUser
-            | LogOut
             | OpenLink(_)
             | OpenShareSessionModal(_)
             | StopSharingSessionFromTabMenu { .. }

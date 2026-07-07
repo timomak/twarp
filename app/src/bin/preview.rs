@@ -14,9 +14,9 @@ use twarp_core::{
 // Simple wrapper around twarp::run() for feature preview channel builds.
 fn main() -> Result<()> {
     ChannelState::set(
+        // twarp: de-cloud (2b) — ForceLogin deleted; there is no login screen.
         ChannelState::new(Channel::Preview, channel_config::load_config!("preview"))
-            .with_additional_features(features::PREVIEW_FLAGS)
-            .with_additional_features(&[features::FeatureFlag::ForceLogin]),
+            .with_additional_features(features::PREVIEW_FLAGS),
     );
 
     twarp::run()

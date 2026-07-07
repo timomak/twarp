@@ -239,9 +239,6 @@ pub enum FeatureFlag {
     /// Enables suggested workflows for Agent Mode.
     SuggestedAgentModeWorkflows,
 
-    /// Forces users to login.
-    ForceLogin,
-
     /// Enables prediction of Agent Mode queries.
     PredictAMQueries,
 
@@ -754,11 +751,6 @@ pub enum FeatureFlag {
     /// Enables the install/update chip for the Gemini CLI Warp extension.
     /// Requires HOANotifications to also be enabled.
     GeminiNotifications,
-
-    /// When enabled, the "Skip for now" login flow does not create a Firebase
-    /// anonymous user. The user remains fully logged out (no credentials) and
-    /// login-gated features are disabled until they sign in.
-    SkipFirebaseAnonymousUser,
 
     /// Enables tab configs — user-definable TOML templates for launching custom tab layouts.
     TabConfigs,

@@ -1603,13 +1603,11 @@ impl SettingsView {
     fn handle_twarp_drive_page_event(
         &mut self,
         event: &twarp_drive_page::TwarpDriveSettingsPageEvent,
-        ctx: &mut ViewContext<Self>,
+        _ctx: &mut ViewContext<Self>,
     ) {
-        match event {
-            twarp_drive_page::TwarpDriveSettingsPageEvent::SignUp => {
-                ctx.emit(SettingsViewEvent::SignupAnonymousUser)
-            }
-        }
+        // twarp: de-cloud (2b) — the drive page no longer emits events (its
+        // SignUp CTA was deleted).
+        match *event {}
     }
 
     fn handle_code_page_event(

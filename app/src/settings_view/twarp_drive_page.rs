@@ -21,13 +21,12 @@ use twarpui::{
 #[derive(Debug, Clone)]
 pub enum TwarpDriveSettingsPageAction {
     ToggleShowTwarpDrive,
-    SignUp,
     OpenUrl(String),
 }
 
-pub enum TwarpDriveSettingsPageEvent {
-    SignUp,
-}
+// twarp: de-cloud (2b) — the SignUp action/event and the sign-up header
+// widget were deleted; there is no sign-up.
+pub enum TwarpDriveSettingsPageEvent {}
 
 pub struct TwarpDriveSettingsPageView {
     page: PageType<Self>,
@@ -37,10 +36,7 @@ impl TwarpDriveSettingsPageView {
     pub fn new(_ctx: &mut ViewContext<Self>) -> Self {
         Self {
             page: PageType::new_uncategorized(
-                vec![
-                    Box::new(TwarpDriveHeaderWidget::default()),
-                    Box::new(TwarpDriveToggleWidget::default()),
-                ],
+                vec![Box::new(TwarpDriveToggleWidget::default())],
                 None,
             ),
         }
@@ -61,9 +57,6 @@ impl TypedActionView for TwarpDriveSettingsPageView {
                     report_if_error!(settings.enable_twarp_drive.toggle_and_save_value(ctx));
                 });
                 ctx.notify();
-            }
-            TwarpDriveSettingsPageAction::SignUp => {
-                ctx.emit(TwarpDriveSettingsPageEvent::SignUp);
             }
             TwarpDriveSettingsPageAction::OpenUrl(url) => {
                 ctx.open_url(url.as_str());
@@ -111,88 +104,6 @@ impl From<ViewHandle<TwarpDriveSettingsPageView>> for SettingsPageViewHandle {
 }
 
 #[derive(Default)]
-struct TwarpDriveHeaderWidget {
-    sign_up_button: MouseStateHandle,
-}
-
-impl SettingsWidget for TwarpDriveHeaderWidget {
-    type View = TwarpDriveSettingsPageView;
-
-    fn search_terms(&self) -> &str {
-        "twarp drive sign up"
-    }
-
-    fn should_render(&self, app: &AppContext) -> bool {
-        FeatureFlag::SkipFirebaseAnonymousUser.is_enabled()
-            && AuthStateProvider::as_ref(app)
-                .get()
-                .is_anonymous_or_logged_out()
-    }
-
-    fn render(
-        &self,
-        _view: &Self::View,
-        appearance: &Appearance,
-        _app: &AppContext,
-    ) -> Box<dyn Element> {
-        let ui_builder = appearance.ui_builder();
-
-        let message = Container::new(
-            Text::new_inline(
-                "To use Twarp Drive, please create an account.".to_string(),
-                appearance.ui_font_family(),
-                14.,
-            )
-            .with_color(
-                appearance
-                    .theme()
-                    .sub_text_color(appearance.theme().surface_2())
-                    .into_solid(),
-            )
-            .finish(),
-        )
-        .with_margin_right(16.)
-        .finish();
-
-        let button = Container::new(
-            ui_builder
-                .button(ButtonVariant::Accent, self.sign_up_button.clone())
-                .with_style(UiComponentStyles {
-                    font_size: Some(14.),
-                    font_weight: Some(Weight::Semibold),
-                    border_radius: Some(twarpui::elements::CornerRadius::with_all(
-                        twarpui::elements::Radius::Pixels(4.),
-                    )),
-                    padding: Some(Coords {
-                        top: 8.,
-                        bottom: 8.,
-                        left: 24.,
-                        right: 24.,
-                    }),
-                    ..Default::default()
-                })
-                .with_text_label("Sign up".to_owned())
-                .build()
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(TwarpDriveSettingsPageAction::SignUp);
-                })
-                .finish(),
-        )
-        .finish();
-
-        Container::new(
-            Flex::row()
-                .with_cross_axis_alignment(twarpui::elements::CrossAxisAlignment::Center)
-                .with_child(Shrinkable::new(1., message).finish())
-                .with_child(button)
-                .finish(),
-        )
-        .with_padding_bottom(15.)
-        .finish()
-    }
-}
-
-#[derive(Default)]
 struct TwarpDriveToggleWidget {
     switch_state: SwitchStateHandle,
     info_icon_mouse_state: MouseStateHandle,
@@ -212,10 +123,11 @@ impl SettingsWidget for TwarpDriveToggleWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let settings = TwarpDriveSettings::as_ref(app);
-        let is_anonymous_or_logged_out = FeatureFlag::SkipFirebaseAnonymousUser.is_enabled()
-            && AuthStateProvider::as_ref(app)
-                .get()
-                .is_anonymous_or_logged_out();
+        // twarp: de-cloud (2b) — SkipFirebaseAnonymousUser flag deleted;
+        // logged-out is unconditional.
+        let is_anonymous_or_logged_out = AuthStateProvider::as_ref(app)
+            .get()
+            .is_anonymous_or_logged_out();
 
         render_body_item::<TwarpDriveSettingsPageAction>(
             "Twarp Drive".into(),

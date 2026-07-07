@@ -86,27 +86,7 @@ fn model_list_parses() {
     assert!(matches!(model_cmd, crate::model::ModelCommand::List));
 }
 
-#[test]
-fn login_parses() {
-    let args = Args::try_parse_from(["warp", "login"]).unwrap();
-
-    let Some(Command::CommandLine(boxed_cmd)) = args.command else {
-        panic!("Expected `warp login` command");
-    };
-
-    assert!(matches!(boxed_cmd.as_ref(), CliCommand::Login));
-}
-
-#[test]
-fn logout_parses() {
-    let args = Args::try_parse_from(["warp", "logout"]).unwrap();
-
-    let Some(Command::CommandLine(boxed_cmd)) = args.command else {
-        panic!("Expected `warp logout` command");
-    };
-
-    assert!(matches!(boxed_cmd.as_ref(), CliCommand::Logout));
-}
+// twarp: de-cloud (2b) — login/logout CLI parse tests deleted with the commands.
 
 #[test]
 fn agent_run_accepts_file() {

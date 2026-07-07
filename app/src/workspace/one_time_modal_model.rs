@@ -1,6 +1,4 @@
 use super::hoa_onboarding;
-use crate::auth::auth_manager::AuthManagerEvent;
-use crate::auth::AuthManager;
 use crate::channel::{Channel, ChannelState};
 use crate::settings::cloud_preferences_syncer::{
     CloudPreferencesSyncer, CloudPreferencesSyncerEvent,
@@ -44,45 +42,8 @@ impl OneTimeModalModel {
             },
         );
 
-        // Subscribe to auth manager events to automatically trigger modal when user becomes onboarded
-        ctx.subscribe_to_model(&AuthManager::handle(ctx), |_, event, ctx| {
-            let AuthManagerEvent::AuthComplete = event else {
-                return;
-            };
-
-            let auth_state = crate::auth::AuthStateProvider::as_ref(ctx).get().clone();
-            let is_existing_user = auth_state.is_onboarded().unwrap_or_default();
-            if is_existing_user {
-                // Settings modals settings are synced to the cloud, not respecting the user's sync setting, so they
-                // must all await initial load to be triggered, else we risk reading a stale triggered value.
-                ctx.subscribe_to_model(
-                    &CloudPreferencesSyncer::handle(ctx),
-                    move |me, event, ctx| {
-                        if let CloudPreferencesSyncerEvent::InitialLoadCompleted = event {
-                            ctx.unsubscribe_from_model(&CloudPreferencesSyncer::handle(ctx));
-                            me.check_and_trigger_all_modals(ctx);
-                        }
-                    },
-                );
-            } else {
-                AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                    if let Err(e) = settings
-                        .did_check_to_trigger_oz_launch_modal
-                        .set_value(true, ctx)
-                    {
-                        log::warn!("Failed to mark Oz launch modal as dismissed: {e}");
-                    }
-                });
-                GeneralSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    if let Err(e) = settings
-                        .did_check_to_trigger_openwarp_launch_modal
-                        .set_value(true, ctx)
-                    {
-                        log::warn!("Failed to mark OpenWarp launch modal as dismissed: {e}");
-                    }
-                });
-            }
-        });
+        // twarp: de-cloud (2b) — the AuthComplete-triggered modal check was
+        // deleted with the login flow; login can no longer happen.
 
         Self {
             is_build_plan_migration_modal_open: false,

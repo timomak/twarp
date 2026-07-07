@@ -27,7 +27,7 @@ use twarpui::{
 use crate::{
     appearance::Appearance,
     auth::{
-        auth_manager::AuthManager, auth_state::AuthState, auth_view_modal::AuthViewVariant,
+        auth_manager::AuthManager, auth_state::AuthState,
         AuthStateProvider, UserUid,
     },
     completer::SessionContext,
@@ -962,11 +962,7 @@ impl TypedActionView for CommandSearchView {
             }
             AttemptLoginGatedUpgrade => {
                 AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                    auth_manager.attempt_login_gated_feature(
-                        "Upgrade AI Usage",
-                        AuthViewVariant::RequireLoginCloseable,
-                        ctx,
-                    )
+                    auth_manager.attempt_login_gated_feature("Upgrade AI Usage", ctx)
                 });
             }
         }

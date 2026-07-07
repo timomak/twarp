@@ -10,11 +10,10 @@ use twarp_core::{
 fn main() -> Result<()> {
     let config = channel_config::load_config!("local");
 
-    let mut state = ChannelState::new(Channel::Local, config)
+    let state = ChannelState::new(Channel::Local, config)
         .with_additional_features(features::DEBUG_FLAGS)
         .with_additional_features(features::DOGFOOD_FLAGS)
         .with_additional_features(features::PREVIEW_FLAGS);
-
 
     ChannelState::set(state);
 

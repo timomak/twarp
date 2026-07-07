@@ -1,8 +1,6 @@
-use crate::server::datetime_ext::DateTimeExt;
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
-use twarp_graphql::{queries::get_user::FirebaseProfile, scalars::time::ServerTimestamp};
+use twarp_graphql::scalars::time::ServerTimestamp;
 
 use super::UserUid;
 
@@ -116,39 +114,7 @@ pub struct UserMetadata {
     pub photo_url: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FirebaseAuthTokens {
-    /// ID tokens are Firebase tokens, which are short-lived tokens that are used to authenticate
-    /// requests to the server. These are obtained by exchanging long-lived refresh tokens.
-    pub id_token: String,
-    /// Refresh tokens are long-lived tokens that can be exchanged for short-lived access tokens
-    /// (stored in the id_token field). We use the refresh token to get a new ID token when the
-    /// current one expires.
-    /// Note that there are two types of refresh tokens we store in this field:
-    /// "Refresh tokens": these are used for logged-in users.
-    /// "Custom tokens": these are used for anonymous firebase users.
-    pub refresh_token: String,
-    /// When the ID token expires. If the token has expired, or will expire soon, we should
-    /// fetch a new ID token using the user's refresh token.
-    pub expiration_time: DateTime<FixedOffset>,
-}
-
-impl FirebaseAuthTokens {
-    pub fn from_response(
-        id_token: String,
-        refresh_token: String,
-        expires_in: String,
-    ) -> Result<Self, anyhow::Error> {
-        Ok(Self {
-            id_token,
-            expiration_time: chrono::DateTime::now()
-                + chrono::Duration::seconds(
-                    expires_in.parse::<i64>().map_err(anyhow::Error::from)?,
-                ),
-            refresh_token,
-        })
-    }
-}
+// twarp: de-cloud — FirebaseAuthTokens deleted with the Firebase auth client.
 
 impl User {
     /// The name for the user that we display. This is the user's display name, if set. If not set,
@@ -201,16 +167,4 @@ impl User {
     }
 }
 
-impl From<FirebaseProfile> for UserMetadata {
-    fn from(value: FirebaseProfile) -> Self {
-        Self {
-            email: value.email.unwrap_or_default(),
-            display_name: value.display_name,
-            photo_url: value.photo_url,
-        }
-    }
-}
-
-#[cfg(test)]
-#[path = "user_tests.rs"]
-mod tests;
+// twarp: de-cloud — From<FirebaseProfile> conversion deleted with fetch_user.
