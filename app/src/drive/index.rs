@@ -74,7 +74,6 @@ use crate::{
     auth::{
         auth_manager::{AuthManager, LoginGatedFeature},
         auth_state::AuthState,
-        auth_view_modal::AuthViewVariant,
         AuthStateProvider,
     },
     cloud_object::{
@@ -4962,11 +4961,7 @@ impl DriveIndex {
 
         if self.auth_state.is_anonymous_or_logged_out() {
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                auth_manager.attempt_login_gated_feature(
-                    "Share Object",
-                    AuthViewVariant::ShareRequirementCloseable,
-                    ctx,
-                )
+                auth_manager.attempt_login_gated_feature("Share Object", ctx)
             });
             return;
         }
@@ -5292,11 +5287,7 @@ impl TypedActionView for DriveIndex {
         // Block anonymous users from performing team actions
         if self.auth_state.is_anonymous_or_logged_out() && action.blocked_for_anonymous_user() {
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                auth_manager.attempt_login_gated_feature(
-                    action.into(),
-                    AuthViewVariant::RequireLoginCloseable,
-                    ctx,
-                )
+                auth_manager.attempt_login_gated_feature(action.into(), ctx)
             });
             return;
         }
@@ -5704,10 +5695,8 @@ impl TypedActionView for DriveIndex {
                 );
             }
             DriveIndexAction::SignupAnonymousUser => {
-                let entrypoint = AnonymousUserSignupEntrypoint::SignUpButton;
-                AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                    auth_manager.initiate_anonymous_user_linking(entrypoint, ctx);
-                });
+                // twarp: de-cloud (2b) — sign-up/anonymous-user linking deleted.
+                log::info!("Ignoring sign-up request (accounts are disabled)");
             }
             DriveIndexAction::DismissPersonalObjectLimits => {
                 self.dismiss_personal_object_limit_status(ctx);

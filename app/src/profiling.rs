@@ -61,49 +61,32 @@ pub fn dump_dhat_heap_profile() {
     let _ = HEAP_PROFILER.lock().take();
 }
 
-/// Dumps a jemalloc heap profile and sends it to Sentry.
+/// Dumps a jemalloc heap profile to a local file for offline inspection.
 ///
 /// This function spawns `go tool pprof` to fetch and symbolicate the heap
-/// profile from the local HTTP server, then attaches the resulting profile
-/// to a Sentry event.
+/// profile from the local HTTP server, then writes the resulting profile
+/// (and the memory breakdown) to the system temp directory.
+// twarp: de-cloud — this used to upload the profile to Sentry; it is now saved locally.
 #[cfg(feature = "heap_usage_tracking")]
 pub async fn dump_jemalloc_heap_profile(memory_breakdown: serde_json::Value) {
-    use sentry::protocol::{Attachment, AttachmentType};
-
     let result = dump_jemalloc_heap_profile_inner().await;
     match result {
         Ok(profile_data) => {
-            let attachment = Attachment {
-                buffer: profile_data,
-                filename: "heap-profile.pb".to_string(),
-                ty: Some(AttachmentType::Attachment),
-                ..Default::default()
-            };
-            sentry::with_scope(
-                |scope| {
-                    scope.add_attachment(attachment);
-
-                    // Attach the memory breakdown as structured context so it
-                    // is visible directly in the Sentry event.
-                    if let serde_json::Value::Object(map) = memory_breakdown {
-                        let context_map: std::collections::BTreeMap<
-                            String,
-                            sentry::protocol::Value,
-                        > = map.into_iter().collect();
-                        scope.set_context(
-                            "memory_breakdown",
-                            sentry::protocol::Context::Other(context_map),
-                        );
-                    }
-                },
-                || {
-                    sentry::capture_message(
-                        "Excessive memory usage detected",
-                        sentry::Level::Warning,
-                    )
-                },
+            let dir = std::env::temp_dir();
+            let profile_path = dir.join("twarp-heap-profile.pb");
+            let breakdown_path = dir.join("twarp-memory-breakdown.json");
+            if let Err(err) = std::fs::write(&profile_path, profile_data) {
+                log::warn!("Failed to write heap profile to {profile_path:?}: {err:#}");
+                return;
+            }
+            let _ = std::fs::write(
+                &breakdown_path,
+                serde_json::to_vec_pretty(&memory_breakdown).unwrap_or_default(),
             );
-            log::info!("Sent heap profile to Sentry");
+            log::warn!(
+                "Excessive memory usage detected; wrote heap profile to {profile_path:?} and \
+                 memory breakdown to {breakdown_path:?}"
+            );
         }
         Err(err) => {
             log::warn!("Failed to dump heap profile: {err:#}");

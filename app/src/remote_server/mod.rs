@@ -88,16 +88,5 @@ pub(super) fn run_daemon_app(
     Ok(())
 }
 
-/// Forwards app auth-token rotation events to the remote-server manager.
-#[cfg(not(target_family = "wasm"))]
-pub fn wire_auth_token_rotation(ctx: &mut twarpui::AppContext) {
-    let server_api = ServerApiProvider::handle(ctx);
-    let manager = RemoteServerManager::handle(ctx);
-    ctx.subscribe_to_model(&server_api, move |_, event, ctx| {
-        if let ServerApiEvent::AccessTokenRefreshed { token } = event {
-            manager.update(ctx, |manager, _| {
-                manager.rotate_auth_token(token.clone());
-            });
-        }
-    });
-}
+// twarp: de-cloud (2b) — wire_auth_token_rotation deleted; access tokens are
+// never refreshed now that the Firebase client is gone.

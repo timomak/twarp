@@ -26,7 +26,6 @@ impl AIRequestUsageModel {
 }
 use crate::auth::auth_manager::{AuthManager, LoginGatedFeature};
 use crate::auth::auth_state::AuthState;
-use crate::auth::auth_view_modal::AuthViewVariant;
 use crate::auth::{AuthStateProvider, UserUid};
 use crate::menu::{self, Menu, MenuItem, MenuItemFields};
 use crate::modal::{Modal, ModalEvent, ModalViewState};
@@ -480,11 +479,7 @@ impl TypedActionView for TeamsPageView {
             && action.blocked_for_anonymous_user()
         {
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                auth_manager.attempt_login_gated_feature(
-                    action.into(),
-                    AuthViewVariant::RequireLoginCloseable,
-                    ctx,
-                )
+                auth_manager.attempt_login_gated_feature(action.into(), ctx)
             });
             return;
         }
@@ -988,7 +983,7 @@ impl TeamsPageView {
                 ctx.notify();
             }
             UserWorkspacesEvent::FetchDiscoverableTeamsRejected(e) => {
-                // Don't show toast, only log to sentry
+                // Don't show toast, only log
                 log::error!("Failed to fetch discoverable teams: {e:?}");
             }
             UserWorkspacesEvent::TransferTeamOwnershipSuccess => {
@@ -1317,7 +1312,7 @@ impl TeamsPageView {
         let message = error_msg.into();
         self.show_toast(message.clone(), ToastFlavor::Error, ctx);
 
-        // Log error to sentry
+        // Log error
         if let Some(error) = error {
             log::error!("{message}: {error:#}");
         } else {

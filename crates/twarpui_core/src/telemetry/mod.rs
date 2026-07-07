@@ -1,3 +1,7 @@
+// twarp: de-cloud — the RudderStack upload pipeline was deleted. This bounded
+// in-memory queue is the no-op sink for the recording macros: events are
+// recorded here and either dropped on flush or overwritten once the queue
+// (max 1024 entries) is full. Nothing leaves the device.
 mod event_store;
 
 use chrono::{DateTime, Utc};

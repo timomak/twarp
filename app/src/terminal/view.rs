@@ -146,9 +146,7 @@ use crate::ai::{
 */
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::auth_state::AuthState;
-use crate::auth::auth_view_modal::AuthViewVariant;
 use crate::auth::{AuthStateProvider, UserUid};
-use crate::autoupdate::{self, get_update_state, AutoupdateStage};
 use crate::cloud_object::model::actions::ObjectActionType;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::{CloudObject, GenericStringObjectFormat, JsonObjectType};
@@ -5011,17 +5009,6 @@ impl TerminalView {
         let ligature_handle = LigatureSettings::handle(ctx);
         ctx.subscribe_to_model(&ligature_handle, |_, _, _, ctx| ctx.notify());
 
-        let privacy_settings_handle = PrivacySettings::handle(ctx);
-        ctx.subscribe_to_model(
-            &privacy_settings_handle,
-            |me, privacy_settings_handle, event, ctx| {
-                if let PrivacySettingsChangedEvent::UpdateIsTelemetryEnabled { .. } = event {
-                    me.privacy_settings_snapshot =
-                        privacy_settings_handle.as_ref(ctx).get_snapshot(ctx)
-                }
-            },
-        );
-
         let block_visibility_settings_handle = BlockVisibilitySettings::handle(ctx);
         ctx.subscribe_to_model(
             &block_visibility_settings_handle,
@@ -5286,7 +5273,7 @@ impl TerminalView {
             file_link_scanning_join_handle: None,
             last_focus_ts: None,
             tips_completed: resources.tips_completed.clone(),
-            privacy_settings_snapshot: privacy_settings_handle.as_ref(ctx).get_snapshot(ctx),
+            privacy_settings_snapshot: PrivacySettings::as_ref(ctx).get_snapshot(ctx),
             was_ever_visible: false,
             view_id: ctx.view_id(),
             current_state: TerminalViewStateChange::default(),
@@ -12088,24 +12075,12 @@ impl TerminalView {
             }
             ModelEvent::Handler(_) => {}
             ModelEvent::FinishUpdate(data) => {
-                let AutoupdateStage::UpdateReady {
-                    update_id: expected_update_id,
-                    ..
-                } = get_update_state(ctx)
-                else {
-                    log::warn!(
-                        "Got a FinishUpdate event without AutoupdateState being UpdateReady!"
-                    );
-                    return;
-                };
-                if expected_update_id == data.update_id {
-                    // Terminate this shell session so that it doesn't come
-                    // back when we restore sessions after the relaunch.
-                    self.shutdown_pty(ctx);
-                    autoupdate::initiate_relaunch_for_update(ctx);
-                } else {
-                    log::warn!("Got a FinishUpdate event with non-matching update id!");
-                }
+                // twarp: de-cloud — auto-update machinery deleted; this build is from source.
+                log::warn!(
+                    "Ignoring FinishUpdate event (update id {}); autoupdate is not supported in \
+                     this build",
+                    data.update_id
+                );
             }
             ModelEvent::SelectedTextChanged => {
                 ctx.emit(Event::SelectedTextChanged);
@@ -14150,9 +14125,8 @@ impl TerminalView {
                     return;
                 }
 
-                let telemetry_enabled = PrivacySettings::as_ref(ctx).is_telemetry_enabled;
                 let (query_string, block_command) =
-                    if should_collect_ai_ugc_telemetry(&*ctx, telemetry_enabled) {
+                    if should_collect_ai_ugc_telemetry(&*ctx, ()) {
                         (Some(suggestion.prompt.to_string()), Some(command))
                     } else {
                         (None, None)
@@ -19465,11 +19439,7 @@ impl TerminalView {
             .is_anonymous_or_logged_out()
         {
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                auth_manager.attempt_login_gated_feature(
-                    "Share Block",
-                    AuthViewVariant::ShareRequirementCloseable,
-                    ctx,
-                )
+                auth_manager.attempt_login_gated_feature("Share Block", ctx)
             });
             return;
         }
@@ -23143,7 +23113,7 @@ impl TerminalView {
                     {
                         *request_outcome = Some(outcome.clone());
                     }
-                    // Log to sentry if unknown error
+                    // Log if unknown error
                     if let RequestPermissionsOutcome::OtherError { error_message } = &outcome {
                         log::error!(
                             "Unknown error when requesting notification permissions. error_msg: {error_message}"
@@ -24951,11 +24921,7 @@ impl TypedActionView for TerminalView {
             }
             AttemptLoginGatedFeature => {
                 AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                    auth_manager.attempt_login_gated_feature(
-                        "Upgrade AI Usage",
-                        AuthViewVariant::RequireLoginCloseable,
-                        ctx,
-                    )
+                    auth_manager.attempt_login_gated_feature("Upgrade AI Usage", ctx)
                 });
             }
             StartFileDropTarget => {

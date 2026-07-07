@@ -19,7 +19,7 @@ use session_sharing_protocol::{
         InputOperationId, InputOperationSeqNo, InputUpdate, LinkAccessLevelUpdateResponse,
         ParticipantId, ParticipantList, ParticipantPresenceUpdate, RemoveGuestResponse, Role,
         RoleRequestId, RoleRequestResponse, Selection, SelectionUpdate, ServerConversationToken,
-        SessionId, TeamAccessLevelUpdateResponse, TeamAclData, TelemetryContext,
+        SessionId, TeamAccessLevelUpdateResponse, TeamAclData,
         UniversalDeveloperInputContext, UniversalDeveloperInputContextUpdate,
         UpdatePendingUserRoleResponse, UserID, WindowSize, WriteToPtyFailureReason,
         WriteToPtyRequestId, WriteToPtySeqNo,
@@ -41,10 +41,7 @@ use websocket::{Message, Sink, Stream, WebsocketMessage as _};
 use crate::{
     auth::{auth_state::AuthState, AuthStateProvider, UserUid},
     editor::{CrdtOperation, ReplicaId},
-    server::{
-        server_api::{auth::AuthClient, ServerApiProvider},
-        telemetry::telemetry_context,
-    },
+    server::server_api::{auth::AuthClient, ServerApiProvider},
     terminal::{
         event_listener::ChannelEventListener,
         model::block::BlockId,
@@ -399,7 +396,8 @@ impl Network {
                         user_id,
                         last_received_event_no: None,
                         latest_block_id: None,
-                        telemetry_context: Some(TelemetryContext(telemetry_context().as_value())),
+                        // twarp: de-cloud — no telemetry context is shared.
+                        telemetry_context: None,
                         feature_support: FeatureSupport {
                             supports_agent_view: FeatureFlag::AgentView.is_enabled(),
                             supports_full_role: true,
@@ -455,7 +453,8 @@ impl Network {
                         user_id,
                         last_received_event_no,
                         latest_block_id: Some(latest_block_id.into()),
-                        telemetry_context: Some(TelemetryContext(telemetry_context().as_value())),
+                        // twarp: de-cloud — no telemetry context is shared.
+                        telemetry_context: None,
                         feature_support: FeatureSupport {
                             supports_agent_view: FeatureFlag::AgentView.is_enabled(),
                             supports_full_role: true,

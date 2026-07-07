@@ -8,14 +8,7 @@ pub use overrides::{get_overrides, set_overrides};
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, Sequence)]
 pub enum FeatureFlag {
     Changelog,
-    CocoaSentry,
-    CrashReporting,
     DebugMode,
-    Autoupdate,
-    LogExpensiveFramesInSentry,
-    WithSandboxTelemetry,
-    RecordAppActiveEvents,
-
     WelcomeTips,
     ThinStrokes,
     WelcomeBlock,
@@ -217,9 +210,6 @@ pub enum FeatureFlag {
     /// If enabled, the default theme is set to Adeberry for new users.
     DefaultAdeberryTheme,
 
-    /// New, less intrusive autoupdate UI.
-    AutoupdateUIRevamp,
-
     /// Enables Kitty image rendering
     KittyImages,
 
@@ -248,9 +238,6 @@ pub enum FeatureFlag {
 
     /// Enables suggested workflows for Agent Mode.
     SuggestedAgentModeWorkflows,
-
-    /// Forces users to login.
-    ForceLogin,
 
     /// Enables prediction of Agent Mode queries.
     PredictAMQueries,
@@ -367,9 +354,6 @@ pub enum FeatureFlag {
 
     /// Enables the tabbed file viewer
     TabbedEditorView,
-
-    /// Enables sending telemetry data to a file in addition to the server
-    SendTelemetryToFile,
 
     /// Enables multiple agent profiles in settings for managing different AI agent configurations.
     MultiProfile,
@@ -768,11 +752,6 @@ pub enum FeatureFlag {
     /// Requires HOANotifications to also be enabled.
     GeminiNotifications,
 
-    /// When enabled, the "Skip for now" login flow does not create a Firebase
-    /// anonymous user. The user remains fully logged out (no credentials) and
-    /// login-gated features are disabled until they sign in.
-    SkipFirebaseAnonymousUser,
-
     /// Enables tab configs — user-definable TOML templates for launching custom tab layouts.
     TabConfigs,
 
@@ -840,7 +819,6 @@ pub const DEBUG_FLAGS: &[FeatureFlag] = &[FeatureFlag::DebugMode, FeatureFlag::R
 /// Features enabled for the development team.  The expectation is that, over
 /// time, these will move on to PREVIEW_FLAGS before being launched.
 pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
-    FeatureFlag::LogExpensiveFramesInSentry,
     FeatureFlag::ToggleBootstrapBlock,
     FeatureFlag::CreatingSharedSessions,
     FeatureFlag::RemoveAutosuggestionDuringTabCompletions,
@@ -916,9 +894,7 @@ pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
 /// NOTE: if you are promoting a feature from Preview to launch, you'll likely
 /// want to enable the feature by default in app/Cargo.toml, rather than add it to RELEASE_FLAGS.
 pub const RELEASE_FLAGS: &[FeatureFlag] = &[
-    FeatureFlag::Autoupdate,
     FeatureFlag::Changelog,
-    FeatureFlag::CrashReporting,
     // Marked text is currently only supported on MacOS.
     #[cfg(target_os = "macos")]
     FeatureFlag::ImeMarkedText,

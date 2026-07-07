@@ -8,12 +8,11 @@ use super::{
     SettingsAction, SettingsSection, ToggleSettingActionPair,
 };
 use crate::auth::{AuthStateProvider, UserUid};
-use crate::autoupdate::{self, AutoupdateStage, AutoupdateState};
 use crate::send_telemetry_from_ctx;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{
     appearance::Appearance,
-    auth::{auth_state::AuthState, auth_view_modal::AuthViewVariant},
+    auth::auth_state::AuthState,
     report_if_error,
     settings::cloud_preferences::CloudPreferencesSettings,
     TelemetryEvent,
@@ -56,10 +55,8 @@ use twarpui::{
 };
 
 const PHOTO_SIZE: f32 = 40.;
-const REFERRAL_CTA: &str = "Earn rewards by sharing Twarp with friends & colleagues";
 const REGULAR_TEXT_FONT_SIZE: f32 = 12.;
 const VERTICAL_MARGIN: f32 = 24.;
-const LOG_OUT_TEXT: &str = "Log out";
 lazy_static! {
     static ref SETTINGS_SYNC_BINDINGS_ADDED: Arc<Mutex<bool>> = Default::default();
 }
@@ -119,9 +116,6 @@ pub fn handle_experiment_change(app: &mut AppContext) {
 
 #[derive(Debug, Clone)]
 pub enum MainPageAction {
-    Relaunch,
-    DownloadUpdate,
-    CheckForUpdate,
     ToggleSettingsSync,
     Upgrade {
         team_uid: Option<ServerId>,
@@ -158,7 +152,6 @@ impl From<&MainPageAction> for LoginGatedFeature {
 
 #[derive(Clone, Copy)]
 pub enum MainSettingsPageEvent {
-    CheckForUpdate,
     #[allow(dead_code)]
     OpenTwarpDrive,
     SignupAnonymousUser,
@@ -184,26 +177,12 @@ impl TypedActionView for MainSettingsPageView {
             && action.blocked_for_anonymous_user()
         {
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                auth_manager.attempt_login_gated_feature(
-                    action.into(),
-                    AuthViewVariant::RequireLoginCloseable,
-                    ctx,
-                )
+                auth_manager.attempt_login_gated_feature(action.into(), ctx)
             });
             return;
         }
 
         match action {
-            MainPageAction::Relaunch => {
-                autoupdate::initiate_relaunch_for_update(ctx);
-            }
-            MainPageAction::DownloadUpdate => {
-                autoupdate::manually_download_new_version(ctx);
-            }
-            MainPageAction::CheckForUpdate => {
-                ctx.emit(MainSettingsPageEvent::CheckForUpdate);
-                ctx.notify();
-            }
             MainPageAction::ToggleSettingsSync => {
                 let new_value =
                     CloudPreferencesSettings::handle(ctx).update(ctx, |prefs_settings, ctx| {
@@ -257,12 +236,6 @@ impl MainSettingsPageView {
     pub fn new(ctx: &mut ViewContext<MainSettingsPageView>) -> Self {
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
 
-        let autoupdate_state_handle = AutoupdateState::handle(ctx);
-        ctx.observe(
-            &autoupdate_state_handle,
-            Self::handle_autoupdate_state_change,
-        );
-
         ctx.subscribe_to_model(&CloudPreferencesSettings::handle(ctx), |_, _, _, ctx| {
             ctx.notify();
         });
@@ -279,32 +252,22 @@ impl MainSettingsPageView {
 
         widgets.push(Box::new(SettingsSyncWidget::default()));
 
-        widgets.push(Box::new(EarnRewardsWidget::default()));
 
         if ChannelState::app_version().is_some() {
             widgets.push(Box::new(VersionInfoWidget::default()));
         }
 
-        widgets.push(Box::new(LogoutWidget::default()));
+        // twarp: de-cloud (2b) — LogoutWidget deleted; there is no login.
 
         let page = PageType::new_uncategorized(widgets, Some("Account"));
 
         MainSettingsPageView { page, auth_state }
-    }
-
-    fn handle_autoupdate_state_change(
-        &mut self,
-        _: ModelHandle<AutoupdateState>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        ctx.notify();
     }
 }
 
 #[derive(Default)]
 struct AccountWidgetStateHandles {
     upgrade_link: MouseStateHandle,
-    anonymous_user_sign_up_button: MouseStateHandle,
     enterprise_contact_us_link: MouseStateHandle,
     stripe_billing_portal_link: MouseStateHandle,
 }
@@ -320,32 +283,20 @@ impl AccountWidget {
         auth_state: &AuthState,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        let button_styles = UiComponentStyles {
-            font_size: Some(14.),
-            font_weight: Some(Weight::Semibold),
-            border_radius: Some(CornerRadius::with_all(Radius::Pixels(4.))),
-            padding: Some(Coords {
-                top: 12.,
-                bottom: 12.,
-                left: 40.,
-                right: 40.,
-            }),
-            ..Default::default()
-        };
-
-        let user_info = appearance
-            .ui_builder()
-            .button(
-                ButtonVariant::Accent,
-                self.ui_state_handles.anonymous_user_sign_up_button.clone(),
-            )
-            .with_style(button_styles)
-            .with_text_label("Sign up".to_owned())
-            .build()
-            .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(MainPageAction::SignupAnonymousUser);
-            })
-            .finish();
+        // twarp: de-cloud (2b) — the "Sign up" button was deleted; there is no
+        // sign-up. Show a plain local-only label instead.
+        let user_info = Text::new_inline(
+            "Local-only — no account".to_string(),
+            appearance.ui_font_family(),
+            14.,
+        )
+        .with_color(
+            appearance
+                .theme()
+                .sub_text_color(appearance.theme().surface_2())
+                .into_solid(),
+        )
+        .finish();
 
         let mut plan_info = Flex::column()
             .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
@@ -726,88 +677,8 @@ impl SettingsWidget for SettingsSyncWidget {
 }
 
 #[derive(Default)]
-struct EarnRewardsWidget {
-    refer_link_mouse_handle: MouseStateHandle,
-}
-
-impl EarnRewardsWidget {
-    fn render_row(
-        &self,
-        appearance: &Appearance,
-        label: &str,
-        right_child: Box<dyn Element>,
-    ) -> Box<dyn Element> {
-        Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Start)
-            .with_child(
-                Shrinkable::new(
-                    1.0,
-                    Align::new(
-                        Text::new_inline(
-                            label.to_string(),
-                            appearance.ui_font_family(),
-                            REGULAR_TEXT_FONT_SIZE,
-                        )
-                        .with_color(appearance.theme().active_ui_text_color().into())
-                        .finish(),
-                    )
-                    .left()
-                    .finish(),
-                )
-                .finish(),
-            )
-            .with_child(right_child)
-            .finish()
-    }
-}
-
-impl SettingsWidget for EarnRewardsWidget {
-    type View = MainSettingsPageView;
-
-    fn search_terms(&self) -> &str {
-        "earn rewards referral share friends"
-    }
-
-    fn should_render(&self, app: &AppContext) -> bool {
-        !AuthStateProvider::as_ref(app)
-            .get()
-            .is_anonymous_or_logged_out()
-    }
-
-    fn render(
-        &self,
-        _view: &Self::View,
-        appearance: &Appearance,
-        _app: &AppContext,
-    ) -> Box<dyn Element> {
-        Container::new(
-            self.render_row(
-                appearance,
-                REFERRAL_CTA,
-                appearance
-                    .ui_builder()
-                    .link(
-                        "Refer a friend".into(),
-                        None,
-                        Some(Box::new(move |ctx| {
-                            ctx.dispatch_typed_action(WorkspaceAction::ShowReferralSettingsPage);
-                        })),
-                        self.refer_link_mouse_handle.clone(),
-                    )
-                    .soft_wrap(false)
-                    .build()
-                    .finish(),
-            ),
-        )
-        .with_margin_top(VERTICAL_MARGIN)
-        .finish()
-    }
-}
-
-#[derive(Default)]
 struct VersionInfoWidget {
     copy_version_button_mouse_state: MouseStateHandle,
-    version_info_cta_link_mouse_state: MouseStateHandle,
 }
 
 impl VersionInfoWidget {
@@ -815,104 +686,12 @@ impl VersionInfoWidget {
         &self,
         version: &'static str,
         appearance: &Appearance,
-        app: &AppContext,
     ) -> Box<dyn Element> {
         let faded_text_color = appearance
             .theme()
             .active_ui_text_color()
             .with_opacity(60)
             .into();
-        struct StatusContent {
-            text: &'static str,
-            color: ColorU,
-        }
-        struct CallToActionContent {
-            text: &'static str,
-            action: MainPageAction,
-        }
-
-        let (status_content, call_to_action_content) =
-            if ContextFlag::PromptForVersionUpdates.is_enabled() {
-                let ansi_red: ColorU = appearance.theme().terminal_colors().bright.red.into();
-                match autoupdate::get_update_state(app) {
-                    AutoupdateStage::NoUpdateAvailable => (
-                        Some(StatusContent {
-                            text: "Up to date",
-                            color: faded_text_color,
-                        }),
-                        Some(CallToActionContent {
-                            text: "Check for updates",
-                            action: MainPageAction::CheckForUpdate,
-                        }),
-                    ),
-                    AutoupdateStage::CheckingForUpdate => (
-                        Some(StatusContent {
-                            text: "checking for update...",
-                            color: faded_text_color,
-                        }),
-                        None,
-                    ),
-                    AutoupdateStage::DownloadingUpdate => (
-                        Some(StatusContent {
-                            text: "downloading update...",
-                            color: faded_text_color,
-                        }),
-                        None,
-                    ),
-                    AutoupdateStage::UpdateReady { .. } => (
-                        Some(StatusContent {
-                            text: "Update available",
-                            color: ansi_red,
-                        }),
-                        Some(CallToActionContent {
-                            text: "Relaunch Twarp",
-                            action: MainPageAction::Relaunch,
-                        }),
-                    ),
-                    AutoupdateStage::Updating { .. } => (
-                        Some(StatusContent {
-                            text: "Updating...",
-                            color: faded_text_color,
-                        }),
-                        None,
-                    ),
-                    AutoupdateStage::UpdatedPendingRestart { .. } => (
-                        Some(StatusContent {
-                            text: "Installed update",
-                            color: faded_text_color,
-                        }),
-                        Some(CallToActionContent {
-                            text: "Relaunch Twarp",
-                            action: MainPageAction::Relaunch,
-                        }),
-                    ),
-                    AutoupdateStage::UnableToUpdateToNewVersion { .. } => (
-                        Some(StatusContent {
-                            text: "A new version of Twarp is available but can't be installed",
-                            color: ansi_red,
-                        }),
-                        Some(CallToActionContent {
-                            text: "Update Twarp manually",
-                            // note: the handler for this action is a no-op
-                            action: MainPageAction::DownloadUpdate,
-                        }),
-                    ),
-                    AutoupdateStage::UnableToLaunchNewVersion { .. } => (
-                        Some(StatusContent {
-                            text: "A new version of Twarp is installed but can't be launched.",
-                            color: ansi_red,
-                        }),
-                        Some(CallToActionContent {
-                            text: "Update Twarp manually",
-                            // note: the handler for this action is a no-op
-                            action: MainPageAction::DownloadUpdate,
-                        }),
-                    ),
-                }
-            } else {
-                (None, None)
-            };
-
         let mut first_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_child(
@@ -932,24 +711,6 @@ impl VersionInfoWidget {
                 )
                 .finish(),
             );
-        if let Some(call_to_action_content) = call_to_action_content {
-            first_row.add_child(
-                appearance
-                    .ui_builder()
-                    .link(
-                        call_to_action_content.text.into(),
-                        None,
-                        Some(Box::new(move |ctx| {
-                            ctx.dispatch_typed_action(call_to_action_content.action.clone());
-                        })),
-                        self.version_info_cta_link_mouse_state.clone(),
-                    )
-                    .soft_wrap(false)
-                    .build()
-                    .finish(),
-            );
-        }
-
         let mut second_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_child(
@@ -991,18 +752,6 @@ impl VersionInfoWidget {
                 )
                 .finish(),
             );
-        if let Some(status_content) = status_content {
-            second_row.add_child(
-                Text::new_inline(
-                    status_content.text.to_string(),
-                    appearance.ui_font_family(),
-                    REGULAR_TEXT_FONT_SIZE,
-                )
-                .with_color(status_content.color)
-                .finish(),
-            );
-        }
-
         let mut version_info = Flex::column();
         version_info.add_child(first_row.finish());
         version_info.add_child(
@@ -1028,7 +777,7 @@ impl SettingsWidget for VersionInfoWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         if let Some(version) = ChannelState::app_version() {
-            Container::new(self.render_version_info(version, appearance, app))
+            Container::new(self.render_version_info(version, appearance))
                 .with_margin_top(VERTICAL_MARGIN)
                 .finish()
         } else {
@@ -1038,58 +787,7 @@ impl SettingsWidget for VersionInfoWidget {
     }
 }
 
-#[derive(Default)]
-struct LogoutWidget {
-    mouse_state: MouseStateHandle,
-}
-
-impl LogoutWidget {
-    fn render_logout_button(&self, appearance: &Appearance) -> Box<dyn Element> {
-        appearance
-            .ui_builder()
-            .button(ButtonVariant::Secondary, self.mouse_state.clone())
-            .with_text_label(LOG_OUT_TEXT.into())
-            .with_style(UiComponentStyles {
-                font_size: Some(14.),
-                padding: Some(Coords::uniform(8.).left(32.).right(32.)),
-                ..Default::default()
-            })
-            .build()
-            .on_click(|ctx, _, _| {
-                ctx.dispatch_typed_action(WorkspaceAction::LogOut);
-            })
-            .finish()
-    }
-}
-
-impl SettingsWidget for LogoutWidget {
-    type View = MainSettingsPageView;
-
-    fn search_terms(&self) -> &str {
-        "sign out log out logout"
-    }
-
-    fn should_render(&self, app: &AppContext) -> bool {
-        !AuthStateProvider::as_ref(app)
-            .get()
-            .is_anonymous_or_logged_out()
-    }
-
-    fn render(
-        &self,
-        _view: &Self::View,
-        appearance: &Appearance,
-        _app: &AppContext,
-    ) -> Box<dyn Element> {
-        Container::new(
-            Align::new(self.render_logout_button(appearance))
-                .left()
-                .finish(),
-        )
-        .with_margin_top(VERTICAL_MARGIN)
-        .finish()
-    }
-}
+// twarp: de-cloud (2b) — LogoutWidget deleted; there is no login.
 
 impl SettingsPageMeta for MainSettingsPageView {
     fn section() -> SettingsSection {

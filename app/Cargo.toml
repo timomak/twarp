@@ -108,7 +108,6 @@ enclose = "1.1.8"
 enum-iterator.workspace = true
 event-listener = "5.4.0"
 field_mask.workspace = true
-firebase.workspace = true
 flate2 = "1.0.17"
 float-cmp.workspace = true
 futures-lite.workspace = true
@@ -144,7 +143,6 @@ log.workspace = true
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 lsp.workspace = true
 twarp_logging.workspace = true
-sentry = { workspace = true, optional = true }
 lz4_flex = "0.11"
 markdown_parser.workspace = true
 memchr.workspace = true
@@ -152,7 +150,6 @@ memo-map.workspace = true
 mermaid_to_svg.workspace = true
 num-traits.workspace = true
 num_cpus = "1.13.0"
-oauth2.workspace = true
 once_cell.workspace = true
 ordered-float.workspace = true
 os_info = { version = "3.7.0", default-features = false }
@@ -174,7 +171,6 @@ regex-automata = "0.4.6"
 regex.workspace = true
 reqwest.workspace = true
 rust-embed.workspace = true
-sentry-log = { workspace = true, optional = true }
 inventory = "0.3"
 schemars = "1"
 serde.workspace = true
@@ -360,8 +356,6 @@ nix = { workspace = true, features = [
 ] }
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "windows"))'.dependencies]
-crash-handler = { version = "0.6.3", optional = true }
-minidumper = { version = "0.8.3", optional = true }
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
 freedesktop-desktop-entry = "0.5.0"
@@ -433,7 +427,6 @@ embed-resource = "3.0"
 # Note that we support channel-specific enables for these features
 [features]
 ai_resume_button = []
-autoupdate = []
 figma_detection = []
 bundled_skills = []
 agent_mode = []
@@ -448,21 +441,12 @@ changelog = []
 clear_autosuggestion_on_escape = []
 cloud_object_initial_load = ["enforce_revisions_to_cloud_objects"]
 codebase_index_speedbump = []
-cocoa_sentry = ["crash_reporting"]
 command_predictor = []
 context_line_review_comments = []
 completions_v2 = [
     "plugin_host",
     "twarp_completer/v2",
     "dep:command-signatures-v2",
-]
-crash_reporting = [
-    "dep:sentry",
-    "dep:sentry-log",
-    "dep:minidumper",
-    "dep:crash-handler",
-    "twarp_logging/crash_reporting",
-    # twarp: 2c-e — `ai` crate deleted; removed `ai/crash_reporting` propagation.
 ]
 creating_shared_sessions = []
 cross_repo_context = []
@@ -493,7 +477,6 @@ default = [
     "suggested_rules",
     "default_waterfall_mode",
     "am_workflows",
-    "autoupdate_ui_revamp",
     "render_agent_mode_output_markdown",
     "agent_mode_primary_xml",
     "agent_mode_pre_plan_xml",
@@ -630,7 +613,6 @@ default = [
     "codex_notifications",
     "trim_trailing_blank_lines",
     "open_warp_new_settings_modes",
-    "skip_firebase_anonymous_user",
     "settings_file",
     "directory_tab_colors",
 ]
@@ -687,7 +669,7 @@ inline_slash_commands = ["agent_view"]
 # profile report when app memory usage exceeds a 10GB threshold.
 #
 # Enabled on TwarpDev by default.
-heap_usage_tracking = ["jemalloc_pprof", "crash_reporting"]
+heap_usage_tracking = ["jemalloc_pprof"]
 image_as_context = []
 in_band_generators_ssh = []
 # twarp: 2c-e — `ai` crate deleted; removed `ai/jemalloc` propagation.
@@ -719,7 +701,6 @@ local_fs = [
     "repo_metadata/local_fs",
     "twarp_core/local_fs",
 ]
-log_expensive_frames_in_sentry = []
 markdown_tables = []
 markdown_mermaid = []
 mcp_server = []
@@ -745,7 +726,6 @@ plugin_host = ["dep:rquickjs", "dep:twarp_js", "twarp_cli/plugin_host"]
 pprof_cpu_profiling = ["dep:pprof"]
 predict_am_queries = []
 quake_mode = []
-record_app_active_events = []
 recording_mode = []
 # This feature should only be enabled when building a release bundle with
 # the bundle script, and can be used to conditionally enable functionality
@@ -807,7 +787,6 @@ partial_next_command_suggestions = []
 drive_objects_as_context = []
 iterm_images = []
 validate_autosuggestions = []
-autoupdate_ui_revamp = []
 twarp_packs = []
 suggested_rules = []
 command_correction_key = []
@@ -838,7 +817,6 @@ changed_lines_only_apply_diff_result = []
 linked_code_blocks = []
 tabbed_editor_view = []
 selection_as_context = []
-send_telemetry_to_file = []
 multi_profile = []
 pr_comments_slash_command = []
 pr_comments_v2 = []
@@ -927,7 +905,6 @@ oz_handoff = []
 hoa_notifications = []
 open_code_notifications = []
 transfer_control_tool = []
-skip_firebase_anonymous_user = []
 solo_user_byok = []
 configurable_toolbar = []
 twarpify_footer = []

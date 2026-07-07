@@ -200,7 +200,6 @@ pub struct AppStartupInfo {
     /// launched.  Should be set to None if we do not know for sure.
     pub is_screen_reader_enabled: Option<bool>,
     pub from_relaunch: bool,
-    pub is_crash_reporting_enabled: bool,
     pub timing_data: Vec<TimingDataPoint>,
 }
 
@@ -1227,7 +1226,6 @@ pub enum TelemetryEvent {
     /// suggestions menu may be triggered with a keybinding other than tab.
     TabSingleResultAutocompletion,
     EditorUnhandledModifierKey(String),
-    CopyInviteLink,
     OpenThemeChooser,
     ThemeSelection {
         theme: String,
@@ -1243,11 +1241,6 @@ pub enum TelemetryEvent {
     CreateCustomTheme,
     DeleteCustomTheme,
     SplitPane,
-    UnableToAutoUpdateToNewVersion,
-    /// An update was successfully installed, and we're attempting to relaunch the app.
-    AutoupdateRelaunchAttempt {
-        new_version: String,
-    },
     SkipOnboardingSurvey,
     ToggleRestoreSession(bool),
     DatabaseStartUpError(String),
@@ -1389,9 +1382,6 @@ pub enum TelemetryEvent {
         link: GridHighlightedLink,
         open_with: LinkOpenMethod,
     },
-    OpenChangelogLink {
-        url: String,
-    },
     ShowInFileExplorer,
     CommandXRayTriggered {
         trigger: CommandXRayTrigger,
@@ -1424,9 +1414,6 @@ pub enum TelemetryEvent {
     SetLineHeight {
         new_value: f32,
     },
-    ResourceCenterOpened,
-    ResourceCenterTipsCompleted,
-    ResourceCenterTipsSkipped,
     KeybindingsPageOpened,
     CommandSearchOpened {
         has_initial_query: bool,
@@ -2201,16 +2188,6 @@ pub enum TelemetryEvent {
     /// This typically means the user hasn't installed or enabled WSL.
     #[cfg(windows)]
     WSLRegistryError,
-    #[cfg(windows)]
-    AutoupdateUnableToCloseApplications,
-    #[cfg(windows)]
-    AutoupdateFileInUse,
-    #[cfg(windows)]
-    AutoupdateMutexTimeout,
-    #[cfg(windows)]
-    AutoupdateForcekillFailed {
-        exit_code: i32,
-    },
     ExecutedWarpDrivePrompt {
         id: Option<WorkflowId>,
         selection_source: WorkflowSelectionSource,
@@ -2937,7 +2914,6 @@ impl TelemetryEvent {
             TelemetryEvent::OpenLink { link, open_with } => {
                 Some(json!({"link_type": link, "open_with": open_with}))
             }
-            TelemetryEvent::OpenChangelogLink { url } => Some(json!({ "url": url })),
             TelemetryEvent::CommandXRayTriggered { trigger } => Some(json!({ "trigger": trigger })),
             TelemetryEvent::SaveLaunchConfig { state } => Some(json!({ "state": state })),
             TelemetryEvent::SaveAsWorkflowModal { source } => Some(json!({ "source": source })),
@@ -3634,9 +3610,6 @@ impl TelemetryEvent {
                 "env_vars_id": env_vars_id,
                 "env_vars_space": env_vars_space,
             })),
-            TelemetryEvent::AutoupdateRelaunchAttempt { new_version } => Some(json!({
-                "new_version": new_version,
-            })),
             TelemetryEvent::ToggledAgentModeAutoexecuteReadonlyCommandsSetting { src, enabled } => {
                 Some(json!({
                     "source": src,
@@ -3831,13 +3804,11 @@ impl TelemetryEvent {
             | TelemetryEvent::ContextMenuCopySelectedText
             | TelemetryEvent::JumpToPreviousCommand
             | TelemetryEvent::TabSingleResultAutocompletion
-            | TelemetryEvent::CopyInviteLink
             | TelemetryEvent::OpenThemeChooser
             | TelemetryEvent::OpenThemeCreatorModal
             | TelemetryEvent::CreateCustomTheme
             | TelemetryEvent::DeleteCustomTheme
             | TelemetryEvent::SplitPane
-            | TelemetryEvent::UnableToAutoUpdateToNewVersion
             | TelemetryEvent::SkipOnboardingSurvey
             | TelemetryEvent::LoggedOutStartup
             | TelemetryEvent::OpenWorkflowSearch
@@ -3869,9 +3840,6 @@ impl TelemetryEvent {
             | TelemetryEvent::ToggleApprovalsModal
             | TelemetryEvent::ChangedInviteViewOption(_)
             | TelemetryEvent::SendEmailInvites
-            | TelemetryEvent::ResourceCenterOpened
-            | TelemetryEvent::ResourceCenterTipsCompleted
-            | TelemetryEvent::ResourceCenterTipsSkipped
             | TelemetryEvent::KeybindingsPageOpened
             | TelemetryEvent::OpenedAltScreenFind
             | TelemetryEvent::QuitModalDisabled
@@ -4090,14 +4058,7 @@ impl TelemetryEvent {
                 "action": action,
             })),
             #[cfg(windows)]
-            TelemetryEvent::WSLRegistryError
-            | TelemetryEvent::AutoupdateUnableToCloseApplications
-            | TelemetryEvent::AutoupdateFileInUse
-            | TelemetryEvent::AutoupdateMutexTimeout => None,
-            #[cfg(windows)]
-            TelemetryEvent::AutoupdateForcekillFailed { exit_code } => Some(json!({
-                "exit_code": exit_code,
-            })),
+            TelemetryEvent::WSLRegistryError => None,
             TelemetryEvent::InputBufferSubmitted {
                 input_type,
                 is_locked,
@@ -4415,7 +4376,6 @@ impl TelemetryEvent {
             | TelemetryEvent::BootstrappingSucceeded(_)
             | TelemetryEvent::TabSingleResultAutocompletion
             | TelemetryEvent::EditorUnhandledModifierKey(_)
-            | TelemetryEvent::CopyInviteLink
             | TelemetryEvent::OpenThemeChooser
             | TelemetryEvent::ThemeSelection { .. }
             | TelemetryEvent::AppIconSelection { .. }
@@ -4424,8 +4384,6 @@ impl TelemetryEvent {
             | TelemetryEvent::CreateCustomTheme
             | TelemetryEvent::DeleteCustomTheme
             | TelemetryEvent::SplitPane
-            | TelemetryEvent::UnableToAutoUpdateToNewVersion
-            | TelemetryEvent::AutoupdateRelaunchAttempt { .. }
             | TelemetryEvent::SkipOnboardingSurvey
             | TelemetryEvent::ToggleRestoreSession(_)
             | TelemetryEvent::DatabaseStartUpError(_)
@@ -4485,7 +4443,6 @@ impl TelemetryEvent {
             | TelemetryEvent::ToggleJumpToBottomofBlockButton { .. }
             | TelemetryEvent::ToggleShowBlockDividers { .. }
             | TelemetryEvent::OpenLink { .. }
-            | TelemetryEvent::OpenChangelogLink { .. }
             | TelemetryEvent::ShowInFileExplorer
             | TelemetryEvent::CommandXRayTriggered { .. }
             | TelemetryEvent::OpenLaunchConfigSaveModal
@@ -4505,9 +4462,6 @@ impl TelemetryEvent {
             | TelemetryEvent::SendEmailInvites
             | TelemetryEvent::CommandCorrection { .. }
             | TelemetryEvent::SetLineHeight { .. }
-            | TelemetryEvent::ResourceCenterOpened
-            | TelemetryEvent::ResourceCenterTipsCompleted
-            | TelemetryEvent::ResourceCenterTipsSkipped
             | TelemetryEvent::KeybindingsPageOpened
             | TelemetryEvent::GlobalSearchOpened
             | TelemetryEvent::GlobalSearchQueryStarted
@@ -4801,11 +4755,7 @@ impl TelemetryEvent {
             | TelemetryEvent::CodePanelsFileOpened { .. }
             | TelemetryEvent::PreviewPanePromoted => false,
             #[cfg(windows)]
-            TelemetryEvent::WSLRegistryError
-            | TelemetryEvent::AutoupdateUnableToCloseApplications
-            | TelemetryEvent::AutoupdateFileInUse
-            | TelemetryEvent::AutoupdateMutexTimeout
-            | TelemetryEvent::AutoupdateForcekillFailed { .. } => false,
+            TelemetryEvent::WSLRegistryError => false,
         }
     }
 
@@ -4957,7 +4907,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::BootstrappingSucceeded => EnablementState::Always,
             Self::TabSingleResultAutocompletion => EnablementState::Always,
             Self::EditorUnhandledModifierKey => EnablementState::Always,
-            Self::CopyInviteLink => EnablementState::Always,
             Self::OpenThemeChooser => EnablementState::Always,
             Self::ThemeSelection => EnablementState::Always,
             Self::AppIconSelection => EnablementState::Always,
@@ -4966,9 +4915,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::CreateCustomTheme => EnablementState::Always,
             Self::DeleteCustomTheme => EnablementState::Always,
             Self::SplitPane => EnablementState::Always,
-            Self::UnableToAutoUpdateToNewVersion | Self::AutoupdateRelaunchAttempt => {
-                EnablementState::Always
-            }
             Self::SkipOnboardingSurvey => EnablementState::Always,
             Self::ToggleRestoreSession => EnablementState::Always,
             Self::DatabaseStartUpError => EnablementState::Always,
@@ -5025,7 +4971,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::JumpToBottomofBlockButtonClicked => EnablementState::Always,
             Self::ToggleJumpToBottomofBlockButton => EnablementState::Always,
             Self::OpenLink => EnablementState::Always,
-            Self::OpenChangelogLink => EnablementState::Always,
             Self::ShowInFileExplorer => EnablementState::Always,
             Self::CommandXRayTriggered => EnablementState::Always,
             Self::OpenLaunchConfigSaveModal => EnablementState::Always,
@@ -5044,9 +4989,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::SendEmailInvites => EnablementState::Always,
             Self::CommandCorrection => EnablementState::Always,
             Self::SetLineHeight => EnablementState::Always,
-            Self::ResourceCenterOpened => EnablementState::Always,
-            Self::ResourceCenterTipsCompleted => EnablementState::Always,
-            Self::ResourceCenterTipsSkipped => EnablementState::Always,
             Self::KeybindingsPageOpened => EnablementState::Always,
             Self::GlobalSearchOpened => EnablementState::Always,
             Self::GlobalSearchQueryStarted => EnablementState::Always,
@@ -5237,11 +5179,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 EnablementState::Flag(FeatureFlag::ImageAsContext)
             }
             #[cfg(windows)]
-            Self::WSLRegistryError
-            | Self::AutoupdateUnableToCloseApplications
-            | Self::AutoupdateFileInUse
-            | Self::AutoupdateMutexTimeout
-            | Self::AutoupdateForcekillFailed { .. } => EnablementState::Always,
+            Self::WSLRegistryError => EnablementState::Always,
             Self::ToggleCodebaseContext => EnablementState::Always,
             Self::ToggleAutoIndexing => EnablementState::Always,
             Self::AgentModeRatedResponse => {
@@ -5439,7 +5377,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 "Context Menu Toggle Git Prompt Dirty Indicator"
             }
             Self::EditorUnhandledModifierKey => "Unhandled Editor Modifier Key",
-            Self::CopyInviteLink => "Copy Invite Link",
             Self::OpenThemeChooser => "Open Theme Chooser",
             Self::ThemeSelection => "Select Theme",
             Self::AppIconSelection => "Select App Icon",
@@ -5447,8 +5384,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::OpenThemeCreatorModal => "Open Theme Creator Modal",
             Self::CreateCustomTheme => "Create Custom Theme",
             Self::DeleteCustomTheme => "Delete Custom Theme",
-            Self::UnableToAutoUpdateToNewVersion => "Unable to Update To New Version",
-            Self::AutoupdateRelaunchAttempt => "Attempting to Relaunch for Update",
             Self::SplitPane => "Split Pane",
             Self::SkipOnboardingSurvey => "Skip Onboarding Survey",
             Self::ToggleRestoreSession => "Toggle Restore Session",
@@ -5509,7 +5444,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::JumpToBookmark => "Jumped to Bookmark Block",
             Self::JumpToBottomofBlockButtonClicked => "Jumped to Bottom of Block Button Clicked",
             Self::OpenLink => "Opened Link",
-            Self::OpenChangelogLink => "Opened Changelog Link",
             Self::ShowInFileExplorer => "Showed File in File Explorer",
             Self::CommandXRayTriggered => "Triggered Command XRay",
             Self::OpenLaunchConfigSaveModal => "Open Save Config Modal",
@@ -5520,9 +5454,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::SelectNavigationPaletteItem => "Select Navigation Palette Item",
             Self::CommandCorrection => "Command Correction Event",
             Self::SetLineHeight => "Set Line Height",
-            Self::ResourceCenterOpened => "Resource Center Opened",
-            Self::ResourceCenterTipsCompleted => "Resource Center Tips Completed",
-            Self::ResourceCenterTipsSkipped => "Resource Center Tips Skipped",
             Self::KeybindingsPageOpened => "Resource Center Keybindings Page Opened",
             Self::GlobalSearchOpened => "Global Search Opened",
             Self::GlobalSearchQueryStarted => "Global Search Query Started",
@@ -5742,16 +5673,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::RemoteServerSetupDuration => "RemoteServer.SetupDuration",
             #[cfg(windows)]
             Self::WSLRegistryError => "WSL Distribution Registry Error",
-            #[cfg(windows)]
-            Self::AutoupdateUnableToCloseApplications => {
-                "Windows Autoupdate: Setup Unable to Close Applications"
-            }
-            #[cfg(windows)]
-            Self::AutoupdateFileInUse => "Windows Autoupdate: File In Use Error",
-            #[cfg(windows)]
-            Self::AutoupdateMutexTimeout => "Windows Autoupdate: Mutex Timeout",
-            #[cfg(windows)]
-            Self::AutoupdateForcekillFailed { .. } => "Windows Autoupdate: Forcekill Failed",
             Self::ToggleCodebaseContext => "Toggle Agent Mode Codebase Context",
             Self::ToggleAutoIndexing => "Toggle Codebase Context Autoindexing",
             Self::ActiveIndexedReposChanged => "Active Indexed Repos Changed",
@@ -5985,7 +5906,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::EditorUnhandledModifierKey => {
                 "Used modifier keybinding keystroke which is not currently supported"
             }
-            Self::CopyInviteLink => "Clicked \"Copy Link\" on Referral Modal",
             Self::OpenThemeChooser => {
                 "Opened theme chooser (list of different themes and visualizations of those themes)"
             }
@@ -5998,12 +5918,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::CreateCustomTheme => "Created a custom theme using the built-in theme creator",
             Self::DeleteCustomTheme => "Deleted a custom theme using the built-in theme creator",
             Self::SplitPane => "Split tab into multiple panes",
-            Self::UnableToAutoUpdateToNewVersion => {
-                "Update available but not authorized to install"
-            }
-            Self::AutoupdateRelaunchAttempt => {
-                "Attempted to relaunch the app after installing an update"
-            }
             Self::SkipOnboardingSurvey => "Skipped onboarding survey as a whole",
             Self::ToggleRestoreSession => {
                 "Toggled session restoration (\"Restore windows, tabs, panes, on startup\")"
@@ -6098,7 +6012,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             }
             Self::ToggleShowBlockDividers => "Enabled or disabled the Show Block Dividers Button",
             Self::OpenLink => "Opened a highlighted link within input or output",
-            Self::OpenChangelogLink => "Opened the changelog link within the App",
             Self::ShowInFileExplorer => "Opened a file in Finder by using \"Show in Finder\"",
             Self::CommandXRayTriggered => {
                 "Triggered Command X-Ray (hovering over a command for explanation)"
@@ -6123,9 +6036,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::SendEmailInvites => "Sent email invites for Warp Drive team",
             Self::CommandCorrection => "Accepted command correction",
             Self::SetLineHeight => "Set line height through Settings -> Appearance",
-            Self::ResourceCenterOpened => "Opened Resource Center pane",
-            Self::ResourceCenterTipsCompleted => "Completed resource center tips",
-            Self::ResourceCenterTipsSkipped => "Skipped welcome tips for new users",
             Self::KeybindingsPageOpened => "Opened the keybinding page within the resource center",
             Self::CommandSearchOpened => "Opened command search (universal search panel to search)",
             Self::CommandSearchExited => {
@@ -6522,22 +6432,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             #[cfg(windows)]
             Self::WSLRegistryError => {
                 "Encountered an error while fetching WSL distributions from the registry"
-            }
-            #[cfg(windows)]
-            Self::AutoupdateUnableToCloseApplications => {
-                "The Windows auto-update installer was unable to automatically close all applications before installing the update"
-            }
-            #[cfg(windows)]
-            Self::AutoupdateFileInUse => {
-                "The Windows auto-update installer encountered a file-in-use error during installation"
-            }
-            #[cfg(windows)]
-            Self::AutoupdateMutexTimeout => {
-                "The Windows auto-update installer timed out waiting for Warp to release its mutex; a force-kill was attempted"
-            }
-            #[cfg(windows)]
-            Self::AutoupdateForcekillFailed { .. } => {
-                "The Windows auto-update installer failed to force-kill Warp after the mutex timeout"
             }
             Self::ToggleCodebaseContext => {
                 "Toggled on/off the enablement of codebase context usage for Agent Mode."
