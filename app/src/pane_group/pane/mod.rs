@@ -47,7 +47,7 @@ use crate::{
     server::telemetry::SharingDialogSource,
     settings::PaneSettings,
     settings_view::SettingsView,
-    terminal::{available_shells::AvailableShell, TerminalView},
+    terminal::{available_shells::AvailableShell, view::BlockNotification, TerminalView},
     workflows::workflow_view::WorkflowView,
 };
 use serde::{Deserialize, Serialize};
@@ -1090,6 +1090,11 @@ pub enum PaneEvent {
     AppStateChanged,
     /// Repo for this pane's terminal has changed
     RepoChanged,
+    /// twarp 07 (7p): ask the workspace to fire a desktop notification for
+    /// this pane (e.g. a Claude turn finished or needs permission while the
+    /// user is away). Routed through the pane group to the workspace's
+    /// existing `send_desktop_notification` handler.
+    SendNotification(BlockNotification),
     /// A remote server resolved the repo root for a session in this pane.
     RemoteRepoNavigated {
         host_id: HostId,

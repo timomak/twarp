@@ -2024,7 +2024,9 @@ pub struct NotificationsErrorBanner {
     pub banner_type: NotificationsErrorBannerType,
 }
 
-#[derive(Debug, Clone)]
+// PartialEq/Eq because 7p carries this inside `PaneEvent::SendNotification`,
+// and `PaneEvent` derives them.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockNotification {
     pub title: String,
     pub body: String,

@@ -934,6 +934,8 @@ impl<'a> TabComponent<'a> {
             Indicator::Synced
         } else if let Some(agent) = Self::agent_indicator(tab, ctx) {
             agent
+        } else if let Some(claude) = Self::claude_code_indicator(tab, ctx) {
+            claude
         } else if let Some(shell_indicator_type) = shell_indicator_type {
             Indicator::Shell(shell_indicator_type)
         } else if has_active_pane_state_indicator {
@@ -1006,6 +1008,18 @@ impl<'a> TabComponent<'a> {
         let conversation_status = Some(conversation.status().clone());
         Some(Indicator::Agent {
             conversation_status,
+        })
+    }
+
+    /// The status indicator for the tab's Claude Code pane(s) (twarp 07, 7p):
+    /// working / needs-attention / finished, reusing the agent indicator's
+    /// status-dot rendering. The tooltip helpers resolve through
+    /// `focused_session_view` (terminal-only), so a Claude-pane tab simply
+    /// gets no agent tooltip.
+    fn claude_code_indicator(tab: &TabData, app: &AppContext) -> Option<Indicator> {
+        let status = tab.pane_group.as_ref(app).claude_code_tab_status(app)?;
+        Some(Indicator::Agent {
+            conversation_status: Some(status),
         })
     }
 
