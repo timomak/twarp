@@ -27,7 +27,7 @@ use twarpui_core::{
     integration::TestDriver,
     keymap::{Keystroke, Trigger},
     modals::{AlertDialog, ModalId},
-    platform::app::{AppCallbackDispatcher, ApproveTerminateResult},
+    platform::app::{AppCallbackDispatcher, ApproveTerminateResult, TerminationRequestSource},
     platform::menu::{Menu, MenuBar},
     platform::SaveFilePickerCallback,
     platform::{self, FilePickerCallback},
@@ -110,6 +110,9 @@ pub trait AppExt {
 
     /// Sets the macOS dock menu constructor function.
     fn set_dock_menu_builder(&mut self, value: impl FnOnce(&mut AppContext) -> Menu + 'static);
+
+    /// Sets whether the application should show its Dock icon on launch.
+    fn set_show_dock_icon_on_launch(&mut self, value: bool);
 }
 
 type MenuBarBuilderFn = Box<dyn FnOnce(&mut AppContext) -> MenuBar>;
@@ -121,6 +124,7 @@ pub struct App {
     callbacks: AppCallbackDispatcher,
     activate_on_launch: bool,
     dev_icon: Option<Cow<'static, [u8]>>,
+    show_dock_icon_on_launch: bool,
     menu_bar_builder: Option<MenuBarBuilderFn>,
     dock_menu_builder: Option<DockMenuBuilderFn>,
     init_fn: Option<platform::app::AppInitCallbackFn>,
@@ -162,6 +166,7 @@ impl App {
             callbacks: AppCallbackDispatcher::new(callbacks, ui_app),
             activate_on_launch: true,
             dev_icon: None,
+            show_dock_icon_on_launch: true,
             menu_bar_builder: None,
             dock_menu_builder: None,
             init_fn: None,
@@ -243,6 +248,13 @@ impl AppExt for AppBuilder {
             AppBackend::Headless(_) => (),
         }
     }
+
+    fn set_show_dock_icon_on_launch(&mut self, value: bool) {
+        match self.as_inner_mut() {
+            AppBackend::CurrentPlatform(app) => app.show_dock_icon_on_launch = value,
+            AppBackend::Headless(_) => (),
+        }
+    }
 }
 
 unsafe fn get_app(object: &mut Object) -> &mut App {
@@ -316,6 +328,14 @@ pub unsafe extern "C-unwind" fn warp_app_will_finish_launching(this: &mut Object
         let nsmenu = make_dock_menu(dock_menu);
         let _: () = msg_send![app_delegate, setDockMenu: nsmenu];
     }
+
+    let show_dock_icon = if app.show_dock_icon_on_launch {
+        YES
+    } else {
+        NO
+    };
+    // `setDockIconVisible:` is a custom warp app-delegate selector.
+    let _: BOOL = msg_send![&*app_delegate, setDockIconVisible: show_dock_icon];
 }
 
 #[no_mangle]
@@ -337,10 +357,18 @@ pub(crate) extern "C-unwind" fn warp_app_internet_reachability_changed(
 
 /// Returns whether or not we can proceed with termination.
 #[no_mangle]
-pub(crate) extern "C-unwind" fn warp_app_should_terminate_app(this: &mut Object) -> BOOL {
+pub(crate) extern "C-unwind" fn warp_app_should_terminate_app(
+    this: &mut Object,
+    system_initiated: BOOL,
+) -> BOOL {
     let app = unsafe { get_app(this) };
 
-    match app.callbacks.should_terminate_app() {
+    let source = if system_initiated != NO {
+        TerminationRequestSource::System
+    } else {
+        TerminationRequestSource::User
+    };
+    match app.callbacks.should_terminate_app(source) {
         ApproveTerminateResult::Terminate => YES,
         ApproveTerminateResult::Cancel => NO,
     }

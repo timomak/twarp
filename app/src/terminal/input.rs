@@ -49,6 +49,7 @@ use crate::terminal::input::suggestions_mode_model::{
 use crate::terminal::input::terminal_message_bar::TerminalInputMessageBar;
 // twarp: 2c-d — user_query submodule deleted; stubs at file bottom
 use crate::terminal::model::session::active_session::ActiveSession;
+use crate::terminal::model::session::shell_quote_arg;
 use crate::terminal::package_installers::command_at_cursor_has_common_package_installer_prefix;
 use crate::terminal::prompt_render_helper::should_render_ps1_prompt;
 // twarp: 2c-d — universal_developer_input deleted; stub at file bottom
@@ -77,7 +78,7 @@ use crate::{
     completer::SessionContext,
     context_chips::{
         display::{PromptDisplay, PromptDisplayEvent},
-        display_chip::DisplayChipConfig,
+        display_chip::{DisplayChipConfig, PromptChipShellCommand},
         prompt_type::PromptType,
     },
     debounce::debounce,
@@ -1552,7 +1553,7 @@ pub enum AgentInputFooterEvent {
     ToggleInlineModelSelector {
         initial_tab: (),
     },
-    TryExecuteChipCommand(String),
+    TryExecuteChipCommand(crate::context_chips::display_chip::PromptChipShellCommand),
     WriteToPty(()),
 }
 
@@ -2352,6 +2353,33 @@ impl CommandExecutionSource {
     }
 }
 
+fn render_prompt_chip_shell_command(
+    command: &PromptChipShellCommand,
+    shell_type: ShellType,
+) -> String {
+    match command {
+        PromptChipShellCommand::GitCheckout { branch_name } => {
+            format!("git checkout {}", shell_quote_arg(branch_name, shell_type))
+        }
+        PromptChipShellCommand::GitCreateAndCheckoutBranch { branch_name } => {
+            format!(
+                "git checkout -b {} --",
+                shell_quote_arg(branch_name, shell_type)
+            )
+        }
+        PromptChipShellCommand::ChangeDirectory { dir_name } => {
+            format!("cd {}", shell_quote_arg(dir_name, shell_type))
+        }
+        PromptChipShellCommand::NvmUse { version } => {
+            format!("nvm use {}", shell_quote_arg(version, shell_type))
+        }
+        PromptChipShellCommand::NvmInstallLatestNode => "nvm install node".to_string(),
+        PromptChipShellCommand::Echo { message } => {
+            format!("echo {}", shell_quote_arg(message, shell_type))
+        }
+    }
+}
+
 #[derive(PartialEq, Eq, Copy, Clone)]
 pub enum HistoryUpMode {
     // Show prefixed results.
@@ -2387,6 +2415,8 @@ pub enum InputEmptyStateChangeReason {
 pub enum Event {
     AutosuggestionAccepted,
     ClearSelectedBlock,
+    PageUp,
+    PageDown,
     SelectRecentBlocks {
         /// Select the `count` most recent blocks.
         count: usize,
@@ -2525,6 +2555,8 @@ pub enum InputAction {
     CtrlR,
     CtrlD,
     Up,
+    PageUp,
+    PageDown,
     ClearScreen,
     SelectAndRefreshVoltron(VoltronItem),
     ShowAiCommandSearch,
@@ -3214,6 +3246,23 @@ pub fn init(app: &mut AppContext) {
     )
     .with_context_predicate(id!("Input"))
     .with_key_binding("ctrl-l")]);
+
+    app.register_editable_bindings([
+        EditableBinding::new(
+            "terminal:scroll_up_one_page",
+            "Scroll terminal output up one page",
+            InputAction::PageUp,
+        )
+        .with_context_predicate(id!("Input") & !id!("IMEOpen"))
+        .with_key_binding("pageup"),
+        EditableBinding::new(
+            "terminal:scroll_down_one_page",
+            "Scroll terminal output down one page",
+            InputAction::PageDown,
+        )
+        .with_context_predicate(id!("Input") & !id!("IMEOpen"))
+        .with_key_binding("pagedown"),
+    ]);
 
     app.register_editable_bindings([EditableBinding::new(
         "workspace:edit_prompt",
@@ -3932,6 +3981,10 @@ impl Input {
                     include_ai_context_menu: false,
                     delegate_paste_handling: true,
                     keymap_context_modifier: Some(Box::new(move |context, app| {
+                        context
+                            .set
+                            .insert(flags::TERMINAL_INPUT_PAGE_KEYS_HANDLED_BY_INPUT);
+
                         // When ctrl-enter is bound to accepting prompt suggestions and there's
                         // a pending passive code diff, suggested prompt, or prompt suggestion
                         // banner, set a flag so the editor's ctrl-enter binding doesn't match
@@ -5247,11 +5300,10 @@ impl Input {
             .is_profile_selector()
         {
             self.suggestions_mode_model.update(ctx, |model, ctx| {
-                model.set_mode(InputSuggestionsMode::Closed, ctx);
+                model.close_and_restore_buffer(ctx);
             });
             ctx.notify();
         }
-        self.clear_buffer_and_reset_undo_stack(ctx);
         self.focus_input_box(ctx);
     }
 
@@ -6324,9 +6376,17 @@ impl Input {
                 });
             }
             PromptDisplayEvent::TryExecuteCommand(command) => {
+                let Some(shell_type) = self
+                    .active_session(ctx)
+                    .map(|session| session.shell().shell_type())
+                else {
+                    log::warn!("Tried to execute prompt chip command without an active session");
+                    return;
+                };
+                let command = render_prompt_chip_shell_command(command, shell_type);
                 // Snapshot the current input so we can restore it after the command completes.
                 let current_input = self.buffer_text(ctx);
-                if self.try_execute_command_from_source(command, CommandExecutionSource::User, ctx)
+                if self.try_execute_command_from_source(&command, CommandExecutionSource::User, ctx)
                 {
                     self.cancel_active_conversation(ctx, CancellationReason::UserCommandExecuted);
                     if !current_input.is_empty() {
@@ -9114,8 +9174,12 @@ impl Input {
             }
         });
         send_telemetry_from_ctx!(event, ctx);
-        self.editor
-            .update(ctx, |input, ctx| input.move_page_up(ctx));
+        if self.suggestions_mode_model.as_ref(ctx).is_visible() {
+            self.editor
+                .update(ctx, |input, ctx| input.move_page_up(ctx));
+        } else {
+            ctx.emit(Event::PageUp);
+        }
     }
 
     /// Asks the currently active inline menu whether the buffer should be restored on dismiss
@@ -9424,8 +9488,12 @@ impl Input {
             }
         });
         send_telemetry_from_ctx!(event, ctx);
-        self.editor
-            .update(ctx, |input, ctx| input.move_page_down(ctx));
+        if self.suggestions_mode_model.as_ref(ctx).is_visible() {
+            self.editor
+                .update(ctx, |input, ctx| input.move_page_down(ctx));
+        } else {
+            ctx.emit(Event::PageDown);
+        }
     }
 
     fn maybe_generate_autosuggestion(&mut self, ctx: &mut ViewContext<Self>) {
@@ -14915,6 +14983,8 @@ impl TypedActionView for Input {
         match action {
             InputAction::FocusInputBox => self.focus_input_box(ctx),
             InputAction::Up => self.editor_up(ctx),
+            InputAction::PageUp => self.editor_page_up(ctx),
+            InputAction::PageDown => self.editor_page_down(ctx),
             InputAction::CtrlD => self.ctrl_d(ctx),
             InputAction::CtrlR => self.ctrl_r(ctx),
             InputAction::ClearScreen => self.clear_screen(ctx),

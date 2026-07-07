@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 // twarp: 2c-d — AI agent view controller / blocklist input/context/history / AI document deleted.
 use crate::app_state::{AIDocumentId, AIDocumentVersion};
-use crate::context_chips::display_chip::format_git_branch_command;
+use crate::context_chips::display_chip::PromptChipShellCommand;
 use crate::context_chips::display_chip::{
     AgentViewController, BlocklistAIContextModel, BlocklistAIInputModel,
 };
@@ -98,7 +98,7 @@ pub enum PromptDisplayEvent {
     OpenConversationHistory,
     OpenCommandPaletteFiles,
     RunAgentQuery(String),
-    TryExecuteCommand(String),
+    TryExecuteCommand(PromptChipShellCommand),
     OpenAIDocument {
         document_id: AIDocumentId,
         document_version: AIDocumentVersion,
@@ -383,7 +383,9 @@ impl TypedActionView for PromptDisplay {
         match action {
             PromptDisplayAction::SelectGitBranch { value } => {
                 ctx.emit(PromptDisplayEvent::TryExecuteCommand(
-                    format_git_branch_command(value),
+                    PromptChipShellCommand::GitCheckout {
+                        branch_name: value.clone(),
+                    },
                 ));
             }
         }

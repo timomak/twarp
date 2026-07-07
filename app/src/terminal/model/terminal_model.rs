@@ -29,8 +29,8 @@ use super::ansi::{
     WarpificationUnavailableReason,
 };
 use super::block::{
-    AgentInteractionMetadata, Block, BlockId, BlockMetadata, BlockSize, BlocklistEnvVarMetadata,
-    SerializedBlock,
+    AgentInteractionMetadata, Block, BlockId, BlockMetadata, BlockSize, BlockState,
+    BlocklistEnvVarMetadata, SerializedBlock,
 };
 use super::blockgrid::BlockGrid;
 use super::grid::grid_handler::{
@@ -63,8 +63,6 @@ use crate::terminal::shell::{ShellName, ShellType};
 use crate::terminal::model::secrets::ObfuscateSecrets;
 use session_sharing_protocol::sharer::SessionSourceType;
 use twarp_core::report_error;
-#[cfg(not(target_family = "wasm"))]
-use twarpui::util::save_as_file;
 
 use async_channel::Sender;
 use base64::Engine;
@@ -76,7 +74,7 @@ use session_sharing_protocol::common::{
     AICommandMetadata, OrderedTerminalEventType, ParticipantId,
 };
 use std::cmp::{max, min};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::num::ParseIntError;
 use std::ops::{Range, RangeInclusive};
 use std::path::PathBuf;
@@ -608,6 +606,11 @@ pub struct TerminalModel {
     /// Next ID to use for images where the ID is not explicitly specified
     /// by the Kitty protocol
     pub next_kitty_image_id: u32,
+
+    /// Set of session IDs that were generated client-side and injected into
+    /// bootstrap init scripts. Used to validate DCS hook integrity: hooks
+    /// carrying an unrecognized session_id are rejected.
+    registered_session_ids: HashSet<SessionId>,
 }
 
 #[derive(Clone, Debug)]
@@ -1066,23 +1069,33 @@ impl TerminalModel {
             },
         );
 
+        let session_id = 123.into();
+        terminal_model.register_session_id(session_id);
+
         // We need to set the hostname to the local hostname to ensure that we
         // treat the session as a local one, not a remote one.  (See the
         // implementation of `SessionInfo::determine_session_type()` for more
         // details.)
         let hostname = get_local_hostname().unwrap_or_else(|_| "localhost".to_string());
         terminal_model.init_shell(InitShellValue {
-            session_id: 123.into(),
+            session_id,
             shell: "zsh".to_owned(),
             hostname,
             ..Default::default()
         });
         terminal_model.bootstrapped(BootstrappedValue {
+            session_id: Some(session_id.as_u64()),
             shell: "zsh".to_string(),
             ..Default::default()
         });
-        terminal_model.command_finished(Default::default());
-        terminal_model.precmd(Default::default());
+        terminal_model.command_finished(CommandFinishedValue {
+            session_id: Some(session_id.as_u64()),
+            ..Default::default()
+        });
+        terminal_model.precmd(PrecmdValue {
+            session_id: Some(session_id.as_u64()),
+            ..Default::default()
+        });
         terminal_model
     }
 
@@ -1169,6 +1182,7 @@ impl TerminalModel {
             image_id_to_metadata: HashMap::new(),
             // Start mid-way through the u32 range to avoid collisions
             next_kitty_image_id: 2147483647,
+            registered_session_ids: HashSet::new(),
         }
     }
 
@@ -2141,7 +2155,10 @@ impl TerminalModel {
     fn restored_block_commands(&self) -> Vec<HistoryEntry> {
         let mut commands = Vec::new();
         for block in self.block_list.blocks() {
-            if block.is_restored() && !block.is_background() {
+            if block.is_restored()
+                && !block.is_background()
+                && block.state() != BlockState::DoneWithNoExecution
+            {
                 let entry = HistoryEntry::for_restored_block(block.command_to_string(), block);
                 commands.push(entry);
             }
@@ -2353,6 +2370,12 @@ macro_rules! delegate {
 }
 
 impl TerminalModel {
+    /// Registers a client-generated session ID so that DCS hooks carrying
+    /// this ID will be accepted by the integrity check.
+    pub fn register_session_id(&mut self, session_id: SessionId) {
+        self.registered_session_ids.insert(session_id);
+    }
+
     pub fn needs_bracketed_paste(&mut self) -> bool {
         delegate!(self.needs_bracketed_paste())
     }
@@ -2413,6 +2436,10 @@ pub enum HandlerEvent {
 }
 
 impl ansi::Handler for TerminalModel {
+    fn is_registered_session(&self, session_id: SessionId) -> bool {
+        self.registered_session_ids.contains(&session_id)
+    }
+
     fn set_title(&mut self, title: Option<String>) {
         // Don't set the tab title if the title event is for a running in-band command.
         if self.block_list().is_writing_or_executing_in_band_command() {
@@ -2810,6 +2837,25 @@ impl ansi::Handler for TerminalModel {
         });
     }
 
+    fn set_current_working_directory(&mut self, path: String) {
+        // OSC 7 is honor-system: the parser only accepts payloads whose host
+        // matches our local hostname, but a legacy SSH session streams the
+        // remote shell's bytes through this same Performer, so a remote box
+        // with a coincident hostname could still slip through. Drop the
+        // update entirely while we know we're inside an SSH-launching block.
+        if self.is_ssh_block() || self.is_warpified_ssh() {
+            log::debug!("Ignoring OSC 7 CWD update inside SSH session: {path:?}");
+            return;
+        }
+        // Always route OSC 7 to the block list, not through `delegate!` —
+        // the alt-screen handler has no `set_current_working_directory`
+        // override, so a TUI program running on the alt screen (vim, htop,
+        // etc.) would silently swallow updates emitted by tools it
+        // launches. The shell's CWD belongs on the block list regardless
+        // of what's currently rendered on screen.
+        self.block_list.set_current_working_directory(path);
+    }
+
     fn precmd(&mut self, data: PrecmdValue) {
         self.ignore_bootstrapping_messages = false;
         let session_id = data.session_id;
@@ -2880,6 +2926,17 @@ impl ansi::Handler for TerminalModel {
     fn ssh(&mut self, value: SSHValue) {
         if !self.ignore_bootstrapping_messages {
             let remote_shell = value.remote_shell.clone();
+            let Some(remote_session_id) = value.remote_session_id.map(SessionId::from) else {
+                log::warn!("Rejected SSH hook without remote_session_id");
+                return;
+            };
+            // The value `0` is the legacy/default session ID, not a client-generated
+            // integrity token.
+            if remote_session_id.as_u64() == 0 {
+                log::warn!("Rejected SSH hook with zero remote_session_id");
+                return;
+            }
+            self.register_session_id(remote_session_id);
             self.pending_legacy_ssh_session = Some(value);
             self.event_proxy
                 .send_terminal_event(Event::SSH(remote_shell));
@@ -3308,16 +3365,9 @@ impl ansi::Handler for TerminalModel {
                 pending.data = decoded_bytes;
 
                 if !pending.metadata.inline {
-                    #[cfg(not(target_family = "wasm"))]
-                    if let Some(cwd) = self
-                        .active_block_metadata()
-                        .current_working_directory()
-                        .map(|cwd| cwd.to_string())
-                    {
-                        let mut path = PathBuf::from(cwd);
-                        path.push(pending.metadata.name);
-                        let _ = save_as_file(&pending.data[..], path);
-                    }
+                    log::warn!(
+                        "Ignoring non-inline iTerm file payload; automatic local file writes are disabled."
+                    );
                     return;
                 }
 

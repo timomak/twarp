@@ -13,7 +13,7 @@
 use twarpui::{Entity, ModelContext, SingletonEntity};
 
 #[cfg(not(target_family = "wasm"))]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 #[cfg(not(target_family = "wasm"))]
 use std::sync::{atomic::Ordering, Arc};
 #[cfg(not(target_family = "wasm"))]
@@ -62,7 +62,10 @@ impl ShortcutsWatcher {
         let path = shortcuts_file_path();
         if let Some(parent) = path.parent() {
             let target = path.clone();
-            let filter = WatchFilter::with_filter(Arc::new(move |p| p == target));
+            let filter = WatchFilter::with_filter(
+                Arc::new(|_: &Path| true),
+                Arc::new(move |p: &Path| p == target),
+            );
             Self::register_path(ctx, &watcher, parent.to_path_buf(), filter);
         }
 

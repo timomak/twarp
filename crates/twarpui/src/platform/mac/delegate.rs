@@ -394,6 +394,18 @@ impl platform::Delegate for AppDelegate {
         }
     }
 
+    fn set_dock_icon_visible(&self, visible: bool) {
+        // Message the app delegate asynchronously on the main thread.
+        dispatch::Queue::main().exec_async(move || unsafe {
+            let app_delegate: cocoa::base::id = msg_send![NSApp(), delegate];
+            if app_delegate != cocoa::base::nil {
+                let value: BOOL = if visible { YES } else { NO };
+                // `setDockIconVisible:` is a custom warp app-delegate selector.
+                let _: BOOL = msg_send![app_delegate, setDockIconVisible: value];
+            }
+        });
+    }
+
     fn terminate_app(&self, termination_mode: TerminationMode) {
         // Execute `[NSApp terminate]` asynchronously on the main thread to
         // ensure we don't accidentally run into any double-borrow errors.

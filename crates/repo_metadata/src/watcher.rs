@@ -16,6 +16,7 @@ use crate::{repository::SubscriberId, RepoMetadataError, Repository};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
+        use ignore::gitignore::Gitignore;
         use watcher::{BulkFilesystemWatcher, BulkFilesystemWatcherEvent};
         use crate::entry::{
             extract_worktree_git_dir, is_commit_related_git_file, is_git_internal_path,
@@ -41,6 +42,12 @@ pub struct DirectoryWatcher {
 
     /// Handle to the internal processing queue model that orders scan & update tasks.
     processing_queue: ModelHandle<TaskQueue>,
+
+    /// Paths that must be watched (and indexed) even when they are gitignored
+    /// or beyond the tree's size limit — e.g. skill provider directories that
+    /// consumers (LSP, MCP) need live updates for.
+    #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
+    force_included_paths: Vec<PathBuf>,
 }
 
 impl DirectoryWatcher {
@@ -68,6 +75,7 @@ impl DirectoryWatcher {
             #[cfg(feature = "local_fs")]
             watcher: Some(fs_watcher),
             processing_queue,
+            force_included_paths: Vec::new(),
         }
     }
 
@@ -92,6 +100,20 @@ impl DirectoryWatcher {
             #[cfg(feature = "local_fs")]
             watcher: Some(fs_watcher),
             processing_queue,
+            force_included_paths: Vec::new(),
+        }
+    }
+
+    /// Registers paths that must be watched even when gitignored. Mirrors
+    /// `LocalRepoMetadataModel::register_force_included_paths` but applies to
+    /// the watcher backing `Repository` subscribers (LSP, MCP). Must be called
+    /// before repositories begin watching to take effect on already-registered
+    /// watches.
+    pub fn register_force_included_paths(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
+        for path in paths {
+            if !self.force_included_paths.contains(&path) {
+                self.force_included_paths.push(path);
+            }
         }
     }
 
@@ -273,11 +295,12 @@ impl DirectoryWatcher {
     pub(crate) fn start_watching_directories(
         &mut self,
         directory_paths: Vec<StandardizedPath>,
+        gitignores: Vec<Gitignore>,
         ctx: &mut ModelContext<Self>,
     ) -> impl Future<Output = Result<(), RepoMetadataError>> {
         let futures: Vec<_> = directory_paths
             .into_iter()
-            .map(|path| self.start_watching_directory(&path, ctx))
+            .map(|path| self.start_watching_directory(&path, gitignores.clone(), ctx))
             .collect();
 
         async move {
@@ -295,21 +318,26 @@ impl DirectoryWatcher {
     pub(crate) fn start_watching_directory(
         &mut self,
         directory_path: &StandardizedPath,
+        gitignores: Vec<Gitignore>,
         ctx: &mut ModelContext<Self>,
     ) -> impl Future<Output = Result<(), RepoMetadataError>> {
         let local_path = directory_path.to_local_path();
         let registration_future = if let Some(ref watcher) = self.watcher {
             if let Some(local_path) = local_path.clone() {
+                // `gitignores` are the repo's cached root + global gitignores,
+                // threaded in from `Repository::start_watching` so we neither
+                // re-read `.gitignore` from disk nor re-enter the (already
+                // borrowed) `Repository` model here.
+                let force_included_paths = self.force_included_paths.clone();
                 watcher.update(ctx, |watcher, _ctx| {
-                    use crate::entry::should_ignore_git_path;
-                    use notify_debouncer_full::notify::{RecursiveMode, WatchFilter};
-                    use std::sync::Arc;
+                    use crate::entry::repo_watch_filter;
+                    use notify_debouncer_full::notify::RecursiveMode;
 
-                    let watch_filter = WatchFilter::with_filter(Arc::new(move |watch_path| {
-                        !should_ignore_git_path(watch_path)
-                    }));
-
-                    Some(watcher.register_path(&local_path, watch_filter, RecursiveMode::Recursive))
+                    Some(watcher.register_path(
+                        &local_path,
+                        repo_watch_filter(gitignores, force_included_paths),
+                        RecursiveMode::Recursive,
+                    ))
                 })
             } else {
                 log::warn!("Cannot watch non-local path: {directory_path}");
@@ -384,18 +412,6 @@ impl DirectoryWatcher {
         });
     }
 
-    #[cfg(feature = "local_fs")]
-    fn find_existing_subpath(path: &PathBuf) -> Option<PathBuf> {
-        // Attempt to find a subdirectory that exists in the filesystem.
-        let mut current = path.to_owned();
-        while !current.as_path().exists() {
-            if !current.pop() {
-                return None;
-            }
-        }
-        Some(current)
-    }
-
     /// Handles filesystem watcher events.
     #[cfg(feature = "local_fs")]
     fn handle_watcher_event(
@@ -436,16 +452,18 @@ impl DirectoryWatcher {
                     continue;
                 }
 
-                // For non-git files, use standard path lookup
-                if let Ok(standardized) = StandardizedPath::from_local_canonicalized(path.as_path())
-                {
-                    if let Some(repo_handle) = self.find_containing_directory(&standardized) {
-                        let is_ignored =
-                            repo_handle.read(ctx, |repo, _| repo.check_gitignore_status(path));
-                        let target_file = TargetFile::new(path.to_path_buf(), is_ignored);
-                        let repo_update = repo_updates.entry(repo_handle).or_default();
-                        insert(repo_update, target_file);
-                    }
+                // Attribute non-git files by their absolute path, not a canonicalized
+                // one: canonicalizing would follow a below-root symlink (e.g. a
+                // gitignored `node_modules` entry) into the symlink target's repo and
+                // misattribute the event. `from_local_absolute_unchecked` is safe here
+                // because watcher event paths are always absolute.
+                let standardized = StandardizedPath::from_local_absolute_unchecked(path.as_path());
+                if let Some(repo_handle) = self.find_containing_directory(&standardized) {
+                    let is_ignored =
+                        repo_handle.read(ctx, |repo, _| repo.check_gitignore_status(path));
+                    let target_file = TargetFile::new(path.to_path_buf(), is_ignored);
+                    let repo_update = repo_updates.entry(repo_handle).or_default();
+                    insert(repo_update, target_file);
                 }
             }
         };
@@ -477,21 +495,17 @@ impl DirectoryWatcher {
                     }
                 }
             } else {
-                // Because this file will no longer exist, which will fail canonicalization.
-                // We will just try the directory path instead, which hopefully still exists.
-                if let Some(existing_subpath) = Self::find_existing_subpath(path) {
-                    if let Ok(standardized) =
-                        StandardizedPath::from_local_canonicalized(existing_subpath.as_path())
-                    {
-                        if let Some(repo_handle) = self.find_containing_directory(&standardized) {
-                            // Gitignore checking is pattern-based and doesn't require file existence
-                            let is_ignored =
-                                repo_handle.read(ctx, |repo, _| repo.check_gitignore_status(path));
-                            let target_file = TargetFile::new(path.to_path_buf(), is_ignored);
-                            let repo_update = repo_updates.entry(repo_handle).or_default();
-                            repo_update.deleted.insert(target_file);
-                        }
-                    }
+                // Attribute by the absolute (non-canonicalized) path. Deleted files can't be
+                // canonicalized anyway, and resolving symlinks would route the event to the
+                // symlink target's repo rather than the repo the path lexically belongs to.
+                let standardized = StandardizedPath::from_local_absolute_unchecked(path.as_path());
+                if let Some(repo_handle) = self.find_containing_directory(&standardized) {
+                    // Gitignore checking is pattern-based and doesn't require file existence.
+                    let is_ignored =
+                        repo_handle.read(ctx, |repo, _| repo.check_gitignore_status(path));
+                    let target_file = TargetFile::new(path.to_path_buf(), is_ignored);
+                    let repo_update = repo_updates.entry(repo_handle).or_default();
+                    repo_update.deleted.insert(target_file);
                 }
             }
         }
@@ -519,9 +533,9 @@ impl DirectoryWatcher {
                         }
                     }
                 }
-            } else if let Ok(standardized) =
-                StandardizedPath::from_local_canonicalized(to_path.as_path())
-            {
+            } else {
+                let standardized =
+                    StandardizedPath::from_local_absolute_unchecked(to_path.as_path());
                 if let Some(repo_handle) = self.find_containing_directory(&standardized) {
                     let to_is_ignored =
                         repo_handle.read(ctx, |repo, _| repo.check_gitignore_status(to_path));

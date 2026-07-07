@@ -58,7 +58,7 @@ use crate::{
         SaveOutcome, ShowFindReferencesCardProvider,
     },
     debounce::debounce,
-    settings::AISettings,
+    settings::{AISettings, CodeSettings},
     terminal::TerminalView,
     util::sync::Condition,
 };
@@ -1030,6 +1030,14 @@ impl LocalCodeEditorView {
     }
 
     fn format_and_save(&mut self, file_id: FileId, ctx: &mut ViewContext<Self>) {
+        // Respect the user's format-on-save setting. When disabled, save without
+        // requesting LSP document formatting; all other LSP features (hover,
+        // go-to-definition, references, diagnostics) are unaffected.
+        if !*CodeSettings::as_ref(ctx).format_on_save {
+            self.perform_save(file_id, ctx);
+            return;
+        }
+
         let Some(lsp_server) = &self.lsp_server else {
             self.perform_save(file_id, ctx);
             return;

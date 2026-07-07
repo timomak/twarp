@@ -1,9 +1,13 @@
 #![cfg_attr(not(feature = "local_fs"), allow(dead_code))]
 
 use ignore::gitignore::Gitignore;
+#[cfg(feature = "local_fs")]
+use notify_debouncer_full::notify::WatchFilter;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(feature = "local_fs")]
+use std::sync::Arc;
 use thiserror::Error;
 use twarp_util::standardized_path::StandardizedPath;
 
@@ -91,10 +95,33 @@ impl Entry {
         path: impl Into<PathBuf>,
         files: &mut Vec<FileMetadata>,
         gitignores: &mut Vec<Gitignore>,
+        remaining_file_quota: Option<&mut usize>,
+        max_depth: usize,
+        current_depth: usize,
+        ignored_path_strategy: &IgnoredPathStrategy,
+    ) -> Result<Self, BuildTreeError> {
+        Self::build_tree_with_ignored_ancestor(
+            path,
+            files,
+            gitignores,
+            remaining_file_quota,
+            max_depth,
+            current_depth,
+            ignored_path_strategy,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn build_tree_with_ignored_ancestor(
+        path: impl Into<PathBuf>,
+        files: &mut Vec<FileMetadata>,
+        gitignores: &mut Vec<Gitignore>,
         mut remaining_file_quota: Option<&mut usize>,
         max_depth: usize,
         current_depth: usize,
         ignored_path_strategy: &IgnoredPathStrategy,
+        ancestor_is_ignored: bool,
     ) -> Result<Self, BuildTreeError> {
         let curr_path: PathBuf = path.into();
         let is_dir = curr_path.is_dir();
@@ -110,12 +137,14 @@ impl Entry {
             gitignores.push(gitignore);
         }
 
-        let path_is_ignored = matches_gitignores(
-            &curr_path,
-            is_dir,
-            &*gitignores,
-            true, /* check_ancestors */
-        ) || is_git_internal_path(&curr_path);
+        let path_is_ignored = ancestor_is_ignored
+            || is_git_internal_path(&curr_path)
+            || matches_gitignores(
+                &curr_path,
+                is_dir,
+                &*gitignores,
+                false, /* check_ancestors */
+            );
 
         // If we've reached the max depth, force lazy-loading even of non-ignored folders.
         let mut lazy_load = current_depth >= max_depth;
@@ -179,7 +208,7 @@ impl Entry {
                         };
 
                         if let Some(canonical_path) = canonical_path {
-                            match Entry::build_tree(
+                            match Entry::build_tree_with_ignored_ancestor(
                                 canonical_path,
                                 files,
                                 gitignores,
@@ -187,6 +216,7 @@ impl Entry {
                                 max_depth,
                                 current_depth + 1,
                                 ignored_path_strategy,
+                                path_is_ignored,
                             ) {
                                 Ok(entry) => Some(entry),
                                 Err(BuildTreeError::ExceededMaxFileLimit) => {
@@ -262,8 +292,9 @@ impl Entry {
 
         let mut remaining_file_quota = LAZY_LOAD_FILE_LIMIT;
         let mut files = Vec::new();
+        let ancestor_is_ignored = directory.ignored;
 
-        let result = Entry::build_tree(
+        let result = Entry::build_tree_with_ignored_ancestor(
             directory.path.to_local_path_lossy(),
             &mut files,
             gitignores,
@@ -271,6 +302,7 @@ impl Entry {
             1, /* max_depth */
             0, /* current_depth */
             &IgnoredPathStrategy::Include,
+            ancestor_is_ignored,
         );
 
         result.map(|entry| match entry {
@@ -463,22 +495,171 @@ pub fn should_ignore_git_path(path: &Path) -> bool {
     !is_commit_related_git_file(path) && !is_index_lock_file(path)
 }
 
-pub fn path_passes_filters(path: &Path, gitignores: &[Gitignore]) -> bool {
-    let to_check_path = if path.exists() {
-        match dunce::canonicalize(path) {
-            Ok(canonical_path) => canonical_path,
-            Err(_) => return false,
+/// Returns `true` when the directory at `path` should be registered for watching.
+/// Specifically for prefixes that lead to an allowlisted file and `false` for everything else inside `.git/`.
+pub fn should_watch_directory_in_git_path(path: &Path) -> bool {
+    if !is_git_internal_path(path) {
+        return true;
+    }
+
+    // Worktree paths: `.git/worktrees/<name>/...` only descends along the
+    // path needed to reach the allowlisted children (HEAD, index.lock,
+    // config.worktree, refs/heads/*, refs/remotes/<r>/*).
+    if let Some(worktree_dir) = extract_worktree_git_dir(path) {
+        // `path` is either the worktree gitdir itself or something under it.
+        // Anything up to and including `.git/worktrees/<name>` must
+        // be descended into so we can reach children.
+        if path == worktree_dir || worktree_dir.starts_with(path) {
+            return true;
         }
-    } else {
-        path.to_path_buf()
+        // Inside `.git/worktrees/<name>/...`. Apply the same allowlist logic as for the shared `.git/`.
+        let Some(suffix) = git_suffix_components(path) else {
+            return false;
+        };
+        return descend_allowlist_matches(&suffix);
+    }
+
+    // Common `.git/` directory: allow descending along the path to
+    // `.git/`, `.git/refs/heads/`, `.git/refs/remotes/<remote>/`, and
+    // `.git/worktrees/<name>/`.
+    let Some(suffix) = git_suffix_components(path) else {
+        // Path is `.git/` itself — needed so we can reach allowlisted children.
+        return true;
     };
+    descend_allowlist_matches(&suffix)
+}
+
+/// Returns `true` for an in-`.git/` directory suffix that lies on the way to an allowlisted file.
+/// `suffix` is the component sequence after the `.git` component (worktree indirection already stripped),
+/// so e.g. `.git/worktrees/<name>/refs/heads` is seen here as just `["refs", "heads"]`.
+///
+/// Only the first two components are inspected:
+/// - `top_level_dir` is the directory immediately under `.git/` (e.g. `refs`, `objects`, `worktrees`)
+///   and decides which subtree we're descending into.
+/// - `refs_subdir` is meaningful only when `top_level_dir == "refs"`, where it distinguishes
+///   the watched ref subtrees (`heads`, `remotes`) from pruned ones (`tags`, etc.).
+fn descend_allowlist_matches(suffix: &[Component<'_>]) -> bool {
+    let top_level_dir = suffix.first().and_then(|c| c.as_os_str().to_str());
+    let refs_subdir = suffix.get(1).and_then(|c| c.as_os_str().to_str());
+    match top_level_dir {
+        // `.git/refs`, `.git/refs/heads[/...]`, `.git/refs/remotes[/<r>[/...]]`.
+        // `.git/refs/tags/*` and other refs subtrees stay pruned.
+        Some("refs") => matches!(refs_subdir, None | Some("heads") | Some("remotes")),
+        // Worktree dispatcher — needed to reach `.git/worktrees/<name>/...`.
+        Some("worktrees") => true,
+        // All other `.git/` subdirectories (objects, hooks, logs, info, lfs, …) are pruned.
+        Some(_) => false,
+        // `.git/` itself — descend so allowlisted children stay reachable.
+        None => true,
+    }
+}
+
+/// Returns `true` when `path` is, contains, or lies on the way to one of the
+/// `force_included_paths`. Each force-included path is a relative component
+/// sequence (e.g. `.agents/skills`) matched against the tail of `path`, so a
+/// match also holds for the ancestor prefixes leading to it.
+fn matches_force_included_path(path: &Path, force_included_paths: &[PathBuf]) -> bool {
+    let path_components: Vec<_> = path
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(name) => Some(name),
+            Component::RootDir
+            | Component::Prefix(_)
+            | Component::CurDir
+            | Component::ParentDir => None,
+        })
+        .collect();
+
+    force_included_paths.iter().any(|force_included| {
+        let force_included_components: Vec<_> = force_included
+            .components()
+            .filter_map(|component| match component {
+                Component::Normal(name) => Some(name),
+                Component::RootDir
+                | Component::Prefix(_)
+                | Component::CurDir
+                | Component::ParentDir => None,
+            })
+            .collect();
+
+        if force_included_components.is_empty() {
+            return false;
+        }
+
+        if path_components
+            .windows(force_included_components.len())
+            .any(|window| window == force_included_components.as_slice())
+        {
+            return true;
+        }
+
+        (1..force_included_components.len()).any(|prefix_len| {
+            path_components.len() >= prefix_len
+                && path_components[path_components.len() - prefix_len..]
+                    == force_included_components[..prefix_len]
+        })
+    })
+}
+
+/// Returns whether a repository file watcher should descend into (and register
+/// a watch on) the directory at `path`.
+///
+/// Directories inside `.git/` follow the watcher allowlist, force-included
+/// paths are always watched even when gitignored, and any other gitignored
+/// directory is pruned so we don't register watches on `node_modules`, build
+/// output, vendored deps, etc.
+pub fn should_watch_repo_directory(
+    path: &Path,
+    gitignores: &[Gitignore],
+    force_included_paths: &[PathBuf],
+) -> bool {
+    if is_git_internal_path(path) {
+        return should_watch_directory_in_git_path(path);
+    }
+
+    if matches_force_included_path(path, force_included_paths) {
+        return true;
+    }
 
     !matches_gitignores(
-        &to_check_path,
-        to_check_path.is_dir(),
+        path,
+        path.is_dir(),
         gitignores,
-        true, /* check_ancestors */
-    ) && !should_ignore_git_path(&to_check_path)
+        /* check_ancestors */ true,
+    )
+}
+
+/// Returns the [`WatchFilter`] used by repository file watchers.
+///
+/// Emit predicate: forwards events for everything outside `.git/` plus the
+/// allowlisted files inside `.git/` (HEAD, refs/heads/*, index.lock,
+/// config, config.worktree, refs/remotes/<r>/*, and worktree equivalents).
+/// Gitignored files that live directly in a watched (non-ignored) directory
+/// are still emitted here and tagged `is_ignored` downstream, preserving
+/// existing behavior.
+///
+/// Descend predicate: see [`should_watch_repo_directory`]. In addition to the
+/// `.git/` allowlist, it prunes gitignored directories (honoring registered
+/// force-included paths) so the recursive walk does not register watches on
+/// gitignored subtrees.
+///
+/// `gitignores` should be the repo's root + global gitignores (as produced by
+/// [`gitignores_for_directory`]), matching `Repository::check_gitignore_status`
+/// so descend decisions and the downstream `is_ignored` tagging stay
+/// consistent. Nested per-directory `.gitignore` files are not consulted here
+/// (same limitation as the existing tagging), which can only cause us to
+/// over-watch, never to miss events.
+#[cfg(feature = "local_fs")]
+pub fn repo_watch_filter(
+    gitignores: Vec<Gitignore>,
+    force_included_paths: Vec<PathBuf>,
+) -> WatchFilter {
+    let should_watch =
+        move |path: &Path| should_watch_repo_directory(path, &gitignores, &force_included_paths);
+    WatchFilter::with_filter(
+        Arc::new(should_watch),
+        Arc::new(|path: &Path| !should_ignore_git_path(path)),
+    )
 }
 
 /// Determines whether a file should be parsed by a treesitter query. For now the main criteria is it shouldn't

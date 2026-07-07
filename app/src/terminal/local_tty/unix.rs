@@ -17,6 +17,7 @@ use crate::terminal::model::session::command_executor::shell_escape_single_quote
 use crate::terminal::shell::ShellType;
 use crate::ASSETS;
 use twarp_core::features::FeatureFlag;
+use twarp_core::safe_error;
 
 use crate::report_if_error;
 use itertools::Itertools;
@@ -52,6 +53,8 @@ use std::{
 };
 use twarp_core::channel::ChannelState;
 use twarpui::{AppContext, SingletonEntity};
+
+const BASH_HISTORY_SIZE_SENTINEL: &str = "57265949261";
 
 /// Get raw fds for leader/follower ends of a new PTY.
 fn make_pty(size: winsize) -> Result<(RawFd, RawFd)> {
@@ -112,21 +115,15 @@ fn docker_sandbox_run_args(starter: &DockerSandboxShellStarter) -> Vec<std::ffi:
 struct Passwd<'a> {
     name: &'a str,
     dir: &'a str,
-    shell: &'a str,
 }
 
-pub fn get_pw_shell() -> String {
-    let mut buf = [0; 1024];
-    let pw = get_pw_entry(&mut buf);
-    pw.shell.to_string()
-}
-
-/// Return a Passwd struct with pointers into the provided buf.
+/// Return a `Passwd` struct with pointers into the provided buf, or `None` when the current uid
+/// has no password-database entry or the lookup fails.
 ///
 /// # Unsafety
 ///
 /// If `buf` is changed while `Passwd` is alive, bad things will almost certainly happen.
-fn get_pw_entry(buf: &mut [i8; 1024]) -> Passwd<'_> {
+fn get_pw_entry(buf: &mut [i8; 1024]) -> Option<Passwd<'_>> {
     // Create zeroed passwd struct.
     let mut entry: MaybeUninit<libc::passwd> = MaybeUninit::uninit();
 
@@ -145,23 +142,30 @@ fn get_pw_entry(buf: &mut [i8; 1024]) -> Passwd<'_> {
     };
     let entry = unsafe { entry.assume_init() };
 
-    if status < 0 {
-        panic!("getpwuid_r failed");
+    if status != 0 {
+        safe_error!(
+            safe: ("passwd entry lookup failed for uid {uid} with status {status}"),
+            full: ("passwd entry lookup failed")
+        );
+        return None;
     }
 
     if res.is_null() {
-        panic!("pw not found");
+        safe_error!(
+            safe: ("passwd entry lookup failed for uid {uid}"),
+            full: ("passwd entry lookup failed")
+        );
+        return None;
     }
 
     // Sanity check.
     assert_eq!(entry.pw_uid, uid);
 
     // Build a borrowed Passwd struct.
-    Passwd {
+    Some(Passwd {
         name: unsafe { CStr::from_ptr(entry.pw_name).to_str().unwrap() },
         dir: unsafe { CStr::from_ptr(entry.pw_dir).to_str().unwrap() },
-        shell: unsafe { CStr::from_ptr(entry.pw_shell).to_str().unwrap() },
-    }
+    })
 }
 
 pub struct Pty {
@@ -252,7 +256,10 @@ fn build_host_shell_command(
     // Support an overridden home directory for integration tests, which
     // should execute in a more hermetic environment than one where the home
     // directory contains whatever happens to already exist there.
-    let home_dir = std::env::var("HOME").unwrap_or_else(|_| pw.dir.to_owned());
+    let home_dir = std::env::var("HOME")
+        .ok()
+        .or_else(|| pw.as_ref().map(|pw| pw.dir.to_owned()))
+        .unwrap_or_else(|| "/".to_owned());
 
     // Unfortunately process::Command has no facility for using the same fd for in/out/err.
     // The issue is that Stdio wants to close its fd. Previously we tried Stdio::from_raw_fd(follower)
@@ -262,8 +269,15 @@ fn build_host_shell_command(
     // in the tests. Therefore we do NOT set stdin, stdout, stderr here; instead we
     // do it in the pre_exec hook.
     // Setup shell environment.
-    builder.env("LOGNAME", pw.name);
-    builder.env("USER", pw.name);
+    if let Some(user_name) = pw
+        .as_ref()
+        .map(|pw| pw.name.to_owned())
+        .or_else(|| std::env::var("USER").ok())
+        .or_else(|| std::env::var("LOGNAME").ok())
+    {
+        builder.env("LOGNAME", &user_name);
+        builder.env("USER", &user_name);
+    }
     builder.env("HOME", &home_dir);
 
     // Specify terminal name and capabilities.
@@ -343,13 +357,14 @@ fn build_host_shell_command(
     builder.env("WARP_PATH_APPEND", path_append);
 
     if matches!(shell_starter.shell_type(), ShellType::Bash) {
-        // Set an initial very large value for HISTFILESIZE so that it
-        // doesn't get truncated on startup.
-        let sentinel_value = "57265949261";
-        builder.env("HISTFILESIZE", sentinel_value);
-        // Set a second environment variable that we can use to know whether
-        // the user rcfiles set HISTFILESIZE or not.
-        builder.env("WARP_INITIAL_HISTFILESIZE", sentinel_value);
+        // Set initial very large values so bash imports the user's existing
+        // history without truncating the file or in-memory list on startup.
+        builder.env("HISTFILESIZE", BASH_HISTORY_SIZE_SENTINEL);
+        builder.env("HISTSIZE", BASH_HISTORY_SIZE_SENTINEL);
+        // Set second environment variables that we can use to know whether
+        // the user rcfiles set these variables or not.
+        builder.env("WARP_INITIAL_HISTFILESIZE", BASH_HISTORY_SIZE_SENTINEL);
+        builder.env("WARP_INITIAL_HISTSIZE", BASH_HISTORY_SIZE_SENTINEL);
     }
 
     // Pass the desired initial working directory as an environment variable
@@ -754,7 +769,10 @@ fn build_docker_sandbox_command(
         builder.arg(arg);
     }
 
-    let home_dir = std::env::var("HOME").unwrap_or_else(|_| pw.dir.to_owned());
+    let home_dir = std::env::var("HOME")
+        .ok()
+        .or_else(|| pw.as_ref().map(|pw| pw.dir.to_owned()))
+        .unwrap_or_else(|| "/".to_owned());
 
     // Environment variables set on the host-side `sbx` process.
     //
@@ -768,8 +786,15 @@ fn build_docker_sandbox_command(
     // Once we've validated what the container bootstrap actually needs,
     // we can trim this list down to the variables the in-container bash
     // session actually consumes.
-    builder.env("LOGNAME", pw.name);
-    builder.env("USER", pw.name);
+    if let Some(user_name) = pw
+        .as_ref()
+        .map(|pw| pw.name.to_owned())
+        .or_else(|| std::env::var("USER").ok())
+        .or_else(|| std::env::var("LOGNAME").ok())
+    {
+        builder.env("LOGNAME", &user_name);
+        builder.env("USER", &user_name);
+    }
     builder.env("HOME", &home_dir);
     builder.env("TERM", "xterm-256color");
     builder.env("TERM_PROGRAM", "WarpTerminal");
@@ -807,9 +832,10 @@ fn build_docker_sandbox_command(
     builder.env("WARP_PATH_APPEND", path_append);
     // Sandbox shell is always bash (per the container image convention),
     // matching the host-shell path's behavior for bash shells.
-    let sentinel_value = "57265949261";
-    builder.env("HISTFILESIZE", sentinel_value);
-    builder.env("WARP_INITIAL_HISTFILESIZE", sentinel_value);
+    builder.env("HISTFILESIZE", BASH_HISTORY_SIZE_SENTINEL);
+    builder.env("HISTSIZE", BASH_HISTORY_SIZE_SENTINEL);
+    builder.env("WARP_INITIAL_HISTFILESIZE", BASH_HISTORY_SIZE_SENTINEL);
+    builder.env("WARP_INITIAL_HISTSIZE", BASH_HISTORY_SIZE_SENTINEL);
     // Intentionally do NOT set `WARP_INITIAL_WORKING_DIR` for sandboxes:
     // the container's init script cds into the sandbox home dir, not
     // the host's startup dir.
@@ -864,7 +890,8 @@ fn prepare_docker_sandbox(starter: &DockerSandboxShellStarter) -> Result<()> {
     };
 
     // 1. Write the init script to this sandbox's dedicated host init dir.
-    let init_script = raw_init_shell_script_for_shell(ShellType::Bash, &ASSETS);
+    let init_script =
+        raw_init_shell_script_for_shell(ShellType::Bash, &ASSETS, starter.session_id());
     let init_dir = starter.init_dir();
     mk_owner_only_dir(&init_dir)?;
     std::fs::write(starter.init_path(), init_script).context("write sandbox init script")?;
@@ -874,6 +901,101 @@ fn prepare_docker_sandbox(starter: &DockerSandboxShellStarter) -> Result<()> {
     mk_owner_only_dir(&starter.workspace_dir())?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shell_starter(shell_type: ShellType, shell_path: &str) -> DirectShellStarter {
+        DirectShellStarter::new_for_test(shell_type, PathBuf::from(shell_path), Vec::new())
+    }
+
+    fn env_value(command: &Command, key: &str) -> Option<Option<String>> {
+        command
+            .get_envs()
+            .find(|(env_key, _)| *env_key == std::ffi::OsStr::new(key))
+            .map(|(_, value)| value.map(|value| value.to_string_lossy().into_owned()))
+    }
+
+    #[test]
+    fn host_bash_command_sets_history_size_sentinels() {
+        let command = build_host_shell_command(
+            shell_starter(ShellType::Bash, "/bin/bash"),
+            None,
+            HashMap::new(),
+            None,
+            false,
+            false,
+            false,
+        );
+
+        assert_eq!(
+            env_value(&command, "HISTFILESIZE"),
+            Some(Some(BASH_HISTORY_SIZE_SENTINEL.to_owned()))
+        );
+        assert_eq!(
+            env_value(&command, "HISTSIZE"),
+            Some(Some(BASH_HISTORY_SIZE_SENTINEL.to_owned()))
+        );
+        assert_eq!(
+            env_value(&command, "WARP_INITIAL_HISTFILESIZE"),
+            Some(Some(BASH_HISTORY_SIZE_SENTINEL.to_owned()))
+        );
+        assert_eq!(
+            env_value(&command, "WARP_INITIAL_HISTSIZE"),
+            Some(Some(BASH_HISTORY_SIZE_SENTINEL.to_owned()))
+        );
+    }
+
+    #[test]
+    fn host_non_bash_command_does_not_set_history_size_sentinels() {
+        let command = build_host_shell_command(
+            shell_starter(ShellType::Zsh, "/bin/zsh"),
+            None,
+            HashMap::new(),
+            None,
+            false,
+            false,
+            false,
+        );
+
+        assert_eq!(env_value(&command, "HISTFILESIZE"), None);
+        assert_eq!(env_value(&command, "HISTSIZE"), None);
+        assert_eq!(env_value(&command, "WARP_INITIAL_HISTFILESIZE"), None);
+        assert_eq!(env_value(&command, "WARP_INITIAL_HISTSIZE"), None);
+    }
+
+    #[test]
+    fn docker_sandbox_command_sets_history_size_sentinels() {
+        let docker_starter =
+            DockerSandboxShellStarter::new(shell_starter(ShellType::Bash, "sbx"), None);
+        let command = build_docker_sandbox_command(
+            &docker_starter,
+            None,
+            HashMap::new(),
+            false,
+            false,
+            false,
+        );
+
+        assert_eq!(
+            env_value(&command, "HISTFILESIZE"),
+            Some(Some(BASH_HISTORY_SIZE_SENTINEL.to_owned()))
+        );
+        assert_eq!(
+            env_value(&command, "HISTSIZE"),
+            Some(Some(BASH_HISTORY_SIZE_SENTINEL.to_owned()))
+        );
+        assert_eq!(
+            env_value(&command, "WARP_INITIAL_HISTFILESIZE"),
+            Some(Some(BASH_HISTORY_SIZE_SENTINEL.to_owned()))
+        );
+        assert_eq!(
+            env_value(&command, "WARP_INITIAL_HISTSIZE"),
+            Some(Some(BASH_HISTORY_SIZE_SENTINEL.to_owned()))
+        );
+    }
 }
 
 /// A set of platform helper utilities copied directly from std::sys.

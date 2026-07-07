@@ -111,7 +111,7 @@ use crate::{
     terminal::input::MenuPositioning,
     // twarp: 2c-d — InitProjectModel deleted with AI.
     terminal::view::{CliAgentRouting, TerminalAction, TerminalView},
-    util::bindings::{custom_tag_to_keystroke, CustomAction},
+    util::bindings::{custom_tag_to_keystroke, keybinding_name_to_display_string, CustomAction},
     view_components::{
         action_button::{
             ActionButton, ActionButtonTheme, AdjoinedSide, ButtonSize, DangerPrimaryTheme,
@@ -380,6 +380,20 @@ pub fn get_discard_button_disabled_tooltip(git_operation_blocked: bool) -> Strin
             .to_string()
     } else {
         "No changes to discard".to_string()
+    }
+}
+
+/// Builds the tooltip text for the file navigation toggle button, including the
+/// live shortcut for `code_review:toggle_file_navigation` when one is bound.
+fn file_nav_button_tooltip(is_sidebar_expanded: bool, app: &AppContext) -> String {
+    let label = if is_sidebar_expanded {
+        "Hide file navigation"
+    } else {
+        "Show file navigation"
+    };
+    match keybinding_name_to_display_string("code_review:toggle_file_navigation", app) {
+        Some(shortcut) => format!("{label} ({shortcut})"),
+        None => label.to_string(),
     }
 }
 
@@ -1003,6 +1017,13 @@ impl CodeReviewView {
     pub fn on_close(&mut self, ctx: &mut ViewContext<Self>) {
         self.is_open = false;
 
+        if self
+            .find_model
+            .read(ctx, |model, _| model.is_find_bar_open())
+        {
+            self.close_find_bar(ctx);
+        }
+
         ctx.unsubscribe_to_model(&self.diff_state_model);
 
         self.code_review_footer = None;
@@ -1289,10 +1310,10 @@ impl CodeReviewView {
                 .on_click(|ctx| ctx.dispatch_typed_action(CodeReviewAction::OpenHeaderMenu))
         });
 
-        let file_nav_button = ctx.add_typed_action_view(|_ctx| {
+        let file_nav_button = ctx.add_typed_action_view(|ctx| {
             ActionButton::new("", NakedTheme)
                 .with_icon(Icon::FileCopy)
-                .with_tooltip("Show file navigation")
+                .with_tooltip(file_nav_button_tooltip(false, ctx))
                 .on_click(|ctx| ctx.dispatch_typed_action(CodeReviewAction::ToggleFileSidebar))
         });
 
@@ -1571,11 +1592,7 @@ impl CodeReviewView {
     }
 
     fn update_file_nav_button_tooltip(&self, ctx: &mut ViewContext<Self>) {
-        let tooltip = if self.file_sidebar_expanded {
-            "Hide file navigation"
-        } else {
-            "Show file navigation"
-        };
+        let tooltip = file_nav_button_tooltip(self.file_sidebar_expanded, ctx);
         self.file_nav_button.update(ctx, |button, ctx| {
             button.set_tooltip(Some(tooltip), ctx);
         });
@@ -2444,8 +2461,14 @@ impl CodeReviewView {
     }
 
     fn close_find_bar(&mut self, ctx: &mut ViewContext<Self>) {
-        self.find_model.update(ctx, |model, _| {
+        self.find_bar.update(ctx, |find_bar, ctx| {
+            find_bar.set_query_text("", ctx);
+        });
+
+        let editor_handles = self.editor_handles().collect::<Vec<_>>();
+        self.find_model.update(ctx, |model, model_ctx| {
             model.set_is_find_bar_open(false);
+            model.update_query(None, editor_handles.into_iter(), model_ctx);
             model.clear_results();
         });
 
@@ -5912,6 +5935,7 @@ impl CodeReviewView {
 
         Container::new(inner_header)
             .with_background(outer_bg)
+            .with_corner_radius(inner_corner_radius)
             .finish()
     }
 
@@ -7863,6 +7887,27 @@ impl View for CodeReviewView {
 
     fn ui_name() -> &'static str {
         "CodeReviewView"
+    }
+
+    fn keymap_context(&self, ctx: &AppContext) -> twarpui::keymap::Context {
+        let mut context = Self::default_keymap_context();
+
+        // Suppress pane-level shortcuts (e.g. `F`) when a descendant text editor
+        // is focused; otherwise the binding fires before the editor receives
+        // the keystroke as text input. Covers the three text-input surfaces in
+        // this pane: diff editor (`CodeEditorView`), comment composers
+        // (`RichTextEditorView`), and the find bar (`EditorView`).
+        let editor_focused = ctx
+            .focused_view_id(self.window_id)
+            .and_then(|view_id| ctx.view_name(self.window_id, view_id))
+            .is_some_and(|name| {
+                matches!(name, "EditorView" | "RichTextEditorView" | "CodeEditorView")
+            });
+        if !editor_focused {
+            context.set.insert("CodeReviewView_NotEditing");
+        }
+
+        context
     }
 }
 

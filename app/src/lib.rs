@@ -215,7 +215,7 @@ pub use twarp_core::errors::{report_error, report_if_error};
 pub use plugin::{run_plugin_host, PLUGIN_HOST_FLAG};
 use twarp_core::user_preferences::GetUserPreferences as _;
 use twarpui::modals::{AlertDialogWithCallbacks, AppModalCallback};
-use twarpui::platform::app::ApproveTerminateResult;
+use twarpui::platform::app::{ApproveTerminateResult, TerminationRequestSource};
 use window_settings::WindowSettings;
 use workflows::manager::WorkflowManager;
 
@@ -694,10 +694,18 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             if crash_recovery::is_crash_recovery_process(launch_mode.args().as_ref()) {
                 twarp_logging::init_for_crash_recovery_process()?;
             } else {
-                twarp_logging::init(twarp_logging::LogConfig { is_cli, log_destination })?;
+                twarp_logging::init(twarp_logging::LogConfig {
+                    is_cli,
+                    log_destination,
+                    ..Default::default()
+                })?;
             }
         } else {
-            twarp_logging::init(twarp_logging::LogConfig { is_cli, log_destination })?;
+            twarp_logging::init(twarp_logging::LogConfig {
+                is_cli,
+                log_destination,
+                ..Default::default()
+            })?;
         }
     }
 
@@ -791,7 +799,12 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
     // the TOML-backed store. When disabled, they live in the platform-native
     // store (same backend as private). Use the correct one for pre-app reads.
     #[cfg_attr(
-        not(any(enable_crash_recovery, any(target_os = "linux", target_os = "freebsd"))),
+        not(any(
+            enable_crash_recovery,
+            target_os = "linux",
+            target_os = "freebsd",
+            target_os = "macos"
+        )),
         expect(unused)
     )]
     let prefs_for_public_settings: &dyn twarpui_extras::user_preferences::UserPreferences =
@@ -838,6 +851,11 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         let dev_icon = ASSETS.get("bundled/png/local.png")?;
         app_builder.set_dev_icon(dev_icon);
 
+        let show_dock_icon = crate::settings::app_icon::ShowDockIconState::read_from_preferences(
+            prefs_for_public_settings,
+        )
+        .unwrap_or_else(crate::settings::app_icon::ShowDockIconState::default_value);
+        app_builder.set_show_dock_icon_on_launch(show_dock_icon);
         app_builder.set_menu_bar_builder(app_menus::menu_bar);
         app_builder.set_dock_menu_builder(|_| app_menus::dock_menu());
     }
@@ -1828,7 +1846,20 @@ fn app_callbacks(is_integration_test: bool) -> twarpui::platform::AppCallbacks {
                 ApproveTerminateResult::Terminate
             }
         })),
-        on_should_terminate_app: Some(Box::new(move |ctx| {
+        on_should_terminate_app: Some(Box::new(move |source, ctx| {
+            // Never interrupt a system-initiated termination (logout / restart /
+            // scheduled OS update): both cancel paths below return
+            // `ApproveTerminateResult::Cancel`, which macOS interprets as Warp
+            // refusing to quit. That can abort a scheduled OS update while the
+            // quit-warning modal has no visible window to attach to, leaving
+            // Warp waiting on a prompt nobody can see (#12441). Skipping
+            // `apply_pending_update` here doesn't lose the update: the next
+            // update check re-detects it (autoupdate state isn't persisted
+            // across restarts, so the artifact may be re-downloaded).
+            if source == TerminationRequestSource::System {
+                return ApproveTerminateResult::Terminate;
+            }
+
             send_telemetry_from_app_ctx!(
                 TelemetryEvent::UserInitiatedClose {
                     initiated_on: CloseTarget::App,
@@ -2532,6 +2563,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::SummarizationViaMessageReplacement,
         #[cfg(feature = "pluggable_notifications")]
         FeatureFlag::PluggableNotifications,
+        #[cfg(feature = "async_find")]
+        FeatureFlag::AsyncFind,
         #[cfg(feature = "list_skills")]
         FeatureFlag::ListSkills,
         #[cfg(feature = "ask_user_question")]

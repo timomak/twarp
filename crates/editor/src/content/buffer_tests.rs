@@ -45,6 +45,7 @@ use twarpui::text::point::Point;
 use crate::content::buffer::{Buffer, StyledBufferRun};
 
 use super::{BufferEvent, EditResult, ToBufferCharOffset};
+use twarp_util::content_version::ContentVersion;
 
 #[derive(Debug)]
 pub struct TestEmbeddedItem {
@@ -14166,6 +14167,65 @@ fn test_undo_redo_versions() {
     });
 }
 
+/// Regression test: after a remote file save, the server's file-watcher sends a
+/// `BufferUpdatedPush` with the same content the client just saved.
+/// `insert_at_char_offset_ranges` is a no-op (content unchanged) and returns early
+/// without calling `set_version(new_version)`. But the caller updates
+/// `base_content_version` to `new_version` anyway, creating a mismatch that makes
+/// `has_unsaved_changes` return true — causing a spurious "Save changes?" dialog.
+#[test]
+fn test_insert_at_char_offset_ranges_noop_skips_set_version() {
+    App::test((), |mut app| async move {
+        let buffer = app.add_model(|_| Buffer::new(Box::new(|_, _| IndentBehavior::Ignore)));
+        let selection = app.add_model(|_| BufferSelectionModel::new(buffer.clone()));
+
+        buffer.update(&mut app, |buffer, ctx| {
+            // Step 1: Simulate initial file load — populate buffer and set version.
+            buffer.replace_all("hello world", ctx);
+            let load_version = ContentVersion::new();
+            buffer.set_version(load_version);
+            assert!(buffer.version_match(&load_version));
+
+            // Step 2: User edits the buffer.
+            buffer.update_content(
+                BufferEditAction::Insert {
+                    text: "!",
+                    style: TextStyles::default(),
+                    override_text_style: None,
+                },
+                EditOrigin::UserTyped,
+                selection.clone(),
+                ctx,
+            );
+            assert!(!buffer.version_match(&load_version));
+
+            // Step 3: Simulate save — capture the current buffer version as the base.
+            let save_version = buffer.version();
+            assert!(buffer.version_match(&save_version));
+
+            // Step 4: Simulate post-save server push with NO edits.
+            // The server file-watcher detected the save, computed a diff against
+            // the buffer content, and found zero changes — so the push carries
+            // an empty edit list.
+            let push_version = ContentVersion::new();
+            buffer.insert_at_char_offset_ranges(vec![], push_version, ctx);
+
+            // Step 5: The caller (GlobalBufferModel) would set base_content_version = push_version.
+            // version_match(push_version) should be true — the content hasn't changed.
+            // BUG: insert_at_char_offset_ranges returned early without calling set_version,
+            // so the buffer version is still save_version, not push_version.
+            assert!(
+                buffer.version_match(&push_version),
+                "version_match should return true after a no-op insert_at_char_offset_ranges, \
+                 but the buffer version was not updated because the no-op early return \
+                 skipped set_version. Buffer version is {:?}, expected to match {:?}",
+                buffer.version(),
+                push_version,
+            );
+        });
+    });
+}
+
 #[test]
 fn test_insert_at_offsets() {
     App::test((), |mut app| async move {
@@ -14213,6 +14273,60 @@ fn test_insert_at_offsets() {
                 selection.as_ref(ctx).selections_to_offset_ranges(),
                 vec1![CharOffset::from(2)..CharOffset::from(5)]
             );
+        });
+    });
+}
+
+/// Regression test for WARP-CLIENT-DEV-NYY: panic "Invalid edit range 4042..3982".
+///
+/// Root cause: `fuzzy_match_v4a_diffs` produces `DiffDelta`s with overlapping
+/// `replacement_line_range` values when multiple V4A hunks target the same
+/// region of a file (confirmed by the companion test
+/// `test_v4a_maa_crash_d71bf84b_no_overlapping_deltas` in the `ai` crate).
+///
+/// `CodeEditorModel::apply_diffs` converts those line ranges to char offsets
+/// and passes them to `insert_at_offsets`, which feeds them into
+/// `apply_core_edit_actions` without validating.  The invalid range reaches
+/// `Buffer::edit`, which panics on the `debug_assert!`.
+///
+/// This test passes the exact Sentry crash values (`4042..3982`) to
+/// `insert_at_offsets` to confirm the editor does not defend against bad
+/// input from the diff layer.
+#[test]
+fn test_insert_at_offsets_overlapping_ranges_skipped() {
+    App::test((), |mut app| async move {
+        let buffer = app.add_model(|_| Buffer::new(Box::new(|_, _| IndentBehavior::Ignore)));
+        let selection = app.add_model(|_| BufferSelectionModel::new(buffer.clone()));
+
+        buffer.update(&mut app, |buffer, ctx| {
+            // Populate the buffer with enough content.
+            let content = (0..200)
+                .map(|i| format!("line_{:03}_content_padding", i))
+                .collect::<Vec<_>>()
+                .join("\n");
+            buffer.edit_internal_first_selection(
+                CharOffset::from(1)..CharOffset::from(1),
+                &content,
+                Default::default(),
+                selection.clone(),
+                ctx,
+            );
+
+            let original_text = buffer.text().into_string();
+
+            // Pass a range with start > end (the exact Sentry crash values).
+            // After the fix in apply_core_edit_actions, the inverted range
+            // should be skipped gracefully instead of panicking.
+            let edits = Vec1::try_from_vec(vec![(
+                "replacement\n".to_string(),
+                CharOffset::from(4042)..CharOffset::from(3982),
+            )])
+            .unwrap();
+
+            buffer.insert_at_offsets(&edits, selection.clone(), ctx);
+
+            // Buffer should be unchanged — the invalid edit was skipped.
+            assert_eq!(buffer.text().into_string(), original_text);
         });
     });
 }

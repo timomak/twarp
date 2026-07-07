@@ -161,7 +161,6 @@ pub enum WorkspaceAction {
     ToggleTabConfigsMenu,
     ToggleNewSessionMenu {
         position: Vector2F,
-        is_vertical_tabs: bool,
     },
     SelectNewSessionMenuItem(NewSessionMenuItem),
     CopyVersion(&'static str),
@@ -288,8 +287,7 @@ pub enum WorkspaceAction {
     /// An action only registered in dev and local builds, which triggers a
     /// panic immediately when called.
     Panic,
-    /// Stops the heap profiler (if one is running) and writes the profiling
-    /// data to disk.
+    /// Writes a heap profile to disk.
     DumpHeapProfile,
     /// An action to open a new window with a view hierarchy debugger.
     OpenViewTreeDebugWindow,
@@ -503,6 +501,7 @@ pub enum WorkspaceAction {
     NavigateNextPaneOrPanel,
     ToggleProjectExplorer,
     ToggleGlobalSearch,
+    ToggleHiddenFiles,
     OpenGlobalSearch,
     ToggleConversationListView,
     // twarp 07 (7b): ToggleClaudeCodePanel removed — the Claude Code chat is a
@@ -875,6 +874,7 @@ impl WorkspaceAction {
             | NavigateNextPaneOrPanel
             | ToggleProjectExplorer
             | ToggleGlobalSearch
+            | ToggleHiddenFiles
             | OpenGlobalSearch
             | ToggleConversationListView
             | ToggleNotificationMailbox { .. }

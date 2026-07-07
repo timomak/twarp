@@ -577,6 +577,7 @@ mod tests {
             let mutations = block_on(LocalRepoMetadataModel::compute_file_tree_mutations(
                 &update,
                 &gitignores,
+                false,
             ));
             LocalRepoMetadataModel::apply_file_tree_mutations(&mut root, mutations, false, false);
 
@@ -1254,6 +1255,86 @@ Thumbs.db
             // Test Debug trait
             let debug_str = format!("{canonical1:?}");
             assert!(debug_str.contains("StandardizedPath"));
+        });
+    }
+
+    /// On a lazy root, a newly created directory is inserted as an unloaded
+    /// placeholder rather than having its whole subtree materialized eagerly; the
+    /// contents are loaded on demand when the user expands it. On an eager root the
+    /// same directory is fully materialized.
+    #[test]
+    fn lazy_root_created_directory_inserted_as_placeholder() {
+        VirtualFS::test("lazy_created_dir_placeholder", |dirs, mut vfs| {
+            let repo_path = dirs.tests();
+            vfs.mkdir("newdir/sub")
+                .with_files(vec![Stub::FileWithContent("newdir/sub/file.txt", "x")]);
+
+            let new_dir = repo_path.join("newdir");
+            let nested = repo_path.join("newdir/sub");
+            let new_dir_std = StandardizedPath::try_from_local(&new_dir).unwrap();
+            let nested_std = StandardizedPath::try_from_local(&nested).unwrap();
+
+            let make_root = || {
+                FileTreeEntry::from(Entry::Directory(DirectoryEntry {
+                    path: StandardizedPath::try_from_local(repo_path).unwrap(),
+                    children: Vec::new(),
+                    ignored: false,
+                    loaded: true,
+                }))
+            };
+            let update = RepoUpdate {
+                added: vec![new_dir.clone()],
+                ..Default::default()
+            };
+
+            // Lazy root: the new directory is an unloaded placeholder and its
+            // subtree is not materialized.
+            let mut lazy_root = make_root();
+            let lazy_mutations = block_on(LocalRepoMetadataModel::compute_file_tree_mutations(
+                &update,
+                &[],
+                true,
+            ));
+            LocalRepoMetadataModel::apply_file_tree_mutations(
+                &mut lazy_root,
+                lazy_mutations,
+                true,
+                false,
+            );
+
+            let placeholder = lazy_root
+                .get(&new_dir_std)
+                .expect("new directory should be present");
+            assert!(
+                !placeholder.loaded(),
+                "lazy root should add the directory as an unloaded placeholder"
+            );
+            assert!(
+                lazy_root.get(&nested_std).is_none(),
+                "lazy root should not materialize the subtree"
+            );
+
+            // Eager root: the same directory is fully materialized.
+            let mut eager_root = make_root();
+            let eager_mutations = block_on(LocalRepoMetadataModel::compute_file_tree_mutations(
+                &update,
+                &[],
+                false,
+            ));
+            LocalRepoMetadataModel::apply_file_tree_mutations(
+                &mut eager_root,
+                eager_mutations,
+                false,
+                false,
+            );
+            assert!(
+                eager_root.get(&new_dir_std).is_some_and(|e| e.loaded()),
+                "eager root should materialize the directory"
+            );
+            assert!(
+                eager_root.get(&nested_std).is_some(),
+                "eager root should materialize the subtree"
+            );
         });
     }
 }

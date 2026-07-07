@@ -43,6 +43,7 @@ pub fn run_daemon(identity_key: String) -> anyhow::Result<()> {
     twarp_logging::init(twarp_logging::LogConfig {
         is_cli: true,
         log_destination: Some(twarp_logging::LogDestination::File),
+        ..Default::default()
     })?;
 
     // socket_path: ~/.twarp[-channel]/remote-server/{identity_key}/server.sock

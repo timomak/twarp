@@ -1,4 +1,6 @@
-use super::{format_git_branch_command, truncate_from_beginning, GitBranch, GitLineChanges};
+use super::{truncate_from_beginning, CreateGitBranch, GitBranch, GitLineChanges};
+use crate::context_chips::display_chip::PromptChipShellCommand;
+use crate::context_chips::display_menu::GenericMenuItem;
 use crate::context_chips::{
     git_branch_on_click::GitBranchOnClickValue, github_pr_display_text_from_url, ContextChipKind,
 };
@@ -48,8 +50,10 @@ fn test_format_git_branch_command_checks_out_normal_branch() {
     let value = GitBranchOnClickValue::new("feature/alice's-work".to_string()).encode();
 
     assert_eq!(
-        format_git_branch_command(&value),
-        "git checkout 'feature/alice'\\''s-work'"
+        GitBranch(value).prompt_chip_command(),
+        PromptChipShellCommand::GitCheckout {
+            branch_name: "feature/alice\'s-work".to_string()
+        }
     );
 }
 
@@ -63,8 +67,10 @@ fn test_format_git_branch_command_changes_to_linked_worktree_path() {
     .encode();
 
     assert_eq!(
-        format_git_branch_command(&value),
-        "cd '/tmp/repo feature-a'"
+        GitBranch(value).prompt_chip_command(),
+        PromptChipShellCommand::ChangeDirectory {
+            dir_name: "/tmp/repo feature-a".to_string()
+        }
     );
 }
 
@@ -78,8 +84,10 @@ fn test_format_git_branch_command_reports_missing_linked_worktree_path() {
     .encode();
 
     assert_eq!(
-        format_git_branch_command(&value),
-        "echo 'Branch '\\''feature-a'\\'' is already checked out in another worktree, but Warp couldn'\\''t find its path.'"
+        GitBranch(value).prompt_chip_command(),
+        PromptChipShellCommand::Echo {
+            message: "The branch is already checked out in another worktree, but Warp couldn't find its path."
+        }
     );
 }
 
@@ -100,6 +108,32 @@ fn test_git_branch_menu_icon_uses_worktree_icon_for_linked_worktree() {
     .encode();
 
     assert_eq!(GitBranch(value).icon_for_menu(), Icon::Dataflow02);
+}
+
+#[test]
+fn test_create_git_branch_menu_name_quotes_query() {
+    let item = CreateGitBranch::new("feature/xyz".to_string());
+    assert_eq!(item.name(), "Create new branch \"feature/xyz\"");
+}
+
+#[test]
+fn test_create_git_branch_action_data_returns_branch_name() {
+    let item = CreateGitBranch::new("feature/xyz".to_string());
+    assert_eq!(item.action_data(), "feature/xyz");
+    assert_eq!(item.branch_name(), "feature/xyz");
+    assert_eq!(
+        item.prompt_chip_command(),
+        PromptChipShellCommand::GitCreateAndCheckoutBranch {
+            branch_name: "feature/xyz".to_string()
+        }
+    );
+}
+
+#[test]
+fn test_create_git_branch_trims_whitespace_in_constructor() {
+    let item = CreateGitBranch::new("  feature/xyz  ".to_string());
+    assert_eq!(item.branch_name(), "feature/xyz");
+    assert_eq!(item.name(), "Create new branch \"feature/xyz\"");
 }
 
 #[test]

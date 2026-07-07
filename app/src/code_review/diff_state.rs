@@ -322,6 +322,10 @@ impl DiffMode {
 /// and changes against the main branch.
 #[derive(Clone, Default)]
 enum InternalDiffState {
+    /// Repo detection has been kicked off but hasn't completed yet.
+    /// We don't yet know whether the path is inside a git repository, so this is
+    /// surfaced as a loading state rather than a premature "not a repository" verdict.
+    Detecting,
     #[default]
     NotInRepository,
     Loading,
@@ -532,8 +536,8 @@ impl DiffStateModel {
 
     pub fn get(&self) -> DiffState {
         match &self.state {
+            InternalDiffState::Detecting | InternalDiffState::Loading => DiffState::Loading,
             InternalDiffState::NotInRepository => DiffState::NotInRepository,
-            InternalDiffState::Loading => DiffState::Loading,
             InternalDiffState::Loaded(diffs) => match &diffs.changes {
                 Ok(git_diff_data) => DiffState::Loaded(git_diff_data.clone()),
                 Err(err) => DiffState::Error(err.clone()),
@@ -1376,12 +1380,21 @@ impl DiffStateModel {
         new_repository: ModelHandle<Repository>,
         ctx: &mut ModelContext<Self>,
     ) {
-        let new_repository_root = new_repository.as_ref(ctx).root_dir().to_local_path_lossy();
+        // Assign the repository handle before spawning the registration future.
+        // `registration_future` may resolve immediately (e.g. watcher already active), and
+        // `handle_repository_updated` relies on `self.repository` being available for cleanup.
+        self.repository = Some(new_repository.clone());
 
-        // Always include base branch metadata since only code review uses this model now.
-        let include_base_branch = true;
-        let abort_handle =
-            ctx.spawn(
+        // Only kick off the expensive metadata + diff loading when the code
+        // review pane is actually open.  When the pane opens later, `on_open`
+        // calls `set_code_review_metadata_refresh_enabled(true)` (which
+        // triggers metadata) and `load_diffs_for_current_repo` (which triggers
+        // diffs), so nothing is lost — just deferred.
+        if self.metadata_refresh_enabled {
+            let new_repository_root = new_repository.as_ref(ctx).root_dir().to_local_path_lossy();
+            // Always include base branch metadata since only code review uses this model now.
+            let include_base_branch = true;
+            let abort_handle = ctx.spawn(
                 async move {
                     Self::load_metadata_for_repo(new_repository_root, include_base_branch).await
                 },
@@ -1393,14 +1406,9 @@ impl DiffStateModel {
                     )
                 },
             );
-
-        self.computing_metadata_abort_handle = Some(abort_handle);
-        self.state = InternalDiffState::Loading;
-
-        // Assign the repository handle before spawning the registration future.
-        // `registration_future` may resolve immediately (e.g. watcher already active), and
-        // `handle_repository_updated` relies on `self.repository` being available for cleanup.
-        self.repository = Some(new_repository.clone());
+            self.computing_metadata_abort_handle = Some(abort_handle);
+            self.state = InternalDiffState::Loading;
+        }
 
         let (repository_update_tx, repository_update_rx) = async_channel::unbounded();
         let (throttled_repository_update_tx, throttled_repository_update_rx) =
@@ -1479,6 +1487,14 @@ impl DiffStateModel {
             commit_updated,
             index_lock_detected,
         } = update;
+
+        // When the code review pane is closed (metadata_refresh_enabled ==
+        // false), skip diff reloads and per-file invalidations.  The throttled
+        // metadata path already respects this flag, and `on_open` will trigger
+        // a full reload when the pane becomes visible.
+        if !self.metadata_refresh_enabled {
+            return false;
+        }
 
         let invalidation_behavior = if commit_updated {
             InvalidationBehavior::All(InvalidationSource::MetadataChange)
@@ -1881,8 +1897,18 @@ impl DiffStateModel {
                 total_additions += metadata.lines_added;
                 total_deletions += metadata.lines_removed;
             } else if matches!(status, GitFileStatus::Untracked) {
-                let num_lines =
-                    Self::num_lines_in_file_if_non_binary(&repo_path.join(file_path)).await?;
+                // Degrade per entry: an uncountable untracked path (e.g. a nested
+                // repo/worktree directory, or an unreadable file) contributes 0
+                // lines instead of failing the whole metadata computation.
+                let num_lines = Self::num_lines_in_file_if_non_binary(&repo_path.join(file_path))
+                    .await
+                    .unwrap_or_else(|err| {
+                        log::debug!(
+                            "Could not count lines for untracked entry {}: {err}",
+                            file_path.display()
+                        );
+                        None
+                    });
                 total_additions += num_lines.unwrap_or(0);
             }
         }
@@ -2165,7 +2191,9 @@ impl DiffStateModel {
                         // For new and untracked files that don't exist in the merge base,
                         // provide empty baseline content. The diff hunks will show
                         // all content as additions, which is the correct representation.
-                        Some(String::new())
+                        // Non-file entries (e.g. nested repo/worktree directories) get
+                        // no baseline so no editor is constructed for them.
+                        repo_path.join(file_path).is_file().then(String::new)
                     }
                     GitFileStatus::Renamed { old_path } => {
                         // The original content is in the old path of the given base commit.
@@ -2374,9 +2402,18 @@ impl DiffStateModel {
                 total_additions += metadata.lines_added;
                 total_deletions += metadata.lines_removed;
             } else if matches!(status, GitFileStatus::Untracked) {
-                // Get total size of the file
-                let num_lines =
-                    Self::num_lines_in_file_if_non_binary(&repo_path.join(file_path)).await?;
+                // Degrade per entry: an uncountable untracked path (e.g. a nested
+                // repo/worktree directory, or an unreadable file) contributes 0
+                // lines instead of failing the whole metadata computation.
+                let num_lines = Self::num_lines_in_file_if_non_binary(&repo_path.join(file_path))
+                    .await
+                    .unwrap_or_else(|err| {
+                        log::debug!(
+                            "Could not count lines for untracked entry {}: {err}",
+                            file_path.display()
+                        );
+                        None
+                    });
                 total_additions += num_lines.unwrap_or(0);
             }
         }
@@ -2645,7 +2682,9 @@ impl DiffStateModel {
                 // For new and untracked files, provide empty baseline content
                 // since they don't exist in HEAD. The diff hunks will show
                 // all content as additions, which is the correct representation.
-                Some(String::new())
+                // Non-file entries (e.g. nested repo/worktree directories) get
+                // no baseline so no editor is constructed for them.
+                repo_path.join(file_path).is_file().then(String::new)
             }
             _ => {
                 log::debug!(
@@ -2682,6 +2721,23 @@ impl DiffStateModel {
                 status: status.clone(),
                 hunks: Arc::new(Vec::new()),
                 is_binary: true,
+                is_autogenerated: false,
+                max_line_number: 0,
+                has_hidden_bidi_chars: false,
+                size: DiffSize::Normal,
+            });
+        }
+
+        // `git status` can report a non-file untracked entry (e.g. a nested
+        // repo/worktree directory checked out inside this repo). There is no
+        // content to diff — `git diff --no-index` against a directory fails —
+        // so return an empty non-binary diff up front.
+        if matches!(status, GitFileStatus::Untracked) && repo_path.join(file_path).is_dir() {
+            return Ok(FileDiff {
+                file_path: file_path.to_owned(),
+                status: status.clone(),
+                hunks: Arc::new(Vec::new()),
+                is_binary: false,
                 is_autogenerated: false,
                 max_line_number: 0,
                 has_hidden_bidi_chars: false,

@@ -443,6 +443,9 @@ pub enum FeatureFlag {
     /// Enables find/search in code review pane
     CodeReviewFind,
 
+    /// Enables asynchronous find in terminal, running search on a background thread.
+    AsyncFind,
+
     /// Enables using Agent Mode in shared sessions.
     AgentSharedSessions,
 
@@ -875,6 +878,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     // into a new window / drag it between windows). Dormant upstream; turned on
     // for the twarp fork per feature 08.
     FeatureFlag::DragTabsToWindows,
+    FeatureFlag::AsyncFind,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).

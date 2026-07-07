@@ -28,7 +28,7 @@ use twarpui::ui_components::{
     switch::{SwitchStateHandle, TooltipConfig},
 };
 use twarpui::{
-    Action, AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView,
+    id, Action, AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView,
     UpdateModel, View, ViewContext, ViewHandle,
 };
 

@@ -1,25 +1,116 @@
+use std::sync::Arc;
 use std::{collections::HashSet, ops::RangeInclusive};
 
 use itertools::Itertools as _;
 
-// twarp: 2c-d — AI secret redaction deleted; stub.
-pub fn find_secrets_in_text_with_levels(
-    _text: &str,
-) -> Vec<((), crate::terminal::model::secrets::SecretLevel)> {
-    Vec::new()
-}
+use twarpui::elements::SecretRange;
+
 use crate::terminal::model::grid::{grapheme_cursor, Dimensions as _};
+use crate::terminal::model::secrets::SecretsRegex;
 use crate::terminal::model::terminal_model::RangeInModel;
 use crate::terminal::model::{
     grid::RespectDisplayedOutput,
     index::{Direction, Point},
     secrets::{
         IsObfuscated, ObfuscateSecrets, Secret, SecretAndHandle, SecretHandle, SecretLevel,
-        SECRETS_DFA,
+        SECRETS_REGEX,
     },
 };
 
 use super::GridHandler;
+
+// twarp: ported from upstream's `ai::blocklist::block::secret_redaction` (deleted in this
+// fork with the agent-mode UI) so grid secret-level detection can re-scan plaintext
+// against a consistent `SecretsRegex` snapshot.
+pub(crate) fn find_secrets_in_text_with_levels_using_regex(
+    text: &str,
+    secrets_regex: &SecretsRegex,
+) -> Vec<(SecretRange, SecretLevel)> {
+    let SecretsRegex {
+        regex,
+        level_metadata,
+        ..
+    } = secrets_regex;
+
+    let mut secret_ranges = vec![];
+    let mut byte_to_char_index = vec![0; text.len() + 1]; // Map byte index to char index
+
+    // Track the current character index while iterating through the string.
+    let mut char_index = 0;
+    for (byte_index, _) in text.char_indices() {
+        byte_to_char_index[byte_index] = char_index;
+        char_index += 1;
+    }
+    byte_to_char_index[text.len()] = char_index; // Map the last byte to the last character index
+
+    // Iterate over the text once, finding all matches against secret regex. Map the byte ranges
+    // to character ranges and store them.
+    for mat in regex.find_iter(text) {
+        let start_byte = mat.start();
+        let end_byte = mat.end();
+        let start_char = byte_to_char_index[start_byte];
+        let end_char = byte_to_char_index[end_byte];
+
+        // Determine which pattern matched by getting the pattern ID and map via counts
+        let pattern_id = mat.pattern().as_usize();
+        let total_patterns = level_metadata.enterprise_count + level_metadata.user_count;
+        if pattern_id >= total_patterns {
+            log::error!("Secret level not found for pattern ID {pattern_id}");
+            continue;
+        }
+        let secret_level = if pattern_id < level_metadata.enterprise_count {
+            SecretLevel::Enterprise
+        } else {
+            SecretLevel::User
+        };
+
+        secret_ranges.push((
+            SecretRange {
+                char_range: start_char..end_char,
+                byte_range: start_byte..end_byte,
+            },
+            secret_level,
+        ));
+    }
+
+    // Merge overlapping ranges, preserving the highest priority SecretLevel
+    merge_sorted_ranges_with_levels(secret_ranges)
+}
+
+/// Merges overlapping ranges while preserving the highest priority SecretLevel
+fn merge_sorted_ranges_with_levels(
+    ranges: Vec<(SecretRange, SecretLevel)>,
+) -> Vec<(SecretRange, SecretLevel)> {
+    if ranges.is_empty() {
+        return ranges;
+    }
+
+    let mut merged_ranges = vec![];
+    let mut current_range = ranges[0].0.clone();
+    let mut current_level = ranges[0].1;
+
+    for (range, level) in ranges.into_iter().skip(1) {
+        // We can merge based on character ranges since non-overlapping character ranges result in non-overlapping byte ranges.
+        if range.char_range.start <= current_range.char_range.end {
+            // Extend the current range to include the overlapping range.
+            current_range.extend_range_end(&range);
+            // Keep the highest priority level
+            if level.priority() > current_level.priority() {
+                current_level = level;
+            }
+        } else {
+            // No overlap, push the current range and move to the next.
+            merged_ranges.push((current_range, current_level));
+            current_range = range;
+            current_level = level;
+        }
+    }
+
+    // Add the last range.
+    merged_ranges.push((current_range, current_level));
+
+    merged_ranges
+}
 
 impl GridHandler {
     pub fn num_secrets_obfuscated(&self) -> usize {
@@ -122,7 +213,7 @@ impl GridHandler {
 
     /// Clears the secrets that are encompassed in the given range. Returns a range of the minimum
     /// and maximum point of all of the secrets that were removed.
-    fn clear_secrets_in_range(
+    pub(super) fn clear_secrets_in_range(
         &mut self,
         range: RangeInclusive<Point>,
     ) -> Option<RangeInclusive<Point>> {
@@ -231,12 +322,13 @@ impl GridHandler {
             end_point = end_point.max(*cleared_secrets_range.end());
         }
 
+        let secrets_regex: Arc<SecretsRegex> = { SECRETS_REGEX.lock().clone() };
         let matches = self
             .regex_iter(
                 start_point,
                 end_point,
                 Direction::Right,
-                &SECRETS_DFA.read(),
+                &secrets_regex.dfas,
             )
             .collect_vec();
 
@@ -252,7 +344,7 @@ impl GridHandler {
             };
 
             // Determine the secret level by re-scanning the plaintext
-            let secret_level = self.determine_secret_level(&plaintext);
+            let secret_level = self.determine_secret_level(&plaintext, &secrets_regex);
 
             self.mark_secret_range(secret_match, is_obfuscated, plaintext, secret_level);
         }
@@ -277,8 +369,8 @@ impl GridHandler {
 
     /// Determines the secret level by re-scanning the plaintext using the rich content detection
     /// which includes secret level information
-    fn determine_secret_level(&self, plaintext: &str) -> SecretLevel {
-        let secrets_with_levels = find_secrets_in_text_with_levels(plaintext);
+    fn determine_secret_level(&self, plaintext: &str, regex: &SecretsRegex) -> SecretLevel {
+        let secrets_with_levels = find_secrets_in_text_with_levels_using_regex(plaintext, regex);
 
         // Find the first match that corresponds to our plaintext
         // In case of multiple matches, we return the highest priority level

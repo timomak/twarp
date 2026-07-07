@@ -426,6 +426,10 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
 - (void)setAsyncCallback:(BOOL)shouldAsync {
     asyncCallback = shouldAsync;
 }
+- (void)setPresentsWithTransaction:(BOOL)presentsWithTransaction {
+    CAMetalLayer *layer = (CAMetalLayer *)self.layer;
+    layer.presentsWithTransaction = presentsWithTransaction;
+}
 
 - (WarpNativeWebViewEntry *)nativeWebViewEntry:(NSUInteger)webViewId {
     return [nativeWebViews objectForKey:@(webViewId)];
@@ -861,7 +865,7 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
     layer.allowsNextDrawableTimeout = NO;
     layer.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
     layer.needsDisplayOnBoundsChange = YES;
-    layer.presentsWithTransaction = YES;
+    layer.presentsWithTransaction = NO;
     layer.delegate = self;
     layer.opaque = NO;
     return layer;
