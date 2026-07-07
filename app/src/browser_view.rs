@@ -4,8 +4,8 @@ use std::time::Duration;
 use browser::{BrowserEngine, BrowserProfile};
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
 use twarpui::elements::{
-    Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Flex, Hoverable,
-    MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
+    Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Empty, Flex,
+    Hoverable, MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
 };
 use twarpui::text_layout::ClipConfig;
 use twarpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
@@ -27,7 +27,11 @@ use crate::editor::{
 };
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::{
-    pane::view::{self, HeaderContent, StandardHeader, StandardHeaderOptions},
+    pane::view::{
+        self,
+        header::{components::render_pane_header_buttons, PANE_HEADER_HEIGHT},
+        HeaderContent,
+    },
     BackingView, PaneConfiguration, PaneEvent,
 };
 use crate::themes::theme::Fill;
@@ -38,8 +42,8 @@ use crate::ui_components::{
 
 const BROWSER_TITLE: &str = "Browser";
 const OMNIBAR_PLACEHOLDER: &str = "Enter URL";
-const TAB_STRIP_HEIGHT: f32 = 32.;
 const TOOLBAR_HEIGHT: f32 = 36.;
+const TAB_TITLE_CLOSE_SPACING: f32 = 12.;
 const TOOLBAR_PADDING: f32 = 6.;
 const HISTORY_PANEL_ROW_HEIGHT: f32 = 28.;
 const HISTORY_PANEL_MAX_ROWS: usize = 8;
@@ -559,13 +563,27 @@ impl BrowserView {
         hoverable.finish()
     }
 
-    fn render_tab_strip(&self, app: &AppContext) -> Box<dyn Element> {
+    // The tab strip doubles as the pane header (see `render_header_content`),
+    // so it also carries the pane close/overflow buttons on the right edge.
+    fn render_tab_strip_header(
+        &self,
+        header_ctx: &view::HeaderRenderContext<'_>,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         let mut row = Flex::row()
             .with_main_axis_size(MainAxisSize::Max)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(4.);
+
+        if header_ctx.header_left_inset > 0. {
+            row.add_child(
+                Container::new(Empty::new().finish())
+                    .with_padding_left(header_ctx.header_left_inset)
+                    .finish(),
+            );
+        }
 
         for (index, tab) in self.tabs.iter().enumerate() {
             let active = index == self.active_tab_index;
@@ -593,7 +611,7 @@ impl BrowserView {
             let tab_row = Flex::row()
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_spacing(4.)
+                .with_spacing(TAB_TITLE_CLOSE_SPACING)
                 .with_child(Shrinkable::new(1., title).finish())
                 .with_child(close_button)
                 .finish();
@@ -632,6 +650,13 @@ impl BrowserView {
             BrowserViewAction::NewPrivateTab,
         ));
 
+        // Push the pane-level close/overflow buttons to the right edge.
+        row.add_child(Shrinkable::new(1., Empty::new().finish()).finish());
+        row.add_child(render_pane_header_buttons::<
+            BrowserViewAction,
+            BrowserViewCustomAction,
+        >(header_ctx, appearance, true, None, None));
+
         ConstrainedBox::new(
             Container::new(row.finish())
                 .with_horizontal_padding(TOOLBAR_PADDING)
@@ -639,7 +664,7 @@ impl BrowserView {
                 .with_border(Border::bottom(1.).with_border_fill(theme.outline()))
                 .finish(),
         )
-        .with_height(TAB_STRIP_HEIGHT)
+        .with_height(PANE_HEADER_HEIGHT)
         .finish()
     }
 
@@ -805,7 +830,6 @@ impl View for BrowserView {
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let mut column = Flex::column()
             .with_main_axis_size(MainAxisSize::Max)
-            .with_child(self.render_tab_strip(app))
             .with_child(self.render_toolbar(app))
             .with_child(self.render_loading_indicator(app));
         if let Some(history_panel) = self.render_history_panel(app) {
@@ -891,29 +915,15 @@ impl BackingView for BrowserView {
 
     fn render_header_content(
         &self,
-        _ctx: &view::HeaderRenderContext<'_>,
-        _app: &AppContext,
+        ctx: &view::HeaderRenderContext<'_>,
+        app: &AppContext,
     ) -> HeaderContent {
-        HeaderContent::Standard(StandardHeader {
-            title: self.active_title(),
-            // The header renders the secondary inline after the title, so the
-            // separator lives in the string (same convention as the Claude
-            // pane's cwd secondary).
-            title_secondary: self
-                .active_current_url()
-                .map(|url| format!(" — {url}")),
-            title_style: None,
-            title_clip_config: ClipConfig::start(),
-            title_max_width: None,
-            left_of_title: None,
-            right_of_title: None,
-            left_of_overflow: None,
-            options: StandardHeaderOptions {
-                always_show_icons: true,
-                ..StandardHeaderOptions::default()
-            },
-            title_on_double_click: None,
-        })
+        // The browser tab strip IS the pane header — a standard title row on
+        // top of it would just duplicate the active tab's title.
+        HeaderContent::Custom {
+            element: self.render_tab_strip_header(ctx, app),
+            has_custom_draggable_behavior: false,
+        }
     }
 
     fn set_focus_handle(&mut self, focus_handle: PaneFocusHandle, _ctx: &mut ViewContext<Self>) {

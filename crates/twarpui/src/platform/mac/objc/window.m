@@ -359,6 +359,11 @@ void init_warp_nswindow(NSWindow<WarpWindowProtocol> *window, bool testMode, boo
     // being created and positioned under the cursor.
     BOOL _suppressFrameConstraintsDuringDrag;
     BOOL _leftMouseDownStartedInNativeWindowChrome;
+    // Whether the current left-mouse gesture began on a native subview of the content view
+    // (e.g. a browser WKWebView). Those views need AppKit's default event routing; the forced
+    // contentView dispatch in sendEvent: would otherwise swallow their MouseUp/MouseDragged
+    // events, so clicks inside them never complete.
+    BOOL _leftMouseGestureOnNativeSubview;
 }
 
 @synthesize testMode;
@@ -458,16 +463,29 @@ void init_warp_nswindow(NSWindow<WarpWindowProtocol> *window, bool testMode, boo
     return NO;
 }
 
+/// Whether the event lands on a native subview of the content view (e.g. a browser WKWebView)
+/// rather than on the content view itself. Such subviews rely on AppKit's default hit-tested
+/// event dispatch.
+- (BOOL)eventHitsNativeSubview:(NSEvent *)event {
+    NSView *contentView = self.contentView;
+    if (!contentView) return NO;
+    NSPoint point = [contentView.superview convertPoint:event.locationInWindow fromView:nil];
+    NSView *hit = [contentView hitTest:point];
+    return hit != nil && hit != contentView;
+}
+
 - (void)sendEvent:(NSEvent *)event {
     switch (event.type) {
         case NSEventTypeLeftMouseDown: {
             NSButton *windowButton = [self standardWindowButtonAtEvent:event];
             if (windowButton) {
                 _leftMouseDownStartedInNativeWindowChrome = NO;
+                _leftMouseGestureOnNativeSubview = NO;
                 [windowButton mouseDown:event];
                 break;
             }
             _leftMouseDownStartedInNativeWindowChrome = [self eventIsOverResizeEdge:event];
+            _leftMouseGestureOnNativeSubview = [self eventHitsNativeSubview:event];
             [super sendEvent:event];
             break;
         }
@@ -480,8 +498,16 @@ void init_warp_nswindow(NSWindow<WarpWindowProtocol> *window, bool testMode, boo
         // but it's unclear how or why the events get redirected.
         // This breaks drag-and-drop for panes and tabs (see CLD-2581), so we work around it with
         // custom dispatching.
+        //
+        // The workaround must NOT apply to gestures that began on a native subview (browser
+        // WKWebViews): forcing their MouseUp onto the content view means the webview receives
+        // MouseDown but never MouseUp, so web-page clicks never fire. Track where the gesture
+        // started and let AppKit route those events normally. The same applies (on macOS 27+)
+        // to gestures that began on native window chrome (resize edges).
         case NSEventTypeLeftMouseUp:
-            if (@available(macOS 27, *)) {
+            if (_leftMouseGestureOnNativeSubview) {
+                [super sendEvent:event];
+            } else if (@available(macOS 27, *)) {
                 if (_leftMouseDownStartedInNativeWindowChrome) {
                     [super sendEvent:event];
                 } else {
@@ -491,9 +517,12 @@ void init_warp_nswindow(NSWindow<WarpWindowProtocol> *window, bool testMode, boo
                 [self.contentView mouseUp:event];
             }
             _leftMouseDownStartedInNativeWindowChrome = NO;
+            _leftMouseGestureOnNativeSubview = NO;
             break;
         case NSEventTypeLeftMouseDragged:
-            if (@available(macOS 27, *)) {
+            if (_leftMouseGestureOnNativeSubview) {
+                [super sendEvent:event];
+            } else if (@available(macOS 27, *)) {
                 if (_leftMouseDownStartedInNativeWindowChrome) {
                     [super sendEvent:event];
                 } else {
@@ -508,8 +537,14 @@ void init_warp_nswindow(NSWindow<WarpWindowProtocol> *window, bool testMode, boo
         // from the application title bar to the content view when running a development build
         // locally, though it is unclear why. This breaks the right-click context menu for tabs on
         // local builds, so we propagate the RightMouseDown event manually.
+        // Right-clicks on native subviews keep default routing so webviews show their own
+        // context menu.
         case NSEventTypeRightMouseDown:
-            [self.contentView rightMouseDown:event];
+            if ([self eventHitsNativeSubview:event]) {
+                [super sendEvent:event];
+            } else {
+                [self.contentView rightMouseDown:event];
+            }
             break;
         default:
             [super sendEvent:event];
