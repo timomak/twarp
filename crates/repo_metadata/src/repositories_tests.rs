@@ -157,6 +157,74 @@ fn test_detect_possible_git_repo_nested_repo_created_after_parent_registration()
     });
 }
 
+/// A repo root cached in `repository_roots` but missing its DirectoryWatcher
+/// registration (e.g. `add_directory_with_git_dir` failed on the first
+/// detection) must be re-detected — and thus re-registered with the watcher —
+/// instead of early-returning the bare cached path. Callers like
+/// DiffStateModel require a *watched* repo; returning an unwatched one left
+/// the code-review / Open Changes panel unable to bind a repository.
+#[test]
+fn test_detect_cached_repo_reregisters_dropped_watcher() {
+    VirtualFS::test("detect_cached_rewatch", |dirs, mut vfs| {
+        stub_git_repository(&mut vfs, "my_repo");
+        let repo_dir = dirs.tests().join("my_repo");
+
+        App::test((), |mut app| async move {
+            let watcher_handle = app.add_singleton_model(DirectoryWatcher::new);
+            let repo_handle = app.add_model(|_| DetectedRepositories::default());
+
+            // First detection: registers the root and the watcher entry.
+            repo_handle
+                .update(&mut app, |repo, ctx| {
+                    std::mem::drop(repo.detect_possible_git_repo(
+                        &repo_dir.to_string_lossy(),
+                        RepoDetectionSource::TerminalNavigation,
+                        ctx,
+                    ));
+                    let future_id = *repo.spawned_futures().last().unwrap();
+                    ctx.await_spawned_future(future_id)
+                })
+                .await;
+
+            let canonical = StandardizedPath::from_local_canonicalized(&repo_dir).unwrap();
+            watcher_handle.read(&app, |watcher, _| {
+                assert!(watcher.is_directory_watched(&canonical));
+            });
+
+            // Drop the watcher registration while the cached root in
+            // `repository_roots` remains, simulating a first detection whose
+            // `add_directory_with_git_dir` failed after caching the root.
+            watcher_handle.update(&mut app, |watcher, _ctx| {
+                watcher.remove_directory_for_test(&canonical);
+            });
+            watcher_handle.read(&app, |watcher, _| {
+                assert!(!watcher.is_directory_watched(&canonical));
+            });
+
+            // Second detection for the same (cached) root must fall through to
+            // full detection and re-register the watcher entry.
+            repo_handle
+                .update(&mut app, |repo, ctx| {
+                    std::mem::drop(repo.detect_possible_git_repo(
+                        &repo_dir.to_string_lossy(),
+                        RepoDetectionSource::CodeReviewInitialization,
+                        ctx,
+                    ));
+                    let future_id = *repo.spawned_futures().last().unwrap();
+                    ctx.await_spawned_future(future_id)
+                })
+                .await;
+
+            watcher_handle.read(&app, |watcher, _| {
+                assert!(
+                    watcher.is_directory_watched(&canonical),
+                    "cached-but-unwatched root should be re-registered with the DirectoryWatcher"
+                );
+            });
+        });
+    });
+}
+
 #[test]
 #[cfg(feature = "local_fs")]
 fn test_find_git_repo_with_worktree() {
