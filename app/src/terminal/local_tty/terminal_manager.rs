@@ -768,7 +768,6 @@ impl TerminalManager {
             .is_shell_debug_mode_enabled
             .value();
         let is_honor_ps1_enabled = *SessionSettings::as_ref(ctx).honor_ps1;
-        let is_crash_reporting_enabled = PrivacySettings::as_ref(ctx).is_crash_reporting_enabled;
 
         // The TMUX SSH wrapper supercedes the original ControlMaster wrapper.
         let enable_ssh_wrapper = if FeatureFlag::SSHTmuxWrapper.is_enabled() {
@@ -795,7 +794,6 @@ impl TerminalManager {
 
         Pty::new(
             options,
-            is_crash_reporting_enabled,
             #[cfg(windows)]
             event_loop_tx,
             ctx,

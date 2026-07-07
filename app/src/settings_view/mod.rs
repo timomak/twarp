@@ -37,7 +37,6 @@ use mcp_servers_page::MCPServersSettingsPageView;
 use nav::{SettingsNavItem, SettingsUmbrella};
 use pathfinder_geometry::vector::Vector2F;
 use privacy_page::{PrivacyPageView, PrivacyPageViewEvent};
-use referrals_page::{ReferralsPageEvent, ReferralsPageView};
 use settings_file_footer::{render_footer, SettingsFooterKind, SettingsFooterMouseStates};
 use settings_page::{
     MatchData, SettingsPage, SettingsPageEvent, SettingsPageMeta, SettingsPageViewHandle,
@@ -93,7 +92,6 @@ mod platform;
 mod platform_page;
 mod privacy;
 mod privacy_page;
-mod referrals_page;
 mod settings_file_footer;
 pub(crate) mod settings_page;
 mod shortcuts_page;
@@ -168,7 +166,6 @@ pub(super) fn render_beta_chip(appearance: &Appearance) -> Box<dyn Element> {
 pub enum SettingsViewEvent {
     Pane(PaneEvent),
     StartResize,
-    CheckForUpdate,
     LaunchNetworkLogging,
     OpenTwarpDrive,
     SignupAnonymousUser,
@@ -199,7 +196,6 @@ pub enum SettingsSection {
     Features,
     Keybindings,
     Privacy,
-    Referrals,
     SharedBlocks,
     Teams,
     TwarpDrive,
@@ -291,7 +287,6 @@ impl FromStr for SettingsSection {
             "Features" => Ok(Self::Features),
             "Keyboard shortcuts" => Ok(Self::Keybindings),
             "Privacy" => Ok(Self::Privacy),
-            "Referrals" => Ok(Self::Referrals),
             "Shared blocks" => Ok(Self::SharedBlocks),
             "Shortcuts" => Ok(Self::Shortcuts),
             "Teams" => Ok(Self::Teams),
@@ -382,13 +377,8 @@ pub mod flags {
     pub const ERROR_UNDERLINING_FLAG: &str = "error_underlining";
     pub const SYNTAX_HIGHLIGHTING_FLAG: &str = "syntax_highlighting";
     pub const SAME_LINE_PROMPT: &str = "Same_Line_Prompt_Enabled";
-    pub const TELEMETRY_FLAG: &str = "telemetry";
     pub const SETTINGS_SYNC_FLAG: &str = "settings_sync";
     pub const SAFE_MODE_FLAG: &str = "safe_mode";
-    pub const CRASH_REPORTING_FLAG: &str = "crash_reporting";
-    pub const CLOUD_CONVERSATION_STORAGE_FLAG: &str = "Cloud_Conversation_Storage_Enabled";
-    pub const CLOUD_CONVERSATION_STORAGE_EDITABLE_FLAG: &str =
-        "Cloud_Conversation_Storage_Editable";
     pub const DIM_INACTIVE_PANES_FLAG: &str = "Dim_Inactive_Panes";
     pub const OPEN_WINDOWS_AT_CUSTOM_SIZE_FLAG: &str = "Open_Windows_At_Custom_Size";
     pub const WINDOW_BLUR_TEXTURE_FLAG: &str = "Window_Blur_Texture";
@@ -981,7 +971,6 @@ macro_rules! update_page {
             SettingsPageViewHandle::Twarpify(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::OzCloudAPIKeys(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Privacy(handle) => $ctx.update_view(handle, $update),
-            SettingsPageViewHandle::Referrals(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::About(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Code(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::BillingAndUsage(handle) => $ctx.update_view(handle, $update),
@@ -1109,13 +1098,6 @@ impl SettingsView {
             me.handle_privacy_page_event(event, ctx);
         });
 
-        let referrals_client = ServerApiProvider::as_ref(ctx).get_referrals_client();
-        let referrals_page_handle =
-            ctx.add_typed_action_view(|ctx| ReferralsPageView::new(referrals_client, ctx));
-        ctx.subscribe_to_view(&referrals_page_handle, |me, _, event, ctx| {
-            me.handle_referrals_page_event(event, ctx);
-        });
-
         // Warp Drive page
         let twarp_drive_page_handle =
             ctx.add_typed_action_view(twarp_drive_page::TwarpDriveSettingsPageView::new);
@@ -1173,7 +1155,6 @@ impl SettingsView {
             SettingsPage::new(shortcuts_page_handle),
             SettingsPage::new(platform_page_handle),
             SettingsPage::new(twarpify_page_handle),
-            SettingsPage::new(referrals_page_handle),
             SettingsPage::new(show_blocks_view_handle),
             SettingsPage::new(twarp_drive_page_handle),
         ];
@@ -1210,7 +1191,6 @@ impl SettingsView {
             SettingsNavItem::Page(SettingsSection::Keybindings),
             SettingsNavItem::Page(SettingsSection::Shortcuts),
             SettingsNavItem::Page(SettingsSection::Twarpify),
-            SettingsNavItem::Page(SettingsSection::Referrals),
             SettingsNavItem::Page(SettingsSection::SharedBlocks),
             SettingsNavItem::Page(SettingsSection::TwarpDrive),
             SettingsNavItem::Page(SettingsSection::Privacy),
@@ -1563,7 +1543,6 @@ impl SettingsView {
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            MainSettingsPageEvent::CheckForUpdate => ctx.emit(SettingsViewEvent::CheckForUpdate),
             MainSettingsPageEvent::SignupAnonymousUser => {
                 ctx.emit(SettingsViewEvent::SignupAnonymousUser)
             }
@@ -1698,35 +1677,14 @@ impl SettingsView {
         }
     }
 
-    fn handle_referrals_page_event(
-        &mut self,
-        event: &ReferralsPageEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            ReferralsPageEvent::SignupAnonymousUser => {
-                ctx.emit(SettingsViewEvent::SignupAnonymousUser)
-            }
-            ReferralsPageEvent::FocusModal => ctx.focus(&self.search_editor),
-            ReferralsPageEvent::ShowToast { message, flavor } => {
-                ctx.emit(SettingsViewEvent::ShowToast {
-                    message: message.clone(),
-                    flavor: *flavor,
-                })
-            }
-        }
-    }
-
     fn handle_twarp_drive_page_event(
         &mut self,
         event: &twarp_drive_page::TwarpDriveSettingsPageEvent,
-        ctx: &mut ViewContext<Self>,
+        _ctx: &mut ViewContext<Self>,
     ) {
-        match event {
-            twarp_drive_page::TwarpDriveSettingsPageEvent::SignUp => {
-                ctx.emit(SettingsViewEvent::SignupAnonymousUser)
-            }
-        }
+        // twarp: de-cloud (2b) — the drive page no longer emits events (its
+        // SignUp CTA was deleted).
+        match *event {}
     }
 
     fn handle_code_page_event(
@@ -1836,11 +1794,6 @@ impl SettingsView {
             }
         }
 
-        #[cfg(feature = "crash_reporting")]
-        {
-            crate::crash_reporting::set_tag("warp.settings_page", section.to_string());
-        }
-
         if let Some(settings_page) = self.current_settings_page() {
             update_page!(
                 &settings_page.view_handle,
@@ -1880,7 +1833,6 @@ impl SettingsView {
             SettingsPageViewHandle::OzCloudAPIKeys(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Privacy(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Twarpify(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::Referrals(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::MCPServers(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Code(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::TwarpDrive(v) => v.as_ref(app).should_render(app),

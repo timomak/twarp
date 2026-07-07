@@ -3,7 +3,7 @@ use crate::model::{
     SelectedSettings,
 };
 use crate::slides::{
-    CustomizeUISlide, FreeUserNoAiSlide, IntentionSlide, IntroSlide, IntroSlideEvent,
+    CustomizeUISlide, FreeUserNoAiSlide, IntentionSlide, IntroSlide,
     OnboardingModelInfo, OnboardingSlide, ProjectSlide, ThemePickerSlide, ThemePickerSlideEvent,
     ThirdPartySlide,
 };
@@ -49,13 +49,9 @@ pub enum AgentOnboardingEvent {
     },
     OnboardingCompleted(SelectedSettings),
     OnboardingSkipped,
-    LoginFromWelcomeRequested,
-    /// Emitted when the user clicks the "Privacy Settings" link on the terminal
-    /// intention theme slide. The variant name encodes that the event is only
-    /// emitted from the terminal-intention theme slide; consumers (e.g. a
-    /// `LoginSlideView` with `LoginSlideSource::PrivacySettingsFromTerminalIntentionTheme`)
-    /// rely on that to select the right visual / back-routing behavior.
-    PrivacySettingsFromTerminalThemeSlideRequested,
+    // twarp: de-cloud (2b) — LoginFromWelcomeRequested and
+    // PrivacySettingsFromTerminalThemeSlideRequested were deleted with the
+    // login slide; onboarding has no login step.
     UpgradeRequested,
     // twarp: `UpgradeCopyUrlRequested` and
     // `UpgradePasteTokenFromClipboardRequested` were emitted by the agent
@@ -162,12 +158,6 @@ impl AgentOnboardingView {
             let onboarding_state = onboarding_state.clone();
             ctx.add_typed_action_view(move |_| IntroSlide::new(onboarding_state))
         };
-
-        ctx.subscribe_to_view(&intro_slide, |_me, _view, event, ctx| match event {
-            IntroSlideEvent::LoginRequested => {
-                ctx.emit(AgentOnboardingEvent::LoginFromWelcomeRequested);
-            }
-        });
 
         let theme_picker_slide = {
             let themes = theme_picker_themes.clone();
@@ -372,9 +362,6 @@ impl AgentOnboardingView {
             }
             ThemePickerSlideEvent::SyncWithOsToggled { enabled } => {
                 ctx.emit(AgentOnboardingEvent::SyncWithOsToggled { enabled: *enabled });
-            }
-            ThemePickerSlideEvent::PrivacySettingsRequested => {
-                ctx.emit(AgentOnboardingEvent::PrivacySettingsFromTerminalThemeSlideRequested);
             }
         }
     }

@@ -5,7 +5,6 @@ use crate::app_state::{
     SerializedBlockListItem,
 };
 use crate::auth::auth_manager::AuthManager;
-use crate::auth::auth_view_modal::AuthViewVariant;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::Space;
 #[cfg(feature = "local_fs")]
@@ -2253,11 +2252,7 @@ impl PaneGroup {
             .is_anonymous_or_logged_out()
         {
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                auth_manager.attempt_login_gated_feature(
-                    "Share Session",
-                    AuthViewVariant::ShareRequirementCloseable,
-                    ctx,
-                )
+                auth_manager.attempt_login_gated_feature("Share Session", ctx)
             });
             return;
         }

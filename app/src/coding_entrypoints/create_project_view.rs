@@ -83,9 +83,6 @@ impl CreateProjectView {
                     ctx
                 );
 
-                // twarp 2c-d: UGC content telemetry removed alongside AI feature.
-                let _ = PrivacySettings::as_ref(ctx).is_telemetry_enabled;
-
                 ctx.emit(CreateProjectEvent::SubmitPrompt(prompt.clone()));
             }
             GlowingEditorEvent::Cancel => {

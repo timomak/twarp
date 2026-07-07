@@ -16,7 +16,6 @@ use crate::GlobalResourceHandlesProvider;
 use std::cell::Cell;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
-use twarp_graphql::mutations::create_anonymous_user::AnonymousUserType;
 use twarpui::windowing::WindowManager;
 use twarpui::{AppContext, SingletonEntity, TypedActionView};
 
@@ -80,14 +79,10 @@ pub fn init_global_actions(app: &mut AppContext) {
         "workspace:toggle_debug_network_status",
         toggle_debug_network_status,
     );
-    app.add_global_action(
-        "workspace:debug_create_anonymous_user",
-        create_anonymous_user,
-    );
+    // twarp: de-cloud (2b) — debug_create_anonymous_user deleted with Firebase.
     app.add_global_action("workspace:open_repository", open_repository);
     app.add_global_action("app:undo_close", undo_close);
-    app.add_global_action("app:maybe_log_out", trigger_maybe_log_out);
-    app.add_global_action("app:log_out", trigger_log_out);
+    // twarp: de-cloud (2b) — app:log_out / app:maybe_log_out deleted; there is no login.
 }
 
 fn toggle_mouse_reporting(_: &(), ctx: &mut AppContext) {
@@ -194,27 +189,11 @@ fn toggle_debug_network_status(_: &(), ctx: &mut AppContext) {
     });
 }
 
-fn create_anonymous_user(_: &(), ctx: &mut AppContext) {
-    log::info!("Creating anonymous user");
-    let anonymous_user_type = AnonymousUserType::NativeClientAnonymousUser;
-    let server_api = ServerApiProvider::handle(ctx).read(ctx, |provider, _ctx| provider.get());
-    let result =
-        twarpui::r#async::block_on(server_api.create_anonymous_user(None, anonymous_user_type));
-    match result {
-        Ok(user) => log::info!("Successfully created anonymous user {user:?}"),
-        Err(err) => log::error!("Failed to create anonymous user: {err:?}"),
-    }
-}
-
 /// Reopens the last closed item (window or tab).
 fn undo_close(_: &(), ctx: &mut AppContext) {
     UndoCloseStack::handle(ctx).update(ctx, |stack, ctx| {
         stack.undo_close(ctx);
     });
-}
-
-fn trigger_maybe_log_out(_: &(), ctx: &mut AppContext) {
-    auth::maybe_log_out(ctx)
 }
 
 /// Dispatches an action to the active workspace, if one exists.
@@ -270,6 +249,3 @@ fn summarize_ai_conversation(prompt: &Option<String>, ctx: &mut AppContext) {
     );
 }
 
-fn trigger_log_out(_: &(), ctx: &mut AppContext) {
-    auth::log_out(ctx)
-}

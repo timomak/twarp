@@ -162,7 +162,7 @@ impl SystemInfo {
     }
 
     /// Checks for excessive memory usage.  This may send a telemetry event
-    /// and trigger a Sentry heap profile dump if excessive usage is detected.
+    /// and trigger a local heap profile dump if excessive usage is detected.
     ///
     /// The threshold check uses `memory_footprint` (which includes swapped
     /// and compressed pages) so we actually detect high memory situations.
@@ -190,12 +190,12 @@ impl SystemInfo {
         let memory_breakdown = memory_footprint::memory_breakdown();
 
         // If we're tracking heap usage and detect excessive memory usage,
-        // dump and upload the current heap profiling data.
+        // dump the current heap profiling data to disk.
         #[cfg(feature = "heap_usage_tracking")]
         {
-            let breakdown_for_sentry = memory_breakdown.clone();
+            let breakdown_for_dump = memory_breakdown.clone();
             ctx.spawn(
-                crate::profiling::dump_jemalloc_heap_profile(breakdown_for_sentry),
+                crate::profiling::dump_jemalloc_heap_profile(breakdown_for_dump),
                 |_, _, _| {},
             );
         }

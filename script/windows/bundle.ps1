@@ -14,7 +14,7 @@ Param (
 
     [Alias('release-tag')]
     [String]$RELEASE_TAG = '',
-    [String]$FEATURES = 'release_bundle,crash_reporting,gui',
+    [String]$FEATURES = 'release_bundle,gui',
 
     # Builds only the Twarp binary, skips the installer.
     [Switch]$SKIP_BUILD_INSTALLER = $False,
@@ -111,8 +111,6 @@ if ("$CHANNEL" -eq 'local') {
     $WARP_BIN = 'twarp-oss'
     $BINARY_NAME = 'twarp-oss.exe'
     $APP_NAME = 'TwarpOss'
-    # The OSS channel does not ship Sentry, so drop the crash_reporting feature
-    # (which would otherwise pull in the Sentry SDK as a dependency).
     $FEATURES = 'release_bundle,gui,nld_improvements'
 }
 

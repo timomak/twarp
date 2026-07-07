@@ -44,14 +44,12 @@ mod app_menus;
 mod app_services;
 mod app_state;
 mod auth;
-mod autoupdate;
 mod banner;
 mod billing;
 #[cfg(not(target_family = "wasm"))]
 mod browser_mcp;
 mod browser_spike_view;
 mod browser_view;
-mod changelog_model;
 mod chip_configurator;
 // twarp 07 (7b): the Claude Code main-content pane view. Opened by typing
 // `claude` in a terminal (re-spec #70 moved it here from the #69 sidebar).
@@ -73,8 +71,6 @@ mod computer_control;
 mod context_chips;
 #[cfg(enable_crash_recovery)]
 mod crash_recovery;
-#[cfg(feature = "crash_reporting")]
-mod crash_reporting;
 mod debounce;
 mod debug_dump;
 mod default_terminal;
@@ -115,11 +111,9 @@ mod profiling;
 mod projects;
 mod prompt;
 mod quit_warning;
-mod referral_theme_status;
 #[allow(dead_code)]
 mod remote_server;
 mod resource_limits;
-mod reward_view;
 mod safe_triangle;
 mod search_bar;
 mod server;
@@ -225,8 +219,6 @@ use twarpui::platform::app::{ApproveTerminateResult, TerminationRequestSource};
 use window_settings::WindowSettings;
 use workflows::manager::WorkflowManager;
 
-use crate::autoupdate::{AutoupdateState, RelaunchModel};
-use crate::changelog_model::ChangelogModel;
 use crate::cloud_object::model::actions::ObjectActions;
 use crate::cloud_object::model::view::CloudViewModel;
 use crate::code::global_buffer_model::GlobalBufferModel;
@@ -275,7 +267,6 @@ use appearance::{Appearance, AppearanceManager};
 use channel::ChannelState;
 use interval_timer::IntervalTimer;
 use itertools::Itertools;
-use referral_theme_status::ReferralThemeStatus;
 use rust_embed::RustEmbed;
 use server::server_api::ServerApiProvider;
 use settings::{ExtraMetaKeys, PrivacySettings};
@@ -306,7 +297,7 @@ use crate::root_view::{
 pub use crate::server::telemetry::{
     AgentModeEntrypoint, AgentModeEntrypointSelectionType, TelemetryEvent,
 };
-use crate::server::telemetry::{AppStartupInfo, CloseTarget, PaletteSource, TelemetryCollector};
+use crate::server::telemetry::{AppStartupInfo, CloseTarget, PaletteSource};
 use crate::terminal::CustomSecretRegexUpdater;
 use crate::util::bindings::is_binding_cross_platform;
 use crate::workspace::{PaneViewLocator, Workspace, WorkspaceAction};
@@ -561,14 +552,8 @@ pub fn run() -> Result<()> {
             twarp_cli::Command::Worker(twarp_cli::WorkerCommand::MinidumpServer {
                 socket_name,
             }) => {
-                cfg_if::cfg_if! {
-                    if #[cfg(all(linux_or_windows, feature = "crash_reporting"))] {
-                        return crate::crash_reporting::run_minidump_server(socket_name);
-                    } else {
-                        let _ = socket_name;
-                        panic!("The minidump server is not supported on this platform");
-                    }
-                }
+                let _ = socket_name;
+                panic!("The minidump server is not supported on this platform");
             }
             #[cfg(not(target_family = "wasm"))]
             twarp_cli::Command::Worker(twarp_cli::WorkerCommand::RemoteServerProxy(args)) => {
@@ -688,15 +673,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
 
     let mut timer = IntervalTimer::new();
 
-    #[cfg(feature = "crash_reporting")]
-    {
-        // Ensure that the main/root Sentry hub is initialized on the main
-        // thread.  PtySpawner creates a background thread to receive logs from
-        // the terminal server process, and we don't want it to be the host of
-        // the primary sentry::Hub.
-        sentry::Hub::main();
-    }
-
     tracing::init()?;
 
     let is_cli = matches!(launch_mode, LaunchMode::CommandLine { .. });
@@ -754,16 +730,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         web_intent_parser::set_context_flags_from_current_url();
     }
 
-    // Collect errors that occur in run_internal() before the Sentry client is initialized,
-    // so they can be replayed to Sentry once it's ready.
-    #[cfg_attr(
-        not(all(
-            feature = "release_bundle",
-            any(windows, any(target_os = "linux", target_os = "freebsd"))
-        )),
-        expect(unused_mut)
-    )]
-    let mut pre_sentry_errors: Vec<anyhow::Error> = Vec::new();
 
     #[cfg(all(
         feature = "release_bundle",
@@ -786,7 +752,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             Err(err) => {
                 let err = anyhow::Error::from(err).context("Failed to forward startup args");
                 log::error!("{err:#}");
-                pre_sentry_errors.push(err);
             }
         }
     }
@@ -809,7 +774,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             Err(err) => {
                 let err = anyhow::Error::from(err).context("Failed to forward startup args");
                 log::error!("{err:#}");
-                pre_sentry_errors.push(err);
             }
         }
     }
@@ -959,9 +923,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
                 ctx,
             )
         });
-        #[cfg(feature = "crash_reporting")]
-        crate::crash_reporting::set_client_type_tag(launch_mode.execution_mode().client_id());
-
         // Add the terminal server singleton to the application.
         #[cfg(feature = "local_tty")]
         ctx.add_singleton_model(move |_ctx| pty_spawner);
@@ -985,7 +946,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             timer,
             startup_toml_parse_error,
             ctx,
-            pre_sentry_errors,
         );
 
         if ImprovedPaletteSearch::improved_search_enabled(ctx) {
@@ -1005,11 +965,7 @@ fn initialize_app(
     mut timer: IntervalTimer,
     startup_toml_parse_error: Option<twarpui_extras::user_preferences::Error>,
     ctx: &mut twarpui::AppContext,
-    _pre_sentry_errors: impl IntoIterator<Item = anyhow::Error>,
 ) -> Option<AppState> {
-    // WARNING: Errors that happen here before crash_reporting::init will not be collected in
-    // Sentry. Only the dependencies of crash_reporting should be initialized here. Avoid adding
-    // any other stuff here, as failures will be silent. Push them to pre_sentry_errors instead.
     let data_domain = ChannelState::data_domain();
 
     // Register an implementation of the secure storage service.
@@ -1073,13 +1029,7 @@ fn initialize_app(
 
     ctx.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
 
-    ctx.add_singleton_model(|ctx| {
-        AuthManager::new(
-            server_api.clone(),
-            server_api_provider.as_ref(ctx).get_auth_client(),
-            ctx,
-        )
-    });
+    ctx.add_singleton_model(AuthManager::new);
 
     ctx.add_singleton_model(|_ctx| GPUState::new());
 
@@ -1094,7 +1044,6 @@ fn initialize_app(
 
     let model_event_sender = persistence_writer.sender();
 
-    let referral_theme_status = ctx.add_model(ReferralThemeStatus::new);
     let tips_handle = ctx.add_model(|_| user_defaults_on_startup.tips_data);
     let user_default_shell_unsupported_banner_model_handle =
         ctx.add_model(|_| user_defaults_on_startup.user_default_shell_unsupported_banner_state);
@@ -1115,7 +1064,6 @@ fn initialize_app(
         GlobalResourceHandlesProvider::new(GlobalResourceHandles {
             model_event_sender,
             tips_completed: tips_handle,
-            referral_theme_status,
             user_default_shell_unsupported_banner_model_handle,
             settings_file_error,
         })
@@ -1200,37 +1148,10 @@ fn initialize_app(
 
     ctx.add_singleton_model(AntivirusInfo::new);
 
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "crash_reporting")] {
-            let is_crash_reporting_enabled = crash_reporting::init(ctx);
-        } else {
-            let is_crash_reporting_enabled = false;
-        }
-    }
-    // Send buffered pre-init errors to Sentry now that the client is ready.
-    #[cfg(feature = "crash_reporting")]
-    for err in _pre_sentry_errors {
-        sentry::integrations::anyhow::capture_anyhow(&err);
-    }
-    timer.mark_interval_end("INIT_CRASH_REPORTING");
-
-    if let LaunchMode::App { .. } = launch_mode {
-        autoupdate::check_and_report_update_errors(ctx);
-    }
 
     ctx.set_fallback_font_source_provider(|url| ::asset_cache::url_source(url));
 
     ctx.set_default_binding_validator(is_binding_cross_platform);
-
-    if FeatureFlag::Autoupdate.is_enabled() {
-        // Attempt to clean up any old executable, whether or not we were
-        // explicitly launched as part of the auto-update process.  We may have
-        // failed to remove the executable on a previous launch of the app and
-        // should try again.
-        if let Err(e) = autoupdate::remove_old_executable() {
-            log::error!("Failed to remove old executable: {e:?}");
-        }
-    }
 
     experiments::init(ctx);
 
@@ -1272,7 +1193,6 @@ fn initialize_app(
 
     ctx.add_singleton_model(remote_server::manager::RemoteServerManager::new);
     #[cfg(not(target_family = "wasm"))]
-    remote_server::wire_auth_token_rotation(ctx);
 
     log::info!(
         "Starting warp with channel state {} and version {:?}",
@@ -1310,14 +1230,8 @@ fn initialize_app(
     let user_is_logged_in = auth_state.is_logged_in();
 
     if user_is_logged_in {
-        // Skip refresh_user for CLI mode — the CLI handles auth refresh in
-        // ensure_auth_state so it can detect invalid credentials before running
-        // a command.
-        if !matches!(launch_mode, LaunchMode::CommandLine { .. }) {
-            AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                auth_manager.refresh_user(ctx);
-            });
-        }
+        // twarp: de-cloud (2b) — startup refresh_user deleted with the Firebase
+        // client; test/API-key credentials need no refresh.
 
         // Set the first frame callback to record the app's startup time.
         // This is only sent for logged-in users so that new users don't skew performance metrics.
@@ -1332,7 +1246,6 @@ fn initialize_app(
                 is_session_restoration_on: user_defaults_on_startup.should_restore_session,
                 is_screen_reader_enabled,
                 from_relaunch,
-                is_crash_reporting_enabled,
                 timing_data,
             });
 
@@ -1432,14 +1345,7 @@ fn initialize_app(
 
     ctx.add_singleton_model(CustomSecretRegexUpdater::new);
 
-    // Register the `TelemetryCollection` singleton model.
-    let server_api_clone = server_api.clone();
-    ctx.add_singleton_model(|ctx| {
-        let telemetry_collector = TelemetryCollector::new(server_api_clone);
-        telemetry_collector.initialize_telemetry_collection(ctx);
-        telemetry_collector
-    });
-    timer.mark_interval_end("INITIALIZE_TELEMETRY_COLLECTION");
+    // twarp: de-cloud — TelemetryCollector (RudderStack batching/upload) deleted.
 
     // Register initial keybindings prior to creating menus
     app_services::init(ctx);
@@ -1461,8 +1367,7 @@ fn initialize_app(
     themes::theme_deletion_modal::init(ctx);
     root_view::init(ctx);
     voltron::init(ctx);
-    auth::init(ctx);
-    reward_view::init(ctx);
+    // twarp: de-cloud (2b) — auth::init deleted with the login views.
     crate::view_components::find::init(ctx);
     prompt::editor_modal::init(ctx);
     undo_close::init(ctx);
@@ -1486,8 +1391,6 @@ fn initialize_app(
     let display_count = ctx.windows().display_count();
     ctx.add_singleton_model(|_| DisplayCount(display_count));
 
-    ctx.add_singleton_model(|_| RelaunchModel::new());
-    ctx.add_singleton_model(|_| ChangelogModel::new(server_api.clone()));
     ctx.add_singleton_model(|_| NetworkStatus::new());
     ctx.add_singleton_model(|_| SystemStats::new());
     ctx.add_singleton_model(|_| KeybindingChangedNotifier::new());
@@ -1738,8 +1641,6 @@ fn initialize_app(
     ctx.add_singleton_model(EnvVarCollectionManager::new);
     ctx.add_singleton_model(WorkflowManager::new);
 
-    AutoupdateState::register(ctx, server_api.clone());
-
     ctx.add_singleton_model(LocalWorkflows::new);
 
     timer.mark_interval_end("SINGLETON_MODELS_REGISTERED");
@@ -1868,18 +1769,13 @@ fn app_callbacks(is_integration_test: bool) -> twarpui::platform::AppCallbacks {
                 auth_state.user_id().map(|uid| uid.as_string()),
                 auth_state.anonymous_id(),
             );
-            TelemetryCollector::handle(ctx).update(ctx, |telemetry_collector, ctx| {
-                telemetry_collector.flush_telemetry_events_for_shutdown(ctx);
-            });
-
             // Shutdown all LSP servers gracefully before app termination
             lsp::LspManagerModel::handle(ctx).update(ctx, |manager, ctx| {
                 manager.terminate(ctx);
             });
 
-            // We want to tear down the terminal server before relaunching for
-            // autoupdate, to ensure we're not running any extra Warp processes
-            // when we bring up the new process.  Additionally, this must occur
+            // Tear down the terminal server before exit, to ensure we're not
+            // running any extra Warp processes.  Additionally, this must occur
             // after terminating the persistence writer, so we don't keep track
             // of the fact that the shell sessions terminated.
             #[cfg(feature = "local_tty")]
@@ -1894,7 +1790,6 @@ fn app_callbacks(is_integration_test: bool) -> twarpui::platform::AppCallbacks {
             // ensure that the new process doesn't find the old process while
             // attempting to enforce our single-instance policy on Linux.
             app_services::teardown(ctx);
-            autoupdate::spawn_child_if_necessary(ctx);
 
             // Tear down any application profilers that are running, writing
             // results to disk.
@@ -1904,11 +1799,6 @@ fn app_callbacks(is_integration_test: bool) -> twarpui::platform::AppCallbacks {
             crash_recovery::CrashRecovery::handle(ctx).update(ctx, |crash_recovery, _ctx| {
                 crash_recovery.teardown();
             });
-
-            // Tear down crash reporting as the last thing we do before the application
-            // terminates.
-            #[cfg(feature = "crash_reporting")]
-            crash_reporting::uninit_sentry();
         })),
         on_should_close_window: Some(Box::new(move |window_id, ctx| {
             let general_settings = GeneralSettings::as_ref(ctx);
@@ -1976,18 +1866,6 @@ fn app_callbacks(is_integration_test: bool) -> twarpui::platform::AppCallbacks {
                 },
                 ctx
             );
-
-            // If there's a pending autoupdate, apply that before showing the unsaved changes
-            // dialog. We apply the update first so that the dialog can force-terminate.
-            let applying_update = autoupdate::apply_pending_update(ctx, |ctx| {
-                // Once the deferred update is applied, re-terminate the app. This termination is
-                // cancellable so that we still show the unsaved changes dialog.
-                log::info!("Deferred autoupdate applied, terminating app");
-                ctx.terminate_app(TerminationMode::Cancellable, None);
-            });
-            if applying_update {
-                return ApproveTerminateResult::Cancel;
-            }
 
             let summary = UnsavedStateSummary::for_app(ctx);
             // Don't show dialog on integration test. Machine can't press buttons.
@@ -2136,8 +2014,6 @@ fn focus_running_window_and_show_native_modal(
 }
 
 fn on_close_app_cancelled(open_navigation_palette: bool, ctx: &mut AppContext) {
-    autoupdate::cancel_relaunch(ctx);
-
     send_telemetry_from_app_ctx!(
         TelemetryEvent::QuitModalCancel {
             nav_palette: open_navigation_palette,
@@ -2343,18 +2219,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
     }
 
     flags.extend([
-        #[cfg(feature = "autoupdate")]
-        FeatureFlag::Autoupdate,
         #[cfg(feature = "changelog")]
         FeatureFlag::Changelog,
-        #[cfg(feature = "cocoa_sentry")]
-        FeatureFlag::CocoaSentry,
-        #[cfg(feature = "crash_reporting")]
-        FeatureFlag::CrashReporting,
-        #[cfg(feature = "log_expensive_frames_in_sentry")]
-        FeatureFlag::LogExpensiveFramesInSentry,
-        #[cfg(feature = "record_app_active_events")]
-        FeatureFlag::RecordAppActiveEvents,
         #[cfg(feature = "runtime_feature_flags")]
         FeatureFlag::RuntimeFeatureFlags,
         #[cfg(feature = "sequential_storage")]
@@ -2443,8 +2309,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::PromptSuggestionsViaMAA,
         #[cfg(feature = "clear_autosuggestion_on_escape")]
         FeatureFlag::ClearAutosuggestionOnEscape,
-        #[cfg(feature = "autoupdate_ui_revamp")]
-        FeatureFlag::AutoupdateUIRevamp,
         #[cfg(all(not(windows), feature = "kitty_images"))]
         FeatureFlag::KittyImages,
         #[cfg(feature = "twarp_packs")]
@@ -2553,8 +2417,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::LinkedCodeBlocks,
         #[cfg(feature = "tabbed_editor_view")]
         FeatureFlag::TabbedEditorView,
-        #[cfg(feature = "send_telemetry_to_file")]
-        FeatureFlag::SendTelemetryToFile,
         #[cfg(feature = "undo_closed_panes")]
         FeatureFlag::UndoClosedPanes,
         #[cfg(feature = "multi_profile")]
@@ -2775,8 +2637,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::TwarpifyFooter,
         #[cfg(feature = "solo_user_byok")]
         FeatureFlag::SoloUserByok,
-        #[cfg(feature = "skip_firebase_anonymous_user")]
-        FeatureFlag::SkipFirebaseAnonymousUser,
         #[cfg(feature = "hoa_onboarding_flow")]
         FeatureFlag::HOAOnboardingFlow,
         #[cfg(feature = "git_operations_in_code_review")]

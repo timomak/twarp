@@ -161,18 +161,8 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
         ctx,
     )];
 
-    if !FeatureFlag::AvatarInTabBar.is_enabled() {
-        menu_items.push(updateable_custom_item_without_checkmark(
-            CustomAction::ToggleResourceCenter,
-            ctx,
-        ))
-    }
-
-    menu_items.extend([
-        MenuItem::Separator,
-        updateable_custom_item_without_checkmark(CustomAction::ReferAFriend, ctx),
-        MenuItem::Separator,
-    ]);
+    // twarp: de-cloud — resource center and referral menu items removed.
+    menu_items.push(MenuItem::Separator);
 
     let preferences_menu_items = vec![
         updateable_custom_item_without_checkmark(CustomAction::ShowSettings, ctx),
@@ -191,13 +181,6 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
         None,
         preferences_menu_items,
     )));
-
-    if FeatureFlag::Changelog.is_enabled() {
-        menu_items.push(updateable_custom_item_without_checkmark(
-            CustomAction::ViewChangelog,
-            ctx,
-        ));
-    }
 
     #[cfg(target_os = "macos")]
     {
@@ -245,22 +228,9 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
         },
         None,
     )));
+    // twarp: de-cloud (2b) — the "Log out" menu item was deleted; logged-out
+    // is the only state.
     menu_items.push(MenuItem::Separator);
-    menu_items.push(MenuItem::Custom(CustomMenuItem::new(
-        "Log out",
-        auth::maybe_log_out,
-        move |_, ctx| {
-            let is_anonymous = AuthStateProvider::handle(ctx)
-                .as_ref(ctx)
-                .get()
-                .is_anonymous_or_logged_out();
-            MenuItemPropertyChanges {
-                disabled: Some(is_anonymous),
-                ..Default::default()
-            }
-        },
-        None,
-    )));
     menu_items.push(MenuItem::Standard(StandardAction::Quit));
     Menu::new("Twarp", menu_items)
 }
@@ -904,12 +874,8 @@ fn debug_menu_items() -> Vec<MenuItem> {
             None,
         )));
 
-        debug_menu_items.push(MenuItem::Custom(CustomMenuItem::new(
-            "Create anonymous user",
-            move |ctx| ctx.dispatch_global_action("workspace:debug_create_anonymous_user", &()),
-            no_updates,
-            None,
-        )));
+        // twarp: de-cloud (2b) — the "Create anonymous user" debug item was
+        // deleted with the anonymous-user (Firebase) flows.
     }
 
     if FeatureFlag::RuntimeFeatureFlags.is_enabled() {

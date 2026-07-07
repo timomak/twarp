@@ -163,11 +163,7 @@ pub enum WorkspaceAction {
         position: Vector2F,
     },
     SelectNewSessionMenuItem(NewSessionMenuItem),
-    AutoupdateFailureLink,
-    ApplyUpdate,
-    LogOut,
     CopyVersion(&'static str),
-    DownloadNewVersion,
     ConfigureKeybindingSettings {
         keybinding_name: Option<String>,
     },
@@ -196,10 +192,8 @@ pub enum WorkspaceAction {
         source: PaletteSource,
     },
     ShowUpgrade,
-    ShowReferralSettingsPage,
     JoinSlack,
     ViewUserDocs,
-    ViewLatestChangelog,
     ViewPrivacyPolicy,
     SendFeedback,
     /// Open the log directory in the system file explorer with the current log file selected.
@@ -209,7 +203,6 @@ pub enum WorkspaceAction {
     ToggleBlockSnackbar,
     ToggleErrorUnderlining,
     ToggleSyntaxHighlighting,
-    CheckForUpdate,
     ExportAllTwarpDriveObjects,
     SetA11yVerbosityLevel(AccessibilityVerbosity),
     ToggleNotifications,
@@ -235,7 +228,6 @@ pub enum WorkspaceAction {
     OpenLaunchConfigSaveModal,
     SelectTabConfig(TabConfig),
     DispatchToSettingsTab(SettingsTabAction),
-    ToggleResourceCenter,
     ToggleUserMenu,
     ToggleKeybindingsPage,
     ShowCommandSearch(CommandSearchOptions),
@@ -292,9 +284,6 @@ pub enum WorkspaceAction {
     /// token to the system clipboard to aid debugging and development.
     CopyAccessTokenToClipboard,
     DismissWorkspaceBanner(WorkspaceBanner),
-    /// An action only registered in dev and local builds, which crashes the
-    /// app (via a Sentry helper method) immediately when called.
-    Crash,
     /// An action only registered in dev and local builds, which triggers a
     /// panic immediately when called.
     Panic,
@@ -321,7 +310,7 @@ pub enum WorkspaceAction {
     ShowHeaderToolbarContextMenu {
         position: Vector2F,
     },
-    Reauth,
+    // twarp: de-cloud (2b) — Reauth and LogOut actions deleted with the login flow.
     SignupAnonymousUser,
     SignInAnonymousWebUser,
     OpenLink(String),
@@ -755,10 +744,7 @@ impl WorkspaceAction {
             | OpenRepository { .. }
             | SelectTabConfig(_)
             | ToggleVerticalTabsPanel => true,
-            AutoupdateFailureLink
-            | ApplyUpdate
-            | CopyVersion(_)
-            | DownloadNewVersion
+            CopyVersion(_)
             | ConfigureKeybindingSettings { .. }
             | ExportAllTwarpDriveObjects
             | ShowSettings
@@ -775,10 +761,8 @@ impl WorkspaceAction {
             | OpenPalette { .. }
             | TogglePalette { mode: _, source: _ }
             | ShowUpgrade
-            | ShowReferralSettingsPage
             | JoinSlack
             | ViewUserDocs
-            | ViewLatestChangelog
             | ViewPrivacyPolicy
             | SendFeedback
             | ChangeCursor(_)
@@ -793,11 +777,9 @@ impl WorkspaceAction {
             | ToggleNewSessionMenu { .. }
             | SelectNewSessionMenuItem(_)
             | ToggleTabBarOverflowMenu
-            | CheckForUpdate
             | SetA11yVerbosityLevel(_)
             | ToggleNotifications
             | DispatchToSettingsTab { .. }
-            | ToggleResourceCenter
             | ToggleUserMenu
             | ToggleKeybindingsPage
             | ShowCommandSearch(_)
@@ -842,7 +824,6 @@ impl WorkspaceAction {
             | OpenNewWorktreeRepoPicker
             | OpenWorktreeInRepo { .. }
             | OpenWorktreeAddRepoPicker
-            | Crash
             | Panic
             | DumpHeapProfile
             | OpenViewTreeDebugWindow
@@ -857,9 +838,7 @@ impl WorkspaceAction {
             | OpenCLIAgentToolbarEditor
             | OpenHeaderToolbarEditor
             | ShowHeaderToolbarContextMenu { .. }
-            | Reauth
             | SignupAnonymousUser
-            | LogOut
             | OpenLink(_)
             | OpenShareSessionModal(_)
             | StopSharingSessionFromTabMenu { .. }

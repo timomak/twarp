@@ -50,9 +50,6 @@ pub fn main() -> Result<()> {
                 oz_root_url: "http://192.0.2.0:9".into(),
                 workload_audience_url: None,
             },
-            telemetry_config: None,
-            crash_reporting_config: None,
-            autoupdate_config: None,
             mcp_static_config: None,
         },
     ));
@@ -140,7 +137,6 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_rc_files_only_sourced_once_during_bootstrapping);
     register_test!(test_unescaped_prompt_bootstraps);
     register_test!(test_detect_powerlevel10k);
-    register_test!(test_open_and_close_resource_center);
     register_test!(test_block_based_snackbar_scroll_to_top);
     register_test!(test_block_based_snackbar_small_window);
     register_test!(test_block_based_snackbar_appears_for_running_command_input_at_bottom);
