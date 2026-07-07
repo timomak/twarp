@@ -890,7 +890,7 @@ impl Buffer {
         selection_model: ModelHandle<BufferSelectionModel>,
         ctx: &mut ModelContext<Self>,
     ) -> Result<Self, ipynb_parser::IpynbError> {
-        let gfm_tables = warp_core::features::FeatureFlag::MarkdownTables.is_enabled();
+        let gfm_tables = twarp_core::features::FeatureFlag::MarkdownTables.is_enabled();
         let formatted_text = ipynb_parser::ipynb_to_formatted_text(ipynb, gfm_tables)?;
         Ok(Self::from_formatted_text(
             formatted_text,

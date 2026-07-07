@@ -117,7 +117,7 @@ fn build_repo_state_with_unloaded_directory(repo_root: &std::path::Path) -> File
 fn flattened_paths(
     view: &FileTreeView,
     root: &std::path::Path,
-) -> Vec<warp_util::standardized_path::StandardizedPath> {
+) -> Vec<twarp_util::standardized_path::StandardizedPath> {
     view.root_directories
         .get(&std_path(root))
         .expect("root directory is tracked")

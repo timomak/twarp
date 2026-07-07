@@ -8,14 +8,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use pathfinder_color::ColorU;
-use warp_core::ui::icons::Icon;
-use warp_core::ui::theme::color::internal_colors;
-use warp_core::ui::theme::WarpTheme;
-use warpui::elements::{
+use twarp_core::ui::icons::Icon;
+use twarp_core::ui::theme::color::internal_colors;
+use twarp_core::ui::theme::WarpTheme;
+use twarpui::elements::{
     ConstrainedBox, CrossAxisAlignment, Empty, Flex, Hoverable, MainAxisSize, MouseStateHandle,
     ParentElement, Shrinkable, Text,
 };
-use warpui::Element;
+use twarpui::Element;
 
 use crate::appearance::Appearance;
 
@@ -268,7 +268,7 @@ fn render_value(
     colors: &JsonTreeColors,
     on_toggle: &Arc<dyn Fn(Vec<PathSegment>, usize) + Send + Sync>,
     on_copy_json: &Arc<dyn Fn(Vec<PathSegment>, serde_json::Value) + Send + Sync>,
-    font_family: warpui::fonts::FamilyId,
+    font_family: twarpui::fonts::FamilyId,
     column: &mut Flex,
 ) {
     match value {
@@ -426,7 +426,7 @@ fn render_value(
 fn build_string_value_text(
     s: &str,
     colors: &JsonTreeColors,
-    font_family: warpui::fonts::FamilyId,
+    font_family: twarpui::fonts::FamilyId,
 ) -> Box<dyn Element> {
     if is_long_string(s) {
         // Show a preview: first line, capped at threshold characters.
@@ -461,7 +461,7 @@ fn render_container_node(
     colors: &JsonTreeColors,
     on_toggle: &Arc<dyn Fn(Vec<PathSegment>, usize) + Send + Sync>,
     on_copy_json: &Arc<dyn Fn(Vec<PathSegment>, serde_json::Value) + Send + Sync>,
-    font_family: warpui::fonts::FamilyId,
+    font_family: twarpui::fonts::FamilyId,
     column: &mut Flex,
 ) {
     // Empty containers have no chevron and are not interactive.
@@ -493,7 +493,7 @@ fn render_container_node(
         let icon_color = colors.annotation;
         row.add_child(
             ConstrainedBox::new(
-                icon.to_warpui_icon(warp_core::ui::theme::Fill::Solid(icon_color))
+                icon.to_warpui_icon(twarp_core::ui::theme::Fill::Solid(icon_color))
                     .finish(),
             )
             .with_width(CHEVRON_SIZE)
@@ -560,7 +560,7 @@ fn render_scalar_row(
     value_for_copy: serde_json::Value,
     colors: &JsonTreeColors,
     on_copy_json: &Arc<dyn Fn(Vec<PathSegment>, serde_json::Value) + Send + Sync>,
-    font_family: warpui::fonts::FamilyId,
+    font_family: twarpui::fonts::FamilyId,
     column: &mut Flex,
 ) {
     let mut row = Flex::row()

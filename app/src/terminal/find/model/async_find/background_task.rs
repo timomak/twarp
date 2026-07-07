@@ -11,7 +11,7 @@ use std::sync::Arc;
 use futures_lite::future::yield_now;
 use instant::Instant;
 use parking_lot::FairMutex;
-use warp_terminal::model::grid::Dimensions;
+use twarp_terminal::model::grid::Dimensions;
 use twarpui::ModelContext;
 
 use twarpui::Entity;

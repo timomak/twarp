@@ -1871,7 +1871,10 @@ impl DiffStateModel {
                 let num_lines = Self::num_lines_in_file_if_non_binary(&repo_path.join(file_path))
                     .await
                     .unwrap_or_else(|err| {
-                        log::debug!("Could not count lines for untracked entry {file_path}: {err}");
+                        log::debug!(
+                            "Could not count lines for untracked entry {}: {err}",
+                            file_path.display()
+                        );
                         None
                     });
                 total_additions += num_lines.unwrap_or(0);
@@ -2373,7 +2376,10 @@ impl DiffStateModel {
                 let num_lines = Self::num_lines_in_file_if_non_binary(&repo_path.join(file_path))
                     .await
                     .unwrap_or_else(|err| {
-                        log::debug!("Could not count lines for untracked entry {file_path}: {err}");
+                        log::debug!(
+                            "Could not count lines for untracked entry {}: {err}",
+                            file_path.display()
+                        );
                         None
                     });
                 total_additions += num_lines.unwrap_or(0);

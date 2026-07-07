@@ -2948,7 +2948,7 @@ fn test_move_to_visual_line_start_non_wrapped_unchanged() -> Result<()> {
 /// action.
 #[test]
 fn test_home_end_keybinding_resolution() {
-    use warpui::keymap::{Keystroke, Trigger};
+    use twarpui::keymap::{Keystroke, Trigger};
 
     App::test((), |mut app| async move {
         initialize_app(&mut app);

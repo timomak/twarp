@@ -385,7 +385,7 @@ pub fn test_session_context_refresh_directory_entries_bypasses_cache() {
                 let ctx = test_session_context(Session::test(), tests_dir.clone(), &app);
 
                 // Prime the shared cache with the directory's initial contents.
-                let cached = warpui::r#async::block_on(
+                let cached = twarpui::r#async::block_on(
                     ctx.path_completion_context()
                         .expect("Path completion context should exist with active session")
                         .list_directory_entries(tests_dir.clone()),
@@ -399,7 +399,7 @@ pub fn test_session_context_refresh_directory_entries_bypasses_cache() {
                 sandbox.touch(vec![Stub::EmptyFile("second.txt")]);
 
                 // `list_directory_entries` keeps returning the stale cached listing.
-                let stale = warpui::r#async::block_on(
+                let stale = twarpui::r#async::block_on(
                     ctx.path_completion_context()
                         .expect("Path completion context should exist with active session")
                         .list_directory_entries(tests_dir.clone()),
@@ -411,7 +411,7 @@ pub fn test_session_context_refresh_directory_entries_bypasses_cache() {
 
                 // `refresh_directory_entries` re-reads from disk and overwrites the cached entry.
                 let refreshed =
-                    warpui::r#async::block_on(ctx.refresh_directory_entries(tests_dir.clone()));
+                    twarpui::r#async::block_on(ctx.refresh_directory_entries(tests_dir.clone()));
                 assert_eq!(
                     HashSet::<EngineDirEntry>::from_iter(Arc::unwrap_or_clone(refreshed)),
                     HashSet::from_iter([
@@ -421,7 +421,7 @@ pub fn test_session_context_refresh_directory_entries_bypasses_cache() {
                 );
 
                 // Subsequent cached reads now observe the refreshed listing.
-                let after_refresh = warpui::r#async::block_on(
+                let after_refresh = twarpui::r#async::block_on(
                     ctx.path_completion_context()
                         .expect("Path completion context should exist with active session")
                         .list_directory_entries(tests_dir),

@@ -10,6 +10,7 @@ use crate::repository::RepositorySubscriber;
 use crate::watcher::{DirectoryWatcher, TaskQueue};
 use crate::{CanonicalizedPath, RepoMetadataError, Repository, RepositoryUpdate};
 use futures::channel::mpsc;
+use futures::FutureExt as _;
 use futures::StreamExt as _;
 use twarp_util::standardized_path::StandardizedPath;
 use twarpui::r#async::Timer;

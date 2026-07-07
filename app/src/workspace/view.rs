@@ -6964,7 +6964,7 @@ impl Workspace {
                 .file_notebook_panes(ctx)
                 .find(|(pane_id, file_view)| {
                     !pane_group.as_ref(ctx).is_pane_hidden_for_close(*pane_id)
-                        && file_view.as_ref(ctx).path() == Some(&path)
+                        && file_view.as_ref(ctx).local_path().as_deref() == Some(path.as_path())
                 })
                 .map(|(pane_id, _)| pane_id)
         };
@@ -18994,7 +18994,7 @@ impl Workspace {
         if !privacy_settings.is_telemetry_force_enabled()
             && matches!(
                 UserWorkspaces::as_ref(app).get_cloud_conversation_storage_enablement_setting(),
-                AdminEnablementSetting::RespectUserSetting
+                crate::workspaces::workspace::AdminEnablementSetting::RespectUserSetting
             )
         {
             context
@@ -19242,7 +19242,7 @@ impl Workspace {
         if *ai_settings.rule_suggestions_enabled_internal.value() {
             context.set.insert(flags::SUGGESTED_RULES_FLAG);
         }
-        if *ai_settings.warp_drive_context_enabled.value() {
+        if *ai_settings.twarp_drive_context_enabled.value() {
             context.set.insert(flags::WARP_DRIVE_CONTEXT_FLAG);
         }
         if *ai_settings.file_based_mcp_enabled.value() {

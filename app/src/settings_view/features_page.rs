@@ -88,7 +88,7 @@ use crate::workspace::tab_settings::{NewTabPlacement, TabSettings};
 use crate::workspace::WorkspaceAction;
 use crate::{appearance::Appearance, settings::native_preference::NativePreferenceSettings};
 use crate::{editor::EditorView, settings::native_preference::UserNativePreference};
-use crate::{features::FeatureFlag, terminal::settings::TerminalSettingsChangedEvent};
+use crate::features::FeatureFlag;
 use crate::{report_if_error, send_telemetry_from_ctx, themes, GlobalResourceHandles};
 use crate::{root_view::QuakeModePinPosition, workspace::tab_settings::TabSettingsChangedEvent};
 use ::settings::{Setting, ToggleableSetting};

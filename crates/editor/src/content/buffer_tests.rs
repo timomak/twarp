@@ -45,7 +45,7 @@ use twarpui::text::point::Point;
 use crate::content::buffer::{Buffer, StyledBufferRun};
 
 use super::{BufferEvent, EditResult, ToBufferCharOffset};
-use warp_util::content_version::ContentVersion;
+use twarp_util::content_version::ContentVersion;
 
 #[derive(Debug)]
 pub struct TestEmbeddedItem {

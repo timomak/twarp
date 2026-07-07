@@ -1553,7 +1553,7 @@ pub enum AgentInputFooterEvent {
     ToggleInlineModelSelector {
         initial_tab: (),
     },
-    TryExecuteChipCommand(String),
+    TryExecuteChipCommand(crate::context_chips::display_chip::PromptChipShellCommand),
     WriteToPty(()),
 }
 

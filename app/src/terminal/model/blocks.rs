@@ -2696,6 +2696,7 @@ impl BlockList {
         // Simulate preexec to transition to Executing state
         self.preexec(PreexecValue {
             command: command.to_string(),
+            session_id: None,
         });
 
         // Add the command output

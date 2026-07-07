@@ -27,9 +27,7 @@ use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::server::telemetry::{InputUXChangeOrigin, TelemetryEvent};
 use crate::settings::app_icon::{AppIcon, AppIconSettings, ShowDockIconState};
 use crate::settings::{
-    active_theme_kind,
-    app_icon::{AppIcon, AppIconSettings},
-    respect_system_theme, AIFontName, AppEditorSettings, CursorBlink, CursorBlinkEnabled,
+    active_theme_kind, respect_system_theme, AIFontName, AppEditorSettings, CursorBlink, CursorBlinkEnabled,
     EnforceMinimumContrast, FocusPaneOnHover, FontSettings, FontSettingsChangedEvent, InputBoxType,
     InputModeSettings, InputModeState, MonospaceFontName, PaneSettings, ShouldDimInactivePanes,
     ThemeSettings, UseSystemTheme, DEFAULT_MONOSPACE_FONT_NAME,
@@ -68,7 +66,7 @@ use crate::{
     view_components::{Dropdown, DropdownItem, FilterableDropdown},
 };
 use crate::{report_error, report_if_error, themes};
-use crate::{send_telemetry_from_ctx, server::telemetry::TelemetryEvent};
+use crate::send_telemetry_from_ctx;
 use ::settings::{Setting, SettingSection, ToggleableSetting};
 use enum_iterator::all;
 use std::borrow::Cow;

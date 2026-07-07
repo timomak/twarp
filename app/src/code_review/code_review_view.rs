@@ -7889,7 +7889,7 @@ impl View for CodeReviewView {
         "CodeReviewView"
     }
 
-    fn keymap_context(&self, ctx: &AppContext) -> warpui::keymap::Context {
+    fn keymap_context(&self, ctx: &AppContext) -> twarpui::keymap::Context {
         let mut context = Self::default_keymap_context();
 
         // Suppress pane-level shortcuts (e.g. `F`) when a descendant text editor
