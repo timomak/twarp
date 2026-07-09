@@ -416,7 +416,39 @@ mod tests {
         assert!(events
             .iter()
             .all(|e| !matches!(e, TranscriptEvent::UserMessage(m) if m == "two")));
+
+        fork_interrupt_marker_case(&dir, cwd);
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// An interrupted turn stores "[Request interrupted by user]" as a `user`
+    /// line. It must not consume a kept turn — the panel never counts it, and
+    /// doing so here cut the fork a whole turn early (the reported "forks at
+    /// my message, not the reply" bug). Runs inside
+    /// [`fork_truncates_at_user_turn_and_rewrites_session_id`] because both
+    /// scenarios mutate the process-global `HOME` and would race in parallel.
+    fn fork_interrupt_marker_case(dir: &Path, cwd: &Path) {
+        let parent = dir.join("orig-interrupt.jsonl");
+        std::fs::write(
+            &parent,
+            concat!(
+                r#"{"type":"user","sessionId":"orig","message":{"role":"user","content":"one"}}"#,
+                "\n",
+                r#"{"type":"user","sessionId":"orig","message":{"role":"user","content":"[Request interrupted by user]"}}"#,
+                "\n",
+                r#"{"type":"user","sessionId":"orig","message":{"role":"user","content":"two"}}"#,
+                "\n",
+                r#"{"type":"assistant","sessionId":"orig","message":{"role":"assistant","content":[{"type":"text","text":"a2"}]}}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+
+        // Keep both genuine turns: "two" and its reply must survive the cut.
+        let new_path = fork_session_file(&parent, "fork-interrupt", 2, cwd).unwrap();
+        let forked = std::fs::read_to_string(&new_path).unwrap();
+        assert!(forked.contains("\"two\""), "turn 2 dropped: {forked}");
+        assert!(forked.contains("a2"), "turn 2 reply dropped: {forked}");
     }
 
     #[test]

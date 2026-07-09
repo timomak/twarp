@@ -1144,6 +1144,14 @@ pub(crate) fn parse_history_line(value: &Value, out: &mut VecDeque<TranscriptEve
                 // (`display_user_text` drops the envelope regardless).
                 if let Some(notification) = parse_task_notification_text(&text) {
                     out.push_back(TranscriptEvent::TaskNotification(notification));
+                } else if text.starts_with("[Request interrupted by user") {
+                    // Stop stores this marker as a `user` line, but it isn't a
+                    // user turn: live panes render the interruption as the
+                    // `Ended` notice, and `fork_session_file` counts user turns
+                    // through this parser — both need it classified the same.
+                    out.push_back(TranscriptEvent::Ended {
+                        reason: EndReason::Interrupted,
+                    });
                 } else if let Some(display) = display_user_text(&text) {
                     out.push_back(TranscriptEvent::UserMessage(display));
                 }
@@ -1798,6 +1806,37 @@ mod tests {
             out.front(),
             Some(TranscriptEvent::UserMessage(m)) if m == "/model"
         ));
+    }
+
+    #[test]
+    fn history_interrupt_marker_is_the_interrupted_notice_not_a_user_turn() {
+        // Stop stores "[Request interrupted by user]" as a `user` line. It must
+        // replay as the interruption (like the live `Ended`), never as a user
+        // turn — `fork_session_file` counts turns through this parser and an
+        // extra one shifts the fork boundary a whole turn early.
+        for content in [
+            r#""[Request interrupted by user]""#,
+            r#"[{"type":"text","text":"[Request interrupted by user for tool use]"}]"#,
+        ] {
+            let v: Value = serde_json::from_str(&format!(
+                r#"{{"type":"user","message":{{"role":"user","content":{content}}}}}"#
+            ))
+            .unwrap();
+            let mut out = VecDeque::new();
+            parse_history_line(&v, &mut out);
+            assert!(
+                matches!(
+                    out.front(),
+                    Some(TranscriptEvent::Ended {
+                        reason: EndReason::Interrupted
+                    })
+                ),
+                "expected interrupted end, got {out:?}"
+            );
+            assert!(!out
+                .iter()
+                .any(|e| matches!(e, TranscriptEvent::UserMessage(_))));
+        }
     }
 
     #[test]
