@@ -2201,6 +2201,12 @@ impl ClaudeCodeView {
         previews: Vec<PathBuf>,
         ctx: &mut ViewContext<Self>,
     ) {
+        // PRODUCT §1: claude is parked on an AskUserQuestion — a typed message
+        // is the user's answer (the free-form "Other" path), not type-ahead
+        // for after the question. Consume it as the held permission's answer.
+        if self.try_answer_pending_question(&message, ctx) {
+            return;
+        }
         if self.streaming {
             // PRODUCT §53–§54 (7m): a turn is in flight — queue this for
             // automatic dispatch when the turn completes, rather than blocking.
@@ -2235,6 +2241,87 @@ impl ClaudeCodeView {
         // PRODUCT §14: a user turn always jumps back to the live bottom.
         self.scroll_to_bottom();
         ctx.notify();
+    }
+
+    /// A typed message while claude is holding the turn on an `AskUserQuestion`
+    /// `can_use_tool` (PRODUCT §1) answers the question directly — the free-form
+    /// counterpart of the card's "Other" option — instead of queueing behind a
+    /// turn that can't advance until the question is answered. Fills every
+    /// question on the most recent pending card with the typed text, releases
+    /// the held permission, and echoes the text as a user bubble so the answer
+    /// stays visible in the transcript. Returns `true` if the message was
+    /// consumed this way. (Attached images can't ride along in a tool answer
+    /// and are dropped.)
+    fn try_answer_pending_question(
+        &mut self,
+        message: &OutgoingMessage,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        if self.pending_question_permission.is_empty() {
+            return false;
+        }
+        // The most recent pending question card is the one on screen.
+        let Some((item, tool_use_id, input)) = self
+            .transcript
+            .items()
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, entry)| match entry {
+                TranscriptItem::Tool {
+                    id, name, input, ..
+                } if name == "AskUserQuestion"
+                    && self.pending_question_permission.contains_key(id) =>
+                {
+                    Some((index, id.clone(), input.clone()))
+                }
+                _ => None,
+            })
+        else {
+            return false;
+        };
+        let Some(request_id) = self.pending_question_permission.remove(&tool_use_id) else {
+            return false;
+        };
+        log::warn!("QDIAG free-text answer to pending question item={item}");
+        let mut answers = serde_json::Map::new();
+        for question in parse_questions(&input) {
+            answers.insert(
+                question.question.clone(),
+                serde_json::Value::String(message.text.clone()),
+            );
+        }
+        let mut updated_input = input;
+        if let Some(obj) = updated_input.as_object_mut() {
+            obj.insert("answers".to_owned(), serde_json::Value::Object(answers));
+        }
+        // Lock the card (no live controls) and show the typed reply as the
+        // user's answer beneath it.
+        let picks = self.question_selected.remove(&item).unwrap_or_default();
+        self.question_submitted.insert(item, picks);
+        self.transcript
+            .apply(TranscriptEvent::UserMessage(message.text.clone()));
+        if let Some(tx) = &self.message_tx {
+            let _ = tx.try_send(StdinCommand::Control {
+                request_id,
+                response: serde_json::json!({
+                    "behavior": "allow",
+                    "updatedInput": updated_input,
+                }),
+            });
+        }
+        // claude continues the same turn with the answer; make sure the
+        // "Working…" status is live (mirrors submit_question_answers).
+        if !self.streaming {
+            let started = Instant::now();
+            self.streaming = true;
+            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+            self.turn_started = Some(started);
+            self.schedule_elapsed_tick(started, ctx);
+        }
+        self.scroll_to_bottom();
+        ctx.notify();
+        true
     }
 
     /// Select (radio) or toggle (multi-select) an option on the
@@ -2502,10 +2589,13 @@ impl ClaudeCodeView {
         }
         let message = self.message_queue.remove(index);
         self.queue_expanded.clear();
-        if self.streaming {
+        if self.streaming && self.pending_question_permission.is_empty() {
+            // Mid-stream there's nothing to send onto yet — jump the queue.
             self.message_queue.insert(0, message);
             ctx.notify();
         } else {
+            // Idle, or the turn is parked on an AskUserQuestion (in which case
+            // submit_message consumes this as the question's free-text answer).
             // Type-ahead image previews aren't carried through the queue.
             self.submit_message(message, Vec::new(), ctx);
         }
