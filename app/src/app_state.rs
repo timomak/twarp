@@ -444,14 +444,32 @@ impl std::fmt::Display for ConversationStatus {
 }
 #[allow(dead_code)]
 impl ConversationStatus {
-    pub fn render_icon<A>(&self, _: A) -> twarpui::elements::Empty {
-        twarpui::elements::Empty::new()
+    pub fn render_icon(&self, appearance: &crate::appearance::Appearance) -> twarpui::elements::Icon {
+        let (icon, color) = self.status_icon_and_color(appearance.theme());
+        icon.to_warpui_icon(twarp_core::ui::theme::Fill::from(color))
     }
-    pub fn status_icon_and_color<T>(&self, _: T) -> (twarp_core::ui::Icon, twarpui::color::ColorU) {
-        (
-            twarp_core::ui::Icon::Terminal,
-            twarpui::color::ColorU::new(0, 0, 0, 0),
-        )
+    // Mirrors upstream's mapping (`ai/agent/conversation.rs`, deleted in 2c-d);
+    // the fork-only `Done`/`Failed`/`Other` variants fold into their nearest
+    // upstream equivalent.
+    pub fn status_icon_and_color(
+        &self,
+        theme: &twarp_core::ui::theme::WarpTheme,
+    ) -> (twarp_core::ui::Icon, twarpui::color::ColorU) {
+        use twarp_core::ui::theme::color::internal_colors;
+        use twarp_core::ui::Icon;
+        match self {
+            ConversationStatus::InProgress => (Icon::ClockLoader, theme.ansi_fg_magenta()),
+            ConversationStatus::Done | ConversationStatus::Success => {
+                (Icon::Check, theme.ansi_fg_green())
+            }
+            ConversationStatus::Failed | ConversationStatus::Error => {
+                (Icon::Triangle, theme.ansi_fg_red())
+            }
+            ConversationStatus::Blocked {} => (Icon::StopFilled, theme.ansi_fg_yellow()),
+            ConversationStatus::Cancelled | ConversationStatus::Other => {
+                (Icon::StopFilled, internal_colors::neutral_5(theme))
+            }
+        }
     }
     // twarp: 2c-d — predicate stubs
     pub fn is_in_progress(&self) -> bool {
