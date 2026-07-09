@@ -50,6 +50,9 @@ const HISTORY_PANEL_ROW_HEIGHT: f32 = 28.;
 const HISTORY_PANEL_MAX_ROWS: usize = 8;
 const LOADING_INDICATOR_HEIGHT: f32 = 2.;
 const STATE_POLL_INTERVAL: Duration = Duration::from_millis(250);
+/// How long after the last MCP tool call the agent input lease is released.
+const AGENT_LEASE_TIMEOUT: Duration = Duration::from_secs(4);
+const AGENT_BANNER_HEIGHT: f32 = 26.;
 static NEXT_BROWSER_FOCUS_SEQ: AtomicU64 = AtomicU64::new(1);
 
 #[cfg(not(target_os = "macos"))]
@@ -72,6 +75,8 @@ pub enum BrowserViewAction {
     ToggleHistory,
     NavigateHistory(usize),
     ClearDefaultProfileData,
+    /// twarp 14l: user reclaims the page from the driving agent.
+    TakeControl,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,6 +144,15 @@ struct BrowserHistoryEntry {
     title: String,
 }
 
+/// twarp 14l: an agent (the browser MCP) is actively driving this pane.
+/// While held, direct user input to the *page* is blocked (a native shield
+/// over the webview) — the pane chrome stays interactive — and the pane shows
+/// a banner with a "Take control" escape hatch. The lease is touched on every
+/// MCP tool call and expires [`AGENT_LEASE_TIMEOUT`] after the last one.
+struct AgentLease {
+    last_activity: std::time::Instant,
+}
+
 /// Tabs waiting to be re-created as native webviews. Engine creation fails
 /// whenever the target native window isn't registered yet (during session
 /// restore or a cross-window pane transfer), so instead of giving up we park
@@ -168,6 +182,8 @@ pub struct BrowserView {
     show_history: bool,
     pending_restore: Option<PendingTabRestore>,
     state_poll_active: bool,
+    agent_lease: Option<AgentLease>,
+    take_control_button: MouseStateHandle,
     back_button: MouseStateHandle,
     forward_button: MouseStateHandle,
     reload_button: MouseStateHandle,
@@ -230,6 +246,8 @@ impl BrowserView {
             show_history: false,
             pending_restore,
             state_poll_active: false,
+            agent_lease: None,
+            take_control_button: Default::default(),
             back_button: Default::default(),
             forward_button: Default::default(),
             reload_button: Default::default(),
@@ -416,6 +434,9 @@ impl BrowserView {
         if let Some(tab) = self.active_tab() {
             tab.engine.set_hidden(true);
         }
+        if self.agent_lease.is_some() {
+            engine.set_input_blocked(true);
+        }
         self.tabs.push(BrowserTab::new(engine));
         self.active_tab_index = self.tabs.len() - 1;
         self.set_omnibar_text("", ctx);
@@ -484,6 +505,7 @@ impl BrowserView {
                 if me.try_restore_pending_tabs(ctx) {
                     ctx.notify();
                 }
+                me.expire_agent_lease_if_idle(ctx);
                 if me.tabs.is_empty() && me.pending_restore.is_none() {
                     me.state_poll_active = false;
                     return;
@@ -500,6 +522,44 @@ impl BrowserView {
     fn ensure_state_poll(&mut self, ctx: &mut ViewContext<Self>) {
         if !self.state_poll_active {
             self.schedule_state_poll(ctx);
+        }
+    }
+
+    /// twarp 14l: called (via the MCP bridge) on every automation tool call.
+    pub(crate) fn touch_agent_lease(&mut self, ctx: &mut ViewContext<Self>) {
+        let was_held = self.agent_lease.is_some();
+        self.agent_lease = Some(AgentLease {
+            last_activity: std::time::Instant::now(),
+        });
+        if !was_held {
+            self.set_webview_input_blocked(true);
+            ctx.notify();
+        }
+        self.ensure_state_poll(ctx);
+    }
+
+    /// twarp 14l: release the agent lease (expiry or the user's "Take
+    /// control" button) and give the page back to the user.
+    fn release_agent_lease(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.agent_lease.take().is_some() {
+            self.set_webview_input_blocked(false);
+            ctx.notify();
+        }
+    }
+
+    fn expire_agent_lease_if_idle(&mut self, ctx: &mut ViewContext<Self>) {
+        let expired = self
+            .agent_lease
+            .as_ref()
+            .is_some_and(|lease| lease.last_activity.elapsed() >= AGENT_LEASE_TIMEOUT);
+        if expired {
+            self.release_agent_lease(ctx);
+        }
+    }
+
+    fn set_webview_input_blocked(&self, blocked: bool) {
+        for tab in &self.tabs {
+            tab.engine.set_input_blocked(blocked);
         }
     }
 
@@ -544,6 +604,9 @@ impl BrowserView {
             .min(self.tabs.len().saturating_sub(1));
         for (index, tab) in self.tabs.iter().enumerate() {
             tab.engine.set_hidden(index != self.active_tab_index);
+        }
+        if self.agent_lease.is_some() {
+            self.set_webview_input_blocked(true);
         }
         self.sync_omnibar_to_current_url(ctx);
         self.update_pane_title(ctx);
@@ -912,6 +975,66 @@ impl BrowserView {
         )
     }
 
+    /// twarp 14l: banner shown while an agent holds the input lease. The page
+    /// is locked (native shield); this row explains why and offers the way
+    /// out.
+    fn render_agent_banner(&self, app: &AppContext) -> Option<Box<dyn Element>> {
+        self.agent_lease.as_ref()?;
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+
+        let label = Text::new_inline(
+            "Claude is driving this page",
+            appearance.ui_font_family(),
+            12.,
+        )
+        .with_color(theme.active_ui_text_color().into())
+        .with_clip(ClipConfig::end())
+        .finish();
+
+        let take_control = Hoverable::new(self.take_control_button.clone(), move |hover| {
+            let text = Text::new_inline("Take control", appearance.ui_font_family(), 12.)
+                .with_color(theme.active_ui_text_color().into())
+                .finish();
+            Container::new(text)
+                .with_horizontal_padding(8.)
+                .with_vertical_padding(2.)
+                .with_background(if hover.is_hovered() {
+                    theme.surface_2()
+                } else {
+                    theme.surface_1()
+                })
+                .with_border(Border::all(1.).with_border_fill(theme.outline()))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                .finish()
+        })
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(BrowserViewAction::TakeControl);
+        })
+        .finish();
+
+        let row = Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(8.)
+            .with_child(Shrinkable::new(1., label).finish())
+            .with_child(take_control)
+            .finish();
+
+        Some(
+            ConstrainedBox::new(
+                Container::new(row)
+                    .with_horizontal_padding(TOOLBAR_PADDING)
+                    .with_background(theme.accent_overlay())
+                    .with_border(Border::bottom(1.).with_border_fill(theme.outline()))
+                    .finish(),
+            )
+            .with_height(AGENT_BANNER_HEIGHT)
+            .finish(),
+        )
+    }
+
     fn render_loading_indicator(&self, app: &AppContext) -> Box<dyn Element> {
         let theme = Appearance::as_ref(app).theme();
         let fill = if self.active_is_loading() {
@@ -950,6 +1073,9 @@ impl View for BrowserView {
             .with_main_axis_size(MainAxisSize::Max)
             .with_child(self.render_toolbar(app))
             .with_child(self.render_loading_indicator(app));
+        if let Some(banner) = self.render_agent_banner(app) {
+            column.add_child(banner);
+        }
         if let Some(history_panel) = self.render_history_panel(app) {
             column.add_child(history_panel);
         }
@@ -1032,6 +1158,7 @@ impl TypedActionView for BrowserView {
             }
             BrowserViewAction::NavigateHistory(index) => self.navigate_to_history(*index, ctx),
             BrowserViewAction::ClearDefaultProfileData => self.clear_default_profile_data(ctx),
+            BrowserViewAction::TakeControl => self.release_agent_lease(ctx),
         }
     }
 }

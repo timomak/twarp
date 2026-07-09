@@ -304,6 +304,16 @@ impl BrowserEngine {
         MacWindow::destroy_browser_webview(self.window_id, self.webview_id);
     }
 
+    /// twarp 14l: blocks/unblocks direct user input to the page (agent input
+    /// lease). Pane chrome is unaffected.
+    pub fn set_input_blocked(&self, blocked: bool) {
+        #[cfg(target_os = "macos")]
+        MacWindow::set_browser_webview_input_blocked(self.window_id, self.webview_id, blocked);
+
+        #[cfg(not(target_os = "macos"))]
+        let _ = blocked;
+    }
+
     pub async fn navigate(&self, url: &str) -> Result<()> {
         self.load_url(url);
         self.wait(WaitSpec::NavigationSettled {
