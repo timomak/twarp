@@ -2058,6 +2058,17 @@ impl PaneGroup {
             .map(|pane| pane.id())
     }
 
+    /// twarp 14j: iterate over the browser views in this pane group — used by
+    /// the browser MCP to prefer panes living in the invoking Claude
+    /// session's tab.
+    pub fn browser_views<'a>(
+        &'a self,
+        app: &'a AppContext,
+    ) -> impl Iterator<Item = twarpui::ViewHandle<crate::browser_view::BrowserView>> + 'a {
+        self.panes_of::<BrowserPane>()
+            .map(move |pane| pane.browser_view(app))
+    }
+
     /// Iterate over the code editors in this pane group.
     pub fn code_panes<'a>(
         &'a self,

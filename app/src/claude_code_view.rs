@@ -2786,7 +2786,7 @@ impl ClaudeCodeView {
                 .then(|| self.session_id.clone()),
             permission_mode: self.permission_mode,
             allowed_tools: Vec::new(),
-            mcp_config: claude_mcp_config_json(ctx),
+            mcp_config: claude_mcp_config_json(&self.session_id, ctx),
             path_env: self.interactive_path.clone(),
         };
         ctx.spawn(
@@ -8955,19 +8955,22 @@ fn format_token_count(n: u64) -> String {
     }
 }
 
-fn claude_mcp_config_json(app: &AppContext) -> Option<String> {
+fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> {
     #[cfg(target_family = "wasm")]
     {
-        let _ = app;
+        let _ = (session_id, app);
         None
     }
 
     #[cfg(not(target_family = "wasm"))]
     {
         let mut servers = serde_json::Map::new();
+        // twarp 14j: session-scoped endpoint — browser tools target/open
+        // panes in THIS session's tab and stay bound to them across moves.
         merge_mcp_servers(
             &mut servers,
-            crate::browser_mcp::BrowserMcpBridge::as_ref(app).mcp_config_json(),
+            crate::browser_mcp::BrowserMcpBridge::as_ref(app)
+                .mcp_config_json_for_session(session_id),
         );
         if FeatureFlag::LocalComputerUse.is_enabled() {
             merge_mcp_servers(
