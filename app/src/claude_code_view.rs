@@ -7045,38 +7045,13 @@ impl BackingView for ClaudeCodeView {
                 ctx.notify();
             }
             ClaudeCodeCustomAction::FocusBoundBrowser => {
-                if let Some((window_id, locator)) =
-                    crate::pane_links::locate_browser_pane_for_session(&self.session_id, ctx)
-                {
-                    crate::pane_links::focus_located_pane(window_id, locator, ctx);
-                } else {
-                    // twarp 14o: no bound browser (yet) — the globe opens one
-                    // next to this session, bound to it, and focuses it
-                    // (user-initiated, unlike the MCP's unfocused opens).
-                    let session_id = self.session_id.clone();
-                    let opened = WorkspaceRegistry::as_ref(ctx)
-                        .all_workspaces(ctx)
-                        .into_iter()
-                        .any(|(_, workspace)| {
-                            workspace.update(ctx, |workspace, ctx| {
-                                workspace.open_browser_pane_for_claude_session(
-                                    &session_id,
-                                    None,
-                                    ctx,
-                                )
-                            })
-                        });
-                    if opened {
-                        if let Some((window_id, locator)) =
-                            crate::pane_links::locate_browser_pane_for_session(
-                                &self.session_id,
-                                ctx,
-                            )
-                        {
-                            crate::pane_links::focus_located_pane(window_id, locator, ctx);
-                        }
-                    }
-                }
+                // twarp 14p: DEFERRED — the handler runs while this view is
+                // checked out of the registry; the workspace handler reads
+                // Claude views by session id, which would re-enter this view
+                // and abort. The deferred action runs after effects flush.
+                ctx.dispatch_typed_action_deferred(
+                    WorkspaceAction::FocusOrOpenBrowserForClaudeSession(self.session_id.clone()),
+                );
             }
         }
     }
