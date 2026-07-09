@@ -104,12 +104,15 @@ impl BrowserMcpBridge {
         // twarp 14l: every scoped tool call renews the pane's agent input
         // lease (page locked for the user, banner shown). Unscoped/legacy
         // connections don't lock the user out.
-        if scope_session_id.is_some() {
+        if let Some(session_id) = scope_session_id {
             if let Some((view_id, _)) = &resolved {
                 let view_id = *view_id;
                 let view = Self::all_browser_views(ctx).find(|view| view.id() == view_id);
                 if let Some(view) = view {
-                    view.update(ctx, |view, ctx| view.touch_agent_lease(ctx));
+                    view.update(ctx, |view, ctx| {
+                        view.set_bound_claude_session(session_id.to_owned());
+                        view.touch_agent_lease(ctx);
+                    });
                 }
             }
         }

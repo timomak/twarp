@@ -529,6 +529,13 @@ extern "C" {
     fn warp_host_set_webview_frame(host: id, webview_id: usize, frame: NSRect);
     fn warp_host_set_webview_hidden(host: id, webview_id: usize, hidden: BOOL);
     fn warp_host_set_webview_input_blocked(host: id, webview_id: usize, blocked: BOOL);
+    fn warp_host_set_webview_annotation_capture(host: id, webview_id: usize, enabled: BOOL);
+    fn warp_host_take_webview_annotation_click(
+        host: id,
+        webview_id: usize,
+        x: *mut f64,
+        y: *mut f64,
+    ) -> BOOL;
     fn warp_host_load_url(host: id, webview_id: usize, url: id);
     fn warp_host_go_back(host: id, webview_id: usize);
     fn warp_host_go_forward(host: id, webview_id: usize);
@@ -1088,6 +1095,37 @@ impl Window {
                 let host_view: id = msg_send![window, contentView];
                 warp_host_set_webview_input_blocked(host_view, webview_id, blocked as BOOL);
             }
+        }
+    }
+
+    /// twarp 14l-2: arm/disarm annotation-click capture over the webview.
+    pub fn set_browser_webview_annotation_capture(
+        window_id: WindowId,
+        webview_id: BrowserWebViewId,
+        enabled: bool,
+    ) {
+        unsafe {
+            if let Some(window) = Self::find_window_with_id(window_id) {
+                let host_view: id = msg_send![window, contentView];
+                warp_host_set_webview_annotation_capture(host_view, webview_id, enabled as BOOL);
+            }
+        }
+    }
+
+    /// twarp 14l-2: pops the recorded annotation click (webview top-left
+    /// coordinates), if one happened since the capture was armed.
+    pub fn take_browser_webview_annotation_click(
+        window_id: WindowId,
+        webview_id: BrowserWebViewId,
+    ) -> Option<(f64, f64)> {
+        unsafe {
+            let window = Self::find_window_with_id(window_id)?;
+            let host_view: id = msg_send![window, contentView];
+            let mut x: f64 = 0.;
+            let mut y: f64 = 0.;
+            let taken =
+                warp_host_take_webview_annotation_click(host_view, webview_id, &mut x, &mut y);
+            taken.then_some((x, y))
         }
     }
 

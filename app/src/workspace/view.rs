@@ -12359,6 +12359,10 @@ impl Workspace {
             return false;
         };
         let pane = BrowserPane::new_unfocused(url, ctx);
+        // twarp 14l-2: stamp the owning session so annotations route to it.
+        pane.browser_view(ctx).update(ctx, |view, _ctx| {
+            view.set_bound_claude_session(session_id.to_owned())
+        });
         pane_group.update(ctx, |pane_group, ctx| {
             pane_group.add_pane_with_direction(
                 Direction::Right,

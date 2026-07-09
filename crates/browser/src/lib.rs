@@ -60,6 +60,15 @@ pub struct SnapshotOptions {
     pub max_elements: Option<u64>,
 }
 
+/// twarp 14l-2: what lives at an annotation click point.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct DescribedElement {
+    pub selector: String,
+    pub tag: String,
+    pub name: String,
+    pub text: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ActionResult {
     #[serde(rename = "ref")]
@@ -312,6 +321,32 @@ impl BrowserEngine {
 
         #[cfg(not(target_os = "macos"))]
         let _ = blocked;
+    }
+
+    /// twarp 14l-2: while armed, the next page click is captured (not
+    /// delivered to the page) and retrievable via
+    /// [`Self::take_annotation_click`].
+    pub fn set_annotation_capture(&self, enabled: bool) {
+        #[cfg(target_os = "macos")]
+        MacWindow::set_browser_webview_annotation_capture(self.window_id, self.webview_id, enabled);
+
+        #[cfg(not(target_os = "macos"))]
+        let _ = enabled;
+    }
+
+    pub fn take_annotation_click(&self) -> Option<(f64, f64)> {
+        #[cfg(target_os = "macos")]
+        return MacWindow::take_browser_webview_annotation_click(self.window_id, self.webview_id);
+
+        #[cfg(not(target_os = "macos"))]
+        None
+    }
+
+    /// twarp 14l-2: describe the element at viewport coordinates — the anchor
+    /// for a user annotation.
+    pub async fn describe_point(&self, x: f64, y: f64) -> Result<DescribedElement> {
+        self.call_automation("describePoint", vec![json!(x), json!(y)])
+            .await
     }
 
     pub async fn navigate(&self, url: &str) -> Result<()> {
@@ -882,6 +917,19 @@ const INJECTED_SCRIPT: &str = r##"
 
         hasSelector(selector) {
             return document.querySelector(selector) !== null;
+        },
+
+        describePoint(x, y) {
+            const element = document.elementFromPoint(Number(x), Number(y));
+            if (!element) {
+                throw new Error("no element at point");
+            }
+            return {
+                selector: selectorFor(element),
+                tag: element.tagName.toLowerCase(),
+                name: accessibleName(element).trim().slice(0, 120),
+                text: (element.innerText || element.textContent || "").trim().slice(0, 200)
+            };
         }
     };
 })();
