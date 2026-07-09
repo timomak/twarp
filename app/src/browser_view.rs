@@ -180,6 +180,17 @@ pub struct BrowserView {
 
 impl BrowserView {
     pub fn new(initial_url: Option<String>, ctx: &mut ViewContext<Self>) -> Self {
+        Self::new_with_focus(initial_url, true, ctx)
+    }
+
+    /// `focus_omnibar: false` opens the pane without touching keyboard focus —
+    /// used when automation (the browser MCP) opens a pane so the user's
+    /// typing focus (e.g. a Claude composer) is never hijacked.
+    pub fn new_with_focus(
+        initial_url: Option<String>,
+        focus_omnibar: bool,
+        ctx: &mut ViewContext<Self>,
+    ) -> Self {
         let appearance = Appearance::as_ref(ctx);
         let editor_options = SingleLineEditorOptions {
             text: TextOptions::ui_font_size(appearance),
@@ -232,13 +243,16 @@ impl BrowserView {
         if let Some(url) = initial_url {
             view.navigate_to_normalized_url(url, ctx);
         }
-        view.focus_omnibar(ctx);
+        if focus_omnibar {
+            view.focus_omnibar(ctx);
+        }
         view.schedule_state_poll(ctx);
         view
     }
 
     pub fn new_restore(url: Option<String>, ctx: &mut ViewContext<Self>) -> Self {
-        Self::new(url, ctx)
+        // Restored panes must not grab keyboard focus at launch.
+        Self::new_with_focus(url, false, ctx)
     }
 
     pub fn pane_configuration(&self) -> twarpui::ModelHandle<PaneConfiguration> {

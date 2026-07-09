@@ -637,6 +637,12 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
     return [self copyNativeWebViewString:[entry networkMessagesJSON] buffer:buffer bufferLength:bufferLength];
 }
 
+/// Whether the responder is a view inside the given webview.
+- (BOOL)responder:(NSResponder *)responder isInWebView:(WKWebView *)webView {
+    if (![responder isKindOfClass:[NSView class]]) return NO;
+    return [(NSView *)responder isDescendantOf:webView];
+}
+
 - (void)evaluateNativeWebView:(NSUInteger)webViewId
                        script:(NSString *)script
                      callback:(WarpBrowserStringCallback)callback
@@ -647,7 +653,19 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
         return;
     }
 
+    // Automation scripts call element.focus(), which can pull the window's
+    // first responder into the webview — hijacking the keyboard from whatever
+    // the user was typing in (e.g. a Claude composer). Automation must be
+    // able to drive an unfocused webview, so if the responder moves into the
+    // webview during evaluation, put it back.
+    NSResponder *responderBefore = self.window.firstResponder;
+    BOOL webViewHadFocus = [self responder:responderBefore isInWebView:entry.webView];
+    WKWebView *webView = entry.webView;
+
     void (^completion)(id, NSError *) = ^(id result, NSError *error) {
+        if (!webViewHadFocus && [self responder:self.window.firstResponder isInWebView:webView]) {
+            [self.window makeFirstResponder:responderBefore ?: self];
+        }
         if (error) {
             callback(context, NULL, error.localizedDescription.UTF8String);
             return;

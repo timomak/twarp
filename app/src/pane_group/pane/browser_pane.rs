@@ -33,6 +33,14 @@ impl BrowserPane {
         Self::from_view(view, ctx)
     }
 
+    /// Opens without touching keyboard focus — the automation (browser MCP)
+    /// path, so the user's typing focus is never hijacked.
+    pub fn new_unfocused<V: View>(url: Option<String>, ctx: &mut ViewContext<V>) -> Self {
+        let view =
+            ctx.add_typed_action_view(move |ctx| BrowserView::new_with_focus(url, false, ctx));
+        Self::from_view(view, ctx)
+    }
+
     pub fn new_restore<V: View>(url: Option<String>, ctx: &mut ViewContext<V>) -> Self {
         let view = ctx.add_typed_action_view(move |ctx| BrowserView::new_restore(url, ctx));
         Self::from_view(view, ctx)
@@ -71,11 +79,17 @@ impl PaneContent for BrowserPane {
     fn detach(
         &self,
         _group: &PaneGroup,
-        _detach_type: DetachType,
+        detach_type: DetachType,
         ctx: &mut ViewContext<PaneGroup>,
     ) {
         let browser_view = self.browser_view(ctx);
-        browser_view.update(ctx, |view, _ctx| view.destroy_webview());
+        // A moved pane re-attaches with the same view (same-window moves keep
+        // the webviews; cross-window moves rebuild them in
+        // on_window_transferred) — only tear down the native webviews when
+        // the pane is actually going away.
+        if !matches!(detach_type, DetachType::Moved) {
+            browser_view.update(ctx, |view, _ctx| view.destroy_webview());
+        }
         ctx.unsubscribe_to_view(&browser_view);
         ctx.unsubscribe_to_view(&self.view);
     }

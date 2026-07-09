@@ -12310,6 +12310,25 @@ impl Workspace {
         });
     }
 
+    /// twarp 14i: browser-MCP variant of [`Self::open_browser_pane`] — the
+    /// pane opens without taking pane or keyboard focus so automation never
+    /// hijacks what the user is typing in (e.g. a Claude composer).
+    pub(crate) fn open_browser_pane_unfocused(
+        &mut self,
+        url: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let pane = BrowserPane::new_unfocused(url, ctx);
+        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
+            pane_group.add_pane_with_direction(
+                Direction::Right,
+                pane,
+                false, /* focus_new_pane */
+                ctx,
+            );
+        });
+    }
+
     /// twarp 07 (7b): open a Claude Code pane in the active tab's pane group and
     /// focus it — the destination of the `claude` terminal trigger (PRODUCT §1,
     /// §5). `args` are the tokens after `claude`: recognized flags (incl. the
