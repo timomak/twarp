@@ -150,6 +150,18 @@ impl BrowserMcpBridge {
             .flatten()
     }
 
+    /// twarp 14k: close the pane hosting the given browser view (used by the
+    /// browser_close tool — only ever called with a session's bound pane).
+    fn close_browser_view(&mut self, view_id: EntityId, ctx: &mut ModelContext<Self>) -> bool {
+        let Some(view) = Self::all_browser_views(ctx).find(|view| view.id() == view_id) else {
+            return false;
+        };
+        view.update(ctx, |view, ctx| {
+            crate::pane_group::BackingView::close(view, ctx)
+        });
+        true
+    }
+
     fn open_browser_pane(
         &mut self,
         url: String,
@@ -371,6 +383,31 @@ struct EvalParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct SnapshotParams {
+    /// Restrict the snapshot (elements and text) to this CSS selector's subtree.
+    selector: Option<String>,
+    /// Cap on returned elements (default and max 500).
+    max_elements: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct SelectParams {
+    #[serde(rename = "ref")]
+    reference: String,
+    /// Option value, label, or text to select.
+    value: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ScrollParams {
+    /// Element ref to scroll; omit to scroll the window.
+    #[serde(rename = "ref")]
+    reference: Option<String>,
+    dx: Option<f64>,
+    dy: Option<f64>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct WaitParams {
     selector: Option<String>,
     navigation: Option<bool>,
@@ -453,9 +490,19 @@ impl BrowserMcpServer {
         name = "browser_snapshot",
         description = "Return a DOM/accessibility snapshot with stable element refs for the live twarp Browser pane."
     )]
-    async fn browser_snapshot(&self) -> Result<CallToolResult, McpError> {
+    async fn browser_snapshot(
+        &self,
+        Parameters(params): Parameters<SnapshotParams>,
+    ) -> Result<CallToolResult, McpError> {
         let target = self.required_target().await?;
-        let snapshot = target.engine.snapshot().await.map_err(tool_error)?;
+        let snapshot = target
+            .engine
+            .snapshot(browser::SnapshotOptions {
+                selector: params.selector,
+                max_elements: params.max_elements,
+            })
+            .await
+            .map_err(tool_error)?;
         json_result(ToolEnvelope {
             target: target.label(),
             result: snapshot,
@@ -579,6 +626,124 @@ impl BrowserMcpServer {
         json_result(json!({
             "target": target.label(),
             "result": "ok"
+        }))
+    }
+
+    #[tool(
+        name = "browser_hover",
+        description = "Hover an element from a browser_snapshot ref (dispatches mouseenter/mouseover/mousemove)."
+    )]
+    async fn browser_hover(
+        &self,
+        Parameters(params): Parameters<RefParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let target = self.required_target().await?;
+        let result = target
+            .engine
+            .hover(&params.reference)
+            .await
+            .map_err(tool_error)?;
+        json_result(ToolEnvelope {
+            target: target.label(),
+            result,
+        })
+    }
+
+    #[tool(
+        name = "browser_select",
+        description = "Select an option (by value, label, or text) in a <select> element from a browser_snapshot ref."
+    )]
+    async fn browser_select(
+        &self,
+        Parameters(params): Parameters<SelectParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let target = self.required_target().await?;
+        let result = target
+            .engine
+            .select(&params.reference, &params.value)
+            .await
+            .map_err(tool_error)?;
+        json_result(ToolEnvelope {
+            target: target.label(),
+            result,
+        })
+    }
+
+    #[tool(
+        name = "browser_scroll",
+        description = "Scroll the page (or an element ref) by dx/dy pixels. Returns the new scroll position."
+    )]
+    async fn browser_scroll(
+        &self,
+        Parameters(params): Parameters<ScrollParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let target = self.required_target().await?;
+        let result = target
+            .engine
+            .scroll(
+                params.reference.as_deref(),
+                params.dx.unwrap_or(0.),
+                params.dy.unwrap_or(0.),
+            )
+            .await
+            .map_err(tool_error)?;
+        json_result(ToolEnvelope {
+            target: target.label(),
+            result,
+        })
+    }
+
+    #[tool(
+        name = "browser_back",
+        description = "Navigate the Browser pane back in history."
+    )]
+    async fn browser_back(&self) -> Result<CallToolResult, McpError> {
+        let target = self.required_target().await?;
+        target.engine.go_back();
+        let _ = target
+            .engine
+            .wait(WaitSpec::NavigationSettled {
+                timeout: Duration::from_secs(10),
+            })
+            .await;
+        json_result(json!({ "target": target.label(), "result": "ok" }))
+    }
+
+    #[tool(
+        name = "browser_forward",
+        description = "Navigate the Browser pane forward in history."
+    )]
+    async fn browser_forward(&self) -> Result<CallToolResult, McpError> {
+        let target = self.required_target().await?;
+        target.engine.go_forward();
+        let _ = target
+            .engine
+            .wait(WaitSpec::NavigationSettled {
+                timeout: Duration::from_secs(10),
+            })
+            .await;
+        json_result(json!({ "target": target.label(), "result": "ok" }))
+    }
+
+    #[tool(
+        name = "browser_close",
+        description = "Close the Browser pane this session opened/is bound to. No-op if the session has no bound pane."
+    )]
+    async fn browser_close(&self) -> Result<CallToolResult, McpError> {
+        let bound = self.bound_view.lock().ok().and_then(|bound| *bound);
+        let Some(view_id) = bound else {
+            return json_result(json!({ "result": "no bound Browser pane to close" }));
+        };
+        let closed = self
+            .spawner
+            .spawn(move |bridge, ctx| bridge.close_browser_view(view_id, ctx))
+            .await
+            .map_err(|_| McpError::internal_error("Browser MCP bridge is unavailable", None))?;
+        if let Ok(mut bound) = self.bound_view.lock() {
+            *bound = None;
+        }
+        json_result(json!({
+            "result": if closed { "closed" } else { "pane was already gone" }
         }))
     }
 
