@@ -18543,6 +18543,67 @@ impl TypedActionView for Workspace {
             RenamePane(locator) => self.rename_pane(*locator, ctx),
             ResetPaneName(locator) => self.clear_pane_name(*locator, ctx),
             RenameActiveTab => self.rename_tab(self.active_tab_index, ctx),
+            // twarp 14p: globe button. Runs deferred (after the dispatching
+            // Claude view is checked back into the registry) so the session
+            // lookups below are safe.
+            FocusOrOpenBrowserForClaudeSession(session_id) => {
+                if let Some((window_id, locator)) =
+                    crate::pane_links::locate_browser_pane_for_session(session_id, ctx)
+                {
+                    if window_id == ctx.window_id() {
+                        self.focus_pane(locator, ctx);
+                    } else {
+                        crate::pane_links::focus_located_pane(window_id, locator, ctx);
+                    }
+                } else {
+                    // No bound browser anywhere — open one next to the
+                    // session (it may live in this workspace or another
+                    // window's) and focus it.
+                    let session_id = session_id.clone();
+                    let this_window = ctx.window_id();
+                    let opened_here =
+                        self.open_browser_pane_for_claude_session(&session_id, None, ctx);
+                    let other_workspaces: Vec<_> = WorkspaceRegistry::as_ref(ctx)
+                        .all_workspaces(ctx)
+                        .into_iter()
+                        .filter(|(window_id, _)| *window_id != this_window)
+                        .map(|(_, workspace)| workspace)
+                        .collect();
+                    let opened = opened_here
+                        || other_workspaces.into_iter().any(|workspace| {
+                            workspace.update(ctx, |workspace, ctx| {
+                                workspace.open_browser_pane_for_claude_session(
+                                    &session_id,
+                                    None,
+                                    ctx,
+                                )
+                            })
+                        });
+                    if opened {
+                        if let Some((window_id, locator)) =
+                            crate::pane_links::locate_browser_pane_for_session(&session_id, ctx)
+                        {
+                            if window_id == ctx.window_id() {
+                                self.focus_pane(locator, ctx);
+                            } else {
+                                crate::pane_links::focus_located_pane(window_id, locator, ctx);
+                            }
+                        }
+                    }
+                }
+            }
+            // twarp 14p: browser header's chat button, same deferred pattern.
+            FocusClaudePaneForSession(session_id) => {
+                if let Some((window_id, locator)) =
+                    crate::pane_links::locate_claude_pane_for_session(session_id, ctx)
+                {
+                    if window_id == ctx.window_id() {
+                        self.focus_pane(locator, ctx);
+                    } else {
+                        crate::pane_links::focus_located_pane(window_id, locator, ctx);
+                    }
+                }
+            }
             RenameActivePane => {
                 let pane_group = self.active_tab_pane_group().clone();
                 let pane_group_id = pane_group.id();

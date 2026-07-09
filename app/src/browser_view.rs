@@ -688,16 +688,16 @@ impl BrowserView {
     }
 
     /// twarp 14n: reveal the bound Claude pane — the browser-side twin of the
-    /// Claude header's globe button.
+    /// Claude header's globe button. Deferred (14p): the workspace handler
+    /// reads views from the registry, which must not happen while this view
+    /// is checked out mid-update.
     fn focus_bound_chat(&mut self, ctx: &mut ViewContext<Self>) {
         let Some(session_id) = self.bound_claude_session.clone() else {
             return;
         };
-        if let Some((window_id, locator)) =
-            crate::pane_links::locate_claude_pane_for_session(&session_id, ctx)
-        {
-            crate::pane_links::focus_located_pane(window_id, locator, ctx);
-        }
+        ctx.dispatch_typed_action_deferred(
+            crate::workspace::WorkspaceAction::FocusClaudePaneForSession(session_id),
+        );
     }
 
     fn find_bound_claude_view(

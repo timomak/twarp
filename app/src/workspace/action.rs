@@ -108,6 +108,14 @@ pub enum WorkspaceAction {
     RenamePane(PaneViewLocator),
     ResetPaneName(PaneViewLocator),
     RenameActiveTab,
+    /// twarp 14p: reveal the Browser pane bound to the Claude session (or
+    /// open one next to it). Dispatched DEFERRED from the Claude pane's globe
+    /// button — the work reads Claude views from the registry, so it must run
+    /// after the dispatching view is checked back in.
+    FocusOrOpenBrowserForClaudeSession(String),
+    /// twarp 14p: reveal the Claude pane hosting the session — the browser
+    /// header's chat button, same deferred-dispatch rationale.
+    FocusClaudePaneForSession(String),
     /// Renames the focused pane in the active tab. Mirrors `RenameActiveTab`
     /// so the action is reachable from the binding registry / Command Palette
     /// (see #9351). The context-menu path keeps using `RenamePane(locator)`.
@@ -727,6 +735,8 @@ impl WorkspaceAction {
             | ResetActiveTabColor
             | AddDefaultTab
             | OpenBrowserPane
+            | FocusOrOpenBrowserForClaudeSession(_)
+            | FocusClaudePaneForSession(_)
             | OpenBrowserSpikePane
             | OpenClaudeCodeInNewTab
             | AddTerminalTab { .. }
