@@ -447,6 +447,10 @@ pub enum ClaudeCodeCustomAction {
     /// icon button (left of the background-scripts button). Routed the same
     /// way as [`ClaudeCodeCustomAction::ToggleBackgroundPanel`].
     ToggleAgentsPanel,
+    /// twarp 14n: reveal the Browser pane bound to this session (14j) —
+    /// raises its window/tab and focuses it, wherever the user moved it.
+    /// Dispatched by the header's globe button.
+    FocusBoundBrowser,
 }
 
 /// Which composer dropdown / popover is open (#13). The model picker, the
@@ -882,6 +886,8 @@ pub struct ClaudeCodeView {
     /// Mouse state for the header's agents icon button (left of the
     /// background-scripts button) that opens the floating panel.
     agents_button_mouse: MouseStateHandle,
+    /// twarp 14n: mouse state for the header's globe button (bound browser).
+    globe_button_mouse: MouseStateHandle,
     /// Mouse state for the agents panel header's "Clear" button.
     agents_clear_mouse: MouseStateHandle,
     /// Memoized [`agents::collect`] output, keyed by the transcript revision
@@ -1108,6 +1114,7 @@ impl ClaudeCodeView {
             agent_row_mouse: std::cell::RefCell::new(HashMap::new()),
             agents_panel_mouse: MouseStateHandle::default(),
             agents_button_mouse: MouseStateHandle::default(),
+            globe_button_mouse: MouseStateHandle::default(),
             agents_clear_mouse: MouseStateHandle::default(),
             agents_memo: std::cell::RefCell::new(None),
             computer_control: std::cell::RefCell::new(ComputerControlCoordinator::default()),
@@ -4283,8 +4290,15 @@ impl ClaudeCodeView {
         let wash = self.accent_wash(app);
         let expanded = self.background_scripts_expanded;
 
+        // twarp 14n: idle affordances read as chrome (gray); the accent is
+        // reserved for "something is running right now".
+        let glyph_color = if active > 0 {
+            accent
+        } else {
+            theme.sub_text_color(theme.background()).into_solid()
+        };
         let glyph = ConstrainedBox::new(
-            Icon::new(crate::ui_components::icons::Icon::Terminal.into(), accent).finish(),
+            Icon::new(crate::ui_components::icons::Icon::Terminal.into(), glyph_color).finish(),
         )
         .with_width(15.)
         .with_height(15.)
@@ -4380,6 +4394,66 @@ impl ClaudeCodeView {
     /// chat's agents are still running, an accent notification bubble overlays
     /// the glyph's top-right corner with the active count — the exact
     /// composition of [`render_background_button`](Self::render_background_button).
+    /// twarp 14n: the header's **globe button** — the visible end of the
+    /// session↔browser binding (14j). Gray by default; accent while the agent
+    /// is actively driving its bound Browser pane (input lease held). Clicking
+    /// reveals the bound pane wherever the user moved it — another tab or its
+    /// own window.
+    fn render_globe_button(&self, app: &AppContext) -> Option<Box<dyn Element>> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let browsing = self
+            .bound_browser_view(app)
+            .is_some_and(|view| view.as_ref(app).agent_lease_active());
+        let glyph_color = if browsing {
+            self.accent(app)
+        } else {
+            theme.sub_text_color(theme.background()).into_solid()
+        };
+        let wash = self.accent_wash(app);
+
+        let glyph = ConstrainedBox::new(
+            Icon::new(crate::ui_components::icons::Icon::Globe.into(), glyph_color).finish(),
+        )
+        .with_width(15.)
+        .with_height(15.)
+        .finish();
+        let inner = Container::new(glyph)
+            .with_padding(Padding::uniform(1.))
+            .finish();
+        let button = Hoverable::new(self.globe_button_mouse.clone(), move |state| {
+            let mut body = Container::new(inner)
+                .with_padding(Padding::uniform(4.))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)));
+            if state.is_hovered() {
+                body = body.with_background_color(wash);
+            }
+            body.finish()
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
+                PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::FocusBoundBrowser),
+            );
+        })
+        .finish();
+        Some(button)
+    }
+
+    /// twarp 14n: the Browser pane bound to this session (14j), wherever it
+    /// lives.
+    fn bound_browser_view(
+        &self,
+        app: &AppContext,
+    ) -> Option<twarpui::ViewHandle<crate::browser_view::BrowserView>> {
+        app.window_ids()
+            .filter_map(|window_id| {
+                app.views_of_type::<crate::browser_view::BrowserView>(window_id)
+            })
+            .flatten()
+            .find(|view| view.as_ref(app).bound_claude_session() == Some(self.session_id.as_str()))
+    }
+
     fn render_agents_button(&self, app: &AppContext) -> Option<Box<dyn Element>> {
         let agent_runs = self.agent_runs();
         let active = agent_runs
@@ -4393,8 +4467,15 @@ impl ClaudeCodeView {
         let wash = self.accent_wash(app);
         let expanded = self.agents_panel_expanded;
 
+        // twarp 14n: gray while no agent is running (see the
+        // background-scripts button for the rationale).
+        let glyph_color = if active > 0 {
+            accent
+        } else {
+            theme.sub_text_color(theme.background()).into_solid()
+        };
         let glyph = ConstrainedBox::new(
-            Icon::new(crate::ui_components::icons::Icon::ArrowSplit.into(), accent).finish(),
+            Icon::new(crate::ui_components::icons::Icon::ArrowSplit.into(), glyph_color).finish(),
         )
         .with_width(15.)
         .with_height(15.)
@@ -6958,6 +7039,13 @@ impl BackingView for ClaudeCodeView {
                 }
                 ctx.notify();
             }
+            ClaudeCodeCustomAction::FocusBoundBrowser => {
+                if let Some((window_id, locator)) =
+                    crate::pane_links::locate_browser_pane_for_session(&self.session_id, ctx)
+                {
+                    crate::pane_links::focus_located_pane(window_id, locator, ctx);
+                }
+            }
         }
     }
 
@@ -7058,11 +7146,19 @@ impl BackingView for ClaudeCodeView {
         // background-scripts button — same chrome, badging running agents.
         let agents_button = self.render_agents_button(app);
         let has_agents_button = agents_button.is_some();
+        // twarp 14n: the globe button sits to the LEFT of the agents button —
+        // gray by default, accent while the agent drives its bound Browser
+        // pane; clicking reveals that pane wherever it lives.
+        let globe_button = self.render_globe_button(app);
+        let has_globe_button = globe_button.is_some();
         let mut controls = Flex::row()
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(6.);
         if let Some(button) = computer_control_button {
+            controls = controls.with_child(button);
+        }
+        if let Some(button) = globe_button {
             controls = controls.with_child(button);
         }
         if let Some(button) = agents_button {
@@ -7074,6 +7170,9 @@ impl BackingView for ClaudeCodeView {
         let left_of_overflow = controls.with_child(toggle).finish();
         let mut control_container_width = if has_background_button { 250. } else { 210. };
         if has_agents_button {
+            control_container_width += 40.;
+        }
+        if has_globe_button {
             control_container_width += 40.;
         }
         if has_computer_control_button {
