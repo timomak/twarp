@@ -50,6 +50,16 @@ pub struct SnapshotElement {
     pub selector: String,
 }
 
+/// twarp 14k: server-side filters so agents don't pay for 200-element
+/// footers on every snapshot.
+#[derive(Clone, Debug, Default)]
+pub struct SnapshotOptions {
+    /// Restrict elements (and page text) to this CSS-selector subtree.
+    pub selector: Option<String>,
+    /// Cap on returned elements (default 500).
+    pub max_elements: Option<u64>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ActionResult {
     #[serde(rename = "ref")]
@@ -302,8 +312,12 @@ impl BrowserEngine {
         .await
     }
 
-    pub async fn snapshot(&self) -> Result<Snapshot> {
-        self.call_automation("snapshot", Vec::new()).await
+    pub async fn snapshot(&self, options: SnapshotOptions) -> Result<Snapshot> {
+        self.call_automation(
+            "snapshot",
+            vec![json!(options.selector), json!(options.max_elements)],
+        )
+        .await
     }
 
     pub async fn click(&self, reference: &str) -> Result<ActionResult> {
@@ -315,8 +329,40 @@ impl BrowserEngine {
             .await
     }
 
+    pub async fn hover(&self, reference: &str) -> Result<ActionResult> {
+        self.call_automation("hover", vec![json!(reference)]).await
+    }
+
+    pub async fn select(&self, reference: &str, value: &str) -> Result<ActionResult> {
+        self.call_automation("select", vec![json!(reference), json!(value)])
+            .await
+    }
+
+    pub async fn scroll(&self, reference: Option<&str>, dx: f64, dy: f64) -> Result<Value> {
+        self.call_automation("scroll", vec![json!(reference), json!(dx), json!(dy)])
+            .await
+    }
+
+    /// Evaluates the JS as an expression directly via the native
+    /// callAsyncJavaScript path. Unlike routing through the injected script's
+    /// string-`eval` (the pre-14k behavior), native evaluation is not subject
+    /// to the page's `unsafe-eval` CSP, so this works on strict-CSP sites.
     pub async fn eval(&self, javascript: &str) -> Result<Value> {
-        self.call_automation("eval", vec![json!(javascript)]).await
+        let source = raw_eval_script(javascript);
+        let response = self.evaluate_javascript(&source).await?;
+        let envelope: AutomationEnvelope<Value> = serde_json::from_str(&response)
+            .map_err(|err| BrowserError::MalformedData(err.to_string()))?;
+        if envelope.ok {
+            envelope
+                .value
+                .ok_or_else(|| BrowserError::MalformedData("missing value".to_owned()))
+        } else {
+            Err(BrowserError::JavaScript(
+                envelope
+                    .error
+                    .unwrap_or_else(|| "unknown eval error".to_owned()),
+            ))
+        }
     }
 
     pub async fn screenshot(&self) -> Result<Vec<u8>> {
@@ -465,6 +511,33 @@ where
     T: for<'de> Deserialize<'de>,
 {
     serde_json::from_str(entries_json).map_err(|err| BrowserError::MalformedData(err.to_string()))
+}
+
+/// Wraps user JS so it evaluates as an (optionally async) expression and the
+/// result comes back as the same ok/value/error envelope the automation
+/// methods use. The body is compiled natively by callAsyncJavaScript, so page
+/// CSP cannot block it.
+fn raw_eval_script(javascript: &str) -> String {
+    format!(
+        r#"(async function() {{
+    try {{
+        const raw = await (async () => ( {javascript} ))();
+        let value;
+        if (raw === undefined) {{
+            value = null;
+        }} else {{
+            try {{
+                value = JSON.parse(JSON.stringify(raw) ?? "null");
+            }} catch (_) {{
+                value = String(raw);
+            }}
+        }}
+        return JSON.stringify({{ ok: true, value }});
+    }} catch (error) {{
+        return JSON.stringify({{ ok: false, error: String(error && error.message ? error.message : error) }});
+    }}
+}})()"#
+    )
 }
 
 fn automation_call_script(method: &str, args: &[Value]) -> Result<String> {
@@ -703,12 +776,20 @@ const INJECTED_SCRIPT: &str = r##"
     };
 
     window.__twarpBrowserAutomation = {
-        snapshot() {
+        snapshot(scopeSelector, maxElements) {
             refs = new Map();
             refCounter = 1;
-            const elements = Array.from(document.querySelectorAll("a,button,input,textarea,select,summary,[role],[tabindex],[contenteditable=true],[onclick]"))
+            let root = document;
+            if (scopeSelector) {
+                root = document.querySelector(scopeSelector);
+                if (!root) {
+                    throw new Error("snapshot selector matched nothing: " + scopeSelector);
+                }
+            }
+            const cap = Math.max(1, Math.min(Number(maxElements) || 500, 500));
+            const elements = Array.from(root.querySelectorAll("a,button,input,textarea,select,summary,[role],[tabindex],[contenteditable=true],[onclick]"))
                 .filter(isCandidate)
-                .slice(0, 500)
+                .slice(0, cap)
                 .map((element) => {
                     const reference = "e" + refCounter++;
                     refs.set(reference, element);
@@ -722,10 +803,11 @@ const INJECTED_SCRIPT: &str = r##"
                         selector: selectorFor(element)
                     };
                 });
+            const textRoot = scopeSelector ? root : document.body;
             return {
                 url: location.href || null,
                 title: document.title || "",
-                text: (document.body ? document.body.innerText || "" : "").slice(0, 20000),
+                text: (textRoot ? textRoot.innerText || "" : "").slice(0, 20000),
                 elements
             };
         },
@@ -744,8 +826,48 @@ const INJECTED_SCRIPT: &str = r##"
             return { ref: reference, success: true, message: "typed" };
         },
 
-        async eval(source) {
-            return sanitize(await (0, eval)(source));
+        hover(reference) {
+            const element = resolveRef(reference);
+            element.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+            const rect = element.getBoundingClientRect();
+            const init = {
+                bubbles: true, cancelable: true, view: window,
+                clientX: rect.left + Math.max(1, rect.width / 2),
+                clientY: rect.top + Math.max(1, rect.height / 2)
+            };
+            element.dispatchEvent(new MouseEvent("mouseenter", { ...init, bubbles: false }));
+            element.dispatchEvent(new MouseEvent("mouseover", init));
+            element.dispatchEvent(new MouseEvent("mousemove", init));
+            return { ref: reference, success: true, message: "hovered" };
+        },
+
+        select(reference, value) {
+            const element = resolveRef(reference);
+            if (element.tagName !== "SELECT") {
+                throw new Error("select requires a <select> element ref");
+            }
+            const option = Array.from(element.options).find(
+                (opt) => opt.value === value || opt.label === value || opt.text === value
+            );
+            if (!option) {
+                throw new Error("no option matching: " + value);
+            }
+            element.value = option.value;
+            element.dispatchEvent(new Event("input", { bubbles: true }));
+            element.dispatchEvent(new Event("change", { bubbles: true }));
+            return { ref: reference, success: true, message: "selected " + option.value };
+        },
+
+        scroll(reference, dx, dy) {
+            const deltaX = Number(dx) || 0;
+            const deltaY = Number(dy) || 0;
+            if (reference) {
+                const element = resolveRef(reference);
+                element.scrollBy(deltaX, deltaY);
+                return { x: element.scrollLeft, y: element.scrollTop };
+            }
+            window.scrollBy(deltaX, deltaY);
+            return { x: window.scrollX, y: window.scrollY };
         },
 
         hasSelector(selector) {
