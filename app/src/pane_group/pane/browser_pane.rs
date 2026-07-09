@@ -46,7 +46,7 @@ impl BrowserPane {
         Self::from_view(view, ctx)
     }
 
-    fn browser_view(&self, ctx: &AppContext) -> ViewHandle<BrowserView> {
+    pub(crate) fn browser_view(&self, ctx: &AppContext) -> ViewHandle<BrowserView> {
         self.view.as_ref(ctx).child(ctx)
     }
 }

@@ -12329,6 +12329,47 @@ impl Workspace {
         });
     }
 
+    /// twarp 14j: the pane group of the tab hosting the Claude session, if
+    /// this workspace contains it.
+    pub(crate) fn pane_group_hosting_claude_session(
+        &self,
+        session_id: &str,
+        ctx: &AppContext,
+    ) -> Option<ViewHandle<PaneGroup>> {
+        self.tabs.iter().find_map(|tab| {
+            tab.pane_group
+                .as_ref(ctx)
+                .find_claude_code_pane_by_session_id(session_id, ctx)
+                .is_some()
+                .then(|| tab.pane_group.clone())
+        })
+    }
+
+    /// twarp 14j: open a Browser pane (unfocused) in the tab that hosts the
+    /// given Claude session, splitting next to it — NOT in whatever tab the
+    /// user happens to be looking at. Returns false when this workspace
+    /// doesn't host the session.
+    pub(crate) fn open_browser_pane_for_claude_session(
+        &mut self,
+        session_id: &str,
+        url: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        let Some(pane_group) = self.pane_group_hosting_claude_session(session_id, ctx) else {
+            return false;
+        };
+        let pane = BrowserPane::new_unfocused(url, ctx);
+        pane_group.update(ctx, |pane_group, ctx| {
+            pane_group.add_pane_with_direction(
+                Direction::Right,
+                pane,
+                false, /* focus_new_pane */
+                ctx,
+            );
+        });
+        true
+    }
+
     /// twarp 07 (7b): open a Claude Code pane in the active tab's pane group and
     /// focus it — the destination of the `claude` terminal trigger (PRODUCT §1,
     /// §5). `args` are the tokens after `claude`: recognized flags (incl. the
