@@ -214,19 +214,16 @@ pub(super) fn apply_suggestion(text: &str, query: &SuggestionQuery, accepted: &s
 /// Walk the cwd for mentionable files: relative paths, files only, capped at
 /// [`MAX_CWD_FILES`] (PRODUCT §15a).
 ///
-/// Gitignored files ARE included so they can be `@`-mentioned — the `.gitignore`
-/// / `.ignore` / global-ignore filters are all disabled. Hidden dotfiles stay
-/// excluded via `.hidden(true)`, which also keeps the `.git` internal directory
-/// out.
+/// The walk is gitignore-aware (the `WalkBuilder` defaults): bulk directories
+/// like `node_modules/` would otherwise eat the [`MAX_CWD_FILES`] budget before
+/// the walk reaches the real source tree, leaving most project files
+/// unmentionable. Gitignored paths can still be attached by typing them out in
+/// full. Hidden dotfiles stay excluded via `.hidden(true)`, which also keeps
+/// the `.git` internal directory out.
 pub(super) fn list_cwd_files(cwd: &Path) -> Vec<String> {
     let mut files = Vec::new();
     for entry in ignore::WalkBuilder::new(cwd)
         .hidden(true)
-        .git_ignore(false)
-        .git_global(false)
-        .git_exclude(false)
-        .ignore(false)
-        .parents(false)
         .follow_links(false)
         .build()
         .flatten()
@@ -449,6 +446,23 @@ mod tests {
         std::fs::write(dir.join("sub/b.rs"), b"x").unwrap();
         let files = list_cwd_files(&dir);
         assert_eq!(files, vec!["a.rs".to_string(), "sub/b.rs".to_string()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_cwd_files_skips_gitignored_paths() {
+        let dir = std::env::temp_dir().join("twarp-test-cwd-files-gitignore");
+        let _ = std::fs::remove_dir_all(&dir);
+        // The `ignore` crate only applies .gitignore inside a git repo, so
+        // fake one with an empty `.git` directory.
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        std::fs::create_dir_all(dir.join("node_modules/pkg")).unwrap();
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join(".gitignore"), b"node_modules/\n").unwrap();
+        std::fs::write(dir.join("node_modules/pkg/index.js"), b"x").unwrap();
+        std::fs::write(dir.join("src/coach.ts"), b"x").unwrap();
+        let files = list_cwd_files(&dir);
+        assert_eq!(files, vec!["src/coach.ts".to_string()]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
