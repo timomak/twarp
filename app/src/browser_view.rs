@@ -77,6 +77,9 @@ pub enum BrowserViewAction {
     ClearDefaultProfileData,
     /// twarp 14l: user reclaims the page from the driving agent.
     TakeControl,
+    /// twarp 14l-2: arm/disarm annotation mode (next page click becomes an
+    /// annotation anchor in the bound Claude session's composer).
+    ToggleAnnotation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,6 +187,14 @@ pub struct BrowserView {
     state_poll_active: bool,
     agent_lease: Option<AgentLease>,
     take_control_button: MouseStateHandle,
+    /// twarp 14l-2: armed = the next page click becomes an annotation anchor
+    /// instead of reaching the page.
+    annotation_armed: bool,
+    annotate_button: MouseStateHandle,
+    /// twarp 14l-2/14j: the Claude session this pane belongs to (stamped when
+    /// a scoped MCP opens or drives the pane). Annotations land in this
+    /// session's composer.
+    bound_claude_session: Option<String>,
     back_button: MouseStateHandle,
     forward_button: MouseStateHandle,
     reload_button: MouseStateHandle,
@@ -248,6 +259,9 @@ impl BrowserView {
             state_poll_active: false,
             agent_lease: None,
             take_control_button: Default::default(),
+            annotation_armed: false,
+            annotate_button: Default::default(),
+            bound_claude_session: None,
             back_button: Default::default(),
             forward_button: Default::default(),
             reload_button: Default::default(),
@@ -437,6 +451,9 @@ impl BrowserView {
         if self.agent_lease.is_some() {
             engine.set_input_blocked(true);
         }
+        if self.annotation_armed {
+            engine.set_annotation_capture(true);
+        }
         self.tabs.push(BrowserTab::new(engine));
         self.active_tab_index = self.tabs.len() - 1;
         self.set_omnibar_text("", ctx);
@@ -506,6 +523,7 @@ impl BrowserView {
                     ctx.notify();
                 }
                 me.expire_agent_lease_if_idle(ctx);
+                me.poll_annotation_click(ctx);
                 if me.tabs.is_empty() && me.pending_restore.is_none() {
                     me.state_poll_active = false;
                     return;
@@ -523,6 +541,12 @@ impl BrowserView {
         if !self.state_poll_active {
             self.schedule_state_poll(ctx);
         }
+    }
+
+    /// twarp 14l-2/14j: bind this pane to a Claude session (set when a scoped
+    /// MCP opens or drives the pane); annotations route to this session.
+    pub(crate) fn set_bound_claude_session(&mut self, session_id: String) {
+        self.bound_claude_session = Some(session_id);
     }
 
     /// twarp 14l: called (via the MCP bridge) on every automation tool call.
@@ -560,6 +584,111 @@ impl BrowserView {
     fn set_webview_input_blocked(&self, blocked: bool) {
         for tab in &self.tabs {
             tab.engine.set_input_blocked(blocked);
+        }
+    }
+
+    /// twarp 14l-2: arm/disarm annotation mode. Armed, the next click on the
+    /// page is captured as an annotation anchor (element under the click) and
+    /// routed into the bound Claude session's composer.
+    fn toggle_annotation_mode(&mut self, ctx: &mut ViewContext<Self>) {
+        self.set_annotation_armed(!self.annotation_armed, ctx);
+    }
+
+    fn set_annotation_armed(&mut self, armed: bool, ctx: &mut ViewContext<Self>) {
+        if self.annotation_armed == armed {
+            return;
+        }
+        self.annotation_armed = armed;
+        for tab in &self.tabs {
+            tab.engine.set_annotation_capture(armed);
+        }
+        self.ensure_state_poll(ctx);
+        ctx.notify();
+    }
+
+    /// Polled: consume a captured annotation click, resolve the element under
+    /// it, and hand off to the bound Claude session's composer.
+    fn poll_annotation_click(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.annotation_armed {
+            return;
+        }
+        let Some(tab) = self.active_tab() else {
+            return;
+        };
+        let Some((x, y)) = tab.engine.take_annotation_click() else {
+            return;
+        };
+        // One-shot: the click consumes the armed state.
+        let engine = tab.engine;
+        let url = tab.current_url.clone();
+        self.set_annotation_armed(false, ctx);
+        ctx.spawn(
+            async move { engine.describe_point(x, y).await },
+            move |me, described, ctx| match described {
+                Ok(described) => me.deliver_annotation(described, url, ctx),
+                Err(err) => log::warn!("browser annotation: describe_point failed: {err}"),
+            },
+        );
+    }
+
+    /// twarp 14l-2: pre-fill the bound Claude session's composer with the
+    /// annotation anchor and focus it so the user types the note there.
+    fn deliver_annotation(
+        &mut self,
+        described: browser::DescribedElement,
+        url: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let claude_view = self.find_bound_claude_view(ctx);
+        let Some(claude_view) = claude_view else {
+            log::warn!("browser annotation: no Claude session to deliver to");
+            return;
+        };
+
+        let mut anchor = format!("[web annotation] {}", described.selector);
+        let label = if !described.name.is_empty() {
+            &described.name
+        } else {
+            &described.text
+        };
+        if !label.is_empty() {
+            let mut label = label.replace('\n', " ");
+            label.truncate(80);
+            anchor.push_str(&format!(" ({label:?})"));
+        }
+        if let Some(url) = url {
+            anchor.push_str(&format!(" on {url}"));
+        }
+        anchor.push_str(": ");
+
+        let editor = claude_view.as_ref(ctx).input_editor_view();
+        let existing = editor.as_ref(ctx).buffer_text(ctx);
+        let text = if existing.trim().is_empty() {
+            anchor
+        } else {
+            format!("{existing}\n{anchor}")
+        };
+        editor.update(ctx, |editor, ctx| editor.set_buffer_text(&text, ctx));
+        claude_view.update(ctx, |view, ctx| view.focus(ctx));
+    }
+
+    fn find_bound_claude_view(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<twarpui::ViewHandle<crate::claude_code_view::ClaudeCodeView>> {
+        let views = ctx
+            .window_ids()
+            .filter_map(|window_id| {
+                ctx.views_of_type::<crate::claude_code_view::ClaudeCodeView>(window_id)
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+        match self.bound_claude_session.as_deref() {
+            Some(session_id) => views
+                .into_iter()
+                .find(|view| view.as_ref(ctx).session_id() == session_id),
+            // Unbound pane: only deliver when it's unambiguous.
+            None => (views.len() == 1).then(|| views.into_iter().next()).flatten(),
         }
     }
 
@@ -914,6 +1043,20 @@ impl BrowserView {
                         self.clear_profile_data_button.clone(),
                         BrowserViewAction::ClearDefaultProfileData,
                     ))
+                    .with_child(
+                        // Annotate: armed state renders as an active button.
+                        buttons::icon_button(
+                            appearance,
+                            icons::Icon::MessagePlusSquare,
+                            self.annotation_armed,
+                            self.annotate_button.clone(),
+                        )
+                        .build()
+                        .on_click(|ctx, _, _| {
+                            ctx.dispatch_typed_action(BrowserViewAction::ToggleAnnotation);
+                        })
+                        .finish(),
+                    )
                     .with_child(Shrinkable::new(1., text_input).finish())
                     .finish(),
             )
@@ -1159,6 +1302,7 @@ impl TypedActionView for BrowserView {
             BrowserViewAction::NavigateHistory(index) => self.navigate_to_history(*index, ctx),
             BrowserViewAction::ClearDefaultProfileData => self.clear_default_profile_data(ctx),
             BrowserViewAction::TakeControl => self.release_agent_lease(ctx),
+            BrowserViewAction::ToggleAnnotation => self.toggle_annotation_mode(ctx),
         }
     }
 }

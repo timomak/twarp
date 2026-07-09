@@ -29,18 +29,57 @@ typedef void (*WarpBrowserBytesCallback)(void *, const uint8_t *, uintptr_t, con
 - (instancetype)initWithEntry:(WarpNativeWebViewEntry *)entry;
 @end
 
+@class WarpNativeWebViewEntry;
+
 /// twarp 14l: transparent view layered over a webview while an agent holds
 /// the input lease. Swallows all mouse/scroll/key input so the user can't
 /// interact with the page mid-automation (the pane chrome stays interactive —
-/// this only covers the webview rect).
+/// this only covers the webview rect). In annotation-capture mode the
+/// swallowed click's page coordinates are recorded instead of discarded.
 @interface WarpWebViewInputShield : NSView
+@property(nonatomic) BOOL captureClicks;
+// The owning entry outlives the shield (it removes the shield before dying).
+@property(nonatomic, assign) WarpNativeWebViewEntry *entry;
 @end
 
+@interface WarpNativeWebViewEntry : NSObject <WKNavigationDelegate, WKUIDelegate>
+@property(nonatomic, retain) NSView *containerView;
+@property(nonatomic, retain) WKWebView *webView;
+@property(nonatomic, retain) WKUserContentController *userContentController;
+@property(nonatomic, retain) WarpAutomationScriptMessageHandler *messageHandler;
+@property(nonatomic, retain) NSMutableArray<NSString *> *consoleMessages;
+@property(nonatomic, retain) NSMutableArray<NSString *> *networkMessages;
+@property(nonatomic, retain) WarpWebViewInputShield *inputShieldView;
+@property(nonatomic) BOOL hiddenRequested;
+// twarp 14l: shield ownership flags — the shield exists while either is set.
+@property(nonatomic) BOOL inputBlockRequested;
+@property(nonatomic) BOOL annotationCaptureRequested;
+// twarp 14l-2: the last annotation click (webview top-left coords), if any.
+@property(nonatomic, retain) NSValue *pendingAnnotationClick;
+- (instancetype)initWithContainerView:(NSView *)containerView
+                              webView:(WKWebView *)webView
+                userContentController:(WKUserContentController *)userContentController;
+- (void)appendAutomationMessage:(id)message;
+- (void)clearAutomationMessages;
+- (void)recordAnnotationClickAt:(NSPoint)webViewPoint;
+- (NSString *)consoleMessagesJSON;
+- (NSString *)networkMessagesJSON;
+- (void)downloadRequest:(NSURLRequest *)request response:(NSURLResponse *)response;
+@end
+
+/// Shield implementation lives after the entry interface so it can call back
+/// into the entry when capturing annotation clicks.
 @implementation WarpWebViewInputShield
 - (BOOL)acceptsFirstMouse:(NSEvent *)event {
     return YES;
 }
 - (void)mouseDown:(NSEvent *)event {
+    if (self.captureClicks && self.entry) {
+        // WKWebView is flipped, so converting into it yields top-left-origin
+        // coordinates matching CSS's elementFromPoint space.
+        NSPoint point = [self.entry.webView convertPoint:event.locationInWindow fromView:nil];
+        [self.entry recordAnnotationClickAt:point];
+    }
 }
 - (void)mouseUp:(NSEvent *)event {
 }
@@ -64,25 +103,6 @@ typedef void (*WarpBrowserBytesCallback)(void *, const uint8_t *, uintptr_t, con
 }
 @end
 
-@interface WarpNativeWebViewEntry : NSObject <WKNavigationDelegate, WKUIDelegate>
-@property(nonatomic, retain) NSView *containerView;
-@property(nonatomic, retain) WKWebView *webView;
-@property(nonatomic, retain) WKUserContentController *userContentController;
-@property(nonatomic, retain) WarpAutomationScriptMessageHandler *messageHandler;
-@property(nonatomic, retain) NSMutableArray<NSString *> *consoleMessages;
-@property(nonatomic, retain) NSMutableArray<NSString *> *networkMessages;
-@property(nonatomic, retain) WarpWebViewInputShield *inputShieldView;
-@property(nonatomic) BOOL hiddenRequested;
-- (instancetype)initWithContainerView:(NSView *)containerView
-                              webView:(WKWebView *)webView
-                userContentController:(WKUserContentController *)userContentController;
-- (void)appendAutomationMessage:(id)message;
-- (void)clearAutomationMessages;
-- (NSString *)consoleMessagesJSON;
-- (NSString *)networkMessagesJSON;
-- (void)downloadRequest:(NSURLRequest *)request response:(NSURLResponse *)response;
-@end
-
 static const NSUInteger WarpAutomationMessageLimit = 200;
 
 @implementation WarpNativeWebViewEntry
@@ -102,10 +122,16 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
     return self;
 }
 
+- (void)recordAnnotationClickAt:(NSPoint)webViewPoint {
+    self.pendingAnnotationClick = [NSValue valueWithPoint:webViewPoint];
+}
+
 - (void)dealloc {
     [_userContentController removeScriptMessageHandlerForName:@"twarpAutomation"];
     _webView.navigationDelegate = nil;
     _webView.UIDelegate = nil;
+    _inputShieldView.entry = nil;
+    [_pendingAnnotationClick release];
     [_inputShieldView release];
     [_messageHandler release];
     [_networkMessages release];
@@ -582,8 +608,36 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
 - (void)setNativeWebViewInputBlocked:(NSUInteger)webViewId blocked:(BOOL)blocked {
     WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
     if (!entry) return;
+    entry.inputBlockRequested = blocked;
+    [self applyShieldStateToNativeWebViewEntry:entry];
+}
 
-    if (blocked) {
+/// twarp 14l-2: arm/disarm annotation-click capture. While armed the shield
+/// records the next page click's coordinates instead of delivering it.
+- (void)setNativeWebViewAnnotationCapture:(NSUInteger)webViewId enabled:(BOOL)enabled {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry) return;
+    entry.annotationCaptureRequested = enabled;
+    if (!enabled) {
+        entry.pendingAnnotationClick = nil;
+    }
+    [self applyShieldStateToNativeWebViewEntry:entry];
+}
+
+/// twarp 14l-2: pops the recorded annotation click, if any.
+- (BOOL)takeNativeWebViewAnnotationClick:(NSUInteger)webViewId x:(double *)x y:(double *)y {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry || !entry.pendingAnnotationClick) return NO;
+    NSPoint point = [entry.pendingAnnotationClick pointValue];
+    entry.pendingAnnotationClick = nil;
+    if (x) *x = point.x;
+    if (y) *y = point.y;
+    return YES;
+}
+
+- (void)applyShieldStateToNativeWebViewEntry:(WarpNativeWebViewEntry *)entry {
+    BOOL wantShield = entry.inputBlockRequested || entry.annotationCaptureRequested;
+    if (wantShield) {
         if (!entry.inputShieldView) {
             WarpWebViewInputShield *shield =
                 [[[WarpWebViewInputShield alloc] initWithFrame:entry.containerView.bounds] autorelease];
@@ -591,12 +645,15 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
             [entry.containerView addSubview:shield positioned:NSWindowAbove relativeTo:entry.webView];
             entry.inputShieldView = shield;
         }
+        entry.inputShieldView.entry = entry;
+        entry.inputShieldView.captureClicks = entry.annotationCaptureRequested;
         // If the user was mid-interaction with the page, take the keyboard
         // back so their keystrokes don't keep flowing into it.
         if ([self responder:self.window.firstResponder isInWebView:entry.webView]) {
             [self.window makeFirstResponder:self];
         }
     } else if (entry.inputShieldView) {
+        entry.inputShieldView.entry = nil;
         [entry.inputShieldView removeFromSuperview];
         entry.inputShieldView = nil;
     }
@@ -1211,6 +1268,17 @@ void warp_host_set_webview_hidden(WarpHostView *host, uintptr_t webViewId, BOOL 
 
 void warp_host_set_webview_input_blocked(WarpHostView *host, uintptr_t webViewId, BOOL blocked) {
     [host setNativeWebViewInputBlocked:(NSUInteger)webViewId blocked:blocked];
+}
+
+void warp_host_set_webview_annotation_capture(WarpHostView *host, uintptr_t webViewId, BOOL enabled) {
+    [host setNativeWebViewAnnotationCapture:(NSUInteger)webViewId enabled:enabled];
+}
+
+BOOL warp_host_take_webview_annotation_click(WarpHostView *host,
+                                             uintptr_t webViewId,
+                                             double *x,
+                                             double *y) {
+    return [host takeNativeWebViewAnnotationClick:(NSUInteger)webViewId x:x y:y];
 }
 
 void warp_host_load_url(WarpHostView *host, uintptr_t webViewId, NSString *urlString) {

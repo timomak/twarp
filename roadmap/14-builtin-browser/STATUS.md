@@ -1,6 +1,6 @@
 # 14 — Built-in browser (Claude-debuggable)
 
-**Phase:** impl-pending — **reopened 2026-07-01** (regression: WKWebView renders blank; see 14f below)
+**Phase:** merged — 14f fixed + merged 2026-07-01 (fleet/14f); phase 3 (14g–14l) merged 2026-07-09
 **Spec PR:** [#96](https://github.com/timomak/twarp/pull/96) (merged)
 **Impl PRs:** 14a [#111](https://github.com/timomak/twarp/pull/111), 14b [#112](https://github.com/timomak/twarp/pull/112), 14c [#113](https://github.com/timomak/twarp/pull/113), 14d [#114](https://github.com/timomak/twarp/pull/114), 14e [#115](https://github.com/timomak/twarp/pull/115)
 
@@ -39,6 +39,19 @@ Net-new feature, owner-requested. Independent of the IDE-pivot features (10–12
 - [x] **14c — Automation core.** Injected content script: navigate/snapshot/click/type/eval + console + network capture. Internal Rust API.
 - [x] **14d — Claude bridge.** Expose the automation core as an MCP server twarp registers for the session. Acceptance: Claude CLI drives the live pane via MCP tools. Not "done" until MCP-exposed.
 - [x] **14e — Full-browser features (optional/later).** Tabs, history, downloads, profiles/cookies, popups.
+
+## Phase 3 (owner-directed 2026-07-09) — polish, reliability, shared control
+
+Driven end-to-end in one session from owner notes + a live MCP test drive. All merged:
+
+- [x] **14g — Tab/omnibar polish** ([#171](https://github.com/timomak/twarp/pull/171)): tab close X right-aligned (SpaceBetween); non-URL omnibar input falls back to a Google search.
+- [x] **14h — Pane lifecycle** ([#172](https://github.com/timomak/twarp/pull/172)): `PendingTabRestore` retry loop — the pane survives session restore and cross-window transfer instead of dying when `BrowserEngine::new` returns `None` (window not registered yet); all tabs preserved on transfer; explicit "Reconnecting…" body. Fixes the PR #144 restore-blank bug too.
+- [x] **14i — Focus isolation** ([#173](https://github.com/timomak/twarp/pull/173)): automation never steals the keyboard (native first-responder guard around evals; MCP opens panes unfocused; no `show_window_and_focus_app`). Companion fix: `DetachType::Moved` no longer destroys webviews (same-window pane moves).
+- [x] **14j — Per-session scoping** ([#174](https://github.com/timomak/twarp/pull/174)): one SSE endpoint per Claude session; tools bind per connection to a `BrowserView` `EntityId` (survives moves, ignores focus); `browser_navigate` opens panes in the invoking session's tab.
+- [x] **14k — Automation robustness** ([#175](https://github.com/timomak/twarp/pull/175)): CSP-proof `browser_eval` (native expression eval, not page-world string-eval); `browser_snapshot` selector/max_elements filters; new verbs hover/select/scroll/back/forward/close. (Isolated-`WKContentWorld` split deferred — no driving bug once eval went native.)
+- [x] **14l — Shared control** ([#176](https://github.com/timomak/twarp/pull/176) + annotations [#178](https://github.com/timomak/twarp/pull/178)): agent input lease — while Claude drives, a native shield locks the *page* (chrome stays interactive), banner + "Take control"; lease renews per tool call, expires 4s idle. Annotation mode: toolbar button arms one click → element under it (selector/name via `describePoint`) pre-fills the bound Claude session's composer for the user's note. Idle panes browse normally; annotate works in both modes.
+
+Known follow-ups (not scheduled): per-session server teardown on session end (tiny leak: one localhost listener per session per app run); isolated content world for tamper-proofing; annotation screenshot crops; richer network capture (subresources/WebSocket).
 
 ## What's already built
 
