@@ -907,6 +907,10 @@ impl BrowserView {
     ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
+        // twarp: browser tab titles follow the active tab's colour, matching
+        // the pane-header labels elsewhere.
+        let title_color = crate::workspace::view::active_tab_accent(self.window_id, app)
+            .unwrap_or_else(|| theme.active_ui_text_color().into_solid());
         let mut row = Flex::row()
             .with_main_axis_size(MainAxisSize::Max)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -933,7 +937,7 @@ impl BrowserView {
                 tab.title.clone()
             };
             let title = Text::new_inline(title, appearance.ui_font_family(), 12.)
-                .with_color(theme.active_ui_text_color().into())
+                .with_color(title_color.into())
                 .with_clip(ClipConfig::end())
                 .finish();
             let close_button = self.render_toolbar_button(

@@ -1231,12 +1231,7 @@ impl ClaudeCodeView {
     /// The active tab's colour (#10/#11) resolved to a `ColorU`, or `None` when
     /// the tab has no colour. Looked up via the window's workspace.
     fn tab_accent(&self, app: &AppContext) -> Option<ColorU> {
-        let workspace = WorkspaceRegistry::as_ref(app).get(self.window_id, app)?;
-        let identifier = workspace.as_ref(app).active_tab_color()?;
-        let theme = Appearance::as_ref(app).theme();
-        Some(ColorU::from(
-            identifier.to_tab_color(&theme.terminal_colors().normal),
-        ))
+        crate::workspace::view::active_tab_accent(self.window_id, app)
     }
 
     /// The pane's primary/accent colour (#10): the active tab's colour when set,

@@ -609,6 +609,21 @@ pub(crate) fn floating_panel_surface_fill(app: &AppContext) -> twarp_core::ui::t
     Appearance::as_ref(app).theme().background()
 }
 
+/// twarp: the active tab's colour (the tab-strip swatch) resolved to a solid,
+/// for pane chrome that follows the tab — the pane-header title labels and the
+/// browser pane's tab titles. `None` when the active tab has no colour, in
+/// which case callers fall back to their usual neutral text colour.
+pub(crate) fn active_tab_accent(window_id: WindowId, app: &AppContext) -> Option<ColorU> {
+    let workspace = WorkspaceRegistry::as_ref(app).get(window_id, app)?;
+    let identifier = workspace.as_ref(app).active_tab_color()?;
+    let theme = Appearance::as_ref(app).theme();
+    Some(
+        identifier
+            .to_tab_color(&theme.terminal_colors().normal)
+            .into(),
+    )
+}
+
 /// twarp: a subtle gray outline around the floating side panels so each card's
 /// edge reads cleanly against the terminal background. Uses the theme's standard
 /// `outline()` gray (the same border the shell-selector menu uses) rather than a

@@ -40,7 +40,7 @@ use twarpui::{
     },
     presenter::ChildView,
     AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View,
-    ViewContext, ViewHandle,
+    ViewContext, ViewHandle, WindowId,
 };
 
 use super::PaneDropTargetData;
@@ -137,6 +137,10 @@ pub struct PaneHeader<P: BackingView> {
     open_overlay: OpenOverlay,
     is_visible_in_pane_group: bool, // If this pane header is being dragged along the tab bar, then it is not visible in the pane group
     toolbelt_feature_popup: ViewHandle<FeaturePopup>,
+    /// twarp: the hosting window, for resolving the active tab's colour (the
+    /// header title labels follow the tab colour like the rest of the pane
+    /// chrome).
+    window_id: WindowId,
 }
 
 impl<P: BackingView> PaneHeader<P> {
@@ -175,6 +179,7 @@ impl<P: BackingView> PaneHeader<P> {
             toolbelt_buttons: Default::default(),
             is_visible_in_pane_group: true,
             toolbelt_feature_popup,
+            window_id: ctx.window_id(),
         }
     }
 
@@ -623,9 +628,16 @@ impl<P: BackingView> PaneHeader<P> {
                 }
 
                 let font_size = appearance.ui_font_size();
-                let font_color = appearance
-                    .theme()
-                    .sub_text_color(appearance.theme().background());
+                // twarp: the title label follows the active tab's colour when
+                // one is set, matching the rest of the tab-themed chrome.
+                let font_color: pathfinder_color::ColorU =
+                    crate::workspace::view::active_tab_accent(self.window_id, app)
+                        .unwrap_or_else(|| {
+                            appearance
+                                .theme()
+                                .sub_text_color(appearance.theme().background())
+                                .into_solid()
+                        });
 
                 // Build title row with primary title and optional secondary title.
                 let mut title_row = Flex::row();
