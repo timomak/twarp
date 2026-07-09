@@ -714,13 +714,21 @@ impl<P: BackingView> PaneHeader<P> {
                 let right_justified_container =
                     Container::new(right_justified_row.finish()).with_padding_right(4.);
 
-                let edge_width = options.control_container_width();
+                // twarp: pin BOTH edge columns to exactly the control budget.
+                // With only a shared cap (min = icon width, max = budget) the
+                // left column collapsed to its content while the right filled
+                // its budget with controls, so titles sat left of center on
+                // panes with wide control clusters (e.g. the Claude pane's
+                // [Chat UI | Raw CLI] toggle). Equal fixed edges keep the
+                // title centered in the pane regardless of what each side
+                // actually holds.
+                let edge_width = options.control_container_width().max(min_right_width);
                 let left_constrained = ConstrainedBox::new(left_justified_container.finish())
-                    .with_min_width(min_right_width)
+                    .with_min_width(edge_width)
                     .with_max_width(edge_width)
                     .finish();
                 let right_constrained = ConstrainedBox::new(right_justified_container.finish())
-                    .with_min_width(min_right_width)
+                    .with_min_width(edge_width)
                     .with_max_width(edge_width)
                     .finish();
 
