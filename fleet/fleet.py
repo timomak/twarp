@@ -789,14 +789,16 @@ def _ux_launch(it, name):
            f"caffeinate -dimsu </dev/null >/dev/null 2>&1 & echo $! > /tmp/ux_caf_{iid}\n"
            f'open "$APP" > /tmp/ux_open_{iid}.log 2>&1; echo OPEN_$?\n'
            # match the worktree's bundle path, not the app name — per-item precise + rename-proof
-           f"sleep 12\npgrep -f '{wt}/target/debug/bundle' >/dev/null && echo RUNNING || echo NOTRUNNING\n")
+           f"sleep 12\npgrep -f '{wt}/target/debug/bundle' >/dev/null && echo LAUNCH_UP || echo LAUNCH_DOWN\n")
     say(f"  [{iid}] UX: building GUI bundle + launching on {name}'s display (multi-min build)…")
     with gatelock(name):                       # one cargo cache per pod
         r = bash_on(name, cmd, timeout=3600)
-    # Gate on the app actually being up (BUNDLE_OK + RUNNING), NOT on script/run's exit code:
+    # Gate on the app actually being up (BUNDLE_OK + LAUNCH_UP), NOT on script/run's exit code:
     # ad-hoc codesigning flakily returns `errSecInternalComponent` (BUILD_1) while still producing a
-    # launchable, running bundle. RUNNING is the real signal; a non-zero BUILD alone must not veto it.
-    ok = ("BUNDLE_OK" in r.stdout and "RUNNING" in r.stdout)
+    # launchable, running bundle. LAUNCH_UP is the real signal; a non-zero BUILD alone must not veto
+    # it. Distinct up/down tokens: the old RUNNING/NOTRUNNING pair made the substring check always
+    # true, so a dead app still went to the driver (which then judged whatever else was on screen).
+    ok = ("BUNDLE_OK" in r.stdout and "LAUNCH_UP" in r.stdout)
     (LOG / f"{iid}.uxlaunch.log").write_text(r.stdout)
     return ok, r.stdout
 
