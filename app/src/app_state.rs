@@ -841,6 +841,8 @@ pub struct ClaudeCodePaneSnapshot {
 #[derive(Clone, Debug, PartialEq)]
 pub struct BrowserPaneSnapshot {
     pub url: Option<String>,
+    /// twarp 14o: the Claude session this pane is bound to (14j).
+    pub bound_claude_session: Option<String>,
 }
 
 /// Snapshot of the contents of a terminal pane.

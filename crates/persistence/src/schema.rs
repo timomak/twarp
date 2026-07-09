@@ -110,6 +110,7 @@ diesel::table! {
         id -> Integer,
         kind -> Text,
         url -> Nullable<Text>,
+        bound_claude_session -> Nullable<Text>,
     }
 }
 

@@ -714,6 +714,9 @@ pub struct BrowserPane {
     pub id: i32,
     pub kind: String,
     pub url: Option<String>,
+    /// twarp 14o: the Claude session this pane is bound to (14j), persisted so
+    /// the globe/chat cross-links survive a restart.
+    pub bound_claude_session: Option<String>,
 }
 
 #[derive(Insertable)]
@@ -721,6 +724,7 @@ pub struct BrowserPane {
 pub struct NewBrowserPane {
     pub id: i32,
     pub url: Option<String>,
+    pub bound_claude_session: Option<String>,
 }
 
 /// twarp 07: the single global row recording the last-used Claude session

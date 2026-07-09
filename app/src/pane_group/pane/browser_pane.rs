@@ -41,8 +41,18 @@ impl BrowserPane {
         Self::from_view(view, ctx)
     }
 
-    pub fn new_restore<V: View>(url: Option<String>, ctx: &mut ViewContext<V>) -> Self {
-        let view = ctx.add_typed_action_view(move |ctx| BrowserView::new_restore(url, ctx));
+    pub fn new_restore<V: View>(
+        url: Option<String>,
+        bound_claude_session: Option<String>,
+        ctx: &mut ViewContext<V>,
+    ) -> Self {
+        let view = ctx.add_typed_action_view(move |ctx| {
+            let mut view = BrowserView::new_restore(url, ctx);
+            if let Some(session_id) = bound_claude_session {
+                view.set_bound_claude_session(session_id);
+            }
+            view
+        });
         Self::from_view(view, ctx)
     }
 
@@ -95,8 +105,12 @@ impl PaneContent for BrowserPane {
     }
 
     fn snapshot(&self, app: &AppContext) -> LeafContents {
-        let url = self.browser_view(app).as_ref(app).snapshot_url();
-        LeafContents::Browser(BrowserPaneSnapshot { url })
+        let view = self.browser_view(app);
+        let view = view.as_ref(app);
+        LeafContents::Browser(BrowserPaneSnapshot {
+            url: view.snapshot_url(),
+            bound_claude_session: view.bound_claude_session().map(ToOwned::to_owned),
+        })
     }
 
     fn has_application_focus(&self, ctx: &mut ViewContext<PaneGroup>) -> bool {

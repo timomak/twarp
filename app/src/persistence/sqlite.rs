@@ -1270,6 +1270,7 @@ fn save_pane_state(
             let browser_pane = model::NewBrowserPane {
                 id,
                 url: snapshot.url.clone(),
+                bound_claude_session: snapshot.bound_claude_session.clone(),
             };
 
             diesel::insert_into(schema::browser_panes::dsl::browser_panes)
@@ -2561,7 +2562,10 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                         .select(model::BrowserPane::as_select())
                         .first(conn)?;
 
-                    LeafContents::Browser(crate::app_state::BrowserPaneSnapshot { url: pane.url })
+                    LeafContents::Browser(crate::app_state::BrowserPaneSnapshot {
+                        url: pane.url,
+                        bound_claude_session: pane.bound_claude_session,
+                    })
                 }
                 other => bail!("Unrecognized pane kind: {other}"),
             };
