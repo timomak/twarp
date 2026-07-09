@@ -97,10 +97,12 @@ impl BrowserMcpBridge {
             })
             .ok_or_else(|| "No workspace is available to open a Browser pane".to_owned())?;
 
-        let (window_id, workspace) = workspace;
-        ctx.windows().show_window_and_focus_app(window_id);
+        // twarp 14i: no show_window_and_focus_app, no pane focus — automation
+        // opening a pane must never steal the user's keyboard or raise a
+        // window over what they're doing.
+        let (_window_id, workspace) = workspace;
         workspace.update(ctx, |workspace, ctx| {
-            workspace.open_browser_pane(Some(url), ctx);
+            workspace.open_browser_pane_unfocused(Some(url), ctx);
         });
         Ok(())
     }
