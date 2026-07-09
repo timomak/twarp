@@ -5,7 +5,8 @@ use browser::{BrowserEngine, BrowserProfile};
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
 use twarpui::elements::{
     Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Empty, Flex,
-    Hoverable, MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
+    Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius,
+    Shrinkable, Text,
 };
 use twarpui::text_layout::ClipConfig;
 use twarpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
@@ -300,7 +301,7 @@ impl BrowserView {
                     .buffer_text(ctx)
                     .trim()
                     .to_owned();
-                if let Some(url) = normalize_browser_url(&input) {
+                if let Some(url) = resolve_omnibar_input(&input) {
                     self.navigate_to_normalized_url(url, ctx);
                 }
             }
@@ -608,8 +609,11 @@ impl BrowserView {
                 tab.close_button.clone(),
                 BrowserViewAction::CloseTab(index),
             );
+            // SpaceBetween pins the title to the left edge and the close
+            // button to the right edge of the fixed-width tab.
             let tab_row = Flex::row()
                 .with_main_axis_size(MainAxisSize::Max)
+                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_spacing(TAB_TITLE_CLOSE_SPACING)
                 .with_child(Shrinkable::new(1., title).finish())
@@ -1017,6 +1021,19 @@ impl Element for NativeBrowserElement {
     }
 }
 
+/// Resolves what the user typed in the omnibar: a URL when it parses as one,
+/// otherwise a Google search for the raw input.
+fn resolve_omnibar_input(input: &str) -> Option<String> {
+    if input.is_empty() {
+        return None;
+    }
+    normalize_browser_url(input).or_else(|| {
+        Url::parse_with_params("https://www.google.com/search", &[("q", input)])
+            .ok()
+            .map(|url| url.to_string())
+    })
+}
+
 pub(crate) fn normalize_browser_url(input: &str) -> Option<String> {
     let trimmed = input.trim();
     if trimmed.is_empty() || trimmed.chars().any(char::is_whitespace) {
@@ -1053,4 +1070,38 @@ fn host_from_url(url: &str) -> Option<String> {
     Url::parse(url)
         .ok()
         .and_then(|url| url.host_str().map(ToOwned::to_owned))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn omnibar_urls_pass_through() {
+        assert_eq!(
+            resolve_omnibar_input("example.com").as_deref(),
+            Some("https://example.com/")
+        );
+        assert_eq!(
+            resolve_omnibar_input("http://localhost:3000").as_deref(),
+            Some("http://localhost:3000/")
+        );
+    }
+
+    #[test]
+    fn omnibar_non_urls_become_google_searches() {
+        assert_eq!(
+            resolve_omnibar_input("weather").as_deref(),
+            Some("https://www.google.com/search?q=weather")
+        );
+        assert_eq!(
+            resolve_omnibar_input("rust borrow checker").as_deref(),
+            Some("https://www.google.com/search?q=rust+borrow+checker")
+        );
+    }
+
+    #[test]
+    fn omnibar_empty_input_is_ignored() {
+        assert_eq!(resolve_omnibar_input(""), None);
+    }
 }
