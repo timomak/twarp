@@ -1813,7 +1813,11 @@ impl PaneGroup {
             )),
             LeafContents::Browser(snapshot) => {
                 let pane: Box<dyn AnyPaneContent + 'static> =
-                    Box::new(BrowserPane::new_restore(snapshot.url, ctx));
+                    Box::new(BrowserPane::new_restore(
+                        snapshot.url,
+                        snapshot.bound_claude_session,
+                        ctx,
+                    ));
                 let pane_id = pane.as_pane().id();
                 pane_contents.insert(pane_id, pane);
                 let focus = InitialFocus {

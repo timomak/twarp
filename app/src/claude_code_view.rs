@@ -4616,12 +4616,17 @@ impl ClaudeCodeView {
         .with_height(14.)
         .finish();
 
+        // Title cluster left; count / Clear / chevron pinned to the right
+        // edge (the expanding spacer soaks up the middle).
         let mut header_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max)
             .with_spacing(8.)
             .with_child(glyph)
-            .with_child(Shrinkable::new(1., title).finish())
+            .with_child(title)
+            .with_child(
+                Shrinkable::new(1., twarpui::elements::Empty::new().finish()).finish(),
+            )
             .with_child(count);
         if clearable {
             let clear_label = appearance
@@ -4938,12 +4943,17 @@ impl ClaudeCodeView {
         // "Clear" button — only when there's something non-running to clear. It
         // lives inside the header row, so the header defers its click to the
         // child (below) to keep a Clear tap from also toggling the panel.
+        // Title cluster left; count / Clear / chevron pinned to the right
+        // edge (the expanding spacer soaks up the middle).
         let mut header_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max)
             .with_spacing(8.)
             .with_child(glyph)
-            .with_child(Shrinkable::new(1., title).finish())
+            .with_child(title)
+            .with_child(
+                Shrinkable::new(1., twarpui::elements::Empty::new().finish()).finish(),
+            )
             .with_child(count);
         if clearable {
             let clear_label = appearance
@@ -7039,6 +7049,33 @@ impl BackingView for ClaudeCodeView {
                     crate::pane_links::locate_browser_pane_for_session(&self.session_id, ctx)
                 {
                     crate::pane_links::focus_located_pane(window_id, locator, ctx);
+                } else {
+                    // twarp 14o: no bound browser (yet) — the globe opens one
+                    // next to this session, bound to it, and focuses it
+                    // (user-initiated, unlike the MCP's unfocused opens).
+                    let session_id = self.session_id.clone();
+                    let opened = WorkspaceRegistry::as_ref(ctx)
+                        .all_workspaces(ctx)
+                        .into_iter()
+                        .any(|(_, workspace)| {
+                            workspace.update(ctx, |workspace, ctx| {
+                                workspace.open_browser_pane_for_claude_session(
+                                    &session_id,
+                                    None,
+                                    ctx,
+                                )
+                            })
+                        });
+                    if opened {
+                        if let Some((window_id, locator)) =
+                            crate::pane_links::locate_browser_pane_for_session(
+                                &self.session_id,
+                                ctx,
+                            )
+                        {
+                            crate::pane_links::focus_located_pane(window_id, locator, ctx);
+                        }
+                    }
                 }
             }
         }
