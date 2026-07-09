@@ -12467,33 +12467,24 @@ impl Workspace {
             return;
         }
 
-        // Resume with the SAME defaults a freshly typed `claude` would get. Once
-        // the last-used store is seeded, `ClaudeCodeView::new` fills the defaults
-        // from the previous session, so this passes none (an empty `launch`).
-        // Only during the first-run bootstrap (store empty) do we resolve the
-        // user's `claude` alias (e.g. `--permission-mode`, `--effort`,
-        // `--dangerously-skip-permissions`) from the active terminal session —
-        // without that seed the pane would open in bare ask-mode (twarp 07 §2).
-        let launch = if crate::claude_code_session_defaults::ClaudeSessionDefaultsModel::as_ref(ctx)
-            .is_seeded()
-        {
-            Default::default()
-        } else {
-            self.get_pane_group_view(self.active_tab_index)
-                .and_then(|group| {
-                    group.read(ctx, |pane_group, ctx| {
-                        pane_group.active_session_view(ctx).and_then(|terminal| {
-                            terminal.read(ctx, |terminal, ctx| {
-                                terminal
-                                    .input()
-                                    .as_ref(ctx)
-                                    .claude_alias_launch_options(ctx)
-                            })
+        // Resume with the SAME defaults a freshly typed `claude` would get.
+        // Feature 16a moved those defaults to Agent settings, while explicit
+        // alias flags remain launch options that win over the Chat row.
+        let launch = self
+            .get_pane_group_view(self.active_tab_index)
+            .and_then(|group| {
+                group.read(ctx, |pane_group, ctx| {
+                    pane_group.active_session_view(ctx).and_then(|terminal| {
+                        terminal.read(ctx, |terminal, ctx| {
+                            terminal
+                                .input()
+                                .as_ref(ctx)
+                                .claude_alias_launch_options(ctx)
                         })
                     })
                 })
-                .unwrap_or_default()
-        };
+            })
+            .unwrap_or_default();
         let pane = ClaudeCodePane::new_resume(
             crate::claude_code_view::ResumeSession {
                 session_id,
