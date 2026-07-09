@@ -18,9 +18,13 @@ use super::{
 use crate::{
     app_state::CLIAgent,
     appearance::Appearance,
+    menu::{MenuItem, MenuItemFields},
     report_if_error,
     settings::{self, AgentSettings},
-    view_components::{Dropdown, DropdownItem},
+    view_components::{
+        dropdown::{DropdownAction, DropdownItem},
+        Dropdown,
+    },
 };
 
 const PAGE_TITLE: &str = "Agent";
@@ -50,7 +54,7 @@ impl AgentSettingsPageView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let backend_dropdown = ctx.add_typed_action_view(|ctx| {
             let mut dropdown = Dropdown::new(ctx);
-            dropdown.set_items(backend_items(), ctx);
+            dropdown.set_rich_items(backend_items(), ctx);
             dropdown
                 .set_selected_by_action(AgentSettingsPageAction::SetBackend(CLIAgent::Claude), ctx);
             dropdown.set_top_bar_max_width(220.);
@@ -58,7 +62,7 @@ impl AgentSettingsPageView {
         });
         let chat_provider_dropdown = ctx.add_typed_action_view(|ctx| {
             let mut dropdown = Dropdown::new(ctx);
-            dropdown.set_items(chat_provider_items(), ctx);
+            dropdown.set_rich_items(chat_provider_items(), ctx);
             dropdown.set_selected_by_action(
                 AgentSettingsPageAction::SetChatProvider(CLIAgent::Claude),
                 ctx,
@@ -122,11 +126,11 @@ impl AgentSettingsPageView {
             .to_owned();
 
         self.backend_dropdown.update(ctx, |dropdown, ctx| {
-            dropdown.set_items(backend_items(), ctx);
+            dropdown.set_rich_items(backend_items(), ctx);
             dropdown.set_selected_by_action(AgentSettingsPageAction::SetBackend(backend), ctx);
         });
         self.chat_provider_dropdown.update(ctx, |dropdown, ctx| {
-            dropdown.set_items(chat_provider_items(), ctx);
+            dropdown.set_rich_items(chat_provider_items(), ctx);
             dropdown.set_selected_by_action(
                 AgentSettingsPageAction::SetChatProvider(chat_provider),
                 ctx,
@@ -362,38 +366,55 @@ impl SettingsWidget for AgentSettingsWidget {
     }
 }
 
-fn backend_items() -> Vec<DropdownItem<AgentSettingsPageAction>> {
+fn backend_items() -> Vec<MenuItem<DropdownAction<AgentSettingsPageAction>>> {
     vec![
-        DropdownItem::new(
+        agent_dropdown_item(
             "Claude",
             AgentSettingsPageAction::SetBackend(CLIAgent::Claude),
+            false,
         ),
-        DropdownItem::new(
+        agent_dropdown_item(
             "Codex (coming soon)",
             AgentSettingsPageAction::SetBackend(CLIAgent::Codex),
+            true,
         ),
-        DropdownItem::new(
+        agent_dropdown_item(
             "Gemini (coming soon)",
             AgentSettingsPageAction::SetBackend(CLIAgent::Gemini),
+            true,
         ),
     ]
 }
 
-fn chat_provider_items() -> Vec<DropdownItem<AgentSettingsPageAction>> {
+fn chat_provider_items() -> Vec<MenuItem<DropdownAction<AgentSettingsPageAction>>> {
     vec![
-        DropdownItem::new(
+        agent_dropdown_item(
             "Claude",
             AgentSettingsPageAction::SetChatProvider(CLIAgent::Claude),
+            false,
         ),
-        DropdownItem::new(
+        agent_dropdown_item(
             "Codex (coming soon)",
             AgentSettingsPageAction::SetChatProvider(CLIAgent::Codex),
+            true,
         ),
-        DropdownItem::new(
+        agent_dropdown_item(
             "Gemini (coming soon)",
             AgentSettingsPageAction::SetChatProvider(CLIAgent::Gemini),
+            true,
         ),
     ]
+}
+
+fn agent_dropdown_item(
+    label: &'static str,
+    action: AgentSettingsPageAction,
+    disabled: bool,
+) -> MenuItem<DropdownAction<AgentSettingsPageAction>> {
+    MenuItemFields::new(label)
+        .with_on_select_action(DropdownAction::SelectActionAndClose(action))
+        .with_disabled(disabled)
+        .into_item()
 }
 
 fn chat_model_items() -> Vec<DropdownItem<AgentSettingsPageAction>> {
