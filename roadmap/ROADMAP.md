@@ -22,7 +22,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 11 | [Git blame](11-git-blame/STATUS.md) | not-started | — | — |
 | 12 | [Project search & replace](12-project-search-replace/STATUS.md) | not-started | — | — |
 | 13 | [MCP viewer in Claude pane](13-mcp-viewer/STATUS.md) | merged | [#91](https://github.com/timomak/twarp/pull/91) | 13a [#95](https://github.com/timomak/twarp/pull/95) |
-| 14 | [Built-in browser (Claude-debuggable)](14-builtin-browser/STATUS.md) | merged (phase 3 14g–14l shipped 2026-07-09) | [#96](https://github.com/timomak/twarp/pull/96) | 14a [#111](https://github.com/timomak/twarp/pull/111), 14b [#112](https://github.com/timomak/twarp/pull/112), 14c [#113](https://github.com/timomak/twarp/pull/113), 14d [#114](https://github.com/timomak/twarp/pull/114), 14e [#115](https://github.com/timomak/twarp/pull/115), 14f (fleet), 14g–14l [#171](https://github.com/timomak/twarp/pull/171)–[#177](https://github.com/timomak/twarp/pull/177) |
+| 14 | [Built-in browser (Claude-debuggable)](14-builtin-browser/STATUS.md) | merged (phase 3 14g–14l shipped 2026-07-09) | [#96](https://github.com/timomak/twarp/pull/96) | 14a [#111](https://github.com/timomak/twarp/pull/111), 14b [#112](https://github.com/timomak/twarp/pull/112), 14c [#113](https://github.com/timomak/twarp/pull/113), 14d [#114](https://github.com/timomak/twarp/pull/114), 14e [#115](https://github.com/timomak/twarp/pull/115), 14f (fleet), 14g–14l [#171](https://github.com/timomak/twarp/pull/171)–[#178](https://github.com/timomak/twarp/pull/178) |
 | 15 | [Computer control overlay (Claude drives the Mac)](15-computer-control/STATUS.md) | merged | — | — |
 | 16 | [Agent settings page](16-agent-settings/STATUS.md) | impl-pending | — | — |
 
