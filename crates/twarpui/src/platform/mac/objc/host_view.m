@@ -1250,91 +1250,170 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
 
 @end
 
+// twarp 14m: WKWebView (and the entry bookkeeping around it) is
+// main-thread-only, but the browser MCP invokes these shims from a tokio
+// worker thread. [WKWebView goBack] hard-asserts off-main (EXC_BREAKPOINT in
+// WebPageProxy::goBack — live crash 2026-07-09); the others are silent UB.
+// Every shim therefore hops to the main queue: fire-and-forget for commands,
+// synchronous for reads (cheap main-thread work only — no re-entrant waits,
+// so no deadlock pairing exists with the MCP thread).
+static void warp_host_on_main_async(dispatch_block_t block) {
+    if ([NSThread isMainThread]) {
+        block();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), block);
+    }
+}
+
+static void warp_host_on_main_sync(NS_NOESCAPE dispatch_block_t block) {
+    if ([NSThread isMainThread]) {
+        block();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), block);
+    }
+}
+
 uintptr_t warp_host_create_webview(WarpHostView *host, BOOL persistentDataStore) {
-    return [host createNativeWebViewWithPersistentDataStore:persistentDataStore];
+    __block uintptr_t webViewId = 0;
+    warp_host_on_main_sync(^{
+      webViewId = [host createNativeWebViewWithPersistentDataStore:persistentDataStore];
+    });
+    return webViewId;
 }
 
 void warp_host_install_automation_script(WarpHostView *host, uintptr_t webViewId, NSString *source) {
-    [host installNativeWebViewAutomationScript:(NSUInteger)webViewId source:source];
+    warp_host_on_main_async(^{
+      [host installNativeWebViewAutomationScript:(NSUInteger)webViewId source:source];
+    });
 }
 
 void warp_host_set_webview_frame(WarpHostView *host, uintptr_t webViewId, NSRect frame) {
-    [host setNativeWebViewFrame:(NSUInteger)webViewId frame:frame];
+    warp_host_on_main_async(^{
+      [host setNativeWebViewFrame:(NSUInteger)webViewId frame:frame];
+    });
 }
 
 void warp_host_set_webview_hidden(WarpHostView *host, uintptr_t webViewId, BOOL hidden) {
-    [host setNativeWebViewHidden:(NSUInteger)webViewId hidden:hidden];
+    warp_host_on_main_async(^{
+      [host setNativeWebViewHidden:(NSUInteger)webViewId hidden:hidden];
+    });
 }
 
 void warp_host_set_webview_input_blocked(WarpHostView *host, uintptr_t webViewId, BOOL blocked) {
-    [host setNativeWebViewInputBlocked:(NSUInteger)webViewId blocked:blocked];
+    warp_host_on_main_async(^{
+      [host setNativeWebViewInputBlocked:(NSUInteger)webViewId blocked:blocked];
+    });
 }
 
 void warp_host_set_webview_annotation_capture(WarpHostView *host, uintptr_t webViewId, BOOL enabled) {
-    [host setNativeWebViewAnnotationCapture:(NSUInteger)webViewId enabled:enabled];
+    warp_host_on_main_async(^{
+      [host setNativeWebViewAnnotationCapture:(NSUInteger)webViewId enabled:enabled];
+    });
 }
 
 BOOL warp_host_take_webview_annotation_click(WarpHostView *host,
                                              uintptr_t webViewId,
                                              double *x,
                                              double *y) {
-    return [host takeNativeWebViewAnnotationClick:(NSUInteger)webViewId x:x y:y];
+    __block BOOL taken = NO;
+    warp_host_on_main_sync(^{
+      taken = [host takeNativeWebViewAnnotationClick:(NSUInteger)webViewId x:x y:y];
+    });
+    return taken;
 }
 
 void warp_host_load_url(WarpHostView *host, uintptr_t webViewId, NSString *urlString) {
-    [host loadNativeWebView:(NSUInteger)webViewId urlString:urlString];
+    warp_host_on_main_async(^{
+      [host loadNativeWebView:(NSUInteger)webViewId urlString:urlString];
+    });
 }
 
 void warp_host_go_back(WarpHostView *host, uintptr_t webViewId) {
-    [host goBackNativeWebView:(NSUInteger)webViewId];
+    warp_host_on_main_async(^{
+      [host goBackNativeWebView:(NSUInteger)webViewId];
+    });
 }
 
 void warp_host_go_forward(WarpHostView *host, uintptr_t webViewId) {
-    [host goForwardNativeWebView:(NSUInteger)webViewId];
+    warp_host_on_main_async(^{
+      [host goForwardNativeWebView:(NSUInteger)webViewId];
+    });
 }
 
 void warp_host_reload(WarpHostView *host, uintptr_t webViewId) {
-    [host reloadNativeWebView:(NSUInteger)webViewId];
+    warp_host_on_main_async(^{
+      [host reloadNativeWebView:(NSUInteger)webViewId];
+    });
 }
 
 void warp_host_stop_loading(WarpHostView *host, uintptr_t webViewId) {
-    [host stopLoadingNativeWebView:(NSUInteger)webViewId];
+    warp_host_on_main_async(^{
+      [host stopLoadingNativeWebView:(NSUInteger)webViewId];
+    });
 }
 
 BOOL warp_host_can_go_back(WarpHostView *host, uintptr_t webViewId) {
-    return [host nativeWebViewCanGoBack:(NSUInteger)webViewId];
+    __block BOOL result = NO;
+    warp_host_on_main_sync(^{
+      result = [host nativeWebViewCanGoBack:(NSUInteger)webViewId];
+    });
+    return result;
 }
 
 BOOL warp_host_can_go_forward(WarpHostView *host, uintptr_t webViewId) {
-    return [host nativeWebViewCanGoForward:(NSUInteger)webViewId];
+    __block BOOL result = NO;
+    warp_host_on_main_sync(^{
+      result = [host nativeWebViewCanGoForward:(NSUInteger)webViewId];
+    });
+    return result;
 }
 
 BOOL warp_host_is_loading(WarpHostView *host, uintptr_t webViewId) {
-    return [host nativeWebViewIsLoading:(NSUInteger)webViewId];
+    __block BOOL result = NO;
+    warp_host_on_main_sync(^{
+      result = [host nativeWebViewIsLoading:(NSUInteger)webViewId];
+    });
+    return result;
 }
 
 BOOL warp_host_copy_url(WarpHostView *host, uintptr_t webViewId, char *buffer, uintptr_t bufferLength) {
-    return [host copyNativeWebViewURL:(NSUInteger)webViewId
-                               buffer:buffer
-                         bufferLength:(NSUInteger)bufferLength];
+    __block BOOL result = NO;
+    warp_host_on_main_sync(^{
+      result = [host copyNativeWebViewURL:(NSUInteger)webViewId
+                                   buffer:buffer
+                             bufferLength:(NSUInteger)bufferLength];
+    });
+    return result;
 }
 
 BOOL warp_host_copy_title(WarpHostView *host, uintptr_t webViewId, char *buffer, uintptr_t bufferLength) {
-    return [host copyNativeWebViewTitle:(NSUInteger)webViewId
-                                 buffer:buffer
-                           bufferLength:(NSUInteger)bufferLength];
+    __block BOOL result = NO;
+    warp_host_on_main_sync(^{
+      result = [host copyNativeWebViewTitle:(NSUInteger)webViewId
+                                     buffer:buffer
+                               bufferLength:(NSUInteger)bufferLength];
+    });
+    return result;
 }
 
 BOOL warp_host_copy_console_json(WarpHostView *host, uintptr_t webViewId, char *buffer, uintptr_t bufferLength) {
-    return [host copyNativeWebViewConsoleJSON:(NSUInteger)webViewId
-                                       buffer:buffer
-                                 bufferLength:(NSUInteger)bufferLength];
+    __block BOOL result = NO;
+    warp_host_on_main_sync(^{
+      result = [host copyNativeWebViewConsoleJSON:(NSUInteger)webViewId
+                                           buffer:buffer
+                                     bufferLength:(NSUInteger)bufferLength];
+    });
+    return result;
 }
 
 BOOL warp_host_copy_network_json(WarpHostView *host, uintptr_t webViewId, char *buffer, uintptr_t bufferLength) {
-    return [host copyNativeWebViewNetworkJSON:(NSUInteger)webViewId
-                                       buffer:buffer
-                                 bufferLength:(NSUInteger)bufferLength];
+    __block BOOL result = NO;
+    warp_host_on_main_sync(^{
+      result = [host copyNativeWebViewNetworkJSON:(NSUInteger)webViewId
+                                           buffer:buffer
+                                     bufferLength:(NSUInteger)bufferLength];
+    });
+    return result;
 }
 
 void warp_host_evaluate_javascript(WarpHostView *host,
@@ -1342,28 +1421,43 @@ void warp_host_evaluate_javascript(WarpHostView *host,
                                    NSString *script,
                                    WarpBrowserStringCallback callback,
                                    void *context) {
-    [host evaluateNativeWebView:(NSUInteger)webViewId script:script callback:callback context:context];
+    warp_host_on_main_async(^{
+      [host evaluateNativeWebView:(NSUInteger)webViewId
+                           script:script
+                         callback:callback
+                          context:context];
+    });
 }
 
 void warp_host_take_snapshot(WarpHostView *host,
                              uintptr_t webViewId,
                              WarpBrowserBytesCallback callback,
                              void *context) {
-    [host takeNativeWebViewSnapshot:(NSUInteger)webViewId callback:callback context:context];
+    warp_host_on_main_async(^{
+      [host takeNativeWebViewSnapshot:(NSUInteger)webViewId callback:callback context:context];
+    });
 }
 
 void warp_host_focus_webview(WarpHostView *host, uintptr_t webViewId) {
-    [host focusNativeWebView:(NSUInteger)webViewId];
+    warp_host_on_main_async(^{
+      [host focusNativeWebView:(NSUInteger)webViewId];
+    });
 }
 
 void warp_host_destroy_webview(WarpHostView *host, uintptr_t webViewId) {
-    [host destroyNativeWebView:(NSUInteger)webViewId];
+    warp_host_on_main_async(^{
+      [host destroyNativeWebView:(NSUInteger)webViewId];
+    });
 }
 
 void warp_host_clear_browser_website_data(WarpHostView *host) {
-    [host clearNativeBrowserWebsiteData];
+    warp_host_on_main_async(^{
+      [host clearNativeBrowserWebsiteData];
+    });
 }
 
 void warp_host_prepare_webviews_for_frame(WarpHostView *host) {
-    [host prepareNativeWebViewsForFrame];
+    warp_host_on_main_async(^{
+      [host prepareNativeWebViewsForFrame];
+    });
 }
