@@ -25,6 +25,7 @@ use crate::{
     GlobalResourceHandlesProvider,
 };
 use about_page::AboutPageView;
+use agent_page::AgentSettingsPageView;
 use appearance_page::{AppearancePageAction, AppearanceSettingsPageView};
 use billing_and_usage_page::{BillingAndUsagePageEvent, BillingAndUsagePageView};
 use code_page::CodeSubpage;
@@ -73,6 +74,7 @@ use twarpui::{
 
 mod about_page;
 mod admin_actions;
+mod agent_page;
 mod appearance_page;
 mod billing_and_usage;
 // twarp: 2c-d — visibility raised to pub(crate) so lib.rs can register the
@@ -190,6 +192,7 @@ pub enum SettingsSection {
     About,
     #[default]
     Account,
+    Agent,
     MCPServers,
     BillingAndUsage,
     Appearance,
@@ -222,6 +225,7 @@ impl Display for SettingsSection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SettingsSection::BillingAndUsage => write!(f, "Billing and usage"),
+            SettingsSection::Agent => write!(f, "Agent"),
             SettingsSection::Keybindings => write!(f, "Keyboard shortcuts"),
             SettingsSection::SharedBlocks => write!(f, "Shared blocks"),
             SettingsSection::MCPServers => write!(f, "MCP Servers"),
@@ -280,6 +284,7 @@ impl FromStr for SettingsSection {
         match s {
             "About" => Ok(Self::About),
             "Account" => Ok(Self::Account),
+            "Agent" => Ok(Self::Agent),
             "MCP Servers" => Ok(Self::MCPServers),
             "Billing and usage" => Ok(Self::BillingAndUsage),
             "Appearance" => Ok(Self::Appearance),
@@ -964,6 +969,7 @@ macro_rules! update_page {
         match $handle {
             SettingsPageViewHandle::Main(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Appearance(handle) => $ctx.update_view(handle, $update),
+            SettingsPageViewHandle::Agent(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Features(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::SharedBlocks(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Keybindings(handle) => $ctx.update_view(handle, $update),
@@ -1066,6 +1072,8 @@ impl SettingsView {
         // Custom shortcuts page (moved out of the left-panel toolbelt).
         let shortcuts_page_handle = ctx.add_typed_action_view(ShortcutsSettingsPageView::new);
 
+        let agent_page_handle = ctx.add_typed_action_view(AgentSettingsPageView::new);
+
         // Code page
         let code_page_handle = ctx.add_typed_action_view(CodeSettingsPageView::new);
         let code_page_handle_for_nav = code_page_handle.clone();
@@ -1150,6 +1158,7 @@ impl SettingsView {
             SettingsPage::new(code_page_handle),
             SettingsPage::new(teams_page_handle),
             SettingsPage::new(appearance_page_handle),
+            SettingsPage::new(agent_page_handle),
             SettingsPage::new(features_page_handle),
             SettingsPage::new(keybindings_handle),
             SettingsPage::new(shortcuts_page_handle),
@@ -1187,6 +1196,7 @@ impl SettingsView {
             )),
             SettingsNavItem::Page(SettingsSection::Teams),
             SettingsNavItem::Page(SettingsSection::Appearance),
+            SettingsNavItem::Page(SettingsSection::Agent),
             SettingsNavItem::Page(SettingsSection::Features),
             SettingsNavItem::Page(SettingsSection::Keybindings),
             SettingsNavItem::Page(SettingsSection::Shortcuts),
@@ -1828,6 +1838,7 @@ impl SettingsView {
             SettingsPageViewHandle::Keybindings(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Features(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Appearance(v) => v.as_ref(app).should_render(app),
+            SettingsPageViewHandle::Agent(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::BillingAndUsage(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::About(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::OzCloudAPIKeys(v) => v.as_ref(app).should_render(app),

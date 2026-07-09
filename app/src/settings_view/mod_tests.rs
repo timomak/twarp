@@ -105,6 +105,7 @@ fn subpage_display_names_are_correct() {
         SettingsSection::OzCloudAPIKeys.to_string(),
         "Oz Cloud API Keys"
     );
+    assert_eq!(SettingsSection::Agent.to_string(), "Agent");
 }
 
 #[test]
@@ -124,6 +125,10 @@ fn subpage_from_str_parses_display_names() {
     assert_eq!(
         SettingsSection::from_str("Oz Cloud API Keys"),
         Ok(SettingsSection::OzCloudAPIKeys)
+    );
+    assert_eq!(
+        SettingsSection::from_str("Agent"),
+        Ok(SettingsSection::Agent)
     );
 }
 

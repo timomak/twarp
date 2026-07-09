@@ -7351,25 +7351,6 @@ impl Input {
             twarp_completer::parsers::simple::all_parsed_commands(command, escape_char).next()?;
         let original: Vec<&str> = first.parts.iter().map(|part| part.as_str()).collect();
 
-        // twarp 07: the user's literally-typed tokens (alias NOT expanded) — the
-        // per-invocation overrides. Skip the same leading env assignments /
-        // program wrappers and the program token the detection loop below skips.
-        // Computed before the alias-expansion match consumes `original`.
-        let typed_args: Vec<String> = {
-            let mut rest: Vec<&str> = Vec::new();
-            let mut seen_program = false;
-            for token in original.iter().copied() {
-                if seen_program {
-                    rest.push(token);
-                } else if token.contains('=') || PROGRAM_WRAPPERS.contains(&token) {
-                    continue;
-                } else {
-                    seen_program = true; // the program token itself; drop it
-                }
-            }
-            rest.into_iter().map(str::to_owned).collect()
-        };
-
         // Expand the user's `claude` alias ourselves (PRODUCT §2). Warp only
         // rewrites the editor text when the "expand aliases" setting is on
         // (see `should_expand_aliases`); with it off, a user's
@@ -7440,19 +7421,11 @@ impl Input {
         // The alias-expanded remainder (alias flags + the user's typed tokens).
         let alias_expanded_args: Vec<String> = tokens.map(str::to_owned).collect();
 
-        // twarp 07: once the last-used store is seeded, the `claude` alias is no
-        // longer a source of session defaults — forward only the user's typed
-        // flags and let the pane inherit model/effort/permission mode from the
-        // previous session (`ClaudeCodeView::new`). Before the first run the
-        // store is empty, so the alias still seeds the defaults (PRODUCT §2).
-        let store_seeded =
-            crate::claude_code_session_defaults::ClaudeSessionDefaultsModel::as_ref(ctx)
-                .is_seeded();
-        let args = if store_seeded {
-            typed_args
-        } else {
-            alias_expanded_args
-        };
+        // Feature 16a: fresh panes are seeded by Agent settings, not the old
+        // last-used store. Explicit launch flags still win, including flags a
+        // user supplies through their `claude` alias, so always forward the
+        // alias-expanded command to the pane launch parser.
+        let args = alias_expanded_args;
         let cwd = self
             .active_block_metadata
             .as_ref()

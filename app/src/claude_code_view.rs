@@ -118,6 +118,7 @@ use crate::pane_group::{
     pane::view::{self, HeaderContent, StandardHeader, StandardHeaderOptions},
     BackingView, PaneConfiguration, PaneEvent, PaneHeaderAction,
 };
+use crate::settings::AgentSettings;
 #[cfg(all(feature = "local_fs", feature = "local_tty"))]
 use crate::terminal::local_shell::LocalShellState;
 use crate::terminal::{
@@ -937,20 +938,13 @@ impl ClaudeCodeView {
             resume_session_id,
         } = launch;
 
-        // twarp 07: a fresh pane inherits the PREVIOUS session's settings. Any
-        // setting the invocation didn't pin (typed flags, or the alias during
-        // the first-run bootstrap) falls back to the persisted last-used store;
-        // the effective settings are then recorded back as the new last-used so
-        // the next pane — and a crash-restored pane — inherits them in turn.
-        let stored = ClaudeSessionDefaultsModel::as_ref(ctx).get().cloned();
-        let model = model.or_else(|| stored.as_ref().and_then(|s| s.model.clone()));
-        let effort = effort.or_else(|| stored.as_ref().and_then(|s| s.effort.clone()));
-        let permission_mode = permission_mode
-            .or_else(|| stored.as_ref().and_then(|s| s.permission_mode))
-            .unwrap_or(PermissionMode::Default);
-        ClaudeSessionDefaultsModel::handle(ctx).update(ctx, |defaults, ctx| {
-            defaults.record(model.clone(), effort.clone(), permission_mode, ctx);
-        });
+        // Feature 16a: the Agent settings Chat row is authoritative for fresh
+        // panes. Explicit launch flags still win, but the old last-used
+        // `claude_session_defaults` row no longer seeds new panes.
+        let chat_config = AgentSettings::as_ref(ctx).chat_launch_config();
+        let model = model.or(chat_config.model);
+        let effort = effort.or(chat_config.effort);
+        let permission_mode = permission_mode.unwrap_or(chat_config.permission_mode);
 
         let input_editor = ctx.add_typed_action_view(|ctx| {
             let appearance = Appearance::as_ref(ctx);

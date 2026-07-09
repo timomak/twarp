@@ -6,11 +6,11 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use super::{
-    about_page::AboutPageView, appearance_page::AppearanceSettingsPageView,
-    billing_and_usage_page::BillingAndUsagePageView, code_page::CodeSettingsPageView,
-    features_page::FeaturesPageView, keybindings::KeybindingsView, main_page::MainSettingsPageView,
-    mcp_servers_page::MCPServersSettingsPageView, privacy_page::PrivacyPageView,
-    shortcuts_page::ShortcutsSettingsPageView,
+    about_page::AboutPageView, agent_page::AgentSettingsPageView,
+    appearance_page::AppearanceSettingsPageView, billing_and_usage_page::BillingAndUsagePageView,
+    code_page::CodeSettingsPageView, features_page::FeaturesPageView, keybindings::KeybindingsView,
+    main_page::MainSettingsPageView, mcp_servers_page::MCPServersSettingsPageView,
+    privacy_page::PrivacyPageView, shortcuts_page::ShortcutsSettingsPageView,
     show_blocks_view::ShowBlocksView, teams_page::TeamsPageView,
     twarp_drive_page::TwarpDriveSettingsPageView, twarpify_page::TwarpifyPageView, SettingsSection,
 };
@@ -93,6 +93,7 @@ pub trait SettingsPageMeta {
 pub enum SettingsPageViewHandle {
     Main(ViewHandle<MainSettingsPageView>),
     Appearance(ViewHandle<AppearanceSettingsPageView>),
+    Agent(ViewHandle<AgentSettingsPageView>),
     Features(ViewHandle<FeaturesPageView>),
     SharedBlocks(ViewHandle<ShowBlocksView>),
     Keybindings(ViewHandle<KeybindingsView>),
@@ -114,6 +115,7 @@ impl SettingsPageViewHandle {
         match self {
             Main(view_handle) => ChildView::new(view_handle).finish(),
             Appearance(view_handle) => ChildView::new(view_handle).finish(),
+            Agent(view_handle) => ChildView::new(view_handle).finish(),
             Features(view_handle) => ChildView::new(view_handle).finish(),
             SharedBlocks(view_handle) => ChildView::new(view_handle).finish(),
             Keybindings(view_handle) => ChildView::new(view_handle).finish(),
