@@ -4,8 +4,8 @@ use std::time::Duration;
 use browser::{BrowserEngine, BrowserProfile};
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
 use twarpui::elements::{
-    Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Empty, Flex,
-    Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius,
+    Align, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Empty,
+    Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius,
     Shrinkable, Text,
 };
 use twarpui::text_layout::ClipConfig;
@@ -139,6 +139,24 @@ struct BrowserHistoryEntry {
     title: String,
 }
 
+/// Tabs waiting to be re-created as native webviews. Engine creation fails
+/// whenever the target native window isn't registered yet (during session
+/// restore or a cross-window pane transfer), so instead of giving up we park
+/// the tab URLs here and let the state poll retry until the window exists.
+struct PendingTabRestore {
+    tabs: Vec<(Option<String>, BrowserProfile)>,
+    active_index: usize,
+}
+
+impl PendingTabRestore {
+    fn single(url: Option<String>) -> Self {
+        Self {
+            tabs: vec![(url, BrowserProfile::Default)],
+            active_index: 0,
+        }
+    }
+}
+
 pub struct BrowserView {
     window_id: WindowId,
     tabs: Vec<BrowserTab>,
@@ -148,6 +166,8 @@ pub struct BrowserView {
     focus_handle: Option<PaneFocusHandle>,
     history: Vec<BrowserHistoryEntry>,
     show_history: bool,
+    pending_restore: Option<PendingTabRestore>,
+    state_poll_active: bool,
     back_button: MouseStateHandle,
     forward_button: MouseStateHandle,
     reload_button: MouseStateHandle,
@@ -177,10 +197,16 @@ impl BrowserView {
 
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new(BROWSER_TITLE));
         let window_id = ctx.window_id();
-        let tabs = BrowserEngine::new(window_id)
+        let tabs: Vec<BrowserTab> = BrowserEngine::new(window_id)
             .map(BrowserTab::new)
             .into_iter()
             .collect();
+        // Engine creation fails when the native window isn't registered yet
+        // (session restore races window creation); park the URL and let the
+        // state poll retry instead of leaving a permanently dead pane.
+        let pending_restore = tabs
+            .is_empty()
+            .then(|| PendingTabRestore::single(initial_url.clone()));
 
         let mut view = Self {
             window_id,
@@ -191,6 +217,8 @@ impl BrowserView {
             focus_handle: None,
             history: Vec::new(),
             show_history: false,
+            pending_restore,
+            state_poll_active: false,
             back_button: Default::default(),
             forward_button: Default::default(),
             reload_button: Default::default(),
@@ -218,7 +246,14 @@ impl BrowserView {
     }
 
     pub fn snapshot_url(&self) -> Option<String> {
-        self.active_tab().and_then(|tab| tab.current_url.clone())
+        self.active_tab()
+            .and_then(|tab| tab.current_url.clone())
+            .or_else(|| {
+                // Still waiting on the native window — persist the URL the
+                // pending restore will load, not nothing.
+                let pending = self.pending_restore.as_ref()?;
+                pending.tabs.get(pending.active_index)?.0.clone()
+            })
     }
 
     pub fn focus_omnibar(&mut self, ctx: &mut ViewContext<Self>) {
@@ -234,6 +269,7 @@ impl BrowserView {
     }
 
     pub fn destroy_webview(&mut self) {
+        self.pending_restore = None;
         for tab in self.tabs.drain(..) {
             tab.engine.destroy();
         }
@@ -317,6 +353,12 @@ impl BrowserView {
             tab.engine.load_url(&url);
             tab.current_url = Some(url.clone());
             tab.is_loading = true;
+        } else if let Some(pending) = self.pending_restore.as_mut() {
+            // No live webview yet — remember the URL so the pending restore
+            // loads it once the native window is available.
+            if let Some(entry) = pending.tabs.get_mut(pending.active_index) {
+                entry.0 = Some(url.clone());
+            }
         }
 
         self.set_omnibar_text(&url, ctx);
@@ -418,13 +460,18 @@ impl BrowserView {
         ctx.notify();
     }
 
-    fn schedule_state_poll(&self, ctx: &mut ViewContext<Self>) {
+    fn schedule_state_poll(&mut self, ctx: &mut ViewContext<Self>) {
+        self.state_poll_active = true;
         ctx.spawn(
             async move {
                 Timer::after(STATE_POLL_INTERVAL).await;
             },
             |me, _, ctx| {
-                if me.tabs.is_empty() {
+                if me.try_restore_pending_tabs(ctx) {
+                    ctx.notify();
+                }
+                if me.tabs.is_empty() && me.pending_restore.is_none() {
+                    me.state_poll_active = false;
                     return;
                 }
 
@@ -434,6 +481,59 @@ impl BrowserView {
                 me.schedule_state_poll(ctx);
             },
         );
+    }
+
+    fn ensure_state_poll(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.state_poll_active {
+            self.schedule_state_poll(ctx);
+        }
+    }
+
+    /// Attempts to turn `pending_restore` back into live webview tabs.
+    /// Returns true when the tabs were (re)created. Engine creation keeps
+    /// failing until the native window registers, so this is called from the
+    /// state poll as a retry loop.
+    fn try_restore_pending_tabs(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+        let Some(pending) = self.pending_restore.as_ref() else {
+            return false;
+        };
+        let Some((_, first_profile)) = pending.tabs.first() else {
+            self.pending_restore = None;
+            return false;
+        };
+        // Probe with the first tab; if the window isn't ready this fails and
+        // the next poll tick retries.
+        let Some(first_engine) = BrowserEngine::new_with_profile(self.window_id, *first_profile)
+        else {
+            return false;
+        };
+
+        let pending = self.pending_restore.take().expect("checked above");
+        let mut first_engine = Some(first_engine);
+        let mut tabs = Vec::with_capacity(pending.tabs.len());
+        for (url, profile) in &pending.tabs {
+            let engine = first_engine
+                .take()
+                .or_else(|| BrowserEngine::new_with_profile(self.window_id, *profile));
+            let Some(engine) = engine else { continue };
+            let mut tab = BrowserTab::new(engine);
+            if let Some(url) = url {
+                tab.engine.load_url(url);
+                tab.current_url = Some(url.clone());
+                tab.is_loading = true;
+            }
+            tabs.push(tab);
+        }
+        self.tabs = tabs;
+        self.active_tab_index = pending
+            .active_index
+            .min(self.tabs.len().saturating_sub(1));
+        for (index, tab) in self.tabs.iter().enumerate() {
+            tab.engine.set_hidden(index != self.active_tab_index);
+        }
+        self.sync_omnibar_to_current_url(ctx);
+        self.update_pane_title(ctx);
+        !self.tabs.is_empty()
     }
 
     fn sync_native_state(&mut self, ctx: &mut ViewContext<Self>) -> bool {
@@ -839,14 +939,26 @@ impl View for BrowserView {
         if let Some(history_panel) = self.render_history_panel(app) {
             column.add_child(history_panel);
         }
-        column
-            .with_child(
-                Shrinkable::new(
-                    1.,
-                    NativeBrowserElement::new(self.browser_engine()).finish(),
-                )
-                .finish(),
+        let content: Box<dyn Element> = if self.browser_engine().is_some() {
+            NativeBrowserElement::new(self.browser_engine()).finish()
+        } else {
+            // No live webview (waiting on the native window during restore or
+            // a cross-window move) — show state instead of a dead blank area.
+            let appearance = Appearance::as_ref(app);
+            let theme = appearance.theme();
+            let label = Text::new_inline(
+                "Reconnecting to browser…",
+                appearance.ui_font_family(),
+                12.,
             )
+            .with_color(theme.sub_text_color(theme.background()).into())
+            .finish();
+            Container::new(Align::new(label).finish())
+                .with_background(theme.background())
+                .finish()
+        };
+        column
+            .with_child(Shrinkable::new(1., content).finish())
             .finish()
     }
 
@@ -860,17 +972,31 @@ impl View for BrowserView {
         target_window_id: WindowId,
         ctx: &mut ViewContext<Self>,
     ) {
-        let url = self.active_current_url();
+        // Webviews are native children of the source window, so they must be
+        // re-created in the target window. Preserve every tab's URL/profile
+        // and let the retry loop rebuild them — the target window may not be
+        // registered yet at the moment of transfer.
+        let pending = if self.tabs.is_empty() {
+            self.pending_restore
+                .take()
+                .unwrap_or_else(|| PendingTabRestore::single(None))
+        } else {
+            PendingTabRestore {
+                tabs: self
+                    .tabs
+                    .iter()
+                    .map(|tab| (tab.current_url.clone(), tab.engine.profile()))
+                    .collect(),
+                active_index: self.active_tab_index,
+            }
+        };
         self.destroy_webview();
         self.window_id = target_window_id;
-        self.tabs = BrowserEngine::new(target_window_id)
-            .map(BrowserTab::new)
-            .into_iter()
-            .collect();
-        self.active_tab_index = 0;
-        if let Some(url) = url {
-            self.navigate_to_normalized_url(url, ctx);
+        self.pending_restore = Some(pending);
+        if self.try_restore_pending_tabs(ctx) {
+            ctx.notify();
         }
+        self.ensure_state_poll(ctx);
     }
 }
 
