@@ -165,6 +165,7 @@ pub mod integration_testing;
 pub mod keyboard;
 pub mod launch_configs;
 pub mod pane_group;
+mod pane_links;
 pub mod resource_center;
 pub mod root_view;
 pub mod search;

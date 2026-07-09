@@ -2058,6 +2058,21 @@ impl PaneGroup {
             .map(|pane| pane.id())
     }
 
+    /// twarp 14n: the Browser pane bound to the given Claude session (14j
+    /// binding), if this pane group hosts it.
+    pub fn find_browser_pane_bound_to_session(
+        &self,
+        session_id: &str,
+        ctx: &AppContext,
+    ) -> Option<PaneId> {
+        self.panes_of::<BrowserPane>()
+            .find(|pane| {
+                !self.is_pane_hidden_for_close(pane.id())
+                    && pane.browser_view(ctx).as_ref(ctx).bound_claude_session() == Some(session_id)
+            })
+            .map(|pane| pane.id())
+    }
+
     /// twarp 14j: iterate over the browser views in this pane group — used by
     /// the browser MCP to prefer panes living in the invoking Claude
     /// session's tab.

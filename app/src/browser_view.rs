@@ -80,6 +80,9 @@ pub enum BrowserViewAction {
     /// twarp 14l-2: arm/disarm annotation mode (next page click becomes an
     /// annotation anchor in the bound Claude session's composer).
     ToggleAnnotation,
+    /// twarp 14n: reveal the Claude pane this browser is bound to (raises its
+    /// window/tab and focuses the composer), wherever it lives.
+    FocusBoundChat,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,6 +194,8 @@ pub struct BrowserView {
     /// instead of reaching the page.
     annotation_armed: bool,
     annotate_button: MouseStateHandle,
+    /// twarp 14n: header button jumping to the bound Claude session.
+    focus_chat_button: MouseStateHandle,
     /// twarp 14l-2/14j: the Claude session this pane belongs to (stamped when
     /// a scoped MCP opens or drives the pane). Annotations land in this
     /// session's composer.
@@ -261,6 +266,7 @@ impl BrowserView {
             take_control_button: Default::default(),
             annotation_armed: false,
             annotate_button: Default::default(),
+            focus_chat_button: Default::default(),
             bound_claude_session: None,
             back_button: Default::default(),
             forward_button: Default::default(),
@@ -549,6 +555,15 @@ impl BrowserView {
         self.bound_claude_session = Some(session_id);
     }
 
+    pub(crate) fn bound_claude_session(&self) -> Option<&str> {
+        self.bound_claude_session.as_deref()
+    }
+
+    /// twarp 14n: whether the agent is actively driving this pane right now.
+    pub(crate) fn agent_lease_active(&self) -> bool {
+        self.agent_lease.is_some()
+    }
+
     /// twarp 14l: called (via the MCP bridge) on every automation tool call.
     pub(crate) fn touch_agent_lease(&mut self, ctx: &mut ViewContext<Self>) {
         let was_held = self.agent_lease.is_some();
@@ -670,6 +685,19 @@ impl BrowserView {
         };
         editor.update(ctx, |editor, ctx| editor.set_buffer_text(&text, ctx));
         claude_view.update(ctx, |view, ctx| view.focus(ctx));
+    }
+
+    /// twarp 14n: reveal the bound Claude pane — the browser-side twin of the
+    /// Claude header's globe button.
+    fn focus_bound_chat(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(session_id) = self.bound_claude_session.clone() else {
+            return;
+        };
+        if let Some((window_id, locator)) =
+            crate::pane_links::locate_claude_pane_for_session(&session_id, ctx)
+        {
+            crate::pane_links::focus_located_pane(window_id, locator, ctx);
+        }
     }
 
     fn find_bound_claude_view(
@@ -962,6 +990,18 @@ impl BrowserView {
 
         // Push the pane-level close/overflow buttons to the right edge.
         row.add_child(Shrinkable::new(1., Empty::new().finish()).finish());
+
+        // twarp 14n: chat button — jumps to the Claude session this browser
+        // is bound to (the browser-side twin of the Claude header's globe).
+        if self.bound_claude_session.is_some() {
+            row.add_child(self.render_toolbar_button(
+                appearance,
+                icons::Icon::MessageChatSquare,
+                true,
+                self.focus_chat_button.clone(),
+                BrowserViewAction::FocusBoundChat,
+            ));
+        }
         row.add_child(render_pane_header_buttons::<
             BrowserViewAction,
             BrowserViewCustomAction,
@@ -1303,6 +1343,7 @@ impl TypedActionView for BrowserView {
             BrowserViewAction::ClearDefaultProfileData => self.clear_default_profile_data(ctx),
             BrowserViewAction::TakeControl => self.release_agent_lease(ctx),
             BrowserViewAction::ToggleAnnotation => self.toggle_annotation_mode(ctx),
+            BrowserViewAction::FocusBoundChat => self.focus_bound_chat(ctx),
         }
     }
 }
