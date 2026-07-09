@@ -726,6 +726,12 @@ pub struct ClaudeCodeView {
     /// locks: it keeps the picks visibly checked (so the answer doesn't appear
     /// to vanish) and drops its live controls while `claude` produces the reply.
     question_submitted: HashMap<usize, HashSet<usize>>,
+    /// Transcript indices of `User` items that are typed `AskUserQuestion`
+    /// answers (PRODUCT §1). They render as user bubbles but travel back as the
+    /// question's `can_use_tool` answer, so the session file never stores them
+    /// as user turns — fork turn-counting must skip them to stay aligned with
+    /// the file ([`Self::fork_conversation`]).
+    question_answer_items: HashSet<usize>,
     /// `AskUserQuestion` permissions held open for the user to answer inline
     /// (PRODUCT §1), keyed by the gated `tool_use_id` → the control-protocol
     /// `request_id` to answer. `claude` blocks the turn on this `can_use_tool`
@@ -1054,6 +1060,7 @@ impl ClaudeCodeView {
             session_epoch: 0,
             question_selected: HashMap::new(),
             question_submitted: HashMap::new(),
+            question_answer_items: HashSet::new(),
             pending_question_permission: HashMap::new(),
             question_option_mouse: std::cell::RefCell::new(HashMap::new()),
             question_submit_mouse: std::cell::RefCell::new(HashMap::new()),
@@ -2301,6 +2308,10 @@ impl ClaudeCodeView {
         self.question_submitted.insert(item, picks);
         self.transcript
             .apply(TranscriptEvent::UserMessage(message.text.clone()));
+        // The bubble is display-only — the file records the answer inside the
+        // tool call, not as a user turn (see `question_answer_items`).
+        self.question_answer_items
+            .insert(self.transcript.items().len().saturating_sub(1));
         if let Some(tx) = &self.message_tx {
             let _ = tx.try_send(StdinCommand::Control {
                 request_id,
@@ -3290,8 +3301,11 @@ impl ClaudeCodeView {
         self.diff_cards.clear();
         self.thinking_ui.clear();
         // The rebuilt transcript carries no live control requests, so drop any
-        // held question permission (its `claude` process is gone).
+        // held question permission (its `claude` process is gone). Typed
+        // answers rebuild from the file as tool results, not user bubbles, so
+        // their live-echo indices are stale too.
         self.pending_question_permission.clear();
+        self.question_answer_items.clear();
         for event in history {
             self.ingest_event(event, ctx);
         }
@@ -3836,10 +3850,15 @@ impl ClaudeCodeView {
 
         // Keep every user turn up to and including the one this response belongs
         // to. `User` items map 1:1 to the `UserMessage` events `fork_session_file`
-        // counts, so the boundary the user sees and the file cut agree.
+        // counts — except typed `AskUserQuestion` answers, which render as user
+        // bubbles but are stored inside the tool call, not as user turns — so
+        // the boundary the user sees and the file cut agree.
         let keep_user_turns = self.transcript.items()[..=index]
             .iter()
-            .filter(|item| matches!(item, TranscriptItem::User(_)))
+            .enumerate()
+            .filter(|(i, item)| {
+                matches!(item, TranscriptItem::User(_)) && !self.question_answer_items.contains(i)
+            })
             .count();
         if keep_user_turns == 0 {
             return;
