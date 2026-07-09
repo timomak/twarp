@@ -51,6 +51,8 @@ Driven end-to-end in one session from owner notes + a live MCP test drive. All m
 - [x] **14k — Automation robustness** ([#175](https://github.com/timomak/twarp/pull/175)): CSP-proof `browser_eval` (native expression eval, not page-world string-eval); `browser_snapshot` selector/max_elements filters; new verbs hover/select/scroll/back/forward/close. (Isolated-`WKContentWorld` split deferred — no driving bug once eval went native.)
 - [x] **14l — Shared control** ([#176](https://github.com/timomak/twarp/pull/176) + annotations [#178](https://github.com/timomak/twarp/pull/178)): agent input lease — while Claude drives, a native shield locks the *page* (chrome stays interactive), banner + "Take control"; lease renews per tool call, expires 4s idle. Annotation mode: toolbar button arms one click → element under it (selector/name via `describePoint`) pre-fills the bound Claude session's composer for the user's note. Idle panes browse normally; annotate works in both modes.
 
+- [x] **14m — Main-thread webview shims** ([#179](https://github.com/timomak/twarp/pull/179)): live crash on first browser_back use (`EXC_BREAKPOINT`, WKWebView goBack asserts off-main — the MCP runs on tokio). Every `warp_host_*` webview shim now hops to the main queue (async commands, sync reads); latent off-main UB in load/eval/getters/console reads fixed with it.
+
 Known follow-ups (not scheduled): per-session server teardown on session end (tiny leak: one localhost listener per session per app run); isolated content world for tamper-proofing; annotation screenshot crops; richer network capture (subresources/WebSocket).
 
 ## What's already built
