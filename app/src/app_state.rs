@@ -602,6 +602,9 @@ impl CLIAgent {
     pub fn display_name(&self) -> &'static str {
         self.serialized_name()
     }
+    pub fn is_agent_settings_enabled(&self) -> bool {
+        matches!(self, CLIAgent::Claude)
+    }
     pub fn skill_command_prefix(&self) -> &'static str {
         ""
     }

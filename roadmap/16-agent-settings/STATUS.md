@@ -16,7 +16,7 @@ A new **Agent** settings page (backend selector, local-auth reuse or API key via
 
 ## Sub-phases (see TECH.md §Sub-phase plan)
 
-- [ ] **16a — Agent page scaffold.** Agent settings page scaffold + unified authoritative Chat config seeding the spawn seam.
+- [x] **16a — Agent page scaffold.** Agent settings page scaffold + unified authoritative Chat config seeding the spawn seam.
 - [ ] **16b — Auth probe and keychain.** Auth status probe + API-key storage in the OS keychain.
 - [ ] **16c — Per-action matrix.** Per-action model matrix (terminal + reply rows) + enable toggles.
 - [ ] **16d — Provider abstraction hardening.** Capability model + adapter seam; Claude-only impl.
