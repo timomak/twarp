@@ -29,6 +29,41 @@ typedef void (*WarpBrowserBytesCallback)(void *, const uint8_t *, uintptr_t, con
 - (instancetype)initWithEntry:(WarpNativeWebViewEntry *)entry;
 @end
 
+/// twarp 14l: transparent view layered over a webview while an agent holds
+/// the input lease. Swallows all mouse/scroll/key input so the user can't
+/// interact with the page mid-automation (the pane chrome stays interactive —
+/// this only covers the webview rect).
+@interface WarpWebViewInputShield : NSView
+@end
+
+@implementation WarpWebViewInputShield
+- (BOOL)acceptsFirstMouse:(NSEvent *)event {
+    return YES;
+}
+- (void)mouseDown:(NSEvent *)event {
+}
+- (void)mouseUp:(NSEvent *)event {
+}
+- (void)mouseDragged:(NSEvent *)event {
+}
+- (void)mouseMoved:(NSEvent *)event {
+}
+- (void)rightMouseDown:(NSEvent *)event {
+}
+- (void)rightMouseUp:(NSEvent *)event {
+}
+- (void)otherMouseDown:(NSEvent *)event {
+}
+- (void)otherMouseUp:(NSEvent *)event {
+}
+- (void)scrollWheel:(NSEvent *)event {
+}
+- (void)keyDown:(NSEvent *)event {
+}
+- (void)keyUp:(NSEvent *)event {
+}
+@end
+
 @interface WarpNativeWebViewEntry : NSObject <WKNavigationDelegate, WKUIDelegate>
 @property(nonatomic, retain) NSView *containerView;
 @property(nonatomic, retain) WKWebView *webView;
@@ -36,6 +71,7 @@ typedef void (*WarpBrowserBytesCallback)(void *, const uint8_t *, uintptr_t, con
 @property(nonatomic, retain) WarpAutomationScriptMessageHandler *messageHandler;
 @property(nonatomic, retain) NSMutableArray<NSString *> *consoleMessages;
 @property(nonatomic, retain) NSMutableArray<NSString *> *networkMessages;
+@property(nonatomic, retain) WarpWebViewInputShield *inputShieldView;
 @property(nonatomic) BOOL hiddenRequested;
 - (instancetype)initWithContainerView:(NSView *)containerView
                               webView:(WKWebView *)webView
@@ -70,6 +106,7 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
     [_userContentController removeScriptMessageHandlerForName:@"twarpAutomation"];
     _webView.navigationDelegate = nil;
     _webView.UIDelegate = nil;
+    [_inputShieldView release];
     [_messageHandler release];
     [_networkMessages release];
     [_consoleMessages release];
@@ -537,6 +574,32 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
     [entry.webView setNeedsLayout:YES];
     [entry.containerView setNeedsDisplay:YES];
     [entry.webView setNeedsDisplay:YES];
+}
+
+/// twarp 14l: block or unblock direct user input to the webview while an
+/// agent holds the input lease. The shield only covers the page rect; pane
+/// chrome (tabs/omnibar) stays interactive.
+- (void)setNativeWebViewInputBlocked:(NSUInteger)webViewId blocked:(BOOL)blocked {
+    WarpNativeWebViewEntry *entry = [self nativeWebViewEntry:webViewId];
+    if (!entry) return;
+
+    if (blocked) {
+        if (!entry.inputShieldView) {
+            WarpWebViewInputShield *shield =
+                [[[WarpWebViewInputShield alloc] initWithFrame:entry.containerView.bounds] autorelease];
+            shield.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+            [entry.containerView addSubview:shield positioned:NSWindowAbove relativeTo:entry.webView];
+            entry.inputShieldView = shield;
+        }
+        // If the user was mid-interaction with the page, take the keyboard
+        // back so their keystrokes don't keep flowing into it.
+        if ([self responder:self.window.firstResponder isInWebView:entry.webView]) {
+            [self.window makeFirstResponder:self];
+        }
+    } else if (entry.inputShieldView) {
+        [entry.inputShieldView removeFromSuperview];
+        entry.inputShieldView = nil;
+    }
 }
 
 - (void)setNativeWebViewHidden:(NSUInteger)webViewId hidden:(BOOL)hidden {
@@ -1144,6 +1207,10 @@ void warp_host_set_webview_frame(WarpHostView *host, uintptr_t webViewId, NSRect
 
 void warp_host_set_webview_hidden(WarpHostView *host, uintptr_t webViewId, BOOL hidden) {
     [host setNativeWebViewHidden:(NSUInteger)webViewId hidden:hidden];
+}
+
+void warp_host_set_webview_input_blocked(WarpHostView *host, uintptr_t webViewId, BOOL blocked) {
+    [host setNativeWebViewInputBlocked:(NSUInteger)webViewId blocked:blocked];
 }
 
 void warp_host_load_url(WarpHostView *host, uintptr_t webViewId, NSString *urlString) {

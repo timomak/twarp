@@ -98,6 +98,28 @@ impl BrowserMcpBridge {
         &self,
         scope_session_id: Option<&str>,
         bound_view: Option<EntityId>,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<(EntityId, BrowserAutomationTarget)> {
+        let resolved = self.resolve_target_inner(scope_session_id, bound_view, ctx);
+        // twarp 14l: every scoped tool call renews the pane's agent input
+        // lease (page locked for the user, banner shown). Unscoped/legacy
+        // connections don't lock the user out.
+        if scope_session_id.is_some() {
+            if let Some((view_id, _)) = &resolved {
+                let view_id = *view_id;
+                let view = Self::all_browser_views(ctx).find(|view| view.id() == view_id);
+                if let Some(view) = view {
+                    view.update(ctx, |view, ctx| view.touch_agent_lease(ctx));
+                }
+            }
+        }
+        resolved
+    }
+
+    fn resolve_target_inner(
+        &self,
+        scope_session_id: Option<&str>,
+        bound_view: Option<EntityId>,
         ctx: &AppContext,
     ) -> Option<(EntityId, BrowserAutomationTarget)> {
         if let Some(bound) = bound_view {

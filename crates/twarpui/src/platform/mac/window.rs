@@ -528,6 +528,7 @@ extern "C" {
     fn warp_host_install_automation_script(host: id, webview_id: usize, script: id);
     fn warp_host_set_webview_frame(host: id, webview_id: usize, frame: NSRect);
     fn warp_host_set_webview_hidden(host: id, webview_id: usize, hidden: BOOL);
+    fn warp_host_set_webview_input_blocked(host: id, webview_id: usize, blocked: BOOL);
     fn warp_host_load_url(host: id, webview_id: usize, url: id);
     fn warp_host_go_back(host: id, webview_id: usize);
     fn warp_host_go_forward(host: id, webview_id: usize);
@@ -1071,6 +1072,21 @@ impl Window {
             if let Some(window) = Self::find_window_with_id(window_id) {
                 let host_view: id = msg_send![window, contentView];
                 warp_host_set_webview_hidden(host_view, webview_id, hidden as BOOL);
+            }
+        }
+    }
+
+    /// twarp 14l: while an agent holds the input lease, a transparent shield
+    /// over the webview swallows all direct user input to the page.
+    pub fn set_browser_webview_input_blocked(
+        window_id: WindowId,
+        webview_id: BrowserWebViewId,
+        blocked: bool,
+    ) {
+        unsafe {
+            if let Some(window) = Self::find_window_with_id(window_id) {
+                let host_view: id = msg_send![window, contentView];
+                warp_host_set_webview_input_blocked(host_view, webview_id, blocked as BOOL);
             }
         }
     }
