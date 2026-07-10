@@ -53,15 +53,15 @@ use async_channel::Sender;
 use base64::Engine as _;
 use claude_code::diff::diff_for_tool;
 use claude_code::driver::{
-    Child, OutgoingImage, OutgoingMessage, PermissionMode, SpawnOptions, SpawnedSession, interrupt,
-    send_control_response, send_interrupt, send_user_message, spawn_session,
+    interrupt, send_control_response, send_interrupt, send_user_message, spawn_session, Child,
+    OutgoingImage, OutgoingMessage, PermissionMode, SpawnOptions, SpawnedSession,
 };
 use claude_code::launch::LaunchOptions;
-use claude_code::{Transcript, TranscriptEvent, TranscriptItem, TurnMetrics, Usage, sessions};
+use claude_code::{sessions, Transcript, TranscriptEvent, TranscriptItem, TurnMetrics, Usage};
 use futures::StreamExt;
 use markdown_parser::{
-    FormattedTable, FormattedText, FormattedTextInline, FormattedTextLine, TableAlignment,
-    parse_markdown_with_gfm_tables,
+    parse_markdown_with_gfm_tables, FormattedTable, FormattedText, FormattedTextInline,
+    FormattedTextLine, TableAlignment,
 };
 use parking_lot::RwLock;
 use pathfinder_color::ColorU;
@@ -69,17 +69,15 @@ use pathfinder_geometry::vector::vec2f;
 use twarp_core::features::FeatureFlag;
 use twarp_editor::editor::NavigationKey;
 use twarpui::assets::asset_cache::AssetSource;
-use twarpui::r#async::Timer;
 use twarpui::clipboard::ClipboardContent;
 use twarpui::elements::shimmering_text::{
     ShimmerConfig, ShimmeringTextElement, ShimmeringTextStateHandle,
 };
 use twarpui::platform::FilePickerConfiguration;
+use twarpui::r#async::Timer;
 use twarpui::ui_components::button::ButtonVariant;
 use twarpui::ui_components::slider::SliderStateHandle;
 use twarpui::{
-    AppContext, BlurContext, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView,
-    View, ViewContext, ViewHandle, WindowId,
     elements::{
         Align, Border, CacheOption, ChildAnchor, Clipped, ClippedScrollStateHandle,
         ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss,
@@ -95,6 +93,8 @@ use twarpui::{
     presenter::ChildView,
     text_layout::ClipConfig,
     ui_components::components::{UiComponent, UiComponentStyles},
+    AppContext, BlurContext, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView,
+    View, ViewContext, ViewHandle, WindowId,
 };
 use twarpui_extras::secure_storage;
 
@@ -104,9 +104,9 @@ use self::composer::{SuggestionKind, SuggestionQuery};
 use self::diff_cards::DiffCard;
 use self::repo_context::{CiState, RepoContext};
 use self::thinking::ThinkingUi;
-use self::tool_cards::{ToolCardUi, render_tool_card};
+use self::tool_cards::{render_tool_card, ToolCardUi};
 use crate::agent_suggestions::{
-    DefaultSuggestionProvider, ReplySuggestionContext, SuggestionProvider,
+    DefaultSuggestionProvider, ReplySuggestionContext, SuggestionContext, SuggestionProvider,
 };
 use crate::app_state::{CLIAgent, ConversationStatus};
 use crate::appearance::Appearance;
@@ -120,16 +120,16 @@ use crate::editor::{
 };
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::{
-    BackingView, PaneConfiguration, PaneEvent, PaneHeaderAction,
     pane::view::{self, HeaderContent, StandardHeader, StandardHeaderOptions},
+    BackingView, PaneConfiguration, PaneEvent, PaneHeaderAction,
 };
 use crate::settings::{self as app_settings, AgentSettings};
 #[cfg(all(feature = "local_fs", feature = "local_tty"))]
 use crate::terminal::local_shell::LocalShellState;
 use crate::terminal::{
-    TerminalManager, TerminalView,
     session_settings::{NotificationsMode, SessionSettings},
     view::{Event as TerminalViewEvent, NotificationsTrigger},
+    TerminalManager, TerminalView,
 };
 use crate::util::path::{resolve_executable, resolve_executable_in_path};
 use crate::workspace::{WorkspaceAction, WorkspaceRegistry};
@@ -1699,7 +1699,7 @@ impl ClaudeCodeView {
                 .clone()
                 .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
             path_env: self.interactive_path.clone(),
-            context,
+            context: SuggestionContext::Reply(context),
         };
 
         self.reply_suggestion_generation = self.reply_suggestion_generation.wrapping_add(1);

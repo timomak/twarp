@@ -21,7 +21,7 @@ A new **Agent** settings page (backend selector, local-auth reuse or API key via
 - [x] **16c — Per-action matrix.** Per-action model matrix (terminal + reply rows) + enable toggles.
 - [x] **16d — Provider abstraction hardening.** Capability model + adapter seam; Claude-only impl.
 - [x] **16e — Chat reply suggestions.** Ghost text in the composer via `SuggestionProvider`.
-- [ ] **16f — Terminal AI command suggestions.** Fallback below instant history via `SuggestionProvider`.
+- [x] **16f — Terminal AI command suggestions.** Fallback below instant history via `SuggestionProvider`.
 
 ## Key constraints carried into the specs
 
