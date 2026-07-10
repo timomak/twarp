@@ -38,6 +38,7 @@
 #![allow(clippy::result_unit_err)]
 
 mod alloc;
+mod agent_suggestions;
 mod antivirus;
 #[cfg(target_os = "macos")]
 mod app_menus;
