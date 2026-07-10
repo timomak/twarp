@@ -194,28 +194,41 @@ impl AgentSettings {
     }
 
     pub fn chat_launch_config(&self) -> AgentChatLaunchConfig {
+        let provider = self.chat_provider_agent();
         AgentChatLaunchConfig {
-            provider: self.chat_provider_agent(),
-            model: valid_chat_model(self.chat_model.value()),
-            effort: valid_chat_effort(self.chat_effort.value()),
-            permission_mode: PermissionMode::from_cli_arg(self.chat_permission_mode.value())
-                .unwrap_or(PermissionMode::Default),
+            provider,
+            model: valid_model_for_provider(provider, self.chat_model.value()),
+            effort: valid_effort_for_provider(provider, self.chat_effort.value()),
+            permission_mode: valid_permission_mode_for_provider(
+                provider,
+                self.chat_permission_mode.value(),
+            )
+            .unwrap_or(PermissionMode::Default),
         }
     }
 
     pub fn terminal_suggest_config(&self) -> AgentSuggestionActionConfig {
+        let chat_provider = self.chat_provider_agent();
+        let provider = suggestion_provider(self.terminal_suggest_provider.value());
+        let resolved_provider = provider.resolve(chat_provider);
         AgentSuggestionActionConfig {
-            provider: suggestion_provider(self.terminal_suggest_provider.value()),
-            model: valid_chat_model(self.terminal_suggest_model.value()),
-            effort: valid_chat_effort(self.terminal_suggest_effort.value()),
+            provider,
+            model: valid_model_for_provider(resolved_provider, self.terminal_suggest_model.value()),
+            effort: valid_effort_for_provider(
+                resolved_provider,
+                self.terminal_suggest_effort.value(),
+            ),
         }
     }
 
     pub fn reply_suggest_config(&self) -> AgentSuggestionActionConfig {
+        let chat_provider = self.chat_provider_agent();
+        let provider = suggestion_provider(self.reply_suggest_provider.value());
+        let resolved_provider = provider.resolve(chat_provider);
         AgentSuggestionActionConfig {
-            provider: suggestion_provider(self.reply_suggest_provider.value()),
-            model: valid_chat_model(self.reply_suggest_model.value()),
-            effort: valid_chat_effort(self.reply_suggest_effort.value()),
+            provider,
+            model: valid_model_for_provider(resolved_provider, self.reply_suggest_model.value()),
+            effort: valid_effort_for_provider(resolved_provider, self.reply_suggest_effort.value()),
         }
     }
 }
@@ -250,30 +263,45 @@ pub fn valid_suggestion_provider_value(serialized_name: &str) -> String {
 }
 
 pub fn valid_chat_model(model: &str) -> Option<String> {
+    valid_model_for_provider(CLIAgent::Claude, model)
+}
+
+pub fn valid_model_for_provider(provider: CLIAgent, model: &str) -> Option<String> {
     let model = model.trim();
     if model.is_empty() {
         return None;
     }
 
-    if crate::claude_code_models::FALLBACK_MODEL_ALIASES.contains(&model) {
-        return Some(model.to_owned());
-    }
-
-    crate::claude_code_models::discovered()
-        .is_some_and(|models| models.iter().any(|entry| entry.id == model))
-        .then(|| model.to_owned())
+    provider.is_valid_model(model).then(|| model.to_owned())
 }
 
 pub fn valid_chat_effort(effort: &str) -> Option<String> {
+    valid_effort_for_provider(CLIAgent::Claude, effort)
+}
+
+pub fn valid_effort_for_provider(provider: CLIAgent, effort: &str) -> Option<String> {
     match effort.trim() {
         "" | "default" => None,
-        "low" | "medium" | "high" | "max" => Some(effort.trim().to_owned()),
+        effort if provider.is_valid_effort(effort) => Some(effort.to_owned()),
         _ => None,
     }
 }
 
+pub fn valid_permission_mode_for_provider(
+    provider: CLIAgent,
+    permission_mode: &str,
+) -> Option<PermissionMode> {
+    let permission_mode = PermissionMode::from_cli_arg(permission_mode)?;
+    provider
+        .permission_modes()
+        .contains(&permission_mode)
+        .then_some(permission_mode)
+}
+
 pub fn api_key_storage_key(agent: CLIAgent) -> Option<String> {
-    (!matches!(agent, CLIAgent::Unknown))
+    agent
+        .spawn_spec()
+        .is_some()
         .then(|| format!("agent.api_key.{}", agent.serialized_name()))
 }
 
@@ -315,5 +343,37 @@ mod tests {
             AgentActionProvider::Agent(CLIAgent::Claude).resolve(CLIAgent::Gemini),
             CLIAgent::Claude
         );
+    }
+
+    #[test]
+    fn provider_validation_uses_capabilities() {
+        assert_eq!(
+            valid_model_for_provider(CLIAgent::Claude, "sonnet"),
+            Some("sonnet".to_owned())
+        );
+        assert_eq!(valid_model_for_provider(CLIAgent::Unknown, "sonnet"), None);
+        assert_eq!(
+            valid_effort_for_provider(CLIAgent::Claude, "medium"),
+            Some("medium".to_owned())
+        );
+        assert_eq!(valid_effort_for_provider(CLIAgent::Unknown, "medium"), None);
+        assert_eq!(
+            valid_permission_mode_for_provider(CLIAgent::Claude, "plan"),
+            Some(PermissionMode::Plan)
+        );
+        assert_eq!(
+            valid_permission_mode_for_provider(CLIAgent::Unknown, "plan"),
+            None
+        );
+    }
+
+    #[test]
+    fn disabled_agents_have_no_adapter_backed_key_storage() {
+        assert_eq!(
+            api_key_storage_key(CLIAgent::Claude),
+            Some("agent.api_key.claude".to_owned())
+        );
+        assert_eq!(api_key_storage_key(CLIAgent::Codex), None);
+        assert_eq!(api_key_storage_key(CLIAgent::Gemini), None);
     }
 }

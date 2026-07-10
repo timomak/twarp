@@ -133,7 +133,7 @@ impl AgentSettingsPageView {
         });
         let chat_model_dropdown = ctx.add_typed_action_view(|ctx| {
             let mut dropdown = Dropdown::new(ctx);
-            dropdown.set_items(chat_model_items(), ctx);
+            dropdown.set_items(chat_model_items(CLIAgent::Claude), ctx);
             dropdown
                 .set_selected_by_action(AgentSettingsPageAction::SetChatModel(String::new()), ctx);
             dropdown.set_top_bar_max_width(220.);
@@ -141,7 +141,7 @@ impl AgentSettingsPageView {
         });
         let chat_effort_dropdown = ctx.add_typed_action_view(|ctx| {
             let mut dropdown = Dropdown::new(ctx);
-            dropdown.set_items(chat_effort_items(), ctx);
+            dropdown.set_items(chat_effort_items(CLIAgent::Claude), ctx);
             dropdown
                 .set_selected_by_action(AgentSettingsPageAction::SetChatEffort(String::new()), ctx);
             dropdown.set_top_bar_max_width(180.);
@@ -149,7 +149,7 @@ impl AgentSettingsPageView {
         });
         let chat_permission_mode_dropdown = ctx.add_typed_action_view(|ctx| {
             let mut dropdown = Dropdown::new(ctx);
-            dropdown.set_items(chat_permission_mode_items(), ctx);
+            dropdown.set_items(chat_permission_mode_items(CLIAgent::Claude), ctx);
             dropdown.set_selected_by_action(
                 AgentSettingsPageAction::SetChatPermissionMode(
                     PermissionMode::Default.as_cli_arg().to_owned(),
@@ -174,7 +174,10 @@ impl AgentSettingsPageView {
         });
         let terminal_model_dropdown = ctx.add_typed_action_view(|ctx| {
             let mut dropdown = Dropdown::new(ctx);
-            dropdown.set_items(model_items(AgentSettingsPageAction::SetTerminalModel), ctx);
+            dropdown.set_items(
+                model_items(CLIAgent::Claude, AgentSettingsPageAction::SetTerminalModel),
+                ctx,
+            );
             dropdown.set_selected_by_action(
                 AgentSettingsPageAction::SetTerminalModel(String::new()),
                 ctx,
@@ -185,7 +188,7 @@ impl AgentSettingsPageView {
         let terminal_effort_dropdown = ctx.add_typed_action_view(|ctx| {
             let mut dropdown = Dropdown::new(ctx);
             dropdown.set_items(
-                effort_items(AgentSettingsPageAction::SetTerminalEffort),
+                effort_items(CLIAgent::Claude, AgentSettingsPageAction::SetTerminalEffort),
                 ctx,
             );
             dropdown.set_selected_by_action(
@@ -210,7 +213,10 @@ impl AgentSettingsPageView {
         });
         let reply_model_dropdown = ctx.add_typed_action_view(|ctx| {
             let mut dropdown = Dropdown::new(ctx);
-            dropdown.set_items(model_items(AgentSettingsPageAction::SetReplyModel), ctx);
+            dropdown.set_items(
+                model_items(CLIAgent::Claude, AgentSettingsPageAction::SetReplyModel),
+                ctx,
+            );
             dropdown
                 .set_selected_by_action(AgentSettingsPageAction::SetReplyModel(String::new()), ctx);
             dropdown.set_top_bar_max_width(220.);
@@ -218,7 +224,10 @@ impl AgentSettingsPageView {
         });
         let reply_effort_dropdown = ctx.add_typed_action_view(|ctx| {
             let mut dropdown = Dropdown::new(ctx);
-            dropdown.set_items(effort_items(AgentSettingsPageAction::SetReplyEffort), ctx);
+            dropdown.set_items(
+                effort_items(CLIAgent::Claude, AgentSettingsPageAction::SetReplyEffort),
+                ctx,
+            );
             dropdown.set_selected_by_action(
                 AgentSettingsPageAction::SetReplyEffort(String::new()),
                 ctx,
@@ -296,25 +305,48 @@ impl AgentSettingsPageView {
         let backend = settings.backend_agent();
         let chat_provider = settings.chat_provider_agent();
         let chat_model =
-            settings::valid_chat_model(settings.chat_model.value()).unwrap_or_default();
+            settings::valid_model_for_provider(chat_provider, settings.chat_model.value())
+                .unwrap_or_default();
         let chat_effort =
-            settings::valid_chat_effort(settings.chat_effort.value()).unwrap_or_default();
-        let permission_mode = PermissionMode::from_cli_arg(settings.chat_permission_mode.value())
-            .unwrap_or(PermissionMode::Default)
-            .as_cli_arg()
-            .to_owned();
+            settings::valid_effort_for_provider(chat_provider, settings.chat_effort.value())
+                .unwrap_or_default();
+        let permission_mode = settings::valid_permission_mode_for_provider(
+            chat_provider,
+            settings.chat_permission_mode.value(),
+        )
+        .unwrap_or(PermissionMode::Default)
+        .as_cli_arg()
+        .to_owned();
         let terminal_provider =
             settings::valid_suggestion_provider_value(settings.terminal_suggest_provider.value());
-        let terminal_model =
-            settings::valid_chat_model(settings.terminal_suggest_model.value()).unwrap_or_default();
-        let terminal_effort = settings::valid_chat_effort(settings.terminal_suggest_effort.value())
-            .unwrap_or_default();
+        let terminal_resolved_provider =
+            settings::suggestion_provider(settings.terminal_suggest_provider.value())
+                .resolve(chat_provider);
+        let terminal_model = settings::valid_model_for_provider(
+            terminal_resolved_provider,
+            settings.terminal_suggest_model.value(),
+        )
+        .unwrap_or_default();
+        let terminal_effort = settings::valid_effort_for_provider(
+            terminal_resolved_provider,
+            settings.terminal_suggest_effort.value(),
+        )
+        .unwrap_or_default();
         let reply_provider =
             settings::valid_suggestion_provider_value(settings.reply_suggest_provider.value());
-        let reply_model =
-            settings::valid_chat_model(settings.reply_suggest_model.value()).unwrap_or_default();
-        let reply_effort =
-            settings::valid_chat_effort(settings.reply_suggest_effort.value()).unwrap_or_default();
+        let reply_resolved_provider =
+            settings::suggestion_provider(settings.reply_suggest_provider.value())
+                .resolve(chat_provider);
+        let reply_model = settings::valid_model_for_provider(
+            reply_resolved_provider,
+            settings.reply_suggest_model.value(),
+        )
+        .unwrap_or_default();
+        let reply_effort = settings::valid_effort_for_provider(
+            reply_resolved_provider,
+            settings.reply_suggest_effort.value(),
+        )
+        .unwrap_or_default();
 
         self.backend_dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_rich_items(backend_items(), ctx);
@@ -328,15 +360,17 @@ impl AgentSettingsPageView {
             );
         });
         self.chat_model_dropdown.update(ctx, |dropdown, ctx| {
-            dropdown.set_items(chat_model_items(), ctx);
+            dropdown.set_items(chat_model_items(chat_provider), ctx);
             dropdown.set_selected_by_action(AgentSettingsPageAction::SetChatModel(chat_model), ctx);
         });
         self.chat_effort_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_items(chat_effort_items(chat_provider), ctx);
             dropdown
                 .set_selected_by_action(AgentSettingsPageAction::SetChatEffort(chat_effort), ctx);
         });
         self.chat_permission_mode_dropdown
             .update(ctx, |dropdown, ctx| {
+                dropdown.set_items(chat_permission_mode_items(chat_provider), ctx);
                 dropdown.set_selected_by_action(
                     AgentSettingsPageAction::SetChatPermissionMode(permission_mode),
                     ctx,
@@ -354,13 +388,26 @@ impl AgentSettingsPageView {
                 );
             });
         self.terminal_model_dropdown.update(ctx, |dropdown, ctx| {
-            dropdown.set_items(model_items(AgentSettingsPageAction::SetTerminalModel), ctx);
+            dropdown.set_items(
+                model_items(
+                    terminal_resolved_provider,
+                    AgentSettingsPageAction::SetTerminalModel,
+                ),
+                ctx,
+            );
             dropdown.set_selected_by_action(
                 AgentSettingsPageAction::SetTerminalModel(terminal_model),
                 ctx,
             );
         });
         self.terminal_effort_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_items(
+                effort_items(
+                    terminal_resolved_provider,
+                    AgentSettingsPageAction::SetTerminalEffort,
+                ),
+                ctx,
+            );
             dropdown.set_selected_by_action(
                 AgentSettingsPageAction::SetTerminalEffort(terminal_effort),
                 ctx,
@@ -377,11 +424,24 @@ impl AgentSettingsPageView {
             );
         });
         self.reply_model_dropdown.update(ctx, |dropdown, ctx| {
-            dropdown.set_items(model_items(AgentSettingsPageAction::SetReplyModel), ctx);
+            dropdown.set_items(
+                model_items(
+                    reply_resolved_provider,
+                    AgentSettingsPageAction::SetReplyModel,
+                ),
+                ctx,
+            );
             dropdown
                 .set_selected_by_action(AgentSettingsPageAction::SetReplyModel(reply_model), ctx);
         });
         self.reply_effort_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_items(
+                effort_items(
+                    reply_resolved_provider,
+                    AgentSettingsPageAction::SetReplyEffort,
+                ),
+                ctx,
+            );
             dropdown
                 .set_selected_by_action(AgentSettingsPageAction::SetReplyEffort(reply_effort), ctx);
         });
@@ -464,6 +524,15 @@ impl AgentSettingsPageView {
     fn is_valid_suggestion_provider_selection(&self, provider: &str) -> bool {
         let provider = provider.trim();
         provider.is_empty() || CLIAgent::from_serialized_name(provider).is_agent_settings_enabled()
+    }
+
+    fn resolved_provider_for_pending_suggestion_selection(
+        &self,
+        provider: &str,
+        app: &AppContext,
+    ) -> CLIAgent {
+        let chat_provider = AgentSettings::as_ref(app).chat_provider_agent();
+        settings::suggestion_provider(provider).resolve(chat_provider)
     }
 
     fn save_api_key(&mut self, ctx: &mut ViewContext<Self>) {
@@ -597,17 +666,27 @@ impl TypedActionView for AgentSettingsPageView {
                 }
             }
             AgentSettingsPageAction::SetChatModel(model) => {
-                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings.chat_model.set_value(model.clone(), ctx));
-                });
+                let provider = AgentSettings::as_ref(ctx).chat_provider_agent();
+                if model.is_empty() || settings::valid_model_for_provider(provider, model).is_some()
+                {
+                    AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                        report_if_error!(settings.chat_model.set_value(model.clone(), ctx));
+                    });
+                }
             }
             AgentSettingsPageAction::SetChatEffort(effort) => {
-                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings.chat_effort.set_value(effort.clone(), ctx));
-                });
+                let provider = AgentSettings::as_ref(ctx).chat_provider_agent();
+                if effort.is_empty()
+                    || settings::valid_effort_for_provider(provider, effort).is_some()
+                {
+                    AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                        report_if_error!(settings.chat_effort.set_value(effort.clone(), ctx));
+                    });
+                }
             }
             AgentSettingsPageAction::SetChatPermissionMode(mode) => {
-                if PermissionMode::from_cli_arg(mode).is_some() {
+                let provider = AgentSettings::as_ref(ctx).chat_provider_agent();
+                if settings::valid_permission_mode_for_provider(provider, mode).is_some() {
                     AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
                         report_if_error!(settings
                             .chat_permission_mode
@@ -625,18 +704,33 @@ impl TypedActionView for AgentSettingsPageView {
                 }
             }
             AgentSettingsPageAction::SetTerminalModel(model) => {
-                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings
-                        .terminal_suggest_model
-                        .set_value(model.clone(), ctx));
-                });
+                let provider = self.resolved_provider_for_pending_suggestion_selection(
+                    AgentSettings::as_ref(ctx).terminal_suggest_provider.value(),
+                    ctx,
+                );
+                if model.is_empty() || settings::valid_model_for_provider(provider, model).is_some()
+                {
+                    AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                        report_if_error!(settings
+                            .terminal_suggest_model
+                            .set_value(model.clone(), ctx));
+                    });
+                }
             }
             AgentSettingsPageAction::SetTerminalEffort(effort) => {
-                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings
-                        .terminal_suggest_effort
-                        .set_value(effort.clone(), ctx));
-                });
+                let provider = self.resolved_provider_for_pending_suggestion_selection(
+                    AgentSettings::as_ref(ctx).terminal_suggest_provider.value(),
+                    ctx,
+                );
+                if effort.is_empty()
+                    || settings::valid_effort_for_provider(provider, effort).is_some()
+                {
+                    AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                        report_if_error!(settings
+                            .terminal_suggest_effort
+                            .set_value(effort.clone(), ctx));
+                    });
+                }
             }
             AgentSettingsPageAction::SetReplyProvider(provider) => {
                 if self.is_valid_suggestion_provider_selection(provider) {
@@ -648,14 +742,33 @@ impl TypedActionView for AgentSettingsPageView {
                 }
             }
             AgentSettingsPageAction::SetReplyModel(model) => {
-                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings.reply_suggest_model.set_value(model.clone(), ctx));
-                });
+                let provider = self.resolved_provider_for_pending_suggestion_selection(
+                    AgentSettings::as_ref(ctx).reply_suggest_provider.value(),
+                    ctx,
+                );
+                if model.is_empty() || settings::valid_model_for_provider(provider, model).is_some()
+                {
+                    AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                        report_if_error!(settings
+                            .reply_suggest_model
+                            .set_value(model.clone(), ctx));
+                    });
+                }
             }
             AgentSettingsPageAction::SetReplyEffort(effort) => {
-                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings.reply_suggest_effort.set_value(effort.clone(), ctx));
-                });
+                let provider = self.resolved_provider_for_pending_suggestion_selection(
+                    AgentSettings::as_ref(ctx).reply_suggest_provider.value(),
+                    ctx,
+                );
+                if effort.is_empty()
+                    || settings::valid_effort_for_provider(provider, effort).is_some()
+                {
+                    AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                        report_if_error!(settings
+                            .reply_suggest_effort
+                            .set_value(effort.clone(), ctx));
+                    });
+                }
             }
             AgentSettingsPageAction::ToggleReplySuggestions => {
                 AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
@@ -848,70 +961,81 @@ fn render_chat_action_row(
     app: &AppContext,
 ) -> Box<dyn Element> {
     let chat_provider = AgentSettings::as_ref(app).chat_provider_agent();
-
-    render_action_group(
+    let mut rows = vec![render_dropdown_item(
         appearance,
-        "Chat & history",
-        vec![
-            render_dropdown_item(
-                appearance,
-                "Provider",
-                None,
-                None,
-                local_only_icon_state(
-                    view,
-                    settings::AgentChatProvider::storage_key(),
-                    settings::AgentChatProvider::sync_to_cloud(),
-                    app,
-                ),
-                None,
-                &view.chat_provider_dropdown,
+        "Provider",
+        None,
+        None,
+        local_only_icon_state(
+            view,
+            settings::AgentChatProvider::storage_key(),
+            settings::AgentChatProvider::sync_to_cloud(),
+            app,
+        ),
+        None,
+        &view.chat_provider_dropdown,
+    )];
+
+    if chat_provider.supports_models() {
+        rows.push(render_dropdown_item(
+            appearance,
+            "Model",
+            None,
+            None,
+            local_only_icon_state(
+                view,
+                settings::AgentChatModel::storage_key(),
+                settings::AgentChatModel::sync_to_cloud(),
+                app,
             ),
-            render_dropdown_item(
-                appearance,
-                "Model",
-                None,
-                None,
-                local_only_icon_state(
-                    view,
-                    settings::AgentChatModel::storage_key(),
-                    settings::AgentChatModel::sync_to_cloud(),
-                    app,
-                ),
-                None,
-                &view.chat_model_dropdown,
+            None,
+            &view.chat_model_dropdown,
+        ));
+    }
+
+    if chat_provider.supports_effort() {
+        rows.push(render_dropdown_item(
+            appearance,
+            "Effort",
+            None,
+            None,
+            local_only_icon_state(
+                view,
+                settings::AgentChatEffort::storage_key(),
+                settings::AgentChatEffort::sync_to_cloud(),
+                app,
             ),
-            render_dropdown_item(
-                appearance,
-                "Effort",
-                None,
-                None,
-                local_only_icon_state(
-                    view,
-                    settings::AgentChatEffort::storage_key(),
-                    settings::AgentChatEffort::sync_to_cloud(),
-                    app,
-                ),
-                None,
-                &view.chat_effort_dropdown,
+            None,
+            &view.chat_effort_dropdown,
+        ));
+    }
+
+    if chat_provider.supports_permission_modes() {
+        rows.push(render_dropdown_item(
+            appearance,
+            "Permission mode",
+            None,
+            None,
+            local_only_icon_state(
+                view,
+                settings::AgentChatPermissionMode::storage_key(),
+                settings::AgentChatPermissionMode::sync_to_cloud(),
+                app,
             ),
-            render_dropdown_item(
-                appearance,
-                "Permission mode",
-                None,
-                None,
-                local_only_icon_state(
-                    view,
-                    settings::AgentChatPermissionMode::storage_key(),
-                    settings::AgentChatPermissionMode::sync_to_cloud(),
-                    app,
-                ),
-                None,
-                &view.chat_permission_mode_dropdown,
-            ),
-            render_auth_source_row(view, appearance, app, chat_provider, None),
-        ],
-    )
+            None,
+            &view.chat_permission_mode_dropdown,
+        ));
+    }
+
+    rows.push(render_auth_source_row(
+        view,
+        appearance,
+        app,
+        chat_provider,
+        None,
+    ));
+
+    render_action_group(appearance, "Chat & history", rows)
 }
 
 fn render_suggestion_action_row(
@@ -963,51 +1087,54 @@ fn render_suggestion_action_row(
         ),
     };
 
-    render_action_group(
+    let mut rows = vec![render_dropdown_item(
         appearance,
-        title,
-        vec![
-            render_dropdown_item(
-                appearance,
-                "Provider",
-                None,
-                inherited_note,
-                local_only_icon_state(view, provider_key, provider_sync, app),
-                None,
-                provider_dropdown,
-            ),
-            render_dropdown_item(
-                appearance,
-                "Model",
-                None,
-                None,
-                local_only_icon_state(view, model_key, model_sync, app),
-                None,
-                model_dropdown,
-            ),
-            render_dropdown_item(
-                appearance,
-                "Effort",
-                None,
-                None,
-                local_only_icon_state(view, effort_key, effort_sync, app),
-                None,
-                effort_dropdown,
-            ),
-            render_auth_source_row(
-                view,
-                appearance,
-                app,
-                provider,
-                inherited.then(|| {
-                    format!(
-                        "Inherited from Chat & history ({})",
-                        agent_display_name(provider)
-                    )
-                }),
-            ),
-        ],
-    )
+        "Provider",
+        None,
+        inherited_note,
+        local_only_icon_state(view, provider_key, provider_sync, app),
+        None,
+        provider_dropdown,
+    )];
+
+    if provider.supports_models() {
+        rows.push(render_dropdown_item(
+            appearance,
+            "Model",
+            None,
+            None,
+            local_only_icon_state(view, model_key, model_sync, app),
+            None,
+            model_dropdown,
+        ));
+    }
+
+    if provider.supports_effort() {
+        rows.push(render_dropdown_item(
+            appearance,
+            "Effort",
+            None,
+            None,
+            local_only_icon_state(view, effort_key, effort_sync, app),
+            None,
+            effort_dropdown,
+        ));
+    }
+
+    rows.push(render_auth_source_row(
+        view,
+        appearance,
+        app,
+        provider,
+        inherited.then(|| {
+            format!(
+                "Inherited from Chat & history ({})",
+                agent_display_name(provider)
+            )
+        }),
+    ));
+
+    render_action_group(appearance, title, rows)
 }
 
 fn render_action_group(
@@ -1168,12 +1295,7 @@ fn auth_source_label(status: AuthStatus) -> &'static str {
 }
 
 fn agent_display_name(agent: CLIAgent) -> &'static str {
-    match agent {
-        CLIAgent::Claude => "Claude",
-        CLIAgent::Codex => "Codex",
-        CLIAgent::Gemini => "Gemini",
-        CLIAgent::Unknown => "Unknown",
-    }
+    agent.display_name()
 }
 
 fn render_auth_status_row(status: AuthStatus, appearance: &Appearance) -> Box<dyn Element> {
@@ -1326,128 +1448,91 @@ fn render_settings_row(label: Box<dyn Element>, control: Box<dyn Element>) -> Bo
 }
 
 fn backend_items() -> Vec<MenuItem<DropdownAction<AgentSettingsPageAction>>> {
-    vec![
-        agent_dropdown_item(
-            "Claude",
-            AgentSettingsPageAction::SetBackend(CLIAgent::Claude),
-            false,
-        ),
-        agent_dropdown_item(
-            "Codex (coming soon)",
-            AgentSettingsPageAction::SetBackend(CLIAgent::Codex),
-            true,
-        ),
-        agent_dropdown_item(
-            "Gemini (coming soon)",
-            AgentSettingsPageAction::SetBackend(CLIAgent::Gemini),
-            true,
-        ),
-    ]
+    CLIAgent::SETTINGS_OPTIONS
+        .into_iter()
+        .map(|agent| agent_dropdown_item(agent, AgentSettingsPageAction::SetBackend(agent)))
+        .collect()
 }
 
 fn chat_provider_items() -> Vec<MenuItem<DropdownAction<AgentSettingsPageAction>>> {
-    vec![
-        agent_dropdown_item(
-            "Claude",
-            AgentSettingsPageAction::SetChatProvider(CLIAgent::Claude),
-            false,
-        ),
-        agent_dropdown_item(
-            "Codex (coming soon)",
-            AgentSettingsPageAction::SetChatProvider(CLIAgent::Codex),
-            true,
-        ),
-        agent_dropdown_item(
-            "Gemini (coming soon)",
-            AgentSettingsPageAction::SetChatProvider(CLIAgent::Gemini),
-            true,
-        ),
-    ]
+    CLIAgent::SETTINGS_OPTIONS
+        .into_iter()
+        .map(|agent| agent_dropdown_item(agent, AgentSettingsPageAction::SetChatProvider(agent)))
+        .collect()
 }
 
 fn suggestion_provider_items(
     action: fn(String) -> AgentSettingsPageAction,
 ) -> Vec<MenuItem<DropdownAction<AgentSettingsPageAction>>> {
-    vec![
-        agent_dropdown_item("Default", action(String::new()), false),
-        agent_dropdown_item(
-            "Claude",
-            action(CLIAgent::Claude.serialized_name().to_owned()),
-            false,
-        ),
-        agent_dropdown_item(
-            "Codex (coming soon)",
-            action(CLIAgent::Codex.serialized_name().to_owned()),
-            true,
-        ),
-        agent_dropdown_item(
-            "Gemini (coming soon)",
-            action(CLIAgent::Gemini.serialized_name().to_owned()),
-            true,
-        ),
-    ]
+    let mut items = vec![MenuItemFields::new("Default")
+        .with_on_select_action(DropdownAction::SelectActionAndClose(action(String::new())))
+        .with_disabled(false)
+        .into_item()];
+    items.extend(
+        CLIAgent::SETTINGS_OPTIONS
+            .into_iter()
+            .map(|agent| agent_dropdown_item(agent, action(agent.serialized_name().to_owned()))),
+    );
+    items
 }
 
 fn agent_dropdown_item(
-    label: &'static str,
+    agent: CLIAgent,
     action: AgentSettingsPageAction,
-    disabled: bool,
 ) -> MenuItem<DropdownAction<AgentSettingsPageAction>> {
+    let disabled = !agent.is_agent_settings_enabled();
+    let label = if disabled {
+        format!("{} (coming soon)", agent.display_name())
+    } else {
+        agent.display_name().to_owned()
+    };
     MenuItemFields::new(label)
         .with_on_select_action(DropdownAction::SelectActionAndClose(action))
         .with_disabled(disabled)
         .into_item()
 }
 
-fn chat_model_items() -> Vec<DropdownItem<AgentSettingsPageAction>> {
-    model_items(AgentSettingsPageAction::SetChatModel)
+fn chat_model_items(provider: CLIAgent) -> Vec<DropdownItem<AgentSettingsPageAction>> {
+    model_items(provider, AgentSettingsPageAction::SetChatModel)
 }
 
 fn model_items(
+    provider: CLIAgent,
     action: fn(String) -> AgentSettingsPageAction,
 ) -> Vec<DropdownItem<AgentSettingsPageAction>> {
     let mut items = vec![DropdownItem::new("Default", action(String::new()))];
-    match crate::claude_code_models::discovered() {
-        Some(models) => {
-            items.extend(models.iter().map(|model| {
-                DropdownItem::new(model.display_name.clone(), action(model.id.clone()))
-            }));
-        }
-        None => {
-            items.extend(
-                crate::claude_code_models::FALLBACK_MODEL_ALIASES
-                    .iter()
-                    .map(|alias| {
-                        DropdownItem::new(prettify_model(alias), action((*alias).to_owned()))
-                    }),
-            );
-        }
-    }
+    items.extend(
+        provider
+            .model_options()
+            .into_iter()
+            .map(|model| DropdownItem::new(model.display_name, action(model.id))),
+    );
     items
 }
 
-fn chat_effort_items() -> Vec<DropdownItem<AgentSettingsPageAction>> {
-    effort_items(AgentSettingsPageAction::SetChatEffort)
+fn chat_effort_items(provider: CLIAgent) -> Vec<DropdownItem<AgentSettingsPageAction>> {
+    effort_items(provider, AgentSettingsPageAction::SetChatEffort)
 }
 
 fn effort_items(
+    provider: CLIAgent,
     action: fn(String) -> AgentSettingsPageAction,
 ) -> Vec<DropdownItem<AgentSettingsPageAction>> {
-    [
-        ("Default", ""),
-        ("Low", "low"),
-        ("Medium", "medium"),
-        ("High", "high"),
-        ("Max", "max"),
-    ]
-    .into_iter()
-    .map(|(label, value)| DropdownItem::new(label, action(value.to_owned())))
-    .collect()
+    std::iter::once(DropdownItem::new("Default", action(String::new())))
+        .chain(
+            provider
+                .effort_options()
+                .iter()
+                .map(|option| DropdownItem::new(option.label, action(option.value.to_owned()))),
+        )
+        .collect()
 }
 
-fn chat_permission_mode_items() -> Vec<DropdownItem<AgentSettingsPageAction>> {
-    PermissionMode::ALL
-        .into_iter()
+fn chat_permission_mode_items(provider: CLIAgent) -> Vec<DropdownItem<AgentSettingsPageAction>> {
+    provider
+        .permission_modes()
+        .iter()
+        .copied()
         .rev()
         .map(|mode| {
             DropdownItem::new(
@@ -1456,14 +1541,6 @@ fn chat_permission_mode_items() -> Vec<DropdownItem<AgentSettingsPageAction>> {
             )
         })
         .collect()
-}
-
-fn prettify_model(model: &str) -> String {
-    let mut chars = model.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
 }
 
 fn prettify_permission_mode(mode: &str) -> String {
