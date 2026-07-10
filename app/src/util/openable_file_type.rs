@@ -180,25 +180,43 @@ pub fn is_file_openable_in_warp(path: &Path) -> Option<OpenableFileType> {
 
 /// Only use this for UI elements that must explicitly open a file in Warp (i.e. "Open in New Tab").
 /// Prefer `resolve_file_target` for all other cases to respect users' preferences.
-/// This would also force any binary file to be opened in Warp's Code Editor, so you should likely check
-/// `is_file_openable_in_warp` before rendering any such UI Elements.
+/// Non-openable binary files still route away from the Code Editor so explicit in-app open actions
+/// do not render binary bytes as text.
 #[cfg(feature = "local_fs")]
 pub fn resolve_file_target_to_open_in_twarp(
     path: &Path,
     settings: &EditorSettings,
     layout: Option<EditorLayout>,
 ) -> FileTarget {
+    resolve_file_target_to_open_in_twarp_with_preferences(
+        path,
+        *settings.prefer_markdown_viewer,
+        *settings.open_file_layout,
+        layout,
+    )
+}
+
+#[cfg(feature = "local_fs")]
+fn resolve_file_target_to_open_in_twarp_with_preferences(
+    path: &Path,
+    prefer_markdown_viewer: bool,
+    default_layout: EditorLayout,
+    layout: Option<EditorLayout>,
+) -> FileTarget {
     let openable_file_type = is_file_openable_in_warp(path);
     let is_markdown = matches!(openable_file_type, Some(OpenableFileType::Markdown));
-    let layout = layout.unwrap_or(*settings.open_file_layout);
+    let layout = layout.unwrap_or(default_layout);
 
-    if is_markdown && *settings.prefer_markdown_viewer {
+    if is_markdown && prefer_markdown_viewer {
         return FileTarget::MarkdownViewer(layout);
     }
     if is_image_viewer_file(path) {
         return FileTarget::ImageViewer(layout);
     }
-    FileTarget::CodeEditor(layout)
+    if openable_file_type.is_some() {
+        return FileTarget::CodeEditor(layout);
+    }
+    FileTarget::SystemGeneric
 }
 
 /// Resolves the target application or viewer for opening a file based on its path and editor settings.
@@ -433,6 +451,19 @@ mod tests {
             None,
         );
         assert_eq!(target, FileTarget::EnvEditor);
+    }
+
+    #[test]
+    #[cfg(feature = "local_fs")]
+    fn test_resolve_file_target_to_open_in_twarp_keeps_binary_out_of_code_editor() {
+        let target = resolve_file_target_to_open_in_twarp_with_preferences(
+            Path::new("archive.zip"),
+            true, /* prefer_markdown_viewer */
+            EditorLayout::SplitPane,
+            None,
+        );
+
+        assert_eq!(target, FileTarget::SystemGeneric);
     }
 
     // twarp 03 — PRODUCT invariant 1: path-based markdown detection is
