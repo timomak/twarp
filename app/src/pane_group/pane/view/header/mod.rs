@@ -45,7 +45,10 @@ use twarpui::{
 
 use super::PaneDropTargetData;
 
+mod edge_budget_row;
 mod sharing;
+
+use edge_budget_row::EdgeBudgetRow;
 
 pub(crate) mod components;
 
@@ -474,11 +477,6 @@ impl<P: BackingView> PaneHeader<P> {
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min);
 
-        // Add left_of_overflow elements (restore button, sync indicator, etc.) first
-        if let Some(left_element) = left_of_overflow {
-            required_controls.add_child(left_element);
-        }
-
         if should_show_overflow {
             required_controls.add_child(overflow_menu_button);
         }
@@ -505,6 +503,17 @@ impl<P: BackingView> PaneHeader<P> {
             .with_main_axis_size(MainAxisSize::Max);
 
         right_justified_row.add_child(optional_controls);
+        // twarp: left_of_overflow (restore button, sync indicator, the Claude
+        // pane's control cluster, …) sits directly in this row rather than
+        // inside `required_controls`. As a direct child a pane can hand us a
+        // `Shrinkable`-wrapped element: Flex then gives it a *bounded* share
+        // of the remaining width (fixed children get an unbounded main-axis
+        // constraint), which is what lets the Claude pane swap in a compact
+        // cluster via `SizeConstraintSwitch` in a narrow pane. Fixed elements
+        // keep their natural size exactly as before.
+        if let Some(left_element) = left_of_overflow {
+            right_justified_row.add_child(left_element);
+        }
         right_justified_row.add_child(required_controls.finish());
 
         let required_icons_count = can_show_overflow as u32 + can_show_close as u32;
@@ -631,13 +640,14 @@ impl<P: BackingView> PaneHeader<P> {
                 // twarp: the title label follows the active tab's colour when
                 // one is set, matching the rest of the tab-themed chrome.
                 let font_color: pathfinder_color::ColorU =
-                    crate::workspace::view::active_tab_accent(self.window_id, app)
-                        .unwrap_or_else(|| {
+                    crate::workspace::view::active_tab_accent(self.window_id, app).unwrap_or_else(
+                        || {
                             appearance
                                 .theme()
                                 .sub_text_color(appearance.theme().background())
                                 .into_solid()
-                        });
+                        },
+                    );
 
                 // Build title row with primary title and optional secondary title.
                 let mut title_row = Flex::row();
@@ -714,40 +724,32 @@ impl<P: BackingView> PaneHeader<P> {
                 let right_justified_container =
                     Container::new(right_justified_row.finish()).with_padding_right(4.);
 
-                // twarp: pin BOTH edge columns to exactly the control budget.
-                // With only a shared cap (min = icon width, max = budget) the
-                // left column collapsed to its content while the right filled
-                // its budget with controls, so titles sat left of center on
-                // panes with wide control clusters (e.g. the Claude pane's
-                // [Chat UI | Raw CLI] toggle). Equal fixed edges keep the
-                // title centered in the pane regardless of what each side
-                // actually holds.
+                // twarp: pin BOTH edge columns to exactly the control budget
+                // when the pane is wide enough — equal fixed edges keep the
+                // title centered regardless of what each side actually holds
+                // (with only a shared cap, titles sat left of center on panes
+                // with wide control clusters like the Claude pane's
+                // [Chat UI | Raw CLI] toggle). In a narrow pane the fixed
+                // pinning used to lay both edges out at the full budget and
+                // clip the controls off the pane edge; EdgeBudgetRow degrades
+                // instead — the left edge drops to its natural width and the
+                // right edge shrinks to what actually fits, handing its
+                // contents a real pane-derived width so they can adapt (the
+                // Claude pane swaps in a compact control cluster via
+                // SizeConstraintSwitch).
                 let edge_width = options.control_container_width().max(min_right_width);
-                let left_constrained = ConstrainedBox::new(left_justified_container.finish())
-                    .with_min_width(edge_width)
-                    .with_max_width(edge_width)
-                    .finish();
-                let right_constrained = ConstrainedBox::new(right_justified_container.finish())
-                    .with_min_width(edge_width)
-                    .with_max_width(edge_width)
-                    .finish();
-
-                // Build the complete 3-column layout.
-                let mut row = Flex::row()
-                    .with_main_axis_size(MainAxisSize::Max)
-                    .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-                    .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
-
-                row.add_child(left_constrained);
-                // Wrap center_row in Align to vertically center within the stretched space.
-                row.add_child(
-                    Shrinkable::new(1., Align::new(center_row.finish()).finish()).finish(),
+                let row = EdgeBudgetRow::new(
+                    left_justified_container.finish(),
+                    // Wrap center_row in Align to vertically center within the stretched space.
+                    Align::new(center_row.finish()).finish(),
+                    right_justified_container.finish(),
+                    edge_width,
+                    min_right_width,
                 );
-                row.add_child(right_constrained);
 
                 Container::new(
                     Clipped::new(
-                        ConstrainedBox::new(row.finish())
+                        ConstrainedBox::new(Box::new(row))
                             .with_height(PANE_HEADER_HEIGHT)
                             .finish(),
                     )
