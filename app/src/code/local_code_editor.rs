@@ -19,7 +19,7 @@ use lsp_types::FormattingOptions;
 use markdown_parser::FormattedText;
 use num_traits::SaturatingSub;
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
-use repo_metadata::repositories::DetectedRepositories;
+use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
 use string_offset::CharOffset;
 use twarp_core::{features::FeatureFlag, ui::appearance::Appearance};
 use twarp_editor::{
@@ -211,6 +211,7 @@ struct SelectionAsContextTooltip {
 struct BlameState {
     next_request_id: u64,
     pending_request: Option<BlameRequest>,
+    pending_repo_detection: Option<PathBuf>,
     cached_blame: Option<(BlameCacheKey, ParsedBlame)>,
 }
 
@@ -1705,6 +1706,7 @@ impl LocalCodeEditorView {
 
     fn clear_git_blame(&mut self, ctx: &mut ViewContext<Self>) {
         self.blame_state.pending_request = None;
+        self.blame_state.pending_repo_detection = None;
         self.blame_state.cached_blame = None;
         self.editor.update(ctx, |editor, ctx| {
             editor.set_blame_annotations(Vec::new(), ctx);
@@ -1712,6 +1714,24 @@ impl LocalCodeEditorView {
     }
 
     fn request_git_blame(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.git_blame_enabled() {
+            if let Some(path) = self.file_path() {
+                if DetectedRepositories::as_ref(ctx)
+                    .get_root_for_path(path)
+                    .is_none()
+                {
+                    let path = path.to_path_buf();
+                    self.blame_state.pending_request = None;
+                    self.blame_state.cached_blame = None;
+                    self.editor.update(ctx, |editor, ctx| {
+                        editor.set_blame_annotations(Vec::new(), ctx);
+                    });
+                    self.request_git_repo_detection_for_blame(path, ctx);
+                    return;
+                }
+            }
+        }
+
         let Some(mut request) = self.resolve_blame_request(ctx) else {
             self.clear_git_blame(ctx);
             return;
@@ -1743,6 +1763,42 @@ impl LocalCodeEditorView {
                 me.handle_git_blame_result(request.clone(), result, ctx);
             },
         );
+    }
+
+    fn request_git_repo_detection_for_blame(&mut self, path: PathBuf, ctx: &mut ViewContext<Self>) {
+        #[cfg(feature = "local_fs")]
+        {
+            if self.blame_state.pending_repo_detection.as_ref() == Some(&path) {
+                return;
+            }
+
+            self.blame_state.pending_repo_detection = Some(path.clone());
+            let detection_path = path.to_string_lossy().to_string();
+            let fut = DetectedRepositories::handle(ctx).update(ctx, |repositories, ctx| {
+                repositories.detect_possible_git_repo(
+                    &detection_path,
+                    RepoDetectionSource::CodeReviewInitialization,
+                    ctx,
+                )
+            });
+
+            ctx.spawn(fut, move |me, repo_root, ctx| {
+                if me.blame_state.pending_repo_detection.as_ref() != Some(&path) {
+                    return;
+                }
+
+                me.blame_state.pending_repo_detection = None;
+                if repo_root.is_some() {
+                    me.request_git_blame(ctx);
+                }
+            });
+        }
+
+        #[cfg(not(feature = "local_fs"))]
+        {
+            let _ = path;
+            let _ = ctx;
+        }
     }
 
     fn handle_git_blame_result(

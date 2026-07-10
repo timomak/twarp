@@ -20,9 +20,14 @@ use twarp_core::{
 // DOGFOOD_FLAGS. twarp-oss (the default `./script/run` binary) never enables the
 // dogfood set, so without this the tab drag axis stays locked to horizontal and
 // detach-to-new-window never fires. Force-enable it for the OSS build.
+//
+// twarp: feature 11a (Git blame gutter) is smoke-tested through the default
+// twarp-oss binary. Keep the feature flag boundary in code, but enable it for
+// this fork's dev binary so the gutter path is live in fleet UX gates.
 const TWARP_OSS_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::GitOperationsInCodeReview,
     FeatureFlag::DragTabsToWindows,
+    FeatureFlag::GitBlame,
 ];
 
 // Simple wrapper around twarp::run() for Twarp OSS builds.
