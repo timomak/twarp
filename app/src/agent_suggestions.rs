@@ -1,7 +1,7 @@
 use std::{future::Future, path::PathBuf, pin::Pin, time::Duration};
 
 use claude_code::{Transcript, TranscriptItem};
-use command::{Stdio, blocking::Command};
+use command::{blocking::Command, Stdio};
 use instant::Instant;
 use serde_json::json;
 
@@ -27,12 +27,24 @@ pub struct SuggestionRequest {
     pub api_key: Option<String>,
     pub cwd: PathBuf,
     pub path_env: Option<String>,
-    pub context: ReplySuggestionContext,
+    pub context: SuggestionContext,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SuggestionContext {
+    Reply(ReplySuggestionContext),
+    TerminalCommand(TerminalSuggestionContext),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReplySuggestionContext {
     exchanges: Vec<ReplyExchange>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TerminalSuggestionContext {
+    prefix: String,
+    cwd: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -45,7 +57,16 @@ pub struct DefaultSuggestionProvider;
 
 impl SuggestionProvider for DefaultSuggestionProvider {
     fn suggest(&self, request: SuggestionRequest) -> SuggestionFuture {
-        Box::pin(async move { suggest_reply(request).await })
+        Box::pin(async move { suggest(request).await })
+    }
+}
+
+impl SuggestionContext {
+    fn prompt(&self) -> String {
+        match self {
+            Self::Reply(context) => context.prompt(),
+            Self::TerminalCommand(context) => context.prompt(),
+        }
     }
 }
 
@@ -103,7 +124,31 @@ impl ReplySuggestionContext {
     }
 }
 
-async fn suggest_reply(request: SuggestionRequest) -> Option<String> {
+impl TerminalSuggestionContext {
+    pub fn new(prefix: String, cwd: Option<String>) -> Option<Self> {
+        (!prefix.trim().is_empty()).then_some(Self { prefix, cwd })
+    }
+
+    fn prompt(&self) -> String {
+        let mut prompt = String::from(
+            "Suggest exactly one shell command that completes the command prefix below.\n\
+             Return only the full command. Do not include markdown, labels, quotes, or explanation.\n\
+             The command must start with the prefix exactly and must be safe to place in a terminal input buffer.\n\
+             Do not include a trailing newline and do not run the command.\n\n",
+        );
+        if let Some(cwd) = &self.cwd {
+            prompt.push_str("Current directory: ");
+            prompt.push_str(cwd);
+            prompt.push('\n');
+        }
+        prompt.push_str("Command prefix: ");
+        prompt.push_str(&self.prefix);
+        prompt.push_str("\nFull command:");
+        prompt
+    }
+}
+
+async fn suggest(request: SuggestionRequest) -> Option<String> {
     let provider = request.config.provider.resolve(request.chat_provider);
     if provider != CLIAgent::Claude {
         return None;
@@ -125,7 +170,7 @@ async fn suggest_reply(request: SuggestionRequest) -> Option<String> {
             .await
         }
     }?;
-    sanitize_suggestion(&suggestion)
+    sanitize_suggestion(&suggestion, &request.context)
 }
 
 async fn suggest_with_anthropic_api(
@@ -239,7 +284,7 @@ async fn suggest_with_claude_cli(
     None
 }
 
-fn sanitize_suggestion(suggestion: &str) -> Option<String> {
+fn sanitize_suggestion(suggestion: &str, context: &SuggestionContext) -> Option<String> {
     let mut suggestion = suggestion.trim().trim_matches('"').trim().to_owned();
     if let Some(stripped) = suggestion.strip_prefix("User:") {
         suggestion = stripped.trim().to_owned();
@@ -247,7 +292,18 @@ fn sanitize_suggestion(suggestion: &str) -> Option<String> {
     if let Some(stripped) = suggestion.strip_prefix("Next user message:") {
         suggestion = stripped.trim().to_owned();
     }
+    if let Some(stripped) = suggestion.strip_prefix("Command:") {
+        suggestion = stripped.trim().to_owned();
+    }
+    if let Some(stripped) = suggestion.strip_prefix("$ ") {
+        suggestion = stripped.trim().to_owned();
+    }
     suggestion = suggestion.lines().next().unwrap_or("").trim().to_owned();
+    if let SuggestionContext::TerminalCommand(context) = context {
+        if !suggestion.starts_with(&context.prefix) {
+            return None;
+        }
+    }
     (!suggestion.is_empty()).then_some(suggestion)
 }
 
@@ -279,10 +335,31 @@ mod tests {
     #[test]
     fn sanitize_strips_common_wrappers() {
         assert_eq!(
-            sanitize_suggestion("\"User: Can you run the tests?\""),
+            sanitize_suggestion(
+                "\"User: Can you run the tests?\"",
+                &SuggestionContext::Reply(ReplySuggestionContext { exchanges: vec![] })
+            ),
             Some("Can you run the tests?".to_owned())
         );
-        assert_eq!(sanitize_suggestion(""), None);
+        assert_eq!(
+            sanitize_suggestion(
+                "",
+                &SuggestionContext::Reply(ReplySuggestionContext { exchanges: vec![] })
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn terminal_suggestion_must_keep_prefix() {
+        let context = SuggestionContext::TerminalCommand(
+            TerminalSuggestionContext::new("git st".to_owned(), None).unwrap(),
+        );
+        assert_eq!(
+            sanitize_suggestion("git status --short", &context),
+            Some("git status --short".to_owned())
+        );
+        assert_eq!(sanitize_suggestion("cargo test", &context), None);
     }
 
     #[test]
@@ -297,12 +374,12 @@ mod tests {
             api_key: None,
             cwd: PathBuf::new(),
             path_env: None,
-            context: ReplySuggestionContext {
+            context: SuggestionContext::Reply(ReplySuggestionContext {
                 exchanges: vec![ReplyExchange {
                     user: "hi".to_owned(),
                     assistant: "hello".to_owned(),
                 }],
-            },
+            }),
         };
         assert_eq!(
             request.config.provider.resolve(request.chat_provider),

@@ -18,6 +18,10 @@ mod terminal_message_bar;
 mod universal;
 
 // twarp: 2c-d — AI imports replaced with file-local stubs (see definitions below)
+use crate::agent_suggestions::{
+    DefaultSuggestionProvider, SuggestionContext, SuggestionProvider, SuggestionRequest,
+    TerminalSuggestionContext,
+};
 use crate::app_state::{AIConversationId, AIDocumentId, AIDocumentVersion};
 use crate::context_chips::spacing;
 use crate::pane_group::focus_state::PaneFocusHandle;
@@ -119,8 +123,9 @@ use crate::{
     },
     session_management::SessionNavigationPromptElements,
     settings::{
-        AISettings, AISettingsChangedEvent, AliasExpansionSettings, AppEditorSettings,
-        AppEditorSettingsChangedEvent, InputModeSettings, InputSettings, InputSettingsChangedEvent,
+        self as app_settings, AISettings, AISettingsChangedEvent, AgentSettings,
+        AliasExpansionSettings, AppEditorSettings, AppEditorSettingsChangedEvent,
+        InputModeSettings, InputSettings, InputSettingsChangedEvent,
         MAX_TIMES_TO_SHOW_AUTOSUGGESTION_HINT,
     },
     settings_view::{flags, SettingsSection},
@@ -182,6 +187,7 @@ use std::{
 };
 use string_offset::CharOffset;
 use twarp_completer::util::parse_current_commands_and_tokens;
+use twarpui_extras::secure_storage;
 use vec1::Vec1;
 use vim::vim::{VimHandler, VimMode};
 
@@ -218,7 +224,7 @@ use twarpui::{
     keymap::{BindingDescription, EditableBinding, FixedBinding, Keystroke},
     platform::OperatingSystem,
     presenter::ChildView,
-    r#async::SpawnedFutureHandle,
+    r#async::{SpawnedFutureHandle, Timer},
     start_trace,
     text_layout::TextStyle,
     ui_components::{
@@ -1825,6 +1831,7 @@ impl DropTargetData for InputDropTargetData {
 }
 
 pub const DEBOUNCE_INPUT_DECORATION_PERIOD: Duration = Duration::from_millis(10);
+const TERMINAL_AI_SUGGESTION_DEBOUNCE: Duration = Duration::from_millis(500);
 /// Maximum number of historical commands to scan when looking for "similar"
 /// command runs (same pwd / shell / hostname / exit code) to derive a likely
 /// next-command shell autosuggestion.
@@ -2830,6 +2837,8 @@ pub struct AutoSuggestionResult {
     pub buffer_text: String,
     /// Generated autosuggestion result.
     pub autosuggestion_result: Option<String>,
+    /// Whether the suggestion came from an AI-backed provider rather than local history/completion.
+    pub was_intelligent_autosuggestion: bool,
 }
 
 /// Views that call into the autosuggestion generation logic must implement the Autosuggester
@@ -9260,8 +9269,7 @@ impl Input {
     ) {
         let input_buffer_text = self.buffer_text(ctx);
         let buffer_length = input_buffer_text.len();
-        let input =
-            should_collect_ai_ugc_telemetry(&*ctx, ()).then_some(input_buffer_text);
+        let input = should_collect_ai_ugc_telemetry(&*ctx, ()).then_some(input_buffer_text);
         let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
         send_telemetry_from_ctx!(
             TelemetryEvent::AgentModeChangedInputType {
@@ -9482,6 +9490,68 @@ impl Input {
         }
     }
 
+    fn terminal_suggestion_request(
+        &self,
+        buffer_text: &str,
+        completer_data: &CompleterData,
+        session_env_vars: Option<&HashMap<String, String>>,
+        ctx: &AppContext,
+    ) -> Option<SuggestionRequest> {
+        if !*AgentSettings::as_ref(ctx)
+            .enable_terminal_suggestions
+            .value()
+        {
+            return None;
+        }
+
+        let settings = AgentSettings::as_ref(ctx);
+        let mut config = settings.terminal_suggest_config();
+        let chat_config = settings.chat_launch_config();
+        if config.provider.is_inherit() {
+            config.model = config.model.or(chat_config.model);
+            config.effort = config.effort.or(chat_config.effort);
+        }
+
+        let chat_provider = settings.chat_provider_agent();
+        let resolved_provider = config.provider.resolve(chat_provider);
+        let cwd = completer_data
+            .active_block_metadata
+            .as_ref()
+            .and_then(|metadata| metadata.current_working_directory())
+            .map(PathBuf::from)
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_default();
+        let context = TerminalSuggestionContext::new(
+            buffer_text.to_owned(),
+            Some(cwd.display().to_string()),
+        )?;
+        let path_env = session_env_vars
+            .and_then(|env| env.get("PATH").cloned())
+            .or_else(|| std::env::var("PATH").ok());
+
+        Some(SuggestionRequest {
+            config,
+            chat_provider,
+            api_key: self.api_key_for_agent(resolved_provider, ctx),
+            cwd,
+            path_env,
+            context: SuggestionContext::TerminalCommand(context),
+        })
+    }
+
+    fn api_key_for_agent(&self, agent: CLIAgent, ctx: &AppContext) -> Option<String> {
+        if !app_settings::api_key_presence(AgentSettings::as_ref(ctx), agent) {
+            return None;
+        }
+        let storage_key = app_settings::api_key_storage_key(agent)?;
+        secure_storage::Model::handle(ctx)
+            .as_ref(ctx)
+            .read_value(&storage_key)
+            .ok()
+            .map(|key| key.trim().to_owned())
+            .filter(|key| !key.is_empty())
+    }
+
     /// Asynchronously generate an autosuggestion to be inserted into the editor. First, reverse
     /// search the user's history to find a possible command that starts with the buffer text. If
     /// no commands are found, run the completer in a background thread to generate a result.
@@ -9526,6 +9596,12 @@ impl Input {
         // Get current ignored shell commands to filter during generation
         let ignored_suggestions = IgnoredSuggestionsModel::as_ref(ctx)
             .get_ignored_suggestions_for_type(SuggestionType::ShellCommand);
+        let terminal_suggestion_request = self.terminal_suggestion_request(
+            &buffer_text,
+            &completer_data,
+            session_env_vars.as_ref(),
+            ctx,
+        );
         #[cfg(feature = "local_fs")]
         let conn = self.conn.clone();
         let abort_handle = ctx
@@ -9584,6 +9660,7 @@ impl Input {
                                             autosuggestion_result: Some(
                                                 most_likely_next_command.clone(),
                                             ),
+                                            was_intelligent_autosuggestion: false,
                                         };
                                     }
                                 }
@@ -9607,7 +9684,28 @@ impl Input {
                             return AutoSuggestionResult {
                                 buffer_text,
                                 autosuggestion_result: Some(reverse_chronological_command.command),
+                                was_intelligent_autosuggestion: false,
                             };
+                        }
+                    }
+
+                    if let Some(request) = terminal_suggestion_request {
+                        Timer::after(TERMINAL_AI_SUGGESTION_DEBOUNCE).await;
+                        if let Some(suggestion) = DefaultSuggestionProvider.suggest(request).await {
+                            if !ignored_suggestions.contains(&suggestion)
+                                && is_command_valid(
+                                    &suggestion,
+                                    completion_context.as_ref(),
+                                    session_env_vars.as_ref(),
+                                )
+                                .await
+                            {
+                                return AutoSuggestionResult {
+                                    buffer_text,
+                                    autosuggestion_result: Some(suggestion),
+                                    was_intelligent_autosuggestion: true,
+                                };
+                            }
                         }
                     }
 
@@ -9616,6 +9714,7 @@ impl Input {
                         return AutoSuggestionResult {
                             buffer_text,
                             autosuggestion_result: None,
+                            was_intelligent_autosuggestion: false,
                         };
                     };
                     let completion_result = completer::suggestions(
@@ -9652,6 +9751,7 @@ impl Input {
                     AutoSuggestionResult {
                         buffer_text,
                         autosuggestion_result: autosuggestion,
+                        was_intelligent_autosuggestion: false,
                     }
                 },
                 Self::on_autosuggestion_result,
@@ -15375,6 +15475,14 @@ impl Autosuggester for Input {
         result: AutoSuggestionResult,
         ctx: &mut ViewContext<Self>,
     ) {
+        let was_intelligent_autosuggestion = result.was_intelligent_autosuggestion;
+        if was_intelligent_autosuggestion
+            && !*AgentSettings::as_ref(ctx)
+                .enable_terminal_suggestions
+                .value()
+        {
+            return;
+        }
         let buffer_text = result.buffer_text;
         if self.editor.as_ref(ctx).buffer_text(ctx) != buffer_text {
             return;
@@ -15389,7 +15497,7 @@ impl Autosuggester for Input {
             self.set_autosuggestion(
                 autosuggestion,
                 AutosuggestionType::Command {
-                    was_intelligent_autosuggestion: false,
+                    was_intelligent_autosuggestion,
                 },
                 ctx,
             );
