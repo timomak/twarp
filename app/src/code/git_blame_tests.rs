@@ -94,3 +94,32 @@ fn reports_malformed_trailing_records_without_failing_parse() {
     assert!(parsed.lines.is_empty());
     assert!(!parsed.diagnostics.is_empty());
 }
+
+#[test]
+fn parses_commit_detail_metadata_with_body() {
+    let parsed = parse_git_show_commit_metadata(&format!(
+        "{SHA_B}\0Bob\0bob@example.com\02024-01-02T03:04:05+00:00\0subject\n\nbody line"
+    ))
+    .expect("metadata parses");
+
+    assert_eq!(parsed.full_sha, SHA_B);
+    assert_eq!(parsed.author_name, "Bob");
+    assert_eq!(parsed.author_email.as_deref(), Some("bob@example.com"));
+    assert_eq!(
+        parsed.absolute_author_date.as_deref(),
+        Some("2024-01-02 03:04:05 +00:00")
+    );
+    assert_eq!(parsed.message, "subject\n\nbody line");
+}
+
+#[test]
+fn builds_github_commit_url_from_origin() {
+    assert_eq!(
+        github_commit_url("git@github.com:owner/repo.git", SHA_A).as_deref(),
+        Some("https://github.com/owner/repo/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    );
+    assert_eq!(
+        github_commit_url("https://gitlab.com/owner/repo.git", SHA_A),
+        None
+    );
+}
