@@ -78,7 +78,8 @@ use crate::util::file::external_editor::EditorSettings;
 use crate::util::openable_file_type::FileTarget;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::{
-    is_binary_file, resolve_file_target_with_editor_choice, EditorLayout,
+    is_binary_file, resolve_file_target_to_open_in_twarp, resolve_file_target_with_editor_choice,
+    EditorLayout,
 };
 
 // twarp: 2c-d — removed crate::ai::blocklist::history_model::CloudConversationData,
@@ -11932,18 +11933,23 @@ impl Workspace {
                 line_and_column_arg,
             } => {
                 #[cfg(feature = "local_fs")]
-                self.open_code(
-                    CodeSource::Link {
-                        path: path.clone().into(),
-                        range_start: None,
-                        range_end: None,
-                    },
-                    *EditorSettings::as_ref(ctx).open_file_layout.value(),
-                    *line_and_column_arg,
-                    false, // preview
-                    &[],
-                    ctx,
-                );
+                {
+                    let path = PathBuf::from(path.as_str());
+                    let settings = EditorSettings::as_ref(ctx);
+                    let target = resolve_file_target_to_open_in_twarp(&path, settings, None);
+
+                    self.open_file_with_target(
+                        path.clone(),
+                        target,
+                        *line_and_column_arg,
+                        CodeSource::Link {
+                            path,
+                            range_start: None,
+                            range_end: None,
+                        },
+                        ctx,
+                    );
+                }
             }
             CommandPaletteEvent::OpenDirectory { path } => {
                 let active_terminal_view = self
