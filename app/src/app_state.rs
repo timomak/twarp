@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use twarpui::platform::FullscreenState;
 
+use claude_code::driver::PermissionMode;
 use twarpui::AppContext;
 
 // twarp: 2c-d.4 — local stubs for deleted AI types referenced by persisted snapshots
@@ -543,7 +544,6 @@ impl RestoredAIConversation {
     }
 }
 
-// twarp: 2c-d — CLIAgent stub (was crate::terminal::CLIAgent, deleted)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CLIAgent {
     Claude,
@@ -562,6 +562,9 @@ impl From<CLIAgent> for crate::server::telemetry::events::CLIAgentType {
     }
 }
 impl CLIAgent {
+    pub const SETTINGS_OPTIONS: [CLIAgent; 3] =
+        [CLIAgent::Claude, CLIAgent::Codex, CLIAgent::Gemini];
+
     pub fn from_serialized_name(name: &str) -> Self {
         match name {
             "claude" => CLIAgent::Claude,
@@ -600,35 +603,64 @@ impl CLIAgent {
         twarpui::color::ColorU::new(0, 0, 0, 0)
     }
     pub fn display_name(&self) -> &'static str {
-        self.serialized_name()
+        match self {
+            CLIAgent::Claude => "Claude",
+            CLIAgent::Codex => "Codex",
+            CLIAgent::Gemini => "Gemini",
+            CLIAgent::Unknown => "Unknown",
+        }
     }
     pub fn is_agent_settings_enabled(&self) -> bool {
-        matches!(self, CLIAgent::Claude)
+        self.capabilities().enabled
+    }
+    pub fn capabilities(&self) -> CLIAgentCapabilities {
+        self.adapter()
+            .map(CLIAgentAdapter::capabilities)
+            .unwrap_or_default()
+    }
+    pub fn supports_models(&self) -> bool {
+        self.capabilities().supports_models
+    }
+    pub fn model_options(&self) -> Vec<CLIAgentModelOption> {
+        self.adapter()
+            .map(CLIAgentAdapter::model_options)
+            .unwrap_or_default()
+    }
+    pub fn is_valid_model(&self, model: &str) -> bool {
+        self.adapter()
+            .is_some_and(|adapter| adapter.is_valid_model(model))
+    }
+    pub fn supports_effort(&self) -> bool {
+        self.capabilities().supports_effort
+    }
+    pub fn effort_options(&self) -> &'static [CLIAgentEffortOption] {
+        self.adapter()
+            .map(CLIAgentAdapter::effort_options)
+            .unwrap_or(&[])
+    }
+    pub fn is_valid_effort(&self, effort: &str) -> bool {
+        self.adapter()
+            .is_some_and(|adapter| adapter.is_valid_effort(effort))
+    }
+    pub fn supports_permission_modes(&self) -> bool {
+        self.capabilities().supports_permission_modes
+    }
+    pub fn permission_modes(&self) -> &'static [PermissionMode] {
+        self.adapter()
+            .map(CLIAgentAdapter::permission_modes)
+            .unwrap_or(&[])
     }
     pub fn executable_name(&self) -> Option<&'static str> {
-        match self {
-            CLIAgent::Claude => Some("claude"),
-            CLIAgent::Codex => Some("codex"),
-            CLIAgent::Gemini => Some("gemini"),
-            CLIAgent::Unknown => None,
-        }
+        self.adapter().and_then(CLIAgentAdapter::executable_name)
+    }
+    pub fn spawn_spec(&self) -> Option<CLIAgentSpawnSpec> {
+        self.adapter().map(CLIAgentAdapter::spawn_spec)
     }
     pub fn install_probe(&self) -> bool {
         self.executable_name().is_some_and(command_exists_on_path)
     }
     pub fn login_probe(&self) -> bool {
-        match self {
-            CLIAgent::Claude => command::blocking::Command::new("claude")
-                .args(["auth", "status"])
-                .stdin(command::Stdio::null())
-                .output()
-                .ok()
-                .is_some_and(|output| {
-                    output.status.success()
-                        && String::from_utf8_lossy(&output.stdout).contains("\"loggedIn\": true")
-                }),
-            CLIAgent::Codex | CLIAgent::Gemini | CLIAgent::Unknown => false,
-        }
+        self.adapter().is_some_and(CLIAgentAdapter::login_probe)
     }
     pub fn local_auth_probe(&self) -> AgentLocalAuthProbe {
         let cli_installed = self.install_probe();
@@ -647,10 +679,173 @@ impl CLIAgent {
     pub fn to_serialized_name(&self) -> &'static str {
         self.serialized_name()
     }
+
+    fn adapter(&self) -> Option<&'static dyn CLIAgentAdapter> {
+        match self {
+            CLIAgent::Claude => Some(&CLAUDE_AGENT_ADAPTER),
+            CLIAgent::Codex | CLIAgent::Gemini | CLIAgent::Unknown => None,
+        }
+    }
 }
 impl std::fmt::Display for CLIAgent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.serialized_name())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CLIAgentCapabilities {
+    pub enabled: bool,
+    pub supports_models: bool,
+    pub supports_effort: bool,
+    pub supports_permission_modes: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CLIAgentModelOption {
+    pub id: String,
+    pub display_name: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CLIAgentEffortOption {
+    pub value: &'static str,
+    pub label: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CLIAgentSpawnSpec {
+    pub executable_name: &'static str,
+    pub model_flag: Option<&'static str>,
+    pub effort_flag: Option<&'static str>,
+    pub permission_mode_flag: Option<&'static str>,
+}
+
+pub trait CLIAgentAdapter: Sync {
+    fn capabilities(&self) -> CLIAgentCapabilities;
+    fn executable_name(&self) -> Option<&'static str>;
+    fn spawn_spec(&self) -> CLIAgentSpawnSpec;
+    fn permission_modes(&self) -> &'static [PermissionMode];
+    fn model_options(&self) -> Vec<CLIAgentModelOption>;
+    fn is_valid_model(&self, model: &str) -> bool;
+    fn effort_options(&self) -> &'static [CLIAgentEffortOption];
+    fn is_valid_effort(&self, effort: &str) -> bool;
+    fn login_probe(&self) -> bool;
+}
+
+struct ClaudeAgentAdapter;
+
+static CLAUDE_AGENT_ADAPTER: ClaudeAgentAdapter = ClaudeAgentAdapter;
+
+const CLAUDE_PERMISSION_MODES: &[PermissionMode] = &[
+    PermissionMode::BypassPermissions,
+    PermissionMode::AcceptEdits,
+    PermissionMode::Plan,
+    PermissionMode::Default,
+];
+
+const CLAUDE_EFFORT_OPTIONS: &[CLIAgentEffortOption] = &[
+    CLIAgentEffortOption {
+        value: "low",
+        label: "Low",
+    },
+    CLIAgentEffortOption {
+        value: "medium",
+        label: "Medium",
+    },
+    CLIAgentEffortOption {
+        value: "high",
+        label: "High",
+    },
+    CLIAgentEffortOption {
+        value: "max",
+        label: "Max",
+    },
+];
+
+impl CLIAgentAdapter for ClaudeAgentAdapter {
+    fn capabilities(&self) -> CLIAgentCapabilities {
+        CLIAgentCapabilities {
+            enabled: true,
+            supports_models: true,
+            supports_effort: true,
+            supports_permission_modes: true,
+        }
+    }
+
+    fn executable_name(&self) -> Option<&'static str> {
+        Some("claude")
+    }
+
+    fn spawn_spec(&self) -> CLIAgentSpawnSpec {
+        CLIAgentSpawnSpec {
+            executable_name: "claude",
+            model_flag: Some("--model"),
+            effort_flag: Some("--effort"),
+            permission_mode_flag: Some("--permission-mode"),
+        }
+    }
+
+    fn permission_modes(&self) -> &'static [PermissionMode] {
+        CLAUDE_PERMISSION_MODES
+    }
+
+    fn model_options(&self) -> Vec<CLIAgentModelOption> {
+        match crate::claude_code_models::discovered() {
+            Some(models) => models
+                .iter()
+                .map(|model| CLIAgentModelOption {
+                    id: model.id.clone(),
+                    display_name: model.display_name.clone(),
+                })
+                .collect(),
+            None => crate::claude_code_models::FALLBACK_MODEL_ALIASES
+                .iter()
+                .map(|alias| CLIAgentModelOption {
+                    id: (*alias).to_owned(),
+                    display_name: prettify_agent_model(alias),
+                })
+                .collect(),
+        }
+    }
+
+    fn is_valid_model(&self, model: &str) -> bool {
+        if crate::claude_code_models::FALLBACK_MODEL_ALIASES.contains(&model) {
+            return true;
+        }
+
+        crate::claude_code_models::discovered()
+            .is_some_and(|models| models.iter().any(|entry| entry.id == model))
+    }
+
+    fn effort_options(&self) -> &'static [CLIAgentEffortOption] {
+        CLAUDE_EFFORT_OPTIONS
+    }
+
+    fn is_valid_effort(&self, effort: &str) -> bool {
+        CLAUDE_EFFORT_OPTIONS
+            .iter()
+            .any(|option| option.value == effort)
+    }
+
+    fn login_probe(&self) -> bool {
+        command::blocking::Command::new("claude")
+            .args(["auth", "status"])
+            .stdin(command::Stdio::null())
+            .output()
+            .ok()
+            .is_some_and(|output| {
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout).contains("\"loggedIn\": true")
+            })
+    }
+}
+
+fn prettify_agent_model(model: &str) -> String {
+    let mut chars = model.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
     }
 }
 
