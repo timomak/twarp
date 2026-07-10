@@ -48,36 +48,38 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use ::settings::Setting;
 use async_channel::Sender;
 use base64::Engine as _;
 use claude_code::diff::diff_for_tool;
 use claude_code::driver::{
-    interrupt, send_control_response, send_interrupt, send_user_message, spawn_session, Child,
-    OutgoingImage, OutgoingMessage, PermissionMode, SpawnOptions, SpawnedSession,
+    Child, OutgoingImage, OutgoingMessage, PermissionMode, SpawnOptions, SpawnedSession, interrupt,
+    send_control_response, send_interrupt, send_user_message, spawn_session,
 };
 use claude_code::launch::LaunchOptions;
-use claude_code::{sessions, Transcript, TranscriptEvent, TranscriptItem, TurnMetrics, Usage};
+use claude_code::{Transcript, TranscriptEvent, TranscriptItem, TurnMetrics, Usage, sessions};
 use futures::StreamExt;
 use markdown_parser::{
-    parse_markdown_with_gfm_tables, FormattedTable, FormattedText, FormattedTextInline,
-    FormattedTextLine, TableAlignment,
+    FormattedTable, FormattedText, FormattedTextInline, FormattedTextLine, TableAlignment,
+    parse_markdown_with_gfm_tables,
 };
 use parking_lot::RwLock;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use settings::Setting;
 use twarp_core::features::FeatureFlag;
 use twarp_editor::editor::NavigationKey;
 use twarpui::assets::asset_cache::AssetSource;
+use twarpui::r#async::Timer;
 use twarpui::clipboard::ClipboardContent;
 use twarpui::elements::shimmering_text::{
     ShimmerConfig, ShimmeringTextElement, ShimmeringTextStateHandle,
 };
 use twarpui::platform::FilePickerConfiguration;
-use twarpui::r#async::Timer;
 use twarpui::ui_components::button::ButtonVariant;
 use twarpui::ui_components::slider::SliderStateHandle;
 use twarpui::{
+    AppContext, BlurContext, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView,
+    View, ViewContext, ViewHandle, WindowId,
     elements::{
         Align, Border, CacheOption, ChildAnchor, Clipped, ClippedScrollStateHandle,
         ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss,
@@ -93,9 +95,8 @@ use twarpui::{
     presenter::ChildView,
     text_layout::ClipConfig,
     ui_components::components::{UiComponent, UiComponentStyles},
-    AppContext, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View,
-    ViewContext, ViewHandle, WindowId,
 };
+use twarpui_extras::secure_storage;
 
 use self::agents::{AgentRun, AgentRunState};
 use self::background_scripts::{BackgroundScript, BackgroundScriptState};
@@ -103,28 +104,32 @@ use self::composer::{SuggestionKind, SuggestionQuery};
 use self::diff_cards::DiffCard;
 use self::repo_context::{CiState, RepoContext};
 use self::thinking::ThinkingUi;
-use self::tool_cards::{render_tool_card, ToolCardUi};
-use crate::app_state::ConversationStatus;
+use self::tool_cards::{ToolCardUi, render_tool_card};
+use crate::agent_suggestions::{
+    DefaultSuggestionProvider, ReplySuggestionContext, SuggestionProvider,
+};
+use crate::app_state::{CLIAgent, ConversationStatus};
 use crate::appearance::Appearance;
 use crate::claude_code_session_defaults::ClaudeSessionDefaultsModel;
 use crate::computer_control::{
     ComputerControlChrome, ComputerControlCoordinator, ComputerControlState,
 };
 use crate::editor::{
-    EditorOptions, EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, TextOptions,
+    AutosuggestionLocation, AutosuggestionType, EditorOptions, EditorView, Event as EditorEvent,
+    PropagateAndNoOpNavigationKeys, TextOptions,
 };
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::{
-    pane::view::{self, HeaderContent, StandardHeader, StandardHeaderOptions},
     BackingView, PaneConfiguration, PaneEvent, PaneHeaderAction,
+    pane::view::{self, HeaderContent, StandardHeader, StandardHeaderOptions},
 };
-use crate::settings::AgentSettings;
+use crate::settings::{self as app_settings, AgentSettings};
 #[cfg(all(feature = "local_fs", feature = "local_tty"))]
 use crate::terminal::local_shell::LocalShellState;
 use crate::terminal::{
+    TerminalManager, TerminalView,
     session_settings::{NotificationsMode, SessionSettings},
     view::{Event as TerminalViewEvent, NotificationsTrigger},
-    TerminalManager, TerminalView,
 };
 use crate::util::path::{resolve_executable, resolve_executable_in_path};
 use crate::workspace::{WorkspaceAction, WorkspaceRegistry};
@@ -705,6 +710,10 @@ pub struct ClaudeCodeView {
     /// Stable per-row mouse handles for the suggestions panel, grown on
     /// demand (the Timeline/shortcut-row pattern).
     suggestion_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Monotonic cancellation token for chat reply ghost-text generation. Any
+    /// user edit, focus loss, or new turn increments it so stale provider
+    /// results cannot repopulate the composer.
+    reply_suggestion_generation: u64,
     /// The cwd's mentionable files, walked lazily on the first `@` and kept
     /// for the pane's lifetime (gitignore-aware, capped).
     cwd_files: Option<Vec<String>>,
@@ -1076,6 +1085,7 @@ impl ClaudeCodeView {
             suggestions: Vec::new(),
             suggestion_selected: 0,
             suggestion_row_mouse: std::cell::RefCell::new(Vec::new()),
+            reply_suggestion_generation: 0,
             cwd_files: None,
             slash_command_index: None,
             pending_images: Vec::new(),
@@ -1457,12 +1467,16 @@ impl ClaudeCodeView {
                 if self.suggestion_query.is_some() && !self.suggestions.is_empty() {
                     self.accept_suggestion(self.suggestion_selected, ctx);
                 } else {
+                    self.clear_reply_suggestion(ctx);
                     self.submit(ctx);
                 }
             }
             // Live-filter the suggestions + attachment chips as the draft
             // changes (PRODUCT §15a–§15b).
-            EditorEvent::Edited(_) => self.refresh_composer_intelligence(ctx),
+            EditorEvent::Edited(_) => {
+                self.clear_reply_suggestion(ctx);
+                self.refresh_composer_intelligence(ctx);
+            }
             // PRODUCT §49 (7l): a paste may carry a clipboard image — attach it.
             // The editor has already inserted any plain text, so this only adds
             // image chips (an image-only clipboard inserts no text).
@@ -1479,6 +1493,7 @@ impl ClaudeCodeView {
                 }
             }
             EditorEvent::Escape => {
+                self.clear_reply_suggestion(ctx);
                 if self.suggestion_query.take().is_some() {
                     self.suggestions.clear();
                     self.sync_navigation_propagation(ctx);
@@ -1635,6 +1650,109 @@ impl ClaudeCodeView {
         };
         self.input_editor.update(ctx, |editor, _ctx| {
             editor.set_propagate_vertical_navigation_keys(mode);
+        });
+    }
+
+    fn clear_reply_suggestion(&mut self, ctx: &mut ViewContext<Self>) {
+        self.reply_suggestion_generation = self.reply_suggestion_generation.wrapping_add(1);
+        self.input_editor
+            .update(ctx, |editor, ctx| editor.clear_autosuggestion(ctx));
+    }
+
+    fn maybe_request_reply_suggestion(&mut self, ctx: &mut ViewContext<Self>) {
+        if !*AgentSettings::as_ref(ctx).enable_reply_suggestions.value() {
+            self.clear_reply_suggestion(ctx);
+            return;
+        }
+        if self.streaming || self.raw_cli.is_some() || !self.message_queue.is_empty() {
+            self.clear_reply_suggestion(ctx);
+            return;
+        }
+        let composer_ready = self.input_editor.read(ctx, |editor, ctx| {
+            editor.is_focused() && editor.buffer_text(ctx).trim().is_empty()
+        });
+        if !composer_ready {
+            self.clear_reply_suggestion(ctx);
+            return;
+        }
+
+        let Some(context) = ReplySuggestionContext::from_transcript(&self.transcript) else {
+            self.clear_reply_suggestion(ctx);
+            return;
+        };
+
+        let settings = AgentSettings::as_ref(ctx);
+        let mut config = settings.reply_suggest_config();
+        let chat_config = settings.chat_launch_config();
+        if config.provider.is_inherit() {
+            config.model = config.model.or(chat_config.model);
+            config.effort = config.effort.or(chat_config.effort);
+        }
+        let resolved_provider = config.provider.resolve(settings.chat_provider_agent());
+        let api_key = self.api_key_for_agent(resolved_provider, ctx);
+        let request = crate::agent_suggestions::SuggestionRequest {
+            config,
+            chat_provider: settings.chat_provider_agent(),
+            api_key,
+            cwd: self
+                .cwd
+                .clone()
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
+            path_env: self.interactive_path.clone(),
+            context,
+        };
+
+        self.reply_suggestion_generation = self.reply_suggestion_generation.wrapping_add(1);
+        let generation = self.reply_suggestion_generation;
+        ctx.spawn(
+            DefaultSuggestionProvider.suggest(request),
+            move |view, suggestion, ctx| {
+                if view.reply_suggestion_generation != generation {
+                    return;
+                }
+                view.apply_reply_suggestion(suggestion, ctx);
+            },
+        );
+    }
+
+    fn api_key_for_agent(&self, agent: CLIAgent, ctx: &AppContext) -> Option<String> {
+        if !app_settings::api_key_presence(AgentSettings::as_ref(ctx), agent) {
+            return None;
+        }
+        let storage_key = app_settings::api_key_storage_key(agent)?;
+        secure_storage::Model::handle(ctx)
+            .as_ref(ctx)
+            .read_value(&storage_key)
+            .ok()
+            .map(|key| key.trim().to_owned())
+            .filter(|key| !key.is_empty())
+    }
+
+    fn apply_reply_suggestion(&mut self, suggestion: Option<String>, ctx: &mut ViewContext<Self>) {
+        if !*AgentSettings::as_ref(ctx).enable_reply_suggestions.value() {
+            self.clear_reply_suggestion(ctx);
+            return;
+        }
+        if self.streaming || self.raw_cli.is_some() || suggestion.is_none() {
+            return;
+        }
+        let composer_ready = self.input_editor.read(ctx, |editor, ctx| {
+            editor.is_focused() && editor.buffer_text(ctx).trim().is_empty()
+        });
+        if !composer_ready {
+            return;
+        }
+        let suggestion = suggestion.unwrap();
+        self.input_editor.update(ctx, |editor, ctx| {
+            editor.set_autosuggestion(
+                suggestion,
+                AutosuggestionLocation::EndOfBuffer,
+                AutosuggestionType::AgentModeQuery {
+                    context_block_ids: Vec::new(),
+                    was_intelligent_autosuggestion: true,
+                },
+                ctx,
+            );
         });
     }
 
@@ -2241,6 +2359,7 @@ impl ClaudeCodeView {
         previews: Vec<PathBuf>,
         ctx: &mut ViewContext<Self>,
     ) {
+        self.clear_reply_suggestion(ctx);
         // PRODUCT §1: claude is parked on an AskUserQuestion — a typed message
         // is the user's answer (the free-form "Other" path), not type-ahead
         // for after the question. Consume it as the held permission's answer.
@@ -2608,6 +2727,7 @@ impl ClaudeCodeView {
             return;
         };
         let message = self.message_queue.remove(0);
+        self.clear_reply_suggestion(ctx);
         self.queue_expanded.clear();
         self.transcript
             .apply(TranscriptEvent::UserMessage(message.text.clone()));
@@ -3069,6 +3189,12 @@ impl ClaudeCodeView {
             // message starts fresh instead of re-failing (PRODUCT §37).
             self.resume_session_id = None;
         }
+        let completed_end = matches!(
+            &event,
+            TranscriptEvent::Ended {
+                reason: claude_code::EndReason::Completed
+            }
+        );
         let ended = matches!(event, TranscriptEvent::Ended { .. });
         self.ingest_event(event, ctx);
         if turn_completed {
@@ -3078,6 +3204,9 @@ impl ClaudeCodeView {
             // #11: the turn may have edited files, committed, or pushed —
             // refresh the diff / branch / PR / CI bar.
             self.refresh_repo_context(ctx);
+        }
+        if completed_end {
+            self.maybe_request_reply_suggestion(ctx);
         }
         // PRODUCT §14: follow streaming output to the bottom as it arrives —
         // but only while the user is still pinned to the bottom. If they've
@@ -6751,6 +6880,10 @@ impl View for ClaudeCodeView {
         // view's own update), so nothing reads this view while we hold `&mut
         // self`.
         ctx.emit(ClaudeCodeViewEvent::Pane(PaneEvent::FocusSelf));
+    }
+
+    fn on_blur(&mut self, _blur_ctx: &BlurContext, ctx: &mut ViewContext<Self>) {
+        self.clear_reply_suggestion(ctx);
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
