@@ -605,6 +605,39 @@ impl CLIAgent {
     pub fn is_agent_settings_enabled(&self) -> bool {
         matches!(self, CLIAgent::Claude)
     }
+    pub fn executable_name(&self) -> Option<&'static str> {
+        match self {
+            CLIAgent::Claude => Some("claude"),
+            CLIAgent::Codex => Some("codex"),
+            CLIAgent::Gemini => Some("gemini"),
+            CLIAgent::Unknown => None,
+        }
+    }
+    pub fn install_probe(&self) -> bool {
+        self.executable_name().is_some_and(command_exists_on_path)
+    }
+    pub fn login_probe(&self) -> bool {
+        match self {
+            CLIAgent::Claude => command::blocking::Command::new("claude")
+                .args(["auth", "status"])
+                .stdin(command::Stdio::null())
+                .output()
+                .ok()
+                .is_some_and(|output| {
+                    output.status.success()
+                        && String::from_utf8_lossy(&output.stdout).contains("\"loggedIn\": true")
+                }),
+            CLIAgent::Codex | CLIAgent::Gemini | CLIAgent::Unknown => false,
+        }
+    }
+    pub fn local_auth_probe(&self) -> AgentLocalAuthProbe {
+        let cli_installed = self.install_probe();
+        let logged_in = cli_installed && self.login_probe();
+        AgentLocalAuthProbe {
+            cli_installed,
+            logged_in,
+        }
+    }
     pub fn skill_command_prefix(&self) -> &'static str {
         ""
     }
@@ -619,6 +652,34 @@ impl std::fmt::Display for CLIAgent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.serialized_name())
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AgentLocalAuthProbe {
+    pub cli_installed: bool,
+    pub logged_in: bool,
+}
+
+fn command_exists_on_path(command: &str) -> bool {
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+
+    std::env::split_paths(&path).any(|dir| {
+        let candidate = dir.join(command);
+        if crate::util::path::file_exists_and_is_executable(&candidate) {
+            return true;
+        }
+
+        #[cfg(windows)]
+        {
+            crate::util::path::file_exists_and_is_executable(&dir.join(format!("{command}.exe")))
+        }
+        #[cfg(not(windows))]
+        {
+            false
+        }
+    })
 }
 
 impl std::fmt::Display for AIDocumentId {
