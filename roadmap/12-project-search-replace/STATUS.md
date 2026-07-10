@@ -1,6 +1,6 @@
 # 12 — Project-wide search & replace
 
-**Phase:** spec-pending
+**Phase:** impl-pending
 **Spec PR:** —
 **Impl PRs:** —
 
