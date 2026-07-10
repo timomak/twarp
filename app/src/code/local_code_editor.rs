@@ -3,6 +3,7 @@
 /// It also handles applying an optional diff to the file content that will be applied
 /// when the file is loaded.
 use std::{
+    collections::HashSet,
     ops::Range,
     path::{Path, PathBuf},
     rc::Rc,
@@ -18,6 +19,7 @@ use lsp_types::FormattingOptions;
 use markdown_parser::FormattedText;
 use num_traits::SaturatingSub;
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
+use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
 use string_offset::CharOffset;
 use twarp_core::{features::FeatureFlag, ui::appearance::Appearance};
 use twarp_editor::{
@@ -54,6 +56,10 @@ use crate::{
     code::{
         editor::model::HoverableLink,
         footer::{CodeFooterView, CodeFooterViewEvent},
+        git_blame::{
+            committed_annotation, fetch_git_blame, path_is_in_repo, uncommitted_annotation,
+            BlameCacheKey, BlameGutterAnnotation, BlameLineState, FetchedBlame, ParsedBlame,
+        },
         global_buffer_model::{BufferState, GlobalBufferModel},
         SaveOutcome, ShowFindReferencesCardProvider,
     },
@@ -201,6 +207,22 @@ struct SelectionAsContextTooltip {
     terminal_target_fn: Box<TerminalTargetFn>,
 }
 
+#[derive(Debug, Default)]
+struct BlameState {
+    next_request_id: u64,
+    pending_request: Option<BlameRequest>,
+    pending_repo_detection: Option<PathBuf>,
+    cached_blame: Option<(BlameCacheKey, ParsedBlame)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BlameRequest {
+    id: u64,
+    repo_root: PathBuf,
+    relative_path: PathBuf,
+    content_version: ContentVersion,
+}
+
 #[derive(Debug, Clone)]
 pub enum LocalCodeEditorAction {
     InsertSelectedTextToInput,
@@ -311,6 +333,7 @@ pub struct LocalCodeEditorView {
     hover_debounce_tx: async_channel::Sender<CharOffset>,
     /// State for the LSP hover tooltip.
     pub(super) lsp_hover_state: LspHoverState,
+    blame_state: BlameState,
     /// Pending scroll position to apply after the file is loaded. This is used when
     /// `set_pending_scroll` is called before the file content has finished loading
     /// (e.g., in the GlobalBuffer path where content loads asynchronously).
@@ -353,6 +376,7 @@ impl LocalCodeEditorView {
             }
             CodeEditorEvent::ContentChanged { origin, .. } => {
                 me.update_diff_hunk_gutter_buttons(ctx);
+                me.refresh_blame_annotations(ctx);
 
                 // Clear cached diagnostics/decorations on any content change. This is to avoid showing stale diagnostics while we are waiting for new diagnostics.
                 if !me.processed_diagnostics.is_empty() || !me.diagnostic_decorations.is_empty() {
@@ -377,6 +401,7 @@ impl LocalCodeEditorView {
                 }
             }
             CodeEditorEvent::DiffUpdated => {
+                me.refresh_blame_annotations(ctx);
                 ctx.emit(LocalCodeEditorEvent::DiffStatusUpdated);
             }
             CodeEditorEvent::StageHunkRequested { line_range } => {
@@ -532,6 +557,7 @@ impl LocalCodeEditorView {
             context_menu_state: Default::default(),
             hover_debounce_tx,
             lsp_hover_state: LspHoverState::None,
+            blame_state: BlameState::default(),
             pending_scroll_on_load: None,
             pending_diff_base_on_load: None,
             processed_diagnostics: Vec::new(),
@@ -1244,6 +1270,9 @@ impl LocalCodeEditorView {
         });
 
         Self::subscribe_to_global_buffer_events(file_id, ctx);
+        if local_editor.file_loaded(ctx) {
+            local_editor.request_git_blame(ctx);
+        }
 
         local_editor
     }
@@ -1481,10 +1510,12 @@ impl LocalCodeEditorView {
                             editor.scroll_to_first_hunk(ctx);
                         });
                     }
+                    me.request_git_blame(ctx);
                     ctx.emit(LocalCodeEditorEvent::FileLoaded);
                 }
                 GlobalBufferModelEvent::FailedToLoad { error, .. } => {
                     me.is_new_file = true;
+                    me.clear_git_blame(ctx);
                     me.on_file_loaded(ctx);
                     ctx.emit(LocalCodeEditorEvent::FailedToLoad {
                         error: error.clone(),
@@ -1499,9 +1530,12 @@ impl LocalCodeEditorView {
                         ctx.notify();
                     } else {
                         me.base_content_version = Some(*content_version);
+                        me.request_git_blame(ctx);
                     }
                 }
                 GlobalBufferModelEvent::FileSaved { .. } => {
+                    me.base_content_version = GlobalBufferModel::as_ref(ctx).base_version(file_id);
+                    me.request_git_blame(ctx);
                     ctx.emit(LocalCodeEditorEvent::FileSaved);
                 }
                 GlobalBufferModelEvent::FailedToSave { error, .. } => {
@@ -1597,6 +1631,7 @@ impl LocalCodeEditorView {
             SaveOutcome::Failed
         } else {
             Self::subscribe_to_global_buffer_events(file_id, ctx);
+            me.request_git_blame(ctx);
             SaveOutcome::Succeeded
         };
         callback(save_outcome, ctx);
@@ -1649,6 +1684,226 @@ impl LocalCodeEditorView {
         })
     }
 
+    fn git_blame_enabled(&self) -> bool {
+        FeatureFlag::GitBlame.is_enabled() && self.diff_type.is_none() && !self.is_new_file
+    }
+
+    fn resolve_blame_request(&self, ctx: &AppContext) -> Option<BlameRequest> {
+        if !self.git_blame_enabled() {
+            return None;
+        }
+
+        let path = self.file_path()?;
+        let repo_root = DetectedRepositories::as_ref(ctx).get_root_for_path(path)?;
+        let relative_path = path_is_in_repo(path, &repo_root)?;
+        Some(BlameRequest {
+            id: 0,
+            repo_root,
+            relative_path,
+            content_version: self.editor.as_ref(ctx).version(ctx),
+        })
+    }
+
+    fn clear_git_blame(&mut self, ctx: &mut ViewContext<Self>) {
+        self.blame_state.pending_request = None;
+        self.blame_state.pending_repo_detection = None;
+        self.blame_state.cached_blame = None;
+        self.editor.update(ctx, |editor, ctx| {
+            editor.set_blame_annotations(Vec::new(), ctx);
+        });
+    }
+
+    fn request_git_blame(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.git_blame_enabled() {
+            if let Some(path) = self.file_path() {
+                if DetectedRepositories::as_ref(ctx)
+                    .get_root_for_path(path)
+                    .is_none()
+                {
+                    let path = path.to_path_buf();
+                    self.blame_state.pending_request = None;
+                    self.blame_state.cached_blame = None;
+                    self.editor.update(ctx, |editor, ctx| {
+                        editor.set_blame_annotations(Vec::new(), ctx);
+                    });
+                    self.request_git_repo_detection_for_blame(path, ctx);
+                    return;
+                }
+            }
+        }
+
+        let Some(mut request) = self.resolve_blame_request(ctx) else {
+            self.clear_git_blame(ctx);
+            return;
+        };
+
+        if let Some((key, parsed)) = &self.blame_state.cached_blame {
+            if key.repo_root == request.repo_root
+                && key.relative_path == request.relative_path
+                && key.content_version == request.content_version
+            {
+                let annotations = self.blame_annotations(parsed, ctx);
+                self.editor.update(ctx, |editor, ctx| {
+                    editor.set_blame_annotations(annotations, ctx);
+                });
+                return;
+            }
+        }
+
+        self.blame_state.next_request_id = self.blame_state.next_request_id.saturating_add(1);
+        request.id = self.blame_state.next_request_id;
+        self.blame_state.pending_request = Some(request.clone());
+
+        let repo_root = request.repo_root.clone();
+        let relative_path = request.relative_path.clone();
+        let content_version = request.content_version;
+        ctx.spawn(
+            async move { fetch_git_blame(repo_root, relative_path, content_version).await },
+            move |me, result, ctx| {
+                me.handle_git_blame_result(request.clone(), result, ctx);
+            },
+        );
+    }
+
+    fn request_git_repo_detection_for_blame(&mut self, path: PathBuf, ctx: &mut ViewContext<Self>) {
+        #[cfg(feature = "local_fs")]
+        {
+            if self.blame_state.pending_repo_detection.as_ref() == Some(&path) {
+                return;
+            }
+
+            self.blame_state.pending_repo_detection = Some(path.clone());
+            let detection_path = path.to_string_lossy().to_string();
+            let fut = DetectedRepositories::handle(ctx).update(ctx, |repositories, ctx| {
+                repositories.detect_possible_git_repo(
+                    &detection_path,
+                    RepoDetectionSource::CodeReviewInitialization,
+                    ctx,
+                )
+            });
+
+            ctx.spawn(fut, move |me, repo_root, ctx| {
+                if me.blame_state.pending_repo_detection.as_ref() != Some(&path) {
+                    return;
+                }
+
+                me.blame_state.pending_repo_detection = None;
+                if repo_root.is_some() {
+                    me.request_git_blame(ctx);
+                }
+            });
+        }
+
+        #[cfg(not(feature = "local_fs"))]
+        {
+            let _ = path;
+            let _ = ctx;
+        }
+    }
+
+    fn handle_git_blame_result(
+        &mut self,
+        request: BlameRequest,
+        result: anyhow::Result<FetchedBlame>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.blame_state.pending_request.as_ref() != Some(&request) {
+            return;
+        }
+
+        let Some(current_request) = self.resolve_blame_request(ctx) else {
+            self.clear_git_blame(ctx);
+            return;
+        };
+        if current_request.repo_root != request.repo_root
+            || current_request.relative_path != request.relative_path
+            || current_request.content_version != request.content_version
+        {
+            return;
+        }
+
+        self.blame_state.pending_request = None;
+        match result {
+            Ok(fetched) => {
+                let annotations = self.blame_annotations(&fetched.parsed, ctx);
+                self.blame_state.cached_blame = Some((fetched.key, fetched.parsed));
+                self.editor.update(ctx, |editor, ctx| {
+                    editor.set_blame_annotations(annotations, ctx);
+                });
+            }
+            Err(error) => {
+                log::debug!("git blame request failed: {error:#}");
+                self.editor.update(ctx, |editor, ctx| {
+                    editor.set_blame_annotations(Vec::new(), ctx);
+                });
+            }
+        }
+    }
+
+    fn refresh_blame_annotations(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some((_, parsed)) = self.blame_state.cached_blame.clone() else {
+            return;
+        };
+        let annotations = self.blame_annotations(&parsed, ctx);
+        self.editor.update(ctx, |editor, ctx| {
+            editor.set_blame_annotations(annotations, ctx);
+        });
+    }
+
+    fn blame_annotations(
+        &self,
+        parsed: &ParsedBlame,
+        ctx: &AppContext,
+    ) -> Vec<BlameGutterAnnotation> {
+        if !self.git_blame_enabled() {
+            return Vec::new();
+        }
+
+        let current_line_count = self
+            .editor
+            .as_ref(ctx)
+            .text(ctx)
+            .as_str()
+            .lines()
+            .count()
+            .max(parsed.lines.len());
+        let dirty_lines = self.dirty_line_indices(current_line_count, ctx);
+        let mut annotations = Vec::new();
+
+        for line_index in 0..current_line_count {
+            if dirty_lines.contains(&line_index) {
+                annotations.push(uncommitted_annotation(line_index));
+                continue;
+            }
+
+            let Some(blame_line) = parsed.lines.get(line_index).and_then(Option::as_ref) else {
+                continue;
+            };
+
+            match &blame_line.state {
+                BlameLineState::Committed(commit) => {
+                    annotations.push(committed_annotation(line_index, commit));
+                }
+                BlameLineState::Uncommitted => {
+                    annotations.push(uncommitted_annotation(line_index));
+                }
+            }
+        }
+
+        annotations
+    }
+
+    fn dirty_line_indices(&self, line_count: usize, ctx: &AppContext) -> HashSet<usize> {
+        let diff_status = self.editor.as_ref(ctx).diff_status(ctx);
+        (0..line_count)
+            .filter(|line| {
+                diff_status
+                    .added_diff_range(LineCount::from(*line))
+                    .is_some()
+            })
+            .collect()
+    }
+
     /// Update this editor's file identity after a `GlobalBufferModel::rename`.
     /// Sets the new file_id and path, re-subscribes to `GlobalBufferModelEvent`,
     /// and updates the language from the new path.
@@ -1671,6 +1926,8 @@ impl LocalCodeEditorView {
 
         // Re-subscribe to GlobalBufferModel events for the new file_id.
         Self::subscribe_to_global_buffer_events(file_id, ctx);
+        self.clear_git_blame(ctx);
+        self.request_git_blame(ctx);
     }
 
     pub fn editor(&self) -> &ViewHandle<CodeEditorView> {

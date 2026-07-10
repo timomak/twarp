@@ -36,9 +36,9 @@ use twarp_editor::{
 use twarpui::{
     elements::{
         new_scrollable::{NewScrollableElement, ScrollableAxis},
-        Align, Axis, Border, ChildAnchor, ConstrainedBox, Container, CornerRadius, Empty, F32Ext,
-        Flex, MainAxisSize, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
-        Point, Radius, ScrollData, Stack, Text, ZIndex,
+        Align, Axis, Border, ChildAnchor, ConstrainedBox, Container, CornerRadius,
+        CrossAxisAlignment, Empty, F32Ext, Flex, MainAxisSize, OffsetPositioning, ParentAnchor,
+        ParentElement, ParentOffsetBounds, Point, Radius, ScrollData, Stack, Text, ZIndex,
     },
     event::DispatchedEvent,
     fonts::FamilyId,
@@ -51,6 +51,7 @@ use twarpui::{
 use super::diff::{DiffHunkDisplay, DiffStatus};
 use super::model::DiffNavigationState;
 use crate::code::editor::element::gutter_button::GutterButton;
+use crate::code::git_blame::BlameGutterAnnotation;
 use crate::settings::CodeEditorLineNumberMode;
 use crate::{
     code::editor::{
@@ -63,6 +64,8 @@ use twarp_core::features::FeatureFlag;
 use twarpui::elements::{Hoverable, MouseStateHandle};
 
 pub const GUTTER_WIDTH: f32 = 94.;
+const BLAME_GUTTER_WIDTH: f32 = 220.;
+const BLAME_GUTTER_GAP: f32 = 8.;
 const VERTICAL_DIFF_HUNK_INDICATOR_WIDTH: f32 = 3.;
 const VERTICAL_DIFF_HUNK_INDICATOR_HOVERED_WIDTH: f32 = 8.;
 
@@ -165,6 +168,7 @@ struct GutterElement {
     element: Box<dyn Element>,
     offset: Pixels,
     height: f32,
+    gutter_width: f32,
     hovered: bool,
     line: EditorLineLocation,
     element_type: GutterElementType,
@@ -195,7 +199,7 @@ impl GutterElement {
                     RectF::new(line_origin, line_size).contains_point(position)
                 } else {
                     // Hidden sections use the full gutter width
-                    let size = vec2f(GUTTER_WIDTH, self.height);
+                    let size = vec2f(self.gutter_width, self.height);
                     RectF::new(gutter_origin, size).contains_point(position)
                 };
                 if does_contain {
@@ -230,7 +234,7 @@ impl GutterElement {
                 } else {
                     // Check if position is in the full gutter width (but not in sliver)
                     let full_gutter_rect =
-                        RectF::new(gutter_origin, vec2f(GUTTER_WIDTH, self.height));
+                        RectF::new(gutter_origin, vec2f(self.gutter_width, self.height));
                     if full_gutter_rect.contains_point(position) {
                         Some(GutterRange::DiffHunk {
                             line: self.line.clone(),
@@ -249,7 +253,7 @@ impl GutterElement {
         match self.element_type {
             GutterElementType::HiddenSection { .. } => {
                 // Hidden section elements are always horizontal.
-                Some(vec2f(GUTTER_WIDTH, self.height))
+                Some(vec2f(self.gutter_width, self.height))
             }
             GutterElementType::DiffHunk { hunk: ref diff, .. } => {
                 let vertical_indicator_width = if gutter_element_is_hovered {
@@ -450,6 +454,7 @@ pub struct EditorWrapper<V: EditorView> {
     find_references_save_position_id: String,
     /// The line where find references card is anchored (if active).
     find_references_anchor: Option<EditorLineLocation>,
+    blame_annotations: Vec<BlameGutterAnnotation>,
 }
 
 impl<V: EditorView> EditorWrapper<V> {
@@ -549,6 +554,7 @@ impl<V: EditorView> EditorWrapper<V> {
         gutter_element_hover_target: GutterHoverTarget,
         comment_save_position_id: String,
         find_references_save_position_id: String,
+        blame_annotations: Vec<BlameGutterAnnotation>,
     ) -> Self {
         Self {
             editor,
@@ -576,6 +582,7 @@ impl<V: EditorView> EditorWrapper<V> {
             comment_save_position_id,
             find_references_save_position_id,
             find_references_anchor: None,
+            blame_annotations,
         }
     }
 
@@ -619,6 +626,24 @@ impl<V: EditorView> EditorWrapper<V> {
         // Relative numbers follow the cursor: only show them when a cursor is
         // actually drawn (editor focused and editable).
         line_number_config.active_cursor_is_visible
+    }
+
+    fn gutter_width(&self) -> f32 {
+        if self.blame_annotations.is_empty() {
+            GUTTER_WIDTH
+        } else {
+            GUTTER_WIDTH + BLAME_GUTTER_GAP + BLAME_GUTTER_WIDTH
+        }
+    }
+
+    fn blame_annotation_for_line(
+        &self,
+        line: &EditorLineLocation,
+    ) -> Option<&BlameGutterAnnotation> {
+        let line_index = line.line_number()?.as_usize();
+        self.blame_annotations
+            .iter()
+            .find(|annotation| annotation.line_index == line_index)
     }
 
     /// Returning **no** gutter means the gutter shouldn't be rendered at all.
@@ -750,6 +775,7 @@ impl<V: EditorView> EditorWrapper<V> {
                         element,
                         height,
                         offset,
+                        gutter_width: self.gutter_width(),
                         hovered: range_hovered,
                         line,
                         element_type: GutterElementType::DiffHunk {
@@ -938,6 +964,7 @@ impl<V: EditorView> EditorWrapper<V> {
                 element,
                 height,
                 offset,
+                gutter_width: self.gutter_width(),
                 hovered: range_hovered,
                 // We can skip rendering this removal gutter element if its hunk is expanded since
                 // the gutter is rendered on the temporary block.
@@ -985,7 +1012,7 @@ impl<V: EditorView> EditorWrapper<V> {
         let element = Container::new(
             ConstrainedBox::new(Align::new(icon).finish())
                 .with_height(height)
-                .with_width(GUTTER_WIDTH)
+                .with_width(self.gutter_width())
                 .finish(),
         )
         .with_background_color(gutter_background_color.into())
@@ -995,6 +1022,7 @@ impl<V: EditorView> EditorWrapper<V> {
             element,
             offset,
             height,
+            gutter_width: self.gutter_width(),
             hovered: range_hovered,
             line: EditorLineLocation::Collapsed { line_range },
             element_type: GutterElementType::HiddenSection { expansion_type },
@@ -1237,7 +1265,7 @@ impl<V: EditorView> EditorWrapper<V> {
         highlight_text: bool,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        let base_content = match current_line {
+        let line_number_content = match current_line {
             Some(line) => {
                 // Highlight the line number if it's a diff line or has an overlay
                 let text_color = if highlight_text || overlay.is_some() {
@@ -1263,9 +1291,48 @@ impl<V: EditorView> EditorWrapper<V> {
             }
         };
 
+        let blame_annotation = if current_line.is_some() {
+            self.blame_annotation_for_line(line)
+        } else {
+            None
+        };
+        let base_content = if let Some(annotation) = blame_annotation {
+            let mut row = Flex::row()
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center);
+            row.add_child(
+                ConstrainedBox::new(line_number_content)
+                    .with_width(GUTTER_WIDTH)
+                    .finish(),
+            );
+            row.add_child(
+                ConstrainedBox::new(Empty::new().finish())
+                    .with_width(BLAME_GUTTER_GAP)
+                    .finish(),
+            );
+            row.add_child(
+                ConstrainedBox::new(
+                    Text::new_inline(
+                        annotation.text.clone(),
+                        line_number_config.font_family,
+                        line_number_config.font_size,
+                    )
+                    .with_selectable(true)
+                    .with_color(line_number_config.text_color)
+                    .soft_wrap(false)
+                    .finish(),
+                )
+                .with_width(BLAME_GUTTER_WIDTH)
+                .finish(),
+            );
+            row.finish()
+        } else {
+            line_number_content
+        };
+
         let constrained_base = ConstrainedBox::new(base_content)
             .with_height(gutter_element_height)
-            .with_width(GUTTER_WIDTH)
+            .with_width(self.gutter_width())
             .finish();
 
         let show_add_as_context_button = self.add_hunk_as_context_button.is_some();
@@ -1409,7 +1476,7 @@ impl<V: EditorView> EditorWrapper<V> {
     fn size_buffer(&self) -> Vector2F {
         let is_gutter_present = self.line_number_config.is_some();
         if is_gutter_present {
-            GUTTER_WIDTH.along(Axis::Horizontal)
+            self.gutter_width().along(Axis::Horizontal)
         } else {
             Vector2F::zero()
         }
