@@ -3,25 +3,34 @@ use std::{cell::RefCell, collections::HashMap};
 use ::settings::Setting as _;
 use claude_code::driver::PermissionMode;
 use twarpui::{
-    elements::{Container, Element, Flex, ParentElement},
+    elements::{
+        ChildView, Container, CornerRadius, CrossAxisAlignment, Element, Flex, MainAxisAlignment,
+        ParentElement, Radius, Shrinkable,
+    },
     ui_components::components::{Coords, UiComponent, UiComponentStyles},
     AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
+use twarpui_extras::secure_storage::{self, Error as SecureStorageError};
 
 use super::{
     settings_page::{
-        render_dropdown_item, render_sub_header, MatchData, PageType, SettingsPageMeta,
-        SettingsPageViewHandle, SettingsWidget,
+        render_dropdown_item, render_dropdown_item_label, render_sub_header, MatchData, PageType,
+        SettingsPageMeta, SettingsPageViewHandle, SettingsWidget,
     },
     LocalOnlyIconState, SettingsSection,
 };
 use crate::{
-    app_state::CLIAgent,
+    app_state::{AgentLocalAuthProbe, CLIAgent},
     appearance::Appearance,
+    editor::{
+        EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
+        TextOptions,
+    },
     menu::{MenuItem, MenuItemFields},
     report_if_error,
     settings::{self, AgentSettings},
     view_components::{
+        action_button::{ActionButton, DangerSecondaryTheme, SecondaryTheme},
         dropdown::{DropdownAction, DropdownItem},
         Dropdown,
     },
@@ -36,6 +45,9 @@ pub enum AgentSettingsPageAction {
     SetChatModel(String),
     SetChatEffort(String),
     SetChatPermissionMode(String),
+    ShowApiKeyEditor,
+    SaveApiKey,
+    RemoveApiKey,
 }
 
 pub enum AgentSettingsPageEvent {}
@@ -47,11 +59,35 @@ pub struct AgentSettingsPageView {
     chat_model_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
     chat_effort_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
     chat_permission_mode_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
+    api_key_editor: ViewHandle<EditorView>,
+    save_api_key_button: ViewHandle<ActionButton>,
+    replace_api_key_button: ViewHandle<ActionButton>,
+    remove_api_key_button: ViewHandle<ActionButton>,
+    auth_probe_generation: u64,
+    auth_probe_agent: CLIAgent,
+    auth_probe_state: AuthProbeState,
+    show_api_key_editor: bool,
     local_only_icon_states: RefCell<HashMap<String, twarpui::elements::MouseStateHandle>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AuthProbeState {
+    Checking,
+    Ready(AgentLocalAuthProbe),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AuthStatus {
+    Checking,
+    LoggedInLocalCli,
+    UsingApiKey,
+    NotAuthenticated,
+    CliNotInstalled,
 }
 
 impl AgentSettingsPageView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
+        let font_family = Appearance::as_ref(ctx).ui_font_family();
         let backend_dropdown = ctx.add_typed_action_view(|ctx| {
             let mut dropdown = Dropdown::new(ctx);
             dropdown.set_rich_items(backend_items(), ctx);
@@ -98,6 +134,40 @@ impl AgentSettingsPageView {
             dropdown.set_top_bar_max_width(220.);
             dropdown
         });
+        let api_key_editor = ctx.add_typed_action_view(move |ctx| {
+            let options = SingleLineEditorOptions {
+                text: TextOptions {
+                    font_family_override: Some(font_family),
+                    ..Default::default()
+                },
+                propagate_and_no_op_vertical_navigation_keys:
+                    PropagateAndNoOpNavigationKeys::Always,
+                ..Default::default()
+            };
+            let mut editor = EditorView::single_line(options, ctx);
+            editor.set_placeholder_text("Paste API key", ctx);
+            editor
+        });
+        ctx.subscribe_to_view(&api_key_editor, |_me, _, event, ctx| {
+            if matches!(event, EditorEvent::Edited(_)) {
+                ctx.notify();
+            }
+        });
+        let save_api_key_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Save", SecondaryTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(AgentSettingsPageAction::SaveApiKey);
+            })
+        });
+        let replace_api_key_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Replace", SecondaryTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(AgentSettingsPageAction::ShowApiKeyEditor);
+            })
+        });
+        let remove_api_key_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Remove", DangerSecondaryTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(AgentSettingsPageAction::RemoveApiKey);
+            })
+        });
 
         let mut view = Self {
             page: PageType::new_monolith(AgentSettingsWidget, Some(PAGE_TITLE), true),
@@ -106,9 +176,18 @@ impl AgentSettingsPageView {
             chat_model_dropdown,
             chat_effort_dropdown,
             chat_permission_mode_dropdown,
+            api_key_editor,
+            save_api_key_button,
+            replace_api_key_button,
+            remove_api_key_button,
+            auth_probe_generation: 0,
+            auth_probe_agent: CLIAgent::Claude,
+            auth_probe_state: AuthProbeState::Checking,
+            show_api_key_editor: true,
             local_only_icon_states: RefCell::new(HashMap::new()),
         };
         view.refresh_dropdowns(ctx);
+        view.refresh_auth_status(ctx);
         view
     }
 
@@ -152,6 +231,156 @@ impl AgentSettingsPageView {
                 );
             });
     }
+
+    fn selected_auth_agent(&self, ctx: &AppContext) -> CLIAgent {
+        AgentSettings::as_ref(ctx).backend_agent()
+    }
+
+    fn refresh_auth_status(&mut self, ctx: &mut ViewContext<Self>) {
+        let agent = self.selected_auth_agent(ctx);
+        self.sync_api_key_presence_flag(agent, ctx);
+
+        let has_key = settings::api_key_presence(AgentSettings::as_ref(ctx), agent);
+        self.show_api_key_editor = !has_key;
+        self.auth_probe_agent = agent;
+        self.auth_probe_state = AuthProbeState::Checking;
+        self.auth_probe_generation += 1;
+        let generation = self.auth_probe_generation;
+
+        ctx.spawn(
+            async move { agent.local_auth_probe() },
+            move |view, probe, ctx| {
+                if view.auth_probe_generation == generation && view.auth_probe_agent == agent {
+                    view.auth_probe_state = AuthProbeState::Ready(probe);
+                    ctx.notify();
+                }
+            },
+        );
+    }
+
+    fn auth_status(&self, app: &AppContext) -> AuthStatus {
+        let agent = self.selected_auth_agent(app);
+        if settings::api_key_presence(AgentSettings::as_ref(app), agent) {
+            return AuthStatus::UsingApiKey;
+        }
+
+        match self.auth_probe_state {
+            AuthProbeState::Checking => AuthStatus::Checking,
+            AuthProbeState::Ready(AgentLocalAuthProbe {
+                cli_installed: false,
+                ..
+            }) => AuthStatus::CliNotInstalled,
+            AuthProbeState::Ready(AgentLocalAuthProbe {
+                cli_installed: true,
+                logged_in: true,
+            }) => AuthStatus::LoggedInLocalCli,
+            AuthProbeState::Ready(AgentLocalAuthProbe {
+                cli_installed: true,
+                logged_in: false,
+            }) => AuthStatus::NotAuthenticated,
+        }
+    }
+
+    fn save_api_key(&mut self, ctx: &mut ViewContext<Self>) {
+        let agent = self.selected_auth_agent(ctx);
+        let Some(storage_key) = settings::api_key_storage_key(agent) else {
+            return;
+        };
+        let api_key = self
+            .api_key_editor
+            .as_ref(ctx)
+            .buffer_text(ctx)
+            .trim()
+            .to_owned();
+        if api_key.is_empty() {
+            return;
+        }
+
+        match secure_storage::Model::handle(ctx)
+            .as_ref(ctx)
+            .write_value(&storage_key, &api_key)
+        {
+            Ok(()) => {
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| match agent {
+                    CLIAgent::Claude => {
+                        report_if_error!(settings.claude_api_key_set.set_value(true, ctx));
+                    }
+                    CLIAgent::Codex | CLIAgent::Gemini | CLIAgent::Unknown => {}
+                });
+                self.api_key_editor
+                    .update(ctx, |editor, ctx| editor.clear_buffer(ctx));
+                self.show_api_key_editor = false;
+                self.refresh_auth_status(ctx);
+            }
+            Err(err) => {
+                log::error!(
+                    "Failed to store {} API key in secure storage: {err}",
+                    agent.display_name()
+                );
+            }
+        }
+    }
+
+    fn remove_api_key(&mut self, ctx: &mut ViewContext<Self>) {
+        let agent = self.selected_auth_agent(ctx);
+        let Some(storage_key) = settings::api_key_storage_key(agent) else {
+            return;
+        };
+
+        let result = secure_storage::Model::handle(ctx)
+            .as_ref(ctx)
+            .remove_value(&storage_key);
+        match result {
+            Ok(()) | Err(SecureStorageError::NotFound) => {
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| match agent {
+                    CLIAgent::Claude => {
+                        report_if_error!(settings.claude_api_key_set.set_value(false, ctx));
+                    }
+                    CLIAgent::Codex | CLIAgent::Gemini | CLIAgent::Unknown => {}
+                });
+                self.api_key_editor
+                    .update(ctx, |editor, ctx| editor.clear_buffer(ctx));
+                self.show_api_key_editor = true;
+                self.refresh_auth_status(ctx);
+            }
+            Err(err) => {
+                log::error!(
+                    "Failed to remove {} API key from secure storage: {err}",
+                    agent.display_name()
+                );
+            }
+        }
+    }
+
+    fn sync_api_key_presence_flag(&self, agent: CLIAgent, ctx: &mut ViewContext<Self>) {
+        if !settings::api_key_presence(AgentSettings::as_ref(ctx), agent) {
+            return;
+        }
+
+        let Some(storage_key) = settings::api_key_storage_key(agent) else {
+            return;
+        };
+        match secure_storage::Model::handle(ctx)
+            .as_ref(ctx)
+            .read_value(&storage_key)
+        {
+            Ok(_) => {}
+            Err(SecureStorageError::NotFound) => {
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| match agent {
+                    CLIAgent::Claude => {
+                        report_if_error!(settings.claude_api_key_set.set_value(false, ctx));
+                    }
+                    CLIAgent::Codex | CLIAgent::Gemini | CLIAgent::Unknown => {}
+                });
+            }
+            Err(err) => {
+                log::error!(
+                    "Failed to verify {} API key presence in secure storage: {err}",
+                    agent.display_name()
+                );
+            }
+        }
+    }
 }
 
 impl Entity for AgentSettingsPageView {
@@ -170,6 +399,7 @@ impl TypedActionView for AgentSettingsPageView {
                             .backend
                             .set_value(agent.serialized_name().to_owned(), ctx));
                     });
+                    self.refresh_auth_status(ctx);
                 }
             }
             AgentSettingsPageAction::SetChatProvider(agent) => {
@@ -199,6 +429,20 @@ impl TypedActionView for AgentSettingsPageView {
                             .set_value(mode.clone(), ctx));
                     });
                 }
+            }
+            AgentSettingsPageAction::ShowApiKeyEditor => {
+                self.show_api_key_editor = true;
+                self.api_key_editor.update(ctx, |editor, ctx| {
+                    editor.clear_buffer(ctx);
+                    editor.set_placeholder_text("Paste replacement API key", ctx);
+                });
+                ctx.focus(&self.api_key_editor);
+            }
+            AgentSettingsPageAction::SaveApiKey => {
+                self.save_api_key(ctx);
+            }
+            AgentSettingsPageAction::RemoveApiKey => {
+                self.remove_api_key(ctx);
             }
         }
         self.refresh_dropdowns(ctx);
@@ -288,6 +532,7 @@ impl SettingsWidget for AgentSettingsWidget {
             None,
             &view.backend_dropdown,
         );
+        let auth = render_auth_section(view, appearance, app);
 
         let chat_provider = render_dropdown_item(
             appearance,
@@ -348,6 +593,7 @@ impl SettingsWidget for AgentSettingsWidget {
 
         Flex::column()
             .with_child(backend)
+            .with_child(auth)
             .with_child(render_sub_header(appearance, "Models by action", None))
             .with_child(
                 Container::new(
@@ -364,6 +610,176 @@ impl SettingsWidget for AgentSettingsWidget {
             )
             .finish()
     }
+}
+
+fn render_auth_section(
+    view: &AgentSettingsPageView,
+    appearance: &Appearance,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let status = view.auth_status(app);
+    let status_row = render_auth_status_row(status, appearance);
+    let api_key_row = render_api_key_row(view, appearance, app);
+
+    Container::new(
+        Flex::column()
+            .with_child(render_sub_header(appearance, "Authentication", None))
+            .with_child(status_row)
+            .with_child(api_key_row)
+            .finish(),
+    )
+    .with_margin_top(12.)
+    .with_margin_bottom(16.)
+    .finish()
+}
+
+fn render_auth_status_row(status: AuthStatus, appearance: &Appearance) -> Box<dyn Element> {
+    let (label, detail) = match status {
+        AuthStatus::Checking => ("Checking...", "Verifying the selected CLI auth state."),
+        AuthStatus::LoggedInLocalCli => (
+            "Logged in (local CLI)",
+            "Twarp will use your existing CLI login by default.",
+        ),
+        AuthStatus::UsingApiKey => ("Using API key", "The key is stored in the OS keychain."),
+        AuthStatus::NotAuthenticated => (
+            "Not authenticated",
+            "Run `claude auth login`, or save an API key.",
+        ),
+        AuthStatus::CliNotInstalled => (
+            "CLI not installed",
+            "Install the selected CLI and make sure it is on PATH.",
+        ),
+    };
+
+    render_settings_row(
+        render_dropdown_item_label(
+            "Auth status".to_owned(),
+            Some(detail.to_owned()),
+            LocalOnlyIconState::Hidden,
+            None,
+            appearance,
+        ),
+        appearance
+            .ui_builder()
+            .span(label)
+            .with_style(UiComponentStyles {
+                font_color: Some(appearance.theme().active_ui_text_color().into()),
+                font_size: Some(12.),
+                ..Default::default()
+            })
+            .build()
+            .finish(),
+    )
+}
+
+fn render_api_key_row(
+    view: &AgentSettingsPageView,
+    appearance: &Appearance,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let agent = view.selected_auth_agent(app);
+    let has_key = settings::api_key_presence(AgentSettings::as_ref(app), agent);
+    let local_only_icon_state = LocalOnlyIconState::for_setting(
+        settings::AgentClaudeApiKeySet::storage_key(),
+        settings::AgentClaudeApiKeySet::sync_to_cloud(),
+        &mut view.local_only_icon_states.borrow_mut(),
+        app,
+    );
+    let label = render_dropdown_item_label(
+        "API key".to_owned(),
+        Some("Stored in the OS keychain, never in plaintext settings.".to_owned()),
+        local_only_icon_state,
+        None,
+        appearance,
+    );
+
+    let mut controls = Flex::column()
+        .with_cross_axis_alignment(CrossAxisAlignment::End)
+        .with_main_axis_alignment(MainAxisAlignment::Center);
+
+    if has_key {
+        controls.add_child(
+            appearance
+                .ui_builder()
+                .span("**** key set")
+                .with_style(UiComponentStyles {
+                    font_color: Some(appearance.theme().active_ui_text_color().into()),
+                    font_size: Some(12.),
+                    margin: Some(Coords {
+                        bottom: 6.,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+                .build()
+                .finish(),
+        );
+        controls.add_child(
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(ChildView::new(&view.replace_api_key_button).finish())
+                .with_child(
+                    Container::new(ChildView::new(&view.remove_api_key_button).finish())
+                        .with_margin_left(8.)
+                        .finish(),
+                )
+                .finish(),
+        );
+    }
+
+    if view.show_api_key_editor {
+        controls.add_child(
+            Container::new(
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_child(
+                        appearance
+                            .ui_builder()
+                            .text_input(view.api_key_editor.clone())
+                            .with_style(UiComponentStyles {
+                                width: Some(260.),
+                                border_radius: Some(CornerRadius::with_all(Radius::Pixels(4.))),
+                                border_width: Some(1.),
+                                border_color: Some(appearance.theme().outline().into()),
+                                background: Some(
+                                    appearance.theme().surface_2().into_solid().into(),
+                                ),
+                                padding: Some(Coords::uniform(6.)),
+                                ..Default::default()
+                            })
+                            .build()
+                            .finish(),
+                    )
+                    .with_child(
+                        Container::new(ChildView::new(&view.save_api_key_button).finish())
+                            .with_margin_left(8.)
+                            .finish(),
+                    )
+                    .finish(),
+            )
+            .with_margin_top(if has_key { 8. } else { 0. })
+            .finish(),
+        );
+    }
+
+    render_settings_row(label, controls.finish())
+}
+
+fn render_settings_row(label: Box<dyn Element>, control: Box<dyn Element>) -> Box<dyn Element> {
+    Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_child(
+            Shrinkable::new(
+                1.0,
+                Container::new(label)
+                    .with_margin_bottom(4.)
+                    .with_padding_right(16.)
+                    .finish(),
+            )
+            .finish(),
+        )
+        .with_child(control)
+        .finish()
 }
 
 fn backend_items() -> Vec<MenuItem<DropdownAction<AgentSettingsPageAction>>> {

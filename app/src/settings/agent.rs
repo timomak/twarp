@@ -57,6 +57,15 @@ define_settings_group!(AgentSettings, settings: [
         toml_path: "agent.actions.chat.permission_mode",
         description: "The permission mode used for new chat panes.",
     },
+    claude_api_key_set: AgentClaudeApiKeySet {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.auth.claude.api_key_set",
+        description: "Whether a Claude API key is stored in the OS keychain.",
+    },
 ]);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -116,5 +125,17 @@ pub fn valid_chat_effort(effort: &str) -> Option<String> {
         "" | "default" => None,
         "low" | "medium" | "high" | "max" => Some(effort.trim().to_owned()),
         _ => None,
+    }
+}
+
+pub fn api_key_storage_key(agent: CLIAgent) -> Option<String> {
+    (!matches!(agent, CLIAgent::Unknown))
+        .then(|| format!("agent.api_key.{}", agent.serialized_name()))
+}
+
+pub fn api_key_presence(settings: &AgentSettings, agent: CLIAgent) -> bool {
+    match agent {
+        CLIAgent::Claude => *settings.claude_api_key_set.value(),
+        CLIAgent::Codex | CLIAgent::Gemini | CLIAgent::Unknown => false,
     }
 }
