@@ -15,7 +15,7 @@ Foundation for the IDE direction (11 and 12 depend on it). Placed after 09 (rebr
 ## Sub-phases
 
 - [x] **10a — File-tree → code pane wiring.** Click a file in the existing file tree (or trigger "Open File" palette mode) to open it in a `Code` pane. Save (Cmd+S) with dirty-state indicator. Reload on external change via existing watcher.
-- [ ] **10b — Multi-file tabs + cmd+click gesture.** Multiple open files as tabs within the window. Cmd+click on a symbol triggers LSP `definition()` — verify whether the gesture is already wired in code-review context vs. needs a new binding. Tab close confirms when dirty.
+- [x] **10b — Multi-file tabs + cmd+click gesture.** Multiple open files as tabs within the window. Cmd+click on a symbol triggers LSP `definition()` — verify whether the gesture is already wired in code-review context vs. needs a new binding. Tab close confirms when dirty.
 
 ## What's already built (audited 2026-05-14)
 

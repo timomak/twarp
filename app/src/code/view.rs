@@ -8,15 +8,15 @@ use crate::editor::InteractionState;
 use crate::input::Vector2F;
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::pane::view::header::components::{
-    render_pane_header_buttons, render_pane_header_title_text, render_three_column_header,
-    CenteredHeaderEdgeWidth,
+    CenteredHeaderEdgeWidth, render_pane_header_buttons, render_pane_header_title_text,
+    render_three_column_header,
 };
 use crate::pane_group::pane::view::header::render_pane_header_draggable;
 use crate::pane_group::{CodePane, PaneConfigurationEvent, PaneDragDropLocation};
 use crate::quit_warning::UnsavedStateSummary;
 use crate::server::telemetry::CodeContextDestination;
-use crate::workspace::util::get_context_target_terminal_view;
 use crate::workspace::TabBarDropTargetData;
+use crate::workspace::util::get_context_target_terminal_view;
 use crate::{code::EditorTabBarDropTargetData, pane_group::pane::ActionOrigin};
 use lsp::LspManagerModel;
 use pathfinder_color::ColorU;
@@ -38,6 +38,8 @@ use twarpui::text_layout::ClipConfig;
 #[cfg(feature = "local_fs")]
 use twarpui::clipboard::ClipboardContent;
 use twarpui::{
+    AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
+    ViewHandle, WindowId,
     elements::{
         AcceptedByDropTarget, Align, Border, ChildAnchor, ChildView, Clipped, ConstrainedBox,
         Container, CornerRadius, CrossAxisAlignment, Draggable, DraggableState, DropTarget, Empty,
@@ -49,14 +51,12 @@ use twarpui::{
     id,
     keymap::EditableBinding,
     ui_components::{button::ButtonVariant, components::UiComponent},
-    AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
-    ViewHandle, WindowId,
 };
 
 use crate::{
     menu::{MenuItem, MenuItemFields},
-    notebooks::file::{is_markdown_file, MarkdownDisplayMode},
-    search::{files::icon::icon_from_file_path, ItemHighlightState},
+    notebooks::file::{MarkdownDisplayMode, is_markdown_file},
+    search::{ItemHighlightState, files::icon::icon_from_file_path},
     tab::TAB_BAR_BORDER_HEIGHT,
     ui_components::{blended_colors, buttons::icon_button},
     view_components::{DismissibleToast, MarkdownToggleEvent, MarkdownToggleView},
@@ -64,8 +64,8 @@ use crate::{
 };
 
 use crate::pane_group::{
-    pane::{view, PaneHeaderAction},
     BackingView, PaneConfiguration, PaneEvent,
+    pane::{PaneHeaderAction, view},
 };
 
 use super::{
@@ -75,7 +75,7 @@ use super::{
     local_code_editor::{LocalCodeEditorEvent, LocalCodeEditorView},
 };
 
-use crate::{send_telemetry_from_ctx, TelemetryEvent};
+use crate::{TelemetryEvent, send_telemetry_from_ctx};
 
 type SaveCallback =
     Box<dyn FnOnce(SaveOutcome, &mut CodeView, &mut ViewContext<CodeView>) + Send + Sync + 'static>;
@@ -231,6 +231,18 @@ pub enum PendingSaveIntent {
     Cancel,
 }
 
+#[derive(Clone)]
+enum PendingSaveContinuation {
+    CloseTab {
+        editor: ViewHandle<LocalCodeEditorView>,
+    },
+    ClearTabGroup {
+        editor: ViewHandle<LocalCodeEditorView>,
+        unsaved_indices: Vec<usize>,
+        current_index: usize,
+    },
+}
+
 impl TabData {
     pub fn path(&self) -> Option<PathBuf> {
         self.path.clone()
@@ -253,6 +265,7 @@ pub struct CodeView {
     window_id: WindowId,
     drag_position: Option<TabBarDragPosition>,
     markdown_mode_segmented_control: Option<ViewHandle<MarkdownToggleView>>,
+    pending_save_continuation: Option<PendingSaveContinuation>,
 }
 
 impl CodeView {
@@ -269,6 +282,7 @@ impl CodeView {
             window_id,
             drag_position: None,
             markdown_mode_segmented_control: None,
+            pending_save_continuation: None,
         }
     }
 
@@ -526,7 +540,8 @@ impl CodeView {
                 editor.set_interaction_state(InteractionState::Selectable, ctx);
             });
         }
-        ctx.subscribe_to_view(&code_editor, |me, _, event, ctx| match event {
+        let code_editor_for_events = code_editor.clone();
+        ctx.subscribe_to_view(&code_editor, move |me, _, event, ctx| match event {
             LocalCodeEditorEvent::FileLoaded => {
                 me.pane_configuration.update(ctx, |pane_config, ctx| {
                     pane_config.refresh_pane_header_overflow_menu_items(ctx);
@@ -560,14 +575,18 @@ impl CodeView {
                 );
             }
             LocalCodeEditorEvent::FileSaved => {
-                me.sync_active_tab_path(ctx);
+                if let Some(index) = me.tab_index_for_editor(&code_editor_for_events) {
+                    me.sync_tab_path(index, ctx);
+                }
                 me.set_title_after_content_update(ctx);
                 CodeView::display_save_success(ctx.window_id(), ctx);
+                me.complete_pending_save_for_editor(&code_editor_for_events, true, ctx);
                 ctx.notify();
             }
             LocalCodeEditorEvent::FailedToSave { error: err } => {
                 log::warn!("Failed to load file. {err:?}");
                 CodeView::display_save_failure(ctx.window_id(), ctx);
+                me.complete_pending_save_for_editor(&code_editor_for_events, false, ctx);
             }
             LocalCodeEditorEvent::DiffAccepted => {
                 CodeManager::handle(ctx).update(ctx, |code_manager, ctx| {
@@ -1041,16 +1060,72 @@ impl CodeView {
         self.set_title(self.contains_unsaved_changes(ctx), ctx);
     }
 
-    /// Update the TabData path for the active tab to match the LocalCodeEditor metadata.
+    fn tab_index_for_editor(&self, editor: &ViewHandle<LocalCodeEditorView>) -> Option<usize> {
+        self.tab_group
+            .iter()
+            .position(|tab| &tab.editor_view == editor)
+    }
+
+    /// Update the TabData path to match the LocalCodeEditor metadata.
     /// This is needed after save_as operations to keep the paths in sync.
-    fn sync_active_tab_path(&mut self, ctx: &mut ViewContext<Self>) {
-        if let Some(tab) = self.tab_group.get_mut(self.active_tab_index) {
+    fn sync_tab_path(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        if let Some(tab) = self.tab_group.get_mut(index) {
             let new_path = tab
                 .editor_view
                 .as_ref(ctx)
                 .file_path()
                 .map(|p| p.to_path_buf());
             tab.path = new_path;
+        }
+    }
+
+    fn pending_continuation_matches_editor(
+        &self,
+        editor: &ViewHandle<LocalCodeEditorView>,
+    ) -> bool {
+        match &self.pending_save_continuation {
+            Some(PendingSaveContinuation::CloseTab {
+                editor: pending_editor,
+            })
+            | Some(PendingSaveContinuation::ClearTabGroup {
+                editor: pending_editor,
+                ..
+            }) => pending_editor == editor,
+            None => false,
+        }
+    }
+
+    fn complete_pending_save_for_editor(
+        &mut self,
+        editor: &ViewHandle<LocalCodeEditorView>,
+        succeeded: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if !self.pending_continuation_matches_editor(editor) {
+            return;
+        }
+
+        let Some(continuation) = self.pending_save_continuation.take() else {
+            return;
+        };
+
+        if !succeeded {
+            return;
+        }
+
+        match continuation {
+            PendingSaveContinuation::CloseTab { editor } => {
+                if let Some(index) = self.tab_index_for_editor(&editor) {
+                    self.remove_tab_data_index(index, ctx);
+                }
+            }
+            PendingSaveContinuation::ClearTabGroup {
+                unsaved_indices,
+                current_index,
+                ..
+            } => {
+                self.process_next_tab_for_clear(unsaved_indices, current_index + 1, ctx);
+            }
         }
     }
 
@@ -1247,15 +1322,13 @@ impl CodeView {
     ) {
         match intent {
             Some(PendingSaveIntent::Save) => {
-                self.save_local(
-                    index,
-                    Some(Box::new(move |outcome, me, ctx| {
-                        if outcome != SaveOutcome::Canceled {
-                            me.remove_tab_data_index(index, ctx);
-                        }
-                    })),
-                    ctx,
-                );
+                if let Some(editor) = self.tab_at(index).map(|tab| tab.editor_view.clone()) {
+                    self.save_tab_with_continuation(
+                        index,
+                        PendingSaveContinuation::CloseTab { editor },
+                        ctx,
+                    );
+                }
             }
             Some(PendingSaveIntent::Discard) => {
                 self.remove_tab_data_index(index, ctx);
@@ -1273,20 +1346,55 @@ impl CodeView {
     ) {
         match intent {
             Some(PendingSaveIntent::Save) => {
-                self.save_local(
-                    unsaved_indices[current_index],
-                    Some(Box::new(move |outcome, me, ctx| {
-                        if outcome != SaveOutcome::Canceled {
-                            me.process_next_tab_for_clear(unsaved_indices, current_index + 1, ctx);
-                        }
-                    })),
-                    ctx,
-                );
+                let tab_index = unsaved_indices[current_index];
+                if let Some(editor) = self.tab_at(tab_index).map(|tab| tab.editor_view.clone()) {
+                    self.save_tab_with_continuation(
+                        tab_index,
+                        PendingSaveContinuation::ClearTabGroup {
+                            editor,
+                            unsaved_indices,
+                            current_index,
+                        },
+                        ctx,
+                    );
+                }
             }
             Some(PendingSaveIntent::Discard) => {
                 self.process_next_tab_for_clear(unsaved_indices, current_index + 1, ctx);
             }
             _ => (),
+        }
+    }
+
+    fn save_tab_with_continuation(
+        &mut self,
+        index: usize,
+        continuation: PendingSaveContinuation,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let editor = match &continuation {
+            PendingSaveContinuation::CloseTab { editor }
+            | PendingSaveContinuation::ClearTabGroup { editor, .. } => editor.clone(),
+        };
+
+        self.pending_save_continuation = Some(continuation);
+        let callback_editor = editor.clone();
+        let status = self.save_local(
+            index,
+            Some(Box::new(move |outcome, me, _ctx| {
+                if outcome != SaveOutcome::Succeeded
+                    && me.pending_continuation_matches_editor(&callback_editor)
+                {
+                    me.pending_save_continuation = None;
+                }
+            })),
+            ctx,
+        );
+
+        if matches!(status, SaveStatus::Failed(_))
+            && self.pending_continuation_matches_editor(&editor)
+        {
+            self.pending_save_continuation = None;
         }
     }
 
