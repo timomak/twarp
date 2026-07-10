@@ -87,7 +87,7 @@ use twarpui::{
         ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementAnchor,
         PositionedElementOffsetBounds, PulsingIcon, PulsingIconStateHandle, Radius, SavePosition,
         ScrollTarget, ScrollToPositionMode, ScrollbarWidth, SelectableArea, SelectionHandle,
-        Shrinkable, Stack,
+        Shrinkable, SizeConstraintCondition, SizeConstraintSwitch, Stack,
     },
     platform::Cursor,
     presenter::ChildView,
@@ -203,6 +203,43 @@ const USER_BUBBLE_MAX_WIDTH: f32 = 520.;
 const SENT_IMAGE_SIZE: f32 = 120.;
 const PILL_CORNER_RADIUS: f32 = 6.;
 const HEADING_FONT_SIZE: f32 = 20.;
+
+/// Below this composer width the context bar and controls row step down to
+/// their compact tier (folder pill dropped, branch truncated, MCP chip
+/// dropped) — roughly a half-window pane.
+const COMPOSER_COMPACT_MAX_WIDTH: f32 = 560.;
+/// Below this width they step down again to the tiny tier (diff counts and
+/// the read-only info chips dropped, branch truncated harder) — roughly a
+/// three-up pane.
+const COMPOSER_TINY_MAX_WIDTH: f32 = 430.;
+
+/// Density tier for the composer's context bar and controls row. The composer
+/// is width-capped and shrinks with the pane; each row is wrapped in a
+/// [`SizeConstraintSwitch`] that steps down through these tiers at layout
+/// time so three side-by-side Claude panes degrade gracefully instead of
+/// overflowing pills off the card.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ComposerDensity {
+    Full,
+    Compact,
+    Tiny,
+}
+
+/// Middle-truncate `text` to at most `max_chars` characters (branch names in
+/// the compact context bar): `feature/very-long-branch-name` →
+/// `feature/ve…ch-name`.
+fn truncate_middle(text: &str, max_chars: usize) -> String {
+    let count = text.chars().count();
+    if count <= max_chars {
+        return text.to_owned();
+    }
+    let keep = max_chars.saturating_sub(1);
+    let head = keep * 3 / 5;
+    let tail = keep - head;
+    let start: String = text.chars().take(head).collect();
+    let end: String = text.chars().skip(count - tail).collect();
+    format!("{start}\u{2026}{end}")
+}
 
 // The model selector's entries (PRODUCT §52, 7m) are no longer a hardcoded
 // cycle: see [`crate::claude_code_models`] (Models-API discovery with an alias
@@ -2270,22 +2307,19 @@ impl ClaudeCodeView {
             return false;
         }
         // The most recent pending question card is the one on screen.
-        let Some((item, tool_use_id, input)) = self
-            .transcript
-            .items()
-            .iter()
-            .enumerate()
-            .rev()
-            .find_map(|(index, entry)| match entry {
-                TranscriptItem::Tool {
-                    id, name, input, ..
-                } if name == "AskUserQuestion"
-                    && self.pending_question_permission.contains_key(id) =>
-                {
-                    Some((index, id.clone(), input.clone()))
-                }
-                _ => None,
-            })
+        let Some((item, tool_use_id, input)) =
+            self.transcript.items().iter().enumerate().rev().find_map(
+                |(index, entry)| match entry {
+                    TranscriptItem::Tool {
+                        id, name, input, ..
+                    } if name == "AskUserQuestion"
+                        && self.pending_question_permission.contains_key(id) =>
+                    {
+                        Some((index, id.clone(), input.clone()))
+                    }
+                    _ => None,
+                },
+            )
         else {
             return false;
         };
@@ -3654,7 +3688,13 @@ impl ClaudeCodeView {
         );
     }
 
-    fn render_computer_control_button(&self, app: &AppContext) -> Option<Box<dyn Element>> {
+    /// `compact` drops the text label (icon-only) for narrow panes — the
+    /// state colours still read through the glyph.
+    fn render_computer_control_button(
+        &self,
+        app: &AppContext,
+        compact: bool,
+    ) -> Option<Box<dyn Element>> {
         if !Self::computer_control_entrypoint_available() {
             return None;
         }
@@ -3693,13 +3733,17 @@ impl ClaudeCodeView {
             .with_width(14.)
             .with_height(14.)
             .finish();
-        let content = Flex::row()
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_spacing(5.)
-            .with_child(glyph)
-            .with_child(context_segment(appearance, label.to_owned(), text_color))
-            .finish();
+        let content = if compact {
+            glyph
+        } else {
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(5.)
+                .with_child(glyph)
+                .with_child(context_segment(appearance, label.to_owned(), text_color))
+                .finish()
+        };
 
         let mouse = self.computer_control_button_mouse.clone();
         Some(
@@ -4293,7 +4337,11 @@ impl ClaudeCodeView {
             theme.sub_text_color(theme.background()).into_solid()
         };
         let glyph = ConstrainedBox::new(
-            Icon::new(crate::ui_components::icons::Icon::Terminal.into(), glyph_color).finish(),
+            Icon::new(
+                crate::ui_components::icons::Icon::Terminal.into(),
+                glyph_color,
+            )
+            .finish(),
         )
         .with_width(15.)
         .with_height(15.)
@@ -4470,7 +4518,11 @@ impl ClaudeCodeView {
             theme.sub_text_color(theme.background()).into_solid()
         };
         let glyph = ConstrainedBox::new(
-            Icon::new(crate::ui_components::icons::Icon::ArrowSplit.into(), glyph_color).finish(),
+            Icon::new(
+                crate::ui_components::icons::Icon::ArrowSplit.into(),
+                glyph_color,
+            )
+            .finish(),
         )
         .with_width(15.)
         .with_height(15.)
@@ -4624,9 +4676,7 @@ impl ClaudeCodeView {
             .with_spacing(8.)
             .with_child(glyph)
             .with_child(title)
-            .with_child(
-                Shrinkable::new(1., twarpui::elements::Empty::new().finish()).finish(),
-            )
+            .with_child(Shrinkable::new(1., twarpui::elements::Empty::new().finish()).finish())
             .with_child(count);
         if clearable {
             let clear_label = appearance
@@ -4951,9 +5001,7 @@ impl ClaudeCodeView {
             .with_spacing(8.)
             .with_child(glyph)
             .with_child(title)
-            .with_child(
-                Shrinkable::new(1., twarpui::elements::Empty::new().finish()).finish(),
-            )
+            .with_child(Shrinkable::new(1., twarpui::elements::Empty::new().finish()).finish())
             .with_child(count);
         if clearable {
             let clear_label = appearance
@@ -6062,7 +6110,17 @@ impl ClaudeCodeView {
     /// menu), and the worktree toggle. Each pill appears only when resolved
     /// ([`RepoContext`]); the whole bar is hidden until the first probe returns
     /// and stays hidden if nothing (not even a folder) resolved.
-    fn render_repo_context_bar(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+    ///
+    /// `density` steps the bar down in a narrow pane: compact drops the folder
+    /// pill (the cwd already lives in the pane header) and middle-truncates the
+    /// branch; tiny also drops the `+N −M` diff counts. Whether the bar renders
+    /// at all is density-independent, so callers can build every tier for a
+    /// [`SizeConstraintSwitch`] whenever the full tier resolves.
+    fn render_repo_context_bar(
+        &self,
+        appearance: &Appearance,
+        density: ComposerDensity,
+    ) -> Option<Box<dyn Element>> {
         let context = self.repo_context.as_ref()?;
         if context.folder.is_none() && context.is_effectively_empty() {
             return None;
@@ -6087,20 +6145,30 @@ impl ClaudeCodeView {
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(6.);
 
-        // Folder — static (#11).
-        if let Some(folder) = &context.folder {
-            row.add_child(render_context_pill(
-                folder.clone(),
-                text_color,
-                wash,
-                appearance,
-            ));
+        // Folder — static (#11). Full tier only: the cwd already reads in the
+        // pane header, so it is the first pill to go in a narrow pane.
+        if density == ComposerDensity::Full {
+            if let Some(folder) = &context.folder {
+                row.add_child(render_context_pill(
+                    folder.clone(),
+                    text_color,
+                    wash,
+                    appearance,
+                ));
+            }
         }
         // Branch — clickable, opens the branch menu (copy / open on GitHub /
-        // switch). Always shown when resolved, including on the default branch.
+        // switch). Always shown when resolved, including on the default branch;
+        // long names are middle-truncated below the full tier (the branch menu
+        // still shows — and copies — the full name).
         if let Some(branch) = &context.branch {
+            let branch_label = match density {
+                ComposerDensity::Full => branch.clone(),
+                ComposerDensity::Compact => truncate_middle(branch, 24),
+                ComposerDensity::Tiny => truncate_middle(branch, 14),
+            };
             row.add_child(render_context_menu_pill(
-                branch.clone(),
+                branch_label,
                 accent,
                 wash,
                 self.branch_pill_mouse.clone(),
@@ -6113,8 +6181,10 @@ impl ClaudeCodeView {
                 appearance,
             ));
         }
-        // Diff `+N −M` — static, as one unit.
-        if context.added.is_some() || context.removed.is_some() {
+        // Diff `+N −M` — static, as one unit. Dropped at the tiny tier.
+        if density != ComposerDensity::Tiny
+            && (context.added.is_some() || context.removed.is_some())
+        {
             let added = context.added.unwrap_or(0);
             let removed = context.removed.unwrap_or(0);
             row.add_child(
@@ -6243,101 +6313,132 @@ impl ClaudeCodeView {
                 .with_max_height(COMPOSER_MAX_HEIGHT)
                 .finish();
 
-        // #13: the Send / Stop action.
-        let action: Box<dyn Element> = if self.streaming {
-            appearance
-                .ui_builder()
-                .button(ButtonVariant::Outlined, self.stop_button.clone())
-                .with_text_label("Stop".to_owned())
-                .build()
-                .on_click(|ctx, _, _| {
-                    ctx.dispatch_typed_action(ClaudeCodeViewAction::Stop);
-                })
-                .finish()
-        } else {
-            let label = if self.transcript.is_empty() {
-                "Start session"
+        // #13: the Send / Stop action. Built per density tier below, so a
+        // closure rather than a one-shot element.
+        let make_action = || -> Box<dyn Element> {
+            if self.streaming {
+                appearance
+                    .ui_builder()
+                    .button(ButtonVariant::Outlined, self.stop_button.clone())
+                    .with_text_label("Stop".to_owned())
+                    .build()
+                    .on_click(|ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::Stop);
+                    })
+                    .finish()
             } else {
-                "Send"
-            };
-            // #10: the primary button is the pane's accent (the tab colour),
-            // not the theme accent — so a custom-coloured button rather than
-            // ButtonVariant::Accent. The label colour contrasts the fill.
-            let accent = self.render_accent.get();
-            let text_color = contrasting_text(accent);
-            let button_label = appearance
-                .ui_builder()
-                .span(label.to_owned())
-                .with_style(UiComponentStyles {
-                    font_color: Some(text_color),
-                    font_size: Some(13.),
-                    ..Default::default()
-                })
-                .build()
-                .finish();
-            let button = Container::new(button_label)
-                .with_padding_left(12.)
-                .with_padding_right(12.)
-                .with_padding_top(6.)
-                .with_padding_bottom(6.)
-                .with_background_color(accent)
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-                .finish();
-            Hoverable::new(self.submit_button.clone(), move |_| button)
-                .with_cursor(Cursor::PointingHand)
-                .on_click(|ctx, _, _| {
-                    ctx.dispatch_typed_action(ClaudeCodeViewAction::Submit);
-                })
-                .finish()
+                let label = if self.transcript.is_empty() {
+                    "Start session"
+                } else {
+                    "Send"
+                };
+                // #10: the primary button is the pane's accent (the tab colour),
+                // not the theme accent — so a custom-coloured button rather than
+                // ButtonVariant::Accent. The label colour contrasts the fill.
+                let accent = self.render_accent.get();
+                let text_color = contrasting_text(accent);
+                let button_label = appearance
+                    .ui_builder()
+                    .span(label.to_owned())
+                    .with_style(UiComponentStyles {
+                        font_color: Some(text_color),
+                        font_size: Some(13.),
+                        ..Default::default()
+                    })
+                    .build()
+                    .finish();
+                let button = Container::new(button_label)
+                    .with_padding_left(12.)
+                    .with_padding_right(12.)
+                    .with_padding_top(6.)
+                    .with_padding_bottom(6.)
+                    .with_background_color(accent)
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                    .finish();
+                Hoverable::new(self.submit_button.clone(), move |_| button)
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(|ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::Submit);
+                    })
+                    .finish()
+            }
         };
 
         // PRODUCT §51 (7l): the "＋ attach" control opens the OS file picker.
-        let attach = Hoverable::new(self.attach_button.clone(), {
-            let glyph =
-                Icon::new(crate::ui_components::icons::Icon::Paperclip.into(), muted).finish();
-            move |_| {
-                ConstrainedBox::new(glyph)
-                    .with_width(16.)
-                    .with_height(16.)
-                    .finish()
-            }
-        })
-        .with_cursor(Cursor::PointingHand)
-        .on_click(|ctx, _, _| {
-            ctx.dispatch_typed_action(ClaudeCodeViewAction::AttachFromPicker);
-        })
-        .finish();
+        let make_attach = || -> Box<dyn Element> {
+            Hoverable::new(self.attach_button.clone(), {
+                let glyph =
+                    Icon::new(crate::ui_components::icons::Icon::Paperclip.into(), muted).finish();
+                move |_| {
+                    ConstrainedBox::new(glyph)
+                        .with_width(16.)
+                        .with_height(16.)
+                        .finish()
+                }
+            })
+            .with_cursor(Cursor::PointingHand)
+            .on_click(|ctx, _, _| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::AttachFromPicker);
+            })
+            .finish()
+        };
 
         // #13: Claude-style footer below the input — permission selector and
         // attach on the left; the context / model / effort controls (each opens
         // a dropdown / popover above the input) and the Send/Stop action on the
         // right. (#7: the streaming indicator moved out of here to below the
         // last message.)
-        let left = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_spacing(8.)
-            .with_child(self.render_permission_control(appearance))
-            .with_child(attach)
-            .finish();
+        //
+        // Responsive: in a narrow pane the read-only info chips step out first
+        // (compact drops `MCP · N`, tiny also drops the context-usage and
+        // effort chips) so the interactive controls and the Send/Stop action
+        // never overflow the card. Every tier is built up front and a
+        // SizeConstraintSwitch picks one at layout time.
+        let controls_for = |density: ComposerDensity| -> Box<dyn Element> {
+            let left = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(8.)
+                .with_child(self.render_permission_control(appearance))
+                .with_child(make_attach())
+                .finish();
 
-        let right = Flex::row()
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_spacing(8.)
-            .with_child(self.render_mcp_control(appearance))
-            .with_child(self.render_context_control(appearance))
-            .with_child(self.render_model_control(appearance))
-            .with_child(self.render_effort_control(appearance))
-            .with_child(action)
-            .finish();
+            let mut right = Flex::row()
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(8.);
+            if density == ComposerDensity::Full {
+                right.add_child(self.render_mcp_control(appearance));
+            }
+            if density != ComposerDensity::Tiny {
+                right.add_child(self.render_context_control(appearance));
+            }
+            right.add_child(self.render_model_control(appearance));
+            if density != ComposerDensity::Tiny {
+                right.add_child(self.render_effort_control(appearance));
+            }
+            right.add_child(make_action());
 
-        let controls = Flex::row()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(left)
-            .with_child(right)
-            .finish();
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(left)
+                .with_child(right.finish())
+                .finish()
+        };
+        let controls: Box<dyn Element> = Box::new(SizeConstraintSwitch::new(
+            controls_for(ComposerDensity::Full),
+            [
+                (
+                    SizeConstraintCondition::WidthLessThan(COMPOSER_TINY_MAX_WIDTH),
+                    controls_for(ComposerDensity::Tiny),
+                ),
+                (
+                    SizeConstraintCondition::WidthLessThan(COMPOSER_COMPACT_MAX_WIDTH),
+                    controls_for(ComposerDensity::Compact),
+                ),
+            ],
+        ));
 
         let mut card_column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
@@ -6422,8 +6523,28 @@ impl ClaudeCodeView {
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(4.);
-        if let Some(bar) = self.render_repo_context_bar(appearance) {
-            composer_column.add_child(bar);
+        if let Some(bar) = self.render_repo_context_bar(appearance, ComposerDensity::Full) {
+            // Whether the bar resolves is density-independent, so the compact
+            // and tiny tiers are always present when the full tier is.
+            let compact = self
+                .render_repo_context_bar(appearance, ComposerDensity::Compact)
+                .expect("context bar tiers resolve together");
+            let tiny = self
+                .render_repo_context_bar(appearance, ComposerDensity::Tiny)
+                .expect("context bar tiers resolve together");
+            composer_column.add_child(Box::new(SizeConstraintSwitch::new(
+                bar,
+                [
+                    (
+                        SizeConstraintCondition::WidthLessThan(COMPOSER_TINY_MAX_WIDTH),
+                        tiny,
+                    ),
+                    (
+                        SizeConstraintCondition::WidthLessThan(COMPOSER_COMPACT_MAX_WIDTH),
+                        compact,
+                    ),
+                ],
+            )));
         }
         composer_column.add_child(card);
         composer_column.add_child(controls);
@@ -7106,75 +7227,156 @@ impl BackingView for ClaudeCodeView {
         let accent = self.accent(app);
         let wash = self.accent_wash(app);
         let raw_mode = self.raw_cli.is_some();
-        let chat_segment = render_mode_segment(
-            "Chat UI",
-            !raw_mode, // active when in chat
-            raw_mode,  // clickable only from raw mode (to exit)
-            self.chat_ui_button.clone(),
-            accent,
-            wash,
-            appearance,
-        );
-        let raw_segment = render_mode_segment(
-            "Raw CLI",
-            raw_mode,                     // active when in raw
-            !raw_mode && !self.streaming, // enter raw only when idle
-            self.raw_cli_button.clone(),
-            accent,
-            wash,
-            appearance,
-        );
         let theme = appearance.theme();
-        let toggle = Container::new(
-            Flex::row()
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_spacing(2.)
-                .with_child(chat_segment)
-                .with_child(raw_segment)
-                .finish(),
-        )
-        .with_padding(Padding::uniform(2.))
-        .with_border(Border::all(1.).with_border_fill(theme.outline()))
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-        // #5: breathing room between the toggle and the always-visible close ✕.
-        .with_margin_right(10.)
-        .finish();
+        // The bordered [ chat | raw ] segmented control, with density-specific
+        // labels ("Chat UI"/"Raw CLI" wide, "Chat"/"CLI" compact).
+        let segmented_toggle = |chat_label: &str, raw_label: &str| -> Box<dyn Element> {
+            let chat_segment = render_mode_segment(
+                chat_label,
+                !raw_mode, // active when in chat
+                raw_mode,  // clickable only from raw mode (to exit)
+                self.chat_ui_button.clone(),
+                accent,
+                wash,
+                appearance,
+            );
+            let raw_segment = render_mode_segment(
+                raw_label,
+                raw_mode,                     // active when in raw
+                !raw_mode && !self.streaming, // enter raw only when idle
+                self.raw_cli_button.clone(),
+                accent,
+                wash,
+                appearance,
+            );
+            Container::new(
+                Flex::row()
+                    .with_main_axis_size(MainAxisSize::Min)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(2.)
+                    .with_child(chat_segment)
+                    .with_child(raw_segment)
+                    .finish(),
+            )
+            .with_padding(Padding::uniform(2.))
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+            // #5: breathing room between the toggle and the always-visible close ✕.
+            .with_margin_right(10.)
+            .finish()
+        };
+        // The tightest tier keeps only the *switch-to* action as a single
+        // chip — the current mode is evident from the pane body itself.
+        let minimal_toggle = || -> Box<dyn Element> {
+            let (label, mouse, clickable) = if raw_mode {
+                ("Chat", self.chat_ui_button.clone(), true)
+            } else {
+                ("CLI", self.raw_cli_button.clone(), !self.streaming)
+            };
+            Container::new(render_mode_segment(
+                label, false, clickable, mouse, accent, wash, appearance,
+            ))
+            .with_padding(Padding::uniform(2.))
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+            .with_margin_right(10.)
+            .finish()
+        };
         // twarp: the background-scripts icon button sits to the LEFT of the
         // toggle, opening the floating panel and badging the active run count.
-        // The computer-control entry point sits to its left when the 15b flag is
-        // on, so widen the header control budget for whichever controls are
-        // present.
-        let computer_control_button = self.render_computer_control_button(app);
+        // The agents icon button sits to ITS left (same chrome, badging running
+        // agents), the globe (14n) left of that, and the computer-control entry
+        // point leftmost when the 15b flag is on — so widen the header control
+        // budget for whichever controls are present.
+        let computer_control_button = self.render_computer_control_button(app, false);
         let has_computer_control_button = computer_control_button.is_some();
         let background_button = self.render_background_button(app);
         let has_background_button = background_button.is_some();
-        // twarp: the agents icon button sits to the LEFT of the
-        // background-scripts button — same chrome, badging running agents.
         let agents_button = self.render_agents_button(app);
         let has_agents_button = agents_button.is_some();
-        // twarp 14n: the globe button sits to the LEFT of the agents button —
-        // gray by default, accent while the agent drives its bound Browser
-        // pane; clicking reveals that pane wherever it lives.
         let globe_button = self.render_globe_button(app);
         let has_globe_button = globe_button.is_some();
-        let mut controls = Flex::row()
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_spacing(6.);
-        if let Some(button) = computer_control_button {
-            controls = controls.with_child(button);
-        }
-        if let Some(button) = globe_button {
-            controls = controls.with_child(button);
-        }
-        if let Some(button) = agents_button {
-            controls = controls.with_child(button);
-        }
-        if let Some(button) = background_button {
-            controls = controls.with_child(button);
-        }
-        let left_of_overflow = controls.with_child(toggle).finish();
+        let assemble_cluster = |computer_control_button: Option<Box<dyn Element>>,
+                                globe_button: Option<Box<dyn Element>>,
+                                agents_button: Option<Box<dyn Element>>,
+                                background_button: Option<Box<dyn Element>>,
+                                toggle: Box<dyn Element>|
+         -> Box<dyn Element> {
+            let mut controls = Flex::row()
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(6.);
+            if let Some(button) = computer_control_button {
+                controls = controls.with_child(button);
+            }
+            if let Some(button) = globe_button {
+                controls = controls.with_child(button);
+            }
+            if let Some(button) = agents_button {
+                controls = controls.with_child(button);
+            }
+            if let Some(button) = background_button {
+                controls = controls.with_child(button);
+            }
+            controls.with_child(toggle).finish()
+        };
+        // Responsive header controls: the cluster is a flex (Shrinkable) child
+        // of the header's control row, so in a narrow pane it receives a real
+        // bounded width and SizeConstraintSwitch can step down — first to
+        // compact (icon-only computer control, "Chat|CLI" toggle), then to
+        // minimal (a single switch-to chip). Thresholds mirror the per-control
+        // width estimates the budget below is built from.
+        let icon_count = [has_globe_button, has_agents_button, has_background_button]
+            .iter()
+            .filter(|present| **present)
+            .count() as f32;
+        let full_cluster_width = 130.
+            + 40. * icon_count
+            + if has_computer_control_button {
+                132.
+            } else {
+                0.
+            };
+        let compact_cluster_width =
+            95. + 34. * icon_count + if has_computer_control_button { 34. } else { 0. };
+        let full_cluster = assemble_cluster(
+            computer_control_button,
+            globe_button,
+            agents_button,
+            background_button,
+            segmented_toggle("Chat UI", "Raw CLI"),
+        );
+        let compact_cluster = assemble_cluster(
+            self.render_computer_control_button(app, true),
+            self.render_globe_button(app),
+            self.render_agents_button(app),
+            self.render_background_button(app),
+            segmented_toggle("Chat", "CLI"),
+        );
+        let minimal_cluster = assemble_cluster(
+            self.render_computer_control_button(app, true),
+            self.render_globe_button(app),
+            self.render_agents_button(app),
+            self.render_background_button(app),
+            minimal_toggle(),
+        );
+        let left_of_overflow = Shrinkable::new(
+            1.,
+            Box::new(SizeConstraintSwitch::new(
+                full_cluster,
+                [
+                    (
+                        SizeConstraintCondition::WidthLessThan(compact_cluster_width),
+                        minimal_cluster,
+                    ),
+                    (
+                        SizeConstraintCondition::WidthLessThan(full_cluster_width),
+                        compact_cluster,
+                    ),
+                ],
+            )),
+        )
+        .finish();
         let mut control_container_width = if has_background_button { 250. } else { 210. };
         if has_agents_button {
             control_container_width += 40.;
@@ -9111,8 +9313,27 @@ fn merge_mcp_servers(
 
 #[cfg(test)]
 mod tests {
-    use super::{format_metrics_line, queue_preview, should_hold_question_permission};
+    use super::{
+        format_metrics_line, queue_preview, should_hold_question_permission, truncate_middle,
+    };
     use claude_code::TurnMetrics;
+
+    #[test]
+    fn truncate_middle_keeps_short_names_and_middle_truncates_long_ones() {
+        // Short branch names pass through untouched.
+        assert_eq!(truncate_middle("main", 24), "main");
+        assert_eq!(truncate_middle("exactly-sixteen!", 16), "exactly-sixteen!");
+        // Long ones keep the start and end around a single ellipsis, capped
+        // at max_chars total.
+        let truncated = truncate_middle("feature/very-long-branch-name-here", 14);
+        assert_eq!(truncated.chars().count(), 14);
+        assert!(truncated.starts_with("feature"));
+        assert!(truncated.contains('\u{2026}'));
+        assert!(truncated.ends_with("here"));
+        // Multi-byte safe (chars, not bytes).
+        let unicode = truncate_middle("brænçh-ñäme-with-àccents-everywhere", 14);
+        assert_eq!(unicode.chars().count(), 14);
+    }
 
     #[test]
     fn ask_user_question_permission_is_held_for_inline_answer() {
