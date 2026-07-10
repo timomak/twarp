@@ -17,11 +17,11 @@ use crate::code::editor::{
     nav_bar::{NavBar, NavBarBehavior, NavBarEvent, NavBarStageButtonState},
     scroll::{ScrollPosition, ScrollTrigger, ScrollWheelBehavior},
 };
+use crate::code::git_blame::BlameGutterAnnotation;
 use crate::code::{
     editor::EditorReviewComment, DiffResult, NoopCommentEditorProvider,
     NoopFindReferencesCardProvider, ShowCommentEditorProvider, ShowFindReferencesCardProvider,
 };
-use settings::Setting as _;
 use crate::{
     appearance::Appearance,
     code_review::comments::{CommentId, CommentOrigin},
@@ -31,6 +31,7 @@ use crate::{
     settings::{AppEditorSettings, CodeEditorLineNumberMode, FontSettings},
     view_components::find::FindDirection,
 };
+use settings::Setting as _;
 // twarp: 2c-e — DiffDelta is now a stub in `crate::app_state`.
 use crate::app_state::DiffDelta;
 use lazy_static::lazy_static;
@@ -302,6 +303,7 @@ pub struct CodeEditorView {
     pub(super) temp_block_click_anchor: Option<string_offset::CharOffset>,
     self_handle: WeakViewHandle<Self>,
     display_options: CodeEditorViewDisplayOptions,
+    blame_annotations: Vec<BlameGutterAnnotation>,
     pending_scroll: Option<ScrollTrigger>,
     supports_vim_mode: bool,
     vim_model: ModelHandle<VimModel>,
@@ -456,6 +458,7 @@ impl CodeEditorView {
                 gutter_hover_target: GutterHoverTarget::GutterElement,
                 line_height_override: render_options.line_height_override,
             },
+            blame_annotations: Vec::new(),
             pending_scroll: None,
             supports_vim_mode,
             vim_model,
@@ -475,6 +478,26 @@ impl CodeEditorView {
 
     pub fn set_find_references_anchor_offset(&mut self, offset: Option<CharOffset>) {
         self.find_references_anchor_offset = offset;
+    }
+
+    pub fn set_blame_annotations(
+        &mut self,
+        annotations: Vec<BlameGutterAnnotation>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.blame_annotations == annotations {
+            return;
+        }
+        self.blame_annotations = annotations;
+        ctx.notify();
+    }
+
+    fn gutter_width(&self) -> f32 {
+        if self.blame_annotations.is_empty() {
+            super::element::GUTTER_WIDTH
+        } else {
+            super::element::GUTTER_WIDTH + 8. + 220.
+        }
     }
 
     pub fn find_references_save_position_id(&self) -> &str {
@@ -725,6 +748,7 @@ impl CodeEditorView {
             self.display_options.gutter_hover_target,
             self.comment_save_position_id.clone(),
             self.find_references_save_position_id.clone(),
+            Vec::new(),
         )
         .finish()
     }
@@ -956,7 +980,7 @@ impl CodeEditorView {
         // CodeEditorView also includes a gutter (line numbers). We need to offset
         // the bounds by the gutter width when line numbers are shown.
         let gutter_offset = if self.display_options.show_line_numbers {
-            super::element::GUTTER_WIDTH
+            self.gutter_width()
         } else {
             0.0
         };
@@ -2037,6 +2061,14 @@ impl CodeEditorView {
         diff.diff_status().get_diff_lines()
     }
 
+    pub fn diff_status(&self, app: &AppContext) -> DiffStatus {
+        if self.display_options.can_show_diff_ui {
+            self.model.as_ref(app).diff_status(app)
+        } else {
+            DiffStatus::default()
+        }
+    }
+
     /// If there's a single selection, returns its starting and ending line numbers.
     pub fn selected_lines(&self, app: &AppContext) -> Option<(u32, u32)> {
         // Query the buffer model directly to determine if we have a selection
@@ -2374,6 +2406,7 @@ impl View for CodeEditorView {
             self.display_options.gutter_hover_target,
             self.comment_save_position_id.clone(),
             self.find_references_save_position_id.clone(),
+            self.blame_annotations.clone(),
         );
 
         let pending_comment = &self

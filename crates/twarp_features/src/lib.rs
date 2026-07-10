@@ -780,6 +780,9 @@ pub enum FeatureFlag {
     /// Enables commit, push, and create-PR actions in the code review panel.
     GitOperationsInCodeReview,
 
+    /// Enables per-line git blame annotations in the file editor gutter.
+    GitBlame,
+
     /// Gates the remote control chip and `/remote-control` slash command in the CLI agent footer.
     HOARemoteControl,
 

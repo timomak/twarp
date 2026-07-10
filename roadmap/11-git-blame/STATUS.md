@@ -14,7 +14,7 @@ Depends on 10 (no blame surface without a file-editing workflow). Genuinely net-
 
 ## Sub-phases
 
-- [ ] **11a — Blame parser + gutter rendering.** Parse `git blame --porcelain` for the open file. Cache by file version. Render author / short hash / relative date in the editor gutter alongside line numbers and diff indicators.
+- [x] **11a — Blame parser + gutter rendering.** Parse `git blame --porcelain` for the open file. Cache by file version. Render author / short hash / relative date in the editor gutter alongside line numbers and diff indicators.
 - [ ] **11b — Commit detail popover.** Click on author or hash → popover showing commit message, author, full hash, date, and that commit's diff. Optionally link to a GitHub commit URL when origin is a GitHub remote.
 
 ## What's already built

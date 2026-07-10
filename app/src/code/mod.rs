@@ -19,6 +19,7 @@ pub mod diff_card;
 pub mod diff_viewer;
 pub mod editor;
 pub mod editor_management;
+pub mod git_blame;
 pub mod global_buffer_model;
 pub mod inline_diff;
 #[cfg(feature = "local_fs")]
