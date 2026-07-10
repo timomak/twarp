@@ -37,9 +37,9 @@ use twarpui::elements::{
     Border, ChildAnchor, ChildView, Clipped, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, DispatchEventResult, Empty, EventHandler, Fill, Flex, FormattedTextElement,
     Highlight, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
-    Padding, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, ScrollStateHandle,
-    Scrollable, ScrollableElement, ScrollbarWidth, Shrinkable, Stack, Text, UniformList,
-    UniformListState,
+    Padding, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, SavePosition,
+    ScrollStateHandle, Scrollable, ScrollableElement, ScrollbarWidth, Shrinkable, Stack, Text,
+    UniformList, UniformListState,
 };
 use twarpui::fonts::{Properties, Weight};
 use twarpui::keymap::FixedBinding;
@@ -806,15 +806,19 @@ impl GlobalSearchView {
         ctx.notify();
     }
 
-    /// Returns an iterator over all directory paths where the given file path should appear.
-    /// A file matches a directory if the file path starts with that directory.
-    fn find_matching_directories<'a>(
-        &'a self,
-        file_path: &'a Path,
-    ) -> impl Iterator<Item = &'a PathBuf> {
+    /// Returns the most specific root where the given file path should appear.
+    /// Nested roots are searched once and displayed once, avoiding duplicate
+    /// result rows for the same file.
+    fn find_matching_directory<'a>(&'a self, file_path: &'a Path) -> Option<&'a PathBuf> {
         self.root_directories
             .iter()
             .filter(move |root| file_path.starts_with(root))
+            .max_by_key(|root| {
+                (
+                    root.components().count(),
+                    root.as_os_str().to_string_lossy().len(),
+                )
+            })
     }
 
     fn apply_progress_item(&mut self, result: RipgrepMatch, ctx: &mut ViewContext<Self>) {
@@ -824,9 +828,7 @@ impl GlobalSearchView {
 
         let file_path = result.file_path.clone();
 
-        // Find all directories that this file belongs to
-        let mut matching_directories = self.find_matching_directories(&file_path).peekable();
-        if matching_directories.peek().is_none() {
+        let Some(directory_path) = self.find_matching_directory(&file_path).cloned() else {
             // File doesn't match any root directory, skip it
             let file_path_name = file_path
                 .file_name()
@@ -834,8 +836,7 @@ impl GlobalSearchView {
                 .unwrap_or_else(|| std::borrow::Cow::Borrowed("<unknown>"));
             log::warn!("[Global search] file {file_path_name} was not found in directories");
             return;
-        }
-        let matching_directories: Vec<_> = matching_directories.cloned().collect();
+        };
 
         // Populate hierarchical data model (directory_entries)
         let (directory_entries, directory_path_to_directory_index_entry) = (
@@ -843,27 +844,22 @@ impl GlobalSearchView {
             &mut self.directory_path_to_directory_index_entry,
         );
 
-        for directory_path in &matching_directories {
-            // Get or create the directory entry
-            let dir_index = *directory_path_to_directory_index_entry
-                .entry(directory_path.clone())
-                .or_insert_with(|| {
-                    let idx = directory_entries.len();
-                    directory_entries.push(DirectoryEntry::new(directory_path.clone()));
-                    idx
-                });
+        let dir_index = *directory_path_to_directory_index_entry
+            .entry(directory_path.clone())
+            .or_insert_with(|| {
+                let idx = directory_entries.len();
+                directory_entries.push(DirectoryEntry::new(directory_path.clone()));
+                idx
+            });
 
-            // Get or create the matched path entry within this directory
-            let dir_entry = &mut directory_entries[dir_index];
-            let (matched_path, _path_index) = dir_entry.matched_paths.get_or_create(&file_path);
+        let dir_entry = &mut directory_entries[dir_index];
+        let (matched_path, _path_index) = dir_entry.matched_paths.get_or_create(&file_path);
 
-            // Add the match
-            matched_path.matches.push(Match::new(
-                result.line_text.clone(),
-                result.line_number,
-                result.submatches.clone(),
-            ));
-        }
+        matched_path.matches.push(Match::new(
+            result.line_text.clone(),
+            result.line_number,
+            result.submatches.clone(),
+        ));
 
         self.total_match_count += 1;
 
@@ -876,6 +872,14 @@ impl GlobalSearchView {
         self.is_search_in_progress = false;
         self.current_search_id = None;
 
+        self.find_model.update(ctx, |model, _| {
+            model.abort_search();
+        });
+    }
+
+    fn cancel_search(&mut self, ctx: &mut ViewContext<Self>) {
+        self.current_search_id = None;
+        self.is_search_in_progress = false;
         self.find_model.update(ctx, |model, _| {
             model.abort_search();
         });
@@ -900,8 +904,7 @@ impl GlobalSearchView {
             | EditorEvent::BufferReinitialized => {
                 let query_text = self.query_editor.as_ref(ctx).buffer_text(ctx);
                 if query_text.is_empty() {
-                    self.current_search_id = None;
-                    self.is_search_in_progress = false;
+                    self.cancel_search(ctx);
                     self.reset_search_state(true);
                     ctx.notify();
                     return;
@@ -968,8 +971,7 @@ impl GlobalSearchView {
 
         let pattern = self.query_editor.as_ref(ctx).buffer_text(ctx);
         if pattern.is_empty() {
-            self.current_search_id = None;
-            self.is_search_in_progress = false;
+            self.cancel_search(ctx);
             self.reset_search_state(true);
             ctx.notify();
             return;
@@ -977,6 +979,11 @@ impl GlobalSearchView {
 
         if self.search_roots.is_empty() {
             log::warn!("GlobalSearch: no search roots; skipping search");
+            self.cancel_search(ctx);
+            self.reset_search_state(false);
+            self.last_error =
+                Some("Global search requires a local workspace directory.".to_string());
+            ctx.notify();
             return;
         }
 
@@ -1354,12 +1361,18 @@ impl GlobalSearchView {
         let directory_path_for_select = directory_path.to_path_buf();
         let file_path_for_select = matched_path.path.clone();
         let path_for_click = matched_path.path.clone();
+        let match_position_id = format!(
+            "global_search_match:{}:{}:{}",
+            matched_path.path.display(),
+            line_number,
+            match_index
+        );
 
         // Clone for the on_click closure since line_text and submatches are moved into Hoverable
         let line_text_for_click = line_text.clone();
         let submatches_for_click = submatches.clone();
 
-        Hoverable::new(mouse_state, move |mouse_state| {
+        let row = Hoverable::new(mouse_state, move |mouse_state| {
             let list_highlight_state = ItemHighlightState::new(is_selected, mouse_state);
 
             let text_color = match list_highlight_state {
@@ -1423,7 +1436,9 @@ impl GlobalSearchView {
                 column_num,
             });
         })
-        .finish()
+        .finish();
+
+        SavePosition::new(row, match_position_id.as_str()).finish()
     }
 
     fn items_count(&self) -> usize {
@@ -2194,7 +2209,7 @@ impl View for GlobalSearchView {
         let file_word = if files == 1 { "file" } else { "files" };
 
         let message = if self.is_search_in_progress && self.total_match_count == 0 {
-            "".to_string()
+            "Searching...".to_string()
         } else if !self.is_search_in_progress && self.total_match_count == 0 {
             "No results found. Try adjusting your include/exclude filters.".to_string()
         } else {
@@ -2228,7 +2243,7 @@ impl View for GlobalSearchView {
             .build()
             .finish();
 
-        if self.last_searched_pattern.is_some() {
+        if self.last_searched_pattern.is_some() && self.last_error.is_none() {
             header_column = header_column.with_child(match_text);
         }
 
@@ -2271,11 +2286,20 @@ impl View for GlobalSearchView {
         if should_render_pre_search_zero_state {
             body =
                 body.with_child(Shrinkable::new(1.0, self.render_pre_search_state(app)).finish());
+        } else if let Some(error) = &self.last_error {
+            body = body.with_child(
+                Shrinkable::new(1.0, self.render_search_error_state(error, app)).finish(),
+            );
         } else if let Some(results) = self.render_results(app) {
             let results_section = Container::new(results)
                 .with_horizontal_padding(12.)
                 .finish();
             body = body.with_child(Shrinkable::new(1.0, results_section).finish());
+        } else if self.is_search_in_progress {
+            body = body.with_child(Shrinkable::new(1.0, self.render_loading_state(app)).finish());
+        } else if self.last_searched_pattern.is_some() {
+            body =
+                body.with_child(Shrinkable::new(1.0, self.render_no_results_state(app)).finish());
         }
 
         let has_results = !self.directory_entries.is_empty();
@@ -2377,6 +2401,28 @@ impl GlobalSearchView {
             "Search in files across your current directories.",
             app,
         )
+    }
+
+    fn render_loading_state(&self, app: &AppContext) -> Box<dyn Element> {
+        self.render_zero_state(
+            Icon::Search,
+            "Searching",
+            "Results will appear here as matches are found.",
+            app,
+        )
+    }
+
+    fn render_no_results_state(&self, app: &AppContext) -> Box<dyn Element> {
+        self.render_zero_state(
+            Icon::Search,
+            "No results found",
+            "Try adjusting your query or include/exclude filters.",
+            app,
+        )
+    }
+
+    fn render_search_error_state(&self, error: &str, app: &AppContext) -> Box<dyn Element> {
+        self.render_zero_state(Icon::AlertTriangle, "Search failed", error.to_string(), app)
     }
 
     fn render_unavailable_state(&self, app: &AppContext) -> Box<dyn Element> {

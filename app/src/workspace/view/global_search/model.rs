@@ -85,6 +85,19 @@ impl GlobalSearch {
         let includes = search_config.includes;
         let excludes = search_config.excludes;
 
+        if search_config.use_regex {
+            let patterns = [effective_pattern.clone()];
+            if let Err(err) =
+                twarp_ripgrep::search::validate_search_patterns(&patterns, ignore_case, multiline)
+            {
+                ctx.emit(GlobalSearchEvent::Failed {
+                    search_id,
+                    error: format!("Invalid regex: {err}"),
+                });
+                return;
+            }
+        }
+
         let handle = ctx.spawn(
             async move {
                 Self::run_warp_ripgrep_cli(
@@ -110,7 +123,7 @@ impl GlobalSearch {
                     log::error!("GlobalSearch: twarp_ripgrep CLI search failed or aborted: {err}");
                     ctx.emit(GlobalSearchEvent::Failed {
                         search_id,
-                        error: "Global search failed.".to_string(),
+                        error: format!("Global search failed: {err}"),
                     });
                 }
             },

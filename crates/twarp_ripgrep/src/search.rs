@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Result};
 use grep::regex::RegexMatcherBuilder;
 use grep::{
     printer::JSONBuilder,
@@ -36,6 +36,26 @@ pub struct Match {
     pub submatches: Vec<Submatch>,
 }
 
+/// Validates search patterns with the same regex settings used by the
+/// ripgrep worker.
+pub fn validate_search_patterns(
+    patterns: &[String],
+    ignore_case: bool,
+    multiline: bool,
+) -> Result<()> {
+    if patterns.is_empty() {
+        return Err(anyhow!("No patterns specified"));
+    }
+
+    let mut matcher_builder = RegexMatcherBuilder::new();
+    matcher_builder.case_insensitive(ignore_case);
+    if multiline {
+        matcher_builder.line_terminator(None);
+    }
+    matcher_builder.build_many(patterns)?;
+    Ok(())
+}
+
 /// Entry point for the ripgrep subprocess.
 ///
 /// Runs a ripgrep search in-process and writes JSON results to stdout.
@@ -53,13 +73,10 @@ pub fn run_search_subprocess(
     #[cfg(unix)]
     crate::monitor_parent_and_exit_on_change(parent_pid);
 
-    if patterns.is_empty() {
-        return Err(anyhow!("No patterns specified"));
-    }
+    validate_search_patterns(patterns, ignore_case, multiline)?;
     if paths.is_empty() {
         return Err(anyhow!("No paths specified"));
     }
-
     let mut matcher_builder = RegexMatcherBuilder::new();
     matcher_builder.case_insensitive(ignore_case);
     if multiline {
@@ -229,6 +246,7 @@ mod process_impl {
         includes: &[String],
         excludes: &[String],
     ) -> anyhow::Result<impl Stream<Item = Match>> {
+        super::validate_search_patterns(patterns, ignore_case, multiline)?;
         let child =
             spawn_search_process(patterns, paths, ignore_case, multiline, includes, excludes)?;
         Ok(match_stream_from_child(child))
@@ -330,3 +348,22 @@ mod process_impl {
 
 #[cfg(not(target_family = "wasm"))]
 pub use process_impl::{search, search_streaming};
+
+#[cfg(test)]
+mod tests {
+    use super::validate_search_patterns;
+
+    #[test]
+    fn validate_search_patterns_accepts_valid_regex() {
+        validate_search_patterns(&["need(le)?".to_string()], true, false).unwrap();
+    }
+
+    #[test]
+    fn validate_search_patterns_rejects_invalid_regex() {
+        let err = validate_search_patterns(&["(".to_string()], true, false).unwrap_err();
+        assert!(
+            err.to_string().contains("regex"),
+            "expected regex error, got {err:#}"
+        );
+    }
+}

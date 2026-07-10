@@ -237,8 +237,8 @@ use crate::server::telemetry::{
 use crate::session_management::{SessionNavigationData, SessionSource};
 use crate::settings::{
     active_theme_kind, respect_system_theme, AccessibilitySettings, AliasExpansionSettings,
-    AppEditorSettings, BlockVisibilitySettings, CursorBlink, DebugSettings,
-    FontSettings, GPUSettings, InputSettings, MonospaceFontSize, PaneSettings, PrivacySettings,
+    AppEditorSettings, BlockVisibilitySettings, CursorBlink, DebugSettings, FontSettings,
+    GPUSettings, InputSettings, MonospaceFontSize, PaneSettings, PrivacySettings,
     SelectionSettings, Settings, SshSettings, ThemeSettings,
 };
 use crate::settings_view::flags;
@@ -20074,18 +20074,7 @@ impl TypedActionView for Workspace {
                 if FeatureFlag::GlobalSearch.is_enabled()
                     && *CodeSettings::as_ref(ctx).show_global_search
                 {
-                    if let Some(selected_text) = self.get_selected_text_from_focused_view(ctx) {
-                        if let Some(global_search_view) = self
-                            .left_panel_view
-                            .as_ref(ctx)
-                            .active_global_search_view(ctx)
-                        {
-                            // If we detect selected text in the active pane, pre-populate the global search input
-                            global_search_view.update(ctx, |view, ctx| {
-                                view.set_initial_query(selected_text, ctx);
-                            });
-                        }
-                    }
+                    let selected_text = self.get_selected_text_from_focused_view(ctx);
 
                     self.open_left_panel_view(
                         &LeftPanelAction::GlobalSearch {
@@ -20093,6 +20082,18 @@ impl TypedActionView for Workspace {
                         },
                         ctx,
                     );
+
+                    if let Some(selected_text) = selected_text {
+                        if let Some(global_search_view) = self
+                            .left_panel_view
+                            .as_ref(ctx)
+                            .active_global_search_view(ctx)
+                        {
+                            global_search_view.update(ctx, |view, ctx| {
+                                view.set_initial_query(selected_text, ctx);
+                            });
+                        }
+                    }
                 }
             }
             ToggleConversationListView => {
