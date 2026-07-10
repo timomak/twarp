@@ -7,7 +7,10 @@ use twarpui::{
         ChildView, Container, CornerRadius, CrossAxisAlignment, Element, Flex, MainAxisAlignment,
         ParentElement, Radius, Shrinkable,
     },
-    ui_components::components::{Coords, UiComponent, UiComponentStyles},
+    ui_components::{
+        components::{Coords, UiComponent, UiComponentStyles},
+        switch::SwitchStateHandle,
+    },
     AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 use twarpui_extras::secure_storage::{self, Error as SecureStorageError};
@@ -45,6 +48,14 @@ pub enum AgentSettingsPageAction {
     SetChatModel(String),
     SetChatEffort(String),
     SetChatPermissionMode(String),
+    SetTerminalProvider(String),
+    SetTerminalModel(String),
+    SetTerminalEffort(String),
+    SetReplyProvider(String),
+    SetReplyModel(String),
+    SetReplyEffort(String),
+    ToggleReplySuggestions,
+    ToggleTerminalSuggestions,
     ShowApiKeyEditor,
     SaveApiKey,
     RemoveApiKey,
@@ -59,6 +70,14 @@ pub struct AgentSettingsPageView {
     chat_model_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
     chat_effort_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
     chat_permission_mode_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
+    terminal_provider_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
+    terminal_model_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
+    terminal_effort_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
+    reply_provider_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
+    reply_model_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
+    reply_effort_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
+    reply_suggestions_switch_state: SwitchStateHandle,
+    terminal_suggestions_switch_state: SwitchStateHandle,
     api_key_editor: ViewHandle<EditorView>,
     save_api_key_button: ViewHandle<ActionButton>,
     replace_api_key_button: ViewHandle<ActionButton>,
@@ -83,6 +102,12 @@ enum AuthStatus {
     UsingApiKey,
     NotAuthenticated,
     CliNotInstalled,
+}
+
+#[derive(Clone, Copy)]
+enum SuggestionAction {
+    Terminal,
+    Reply,
 }
 
 impl AgentSettingsPageView {
@@ -134,6 +159,73 @@ impl AgentSettingsPageView {
             dropdown.set_top_bar_max_width(220.);
             dropdown
         });
+        let terminal_provider_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            dropdown.set_rich_items(
+                suggestion_provider_items(AgentSettingsPageAction::SetTerminalProvider),
+                ctx,
+            );
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetTerminalProvider(String::new()),
+                ctx,
+            );
+            dropdown.set_top_bar_max_width(180.);
+            dropdown
+        });
+        let terminal_model_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            dropdown.set_items(model_items(AgentSettingsPageAction::SetTerminalModel), ctx);
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetTerminalModel(String::new()),
+                ctx,
+            );
+            dropdown.set_top_bar_max_width(220.);
+            dropdown
+        });
+        let terminal_effort_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            dropdown.set_items(
+                effort_items(AgentSettingsPageAction::SetTerminalEffort),
+                ctx,
+            );
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetTerminalEffort(String::new()),
+                ctx,
+            );
+            dropdown.set_top_bar_max_width(180.);
+            dropdown
+        });
+        let reply_provider_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            dropdown.set_rich_items(
+                suggestion_provider_items(AgentSettingsPageAction::SetReplyProvider),
+                ctx,
+            );
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetReplyProvider(String::new()),
+                ctx,
+            );
+            dropdown.set_top_bar_max_width(180.);
+            dropdown
+        });
+        let reply_model_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            dropdown.set_items(model_items(AgentSettingsPageAction::SetReplyModel), ctx);
+            dropdown
+                .set_selected_by_action(AgentSettingsPageAction::SetReplyModel(String::new()), ctx);
+            dropdown.set_top_bar_max_width(220.);
+            dropdown
+        });
+        let reply_effort_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            dropdown.set_items(effort_items(AgentSettingsPageAction::SetReplyEffort), ctx);
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetReplyEffort(String::new()),
+                ctx,
+            );
+            dropdown.set_top_bar_max_width(180.);
+            dropdown
+        });
         let api_key_editor = ctx.add_typed_action_view(move |ctx| {
             let options = SingleLineEditorOptions {
                 text: TextOptions {
@@ -176,6 +268,14 @@ impl AgentSettingsPageView {
             chat_model_dropdown,
             chat_effort_dropdown,
             chat_permission_mode_dropdown,
+            terminal_provider_dropdown,
+            terminal_model_dropdown,
+            terminal_effort_dropdown,
+            reply_provider_dropdown,
+            reply_model_dropdown,
+            reply_effort_dropdown,
+            reply_suggestions_switch_state: Default::default(),
+            terminal_suggestions_switch_state: Default::default(),
             api_key_editor,
             save_api_key_button,
             replace_api_key_button,
@@ -203,6 +303,18 @@ impl AgentSettingsPageView {
             .unwrap_or(PermissionMode::Default)
             .as_cli_arg()
             .to_owned();
+        let terminal_provider =
+            settings::valid_suggestion_provider_value(settings.terminal_suggest_provider.value());
+        let terminal_model =
+            settings::valid_chat_model(settings.terminal_suggest_model.value()).unwrap_or_default();
+        let terminal_effort = settings::valid_chat_effort(settings.terminal_suggest_effort.value())
+            .unwrap_or_default();
+        let reply_provider =
+            settings::valid_suggestion_provider_value(settings.reply_suggest_provider.value());
+        let reply_model =
+            settings::valid_chat_model(settings.reply_suggest_model.value()).unwrap_or_default();
+        let reply_effort =
+            settings::valid_chat_effort(settings.reply_suggest_effort.value()).unwrap_or_default();
 
         self.backend_dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_rich_items(backend_items(), ctx);
@@ -230,6 +342,49 @@ impl AgentSettingsPageView {
                     ctx,
                 );
             });
+        self.terminal_provider_dropdown
+            .update(ctx, |dropdown, ctx| {
+                dropdown.set_rich_items(
+                    suggestion_provider_items(AgentSettingsPageAction::SetTerminalProvider),
+                    ctx,
+                );
+                dropdown.set_selected_by_action(
+                    AgentSettingsPageAction::SetTerminalProvider(terminal_provider),
+                    ctx,
+                );
+            });
+        self.terminal_model_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_items(model_items(AgentSettingsPageAction::SetTerminalModel), ctx);
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetTerminalModel(terminal_model),
+                ctx,
+            );
+        });
+        self.terminal_effort_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetTerminalEffort(terminal_effort),
+                ctx,
+            );
+        });
+        self.reply_provider_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_rich_items(
+                suggestion_provider_items(AgentSettingsPageAction::SetReplyProvider),
+                ctx,
+            );
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetReplyProvider(reply_provider),
+                ctx,
+            );
+        });
+        self.reply_model_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_items(model_items(AgentSettingsPageAction::SetReplyModel), ctx);
+            dropdown
+                .set_selected_by_action(AgentSettingsPageAction::SetReplyModel(reply_model), ctx);
+        });
+        self.reply_effort_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown
+                .set_selected_by_action(AgentSettingsPageAction::SetReplyEffort(reply_effort), ctx);
+        });
     }
 
     fn selected_auth_agent(&self, ctx: &AppContext) -> CLIAgent {
@@ -260,8 +415,16 @@ impl AgentSettingsPageView {
 
     fn auth_status(&self, app: &AppContext) -> AuthStatus {
         let agent = self.selected_auth_agent(app);
+        self.auth_status_for_agent(agent, app)
+    }
+
+    fn auth_status_for_agent(&self, agent: CLIAgent, app: &AppContext) -> AuthStatus {
         if settings::api_key_presence(AgentSettings::as_ref(app), agent) {
             return AuthStatus::UsingApiKey;
+        }
+
+        if self.auth_probe_agent != agent {
+            return AuthStatus::Checking;
         }
 
         match self.auth_probe_state {
@@ -279,6 +442,28 @@ impl AgentSettingsPageView {
                 logged_in: false,
             }) => AuthStatus::NotAuthenticated,
         }
+    }
+
+    fn resolved_provider_for_suggestion(
+        &self,
+        action: SuggestionAction,
+        app: &AppContext,
+    ) -> (CLIAgent, bool) {
+        let settings = AgentSettings::as_ref(app);
+        let config = match action {
+            SuggestionAction::Terminal => settings.terminal_suggest_config(),
+            SuggestionAction::Reply => settings.reply_suggest_config(),
+        };
+        let inherited = config.provider.is_inherit();
+        (
+            config.provider.resolve(settings.chat_provider_agent()),
+            inherited,
+        )
+    }
+
+    fn is_valid_suggestion_provider_selection(&self, provider: &str) -> bool {
+        let provider = provider.trim();
+        provider.is_empty() || CLIAgent::from_serialized_name(provider).is_agent_settings_enabled()
     }
 
     fn save_api_key(&mut self, ctx: &mut ViewContext<Self>) {
@@ -430,6 +615,62 @@ impl TypedActionView for AgentSettingsPageView {
                     });
                 }
             }
+            AgentSettingsPageAction::SetTerminalProvider(provider) => {
+                if self.is_valid_suggestion_provider_selection(provider) {
+                    AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                        report_if_error!(settings
+                            .terminal_suggest_provider
+                            .set_value(provider.trim().to_owned(), ctx));
+                    });
+                }
+            }
+            AgentSettingsPageAction::SetTerminalModel(model) => {
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings
+                        .terminal_suggest_model
+                        .set_value(model.clone(), ctx));
+                });
+            }
+            AgentSettingsPageAction::SetTerminalEffort(effort) => {
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings
+                        .terminal_suggest_effort
+                        .set_value(effort.clone(), ctx));
+                });
+            }
+            AgentSettingsPageAction::SetReplyProvider(provider) => {
+                if self.is_valid_suggestion_provider_selection(provider) {
+                    AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                        report_if_error!(settings
+                            .reply_suggest_provider
+                            .set_value(provider.trim().to_owned(), ctx));
+                    });
+                }
+            }
+            AgentSettingsPageAction::SetReplyModel(model) => {
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings.reply_suggest_model.set_value(model.clone(), ctx));
+                });
+            }
+            AgentSettingsPageAction::SetReplyEffort(effort) => {
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings.reply_suggest_effort.set_value(effort.clone(), ctx));
+                });
+            }
+            AgentSettingsPageAction::ToggleReplySuggestions => {
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let enabled = *settings.enable_reply_suggestions.value();
+                    report_if_error!(settings.enable_reply_suggestions.set_value(!enabled, ctx));
+                });
+            }
+            AgentSettingsPageAction::ToggleTerminalSuggestions => {
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let enabled = *settings.enable_terminal_suggestions.value();
+                    report_if_error!(settings
+                        .enable_terminal_suggestions
+                        .set_value(!enabled, ctx));
+                });
+            }
             AgentSettingsPageAction::ShowApiKeyEditor => {
                 self.show_api_key_editor = true;
                 self.api_key_editor.update(ctx, |editor, ctx| {
@@ -494,7 +735,7 @@ impl SettingsWidget for AgentSettingsWidget {
     type View = AgentSettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "agent claude codex gemini backend chat history model effort permission mode"
+        "agent claude codex gemini backend chat history terminal reply suggestions model effort permission mode"
     }
 
     fn render(
@@ -534,63 +775,6 @@ impl SettingsWidget for AgentSettingsWidget {
         );
         let auth = render_auth_section(view, appearance, app);
 
-        let chat_provider = render_dropdown_item(
-            appearance,
-            "Provider",
-            None,
-            None,
-            LocalOnlyIconState::for_setting(
-                settings::AgentChatProvider::storage_key(),
-                settings::AgentChatProvider::sync_to_cloud(),
-                &mut view.local_only_icon_states.borrow_mut(),
-                app,
-            ),
-            None,
-            &view.chat_provider_dropdown,
-        );
-        let chat_model = render_dropdown_item(
-            appearance,
-            "Model",
-            None,
-            None,
-            LocalOnlyIconState::for_setting(
-                settings::AgentChatModel::storage_key(),
-                settings::AgentChatModel::sync_to_cloud(),
-                &mut view.local_only_icon_states.borrow_mut(),
-                app,
-            ),
-            None,
-            &view.chat_model_dropdown,
-        );
-        let chat_effort = render_dropdown_item(
-            appearance,
-            "Effort",
-            None,
-            None,
-            LocalOnlyIconState::for_setting(
-                settings::AgentChatEffort::storage_key(),
-                settings::AgentChatEffort::sync_to_cloud(),
-                &mut view.local_only_icon_states.borrow_mut(),
-                app,
-            ),
-            None,
-            &view.chat_effort_dropdown,
-        );
-        let chat_permission_mode = render_dropdown_item(
-            appearance,
-            "Permission mode",
-            None,
-            None,
-            LocalOnlyIconState::for_setting(
-                settings::AgentChatPermissionMode::storage_key(),
-                settings::AgentChatPermissionMode::sync_to_cloud(),
-                &mut view.local_only_icon_states.borrow_mut(),
-                app,
-            ),
-            None,
-            &view.chat_permission_mode_dropdown,
-        );
-
         Flex::column()
             .with_child(backend)
             .with_child(auth)
@@ -598,16 +782,27 @@ impl SettingsWidget for AgentSettingsWidget {
             .with_child(
                 Container::new(
                     Flex::column()
-                        .with_child(render_sub_header(appearance, "Chat & history", None))
-                        .with_child(chat_provider)
-                        .with_child(chat_model)
-                        .with_child(chat_effort)
-                        .with_child(chat_permission_mode)
+                        .with_child(render_chat_action_row(view, appearance, app))
+                        .with_child(render_suggestion_action_row(
+                            view,
+                            appearance,
+                            app,
+                            SuggestionAction::Terminal,
+                        ))
+                        .with_child(render_suggestion_action_row(
+                            view,
+                            appearance,
+                            app,
+                            SuggestionAction::Reply,
+                        ))
                         .finish(),
                 )
                 .with_padding_left(8.)
                 .finish(),
             )
+            .with_child(render_sub_header(appearance, "Suggestions", None))
+            .with_child(render_reply_suggestions_toggle(view, appearance, app))
+            .with_child(render_terminal_suggestions_toggle(view, appearance, app))
             .finish()
     }
 }
@@ -631,6 +826,354 @@ fn render_auth_section(
     .with_margin_top(12.)
     .with_margin_bottom(16.)
     .finish()
+}
+
+fn local_only_icon_state(
+    view: &AgentSettingsPageView,
+    storage_key: &str,
+    sync_to_cloud: ::settings::SyncToCloud,
+    app: &AppContext,
+) -> LocalOnlyIconState {
+    LocalOnlyIconState::for_setting(
+        storage_key,
+        sync_to_cloud,
+        &mut view.local_only_icon_states.borrow_mut(),
+        app,
+    )
+}
+
+fn render_chat_action_row(
+    view: &AgentSettingsPageView,
+    appearance: &Appearance,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let chat_provider = AgentSettings::as_ref(app).chat_provider_agent();
+
+    render_action_group(
+        appearance,
+        "Chat & history",
+        vec![
+            render_dropdown_item(
+                appearance,
+                "Provider",
+                None,
+                None,
+                local_only_icon_state(
+                    view,
+                    settings::AgentChatProvider::storage_key(),
+                    settings::AgentChatProvider::sync_to_cloud(),
+                    app,
+                ),
+                None,
+                &view.chat_provider_dropdown,
+            ),
+            render_dropdown_item(
+                appearance,
+                "Model",
+                None,
+                None,
+                local_only_icon_state(
+                    view,
+                    settings::AgentChatModel::storage_key(),
+                    settings::AgentChatModel::sync_to_cloud(),
+                    app,
+                ),
+                None,
+                &view.chat_model_dropdown,
+            ),
+            render_dropdown_item(
+                appearance,
+                "Effort",
+                None,
+                None,
+                local_only_icon_state(
+                    view,
+                    settings::AgentChatEffort::storage_key(),
+                    settings::AgentChatEffort::sync_to_cloud(),
+                    app,
+                ),
+                None,
+                &view.chat_effort_dropdown,
+            ),
+            render_dropdown_item(
+                appearance,
+                "Permission mode",
+                None,
+                None,
+                local_only_icon_state(
+                    view,
+                    settings::AgentChatPermissionMode::storage_key(),
+                    settings::AgentChatPermissionMode::sync_to_cloud(),
+                    app,
+                ),
+                None,
+                &view.chat_permission_mode_dropdown,
+            ),
+            render_auth_source_row(view, appearance, app, chat_provider, None),
+        ],
+    )
+}
+
+fn render_suggestion_action_row(
+    view: &AgentSettingsPageView,
+    appearance: &Appearance,
+    app: &AppContext,
+    action: SuggestionAction,
+) -> Box<dyn Element> {
+    let (provider, inherited) = view.resolved_provider_for_suggestion(action, app);
+    let inherited_note = inherited.then(|| {
+        render_inheritance_note(
+            format!("Inherits Chat & history ({})", agent_display_name(provider)),
+            appearance,
+        )
+    });
+
+    let (title, provider_dropdown, model_dropdown, effort_dropdown) = match action {
+        SuggestionAction::Terminal => (
+            "Terminal suggestions",
+            &view.terminal_provider_dropdown,
+            &view.terminal_model_dropdown,
+            &view.terminal_effort_dropdown,
+        ),
+        SuggestionAction::Reply => (
+            "Chat reply suggestions",
+            &view.reply_provider_dropdown,
+            &view.reply_model_dropdown,
+            &view.reply_effort_dropdown,
+        ),
+    };
+
+    let (provider_key, provider_sync, model_key, model_sync, effort_key, effort_sync) = match action
+    {
+        SuggestionAction::Terminal => (
+            settings::AgentTerminalSuggestProvider::storage_key(),
+            settings::AgentTerminalSuggestProvider::sync_to_cloud(),
+            settings::AgentTerminalSuggestModel::storage_key(),
+            settings::AgentTerminalSuggestModel::sync_to_cloud(),
+            settings::AgentTerminalSuggestEffort::storage_key(),
+            settings::AgentTerminalSuggestEffort::sync_to_cloud(),
+        ),
+        SuggestionAction::Reply => (
+            settings::AgentReplySuggestProvider::storage_key(),
+            settings::AgentReplySuggestProvider::sync_to_cloud(),
+            settings::AgentReplySuggestModel::storage_key(),
+            settings::AgentReplySuggestModel::sync_to_cloud(),
+            settings::AgentReplySuggestEffort::storage_key(),
+            settings::AgentReplySuggestEffort::sync_to_cloud(),
+        ),
+    };
+
+    render_action_group(
+        appearance,
+        title,
+        vec![
+            render_dropdown_item(
+                appearance,
+                "Provider",
+                None,
+                inherited_note,
+                local_only_icon_state(view, provider_key, provider_sync, app),
+                None,
+                provider_dropdown,
+            ),
+            render_dropdown_item(
+                appearance,
+                "Model",
+                None,
+                None,
+                local_only_icon_state(view, model_key, model_sync, app),
+                None,
+                model_dropdown,
+            ),
+            render_dropdown_item(
+                appearance,
+                "Effort",
+                None,
+                None,
+                local_only_icon_state(view, effort_key, effort_sync, app),
+                None,
+                effort_dropdown,
+            ),
+            render_auth_source_row(
+                view,
+                appearance,
+                app,
+                provider,
+                inherited.then(|| {
+                    format!(
+                        "Inherited from Chat & history ({})",
+                        agent_display_name(provider)
+                    )
+                }),
+            ),
+        ],
+    )
+}
+
+fn render_action_group(
+    appearance: &Appearance,
+    title: &'static str,
+    rows: Vec<Box<dyn Element>>,
+) -> Box<dyn Element> {
+    let mut column = Flex::column().with_child(render_sub_header(appearance, title, None));
+    for row in rows {
+        column.add_child(row);
+    }
+
+    Container::new(column.finish())
+        .with_margin_bottom(12.)
+        .finish()
+}
+
+fn render_auth_source_row(
+    view: &AgentSettingsPageView,
+    appearance: &Appearance,
+    app: &AppContext,
+    provider: CLIAgent,
+    inherited_detail: Option<String>,
+) -> Box<dyn Element> {
+    let status = view.auth_status_for_agent(provider, app);
+    let warning = matches!(
+        status,
+        AuthStatus::NotAuthenticated | AuthStatus::CliNotInstalled
+    );
+    let color = if warning {
+        appearance.theme().ui_error_color()
+    } else {
+        appearance.theme().active_ui_text_color().into()
+    };
+    let detail = inherited_detail
+        .unwrap_or_else(|| format!("Resolved for {}.", agent_display_name(provider)));
+
+    render_settings_row(
+        render_dropdown_item_label(
+            "Auth source".to_owned(),
+            Some(detail),
+            LocalOnlyIconState::Hidden,
+            None,
+            appearance,
+        ),
+        appearance
+            .ui_builder()
+            .span(auth_source_label(status))
+            .with_style(UiComponentStyles {
+                font_color: Some(color),
+                font_size: Some(12.),
+                ..Default::default()
+            })
+            .build()
+            .finish(),
+    )
+}
+
+fn render_reply_suggestions_toggle(
+    view: &AgentSettingsPageView,
+    appearance: &Appearance,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let settings = AgentSettings::as_ref(app);
+    render_suggestion_toggle(
+        view,
+        appearance,
+        app,
+        "Suggest a reply after each response",
+        "Uses the Chat reply suggestions row when available.",
+        *settings.enable_reply_suggestions.value(),
+        settings::AgentEnableReplySuggestions::storage_key(),
+        settings::AgentEnableReplySuggestions::sync_to_cloud(),
+        view.reply_suggestions_switch_state.clone(),
+        AgentSettingsPageAction::ToggleReplySuggestions,
+    )
+}
+
+fn render_terminal_suggestions_toggle(
+    view: &AgentSettingsPageView,
+    appearance: &Appearance,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let settings = AgentSettings::as_ref(app);
+    render_suggestion_toggle(
+        view,
+        appearance,
+        app,
+        "AI command suggestions in the terminal",
+        "Uses the Terminal suggestions row when available.",
+        *settings.enable_terminal_suggestions.value(),
+        settings::AgentEnableTerminalSuggestions::storage_key(),
+        settings::AgentEnableTerminalSuggestions::sync_to_cloud(),
+        view.terminal_suggestions_switch_state.clone(),
+        AgentSettingsPageAction::ToggleTerminalSuggestions,
+    )
+}
+
+fn render_suggestion_toggle(
+    view: &AgentSettingsPageView,
+    appearance: &Appearance,
+    app: &AppContext,
+    label: &str,
+    detail: &str,
+    checked: bool,
+    storage_key: &str,
+    sync_to_cloud: ::settings::SyncToCloud,
+    switch_state: SwitchStateHandle,
+    action: AgentSettingsPageAction,
+) -> Box<dyn Element> {
+    let label = render_dropdown_item_label(
+        label.to_owned(),
+        Some(detail.to_owned()),
+        local_only_icon_state(view, storage_key, sync_to_cloud, app),
+        None,
+        appearance,
+    );
+    let switch = appearance
+        .ui_builder()
+        .switch(switch_state)
+        .check(checked)
+        .build()
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(action.clone());
+        })
+        .finish();
+
+    Container::new(render_settings_row(label, switch))
+        .with_margin_bottom(8.)
+        .finish()
+}
+
+fn render_inheritance_note(text: String, appearance: &Appearance) -> Box<dyn Element> {
+    appearance
+        .ui_builder()
+        .span(text)
+        .with_style(UiComponentStyles {
+            font_color: Some(appearance.theme().nonactive_ui_text_color().into()),
+            font_size: Some(12.),
+            margin: Some(Coords {
+                top: 2.,
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .build()
+        .finish()
+}
+
+fn auth_source_label(status: AuthStatus) -> &'static str {
+    match status {
+        AuthStatus::Checking => "Checking...",
+        AuthStatus::LoggedInLocalCli => "Logged in (local CLI)",
+        AuthStatus::UsingApiKey => "Using API key",
+        AuthStatus::NotAuthenticated => "Not authenticated",
+        AuthStatus::CliNotInstalled => "CLI not installed",
+    }
+}
+
+fn agent_display_name(agent: CLIAgent) -> &'static str {
+    match agent {
+        CLIAgent::Claude => "Claude",
+        CLIAgent::Codex => "Codex",
+        CLIAgent::Gemini => "Gemini",
+        CLIAgent::Unknown => "Unknown",
+    }
 }
 
 fn render_auth_status_row(status: AuthStatus, appearance: &Appearance) -> Box<dyn Element> {
@@ -822,6 +1365,29 @@ fn chat_provider_items() -> Vec<MenuItem<DropdownAction<AgentSettingsPageAction>
     ]
 }
 
+fn suggestion_provider_items(
+    action: fn(String) -> AgentSettingsPageAction,
+) -> Vec<MenuItem<DropdownAction<AgentSettingsPageAction>>> {
+    vec![
+        agent_dropdown_item("Default", action(String::new()), false),
+        agent_dropdown_item(
+            "Claude",
+            action(CLIAgent::Claude.serialized_name().to_owned()),
+            false,
+        ),
+        agent_dropdown_item(
+            "Codex (coming soon)",
+            action(CLIAgent::Codex.serialized_name().to_owned()),
+            true,
+        ),
+        agent_dropdown_item(
+            "Gemini (coming soon)",
+            action(CLIAgent::Gemini.serialized_name().to_owned()),
+            true,
+        ),
+    ]
+}
+
 fn agent_dropdown_item(
     label: &'static str,
     action: AgentSettingsPageAction,
@@ -834,17 +1400,17 @@ fn agent_dropdown_item(
 }
 
 fn chat_model_items() -> Vec<DropdownItem<AgentSettingsPageAction>> {
-    let mut items = vec![DropdownItem::new(
-        "Default",
-        AgentSettingsPageAction::SetChatModel(String::new()),
-    )];
+    model_items(AgentSettingsPageAction::SetChatModel)
+}
+
+fn model_items(
+    action: fn(String) -> AgentSettingsPageAction,
+) -> Vec<DropdownItem<AgentSettingsPageAction>> {
+    let mut items = vec![DropdownItem::new("Default", action(String::new()))];
     match crate::claude_code_models::discovered() {
         Some(models) => {
             items.extend(models.iter().map(|model| {
-                DropdownItem::new(
-                    model.display_name.clone(),
-                    AgentSettingsPageAction::SetChatModel(model.id.clone()),
-                )
+                DropdownItem::new(model.display_name.clone(), action(model.id.clone()))
             }));
         }
         None => {
@@ -852,10 +1418,7 @@ fn chat_model_items() -> Vec<DropdownItem<AgentSettingsPageAction>> {
                 crate::claude_code_models::FALLBACK_MODEL_ALIASES
                     .iter()
                     .map(|alias| {
-                        DropdownItem::new(
-                            prettify_model(alias),
-                            AgentSettingsPageAction::SetChatModel((*alias).to_owned()),
-                        )
+                        DropdownItem::new(prettify_model(alias), action((*alias).to_owned()))
                     }),
             );
         }
@@ -864,6 +1427,12 @@ fn chat_model_items() -> Vec<DropdownItem<AgentSettingsPageAction>> {
 }
 
 fn chat_effort_items() -> Vec<DropdownItem<AgentSettingsPageAction>> {
+    effort_items(AgentSettingsPageAction::SetChatEffort)
+}
+
+fn effort_items(
+    action: fn(String) -> AgentSettingsPageAction,
+) -> Vec<DropdownItem<AgentSettingsPageAction>> {
     [
         ("Default", ""),
         ("Low", "low"),
@@ -872,12 +1441,7 @@ fn chat_effort_items() -> Vec<DropdownItem<AgentSettingsPageAction>> {
         ("Max", "max"),
     ]
     .into_iter()
-    .map(|(label, value)| {
-        DropdownItem::new(
-            label,
-            AgentSettingsPageAction::SetChatEffort(value.to_owned()),
-        )
-    })
+    .map(|(label, value)| DropdownItem::new(label, action(value.to_owned())))
     .collect()
 }
 

@@ -10,6 +10,9 @@ pub const DEFAULT_CHAT_PROVIDER: &str = "claude";
 pub const DEFAULT_CHAT_MODEL: &str = "";
 pub const DEFAULT_CHAT_EFFORT: &str = "";
 pub const DEFAULT_CHAT_PERMISSION_MODE: &str = "default";
+pub const DEFAULT_SUGGESTION_PROVIDER: &str = "";
+pub const DEFAULT_SUGGESTION_MODEL: &str = "";
+pub const DEFAULT_SUGGESTION_EFFORT: &str = "";
 
 define_settings_group!(AgentSettings, settings: [
     backend: AgentBackend {
@@ -57,6 +60,78 @@ define_settings_group!(AgentSettings, settings: [
         toml_path: "agent.actions.chat.permission_mode",
         description: "The permission mode used for new chat panes.",
     },
+    terminal_suggest_provider: AgentTerminalSuggestProvider {
+        type: String,
+        default: DEFAULT_SUGGESTION_PROVIDER.to_owned(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.actions.terminal_suggest.provider",
+        description: "The provider used for terminal suggestions. Empty means inherit the chat provider.",
+    },
+    terminal_suggest_model: AgentTerminalSuggestModel {
+        type: String,
+        default: DEFAULT_SUGGESTION_MODEL.to_owned(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.actions.terminal_suggest.model",
+        description: "The model used for terminal suggestions. Empty means the provider default.",
+    },
+    terminal_suggest_effort: AgentTerminalSuggestEffort {
+        type: String,
+        default: DEFAULT_SUGGESTION_EFFORT.to_owned(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.actions.terminal_suggest.effort",
+        description: "The reasoning effort used for terminal suggestions. Empty means the provider default.",
+    },
+    reply_suggest_provider: AgentReplySuggestProvider {
+        type: String,
+        default: DEFAULT_SUGGESTION_PROVIDER.to_owned(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.actions.reply_suggest.provider",
+        description: "The provider used for chat reply suggestions. Empty means inherit the chat provider.",
+    },
+    reply_suggest_model: AgentReplySuggestModel {
+        type: String,
+        default: DEFAULT_SUGGESTION_MODEL.to_owned(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.actions.reply_suggest.model",
+        description: "The model used for chat reply suggestions. Empty means the provider default.",
+    },
+    reply_suggest_effort: AgentReplySuggestEffort {
+        type: String,
+        default: DEFAULT_SUGGESTION_EFFORT.to_owned(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.actions.reply_suggest.effort",
+        description: "The reasoning effort used for chat reply suggestions. Empty means the provider default.",
+    },
+    enable_reply_suggestions: AgentEnableReplySuggestions {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.suggestions.reply.enabled",
+        description: "Whether to suggest a reply after each agent response.",
+    },
+    enable_terminal_suggestions: AgentEnableTerminalSuggestions {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.suggestions.terminal.enabled",
+        description: "Whether to show AI command suggestions in the terminal.",
+    },
     claude_api_key_set: AgentClaudeApiKeySet {
         type: bool,
         default: false,
@@ -74,6 +149,39 @@ pub struct AgentChatLaunchConfig {
     pub model: Option<String>,
     pub effort: Option<String>,
     pub permission_mode: PermissionMode,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AgentActionProvider {
+    Inherit,
+    Agent(CLIAgent),
+}
+
+impl AgentActionProvider {
+    pub fn resolve(self, chat_provider: CLIAgent) -> CLIAgent {
+        match self {
+            Self::Inherit => chat_provider,
+            Self::Agent(agent) => agent,
+        }
+    }
+
+    pub fn serialized_name(self) -> &'static str {
+        match self {
+            Self::Inherit => DEFAULT_SUGGESTION_PROVIDER,
+            Self::Agent(agent) => agent.serialized_name(),
+        }
+    }
+
+    pub fn is_inherit(self) -> bool {
+        matches!(self, Self::Inherit)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentSuggestionActionConfig {
+    pub provider: AgentActionProvider,
+    pub model: Option<String>,
+    pub effort: Option<String>,
 }
 
 impl AgentSettings {
@@ -94,6 +202,22 @@ impl AgentSettings {
                 .unwrap_or(PermissionMode::Default),
         }
     }
+
+    pub fn terminal_suggest_config(&self) -> AgentSuggestionActionConfig {
+        AgentSuggestionActionConfig {
+            provider: suggestion_provider(self.terminal_suggest_provider.value()),
+            model: valid_chat_model(self.terminal_suggest_model.value()),
+            effort: valid_chat_effort(self.terminal_suggest_effort.value()),
+        }
+    }
+
+    pub fn reply_suggest_config(&self) -> AgentSuggestionActionConfig {
+        AgentSuggestionActionConfig {
+            provider: suggestion_provider(self.reply_suggest_provider.value()),
+            model: valid_chat_model(self.reply_suggest_model.value()),
+            effort: valid_chat_effort(self.reply_suggest_effort.value()),
+        }
+    }
 }
 
 pub fn enabled_agent_or_default(serialized_name: &str) -> CLIAgent {
@@ -103,6 +227,26 @@ pub fn enabled_agent_or_default(serialized_name: &str) -> CLIAgent {
     } else {
         CLIAgent::Claude
     }
+}
+
+pub fn suggestion_provider(serialized_name: &str) -> AgentActionProvider {
+    let serialized_name = serialized_name.trim();
+    if serialized_name.is_empty() || serialized_name == "default" {
+        return AgentActionProvider::Inherit;
+    }
+
+    let agent = CLIAgent::from_serialized_name(serialized_name);
+    if agent.is_agent_settings_enabled() {
+        AgentActionProvider::Agent(agent)
+    } else {
+        AgentActionProvider::Inherit
+    }
+}
+
+pub fn valid_suggestion_provider_value(serialized_name: &str) -> String {
+    suggestion_provider(serialized_name)
+        .serialized_name()
+        .to_owned()
 }
 
 pub fn valid_chat_model(model: &str) -> Option<String> {
@@ -137,5 +281,39 @@ pub fn api_key_presence(settings: &AgentSettings, agent: CLIAgent) -> bool {
     match agent {
         CLIAgent::Claude => *settings.claude_api_key_set.value(),
         CLIAgent::Codex | CLIAgent::Gemini | CLIAgent::Unknown => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn suggestion_provider_defaults_to_inherit() {
+        assert_eq!(suggestion_provider(""), AgentActionProvider::Inherit);
+        assert_eq!(suggestion_provider("default"), AgentActionProvider::Inherit);
+        assert_eq!(suggestion_provider("unknown"), AgentActionProvider::Inherit);
+    }
+
+    #[test]
+    fn suggestion_provider_allows_enabled_agents_only() {
+        assert_eq!(
+            suggestion_provider("claude"),
+            AgentActionProvider::Agent(CLIAgent::Claude)
+        );
+        assert_eq!(suggestion_provider("codex"), AgentActionProvider::Inherit);
+        assert_eq!(suggestion_provider("gemini"), AgentActionProvider::Inherit);
+    }
+
+    #[test]
+    fn suggestion_provider_resolves_inherit_to_chat_provider() {
+        assert_eq!(
+            AgentActionProvider::Inherit.resolve(CLIAgent::Claude),
+            CLIAgent::Claude
+        );
+        assert_eq!(
+            AgentActionProvider::Agent(CLIAgent::Claude).resolve(CLIAgent::Gemini),
+            CLIAgent::Claude
+        );
     }
 }
