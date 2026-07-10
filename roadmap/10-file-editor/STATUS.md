@@ -1,6 +1,6 @@
 # 10 — File editor surface with go-to-definition
 
-**Phase:** impl-pending — PRODUCT.md + TECH.md merged via [#155](https://github.com/timomak/twarp/pull/155) (fleet `10-file-editor-spec`); the 16-advance PR incorrectly reset this to spec-pending, corrected per the "trust git" rule
+**Phase:** merged
 **Spec PR:** [#155](https://github.com/timomak/twarp/pull/155)
 **Impl PRs:** —
 
