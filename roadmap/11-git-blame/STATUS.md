@@ -1,6 +1,6 @@
 # 11 — Git blame & per-line history
 
-**Phase:** spec-pending
+**Phase:** impl-pending
 **Spec PR:** —
 **Impl PRs:** —
 
