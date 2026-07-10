@@ -1,6 +1,6 @@
 # 16 — Agent settings — STATUS
 
-**Phase:** impl-pending — specs approved 2026-07-06 via the merged activation PR #154 (that merge was the documented sign-off gate; PRODUCT.md + TECH.md drafted 2026-07-01, expanded same day per owner Q&A, landed on master via fleet wip commit `1f5f2db34`). Owner directed 16 active 2026-07-06 (pulled ahead; 10-file-editor resumes after). Implementation starts with 16a.
+**Phase:** merged
 
 **Owner-confirmed decisions (2026-07-01):**
 - Provider scope: **independent per action** (chat / terminal-suggest / reply-suggest each get their own provider+model+effort).
