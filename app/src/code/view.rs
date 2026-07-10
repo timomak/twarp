@@ -1250,7 +1250,7 @@ impl CodeView {
                 self.save_local(
                     index,
                     Some(Box::new(move |outcome, me, ctx| {
-                        if outcome != SaveOutcome::Canceled {
+                        if Self::should_close_tab_after_prompt_save(&outcome) {
                             me.remove_tab_data_index(index, ctx);
                         }
                     })),
@@ -1276,7 +1276,7 @@ impl CodeView {
                 self.save_local(
                     unsaved_indices[current_index],
                     Some(Box::new(move |outcome, me, ctx| {
-                        if outcome != SaveOutcome::Canceled {
+                        if Self::should_close_tab_after_prompt_save(&outcome) {
                             me.process_next_tab_for_clear(unsaved_indices, current_index + 1, ctx);
                         }
                     })),
@@ -1288,6 +1288,10 @@ impl CodeView {
             }
             _ => (),
         }
+    }
+
+    fn should_close_tab_after_prompt_save(outcome: &SaveOutcome) -> bool {
+        *outcome == SaveOutcome::Succeeded
     }
 
     fn process_next_tab_for_clear(
@@ -2453,4 +2457,22 @@ fn render_unsaved_changes_icon(color: ColorU) -> Box<dyn Element> {
     .with_width(8.)
     .with_height(8.)
     .finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prompt_save_closes_tab_only_after_successful_save() {
+        assert!(CodeView::should_close_tab_after_prompt_save(
+            &SaveOutcome::Succeeded
+        ));
+        assert!(!CodeView::should_close_tab_after_prompt_save(
+            &SaveOutcome::Failed
+        ));
+        assert!(!CodeView::should_close_tab_after_prompt_save(
+            &SaveOutcome::Canceled
+        ));
+    }
 }
