@@ -2,7 +2,7 @@
 
 Single source of truth for what's being built next. `/twarp-next` reads this file every invocation; the user reads it to see status at a glance.
 
-**Currently active:** `11-git-blame`
+**Currently active:** `12-project-search-replace`
 **Next up:** `10-file-editor` (resumes) — or owner direction
 
 ## Features
@@ -19,7 +19,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 08 | [macOS-style UI overhaul](08-macos-ui/STATUS.md) | merged | #81 | #81 (spec+impl bundled, owner-directed) |
 | 09 | [Rebrand to twarp](09-rebrand/STATUS.md) | merged | — | — |
 | 10 | [File editor with go-to-definition](10-file-editor/STATUS.md) | merged | [#155](https://github.com/timomak/twarp/pull/155) | — |
-| 11 | [Git blame](11-git-blame/STATUS.md) | not-started | — | — |
+| 11 | [Git blame](11-git-blame/STATUS.md) | merged | — | — |
 | 12 | [Project search & replace](12-project-search-replace/STATUS.md) | not-started | — | — |
 | 13 | [MCP viewer in Claude pane](13-mcp-viewer/STATUS.md) | merged | [#91](https://github.com/timomak/twarp/pull/91) | 13a [#95](https://github.com/timomak/twarp/pull/95) |
 | 14 | [Built-in browser (Claude-debuggable)](14-builtin-browser/STATUS.md) | merged (phase 3 14g–14l shipped 2026-07-09) | [#96](https://github.com/timomak/twarp/pull/96) | 14a [#111](https://github.com/timomak/twarp/pull/111), 14b [#112](https://github.com/timomak/twarp/pull/112), 14c [#113](https://github.com/timomak/twarp/pull/113), 14d [#114](https://github.com/timomak/twarp/pull/114), 14e [#115](https://github.com/timomak/twarp/pull/115), 14f (fleet), 14g–14l [#171](https://github.com/timomak/twarp/pull/171)–[#178](https://github.com/timomak/twarp/pull/178) |
