@@ -532,7 +532,7 @@ def worker_codex(it, name, ref="origin/master", prompt_text=None):
            f"> /tmp/fleet_{iid}.author.log 2>&1\n"
            f"echo CODEX_EXIT_$?\n")
     auth_start = time.time()
-    r = bash_on(name, run, timeout=1500)
+    r = bash_on(name, run, timeout=3600)
     (LOG / f"{iid}.author.log").write_text(node_read(name, f"/tmp/fleet_{iid}.author.log"))
     _collect_codex_session(iid, name, auth_start)   # structured author trace (parity with driver.jsonl)
     if "CODEX_EXIT_0" not in r.stdout:
