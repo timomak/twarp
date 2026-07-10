@@ -3,7 +3,7 @@
 /// It also handles applying an optional diff to the file content that will be applied
 /// when the file is loaded.
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     ops::Range,
     path::{Path, PathBuf},
     rc::Rc,
@@ -12,8 +12,8 @@ use std::{
 
 use futures::stream::AbortHandle;
 use lsp::{
-    types::FileLocation, LanguageId, LanguageServerId, LspEvent, LspManagerModel,
-    LspManagerModelEvent, LspServerModel, ReferenceLocation,
+    LanguageId, LanguageServerId, LspEvent, LspManagerModel, LspManagerModelEvent, LspServerModel,
+    ReferenceLocation, types::FileLocation,
 };
 use lsp_types::FormattingOptions;
 use markdown_parser::FormattedText;
@@ -21,7 +21,10 @@ use num_traits::SaturatingSub;
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
 use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
 use string_offset::CharOffset;
-use twarp_core::{features::FeatureFlag, ui::appearance::Appearance};
+use twarp_core::{
+    features::FeatureFlag,
+    ui::{appearance::Appearance, theme::color::internal_colors},
+};
 use twarp_editor::{
     content::{buffer::InitialBufferState, text::IndentUnit},
     render::model::{Decoration, LineCount},
@@ -32,36 +35,38 @@ use twarp_util::{
     path::to_relative_path,
 };
 use twarpui::{
+    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
+    WindowId,
     elements::{
-        Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container,
-        CornerRadius, CrossAxisAlignment, DropShadow, Flex, Hoverable, MainAxisAlignment,
-        MainAxisSize, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement,
-        ParentOffsetBounds, Radius, Rect, Shrinkable, Stack, Text,
+        Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ClippedScrollable,
+        ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss, DropShadow, Flex,
+        Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
+        ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Rect, ScrollbarWidth, Shrinkable,
+        Stack, Text,
     },
-    keymap::{macros::*, FixedBinding},
+    keymap::{FixedBinding, macros::*},
     text::point::Point,
     ui_components::{
         button::ButtonVariant,
         components::{Coords, UiComponent, UiComponentStyles},
     },
-    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
-    WindowId,
 };
-use twarpui::{platform::SaveFilePickerConfiguration, ModelHandle};
+use twarpui::{ModelHandle, platform::SaveFilePickerConfiguration};
 use vec1::Vec1;
 
 use crate::menu::{Event, Menu, MenuItem, MenuItemFields};
 
 use crate::{
     code::{
+        SaveOutcome, ShowFindReferencesCardProvider,
         editor::model::HoverableLink,
         footer::{CodeFooterView, CodeFooterViewEvent},
         git_blame::{
-            committed_annotation, fetch_git_blame, path_is_in_repo, uncommitted_annotation,
-            BlameCacheKey, BlameGutterAnnotation, BlameLineState, FetchedBlame, ParsedBlame,
+            BlameCacheKey, BlameGutterAnnotation, BlameLineState, CommitDetail, CommitDetailKey,
+            FetchedBlame, FetchedCommitDetail, ParsedBlame, committed_annotation,
+            fetch_commit_detail, fetch_git_blame, path_is_in_repo, uncommitted_annotation,
         },
         global_buffer_model::{BufferState, GlobalBufferModel},
-        SaveOutcome, ShowFindReferencesCardProvider,
     },
     debounce::debounce,
     settings::{AISettings, CodeSettings},
@@ -96,15 +101,16 @@ const DROP_SHADOW_COLOR: ColorU = ColorU {
 
 const HOVER_DEBOUNCE_PERIOD: Duration = Duration::from_millis(500);
 
+use super::ImmediateSaveError;
 use super::diff_viewer::DiffViewer;
 use super::editor::{
+    line::EditorLineLocation,
     scroll::{ScrollPosition, ScrollTrigger},
     view::{CodeEditorEvent, CodeEditorView},
 };
 use super::find_references_view::{FindReferencesView, FindReferencesViewEvent};
 use super::language_server_extension::ProcessedDiagnostic;
 use super::lsp_telemetry::LspTelemetryEvent;
-use super::ImmediateSaveError;
 use twarp_core::send_telemetry_from_ctx;
 
 type SaveCallback =
@@ -207,12 +213,16 @@ struct SelectionAsContextTooltip {
     terminal_target_fn: Box<TerminalTargetFn>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct BlameState {
     next_request_id: u64,
     pending_request: Option<BlameRequest>,
     pending_repo_detection: Option<PathBuf>,
     cached_blame: Option<(BlameCacheKey, ParsedBlame)>,
+    next_detail_request_id: u64,
+    pending_detail_request: Option<CommitDetailRequest>,
+    commit_details: HashMap<CommitDetailKey, CommitDetail>,
+    popover: BlamePopoverState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,11 +233,52 @@ struct BlameRequest {
     content_version: ContentVersion,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommitDetailRequest {
+    id: u64,
+    key: CommitDetailKey,
+    line: EditorLineLocation,
+}
+
+enum BlamePopoverState {
+    Closed,
+    Loading {
+        request: CommitDetailRequest,
+        scroll_state: ClippedScrollStateHandle,
+    },
+    Loaded {
+        line: EditorLineLocation,
+        detail: CommitDetail,
+        scroll_state: ClippedScrollStateHandle,
+        github_mouse_state: MouseStateHandle,
+    },
+    Failed {
+        key: CommitDetailKey,
+        line: EditorLineLocation,
+        message: String,
+        scroll_state: ClippedScrollStateHandle,
+    },
+}
+
+impl Default for BlamePopoverState {
+    fn default() -> Self {
+        Self::Closed
+    }
+}
+
+impl BlamePopoverState {
+    fn is_open(&self) -> bool {
+        !matches!(self, Self::Closed)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum LocalCodeEditorAction {
     InsertSelectedTextToInput,
     SaveFile,
     DiscardUnsavedChanges,
+    DismissBlamePopover,
+    OpenBlameCommitOnGitHub(String),
     NavigateToTarget(FileLocation),
     GotoDefinition,
     FindReferences,
@@ -389,14 +440,14 @@ impl LocalCodeEditorView {
                 }
             }
             CodeEditorEvent::VimEscapeInNormalMode => {
-                if me.dismiss_lsp_overlays(ctx) {
+                if me.dismiss_blame_popover(ctx) || me.dismiss_lsp_overlays(ctx) {
                     ctx.notify();
                 } else {
                     ctx.emit(LocalCodeEditorEvent::VimMinimizeRequested);
                 }
             }
             CodeEditorEvent::EscapePressed => {
-                if me.dismiss_lsp_overlays(ctx) {
+                if me.dismiss_blame_popover(ctx) || me.dismiss_lsp_overlays(ctx) {
                     ctx.notify();
                 }
             }
@@ -419,6 +470,9 @@ impl LocalCodeEditorView {
                         line_range: line_range.clone(),
                     });
                 }
+            }
+            CodeEditorEvent::BlameAnnotationClicked { line, sha } => {
+                me.open_blame_commit_detail(line.clone(), sha.clone(), ctx);
             }
             CodeEditorEvent::SelectionEnd => {
                 ctx.notify();
@@ -1708,6 +1762,8 @@ impl LocalCodeEditorView {
         self.blame_state.pending_request = None;
         self.blame_state.pending_repo_detection = None;
         self.blame_state.cached_blame = None;
+        self.blame_state.pending_detail_request = None;
+        self.blame_state.popover = BlamePopoverState::Closed;
         self.editor.update(ctx, |editor, ctx| {
             editor.set_blame_annotations(Vec::new(), ctx);
         });
@@ -1902,6 +1958,437 @@ impl LocalCodeEditorView {
                     .is_some()
             })
             .collect()
+    }
+
+    fn resolve_commit_detail_request(
+        &self,
+        sha: String,
+        line: EditorLineLocation,
+        ctx: &AppContext,
+    ) -> Option<CommitDetailRequest> {
+        if !self.git_blame_enabled() {
+            return None;
+        }
+
+        let path = self.file_path()?;
+        let repo_root = DetectedRepositories::as_ref(ctx).get_root_for_path(path)?;
+        let relative_path = path_is_in_repo(path, &repo_root)?;
+        Some(CommitDetailRequest {
+            id: 0,
+            key: CommitDetailKey {
+                repo_root,
+                relative_path,
+                sha,
+            },
+            line,
+        })
+    }
+
+    fn open_blame_commit_detail(
+        &mut self,
+        line: EditorLineLocation,
+        sha: String,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(mut request) = self.resolve_commit_detail_request(sha, line, ctx) else {
+            return;
+        };
+
+        if let Some(detail) = self.blame_state.commit_details.get(&request.key).cloned() {
+            self.blame_state.pending_detail_request = None;
+            self.blame_state.popover = BlamePopoverState::Loaded {
+                line: request.line,
+                detail,
+                scroll_state: ClippedScrollStateHandle::new(),
+                github_mouse_state: MouseStateHandle::default(),
+            };
+            ctx.notify();
+            return;
+        }
+
+        self.blame_state.next_detail_request_id =
+            self.blame_state.next_detail_request_id.saturating_add(1);
+        request.id = self.blame_state.next_detail_request_id;
+        self.blame_state.pending_detail_request = Some(request.clone());
+        self.blame_state.popover = BlamePopoverState::Loading {
+            request: request.clone(),
+            scroll_state: ClippedScrollStateHandle::new(),
+        };
+        ctx.notify();
+
+        let repo_root = request.key.repo_root.clone();
+        let relative_path = request.key.relative_path.clone();
+        let sha = request.key.sha.clone();
+        ctx.spawn(
+            async move { fetch_commit_detail(repo_root, relative_path, sha).await },
+            move |me, result, ctx| {
+                me.handle_commit_detail_result(request.clone(), result, ctx);
+            },
+        );
+    }
+
+    fn handle_commit_detail_result(
+        &mut self,
+        request: CommitDetailRequest,
+        result: anyhow::Result<FetchedCommitDetail>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.blame_state.pending_detail_request.as_ref() != Some(&request) {
+            return;
+        }
+
+        let Some(current_request) =
+            self.resolve_commit_detail_request(request.key.sha.clone(), request.line.clone(), ctx)
+        else {
+            self.dismiss_blame_popover(ctx);
+            return;
+        };
+        if current_request.key != request.key {
+            self.dismiss_blame_popover(ctx);
+            return;
+        }
+
+        self.blame_state.pending_detail_request = None;
+        match result {
+            Ok(fetched) if fetched.key == request.key => {
+                self.blame_state
+                    .commit_details
+                    .insert(fetched.key.clone(), fetched.detail.clone());
+                self.blame_state.popover = BlamePopoverState::Loaded {
+                    line: request.line,
+                    detail: fetched.detail,
+                    scroll_state: ClippedScrollStateHandle::new(),
+                    github_mouse_state: MouseStateHandle::default(),
+                };
+            }
+            Ok(_) => return,
+            Err(error) => {
+                log::debug!("git commit detail request failed: {error:#}");
+                self.blame_state.popover = BlamePopoverState::Failed {
+                    key: request.key,
+                    line: request.line,
+                    message: "Commit details could not be loaded.".to_string(),
+                    scroll_state: ClippedScrollStateHandle::new(),
+                };
+            }
+        }
+        ctx.notify();
+    }
+
+    fn dismiss_blame_popover(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+        if !self.blame_state.popover.is_open() {
+            return false;
+        }
+
+        self.blame_state.pending_detail_request = None;
+        self.blame_state.popover = BlamePopoverState::Closed;
+        self.editor.update(ctx, |editor, ctx| {
+            editor.focus(ctx);
+        });
+        true
+    }
+
+    fn blame_popover_positioning(
+        &self,
+        line: &EditorLineLocation,
+        app: &AppContext,
+    ) -> Option<OffsetPositioning> {
+        let (offset, _) = self.editor.as_ref(app).line_location_to_offsets(line, app);
+        let bounds = self
+            .editor
+            .as_ref(app)
+            .character_bounds_in_viewport(offset, app)?;
+        let viewport_height = self
+            .editor
+            .as_ref(app)
+            .viewport_height(app)
+            .unwrap_or(f32::MAX);
+        if bounds.origin_y() > viewport_height || bounds.max_y() < 0.0 {
+            return None;
+        }
+
+        Some(OffsetPositioning::offset_from_parent(
+            Vector2F::new(0., bounds.max_y()),
+            ParentOffsetBounds::ParentByPosition,
+            ParentAnchor::TopLeft,
+            ChildAnchor::TopLeft,
+        ))
+    }
+
+    fn render_blame_popover(
+        &self,
+        app: &AppContext,
+    ) -> Option<(Box<dyn Element>, OffsetPositioning)> {
+        let appearance = Appearance::as_ref(app);
+        let (body, line) = match &self.blame_state.popover {
+            BlamePopoverState::Closed => return None,
+            BlamePopoverState::Loading {
+                request,
+                scroll_state,
+            } => (
+                self.render_blame_popover_card(
+                    scroll_state.clone(),
+                    vec![
+                        Self::render_blame_popover_title("Loading commit details...", appearance),
+                        Self::render_blame_metadata_row(
+                            "Commit",
+                            request.key.sha.as_str(),
+                            appearance,
+                        ),
+                    ],
+                    appearance,
+                ),
+                &request.line,
+            ),
+            BlamePopoverState::Loaded {
+                detail,
+                line,
+                scroll_state,
+                github_mouse_state,
+                ..
+            } => (
+                self.render_loaded_blame_popover(
+                    detail,
+                    scroll_state.clone(),
+                    github_mouse_state.clone(),
+                    appearance,
+                ),
+                line,
+            ),
+            BlamePopoverState::Failed {
+                key,
+                line,
+                message,
+                scroll_state,
+            } => (
+                self.render_blame_popover_card(
+                    scroll_state.clone(),
+                    vec![
+                        Self::render_blame_popover_title("Commit details unavailable", appearance),
+                        Self::render_blame_metadata_row("Commit", key.sha.as_str(), appearance),
+                        Self::render_blame_body_text(message, appearance),
+                    ],
+                    appearance,
+                ),
+                line,
+            ),
+        };
+
+        let positioning = self.blame_popover_positioning(line, app)?;
+        let dismissible = Dismiss::new(body)
+            .on_dismiss(|ctx, _app| {
+                ctx.dispatch_typed_action(LocalCodeEditorAction::DismissBlamePopover);
+            })
+            .finish();
+        Some((dismissible, positioning))
+    }
+
+    fn render_loaded_blame_popover(
+        &self,
+        detail: &CommitDetail,
+        scroll_state: ClippedScrollStateHandle,
+        github_mouse_state: MouseStateHandle,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let mut children = vec![
+            Self::render_blame_popover_title("Commit", appearance),
+            Self::render_blame_section_label("Message", appearance),
+            Self::render_blame_body_text(
+                if detail.message.is_empty() {
+                    "(no commit message)"
+                } else {
+                    detail.message.as_str()
+                },
+                appearance,
+            ),
+            Self::render_blame_separator(appearance),
+            Self::render_blame_metadata_row("Author", &Self::author_label(detail), appearance),
+            Self::render_blame_metadata_row("Full hash", detail.full_sha.as_str(), appearance),
+        ];
+
+        if let Some(date) = &detail.absolute_author_date {
+            let label = match &detail.relative_author_date {
+                Some(relative) => format!("{date} ({relative})"),
+                None => date.clone(),
+            };
+            children.push(Self::render_blame_metadata_row("Date", &label, appearance));
+        }
+
+        children.push(Self::render_blame_metadata_row(
+            "File",
+            &detail.relative_path.display().to_string(),
+            appearance,
+        ));
+
+        if let Some(url) = &detail.github_url {
+            let url = url.clone();
+            children.push(
+                appearance
+                    .ui_builder()
+                    .button(ButtonVariant::Text, github_mouse_state)
+                    .with_text_label("Open on GitHub".into())
+                    .with_style(UiComponentStyles {
+                        height: Some(24.),
+                        padding: Some(Coords {
+                            left: 0.,
+                            right: 8.,
+                            ..Default::default()
+                        }),
+                        font_color: Some(appearance.theme().accent().into_solid()),
+                        ..Default::default()
+                    })
+                    .build()
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(LocalCodeEditorAction::OpenBlameCommitOnGitHub(
+                            url.clone(),
+                        ));
+                    })
+                    .finish(),
+            );
+        }
+
+        children.push(Self::render_blame_separator(appearance));
+        children.push(Self::render_blame_section_label("Diff", appearance));
+        children.push(Self::render_blame_diff(detail, appearance));
+        if detail.patch_truncated {
+            children.push(Self::render_blame_body_text("Diff truncated", appearance));
+        }
+
+        self.render_blame_popover_card(scroll_state, children, appearance)
+    }
+
+    fn render_blame_popover_card(
+        &self,
+        scroll_state: ClippedScrollStateHandle,
+        children: Vec<Box<dyn Element>>,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let mut content = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+        for child in children {
+            content.add_child(Container::new(child).with_padding_bottom(6.).finish());
+        }
+
+        let scrollable_content = ClippedScrollable::vertical(
+            scroll_state,
+            content.finish(),
+            ScrollbarWidth::Auto,
+            theme.disabled_ui_text_color().into(),
+            theme.active_ui_text_color().into(),
+            twarpui::elements::Fill::None,
+        )
+        .finish();
+
+        let constrained_content = ConstrainedBox::new(scrollable_content)
+            .with_width(560.)
+            .with_max_height(420.)
+            .finish();
+
+        Container::new(constrained_content)
+            .with_horizontal_padding(10.)
+            .with_vertical_padding(8.)
+            .with_background(theme.background())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+            .with_border(Border::all(1.).with_border_fill(internal_colors::neutral_4(theme)))
+            .with_drop_shadow(DropShadow::default())
+            .finish()
+    }
+
+    fn render_blame_popover_title(text: &str, appearance: &Appearance) -> Box<dyn Element> {
+        Text::new(
+            text.to_string(),
+            appearance.ui_font_family(),
+            appearance.ui_font_size(),
+        )
+        .with_color(appearance.theme().active_ui_text_color().into_solid())
+        .with_selectable(true)
+        .finish()
+    }
+
+    fn render_blame_section_label(text: &str, appearance: &Appearance) -> Box<dyn Element> {
+        Text::new_inline(text.to_string(), appearance.ui_font_family(), 12.)
+            .with_color(appearance.theme().disabled_ui_text_color().into_solid())
+            .finish()
+    }
+
+    fn render_blame_metadata_row(
+        label: &str,
+        value: &str,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let mut row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+        row.add_child(
+            ConstrainedBox::new(Self::render_blame_section_label(label, appearance))
+                .with_width(72.)
+                .finish(),
+        );
+        row.add_child(
+            Shrinkable::new(
+                1.,
+                Text::new(value.to_string(), appearance.monospace_font_family(), 12.)
+                    .with_color(appearance.theme().active_ui_text_color().into_solid())
+                    .with_selectable(true)
+                    .soft_wrap(true)
+                    .finish(),
+            )
+            .finish(),
+        );
+        row.finish()
+    }
+
+    fn render_blame_body_text(text: &str, appearance: &Appearance) -> Box<dyn Element> {
+        Text::new(text.to_string(), appearance.monospace_font_family(), 12.)
+            .with_color(appearance.theme().active_ui_text_color().into_solid())
+            .with_selectable(true)
+            .soft_wrap(true)
+            .finish()
+    }
+
+    fn render_blame_diff(detail: &CommitDetail, appearance: &Appearance) -> Box<dyn Element> {
+        if detail.patch.trim().is_empty() {
+            return Self::render_blame_body_text("No file diff for this commit.", appearance);
+        }
+
+        let theme = appearance.theme();
+        let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+        for line in detail.patch.lines() {
+            let color = if line.starts_with('+') && !line.starts_with("+++") {
+                theme.accent().into_solid()
+            } else if line.starts_with('-') && !line.starts_with("---") {
+                theme.ui_error_color()
+            } else {
+                theme.active_ui_text_color().into_solid()
+            };
+            column.add_child(
+                Text::new(line.to_string(), appearance.monospace_font_family(), 12.)
+                    .with_color(color)
+                    .with_selectable(true)
+                    .soft_wrap(false)
+                    .finish(),
+            );
+        }
+        column.finish()
+    }
+
+    fn render_blame_separator(appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        Container::new(
+            ConstrainedBox::new(
+                Rect::new()
+                    .with_background(internal_colors::neutral_2(theme))
+                    .finish(),
+            )
+            .with_height(1.)
+            .finish(),
+        )
+        .finish()
+    }
+
+    fn author_label(detail: &CommitDetail) -> String {
+        match &detail.author_email {
+            Some(email) => format!("{} <{}>", detail.author_name, email),
+            None => detail.author_name.clone(),
+        }
     }
 
     /// Update this editor's file identity after a `GlobalBufferModel::rename`.
@@ -2416,6 +2903,10 @@ impl View for LocalCodeEditorView {
             }
         }
 
+        if let Some((popover, positioning)) = self.render_blame_popover(app) {
+            stack.add_positioned_overlay_child(popover, positioning);
+        }
+
         // Render LSP hover tooltip if available (render last so it appears on top)
         if let (Some(hover_tooltip), Some(positioning)) = (
             self.render_hover_tooltip(app),
@@ -2460,6 +2951,13 @@ impl TypedActionView for LocalCodeEditorView {
                     self.base_content_version = Some(self.editor().as_ref(ctx).version(ctx));
                     ctx.emit(LocalCodeEditorEvent::DiscardUnsavedChanges { path });
                 }
+            }
+            LocalCodeEditorAction::DismissBlamePopover => {
+                self.dismiss_blame_popover(ctx);
+                ctx.notify();
+            }
+            LocalCodeEditorAction::OpenBlameCommitOnGitHub(url) => {
+                ctx.open_url(url);
             }
             LocalCodeEditorAction::NavigateToTarget(location) => {
                 let Some(source_server_id) = self.lsp_server.as_ref().map(|s| s.as_ref(ctx).id())

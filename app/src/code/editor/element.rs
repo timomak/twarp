@@ -6,8 +6,8 @@ pub use gutter_button::{
 use std::{
     ops::Range,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
@@ -15,43 +15,43 @@ use parking_lot::Mutex;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::{
     rect::RectF,
-    vector::{vec2f, Vector2F},
+    vector::{Vector2F, vec2f},
 };
 use twarp_core::ui::{
     appearance::Appearance,
-    theme::{color::internal_colors, Fill},
+    theme::{Fill, color::internal_colors},
 };
 use twarp_editor::{
     editor::EditorView,
     render::{
         element::{
-            lens_element::RichTextElementLens, RenderableBlock, RichTextElement,
-            VerticalExpansionBehavior,
+            RenderableBlock, RichTextElement, VerticalExpansionBehavior,
+            lens_element::RichTextElementLens,
         },
         model::{
-            gutter_expansion_button_types, BlockLocation, ExpansionType, LineCount, RenderState,
+            BlockLocation, ExpansionType, LineCount, RenderState, gutter_expansion_button_types,
         },
     },
 };
 use twarpui::{
+    AfterLayoutContext, AppContext, ClipBounds, Element, Event, EventContext, LayoutContext,
+    ModelHandle, PaintContext, SingletonEntity, SizeConstraint,
     elements::{
-        new_scrollable::{NewScrollableElement, ScrollableAxis},
         Align, Axis, Border, ChildAnchor, ConstrainedBox, Container, CornerRadius,
         CrossAxisAlignment, Empty, F32Ext, Flex, MainAxisSize, OffsetPositioning, ParentAnchor,
         ParentElement, ParentOffsetBounds, Point, Radius, ScrollData, Stack, Text, ZIndex,
+        new_scrollable::{NewScrollableElement, ScrollableAxis},
     },
     event::DispatchedEvent,
     fonts::FamilyId,
     ui_components::components::UiComponent,
     units::{IntoPixels, Pixels},
-    AfterLayoutContext, AppContext, ClipBounds, Element, Event, EventContext, LayoutContext,
-    ModelHandle, PaintContext, SingletonEntity, SizeConstraint,
 };
 
 use super::diff::{DiffHunkDisplay, DiffStatus};
 use super::model::DiffNavigationState;
 use crate::code::editor::element::gutter_button::GutterButton;
-use crate::code::git_blame::BlameGutterAnnotation;
+use crate::code::git_blame::{BlameGutterAnnotation, BlameGutterAnnotationKind};
 use crate::settings::CodeEditorLineNumberMode;
 use crate::{
     code::editor::{
@@ -172,6 +172,7 @@ struct GutterElement {
     hovered: bool,
     line: EditorLineLocation,
     element_type: GutterElementType,
+    blame_sha: Option<String>,
     /// Optional background fill for removed-line (temporary) blocks.
     overlay: Option<Fill>,
 }
@@ -212,6 +213,21 @@ impl GutterElement {
                 }
             }
             GutterElementType::DiffHunk { .. } => {
+                if !check_y_axis_only {
+                    if let Some(sha) = &self.blame_sha {
+                        let blame_origin =
+                            gutter_origin + vec2f(GUTTER_WIDTH + BLAME_GUTTER_GAP, 0.);
+                        let blame_rect =
+                            RectF::new(blame_origin, vec2f(BLAME_GUTTER_WIDTH, self.height));
+                        if blame_rect.contains_point(position) {
+                            return Some(GutterRange::Blame {
+                                line: self.line.clone(),
+                                sha: sha.clone(),
+                            });
+                        }
+                    }
+                }
+
                 let does_contain = if check_y_axis_only {
                     // We can count the position if it's within the editor wrapper's whole line width
                     let line_origin = Vector2F::new(wrapper_origin.x(), gutter_origin.y());
@@ -349,6 +365,10 @@ pub enum GutterRange {
         line: EditorLineLocation,
         expansion_type: ExpansionType,
     },
+    Blame {
+        line: EditorLineLocation,
+        sha: String,
+    },
 }
 
 impl GutterRange {
@@ -356,6 +376,7 @@ impl GutterRange {
         match self {
             GutterRange::DiffHunk { line, .. } => line,
             GutterRange::HiddenSection { line, .. } => line,
+            GutterRange::Blame { line, .. } => line,
         }
     }
 }
@@ -646,6 +667,14 @@ impl<V: EditorView> EditorWrapper<V> {
             .find(|annotation| annotation.line_index == line_index)
     }
 
+    fn blame_sha_for_line(&self, line: &EditorLineLocation) -> Option<String> {
+        self.blame_annotation_for_line(line)
+            .and_then(|annotation| match &annotation.kind {
+                BlameGutterAnnotationKind::Committed { sha } => Some(sha.clone()),
+                BlameGutterAnnotationKind::Uncommitted => None,
+            })
+    }
+
     /// Returning **no** gutter means the gutter shouldn't be rendered at all.
     /// Returning an **empty** gutter means the gutter should be rendered with no contents.
     fn gutter_elements(&self, app: &AppContext) -> Option<Vec<GutterElement>> {
@@ -782,6 +811,7 @@ impl<V: EditorView> EditorWrapper<V> {
                             hunk: diff_hunk,
                             change_type: ChangeType::Remove,
                         },
+                        blame_sha: None,
                         overlay: block.overlay_decoration(),
                     });
                 }
@@ -968,6 +998,7 @@ impl<V: EditorView> EditorWrapper<V> {
                 hovered: range_hovered,
                 // We can skip rendering this removal gutter element if its hunk is expanded since
                 // the gutter is rendered on the temporary block.
+                blame_sha: self.blame_sha_for_line(&line),
                 line,
                 element_type: GutterElementType::DiffHunk {
                     hunk: diff_hunk,
@@ -1026,6 +1057,7 @@ impl<V: EditorView> EditorWrapper<V> {
             hovered: range_hovered,
             line: EditorLineLocation::Collapsed { line_range },
             element_type: GutterElementType::HiddenSection { expansion_type },
+            blame_sha: None,
             overlay: None,
         }
     }

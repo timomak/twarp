@@ -30,12 +30,12 @@ use twarp_editor::{
 };
 use twarp_util::user_input::UserInput;
 use twarpui::{
+    AppContext, TypedActionView, ViewContext, WeakViewHandle,
     actions::StandardAction,
     elements::Axis,
     event::ModifiersState,
     keymap::{EditableBinding, FixedBinding, Keystroke, PerPlatformKeystroke},
     units::Pixels,
-    AppContext, TypedActionView, ViewContext, WeakViewHandle,
 };
 
 /// Limit the keybindings that conflict with the Agent Mode embedded editor.
@@ -668,6 +668,10 @@ pub enum CodeEditorViewAction {
     UnstageDiffHunk {
         line_range: Range<LineCount>,
     },
+    BlameAnnotationClicked {
+        line: EditorLineLocation,
+        sha: String,
+    },
     /// Open comment line (when opening a comment on a specific line)
     NewCommentOnLine {
         line: EditorLineLocation,
@@ -838,6 +842,7 @@ impl CodeEditorViewAction {
             | Self::RevertDiffHunk { .. }
             | Self::StageDiffHunk { .. }
             | Self::UnstageDiffHunk { .. }
+            | Self::BlameAnnotationClicked { .. }
             | Self::NewCommentOnLine { .. }
             | Self::RequestOpenSavedComment { .. }
             | Self::MouseHovered { .. }
@@ -1158,6 +1163,14 @@ impl TypedActionView for CodeEditorView {
                 if FeatureFlag::RevertDiffHunk.is_enabled() {
                     ctx.emit(CodeEditorEvent::UnstageHunkRequested {
                         line_range: line_range.clone(),
+                    });
+                }
+            }
+            BlameAnnotationClicked { line, sha } => {
+                if FeatureFlag::GitBlame.is_enabled() {
+                    ctx.emit(CodeEditorEvent::BlameAnnotationClicked {
+                        line: line.clone(),
+                        sha: sha.clone(),
                     });
                 }
             }

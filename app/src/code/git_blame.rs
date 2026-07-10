@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use chrono::{DateTime, Utc};
 use twarp_util::content_version::ContentVersion;
 
@@ -62,6 +62,33 @@ pub struct BlameGutterAnnotation {
 pub struct FetchedBlame {
     pub key: BlameCacheKey,
     pub parsed: ParsedBlame,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CommitDetailKey {
+    pub repo_root: PathBuf,
+    pub relative_path: PathBuf,
+    pub sha: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitDetail {
+    pub full_sha: String,
+    pub author_name: String,
+    pub author_email: Option<String>,
+    pub absolute_author_date: Option<String>,
+    pub relative_author_date: Option<String>,
+    pub message: String,
+    pub relative_path: PathBuf,
+    pub patch: String,
+    pub patch_truncated: bool,
+    pub github_url: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FetchedCommitDetail {
+    pub key: CommitDetailKey,
+    pub detail: CommitDetail,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -289,6 +316,159 @@ pub fn compact_relative_date(timestamp: i64) -> String {
     } else {
         "now".to_string()
     }
+}
+
+fn parse_git_show_commit_metadata(input: &str) -> Result<CommitDetailMetadata> {
+    let mut parts = input.splitn(5, '\0');
+    let full_sha = parts
+        .next()
+        .filter(|sha| !sha.trim().is_empty())
+        .ok_or_else(|| anyhow!("missing commit hash"))?
+        .trim()
+        .to_string();
+    let author_name = parts.next().unwrap_or("Unknown").trim().to_string();
+    let author_email = parts
+        .next()
+        .map(str::trim)
+        .filter(|email| !email.is_empty())
+        .map(ToOwned::to_owned);
+    let raw_date = parts
+        .next()
+        .map(str::trim)
+        .filter(|date| !date.is_empty())
+        .map(ToOwned::to_owned);
+    let message = parts.next().unwrap_or_default().trim().to_string();
+
+    let (absolute_author_date, relative_author_date) = match raw_date {
+        Some(date) => match DateTime::parse_from_rfc3339(&date) {
+            Ok(parsed) => (
+                Some(parsed.format("%Y-%m-%d %H:%M:%S %:z").to_string()),
+                Some(compact_relative_date(parsed.timestamp())),
+            ),
+            Err(_) => (Some(date), Some("unknown".to_string())),
+        },
+        None => (None, None),
+    };
+
+    Ok(CommitDetailMetadata {
+        full_sha,
+        author_name: if author_name.is_empty() {
+            "Unknown".to_string()
+        } else {
+            author_name
+        },
+        author_email,
+        absolute_author_date,
+        relative_author_date,
+        message,
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommitDetailMetadata {
+    full_sha: String,
+    author_name: String,
+    author_email: Option<String>,
+    absolute_author_date: Option<String>,
+    relative_author_date: Option<String>,
+    message: String,
+}
+
+const MAX_COMMIT_DETAIL_PATCH_CHARS: usize = 20_000;
+
+fn truncate_patch(patch: String) -> (String, bool) {
+    if patch.chars().count() <= MAX_COMMIT_DETAIL_PATCH_CHARS {
+        return (patch, false);
+    }
+
+    (
+        patch.chars().take(MAX_COMMIT_DETAIL_PATCH_CHARS).collect(),
+        true,
+    )
+}
+
+fn github_commit_url(origin: &str, sha: &str) -> Option<String> {
+    let (owner, repo) = crate::code_review::github_author::parse_github_origin(origin)?;
+    Some(format!("https://github.com/{owner}/{repo}/commit/{sha}"))
+}
+
+#[cfg(feature = "local_fs")]
+pub async fn fetch_commit_detail(
+    repo_root: PathBuf,
+    relative_path: PathBuf,
+    sha: String,
+) -> Result<FetchedCommitDetail> {
+    use crate::util::git::run_git_command;
+
+    let metadata_output = run_git_command(
+        &repo_root,
+        &[
+            "show",
+            "-s",
+            "--format=%H%x00%an%x00%ae%x00%aI%x00%B",
+            sha.as_str(),
+        ],
+    )
+    .await?;
+    let metadata = parse_git_show_commit_metadata(&metadata_output)?;
+
+    let relative_path_arg = relative_path.to_string_lossy().to_string();
+    let patch = run_git_command(
+        &repo_root,
+        &[
+            "show",
+            "--format=",
+            "--patch",
+            "--find-renames",
+            "--find-copies",
+            sha.as_str(),
+            "--",
+            relative_path_arg.as_str(),
+        ],
+    )
+    .await?;
+    let (patch, patch_truncated) = truncate_patch(patch);
+
+    let github_url = run_git_command(&repo_root, &["remote", "get-url", "origin"])
+        .await
+        .ok()
+        .and_then(|origin| github_commit_url(&origin, metadata.full_sha.as_str()));
+
+    let key = CommitDetailKey {
+        repo_root,
+        relative_path: relative_path.clone(),
+        sha,
+    };
+
+    Ok(FetchedCommitDetail {
+        key,
+        detail: CommitDetail {
+            full_sha: metadata.full_sha,
+            author_name: metadata.author_name,
+            author_email: metadata.author_email,
+            absolute_author_date: metadata.absolute_author_date,
+            relative_author_date: metadata.relative_author_date,
+            message: metadata.message,
+            relative_path,
+            patch,
+            patch_truncated,
+            github_url,
+        },
+    })
+}
+
+#[cfg(not(feature = "local_fs"))]
+pub async fn fetch_commit_detail(
+    repo_root: PathBuf,
+    relative_path: PathBuf,
+    sha: String,
+) -> Result<FetchedCommitDetail> {
+    Err(anyhow!(
+        "git commit details are not supported on this platform: {} {} {}",
+        repo_root.display(),
+        relative_path.display(),
+        sha
+    ))
 }
 
 #[cfg(feature = "local_fs")]
