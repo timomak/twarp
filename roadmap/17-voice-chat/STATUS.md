@@ -2,7 +2,7 @@
 
 **Phase:** impl-in-review
 **Spec PR:** [#205](https://github.com/timomak/twarp/pull/205)
-**Impl PRs:** 17a–17c bundled (this PR — owner asked for end-to-end in one pass, 2026-07-11)
+**Impl PRs:** 17a–17c bundled [#206](https://github.com/timomak/twarp/pull/206) (owner asked for end-to-end in one pass, 2026-07-11)
 
 ## Scope
 
