@@ -1,7 +1,7 @@
 # 17 — Voice chat in the Claude pane
 
 **Phase:** spec-in-review
-**Spec PR:** (this PR)
+**Spec PR:** [#205](https://github.com/timomak/twarp/pull/205)
 **Impl PRs:** —
 
 ## Scope
