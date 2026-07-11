@@ -24,13 +24,15 @@ use crate::editor::{
 };
 use crate::gpu_state::{GPUState, GPUStateEvent};
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
+use crate::send_telemetry_from_ctx;
 use crate::server::telemetry::{InputUXChangeOrigin, TelemetryEvent};
 use crate::settings::app_icon::{AppIcon, AppIconSettings, ShowDockIconState};
 use crate::settings::{
-    active_theme_kind, respect_system_theme, AIFontName, AppEditorSettings, CursorBlink, CursorBlinkEnabled,
-    EnforceMinimumContrast, FocusPaneOnHover, FontSettings, FontSettingsChangedEvent, InputBoxType,
-    InputModeSettings, InputModeState, MonospaceFontName, PaneSettings, ShouldDimInactivePanes,
-    ThemeSettings, UseSystemTheme, DEFAULT_MONOSPACE_FONT_NAME,
+    active_theme_kind, respect_system_theme, AIFontName, AppEditorSettings, CursorBlink,
+    CursorBlinkEnabled, EnforceMinimumContrast, FocusPaneOnHover, FontSettings,
+    FontSettingsChangedEvent, InputBoxType, InputModeSettings, InputModeState, MonospaceFontName,
+    PaneSettings, ShouldDimInactivePanes, ThemeSettings, UseSystemTheme,
+    DEFAULT_MONOSPACE_FONT_NAME,
 };
 use crate::settings::{CursorDisplayType, GPUSettings, InputSettings, InputSettingsChangedEvent};
 use crate::terminal::block_list_viewport::InputMode;
@@ -54,10 +56,9 @@ use crate::window_settings::{
 use crate::workspace::header_toolbar_editor::HeaderToolbarInlineEditor;
 use crate::workspace::tab_settings::{
     canonical_directory_key, DirectoryTabColor, PreserveActiveTabColor, ShowCodeReviewButton,
-    ShowIndicatorsButton,
-    ShowVerticalTabPanelInRestoredWindows, TabCloseButtonPosition, TabSettings,
-    TabSettingsChangedEvent, UseLatestUserPromptAsConversationTitleInTabNames, UseVerticalTabs,
-    WorkspaceDecorationVisibility,
+    ShowIndicatorsButton, ShowVerticalTabPanelInRestoredWindows, TabCloseButtonPosition,
+    TabSettings, TabSettingsChangedEvent, UseLatestUserPromptAsConversationTitleInTabNames,
+    UseVerticalTabs, WorkspaceDecorationVisibility,
 };
 use crate::workspace::WorkspaceAction;
 use crate::{editor::EditorView, themes::theme_chooser::ThemeChooserMode};
@@ -66,7 +67,6 @@ use crate::{
     view_components::{Dropdown, DropdownItem, FilterableDropdown},
 };
 use crate::{report_error, report_if_error, themes};
-use crate::send_telemetry_from_ctx;
 use ::settings::{Setting, SettingSection, ToggleableSetting};
 use enum_iterator::all;
 use std::borrow::Cow;

@@ -74,8 +74,8 @@ impl AIRequestUsageModel {
 }
 use crate::{
     auth::{
-        auth_manager::LoginGatedFeature, auth_state::AuthState,
-        AuthManager, AuthStateProvider, UserUid,
+        auth_manager::LoginGatedFeature, auth_state::AuthState, AuthManager, AuthStateProvider,
+        UserUid,
     },
     menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields},
     modal::{Modal, ModalEvent, ModalViewState},

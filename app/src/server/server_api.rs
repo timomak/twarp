@@ -63,7 +63,6 @@ use super::experiments::ServerExperiment;
 use super::experiments::ServerExperiments;
 use super::graphql::GraphQLError;
 
-
 const EXPERIMENT_ID_HEADER: &str = "X-Warp-Experiment-Id";
 
 /// We use a special error code header `X-Warp-Error-Code` to allow the server to send

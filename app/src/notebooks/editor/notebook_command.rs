@@ -11,9 +11,8 @@ use syntect::{
     parsing::SyntaxSet,
     util::LinesWithEndings,
 };
-use twarp_editor::content::mermaid_diagram::mermaid_asset_source;
-use ui_components::lightbox::{LightboxImage, LightboxImageSource};
 use twarp_completer::signatures::CommandRegistry;
+use twarp_editor::content::mermaid_diagram::mermaid_asset_source;
 use twarp_editor::{
     content::{
         anchor::Anchor,
@@ -26,6 +25,7 @@ use twarp_editor::{
     },
     editor::RunnableCommandModel,
 };
+use ui_components::lightbox::{LightboxImage, LightboxImageSource};
 
 use markdown_parser::markdown_parser::CODE_BLOCK_DEFAULT_MARKDOWN_LANG;
 use twarp_util::user_input::UserInput;

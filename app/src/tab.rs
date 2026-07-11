@@ -1,5 +1,4 @@
 use crate::app_state::ConversationStatus;
-use crate::ui_components::conversation_status::{render_status_element, STATUS_ELEMENT_PADDING};
 use crate::appearance::Appearance;
 /// Tab module contains structures related to Tabs (such as TabData or TabComponent) that simplify
 /// the rendering and management of tabs in general.
@@ -9,6 +8,7 @@ use crate::launch_configs::launch_config::LaunchConfig;
 use crate::menu::{MenuAction, MenuItem, MenuItemFields};
 use crate::pane_group::{PaneGroup, PaneId};
 use crate::terminal::model::terminal_model::ConversationTranscriptViewerStatus;
+use crate::ui_components::conversation_status::{render_status_element, STATUS_ELEMENT_PADDING};
 use settings::Setting as _;
 use std::sync::Arc;
 use std::time::Duration;

@@ -1,10 +1,10 @@
 use crate::app_state::{AIConversationId, ConversationStatus};
-use crate::ui_components::conversation_status::{render_status_element, STATUS_ELEMENT_PADDING};
 use crate::appearance::Appearance;
 use crate::search::{ItemHighlightState, SearchItem};
 use crate::terminal::history::LinkedWorkflowData;
 use crate::terminal::input::inline_history::data_source::AcceptHistoryItem;
 use crate::terminal::input::inline_menu::styles as inline_styles;
+use crate::ui_components::conversation_status::{render_status_element, STATUS_ELEMENT_PADDING};
 use crate::util::time_format::format_approx_duration_from_now_utc;
 use chrono::{DateTime, Local};
 use fuzzy_match::FuzzyMatchResult;

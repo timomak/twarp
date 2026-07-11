@@ -19,8 +19,8 @@ use crate::code::editor::{
 };
 use crate::code::git_blame::BlameGutterAnnotation;
 use crate::code::{
-    DiffResult, NoopCommentEditorProvider, NoopFindReferencesCardProvider,
-    ShowCommentEditorProvider, ShowFindReferencesCardProvider, editor::EditorReviewComment,
+    editor::EditorReviewComment, DiffResult, NoopCommentEditorProvider,
+    NoopFindReferencesCardProvider, ShowCommentEditorProvider, ShowFindReferencesCardProvider,
 };
 use crate::{
     appearance::Appearance,
@@ -56,27 +56,25 @@ use twarp_editor::{
     multiline::AnyMultilineString,
     render::{
         element::{
-            DisplayOptions, DisplayStateHandle, RichTextElement, VerticalExpansionBehavior,
-            lens_element::RichTextElementLens,
+            lens_element::RichTextElementLens, DisplayOptions, DisplayStateHandle, RichTextElement,
+            VerticalExpansionBehavior,
         },
         model::{
-            AutoScrollMode, BlockSpacing, CODE_EDITOR_HIDDEN_SECTION_EXPANSION_LINES, Decoration,
-            ExpansionType, LineCount, ParagraphStyles, RichTextStyles,
+            AutoScrollMode, BlockSpacing, Decoration, ExpansionType, LineCount, ParagraphStyles,
+            RichTextStyles, CODE_EDITOR_HIDDEN_SECTION_EXPANSION_LINES,
         },
     },
-    search::{MATCH_FILL, SELECTED_MATCH_FILL, SearchEvent, Searcher},
+    search::{SearchEvent, Searcher, MATCH_FILL, SELECTED_MATCH_FILL},
 };
 use twarp_util::content_version::ContentVersion;
 use twarpui::{
-    AppContext, BlurContext, CursorInfo, Element, Entity, FocusContext, ModelHandle,
-    SingletonEntity, View, ViewContext, ViewHandle, WeakViewHandle, WindowId,
     elements::{
-        ChildAnchor, ChildView, Dismiss, Fill, Flex, Margin, MouseStateHandle, NewScrollable,
-        OffsetPositioning, Padding, ParentAnchor, ParentElement, ParentOffsetBounds,
-        ScrollStateHandle, Shrinkable, Stack,
         new_scrollable::{
             AxisConfiguration, DualAxisConfig, NewScrollableElement, ScrollableAppearance,
         },
+        ChildAnchor, ChildView, Dismiss, Fill, Flex, Margin, MouseStateHandle, NewScrollable,
+        OffsetPositioning, Padding, ParentAnchor, ParentElement, ParentOffsetBounds,
+        ScrollStateHandle, Shrinkable, Stack,
     },
     event::ModifiersState,
     keymap::Keystroke,
@@ -84,13 +82,15 @@ use twarpui::{
     prelude::RectF,
     text::point::Point,
     units::Pixels,
+    AppContext, BlurContext, CursorInfo, Element, Entity, FocusContext, ModelHandle,
+    SingletonEntity, View, ViewContext, ViewHandle, WeakViewHandle, WindowId,
 };
-use vec1::{Vec1, vec1};
+use vec1::{vec1, Vec1};
 use vim::vim::{Direction, InsertPosition, VimMode, VimModel, VimState, VimSubscriber};
 
 mod actions;
-pub(super) use actions::CodeEditorViewAction;
 pub use actions::init;
+pub(super) use actions::CodeEditorViewAction;
 
 mod vim_handler;
 
@@ -2433,8 +2433,8 @@ impl View for CodeEditorView {
             let render_state_ref = render_state.as_ref(app);
             let softwrap_point = render_state_ref.offset_to_softwrap_point(*offset);
             let line_number = LineCount::from(softwrap_point.row() as usize + 1); // Convert 0-indexed to 1-indexed
-            // Create a simple EditorLineLocation::Current with the line number
-            // We don't have hunk range info here, so use a single-line range
+                                                                                  // Create a simple EditorLineLocation::Current with the line number
+                                                                                  // We don't have hunk range info here, so use a single-line range
             let anchor_line = EditorLineLocation::Current {
                 line_number,
                 line_range: line_number..line_number + LineCount::from(1),

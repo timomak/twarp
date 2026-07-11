@@ -12,8 +12,8 @@ use std::{
 
 use futures::stream::AbortHandle;
 use lsp::{
-    LanguageId, LanguageServerId, LspEvent, LspManagerModel, LspManagerModelEvent, LspServerModel,
-    ReferenceLocation, types::FileLocation,
+    types::FileLocation, LanguageId, LanguageServerId, LspEvent, LspManagerModel,
+    LspManagerModelEvent, LspServerModel, ReferenceLocation,
 };
 use lsp_types::FormattingOptions;
 use markdown_parser::FormattedText;
@@ -35,8 +35,6 @@ use twarp_util::{
     path::to_relative_path,
 };
 use twarpui::{
-    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
-    WindowId,
     elements::{
         Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ClippedScrollable,
         ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss, DropShadow, Flex,
@@ -44,29 +42,31 @@ use twarpui::{
         ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Rect, ScrollbarWidth, Shrinkable,
         Stack, Text,
     },
-    keymap::{FixedBinding, macros::*},
+    keymap::{macros::*, FixedBinding},
     text::point::Point,
     ui_components::{
         button::ButtonVariant,
         components::{Coords, UiComponent, UiComponentStyles},
     },
+    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
+    WindowId,
 };
-use twarpui::{ModelHandle, platform::SaveFilePickerConfiguration};
+use twarpui::{platform::SaveFilePickerConfiguration, ModelHandle};
 use vec1::Vec1;
 
 use crate::menu::{Event, Menu, MenuItem, MenuItemFields};
 
 use crate::{
     code::{
-        SaveOutcome, ShowFindReferencesCardProvider,
         editor::model::HoverableLink,
         footer::{CodeFooterView, CodeFooterViewEvent},
         git_blame::{
-            BlameCacheKey, BlameGutterAnnotation, BlameLineState, CommitDetail, CommitDetailKey,
-            FetchedBlame, FetchedCommitDetail, ParsedBlame, committed_annotation,
-            fetch_commit_detail, fetch_git_blame, path_is_in_repo, uncommitted_annotation,
+            committed_annotation, fetch_commit_detail, fetch_git_blame, path_is_in_repo,
+            uncommitted_annotation, BlameCacheKey, BlameGutterAnnotation, BlameLineState,
+            CommitDetail, CommitDetailKey, FetchedBlame, FetchedCommitDetail, ParsedBlame,
         },
         global_buffer_model::{BufferState, GlobalBufferModel},
+        SaveOutcome, ShowFindReferencesCardProvider,
     },
     debounce::debounce,
     settings::{AISettings, CodeSettings},
@@ -101,7 +101,6 @@ const DROP_SHADOW_COLOR: ColorU = ColorU {
 
 const HOVER_DEBOUNCE_PERIOD: Duration = Duration::from_millis(500);
 
-use super::ImmediateSaveError;
 use super::diff_viewer::DiffViewer;
 use super::editor::{
     line::EditorLineLocation,
@@ -111,6 +110,7 @@ use super::editor::{
 use super::find_references_view::{FindReferencesView, FindReferencesViewEvent};
 use super::language_server_extension::ProcessedDiagnostic;
 use super::lsp_telemetry::LspTelemetryEvent;
+use super::ImmediateSaveError;
 use twarp_core::send_telemetry_from_ctx;
 
 type SaveCallback =

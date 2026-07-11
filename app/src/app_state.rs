@@ -445,7 +445,10 @@ impl std::fmt::Display for ConversationStatus {
 }
 #[allow(dead_code)]
 impl ConversationStatus {
-    pub fn render_icon(&self, appearance: &crate::appearance::Appearance) -> twarpui::elements::Icon {
+    pub fn render_icon(
+        &self,
+        appearance: &crate::appearance::Appearance,
+    ) -> twarpui::elements::Icon {
         let (icon, color) = self.status_icon_and_color(appearance.theme());
         icon.to_warpui_icon(twarp_core::ui::theme::Fill::from(color))
     }

@@ -1,13 +1,13 @@
 use super::{
+    flags, SettingActionPairContexts, SettingActionPairDescriptions, SettingsAction,
+    ToggleSettingActionPair,
+};
+use super::{
     settings_page::{
         render_body_item, AdditionalInfo, MatchData, PageType, SettingsPageMeta,
         SettingsPageViewHandle, SettingsWidget,
     },
     LocalOnlyIconState, SettingsSection, ToggleState,
-};
-use super::{
-    flags, SettingActionPairContexts, SettingActionPairDescriptions, SettingsAction,
-    ToggleSettingActionPair,
 };
 use crate::{appearance::Appearance, auth::AuthStateProvider, drive::settings::TwarpDriveSettings};
 use twarp_core::{features::FeatureFlag, report_if_error, settings::ToggleableSetting as _};

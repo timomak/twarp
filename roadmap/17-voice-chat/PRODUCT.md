@@ -32,15 +32,15 @@ Figma: none provided.
 ### Voice input (STT)
 
 1. The Claude pane composer's left control row (currently permission control + paperclip) gains a **microphone button** immediately right of the paperclip, same size/hover treatment as the paperclip, tooltip "Voice input". It is present in both new-session and active-session composers.
-2. If no STT provider is configured, clicking the mic shows a non-blocking notice ("Configure voice in Settings → Agent") and does not record. The button renders slightly dimmed in this state but stays visible (discoverability).
+2. If no STT provider is configured, clicking the mic shows a non-blocking notice ("Configure voice in Settings → Agent") and does not record. The button stays visible in its muted idle style (discoverability).
 3. If macOS microphone permission is undetermined, the first click triggers the system permission prompt; if denied, clicking shows a notice directing the user to System Settings → Privacy & Security → Microphone. No recording starts in either failure case.
 4. Clicking the mic (configured + permitted) starts recording: the button switches to an accent-colored recording state with a subtle pulse, and an elapsed-time label (m:ss) appears beside it. The composer stays fully editable while recording.
 5. Clicking the mic again stops recording and submits the audio for transcription. While transcribing, the button shows a spinner state; a second click during transcription is a no-op.
 6. Pressing **Esc** while recording cancels: audio is discarded, no request is made, the button returns to idle. Esc retains its existing composer behaviors when not recording.
-7. On successful transcription, the text is inserted at the composer cursor (with a separating space if the composer already has adjacent text), the composer keeps focus, and nothing is auto-sent — **unless** the auto-send setting (§19) is on and the composer was empty when recording started, in which case the transcript is submitted as a message immediately.
+7. On successful transcription, the text is appended to the composer draft (with a separating space if the draft doesn't already end in whitespace), the composer keeps focus, and nothing is auto-sent — **unless** the auto-send setting (§19) is on and the composer was empty both when recording started and when the transcript lands, in which case the transcript is submitted as a message immediately.
 8. On transcription failure (network error, HTTP error, timeout, empty transcript), a non-blocking error notice appears with the provider's error text where available; the composer content is unchanged and the recorded audio is discarded.
 9. Recording auto-stops (and transcribes) at a 5-minute cap. Closing the pane, switching it to Raw CLI mode, or quitting the app while recording cancels the recording silently.
-10. Only one recording may be active across the app. The mic button in other Claude panes is disabled (dimmed, tooltip "Recording in another pane") while one records.
+10. Only one recording may be active across the app. Clicking the mic in another Claude pane while one records shows a non-blocking "Already recording in another pane" notice and does not start a second recording.
 11. Recording captures from the system default input device. Device changes mid-recording end the recording as a stop-and-transcribe (best effort), not a crash.
 
 ### Spoken replies (TTS)

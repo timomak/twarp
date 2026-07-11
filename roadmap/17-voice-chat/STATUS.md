@@ -1,8 +1,8 @@
 # 17 — Voice chat in the Claude pane
 
-**Phase:** spec-in-review
+**Phase:** impl-in-review
 **Spec PR:** [#205](https://github.com/timomak/twarp/pull/205)
-**Impl PRs:** —
+**Impl PRs:** 17a–17c bundled (this PR — owner asked for end-to-end in one pass, 2026-07-11)
 
 ## Scope
 
@@ -16,9 +16,11 @@ Talk to the Claude pane, and have it talk back. Owner-requested 2026-07-11.
 
 ## Sub-phases
 
-- [ ] **17a — providers + settings.** STT/TTS clients, settings fields + keychain, Voice settings UI incl. Test voice. *(bundled with 17b in one PR per owner's bundling rule)*
-- [ ] **17b — talk to the chat.** cpal capture, mic button, transcript insertion, permission/error paths.
-- [ ] **17c — spoken replies.** Playback, speaker toggle, prose extraction + chunking.
+- [x] **17a — providers + settings.** STT/TTS clients, settings fields + keychain, Voice settings UI incl. Test voice.
+- [x] **17b — talk to the chat.** cpal capture, mic button, transcript insertion, permission/error paths.
+- [x] **17c — spoken replies.** Playback, speaker toggle, prose extraction + chunking.
+
+All three bundled into one impl PR (owner-directed end-to-end pass, 2026-07-11 — supersedes the spec's two-PR plan).
 
 ## Smoke test
 

@@ -11198,14 +11198,13 @@ impl TerminalView {
                         let directory_for_detection =
                             native_directory.as_deref().unwrap_or(active_directory);
 
-                        let fut =
-                            DetectedRepositories::handle(ctx).update(ctx, |updater, ctx| {
-                                updater.detect_possible_git_repo(
-                                    directory_for_detection,
-                                    RepoDetectionSource::TerminalNavigation,
-                                    ctx,
-                                )
-                            });
+                        let fut = DetectedRepositories::handle(ctx).update(ctx, |updater, ctx| {
+                            updater.detect_possible_git_repo(
+                                directory_for_detection,
+                                RepoDetectionSource::TerminalNavigation,
+                                ctx,
+                            )
+                        });
 
                         ctx.spawn(fut, move |me, repo_path_opt, ctx| {
                             let old_repo_path = me.current_repo_path.clone();
@@ -14400,12 +14399,11 @@ impl TerminalView {
                     return;
                 }
 
-                let (query_string, block_command) =
-                    if should_collect_ai_ugc_telemetry(&*ctx, ()) {
-                        (Some(suggestion.prompt.to_string()), Some(command))
-                    } else {
-                        (None, None)
-                    };
+                let (query_string, block_command) = if should_collect_ai_ugc_telemetry(&*ctx, ()) {
+                    (Some(suggestion.prompt.to_string()), Some(command))
+                } else {
+                    (None, None)
+                };
 
                 let banner_id = self.inline_banners_state.next_banner_id();
 

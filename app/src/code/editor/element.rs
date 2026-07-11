@@ -6,8 +6,8 @@ pub use gutter_button::{
 use std::{
     ops::Range,
     sync::{
-        Arc,
         atomic::{AtomicBool, Ordering},
+        Arc,
     },
 };
 
@@ -15,37 +15,37 @@ use parking_lot::Mutex;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::{
     rect::RectF,
-    vector::{Vector2F, vec2f},
+    vector::{vec2f, Vector2F},
 };
 use twarp_core::ui::{
     appearance::Appearance,
-    theme::{Fill, color::internal_colors},
+    theme::{color::internal_colors, Fill},
 };
 use twarp_editor::{
     editor::EditorView,
     render::{
         element::{
-            RenderableBlock, RichTextElement, VerticalExpansionBehavior,
-            lens_element::RichTextElementLens,
+            lens_element::RichTextElementLens, RenderableBlock, RichTextElement,
+            VerticalExpansionBehavior,
         },
         model::{
-            BlockLocation, ExpansionType, LineCount, RenderState, gutter_expansion_button_types,
+            gutter_expansion_button_types, BlockLocation, ExpansionType, LineCount, RenderState,
         },
     },
 };
 use twarpui::{
-    AfterLayoutContext, AppContext, ClipBounds, Element, Event, EventContext, LayoutContext,
-    ModelHandle, PaintContext, SingletonEntity, SizeConstraint,
     elements::{
+        new_scrollable::{NewScrollableElement, ScrollableAxis},
         Align, Axis, Border, ChildAnchor, ConstrainedBox, Container, CornerRadius,
         CrossAxisAlignment, Empty, F32Ext, Flex, MainAxisSize, OffsetPositioning, ParentAnchor,
         ParentElement, ParentOffsetBounds, Point, Radius, ScrollData, Stack, Text, ZIndex,
-        new_scrollable::{NewScrollableElement, ScrollableAxis},
     },
     event::DispatchedEvent,
     fonts::FamilyId,
     ui_components::components::UiComponent,
     units::{IntoPixels, Pixels},
+    AfterLayoutContext, AppContext, ClipBounds, Element, Event, EventContext, LayoutContext,
+    ModelHandle, PaintContext, SingletonEntity, SizeConstraint,
 };
 
 use super::diff::{DiffHunkDisplay, DiffStatus};

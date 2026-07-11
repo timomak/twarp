@@ -4,6 +4,10 @@ use settings::{
 };
 
 use crate::app_state::CLIAgent;
+use crate::voice::config::{
+    VoiceProviderKind, VoiceSttConfig, VoiceTtsConfig, DEFAULT_AZURE_API_VERSION,
+    DEFAULT_STT_MODEL, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE,
+};
 
 pub const DEFAULT_BACKEND: &str = "claude";
 pub const DEFAULT_CHAT_PROVIDER: &str = "claude";
@@ -141,6 +145,116 @@ define_settings_group!(AgentSettings, settings: [
         toml_path: "agent.auth.claude.api_key_set",
         description: "Whether a Claude API key is stored in the OS keychain.",
     },
+    // twarp 17: voice chat (PRODUCT §19–§23). Keys live in the keychain;
+    // settings persist endpoints/models and key-presence flags only.
+    voice_stt_kind: AgentVoiceSttKind {
+        type: String,
+        default: String::new(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.voice.stt.kind",
+        description: "Speech-to-text provider kind: azure_foundry or openai_compatible.",
+    },
+    voice_stt_endpoint: AgentVoiceSttEndpoint {
+        type: String,
+        default: String::new(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.voice.stt.endpoint",
+        description: "Speech-to-text endpoint: Azure resource endpoint or OpenAI-compatible base URL.",
+    },
+    voice_stt_model: AgentVoiceSttModel {
+        type: String,
+        default: String::new(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.voice.stt.model",
+        description: "Speech-to-text model (OpenAI-compatible) or deployment name (Azure). Empty means gpt-4o-transcribe.",
+    },
+    voice_stt_api_version: AgentVoiceSttApiVersion {
+        type: String,
+        default: String::new(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.voice.stt.api_version",
+        description: "Azure api-version for the transcription endpoint. Empty means the built-in default.",
+    },
+    voice_tts_kind: AgentVoiceTtsKind {
+        type: String,
+        default: String::new(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.voice.tts.kind",
+        description: "Text-to-speech provider kind: azure_foundry or openai_compatible.",
+    },
+    voice_tts_endpoint: AgentVoiceTtsEndpoint {
+        type: String,
+        default: String::new(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.voice.tts.endpoint",
+        description: "Text-to-speech endpoint: Azure resource endpoint or OpenAI-compatible base URL. Empty means reuse the speech-to-text endpoint.",
+    },
+    voice_tts_model: AgentVoiceTtsModel {
+        type: String,
+        default: String::new(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.voice.tts.model",
+        description: "Text-to-speech model or Azure deployment name. Empty means gpt-4o-mini-tts.",
+    },
+    voice_tts_voice: AgentVoiceTtsVoice {
+        type: String,
+        default: DEFAULT_TTS_VOICE.to_owned(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.voice.tts.voice",
+        description: "The OpenAI voice used for spoken replies.",
+    },
+    voice_tts_use_stt_key: AgentVoiceTtsUseSttKey {
+        type: bool,
+        default: true,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.voice.tts.use_stt_key",
+        description: "Whether text-to-speech reuses the speech-to-text API key.",
+    },
+    voice_auto_send: AgentVoiceAutoSend {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.voice.auto_send",
+        description: "Whether a voice transcription into an empty composer sends immediately.",
+    },
+    voice_stt_api_key_set: AgentVoiceSttApiKeySet {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.auth.voice_stt.api_key_set",
+        description: "Whether a voice speech-to-text API key is stored in the OS keychain.",
+    },
+    voice_tts_api_key_set: AgentVoiceTtsApiKeySet {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.auth.voice_tts.api_key_set",
+        description: "Whether a dedicated voice text-to-speech API key is stored in the OS keychain.",
+    },
 ]);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -230,6 +344,102 @@ impl AgentSettings {
             model: valid_model_for_provider(resolved_provider, self.reply_suggest_model.value()),
             effort: valid_effort_for_provider(resolved_provider, self.reply_suggest_effort.value()),
         }
+    }
+}
+
+/// Keychain accounts for the voice keys (twarp 17, PRODUCT §17 pattern —
+/// same service as `api_key_storage_key`, distinct accounts).
+pub const VOICE_STT_API_KEY_STORAGE_KEY: &str = "agent.api_key.voice_stt";
+pub const VOICE_TTS_API_KEY_STORAGE_KEY: &str = "agent.api_key.voice_tts";
+
+impl AgentSettings {
+    /// The resolved STT provider, or `None` while unconfigured (no endpoint or
+    /// no stored key — drives the mic button's PRODUCT §2 behavior).
+    /// `api_key` comes back **empty**: settings can't reach the keychain, so
+    /// the caller fills it via [`VOICE_STT_API_KEY_STORAGE_KEY`].
+    pub fn voice_stt_config(&self) -> Option<VoiceSttConfig> {
+        let endpoint = self.voice_stt_endpoint.value().trim().to_owned();
+        if endpoint.is_empty() || !*self.voice_stt_api_key_set.value() {
+            return None;
+        }
+        Some(VoiceSttConfig {
+            kind: VoiceProviderKind::from_serialized_name(self.voice_stt_kind.value()),
+            endpoint,
+            model: non_empty_or(self.voice_stt_model.value(), DEFAULT_STT_MODEL),
+            api_version: non_empty_or(
+                self.voice_stt_api_version.value(),
+                DEFAULT_AZURE_API_VERSION,
+            ),
+            api_key: String::new(),
+        })
+    }
+
+    /// The resolved TTS provider, or `None` while unconfigured (PRODUCT §12).
+    /// An empty TTS endpoint reuses the STT endpoint/kind/api-version, and
+    /// `use_stt_key` (default on) reuses the STT key (PRODUCT §21). `api_key`
+    /// comes back empty; the caller fills it from the keychain account named
+    /// by [`Self::voice_tts_key_storage_key`].
+    pub fn voice_tts_config(&self) -> Option<VoiceTtsConfig> {
+        let stt_endpoint = self.voice_stt_endpoint.value().trim().to_owned();
+        let own_endpoint = self.voice_tts_endpoint.value().trim().to_owned();
+        let reuse_stt_endpoint = own_endpoint.is_empty();
+        let endpoint = if reuse_stt_endpoint {
+            stt_endpoint
+        } else {
+            own_endpoint
+        };
+        if endpoint.is_empty() {
+            return None;
+        }
+        let key_set = if *self.voice_tts_use_stt_key.value() {
+            *self.voice_stt_api_key_set.value()
+        } else {
+            *self.voice_tts_api_key_set.value()
+        };
+        if !key_set {
+            return None;
+        }
+        let (kind, api_version) = if reuse_stt_endpoint {
+            (
+                VoiceProviderKind::from_serialized_name(self.voice_stt_kind.value()),
+                non_empty_or(
+                    self.voice_stt_api_version.value(),
+                    DEFAULT_AZURE_API_VERSION,
+                ),
+            )
+        } else {
+            (
+                VoiceProviderKind::from_serialized_name(self.voice_tts_kind.value()),
+                DEFAULT_AZURE_API_VERSION.to_owned(),
+            )
+        };
+        Some(VoiceTtsConfig {
+            kind,
+            endpoint,
+            model: non_empty_or(self.voice_tts_model.value(), DEFAULT_TTS_MODEL),
+            voice: non_empty_or(self.voice_tts_voice.value(), DEFAULT_TTS_VOICE),
+            api_version,
+            api_key: String::new(),
+        })
+    }
+
+    /// Which keychain account holds the TTS key (PRODUCT §21's "use
+    /// speech-to-text key" toggle).
+    pub fn voice_tts_key_storage_key(&self) -> &'static str {
+        if *self.voice_tts_use_stt_key.value() {
+            VOICE_STT_API_KEY_STORAGE_KEY
+        } else {
+            VOICE_TTS_API_KEY_STORAGE_KEY
+        }
+    }
+}
+
+fn non_empty_or(value: &str, fallback: &str) -> String {
+    let value = value.trim();
+    if value.is_empty() {
+        fallback.to_owned()
+    } else {
+        value.to_owned()
     }
 }
 

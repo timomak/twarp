@@ -20,8 +20,8 @@ Companion to [PRODUCT.md](PRODUCT.md); §N references its Behavior invariants.
 - `stt.rs` — transcription client. Two request shapes off one config (§23):
   - **Azure AI Foundry:** `POST {endpoint}/openai/deployments/{model}/audio/transcriptions?api-version={v}` with `api-key` header (api-version default `2025-03-01-preview`, user-editable per §20 since Azure moves this).
   - **OpenAI-compatible:** `POST {base}/audio/transcriptions` with `Authorization: Bearer`.
-  Both: multipart body (`file` = WAV, `model` = model name), parse `{ "text": ... }`.
-- `tts.rs` — speech client, same dual shape (`.../audio/speech`), JSON body `{model, voice, input, response_format: "pcm"}` → 24 kHz s16le mono bytes, no decoder needed. Sentence-boundary chunking at the 4096-char input cap (§16). Markdown-to-prose stripping (§13): walk the pane's already-parsed turn content, keep prose text nodes, drop code fences / tool cards.
+  Both: multipart body (`file` = WAV; `model` in the form for the OpenAI-compatible shape — Azure scopes it via the deployment path), parse `{ "text": ... }`.
+- `tts.rs` — speech client, same dual shape (`.../audio/speech`), JSON body `{model, voice, input, response_format: "pcm"}` → 24 kHz s16le mono bytes, no decoder needed. Sentence-boundary chunking at the 4096-char input cap (§16). Markdown-to-prose stripping (§13, `prose.rs`) is a text-level pass over the turn's final markdown (`last_assistant_text`): drops fenced blocks / tables / rules, keeps inline markup's text content — no hooks into the rendered transcript needed.
 - `playback.rs` — cpal output stream fed from a byte channel; `stop()` handle for §14/§15/§18.
 - A small `VoiceController` (one per Claude pane view) owning the state machine Idle → Recording → Transcribing and Speaking, plus the **global single-recording guard** (§10) as a `static` slot.
 

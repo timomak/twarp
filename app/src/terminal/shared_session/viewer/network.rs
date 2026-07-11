@@ -19,10 +19,9 @@ use session_sharing_protocol::{
         InputOperationId, InputOperationSeqNo, InputUpdate, LinkAccessLevelUpdateResponse,
         ParticipantId, ParticipantList, ParticipantPresenceUpdate, RemoveGuestResponse, Role,
         RoleRequestId, RoleRequestResponse, Selection, SelectionUpdate, ServerConversationToken,
-        SessionId, TeamAccessLevelUpdateResponse, TeamAclData,
-        UniversalDeveloperInputContext, UniversalDeveloperInputContextUpdate,
-        UpdatePendingUserRoleResponse, UserID, WindowSize, WriteToPtyFailureReason,
-        WriteToPtyRequestId, WriteToPtySeqNo,
+        SessionId, TeamAccessLevelUpdateResponse, TeamAclData, UniversalDeveloperInputContext,
+        UniversalDeveloperInputContextUpdate, UpdatePendingUserRoleResponse, UserID, WindowSize,
+        WriteToPtyFailureReason, WriteToPtyRequestId, WriteToPtySeqNo,
     },
     sharer::SessionSourceType,
     viewer::{

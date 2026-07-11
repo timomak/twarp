@@ -26,10 +26,7 @@ use twarpui::{
 
 use crate::{
     appearance::Appearance,
-    auth::{
-        auth_manager::AuthManager, auth_state::AuthState,
-        AuthStateProvider, UserUid,
-    },
+    auth::{auth_manager::AuthManager, auth_state::AuthState, AuthStateProvider, UserUid},
     completer::SessionContext,
     drive::settings::TwarpDriveSettings,
     search::{
