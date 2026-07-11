@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,6 +13,7 @@ use string_offset::{ByteOffset, CharCounter};
 use twarp_editor::editor::NavigationKey;
 use twarp_ripgrep::search::{Match as RipgrepMatch, Submatch};
 
+use crate::code::global_buffer_model::GlobalBufferModel;
 use crate::code::icon_from_file_path;
 use crate::debounce::debounce;
 use crate::editor::{
@@ -24,8 +25,14 @@ use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon as UiIcon;
 use crate::ui_components::item_highlight::{ImageOrIcon, ItemHighlightState};
 use crate::ui_components::render_file_search_row::{render_file_search_row, FileSearchRowOptions};
-use crate::view_components::action_button::{ActionButton, ButtonSize, NakedTheme};
+use crate::view_components::action_button::{
+    ActionButton, ButtonSize, NakedTheme, PrimaryTheme, SecondaryTheme,
+};
 use crate::workspace::view::global_search::model::GlobalSearch;
+use crate::workspace::view::global_search::replace_model::{
+    apply_preview_to_disk, generate_preview, make_fingerprint, ReplaceApplySummary,
+    ReplaceFilePreview, ReplaceFingerprint, ReplacePreview,
+};
 use crate::workspace::view::global_search::SearchConfig;
 use crate::TelemetryEvent;
 use twarp_core::send_telemetry_from_ctx;
@@ -102,8 +109,15 @@ pub enum GlobalSearchAction {
     FocusResultsList,
     FocusIncludeEditor,
     FocusExcludeEditor,
+    FocusReplaceEditor,
     ToggleRegexSearch,
     ToggleCaseSensitivity,
+    GenerateReplacePreview,
+    ToggleReplacePreviewFile {
+        path: PathBuf,
+    },
+    CancelReplacePreview,
+    ConfirmReplacePreview,
 }
 
 #[cfg_attr(target_family = "wasm", allow(dead_code))]
@@ -299,6 +313,7 @@ impl Match {
 pub struct GlobalSearchView {
     find_model: ModelHandle<GlobalSearch>,
     query_editor: ViewHandle<EditorView>,
+    replace_editor: ViewHandle<EditorView>,
     /// VSCode-style "files to include" glob input (comma-separated).
     include_editor: ViewHandle<EditorView>,
     /// VSCode-style "files to exclude" glob input (comma-separated).
@@ -329,6 +344,15 @@ pub struct GlobalSearchView {
     regex_button: ViewHandle<ActionButton>,
     case_sensitivity_enabled: bool,
     case_sensitivity_button: ViewHandle<ActionButton>,
+    replace_all_button: ViewHandle<ActionButton>,
+    confirm_replace_button: ViewHandle<ActionButton>,
+    cancel_replace_button: ViewHandle<ActionButton>,
+    replace_preview: Option<ReplacePreview>,
+    replace_is_generating_preview: bool,
+    replace_is_applying: bool,
+    replace_error: Option<String>,
+    replace_summary: Option<ReplaceApplySummary>,
+    search_results_stale: bool,
 }
 
 impl Entity for GlobalSearchView {
@@ -486,7 +510,12 @@ impl TypedActionView for GlobalSearchView {
                 self.set_query_mode_state(ctx);
                 ctx.focus(&self.exclude_editor);
             }
+            GlobalSearchAction::FocusReplaceEditor => {
+                self.set_query_mode_state(ctx);
+                ctx.focus(&self.replace_editor);
+            }
             GlobalSearchAction::ToggleRegexSearch => {
+                self.dismiss_replace_preview(ctx);
                 self.regex_search_enabled = !self.regex_search_enabled;
                 self.regex_button.update(ctx, |button, ctx| {
                     button.set_active(self.regex_search_enabled, ctx);
@@ -494,11 +523,24 @@ impl TypedActionView for GlobalSearchView {
                 self.rerun_search_from_query(ctx, true);
             }
             GlobalSearchAction::ToggleCaseSensitivity => {
+                self.dismiss_replace_preview(ctx);
                 self.case_sensitivity_enabled = !self.case_sensitivity_enabled;
                 self.case_sensitivity_button.update(ctx, |button, ctx| {
                     button.set_active(self.case_sensitivity_enabled, ctx);
                 });
                 self.rerun_search_from_query(ctx, true);
+            }
+            GlobalSearchAction::GenerateReplacePreview => {
+                self.generate_replace_preview(ctx);
+            }
+            GlobalSearchAction::ToggleReplacePreviewFile { path } => {
+                self.toggle_replace_preview_file(path, ctx);
+            }
+            GlobalSearchAction::CancelReplacePreview => {
+                self.dismiss_replace_preview(ctx);
+            }
+            GlobalSearchAction::ConfirmReplacePreview => {
+                self.confirm_replace_preview(ctx);
             }
         }
     }
@@ -675,6 +717,29 @@ impl GlobalSearchView {
         })
     }
 
+    fn build_replace_editor(ctx: &mut ViewContext<Self>) -> ViewHandle<EditorView> {
+        ctx.add_typed_action_view(|ctx| {
+            let appearance = Appearance::as_ref(ctx);
+            let options = EditorOptions {
+                text: TextOptions::ui_text(Some(13.), appearance),
+                select_all_on_focus: true,
+                clear_selections_on_blur: true,
+                propagate_and_no_op_vertical_navigation_keys:
+                    PropagateAndNoOpNavigationKeys::Always,
+                propagate_horizontal_navigation_keys: PropagateHorizontalNavigationKeys::Always,
+                convert_newline_to_space: false,
+                single_line: false,
+                autogrow: true,
+                soft_wrap: false,
+                ..Default::default()
+            };
+
+            let mut editor = EditorView::new(options, ctx);
+            editor.set_placeholder_text("Replace", ctx);
+            editor
+        })
+    }
+
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let find_model = ctx.add_model(|_| GlobalSearch::new());
 
@@ -701,6 +766,7 @@ impl GlobalSearchView {
             editor
         });
 
+        let replace_editor = Self::build_replace_editor(ctx);
         let include_editor = Self::build_filter_editor("files to include (e.g. src, *.rs)", ctx);
         let exclude_editor =
             Self::build_filter_editor("files to exclude (e.g. target, *.lock)", ctx);
@@ -732,8 +798,36 @@ impl GlobalSearchView {
                 })
         });
 
+        let replace_all_button = ctx.add_typed_action_view(|_ctx| {
+            ActionButton::new("Replace all", PrimaryTheme)
+                .with_size(ButtonSize::Small)
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(GlobalSearchAction::GenerateReplacePreview);
+                })
+        });
+
+        let confirm_replace_button = ctx.add_typed_action_view(|_ctx| {
+            ActionButton::new("Confirm replace", PrimaryTheme)
+                .with_size(ButtonSize::Small)
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(GlobalSearchAction::ConfirmReplacePreview);
+                })
+        });
+
+        let cancel_replace_button = ctx.add_typed_action_view(|_ctx| {
+            ActionButton::new("Cancel", SecondaryTheme)
+                .with_size(ButtonSize::Small)
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(GlobalSearchAction::CancelReplacePreview);
+                })
+        });
+
         ctx.subscribe_to_view(&query_editor, |me, _handle, event, ctx| {
             me.handle_query_editor_event(event, ctx);
+        });
+
+        ctx.subscribe_to_view(&replace_editor, |me, _handle, event, ctx| {
+            me.handle_replace_editor_event(event, ctx);
         });
 
         ctx.subscribe_to_view(&include_editor, |me, _handle, event, ctx| {
@@ -746,11 +840,18 @@ impl GlobalSearchView {
         ctx.subscribe_to_model(&find_model, |me, _handle, event, ctx| {
             me.handle_find_model_event(event, ctx);
         });
+        replace_all_button.update(ctx, |button, ctx| {
+            button.set_disabled(true, ctx);
+        });
+        confirm_replace_button.update(ctx, |button, ctx| {
+            button.set_disabled(true, ctx);
+        });
         let handle = ctx.handle();
 
         GlobalSearchView {
             find_model,
             query_editor,
+            replace_editor,
             include_editor,
             exclude_editor,
             query_change_tx,
@@ -775,6 +876,15 @@ impl GlobalSearchView {
             regex_button,
             case_sensitivity_enabled: false,
             case_sensitivity_button,
+            replace_all_button,
+            confirm_replace_button,
+            cancel_replace_button,
+            replace_preview: None,
+            replace_is_generating_preview: false,
+            replace_is_applying: false,
+            replace_error: None,
+            replace_summary: None,
+            search_results_stale: false,
         }
     }
 
@@ -902,6 +1012,7 @@ impl GlobalSearchView {
             EditorEvent::Edited(_)
             | EditorEvent::BufferReplaced
             | EditorEvent::BufferReinitialized => {
+                self.dismiss_replace_preview(ctx);
                 let query_text = self.query_editor.as_ref(ctx).buffer_text(ctx);
                 if query_text.is_empty() {
                     self.cancel_search(ctx);
@@ -927,10 +1038,27 @@ impl GlobalSearchView {
             EditorEvent::Edited(_)
             | EditorEvent::BufferReplaced
             | EditorEvent::BufferReinitialized => {
+                self.dismiss_replace_preview(ctx);
                 self.notify_query_changed();
             }
             EditorEvent::Enter => {
                 self.rerun_search_from_query(ctx, true);
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_replace_editor_event(&mut self, event: &EditorEvent, ctx: &mut ViewContext<Self>) {
+        match event {
+            EditorEvent::Edited(_)
+            | EditorEvent::BufferReplaced
+            | EditorEvent::BufferReinitialized => {
+                self.dismiss_replace_preview(ctx);
+            }
+            EditorEvent::Enter => {
+                if self.can_generate_replace_preview() {
+                    self.generate_replace_preview(ctx);
+                }
             }
             _ => {}
         }
@@ -950,6 +1078,196 @@ impl GlobalSearchView {
         let _ = self.query_change_tx.try_send(());
     }
 
+    fn can_generate_replace_preview(&self) -> bool {
+        self.last_error.is_none()
+            && !self.search_results_stale
+            && !self.is_search_in_progress
+            && !self.replace_is_generating_preview
+            && !self.replace_is_applying
+            && self.total_match_count > 0
+            && !self.directory_entries.is_empty()
+    }
+
+    fn can_confirm_replace_preview(&self) -> bool {
+        self.replace_preview
+            .as_ref()
+            .is_some_and(|preview| preview.included_match_count() > 0)
+            && !self.replace_is_generating_preview
+            && !self.replace_is_applying
+    }
+
+    fn current_search_config(&self, ctx: &mut ViewContext<Self>) -> SearchConfig {
+        SearchConfig {
+            use_regex: self.regex_search_enabled,
+            use_case_sensitivity: self.case_sensitivity_enabled,
+            includes: Self::parse_globs(&self.include_editor.as_ref(ctx).buffer_text(ctx)),
+            excludes: Self::parse_globs(&self.exclude_editor.as_ref(ctx).buffer_text(ctx)),
+        }
+    }
+
+    fn current_replace_fingerprint(
+        &self,
+        ctx: &mut ViewContext<Self>,
+    ) -> Option<ReplaceFingerprint> {
+        let query = self.query_editor.as_ref(ctx).buffer_text(ctx);
+        if query.is_empty() {
+            return None;
+        }
+
+        Some(make_fingerprint(
+            query,
+            self.current_search_config(ctx),
+            self.search_roots.clone(),
+        ))
+    }
+
+    fn replace_candidate_paths(&self) -> Vec<PathBuf> {
+        self.directory_entries
+            .iter()
+            .flat_map(|directory| directory.matched_paths.paths.iter())
+            .map(|matched_path| matched_path.path.clone())
+            .collect()
+    }
+
+    fn sync_replace_button_state(&mut self, ctx: &mut ViewContext<Self>) {
+        let replace_disabled = !self.can_generate_replace_preview();
+        self.replace_all_button.update(ctx, |button, ctx| {
+            button.set_disabled(replace_disabled, ctx);
+        });
+
+        let confirm_disabled = !self.can_confirm_replace_preview();
+        self.confirm_replace_button.update(ctx, |button, ctx| {
+            button.set_disabled(confirm_disabled, ctx);
+        });
+    }
+
+    fn dismiss_replace_preview(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.replace_preview.is_none()
+            && self.replace_error.is_none()
+            && self.replace_summary.is_none()
+            && !self.replace_is_generating_preview
+            && !self.replace_is_applying
+        {
+            return;
+        }
+
+        self.replace_preview = None;
+        self.replace_is_generating_preview = false;
+        self.replace_is_applying = false;
+        self.replace_error = None;
+        self.replace_summary = None;
+        self.sync_replace_button_state(ctx);
+        ctx.notify();
+    }
+
+    fn generate_replace_preview(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.can_generate_replace_preview() {
+            return;
+        }
+
+        let Some(fingerprint) = self.current_replace_fingerprint(ctx) else {
+            return;
+        };
+        let replacement = self.replace_editor.as_ref(ctx).buffer_text(ctx);
+        let candidate_paths = self.replace_candidate_paths();
+
+        self.replace_preview = None;
+        self.replace_summary = None;
+        self.replace_error = None;
+        self.replace_is_generating_preview = true;
+        self.sync_replace_button_state(ctx);
+        ctx.notify();
+
+        ctx.spawn(
+            generate_preview(fingerprint, replacement, candidate_paths),
+            |me, result, ctx| {
+                me.replace_is_generating_preview = false;
+                match result {
+                    Ok(preview) => {
+                        me.replace_preview = Some(preview);
+                        me.replace_error = None;
+                    }
+                    Err(err) => {
+                        me.replace_preview = None;
+                        me.replace_error =
+                            Some(format!("Could not generate replace preview: {err}"));
+                    }
+                }
+                me.sync_replace_button_state(ctx);
+                ctx.notify();
+            },
+        );
+    }
+
+    fn toggle_replace_preview_file(&mut self, path: &Path, ctx: &mut ViewContext<Self>) {
+        let Some(preview) = self.replace_preview.as_mut() else {
+            return;
+        };
+
+        let Some(file) = preview.files.iter_mut().find(|file| file.path == path) else {
+            return;
+        };
+
+        file.included = !file.included;
+        self.sync_replace_button_state(ctx);
+        ctx.notify();
+    }
+
+    fn confirm_replace_preview(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.can_confirm_replace_preview() {
+            return;
+        }
+
+        let Some(preview) = self.replace_preview.clone() else {
+            return;
+        };
+        let Some(current_fingerprint) = self.current_replace_fingerprint(ctx) else {
+            return;
+        };
+        if preview.fingerprint != current_fingerprint {
+            self.replace_error =
+                Some("Preview is stale. Generate a new preview before applying.".to_string());
+            self.replace_preview = None;
+            self.sync_replace_button_state(ctx);
+            ctx.notify();
+            return;
+        }
+
+        let included_paths: Vec<PathBuf> = preview
+            .files
+            .iter()
+            .filter(|file| file.included)
+            .map(|file| file.path.clone())
+            .collect();
+
+        let open_paths = GlobalBufferModel::handle(ctx).update(ctx, |buffer_model, buffer_ctx| {
+            included_paths
+                .iter()
+                .filter(|path| buffer_model.path_has_active_buffer(path, buffer_ctx))
+                .cloned()
+                .collect::<HashSet<_>>()
+        });
+
+        self.replace_is_applying = true;
+        self.replace_preview = None;
+        self.replace_error = None;
+        self.replace_summary = None;
+        self.sync_replace_button_state(ctx);
+        ctx.notify();
+
+        ctx.spawn(
+            async move { apply_preview_to_disk(&preview, open_paths).await },
+            |me, summary, ctx| {
+                me.replace_is_applying = false;
+                me.replace_preview = None;
+                me.replace_summary = Some(summary);
+                me.search_results_stale = true;
+                me.sync_replace_button_state(ctx);
+                ctx.notify();
+            },
+        );
+    }
+
     fn reset_search_state(&mut self, clear_last_pattern: bool) {
         self.directory_entries.clear();
         self.directory_path_to_directory_index_entry.clear();
@@ -957,6 +1275,7 @@ impl GlobalSearchView {
         self.total_match_count = 0;
         self.capped_matches = false;
         self.last_error = None;
+        self.search_results_stale = false;
         self.uniform_list_state = UniformListState::new();
 
         if clear_last_pattern {
@@ -1031,7 +1350,11 @@ impl GlobalSearchView {
                 self.current_search_id = Some(*search_id);
 
                 self.is_search_in_progress = true;
+                self.replace_preview = None;
+                self.replace_error = None;
+                self.replace_summary = None;
                 self.reset_search_state(false);
+                self.sync_replace_button_state(ctx);
                 ctx.notify();
             }
             GlobalSearchEvent::Progress { search_id, result } => {
@@ -1040,6 +1363,7 @@ impl GlobalSearchView {
                 }
 
                 self.apply_progress_item(result.clone(), ctx);
+                self.sync_replace_button_state(ctx);
                 ctx.notify();
             }
             GlobalSearchEvent::ProgressBatch { search_id, items } => {
@@ -1054,6 +1378,7 @@ impl GlobalSearchView {
                         break;
                     }
                 }
+                self.sync_replace_button_state(ctx);
                 ctx.notify();
             }
             GlobalSearchEvent::Completed {
@@ -1066,6 +1391,7 @@ impl GlobalSearchView {
 
                 self.is_search_in_progress = false;
                 self.total_match_count = *total_match_count;
+                self.sync_replace_button_state(ctx);
                 ctx.notify();
             }
             GlobalSearchEvent::Failed { search_id, error } => {
@@ -1076,6 +1402,7 @@ impl GlobalSearchView {
                 self.is_search_in_progress = false;
                 self.reset_search_state(false);
                 self.last_error = Some(error.clone());
+                self.sync_replace_button_state(ctx);
                 ctx.notify();
             }
         }
@@ -2198,12 +2525,46 @@ impl View for GlobalSearchView {
             build_filter_row(&self.include_editor, GlobalSearchAction::FocusIncludeEditor);
         let exclude_row =
             build_filter_row(&self.exclude_editor, GlobalSearchAction::FocusExcludeEditor);
+        let replace_input = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(
+                Shrinkable::new(
+                    1.0,
+                    ConstrainedBox::new(
+                        Clipped::new(ChildView::new(&self.replace_editor).finish()).finish(),
+                    )
+                    .with_max_height(max_editor_height)
+                    .finish(),
+                )
+                .finish(),
+            )
+            .with_child(
+                Container::new(ChildView::new(&self.replace_all_button).finish())
+                    .with_margin_left(6.)
+                    .finish(),
+            )
+            .finish();
+
+        let replace_row_container = Container::new(replace_input)
+            .with_padding(Padding::uniform(6.))
+            .with_border(Border::all(BORDER_WIDTH).with_border_fill(theme.surface_3()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(BORDER_RADIUS)))
+            .with_margin_bottom(4.)
+            .finish();
+
+        let replace_row = EventHandler::new(replace_row_container)
+            .on_left_mouse_down(|ctx, _, _| {
+                ctx.dispatch_typed_action(GlobalSearchAction::FocusReplaceEditor);
+                DispatchEventResult::StopPropagation
+            })
+            .finish();
 
         let mut header_column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_child(query_row)
             .with_child(include_row)
-            .with_child(exclude_row);
+            .with_child(exclude_row)
+            .with_child(replace_row);
 
         let files = self.unique_match_count();
         let file_word = if files == 1 { "file" } else { "files" };
@@ -2271,6 +2632,39 @@ impl View for GlobalSearchView {
                 header_column.with_child(Container::new(capped_row).with_margin_top(4.0).finish());
         }
 
+        if self.search_results_stale {
+            let stale_styles = UiComponentStyles {
+                font_family_id: Some(appearance.ui_font_family()),
+                font_size: Some(12.),
+                font_color: Some(blended_colors::text_sub(theme, theme.background())),
+                ..Default::default()
+            };
+            let stale_text = Span::new(
+                "Search results are stale after replace. Run the search again to refresh.",
+                stale_styles,
+            )
+            .with_soft_wrap()
+            .build()
+            .finish();
+            header_column =
+                header_column.with_child(Container::new(stale_text).with_margin_top(4.0).finish());
+        }
+
+        if let Some(error) = &self.replace_error {
+            let error_styles = UiComponentStyles {
+                font_family_id: Some(appearance.ui_font_family()),
+                font_size: Some(12.),
+                font_color: Some(theme.terminal_colors().normal.red.into()),
+                ..Default::default()
+            };
+            let error_text = Span::new(error.clone(), error_styles)
+                .with_soft_wrap()
+                .build()
+                .finish();
+            header_column =
+                header_column.with_child(Container::new(error_text).with_margin_top(4.0).finish());
+        }
+
         let header_section = Container::new(header_column.finish())
             .with_padding(Padding::uniform(12.).with_top(4.).with_bottom(8.))
             .finish();
@@ -2283,7 +2677,21 @@ impl View for GlobalSearchView {
         let should_render_pre_search_zero_state =
             self.last_searched_pattern.is_none() && self.query_editor.as_ref(app).is_empty(app);
 
-        if should_render_pre_search_zero_state {
+        if let Some(preview) = &self.replace_preview {
+            body = body.with_child(
+                Shrinkable::new(1.0, self.render_replace_preview(preview, app)).finish(),
+            );
+        } else if let Some(summary) = &self.replace_summary {
+            body = body.with_child(
+                Shrinkable::new(1.0, self.render_replace_summary(summary, app)).finish(),
+            );
+        } else if self.replace_is_generating_preview {
+            body = body
+                .with_child(Shrinkable::new(1.0, self.render_replace_loading_state(app)).finish());
+        } else if self.replace_is_applying {
+            body = body
+                .with_child(Shrinkable::new(1.0, self.render_replace_applying_state(app)).finish());
+        } else if should_render_pre_search_zero_state {
             body =
                 body.with_child(Shrinkable::new(1.0, self.render_pre_search_state(app)).finish());
         } else if let Some(error) = &self.last_error {
@@ -2318,6 +2726,371 @@ impl View for GlobalSearchView {
 }
 
 impl GlobalSearchView {
+    fn render_replace_preview(
+        &self,
+        preview: &ReplacePreview,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+
+        let file_word = if preview.total_file_count() == 1 {
+            "file"
+        } else {
+            "files"
+        };
+        let match_word = if preview.total_match_count() == 1 {
+            "match"
+        } else {
+            "matches"
+        };
+        let summary_text = format!(
+            "Preview: {} {} and {} {}",
+            preview.total_file_count(),
+            file_word,
+            preview.total_match_count(),
+            match_word
+        );
+
+        let mut preview_column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Start)
+            .with_child(
+                Text::new_inline(summary_text, appearance.ui_font_family(), 13.)
+                    .with_style(Properties::default().weight(Weight::Semibold))
+                    .with_color(theme.foreground().into())
+                    .finish(),
+            );
+
+        let actions = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(ChildView::new(&self.cancel_replace_button).finish())
+            .with_child(
+                Container::new(ChildView::new(&self.confirm_replace_button).finish())
+                    .with_margin_left(8.)
+                    .finish(),
+            )
+            .finish();
+
+        preview_column = preview_column.with_child(
+            Container::new(actions)
+                .with_margin_top(8.)
+                .with_margin_bottom(8.)
+                .finish(),
+        );
+
+        let header = Container::new(preview_column.finish())
+            .with_horizontal_padding(12.)
+            .finish();
+
+        let mut body = Flex::column()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_cross_axis_alignment(CrossAxisAlignment::Start)
+            .with_child(header);
+
+        if preview.files.is_empty() {
+            body = body.with_child(
+                Container::new(
+                    Text::new_inline(
+                        "No current matches found. Files may have changed since the search completed.",
+                        appearance.ui_font_family(),
+                        13.,
+                    )
+                    .with_color(blended_colors::text_sub(theme, theme.background()).into())
+                    .finish(),
+                )
+                .with_horizontal_padding(12.)
+                .finish(),
+            );
+        } else {
+            let files = preview.files.clone();
+            let item_count = files.len();
+            let build_items = move |range: Range<usize>, app: &AppContext| {
+                (range.start..range.end)
+                    .map(|idx| Self::render_replace_file_preview(&files[idx], app))
+                    .collect::<Vec<_>>()
+                    .into_iter()
+            };
+            let list = UniformList::new(UniformListState::new(), item_count, build_items);
+            let scrollable = Scrollable::vertical(
+                self.scroll_state.clone(),
+                list.finish_scrollable(),
+                ScrollbarWidth::Auto,
+                theme.nonactive_ui_detail().into(),
+                theme.active_ui_detail().into(),
+                Fill::None,
+            )
+            .with_overlayed_scrollbar()
+            .finish();
+
+            body = body.with_child(
+                Shrinkable::new(
+                    1.0,
+                    Container::new(scrollable)
+                        .with_horizontal_padding(12.)
+                        .with_padding_bottom(12.)
+                        .finish(),
+                )
+                .finish(),
+            );
+        }
+
+        body.finish()
+    }
+
+    fn render_replace_file_preview(
+        file: &ReplaceFilePreview,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+
+        let path = file.path.clone();
+        let file_name = file
+            .path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| file.path.to_string_lossy().to_string());
+        let action_label = if file.included { "Exclude" } else { "Include" };
+        let included_label = if file.included {
+            "Included"
+        } else {
+            "Excluded"
+        };
+
+        let action_text = Text::new_inline(action_label, appearance.ui_font_family(), 12.)
+            .with_color(theme.accent().into())
+            .finish();
+        let action = EventHandler::new(
+            Container::new(action_text)
+                .with_horizontal_padding(6.)
+                .with_vertical_padding(2.)
+                .with_border(Border::all(BORDER_WIDTH).with_border_fill(theme.surface_3()))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                .finish(),
+        )
+        .on_left_mouse_down(move |ctx, _, _| {
+            ctx.dispatch_typed_action(GlobalSearchAction::ToggleReplacePreviewFile {
+                path: path.clone(),
+            });
+            DispatchEventResult::StopPropagation
+        })
+        .finish();
+
+        let header = Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(
+                Shrinkable::new(
+                    1.0,
+                    Text::new_inline(file_name, appearance.ui_font_family(), 13.)
+                        .with_style(Properties::default().weight(Weight::Semibold))
+                        .with_color(theme.foreground().into())
+                        .finish(),
+                )
+                .finish(),
+            )
+            .with_child(action)
+            .finish();
+
+        let sub_text = format!("{}: {} matches", included_label, file.matches.len());
+
+        let mut file_column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Start)
+            .with_child(header)
+            .with_child(
+                Text::new_inline(sub_text, appearance.ui_font_family(), 12.)
+                    .with_color(blended_colors::text_sub(theme, theme.background()).into())
+                    .finish(),
+            );
+
+        for matched in &file.matches {
+            let mut match_column = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                .with_child(
+                    Text::new_inline(
+                        format!(
+                            "Line {}, Col {}",
+                            matched.line_number, matched.column_number
+                        ),
+                        appearance.ui_font_family(),
+                        12.,
+                    )
+                    .with_color(blended_colors::text_disabled(theme, theme.background()).into())
+                    .finish(),
+                );
+
+            for context in &matched.context_before {
+                match_column =
+                    match_column.with_child(Self::render_replace_context_line(context, app));
+            }
+            match_column =
+                match_column.with_child(Self::render_replace_context_line(&matched.line_text, app));
+            for context in &matched.context_after {
+                match_column =
+                    match_column.with_child(Self::render_replace_context_line(context, app));
+            }
+            match_column = match_column
+                .with_child(Self::render_replace_delta_line(
+                    "-",
+                    &matched.old_text,
+                    false,
+                    app,
+                ))
+                .with_child(Self::render_replace_delta_line(
+                    "+",
+                    &matched.replacement_text,
+                    true,
+                    app,
+                ));
+
+            file_column = file_column.with_child(
+                Container::new(match_column.finish())
+                    .with_margin_top(8.)
+                    .with_padding(Padding::uniform(6.))
+                    .with_background(theme.surface_1())
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                    .finish(),
+            );
+        }
+
+        Container::new(file_column.finish())
+            .with_margin_top(8.)
+            .with_padding(Padding::uniform(8.))
+            .with_border(Border::all(BORDER_WIDTH).with_border_fill(theme.surface_3()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(BORDER_RADIUS)))
+            .finish()
+    }
+
+    fn render_replace_context_line(line: &str, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        Text::new_inline(line.to_string(), appearance.ui_font_family(), 12.)
+            .with_color(blended_colors::text_sub(theme, theme.background()).into())
+            .finish()
+    }
+
+    fn render_replace_delta_line(
+        prefix: &str,
+        text: &str,
+        is_replacement: bool,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let color = if is_replacement {
+            theme.terminal_colors().normal.green
+        } else {
+            theme.terminal_colors().normal.red
+        };
+        Text::new_inline(format!("{prefix} {text}"), appearance.ui_font_family(), 12.)
+            .with_color(color.into())
+            .finish()
+    }
+
+    fn render_replace_summary(
+        &self,
+        summary: &ReplaceApplySummary,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Start)
+            .with_child(
+                Text::new_inline(
+                    format!(
+                        "Replace complete: {} files changed",
+                        summary.changed_file_count()
+                    ),
+                    appearance.ui_font_family(),
+                    14.,
+                )
+                .with_style(Properties::default().weight(Weight::Semibold))
+                .with_color(theme.foreground().into())
+                .finish(),
+            );
+
+        if !summary.skipped.is_empty() {
+            column = column.with_child(
+                Text::new_inline(
+                    format!("{} files skipped", summary.skipped.len()),
+                    appearance.ui_font_family(),
+                    13.,
+                )
+                .with_color(theme.terminal_colors().normal.yellow.into())
+                .finish(),
+            );
+            for skipped in &summary.skipped {
+                column = column.with_child(self.render_replace_result_line(
+                    &skipped.path,
+                    &skipped.reason,
+                    app,
+                ));
+            }
+        }
+
+        if !summary.failed.is_empty() {
+            column = column.with_child(
+                Text::new_inline(
+                    format!("{} files failed", summary.failed.len()),
+                    appearance.ui_font_family(),
+                    13.,
+                )
+                .with_color(theme.terminal_colors().normal.red.into())
+                .finish(),
+            );
+            for failed in &summary.failed {
+                column = column.with_child(self.render_replace_result_line(
+                    &failed.path,
+                    &failed.error,
+                    app,
+                ));
+            }
+        }
+
+        Container::new(column.finish())
+            .with_horizontal_padding(12.)
+            .with_padding_bottom(12.)
+            .finish()
+    }
+
+    fn render_replace_result_line(
+        &self,
+        path: &Path,
+        detail: &str,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        Text::new_inline(
+            format!("{}: {}", path.display(), detail),
+            appearance.ui_font_family(),
+            12.,
+        )
+        .with_color(blended_colors::text_sub(theme, theme.background()).into())
+        .finish()
+    }
+
+    fn render_replace_loading_state(&self, app: &AppContext) -> Box<dyn Element> {
+        self.render_zero_state(
+            Icon::Search,
+            "Generating preview",
+            "No files are changed until the preview is confirmed.",
+            app,
+        )
+    }
+
+    fn render_replace_applying_state(&self, app: &AppContext) -> Box<dyn Element> {
+        self.render_zero_state(
+            Icon::Save,
+            "Applying replace",
+            "Writing included files and verifying previewed spans.",
+            app,
+        )
+    }
+
     fn render_zero_state(
         &self,
         icon: Icon,

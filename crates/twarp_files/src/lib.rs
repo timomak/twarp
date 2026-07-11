@@ -742,6 +742,25 @@ impl FileModel {
         Ok(())
     }
 
+    pub async fn write_content_for_file(
+        file_path: PathBuf,
+        content: String,
+    ) -> Result<(), FileSaveError> {
+        if let Err(err) = Self::ensure_parent_directories(&file_path).await {
+            return Err(FileSaveError::IOError {
+                error: err,
+                path: file_path,
+            });
+        }
+
+        async_fs::write(&file_path, content)
+            .await
+            .map_err(|err| FileSaveError::IOError {
+                error: err,
+                path: file_path,
+            })
+    }
+
     /// Renames a file and also saves its content.
     // TODO: refactor this against [`FileModel::save`].
     pub fn rename_and_save(

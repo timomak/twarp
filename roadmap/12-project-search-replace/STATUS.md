@@ -15,7 +15,7 @@ Independent of 10 in principle, but result-click → open-file becomes useful on
 ## Sub-phases
 
 - [x] **12a — Project-wide search UI.** Search modal or side panel. Query input with case-sensitivity and regex toggles. Results grouped by file with line previews. Click → open file at match in editor pane.
-- [ ] **12b — Replace.** Replace-all flow with per-file diff preview before apply. Confirm + commit changes to disk. Undo via the editor's existing undo system where possible.
+- [x] **12b — Replace.** Replace-all flow with per-file diff preview before apply. Confirm + commit changes to disk. Undo via the editor's existing undo system where possible.
 
 ## What's already built
 

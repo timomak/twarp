@@ -533,6 +533,15 @@ impl GlobalBufferModel {
             .map(|path| path.as_path())
     }
 
+    /// Returns true when `path` is currently tracked by an active editor buffer.
+    pub fn path_has_active_buffer(&mut self, path: &Path, ctx: &mut ModelContext<Self>) -> bool {
+        let Some(file_id) = self.path_to_id.get_by_left(path).copied() else {
+            return false;
+        };
+
+        self.buffer_handle_for_id(file_id, ctx).is_some()
+    }
+
     /// Get the base content version (last known on-disk version) for a tracked buffer.
     pub fn base_version(&self, file_id: FileId) -> Option<ContentVersion> {
         self.buffers
