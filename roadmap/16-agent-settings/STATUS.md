@@ -1,6 +1,6 @@
 # 16 — Agent settings — STATUS
 
-**Phase:** merged
+**Phase:** reopened (increment 2 spec-in-review — 16g/16h empty-input placeholder suggestions, owner-directed 2026-07-12)
 
 **Owner-confirmed decisions (2026-07-01):**
 - Provider scope: **independent per action** (chat / terminal-suggest / reply-suggest each get their own provider+model+effort).
@@ -22,6 +22,13 @@ A new **Agent** settings page (backend selector, local-auth reuse or API key via
 - [x] **16d — Provider abstraction hardening.** Capability model + adapter seam; Claude-only impl.
 - [x] **16e — Chat reply suggestions.** Ghost text in the composer via `SuggestionProvider`.
 - [x] **16f — Terminal AI command suggestions.** Fallback below instant history via `SuggestionProvider`.
+
+### Increment 2 — empty-input placeholder suggestions (owner-directed 2026-07-12)
+
+AI-suggested content in the *placeholder* of an empty input (distinct from 16e/16f ghost-text completions): a suggested prompt in the Claude composer, a suggested command in the terminal input. Shared **Placeholder suggestions** matrix row (provider/model/effort, capability-aware per provider, "Default" = inherit Chat) + two independent toggles, off by default. See PRODUCT §44–§52 / TECH "Increment 2".
+
+- [ ] **16g — Composer placeholder suggestion** + shared config row/toggles.
+- [ ] **16h — Terminal placeholder suggestion** (lowest-priority zero-state hint source).
 
 ## Key constraints carried into the specs
 
