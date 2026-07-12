@@ -397,7 +397,12 @@ where
     }
 
     fn select_action_and_close(&mut self, action: &A, ctx: &mut ViewContext<Self>) {
-        ctx.dispatch_typed_action(action);
+        // Deferred: the receiving view's handler may update this dropdown
+        // (e.g. the Agent settings page refreshes every dropdown after each
+        // action) while this dropdown is still mid-update in the dispatch
+        // chain — a synchronous dispatch here panics with "Circular view
+        // update".
+        ctx.dispatch_typed_action_deferred(action.clone());
         self.close(ctx);
     }
 
