@@ -53,6 +53,29 @@ Build the reply generator on the existing editor ghost-text infra. On a Claude t
 ### 16f — Terminal AI command suggestions
 Add a `SuggestionProvider`-backed impl behind the terminal `Autosuggester` seam as a **fallback** below instant history (§41). On a typing-pause debounce with no history match and the §40 toggle on, generate via the terminal row's config off-thread and `set_autosuggestion` an `AutosuggestionType::Command`; accept via the existing key; dismiss-on-type; unauth/failure/edit-in-flight → nothing; never auto-run (§43). Respect the subscription-is-heavy constraint (resident-CLI provider is debounced-on-pause; API-key provider is the fast path). **Acceptance:** with the toggle on, typing a novel command with no history match yields an AI ghost suggestion after a pause, accepted with the autosuggestion key, never blocking input or running a command; instant history suggestions are unchanged. PRODUCT §40–§43.
 
+## Increment 2 — empty-input placeholder suggestions (16g/16h, owner-directed 2026-07-12)
+
+### What already exists (verified against master 2026-07-12)
+
+- **Placeholder API.** Both inputs are `EditorView`s with a mature placeholder API: `set_placeholder_text` / `set_placeholder_text_with_prefix` / `clear_placeholder_text` (`app/src/editor/view/mod.rs:~3520–3599`). The Claude composer sets its static placeholder once at construction (`claude_code_view.rs:~1053`); the terminal has a single placeholder dispatcher, `set_zero_state_hint_text` (`app/src/terminal/input.rs:~6934`), arbitrating 5+ competing hint sources.
+- **The whole generation stack** from 16e/16f is reusable as-is: `SuggestionProvider`/`SuggestionRequest`/`SuggestionContext` (`app/src/agent_suggestions.rs`), API-key vs resident-CLI backends, `api_key_for_agent`, debounce + monotonic generation-token cancellation (`claude_code_view.rs:~1716`, `input.rs:~9480`).
+- **Matrix-row pattern** is copy-paste: settings triple in `app/src/settings/agent.rs` (mirror `reply_suggest_*`), a `SuggestionAction` variant + dropdowns + `render_suggestion_action_row` + `handle_action` arms in `app/src/settings_view/agent_page.rs`, provider-gated options via `model_items`/`effort_items` (already capability-aware per `CLIAgentAdapter`).
+
+### Net-new
+
+- `placeholder_suggest_{provider,model,effort}` settings + `placeholder_suggest_config()` accessor; `enable_composer_placeholder_suggestions` / `enable_terminal_placeholder_suggestions` toggles.
+- A **Placeholder suggestions** row + two toggles on the Agent page (new `SuggestionAction::Placeholder`).
+- Two new `SuggestionContext` variants (or prompt shapes): `ComposerPlaceholder` (cwd/repo + optional recent exchanges) and `TerminalPlaceholder` (cwd + recent commands — note `TerminalSuggestionContext::new` requires a non-empty prefix and its prompt is prefix-oriented, so 16h needs a new context, not a reuse; `sanitize_suggestion`'s prefix rule is vacuous here).
+- **Async placeholder write-back.** Placeholders today are set synchronously on state changes; the suggestion arrives async. 16g: guard the write with a generation token + `buffer_text.is_empty()` re-check. 16h: register the suggestion as the **lowest-priority source inside `set_zero_state_hint_text`** (store latest suggestion on the input; the dispatcher prefers every existing source over it), so any state change that re-runs the dispatcher naturally re-arbitrates — do NOT bypass the dispatcher with a raw `set_placeholder_text`.
+- **Tab-accept on empty input** (PRODUCT §49/§52): a keybinding arm that, when the buffer is empty and a placeholder suggestion is showing, inserts it as editable text. In the composer this must not collide with `editor_view:insert_autosuggestion` (ghost text outranks placeholder, decision #10 — if an autosuggestion is set, Tab keeps its existing meaning). In the terminal it must not collide with completion/accept-autosuggestion handling on non-empty buffers (empty-buffer-only arm).
+- **Trigger points.** 16g: pane open / turn `Ended` / composer-cleared (share the 16e trigger sites, but fire even with no completed turn). 16h: fresh editable prompt (the same place `set_zero_state_hint_text` runs), debounced; regenerate per prompt, not per keystroke.
+
+### Sub-phases
+
+**16g — Composer placeholder suggestion + shared config.** Settings row + both toggles + Agent-page UI; `ComposerPlaceholder` context + prompt; generation at the trigger points above; render via `set_placeholder_text` with restore-to-static on failure/dismiss; Tab-accept; 16e-wins precedence. **Acceptance:** PRODUCT §44–§50 and smoke test 16g.
+
+**16h — Terminal placeholder suggestion.** `TerminalPlaceholder` context + prompt; lowest-priority source in `set_zero_state_hint_text`; per-prompt debounce; empty-buffer Tab-accept; never auto-run. **Acceptance:** PRODUCT §45–§46, §51–§52 and smoke test 16h.
+
 ## Testing
 
 | PRODUCT § | Test | Kind |
@@ -67,6 +90,9 @@ Add a `SuggestionProvider`-backed impl behind the terminal `Autosuggester` seam 
 | §23–§26 | non-secret config round-trips; corrupt/absent → safe defaults; no key outside keychain; no key in telemetry | unit |
 | §30–§36 | reply ghost-text: appears on Ended+empty+idle; Tab accepts (no send); keystroke clears; unauth/failure → nothing | unit + manual |
 | §40–§43 | terminal AI suggest: fallback below history; debounced; accepted via key; never auto-runs; history layer unchanged | unit + manual |
+| §44–§46 | placeholder row persists independent {provider,model,effort}; "Default" inherits Chat; toggles off by default; unauth/failure → static placeholder | unit |
+| §47–§50 | composer placeholder: shows on empty; 16e ghost text wins; empty-buffer Tab accepts (no send); stale async result dropped | unit + manual |
+| §51–§52 | terminal placeholder: lowest priority in zero-state dispatcher; per-prompt debounce; empty-buffer Tab accepts (never runs); typing dismisses | unit + manual |
 
 **Manual/launch checks** (per `twarp_keybinding_menu_mechanism` — UI/keybinding/spawn/ghost-text changes must be verified in the running app): Settings → Agent; change Chat model/effort/mode and confirm a freshly-typed `claude` pane starts there, overriding the last-cycled pill; save an API key and confirm it lands in Keychain (`security find-generic-password`) and not the TOML; enable reply suggestions and confirm ghost text + Tab-accept + dismiss-on-type; enable terminal suggestions and confirm the debounced fallback behind history.
 
@@ -81,3 +107,9 @@ The Agent **page** ships unflagged (provisional). Each **suggestion consumer** i
 3. **`claude_session_defaults` fate.** 16a makes the Chat row authoritative for new-pane *starting* values; last-used is demoted to pane *restore* only. Confirm we don't drop the table entirely (7m persistence relies on it — check before removing).
 4. **Login probe command per backend.** The exact non-interactive, zero-quota probe for `claude` (and later codex/gemini) must be empirically verified against the pinned CLI before 16b.
 5. **Resident-CLI vs `-p` for `SuggestionProvider`.** A persistent `claude` process (lower per-call latency, mirrors the pane driver) vs a fresh `-p` per suggestion (simpler, higher latency). Default: resident for terminal (high frequency), `-p` acceptable for reply (once per turn).
+
+Increment 2 (16g/16h):
+
+6. **One shared placeholder row vs two.** Default: one shared row (PRODUCT decision #9); split only if the owner wants different models per surface.
+7. **Tab-accept scope.** Default: Tab on empty input accepts (decision #11); alternative is display-only placeholders. Confirm at spec review.
+8. **16g terminal-history context.** Whether the composer-placeholder prompt may also see recent terminal commands from the pane's tab (richer suggestions, more plumbing). Default: no for v1.

@@ -15,6 +15,13 @@ and, because the same page owns the config, feature 16 also **ships the two sugg
 - **Chat reply suggestions** — after a Claude turn, a suggested next message appears as dim ghost text in the composer; Tab/→ accepts it, any other key dismisses it;
 - **Terminal suggestions** — an AI-generated command suggestion appears as ghost text in the terminal input (layered under the existing instant history suggestion), accepted with the existing accept-autosuggestion key.
 
+**Increment 2 (owner-directed 2026-07-12)** adds a third consumer pair — **empty-input placeholder suggestions**:
+
+- **Composer placeholder suggestion (16g)** — when a Claude pane's composer is empty, an AI-suggested prompt (context-aware: cwd/repo/recent conversation) is shown as the composer's *placeholder text* instead of the static "Message Claude Code…"; Tab accepts it into the composer as editable text.
+- **Terminal placeholder suggestion (16h)** — when the terminal input is empty at a fresh prompt, an AI-suggested next command (context-aware: cwd, recent commands) is shown as the input's placeholder/hint text; Tab accepts it into the input. Never auto-runs.
+
+Both read a new **Placeholder suggestions** row in the per-action matrix (its own provider + model + effort, "Default" = inherit Chat), each behind its own enable toggle, off by default.
+
 Phase 1 is **Claude-only for the chat backend** but the schema and UI are **multi-provider and capability-aware** — the selector and per-action rows persist provider-tagged config now; Codex/Gemini are disabled entries lit up later by adapters.
 
 ## Problem
@@ -60,6 +67,12 @@ Owner-confirmed 2026-07-01 unless marked **(provisional)**.
 7. **Both suggestion generators are in scope**, each behind its own enable toggle (§30–§43).
 8. **No feature flag for the page itself** (provisional); each suggestion consumer keeps its own enable toggle.
 
+Increment 2 (2026-07-12), **provisional until this spec PR is reviewed**:
+
+9. **One shared "Placeholder suggestions" matrix row** feeds both 16g and 16h (rather than two more rows) — the matrix stays readable, and the two surfaces want the same fast/cheap model profile. Each surface still has its **own enable toggle**.
+10. **Ghost text outranks placeholder** in the composer: if a 16e reply suggestion is available, it wins (it is Tab-acceptable ghost text over the same empty-composer state); the placeholder suggestion covers the states 16e never fires in (fresh pane, no completed turn).
+11. **Tab accepts a placeholder suggestion** into the input as editable text (never auto-send / auto-run); any typing replaces it with normal input behavior and the placeholder machinery gets out of the way.
+
 ## Behavior
 
 Grouped by area, annotated with the delivering sub-phase (16a–16f, defined in TECH.md).
@@ -104,6 +117,7 @@ Grouped by area, annotated with the delivering sub-phase (16a–16f, defined in 
 
 *(§27–§29 reserved.)*
 
+
 ### Chat reply suggestions (ghost text) — 16e
 
 30. An **enable toggle** ("Suggest a reply after each response") on the Agent page gates this feature; **off by default**.
@@ -121,6 +135,24 @@ Grouped by area, annotated with the delivering sub-phase (16a–16f, defined in 
 42. When enabled and history is empty, after a **typing-pause debounce**, twarp generates a command suggestion via the **Terminal suggestions** matrix row's provider/model/effort and renders it as ghost text using the terminal's existing autosuggestion surface.
 43. The suggestion is accepted with the **existing accept-autosuggestion key** and behaves like any terminal autosuggestion (partial-accept, dismiss-on-type). Generation is **off-thread, debounced, best-effort**: unauth/failure/edit-in-flight → no suggestion, never a block. It **never auto-runs** a command.
 
+### Placeholder suggestions — shared config — 16g/16h
+
+44. The **Models by action** section gains a fourth row: **Placeholder suggestions**, with its own `{provider, model, effort}`, capability-aware per provider exactly like the other rows (§5, §19, §21–§22), and **"Default" = inherit the Chat backend** (§20). Provider-dependent options (model list, effort levels) come from that provider's capability model — a provider without an effort concept shows no effort control.
+45. Two independent **enable toggles** gate the consumers: "Suggest a prompt in the empty Claude composer" (16g) and "Suggest a command in the empty terminal input" (16h). Both **off by default**.
+46. Generation is **off-thread, debounced, best-effort** (feature 07 §26/§30 rule): unauthenticated row, provider failure, or the input becoming non-empty mid-flight → the static default placeholder stays; never an error, never a hang, never a block on input.
+
+### Composer placeholder suggestion — 16g
+
+47. When the 16g toggle is on and a Claude pane's composer is **empty**, twarp generates one suggested prompt (from cwd/repo context and, if present, the recent conversation) and renders it as the composer's **placeholder text**, visually distinct from typed text (existing placeholder styling). Until/unless a suggestion arrives, the static "Message Claude Code…" placeholder shows as today.
+48. **Precedence:** a 16e reply ghost-text suggestion, when shown, **replaces** the placeholder suggestion (decision #10). Typing always wins over both.
+49. **Tab** with an empty composer accepts the placeholder suggestion into the composer as editable text; the user still presses Enter to send — never auto-sent. Starting to type instead simply begins normal input (the placeholder disappears as placeholders do).
+50. A new suggestion is generated at natural boundaries only — pane open, turn end, composer cleared — not continuously; a stale in-flight result for a now-non-empty composer is dropped.
+
+### Terminal placeholder suggestion — 16h
+
+51. When the 16h toggle is on and the terminal input is **empty at an editable prompt**, twarp generates one suggested next command (from cwd and recent command history) and renders it via the terminal's **zero-state hint/placeholder** surface, slotted at the **lowest priority** among existing placeholder sources (CLI-agent hint, suggestions-mode placeholder, slash-command prefixes all outrank it); when no suggestion is available the existing default hint shows unchanged.
+52. **Tab** with an empty input accepts the suggested command into the input as editable text; it is **never auto-run** — the user still presses Enter. Typing anything dismisses it (normal placeholder behavior) and the existing instant-history/16f ghost-text pipeline takes over from the first character. Regeneration happens per fresh prompt (debounced), not per keystroke.
+
 ## Constraints the user should know (surfaced, not handled)
 
 - **Subscription generation is the heavy path.** A matrix row whose provider is Claude via the *subscription* must generate through the local `claude` CLI (a resident/`-p` invocation), which is slow and quota-bearing — so subscription-backed suggestions are **debounced-on-pause**, not instant, and terminal per-keystroke suggestion via subscription is impractical. An **API-key** provider (fast completion model) is the low-latency path and the recommended default for suggestion rows. This tradeoff is why the matrix allows a different provider per action.
@@ -129,6 +161,7 @@ Grouped by area, annotated with the delivering sub-phase (16a–16f, defined in 
 ## Dependencies & sequencing
 
 - Recommended order within 16: **16a → 16b → 16c** (config + auth land first, immediately useful for chat) → **16d** (provider hardening) → **16e** (reply ghost-text) → **16f** (terminal suggestions). The generators depend on the matrix + auth being in place.
+- Increment 2: **16g → 16h** (both depend on the shipped 16a–16d config/auth/provider stack and reuse the 16e/16f `SuggestionProvider` seam). The shared matrix row + toggles land with 16g; 16h adds only the terminal consumer.
 - **Codex/Gemini adapters** remain a Phase-2 follow-on; this feature only requires the schema + disabled selector entries.
 
 ## Smoke test
@@ -170,3 +203,15 @@ Steps to validate against a built twarp binary. Each sub-phase's PR is gated on 
 1. The "AI command suggestions in the terminal" toggle exists on the Agent page and is **off by default**.
 2. Enable it, type a prefix with no history match in a terminal, pause: after the debounce, a ghost-text command suggestion appears and is accepted with the existing accept-autosuggestion key; it never auto-runs.
 3. Type a prefix that **does** match history: the instant history suggestion appears as before (the AI layer is only a fallback).
+
+### 16g — Composer placeholder suggestion
+
+1. The Agent page shows a **Placeholder suggestions** matrix row (provider/model/effort, "Default" inherits Chat; options change with the selected provider) and a "Suggest a prompt in the empty Claude composer" toggle, **off by default**; with it off, the composer placeholder is the static "Message Claude Code…" as before.
+2. Enable it, open a fresh Claude pane: after a moment the placeholder becomes a context-aware suggested prompt; **Tab** fills it into the composer as editable text (not sent); typing instead just types normally.
+3. Complete a turn with 16e reply suggestions also enabled: the reply ghost text wins; the placeholder suggestion does not fight it.
+
+### 16h — Terminal placeholder suggestion
+
+1. The "Suggest a command in the empty terminal input" toggle exists, **off by default**; with it off, the terminal zero-state hint is unchanged.
+2. Enable it, land on a fresh empty prompt: after the debounce the hint becomes a suggested command; **Tab** fills it into the input (never runs it); typing a character dismisses it and normal history/AI ghost-text suggestions behave as before.
+3. Surfaces that already own the placeholder (e.g. suggestions-mode, slash-command prefix) still take precedence when active.
