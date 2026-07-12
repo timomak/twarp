@@ -37,8 +37,8 @@
 #![allow(clippy::unnecessary_mut_passed)]
 #![allow(clippy::result_unit_err)]
 
-mod alloc;
 mod agent_suggestions;
+mod alloc;
 mod antivirus;
 #[cfg(target_os = "macos")]
 mod app_menus;
@@ -135,7 +135,9 @@ mod user_config;
 pub mod util;
 mod view_components;
 mod vim_registers;
-// twarp: 2c-f — `voice` module deleted along with the `voice_input` crate.
+// twarp 17: net-new voice module (Claude pane voice chat). Unrelated to the
+// upstream `voice_input` crate deleted in 2c-f.
+mod voice;
 mod voltron;
 mod warp_managed_paths_watcher;
 #[cfg(target_family = "wasm")]
@@ -732,7 +734,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         web_intent_parser::set_context_flags_from_current_url();
     }
 
-
     #[cfg(all(
         feature = "release_bundle",
         any(target_os = "linux", target_os = "freebsd")
@@ -943,12 +944,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         ctx.add_singleton_model(move |ctx| {
             plugin::PluginHost::new(ctx).expect("Could not instantiate PluginHost")
         });
-        let app_state = initialize_app(
-            &launch_mode,
-            timer,
-            startup_toml_parse_error,
-            ctx,
-        );
+        let app_state = initialize_app(&launch_mode, timer, startup_toml_parse_error, ctx);
 
         if ImprovedPaletteSearch::improved_search_enabled(ctx) {
             FeatureFlag::UseTantivySearch.set_enabled(true);
@@ -1149,7 +1145,6 @@ fn initialize_app(
     });
 
     ctx.add_singleton_model(AntivirusInfo::new);
-
 
     ctx.set_fallback_font_source_provider(|url| ::asset_cache::url_source(url));
 

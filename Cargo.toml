@@ -125,6 +125,7 @@ cfg-if = "1.0.0"
 chrono = { version = "0.4.38", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
 cocoa = "=0.26.0"
+cpal = "0.16"
 ctrlc = "3.4.7"
 crc = "3.4.0"
 cynic = { version = "3" }
@@ -220,6 +221,7 @@ reqwest = { version = "0.12.28", default-features = false, features = [
   "http2",
   "json",
   "macos-system-configuration",
+  "multipart",
   "rustls-tls-native-roots-no-provider",
   "stream",
   "system-proxy",

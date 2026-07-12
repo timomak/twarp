@@ -481,7 +481,6 @@ impl<T: Action + Clone> SearchMixer<T> {
                     self.results = late_results;
                     self.results.append(&mut existing_results);
 
-
                     if matches!(self.dedupe_strategy, DedupeStrategy::HighestScore) {
                         self.results = dedupe_score(std::mem::take(&mut self.results));
                     }

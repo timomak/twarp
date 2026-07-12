@@ -168,9 +168,8 @@ struct PreferenceToCreate {
 }
 
 lazy_static! {
-    static ref LEGACY_CLOUD_SETTINGS_STORAGE_KEYS: Vec<&'static str> = vec![
-        super::privacy::CLOUD_CONVERSATION_STORAGE_ENABLED_DEFAULTS_KEY,
-    ];
+    static ref LEGACY_CLOUD_SETTINGS_STORAGE_KEYS: Vec<&'static str> =
+        vec![super::privacy::CLOUD_CONVERSATION_STORAGE_ENABLED_DEFAULTS_KEY,];
 }
 
 const PREFERENCES_DEBOUNCE_PERIOD: Duration = Duration::from_millis(500);

@@ -32,6 +32,7 @@ use crate::terminal::TerminalView;
 use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::icon_button_with_color;
 use crate::ui_components::icons;
+use crate::util::bindings::keybinding_name_to_display_string;
 use settings::Setting as _;
 use twarp_core::context_flag::ContextFlag;
 use twarpui::elements::{
@@ -45,7 +46,6 @@ use twarpui::ui_components::components::UiComponent;
 use twarpui::ui_components::components::UiComponentStyles;
 use twarpui::WeakModelHandle;
 use twarpui::{AppContext, Element, ModelHandle, SingletonEntity, TypedActionView, ViewContext};
-use crate::util::bindings::keybinding_name_to_display_string;
 
 impl TerminalView {
     /// Returns a reference to the focus handle if one has been set.

@@ -8,15 +8,15 @@ use crate::editor::InteractionState;
 use crate::input::Vector2F;
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::pane::view::header::components::{
-    CenteredHeaderEdgeWidth, render_pane_header_buttons, render_pane_header_title_text,
-    render_three_column_header,
+    render_pane_header_buttons, render_pane_header_title_text, render_three_column_header,
+    CenteredHeaderEdgeWidth,
 };
 use crate::pane_group::pane::view::header::render_pane_header_draggable;
 use crate::pane_group::{CodePane, PaneConfigurationEvent, PaneDragDropLocation};
 use crate::quit_warning::UnsavedStateSummary;
 use crate::server::telemetry::CodeContextDestination;
-use crate::workspace::TabBarDropTargetData;
 use crate::workspace::util::get_context_target_terminal_view;
+use crate::workspace::TabBarDropTargetData;
 use crate::{code::EditorTabBarDropTargetData, pane_group::pane::ActionOrigin};
 use lsp::LspManagerModel;
 use pathfinder_color::ColorU;
@@ -38,8 +38,6 @@ use twarpui::text_layout::ClipConfig;
 #[cfg(feature = "local_fs")]
 use twarpui::clipboard::ClipboardContent;
 use twarpui::{
-    AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
-    ViewHandle, WindowId,
     elements::{
         AcceptedByDropTarget, Align, Border, ChildAnchor, ChildView, Clipped, ConstrainedBox,
         Container, CornerRadius, CrossAxisAlignment, Draggable, DraggableState, DropTarget, Empty,
@@ -51,12 +49,14 @@ use twarpui::{
     id,
     keymap::EditableBinding,
     ui_components::{button::ButtonVariant, components::UiComponent},
+    AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
+    ViewHandle, WindowId,
 };
 
 use crate::{
     menu::{MenuItem, MenuItemFields},
-    notebooks::file::{MarkdownDisplayMode, is_markdown_file},
-    search::{ItemHighlightState, files::icon::icon_from_file_path},
+    notebooks::file::{is_markdown_file, MarkdownDisplayMode},
+    search::{files::icon::icon_from_file_path, ItemHighlightState},
     tab::TAB_BAR_BORDER_HEIGHT,
     ui_components::{blended_colors, buttons::icon_button},
     view_components::{DismissibleToast, MarkdownToggleEvent, MarkdownToggleView},
@@ -64,8 +64,8 @@ use crate::{
 };
 
 use crate::pane_group::{
+    pane::{view, PaneHeaderAction},
     BackingView, PaneConfiguration, PaneEvent,
-    pane::{PaneHeaderAction, view},
 };
 
 use super::{
@@ -75,7 +75,7 @@ use super::{
     local_code_editor::{LocalCodeEditorEvent, LocalCodeEditorView},
 };
 
-use crate::{TelemetryEvent, send_telemetry_from_ctx};
+use crate::{send_telemetry_from_ctx, TelemetryEvent};
 
 type SaveCallback =
     Box<dyn FnOnce(SaveOutcome, &mut CodeView, &mut ViewContext<CodeView>) + Send + Sync + 'static>;

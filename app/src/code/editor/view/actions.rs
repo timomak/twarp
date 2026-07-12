@@ -30,12 +30,12 @@ use twarp_editor::{
 };
 use twarp_util::user_input::UserInput;
 use twarpui::{
-    AppContext, TypedActionView, ViewContext, WeakViewHandle,
     actions::StandardAction,
     elements::Axis,
     event::ModifiersState,
     keymap::{EditableBinding, FixedBinding, Keystroke, PerPlatformKeystroke},
     units::Pixels,
+    AppContext, TypedActionView, ViewContext, WeakViewHandle,
 };
 
 /// Limit the keybindings that conflict with the Agent Mode embedded editor.

@@ -248,4 +248,3 @@ fn summarize_ai_conversation(prompt: &Option<String>, ctx: &mut AppContext) {
         },
     );
 }
-

@@ -73,7 +73,7 @@ use twarpui::clipboard::ClipboardContent;
 use twarpui::elements::shimmering_text::{
     ShimmerConfig, ShimmeringTextElement, ShimmeringTextStateHandle,
 };
-use twarpui::platform::FilePickerConfiguration;
+use twarpui::platform::{FilePickerConfiguration, MicrophoneAccessState};
 use twarpui::r#async::Timer;
 use twarpui::ui_components::button::ButtonVariant;
 use twarpui::ui_components::slider::SliderStateHandle;
@@ -462,6 +462,12 @@ pub enum ClaudeCodeViewAction {
     /// (feature 13). Only one server is expanded at a time; re-dispatching the
     /// open server collapses it.
     ToggleMcpServer(String),
+    /// twarp 17: the composer mic button (PRODUCT 17 §1–§11). Idle → start
+    /// recording; recording → stop and transcribe; transcribing → no-op.
+    ToggleVoiceRecording,
+    /// twarp 17: the composer speaker button (PRODUCT 17 §12–§14) — toggles
+    /// spoken replies for this pane; while speaking it also stops playback.
+    ToggleSpeakReplies,
 }
 
 /// Actions dispatched by elements this view renders inside its **pane
@@ -956,6 +962,36 @@ pub struct ClaudeCodeView {
     /// revision moves on.
     background_scripts_memo:
         std::cell::RefCell<Option<(u64, std::rc::Rc<Vec<background_scripts::BackgroundScript>>)>>,
+    /// twarp 17: the live mic recording, when this pane is recording
+    /// (PRODUCT 17 §4). `Some` iff this pane holds the app-wide recording slot.
+    voice_recorder: Option<crate::voice::capture::Recorder>,
+    /// twarp 17: a transcription request is in flight (PRODUCT 17 §5) — the mic
+    /// button shows a pending state and further clicks are no-ops.
+    voice_transcribing: bool,
+    /// Guards stale transcription results after cancel / pane churn.
+    voice_generation: u64,
+    /// twarp 17: whether the composer was empty when recording started — the
+    /// PRODUCT 17 §7 auto-send eligibility bit.
+    voice_composer_was_empty: bool,
+    /// twarp 17: one-line voice status / error under the composer controls
+    /// (PRODUCT 17 §2–§3, §8, §17). Cleared when the next voice action starts.
+    voice_status: Option<String>,
+    /// twarp 17: speak replies aloud (PRODUCT 17 §12). Per-pane, off by
+    /// default, not persisted.
+    speak_replies: bool,
+    /// twarp 17: the playback thread, spawned lazily on first speech and kept
+    /// for the pane's lifetime (dropping it silences and tears down the
+    /// output stream — PRODUCT 17 §18's close-pane stop for free).
+    voice_player: Option<crate::voice::playback::Player>,
+    /// Guards stale TTS chunks after a newer turn started speaking (§15) or
+    /// the toggle flipped off (§14).
+    voice_tts_generation: u64,
+    /// Mouse state for the composer mic button.
+    mic_button_mouse: MouseStateHandle,
+    /// Pulse state for the mic glyph while recording (PRODUCT 17 §4).
+    mic_pulse: PulsingIconStateHandle,
+    /// Mouse state for the composer speaker button.
+    speaker_button_mouse: MouseStateHandle,
 }
 
 impl ClaudeCodeView {
@@ -1161,6 +1197,17 @@ impl ClaudeCodeView {
             computer_control: std::cell::RefCell::new(ComputerControlCoordinator::default()),
             computer_control_button_mouse: MouseStateHandle::default(),
             background_scripts_memo: std::cell::RefCell::new(None),
+            voice_recorder: None,
+            voice_transcribing: false,
+            voice_generation: 0,
+            voice_composer_was_empty: false,
+            voice_status: None,
+            speak_replies: false,
+            voice_player: None,
+            voice_tts_generation: 0,
+            mic_button_mouse: MouseStateHandle::default(),
+            mic_pulse: PulsingIconStateHandle::default(),
+            speaker_button_mouse: MouseStateHandle::default(),
         };
 
         // PRODUCT §4: capture the login-shell PATH up front so availability
@@ -1493,6 +1540,13 @@ impl ClaudeCodeView {
                 }
             }
             EditorEvent::Escape => {
+                // twarp 17 (PRODUCT 17 §6): Esc while recording cancels the
+                // recording — audio discarded, no request — and consumes the
+                // keypress; the composer behaviors below keep Esc otherwise.
+                if self.voice_recorder.is_some() {
+                    self.cancel_voice_recording(ctx);
+                    return;
+                }
                 self.clear_reply_suggestion(ctx);
                 if self.suggestion_query.take().is_some() {
                     self.suggestions.clear();
@@ -3158,6 +3212,9 @@ impl ClaudeCodeView {
                         body,
                         ctx,
                     );
+                    // twarp 17 (PRODUCT 17 §13/§18): speak the completed turn's
+                    // reply. Only this branch — interrupted turns stay silent.
+                    self.maybe_speak_reply(ctx);
                 }
                 claude_code::EndReason::Error(message) => {
                     self.tab_attention = Some(false);
@@ -3338,6 +3395,12 @@ impl ClaudeCodeView {
         }
         if self.streaming {
             return;
+        }
+        // twarp 17 (PRODUCT 17 §9): switching to Raw CLI cancels a live
+        // recording silently and stops any spoken reply.
+        self.cancel_voice_recording(ctx);
+        if let Some(player) = &self.voice_player {
+            player.stop();
         }
         self.detach_live_session();
         ctx.emit(ClaudeCodeViewEvent::SwapToRawCli {
@@ -3709,6 +3772,296 @@ impl ClaudeCodeView {
                 if me.streaming && me.turn_started == Some(started) {
                     ctx.notify();
                     me.schedule_elapsed_tick(started, ctx);
+                }
+            },
+        );
+    }
+
+    // ---- twarp 17: voice chat (mic → transcript, spoken replies) ----------
+
+    /// Read a voice API key from the OS keychain (the `api_key_for_agent`
+    /// pattern; keys never live in settings — PRODUCT 17 §24).
+    fn voice_api_key(&self, storage_key: &str, ctx: &AppContext) -> Option<String> {
+        secure_storage::Model::handle(ctx)
+            .as_ref(ctx)
+            .read_value(storage_key)
+            .ok()
+            .map(|key| key.trim().to_owned())
+            .filter(|key| !key.is_empty())
+    }
+
+    /// The mic button (PRODUCT 17 §2–§5, §10): idle → start recording,
+    /// recording → stop + transcribe, transcribing → no-op.
+    fn toggle_voice_recording(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.voice_transcribing {
+            return; // §5: a second click during transcription is a no-op.
+        }
+        if self.voice_recorder.is_some() {
+            self.finish_voice_recording(ctx);
+            return;
+        }
+
+        self.voice_status = None;
+        // §2: unconfigured → point at the settings page, don't record.
+        if AgentSettings::as_ref(ctx).voice_stt_config().is_none() {
+            self.voice_status = Some("Configure voice in Settings → Agent".to_owned());
+            ctx.notify();
+            return;
+        }
+        // §3: denied → System Settings pointer. NotDetermined proceeds — the
+        // first stream build triggers the TCC prompt.
+        match ctx.microphone_access_state() {
+            MicrophoneAccessState::Denied | MicrophoneAccessState::Restricted => {
+                self.voice_status = Some(
+                    "Microphone access is off — enable twarp in System Settings → Privacy & Security → Microphone".to_owned(),
+                );
+                ctx.notify();
+                return;
+            }
+            MicrophoneAccessState::NotDetermined | MicrophoneAccessState::Authorized => {}
+        }
+        // §10: one recording across the app.
+        if !crate::voice::try_begin_recording() {
+            self.voice_status = Some("Already recording in another pane".to_owned());
+            ctx.notify();
+            return;
+        }
+        match crate::voice::capture::Recorder::start() {
+            Ok(recorder) => {
+                self.voice_composer_was_empty = self
+                    .input_editor
+                    .read(ctx, |editor, ctx| editor.buffer_text(ctx).trim().is_empty());
+                self.voice_recorder = Some(recorder);
+                self.schedule_voice_tick(ctx);
+            }
+            Err(error) => {
+                crate::voice::end_recording();
+                self.voice_status = Some(error.to_string());
+            }
+        }
+        ctx.notify();
+    }
+
+    /// §6: discard the recording without a request (Esc, pane teardown, Raw
+    /// CLI switch).
+    fn cancel_voice_recording(&mut self, ctx: &mut ViewContext<Self>) {
+        if let Some(recorder) = self.voice_recorder.take() {
+            recorder.cancel();
+            crate::voice::end_recording();
+            ctx.notify();
+        }
+    }
+
+    /// §5/§7–§8: stop capturing, upload, and land the transcript in the
+    /// composer (or surface the error, leaving the draft untouched).
+    fn finish_voice_recording(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(recorder) = self.voice_recorder.take() else {
+            return;
+        };
+        crate::voice::end_recording();
+        let wav = match recorder.stop() {
+            Ok(wav) => wav,
+            Err(error) => {
+                self.voice_status = Some(error.to_string());
+                ctx.notify();
+                return;
+            }
+        };
+        let Some(mut config) = AgentSettings::as_ref(ctx).voice_stt_config() else {
+            self.voice_status = Some("Configure voice in Settings → Agent".to_owned());
+            ctx.notify();
+            return;
+        };
+        match self.voice_api_key(app_settings::VOICE_STT_API_KEY_STORAGE_KEY, ctx) {
+            Some(key) => config.api_key = key,
+            None => {
+                self.voice_status = Some("Configure voice in Settings → Agent".to_owned());
+                ctx.notify();
+                return;
+            }
+        }
+
+        self.voice_transcribing = true;
+        self.voice_generation = self.voice_generation.wrapping_add(1);
+        let generation = self.voice_generation;
+        ctx.spawn(
+            crate::voice::stt::transcribe(config, wav),
+            move |view, result, ctx| {
+                if view.voice_generation != generation {
+                    return;
+                }
+                view.voice_transcribing = false;
+                match result {
+                    Ok(text) => view.insert_voice_transcript(text, ctx),
+                    Err(error) => view.voice_status = Some(error.to_string()),
+                }
+                ctx.notify();
+            },
+        );
+        ctx.notify();
+    }
+
+    /// §7: append the transcript to the draft (separating space when needed)
+    /// and keep focus in the composer; auto-send only when enabled and the
+    /// composer was — and still is — empty.
+    fn insert_voice_transcript(&mut self, text: String, ctx: &mut ViewContext<Self>) {
+        let mut was_empty = false;
+        self.input_editor.update(ctx, |editor, ctx| {
+            let existing = editor.buffer_text(ctx);
+            was_empty = existing.trim().is_empty();
+            let combined = if was_empty {
+                text.clone()
+            } else if existing.ends_with(char::is_whitespace) {
+                format!("{existing}{text}")
+            } else {
+                format!("{existing} {text}")
+            };
+            editor.set_buffer_text(&combined, ctx);
+        });
+        self.refresh_composer_intelligence(ctx);
+        let auto_send = *AgentSettings::as_ref(ctx).voice_auto_send.value();
+        if auto_send && self.voice_composer_was_empty && was_empty {
+            self.submit(ctx);
+        }
+    }
+
+    /// The speaker button (PRODUCT 17 §12, §14): off → on (when configured);
+    /// on → stop playback and off.
+    fn toggle_speak_replies(&mut self, ctx: &mut ViewContext<Self>) {
+        self.voice_status = None;
+        if self.speak_replies {
+            self.speak_replies = false;
+            self.voice_tts_generation = self.voice_tts_generation.wrapping_add(1);
+            if let Some(player) = &self.voice_player {
+                player.stop();
+            }
+        } else if AgentSettings::as_ref(ctx).voice_tts_config().is_none() {
+            // §12: unconfigured → same settings pointer as the mic.
+            self.voice_status = Some("Configure voice in Settings → Agent".to_owned());
+        } else {
+            self.speak_replies = true;
+        }
+        ctx.notify();
+    }
+
+    /// §13–§16: speak the just-completed turn's prose. Chunks synthesize
+    /// sequentially; the first replaces any previous utterance (§15).
+    fn maybe_speak_reply(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.speak_replies {
+            return;
+        }
+        let Some(text) = self.last_assistant_text() else {
+            return;
+        };
+        let prose = crate::voice::prose::markdown_to_prose(&text);
+        if prose.is_empty() {
+            return; // §13: a code-only reply has nothing to speak.
+        }
+        let Some(mut config) = AgentSettings::as_ref(ctx).voice_tts_config() else {
+            // Keys were removed while the toggle was on (§22).
+            self.voice_status = Some("Configure voice in Settings → Agent".to_owned());
+            ctx.notify();
+            return;
+        };
+        let key_account = AgentSettings::as_ref(ctx).voice_tts_key_storage_key();
+        match self.voice_api_key(key_account, ctx) {
+            Some(key) => config.api_key = key,
+            None => {
+                self.voice_status = Some("Configure voice in Settings → Agent".to_owned());
+                ctx.notify();
+                return;
+            }
+        }
+        if self.voice_player.is_none() {
+            match crate::voice::playback::Player::start() {
+                Ok(player) => self.voice_player = Some(player),
+                Err(error) => {
+                    self.voice_status = Some(error.to_string());
+                    ctx.notify();
+                    return;
+                }
+            }
+        }
+
+        let chunks = crate::voice::tts::chunk_text(&prose, crate::voice::tts::TTS_INPUT_CAP);
+        self.voice_tts_generation = self.voice_tts_generation.wrapping_add(1);
+        let generation = self.voice_tts_generation;
+        self.spawn_tts_chunk(config, chunks, 0, generation, ctx);
+        self.schedule_voice_tick(ctx);
+    }
+
+    /// Synthesize chunk `index` and queue it, then recurse for the next —
+    /// sequential so chunks arrive in order (§16); a failed chunk surfaces
+    /// once and stops the chain (§17).
+    fn spawn_tts_chunk(
+        &self,
+        config: crate::voice::config::VoiceTtsConfig,
+        chunks: Vec<String>,
+        index: usize,
+        generation: u64,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(text) = chunks.get(index).cloned() else {
+            return;
+        };
+        let request_config = config.clone();
+        ctx.spawn(
+            async move { crate::voice::tts::synthesize(&request_config, &text).await },
+            move |view, result, ctx| {
+                // A newer utterance (§15) or the toggle flipping off (§14)
+                // obsoletes this chunk.
+                if view.voice_tts_generation != generation || !view.speak_replies {
+                    return;
+                }
+                match result {
+                    Ok(pcm) => {
+                        if let Some(player) = &view.voice_player {
+                            if index == 0 {
+                                player.play(pcm, crate::voice::tts::TTS_SAMPLE_RATE);
+                            } else {
+                                player.append(pcm, crate::voice::tts::TTS_SAMPLE_RATE);
+                            }
+                        }
+                        view.spawn_tts_chunk(config, chunks, index + 1, generation, ctx);
+                        view.schedule_voice_tick(ctx);
+                        ctx.notify();
+                    }
+                    Err(error) => {
+                        view.voice_status = Some(error.to_string());
+                        ctx.notify();
+                    }
+                }
+            },
+        );
+    }
+
+    /// The voice beat (the `schedule_elapsed_tick` pattern): while recording
+    /// it repaints the elapsed label and enforces the §9 cap / §11 device-loss
+    /// stop; while speaking it repaints so the speaker button's active state
+    /// clears when playback drains. Dies on its own once both are idle.
+    fn schedule_voice_tick(&self, ctx: &mut ViewContext<Self>) {
+        ctx.spawn(
+            async move {
+                Timer::after(Duration::from_millis(250)).await;
+            },
+            move |me, _, ctx| {
+                let mut rearm = false;
+                if let Some(recorder) = &me.voice_recorder {
+                    if recorder.hit_cap() || recorder.stream_ended() {
+                        // §9/§11: stop-and-transcribe best effort.
+                        me.finish_voice_recording(ctx);
+                    } else {
+                        rearm = true;
+                    }
+                }
+                if let Some(player) = &me.voice_player {
+                    if player.is_active() {
+                        rearm = true;
+                    }
+                }
+                ctx.notify();
+                if rearm {
+                    me.schedule_voice_tick(ctx);
                 }
             },
         );
@@ -6420,6 +6773,106 @@ impl ClaudeCodeView {
     /// message input above a controls row — muted context pills on the left, the
     /// Send / Stop action on the right — pinned to the bottom of the reading
     /// column, Claude-app style. Mirrors `GlobalSearchView`'s bordered query box.
+    /// twarp 17 (PRODUCT 17 §1, §4–§5): the composer mic button, right of the
+    /// paperclip. Idle → muted glyph; recording → pulsing accent glyph plus an
+    /// m:ss elapsed label; transcribing → muted glyph plus an ellipsis label.
+    fn render_mic_button(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let accent = self.render_accent.get();
+        let recording = self.voice_recorder.is_some();
+
+        let glyph: Box<dyn Element> = if recording {
+            PulsingIcon::new(
+                crate::ui_components::icons::Icon::Microphone.into(),
+                accent,
+                self.mic_pulse.clone(),
+            )
+            .finish()
+        } else {
+            Icon::new(crate::ui_components::icons::Icon::Microphone.into(), muted).finish()
+        };
+        let button = Hoverable::new(self.mic_button_mouse.clone(), {
+            move |_| {
+                ConstrainedBox::new(glyph)
+                    .with_width(16.)
+                    .with_height(16.)
+                    .finish()
+            }
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleVoiceRecording);
+        })
+        .finish();
+
+        let label = if let Some(recorder) = &self.voice_recorder {
+            let elapsed = recorder.elapsed().as_secs();
+            Some(format!("{}:{:02}", elapsed / 60, elapsed % 60))
+        } else if self.voice_transcribing {
+            Some("…".to_owned())
+        } else {
+            None
+        };
+        let Some(label) = label else {
+            return button;
+        };
+        let label_color = if recording { accent } else { muted };
+        let label = appearance
+            .ui_builder()
+            .span(label)
+            .with_style(UiComponentStyles {
+                font_color: Some(label_color),
+                font_size: Some(12.),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+        Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(4.)
+            .with_child(button)
+            .with_child(label)
+            .finish()
+    }
+
+    /// twarp 17 (PRODUCT 17 §12, §14): the speaker toggle right of the mic —
+    /// accent while on, muted while off.
+    fn render_speaker_button(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let speaking = self
+            .voice_player
+            .as_ref()
+            .is_some_and(|player| player.is_active());
+        let color = if self.speak_replies {
+            self.render_accent.get()
+        } else {
+            muted
+        };
+        let glyph: Box<dyn Element> = if speaking && self.speak_replies {
+            PulsingIcon::new(
+                crate::ui_components::icons::Icon::Speaker.into(),
+                color,
+                self.mic_pulse.clone(),
+            )
+            .finish()
+        } else {
+            Icon::new(crate::ui_components::icons::Icon::Speaker.into(), color).finish()
+        };
+        Hoverable::new(self.speaker_button_mouse.clone(), move |_| {
+            ConstrainedBox::new(glyph)
+                .with_width(16.)
+                .with_height(16.)
+                .finish()
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleSpeakReplies);
+        })
+        .finish()
+    }
+
     fn render_input(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
         let muted = theme.nonactive_ui_text_color().into_solid();
@@ -6523,6 +6976,9 @@ impl ClaudeCodeView {
                 .with_spacing(8.)
                 .with_child(self.render_permission_control(appearance))
                 .with_child(make_attach())
+                // twarp 17 (PRODUCT 17 §1, §12): voice input + spoken replies.
+                .with_child(self.render_mic_button(appearance))
+                .with_child(self.render_speaker_button(appearance))
                 .finish();
 
             let mut right = Flex::row()
@@ -6671,6 +7127,22 @@ impl ClaudeCodeView {
         }
         composer_column.add_child(card);
         composer_column.add_child(controls);
+        // twarp 17 (PRODUCT 17 §2–§3, §8, §17): one-line voice status / error
+        // under the controls; non-blocking, cleared by the next voice action.
+        if let Some(status) = &self.voice_status {
+            composer_column.add_child(
+                appearance
+                    .ui_builder()
+                    .span(status.clone())
+                    .with_style(UiComponentStyles {
+                        font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+                        font_size: Some(12.),
+                        ..Default::default()
+                    })
+                    .build()
+                    .finish(),
+            );
+        }
 
         let composer = Container::new(composer_column.finish())
             .with_padding_top(6.)
@@ -7110,6 +7582,8 @@ impl TypedActionView for ClaudeCodeView {
                 }
             }
             ClaudeCodeViewAction::AttachFromPicker => self.open_attach_picker(ctx),
+            ClaudeCodeViewAction::ToggleVoiceRecording => self.toggle_voice_recording(ctx),
+            ClaudeCodeViewAction::ToggleSpeakReplies => self.toggle_speak_replies(ctx),
             ClaudeCodeViewAction::RemoveDirectAttachment(index) => {
                 if *index < self.direct_attachments.len() {
                     self.direct_attachments.remove(*index);

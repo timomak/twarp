@@ -157,6 +157,8 @@ pub enum Icon {
     DashedRectangle,
     CornersOfBox,
     Microphone,
+    // twarp 17: voice-chat speaker toggle in the Claude pane composer.
+    Speaker,
     Stop,
     StopFilled,
     MinusCircle,
@@ -338,6 +340,7 @@ impl From<Icon> for &'static str {
             Icon::ListCollapsed => "bundled/svg/chevron-right-2.svg",
             Icon::ListOpen => "bundled/svg/chevron-down-2.svg",
             Icon::Microphone => "bundled/svg/microphone.svg",
+            Icon::Speaker => "bundled/svg/speaker.svg",
             Icon::Stop => "bundled/svg/stop.svg",
             Icon::StopFilled => "bundled/svg/stop-filled.svg",
             Icon::AddTeammates => "bundled/svg/user-plus-01.svg",

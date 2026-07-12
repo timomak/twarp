@@ -1,7 +1,6 @@
 // twarp: 2c-d — AI ServerConversationToken deleted; use stub.
 use crate::app_state::SerializedBlockListItem;
 use crate::app_state::ServerConversationToken;
-use twarp_core::safe_error;
 use crate::appearance::Appearance;
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::AuthStateProvider;
@@ -19,6 +18,7 @@ use crate::settings::AISettings;
 use onboarding::{
     AgentOnboardingEvent, AgentOnboardingView, OnboardingIntention, SelectedSettings,
 };
+use twarp_core::safe_error;
 
 use crate::persistence::ModelEvent;
 use crate::report_if_error;
@@ -57,12 +57,12 @@ use crate::{
     server::{server_api::ServerTime, telemetry::TelemetryEvent},
     UpdateQuakeModeEventArg,
 };
+use crate::{features::FeatureFlag, ChannelState};
+use crate::{send_telemetry_from_app_ctx, GlobalResourceHandles, GlobalResourceHandlesProvider};
 use crate::{
     server::server_api::ServerApi,
     workspace::{view::OnboardingTutorial, PaneViewLocator, Workspace, WorkspaceRegistry},
 };
-use crate::{features::FeatureFlag, ChannelState};
-use crate::{send_telemetry_from_app_ctx, GlobalResourceHandles, GlobalResourceHandlesProvider};
 use anyhow::Result;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
@@ -110,7 +110,6 @@ use twarpui::{
     AppContext, Element, Entity, TypedActionView, View, ViewContext, ViewHandle, WindowId,
 };
 use twarpui::{FocusContext, NextNewWindowsHasThisWindowsBoundsUponClose};
-
 
 const WINDOW_TITLE: &str = "Warp";
 
@@ -2461,11 +2460,7 @@ impl TypedActionView for RootView {
 impl WorkspaceArgs {
     fn create_workspace(self, ctx: &mut ViewContext<RootView>) -> ViewHandle<Workspace> {
         ctx.add_typed_action_view(|ctx| {
-            Workspace::new(
-                self.global_resource_handles,
-                self.workspace_setting,
-                ctx,
-            )
+            Workspace::new(self.global_resource_handles, self.workspace_setting, ctx)
         })
     }
 }

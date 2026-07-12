@@ -11,11 +11,8 @@ use crate::auth::{AuthStateProvider, UserUid};
 use crate::send_telemetry_from_ctx;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{
-    appearance::Appearance,
-    auth::auth_state::AuthState,
-    report_if_error,
-    settings::cloud_preferences::CloudPreferencesSettings,
-    TelemetryEvent,
+    appearance::Appearance, auth::auth_state::AuthState, report_if_error,
+    settings::cloud_preferences::CloudPreferencesSettings, TelemetryEvent,
 };
 use crate::{auth::auth_manager::AuthManager, server::ids::ServerId};
 use crate::{auth::auth_manager::LoginGatedFeature, workspaces::workspace::CustomerType};
@@ -251,7 +248,6 @@ impl MainSettingsPageView {
         ];
 
         widgets.push(Box::new(SettingsSyncWidget::default()));
-
 
         if ChannelState::app_version().is_some() {
             widgets.push(Box::new(VersionInfoWidget::default()));

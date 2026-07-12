@@ -15,7 +15,9 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
-use twarpui::{AppContext, Entity, EntityId, ModelContext, ModelSpawner, SingletonEntity, ViewHandle};
+use twarpui::{
+    AppContext, Entity, EntityId, ModelContext, ModelSpawner, SingletonEntity, ViewHandle,
+};
 
 use crate::{
     browser_view::{normalize_browser_url, BrowserAutomationTarget, BrowserView},

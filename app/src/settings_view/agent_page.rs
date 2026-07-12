@@ -37,6 +37,14 @@ use crate::{
         dropdown::{DropdownAction, DropdownItem},
         Dropdown,
     },
+    voice::{
+        config::{
+            VoiceProviderKind, DEFAULT_AZURE_API_VERSION, DEFAULT_STT_MODEL, DEFAULT_TTS_MODEL,
+            DEFAULT_TTS_VOICE, TTS_VOICES,
+        },
+        playback::Player,
+        tts,
+    },
 };
 
 const PAGE_TITLE: &str = "Agent";
@@ -59,6 +67,23 @@ pub enum AgentSettingsPageAction {
     ShowApiKeyEditor,
     SaveApiKey,
     RemoveApiKey,
+    // twarp 17: Voice section (PRODUCT §19–§22).
+    SetVoiceSttKind(String),
+    SetVoiceTtsKind(String),
+    SetVoiceTtsVoice(String),
+    ToggleVoiceTtsUseSttKey,
+    ToggleVoiceAutoSend,
+    ShowVoiceKeyEditor(VoiceKeyTarget),
+    SaveVoiceKey(VoiceKeyTarget),
+    RemoveVoiceKey(VoiceKeyTarget),
+    TestVoice,
+}
+
+/// Which voice keychain entry a key action targets (twarp 17, PRODUCT §20–§22).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VoiceKeyTarget {
+    Stt,
+    Tts,
 }
 
 pub enum AgentSettingsPageEvent {}
@@ -86,6 +111,33 @@ pub struct AgentSettingsPageView {
     auth_probe_agent: CLIAgent,
     auth_probe_state: AuthProbeState,
     show_api_key_editor: bool,
+    // twarp 17: Voice section state (PRODUCT §19–§22).
+    voice_stt_kind_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
+    voice_tts_kind_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
+    voice_tts_voice_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
+    voice_stt_endpoint_editor: ViewHandle<EditorView>,
+    voice_stt_model_editor: ViewHandle<EditorView>,
+    voice_stt_api_version_editor: ViewHandle<EditorView>,
+    voice_tts_endpoint_editor: ViewHandle<EditorView>,
+    voice_tts_model_editor: ViewHandle<EditorView>,
+    voice_stt_key_editor: ViewHandle<EditorView>,
+    voice_tts_key_editor: ViewHandle<EditorView>,
+    voice_stt_key_save_button: ViewHandle<ActionButton>,
+    voice_stt_key_replace_button: ViewHandle<ActionButton>,
+    voice_stt_key_remove_button: ViewHandle<ActionButton>,
+    voice_tts_key_save_button: ViewHandle<ActionButton>,
+    voice_tts_key_replace_button: ViewHandle<ActionButton>,
+    voice_tts_key_remove_button: ViewHandle<ActionButton>,
+    voice_test_button: ViewHandle<ActionButton>,
+    voice_tts_use_stt_key_switch_state: SwitchStateHandle,
+    voice_auto_send_switch_state: SwitchStateHandle,
+    show_voice_stt_key_editor: bool,
+    show_voice_tts_key_editor: bool,
+    /// Inline status for the Test voice button (PRODUCT §21).
+    voice_test_status: Option<String>,
+    voice_test_generation: u64,
+    /// Keeps the playback stream alive; dropping it kills playback.
+    voice_test_player: Option<Player>,
     local_only_icon_states: RefCell<HashMap<String, twarpui::elements::MouseStateHandle>>,
 }
 
@@ -270,6 +322,131 @@ impl AgentSettingsPageView {
             })
         });
 
+        // twarp 17: Voice section (PRODUCT §19–§22). Text fields persist on
+        // every edit; key editors mirror the Claude API key row above.
+        let voice_stt_kind_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            dropdown.set_items(
+                voice_kind_items(AgentSettingsPageAction::SetVoiceSttKind),
+                ctx,
+            );
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetVoiceSttKind(
+                    VoiceProviderKind::default().serialized_name().to_owned(),
+                ),
+                ctx,
+            );
+            dropdown.set_top_bar_max_width(220.);
+            dropdown
+        });
+        let voice_tts_kind_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            dropdown.set_items(
+                voice_kind_items(AgentSettingsPageAction::SetVoiceTtsKind),
+                ctx,
+            );
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetVoiceTtsKind(
+                    VoiceProviderKind::default().serialized_name().to_owned(),
+                ),
+                ctx,
+            );
+            dropdown.set_top_bar_max_width(220.);
+            dropdown
+        });
+        let voice_tts_voice_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            dropdown.set_items(voice_tts_voice_items(), ctx);
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetVoiceTtsVoice(DEFAULT_TTS_VOICE.to_owned()),
+                ctx,
+            );
+            dropdown.set_top_bar_max_width(180.);
+            dropdown
+        });
+
+        let (
+            voice_stt_endpoint,
+            voice_stt_model,
+            voice_stt_api_version,
+            voice_tts_endpoint,
+            voice_tts_model,
+            voice_stt_kind,
+        ) = {
+            let settings = AgentSettings::as_ref(ctx);
+            (
+                settings.voice_stt_endpoint.value().clone(),
+                settings.voice_stt_model.value().clone(),
+                settings.voice_stt_api_version.value().clone(),
+                settings.voice_tts_endpoint.value().clone(),
+                settings.voice_tts_model.value().clone(),
+                VoiceProviderKind::from_serialized_name(settings.voice_stt_kind.value()),
+            )
+        };
+        let voice_stt_endpoint_editor = Self::new_voice_text_editor(
+            voice_endpoint_placeholder(voice_stt_kind),
+            &voice_stt_endpoint,
+            ctx,
+        );
+        Self::persist_voice_editor_on_edit(&voice_stt_endpoint_editor, ctx, |text, ctx| {
+            AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                report_if_error!(settings.voice_stt_endpoint.set_value(text, ctx));
+            });
+        });
+        let voice_stt_model_editor =
+            Self::new_voice_text_editor(DEFAULT_STT_MODEL, &voice_stt_model, ctx);
+        Self::persist_voice_editor_on_edit(&voice_stt_model_editor, ctx, |text, ctx| {
+            AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                report_if_error!(settings.voice_stt_model.set_value(text, ctx));
+            });
+        });
+        let voice_stt_api_version_editor =
+            Self::new_voice_text_editor(DEFAULT_AZURE_API_VERSION, &voice_stt_api_version, ctx);
+        Self::persist_voice_editor_on_edit(&voice_stt_api_version_editor, ctx, |text, ctx| {
+            AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                report_if_error!(settings.voice_stt_api_version.set_value(text, ctx));
+            });
+        });
+        let voice_tts_endpoint_editor = Self::new_voice_text_editor(
+            "Empty = reuse speech-to-text endpoint",
+            &voice_tts_endpoint,
+            ctx,
+        );
+        Self::persist_voice_editor_on_edit(&voice_tts_endpoint_editor, ctx, |text, ctx| {
+            AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                report_if_error!(settings.voice_tts_endpoint.set_value(text, ctx));
+            });
+        });
+        let voice_tts_model_editor =
+            Self::new_voice_text_editor(DEFAULT_TTS_MODEL, &voice_tts_model, ctx);
+        Self::persist_voice_editor_on_edit(&voice_tts_model_editor, ctx, |text, ctx| {
+            AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                report_if_error!(settings.voice_tts_model.set_value(text, ctx));
+            });
+        });
+
+        let voice_stt_key_editor = Self::new_voice_text_editor("Paste API key", "", ctx);
+        ctx.subscribe_to_view(&voice_stt_key_editor, |_me, _, event, ctx| {
+            if matches!(event, EditorEvent::Edited(_)) {
+                ctx.notify();
+            }
+        });
+        let voice_tts_key_editor = Self::new_voice_text_editor("Paste API key", "", ctx);
+        ctx.subscribe_to_view(&voice_tts_key_editor, |_me, _, event, ctx| {
+            if matches!(event, EditorEvent::Edited(_)) {
+                ctx.notify();
+            }
+        });
+        let (voice_stt_key_save_button, voice_stt_key_replace_button, voice_stt_key_remove_button) =
+            Self::new_voice_key_buttons(VoiceKeyTarget::Stt, ctx);
+        let (voice_tts_key_save_button, voice_tts_key_replace_button, voice_tts_key_remove_button) =
+            Self::new_voice_key_buttons(VoiceKeyTarget::Tts, ctx);
+        let voice_test_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Test voice", SecondaryTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(AgentSettingsPageAction::TestVoice);
+            })
+        });
+
         let mut view = Self {
             page: PageType::new_monolith(AgentSettingsWidget, Some(PAGE_TITLE), true),
             backend_dropdown,
@@ -293,8 +470,40 @@ impl AgentSettingsPageView {
             auth_probe_agent: CLIAgent::Claude,
             auth_probe_state: AuthProbeState::Checking,
             show_api_key_editor: true,
+            voice_stt_kind_dropdown,
+            voice_tts_kind_dropdown,
+            voice_tts_voice_dropdown,
+            voice_stt_endpoint_editor,
+            voice_stt_model_editor,
+            voice_stt_api_version_editor,
+            voice_tts_endpoint_editor,
+            voice_tts_model_editor,
+            voice_stt_key_editor,
+            voice_tts_key_editor,
+            voice_stt_key_save_button,
+            voice_stt_key_replace_button,
+            voice_stt_key_remove_button,
+            voice_tts_key_save_button,
+            voice_tts_key_replace_button,
+            voice_tts_key_remove_button,
+            voice_test_button,
+            voice_tts_use_stt_key_switch_state: Default::default(),
+            voice_auto_send_switch_state: Default::default(),
+            show_voice_stt_key_editor: true,
+            show_voice_tts_key_editor: true,
+            voice_test_status: None,
+            voice_test_generation: 0,
+            voice_test_player: None,
             local_only_icon_states: RefCell::new(HashMap::new()),
         };
+        // twarp 17 (PRODUCT §22): reconcile the voice key-presence flags with
+        // the keychain before deciding whether to show the key editors.
+        view.sync_voice_api_key_presence_flags(ctx);
+        {
+            let settings = AgentSettings::as_ref(ctx);
+            view.show_voice_stt_key_editor = !*settings.voice_stt_api_key_set.value();
+            view.show_voice_tts_key_editor = !*settings.voice_tts_api_key_set.value();
+        }
         view.refresh_dropdowns(ctx);
         view.refresh_auth_status(ctx);
         view
@@ -347,6 +556,23 @@ impl AgentSettingsPageView {
             settings.reply_suggest_effort.value(),
         )
         .unwrap_or_default();
+        // twarp 17: Voice dropdown selections (PRODUCT §20–§21).
+        let voice_stt_kind =
+            VoiceProviderKind::from_serialized_name(settings.voice_stt_kind.value())
+                .serialized_name()
+                .to_owned();
+        let voice_tts_kind =
+            VoiceProviderKind::from_serialized_name(settings.voice_tts_kind.value())
+                .serialized_name()
+                .to_owned();
+        let voice_tts_voice = {
+            let voice = settings.voice_tts_voice.value().as_str();
+            if TTS_VOICES.contains(&voice) {
+                voice.to_owned()
+            } else {
+                DEFAULT_TTS_VOICE.to_owned()
+            }
+        };
 
         self.backend_dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_rich_items(backend_items(), ctx);
@@ -444,6 +670,24 @@ impl AgentSettingsPageView {
             );
             dropdown
                 .set_selected_by_action(AgentSettingsPageAction::SetReplyEffort(reply_effort), ctx);
+        });
+        self.voice_stt_kind_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetVoiceSttKind(voice_stt_kind),
+                ctx,
+            );
+        });
+        self.voice_tts_kind_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetVoiceTtsKind(voice_tts_kind),
+                ctx,
+            );
+        });
+        self.voice_tts_voice_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetVoiceTtsVoice(voice_tts_voice),
+                ctx,
+            );
         });
     }
 
@@ -635,6 +879,251 @@ impl AgentSettingsPageView {
             }
         }
     }
+
+    // --- twarp 17: Voice section (PRODUCT §19–§22) ---
+
+    /// Single-line editor for the Voice free-text fields, matching the API
+    /// key editor's construction.
+    fn new_voice_text_editor(
+        placeholder: &str,
+        initial: &str,
+        ctx: &mut ViewContext<Self>,
+    ) -> ViewHandle<EditorView> {
+        let font_family = Appearance::as_ref(ctx).ui_font_family();
+        let placeholder = placeholder.to_owned();
+        let initial = initial.to_owned();
+        ctx.add_typed_action_view(move |ctx| {
+            let options = SingleLineEditorOptions {
+                text: TextOptions {
+                    font_family_override: Some(font_family),
+                    ..Default::default()
+                },
+                propagate_and_no_op_vertical_navigation_keys:
+                    PropagateAndNoOpNavigationKeys::Always,
+                ..Default::default()
+            };
+            let mut editor = EditorView::single_line(options, ctx);
+            editor.set_placeholder_text(placeholder, ctx);
+            if !initial.is_empty() {
+                editor.set_buffer_text_ignoring_undo(&initial, ctx);
+            }
+            editor
+        })
+    }
+
+    /// Persists a Voice text field to its setting on every edit.
+    fn persist_voice_editor_on_edit(
+        editor: &ViewHandle<EditorView>,
+        ctx: &mut ViewContext<Self>,
+        write: impl 'static + Fn(String, &mut ViewContext<Self>),
+    ) {
+        ctx.subscribe_to_view(editor, move |_me, handle, event, ctx| {
+            if matches!(event, EditorEvent::Edited(_)) {
+                let text = handle.as_ref(ctx).buffer_text(ctx).trim().to_owned();
+                write(text, ctx);
+            }
+        });
+    }
+
+    /// Save/Replace/Remove buttons for one voice key row (PRODUCT §20–§22).
+    fn new_voice_key_buttons(
+        target: VoiceKeyTarget,
+        ctx: &mut ViewContext<Self>,
+    ) -> (
+        ViewHandle<ActionButton>,
+        ViewHandle<ActionButton>,
+        ViewHandle<ActionButton>,
+    ) {
+        let save = ctx.add_typed_action_view(move |_| {
+            ActionButton::new("Save", SecondaryTheme).on_click(move |ctx| {
+                ctx.dispatch_typed_action(AgentSettingsPageAction::SaveVoiceKey(target));
+            })
+        });
+        let replace = ctx.add_typed_action_view(move |_| {
+            ActionButton::new("Replace", SecondaryTheme).on_click(move |ctx| {
+                ctx.dispatch_typed_action(AgentSettingsPageAction::ShowVoiceKeyEditor(target));
+            })
+        });
+        let remove = ctx.add_typed_action_view(move |_| {
+            ActionButton::new("Remove", DangerSecondaryTheme).on_click(move |ctx| {
+                ctx.dispatch_typed_action(AgentSettingsPageAction::RemoveVoiceKey(target));
+            })
+        });
+        (save, replace, remove)
+    }
+
+    /// PRODUCT §20: the STT endpoint placeholder tracks the provider kind.
+    fn update_voice_stt_endpoint_placeholder(&self, ctx: &mut ViewContext<Self>) {
+        let kind = VoiceProviderKind::from_serialized_name(
+            AgentSettings::as_ref(ctx).voice_stt_kind.value(),
+        );
+        self.voice_stt_endpoint_editor.update(ctx, |editor, ctx| {
+            editor.set_placeholder_text(voice_endpoint_placeholder(kind), ctx);
+        });
+    }
+
+    fn set_voice_key_flag(target: VoiceKeyTarget, set: bool, ctx: &mut ViewContext<Self>) {
+        AgentSettings::handle(ctx).update(ctx, |settings, ctx| match target {
+            VoiceKeyTarget::Stt => {
+                report_if_error!(settings.voice_stt_api_key_set.set_value(set, ctx));
+            }
+            VoiceKeyTarget::Tts => {
+                report_if_error!(settings.voice_tts_api_key_set.set_value(set, ctx));
+            }
+        });
+    }
+
+    /// PRODUCT §20/§22: store a voice key in the keychain and persist only a
+    /// presence flag, mirroring `save_api_key`.
+    fn save_voice_api_key(&mut self, target: VoiceKeyTarget, ctx: &mut ViewContext<Self>) {
+        let editor = match target {
+            VoiceKeyTarget::Stt => self.voice_stt_key_editor.clone(),
+            VoiceKeyTarget::Tts => self.voice_tts_key_editor.clone(),
+        };
+        let api_key = editor.as_ref(ctx).buffer_text(ctx).trim().to_owned();
+        if api_key.is_empty() {
+            return;
+        }
+
+        match secure_storage::Model::handle(ctx)
+            .as_ref(ctx)
+            .write_value(voice_key_storage_key(target), &api_key)
+        {
+            Ok(()) => {
+                Self::set_voice_key_flag(target, true, ctx);
+                editor.update(ctx, |editor, ctx| editor.clear_buffer(ctx));
+                match target {
+                    VoiceKeyTarget::Stt => self.show_voice_stt_key_editor = false,
+                    VoiceKeyTarget::Tts => self.show_voice_tts_key_editor = false,
+                }
+            }
+            Err(err) => {
+                log::error!("Failed to store voice {target:?} API key in secure storage: {err}");
+            }
+        }
+    }
+
+    /// PRODUCT §22: removing a key clears it from the keychain and flips the
+    /// presence flag.
+    fn remove_voice_api_key(&mut self, target: VoiceKeyTarget, ctx: &mut ViewContext<Self>) {
+        let editor = match target {
+            VoiceKeyTarget::Stt => self.voice_stt_key_editor.clone(),
+            VoiceKeyTarget::Tts => self.voice_tts_key_editor.clone(),
+        };
+        let result = secure_storage::Model::handle(ctx)
+            .as_ref(ctx)
+            .remove_value(voice_key_storage_key(target));
+        match result {
+            Ok(()) | Err(SecureStorageError::NotFound) => {
+                Self::set_voice_key_flag(target, false, ctx);
+                editor.update(ctx, |editor, ctx| editor.clear_buffer(ctx));
+                match target {
+                    VoiceKeyTarget::Stt => self.show_voice_stt_key_editor = true,
+                    VoiceKeyTarget::Tts => self.show_voice_tts_key_editor = true,
+                }
+            }
+            Err(err) => {
+                log::error!("Failed to remove voice {target:?} API key from secure storage: {err}");
+            }
+        }
+    }
+
+    /// Mirrors `sync_api_key_presence_flag` for the two voice keychain
+    /// entries (PRODUCT §22).
+    fn sync_voice_api_key_presence_flags(&self, ctx: &mut ViewContext<Self>) {
+        for target in [VoiceKeyTarget::Stt, VoiceKeyTarget::Tts] {
+            let flag_set = {
+                let settings = AgentSettings::as_ref(ctx);
+                match target {
+                    VoiceKeyTarget::Stt => *settings.voice_stt_api_key_set.value(),
+                    VoiceKeyTarget::Tts => *settings.voice_tts_api_key_set.value(),
+                }
+            };
+            if !flag_set {
+                continue;
+            }
+            match secure_storage::Model::handle(ctx)
+                .as_ref(ctx)
+                .read_value(voice_key_storage_key(target))
+            {
+                Ok(_) => {}
+                Err(SecureStorageError::NotFound) => {
+                    Self::set_voice_key_flag(target, false, ctx);
+                }
+                Err(err) => {
+                    log::error!(
+                        "Failed to verify voice {target:?} API key presence in secure storage: {err}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// PRODUCT §21: speak a short sample with the current TTS values and
+    /// surface any error inline next to the button.
+    fn run_voice_test(&mut self, ctx: &mut ViewContext<Self>) {
+        // Clear the previous status when a new test starts.
+        self.voice_test_status = None;
+
+        let (config, storage_key) = {
+            let settings = AgentSettings::as_ref(ctx);
+            (
+                settings.voice_tts_config(),
+                settings.voice_tts_key_storage_key(),
+            )
+        };
+        let Some(mut config) = config else {
+            self.voice_test_status =
+                Some("Configure a text-to-speech endpoint and key first".to_owned());
+            ctx.notify();
+            return;
+        };
+        match secure_storage::Model::handle(ctx)
+            .as_ref(ctx)
+            .read_value(storage_key)
+        {
+            Ok(api_key) => config.api_key = api_key,
+            Err(err) => {
+                self.voice_test_status = Some(format!(
+                    "Could not read the API key from the keychain: {err}"
+                ));
+                ctx.notify();
+                return;
+            }
+        }
+
+        self.voice_test_generation += 1;
+        let generation = self.voice_test_generation;
+        ctx.spawn(
+            async move { tts::synthesize(&config, "Hi! This is how twarp will sound.").await },
+            move |view, result, ctx| {
+                if view.voice_test_generation != generation {
+                    return;
+                }
+                match result {
+                    Ok(pcm) => {
+                        if view.voice_test_player.is_none() {
+                            match Player::start() {
+                                Ok(player) => view.voice_test_player = Some(player),
+                                Err(err) => {
+                                    view.voice_test_status = Some(err.to_string());
+                                    ctx.notify();
+                                    return;
+                                }
+                            }
+                        }
+                        if let Some(player) = &view.voice_test_player {
+                            player.stop();
+                            player.play(pcm, tts::TTS_SAMPLE_RATE);
+                        }
+                    }
+                    Err(err) => view.voice_test_status = Some(err.to_string()),
+                }
+                ctx.notify();
+            },
+        );
+        ctx.notify();
+    }
 }
 
 impl Entity for AgentSettingsPageView {
@@ -798,6 +1287,69 @@ impl TypedActionView for AgentSettingsPageView {
             AgentSettingsPageAction::RemoveApiKey => {
                 self.remove_api_key(ctx);
             }
+            // twarp 17: Voice section (PRODUCT §19–§22).
+            AgentSettingsPageAction::SetVoiceSttKind(kind) => {
+                let kind = VoiceProviderKind::from_serialized_name(kind)
+                    .serialized_name()
+                    .to_owned();
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings.voice_stt_kind.set_value(kind, ctx));
+                });
+                self.update_voice_stt_endpoint_placeholder(ctx);
+            }
+            AgentSettingsPageAction::SetVoiceTtsKind(kind) => {
+                let kind = VoiceProviderKind::from_serialized_name(kind)
+                    .serialized_name()
+                    .to_owned();
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings.voice_tts_kind.set_value(kind, ctx));
+                });
+            }
+            AgentSettingsPageAction::SetVoiceTtsVoice(voice) => {
+                if TTS_VOICES.contains(&voice.as_str()) {
+                    AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                        report_if_error!(settings.voice_tts_voice.set_value(voice.clone(), ctx));
+                    });
+                }
+            }
+            AgentSettingsPageAction::ToggleVoiceTtsUseSttKey => {
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let enabled = *settings.voice_tts_use_stt_key.value();
+                    report_if_error!(settings.voice_tts_use_stt_key.set_value(!enabled, ctx));
+                });
+            }
+            AgentSettingsPageAction::ToggleVoiceAutoSend => {
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let enabled = *settings.voice_auto_send.value();
+                    report_if_error!(settings.voice_auto_send.set_value(!enabled, ctx));
+                });
+            }
+            AgentSettingsPageAction::ShowVoiceKeyEditor(target) => {
+                let editor = match target {
+                    VoiceKeyTarget::Stt => {
+                        self.show_voice_stt_key_editor = true;
+                        self.voice_stt_key_editor.clone()
+                    }
+                    VoiceKeyTarget::Tts => {
+                        self.show_voice_tts_key_editor = true;
+                        self.voice_tts_key_editor.clone()
+                    }
+                };
+                editor.update(ctx, |editor, ctx| {
+                    editor.clear_buffer(ctx);
+                    editor.set_placeholder_text("Paste replacement API key", ctx);
+                });
+                ctx.focus(&editor);
+            }
+            AgentSettingsPageAction::SaveVoiceKey(target) => {
+                self.save_voice_api_key(*target, ctx);
+            }
+            AgentSettingsPageAction::RemoveVoiceKey(target) => {
+                self.remove_voice_api_key(*target, ctx);
+            }
+            AgentSettingsPageAction::TestVoice => {
+                self.run_voice_test(ctx);
+            }
         }
         self.refresh_dropdowns(ctx);
         ctx.notify();
@@ -848,7 +1400,7 @@ impl SettingsWidget for AgentSettingsWidget {
     type View = AgentSettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "agent claude codex gemini backend chat history terminal reply suggestions model effort permission mode"
+        "agent claude codex gemini backend chat history terminal reply suggestions model effort permission mode voice speech microphone transcription text-to-speech"
     }
 
     fn render(
@@ -916,6 +1468,7 @@ impl SettingsWidget for AgentSettingsWidget {
             .with_child(render_sub_header(appearance, "Suggestions", None))
             .with_child(render_reply_suggestions_toggle(view, appearance, app))
             .with_child(render_terminal_suggestions_toggle(view, appearance, app))
+            .with_child(render_voice_section(view, appearance, app))
             .finish()
     }
 }
@@ -1550,5 +2103,428 @@ fn prettify_permission_mode(mode: &str) -> String {
         "plan" => "Plan".to_owned(),
         "bypassPermissions" => "Bypass".to_owned(),
         other => other.to_owned(),
+    }
+}
+
+// --- twarp 17: Voice section (PRODUCT §19–§22) ---
+
+/// The whole Voice section: Speech-to-text group, Text-to-speech group, and
+/// the Auto-send transcriptions toggle (PRODUCT §19).
+fn render_voice_section(
+    view: &AgentSettingsPageView,
+    appearance: &Appearance,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let settings = AgentSettings::as_ref(app);
+    let stt_kind = VoiceProviderKind::from_serialized_name(settings.voice_stt_kind.value());
+    let use_stt_key = *settings.voice_tts_use_stt_key.value();
+    let auto_send = *settings.voice_auto_send.value();
+
+    let mut stt_rows = vec![
+        render_dropdown_item(
+            appearance,
+            "Provider",
+            None,
+            None,
+            local_only_icon_state(
+                view,
+                settings::AgentVoiceSttKind::storage_key(),
+                settings::AgentVoiceSttKind::sync_to_cloud(),
+                app,
+            ),
+            None,
+            &view.voice_stt_kind_dropdown,
+        ),
+        render_voice_text_row(
+            view,
+            appearance,
+            app,
+            "Endpoint",
+            "Azure resource endpoint or OpenAI-compatible base URL.",
+            settings::AgentVoiceSttEndpoint::storage_key(),
+            settings::AgentVoiceSttEndpoint::sync_to_cloud(),
+            &view.voice_stt_endpoint_editor,
+        ),
+        render_voice_text_row(
+            view,
+            appearance,
+            app,
+            "Model",
+            "Model name, or the deployment name on Azure.",
+            settings::AgentVoiceSttModel::storage_key(),
+            settings::AgentVoiceSttModel::sync_to_cloud(),
+            &view.voice_stt_model_editor,
+        ),
+    ];
+    // PRODUCT §20: the api-version row only applies to the Azure kind.
+    if stt_kind == VoiceProviderKind::AzureFoundry {
+        stt_rows.push(render_voice_text_row(
+            view,
+            appearance,
+            app,
+            "API version",
+            "Azure api-version for the audio endpoints.",
+            settings::AgentVoiceSttApiVersion::storage_key(),
+            settings::AgentVoiceSttApiVersion::sync_to_cloud(),
+            &view.voice_stt_api_version_editor,
+        ));
+    }
+    stt_rows.push(render_voice_key_row(
+        view,
+        appearance,
+        app,
+        VoiceKeyTarget::Stt,
+    ));
+
+    let mut tts_rows = vec![
+        render_dropdown_item(
+            appearance,
+            "Provider",
+            None,
+            None,
+            local_only_icon_state(
+                view,
+                settings::AgentVoiceTtsKind::storage_key(),
+                settings::AgentVoiceTtsKind::sync_to_cloud(),
+                app,
+            ),
+            None,
+            &view.voice_tts_kind_dropdown,
+        ),
+        render_voice_text_row(
+            view,
+            appearance,
+            app,
+            "Endpoint",
+            "Empty reuses the speech-to-text endpoint.",
+            settings::AgentVoiceTtsEndpoint::storage_key(),
+            settings::AgentVoiceTtsEndpoint::sync_to_cloud(),
+            &view.voice_tts_endpoint_editor,
+        ),
+        render_voice_text_row(
+            view,
+            appearance,
+            app,
+            "Model",
+            "Model name, or the deployment name on Azure.",
+            settings::AgentVoiceTtsModel::storage_key(),
+            settings::AgentVoiceTtsModel::sync_to_cloud(),
+            &view.voice_tts_model_editor,
+        ),
+        render_dropdown_item(
+            appearance,
+            "Voice",
+            None,
+            None,
+            local_only_icon_state(
+                view,
+                settings::AgentVoiceTtsVoice::storage_key(),
+                settings::AgentVoiceTtsVoice::sync_to_cloud(),
+                app,
+            ),
+            None,
+            &view.voice_tts_voice_dropdown,
+        ),
+        render_suggestion_toggle(
+            view,
+            appearance,
+            app,
+            "Use speech-to-text key",
+            "Reuse the speech-to-text API key for text-to-speech.",
+            use_stt_key,
+            settings::AgentVoiceTtsUseSttKey::storage_key(),
+            settings::AgentVoiceTtsUseSttKey::sync_to_cloud(),
+            view.voice_tts_use_stt_key_switch_state.clone(),
+            AgentSettingsPageAction::ToggleVoiceTtsUseSttKey,
+        ),
+    ];
+    // PRODUCT §21: a dedicated TTS key row only when not reusing the STT key.
+    if !use_stt_key {
+        tts_rows.push(render_voice_key_row(
+            view,
+            appearance,
+            app,
+            VoiceKeyTarget::Tts,
+        ));
+    }
+    tts_rows.push(render_voice_test_row(view, appearance));
+
+    Flex::column()
+        .with_child(render_sub_header(appearance, "Voice", None))
+        .with_child(
+            Container::new(
+                Flex::column()
+                    .with_child(render_action_group(appearance, "Speech-to-text", stt_rows))
+                    .with_child(render_action_group(appearance, "Text-to-speech", tts_rows))
+                    .finish(),
+            )
+            .with_padding_left(8.)
+            .finish(),
+        )
+        .with_child(render_suggestion_toggle(
+            view,
+            appearance,
+            app,
+            "Auto-send transcriptions",
+            "Send immediately when a transcription lands in an empty composer.",
+            auto_send,
+            settings::AgentVoiceAutoSend::storage_key(),
+            settings::AgentVoiceAutoSend::sync_to_cloud(),
+            view.voice_auto_send_switch_state.clone(),
+            AgentSettingsPageAction::ToggleVoiceAutoSend,
+        ))
+        .finish()
+}
+
+/// A label + single-line text input row for the Voice free-text fields,
+/// styled like the API key editor's input.
+#[allow(clippy::too_many_arguments)]
+fn render_voice_text_row(
+    view: &AgentSettingsPageView,
+    appearance: &Appearance,
+    app: &AppContext,
+    label: &str,
+    detail: &str,
+    storage_key: &str,
+    sync_to_cloud: ::settings::SyncToCloud,
+    editor: &ViewHandle<EditorView>,
+) -> Box<dyn Element> {
+    let label = render_dropdown_item_label(
+        label.to_owned(),
+        Some(detail.to_owned()),
+        local_only_icon_state(view, storage_key, sync_to_cloud, app),
+        None,
+        appearance,
+    );
+    let input = appearance
+        .ui_builder()
+        .text_input(editor.clone())
+        .with_style(UiComponentStyles {
+            width: Some(260.),
+            border_radius: Some(CornerRadius::with_all(Radius::Pixels(4.))),
+            border_width: Some(1.),
+            border_color: Some(appearance.theme().outline().into()),
+            background: Some(appearance.theme().surface_2().into_solid().into()),
+            padding: Some(Coords::uniform(6.)),
+            ..Default::default()
+        })
+        .build()
+        .finish();
+
+    Container::new(render_settings_row(label, input))
+        .with_margin_bottom(8.)
+        .finish()
+}
+
+/// Masked save/remove key row for the voice STT/TTS keychain entries,
+/// mirroring the Claude API key row (PRODUCT §20–§22).
+fn render_voice_key_row(
+    view: &AgentSettingsPageView,
+    appearance: &Appearance,
+    app: &AppContext,
+    target: VoiceKeyTarget,
+) -> Box<dyn Element> {
+    let settings = AgentSettings::as_ref(app);
+    let (
+        has_key,
+        show_editor,
+        editor,
+        save_button,
+        replace_button,
+        remove_button,
+        flag_key,
+        flag_sync,
+    ) = match target {
+        VoiceKeyTarget::Stt => (
+            *settings.voice_stt_api_key_set.value(),
+            view.show_voice_stt_key_editor,
+            &view.voice_stt_key_editor,
+            &view.voice_stt_key_save_button,
+            &view.voice_stt_key_replace_button,
+            &view.voice_stt_key_remove_button,
+            settings::AgentVoiceSttApiKeySet::storage_key(),
+            settings::AgentVoiceSttApiKeySet::sync_to_cloud(),
+        ),
+        VoiceKeyTarget::Tts => (
+            *settings.voice_tts_api_key_set.value(),
+            view.show_voice_tts_key_editor,
+            &view.voice_tts_key_editor,
+            &view.voice_tts_key_save_button,
+            &view.voice_tts_key_replace_button,
+            &view.voice_tts_key_remove_button,
+            settings::AgentVoiceTtsApiKeySet::storage_key(),
+            settings::AgentVoiceTtsApiKeySet::sync_to_cloud(),
+        ),
+    };
+
+    let label = render_dropdown_item_label(
+        "API key".to_owned(),
+        Some("Stored in the OS keychain, never in plaintext settings.".to_owned()),
+        local_only_icon_state(view, flag_key, flag_sync, app),
+        None,
+        appearance,
+    );
+
+    let mut controls = Flex::column()
+        .with_cross_axis_alignment(CrossAxisAlignment::End)
+        .with_main_axis_alignment(MainAxisAlignment::Center);
+
+    if has_key {
+        controls.add_child(
+            appearance
+                .ui_builder()
+                .span("**** key set")
+                .with_style(UiComponentStyles {
+                    font_color: Some(appearance.theme().active_ui_text_color().into()),
+                    font_size: Some(12.),
+                    margin: Some(Coords {
+                        bottom: 6.,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+                .build()
+                .finish(),
+        );
+        controls.add_child(
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(ChildView::new(replace_button).finish())
+                .with_child(
+                    Container::new(ChildView::new(remove_button).finish())
+                        .with_margin_left(8.)
+                        .finish(),
+                )
+                .finish(),
+        );
+    }
+
+    if show_editor {
+        controls.add_child(
+            Container::new(
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_child(
+                        appearance
+                            .ui_builder()
+                            .text_input(editor.clone())
+                            .with_style(UiComponentStyles {
+                                width: Some(260.),
+                                border_radius: Some(CornerRadius::with_all(Radius::Pixels(4.))),
+                                border_width: Some(1.),
+                                border_color: Some(appearance.theme().outline().into()),
+                                background: Some(
+                                    appearance.theme().surface_2().into_solid().into(),
+                                ),
+                                padding: Some(Coords::uniform(6.)),
+                                ..Default::default()
+                            })
+                            .build()
+                            .finish(),
+                    )
+                    .with_child(
+                        Container::new(ChildView::new(save_button).finish())
+                            .with_margin_left(8.)
+                            .finish(),
+                    )
+                    .finish(),
+            )
+            .with_margin_top(if has_key { 8. } else { 0. })
+            .finish(),
+        );
+    }
+
+    Container::new(render_settings_row(label, controls.finish()))
+        .with_margin_bottom(8.)
+        .finish()
+}
+
+/// PRODUCT §21: the Test voice button with its inline status label.
+fn render_voice_test_row(
+    view: &AgentSettingsPageView,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let label = render_dropdown_item_label(
+        "Test voice".to_owned(),
+        Some("Speaks a short sample with the current values.".to_owned()),
+        LocalOnlyIconState::Hidden,
+        None,
+        appearance,
+    );
+
+    let mut controls = Flex::column()
+        .with_cross_axis_alignment(CrossAxisAlignment::End)
+        .with_main_axis_alignment(MainAxisAlignment::Center)
+        .with_child(ChildView::new(&view.voice_test_button).finish());
+    if let Some(status) = &view.voice_test_status {
+        controls.add_child(
+            appearance
+                .ui_builder()
+                .span(status.clone())
+                .with_style(UiComponentStyles {
+                    font_color: Some(appearance.theme().ui_error_color()),
+                    font_size: Some(12.),
+                    margin: Some(Coords {
+                        top: 6.,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+                .build()
+                .finish(),
+        );
+    }
+
+    render_settings_row(label, controls.finish())
+}
+
+/// Endpoint placeholder per provider kind (PRODUCT §20/§23).
+fn voice_endpoint_placeholder(kind: VoiceProviderKind) -> &'static str {
+    match kind {
+        VoiceProviderKind::AzureFoundry => "https://<resource>.openai.azure.com",
+        VoiceProviderKind::OpenAiCompatible => "https://api.openai.com/v1",
+    }
+}
+
+/// Keychain account for one voice key target (PRODUCT §20–§22).
+fn voice_key_storage_key(target: VoiceKeyTarget) -> &'static str {
+    match target {
+        VoiceKeyTarget::Stt => settings::VOICE_STT_API_KEY_STORAGE_KEY,
+        VoiceKeyTarget::Tts => settings::VOICE_TTS_API_KEY_STORAGE_KEY,
+    }
+}
+
+fn voice_kind_items(
+    action: fn(String) -> AgentSettingsPageAction,
+) -> Vec<DropdownItem<AgentSettingsPageAction>> {
+    VoiceProviderKind::ALL
+        .into_iter()
+        .map(|kind| {
+            DropdownItem::new(
+                kind.display_name(),
+                action(kind.serialized_name().to_owned()),
+            )
+        })
+        .collect()
+}
+
+/// The OpenAI voice set (PRODUCT §21).
+fn voice_tts_voice_items() -> Vec<DropdownItem<AgentSettingsPageAction>> {
+    TTS_VOICES
+        .into_iter()
+        .map(|voice| {
+            DropdownItem::new(
+                prettify_voice_name(voice),
+                AgentSettingsPageAction::SetVoiceTtsVoice(voice.to_owned()),
+            )
+        })
+        .collect()
+}
+
+fn prettify_voice_name(voice: &str) -> String {
+    let mut chars = voice.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
     }
 }

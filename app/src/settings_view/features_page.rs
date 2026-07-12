@@ -16,6 +16,7 @@ use {
 };
 
 use super::keybindings::KeyBindingModifyingState;
+use super::render_beta_chip;
 #[cfg(feature = "local_tty")]
 use super::settings_page::render_sub_sub_header;
 use super::settings_page::{
@@ -27,7 +28,6 @@ use super::settings_page::{
     render_body_item, render_dropdown_item, AdditionalInfo, SettingsPageMeta,
     SettingsPageViewHandle, ToggleState, CONTENT_FONT_SIZE, HEADER_PADDING,
 };
-use super::render_beta_chip;
 use super::{features, SettingsAction};
 use super::{flags, DisplayCount};
 use super::{SettingsSection, ToggleSettingActionPair};
@@ -35,6 +35,7 @@ use crate::editor::{
     Event as EditorEvent, SingleLineEditorOptions, TextOptions,
     ACCEPT_AUTOSUGGESTION_KEYBINDING_NAME,
 };
+use crate::features::FeatureFlag;
 use crate::search::command_search::settings::{
     CommandSearchSettings, ShowGlobalWorkflowsInUniversalSearch,
 };
@@ -47,9 +48,9 @@ use crate::settings::{
     AliasExpansionEnabled, AliasExpansionSettings, AppEditorSettings, AtContextMenuInTerminalMode,
     AutocompleteSymbols, AutosuggestionKeybindingHint, CloudPreferencesSettings,
     CodeEditorLineNumberMode, CodeEditorLineNumberModeSetting, CodeSettings, CommandCorrections,
-    CompletionsOpenWhileTyping, CopyOnSelect, CtrlTabBehavior,
-    DefaultSessionMode, EnableSlashCommandsInTerminal, EnableSshWrapper, ErrorUnderliningEnabled,
-    ExtraMetaKeys, GPUSettings, GlobalHotkeyMode, InputSettings, InputSettingsChangedEvent,
+    CompletionsOpenWhileTyping, CopyOnSelect, CtrlTabBehavior, DefaultSessionMode,
+    EnableSlashCommandsInTerminal, EnableSshWrapper, ErrorUnderliningEnabled, ExtraMetaKeys,
+    GPUSettings, GlobalHotkeyMode, InputSettings, InputSettingsChangedEvent,
     LinuxSelectionClipboard, MiddleClickPasteEnabled, MouseScrollMultiplier,
     OutlineCodebaseSymbolsForAtContextMenu, PreferLowPowerGPU, PreferredGraphicsBackend,
     QuakeModeSettings, ScrollSettings, SelectionSettings, ShowAutosuggestionIgnoreButton,
@@ -88,7 +89,6 @@ use crate::workspace::tab_settings::{NewTabPlacement, TabSettings};
 use crate::workspace::WorkspaceAction;
 use crate::{appearance::Appearance, settings::native_preference::NativePreferenceSettings};
 use crate::{editor::EditorView, settings::native_preference::UserNativePreference};
-use crate::features::FeatureFlag;
 use crate::{report_if_error, send_telemetry_from_ctx, themes, GlobalResourceHandles};
 use crate::{root_view::QuakeModePinPosition, workspace::tab_settings::TabSettingsChangedEvent};
 use ::settings::{Setting, ToggleableSetting};

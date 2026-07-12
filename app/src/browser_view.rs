@@ -716,7 +716,9 @@ impl BrowserView {
                 .into_iter()
                 .find(|view| view.as_ref(ctx).session_id() == session_id),
             // Unbound pane: only deliver when it's unambiguous.
-            None => (views.len() == 1).then(|| views.into_iter().next()).flatten(),
+            None => (views.len() == 1)
+                .then(|| views.into_iter().next())
+                .flatten(),
         }
     }
 
@@ -756,9 +758,7 @@ impl BrowserView {
             tabs.push(tab);
         }
         self.tabs = tabs;
-        self.active_tab_index = pending
-            .active_index
-            .min(self.tabs.len().saturating_sub(1));
+        self.active_tab_index = pending.active_index.min(self.tabs.len().saturating_sub(1));
         for (index, tab) in self.tabs.iter().enumerate() {
             tab.engine.set_hidden(index != self.active_tab_index);
         }
@@ -1273,13 +1273,10 @@ impl View for BrowserView {
             // a cross-window move) — show state instead of a dead blank area.
             let appearance = Appearance::as_ref(app);
             let theme = appearance.theme();
-            let label = Text::new_inline(
-                "Reconnecting to browser…",
-                appearance.ui_font_family(),
-                12.,
-            )
-            .with_color(theme.sub_text_color(theme.background()).into())
-            .finish();
+            let label =
+                Text::new_inline("Reconnecting to browser…", appearance.ui_font_family(), 12.)
+                    .with_color(theme.sub_text_color(theme.background()).into())
+                    .finish();
             Container::new(Align::new(label).finish())
                 .with_background(theme.background())
                 .finish()

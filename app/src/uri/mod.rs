@@ -6,7 +6,6 @@ pub mod web_intent_parser;
 pub mod browser_url_handler;
 
 use crate::drive::OpenTwarpDriveObjectSettings;
-use twarp_util::path::LineAndColumnArg;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::linear::{LinearAction, LinearIssueWork};
 use crate::root_view::{open_new_window_get_handles, OpenLaunchConfigArg};
@@ -20,6 +19,7 @@ use crate::workspace::{Workspace, WorkspaceAction, WorkspaceRegistry};
 use crate::{cloud_object::ObjectType, workspace::ToastStack};
 use crate::{drive::OpenTwarpDriveObjectArgs, view_components::DismissibleToast};
 use crate::{features::FeatureFlag, workspace::active_terminal_in_window};
+use twarp_util::path::LineAndColumnArg;
 
 use crate::settings_view::{
     settings_widget_deeplink_target, OpenTeamsSettingsModalArgs, SettingsSection,
