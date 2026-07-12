@@ -3,7 +3,7 @@
 Single source of truth for what's being built next. `/twarp-next` reads this file every invocation; the user reads it to see status at a glance.
 
 **Currently active:** `12-project-search-replace`
-**Next up:** `17-voice-chat` (owner-directed 2026-07-11), then `10-file-editor` (resumes) — or owner direction
+**Next up:** `10-file-editor` (resumes) — or owner direction
 
 ## Features
 
@@ -25,7 +25,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 14 | [Built-in browser (Claude-debuggable)](14-builtin-browser/STATUS.md) | merged (phase 3 14g–14l shipped 2026-07-09) | [#96](https://github.com/timomak/twarp/pull/96) | 14a [#111](https://github.com/timomak/twarp/pull/111), 14b [#112](https://github.com/timomak/twarp/pull/112), 14c [#113](https://github.com/timomak/twarp/pull/113), 14d [#114](https://github.com/timomak/twarp/pull/114), 14e [#115](https://github.com/timomak/twarp/pull/115), 14f (fleet), 14g–14l [#171](https://github.com/timomak/twarp/pull/171)–[#178](https://github.com/timomak/twarp/pull/178) |
 | 15 | [Computer control overlay (Claude drives the Mac)](15-computer-control/STATUS.md) | merged | — | — |
 | 16 | [Agent settings page](16-agent-settings/STATUS.md) | merged | — | — |
-| 17 | [Voice chat in the Claude pane](17-voice-chat/STATUS.md) | spec-in-review | — | — |
+| 17 | [Voice chat in the Claude pane](17-voice-chat/STATUS.md) | merged (owner smoke test pending) | [#205](https://github.com/timomak/twarp/pull/205) | 17a–17c bundled [#206](https://github.com/timomak/twarp/pull/206) |
 
 ## Phases
 

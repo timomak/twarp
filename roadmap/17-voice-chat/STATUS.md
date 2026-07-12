@@ -1,6 +1,6 @@
 # 17 — Voice chat in the Claude pane
 
-**Phase:** impl-in-review
+**Phase:** merged (owner smoke test pending)
 **Spec PR:** [#205](https://github.com/timomak/twarp/pull/205)
 **Impl PRs:** 17a–17c bundled [#206](https://github.com/timomak/twarp/pull/206) (owner asked for end-to-end in one pass, 2026-07-11)
 
