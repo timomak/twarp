@@ -1,6 +1,6 @@
 # 16 — Agent settings — STATUS
 
-**Phase:** reopened (increment 2 spec-in-review — 16g/16h empty-input placeholder suggestions, owner-directed 2026-07-12)
+**Phase:** reopened (increment 2 impl-pending — 16g/16h empty-input placeholder suggestions; spec [#207](https://github.com/timomak/twarp/pull/207) merged 2026-07-12)
 
 **Owner-confirmed decisions (2026-07-01):**
 - Provider scope: **independent per action** (chat / terminal-suggest / reply-suggest each get their own provider+model+effort).
