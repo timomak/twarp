@@ -163,7 +163,7 @@ define_settings_group!(AgentSettings, settings: [
         sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agent.voice.stt.endpoint",
-        description: "Speech-to-text endpoint: Azure resource endpoint or OpenAI-compatible base URL.",
+        description: "Speech-to-text endpoint: provider resource endpoint or OpenAI-compatible base URL.",
     },
     voice_stt_model: AgentVoiceSttModel {
         type: String,
@@ -172,7 +172,7 @@ define_settings_group!(AgentSettings, settings: [
         sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agent.voice.stt.model",
-        description: "Speech-to-text model (OpenAI-compatible) or deployment name (Azure). Empty means gpt-4o-transcribe.",
+        description: "Speech-to-text model or provider deployment name. Empty means gpt-4o-transcribe.",
     },
     voice_stt_api_version: AgentVoiceSttApiVersion {
         type: String,
@@ -181,7 +181,7 @@ define_settings_group!(AgentSettings, settings: [
         sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agent.voice.stt.api_version",
-        description: "Azure api-version for the transcription endpoint. Empty means the built-in default.",
+        description: "Provider api-version for the transcription endpoint. Empty means the built-in default.",
     },
     voice_tts_kind: AgentVoiceTtsKind {
         type: String,
@@ -199,7 +199,7 @@ define_settings_group!(AgentSettings, settings: [
         sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agent.voice.tts.endpoint",
-        description: "Text-to-speech endpoint: Azure resource endpoint or OpenAI-compatible base URL. Empty means reuse the speech-to-text endpoint.",
+        description: "Text-to-speech endpoint: provider resource endpoint or OpenAI-compatible base URL. Empty means reuse the speech-to-text endpoint.",
     },
     voice_tts_model: AgentVoiceTtsModel {
         type: String,
@@ -208,7 +208,7 @@ define_settings_group!(AgentSettings, settings: [
         sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agent.voice.tts.model",
-        description: "Text-to-speech model or Azure deployment name. Empty means gpt-4o-mini-tts.",
+        description: "Text-to-speech model or provider deployment name. Empty means gpt-4o-mini-tts.",
     },
     voice_tts_voice: AgentVoiceTtsVoice {
         type: String,
