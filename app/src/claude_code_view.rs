@@ -1044,6 +1044,11 @@ impl ClaudeCodeView {
                 // the menu even mid-draft.
                 propagate_and_no_op_vertical_navigation_keys:
                     PropagateAndNoOpNavigationKeys::AtBoundary,
+                // 16e / PRODUCT 16 decision #10: a Tab-acceptable reply
+                // suggestion in the empty composer replaces the static
+                // "Message Claude Code…" placeholder instead of hiding
+                // under it.
+                autosuggestion_overrides_placeholder: true,
                 ..Default::default()
             };
             EditorView::new(options, ctx)

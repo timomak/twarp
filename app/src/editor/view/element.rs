@@ -1563,8 +1563,22 @@ impl Element for EditorElement {
             .and_then(|frame| frame.lines().last().map(|line| line.width))
             .unwrap_or(0.);
 
-        // Choose what to render: placeholder takes precedence over autosuggestion
-        let placeholder_suggestion_text_line_layouts = if let Some(placeholder_text) = view_snapshot
+        // Choose what to render: placeholder takes precedence over
+        // autosuggestion, unless the view opted into the reverse (twarp 16e:
+        // a Tab-acceptable ghost suggestion in an empty composer outranks the
+        // static placeholder — without this the suggestion text is invisible
+        // while its tab-accept hint still renders).
+        let autosuggestion_wins = view_snapshot.autosuggestion_overrides_placeholder
+            && view_snapshot.active_autosuggestion();
+        let placeholder_suggestion_text_line_layouts = if autosuggestion_wins {
+            view_snapshot.layout_autosuggestion(
+                last_text_line_width + left_notch_layout_width_px,
+                font_cache,
+                ctx.text_layout_cache,
+                &size,
+                self.soft_wrap,
+            )
+        } else if let Some(placeholder_text) = view_snapshot
             .matching_placeholder_text(&view_snapshot.editor_model.as_ref(app).buffer_text(app))
         {
             view_snapshot.layout_placeholder_text(

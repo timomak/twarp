@@ -1561,6 +1561,9 @@ pub struct EditorOptions {
     pub autocomplete_symbols: bool,
     pub soft_wrap: bool,
     pub placeholder_soft_wrap: bool,
+    /// When true, an active autosuggestion replaces the placeholder text
+    /// instead of being hidden by it (twarp 16e).
+    pub autosuggestion_overrides_placeholder: bool,
     /// Whether or not this editor should acknowledge the AppEditorSettings::vim_mode option.
     pub supports_vim_mode: bool,
     /// Closures that should return a top section, left notch and right notch elements, if we want to paint them
@@ -1610,6 +1613,7 @@ impl Default for EditorOptions {
             autocomplete_symbols: false,
             soft_wrap: false,
             placeholder_soft_wrap: false,
+            autosuggestion_overrides_placeholder: false,
             supports_vim_mode: false,
             render_decorator_elements: None,
             select_all_on_focus: false,
@@ -1645,6 +1649,7 @@ impl From<SingleLineEditorOptions> for EditorOptions {
             autocomplete_symbols: options.autocomplete_symbols,
             soft_wrap: options.soft_wrap,
             placeholder_soft_wrap: options.placeholder_soft_wrap,
+            autosuggestion_overrides_placeholder: false,
             supports_vim_mode: false,
             render_decorator_elements: None,
             select_all_on_focus: options.select_all_on_focus,
@@ -1908,6 +1913,9 @@ pub struct EditorView {
     enter_settings: EnterSettings,
     soft_wrap: bool,
     placeholder_soft_wrap: bool,
+    /// When true, an active autosuggestion replaces the placeholder text
+    /// instead of being hidden by it (twarp 16e).
+    autosuggestion_overrides_placeholder: bool,
     /// What the starting text of the view was. Helpful for determining if the editor is
     /// "dirty", i.e., a user has changed the contents from what is persisted elsewhere.
     base_buffer_text: String,
@@ -2967,6 +2975,7 @@ impl EditorView {
             is_empty: self.is_empty(ctx),
 
             placeholder_texts: self.placeholder_texts.clone(),
+            autosuggestion_overrides_placeholder: self.autosuggestion_overrides_placeholder,
 
             autosuggestion_state: self.autosuggestion_state.clone(),
             command_xray: self.get_command_x_ray(),
@@ -3208,6 +3217,7 @@ impl EditorView {
             enter_settings: options.enter_settings,
             soft_wrap: options.soft_wrap,
             placeholder_soft_wrap: options.placeholder_soft_wrap,
+            autosuggestion_overrides_placeholder: options.autosuggestion_overrides_placeholder,
             base_buffer_text: base_text,
             supports_vim_mode: options.supports_vim_mode,
             vim_model,

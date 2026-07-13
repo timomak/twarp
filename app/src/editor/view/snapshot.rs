@@ -84,6 +84,12 @@ pub struct ViewSnapshot {
     /// empty string prefix "" is the default placeholder (shown when buffer is empty).
     pub placeholder_texts: Arc<HashMap<String, String>>,
 
+    /// When true, an active autosuggestion is rendered instead of the
+    /// placeholder text (twarp 16e: a Tab-acceptable ghost suggestion in an
+    /// empty composer outranks the static placeholder — PRODUCT 16 decision
+    /// #10). Default false keeps the historical placeholder-wins behavior.
+    pub autosuggestion_overrides_placeholder: bool,
+
     pub autosuggestion_state: Option<Arc<AutosuggestionState>>,
     pub command_xray: Option<Arc<Description>>,
 
