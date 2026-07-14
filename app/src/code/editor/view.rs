@@ -2469,7 +2469,10 @@ impl View for CodeEditorView {
             }
         };
         let mut col = Flex::column().with_child(inner);
-        if self.model.as_ref(app).diff_nav_is_active() && self.display_options.show_nav_bar {
+        if self.model.as_ref(app).diff_nav_is_active()
+            && self.display_options.show_nav_bar
+            && self.nav_bar.as_ref(app).has_visible_content(app)
+        {
             col.add_child(ChildView::new(&self.nav_bar).finish());
         }
 

@@ -1023,15 +1023,14 @@ impl CodeEditorModel {
                                 inline_highlights,
                                 mut removed_lines,
                             }) => {
-                                // Highlight the focused diff hunk OR only 1-line replacements if no diff is focused.
+                                // Highlight the focused diff hunk, or every replacement when no
+                                // diff is focused — the intra-line insertion/deletion ranges are
+                                // computed per hunk regardless of line counts, and without them a
+                                // multi-line replacement forces the reader to spot the changed
+                                // words manually.
                                 let should_highlight_changes = match focused_diff_index {
                                     Some(focused_index) => diff_index == focused_index,
-                                    None => {
-                                        let new_lines = (line_decoration.end
-                                            - line_decoration.start)
-                                            .as_usize();
-                                        new_lines == 1 && removed_lines.len() == 1
-                                    }
+                                    None => true,
                                 };
                                 let highlight_text = if should_highlight_changes {
                                     let buffer = self.content.as_ref(ctx);

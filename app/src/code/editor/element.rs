@@ -785,8 +785,16 @@ impl<V: EditorView> EditorWrapper<V> {
                         && !is_comment_box_open_on_different_line)
                         || is_comment_box_open_on_current_line;
 
+                    // Removed lines live in the OLD file: label them with their
+                    // old-file line number so the gutter reads as a dual
+                    // old/new numbering rather than a gap.
+                    let old_line_number = self
+                        .diff_status
+                        .removed_source_range(line_count)
+                        .map(|source| source.start + removed_hunk_line_index + 1);
+
                     let element = self.render_gutter_element(
-                        None,
+                        old_line_number,
                         line_number_config,
                         show_gutter_buttons,
                         should_show_comment_button,
