@@ -5,8 +5,8 @@ use twarp_core::ui::{appearance::Appearance, theme::Fill};
 use twarp_editor::model::CoreEditorModel;
 use twarpui::{
     elements::{
-        Align, Border, ConstrainedBox, Container, CrossAxisAlignment, Flex, MouseStateHandle,
-        ParentElement, Shrinkable,
+        Align, Border, ConstrainedBox, Container, CrossAxisAlignment, Empty, Flex,
+        MouseStateHandle, ParentElement, Shrinkable,
     },
     presenter::ChildView,
     ui_components::{
@@ -137,6 +137,16 @@ impl NavBar {
 
     pub fn set_behavior(&mut self, behavior: NavBarBehavior) {
         self.behavior = behavior;
+    }
+
+    /// Whether the bar would show anything at all. Hunk navigation is
+    /// pointless with a single hunk, so with one (or zero) hunks the bar only
+    /// earns its row if it has a close affordance or a stage/unstage button —
+    /// embedded read-only diffs (the Claude pane's cards) render nothing.
+    pub fn has_visible_content(&self, app: &AppContext) -> bool {
+        self.diff_hunk_count(app) > 1
+            || matches!(self.behavior, NavBarBehavior::Closable)
+            || !matches!(self.stage_button_state, NavBarStageButtonState::Hidden)
     }
 
     fn diff_hunk_count(&self, app: &AppContext) -> usize {
@@ -330,9 +340,13 @@ impl View for NavBar {
             InteractionState::Editable
         );
 
-        let mut row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(
+        let mut row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+
+        // With a single hunk there is nothing to navigate: drop the
+        // "Hunk: 1/1" counter and the Previous/Next buttons and keep only the
+        // affordances that still do something (close / stage).
+        if total > 1 {
+            row.add_child(
                 Shrinkable::new(
                     1.,
                     self.render_match_index(
@@ -343,9 +357,13 @@ impl View for NavBar {
                     ),
                 )
                 .finish(),
-            )
-            .with_child(self.render_nav_label(true))
-            .with_child(self.render_nav_label(false));
+            );
+            row.add_child(self.render_nav_label(true));
+            row.add_child(self.render_nav_label(false));
+        } else {
+            // Keep the remaining buttons right-aligned in the bar.
+            row.add_child(Shrinkable::new(1., Align::new(Empty::new().finish()).finish()).finish());
+        }
 
         // twarp 05e: render the Stage / Unstage button when the workspace
         // has opted in (gated by `stage_button_state`). The previous

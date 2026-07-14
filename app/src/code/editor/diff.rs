@@ -180,6 +180,22 @@ impl DiffStatus {
         self.added_diff_range(line_count)
     }
 
+    /// For removed lines rendered at `line_count` (new-buffer coordinates), the
+    /// range of lines they came from in the base ("old") file, 0-indexed — from
+    /// the deletion mapping for pure deletions, or the replaced range for
+    /// replacement hunks. Used to label removed lines with their old-file line
+    /// numbers in the gutter.
+    pub fn removed_source_range(&self, line_count: LineCount) -> Option<Range<usize>> {
+        let line_num = line_count.as_usize();
+        if let Some(range) = self.deletion_mapping.get(&line_num) {
+            return Some(range.clone());
+        }
+        match self.change_mapping.get(&line_num) {
+            Some(ChangeType::Replacement { replaced_range, .. }) => Some(replaced_range.clone()),
+            _ => None,
+        }
+    }
+
     /// Return the range of diff hunk lines (if any) containing the given line.
     /// line_count is the line count assigned in the EditorWrapper element.
     /// This is 0-indexed.

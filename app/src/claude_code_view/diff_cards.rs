@@ -21,10 +21,12 @@ use claude_code::diff::ToolDiff;
 use claude_code::{ToolOutput, ToolStatus};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use twarp_editor::content::buffer::InitialBufferState;
+use twarp_editor::model::CoreEditorModel;
 use twarp_editor::render::element::VerticalExpansionBehavior;
+use twarp_util::path::LineAndColumnArg;
 use twarp_util::standardized_path::StandardizedPath;
 use twarpui::{
     elements::{ConstrainedBox, Container, CrossAxisAlignment, Flex, MainAxisSize, ParentElement},
@@ -42,6 +44,8 @@ use crate::code::editor::view::{CodeEditorRenderOptions, CodeEditorView};
 use crate::code::inline_diff::InlineDiffView;
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon as WarpIcon;
+use crate::view_components::action_button::{ActionButton, ButtonSize, NakedTheme};
+use crate::workspace::WorkspaceAction;
 
 /// Height bound for one embedded diff. Kept very large on purpose: a diff that
 /// scrolls *internally* traps the mouse wheel, so scrolling over a code edit
@@ -60,6 +64,31 @@ pub(super) struct DiffCard {
     pub viewers: Vec<ViewHandle<InlineDiffView>>,
     pub added: usize,
     pub removed: usize,
+    /// Header affordance that opens the edited file in a code tab, landing on
+    /// the first edit rather than line 1 (see [`fragment_start_line`]).
+    pub open_button: ViewHandle<ActionButton>,
+}
+
+/// Locate `fragment` (an edit's new text) in the file's current on-disk
+/// content and return its 1-based starting line — the tool has already applied
+/// the edit, so the new text is what's searchable. `None` (open at the top)
+/// when the file is unreadable or has changed since the edit.
+fn fragment_start_line(path: &Path, fragment: &str) -> Option<usize> {
+    #[cfg(target_family = "wasm")]
+    {
+        let _ = (path, fragment);
+        None
+    }
+    #[cfg(not(target_family = "wasm"))]
+    {
+        let fragment = fragment.trim_end_matches('\n');
+        if fragment.is_empty() {
+            return None;
+        }
+        let content = std::fs::read_to_string(path).ok()?;
+        let index = content.find(fragment)?;
+        Some(content[..index].matches('\n').count() + 1)
+    }
 }
 
 /// `apply_diffs` replaces whole base lines; a partial trailing line in the
@@ -76,6 +105,30 @@ fn ensure_trailing_newline(mut text: String) -> String {
 /// as a delta — the `code_diff_view` construction, minus its interactivity).
 pub(super) fn build_diff_card(diff: ToolDiff, ctx: &mut ViewContext<ClaudeCodeView>) -> DiffCard {
     let (added, removed) = diff.line_counts();
+    let open_path = diff.file_path.clone();
+    // The fragment to land on when opening the file. Resolved to a line at
+    // click time (not build time): the file keeps changing during a session,
+    // so a captured line number would go stale.
+    let first_new_fragment = diff.edits.first().map(|edit| edit.new.clone());
+    let open_button = ctx.add_typed_action_view(move |_ctx| {
+        ActionButton::new("", NakedTheme)
+            .with_icon(WarpIcon::LinkExternal)
+            .with_size(ButtonSize::InlineActionHeader)
+            .with_tooltip("Open file")
+            .on_click(move |ctx| {
+                let line_and_column = first_new_fragment
+                    .as_deref()
+                    .and_then(|fragment| fragment_start_line(Path::new(&open_path), fragment))
+                    .map(|line_num| LineAndColumnArg {
+                        line_num,
+                        column_num: None,
+                    });
+                ctx.dispatch_typed_action(WorkspaceAction::OpenFileInNewTab {
+                    full_path: PathBuf::from(&open_path),
+                    line_and_column,
+                });
+            })
+    });
     let viewers = diff
         .edits
         .into_iter()
@@ -97,6 +150,21 @@ pub(super) fn build_diff_card(diff: ToolDiff, ctx: &mut ViewContext<ClaudeCodeVi
                 // diff against.
                 editor_view.set_language_with_path(Path::new(&diff.file_path), ctx);
                 editor_view.reset(InitialBufferState::plain_text(&old), ctx);
+                // This selection-only diff has no cursor, so it doesn't need
+                // the trailing cursor line. Beyond being useless here, the
+                // trailing-newline blocks get duplicated every time the diff
+                // temp blocks are re-laid (`reset_temporary_block` recomputes
+                // `has_final_trailing_newline` from the tree tail, which a
+                // trailing deletion hunk breaks), stacking invisible
+                // full-height lines below the diff — the card's dead space.
+                editor_view
+                    .model
+                    .as_ref(ctx)
+                    .render_state()
+                    .clone()
+                    .update(ctx, |render_state, _ctx| {
+                        render_state.set_show_final_trailing_newline_when_non_empty(false);
+                    });
             });
             let delta = DiffDelta {
                 replacement_line_range: 0..old_lines,
@@ -131,6 +199,7 @@ pub(super) fn build_diff_card(diff: ToolDiff, ctx: &mut ViewContext<ClaudeCodeVi
         viewers,
         added,
         removed,
+        open_button,
     }
 }
 
@@ -191,6 +260,7 @@ pub(super) fn render_diff_card(
             label: Some(cluster_label(card, status)),
             icon: Some(status_icon(status, appearance)),
         })
+        .with_trailing_action(ChildView::new(&card.open_button).finish())
         .with_mouse_state(mouse_state)
         .on_toggle(move |ctx| {
             ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleToolCard(toggle_id.clone()));
