@@ -361,8 +361,11 @@ def roadmap_sync():
         if m:
             if any(it["id"] == sub_id for it in q["items"]):
                 return f"{sub_id}: already in queue"
-            base = next((it for it in q["items"]
-                         if it["id"] == feat or it["id"].split("-")[0] == feat.split("-")[0]), None)
+            # Inherit touches/verify from the feature's base item or a sibling impl sub-phase —
+            # never from -spec/-advance items (their grep verifies would wedge an impl item).
+            num = feat.split("-")[0]
+            base = next((it for it in q["items"] if it["id"] == feat), None) \
+                or next((it for it in q["items"] if re.fullmatch(rf"{num}[a-z]", it["id"])), None)
             touches = (base["touches"][:] if base else ["app/**"]) + [f"roadmap/{feat}/STATUS.md"]
             verify = base["verify"] if base else "cargo build --bin twarp-oss"
             task = (f"Implement sub-phase {sub_id} of roadmap feature {feat}. FIRST read the merged "
