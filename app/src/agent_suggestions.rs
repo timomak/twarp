@@ -35,6 +35,7 @@ pub enum SuggestionContext {
     Reply(ReplySuggestionContext),
     TerminalCommand(TerminalSuggestionContext),
     ComposerPlaceholder(ComposerPlaceholderSuggestionContext),
+    TerminalPlaceholder(TerminalPlaceholderSuggestionContext),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,6 +54,12 @@ pub struct ComposerPlaceholderSuggestionContext {
 pub struct TerminalSuggestionContext {
     prefix: String,
     cwd: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TerminalPlaceholderSuggestionContext {
+    cwd: Option<String>,
+    recent_commands: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -75,6 +82,7 @@ impl SuggestionContext {
             Self::Reply(context) => context.prompt(),
             Self::TerminalCommand(context) => context.prompt(),
             Self::ComposerPlaceholder(context) => context.prompt(),
+            Self::TerminalPlaceholder(context) => context.prompt(),
         }
     }
 }
@@ -202,6 +210,46 @@ impl TerminalSuggestionContext {
         prompt.push_str("Command prefix: ");
         prompt.push_str(&self.prefix);
         prompt.push_str("\nFull command:");
+        prompt
+    }
+}
+
+impl TerminalPlaceholderSuggestionContext {
+    pub fn new(cwd: Option<String>, recent_commands: Vec<String>) -> Option<Self> {
+        let cwd = cwd.filter(|cwd| !cwd.trim().is_empty());
+        let recent_commands = recent_commands
+            .into_iter()
+            .map(|command| command.trim().to_owned())
+            .filter(|command| !command.is_empty())
+            .collect::<Vec<_>>();
+
+        (cwd.is_some() || !recent_commands.is_empty()).then_some(Self {
+            cwd,
+            recent_commands,
+        })
+    }
+
+    fn prompt(&self) -> String {
+        let mut prompt = String::from(
+            "Suggest exactly one shell command the user might want to type at a fresh empty terminal prompt.\n\
+             It should be useful for the current directory and recent command history, and safe to insert as editable text.\n\
+             Return only the command. Do not include markdown, labels, quotes, or explanation.\n\
+             Do not include a trailing newline and do not run the command.\n\n",
+        );
+        if let Some(cwd) = &self.cwd {
+            prompt.push_str("Current directory: ");
+            prompt.push_str(cwd);
+            prompt.push('\n');
+        }
+        if !self.recent_commands.is_empty() {
+            prompt.push_str("\nRecent commands:\n");
+            for command in &self.recent_commands {
+                prompt.push_str("- ");
+                prompt.push_str(command);
+                prompt.push('\n');
+            }
+        }
+        prompt.push_str("\nSuggested command:");
         prompt
     }
 }
@@ -353,6 +401,9 @@ fn sanitize_suggestion(suggestion: &str, context: &SuggestionContext) -> Option<
     if let Some(stripped) = suggestion.strip_prefix("Suggested prompt:") {
         suggestion = stripped.trim().to_owned();
     }
+    if let Some(stripped) = suggestion.strip_prefix("Suggested command:") {
+        suggestion = stripped.trim().to_owned();
+    }
     if let Some(stripped) = suggestion.strip_prefix("Command:") {
         suggestion = stripped.trim().to_owned();
     }
@@ -421,6 +472,26 @@ mod tests {
             Some("git status --short".to_owned())
         );
         assert_eq!(sanitize_suggestion("cargo test", &context), None);
+    }
+
+    #[test]
+    fn terminal_placeholder_context_uses_cwd_or_history() {
+        assert!(TerminalPlaceholderSuggestionContext::new(None, vec![]).is_none());
+        let context = TerminalPlaceholderSuggestionContext::new(
+            Some("/repo".to_owned()),
+            vec![" git status ".to_owned()],
+        )
+        .unwrap();
+
+        assert_eq!(context.cwd, Some("/repo".to_owned()));
+        assert_eq!(context.recent_commands, vec!["git status".to_owned()]);
+        assert_eq!(
+            sanitize_suggestion(
+                "Suggested command: cargo test",
+                &SuggestionContext::TerminalPlaceholder(context)
+            ),
+            Some("cargo test".to_owned())
+        );
     }
 
     #[test]
