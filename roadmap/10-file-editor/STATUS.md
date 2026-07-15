@@ -2,7 +2,7 @@
 
 **Phase:** merged
 **Spec PR:** [#155](https://github.com/timomak/twarp/pull/155)
-**Impl PRs:** —
+**Impl PRs:** 10a [#195](https://github.com/timomak/twarp/pull/195), 10b [#196](https://github.com/timomak/twarp/pull/196)
 
 ## Scope
 

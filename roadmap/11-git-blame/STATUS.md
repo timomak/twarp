@@ -1,8 +1,8 @@
 # 11 — Git blame & per-line history
 
 **Phase:** merged
-**Spec PR:** —
-**Impl PRs:** —
+**Spec PR:** [#198](https://github.com/timomak/twarp/pull/198)
+**Impl PRs:** 11a [#199](https://github.com/timomak/twarp/pull/199), 11b [#200](https://github.com/timomak/twarp/pull/200)
 
 ## Scope
 

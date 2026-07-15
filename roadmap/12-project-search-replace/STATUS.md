@@ -1,8 +1,8 @@
 # 12 — Project-wide search & replace
 
-**Phase:** impl-pending
-**Spec PR:** —
-**Impl PRs:** —
+**Phase:** merged
+**Spec PR:** [#202](https://github.com/timomak/twarp/pull/202)
+**Impl PRs:** 12a [#203](https://github.com/timomak/twarp/pull/203), 12b [#204](https://github.com/timomak/twarp/pull/204)
 
 ## Scope
 
