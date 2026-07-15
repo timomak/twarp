@@ -146,6 +146,8 @@ const USER_ICON_SVG_PATH: &str = "bundled/svg/user.svg";
 const ASSISTANT_ICON_SVG_PATH: &str = "bundled/svg/claude.svg";
 /// Branch glyph for the hover "Fork" affordance below an assistant response.
 const FORK_ICON_SVG_PATH: &str = "bundled/svg/git-branch-02.svg";
+/// Copy glyph for the hover "copy response" affordance beside the Fork button.
+const COPY_ICON_SVG_PATH: &str = "bundled/svg/copy.svg";
 /// Down-chevron for the floating "scroll to bottom" button (shown above the
 /// composer's right edge while the transcript is scrolled up off the bottom).
 const SCROLL_TO_BOTTOM_ICON_SVG_PATH: &str = "bundled/svg/chevron-down.svg";
@@ -435,6 +437,10 @@ pub enum ClaudeCodeViewAction {
     /// Branches the session up to that turn into a new pane to the right,
     /// leaving this one untouched. Shown on hover below a response.
     ForkConversation(usize),
+    /// twarp: copy the whole assistant reply ending at this transcript index to
+    /// the clipboard — the one-click alternative to drag-selecting a long
+    /// response. Shown on hover beside the Fork button.
+    CopyResponse(usize),
     /// twarp: expand / collapse the floating background-scripts panel — the
     /// pill listing this chat's `run_in_background` Bash launches.
     ToggleBackgroundPanel,
@@ -870,6 +876,8 @@ pub struct ClaudeCodeView {
     /// over the response block, `fork_button_mouse` drives the button itself.
     fork_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
     fork_button_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Like [`Self::fork_button_mouse`], for the copy-response button beside it.
+    copy_button_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
     /// Mouse handles for the context-bar pills (#11): branch / CI / PR / the
     /// Create-PR button / the worktree toggle.
     branch_pill_mouse: MouseStateHandle,
@@ -1176,6 +1184,7 @@ impl ClaudeCodeView {
             recent_session_mouse: std::cell::RefCell::new(Vec::new()),
             fork_row_mouse: std::cell::RefCell::new(Vec::new()),
             fork_button_mouse: std::cell::RefCell::new(Vec::new()),
+            copy_button_mouse: std::cell::RefCell::new(Vec::new()),
             branch_pill_mouse: MouseStateHandle::default(),
             ci_pill_mouse: MouseStateHandle::default(),
             pr_pill_mouse: MouseStateHandle::default(),
@@ -4470,6 +4479,30 @@ impl ClaudeCodeView {
         .finish()
     }
 
+    /// The full prose of the reply ending at transcript `index`: every
+    /// assistant text segment since the previous user turn, joined with blank
+    /// lines. Tool cards, thinking blocks, and metrics between the segments are
+    /// skipped — copying a response means copying what Claude *said*.
+    fn reply_text(&self, index: usize) -> String {
+        let items = self.transcript.items();
+        if index >= items.len() {
+            return String::new();
+        }
+        let start = items[..index]
+            .iter()
+            .rposition(|item| matches!(item, TranscriptItem::User(_)))
+            .map_or(0, |pos| pos + 1);
+        items[start..=index]
+            .iter()
+            .filter_map(|item| match item {
+                TranscriptItem::Assistant { text, .. } => Some(text.trim()),
+                _ => None,
+            })
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
+
     /// Whether the assistant message at `index` is the last one of its turn —
     /// no later assistant message appears before the next user turn (or the end
     /// of the transcript). Drives where the Fork affordance is offered.
@@ -4484,7 +4517,8 @@ impl ClaudeCodeView {
         true
     }
 
-    /// twarp: the "⑂ Fork" button shown under a response on hover. Aligned under
+    /// twarp: the "⑂ Fork" + copy-response buttons shown under a response on
+    /// hover. Aligned under
     /// the message prose (past the avatar gutter) and clickable on its own — the
     /// surrounding response stays plain text. When `visible` is false the same
     /// element is laid out with transparent colours and no click/cursor, so it
@@ -4508,12 +4542,26 @@ impl ClaudeCodeView {
         } else {
             ColorU::new(0, 0, 0, 0)
         };
-        let button_mouse = pooled_mouse_state(&self.fork_button_mouse, index);
+        let fork_mouse = pooled_mouse_state(&self.fork_button_mouse, index);
+        let copy_mouse = pooled_mouse_state(&self.copy_button_mouse, index);
 
-        let icon = ConstrainedBox::new(Icon::new(FORK_ICON_SVG_PATH, label_color).finish())
-            .with_width(12.)
-            .with_height(12.)
-            .finish();
+        let pill = |content: Box<dyn Element>| {
+            Container::new(content)
+                .with_padding_left(8.)
+                .with_padding_right(8.)
+                .with_padding_top(3.)
+                .with_padding_bottom(3.)
+                .with_background_color(pill_bg)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
+                .finish()
+        };
+        let small_icon = |path: &'static str| {
+            ConstrainedBox::new(Icon::new(path, label_color).finish())
+                .with_width(12.)
+                .with_height(12.)
+                .finish()
+        };
+
         let label = appearance
             .ui_builder()
             .span("Fork")
@@ -4524,36 +4572,46 @@ impl ClaudeCodeView {
             })
             .build()
             .finish();
-        let content = Flex::row()
+        let fork_content = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(5.)
-            .with_child(icon)
+            .with_child(small_icon(FORK_ICON_SVG_PATH))
             .with_child(label)
             .finish();
-        let pill = Container::new(content)
-            .with_padding_left(8.)
-            .with_padding_right(8.)
-            .with_padding_top(3.)
-            .with_padding_bottom(3.)
-            .with_background_color(pill_bg)
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
-            .finish();
-        let button = Hoverable::new(button_mouse, move |_| pill);
+        let fork_pill = pill(fork_content);
+        let copy_pill = pill(small_icon(COPY_ICON_SVG_PATH));
+
+        let fork_button = Hoverable::new(fork_mouse, move |_| fork_pill);
+        let copy_button = Hoverable::new(copy_mouse, move |_| copy_pill);
         // Only the painted state is interactive — the transparent placeholder
         // must not catch clicks or show the pointer cursor in the empty gap.
-        let button = if visible {
-            button
-                .with_cursor(Cursor::PointingHand)
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ForkConversation(index));
-                })
+        let (fork_button, copy_button) = if visible {
+            (
+                fork_button
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::ForkConversation(index));
+                    }),
+                copy_button
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::CopyResponse(index));
+                    }),
+            )
         } else {
-            button
+            (fork_button, copy_button)
         };
+        let row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(6.)
+            .with_child(fork_button.finish())
+            .with_child(copy_button.finish())
+            .finish();
         // Indent under the prose (avatar gutter ≈ 14 padding + 16 icon + 12
         // margin) so it reads as belonging to the message above it.
-        Container::new(button.finish())
+        Container::new(row)
             .with_margin_left(42.)
             .with_margin_bottom(6.)
             .finish()
@@ -7666,6 +7724,12 @@ impl TypedActionView for ClaudeCodeView {
                 self.resume_recent_session(*index, ctx)
             }
             ClaudeCodeViewAction::ForkConversation(index) => self.fork_conversation(*index, ctx),
+            ClaudeCodeViewAction::CopyResponse(index) => {
+                let text = self.reply_text(*index);
+                if !text.is_empty() {
+                    ctx.clipboard().write(ClipboardContent::plain_text(text));
+                }
+            }
             ClaudeCodeViewAction::ToggleBackgroundPanel => {
                 self.background_scripts_expanded = !self.background_scripts_expanded;
                 // The agents panel shares the top-right anchor; keep at most
