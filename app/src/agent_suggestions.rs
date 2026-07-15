@@ -34,10 +34,18 @@ pub struct SuggestionRequest {
 pub enum SuggestionContext {
     Reply(ReplySuggestionContext),
     TerminalCommand(TerminalSuggestionContext),
+    ComposerPlaceholder(ComposerPlaceholderSuggestionContext),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReplySuggestionContext {
+    exchanges: Vec<ReplyExchange>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ComposerPlaceholderSuggestionContext {
+    cwd: Option<String>,
+    repo: Option<String>,
     exchanges: Vec<ReplyExchange>,
 }
 
@@ -66,42 +74,18 @@ impl SuggestionContext {
         match self {
             Self::Reply(context) => context.prompt(),
             Self::TerminalCommand(context) => context.prompt(),
+            Self::ComposerPlaceholder(context) => context.prompt(),
         }
     }
 }
 
 impl ReplySuggestionContext {
     pub fn from_transcript(transcript: &Transcript) -> Option<Self> {
-        let mut pending_assistant: Option<String> = None;
-        let mut exchanges = Vec::new();
-
-        for item in transcript.items().iter().rev() {
-            match item {
-                TranscriptItem::Assistant { text, done } if *done && !text.trim().is_empty() => {
-                    if pending_assistant.is_none() {
-                        pending_assistant = Some(text.trim().to_owned());
-                    }
-                }
-                TranscriptItem::User(text) if !text.trim().is_empty() => {
-                    if let Some(assistant) = pending_assistant.take() {
-                        exchanges.push(ReplyExchange {
-                            user: text.trim().to_owned(),
-                            assistant,
-                        });
-                        if exchanges.len() >= REPLY_SUGGESTION_MAX_EXCHANGES {
-                            break;
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
+        let exchanges = recent_completed_exchanges(transcript);
         if exchanges.is_empty() {
             return None;
         }
 
-        exchanges.reverse();
         Some(Self { exchanges })
     }
 
@@ -122,6 +106,80 @@ impl ReplySuggestionContext {
         prompt.push_str("\nNext user message:");
         prompt
     }
+}
+
+impl ComposerPlaceholderSuggestionContext {
+    pub fn new(transcript: &Transcript, cwd: Option<String>, repo: Option<String>) -> Option<Self> {
+        let cwd = cwd.filter(|cwd| !cwd.trim().is_empty());
+        let repo = repo.filter(|repo| !repo.trim().is_empty());
+        let exchanges = recent_completed_exchanges(transcript);
+        (cwd.is_some() || repo.is_some() || !exchanges.is_empty()).then_some(Self {
+            cwd,
+            repo,
+            exchanges,
+        })
+    }
+
+    fn prompt(&self) -> String {
+        let mut prompt = String::from(
+            "Suggest exactly one concise prompt the user could type into an empty Claude Code composer.\n\
+             It should be useful for the current project context and safe to insert as editable text.\n\
+             Return only the prompt text. Do not include quotes, labels, markdown, or explanation.\n\
+             Keep it under 140 characters.\n\n",
+        );
+        if let Some(cwd) = &self.cwd {
+            prompt.push_str("Current directory: ");
+            prompt.push_str(cwd);
+            prompt.push('\n');
+        }
+        if let Some(repo) = &self.repo {
+            prompt.push_str("Repo context: ");
+            prompt.push_str(repo);
+            prompt.push('\n');
+        }
+        if !self.exchanges.is_empty() {
+            prompt.push_str("\nRecent conversation:\n");
+            for exchange in &self.exchanges {
+                prompt.push_str("\nUser: ");
+                prompt.push_str(&exchange.user);
+                prompt.push_str("\nAssistant: ");
+                prompt.push_str(&exchange.assistant);
+                prompt.push('\n');
+            }
+        }
+        prompt.push_str("\nSuggested prompt:");
+        prompt
+    }
+}
+
+fn recent_completed_exchanges(transcript: &Transcript) -> Vec<ReplyExchange> {
+    let mut pending_assistant: Option<String> = None;
+    let mut exchanges = Vec::new();
+
+    for item in transcript.items().iter().rev() {
+        match item {
+            TranscriptItem::Assistant { text, done } if *done && !text.trim().is_empty() => {
+                if pending_assistant.is_none() {
+                    pending_assistant = Some(text.trim().to_owned());
+                }
+            }
+            TranscriptItem::User(text) if !text.trim().is_empty() => {
+                if let Some(assistant) = pending_assistant.take() {
+                    exchanges.push(ReplyExchange {
+                        user: text.trim().to_owned(),
+                        assistant,
+                    });
+                    if exchanges.len() >= REPLY_SUGGESTION_MAX_EXCHANGES {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    exchanges.reverse();
+    exchanges
 }
 
 impl TerminalSuggestionContext {
@@ -290,6 +348,9 @@ fn sanitize_suggestion(suggestion: &str, context: &SuggestionContext) -> Option<
         suggestion = stripped.trim().to_owned();
     }
     if let Some(stripped) = suggestion.strip_prefix("Next user message:") {
+        suggestion = stripped.trim().to_owned();
+    }
+    if let Some(stripped) = suggestion.strip_prefix("Suggested prompt:") {
         suggestion = stripped.trim().to_owned();
     }
     if let Some(stripped) = suggestion.strip_prefix("Command:") {

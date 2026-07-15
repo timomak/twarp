@@ -62,8 +62,13 @@ pub enum AgentSettingsPageAction {
     SetReplyProvider(String),
     SetReplyModel(String),
     SetReplyEffort(String),
+    SetPlaceholderProvider(String),
+    SetPlaceholderModel(String),
+    SetPlaceholderEffort(String),
     ToggleReplySuggestions,
     ToggleTerminalSuggestions,
+    ToggleComposerPlaceholderSuggestions,
+    ToggleTerminalPlaceholderSuggestions,
     ShowApiKeyEditor,
     SaveApiKey,
     RemoveApiKey,
@@ -101,8 +106,13 @@ pub struct AgentSettingsPageView {
     reply_provider_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
     reply_model_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
     reply_effort_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
+    placeholder_provider_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
+    placeholder_model_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
+    placeholder_effort_dropdown: ViewHandle<Dropdown<AgentSettingsPageAction>>,
     reply_suggestions_switch_state: SwitchStateHandle,
     terminal_suggestions_switch_state: SwitchStateHandle,
+    composer_placeholder_suggestions_switch_state: SwitchStateHandle,
+    terminal_placeholder_suggestions_switch_state: SwitchStateHandle,
     api_key_editor: ViewHandle<EditorView>,
     save_api_key_button: ViewHandle<ActionButton>,
     replace_api_key_button: ViewHandle<ActionButton>,
@@ -160,6 +170,7 @@ enum AuthStatus {
 enum SuggestionAction {
     Terminal,
     Reply,
+    Placeholder,
 }
 
 impl AgentSettingsPageView {
@@ -282,6 +293,51 @@ impl AgentSettingsPageView {
             );
             dropdown.set_selected_by_action(
                 AgentSettingsPageAction::SetReplyEffort(String::new()),
+                ctx,
+            );
+            dropdown.set_top_bar_max_width(180.);
+            dropdown
+        });
+        let placeholder_provider_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            dropdown.set_rich_items(
+                suggestion_provider_items(AgentSettingsPageAction::SetPlaceholderProvider),
+                ctx,
+            );
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetPlaceholderProvider(String::new()),
+                ctx,
+            );
+            dropdown.set_top_bar_max_width(180.);
+            dropdown
+        });
+        let placeholder_model_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            dropdown.set_items(
+                model_items(
+                    CLIAgent::Claude,
+                    AgentSettingsPageAction::SetPlaceholderModel,
+                ),
+                ctx,
+            );
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetPlaceholderModel(String::new()),
+                ctx,
+            );
+            dropdown.set_top_bar_max_width(220.);
+            dropdown
+        });
+        let placeholder_effort_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            dropdown.set_items(
+                effort_items(
+                    CLIAgent::Claude,
+                    AgentSettingsPageAction::SetPlaceholderEffort,
+                ),
+                ctx,
+            );
+            dropdown.set_selected_by_action(
+                AgentSettingsPageAction::SetPlaceholderEffort(String::new()),
                 ctx,
             );
             dropdown.set_top_bar_max_width(180.);
@@ -460,8 +516,13 @@ impl AgentSettingsPageView {
             reply_provider_dropdown,
             reply_model_dropdown,
             reply_effort_dropdown,
+            placeholder_provider_dropdown,
+            placeholder_model_dropdown,
+            placeholder_effort_dropdown,
             reply_suggestions_switch_state: Default::default(),
             terminal_suggestions_switch_state: Default::default(),
+            composer_placeholder_suggestions_switch_state: Default::default(),
+            terminal_placeholder_suggestions_switch_state: Default::default(),
             api_key_editor,
             save_api_key_button,
             replace_api_key_button,
@@ -554,6 +615,22 @@ impl AgentSettingsPageView {
         let reply_effort = settings::valid_effort_for_provider(
             reply_resolved_provider,
             settings.reply_suggest_effort.value(),
+        )
+        .unwrap_or_default();
+        let placeholder_provider = settings::valid_suggestion_provider_value(
+            settings.placeholder_suggest_provider.value(),
+        );
+        let placeholder_resolved_provider =
+            settings::suggestion_provider(settings.placeholder_suggest_provider.value())
+                .resolve(chat_provider);
+        let placeholder_model = settings::valid_model_for_provider(
+            placeholder_resolved_provider,
+            settings.placeholder_suggest_model.value(),
+        )
+        .unwrap_or_default();
+        let placeholder_effort = settings::valid_effort_for_provider(
+            placeholder_resolved_provider,
+            settings.placeholder_suggest_effort.value(),
         )
         .unwrap_or_default();
         // twarp 17: Voice dropdown selections (PRODUCT §20–§21).
@@ -671,6 +748,45 @@ impl AgentSettingsPageView {
             dropdown
                 .set_selected_by_action(AgentSettingsPageAction::SetReplyEffort(reply_effort), ctx);
         });
+        self.placeholder_provider_dropdown
+            .update(ctx, |dropdown, ctx| {
+                dropdown.set_rich_items(
+                    suggestion_provider_items(AgentSettingsPageAction::SetPlaceholderProvider),
+                    ctx,
+                );
+                dropdown.set_selected_by_action(
+                    AgentSettingsPageAction::SetPlaceholderProvider(placeholder_provider),
+                    ctx,
+                );
+            });
+        self.placeholder_model_dropdown
+            .update(ctx, |dropdown, ctx| {
+                dropdown.set_items(
+                    model_items(
+                        placeholder_resolved_provider,
+                        AgentSettingsPageAction::SetPlaceholderModel,
+                    ),
+                    ctx,
+                );
+                dropdown.set_selected_by_action(
+                    AgentSettingsPageAction::SetPlaceholderModel(placeholder_model),
+                    ctx,
+                );
+            });
+        self.placeholder_effort_dropdown
+            .update(ctx, |dropdown, ctx| {
+                dropdown.set_items(
+                    effort_items(
+                        placeholder_resolved_provider,
+                        AgentSettingsPageAction::SetPlaceholderEffort,
+                    ),
+                    ctx,
+                );
+                dropdown.set_selected_by_action(
+                    AgentSettingsPageAction::SetPlaceholderEffort(placeholder_effort),
+                    ctx,
+                );
+            });
         self.voice_stt_kind_dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_selected_by_action(
                 AgentSettingsPageAction::SetVoiceSttKind(voice_stt_kind),
@@ -757,6 +873,7 @@ impl AgentSettingsPageView {
         let config = match action {
             SuggestionAction::Terminal => settings.terminal_suggest_config(),
             SuggestionAction::Reply => settings.reply_suggest_config(),
+            SuggestionAction::Placeholder => settings.placeholder_suggest_config(),
         };
         let inherited = config.provider.is_inherit();
         (
@@ -1259,6 +1376,48 @@ impl TypedActionView for AgentSettingsPageView {
                     });
                 }
             }
+            AgentSettingsPageAction::SetPlaceholderProvider(provider) => {
+                if self.is_valid_suggestion_provider_selection(provider) {
+                    AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                        report_if_error!(settings
+                            .placeholder_suggest_provider
+                            .set_value(provider.trim().to_owned(), ctx));
+                    });
+                }
+            }
+            AgentSettingsPageAction::SetPlaceholderModel(model) => {
+                let provider = self.resolved_provider_for_pending_suggestion_selection(
+                    AgentSettings::as_ref(ctx)
+                        .placeholder_suggest_provider
+                        .value(),
+                    ctx,
+                );
+                if model.is_empty() || settings::valid_model_for_provider(provider, model).is_some()
+                {
+                    AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                        report_if_error!(settings
+                            .placeholder_suggest_model
+                            .set_value(model.clone(), ctx));
+                    });
+                }
+            }
+            AgentSettingsPageAction::SetPlaceholderEffort(effort) => {
+                let provider = self.resolved_provider_for_pending_suggestion_selection(
+                    AgentSettings::as_ref(ctx)
+                        .placeholder_suggest_provider
+                        .value(),
+                    ctx,
+                );
+                if effort.is_empty()
+                    || settings::valid_effort_for_provider(provider, effort).is_some()
+                {
+                    AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                        report_if_error!(settings
+                            .placeholder_suggest_effort
+                            .set_value(effort.clone(), ctx));
+                    });
+                }
+            }
             AgentSettingsPageAction::ToggleReplySuggestions => {
                 AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
                     let enabled = *settings.enable_reply_suggestions.value();
@@ -1270,6 +1429,22 @@ impl TypedActionView for AgentSettingsPageView {
                     let enabled = *settings.enable_terminal_suggestions.value();
                     report_if_error!(settings
                         .enable_terminal_suggestions
+                        .set_value(!enabled, ctx));
+                });
+            }
+            AgentSettingsPageAction::ToggleComposerPlaceholderSuggestions => {
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let enabled = *settings.enable_composer_placeholder_suggestions.value();
+                    report_if_error!(settings
+                        .enable_composer_placeholder_suggestions
+                        .set_value(!enabled, ctx));
+                });
+            }
+            AgentSettingsPageAction::ToggleTerminalPlaceholderSuggestions => {
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let enabled = *settings.enable_terminal_placeholder_suggestions.value();
+                    report_if_error!(settings
+                        .enable_terminal_placeholder_suggestions
                         .set_value(!enabled, ctx));
                 });
             }
@@ -1400,7 +1575,7 @@ impl SettingsWidget for AgentSettingsWidget {
     type View = AgentSettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "agent claude codex gemini backend chat history terminal reply suggestions model effort permission mode voice speech microphone transcription text-to-speech"
+        "agent claude codex gemini backend chat history terminal reply placeholder suggestions model effort permission mode voice speech microphone transcription text-to-speech"
     }
 
     fn render(
@@ -1460,6 +1635,12 @@ impl SettingsWidget for AgentSettingsWidget {
                             app,
                             SuggestionAction::Reply,
                         ))
+                        .with_child(render_suggestion_action_row(
+                            view,
+                            appearance,
+                            app,
+                            SuggestionAction::Placeholder,
+                        ))
                         .finish(),
                 )
                 .with_padding_left(8.)
@@ -1468,6 +1649,12 @@ impl SettingsWidget for AgentSettingsWidget {
             .with_child(render_sub_header(appearance, "Suggestions", None))
             .with_child(render_reply_suggestions_toggle(view, appearance, app))
             .with_child(render_terminal_suggestions_toggle(view, appearance, app))
+            .with_child(render_composer_placeholder_suggestions_toggle(
+                view, appearance, app,
+            ))
+            .with_child(render_terminal_placeholder_suggestions_toggle(
+                view, appearance, app,
+            ))
             .with_child(render_voice_section(view, appearance, app))
             .finish()
     }
@@ -1618,6 +1805,12 @@ fn render_suggestion_action_row(
             &view.reply_model_dropdown,
             &view.reply_effort_dropdown,
         ),
+        SuggestionAction::Placeholder => (
+            "Placeholder suggestions",
+            &view.placeholder_provider_dropdown,
+            &view.placeholder_model_dropdown,
+            &view.placeholder_effort_dropdown,
+        ),
     };
 
     let (provider_key, provider_sync, model_key, model_sync, effort_key, effort_sync) = match action
@@ -1637,6 +1830,14 @@ fn render_suggestion_action_row(
             settings::AgentReplySuggestModel::sync_to_cloud(),
             settings::AgentReplySuggestEffort::storage_key(),
             settings::AgentReplySuggestEffort::sync_to_cloud(),
+        ),
+        SuggestionAction::Placeholder => (
+            settings::AgentPlaceholderSuggestProvider::storage_key(),
+            settings::AgentPlaceholderSuggestProvider::sync_to_cloud(),
+            settings::AgentPlaceholderSuggestModel::storage_key(),
+            settings::AgentPlaceholderSuggestModel::sync_to_cloud(),
+            settings::AgentPlaceholderSuggestEffort::storage_key(),
+            settings::AgentPlaceholderSuggestEffort::sync_to_cloud(),
         ),
     };
 
@@ -1783,6 +1984,46 @@ fn render_terminal_suggestions_toggle(
         settings::AgentEnableTerminalSuggestions::sync_to_cloud(),
         view.terminal_suggestions_switch_state.clone(),
         AgentSettingsPageAction::ToggleTerminalSuggestions,
+    )
+}
+
+fn render_composer_placeholder_suggestions_toggle(
+    view: &AgentSettingsPageView,
+    appearance: &Appearance,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let settings = AgentSettings::as_ref(app);
+    render_suggestion_toggle(
+        view,
+        appearance,
+        app,
+        "Suggest a prompt in the empty Claude composer",
+        "Uses the Placeholder suggestions row when available.",
+        *settings.enable_composer_placeholder_suggestions.value(),
+        settings::AgentEnableComposerPlaceholderSuggestions::storage_key(),
+        settings::AgentEnableComposerPlaceholderSuggestions::sync_to_cloud(),
+        view.composer_placeholder_suggestions_switch_state.clone(),
+        AgentSettingsPageAction::ToggleComposerPlaceholderSuggestions,
+    )
+}
+
+fn render_terminal_placeholder_suggestions_toggle(
+    view: &AgentSettingsPageView,
+    appearance: &Appearance,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let settings = AgentSettings::as_ref(app);
+    render_suggestion_toggle(
+        view,
+        appearance,
+        app,
+        "Suggest a command in the empty terminal input",
+        "Uses the Placeholder suggestions row when available.",
+        *settings.enable_terminal_placeholder_suggestions.value(),
+        settings::AgentEnableTerminalPlaceholderSuggestions::storage_key(),
+        settings::AgentEnableTerminalPlaceholderSuggestions::sync_to_cloud(),
+        view.terminal_placeholder_suggestions_switch_state.clone(),
+        AgentSettingsPageAction::ToggleTerminalPlaceholderSuggestions,
     )
 }
 

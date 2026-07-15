@@ -27,7 +27,7 @@ A new **Agent** settings page (backend selector, local-auth reuse or API key via
 
 AI-suggested content in the *placeholder* of an empty input (distinct from 16e/16f ghost-text completions): a suggested prompt in the Claude composer, a suggested command in the terminal input. Shared **Placeholder suggestions** matrix row (provider/model/effort, capability-aware per provider, "Default" = inherit Chat) + two independent toggles, off by default. See PRODUCT §44–§52 / TECH "Increment 2".
 
-- [ ] **16g — Composer placeholder suggestion** + shared config row/toggles.
+- [x] **16g — Composer placeholder suggestion** + shared config row/toggles.
 - [ ] **16h — Terminal placeholder suggestion** (lowest-priority zero-state hint source).
 
 ## Key constraints carried into the specs

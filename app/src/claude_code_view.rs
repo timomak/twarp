@@ -106,7 +106,8 @@ use self::repo_context::{CiState, RepoContext};
 use self::thinking::ThinkingUi;
 use self::tool_cards::{render_tool_card, ToolCardUi};
 use crate::agent_suggestions::{
-    DefaultSuggestionProvider, ReplySuggestionContext, SuggestionContext, SuggestionProvider,
+    ComposerPlaceholderSuggestionContext, DefaultSuggestionProvider, ReplySuggestionContext,
+    SuggestionContext, SuggestionProvider,
 };
 use crate::app_state::{CLIAgent, ConversationStatus};
 use crate::appearance::Appearance;
@@ -140,6 +141,7 @@ const CLAUDE_BINARY: &str = "claude";
 
 /// Pane title (PRODUCT §5) — drives the tab label via [`PaneConfiguration`].
 const PANE_TITLE: &str = "Claude Code";
+const COMPOSER_STATIC_PLACEHOLDER: &str = "Message Claude Code…";
 
 /// Avatar glyphs for the message rows (the Agent-Mode shape: icon + body).
 const USER_ICON_SVG_PATH: &str = "bundled/svg/user.svg";
@@ -726,6 +728,13 @@ pub struct ClaudeCodeView {
     /// user edit, focus loss, or new turn increments it so stale provider
     /// results cannot repopulate the composer.
     reply_suggestion_generation: u64,
+    /// Monotonic cancellation token for empty-composer placeholder generation.
+    /// Stale async results are ignored when the composer gains text, a turn
+    /// starts, or the setting is disabled.
+    composer_placeholder_generation: u64,
+    /// The currently rendered AI placeholder text, if any. Tab accepts this
+    /// into the empty composer only when no editor autosuggestion is active.
+    composer_placeholder_suggestion: Option<String>,
     /// The cwd's mentionable files, walked lazily on the first `@` and kept
     /// for the pane's lifetime (gitignore-aware, capped).
     cwd_files: Option<Vec<String>>,
@@ -1063,7 +1072,7 @@ impl ClaudeCodeView {
         });
         ctx.subscribe_to_view(&input_editor, Self::handle_editor_event);
         input_editor.update(ctx, |editor, ctx| {
-            editor.set_placeholder_text("Message Claude Code…", ctx);
+            editor.set_placeholder_text(COMPOSER_STATIC_PLACEHOLDER, ctx);
         });
 
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new(PANE_TITLE));
@@ -1135,6 +1144,8 @@ impl ClaudeCodeView {
             suggestion_selected: 0,
             suggestion_row_mouse: std::cell::RefCell::new(Vec::new()),
             reply_suggestion_generation: 0,
+            composer_placeholder_generation: 0,
+            composer_placeholder_suggestion: None,
             cwd_files: None,
             slash_command_index: None,
             pending_images: Vec::new(),
@@ -1286,6 +1297,7 @@ impl ClaudeCodeView {
         // #11: populate the composer context bar (folder / branch / diff / PR /
         // CI) for the pane's directory.
         view.refresh_repo_context(ctx);
+        view.maybe_request_composer_placeholder_suggestion(ctx);
 
         view
     }
@@ -1529,6 +1541,7 @@ impl ClaudeCodeView {
                     self.accept_suggestion(self.suggestion_selected, ctx);
                 } else {
                     self.clear_reply_suggestion(ctx);
+                    self.clear_composer_placeholder_suggestion(ctx);
                     self.submit(ctx);
                 }
             }
@@ -1537,6 +1550,14 @@ impl ClaudeCodeView {
             EditorEvent::Edited(_) => {
                 self.clear_reply_suggestion(ctx);
                 self.refresh_composer_intelligence(ctx);
+                let composer_empty = self
+                    .input_editor
+                    .read(ctx, |editor, ctx| editor.buffer_text(ctx).trim().is_empty());
+                if composer_empty {
+                    self.maybe_request_composer_placeholder_suggestion(ctx);
+                } else {
+                    self.clear_composer_placeholder_suggestion(ctx);
+                }
             }
             // PRODUCT §49 (7l): a paste may carry a clipboard image — attach it.
             // The editor has already inserted any plain text, so this only adds
@@ -1562,6 +1583,7 @@ impl ClaudeCodeView {
                     return;
                 }
                 self.clear_reply_suggestion(ctx);
+                self.clear_composer_placeholder_suggestion(ctx);
                 if self.suggestion_query.take().is_some() {
                     self.suggestions.clear();
                     self.sync_navigation_propagation(ctx);
@@ -1598,6 +1620,9 @@ impl ClaudeCodeView {
             // like a terminal. The editor only surfaces these when the cursor
             // can't move further (single-line drafts: always; multi-line: at the
             // top/bottom edge), so multi-line editing still works normally.
+            EditorEvent::Navigate(NavigationKey::Tab) => {
+                self.accept_composer_placeholder_suggestion(ctx);
+            }
             EditorEvent::Navigate(NavigationKey::Up) => self.recall_history(true, ctx),
             EditorEvent::Navigate(NavigationKey::Down) => self.recall_history(false, ctx),
             _ => {}
@@ -1727,6 +1752,161 @@ impl ClaudeCodeView {
             .update(ctx, |editor, ctx| editor.clear_autosuggestion(ctx));
     }
 
+    fn clear_composer_placeholder_suggestion(&mut self, ctx: &mut ViewContext<Self>) {
+        self.composer_placeholder_generation = self.composer_placeholder_generation.wrapping_add(1);
+        self.composer_placeholder_suggestion = None;
+        self.input_editor.update(ctx, |editor, ctx| {
+            editor.set_placeholder_text(COMPOSER_STATIC_PLACEHOLDER, ctx);
+        });
+    }
+
+    fn composer_placeholder_repo_context(&self) -> Option<String> {
+        let context = self.repo_context.as_ref()?;
+        let mut parts = Vec::new();
+        if let Some(folder) = &context.folder {
+            parts.push(format!("folder {folder}"));
+        }
+        if let Some(branch) = &context.branch {
+            parts.push(format!("branch {branch}"));
+        }
+        if context.added.is_some() || context.removed.is_some() {
+            parts.push(format!(
+                "diff +{} -{}",
+                context.added.unwrap_or_default(),
+                context.removed.unwrap_or_default()
+            ));
+        }
+        if let Some(pr_number) = context.pr_number {
+            parts.push(format!("PR #{pr_number}"));
+        }
+        if let Some(ci) = context.ci {
+            parts.push(ci.label().to_owned());
+        }
+        (!parts.is_empty()).then(|| parts.join(", "))
+    }
+
+    fn maybe_request_composer_placeholder_suggestion(&mut self, ctx: &mut ViewContext<Self>) {
+        if !*AgentSettings::as_ref(ctx)
+            .enable_composer_placeholder_suggestions
+            .value()
+        {
+            self.clear_composer_placeholder_suggestion(ctx);
+            return;
+        }
+        if self.streaming || self.raw_cli.is_some() || !self.message_queue.is_empty() {
+            self.clear_composer_placeholder_suggestion(ctx);
+            return;
+        }
+        let composer_ready = self.input_editor.read(ctx, |editor, ctx| {
+            editor.buffer_text(ctx).trim().is_empty() && !editor.active_autosuggestion()
+        });
+        if !composer_ready {
+            self.clear_composer_placeholder_suggestion(ctx);
+            return;
+        }
+
+        let cwd = self
+            .cwd
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_default();
+        let context = ComposerPlaceholderSuggestionContext::new(
+            &self.transcript,
+            Some(cwd.display().to_string()),
+            self.composer_placeholder_repo_context(),
+        );
+        let Some(context) = context else {
+            self.clear_composer_placeholder_suggestion(ctx);
+            return;
+        };
+
+        let settings = AgentSettings::as_ref(ctx);
+        let mut config = settings.placeholder_suggest_config();
+        let chat_config = settings.chat_launch_config();
+        if config.provider.is_inherit() {
+            config.model = config.model.or(chat_config.model);
+            config.effort = config.effort.or(chat_config.effort);
+        }
+        let chat_provider = settings.chat_provider_agent();
+        let resolved_provider = config.provider.resolve(chat_provider);
+        let request = crate::agent_suggestions::SuggestionRequest {
+            config,
+            chat_provider,
+            api_key: self.api_key_for_agent(resolved_provider, ctx),
+            cwd,
+            path_env: self.interactive_path.clone(),
+            context: SuggestionContext::ComposerPlaceholder(context),
+        };
+
+        self.composer_placeholder_generation = self.composer_placeholder_generation.wrapping_add(1);
+        let generation = self.composer_placeholder_generation;
+        ctx.spawn(
+            DefaultSuggestionProvider.suggest(request),
+            move |view, suggestion, ctx| {
+                if view.composer_placeholder_generation != generation {
+                    return;
+                }
+                view.apply_composer_placeholder_suggestion(suggestion, ctx);
+            },
+        );
+    }
+
+    fn apply_composer_placeholder_suggestion(
+        &mut self,
+        suggestion: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if !*AgentSettings::as_ref(ctx)
+            .enable_composer_placeholder_suggestions
+            .value()
+        {
+            self.clear_composer_placeholder_suggestion(ctx);
+            return;
+        }
+        if self.streaming || self.raw_cli.is_some() {
+            return;
+        }
+        let composer_ready = self.input_editor.read(ctx, |editor, ctx| {
+            editor.buffer_text(ctx).trim().is_empty() && !editor.active_autosuggestion()
+        });
+        if !composer_ready {
+            return;
+        }
+
+        let Some(suggestion) = suggestion else {
+            self.clear_composer_placeholder_suggestion(ctx);
+            return;
+        };
+        self.composer_placeholder_suggestion = Some(suggestion.clone());
+        self.input_editor.update(ctx, |editor, ctx| {
+            editor.set_placeholder_text(suggestion, ctx);
+        });
+    }
+
+    fn accept_composer_placeholder_suggestion(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+        if !*AgentSettings::as_ref(ctx)
+            .enable_composer_placeholder_suggestions
+            .value()
+        {
+            self.clear_composer_placeholder_suggestion(ctx);
+            return false;
+        }
+        let Some(suggestion) = self.composer_placeholder_suggestion.clone() else {
+            return false;
+        };
+        let composer_ready = self.input_editor.read(ctx, |editor, ctx| {
+            editor.buffer_text(ctx).trim().is_empty() && !editor.active_autosuggestion()
+        });
+        if !composer_ready {
+            return false;
+        }
+
+        self.clear_composer_placeholder_suggestion(ctx);
+        self.input_editor
+            .update(ctx, |editor, ctx| editor.set_buffer_text(&suggestion, ctx));
+        true
+    }
+
     fn maybe_request_reply_suggestion(&mut self, ctx: &mut ViewContext<Self>) {
         if !*AgentSettings::as_ref(ctx).enable_reply_suggestions.value() {
             self.clear_reply_suggestion(ctx);
@@ -1811,6 +1991,7 @@ impl ClaudeCodeView {
             return;
         }
         let suggestion = suggestion.unwrap();
+        self.clear_composer_placeholder_suggestion(ctx);
         self.input_editor.update(ctx, |editor, ctx| {
             editor.set_autosuggestion(
                 suggestion,
@@ -2428,6 +2609,7 @@ impl ClaudeCodeView {
         ctx: &mut ViewContext<Self>,
     ) {
         self.clear_reply_suggestion(ctx);
+        self.clear_composer_placeholder_suggestion(ctx);
         // PRODUCT §1: claude is parked on an AskUserQuestion — a typed message
         // is the user's answer (the free-form "Other" path), not type-ahead
         // for after the question. Consume it as the held permission's answer.
@@ -3277,7 +3459,13 @@ impl ClaudeCodeView {
             self.refresh_repo_context(ctx);
         }
         if completed_end {
+            let reply_suggestion_takes_precedence =
+                *AgentSettings::as_ref(ctx).enable_reply_suggestions.value()
+                    && ReplySuggestionContext::from_transcript(&self.transcript).is_some();
             self.maybe_request_reply_suggestion(ctx);
+            if !reply_suggestion_takes_precedence {
+                self.maybe_request_composer_placeholder_suggestion(ctx);
+            }
         }
         // PRODUCT §14: follow streaming output to the bottom as it arrives —
         // but only while the user is still pinned to the bottom. If they've
