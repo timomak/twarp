@@ -1,6 +1,6 @@
 # 16 — Agent settings — STATUS
 
-**Phase:** impl-pending (increment 2 — 16g/16h empty-input placeholder suggestions; spec [#207](https://github.com/timomak/twarp/pull/207) merged 2026-07-12; 16a–16f shipped [#158](https://github.com/timomak/twarp/pull/158), [#188](https://github.com/timomak/twarp/pull/188), [#190](https://github.com/timomak/twarp/pull/190)–[#193](https://github.com/timomak/twarp/pull/193))
+**Phase:** merged (increment 2 — 16g [#211](https://github.com/timomak/twarp/pull/211) + 16h [#212](https://github.com/timomak/twarp/pull/212) shipped 2026-07-15; spec [#207](https://github.com/timomak/twarp/pull/207) merged 2026-07-12; 16a–16f shipped [#158](https://github.com/timomak/twarp/pull/158), [#188](https://github.com/timomak/twarp/pull/188), [#190](https://github.com/timomak/twarp/pull/190)–[#193](https://github.com/timomak/twarp/pull/193))
 
 **Owner-confirmed decisions (2026-07-01):**
 - Provider scope: **independent per action** (chat / terminal-suggest / reply-suggest each get their own provider+model+effort).
