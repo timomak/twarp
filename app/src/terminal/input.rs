@@ -20,7 +20,7 @@ mod universal;
 // twarp: 2c-d — AI imports replaced with file-local stubs (see definitions below)
 use crate::agent_suggestions::{
     DefaultSuggestionProvider, SuggestionContext, SuggestionProvider, SuggestionRequest,
-    TerminalSuggestionContext,
+    TerminalPlaceholderSuggestionContext, TerminalSuggestionContext,
 };
 use crate::app_state::{AIConversationId, AIDocumentId, AIDocumentVersion};
 use crate::context_chips::spacing;
@@ -1832,6 +1832,7 @@ impl DropTargetData for InputDropTargetData {
 
 pub const DEBOUNCE_INPUT_DECORATION_PERIOD: Duration = Duration::from_millis(10);
 const TERMINAL_AI_SUGGESTION_DEBOUNCE: Duration = Duration::from_millis(500);
+const TERMINAL_PLACEHOLDER_RECENT_COMMANDS: usize = 6;
 /// Maximum number of historical commands to scan when looking for "similar"
 /// command runs (same pwd / shell / hostname / exit code) to derive a likely
 /// next-command shell autosuggestion.
@@ -2978,6 +2979,12 @@ impl CanExecuteCommand {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TerminalPlaceholderPromptKey {
+    block_id: BlockId,
+    cwd: Option<String>,
+}
+
 pub struct Input {
     model: Arc<FairMutex<TerminalModel>>,
     menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
@@ -3069,6 +3076,9 @@ pub struct Input {
     /// Whether the most recent intelligent autosuggestion was accepted or not.
     /// Cleared once a command is run.
     was_intelligent_autosuggestion_accepted: bool,
+    terminal_placeholder_generation: u64,
+    terminal_placeholder_suggestion: Option<String>,
+    terminal_placeholder_prompt_key: Option<TerminalPlaceholderPromptKey>,
 
     /// The last block that the user ran. This is used for generating autosuggestions.
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
@@ -4706,6 +4716,9 @@ impl Input {
             prompt_suggestions_banner_state: None,
             has_prompt_suggestion_banner,
             was_intelligent_autosuggestion_accepted: false,
+            terminal_placeholder_generation: 0,
+            terminal_placeholder_suggestion: None,
+            terminal_placeholder_prompt_key: None,
             last_user_block_completed: None,
             hoverable_handle: Default::default(),
             terminal_view_id,
@@ -6984,6 +6997,14 @@ impl Input {
             }
         });
 
+        self.maybe_request_terminal_placeholder_suggestion(ctx);
+        if let Some(suggestion) = self.terminal_placeholder_suggestion.clone() {
+            self.editor.update(ctx, |editor, ctx| {
+                editor.set_placeholder_text(suggestion, ctx);
+            });
+            return;
+        }
+
         // Now handle the default (empty prefix) placeholder
         if toggled_on && AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
             if FeatureFlag::AgentMode.is_enabled() {
@@ -7529,6 +7550,7 @@ impl Input {
         // multi-line commands to have the height of the empty input
         // box because we don't want its contents to be cut off.
         if !command.is_empty() {
+            self.clear_terminal_placeholder_suggestion();
             self.editor.update(ctx, |editor, ctx| {
                 editor.clear_autosuggestion(ctx);
                 editor.clear_all_placeholder_text();
@@ -9539,6 +9561,246 @@ impl Input {
         })
     }
 
+    fn terminal_placeholder_prompt_key(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<TerminalPlaceholderPromptKey> {
+        if !self.editor.as_ref(ctx).is_empty(ctx) {
+            return None;
+        }
+
+        let (block_id, has_received_precmd) = {
+            let model = self.model.lock();
+            let active_block = model.block_list().active_block();
+            (
+                active_block.id().clone(),
+                active_block.has_received_precmd(),
+            )
+        };
+        if !has_received_precmd {
+            return None;
+        }
+
+        let cwd = self
+            .active_block_metadata
+            .as_ref()
+            .and_then(BlockMetadata::current_working_directory)
+            .map(str::to_owned);
+        Some(TerminalPlaceholderPromptKey { block_id, cwd })
+    }
+
+    fn recent_terminal_placeholder_commands(
+        &self,
+        session_id: Option<SessionId>,
+        ctx: &AppContext,
+    ) -> Vec<String> {
+        let Some(session_id) = session_id else {
+            return Vec::new();
+        };
+        let Some(commands) = History::as_ref(ctx).commands(session_id) else {
+            return Vec::new();
+        };
+
+        let mut recent_commands = Vec::new();
+        for entry in commands.into_iter().rev() {
+            let command = entry.command.trim();
+            if command.is_empty()
+                || recent_commands
+                    .iter()
+                    .any(|recent: &String| recent == command)
+            {
+                continue;
+            }
+            recent_commands.push(command.to_owned());
+            if recent_commands.len() >= TERMINAL_PLACEHOLDER_RECENT_COMMANDS {
+                break;
+            }
+        }
+        recent_commands
+    }
+
+    fn terminal_placeholder_suggestion_request(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<SuggestionRequest> {
+        if !*AgentSettings::as_ref(ctx)
+            .enable_terminal_placeholder_suggestions
+            .value()
+        {
+            return None;
+        }
+
+        let key = self.terminal_placeholder_prompt_key(ctx)?;
+        let settings = AgentSettings::as_ref(ctx);
+        let mut config = settings.placeholder_suggest_config();
+        let chat_config = settings.chat_launch_config();
+        if config.provider.is_inherit() {
+            config.model = config.model.or(chat_config.model);
+            config.effort = config.effort.or(chat_config.effort);
+        }
+
+        let chat_provider = settings.chat_provider_agent();
+        let resolved_provider = config.provider.resolve(chat_provider);
+        let cwd = key
+            .cwd
+            .as_ref()
+            .map(PathBuf::from)
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_default();
+        let recent_commands =
+            self.recent_terminal_placeholder_commands(self.active_block_session_id(), ctx);
+        let context = TerminalPlaceholderSuggestionContext::new(
+            Some(cwd.display().to_string()),
+            recent_commands,
+        )?;
+        let session_env_vars = self.active_block_session_id().and_then(|session_id| {
+            self.sessions.read(ctx, |sessions, _| {
+                sessions.get_env_vars_for_session(session_id)
+            })
+        });
+        let path_env = session_env_vars
+            .as_ref()
+            .and_then(|env| env.get("PATH").cloned())
+            .or_else(|| std::env::var("PATH").ok());
+
+        Some(SuggestionRequest {
+            config,
+            chat_provider,
+            api_key: self.api_key_for_agent(resolved_provider, ctx),
+            cwd,
+            path_env,
+            context: SuggestionContext::TerminalPlaceholder(context),
+        })
+    }
+
+    fn dismiss_terminal_placeholder_suggestion(&mut self) {
+        if self.terminal_placeholder_suggestion.take().is_some() {
+            self.terminal_placeholder_generation =
+                self.terminal_placeholder_generation.wrapping_add(1);
+        }
+    }
+
+    fn clear_terminal_placeholder_suggestion(&mut self) {
+        self.terminal_placeholder_generation = self.terminal_placeholder_generation.wrapping_add(1);
+        self.terminal_placeholder_suggestion = None;
+        self.terminal_placeholder_prompt_key = None;
+    }
+
+    fn maybe_request_terminal_placeholder_suggestion(&mut self, ctx: &mut ViewContext<Self>) {
+        if !*AgentSettings::as_ref(ctx)
+            .enable_terminal_placeholder_suggestions
+            .value()
+        {
+            self.clear_terminal_placeholder_suggestion();
+            return;
+        }
+
+        let Some(key) = self.terminal_placeholder_prompt_key(ctx) else {
+            self.terminal_placeholder_suggestion = None;
+            return;
+        };
+
+        if self
+            .terminal_placeholder_prompt_key
+            .as_ref()
+            .is_some_and(|existing| existing == &key)
+        {
+            return;
+        }
+
+        let Some(request) = self.terminal_placeholder_suggestion_request(ctx) else {
+            self.terminal_placeholder_generation =
+                self.terminal_placeholder_generation.wrapping_add(1);
+            self.terminal_placeholder_prompt_key = Some(key);
+            self.terminal_placeholder_suggestion = None;
+            return;
+        };
+
+        let session_env_vars = self.active_block_session_id().and_then(|session_id| {
+            self.sessions.read(ctx, |sessions, _| {
+                sessions.get_env_vars_for_session(session_id)
+            })
+        });
+        let completion_context = self.completion_session_context(ctx);
+        let ignored_suggestions = IgnoredSuggestionsModel::as_ref(ctx)
+            .get_ignored_suggestions_for_type(SuggestionType::ShellCommand);
+
+        self.terminal_placeholder_generation = self.terminal_placeholder_generation.wrapping_add(1);
+        let generation = self.terminal_placeholder_generation;
+        self.terminal_placeholder_prompt_key = Some(key.clone());
+        self.terminal_placeholder_suggestion = None;
+
+        let _ = ctx.spawn(
+            async move {
+                Timer::after(TERMINAL_AI_SUGGESTION_DEBOUNCE).await;
+                let suggestion = DefaultSuggestionProvider.suggest(request).await?;
+                if ignored_suggestions.contains(&suggestion)
+                    || !is_command_valid(
+                        &suggestion,
+                        completion_context.as_ref(),
+                        session_env_vars.as_ref(),
+                    )
+                    .await
+                {
+                    return None;
+                }
+                Some(suggestion)
+            },
+            move |input, suggestion, ctx| {
+                input.apply_terminal_placeholder_suggestion(generation, key, suggestion, ctx);
+            },
+        );
+    }
+
+    fn apply_terminal_placeholder_suggestion(
+        &mut self,
+        generation: u64,
+        key: TerminalPlaceholderPromptKey,
+        suggestion: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.terminal_placeholder_generation != generation
+            || self.terminal_placeholder_prompt_key.as_ref() != Some(&key)
+        {
+            return;
+        }
+
+        if !*AgentSettings::as_ref(ctx)
+            .enable_terminal_placeholder_suggestions
+            .value()
+            || self.terminal_placeholder_prompt_key(ctx).as_ref() != Some(&key)
+        {
+            self.terminal_placeholder_suggestion = None;
+            self.set_zero_state_hint_text(ctx);
+            return;
+        }
+
+        self.terminal_placeholder_suggestion = suggestion;
+        self.set_zero_state_hint_text(ctx);
+    }
+
+    fn accept_terminal_placeholder_suggestion(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+        if !*AgentSettings::as_ref(ctx)
+            .enable_terminal_placeholder_suggestions
+            .value()
+            || !self.suggestions_mode_model.as_ref(ctx).is_closed()
+            || !self.editor.as_ref(ctx).is_empty(ctx)
+            || self.editor.as_ref(ctx).active_autosuggestion()
+        {
+            return false;
+        }
+
+        let Some(suggestion) = self.terminal_placeholder_suggestion.clone() else {
+            return false;
+        };
+
+        self.clear_terminal_placeholder_suggestion();
+        self.editor.update(ctx, |editor, ctx| {
+            editor.user_initiated_insert(&suggestion, PlainTextEditorViewAction::Paste, ctx);
+        });
+        true
+    }
+
     fn api_key_for_agent(&self, agent: CLIAgent, ctx: &AppContext) -> Option<String> {
         if !app_settings::api_key_presence(AgentSettings::as_ref(ctx), agent) {
             return None;
@@ -10103,6 +10365,11 @@ impl Input {
                 let is_editor_empty = self.editor.as_ref(ctx).is_empty(ctx);
                 if is_editor_empty != self.is_editor_empty_on_last_edit {
                     self.is_editor_empty_on_last_edit = is_editor_empty;
+                    if is_editor_empty {
+                        self.set_zero_state_hint_text(ctx);
+                    } else {
+                        self.dismiss_terminal_placeholder_suggestion();
+                    }
                     ctx.emit(Event::InputEmptyStateChanged {
                         is_empty: is_editor_empty,
                         reason: InputEmptyStateChangeReason::Edited,
@@ -12811,6 +13078,9 @@ impl Input {
             });
             return;
         }
+        if self.accept_terminal_placeholder_suggestion(ctx) {
+            return;
+        }
         // We have to manually check if "tab" is bound to
         // `InputAction::MaybeOpenCompletionSuggestions` here because the child `EditorView`
         // handles the actual tab keypress event -- the handler method attached to the
@@ -14617,6 +14887,10 @@ impl Input {
         // triggers another in-band command, etc. etc.
         if !is_after_in_band_command {
             self.update_prompt_display_chips(ctx);
+        }
+
+        if self.editor.as_ref(ctx).is_empty(ctx) {
+            self.set_zero_state_hint_text(ctx);
         }
     }
 
