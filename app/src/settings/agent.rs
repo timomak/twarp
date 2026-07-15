@@ -118,6 +118,33 @@ define_settings_group!(AgentSettings, settings: [
         toml_path: "agent.actions.reply_suggest.effort",
         description: "The reasoning effort used for chat reply suggestions. Empty means the provider default.",
     },
+    placeholder_suggest_provider: AgentPlaceholderSuggestProvider {
+        type: String,
+        default: DEFAULT_SUGGESTION_PROVIDER.to_owned(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.actions.placeholder_suggest.provider",
+        description: "The provider used for empty-input placeholder suggestions. Empty means inherit the chat provider.",
+    },
+    placeholder_suggest_model: AgentPlaceholderSuggestModel {
+        type: String,
+        default: DEFAULT_SUGGESTION_MODEL.to_owned(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.actions.placeholder_suggest.model",
+        description: "The model used for empty-input placeholder suggestions. Empty means the provider default.",
+    },
+    placeholder_suggest_effort: AgentPlaceholderSuggestEffort {
+        type: String,
+        default: DEFAULT_SUGGESTION_EFFORT.to_owned(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.actions.placeholder_suggest.effort",
+        description: "The reasoning effort used for empty-input placeholder suggestions. Empty means the provider default.",
+    },
     enable_reply_suggestions: AgentEnableReplySuggestions {
         type: bool,
         default: false,
@@ -135,6 +162,24 @@ define_settings_group!(AgentSettings, settings: [
         private: false,
         toml_path: "agent.suggestions.terminal.enabled",
         description: "Whether to show AI command suggestions in the terminal.",
+    },
+    enable_composer_placeholder_suggestions: AgentEnableComposerPlaceholderSuggestions {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.suggestions.composer_placeholder.enabled",
+        description: "Whether to suggest a prompt in the empty Claude composer.",
+    },
+    enable_terminal_placeholder_suggestions: AgentEnableTerminalPlaceholderSuggestions {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.suggestions.terminal_placeholder.enabled",
+        description: "Whether to suggest a command in the empty terminal input.",
     },
     claude_api_key_set: AgentClaudeApiKeySet {
         type: bool,
@@ -343,6 +388,23 @@ impl AgentSettings {
             provider,
             model: valid_model_for_provider(resolved_provider, self.reply_suggest_model.value()),
             effort: valid_effort_for_provider(resolved_provider, self.reply_suggest_effort.value()),
+        }
+    }
+
+    pub fn placeholder_suggest_config(&self) -> AgentSuggestionActionConfig {
+        let chat_provider = self.chat_provider_agent();
+        let provider = suggestion_provider(self.placeholder_suggest_provider.value());
+        let resolved_provider = provider.resolve(chat_provider);
+        AgentSuggestionActionConfig {
+            provider,
+            model: valid_model_for_provider(
+                resolved_provider,
+                self.placeholder_suggest_model.value(),
+            ),
+            effort: valid_effort_for_provider(
+                resolved_provider,
+                self.placeholder_suggest_effort.value(),
+            ),
         }
     }
 }
