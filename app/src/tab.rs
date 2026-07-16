@@ -126,22 +126,6 @@ const NEW_TAB_ACTIVE_COLOR_OPACITY: u8 = 100;
 const NEW_TAB_HOVERED_COLOR_OPACITY: u8 = 40;
 const NEW_TAB_INACTIVE_COLOR_OPACITY: u8 = 20;
 const NEW_TAB_ACTIVE_COLOR_OPACITY_FLOOR: u8 = 72;
-/// Top-corner radius (px) for Chrome/Safari-style tabs (PRODUCT §1). Only the
-/// top corners are rounded; the bottom stays square so the active tab seats
-/// flush onto the pane area below.
-const NEW_TAB_CORNER_RADIUS: f32 = 7.0;
-/// Top-corner radius (px) for the Chrome-style flared tab shape rendered by the
-/// Metal SDF (feature 08a). Drives the rounded top of the tab.
-const TAB_TOP_RADIUS: f32 = 8.;
-/// Flare radius (px) for the Chrome-style tab feet. The feet extend this far
-/// beyond the tab body on each side, with a concave valley of this radius where
-/// the side meets the foot. 0 disables the flare. Tunable for screenshot pass.
-///
-/// Note this doubles as the body's side inset (the SDF draws the body at
-/// `half_width - flare`), so the gap between two adjacent tabs is `2 * flare`.
-/// Kept small so that gap reads as a subtle Chrome notch rather than a tall
-/// white slot once the tab-bar strip behind it is transparent.
-const TAB_FLARE_RADIUS: f32 = 7.;
 /// Opacity (0..=100) for the saturated colored border drawn around the
 /// active tab when the tab has a custom color. Used by both legacy and new
 /// tab styling.
@@ -1710,42 +1694,11 @@ impl<'a> TabComponent<'a> {
         let mut tab = Container::new(stack)
             .with_vertical_padding(2.)
             .with_background(background_color);
-        if FeatureFlag::NewTabStyling.is_enabled() && !is_tab_dragging {
-            // Chrome-style flared tab shape, rendered by the Metal rect SDF
-            // (feature 08a). The shader rounds the top corners (TAB_TOP_RADIUS)
-            // and flares the base outward into feet with concave valleys
-            // (TAB_FLARE_RADIUS), so the tab seats into the strip + content area
-            // below it. Applies to all tabs (active and inactive) — the SDF
-            // draws each tab's own fill, so inactive tabs render correctly too.
-            //
-            // The feet extend TAB_FLARE_RADIUS beyond the body on each side but
-            // are drawn inside the tab's own quad (the SDF insets the body by
-            // the flare). Pad content horizontally by the flare so text/icons
-            // don't sit under the feet, and the border (drawn by the SDF inner
-            // outline) tracks the flared shape on all sides.
-            tab = tab
-                .with_horizontal_padding(TAB_FLARE_RADIUS)
-                .with_corner_radius(CornerRadius::with_top(Radius::Pixels(TAB_TOP_RADIUS)))
-                .with_tab_flare(TAB_FLARE_RADIUS)
-                .with_border(Border::all(1.).with_border_fill(border_fill));
-        } else if FeatureFlag::NewTabStyling.is_enabled() {
-            // While the tab is being dragged it's lifted off the strip, so the
-            // baseline-seating flare reads as wrong (its feet have nothing to
-            // sit on). Render it as a fully self-contained pill instead: all
-            // corners rounded, no flare, and — see below — no opaque backing.
-            tab = tab
-                .with_horizontal_padding(TAB_FLARE_RADIUS)
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(TAB_TOP_RADIUS)))
-                .with_border(Border::all(1.).with_border_fill(border_fill));
-        } else {
-            tab = tab
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.0)))
-                .with_border(Border::all(1.).with_border_fill(border_fill));
-        }
+        tab = tab.with_border(Border::all(1.).with_border_fill(border_fill));
 
-        // While dragging, the tab is a rounded pill (set above) and floats on
-        // its own — no opaque backing slab behind it, so the colored fill reads
-        // cleanly against whatever it's dragged over.
+        // While dragging, the tab floats on its own — no opaque backing slab
+        // behind it, so the colored fill reads cleanly against whatever it's
+        // dragged over.
         if is_tab_dragging {
             tab.finish()
         } else if self.for_drag_ghost {
