@@ -57,7 +57,9 @@ use claude_code::driver::{
     OutgoingImage, OutgoingMessage, PermissionMode, SpawnOptions, SpawnedSession,
 };
 use claude_code::launch::LaunchOptions;
-use claude_code::{sessions, Transcript, TranscriptEvent, TranscriptItem, TurnMetrics, Usage};
+use claude_code::{
+    sessions, ToolStatus, Transcript, TranscriptEvent, TranscriptItem, TurnMetrics, Usage,
+};
 use futures::StreamExt;
 use markdown_parser::{
     parse_markdown_with_gfm_tables, FormattedTable, FormattedText, FormattedTextInline,
@@ -67,6 +69,7 @@ use parking_lot::RwLock;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use twarp_core::features::FeatureFlag;
+use twarp_core::ui::tokens::{border, measure, radius, spacing, type_ramp};
 use twarp_editor::editor::NavigationKey;
 use twarpui::assets::asset_cache::AssetSource;
 use twarpui::clipboard::ClipboardContent;
@@ -87,7 +90,7 @@ use twarpui::{
         ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementAnchor,
         PositionedElementOffsetBounds, PulsingIcon, PulsingIconStateHandle, Radius, SavePosition,
         ScrollTarget, ScrollToPositionMode, ScrollbarWidth, SelectableArea, SelectionHandle,
-        Shrinkable, SizeConstraintCondition, SizeConstraintSwitch, Stack,
+        Shrinkable, SizeConstraintCondition, SizeConstraintSwitch, Stack, Text,
     },
     platform::Cursor,
     presenter::ChildView,
@@ -104,7 +107,7 @@ use self::composer::{SuggestionKind, SuggestionQuery};
 use self::diff_cards::DiffCard;
 use self::repo_context::{CiState, RepoContext};
 use self::thinking::ThinkingUi;
-use self::tool_cards::{render_tool_card, ToolCardUi};
+use self::tool_cards::{render_tool_card, tool_icon, ToolCardUi};
 use crate::agent_suggestions::{
     ComposerPlaceholderSuggestionContext, DefaultSuggestionProvider, ReplySuggestionContext,
     SuggestionContext, SuggestionProvider,
@@ -157,9 +160,9 @@ const SCROLL_TO_BOTTOM_ICON_SVG_PATH: &str = "bundled/svg/chevron-down.svg";
 /// Body / code font sizes. A point past the deleted `ai_assistant::transcript`
 /// renderer for the airier, Claude-app reading rhythm (shell-polish pass —
 /// PRODUCT §32 visual gate).
-const BODY_FONT_SIZE: f32 = 14.;
-const CODE_FONT_SIZE: f32 = 12.5;
-const TRANSCRIPT_LEFT_MARGIN: f32 = 15.;
+const BODY_FONT_SIZE: f32 = type_ramp::PROSE.size;
+const CODE_FONT_SIZE: f32 = type_ramp::CODE.size;
+const TRANSCRIPT_LEFT_MARGIN: f32 = spacing::LG;
 
 /// Shell-polish layout constants (the Claude-app frame): a floating rounded
 /// composer, muted context pills, and a zero-state heading. (Per owner
@@ -194,25 +197,25 @@ const TRANSCRIPT_FADE_HEIGHT: f32 = 150.;
 /// Horizontal gutter inside the transcript scroller. Lives *inside* the
 /// scrollable so the overlay scrollbar can hug the pane's right edge while the
 /// prose keeps its breathing room.
-const TRANSCRIPT_GUTTER: f32 = 16.;
+const TRANSCRIPT_GUTTER: f32 = spacing::LG;
 /// Position id of the zero-height sentinel pinned to the end of the transcript.
 /// Bottom-stick auto-scroll (PRODUCT §14) scrolls this into view to follow
 /// streaming output and to open a resumed session at its latest message.
 const TRANSCRIPT_BOTTOM_POSITION_ID: &str = "claude_transcript_bottom";
-const COMPOSER_CORNER_RADIUS: f32 = 14.;
+const COMPOSER_CORNER_RADIUS: f32 = radius::PANEL;
 /// Slack (px) for the streaming follow-to-bottom check. While following, the
 /// view sits exactly at the bottom; this only absorbs sub-pixel/line-height
 /// rounding so a genuine upward scroll (tens of px) reliably pauses the follow.
 const AUTOSCROLL_STICK_SLACK: f32 = 16.;
-const MESSAGE_CORNER_RADIUS: f32 = 12.;
+const MESSAGE_CORNER_RADIUS: f32 = radius::CARD;
 /// Cap the outgoing (user) iMessage bubble so long messages wrap into a column
 /// hugging the right edge instead of stretching across the whole transcript.
 const USER_BUBBLE_MAX_WIDTH: f32 = 520.;
 /// Side length of a sent-image preview thumbnail (#8): a fixed square so
 /// attachments sit as uniform tiles above the message bubble.
 const SENT_IMAGE_SIZE: f32 = 120.;
-const PILL_CORNER_RADIUS: f32 = 6.;
-const HEADING_FONT_SIZE: f32 = 20.;
+const PILL_CORNER_RADIUS: f32 = radius::CHIP;
+const HEADING_FONT_SIZE: f32 = type_ramp::HEADING.size;
 
 /// Below this composer width the context bar and controls row step down to
 /// their compact tier (folder pill dropped, branch truncated, MCP chip
@@ -338,6 +341,9 @@ pub enum ClaudeCodeViewAction {
     ScrollToBottom,
     /// Expand / collapse the tool card with this tool-use id (PRODUCT §19).
     ToggleToolCard(String),
+    /// Expand / collapse a completed consecutive run of tool cards in the
+    /// document transcript (19c §16).
+    ToggleToolRunGroup(usize),
     /// Expand / collapse the thinking card at this transcript index
     /// (PRODUCT §22).
     ToggleThinking(usize),
@@ -685,6 +691,11 @@ pub struct ClaudeCodeView {
     /// choice), keyed by tool-use id. An entry is created when the card's
     /// `ToolCall` event arrives (PRODUCT §16, §19).
     tool_card_ui: HashMap<String, ToolCardUi>,
+    /// Transcript-index keys for completed consecutive tool runs the user has
+    /// expanded from their collapsed "Worked for ..." summary row.
+    expanded_tool_run_groups: HashSet<usize>,
+    /// Stable mouse state for each collapsed tool-run disclosure row.
+    tool_run_group_mouse: std::cell::RefCell<HashMap<usize, MouseStateHandle>>,
     /// The feature-05 diff views backing `Edit`/`MultiEdit`/`Write` cards
     /// (PRODUCT §20), keyed by tool-use id. Built when the `ToolCall` event
     /// arrives; render-time only reads.
@@ -1138,6 +1149,8 @@ impl ClaudeCodeView {
             refresh_button: MouseStateHandle::default(),
             stop_button: MouseStateHandle::default(),
             tool_card_ui: HashMap::new(),
+            expanded_tool_run_groups: HashSet::new(),
+            tool_run_group_mouse: Default::default(),
             diff_cards: HashMap::new(),
             thinking_ui: HashMap::new(),
             todos_expanded: true,
@@ -2686,17 +2699,18 @@ impl ClaudeCodeView {
         // a Task sub-agent nests under the Task card and isn't at the top
         // level, but the held permission must still be answered (otherwise the
         // typed reply queues behind a turn that can't advance, PRODUCT §1).
-        let item = self.transcript.items().iter().enumerate().rev().find_map(
-            |(index, entry)| match entry {
-                TranscriptItem::Tool { id, name, .. }
-                    if name == "AskUserQuestion"
-                        && self.pending_question_permission.contains_key(id) =>
-                {
-                    Some((index, id.clone()))
-                }
-                _ => None,
-            },
-        );
+        let item =
+            self.transcript.items().iter().enumerate().rev().find_map(
+                |(index, entry)| match entry {
+                    TranscriptItem::Tool { id, name, .. }
+                        if name == "AskUserQuestion"
+                            && self.pending_question_permission.contains_key(id) =>
+                    {
+                        Some((index, id.clone()))
+                    }
+                    _ => None,
+                },
+            );
         let tool_use_id = match &item {
             Some((_, id)) => id.clone(),
             // No top-level card (nested / not yet streamed in): answer the
@@ -3795,6 +3809,8 @@ impl ClaudeCodeView {
         }
         self.transcript.clear();
         self.tool_card_ui.clear();
+        self.expanded_tool_run_groups.clear();
+        self.tool_run_group_mouse.borrow_mut().clear();
         self.diff_cards.clear();
         self.thinking_ui.clear();
         // The rebuilt transcript carries no live control requests, so drop any
@@ -4829,10 +4845,10 @@ impl ClaudeCodeView {
 
         let pill = |content: Box<dyn Element>| {
             Container::new(content)
-                .with_padding_left(8.)
-                .with_padding_right(8.)
-                .with_padding_top(3.)
-                .with_padding_bottom(3.)
+                .with_padding_left(spacing::SM)
+                .with_padding_right(spacing::SM)
+                .with_padding_top(spacing::XS)
+                .with_padding_bottom(spacing::XS)
                 .with_background_color(pill_bg)
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
                 .finish()
@@ -4849,7 +4865,7 @@ impl ClaudeCodeView {
             .span("Fork")
             .with_style(UiComponentStyles {
                 font_color: Some(label_color),
-                font_size: Some(11.5),
+                font_size: Some(type_ramp::LABEL.size),
                 ..Default::default()
             })
             .build()
@@ -4857,7 +4873,7 @@ impl ClaudeCodeView {
         let fork_content = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(5.)
+            .with_spacing(spacing::XS)
             .with_child(small_icon(FORK_ICON_SVG_PATH))
             .with_child(label)
             .finish();
@@ -4894,8 +4910,8 @@ impl ClaudeCodeView {
         // Indent under the prose (avatar gutter ≈ 14 padding + 16 icon + 12
         // margin) so it reads as belonging to the message above it.
         Container::new(row)
-            .with_margin_left(42.)
-            .with_margin_bottom(6.)
+            .with_margin_left(spacing::LG + spacing::LG + spacing::MD)
+            .with_margin_bottom(spacing::SM)
             .finish()
     }
 
@@ -4937,7 +4953,7 @@ impl ClaudeCodeView {
         let header = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(12.)
+            .with_spacing(spacing::MD)
             .with_child(glyph)
             .with_child(heading)
             .finish();
@@ -4945,7 +4961,7 @@ impl ClaudeCodeView {
         let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(16.)
+            .with_spacing(spacing::LG)
             .with_child(header);
 
         if self.recent_sessions.is_empty() {
@@ -4961,7 +4977,7 @@ impl ClaudeCodeView {
                 .with_soft_wrap()
                 .with_style(UiComponentStyles {
                     font_color: Some(muted),
-                    font_size: Some(13.),
+                    font_size: Some(type_ramp::PROSE.size),
                     ..Default::default()
                 })
                 .build()
@@ -4976,7 +4992,7 @@ impl ClaudeCodeView {
                 .span("Sessions".to_owned())
                 .with_style(UiComponentStyles {
                     font_color: Some(muted),
-                    font_size: Some(11.5),
+                    font_size: Some(type_ramp::CAPTION.size),
                     ..Default::default()
                 })
                 .build()
@@ -4984,7 +5000,7 @@ impl ClaudeCodeView {
             let mut rows = Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_main_axis_size(MainAxisSize::Min)
-                .with_spacing(2.);
+                .with_spacing(spacing::XXS);
             for (idx, session) in self.recent_sessions.iter().enumerate().take(MAX_ROWS) {
                 rows.add_child(self.render_recent_session_row(idx, session, app));
             }
@@ -4992,7 +5008,7 @@ impl ClaudeCodeView {
                 Flex::column()
                     .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                     .with_main_axis_size(MainAxisSize::Min)
-                    .with_spacing(8.)
+                    .with_spacing(spacing::SM)
                     .with_child(section)
                     .with_child(rows.finish())
                     .finish(),
@@ -5001,12 +5017,12 @@ impl ClaudeCodeView {
 
         Container::new(
             ConstrainedBox::new(column.finish())
-                .with_max_width(COMPOSER_MAX_WIDTH)
+                .with_max_width(measure::PROSE_MAX_WIDTH)
                 .finish(),
         )
-        .with_padding_left(24.)
-        .with_padding_right(24.)
-        .with_padding_top(64.)
+        .with_padding_left(spacing::XL)
+        .with_padding_right(spacing::XL)
+        .with_padding_top(spacing::XXL)
         .finish()
     }
 
@@ -5648,10 +5664,7 @@ impl ClaudeCodeView {
 
         let row_mouse = {
             let mut states = self.agent_row_mouse.borrow_mut();
-            states
-                .entry(agent.id.clone())
-                .or_insert_with(MouseStateHandle::default)
-                .clone()
+            states.entry(agent.id.clone()).or_default().clone()
         };
         let id = agent.id.clone();
         let header = Hoverable::new(row_mouse, move |state| {
@@ -5981,10 +5994,7 @@ impl ClaudeCodeView {
 
         let row_mouse = {
             let mut states = self.background_row_mouse.borrow_mut();
-            states
-                .entry(script.id.clone())
-                .or_insert_with(MouseStateHandle::default)
-                .clone()
+            states.entry(script.id.clone()).or_default().clone()
         };
         let id = script.id.clone();
         let header = Hoverable::new(row_mouse, move |state| {
@@ -6067,17 +6077,51 @@ impl ClaudeCodeView {
         // to one line. Render each item at its natural height in a column;
         // a variable-height virtualized list can return if very large sessions
         // need it (PRODUCT §14), but correctness comes first.
-        let mut column = Flex::column()
+        let mut turns = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_spacing(spacing::XL)
             .with_main_axis_size(MainAxisSize::Min);
-        for (index, item) in self.transcript.items().iter().enumerate() {
-            column.add_child(self.render_item(index, item, app));
+
+        let mut turn_children: Vec<Box<dyn Element>> = Vec::new();
+        let flush_turn = |turns: &mut Flex, turn_children: &mut Vec<Box<dyn Element>>| {
+            if turn_children.is_empty() {
+                return;
+            }
+            let mut turn = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_main_axis_size(MainAxisSize::Min);
+            for child in turn_children.drain(..) {
+                turn.add_child(child);
+            }
+            turns.add_child(turn.finish());
+        };
+
+        let items = self.transcript.items();
+        let mut index = 0;
+        while index < items.len() {
+            if matches!(items[index], TranscriptItem::User(_)) {
+                flush_turn(&mut turns, &mut turn_children);
+            }
+
+            if !self.streaming && is_collapsible_tool_item(&items[index]) {
+                let start = index;
+                index += 1;
+                while index < items.len() && is_collapsible_tool_item(&items[index]) {
+                    index += 1;
+                }
+                turn_children.push(self.render_tool_run_group(start, index, app));
+                continue;
+            }
+
+            turn_children.push(self.render_item(index, &items[index], app));
+            index += 1;
         }
+        flush_turn(&mut turns, &mut turn_children);
 
         // #7: a live status line below the last message while a turn streams —
         // an animated label + elapsed, replacing the composer's "Working…".
         if self.streaming {
-            column.add_child(self.render_streaming_status(app));
+            turns.add_child(self.render_streaming_status(app));
         }
 
         // Clearance spacer between the last message and the end marker. It must
@@ -6085,7 +6129,7 @@ impl ClaudeCodeView {
         // viewport's bottom edge, so this spacer is what lifts the last message
         // clear of the floating composer (trailing padding *below* the sentinel
         // would just be scrolled out of view, behind the composer).
-        column.add_child(
+        turns.add_child(
             ConstrainedBox::new(Container::new(Flex::row().finish()).finish())
                 .with_height(COMPOSER_CLEARANCE)
                 .finish(),
@@ -6094,7 +6138,7 @@ impl ClaudeCodeView {
         // PRODUCT §14: a zero-height marker pinned to the end of the transcript.
         // [`Self::scroll_to_bottom`] scrolls this into view to follow streaming
         // output and to open a resumed session at its latest message.
-        column.add_child(
+        turns.add_child(
             SavePosition::new(
                 ConstrainedBox::new(Container::new(Flex::row().finish()).finish())
                     .with_height(1.)
@@ -6107,10 +6151,18 @@ impl ClaudeCodeView {
         // The composer floats over the bottom of the pane; this clearance is
         // inside the scroll content so the newest message can scroll out from
         // underneath it (PRODUCT §15).
-        let content = Container::new(column.finish())
-            .with_padding_left(TRANSCRIPT_GUTTER)
-            .with_padding_right(TRANSCRIPT_GUTTER)
-            .finish();
+        let content = Container::new(
+            Align::new(
+                ConstrainedBox::new(turns.finish())
+                    .with_max_width(measure::PROSE_MAX_WIDTH)
+                    .finish(),
+            )
+            .top_center()
+            .finish(),
+        )
+        .with_padding_left(TRANSCRIPT_GUTTER)
+        .with_padding_right(TRANSCRIPT_GUTTER)
+        .finish();
 
         // PRODUCT §13: make the transcript prose highlightable. `SelectableArea`
         // is the coordinator that turns the per-element `set_selectable(true)`
@@ -6173,6 +6225,87 @@ impl ClaudeCodeView {
             scrollable,
         )
         .finish()
+    }
+
+    fn render_tool_run_group(
+        &self,
+        start: usize,
+        end_exclusive: usize,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let count = end_exclusive.saturating_sub(start);
+        let action_label = if count == 1 {
+            "1 action".to_owned()
+        } else {
+            format!("{count} actions")
+        };
+        let title = match self.turn_duration_for_tool_group(end_exclusive) {
+            Some(duration) => {
+                format!(
+                    "Worked for {} · {action_label}",
+                    thinking::format_compact_elapsed(duration)
+                )
+            }
+            None => format!("Worked · {action_label}"),
+        };
+
+        let title = Text::new_inline(title, appearance.ui_font_family(), type_ramp::UI.size)
+            .with_color(theme.main_text_color(theme.background()).into())
+            .with_selectable(false)
+            .finish();
+        let first_tool_name = self.transcript.items()[start..end_exclusive]
+            .iter()
+            .find_map(|item| match item {
+                TranscriptItem::Tool { name, .. } => Some(name.as_str()),
+                _ => None,
+            })
+            .unwrap_or("Tool");
+        let glyph = Icon::new(
+            tool_icon(first_tool_name).into(),
+            crate::ui_components::blended_colors::neutral_7(theme),
+        );
+        let expanded = self.expanded_tool_run_groups.contains(&start);
+        let mouse_state = self
+            .tool_run_group_mouse
+            .borrow_mut()
+            .entry(start)
+            .or_default()
+            .clone();
+
+        let mut disclosure = inline_action::Disclosure::new(title)
+            .with_glyph(glyph)
+            .expandable(true)
+            .expanded(expanded)
+            .with_mouse_state(mouse_state)
+            .on_toggle(move |ctx| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleToolRunGroup(start));
+            });
+        if expanded {
+            let mut body = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(spacing::SM);
+            for index in start..end_exclusive {
+                body.add_child(self.render_item(index, &self.transcript.items()[index], app));
+            }
+            disclosure = disclosure.with_body(body.finish()).with_unboxed_body();
+        }
+        disclosure.render(app)
+    }
+
+    fn turn_duration_for_tool_group(&self, after_index: usize) -> Option<Duration> {
+        for item in self.transcript.items().iter().skip(after_index) {
+            match item {
+                TranscriptItem::Metrics(metrics) => {
+                    return metrics.duration_ms.map(Duration::from_millis);
+                }
+                TranscriptItem::User(_) => return None,
+                _ => {}
+            }
+        }
+        None
     }
 
     /// twarp 08d (PRODUCT §13–§16): the bottom gradient fade-out band.
@@ -7263,18 +7396,18 @@ impl ClaudeCodeView {
                     .span(label.to_owned())
                     .with_style(UiComponentStyles {
                         font_color: Some(text_color),
-                        font_size: Some(13.),
+                        font_size: Some(type_ramp::UI.size),
                         ..Default::default()
                     })
                     .build()
                     .finish();
                 let button = Container::new(button_label)
-                    .with_padding_left(12.)
-                    .with_padding_right(12.)
-                    .with_padding_top(6.)
-                    .with_padding_bottom(6.)
+                    .with_padding_left(spacing::MD)
+                    .with_padding_right(spacing::MD)
+                    .with_padding_top(spacing::SM)
+                    .with_padding_bottom(spacing::SM)
                     .with_background_color(accent)
-                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
                     .finish();
                 Hoverable::new(self.submit_button.clone(), move |_| button)
                     .with_cursor(Cursor::PointingHand)
@@ -7318,7 +7451,7 @@ impl ClaudeCodeView {
         let controls_for = |density: ComposerDensity| -> Box<dyn Element> {
             let left = Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_spacing(8.)
+                .with_spacing(spacing::SM)
                 .with_child(self.render_permission_control(appearance))
                 .with_child(make_attach())
                 // twarp 17 (PRODUCT 17 §1, §12): voice input + spoken replies.
@@ -7329,7 +7462,7 @@ impl ClaudeCodeView {
             let mut right = Flex::row()
                 .with_main_axis_size(MainAxisSize::Min)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_spacing(8.);
+                .with_spacing(spacing::SM);
             if density == ComposerDensity::Full {
                 right.add_child(self.render_mcp_control(appearance));
             }
@@ -7367,7 +7500,7 @@ impl ClaudeCodeView {
         let mut card_column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(8.);
+            .with_spacing(spacing::SM);
         // PRODUCT §54 (7m): queued type-ahead messages sit at the top of the
         // composer, each removable before it dispatches.
         if let Some(queue) = self.render_message_queue(appearance) {
@@ -7398,7 +7531,7 @@ impl ClaudeCodeView {
                             .span("Drop to attach files".to_owned())
                             .with_style(UiComponentStyles {
                                 font_color: Some(accent),
-                                font_size: Some(13.),
+                                font_size: Some(type_ramp::UI.size),
                                 ..Default::default()
                             })
                             .build()
@@ -7414,28 +7547,18 @@ impl ClaudeCodeView {
         }
         // #4: the input card holds ONLY the message input (and its queue /
         // suggestions / attachment chips) — the control pills moved out, below.
-        let (card_border, card_fill) = if self.drag_active {
+        let (composer_border, composer_fill) = if self.drag_active {
             (
-                Border::all(1.5).with_border_color(self.render_accent.get()),
+                Border::all(border::HAIRLINE_WIDTH).with_border_color(self.render_accent.get()),
                 self.render_wash.get(),
             )
         } else {
             (
-                Border::all(1.).with_border_fill(theme.outline()),
+                Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()),
                 theme.surface_1().into_solid(),
             )
         };
-        let card = Container::new(card_column.finish())
-            .with_padding(Padding::uniform(10.))
-            .with_background_color(card_fill)
-            .with_border(card_border)
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
-                COMPOSER_CORNER_RADIUS,
-            )))
-            // The composer floats over the transcript; the shadow separates the
-            // layers (same treatment as the input-suggestions detail panel).
-            .with_drop_shadow(DropShadow::default())
-            .finish();
+        let input_area = card_column.finish();
 
         // Composer column, top → bottom: context bar (#11) above the input;
         // the input card; then the control pills (#4) below the input, outside
@@ -7446,7 +7569,7 @@ impl ClaudeCodeView {
         let mut composer_column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(4.);
+            .with_spacing(spacing::SM);
         if let Some(bar) = self.render_repo_context_bar(appearance, ComposerDensity::Full) {
             // Whether the bar resolves is density-independent, so the compact
             // and tiny tiers are always present when the full tier is.
@@ -7470,7 +7593,7 @@ impl ClaudeCodeView {
                 ],
             )));
         }
-        composer_column.add_child(card);
+        composer_column.add_child(input_area);
         composer_column.add_child(controls);
         // twarp 17 (PRODUCT 17 §2–§3, §8, §17): one-line voice status / error
         // under the controls; non-blocking, cleared by the next voice action.
@@ -7481,7 +7604,7 @@ impl ClaudeCodeView {
                     .span(status.clone())
                     .with_style(UiComponentStyles {
                         font_color: Some(theme.nonactive_ui_text_color().into_solid()),
-                        font_size: Some(12.),
+                        font_size: Some(type_ramp::LABEL.size),
                         ..Default::default()
                     })
                     .build()
@@ -7489,9 +7612,18 @@ impl ClaudeCodeView {
             );
         }
 
-        let composer = Container::new(composer_column.finish())
-            .with_padding_top(6.)
-            .with_padding_bottom(12.)
+        let composer_panel = Container::new(composer_column.finish())
+            .with_padding(Padding::uniform(spacing::MD))
+            .with_background_color(composer_fill)
+            .with_border(composer_border)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                COMPOSER_CORNER_RADIUS,
+            )))
+            .finish();
+
+        let composer = Container::new(composer_panel)
+            .with_padding_top(spacing::SM)
+            .with_padding_bottom(spacing::MD)
             // Keep a gutter so the card doesn't touch the pane edges in a narrow
             // pane (the outer container no longer pads horizontally — that gutter
             // moved inside the transcript scroller so the scrollbar hugs the edge).
@@ -7542,7 +7674,7 @@ impl ClaudeCodeView {
             stack.add_positioned_overlay_child(
                 button,
                 OffsetPositioning::offset_from_parent(
-                    vec2f(-TRANSCRIPT_GUTTER, -8.),
+                    vec2f(-TRANSCRIPT_GUTTER, -spacing::SM),
                     // The button floats *above* the composer's top edge, so it
                     // sits outside the parent (composer) rect. `ParentBySize`
                     // clamps the child's position back inside the parent's
@@ -7581,13 +7713,13 @@ impl ClaudeCodeView {
             (
                 PositionedElementAnchor::BottomLeft,
                 ChildAnchor::TopLeft,
-                vec2f(0., 6.),
+                vec2f(0., spacing::SM),
             )
         } else {
             (
                 PositionedElementAnchor::TopLeft,
                 ChildAnchor::BottomLeft,
-                vec2f(0., -6.),
+                vec2f(0., -spacing::SM),
             )
         };
         stack.add_positioned_overlay_child(
@@ -7897,6 +8029,12 @@ impl TypedActionView for ClaudeCodeView {
                 ctx.notify();
             }
             ClaudeCodeViewAction::ToggleToolCard(id) => self.toggle_tool_card(id, ctx),
+            ClaudeCodeViewAction::ToggleToolRunGroup(start) => {
+                if !self.expanded_tool_run_groups.remove(start) {
+                    self.expanded_tool_run_groups.insert(*start);
+                }
+                ctx.notify();
+            }
             ClaudeCodeViewAction::ToggleThinking(index) => self.toggle_thinking(*index, ctx),
             ClaudeCodeViewAction::ToggleTodos => {
                 self.todos_expanded = !self.todos_expanded;
@@ -8523,7 +8661,7 @@ impl ClaudeCodeView {
 
         let header = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_spacing(8.)
+            .with_spacing(spacing::SM)
             .with_child(
                 ConstrainedBox::new(
                     Icon::new(crate::ui_components::icons::Icon::Lock.into(), accent).finish(),
@@ -8538,7 +8676,7 @@ impl ClaudeCodeView {
                     .span("Permission".to_owned())
                     .with_style(UiComponentStyles {
                         font_color: Some(text_color),
-                        font_size: Some(13.),
+                        font_size: Some(type_ramp::UI.size),
                         ..Default::default()
                     })
                     .build()
@@ -8549,7 +8687,7 @@ impl ClaudeCodeView {
         let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(12.)
+            .with_spacing(spacing::MD)
             .with_child(header)
             .with_child(
                 appearance
@@ -8576,15 +8714,15 @@ impl ClaudeCodeView {
                         .with_soft_wrap()
                         .with_style(UiComponentStyles {
                             font_color: Some(muted),
-                            font_size: Some(12.),
+                            font_size: Some(type_ramp::LABEL.size),
                             ..Default::default()
                         })
                         .build()
                         .finish(),
                 )
-                .with_padding(Padding::uniform(8.))
+                .with_padding(Padding::uniform(spacing::SM))
                 .with_background_color(theme.surface_1().into_solid())
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
                 .finish(),
             );
         }
@@ -8654,7 +8792,7 @@ impl ClaudeCodeView {
                         .span(label.to_owned())
                         .with_style(UiComponentStyles {
                             font_color: Some(muted),
-                            font_size: Some(12.),
+                            font_size: Some(type_ramp::LABEL.size),
                             ..Default::default()
                         })
                         .build()
@@ -8664,16 +8802,14 @@ impl ClaudeCodeView {
         }
 
         Container::new(column.finish())
-            .with_padding(Padding::uniform(14.))
-            .with_margin_top(4.)
-            .with_margin_bottom(4.)
+            .with_padding(Padding::uniform(spacing::LG))
+            .with_margin_top(spacing::XS)
+            .with_margin_bottom(spacing::XS)
             .with_margin_left(TRANSCRIPT_LEFT_MARGIN)
-            .with_margin_right(20.)
+            .with_margin_right(spacing::XL)
             .with_background_color(surface.into_solid())
-            .with_border(Border::all(1.).with_border_fill(theme.outline()))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
-                MESSAGE_CORNER_RADIUS,
-            )))
+            .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
             .finish()
     }
 
@@ -8695,7 +8831,7 @@ impl ClaudeCodeView {
 
         let header = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_spacing(8.)
+            .with_spacing(spacing::SM)
             .with_child(
                 ConstrainedBox::new(
                     Icon::new(crate::ui_components::icons::Icon::File.into(), accent).finish(),
@@ -8710,7 +8846,7 @@ impl ClaudeCodeView {
                     .span("Plan".to_owned())
                     .with_style(UiComponentStyles {
                         font_color: Some(text_color),
-                        font_size: Some(13.),
+                        font_size: Some(type_ramp::UI.size),
                         ..Default::default()
                     })
                     .build()
@@ -8721,7 +8857,7 @@ impl ClaudeCodeView {
         let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(10.)
+            .with_spacing(spacing::MD)
             .with_child(header)
             .with_child(render_markdown_body(plan, text_color, appearance));
 
@@ -8759,16 +8895,14 @@ impl ClaudeCodeView {
         }
 
         Container::new(column.finish())
-            .with_padding(Padding::uniform(14.))
-            .with_margin_top(4.)
-            .with_margin_bottom(4.)
+            .with_padding(Padding::uniform(spacing::LG))
+            .with_margin_top(spacing::XS)
+            .with_margin_bottom(spacing::XS)
             .with_margin_left(TRANSCRIPT_LEFT_MARGIN)
-            .with_margin_right(20.)
+            .with_margin_right(spacing::XL)
             .with_background_color(surface.into_solid())
-            .with_border(Border::all(1.).with_border_fill(theme.outline()))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
-                MESSAGE_CORNER_RADIUS,
-            )))
+            .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
             .finish()
     }
 
@@ -8842,7 +8976,7 @@ impl ClaudeCodeView {
 
         let header = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_spacing(8.)
+            .with_spacing(spacing::SM)
             .with_child(
                 ConstrainedBox::new(
                     Icon::new(crate::ui_components::icons::Icon::HelpCircle.into(), accent)
@@ -8858,7 +8992,7 @@ impl ClaudeCodeView {
                     .span("Question".to_owned())
                     .with_style(UiComponentStyles {
                         font_color: Some(text_color),
-                        font_size: Some(13.),
+                        font_size: Some(type_ramp::UI.size),
                         ..Default::default()
                     })
                     .build()
@@ -8869,14 +9003,14 @@ impl ClaudeCodeView {
         let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(12.)
+            .with_spacing(spacing::MD)
             .with_child(header);
 
         for question in questions {
             let mut block = Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_main_axis_size(MainAxisSize::Min)
-                .with_spacing(6.);
+                .with_spacing(spacing::SM);
             if !question.question.trim().is_empty() {
                 block.add_child(
                     appearance
@@ -8885,7 +9019,7 @@ impl ClaudeCodeView {
                         .with_soft_wrap()
                         .with_style(UiComponentStyles {
                             font_color: Some(text_color),
-                            font_size: Some(BODY_FONT_SIZE),
+                            font_size: Some(type_ramp::PROSE.size),
                             ..Default::default()
                         })
                         .build()
@@ -8904,14 +9038,14 @@ impl ClaudeCodeView {
                 let mut option_row = Flex::row()
                     .with_main_axis_size(MainAxisSize::Max)
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_spacing(8.)
+                    .with_spacing(spacing::SM)
                     .with_child(
                         appearance
                             .ui_builder()
                             .span(marker.to_owned())
                             .with_style(UiComponentStyles {
                                 font_color: Some(if is_selected { accent } else { muted }),
-                                font_size: Some(14.),
+                                font_size: Some(type_ramp::PROSE.size),
                                 ..Default::default()
                             })
                             .build()
@@ -8920,7 +9054,7 @@ impl ClaudeCodeView {
                 let mut label_col = Flex::column()
                     .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                     .with_main_axis_size(MainAxisSize::Min)
-                    .with_spacing(2.)
+                    .with_spacing(spacing::XXS)
                     .with_child(
                         appearance
                             .ui_builder()
@@ -8928,7 +9062,7 @@ impl ClaudeCodeView {
                             .with_soft_wrap()
                             .with_style(UiComponentStyles {
                                 font_color: Some(text_color),
-                                font_size: Some(13.),
+                                font_size: Some(type_ramp::UI.size),
                                 ..Default::default()
                             })
                             .build()
@@ -8943,7 +9077,7 @@ impl ClaudeCodeView {
                                 .with_soft_wrap()
                                 .with_style(UiComponentStyles {
                                     font_color: Some(muted),
-                                    font_size: Some(11.5),
+                                    font_size: Some(type_ramp::CAPTION.size),
                                     ..Default::default()
                                 })
                                 .build()
@@ -8961,11 +9095,11 @@ impl ClaudeCodeView {
                 // width and wraps within it, mirroring `render_message_row`.
                 option_row.add_child(Shrinkable::new(1., label_col.finish()).finish());
                 let mut row_container = Container::new(option_row.finish())
-                    .with_padding_left(8.)
-                    .with_padding_right(8.)
-                    .with_padding_top(6.)
-                    .with_padding_bottom(6.)
-                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)));
+                    .with_padding_left(spacing::SM)
+                    .with_padding_right(spacing::SM)
+                    .with_padding_top(spacing::SM)
+                    .with_padding_bottom(spacing::SM)
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
                 if is_selected {
                     row_container =
                         row_container.with_background_color(theme.surface_1().into_solid());
@@ -9036,16 +9170,14 @@ impl ClaudeCodeView {
         }
 
         Container::new(column.finish())
-            .with_padding(Padding::uniform(14.))
-            .with_margin_top(4.)
-            .with_margin_bottom(4.)
+            .with_padding(Padding::uniform(spacing::LG))
+            .with_margin_top(spacing::XS)
+            .with_margin_bottom(spacing::XS)
             .with_margin_left(TRANSCRIPT_LEFT_MARGIN)
-            .with_margin_right(20.)
+            .with_margin_right(spacing::XL)
             .with_background_color(surface.into_solid())
-            .with_border(Border::all(1.).with_border_fill(theme.outline()))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
-                MESSAGE_CORNER_RADIUS,
-            )))
+            .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
             .finish()
     }
 }
@@ -9211,7 +9343,11 @@ fn render_message_row(
             .main_text_color(twarp_core::ui::theme::Fill::Solid(accent))
             .into_solid();
         let bubble = Container::new(render_markdown_body(text, text_color, appearance))
-            .with_padding(Padding::uniform(10.).with_left(14.).with_right(14.))
+            .with_padding(
+                Padding::uniform(spacing::SM)
+                    .with_left(spacing::LG)
+                    .with_right(spacing::LG),
+            )
             .with_background_color(accent)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
                 MESSAGE_CORNER_RADIUS,
@@ -9228,8 +9364,8 @@ fn render_message_row(
                 .with_child(constrained)
                 .finish(),
         )
-        .with_margin_top(4.)
-        .with_margin_bottom(4.)
+        .with_margin_top(spacing::XS)
+        .with_margin_bottom(spacing::XS)
         .finish();
     }
 
@@ -9245,8 +9381,8 @@ fn render_message_row(
         .with_cross_axis_alignment(CrossAxisAlignment::Start)
         .with_child(
             Container::new(icon)
-                .with_margin_right(12.)
-                .with_margin_top(2.)
+                .with_margin_right(spacing::MD)
+                .with_margin_top(spacing::XXS)
                 .finish(),
         )
         .with_child(
@@ -9258,9 +9394,9 @@ fn render_message_row(
         );
 
     Container::new(row.finish())
-        .with_padding(Padding::uniform(14.))
-        .with_margin_top(4.)
-        .with_margin_bottom(4.)
+        .with_padding(Padding::uniform(spacing::LG))
+        .with_margin_top(spacing::XS)
+        .with_margin_bottom(spacing::XS)
         .finish()
 }
 
@@ -9388,6 +9524,7 @@ fn render_markdown_body(
             .register_default_click_handlers(|url, ctx, _| {
                 ctx.dispatch_typed_action(ClaudeCodeViewAction::OpenUrl(url));
             })
+            .with_line_height_ratio(type_ramp::PROSE.line_height)
             // The transcript prose is read-only, but the user still needs to
             // highlight + copy it (same as the tool-output body in
             // inline_action.rs). FormattedTextElement carries the selection +
@@ -9542,6 +9679,7 @@ fn render_table_cell(
         text_color,
         HighlightedHyperlink::default(),
     )
+    .with_line_height_ratio(type_ramp::PROSE.line_height)
     .with_inline_code_properties(
         Some(theme.nonactive_ui_text_color().into()),
         Some(inline_code_bg),
@@ -9729,15 +9867,16 @@ fn render_metrics_line(metrics: &TurnMetrics, appearance: &Appearance) -> Box<dy
             .span(text)
             .with_style(UiComponentStyles {
                 font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+                font_size: Some(type_ramp::LABEL.size),
                 ..Default::default()
             })
             .build()
             .finish(),
     )
-    .with_padding_top(2.)
-    .with_padding_bottom(8.)
+    .with_padding_top(spacing::XXS)
+    .with_padding_bottom(spacing::SM)
     .with_padding_left(TRANSCRIPT_LEFT_MARGIN)
-    .with_padding_right(20.)
+    .with_padding_right(spacing::XL)
     .finish()
 }
 
@@ -9753,11 +9892,20 @@ fn render_error(message: &str, appearance: &Appearance) -> Box<dyn Element> {
             .finish(),
     )
     .with_background_color(appearance.theme().surface_2().into_solid())
-    .with_padding_top(8.)
-    .with_padding_bottom(8.)
+    .with_padding_top(spacing::SM)
+    .with_padding_bottom(spacing::SM)
     .with_padding_left(TRANSCRIPT_LEFT_MARGIN)
-    .with_padding_right(20.)
+    .with_padding_right(spacing::XL)
     .finish()
+}
+
+fn is_collapsible_tool_item(item: &TranscriptItem) -> bool {
+    match item {
+        TranscriptItem::Tool { name, status, .. } => {
+            *status != ToolStatus::Running && name != "AskUserQuestion" && name != "ExitPlanMode"
+        }
+        _ => false,
+    }
 }
 
 /// A contiguous run of a message's markdown: prose (rendered via
@@ -9824,7 +9972,7 @@ fn context_segment(appearance: &Appearance, text: String, color: ColorU) -> Box<
         .span(text)
         .with_style(UiComponentStyles {
             font_color: Some(color),
-            font_size: Some(11.5),
+            font_size: Some(type_ramp::LABEL.size),
             ..Default::default()
         })
         .build()
@@ -9902,11 +10050,11 @@ fn render_mode_segment(
         theme.nonactive_ui_text_color().into_solid()
     };
     let mut chip = Container::new(context_segment(appearance, label.to_owned(), color))
-        .with_padding_left(8.)
-        .with_padding_right(8.)
-        .with_padding_top(3.)
-        .with_padding_bottom(3.)
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
+        .with_padding_left(spacing::SM)
+        .with_padding_right(spacing::SM)
+        .with_padding_top(spacing::XS)
+        .with_padding_bottom(spacing::XS)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)));
     if active {
         chip = chip.with_background_color(wash);
     }
@@ -9963,11 +10111,11 @@ fn menu_action_row(
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let row = Container::new(context_segment(appearance, label.to_owned(), color))
-        .with_padding_left(8.)
-        .with_padding_right(8.)
-        .with_padding_top(5.)
-        .with_padding_bottom(5.)
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+        .with_padding_left(spacing::SM)
+        .with_padding_right(spacing::SM)
+        .with_padding_top(spacing::XS)
+        .with_padding_bottom(spacing::XS)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)))
         .finish();
     Hoverable::new(mouse, move |_| row)
         .with_cursor(Cursor::PointingHand)
@@ -10036,17 +10184,17 @@ fn render_pill(label: &str, bg: ColorU, appearance: &Appearance) -> Box<dyn Elem
             .span(label.to_owned())
             .with_style(UiComponentStyles {
                 font_color: Some(theme.nonactive_ui_text_color().into_solid()),
-                font_size: Some(11.5),
+                font_size: Some(type_ramp::LABEL.size),
                 ..Default::default()
             })
             .build()
             .finish(),
     )
-    .with_padding_left(8.)
-    .with_padding_right(8.)
-    .with_padding_top(3.)
-    .with_padding_bottom(3.)
-    .with_margin_right(6.)
+    .with_padding_left(spacing::SM)
+    .with_padding_right(spacing::SM)
+    .with_padding_top(spacing::XS)
+    .with_padding_bottom(spacing::XS)
+    .with_margin_right(spacing::SM)
     .with_background_color(bg)
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
     .finish()
@@ -10070,16 +10218,16 @@ fn render_context_pill(
             .span(label)
             .with_style(UiComponentStyles {
                 font_color: Some(color),
-                font_size: Some(11.5),
+                font_size: Some(type_ramp::LABEL.size),
                 ..Default::default()
             })
             .build()
             .finish(),
     )
-    .with_padding_left(8.)
-    .with_padding_right(8.)
-    .with_padding_top(3.)
-    .with_padding_bottom(3.)
+    .with_padding_left(spacing::SM)
+    .with_padding_right(spacing::SM)
+    .with_padding_top(spacing::XS)
+    .with_padding_bottom(spacing::XS)
     .with_background_color(bg)
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
     .finish()
@@ -10123,16 +10271,16 @@ fn render_clickable_pill(
             .span(label)
             .with_style(UiComponentStyles {
                 font_color: Some(theme.nonactive_ui_text_color().into_solid()),
-                font_size: Some(11.5),
+                font_size: Some(type_ramp::LABEL.size),
                 ..Default::default()
             })
             .build()
             .finish(),
     )
-    .with_padding_left(8.)
-    .with_padding_right(8.)
-    .with_padding_top(3.)
-    .with_padding_bottom(3.)
+    .with_padding_left(spacing::SM)
+    .with_padding_right(spacing::SM)
+    .with_padding_top(spacing::XS)
+    .with_padding_bottom(spacing::XS)
     .with_background_color(bg)
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
     .finish();
@@ -10146,7 +10294,9 @@ fn render_clickable_pill(
         position_id,
     )
     .finish();
-    Container::new(trigger).with_margin_right(6.).finish()
+    Container::new(trigger)
+        .with_margin_right(spacing::SM)
+        .finish()
 }
 
 /// Shorten a `claude` model id for the chip: drop the `claude-` prefix the CLI

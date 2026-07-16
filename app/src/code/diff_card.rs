@@ -19,6 +19,7 @@
 use std::rc::Rc;
 
 use twarp_core::ui::theme::AnsiColorIdentifier;
+use twarp_core::ui::tokens::{border, radius, spacing, type_ramp};
 use twarpui::{
     elements::{
         Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Expanded, Flex,
@@ -35,17 +36,17 @@ use crate::view_components::compactible_action_button::render_expansion_icon;
 
 /// Margin between the cluster label and its status icon (and between a glyph and
 /// its label). Ported from the AI block's `inline_action` spacing.
-pub(crate) const ICON_MARGIN: f32 = 8.;
+pub(crate) const ICON_MARGIN: f32 = spacing::SM;
 
 /// Left indent that lines a top-level disclosure up with the Claude transcript's
 /// text column (message-row padding + avatar width + avatar margin = 14+16+12).
 /// The default so the Claude pane's call sites need no change; other consumers
 /// (Code Review) override it via [`Disclosure::with_outer_margins`].
-const DEFAULT_LEFT_MARGIN: f32 = 14. + 16. + 12.;
+const DEFAULT_LEFT_MARGIN: f32 = spacing::LG + spacing::LG + spacing::MD;
 /// Right margin matching the Claude transcript's message-row padding.
-const DEFAULT_RIGHT_MARGIN: f32 = 14.;
+const DEFAULT_RIGHT_MARGIN: f32 = spacing::LG;
 /// Tight gap below each disclosure row so consecutive cards stack closely.
-const DEFAULT_BOTTOM_MARGIN: f32 = 4.;
+const DEFAULT_BOTTOM_MARGIN: f32 = spacing::XS;
 
 /// Returns the size for icons in the card chrome, scaled to the user's current
 /// font size. (Port of `inline_action_icons::icon_size`.)
@@ -101,14 +102,10 @@ impl RightCluster {
         if let Some(label) = self.label {
             children.push(
                 Container::new(
-                    Text::new_inline(
-                        label,
-                        appearance.ui_font_family(),
-                        appearance.monospace_font_size() - 1.,
-                    )
-                    .with_color(theme.sub_text_color(theme.surface_2()).into())
-                    .with_selectable(false)
-                    .finish(),
+                    Text::new_inline(label, appearance.ui_font_family(), type_ramp::LABEL.size)
+                        .with_color(theme.sub_text_color(theme.surface_2()).into())
+                        .with_selectable(false)
+                        .finish(),
                 )
                 .with_margin_right(ICON_MARGIN)
                 .finish(),
@@ -118,8 +115,8 @@ impl RightCluster {
             children.push(
                 Container::new(
                     ConstrainedBox::new(icon.finish())
-                        .with_width(icon_size(app) - 4.)
-                        .with_height(icon_size(app) - 4.)
+                        .with_width(icon_size(app) - spacing::XS)
+                        .with_height(icon_size(app) - spacing::XS)
                         .finish(),
                 )
                 .with_margin_right(ICON_MARGIN)
@@ -299,8 +296,8 @@ impl Disclosure {
         row.add_child(trailing.finish());
 
         let header = Container::new(row.finish())
-            .with_horizontal_padding(2.)
-            .with_vertical_padding(5.)
+            .with_horizontal_padding(spacing::MD)
+            .with_vertical_padding(spacing::SM)
             .finish();
 
         let header = match (self.expandable, self.on_toggle) {
@@ -322,16 +319,18 @@ impl Disclosure {
                     // A bordered, rounded box on the lower surface — the
                     // boundary shown below the label only on expand.
                     Container::new(body)
-                        .with_horizontal_padding(12.)
-                        .with_vertical_padding(8.)
+                        .with_horizontal_padding(spacing::MD)
+                        .with_vertical_padding(spacing::SM)
                         .with_background(theme.surface_1())
-                        .with_border(Border::all(1.).with_border_fill(theme.surface_2()))
-                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                        .with_border(
+                            Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()),
+                        )
+                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
                         .finish()
                 } else {
                     body
                 };
-                column.add_child(Container::new(body).with_margin_top(6.).finish());
+                column.add_child(Container::new(body).with_margin_top(spacing::SM).finish());
             }
         }
 

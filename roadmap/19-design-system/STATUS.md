@@ -12,7 +12,7 @@ Owner-directed 2026-07-16. Bring the non-terminal UI to the Codex-desktop-app le
 
 - [x] **19a — philosophy + tokens + enforcement.** `design/PHILOSOPHY.md`, `crates/twarp_core/src/ui/tokens.rs`, warp-ui-guidelines skill pointer. Bundled into the spec PR (owner bundling rule — nothing smoke-testable alone).
 - [x] **19b — the Codex shell.** Full-height left sidebar (layout inversion behind `DesignShellV1` flag, traffic-light zone, tab-strip origin), right-panel inspector restyle.
-- [ ] **19c — agent pane as a document.** Type ramp + prose measure, turn rhythm, tool-run collapse ("Worked for Ns"), one card anatomy, composer restyle.
+- [x] **19c — agent pane as a document.** Type ramp + prose measure, turn rhythm, tool-run collapse ("Worked for Ns"), one card anatomy, composer restyle.
 - [ ] **19d — tabs & blocks.** Active-tab contrast guarantee, single indicator slot, deduped status, block accent+wash treatment.
 - [ ] **19e — sweep.** Settings pages, raw-literal retirement, PhenomenonStyle migration, shadow/icon consolidation.
 

@@ -36,6 +36,7 @@ use std::borrow::Cow;
 use std::rc::Rc;
 
 use pathfinder_color::ColorU;
+use twarp_core::ui::tokens::{border, radius, spacing, type_ramp};
 use twarpui::{
     elements::{
         Align, Border, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
@@ -60,21 +61,21 @@ pub(super) use crate::code::diff_card::{
 };
 
 /// Ported padding constants — same values as the original for consistency.
-pub(super) const INLINE_ACTION_HORIZONTAL_PADDING: f32 = 16.;
+pub(super) const INLINE_ACTION_HORIZONTAL_PADDING: f32 = spacing::LG;
 /// The vertical padding applied to the requested action row's content body.
-pub(super) const INLINE_ACTION_VERTICAL_PADDING: f32 = 12.;
-pub(super) const INLINE_ACTION_HEADER_VERTICAL_PADDING: f32 = 10.;
+pub(super) const INLINE_ACTION_VERTICAL_PADDING: f32 = spacing::MD;
+pub(super) const INLINE_ACTION_HEADER_VERTICAL_PADDING: f32 = spacing::MD;
 
 /// The space below each card, ported from the AI block's
 /// `CONTENT_ITEM_VERTICAL_MARGIN`.
-const CONTENT_ITEM_VERTICAL_MARGIN: f32 = 16.;
+const CONTENT_ITEM_VERTICAL_MARGIN: f32 = spacing::LG;
 /// Adapted: the message rows in this pane (`render_message_row`) use a uniform
 /// 14px container padding, a 16px avatar, and a 12px avatar margin — so the
 /// transcript's text column starts 42px in. Cards indent to that column the
 /// way Agent Mode indented output items to the user query.
-const CONTENT_HORIZONTAL_PADDING: f32 = 14.;
-const MESSAGE_AVATAR_WIDTH: f32 = 16.;
-const MESSAGE_AVATAR_MARGIN: f32 = 12.;
+const CONTENT_HORIZONTAL_PADDING: f32 = spacing::LG;
+const MESSAGE_AVATAR_WIDTH: f32 = spacing::LG;
+const MESSAGE_AVATAR_MARGIN: f32 = spacing::MD;
 
 /// Configuration for manual expansion behavior (ported; the right-click and
 /// expands-upwards options had no consumer here and are trimmed).
@@ -211,20 +212,19 @@ impl HeaderConfig {
             .font_color_override
             .unwrap_or_else(|| blended_colors::text_main(theme, header_background));
 
-        let title_element = Text::new_inline(
-            self.title.clone(),
-            self.font_family,
-            appearance.monospace_font_size(),
-        )
-        .soft_wrap(self.soft_wrap_title)
-        .with_selectable(self.is_text_selectable)
-        .with_color(text_color)
-        .finish();
+        let title_element =
+            Text::new_inline(self.title.clone(), self.font_family, type_ramp::UI.size)
+                .soft_wrap(self.soft_wrap_title)
+                .with_selectable(self.is_text_selectable)
+                .with_color(text_color)
+                .finish();
 
         left_content_container.add_child(
             Expanded::new(
                 1.,
-                Container::new(title_element).with_margin_right(8.).finish(),
+                Container::new(title_element)
+                    .with_margin_right(spacing::SM)
+                    .finish(),
             )
             .finish(),
         );
@@ -254,9 +254,9 @@ impl HeaderConfig {
             .with_vertical_padding(INLINE_ACTION_HEADER_VERTICAL_PADDING)
             .with_background(header_background)
             .with_corner_radius(if looks_expanded_downwards {
-                CornerRadius::with_top(Radius::Pixels(8.))
+                CornerRadius::with_top(Radius::Pixels(radius::CARD))
             } else {
-                CornerRadius::with_all(Radius::Pixels(8.))
+                CornerRadius::with_all(Radius::Pixels(radius::CARD))
             })
             .finish();
 
@@ -396,20 +396,20 @@ impl RenderableAction {
             content.add_child(
                 Container::new(footer)
                     .with_horizontal_padding(INLINE_ACTION_HORIZONTAL_PADDING)
-                    .with_vertical_padding(4.)
+                    .with_vertical_padding(spacing::XS)
                     .with_background(theme.surface_1())
-                    .with_corner_radius(CornerRadius::with_bottom(Radius::Pixels(8.)))
+                    .with_corner_radius(CornerRadius::with_bottom(Radius::Pixels(radius::CARD)))
                     .finish(),
             );
         }
 
         let container = Container::new(content.finish())
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
             .with_background_color(self.background_color)
-            .with_border(Border::all(1.).with_border_fill(theme.surface_2()));
+            .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()));
 
         if self.nested {
-            Container::new(container.finish()).with_margin_bottom(8.)
+            Container::new(container.finish()).with_margin_bottom(spacing::SM)
         } else if has_header {
             container.finish().with_content_item_spacing()
         } else {
@@ -440,13 +440,14 @@ pub(super) fn render_requested_action_body_text(
     let formatted_text = FormattedText::new(lines);
     FormattedTextElement::new(
         formatted_text,
-        appearance.monospace_font_size(),
+        type_ramp::CODE.size,
         font_family,
         font_family,
         blended_colors::text_main(theme, theme.background()),
         Default::default(),
     )
     .with_color(blended_colors::text_main(theme, theme.background()))
+    .with_line_height_ratio(type_ramp::CODE.line_height)
     .set_selectable(true)
 }
 
@@ -499,7 +500,7 @@ pub(super) fn render_requested_action_row(
         let mut wrap = Wrap::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-            .with_run_spacing(8.);
+            .with_run_spacing(spacing::SM);
         wrap.extend([WrapFill::new(0., text_row.finish()).finish(), trailing]);
         wrap.finish()
     } else {
