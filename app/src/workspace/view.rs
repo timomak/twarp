@@ -15979,7 +15979,8 @@ impl Workspace {
             .with_height(16.)
             .finish();
 
-        let show_diff_stats = *TabSettings::as_ref(ctx).show_code_review_diff_stats;
+        let show_diff_stats = *TabSettings::as_ref(ctx).show_code_review_diff_stats
+            && !self.active_prompt_renders_git_diff_stats(ctx);
 
         let line_changes = if show_diff_stats {
             self.active_tab_pane_group()
@@ -16099,6 +16100,15 @@ impl Workspace {
             "workspace:right_panel_button",
         )
         .finish()
+    }
+
+    fn active_prompt_renders_git_diff_stats(&self, ctx: &AppContext) -> bool {
+        self.active_tab_pane_group()
+            .as_ref(ctx)
+            .active_session_view(ctx)
+            .is_some_and(|terminal_view| {
+                terminal_view.as_ref(ctx).prompt_renders_git_diff_stats(ctx)
+            })
     }
 
     /// Renders an invisible rect for detecting hovers over the tab bar.

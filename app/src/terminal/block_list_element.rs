@@ -35,6 +35,7 @@ use parking_lot::FairMutex;
 use twarp_core::semantic_selection::SemanticSelection;
 use twarp_core::ui::builder::UiBuilder;
 use twarp_core::ui::theme::AnsiColorIdentifier;
+use twarp_core::ui::tokens::{radius, spacing};
 use twarp_util::user_input::UserInput;
 use twarpui::platform::Cursor;
 use twarpui::text::SelectionType;
@@ -110,6 +111,7 @@ const COMMAND_ALPHA: u8 = 255;
 
 const SEPARATOR_TO_MONOSPACE_FONT_SIZE_RATIO: f32 = 0.8;
 const SEPARATOR_LEFT_OFFSET: f32 = 20.;
+const BLOCK_STATE_WASH_OPACITY: Opacity = 4;
 
 /// Border widths for selected blocks
 #[derive(Debug, Clone, Copy)]
@@ -664,6 +666,7 @@ pub struct BlockListElement {
 
     bookmark_element_builder: Box<BookmarkBuilderFn>,
     bookmark_elements: HashMap<BlockIndex, Box<dyn Element>>,
+    bookmarked_blocks: HashSet<BlockIndex>,
 
     /// The block whose filter we are actively editing.
     active_filter_editor_block_index: Option<BlockIndex>,
@@ -945,6 +948,7 @@ impl BlockListElement {
             label_elements_builder,
             bookmark_element_builder,
             bookmark_elements: HashMap::new(),
+            bookmarked_blocks: HashSet::new(),
             filter_elements_builder,
             filter_elements: HashMap::new(),
             mouse_states,
@@ -1042,6 +1046,11 @@ impl BlockListElement {
 
     pub fn with_filtered_blocks(mut self, filtered_blocks: HashSet<BlockIndex>) -> Self {
         self.filtered_blocks = Some(filtered_blocks);
+        self
+    }
+
+    pub fn with_bookmarked_blocks(mut self, bookmarked_blocks: HashSet<BlockIndex>) -> Self {
+        self.bookmarked_blocks = bookmarked_blocks;
         self
     }
 
@@ -2344,11 +2353,31 @@ impl BlockListElement {
     }
 
     #[allow(clippy::too_many_arguments)]
+    fn draw_block_state_emphasis(
+        grid_origin: Vector2F,
+        width: f32,
+        height: f32,
+        accent: Fill,
+        ctx: &mut PaintContext,
+    ) {
+        ctx.scene
+            .draw_rect_with_hit_recording(RectF::new(grid_origin, Vector2F::new(width, height)))
+            .with_background(accent.with_opacity(BLOCK_STATE_WASH_OPACITY));
+        ctx.scene
+            .draw_rect_with_hit_recording(RectF::new(
+                grid_origin,
+                Vector2F::new(spacing::XXS, height),
+            ))
+            .with_background(accent);
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn draw_block_background(
         cell_size: Vector2F,
         grid_origin: Vector2F,
         block: &Block,
-        is_selected_by_anyone: bool,
+        _is_selected_by_anyone: bool,
+        is_bookmarked: bool,
         bounds: RectF,
         warp_theme: &WarpTheme,
         block_borders_enabled: bool,
@@ -2380,32 +2409,30 @@ impl BlockListElement {
                 .with_background(agent_view_bg_fill(app));
         }
 
-        let mut did_render_ai_stripe = false;
         if !FeatureFlag::AgentView.is_enabled() {
             if let Some(ai_context_stripe_color) =
                 ai_render_context.context_color_for_block(block, warp_theme)
             {
                 draw_flag_pole(grid_origin, block_height, ai_context_stripe_color, ctx);
-                did_render_ai_stripe = true;
             }
         }
 
         if block.has_failed() {
-            ctx.scene
-                .draw_rect_with_hit_recording(RectF::new(
-                    grid_origin,
-                    Vector2F::new(bounds.width(), block_height),
-                ))
-                .with_background(warp_theme.failed_block_color().with_opacity(10));
-
-            if !is_selected_by_anyone && !did_render_ai_stripe {
-                draw_flag_pole(
-                    grid_origin,
-                    block_height,
-                    warp_theme.failed_block_color(),
-                    ctx,
-                );
-            }
+            Self::draw_block_state_emphasis(
+                grid_origin,
+                bounds.width(),
+                block_height,
+                warp_theme.failed_block_color(),
+                ctx,
+            );
+        } else if is_bookmarked {
+            Self::draw_block_state_emphasis(
+                grid_origin,
+                bounds.width(),
+                block_height,
+                warp_theme.accent(),
+                ctx,
+            );
         }
 
         if let Some((is_hovered, header_rect)) =
@@ -2464,6 +2491,7 @@ impl BlockListElement {
         block_index: BlockIndex,
         block_borders_enabled: bool,
         is_current_block_selected_by_anyone: bool,
+        is_bookmarked: bool,
         block_grid_params: &BlockGridParams,
         snackbar_header: &Option<SnackbarHeader>,
         terminal_view_id: EntityId,
@@ -2480,6 +2508,7 @@ impl BlockListElement {
             *grid_origin,
             block,
             is_current_block_selected_by_anyone,
+            is_bookmarked,
             block_grid_params.bounds,
             &block_grid_params.grid_render_params.warp_theme,
             block_borders_enabled,
@@ -4010,6 +4039,7 @@ impl Element for BlockListElement {
                         *block_index,
                         self.block_borders_enabled,
                         is_current_block_selected_by_anyone,
+                        self.bookmarked_blocks.contains(block_index),
                         &block_grid_params,
                         &snackbar_header,
                         self.terminal_view_id,
@@ -4023,7 +4053,7 @@ impl Element for BlockListElement {
                     );
 
                     ctx.scene.start_layer(ClipBounds::ActiveLayer);
-                    let block_is_bookmarked = self.bookmark_elements.contains_key(block_index);
+                    let block_is_bookmarked = self.bookmarked_blocks.contains(block_index);
                     let offset = 136.; // 4 icons of 26px width + 4px padding between icons x3 + 4px left padding + 4 px right padding + 4px for selected block border + 8px scrollbar
 
                     let block_menu_items_start_origin = header_grid_origin
@@ -4109,7 +4139,7 @@ impl Element for BlockListElement {
                             || display_rprompt
                         {
                             // We need to render the background around the active bookmark and/or the active filter.
-                            let active_bookmark = self.bookmark_elements.contains_key(block_index);
+                            let active_bookmark = block_is_bookmarked;
 
                             let background_origin = if active_bookmark {
                                 bookmark_button_origin - vec2f(4., 4.) // We need to account for padding when drawing the background.
@@ -4760,7 +4790,8 @@ where
     F: 'static + FnMut(&mut EventContext, &AppContext, Vector2F),
 {
     let mut button = Hoverable::new(mouse_state, |state| {
-        let mut container = icon.with_corner_radius(CornerRadius::with_all(Radius::Pixels(5.)));
+        let mut container =
+            icon.with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)));
 
         container = if state.is_clicked() || state.is_hovered() {
             container.with_background(theme.surface_2())

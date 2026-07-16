@@ -84,6 +84,16 @@ impl TerminalView {
             .filter(|value| !value.trim().is_empty())
     }
 
+    pub fn prompt_renders_git_diff_stats(&self, ctx: &AppContext) -> bool {
+        self.current_prompt
+            .as_ref(ctx)
+            .agent_view_chips(ctx)
+            .iter()
+            .any(|chip| {
+                matches!(chip.kind(), ContextChipKind::GitDiffStats) && chip.value().is_some()
+            })
+    }
+
     #[cfg_attr(not(feature = "local_fs"), allow(clippy::unnecessary_lazy_evaluations))]
     pub fn current_diff_line_changes(&self, ctx: &AppContext) -> Option<GitLineChanges> {
         // Prefer the filesystem-event-based GitRepoStatusModel (which includes
