@@ -4,7 +4,7 @@ Companion to [TECH.md](TECH.md). Behavior is written as numbered, testable invar
 
 ## Summary
 
-The agent pane (feature 07) becomes provider-generic: one pane, one timeline, one composer, one approval surface — with the provider (Claude / Codex) as an attribute of the session, the way model already is. Typing `codex` at a shell prompt opens the same pane driven by the OpenAI Codex CLI, exactly as `claude` does today. Feature 16's stubbed `CLIAgent::Codex` settings entry lights up. Claude behavior does not change at all.
+The agent pane (feature 07) becomes provider-generic: one pane, one timeline, one composer, one approval surface — with the provider (Claude / Codex) as an attribute of the session, the way model already is. Typing `codex` at a shell prompt opens the same pane driven by the OpenAI Codex CLI, exactly as `claude` does today. Feature 16's existing `CLIAgent::Codex` settings entry lights up. Claude behavior does not change at all.
 
 ## Goals / Non-goals
 
@@ -115,7 +115,7 @@ Owner-approved direction 2026-07-16 unless marked **(provisional)**.
 
 ## Smoke test
 
-Steps assume a built `twarp-oss`, both CLIs installed and logged in (`claude`, `codex`), run from a repo cwd.
+Steps assume a built `warp-oss`, both CLIs installed and logged in (`claude`, `codex`), run from a repo cwd.
 
 ### 18a — driver extraction (no user-visible change)
 
