@@ -579,9 +579,16 @@ impl<P: BackingView> PaneHeader<P> {
         // callback to a `FnMut` slot without requiring the field to be `Clone`.
         let title_on_double_click = title_on_double_click.map(std::rc::Rc::new);
         let appearance = Appearance::as_ref(app);
-        let header_icon_color = appearance
-            .theme()
-            .sub_text_color(appearance.theme().background());
+        // twarp: like the title below, the header's icon chrome (close ✕,
+        // overflow ⋯) follows the active tab's colour when one is set.
+        let header_icon_color: twarp_core::ui::theme::Fill =
+            crate::workspace::view::active_tab_accent(self.window_id, app)
+                .map(Into::into)
+                .unwrap_or_else(|| {
+                    appearance
+                        .theme()
+                        .sub_text_color(appearance.theme().background())
+                });
 
         let close_button = components::render_pane_close_button::<
             P::PaneHeaderOverflowMenuAction,
