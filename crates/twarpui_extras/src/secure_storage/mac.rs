@@ -7,6 +7,9 @@ use security_framework::os::macos::{
 
 use super::Error;
 
+/// `errSecItemNotFound` from the macOS Security framework.
+const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
+
 /// Implementation of the SecureStorage service using macOS Security
 /// framework keychains.
 pub struct SecureStorage {
@@ -51,7 +54,18 @@ impl SecureStorage {
         let keychain = SecKeychain::default()?;
         keychain
             .find_generic_password(&self.service_name, key)
-            .map_err(|_| Error::NotFound)
+            .map_err(|err| {
+                // Only a genuine errSecItemNotFound means the item is absent.
+                // Anything else (e.g. an ACL denial after the app is rebuilt
+                // with a new code signature) must not masquerade as NotFound,
+                // or callers that treat NotFound as "the secret is gone" will
+                // destroy state for an item that still exists.
+                if err.code() == ERR_SEC_ITEM_NOT_FOUND {
+                    Error::NotFound
+                } else {
+                    Error::Unknown(anyhow!(err))
+                }
+            })
     }
 }
 
