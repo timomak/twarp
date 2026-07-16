@@ -289,9 +289,7 @@ impl SelectableArea {
         ctx: &mut EventContext,
         app: &AppContext,
     ) -> bool {
-        let has_selectable = self.child.as_selectable_element().is_some();
         let Some(selectable_child_ref) = self.child.as_selectable_element() else {
-            log::warn!("TWARP_SEL3 BAIL as_selectable=None pos={position:?}");
             return false;
         };
         // Clear any previously existing selection on mouse down.
@@ -303,19 +301,7 @@ impl SelectableArea {
         selection_state.clear();
 
         // Only if this click was in the element, start a new selection.
-        let in_el = is_mouse_in(self.origin, self.size, ctx, position);
-        log::warn!(
-            "TWARP_SEL3 pos={:?} in_el={} has_selectable={} origin={:?} size={:?} visible_rect={:?}",
-            position,
-            in_el,
-            has_selectable,
-            self.origin.map(|o| (o.xy(), o.z_index())),
-            self.size,
-            self.origin
-                .zip(self.size)
-                .and_then(|(o, s)| ctx.visible_rect(o, s)),
-        );
-        if !in_el {
+        if !is_mouse_in(self.origin, self.size, ctx, position) {
             return false;
         }
         let Some(origin) = self.origin else {
@@ -663,14 +649,6 @@ impl Element for SelectableArea {
     fn paint(&mut self, origin: Vector2F, ctx: &mut PaintContext, app: &AppContext) {
         self.origin = Some(Point::from_vec2f(origin, ctx.scene.z_index()));
         ctx.current_selection = self.get_current_selection_absolute();
-        if let Some(sel) = ctx.current_selection {
-            log::warn!(
-                "TWARP_SEL3 paint current_selection start={:?} end={:?} origin_x={}",
-                sel.start,
-                sel.end,
-                origin.x(),
-            );
-        }
         self.child.paint(origin, ctx, app);
         ctx.current_selection = None;
     }
@@ -712,26 +690,13 @@ impl Element for SelectableArea {
             }
             Event::LeftMouseDragged { position, .. } => {
                 if !self.selectable_area_state.is_selecting() {
-                    log::warn!(
-                        "TWARP_SEL3 drag BAIL not-selecting pos={:?} origin_x={:?}",
-                        position,
-                        self.origin.map(|o| o.xy().x()),
-                    );
                     return false;
                 }
                 let (Some(origin), Some(size)) = (self.origin, self.size) else {
-                    log::warn!("TWARP_SEL3 drag BAIL no-origin/size pos={position:?}");
                     return false;
                 };
 
                 let selection_updated = self.update_selection(*position);
-                log::warn!(
-                    "TWARP_SEL3 drag pos={:?} updated={} empty_after={} origin_x={}",
-                    position,
-                    selection_updated,
-                    self.is_current_selection_empty(),
-                    origin.xy.x(),
-                );
                 if !selection_updated {
                     return false;
                 }
