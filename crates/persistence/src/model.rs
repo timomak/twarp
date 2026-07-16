@@ -697,6 +697,8 @@ pub struct ClaudeCodePane {
     pub session_id: Option<String>,
     /// The pane's originating working directory (anchors the session lookup).
     pub cwd: Option<String>,
+    /// Runtime provider for this pane. Existing/unknown rows restore as Claude.
+    pub provider: String,
 }
 
 #[derive(Insertable)]
@@ -705,6 +707,7 @@ pub struct NewClaudeCodePane {
     pub id: i32,
     pub session_id: Option<String>,
     pub cwd: Option<String>,
+    pub provider: String,
 }
 
 #[derive(Identifiable, Queryable, Selectable)]

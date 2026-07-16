@@ -6,7 +6,8 @@
 //! Claude Code panel; headless and unit-testable here.
 
 use std::collections::{HashMap, VecDeque};
-use std::path::PathBuf;
+use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::Stdio;
 
@@ -20,9 +21,142 @@ use futures::stream::Stream;
 use serde_json::{json, Value};
 
 use crate::{
-    EndReason, McpServerInfo, TaskNotification, TaskRunStatus, TodoItem, TodoStatus, ToolOutput,
-    TranscriptEvent, TurnMetrics, Usage,
+    sessions, EndReason, McpServerInfo, TaskNotification, TaskRunStatus, TodoItem, TodoStatus,
+    ToolOutput, TranscriptEvent, TurnMetrics, Usage,
 };
+
+pub type DriverFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T>> + Send + 'a>>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum AgentProvider {
+    Claude,
+    Codex,
+}
+
+impl AgentProvider {
+    pub fn as_persistence_str(self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+        }
+    }
+
+    pub fn from_persistence_str(value: &str) -> Option<Self> {
+        match value {
+            "claude" => Some(Self::Claude),
+            "codex" => Some(Self::Codex),
+            _ => None,
+        }
+    }
+
+    pub fn from_persisted_or_default(value: Option<&str>) -> Self {
+        value
+            .and_then(Self::from_persistence_str)
+            .unwrap_or(Self::Claude)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DriverCapabilities {
+    pub fork: bool,
+    pub steering: bool,
+    pub thinking: bool,
+    pub cost: bool,
+    pub usage_tokens: bool,
+}
+
+impl DriverCapabilities {
+    pub const CLAUDE: Self = Self {
+        fork: true,
+        steering: true,
+        thinking: true,
+        cost: true,
+        usage_tokens: true,
+    };
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Decision {
+    AllowOnce { updated_input: Value },
+    AllowAlways { updated_input: Value },
+    Deny { message: String },
+    Answer(Value),
+}
+
+impl Decision {
+    pub fn allow_once(updated_input: Value) -> Self {
+        Self::AllowOnce { updated_input }
+    }
+
+    pub fn allow_always(updated_input: Value) -> Self {
+        Self::AllowAlways { updated_input }
+    }
+
+    pub fn deny() -> Self {
+        Self::Deny {
+            message: "The user declined this action.".to_owned(),
+        }
+    }
+
+    pub fn cancelled() -> Self {
+        Self::Answer(json!({ "behavior": "cancelled" }))
+    }
+
+    fn into_claude_response(self) -> Value {
+        match self {
+            Self::AllowOnce { updated_input } | Self::AllowAlways { updated_input } => {
+                json!({ "behavior": "allow", "updatedInput": updated_input })
+            }
+            Self::Deny { message } => json!({ "behavior": "deny", "message": message }),
+            Self::Answer(response) => response,
+        }
+    }
+}
+
+pub trait AgentOutputParser: Send {
+    fn parse_value(&mut self, value: &Value, out: &mut VecDeque<TranscriptEvent>);
+}
+
+pub trait AgentDriver: Send + Sync {
+    fn provider(&self) -> AgentProvider;
+    fn capabilities(&self) -> DriverCapabilities;
+    fn spawn(&self, opts: SpawnOptions) -> Result<SpawnedSession>;
+    fn send_user_message<'a>(
+        &self,
+        stdin: &'a mut ChildStdin,
+        message: &'a OutgoingMessage,
+    ) -> DriverFuture<'a, ()>;
+    fn interrupt<'a>(&self, stdin: &'a mut ChildStdin, request_id: &'a str)
+        -> DriverFuture<'a, ()>;
+    fn answer<'a>(
+        &self,
+        stdin: &'a mut ChildStdin,
+        request_id: &'a str,
+        decision: Decision,
+    ) -> DriverFuture<'a, ()>;
+    fn new_parser(&self) -> Box<dyn AgentOutputParser>;
+    fn parse_line(
+        &self,
+        parser: &mut dyn AgentOutputParser,
+        line: &str,
+        out: &mut VecDeque<TranscriptEvent>,
+    ) -> Result<()>;
+    fn has_sessions(&self, cwd: &Path) -> bool;
+    fn list_sessions(&self, cwd: &Path) -> Vec<sessions::StoredSession>;
+    fn load_history(&self, path: &Path) -> Vec<TranscriptEvent>;
+    fn fork_session_file(
+        &self,
+        parent_path: &Path,
+        new_session_id: &str,
+        keep_user_turns: usize,
+        cwd: &Path,
+    ) -> std::io::Result<PathBuf>;
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ClaudeDriver;
+
+pub const CLAUDE_DRIVER: ClaudeDriver = ClaudeDriver;
 
 /// Permission mode passed to `claude --permission-mode`. The CLI argument
 /// names are the ones Claude Code itself accepts.
@@ -133,6 +267,10 @@ fn resolve_in_path(program: &str, path_env: Option<&str>) -> Option<PathBuf> {
 /// Spawn `claude` with stream-json IO. PRODUCT §8: the session is one
 /// long-lived process driven multi-turn via stdin.
 pub fn spawn_session(opts: SpawnOptions) -> Result<SpawnedSession> {
+    CLAUDE_DRIVER.spawn(opts)
+}
+
+fn spawn_claude_session(opts: SpawnOptions) -> Result<SpawnedSession> {
     // Resolve the `claude` binary against the supplied login-shell PATH. On
     // Unix, program lookup ignores a PATH set via `Command::env` (it searches
     // the parent process's PATH), so we resolve to an absolute path ourselves
@@ -212,7 +350,7 @@ pub fn spawn_session(opts: SpawnOptions) -> Result<SpawnedSession> {
     // instead of as a bare "ended unexpectedly" (PRODUCT §30, §37).
     let stderr = child.stderr.take();
 
-    let events = event_stream(stdout, stderr);
+    let events = event_stream(stdout, stderr, CLAUDE_DRIVER.new_parser());
     Ok(SpawnedSession {
         child,
         stdin,
@@ -229,6 +367,10 @@ pub fn spawn_session(opts: SpawnOptions) -> Result<SpawnedSession> {
 /// wedges the pane until it's reopened. `request_id` is echoed back on the
 /// acknowledgement; it only needs to be unique per live session.
 pub async fn send_interrupt(stdin: &mut ChildStdin, request_id: &str) -> Result<()> {
+    CLAUDE_DRIVER.interrupt(stdin, request_id).await
+}
+
+async fn send_claude_interrupt(stdin: &mut ChildStdin, request_id: &str) -> Result<()> {
     let line = json!({
         "type": "control_request",
         "request_id": request_id,
@@ -299,6 +441,10 @@ impl OutgoingMessage {
 /// message sends the plain-string content form; attachments use the
 /// content-block array with `image` blocks (PRODUCT §15b).
 pub async fn send_user_message(stdin: &mut ChildStdin, message: &OutgoingMessage) -> Result<()> {
+    CLAUDE_DRIVER.send_user_message(stdin, message).await
+}
+
+async fn send_claude_user_message(stdin: &mut ChildStdin, message: &OutgoingMessage) -> Result<()> {
     let content = if message.images.is_empty() {
         json!(message.text)
     } else {
@@ -346,8 +492,17 @@ pub async fn send_user_message(stdin: &mut ChildStdin, message: &OutgoingMessage
 pub async fn send_control_response(
     stdin: &mut ChildStdin,
     request_id: &str,
-    response: Value,
+    decision: Decision,
 ) -> Result<()> {
+    CLAUDE_DRIVER.answer(stdin, request_id, decision).await
+}
+
+async fn send_claude_control_response(
+    stdin: &mut ChildStdin,
+    request_id: &str,
+    decision: Decision,
+) -> Result<()> {
+    let response = decision.into_claude_response();
     let line = json!({
         "type": "control_response",
         "response": {
@@ -369,13 +524,92 @@ pub async fn send_control_response(
     Ok(())
 }
 
+impl AgentDriver for ClaudeDriver {
+    fn provider(&self) -> AgentProvider {
+        AgentProvider::Claude
+    }
+
+    fn capabilities(&self) -> DriverCapabilities {
+        DriverCapabilities::CLAUDE
+    }
+
+    fn spawn(&self, opts: SpawnOptions) -> Result<SpawnedSession> {
+        spawn_claude_session(opts)
+    }
+
+    fn send_user_message<'a>(
+        &self,
+        stdin: &'a mut ChildStdin,
+        message: &'a OutgoingMessage,
+    ) -> DriverFuture<'a, ()> {
+        Box::pin(send_claude_user_message(stdin, message))
+    }
+
+    fn interrupt<'a>(
+        &self,
+        stdin: &'a mut ChildStdin,
+        request_id: &'a str,
+    ) -> DriverFuture<'a, ()> {
+        Box::pin(send_claude_interrupt(stdin, request_id))
+    }
+
+    fn answer<'a>(
+        &self,
+        stdin: &'a mut ChildStdin,
+        request_id: &'a str,
+        decision: Decision,
+    ) -> DriverFuture<'a, ()> {
+        Box::pin(send_claude_control_response(stdin, request_id, decision))
+    }
+
+    fn new_parser(&self) -> Box<dyn AgentOutputParser> {
+        Box::<Parser>::default()
+    }
+
+    fn parse_line(
+        &self,
+        parser: &mut dyn AgentOutputParser,
+        line: &str,
+        out: &mut VecDeque<TranscriptEvent>,
+    ) -> Result<()> {
+        if line.trim().is_empty() {
+            return Ok(());
+        }
+        let value: Value = serde_json::from_str(line)?;
+        parser.parse_value(&value, out);
+        Ok(())
+    }
+
+    fn has_sessions(&self, cwd: &Path) -> bool {
+        sessions::has_sessions(cwd)
+    }
+
+    fn list_sessions(&self, cwd: &Path) -> Vec<sessions::StoredSession> {
+        sessions::list_sessions(cwd)
+    }
+
+    fn load_history(&self, path: &Path) -> Vec<TranscriptEvent> {
+        sessions::load_history(path)
+    }
+
+    fn fork_session_file(
+        &self,
+        parent_path: &Path,
+        new_session_id: &str,
+        keep_user_turns: usize,
+        cwd: &Path,
+    ) -> std::io::Result<PathBuf> {
+        sessions::fork_session_file(parent_path, new_session_id, keep_user_turns, cwd)
+    }
+}
+
 struct StreamState {
     reader: Option<BufReader<ChildStdout>>,
     stderr: Option<ChildStderr>,
     buffered: VecDeque<TranscriptEvent>,
     /// Holds the cross-line streaming state (open content blocks, the
     /// done-marker flag) the partial-message path needs (7k).
-    parser: Parser,
+    parser: Box<dyn AgentOutputParser>,
 }
 
 /// Cap on the stderr tail surfaced when the process dies (PRODUCT §30 —
@@ -417,12 +651,13 @@ impl StreamState {
 fn event_stream(
     stdout: ChildStdout,
     stderr: Option<ChildStderr>,
+    parser: Box<dyn AgentOutputParser>,
 ) -> impl Stream<Item = TranscriptEvent> + Send {
     let state = StreamState {
         reader: Some(BufReader::new(stdout)),
         stderr,
         buffered: VecDeque::new(),
-        parser: Parser::default(),
+        parser,
     };
     futures::stream::unfold(state, |mut state| async move {
         loop {
@@ -463,7 +698,7 @@ fn event_stream(
                     continue;
                 }
             };
-            state.parser.parse(&value, &mut state.buffered);
+            state.parser.parse_value(&value, &mut state.buffered);
         }
     })
 }
@@ -706,6 +941,12 @@ impl Parser {
             return;
         }
         parse_assistant(value, out);
+    }
+}
+
+impl AgentOutputParser for Parser {
+    fn parse_value(&mut self, value: &Value, out: &mut VecDeque<TranscriptEvent>) {
+        self.parse(value, out);
     }
 }
 
@@ -1274,12 +1515,134 @@ fn parse_context_window(value: &Value) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Transcript, TranscriptItem};
 
     /// Stateless test entry point: most tests feed one self-contained line and
     /// never exercise the cross-line streaming state, so a fresh [`Parser`] per
     /// call matches the old free-function semantics.
     fn parse_event_into(value: &Value, out: &mut VecDeque<TranscriptEvent>) {
         Parser::default().parse(value, out);
+    }
+
+    #[test]
+    fn provider_persistence_defaults_unknown_values_to_claude() {
+        assert_eq!(
+            AgentProvider::from_persisted_or_default(Some("claude")),
+            AgentProvider::Claude
+        );
+        assert_eq!(
+            AgentProvider::from_persisted_or_default(Some("codex")),
+            AgentProvider::Codex
+        );
+        assert_eq!(
+            AgentProvider::from_persisted_or_default(None),
+            AgentProvider::Claude
+        );
+        assert_eq!(
+            AgentProvider::from_persisted_or_default(Some("future-provider")),
+            AgentProvider::Claude
+        );
+    }
+
+    #[test]
+    fn decision_serializes_to_current_claude_control_response_payloads() {
+        let input = json!({ "command": "cargo test" });
+
+        assert_eq!(
+            Decision::allow_once(input.clone()).into_claude_response(),
+            json!({ "behavior": "allow", "updatedInput": input })
+        );
+        assert_eq!(
+            Decision::allow_always(json!({ "command": "cargo test" })).into_claude_response(),
+            json!({ "behavior": "allow", "updatedInput": { "command": "cargo test" } })
+        );
+        assert_eq!(
+            Decision::deny().into_claude_response(),
+            json!({ "behavior": "deny", "message": "The user declined this action." })
+        );
+        assert_eq!(
+            Decision::cancelled().into_claude_response(),
+            json!({ "behavior": "cancelled" })
+        );
+    }
+
+    #[test]
+    fn golden_claude_transcript_replay_matches_stable_snapshot() {
+        let lines = [
+            r#"{"type":"system","subtype":"init","session_id":"sess-1","cwd":"/tmp/project","model":"sonnet","permissionMode":"default"}"#,
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"I'll inspect it."},{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"ls"}}],"usage":{"input_tokens":10,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"output_tokens":4}}}"#,
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"Cargo.toml\n","is_error":false}]}}"#,
+            r#"{"type":"control_request","request_id":"req-1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"cargo test"},"tool_use_id":"toolu_2"}}"#,
+            r#"{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.01,"duration_ms":1200,"ttft_ms":300,"modelUsage":{"sonnet":{"contextWindow":200000}}}"#,
+        ];
+        let driver = ClaudeDriver;
+        let mut parser = driver.new_parser();
+        let mut events = VecDeque::new();
+        for line in lines {
+            driver
+                .parse_line(parser.as_mut(), line, &mut events)
+                .unwrap();
+        }
+
+        let mut transcript = Transcript::new();
+        for event in events {
+            transcript.apply(event);
+        }
+
+        assert_eq!(transcript.session_id(), Some("sess-1"));
+        assert_eq!(
+            transcript.usage(),
+            Some(Usage {
+                input_tokens: 10,
+                cache_read_input_tokens: 2,
+                cache_creation_input_tokens: 3,
+                output_tokens: 4,
+                context_window: Some(200_000),
+            })
+        );
+
+        let snapshot: Vec<String> = transcript
+            .items()
+            .iter()
+            .map(|item| match item {
+                TranscriptItem::Assistant { text, done } => {
+                    format!("assistant:{done}:{text}")
+                }
+                TranscriptItem::Tool {
+                    id,
+                    name,
+                    input,
+                    status,
+                    output,
+                    children,
+                } => format!(
+                    "tool:{id}:{name}:{status:?}:{input}:{}:{}",
+                    output.as_ref().map(|o| o.text.as_str()).unwrap_or(""),
+                    children.len()
+                ),
+                TranscriptItem::Permission {
+                    id,
+                    tool,
+                    input,
+                    decision,
+                } => format!("permission:{id}:{tool}:{input}:{decision:?}"),
+                TranscriptItem::Metrics(metrics) => format!(
+                    "metrics:{:?}:{:?}:{:?}",
+                    metrics.total_cost_usd, metrics.duration_ms, metrics.ttft_ms
+                ),
+                other => format!("unexpected:{other:?}"),
+            })
+            .collect();
+
+        assert_eq!(
+            snapshot,
+            vec![
+                "assistant:true:I'll inspect it.".to_owned(),
+                "tool:toolu_1:Bash:Completed:{\"command\":\"ls\"}:Cargo.toml\n:0".to_owned(),
+                "permission:req-1:Bash:{\"command\":\"cargo test\"}:None".to_owned(),
+                "metrics:Some(0.01):Some(1200):Some(300)".to_owned(),
+            ]
+        );
     }
 
     #[test]
