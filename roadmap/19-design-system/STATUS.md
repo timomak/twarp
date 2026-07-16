@@ -1,6 +1,6 @@
 # 19 — Design system & visual overhaul
 
-**Phase:** spec-in-review
+**Phase:** impl-pending (spec merged 2026-07-16)
 **Spec PR:** [#215](https://github.com/timomak/twarp/pull/215) (also ships 19a: `design/PHILOSOPHY.md` + `twarp_core::ui::tokens` + UI-skill wiring)
 **Impl PRs:** —
 
