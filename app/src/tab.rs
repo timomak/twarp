@@ -40,6 +40,7 @@ use twarp_core::context_flag::ContextFlag;
 use twarp_core::ui::builder::UiBuilder;
 use twarp_core::ui::theme::color::internal_colors;
 use twarp_core::ui::theme::AnsiColors;
+use twarp_core::ui::tokens::spacing;
 use twarpui::elements::{
     Align, Border, ChildAnchor, Clipped, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, DragAxis, Draggable, DraggableState, DropTarget, Element, Empty, Fill,
@@ -49,7 +50,7 @@ use twarpui::elements::{
     SizeConstraintSwitch, Stack, Text,
 };
 use twarpui::fonts::Weight;
-use twarpui::text_layout::ClipConfig;
+use twarpui::text_layout::{ClipConfig, ClipDirection, ClipStyle};
 use twarpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use twarpui::ui_components::text_input::TextInput;
 use twarpui::{AppContext, SingletonEntity, ViewHandle};
@@ -124,6 +125,7 @@ const WARP_2_ACTIVE_TAB_COLOR_OPACITY: Opacity = 80;
 const NEW_TAB_ACTIVE_COLOR_OPACITY: u8 = 100;
 const NEW_TAB_HOVERED_COLOR_OPACITY: u8 = 40;
 const NEW_TAB_INACTIVE_COLOR_OPACITY: u8 = 20;
+const NEW_TAB_ACTIVE_COLOR_OPACITY_FLOOR: u8 = 72;
 /// Top-corner radius (px) for Chrome/Safari-style tabs (PRODUCT §1). Only the
 /// top corners are rounded; the bottom stays square so the active tab seats
 /// flush onto the pane area below.
@@ -149,6 +151,7 @@ const TAB_CLOSE_BUTTON_WIDTH: f32 = 20.0;
 const MAX_TOOLTIP_LENGTH: usize = 80;
 
 const TAB_INDICATOR_SYNCED_COLOR: u32 = 0x4A93FFFF;
+const TAB_INDICATOR_SLOT_WIDTH: f32 = TAB_INDICATOR_HEIGHT + spacing::XS;
 
 // Width threshold (in px) below which we render an icon-only tab
 const COMPACT_TAB_WIDTH_THRESHOLD: f32 = 42.0;
@@ -1198,9 +1201,12 @@ impl<'a> TabComponent<'a> {
                 self.styles.default.font_size.expect("Font size defined"),
             )
             .with_clip(if self.should_clip_text_start() {
-                ClipConfig::start()
+                ClipConfig {
+                    direction: ClipDirection::Start,
+                    style: ClipStyle::Ellipsis,
+                }
             } else {
-                ClipConfig::end()
+                ClipConfig::ellipsis()
             })
             .with_style(font_style)
             .with_color(font_color)
@@ -1426,9 +1432,19 @@ impl<'a> TabComponent<'a> {
                     .with_max_height(TAB_INDICATOR_HEIGHT)
                     .finish(),
             )
-            .with_margin_right(4.)
+            .with_margin_right(spacing::XS)
             .finish()
         })
+    }
+
+    fn render_indicator_slot(&self) -> Box<dyn Element> {
+        ConstrainedBox::new(
+            self.render_indicator()
+                .unwrap_or_else(|| Empty::new().finish()),
+        )
+        .with_width(TAB_INDICATOR_SLOT_WIDTH)
+        .with_height(TAB_INDICATOR_HEIGHT)
+        .finish()
     }
 
     fn render_tab_container(&self, is_hovered: bool) -> Box<dyn Element> {
@@ -1467,7 +1483,13 @@ impl<'a> TabComponent<'a> {
                 } else {
                     NEW_TAB_INACTIVE_COLOR_OPACITY
                 };
-                let opacity = (base_opacity as f32 * self.background_opacity as f32 / 100.) as u8;
+                let scaled_opacity =
+                    (base_opacity as f32 * self.background_opacity as f32 / 100.) as u8;
+                let opacity = if is_active {
+                    scaled_opacity.max(NEW_TAB_ACTIVE_COLOR_OPACITY_FLOOR)
+                } else {
+                    scaled_opacity
+                };
                 coloru_with_opacity(color, opacity).into()
             } else if is_active {
                 internal_colors::fg_overlay_2(theme).into()
@@ -1523,9 +1545,18 @@ impl<'a> TabComponent<'a> {
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_main_axis_alignment(MainAxisAlignment::Center)
                 .with_cross_axis_alignment(twarpui::elements::CrossAxisAlignment::Center);
-            if let Some(indicator) = self.render_indicator() {
-                flex_row.add_child(indicator);
+            let close_button_slot = || {
+                ConstrainedBox::new(Empty::new().finish())
+                    .with_width(TAB_CLOSE_BUTTON_WIDTH)
+                    .with_height(TAB_CLOSE_BUTTON_WIDTH)
+                    .finish()
+            };
+            let close_on_left = FeatureFlag::TabCloseButtonOnLeft.is_enabled()
+                && matches!(self.close_button_position, TabCloseButtonPosition::Left);
+            if close_on_left {
+                flex_row.add_child(close_button_slot());
             }
+            flex_row.add_child(self.render_indicator_slot());
             flex_row.add_child(
                 Shrinkable::new(
                     1.0,
@@ -1534,8 +1565,11 @@ impl<'a> TabComponent<'a> {
                 )
                 .finish(),
             );
+            if !close_on_left {
+                flex_row.add_child(close_button_slot());
+            }
             Container::new(flex_row.finish())
-                .with_horizontal_padding(8.)
+                .with_horizontal_padding(spacing::SM)
                 .finish()
         };
 

@@ -22468,6 +22468,7 @@ impl TerminalView {
             });
 
         let bookmarked_blocks: HashSet<_> = self.bookmarked_blocks.keys().copied().collect();
+        let block_state_bookmarks = bookmarked_blocks.clone();
         let filtered_blocks: HashSet<_> = model.block_list().filtered_blocks();
 
         let snackbar_header_state = SnackbarHeaderState {
@@ -22602,7 +22603,9 @@ impl TerminalView {
 
         // twarp: 2c-f — voice_input toggle-key wiring on block_list_element deleted with crate.
 
-        element = element.with_filtered_blocks(filtered_blocks);
+        element = element
+            .with_filtered_blocks(filtered_blocks)
+            .with_bookmarked_blocks(block_state_bookmarks);
 
         if let Some(active_filter_editor_block_index) = self.active_filter_editor_block_index {
             element = element.with_active_block_filter_editor(active_filter_editor_block_index);
