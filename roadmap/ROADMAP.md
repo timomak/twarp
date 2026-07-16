@@ -2,8 +2,8 @@
 
 Single source of truth for what's being built next. `/twarp-next` reads this file every invocation; the user reads it to see status at a glance.
 
-**Currently active:** 19 — Design system & visual overhaul (owner-directed 2026-07-16)
-**Next up:** 18 — Multi-provider agent pane (Codex backend; deliberately sequenced after 19)
+**Currently active:** `19-design-system` — Design system & visual overhaul (owner-directed 2026-07-16)
+**Next up:** `18-agent-providers` — Multi-provider agent pane (Codex backend; deliberately sequenced after 19)
 
 ## Features
 

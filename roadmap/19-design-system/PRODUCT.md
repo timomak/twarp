@@ -94,3 +94,44 @@ Owner-approved 2026-07-16 unless marked **(provisional)**.
 
 - Invariant 4 note: should the neutral sidebar carry an optional ~3% active-tab tint wash as a twarp signature? (Recommendation: ship neutral, evaluate after 19b.)
 - Invariant 24: exact accent/wash treatment for *bookmarked* (vs error) blocks — same anatomy with a different accent color, or no wash at all?
+
+## Smoke test
+
+Steps assume a built `twarp-oss` launched fresh. Each sub-phase's steps validate its invariants (§ refs above).
+
+### 19b — the Codex shell
+
+1. Toggle the left sidebar open (its existing keybinding or the toolbar toggle). The sidebar renders as one uninterrupted column from the very top of the window to the bottom — no gap above it, no margins around it, no rounded card corners or shadow, and no horizontal line crossing it at tab-strip height (§1, §4).
+2. The traffic lights sit inside the sidebar's top area and all three respond to hover (highlight) and click — close/minimize/zoom still work (§2).
+3. With the sidebar open, the first tab starts at the sidebar's right edge (no dead traffic-light gap between sidebar and first tab). Close the sidebar: tabs return to starting after the traffic-light clearance; tab order and active tab unchanged (§3).
+4. Drag from an empty spot in the sidebar's top band: the window moves. Double-click the same area: the window zooms (§7).
+5. Drag the sidebar's right edge: it resizes within its existing min/max; quit and relaunch: the width persists (§6, §32).
+6. Switch between the sidebar tools (files / search / drive / agent sessions): each renders with section headers and hover/selection fills, no divider lines between rows (§5, §6).
+7. Enter macOS fullscreen: the sidebar's top reservation collapses (no dead zone); exit fullscreen: traffic lights return over the sidebar (§8).
+8. Open the right panel (code review): it floats as a rounded card with a shadow, inset from the window's top/right/bottom edges; its maximize button still fills the content area; toggling it closed/open works (§11–§12).
+9. Open both panels at once with a terminal in the middle: no visual overlap or clipping (§13).
+10. Repeat steps 1–3 in a light theme and a dark theme: the sidebar surface is distinct from the content in both, separated by a 1px hairline (§4, §31).
+
+### 19c — agent pane as a document
+
+1. Run `claude` in a terminal at a repo cwd: the agent pane opens. Send a short prompt; the reply prose is noticeably larger-with-more-leading than UI labels (14pt-class with relaxed line-height), centered in a column that doesn't span edge-to-edge on a wide pane (§14).
+2. Plain assistant text has no box or border around it; consecutive turns have clear vertical breathing room (§15).
+3. Send a prompt that triggers tool use (e.g. "list the files in this directory and read one"). While streaming, tool cards are visible live; after the turn completes, the tool runs collapse into a single "Worked for …" summary row; clicking it expands the full cards with all their actions intact (§16).
+4. Trigger an edit (e.g. "add a comment to README"): the diff card and any approval prompt share the same corner radius and border treatment, and their header/body text left-align to the same inset; Allow/Deny buttons work (§17).
+5. The composer is a rounded panel with visible but subtle border; every pill (model/effort/permission, context pills, worktree) is present and clickable; Stop works mid-turn (§18).
+6. Select and copy a sentence from a completed reply (drag + Cmd+C): it copies. Fork and copy-response buttons still work (§19).
+7. Open a brand-new pane: the empty state shows styled guidance text, not a blank void (§20).
+
+### 19d — tabs & blocks
+
+1. Create 4+ tabs, give two adjacent tabs the same custom color: the active tab is still unmistakably distinguishable from its same-color neighbor in light and dark themes (§21).
+2. A tab with agent attention (or an error) shows exactly one indicator glyph; nowhere in the chrome does the same status (e.g. the working-tree diff count) appear twice (§22).
+3. Narrow the window until tabs truncate: titles ellipsize without overlapping indicators (§23).
+4. Run a failing command (e.g. `false` or a bad `git checkout`): the block shows a thin left accent bar and a subtle wash — not a full-width saturated color band — and is still identifiable as an error at a glance in both themes (§24).
+5. Block affordances (filter/kebab on hover, the context pills under the input) are present and functional (§25).
+
+### 19e — sweep
+
+1. Open Settings and visit every page: consistent paddings and radii, no obviously misaligned rows; all controls still function (§27).
+2. Switch theme light↔dark with Settings open and with a menu/popover open: every swept surface follows the theme (nothing stays light-pinned), and floating surfaces carry a consistent shadow (§28, §29, §31).
+3. Spot-check swept surfaces at a non-default zoom level: layout holds (§31).
