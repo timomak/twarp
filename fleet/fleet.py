@@ -594,6 +594,12 @@ def vision_review(new_png, golden_png):
     out = (r.stdout or "").strip()
     line = next((l for l in out.splitlines() if "VERDICT" in l.upper()),
                 out.splitlines()[-1] if out else "")
+    # Parse the token right after VERDICT — a prose tail like "no regression observed"
+    # inside a pass line must not flip the verdict (same class of bug as _parse_arch).
+    m = re.search(r"\bVERDICT\b\W{0,4}(pass|regression|fail|error)", line, re.I)
+    if m:
+        tok = m.group(1).lower()
+        return ("regression" if tok == "fail" else tok), line
     low = line.lower()
     if "regression" in low:
         return "regression", line
@@ -869,9 +875,15 @@ def ux_drive_gate(it):
         # The driver itself is quota-limited — that's not a pass and not an app error; the caller
         # waits and re-drives rather than letting the item merge un-verified.
         return _stamp_ux(iid, "live", "unavailable", evid)
-    low = line.lower()
-    verdict = ("regression" if ("regression" in low or "verdict fail" in low)
-               else "pass" if "pass" in low else "error")
+    # Token right after VERDICT decides; prose like "no regression observed" in a pass
+    # line must not flip the verdict (bit 19b round 2: pass misrouted to fix-agent).
+    m = re.search(r"\bVERDICT\b\W{0,4}(pass|regression|fail|error)", line, re.I)
+    if m:
+        verdict = "regression" if m.group(1).lower() == "fail" else m.group(1).lower()
+    else:
+        low = line.lower()
+        verdict = ("regression" if ("regression" in low or "verdict fail" in low)
+                   else "pass" if "pass" in low else "error")
     return _stamp_ux(iid, "live", verdict, evid)
 
 
