@@ -56,7 +56,7 @@ Add golden-transcript tests before and after the extraction. Replaying recorded 
 
 ### 18b — Codex driver
 
-Add `CodexDriver` behind a new `CodexAgentBackend` feature flag in `crates/twarp_features`. Keep the flag off by default for 18b; 18d can decide dogfood/OSS enablement after smoke coverage exists.
+Add `CodexDriver` behind a new `CodexAgentBackend` feature flag in `crates/twarp_features`, **enabled for dogfood and twarp-oss builds** (exactly like `DesignShellV1` — lib.rs + oss.rs) so the fleet's UX-drive gate can actually exercise it; stable/preview keep it off. 18b must also ship the **minimal `codex` → agent-pane terminal trigger** (moved up from 18d — the UX gate's smoke path needs an entry point; a bare `codex` at an editable prompt opens the pane with provider=Codex when the flag is on, raw-CLI fallthrough otherwise). 18d retains alias expansion, flag-dialect parsing, settings light-up, auth flows, and the sessions sidebar.
 
 Use `codex app-server` v2 over stdio, per STATUS.md. Vendor a minimal protocol subset under `crates/claude_code/src/codex/`, with `protocol.rs` containing hand-written serde structs for the request/notification/event shapes twarp consumes. Pin a minimum CLI version in one constant and check `codex --version` before spawning. On older or incompatible versions, emit a provider error/upgrade card instead of attempting best-effort parsing.
 

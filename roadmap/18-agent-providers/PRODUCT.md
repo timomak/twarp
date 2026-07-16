@@ -125,7 +125,7 @@ Steps assume a built `warp-oss`, both CLIs installed and logged in (`claude`, `c
 
 ### 18b — codex driver (behind its feature flag)
 
-1. With the flag on, run `codex` at a prompt: the agent pane opens with a Codex glyph and Model·Effort pill (§1, §3).
+1. In a dogfood/twarp-oss build (flag ships enabled there), run bare `codex` at a prompt: the agent pane opens with a Codex glyph and Model·Effort pill (§1, §3). Alias/flag handling and the rest of §1–§2 land in 18d.
 2. Send "list the files here, then read one and summarize it": assistant text streams token-by-token; the command run shows live output; reasoning (if any) renders collapsed (§5).
 3. Press Stop mid-turn: the turn stops with partial content preserved; sending a follow-up works (§7).
 4. Quit twarp and relaunch: the Codex pane restores; sending a message resumes the same thread (§8).

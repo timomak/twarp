@@ -11,7 +11,7 @@ Make the Claude pane provider-generic and light up **Codex** as the second backe
 ## Sub-phases
 
 - [x] **18a — driver extraction.** Runtime `AgentDriver` trait (spawn/send/interrupt/answer/parse/sessions/capabilities); typed approval `Decision`; `provider` column on pane persistence (default claude); golden-transcript tests; zero behavior change.
-- [ ] **18b — codex driver.** Vendored app-server v2 protocol subset pinned to a minimum CLI version; spawn + initialize handshake; thread start/resume; event mapping to `TranscriptEvent`; `turn/interrupt` with tracked turnId; fixture replay tests; behind the `CodexAgentBackend` feature flag.
+- [ ] **18b — codex driver.** Vendored app-server v2 protocol subset pinned to a minimum CLI version; spawn + initialize handshake; thread start/resume; event mapping to `TranscriptEvent`; `turn/interrupt` with tracked turnId; fixture replay tests; `CodexAgentBackend` flag enabled for dogfood/twarp-oss (mirrors `DesignShellV1`) plus the minimal bare-`codex` trigger (moved up from 18d) so the UX gate has a drivable entry point.
 - [ ] **18c — approvals & access.** Unified approval card for both protocols with a guaranteed-reply invariant; four-stop Access pill (Read-only / Ask to edit / Edits allowed / Full access) mapped per provider; bypass-flag detection.
 - [ ] **18d — entry & light-up.** `codex` terminal trigger + alias expansion; settings-16 Codex adapter enabled (install/login probes, model+effort lists); login-in-a-terminal-split flow; min-version upgrade card; provider-tagged past-sessions sidebar with filter.
 - [ ] **18e — capability polish.** Fork via `thread/fork`; provider-shaped usage line (tokens/quota vs cost); steering behind a capability flag; readable provider-error ended states.
