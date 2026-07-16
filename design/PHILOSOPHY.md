@@ -70,7 +70,7 @@ One skeleton per component class. Deviating from an anatomy is a violation even 
 
 - **Left sidebar is a macOS source list**: full window height including the titlebar corner — the traffic lights float over its top area (they are real AppKit buttons compositing above the Metal layer; nothing may be placed under them at x ≈ 12–66 of the top band). Neutral surface distinct from content by a hairline seam, edge-to-edge (no floating-card margins, radius, or shadow when docked). `CAPTION` section headers, list-row anatomy, selection pills.
 - **Tab strip** starts right of the sidebar when it is open, and owns the traffic-light clearance when it is closed. The strip's bottom hairline is the one horizontal rule in the chrome.
-- **Tabs keep their colors and their flares.** Rules on top: the active tab must win contrast against every neighbor; one indicator glyph slot per tab; a given piece of status appears exactly once in the chrome (no duplicated diff counters).
+- **Tabs are a horizontal strip of plain rectangles, and they keep their colors** (owner-directed 2026-07-16: no flares, no rounded-top silhouettes, and never a vertical tab list in the sidebar — the sidebar is the Tools panel). Rules on top: the active tab must win contrast against every neighbor; one indicator glyph slot per tab; a given piece of status appears exactly once in the chrome (no duplicated diff counters).
 - **Right panel is a floating inspector** (the Codex right-rail form): radius `PANEL`, `PANEL` elevation, hairline, `LG` margins from the window edges. Maximize mode fills the content area edge-to-edge.
 - **Window dragging** must keep working from any empty spot in the top band, including over the sidebar's header.
 

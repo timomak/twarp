@@ -19,7 +19,7 @@ Seventeen features shipped without a design system. The audit (2026-07-16) found
 - One binding philosophy + token set (`design/PHILOSOPHY.md`, `twarp_core::ui::tokens`), enforced via the UI skill and the fleet UX gate.
 - The Codex shell: full-height left sidebar owning the window's left edge (traffic lights composite over its top), tab strip starting to its right; right panel as a polished floating inspector.
 - The agent pane as a calm document (prose measure, turn rhythm, one card anatomy, collapsed tool-run groups).
-- Tab strip refinement that **keeps per-tab colors and flares** — they are twarp's identity.
+- Tab strip refinement that **keeps per-tab colors** — they are twarp's identity. *(Flares were retained through 19d, then dropped in 19f by owner direction: plain rectangles.)*
 - Sweeps that retire whole violation classes (raw literals, PhenomenonStyle, ad-hoc shadows, duplicate icons).
 
 **Non-goals**
@@ -74,7 +74,7 @@ Owner-approved 2026-07-16 unless marked **(provisional)**.
 
 ### Tabs & blocks — 19d
 
-21. Per-tab colors and the Chrome-style flare shape are **retained**. The active tab is unambiguously distinguishable from every neighboring tab in both light and dark themes, including when adjacent tabs share the same custom color (contrast comes from state treatment, not hue alone).
+21. Per-tab colors are **retained**. The active tab is unambiguously distinguishable from every neighboring tab in both light and dark themes, including when adjacent tabs share the same custom color (contrast comes from state treatment, not hue alone). *(Flare retention originally specced here was superseded by the owner feedback round — see §34: tabs are plain rectangles.)*
 22. Each tab shows **at most one indicator glyph** in a fixed slot (agent attention, error, sync, etc. by priority); a given piece of status never renders twice in the chrome (e.g., the working-tree diff count appears in exactly one place).
 23. Tab titles truncate with an ellipsis and never overlap their indicator or close affordances.
 24. Terminal **block state emphasis** (error exit, bookmark/highlight) renders as a 2px left accent bar plus a subtle (≤4% alpha) background wash — replacing today's full-bleed saturated band. Exit-status legibility does not regress: an error block remains identifiable at a glance in light and dark themes.
@@ -89,6 +89,15 @@ Owner-approved 2026-07-16 unless marked **(provisional)**.
 30. Duplicate icon variants are consolidated in swept surfaces so the same concept uses the same glyph everywhere.
 31. After each sub-phase, both **light and dark** themes render correctly on every touched surface (no hardcoded-for-one-theme colors), at 100% and at non-default zoom.
 32. Nothing in this feature changes what is persisted or how: panel widths, tab colors, session lists, settings values all read/write exactly as before (a downgrade/upgrade across this feature loses nothing).
+
+### Owner feedback round (post-smoke, 2026-07-16) — 19f
+
+33. **Tabs are a horizontal strip at the top of the window**, exactly as pre-19b in placement and behavior (creation, activation, close, reorder, cross-window drag, overflow). No tabs-as-a-sidebar-list presentation remains in any flag state — the 19b interpretation that rendered tabs as a vertical left-hand list is reverted.
+34. **Tab chips are plain rectangles** — no flare and no rounded-top silhouette. Per-tab colors, the single indicator slot (§22), title truncation (§23), and the active-contrast guarantee (§21) all still hold on the rectangular chips.
+35. **The full-height shell treatment (§1–§10) applies to the Tools panel** — the files / search / drive / agent-sessions panel — not to tabs: it is the flush, edge-to-edge, full-window-height column with the traffic lights inside its top area and no floating-card chrome. With the Tools panel open, the tab strip begins at its right edge (§3); with it closed, the strip spans the window as before. Its existing toggle, tool switcher, resize, and persisted width keep working (§6).
+36. **The chrome's persistent search input becomes an icon**: a search glyph sits at the far right of the tab strip with no always-visible text field; clicking it opens the same search experience the input provided. Nothing else about search behavior changes.
+37. **The top-right avatar/profile control is replaced by a plain gear glyph** — no background fill, no avatar imagery. Clicking it navigates directly to Settings. Its previous dropdown menu is **deleted**; anything that menu offered remains reachable through an existing home (Settings, the command palette, or the menu bar) — no capability is lost without an alternate path.
+38. §33–§37 render correctly in light and dark themes and at non-default zoom, and none of them change persisted state shape (§32 holds across this round).
 
 ## Open questions
 
@@ -135,3 +144,12 @@ Steps assume a built `twarp-oss` launched fresh. Each sub-phase's steps validate
 1. Open Settings and visit every page: consistent paddings and radii, no obviously misaligned rows; all controls still function (§27).
 2. Switch theme light↔dark with Settings open and with a menu/popover open: every swept surface follows the theme (nothing stays light-pinned), and floating surfaces carry a consistent shadow (§28, §29, §31).
 3. Spot-check swept surfaces at a non-default zoom level: layout holds (§31).
+
+### 19f — owner feedback round
+
+1. The window shows a **horizontal tab strip at the top** with 3+ tabs; tabs are colored **plain rectangles** (no curved flare silhouette); creating, switching, and closing tabs works (§33–§34).
+2. There is **no vertical list of tabs in the left sidebar** in any state (§33).
+3. Toggle the Tools panel open: it renders as the full-height flush column — traffic lights inside its top area, no gap/margins/rounded corners/shadow — and the tab strip starts at its right edge; switch between its tools (files / search / agent sessions): all reachable; toggle it closed: the strip spans as before and no leftover panel remains (§35).
+4. The far right of the tab strip shows a **search icon** with no persistent text input; clicking it opens the search UI (§36).
+5. The top-right corner shows a **plain gear glyph with no background or avatar**; clicking it opens Settings directly — no dropdown menu appears (§37).
+6. Repeat steps 1–5 in a light theme and a dark theme (§38).

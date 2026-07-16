@@ -65,6 +65,18 @@ All in `app/src/claude_code_view.rs` (10.2k lines) + `claude_code_view/{tool_car
 
 Grep-driven, fleet-parallelizable, per-surface PRs: `font_size: Some(` (175 app-wide) / paddings off-scale / `CornerRadius::with_all` literals / `PhenomenonStyle` uses / `DropShadow{` definitions (5+ ad-hoc → 2 tokens) / icon dupes (`Globe/Globe4`, `Settings/Gear`, `Share/Share3`, …). Settings pages (`settings_view/*.rs`: ~18 paddings incl. `8.5`, radius-4 default) migrate to tokens + list-row anatomy (§27). Each sweep PR: mechanical, screenshots both themes, no layout moves.
 
+## 19f — owner feedback round (§33–§38)
+
+Owner smoke-tested the shipped shell 2026-07-16; four corrections, all within the `DesignShellV1` flag's surfaces:
+
+- **Revert tabs-as-sidebar** (§33): 19b's shipped interpretation renders tabs as a vertical list in the left column (the UX-gate transcripts describe a "tab-list panel"). Restore the pre-19b horizontal top strip wholesale — placement, activation, reorder, cross-window drag ghost slots, overflow — while keeping the 19b strip-origin rule (starts right of the open Tools panel, traffic-light clearance when closed). The vertical-tabs *config-panel* machinery that predates 19 must be left as it was.
+- **Tools panel gets the shell treatment** (§35): the full-height flush column (traffic-light zone, hairline seam, no card chrome) hosts the existing `LeftPanelView` tools (project explorer / global search / drive / agent sessions) — largely re-pointing what 19b built onto the Tools panel host and re-verifying the toggle-close path (the round-1 UX regression: a stranded content panel after close).
+- **Rectangle tabs** (§34): stop applying the SDF tab-flare and top-radius on tab chips (`with_tab_flare` / `CornerRadius::with_top` call sites in `app/src/tab.rs`); the Metal shader itself stays (harmless if unused). Keep `TabStyles` color mapping, state opacities, indicator slot, contrast floor from 19d.
+- **Search icon** (§36): replace the strip's persistent search input with an `Icon` button pinned at the strip's right end that opens the same search flow; reclaim the width.
+- **Gear, not avatar** (§37): the top-right avatar control and its dropdown menu are removed; a NakedTheme-style gear icon button (no fill) dispatches the existing open-settings action directly. Audit the deleted menu's entries and confirm each has an existing alternate home before deletion; list them in the PR description.
+
+Validation: PRODUCT `### 19f` smoke steps via the UX gate; the §33 revert must re-verify the 19b matrix (open/closed/fullscreen, window drag, resize) since it reshapes the same layout code.
+
 ## Risks
 
 1. **19b blast radius** — the layout inversion touches the most upstream-divergent file (`workspace/view.rs`). Mitigations: feature flag, no shared-helper mutations, explicit checks on the four adjacent systems (seam 8), UX-gate rounds with the sidebar open/closed/fullscreen.
