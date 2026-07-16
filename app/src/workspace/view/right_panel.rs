@@ -1966,20 +1966,29 @@ impl View for RightPanelView {
             return Shrinkable::new(1.0, panel_content).finish();
         }
 
-        // twarp: the code review panel shares the neutral light panel surface
-        // and floats as a card above the terminal background — rounded corners,
-        // a gray outline, and a soft drop shadow, matching the sidebar. The edge
-        // gap (margin) is applied OUTSIDE the Resizable below so the drag bar
-        // sits on the card's border, not out in the gap.
-        let panel_content = Container::new(panel_content)
-            .with_background(super::floating_panel_surface_fill(app))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::PANEL)))
-            .with_border(
-                Border::all(border::HAIRLINE_WIDTH)
-                    .with_border_fill(Appearance::as_ref(app).theme().outline()),
-            )
-            .with_drop_shadow(inspector_panel_drop_shadow())
-            .finish();
+        let use_design_shell = cfg!(target_os = "macos") && FeatureFlag::DesignShellV1.is_enabled();
+
+        // twarp: keep the 19b inspector treatment behind DesignShellV1 so the
+        // shell restyle is reversible as one rollout unit. The legacy path keeps
+        // the existing floating-panel helpers unchanged when the flag is off.
+        let panel_content = if use_design_shell {
+            Container::new(panel_content)
+                .with_background(super::floating_panel_surface_fill(app))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::PANEL)))
+                .with_border(
+                    Border::all(border::HAIRLINE_WIDTH)
+                        .with_border_fill(Appearance::as_ref(app).theme().outline()),
+                )
+                .with_drop_shadow(inspector_panel_drop_shadow())
+                .finish()
+        } else {
+            Container::new(panel_content)
+                .with_background(super::floating_panel_surface_fill(app))
+                .with_corner_radius(super::floating_panel_corner_radius())
+                .with_border(super::floating_panel_border(app))
+                .with_drop_shadow(super::floating_panel_drop_shadow())
+                .finish()
+        };
 
         let drag_side = match self.panel_position {
             super::PanelPosition::Left => DragBarSide::Right,
@@ -2004,7 +2013,11 @@ impl View for RightPanelView {
         // side. The card keeps its float against the window edge / top / bottom,
         // but butts directly up to the center pane (gap removed on the inner side
         // so there's no dead strip between the card and the terminal).
-        let margin = spacing::LG;
+        let margin = if use_design_shell {
+            spacing::LG
+        } else {
+            super::FLOATING_PANEL_MARGIN
+        };
         let mut container = Container::new(resizable)
             .with_margin_top(margin)
             .with_margin_bottom(margin);
