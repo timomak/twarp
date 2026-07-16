@@ -1,117 +1,202 @@
 # Multi-provider agent pane (Codex backend) — TECH
 
-Companion to [PRODUCT.md](PRODUCT.md); §N references its invariants. Grounded in the coupling map verified 2026-07-16 (paths/lines checked against the tree) and protocol research against codex-cli 0.135.x-era docs + the openai/codex source.
+Companion to [PRODUCT.md](PRODUCT.md). Product invariant references below use PRODUCT.md section numbers.
 
-## The seam (why this is an extraction, not a rewrite)
+## Context
 
-The pane already has a normalized boundary: **`claude_code::TranscriptEvent`** (`crates/claude_code/src/lib.rs:170`) — documented as carrying no claude wire shapes — feeding `Transcript`/`TranscriptItem` (pure view model) and the 10k-line `ClaudeCodeView`, which is provider-neutral except for ~10 call sites. All claude-specific knowledge is concentrated in:
+The pane already has the right normalized boundary, but the runtime path is still Claude-specific. `crates/claude_code/src/lib.rs:164` defines `TranscriptEvent` as the UI-facing stream contract and documents that raw Claude JSON must not escape the driver. `TranscriptEvent` already covers the surfaces this feature needs: session init, user/assistant text, thinking, tool calls/results, todos, permission/question requests, usage, task notifications, and ended states.
 
-- `crates/claude_code/src/driver.rs` (~2.1k) — `spawn_session` arg contract (:135-184), stream-json `Parser` (:509-1010), `send_user_message`/`send_control_response` (:301-370), `send_interrupt` control_request (:231-248), usage parsing (:1249+).
-- `crates/claude_code/src/sessions.rs` — `~/.claude/projects/<enc-cwd>/*.jsonl` store layout (:37-62), list/history/fork.
-- `crates/claude_code/src/launch.rs` — claude flag names (:78-106).
-- App side: `begin_session` calling `spawn_session` directly (`claude_code_view.rs:3173`), claude-JSON permission answers (:3318-3353, :2884-2899), model discovery (`claude_code_models.rs:55-93`), trigger `CLAUDE_PROGRAM` (`terminal/input.rs:7355`), snapshot without provider (`app_state.rs:1086-1099`).
+The current Claude runtime is concentrated in `crates/claude_code/src/driver.rs`: `PermissionMode` (`:27`), `SpawnOptions` (`:84`), `SpawnedSession` (`:112`), `spawn_session` (`:135`), `send_interrupt` (`:231`), `send_user_message` (`:301`), `send_control_response` (`:346`), the stdout/stderr stream pump (`:417`), the line parser (`:500`), and usage parsing (`:1245`). This is the extraction target for 18a.
 
-Feature 16 already ships the **metadata** adapter: `CLIAgent{Claude,Codex,Gemini}` + `CLIAgentAdapter` (`app_state.rs:551/727` — executable/spawn-spec/login-probe/capabilities/models/efforts/permission-modes), consumed by a fully capability-driven settings page. 18 adds the **runtime** face and wires the view through it.
+Claude's local session store is isolated in `crates/claude_code/src/sessions.rs`: `StoredSession` (`:19`), cwd encoding and session paths (`:34`), session listing (`:81`), history replay (`:123`), and fork-by-truncating-jsonl (`:149`). Codex needs the same store shape from the pane's perspective, but it must not parse Codex's private rollout files unless the app-server API explicitly exposes stable session metadata.
 
-## 18a — `AgentDriver` extraction (zero behavior change; §28–§29)
+The app pane still calls the Claude driver directly. `app/src/claude_code_view.rs:1049` constructs the pane from Claude `LaunchOptions`; `begin_session` builds Claude `SpawnOptions` and calls `spawn_session` (`:3227`); `on_session_spawned` owns the event drain and stdin writer (`:3285`); the stdin writer branches directly to `send_user_message`, `send_control_response`, and `send_interrupt` (`:3342`); `on_transcript_event` handles permission and ended events (`:3395`); permission changes are Claude `PermissionMode` values (`:3644`); fork calls `sessions::fork_session_file` (`:4661`); model/effort/permission controls are separate composer pills (`:6344`); and the approval card says "Claude wants to use..." with Allow/Deny only (`:8641`).
 
-New trait (in `crates/claude_code`, which becomes the shared driver crate — **no crate rename this feature**):
+Feature 16 already provides the settings-facing provider seam. `app/src/app_state.rs:550` defines `CLIAgent::{Claude,Codex,Gemini,Unknown}`, `CLIAgentAdapter` starts at `:727`, and `adapter()` currently returns a real adapter only for Claude (`:686`). The Agent settings group in `app/src/settings/agent.rs:21` persists chat/action provider, model, effort, and permission defaults; `app/src/settings_view/agent_page.rs:50` renders the Agent page from those settings. 18 should extend this seam for Codex instead of inventing a second provider enum.
+
+Persistence and entry points are Claude-named today. `crates/persistence/src/schema.rs:117` and `crates/persistence/src/model.rs:690` model `claude_code_panes` with only `session_id` and `cwd`; save/restore live in `app/src/persistence/sqlite.rs:1283` and `:2548`. Terminal interception is a hardcoded `claude` trigger in `app/src/terminal/input.rs:7350` with `CLAUDE_PROGRAM` at `:7355`, including alias expansion and conservative raw-CLI fallthrough. The left-panel session list is still `ClaudeSessions` (`app/src/workspace/view/left_panel.rs:2603`, `:2718`) and filters only Claude session presence.
+
+Feature 19 has landed enough that 18 must not restyle the pane. `DesignShellV1` is enabled for dogfood and twarp-oss (`crates/twarp_features/src/lib.rs:831`, `app/src/bin/oss.rs:30`), and the left panel already has a design-shell branch (`left_panel.rs:2613`). 18 may add provider glyphs, labels, cards, and menu items required by PRODUCT.md, but visual layout and style sweeps stay owned by feature 19.
+
+## Proposed changes
+
+### 18a — driver extraction
+
+Introduce a runtime `AgentDriver` abstraction in `crates/claude_code` without renaming the crate in this feature. The trait should cover spawn, send user turn, interrupt, answer pending request, parse provider output into `TranscriptEvent`, session-store access, and capabilities. `ClaudeDriver` should wrap today's `driver.rs` free functions and `sessions.rs` helpers with byte-for-byte behavior preservation.
+
+Add typed provider-neutral request and decision types:
 
 ```rust
-trait AgentDriver: Send + Sync {
-    fn spawn(&self, opts: SpawnOptions) -> Result<SpawnedSession>;      // resume via opts.resume
-    fn send_user_turn(&self, stdin: &mut ChildStdin, msg: OutgoingMessage) -> Result<()>;
-    fn interrupt(&self, stdin: &mut ChildStdin, state: &TurnState) -> Result<()>;
-    fn answer(&self, stdin: &mut ChildStdin, req: &PendingRequest, decision: Decision) -> Result<()>;
-    fn parse_line(&mut self, line: &str) -> Vec<TranscriptEvent>;       // per-provider translator
-    fn sessions(&self) -> &dyn SessionStore;                             // list/load_history/fork
-    fn capabilities(&self) -> DriverCapabilities;                        // fork/steer/cost/thinking/...
+pub enum AgentProvider {
+    Claude,
+    Codex,
+}
+
+pub enum Decision {
+    AllowOnce,
+    AllowAlways,
+    Deny,
+    Answer(serde_json::Value),
+}
+
+pub struct DriverCapabilities {
+    pub fork: bool,
+    pub steering: bool,
+    pub thinking: bool,
+    pub cost: bool,
+    pub usage_tokens: bool,
 }
 ```
 
-- `Decision` is a typed enum (AllowOnce / AllowAlways / Deny / Answer(value)) replacing the raw `{"behavior":"allow"}` serde_json at `claude_code_view.rs:3347` / `:2889` — the claude driver serializes it to today's exact JSON (golden tests prove byte-compat).
-- `ClaudeDriver` = today's free functions moved behind the trait; `event_stream` (driver.rs:417) and `SpawnedSession{child,stdin,events}` stay shared plumbing.
-- `begin_session` (view:3173) resolves the driver from the pane's `CLIAgent`; `on_session_spawned` (:3208) — drain loop, `StdinCommand{Turn,Control,Interrupt}`, epoch guard — is already neutral and stays verbatim.
-- **Persistence**: `ClaudeCodePaneSnapshot` (+ `claude_code_panes` table) gains `provider TEXT NOT NULL DEFAULT 'claude'` (diesel migration; absent ⇒ Claude — §29). Sidebar session rows carry provider.
-- **Golden-transcript tests**: recorded stream-json fixtures replayed through `ClaudeDriver::parse_line` must produce the identical `TranscriptItem` sequence as pre-refactor (snapshot test checked in before the move, re-run after).
+`Decision` replaces ad hoc serde payload construction in the view; `ClaudeDriver::answer` serializes it back to today's exact `control_response` JSON. Keep `SpawnedSession` and the event-stream plumbing as shared runtime types unless 18b proves Codex needs a different carrier.
 
-## 18b — `CodexDriver` via `codex app-server` v2 (§5–§10)
+Add `provider TEXT NOT NULL DEFAULT 'claude'` to `claude_code_panes` and to `ClaudeCodePaneSnapshot`. Absent or unknown provider metadata restores as Claude for PRODUCT §29. The table can keep its existing name for this feature to minimize migration blast radius; user-facing strings should move from "Claude sessions" toward "Agent sessions" where both providers appear.
 
-**Why app-server, not `exec --json`**: only app-server streams deltas (`item/agentMessage/delta`, `item/commandExecution/outputDelta`), carries interactive approvals as server→client requests, supports `turn/interrupt`/`turn/steer`, and does in-process `thread/resume` — exec-json is snapshot-only with no approval round-trip. It is the API OpenAI's own IDE/desktop surfaces use.
+Add golden-transcript tests before and after the extraction. Replaying recorded Claude stream-json through `ClaudeDriver::parse_line` must produce the same `TranscriptItem` sequence and stable snapshots as the pre-extraction path. This sub-phase should have zero user-visible behavior change and no Codex code path enabled.
 
-- **Process model**: one `codex app-server` child per pane (decision 6). Wire = JSONL JSON-RPC-ish over stdio (no `"jsonrpc"` field — do not send it); mandatory handshake `initialize` → `initialized` notification before anything else.
-- **Protocol types**: vendored into `crates/claude_code/src/codex/protocol.rs` — hand-rolled serde structs for exactly the subset we consume, validated against `codex app-server generate-json-schema` output for the **pinned minimum version** (checked in under `fixtures/`). No git-dependency on the codex workspace (their protocol crates aren't published; the crates.io `codex-protocol` is an unrelated third-party fork — do not use).
-- **Lifecycle mapping**: `thread/start {model, cwd, approvalPolicy, sandbox}` → `TranscriptEvent::Init(thread.id)`; `thread/resume {threadId}` for restore (never parse rollout files — explicitly unstable). Persist threadId in the session_id slot.
-- **Event mapping** (parse_line):
+### 18b — Codex driver
 
-| codex v2 | TranscriptEvent |
+Add `CodexDriver` behind a new `CodexAgentBackend` feature flag in `crates/twarp_features`. Keep the flag off by default for 18b; 18d can decide dogfood/OSS enablement after smoke coverage exists.
+
+Use `codex app-server` v2 over stdio, per STATUS.md. Vendor a minimal protocol subset under `crates/claude_code/src/codex/`, with `protocol.rs` containing hand-written serde structs for the request/notification/event shapes twarp consumes. Pin a minimum CLI version in one constant and check `codex --version` before spawning. On older or incompatible versions, emit a provider error/upgrade card instead of attempting best-effort parsing.
+
+Process model for this feature: one app-server child per pane. Start with the app-server initialize handshake, then start or resume a Codex thread for the pane's cwd, model, effort, access policy, and sandbox. Persist the Codex thread id in the pane's current session id slot. Do not read or rewrite Codex's private local files for resume; rely on app-server thread start/resume/list APIs where available.
+
+Map Codex app-server events into `TranscriptEvent` only:
+
+| Codex concept | twarp event/model |
 |---|---|
-| `item/started(agentMessage)` + `agentMessage/delta` + `item/completed` | assistant text delta / final (completed item is authoritative) |
-| `reasoning` item + `summaryTextDelta` | thinking (collapsed) |
-| `commandExecution` started / `outputDelta` / completed {aggregatedOutput, exitCode} | ToolCall(command) → live output → ToolResult |
-| `fileChange` item {changes[], status} (+`turn/diff/updated`) | edit tool card + diff card |
-| `mcpToolCall` / `webSearch` / `plan` (`turn/plan/updated`) | MCP card / web card / todos |
-| `turn/completed {usage}` / `turn/failed {error}` | Ended + Usage (tokens only — no cost field exists; §21) |
-| unknown item kind | generic card (§6) |
+| thread/session start | `TranscriptEvent::SessionInit` |
+| user message | `TranscriptEvent::UserMessage` |
+| assistant text deltas/completion | `AssistantTextDelta` / `AssistantTextDone` |
+| reasoning summaries | `ThinkingDelta` / `ThinkingDone` |
+| command execution start/output/completion | `ToolCall` / live output item / `ToolResult` |
+| file changes and diffs | edit tool card plus diff-card data |
+| MCP/web/plan updates | existing MCP, web, and todo/plan transcript items |
+| usage | `Usage` plus provider-shaped metrics without Claude cost |
+| unknown item | generic expandable provider card |
+| turn failure | `Ended { Error(provider_message) }` |
 
-- **Interrupt** (§7): `turn/interrupt {threadId, turnId}` — track current turnId from `turn/started` in `TurnState`. Same lesson as claude: never SIGINT as primary stop.
-- **Approvals**: `item/commandExecution/requestApproval` and `item/fileChange/requestApproval` are JSON-RPC **requests with ids — the turn blocks until the client responds**. Surface as `TranscriptEvent::PermissionRequest`; `answer()` maps Decision → `accept | acceptForSession | decline` (`cancel` = deny-and-abort wired to Deny+Stop). **Guaranteed-reply invariant** (§15): every PendingRequest is answered on all exits — pane close, session end, user timeout — mirroring the AskUserQuestion-wedge fix.
-- **Feature flag**: `CodexAgentBackend` (twarp_features), default off → dogfood-on in 18d.
-- **Fixture tests**: recorded app-server transcripts under `fixtures/codex/` replayed through `CodexDriver::parse_line` (same harness as claude goldens).
+Track the current Codex `turnId` in a provider-neutral turn state and implement Stop with `turn/interrupt`; do not use SIGINT as the primary interrupt. Fixture tests should replay captured app-server JSONL into the driver without spawning Codex.
 
-## 18c — Access pill + unified approvals (§11–§17)
+### 18c — approvals and Access
 
-Mapping (pill stop → provider-native):
+Replace the Claude-specific permission vocabulary in the pane with an `AccessStop` enum:
 
-| Stop | Claude (`--permission-mode`) | Codex (`thread/start` sandbox + approvalPolicy) |
+| Access stop | Claude native mode | Codex native mapping |
 |---|---|---|
-| Read-only | `plan` | `read-only` + `on-request` |
-| Ask to edit | `default` | `workspace-write` + `untrusted` |
-| Edits allowed | `acceptEdits` | `workspace-write` + `on-request` |
-| Full access | `bypassPermissions` | `danger-full-access` + `never` |
+| Read-only | `plan` | read-only sandbox + on-request approval |
+| Ask to edit | `default` | workspace-write sandbox + untrusted approval |
+| Edits allowed | `acceptEdits` | workspace-write sandbox + on-request approval |
+| Full access | `bypassPermissions` | danger-full-access sandbox + never approval |
 
-- Pill = the existing permission-mode pill generalized; popover lists native names (§12); non-canonical provider configs (set via flags/config) display native-only (§12). Mid-session change: Claude keeps today's mechanism; Codex applies on next `turn/start` (per-turn overrides).
-- Approval card: one component consuming `PermissionRequest` regardless of provider; keyboard handling unchanged. `claude_alias_launch_options`-equivalent parsing marks bypass flags → Full access (§16).
+Render the composer pill as Access for both providers. The popover should show the shared stop plus provider-native names so the mapping is inspectable. If a provider reports a native mode that does not map cleanly, show the native name rather than forcing it into one of the four stops.
 
-## 18d — entry points, settings light-up, sessions (§1–§4, §18–§20, §23–§27, §31–§32)
+Generalize the approval card from `TranscriptItem::Permission` into one component with provider name, verb-first title, detail block, and Allow once / Always allow / Deny. Claude can keep today's session semantics for "always" if it has no durable difference from "allow" in a given prompt type; Codex maps to its accept-for-session response. The `PendingRequest` registry must guarantee a response on every exit path: user action, Deny, pane close, provider process end, or superseded epoch. The safe default reply is Deny/decline.
 
-- **Trigger**: generalize `CLAUDE_PROGRAM` (`input.rs:7355`) to a command→`CLIAgent` table (reuse `matched_agent()` in `settings/ai.rs:1989`); alias expansion identical to claude's (session.alias_value); unsupported flags → raw CLI fallthrough (§2). `parse_launch_args` grows a codex flag dialect in `launch.rs`.
-- **Settings**: implement `CLIAgentAdapter` for Codex (`executable_name="codex"`, install probe = PATH, login probe = cheap read-only auth check, e.g. `codex login status`; models/efforts fetched via a short-lived `app-server` `model/list` call and cached) → `CLIAgent::adapter()` returns it; `capabilities().enabled = true`. Page needs zero edits (16d acceptance).
-- **Auth flow** (§18): logged-out card's action opens a terminal split running `codex login` (device-code variant when headless); completion detected by re-probe (and/or `account/loginCompleted` when a server is already up).
-- **Sessions sidebar** (§31–§32): `SessionStore` impl for codex reading its local session index for the cwd; provider glyph + filter chips in `left_panel.rs` ClaudeSessions view (rename user-visible strings to "Agent sessions").
-- **Min-version pin** (§20): `codex --version` parse at spawn; below-min → upgrade card, no protocol attempt.
+Detect bypass flags in both launch dialects. `claude --dangerously-skip-permissions` and Codex bypass/sandbox flags set Access to Full access visibly before the first turn.
 
-## 18e — capability polish (§9, §21–§22, §25)
+### 18d — entry, settings, auth, and sessions
 
-- Fork: codex `thread/fork` behind `capabilities().fork`; turn-count parity tests mirroring the 7-era fork fixes (§9).
-- Usage line: provider-shaped (Claude: cost+tokens as today; Codex: tokens + `account/rateLimits` quota when ChatGPT-authed) (§21).
-- Steering (`turn/steer`) behind `capabilities().steer` — composer stays enabled mid-turn for codex, queued send for claude (§25). Ship dark if flaky; capability-gated so it's droppable.
-- Error taxonomy: map `turn/failed.error` codes (contextWindowExceeded, usageLimitExceeded, auth) to readable ended states (§22).
+Generalize the terminal trigger in `app/src/terminal/input.rs` from `CLAUDE_PROGRAM` to a command-to-`CLIAgent` table. Reuse the existing shell parser and alias expansion. Unsupported provider flags should fall through to the raw CLI path instead of being silently ignored.
 
-## 18f — in-pane provider switching (§35–§44)
+Extend `LaunchOptions` or add a provider-neutral launch type so `claude` and `codex` flags parse into the same pane options: provider, prompt, model, effort, resume/thread id, access stop, cwd, and raw unsupported remainder. Keep Claude flag behavior regression-barred.
 
-Owner-directed 2026-07-16 (Cursor-style switching, idle-only). Builds purely on 18a–18e primitives; no new protocol work.
+Implement a real `CLIAgentAdapter` for Codex in `app/src/app_state.rs`: executable name `codex`, install probe via PATH/login-shell PATH, login probe via a cheap side-effect-free CLI status command or app-server account probe, model/effort options from Codex when available with safe cached fallbacks, and capabilities enabled behind `CodexAgentBackend`. Gemini remains disabled.
 
-- **Switch affordance**: the Model·Effort pill's menu gains a provider section listing enabled `CLIAgent`s (probe state inline — a logged-out/uninstalled provider shows its blocker instead of switching, §43). Disabled while `TurnState::running` (§35).
-- **Fresh-pane switch** (§36): before the first send the driver may not even be spawned (`new_resume`-style laziness); switching is just swapping the pane's `CLIAgent` + reseeding pill defaults from `AgentSettings::chat_launch_config()` for that provider (§39). If a process was already spawned turn-free, terminate it and spawn the target lazily on first send.
-- **Handoff digest** (§37–§38): a serializer over `TranscriptItem`s (they already normalize everything user-visible): user/assistant text verbatim, tool runs as `- ran `cmd` → exit 0 (summary)`, edits as `- edited path (+a/-b)`; hard budget (~24k chars: keep the last N turns verbatim, elide older tool detail first); prefixed with a fixed system-style preamble ("You are continuing a conversation started with another assistant; do not re-introduce yourself"). Sent as the first user turn of the new session, with the user's actual message appended.
-- **Segments** (§41, §44): pane persistence grows a `segments` JSON column (additive migration on `claude_code_panes`): `[{provider, session_id, item_range}]`; the existing provider/session columns keep meaning "current segment" (18a's migration unchanged, back-compat trivial). Restore stitches each segment via its driver's `sessions().load_history`, inserting divider items; a failed segment load renders the §41 collapsed marker.
-- **Divider** = a new `TranscriptItem::ProviderSwitch{from, to, omitted: Vec<String>}` — render-only, excluded from fork turn-counting (the 7-era 1:1 user-turn parity rule; §42 keeps fork within the current segment by construction).
-- **Access remap** (§39): reuse 18c's stop→native tables; the current stop re-applies at target-session start.
+Add Codex auth and version cards in the pane. Missing CLI shows install guidance. Logged-out CLI shows a Log in action that opens `codex login` in a terminal split and re-probes completion. Below-minimum CLI shows an upgrade card naming the minimum supported version. None of these states should leave the pane blank or spinning.
 
-## Risks
+Provider-tag the past-session sidebar. Rows show Claude/Codex glyphs, a filter control supports All / Claude / Codex, and resume dispatches to the correct driver. If Codex app-server exposes discoverable local thread metadata for cwd, use that stable API; otherwise list only twarp-created Codex panes until a stable discovery surface exists.
 
-1. **Protocol drift** — codex releases fast. Mitigation: pinned min version + vendored types + schema-diff check in fixtures; upgrade card rather than best-effort parsing (§20/§34).
-2. **Unanswered approval wedge** (the 2h AskUserQuestion freeze, now with JSON-RPC ids): the guaranteed-reply invariant is enforced in one place (PendingRequest registry with drop-guard replying `decline` on teardown).
-3. **View churn vs feature 19**: 18 lands after 19 by owner sequencing; 18 makes **no layout/style changes** (PRODUCT non-goal) so 19's restyle isn't churned.
-4. **Two-process resource creep**: one app-server per pane is fine at pane counts twarp sees; revisit shared-process if profiling says otherwise (decision 6).
-5. **Claude regressions from the extraction**: golden transcripts + the 07-era tripwires (Stop-not-SIGINT, FocusSelf, SelectableArea, persistence checklist) re-verified in 18a's PR.
-6. **Digest fidelity** (18f): the target provider only knows what the digest carries — long tool outputs and attachments are summarized/omitted (§38). Mitigation: the divider discloses omissions; the budget favors recent turns; this matches how every "continue in another model" product behaves under the hood.
+### 18e — capability polish
 
-## Validation
+Implement fork through driver capabilities. Claude keeps `sessions::fork_session_file`; Codex uses app-server `thread/fork` if the pinned protocol supports it. Hide the fork affordance when unsupported, rather than rendering a dead control.
 
-- 18a: golden-transcript snapshot equality (claude fixtures) + full manual claude smoke (PRODUCT 18a steps) + existing pane tests green.
-- 18b: codex fixture replay tests; live smoke per PRODUCT 18b; kill -9 the app-server child mid-turn → §10 ended-state.
-- 18c: approval matrix table test (4 stops × 2 providers × allow/always/deny); §15 wedge test (deny + pane-close during pending approval).
-- 18d: probe matrix (not installed / installed+logged-out / logged-in); settings seeding precedence test (launch flag → Chat row → fallback); mixed side-by-side panes (§30).
-- Fleet gates: functional verify `cargo build --bin twarp-oss` minimum + per-PR targeted `cargo test -p claude_code`; UX-drive gate against PRODUCT `## Smoke test`; opposite-model staff review.
+Make the usage line provider-shaped. Claude keeps cost + tokens. Codex shows tokens and provider-reported quota/rate-limit information when present; it must not invent dollar cost. Provider errors should map known auth, context-window, usage-limit, protocol, and process-exit cases to readable ended states while preserving the provider's actionable message.
+
+Put steering behind `DriverCapabilities::steering`. If Codex steering is available and reliable, wire it as a mid-turn provider capability; otherwise ship the capability false and leave the UI unchanged for both providers.
+
+### 18f — in-pane provider switching
+
+Add an idle-only provider section to the composer Model/Effort pill menu. The provider control is enabled only when no turn is running; during streaming it is disabled with no queued switch.
+
+For a fresh pane with no completed turns, switching providers only swaps the pane provider and reseeds model/effort defaults from the target provider's Agent settings Chat row. Preserve composer draft text. Spawn lazily on the first send.
+
+For mid-conversation switching, model it as a handoff, not shared provider state. Append a `TranscriptItem::ProviderSwitch { from, to, omitted }` divider, start a fresh target-provider session, and seed the first target turn with a digest built from existing `TranscriptItem`s. The digest should keep recent user/assistant turns verbatim within a budget, summarize commands and file edits, omit attachments/images, and explicitly disclose omissions in the divider details.
+
+Persist mixed-provider panes as ordered segments. Add an additive `segments` JSON column to `claude_code_panes`, while keeping `provider/session_id` as the current segment for simple restore and back-compat. Restore stitches segment histories through each driver's session store and inserts divider items. A missing provider-side segment renders as a collapsed unavailable-history marker.
+
+Access remaps by shared `AccessStop` on switch. Model and effort reset to the target provider defaults. Switching back to an earlier provider creates a new handoff session seeded with the full visible timeline; it must not silently resume the old provider session and drop intervening turns.
+
+## Testing and validation
+
+18a:
+
+1. Golden Claude transcript replay: pre-refactor and post-refactor snapshots match item-for-item for PRODUCT §28.
+2. Persistence migration test: old `claude_code_panes` rows without `provider` restore as Claude for PRODUCT §29.
+3. Targeted unit tests for `Decision` serialization to today's Claude control JSON.
+4. Manual smoke: PRODUCT 18a steps.
+
+18b:
+
+1. Codex fixture replay tests under `crates/claude_code` covering assistant streaming, reasoning, command output deltas, file changes, usage, unknown items, and turn failure for PRODUCT §5–§10.
+2. Interrupt unit/fixture test proving `turn/interrupt` uses the tracked `turnId` for PRODUCT §7.
+3. Spawn/version tests with mocked process launch for missing CLI, old CLI, failed initialize, and protocol mismatch for PRODUCT §20 and §34.
+4. Manual smoke with `CodexAgentBackend` on: PRODUCT 18b steps.
+
+18c:
+
+1. Access mapping table tests for all four stops across Claude and Codex for PRODUCT §11–§12 and §16–§17.
+2. Approval response tests for Allow once / Always allow / Deny across both providers for PRODUCT §13–§15.
+3. Teardown test: pending Codex JSON-RPC approval receives decline when the pane closes or the epoch is superseded.
+4. Manual smoke: PRODUCT 18c steps.
+
+18d:
+
+1. Trigger parser tests for bare `codex`, alias-expanded `codex`, supported flags, unsupported raw-CLI fallthrough, and unchanged `claude` behavior for PRODUCT §1–§4.
+2. Settings tests proving Codex adapter enablement, model/effort population, auth state, and Chat-row seeding precedence for PRODUCT §18–§24.
+3. Sidebar tests for provider-tagged rows, filter state, and provider-correct resume for PRODUCT §31–§32.
+4. Manual smoke: PRODUCT 18d steps.
+
+18e:
+
+1. Fork tests mirroring the 07 fork turn-count cases for Codex where supported for PRODUCT §9.
+2. Usage rendering tests: Claude cost remains, Codex token/quota line has no dollar cost for PRODUCT §21.
+3. Error mapping tests for auth expired, context exceeded, usage limit, process exit, and malformed protocol for PRODUCT §22 and §33.
+4. Manual smoke: PRODUCT 18e steps.
+
+18f:
+
+1. Fresh-pane switch test: draft preserved, no divider, target provider defaults applied for PRODUCT §36 and §39.
+2. Mid-conversation digest tests over transcript items, including tool/edit summaries and omitted attachment disclosure for PRODUCT §37–§38.
+3. Idle gating tests: provider switch disabled while streaming and re-enabled after Stop/Ended for PRODUCT §35.
+4. Segment persistence/restore tests for mixed panes, missing segment history, and current-provider resume for PRODUCT §41 and §44.
+5. Manual smoke: PRODUCT 18f steps.
+
+Fleet-level validation: each implementation sub-phase should at minimum run `cargo build --bin warp-oss`, `cargo fmt -- --check`, targeted `cargo test -p claude_code` or app tests for touched modules, and `cargo clippy --workspace -- -D warnings` when the diff is ready. Real-display UX gates run on the primary Mac; this worker node stays headless.
+
+## Parallelization
+
+This feature is already split into fleet-sized sub-phases in `STATUS.md`; keep one sub-phase per branch and avoid parallel edits to the same checkout. The dependency order is mostly sequential:
+
+```mermaid
+flowchart LR
+    A[18a driver extraction] --> B[18b Codex driver]
+    B --> C[18c approvals and Access]
+    B --> D[18d entry/settings/sessions]
+    C --> E[18e capability polish]
+    D --> E
+    E --> F[18f provider switching]
+```
+
+18c and 18d can proceed in parallel after 18b if their branches own disjoint files: 18c owns driver request/decision types plus pane approval/access UI, while 18d owns terminal trigger, settings adapter, auth/version cards, and sidebar sessions. 18e should wait for both because it depends on capabilities, provider-shaped usage, and working Codex session lifecycle. 18f should land last because mixed-provider segments depend on the stable provider/session model.
+
+Do not spawn local sub-agents from a fleet worker unless the dispatcher explicitly assigns that mode. The safer default is the fleet's branch-per-sub-phase model: `twarp-18-agent-providers-18a`, `twarp-18-agent-providers-18b`, and so on, all based on the latest `origin/master`, merged by the supervisor only.
+
+## Risks and mitigations
+
+1. Protocol drift: Codex app-server can change faster than twarp. Mitigate with a pinned minimum CLI version, vendored protocol structs, fixture schema snapshots, and an upgrade card instead of best-effort unknown behavior.
+2. Claude regressions: 18a touches the driver seam used by every existing pane. Mitigate with golden transcripts, unchanged launch flags, and manual PRODUCT 18a smoke before Codex is enabled.
+3. Approval wedges: Codex approvals are request/response and can block the turn. Mitigate with a central pending-request registry and decline-on-drop semantics.
+4. Feature-19 churn: the pane has just been visually restyled. Mitigate by adding only required provider controls/cards and leaving layout, typography, spacing, and color sweeps alone.
+5. Mixed-provider history fidelity: handoff digests are lossy by design. Mitigate by preserving the visible timeline, disclosing omissions in the divider, and never pretending the target provider resumed the source provider's native session.
