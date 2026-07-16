@@ -123,7 +123,7 @@ pub(super) fn render_thinking_card(
             ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleThinking(index));
         });
     if expanded {
-        disclosure = disclosure.with_body(render_markdown_body(text, text_color, appearance));
+        disclosure = disclosure.with_body(render_markdown_body(text, text_color, appearance, None));
     }
     disclosure.render(app)
 }
