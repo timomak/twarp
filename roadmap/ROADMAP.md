@@ -2,8 +2,8 @@
 
 Single source of truth for what's being built next. `/twarp-next` reads this file every invocation; the user reads it to see status at a glance.
 
-**Currently active:** `19-design-system` — re-opened for the owner smoke-test feedback round (19f, 2026-07-16)
-**Next up:** `18-agent-providers` — Multi-provider agent pane (Codex backend; 18a merged, 18b–18f paused for 19f)
+**Currently active:** `18-agent-providers` — Multi-provider agent pane (Codex backend; 18a merged, 18b–18f paused pending owner go-ahead)
+**Next up:** —
 
 ## Features
 
@@ -26,8 +26,8 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 15 | [Computer control overlay (Claude drives the Mac)](15-computer-control/STATUS.md) | merged | — | — |
 | 16 | [Agent settings page](16-agent-settings/STATUS.md) | merged | [#207](https://github.com/timomak/twarp/pull/207) | 16a [#158](https://github.com/timomak/twarp/pull/158), 16b [#188](https://github.com/timomak/twarp/pull/188), 16c [#190](https://github.com/timomak/twarp/pull/190), 16d [#191](https://github.com/timomak/twarp/pull/191), 16e [#192](https://github.com/timomak/twarp/pull/192), 16f [#193](https://github.com/timomak/twarp/pull/193), 16g [#211](https://github.com/timomak/twarp/pull/211), 16h [#212](https://github.com/timomak/twarp/pull/212) |
 | 17 | [Voice chat in the Claude pane](17-voice-chat/STATUS.md) | merged (owner smoke test pending) | [#205](https://github.com/timomak/twarp/pull/205) | 17a–17c bundled [#206](https://github.com/timomak/twarp/pull/206) |
-| 18 | [Multi-provider agent pane (Codex)](18-agent-providers/STATUS.md) | not-started | [#218](https://github.com/timomak/twarp/pull/218) | — |
-| 19 | [Design system & visual overhaul](19-design-system/STATUS.md) | impl-pending | [#215](https://github.com/timomak/twarp/pull/215) | — |
+| 18 | [Multi-provider agent pane (Codex)](18-agent-providers/STATUS.md) | impl-pending (18a merged; paused) | [#218](https://github.com/timomak/twarp/pull/218) | — |
+| 19 | [Design system & visual overhaul](19-design-system/STATUS.md) | merged (incl. 19f feedback round) | [#215](https://github.com/timomak/twarp/pull/215) | 19b [#219](https://github.com/timomak/twarp/pull/219), 19c [#221](https://github.com/timomak/twarp/pull/221), 19d [#222](https://github.com/timomak/twarp/pull/222), 19e (fleet), 19f [#228](https://github.com/timomak/twarp/pull/228) |
 
 ## Phases
 

@@ -1,8 +1,8 @@
 # 19 — Design system & visual overhaul
 
-**Phase:** impl-pending (re-opened 2026-07-16 for the owner smoke-test feedback round, 19f)
+**Phase:** merged (19f feedback round shipped 2026-07-16)
 **Spec PR:** [#215](https://github.com/timomak/twarp/pull/215) (also ships 19a: `design/PHILOSOPHY.md` + `twarp_core::ui::tokens` + UI-skill wiring)
-**Impl PRs:** 19b [#219](https://github.com/timomak/twarp/pull/219), 19c [#221](https://github.com/timomak/twarp/pull/221), 19d [#222](https://github.com/timomak/twarp/pull/222), 19e (fleet)
+**Impl PRs:** 19b [#219](https://github.com/timomak/twarp/pull/219), 19c [#221](https://github.com/timomak/twarp/pull/221), 19d [#222](https://github.com/timomak/twarp/pull/222), 19e (fleet), 19f [#228](https://github.com/timomak/twarp/pull/228)
 
 ## Scope
 
