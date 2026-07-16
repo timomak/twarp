@@ -74,7 +74,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
-use twarp_core::ui::theme::color::internal_colors;
+use twarp_core::ui::{theme::color::internal_colors, tokens::spacing};
 use twarp_util::path::user_friendly_path;
 use twarpui::elements::{
     Clipped, Empty, FormattedTextElement, MainAxisAlignment, MainAxisSize, Text, Wrap,
@@ -5194,7 +5194,7 @@ impl SettingsWidget for AltScreenPaddingWidget {
 
             let editor_style = UiComponentStyles {
                 width: Some(40.),
-                padding: Some(Coords::uniform(5.)),
+                padding: Some(Coords::uniform(spacing::XS)),
                 background: Some(theme.surface_2().into()),
                 border_color,
                 ..Default::default()

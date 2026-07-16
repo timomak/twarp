@@ -1,6 +1,7 @@
 use crate::appearance::Appearance;
 use crate::ui_components::icons::Icon;
 use pathfinder_geometry::vector::vec2f;
+use twarp_core::ui::tokens::{spacing, type_ramp};
 use twarpui::{
     elements::{Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle},
     ui_components::{
@@ -15,10 +16,10 @@ use super::{
 };
 
 /// The font size for subpage items inside an umbrella.
-const SUBPAGE_FONT_SIZE: f32 = 10.;
+const SUBPAGE_FONT_SIZE: f32 = type_ramp::CAPTION.size;
 
 /// Left margin for subpage items inside an umbrella (top-level margin + indent).
-const SUBPAGE_LEFT_MARGIN: f32 = NAV_ITEM_LEFT_MARGIN + 12.;
+const SUBPAGE_LEFT_MARGIN: f32 = NAV_ITEM_LEFT_MARGIN + spacing::MD;
 
 /// A collapsible group of settings subpages in the sidebar.
 pub struct SettingsUmbrella {
@@ -89,7 +90,7 @@ impl SettingsUmbrella {
                 UiComponentStyles::default()
                     .set_border_width(0.)
                     .set_margin(Coords::default().left(NAV_ITEM_LEFT_MARGIN))
-                    .set_padding(Coords::uniform(8.)),
+                    .set_padding(Coords::uniform(spacing::SM)),
             )
             .build()
     }
@@ -122,7 +123,7 @@ impl SettingsUmbrella {
                 UiComponentStyles::default()
                     .set_border_width(0.)
                     .set_margin(Coords::default().left(SUBPAGE_LEFT_MARGIN))
-                    .set_padding(Coords::uniform(8.))
+                    .set_padding(Coords::uniform(spacing::SM))
                     .set_font_size(SUBPAGE_FONT_SIZE),
             )
             .build();

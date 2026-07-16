@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use twarp_core::ui::tokens::{spacing, type_ramp};
 use twarpui::{
     elements::{Container, CrossAxisAlignment, Flex, ParentElement, Shrinkable},
     presenter::ChildView,
@@ -275,10 +276,10 @@ fn render_row(
                     .text_input(editor.clone())
                     .with_style(UiComponentStyles {
                         height: Some(TOP_MENU_BAR_HEIGHT),
-                        font_color: Some(pathfinder_color::ColorU::black()),
-                        font_size: Some(appearance.ui_font_size()),
-                        padding: Some(Coords::uniform(7.)),
-                        margin: Some(Coords::default().left(8.).right(8.)),
+                        font_color: Some(appearance.theme().active_ui_text_color().into_solid()),
+                        font_size: Some(type_ramp::UI.size),
+                        padding: Some(Coords::uniform(spacing::SM)),
+                        margin: Some(Coords::default().left(spacing::SM).right(spacing::SM)),
                         background: Some(appearance.theme().surface_2().into()),
                         ..Default::default()
                     })

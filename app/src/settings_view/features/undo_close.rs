@@ -1,6 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, time::Duration};
 
 use settings::{Setting, ToggleableSetting};
+use twarp_core::ui::tokens::spacing;
 use twarpui::{
     elements::{
         Container, CrossAxisAlignment, Flex, MainAxisAlignment, MouseStateHandle, ParentElement,
@@ -127,7 +128,7 @@ impl UndoCloseView {
         let editor_style = UiComponentStyles {
             border_color,
             width: Some(40.),
-            padding: Some(Coords::uniform(5.)),
+            padding: Some(Coords::uniform(spacing::XS)),
             background: Some(theme.surface_2().into()),
             ..Default::default()
         };
@@ -144,7 +145,7 @@ impl UndoCloseView {
                     .with_color(theme.active_ui_text_color().into())
                     .finish(),
                 )
-                .with_padding_right(8.5)
+                .with_padding_right(spacing::SM)
                 .finish(),
             )
             .with_child(

@@ -5,7 +5,10 @@ use crate::terminal::input::OPEN_COMPLETIONS_KEYBINDING_NAME;
 use crate::terminal::session_settings::WorkingDirectoryConfig;
 
 use lazy_static::lazy_static;
-use twarp_core::context_flag::ContextFlag;
+use twarp_core::{
+    context_flag::ContextFlag,
+    ui::tokens::{spacing, type_ramp},
+};
 use twarpui::platform::GraphicsBackend;
 use twarpui::rendering::GPUPowerPreference;
 use twarpui::{elements::DispatchEventResult, platform::Cursor};
@@ -2543,7 +2546,7 @@ impl FeaturesPageView {
             ctx.add_typed_action_view(|ctx| {
                 let options = SingleLineEditorOptions {
                     text: TextOptions {
-                        font_size_override: Some(appearance_handle.as_ref(ctx).ui_font_size() - 2.),
+                        font_size_override: Some(type_ramp::LABEL.size),
                         ..Default::default()
                     },
                     ..Default::default()
@@ -2569,7 +2572,7 @@ impl FeaturesPageView {
         let notification_toast_duration_editor = ctx.add_typed_action_view(|ctx| {
             let options = SingleLineEditorOptions {
                 text: TextOptions {
-                    font_size_override: Some(appearance_handle.as_ref(ctx).ui_font_size() - 2.),
+                    font_size_override: Some(type_ramp::LABEL.size),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -3782,7 +3785,7 @@ impl FeaturesPageView {
         let theme = appearance.theme();
         let editor_style = UiComponentStyles {
             width: Some(40.),
-            padding: Some(Coords::uniform(5.)),
+            padding: Some(Coords::uniform(spacing::XS)),
             background: Some(theme.surface_2().into()),
             ..Default::default()
         };
@@ -3800,7 +3803,7 @@ impl FeaturesPageView {
                                 .with_color(theme.active_ui_text_color().into())
                                 .finish(),
                             )
-                            .with_padding_right(8.5)
+                            .with_padding_right(spacing::SM)
                             .finish(),
                         )
                         .with_child(
@@ -3958,7 +3961,7 @@ impl FeaturesPageView {
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
-        let font_size = appearance.ui_font_size() - 2.;
+        let font_size = type_ramp::LABEL.size;
         let font_color = if notification_settings.is_long_running_enabled {
             theme.active_ui_text_color()
         } else {
@@ -3968,7 +3971,7 @@ impl FeaturesPageView {
         let editor_style = UiComponentStyles {
             width: Some(appearance.ui_font_size() * 3.),
             height: Some(appearance.ui_font_size() * 2.),
-            padding: Some(Coords::uniform(5.)),
+            padding: Some(Coords::uniform(spacing::XS)),
             background: Some(theme.surface_2().into()),
             ..Default::default()
         };
@@ -4064,7 +4067,7 @@ impl FeaturesPageView {
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let text = text.to_string();
-        let font_size = appearance.ui_font_size() - 2.;
+        let font_size = type_ramp::LABEL.size;
         let font_color = if is_enabled {
             appearance.theme().active_ui_text_color()
         } else {
@@ -5331,13 +5334,13 @@ impl SettingsWidget for DesktopNotificationsWidget {
 
             if show_agent_notifications {
                 let theme = appearance.theme();
-                let font_size = appearance.ui_font_size() - 2.;
+                let font_size = type_ramp::LABEL.size;
                 let font_color = theme.active_ui_text_color();
 
                 let editor_style = UiComponentStyles {
                     width: Some(appearance.ui_font_size() * 3.),
                     height: Some(appearance.ui_font_size() * 2.),
-                    padding: Some(Coords::uniform(5.)),
+                    padding: Some(Coords::uniform(spacing::XS)),
                     background: Some(theme.surface_2().into()),
                     ..Default::default()
                 };

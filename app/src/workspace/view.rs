@@ -416,7 +416,8 @@ use std::path::PathBuf;
 use std::process;
 use std::sync::{mpsc, Mutex};
 use std::{cmp::Ordering, sync::Arc};
-use twarp_core::ui::theme::{color::internal_colors, phenomenon::PhenomenonStyle, Fill};
+use twarp_core::ui::theme::{color::internal_colors, Fill};
+use twarp_core::ui::tokens::elevation;
 use twarp_core::ui::{color::coloru_with_opacity, Icon};
 use twarp_editor::editor::NavigationKey;
 use twarpui::keymap::Context;
@@ -594,11 +595,12 @@ pub(super) fn floating_panel_corner_radius() -> CornerRadius {
 }
 
 pub(super) fn floating_panel_drop_shadow() -> twarpui::elements::DropShadow {
+    let (offset_y, blur_radius, spread_radius, alpha) = elevation::POPOVER;
     twarpui::elements::DropShadow {
-        color: twarpui::color::ColorU::new(0, 0, 0, 24),
-        offset: pathfinder_geometry::vector::vec2f(0., 2.),
-        blur_radius: 10.,
-        spread_radius: 0.,
+        color: twarpui::color::ColorU::new(0, 0, 0, (alpha * 255.).round() as u8),
+        offset: pathfinder_geometry::vector::vec2f(0., offset_y),
+        blur_radius,
+        spread_radius,
     }
 }
 
@@ -2136,25 +2138,24 @@ impl Workspace {
         use_vertical: bool,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let text_fill = theme.active_ui_text_color();
+        let text_color = text_fill.into_solid();
+        let close_hover_color = theme.surface_3().into_solid();
         let close_button = Hoverable::new(
             self.mouse_states
                 .session_config_tab_config_chip_close
                 .clone(),
-            |hover_state| {
-                let icon = ConstrainedBox::new(
-                    icons::Icon::X
-                        .to_warpui_icon(Fill::Solid(PhenomenonStyle::modal_close_button_text()))
-                        .finish(),
-                )
-                .with_width(16.)
-                .with_height(16.)
-                .finish();
+            move |hover_state| {
+                let icon = ConstrainedBox::new(icons::Icon::X.to_warpui_icon(text_fill).finish())
+                    .with_width(16.)
+                    .with_height(16.)
+                    .finish();
 
                 let mut button = Container::new(icon)
                     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
                 if hover_state.is_hovered() {
-                    button =
-                        button.with_background_color(PhenomenonStyle::modal_close_button_hover());
+                    button = button.with_background_color(close_hover_color);
                 }
                 button.finish()
             },
@@ -2170,7 +2171,7 @@ impl Workspace {
             appearance.ui_font_family(),
             12.,
         )
-        .with_color(PhenomenonStyle::body_text())
+        .with_color(text_color)
         .with_selectable(false)
         .finish();
 
