@@ -148,9 +148,26 @@ echo "Codesigning app..."
 # Prefer a Developer ID Application cert (the cert intended for apps run outside
 # Xcode — stable, Gatekeeper-friendly), then fall back to an Apple Development
 # cert, then ad-hoc ("-"). Override explicitly with WARP_SIGNING_IDENTITY.
-SIGNING_CERT="${WARP_SIGNING_IDENTITY:-$(security find-identity -p codesigning -v | grep "Developer ID Application" | awk '{print $2}' | head -1)}"
+#
+# When multiple teams' certs are in the keychain, the pick must also be
+# deterministic: an identity from a DIFFERENT team than the previous build
+# changes the designated requirement, and every keychain item the old build
+# wrote (API keys, etc.) becomes ACL-orphaned for the new one. Pin the team
+# with WARP_SIGNING_TEAM to keep debug and release builds on one identity.
+IDENTITIES="$(security find-identity -p codesigning -v)"
+if [ -n "${WARP_SIGNING_TEAM:-}" ]; then
+    IDENTITIES="$(echo "$IDENTITIES" | grep "(${WARP_SIGNING_TEAM})")"
+fi
+pick_identity() {
+    echo "$IDENTITIES" | grep "$1" | awk '{print $2}' | sort | head -1
+}
+SIGNING_CERT="${WARP_SIGNING_IDENTITY:-$(pick_identity "Developer ID Application")}"
 if [ -z "$SIGNING_CERT" ]; then
-    SIGNING_CERT="$(security find-identity -p codesigning -v | grep "Apple Development" | awk '{print $2}' | head -1)"
+    SIGNING_CERT="$(pick_identity "Apple Development")"
+fi
+if [ -z "$SIGNING_CERT" ]; then
+    echo "WARNING: no signing identity found${WARP_SIGNING_TEAM:+ for team ${WARP_SIGNING_TEAM}} — signing ad-hoc." >&2
+    echo "WARNING: ad-hoc signatures change every build, so keychain items (saved API keys) will not survive rebuilds." >&2
 fi
 echo "Signing with identity: ${SIGNING_CERT:--} (ad-hoc if '-')"
 codesign --force --deep --options runtime --sign "${SIGNING_CERT:--}" "$WARP_APP_PATH" --entitlements script/Debug-Entitlements.plist
