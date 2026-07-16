@@ -1,6 +1,6 @@
 # 18 — Multi-provider agent pane (Codex backend)
 
-**Phase:** not-started (queued after 19 by owner direction, 2026-07-16)
+**Phase:** spec-pending
 **Spec PR:** [#218](https://github.com/timomak/twarp/pull/218) (authored 2026-07-16, owner session) — [PRODUCT.md](PRODUCT.md) + [TECH.md](TECH.md) are complete; the fleet's `18-agent-providers-spec` item should review/adjust them against the then-current tree (19 will have landed) rather than rewrite, then flip this phase to `impl-pending`.
 **Impl PRs:** —
 
