@@ -1,6 +1,6 @@
 # Multi-provider agent pane (Codex backend) — PRODUCT
 
-Companion to [TECH.md](TECH.md). Behavior is written as numbered, testable invariants; TECH.md references these numbers. Sub-phase tags (18a–18e) are defined in TECH.md and mirrored in STATUS.md.
+Companion to [TECH.md](TECH.md). Behavior is written as numbered, testable invariants; TECH.md references these numbers. Sub-phase tags (18a–18f) are defined in TECH.md and mirrored in STATUS.md.
 
 ## Summary
 
@@ -22,7 +22,7 @@ The agent pane (feature 07) becomes provider-generic: one pane, one timeline, on
 - **No change to the suggestion generators** (16e/16f/16g/16h stay Claude-only; their matrix rows keep listing Codex as disabled).
 - **No re-implementation of vendor auth** — login runs the vendor CLI's own flow; twarp detects the result.
 - **No cost/billing math for Codex** — it reports tokens and plan quota, not dollars; twarp shows what the provider reports.
-- **No cross-provider handoff/second-opinion features this phase** (candidate for a later feature).
+- **No "second opinion" features this phase** (asking the *other* provider to review a session's work stays a later-feature candidate). In-pane provider *switching* (a Cursor-style handoff) IS in scope — see §35–§44 / 18f.
 - **No visual redesign** — feature 19 owns the pane's look; 18 must not move layout or styles.
 
 ## Load-bearing decisions (surfaced for review)
@@ -35,6 +35,7 @@ Owner-approved direction 2026-07-16 unless marked **(provisional)**.
 4. **Provider identity stays quiet**: a small provider glyph plus the combined Model·Effort pill; no rebranding of the pane. Per-tab color remains the identity system.
 5. **Claude regression bar is absolute**: recorded claude sessions must render identically before/after the refactor (golden-transcript tests in 18a); any behavior diff is a bug.
 6. **(provisional)** One codex app-server process per pane (matching today's one-claude-per-pane lifecycle); consolidating to a shared multi-thread process is a later optimization.
+7. **In-pane provider switching is a handoff, not a shared conversation** (owner-directed 2026-07-16, Cursor as the reference UX). Cursor can switch losslessly because *it* owns the conversation and replays it to any API. twarp's providers are CLI agents that own their **own** session state (claude's session files, codex's threads) — neither can resume the other's session. So switching mid-conversation starts a fresh session on the target provider **seeded with a digest of the conversation so far**, rendered as one continuous timeline with a visible switch divider. Same UX shape as Cursor; one honest seam. Switching is only available while no turn is running.
 
 ## Behavior
 
@@ -99,6 +100,19 @@ Owner-approved direction 2026-07-16 unless marked **(provisional)**.
 33. Any provider error surface shows the provider's own message with enough context to act (stderr snippet, exit code, or protocol error), never a silent blank.
 34. Version/compat problems (§20) and protocol mismatches produce actionable cards, never wedged spinners.
 
+### In-pane provider switching (Cursor-style) — 18f
+
+35. The composer's provider control (the glyph on the Model·Effort pill, or its menu) lets the user switch the session's provider **while no turn is running**: enabled at idle — brand-new pane, between turns, after Stop, after a turn ends — and visibly disabled while a turn is in flight (no queued switches).
+36. Switching on a **fresh pane** (no completed turns yet) is seamless: the next message simply goes to the new provider; no divider, no seeding, nothing else changes. Composer text in progress is preserved.
+37. Switching **mid-conversation** performs a handoff: the pane keeps the entire visible timeline, appends a subtle divider row ("Switched from Claude to Codex"), and the next message starts a fresh session on the target provider seeded with a digest of the conversation so far (decision 7). From the user's seat it reads as one continuous conversation.
+38. The digest carries: user and assistant turns (text, verbatim within a size budget), and one-line summaries of tool runs and file edits (command + outcome; diffs elided). It does not re-send attachments/images from earlier turns; the divider's detail notes what was omitted. The new provider is instructed to continue seamlessly, not to re-introduce itself.
+39. On switch, model + effort reset to the target provider's configured defaults (the feature-16 Chat row for that provider), shown immediately in the pill; the Access stop is preserved and re-mapped to the target's native modes (§11–§12).
+40. Switching back (A→B→A) is a new handoff each time (a fresh A-session seeded with the full visible conversation, including B's turns) — never a silent resume of the earlier A-session, which would drop everything B did.
+41. A mixed-provider pane persists and restores like any other: after relaunch, the full stitched timeline renders (each segment loaded from its own provider's store, dividers intact) and the conversation resumes on the **current** provider. A segment whose provider-side history is gone renders as a collapsed "history unavailable" marker instead of vanishing (§29-class honesty).
+42. Fork from a turn in the **current** segment works as today (§9). Fork points in earlier segments are unavailable in this phase (their affordance is absent, not broken).
+43. If the target provider isn't usable (not installed, logged out, below min version), the switch surfaces the same §18/§20 cards immediately at switch time — the pane never silently stays on the old provider after showing a successful switch.
+44. The past-sessions sidebar lists a mixed pane once, under its current provider's glyph, with a mixed-history indicator; resuming restores per §41.
+
 ## Smoke test
 
 Steps assume a built `twarp-oss`, both CLIs installed and logged in (`claude`, `codex`), run from a repo cwd.
@@ -136,3 +150,13 @@ Steps assume a built `twarp-oss`, both CLIs installed and logged in (`claude`, `
 1. Fork a Codex session: a new pane continues from the fork point (§9).
 2. Complete a Codex turn: the usage line shows tokens (and quota when on a ChatGPT plan), no dollar figure; a Claude turn still shows cost as today (§21).
 3. Trigger a provider error (e.g. revoke auth mid-session or exceed a tiny context deliberately): a readable ended-state with the provider's message (§22, §33).
+
+### 18f — in-pane provider switching
+
+1. Open a fresh pane via `claude`; before sending anything, switch the provider control to Codex: the pill updates (Codex glyph, Codex default model/effort); send a message: it's answered by Codex; no divider appears (§36).
+2. In a Claude conversation with a few turns (including one tool run), switch to Codex while idle: a "Switched from Claude to Codex" divider appears; ask "what did we do so far?": the answer correctly reflects the earlier conversation (§37–§38).
+3. During a running Claude turn, the provider control is disabled; after Stop, it enables (§35).
+4. Switch back to Claude and ask a follow-up referencing something Codex did: it's aware of it (§40).
+5. Quit twarp and relaunch: the mixed timeline restores with the divider; the next message goes to the current provider (§41).
+6. Log out of codex (`codex logout`), then try to switch to Codex: the Log in card appears at switch time; the pane clearly remains on Claude until auth succeeds (§43).
+7. The usage/cost line and Access pill reflect the current provider after each switch (§39).
