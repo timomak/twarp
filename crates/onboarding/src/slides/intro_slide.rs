@@ -4,12 +4,13 @@ use crate::OnboardingEvent;
 use super::OnboardingSlide;
 use pathfinder_color::ColorU;
 use twarp_core::send_telemetry_from_ctx;
-use twarp_core::ui::{appearance::Appearance, theme::color::internal_colors, Icon};
+use twarp_core::ui::{appearance::Appearance, theme::color::internal_colors};
 use twarpui::{
+    assets::asset_cache::AssetSource,
     elements::{
         shimmering_text::{ShimmerConfig, ShimmeringTextElement, ShimmeringTextStateHandle},
-        Align, ConstrainedBox, Container, CrossAxisAlignment, Flex, FormattedTextElement,
-        MainAxisAlignment, MainAxisSize, ParentElement, Stack,
+        Align, CacheOption, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex,
+        FormattedTextElement, Image, MainAxisAlignment, MainAxisSize, ParentElement, Radius, Stack,
     },
     keymap::Keystroke,
     text_layout::TextAlignment,
@@ -85,11 +86,20 @@ impl IntroSlide {
     fn render_centered_content(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
 
-        let logo_fill = internal_colors::fg_overlay_4(theme);
-        let logo = ConstrainedBox::new(Icon::WarpLogoLight.to_warpui_icon(logo_fill).finish())
-            .with_width(64.)
-            .with_height(64.)
-            .finish();
+        // twarp: use the real app icon instead of the tinted Warp glyph.
+        let logo = ConstrainedBox::new(
+            Image::new(
+                AssetSource::Bundled {
+                    path: "bundled/png/app-icon.png",
+                },
+                CacheOption::BySize,
+            )
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(14.)))
+            .finish(),
+        )
+        .with_width(64.)
+        .with_height(64.)
+        .finish();
 
         let base_color: ColorU = internal_colors::fg_overlay_4(theme).into();
         let shimmer_color: ColorU = theme.foreground().into();
