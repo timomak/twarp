@@ -1,17 +1,21 @@
 # 18 — Multi-provider agent pane (Codex backend)
 
 **Phase:** not-started (queued after 19 by owner direction, 2026-07-16)
-**Spec PR:** —
+**Spec PR:** authored 2026-07-16 (owner session) — [PRODUCT.md](PRODUCT.md) + [TECH.md](TECH.md) are complete; the fleet's `18-agent-providers-spec` item should review/adjust them against the then-current tree (19 will have landed) rather than rewrite, then flip this phase to `impl-pending`.
 **Impl PRs:** —
 
-## Scope (direction summary — spec to be written when 18 activates)
+## Scope
 
-Make the Claude pane provider-generic and light up **Codex** as the second backend, behind the pane's existing normalized event boundary (`claude_code::TranscriptEvent`) and feature 16's `CLIAgent`/adapter scaffolding.
+Make the Claude pane provider-generic and light up **Codex** as the second backend, behind the pane's existing normalized event boundary (`claude_code::TranscriptEvent`) and feature 16's `CLIAgent`/adapter scaffolding. Integration surface is `codex app-server` v2 (JSON-RPC over stdio). Claude behavior is regression-barred via golden-transcript tests. No visual changes (feature 19 owns the look).
 
-- **18a** — runtime `AgentDriver` trait extraction (spawn/send/interrupt/approve/parse behind the trait; `provider` column on pane persistence; golden-transcript tests; zero behavior change).
-- **18b** — Codex driver via `codex app-server` v2 (JSON-RPC over stdio; vendored protocol types pinned to a minimum CLI version; thread/turn/item mapping; `turn/interrupt` with tracked turnId), behind a feature flag.
-- **18c** — approvals + unified four-stop **Access** pill (Read-only / Ask to edit / Edits allowed / Full access) mapped per provider; one approval-card anatomy for both protocols.
-- **18d** — entry points & light-up: `codex` terminal trigger, provider-tagged sessions sidebar, settings-16 adapter enabled, auth detection + login-in-a-terminal-tab.
-- **18e** — capability polish: fork (`thread/fork`), steering, tokens-vs-cost usage line, quota display.
+## Sub-phases
 
-Key research (2026-07-16) is recorded in the collaborator memory (`twarp-multiprovider-design-direction`): protocol event mapping, auth/model/sandbox facts, coupling map with path:line seams.
+- [ ] **18a — driver extraction.** Runtime `AgentDriver` trait (spawn/send/interrupt/answer/parse/sessions/capabilities); typed approval `Decision`; `provider` column on pane persistence (default claude); golden-transcript tests; zero behavior change.
+- [ ] **18b — codex driver.** Vendored app-server v2 protocol subset pinned to a minimum CLI version; spawn + initialize handshake; thread start/resume; event mapping to `TranscriptEvent`; `turn/interrupt` with tracked turnId; fixture replay tests; behind the `CodexAgentBackend` feature flag.
+- [ ] **18c — approvals & access.** Unified approval card for both protocols with a guaranteed-reply invariant; four-stop Access pill (Read-only / Ask to edit / Edits allowed / Full access) mapped per provider; bypass-flag detection.
+- [ ] **18d — entry & light-up.** `codex` terminal trigger + alias expansion; settings-16 Codex adapter enabled (install/login probes, model+effort lists); login-in-a-terminal-split flow; min-version upgrade card; provider-tagged past-sessions sidebar with filter.
+- [ ] **18e — capability polish.** Fork via `thread/fork`; provider-shaped usage line (tokens/quota vs cost); steering behind a capability flag; readable provider-error ended states.
+
+## Smoke test
+
+See PRODUCT.md `## Smoke test` (per-sub-phase steps; the UX gate reads that section).
