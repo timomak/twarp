@@ -113,8 +113,19 @@ pub fn chunk_text(text: &str, cap: usize) -> Vec<String> {
     chunks
 }
 
+/// Byte length of the leading part of `text` that ends in a sentence
+/// terminator (`.` `!` `?` `\n`) — the §32 "speak only complete sentences
+/// while streaming" cut. Returns 0 when no sentence has completed yet.
+pub fn complete_sentence_prefix_len(text: &str) -> usize {
+    text.char_indices()
+        .filter(|(_, c)| matches!(c, '.' | '!' | '?' | '\n'))
+        .map(|(i, c)| i + c.len_utf8())
+        .next_back()
+        .unwrap_or(0)
+}
+
 /// Iterate sentence-ish pieces, each keeping its terminator.
-fn split_sentences(text: &str) -> impl Iterator<Item = &str> {
+pub fn split_sentences(text: &str) -> impl Iterator<Item = &str> {
     let mut pieces = Vec::new();
     let mut start = 0;
     for (i, c) in text.char_indices() {
@@ -182,5 +193,16 @@ mod tests {
     #[test]
     fn chunking_empty() {
         assert!(chunk_text("   ", 10).is_empty());
+    }
+
+    #[test]
+    fn complete_sentence_prefix() {
+        assert_eq!(complete_sentence_prefix_len("no terminator yet"), 0);
+        assert_eq!(complete_sentence_prefix_len("Done. And then"), 5);
+        assert_eq!(complete_sentence_prefix_len("One. Two! Thr"), 9);
+        assert_eq!(complete_sentence_prefix_len("line\npartial"), 5);
+        assert_eq!(complete_sentence_prefix_len("all done?"), 9);
+        // Multi-byte terminator neighbours must stay on char boundaries.
+        assert_eq!(complete_sentence_prefix_len("héllo. wörld"), "héllo.".len());
     }
 }

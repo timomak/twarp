@@ -8,7 +8,7 @@
 //! speaker button's speaking state.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -29,26 +29,48 @@ enum Command {
 pub struct Player {
     commands: mpsc::Sender<Command>,
     active: Arc<AtomicBool>,
+    /// Real samples played (output-device rate) since the current utterance's
+    /// `play` — drives the §33 karaoke position. Reset by the playback thread
+    /// when it handles `Play`.
+    consumed: Arc<AtomicU64>,
+    /// The output device's sample rate, for converting `consumed` to seconds.
+    output_rate: u32,
 }
 
 impl Player {
     /// Spawn the playback thread. Fails if there is no output device.
     pub fn start() -> Result<Player, VoiceError> {
         let active = Arc::new(AtomicBool::new(false));
+        let consumed = Arc::new(AtomicU64::new(0));
         let (commands, command_rx) = mpsc::channel::<Command>();
-        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), VoiceError>>();
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<u32, VoiceError>>();
 
         let thread_active = active.clone();
+        let thread_consumed = consumed.clone();
         std::thread::Builder::new()
             .name("voice-playback".into())
-            .spawn(move || playback_thread(command_rx, ready_tx, thread_active))
+            .spawn(move || playback_thread(command_rx, ready_tx, thread_active, thread_consumed))
             .map_err(|e| VoiceError::Audio(format!("playback thread: {e}")))?;
 
         match ready_rx.recv_timeout(Duration::from_secs(5)) {
-            Ok(Ok(())) => Ok(Player { commands, active }),
+            Ok(Ok(output_rate)) => Ok(Player {
+                commands,
+                active,
+                consumed,
+                output_rate,
+            }),
             Ok(Err(error)) => Err(error),
             Err(_) => Err(VoiceError::Audio("audio output did not start".into())),
         }
+    }
+
+    /// Seconds of audio audibly played since the current utterance's `play`
+    /// (the §33 karaoke clock).
+    pub fn position_secs(&self) -> f32 {
+        if self.output_rate == 0 {
+            return 0.0;
+        }
+        self.consumed.load(Ordering::SeqCst) as f32 / self.output_rate as f32
     }
 
     /// Start speaking `pcm` (s16le mono at `sample_rate`), replacing anything
@@ -78,8 +100,9 @@ impl Player {
 
 fn playback_thread(
     commands: mpsc::Receiver<Command>,
-    ready: mpsc::Sender<Result<(), VoiceError>>,
+    ready: mpsc::Sender<Result<u32, VoiceError>>,
     active: Arc<AtomicBool>,
+    consumed: Arc<AtomicU64>,
 ) {
     let host = cpal::default_host();
     let Some(device) = host.default_output_device() else {
@@ -103,18 +126,26 @@ fn playback_thread(
 
     let callback_queue = queue.clone();
     let callback_active = active.clone();
+    let callback_consumed = consumed.clone();
     let stream = device.build_output_stream(
         &config,
         move |data: &mut [f32], _| {
             let mut queue = callback_queue.lock().unwrap();
+            let mut played = 0u64;
             for frame in data.chunks_mut(out_channels) {
                 let sample = match queue.pop_front() {
-                    Some(s) => s as f32 / i16::MAX as f32,
+                    Some(s) => {
+                        played += 1;
+                        s as f32 / i16::MAX as f32
+                    }
                     None => 0.0,
                 };
                 for slot in frame {
                     *slot = sample;
                 }
+            }
+            if played > 0 {
+                callback_consumed.fetch_add(played, Ordering::SeqCst);
             }
             if queue.is_empty() {
                 callback_active.store(false, Ordering::SeqCst);
@@ -134,7 +165,7 @@ fn playback_thread(
         let _ = ready.send(Err(VoiceError::Audio(format!("output start: {e}"))));
         return;
     }
-    let _ = ready.send(Ok(()));
+    let _ = ready.send(Ok(out_rate));
 
     // Exits (dropping the stream) when the Player is dropped.
     while let Ok(command) = commands.recv() {
@@ -143,6 +174,7 @@ fn playback_thread(
                 let samples = resample_for_output(&pcm, rate, out_rate);
                 let mut queue = queue.lock().unwrap();
                 queue.clear();
+                consumed.store(0, Ordering::SeqCst);
                 queue.extend(samples);
             }
             Command::Append(pcm, rate) => {

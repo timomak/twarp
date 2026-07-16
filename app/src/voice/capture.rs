@@ -23,6 +23,9 @@ pub const MAX_RECORDING: Duration = Duration::from_secs(5 * 60);
 enum Command {
     /// Finalize and reply with the WAV bytes.
     Stop(mpsc::Sender<Result<Vec<u8>, VoiceError>>),
+    /// Encode everything captured so far WITHOUT stopping the stream — the
+    /// live-transcription upload (PRODUCT §30).
+    Snapshot(mpsc::Sender<Result<Vec<u8>, VoiceError>>),
     /// Discard everything (PRODUCT §6).
     Cancel,
 }
@@ -100,6 +103,18 @@ impl Recorder {
             .map_err(|_| VoiceError::Audio("capture did not finalize".into()))?
     }
 
+    /// Ask the capture thread to encode the audio captured so far (16 kHz
+    /// mono WAV) while the stream keeps recording — feeds the §30 live
+    /// transcription requests. Non-blocking: the encode (downmix + resample
+    /// of the whole buffer) happens on the capture thread and the result
+    /// arrives on the returned channel; the caller polls it with `try_recv`
+    /// so the UI thread never waits on audio work.
+    pub fn request_snapshot(&self) -> Option<mpsc::Receiver<Result<Vec<u8>, VoiceError>>> {
+        let (reply_tx, reply_rx) = mpsc::channel();
+        self.commands.send(Command::Snapshot(reply_tx)).ok()?;
+        Some(reply_rx)
+    }
+
     /// Discard the recording (§6). Dropping the recorder has the same effect.
     pub fn cancel(self) {
         let _ = self.commands.send(Command::Cancel);
@@ -149,6 +164,18 @@ fn capture_thread(
                 );
                 let _ = reply.send(Ok(wav::encode_mono_s16(&mono, wav::STT_SAMPLE_RATE)));
                 return;
+            }
+            Ok(Command::Snapshot(reply)) => {
+                let mono = {
+                    let samples = buffer.lock().unwrap();
+                    wav::downmix_resample_to_s16(
+                        &samples,
+                        channels,
+                        sample_rate,
+                        wav::STT_SAMPLE_RATE,
+                    )
+                };
+                let _ = reply.send(Ok(wav::encode_mono_s16(&mono, wav::STT_SAMPLE_RATE)));
             }
             // Cancel, or the Recorder was dropped: discard everything.
             Ok(Command::Cancel) | Err(mpsc::RecvTimeoutError::Disconnected) => return,

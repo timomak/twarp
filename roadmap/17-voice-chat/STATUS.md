@@ -1,6 +1,6 @@
 # 17 — Voice chat in the Claude pane
 
-**Phase:** merged (owner smoke test pending)
+**Phase:** merged (owner smoke test pending) + live-voice amendment 17d in review (live transcription §30–§31, streaming readout §32, karaoke highlight §33 — owner-requested 2026-07-16)
 **Spec PR:** [#205](https://github.com/timomak/twarp/pull/205)
 **Impl PRs:** 17a–17c bundled [#206](https://github.com/timomak/twarp/pull/206) (owner asked for end-to-end in one pass, 2026-07-11)
 
