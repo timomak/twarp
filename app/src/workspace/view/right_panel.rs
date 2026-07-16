@@ -38,25 +38,38 @@ use crate::{
 use crate::{code_review::diff_state::DiffStateModel, terminal::view::TerminalView};
 use dunce::canonicalize;
 use itertools::Itertools;
+use pathfinder_geometry::vector::vec2f;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
     sync::Arc,
 };
 use twarp_core::features::FeatureFlag;
+use twarp_core::ui::tokens::{border, elevation, radius, spacing};
 use twarp_core::ui::Icon;
 use twarp_util::path::LineAndColumnArg;
+use twarpui::color::ColorU;
 use twarpui::elements::{ChildAnchor, Empty, PositionedElementAnchor};
 use twarpui::keymap::EditableBinding;
 use twarpui::EntityId;
 use twarpui::{
     elements::{
-        resizable_state_handle, Container, DragBarSide, Element, MainAxisSize, MouseStateHandle,
-        Resizable, ResizableStateHandle,
+        resizable_state_handle, Border, Container, CornerRadius, DragBarSide, DropShadow, Element,
+        MainAxisSize, MouseStateHandle, Radius, Resizable, ResizableStateHandle,
     },
     AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle, WeakViewHandle,
 };
+
+fn inspector_panel_drop_shadow() -> DropShadow {
+    let (offset_y, blur_radius, spread_radius, alpha) = elevation::PANEL;
+    DropShadow {
+        color: ColorU::new(0, 0, 0, (alpha * 255.).round() as u8),
+        offset: vec2f(0., offset_y),
+        blur_radius,
+        spread_radius,
+    }
+}
 use twarpui::{
     elements::{
         ChildView, Clipped, ConstrainedBox, CrossAxisAlignment, Flex, MainAxisAlignment,
@@ -1960,9 +1973,12 @@ impl View for RightPanelView {
         // sits on the card's border, not out in the gap.
         let panel_content = Container::new(panel_content)
             .with_background(super::floating_panel_surface_fill(app))
-            .with_corner_radius(super::floating_panel_corner_radius())
-            .with_border(super::floating_panel_border(app))
-            .with_drop_shadow(super::floating_panel_drop_shadow())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::PANEL)))
+            .with_border(
+                Border::all(border::HAIRLINE_WIDTH)
+                    .with_border_fill(Appearance::as_ref(app).theme().outline()),
+            )
+            .with_drop_shadow(inspector_panel_drop_shadow())
             .finish();
 
         let drag_side = match self.panel_position {
@@ -1988,7 +2004,7 @@ impl View for RightPanelView {
         // side. The card keeps its float against the window edge / top / bottom,
         // but butts directly up to the center pane (gap removed on the inner side
         // so there's no dead strip between the card and the terminal).
-        let margin = super::FLOATING_PANEL_MARGIN;
+        let margin = spacing::LG;
         let mut container = Container::new(resizable)
             .with_margin_top(margin)
             .with_margin_bottom(margin);

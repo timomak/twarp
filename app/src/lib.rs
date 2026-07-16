@@ -2616,6 +2616,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::VerticalTabs,
         #[cfg(feature = "vertical_tabs_summary_mode")]
         FeatureFlag::VerticalTabsSummaryMode,
+        #[cfg(feature = "design_shell_v1")]
+        FeatureFlag::DesignShellV1,
         #[cfg(feature = "tab_configs")]
         FeatureFlag::TabConfigs,
         #[cfg(feature = "agent_harness")]

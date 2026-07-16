@@ -634,6 +634,28 @@ pub(super) fn floating_panel_border(app: &AppContext) -> Border {
     Border::all(1.).with_border_color(outline.into())
 }
 
+fn design_shell_v1_enabled() -> bool {
+    cfg!(target_os = "macos") && FeatureFlag::DesignShellV1.is_enabled()
+}
+
+fn compute_tab_bar_left_padding_value(
+    design_shell_v1_enabled: bool,
+    sidebar_open: bool,
+    legacy_left_panel_open: bool,
+    is_window_fullscreen_without_left_traffic_lights: bool,
+    left_traffic_light_width: Option<f32>,
+) -> f32 {
+    if design_shell_v1_enabled && sidebar_open {
+        TAB_BAR_PADDING_LEFT
+    } else if legacy_left_panel_open {
+        0.
+    } else if is_window_fullscreen_without_left_traffic_lights {
+        TAB_BAR_PADDING_LEFT
+    } else {
+        left_traffic_light_width.unwrap_or(0.) + twarp_core::ui::tokens::spacing::LG
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TabConfigsMenuOpenSource {
     KeyboardShortcut,
@@ -16570,19 +16592,18 @@ impl Workspace {
             .platform_window(self.window_id)
             .map(|window| window.fullscreen_state() == FullscreenState::Fullscreen)
             .unwrap_or(false);
-        if self.current_workspace_state.is_left_panel_open() {
-            0.
-        } else if is_window_fullscreen && cfg!(target_os = "macos") {
-            // Full-screen mode on MacOS does not need as much padding (traffic lights are hidden).
-            TAB_BAR_PADDING_LEFT
-        } else {
-            traffic_light_data
-                .as_ref()
-                .filter(|data| data.side == TrafficLightSide::Left)
-                .map(|data| data.width(zoom_factor))
-                .unwrap_or(0.)
-                + 16.
-        }
+        let sidebar_open = self.active_tab_pane_group().as_ref(ctx).left_panel_open;
+        let left_traffic_light_width = traffic_light_data
+            .as_ref()
+            .filter(|data| data.side == TrafficLightSide::Left)
+            .map(|data| data.width(zoom_factor));
+        compute_tab_bar_left_padding_value(
+            design_shell_v1_enabled(),
+            sidebar_open,
+            self.current_workspace_state.is_left_panel_open(),
+            is_window_fullscreen && cfg!(target_os = "macos"),
+            left_traffic_light_width,
+        )
     }
 
     /// Renders the tab bar contents, wrapped in hover and drag-drop behaviors.
@@ -17651,6 +17672,9 @@ impl Workspace {
                 )
             }
             HeaderToolbarItemKind::ToolsPanel => {
+                if design_shell_v1_enabled() {
+                    return None;
+                }
                 if !pane_group.left_panel_open || twarpui::platform::is_mobile_device() {
                     return None;
                 }
@@ -20403,16 +20427,57 @@ impl View for Workspace {
                 .with_background(util::get_terminal_background_fill(self.window_id, app))
                 .finish()
         } else {
-            let mut outer_column = Flex::column();
-            if tab_bar_mode == ShowTabBar::Stacked {
-                outer_column.add_child(self.render_tab_bar(self.tab_fixed_width, appearance, app));
-            }
-            let content = self.render_banner_and_active_tab(app, appearance);
-            let panels_row = self.render_panels(app, Shrinkable::new(1.0, content).finish(), false);
-            outer_column.add_child(Shrinkable::new(1.0, panels_row).finish());
-            Container::new(outer_column.finish())
+            let is_left_panel_open = self.active_tab_pane_group().as_ref(app).left_panel_open;
+            let use_design_shell = design_shell_v1_enabled()
+                && is_left_panel_open
+                && !twarpui::platform::is_mobile_device();
+
+            if use_design_shell {
+                let sidebar = ChildView::new(&self.left_panel_view).finish();
+                let mut right_column = Flex::column();
+                if tab_bar_mode == ShowTabBar::Stacked {
+                    right_column.add_child(self.render_tab_bar(
+                        self.tab_fixed_width,
+                        appearance,
+                        app,
+                    ));
+                }
+                let content = self.render_banner_and_active_tab(app, appearance);
+                let panels_row =
+                    self.render_panels(app, Shrinkable::new(1.0, content).finish(), false);
+                right_column.add_child(Shrinkable::new(1.0, panels_row).finish());
+
+                let right_column = Container::new(right_column.finish())
+                    .with_padding_top(WORKSPACE_PADDING)
+                    .with_padding_right(WORKSPACE_PADDING)
+                    .with_padding_bottom(WORKSPACE_PADDING)
+                    .finish();
+
+                Container::new(
+                    Flex::row()
+                        .with_child(sidebar)
+                        .with_child(Shrinkable::new(1.0, right_column).finish())
+                        .finish(),
+                )
                 .with_background(util::get_terminal_background_fill(self.window_id, app))
                 .finish()
+            } else {
+                let mut outer_column = Flex::column();
+                if tab_bar_mode == ShowTabBar::Stacked {
+                    outer_column.add_child(self.render_tab_bar(
+                        self.tab_fixed_width,
+                        appearance,
+                        app,
+                    ));
+                }
+                let content = self.render_banner_and_active_tab(app, appearance);
+                let panels_row =
+                    self.render_panels(app, Shrinkable::new(1.0, content).finish(), false);
+                outer_column.add_child(Shrinkable::new(1.0, panels_row).finish());
+                Container::new(outer_column.finish())
+                    .with_background(util::get_terminal_background_fill(self.window_id, app))
+                    .finish()
+            }
         };
         let mut stack = Stack::new();
 
@@ -20462,11 +20527,16 @@ impl View for Workspace {
             }
         }
 
-        stack.add_child(
-            Container::new(panels)
-                .with_uniform_padding(WORKSPACE_PADDING)
-                .finish(),
-        );
+        let is_left_panel_open = self.active_tab_pane_group().as_ref(app).left_panel_open;
+        if design_shell_v1_enabled() && is_left_panel_open {
+            stack.add_child(Container::new(panels).finish());
+        } else {
+            stack.add_child(
+                Container::new(panels)
+                    .with_uniform_padding(WORKSPACE_PADDING)
+                    .finish(),
+            );
+        }
 
         if !use_simplified_wasm_tab_bar
             && FeatureFlag::VerticalTabs.is_enabled()

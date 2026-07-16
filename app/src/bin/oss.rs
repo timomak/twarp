@@ -24,10 +24,14 @@ use twarp_core::{
 // twarp: feature 11a (Git blame gutter) is smoke-tested through the default
 // twarp-oss binary. Keep the feature flag boundary in code, but enable it for
 // this fork's dev binary so the gutter path is live in fleet UX gates.
+//
+// twarp: feature 19b (Codex shell) is likewise gated in code so the layout can
+// be A/B'd, but the default OSS worker build should expose it for UX gates.
 const TWARP_OSS_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::GitOperationsInCodeReview,
     FeatureFlag::DragTabsToWindows,
     FeatureFlag::GitBlame,
+    FeatureFlag::DesignShellV1,
 ];
 
 // Simple wrapper around twarp::run() for Twarp OSS builds.

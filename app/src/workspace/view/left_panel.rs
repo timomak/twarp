@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use twarp_core::features::FeatureFlag;
 use twarp_core::ui::theme::color::internal_colors;
+use twarp_core::ui::tokens::border;
 use twarp_core::{send_telemetry_from_ctx, ui::Icon};
 use twarp_util::path::LineAndColumnArg;
 use twarpui::{
@@ -13,10 +15,10 @@ use twarpui::{
         ScrollbarWidth, Shrinkable, Text,
     },
     fonts::{Properties, Weight},
-    platform::Cursor,
+    platform::{Cursor, FullscreenState},
     ui_components::components::{Coords, UiComponent, UiComponentStyles},
     AppContext, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View,
-    ViewContext, ViewHandle, WeakViewHandle,
+    ViewContext, ViewHandle, WeakViewHandle, WindowId,
 };
 
 // twarp: 2c-d — AgentConversationsModel/AIConversationId stubs no longer needed in this file.
@@ -37,6 +39,8 @@ use crate::util::file::external_editor::EditorSettings;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::resolve_file_target_with_editor_choice;
 use crate::util::openable_file_type::FileTarget;
+use crate::util::traffic_lights::{traffic_light_data, TrafficLightSide};
+use crate::window_settings::WindowSettings;
 // twarp: 2c-d — conversation_list removed
 use crate::workspace::view::global_search::view::{
     Event as GlobalSearchViewEvent, GlobalSearchEntryFocus, GlobalSearchView,
@@ -271,6 +275,7 @@ pub struct ToolbeltButtonConfig {
 
 pub struct LeftPanelView {
     resizable_state_handle: ResizableStateHandle,
+    window_id: WindowId,
     mouse_state_handles: MouseStateHandles,
     twarp_drive_view: ViewHandle<DrivePanel>,
     // twarp: 2c-d — conversation_list_view removed
@@ -512,6 +517,7 @@ impl LeftPanelView {
 
         let mut view = Self {
             resizable_state_handle,
+            window_id: ctx.window_id(),
             mouse_state_handles: Default::default(),
             twarp_drive_view,
             // twarp: 2c-d — conversation_list_view removed
@@ -2604,6 +2610,7 @@ impl View for LeftPanelView {
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
+        let use_design_shell = cfg!(target_os = "macos") && FeatureFlag::DesignShellV1.is_enabled();
 
         // One stable hover handle per toolbelt segment, in the same order as
         // `compute_left_panel_views` (Project Explorer, Global Search, Claude
@@ -2717,7 +2724,7 @@ impl View for LeftPanelView {
             }
         };
 
-        let panel_content = Container::new({
+        let mut panel_content = Container::new({
             let column = Flex::column();
 
             let header_left = if let Some(row) = toolbelt_button_row {
@@ -2729,6 +2736,28 @@ impl View for LeftPanelView {
             // twarp 08f polish: the explicit close-panel "X" is removed — the
             // panel still toggles via its keybinding (workspace:toggle_left_panel),
             // matching the macOS-app sidebar which has no close glyph in-header.
+            let mut column = column;
+
+            if use_design_shell {
+                let is_window_fullscreen = app
+                    .windows()
+                    .platform_window(self.window_id)
+                    .map(|window| window.fullscreen_state() == FullscreenState::Fullscreen)
+                    .unwrap_or(false);
+                let zoom_factor = WindowSettings::as_ref(app).zoom_level.as_zoom_factor();
+                let reserve_traffic_light_zone = !is_window_fullscreen
+                    && traffic_light_data(app, self.window_id).is_some_and(|data| {
+                        data.side == TrafficLightSide::Left && data.width(zoom_factor) > 0.
+                    });
+                if reserve_traffic_light_zone {
+                    column.add_child(
+                        ConstrainedBox::new(Empty::new().finish())
+                            .with_height(super::TOTAL_TAB_BAR_HEIGHT)
+                            .finish(),
+                    );
+                }
+            }
+
             let header_row = Container::new(
                 ConstrainedBox::new(
                     Flex::row()
@@ -2754,27 +2783,38 @@ impl View for LeftPanelView {
             .with_padding_bottom(8.)
             .finish();
 
-            column
-                .with_child(header_row)
-                .with_child(Shrinkable::new(1.0, content_area).finish())
-                .with_main_axis_size(MainAxisSize::Max)
-                .finish()
+            column.add_child(header_row);
+            column.add_child(Shrinkable::new(1.0, content_area).finish());
+            column.with_main_axis_size(MainAxisSize::Max).finish()
         })
         // twarp: the sidebar surface is the main terminal background (shared
         // with the code review panel), so the card blends into the background
         // and is set apart only by its outline/gap/shadow. Child colors derive
         // from the theme (see the `sidebar_*` palette helpers).
-        .with_background(super::floating_panel_surface_fill(app))
-        // twarp: floating-card treatment — rounded corners, a gray outline, and
-        // a soft drop shadow so the sidebar reads as floating above the terminal
-        // background. The edge gap (margin) is applied OUTSIDE the Resizable
-        // below so the drag bar sits on the card's border, not out in the gap.
-        .with_corner_radius(super::floating_panel_corner_radius())
-        .with_border(super::floating_panel_border(app))
-        .with_drop_shadow(super::floating_panel_drop_shadow())
-        // twarp 08f polish: breathing room at the bottom edge.
-        .with_padding_bottom(SIDEBAR_BOTTOM_INSET)
-        .finish();
+        .with_background(if use_design_shell {
+            appearance.theme().surface_1()
+        } else {
+            super::floating_panel_surface_fill(app)
+        });
+        if use_design_shell {
+            panel_content = panel_content.with_border(
+                Border::right(border::HAIRLINE_WIDTH)
+                    .with_border_fill(appearance.theme().outline()),
+            );
+        } else {
+            // twarp: floating-card treatment — rounded corners, a gray outline, and
+            // a soft drop shadow so the sidebar reads as floating above the terminal
+            // background. The edge gap (margin) is applied OUTSIDE the Resizable
+            // below so the drag bar sits on the card's border, not out in the gap.
+            panel_content = panel_content
+                .with_corner_radius(super::floating_panel_corner_radius())
+                .with_border(super::floating_panel_border(app))
+                .with_drop_shadow(super::floating_panel_drop_shadow());
+        }
+        let panel_content = panel_content
+            // twarp 08f polish: breathing room at the bottom edge.
+            .with_padding_bottom(SIDEBAR_BOTTOM_INSET)
+            .finish();
 
         if twarpui::platform::is_mobile_device() {
             return Container::new(panel_content)
@@ -2782,9 +2822,13 @@ impl View for LeftPanelView {
                 .finish();
         }
 
-        let drag_side = match self.panel_position {
-            super::PanelPosition::Left => DragBarSide::Right,
-            super::PanelPosition::Right => DragBarSide::Left,
+        let drag_side = if use_design_shell {
+            DragBarSide::Right
+        } else {
+            match self.panel_position {
+                super::PanelPosition::Left => DragBarSide::Right,
+                super::PanelPosition::Right => DragBarSide::Left,
+            }
         };
         let resizable = Resizable::new(self.resizable_state_handle.clone(), panel_content)
             .with_dragbar_side(drag_side)
@@ -2805,6 +2849,10 @@ impl View for LeftPanelView {
         // side. The card keeps its float against the window edge / top / bottom,
         // but butts directly up to the center pane (gap removed on the inner side
         // so there's no dead strip between the card and the terminal).
+        if use_design_shell {
+            return Container::new(resizable).finish();
+        }
+
         let margin = super::FLOATING_PANEL_MARGIN;
         let mut container = Container::new(resizable)
             .with_margin_top(margin)
