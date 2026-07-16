@@ -17,6 +17,18 @@ New guidelines get added here over time. If you discover a recurring UI mistake 
 
 ---
 
+## Guideline: The design philosophy and tokens are the law
+
+Before any UI work, read [`design/PHILOSOPHY.md`](../../../design/PHILOSOPHY.md). It defines the surface classes (terminal / conversation / chrome), the color and border rules, the component anatomies, and the shell rules. It is enforced, not advisory: the fleet UX gate checks conformance and new violations are review blockers.
+
+Concretely, in code:
+
+- **No raw numeric literals** for spacing, corner radius, font size, or line height in view code. Use `twarp_core::ui::tokens` (`spacing::*`, `radius::*`, `type_ramp::*`, `elevation::*`, `border::*`). If no token fits, raise it — don't invent a value.
+- **Every 1px border is `theme().outline()`** (the alpha hairline). Never `surface_2()`, `background()`, or a full-opacity color as a border.
+- **Conversation prose** uses `type_ramp::PROSE` with its line-height applied via `with_line_height_ratio` — never the 1.2 default.
+- **No new `PhenomenonStyle` uses** — theme-role accessors only.
+- **Match the philosophy, not the neighbors.** Surrounding legacy code with raw literals is scheduled for sweeps (feature 19); copying its values propagates the violation.
+
 ## Guideline: Reuse button themes
 
 Button colors come from a shared set of `ActionButtonTheme` impls in `app/src/view_components/action_button.rs` (and the parallel `Theme` impls in `crates/ui_components/src/button/themes.rs`) — `PrimaryTheme`, `SecondaryTheme`, `NakedTheme`, `DangerPrimaryTheme`, etc. These encode the design system and keep button colors consistent across the app.

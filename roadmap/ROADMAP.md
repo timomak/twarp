@@ -2,8 +2,8 @@
 
 Single source of truth for what's being built next. `/twarp-next` reads this file every invocation; the user reads it to see status at a glance.
 
-**Currently active:** — (roadmap complete 2026-07-15; next feature is owner direction)
-**Next up:** —
+**Currently active:** 19 — Design system & visual overhaul (owner-directed 2026-07-16)
+**Next up:** 18 — Multi-provider agent pane (Codex backend; deliberately sequenced after 19)
 
 ## Features
 
@@ -26,6 +26,8 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 15 | [Computer control overlay (Claude drives the Mac)](15-computer-control/STATUS.md) | merged | — | — |
 | 16 | [Agent settings page](16-agent-settings/STATUS.md) | merged | [#207](https://github.com/timomak/twarp/pull/207) | 16a [#158](https://github.com/timomak/twarp/pull/158), 16b [#188](https://github.com/timomak/twarp/pull/188), 16c [#190](https://github.com/timomak/twarp/pull/190), 16d [#191](https://github.com/timomak/twarp/pull/191), 16e [#192](https://github.com/timomak/twarp/pull/192), 16f [#193](https://github.com/timomak/twarp/pull/193), 16g [#211](https://github.com/timomak/twarp/pull/211), 16h [#212](https://github.com/timomak/twarp/pull/212) |
 | 17 | [Voice chat in the Claude pane](17-voice-chat/STATUS.md) | merged (owner smoke test pending) | [#205](https://github.com/timomak/twarp/pull/205) | 17a–17c bundled [#206](https://github.com/timomak/twarp/pull/206) |
+| 18 | [Multi-provider agent pane (Codex)](18-agent-providers/STATUS.md) | not-started | — | — |
+| 19 | [Design system & visual overhaul](19-design-system/STATUS.md) | spec-in-review | — | — |
 
 ## Phases
 
@@ -64,6 +66,10 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 16. **Agent settings page sixteenth (owner-directed 2026-07-01).** A new **Agent** settings page consolidating agent config that feature 07 left scattered (composer pills, per-session SQLite defaults, hardcoded spawn flags): pick the agent CLI backend (Claude enabled; Codex/Gemini disabled entries), reuse local CLI auth or supply an API key (**net-new OS-keychain storage — twarp has none today**), set new-chat defaults (permission mode / model / effort) that seed panes, and configure a **per-action model matrix** (chat / terminal-suggestions / reply-suggestions, each with an independent provider+model+effort — owner-confirmed). Phase 1 is **Claude-only with a multi-provider, capability-aware schema**; the `CLIAgent` enum already exists as stubs, so the selector is cheap and the driver adapters are the real later work. Config UI is **unified** (the Chat matrix row IS the new-chat model/effort/mode, authoritative over the pills' last-used memory) and **also builds both suggestion consumers** (owner-expanded 2026-07-01): reply ghost-text in the composer (16e) and terminal AI command suggestions (16f), each off-by-default behind its own toggle, reusing the existing editor/terminal ghost-text infra. Sub-phased 16a–16f. Low upstream-cherry-pick risk (net-new settings surface + additive suggestion backends), so placement vs. rebrand (09) is flexible. See [16-agent-settings/PRODUCT.md](16-agent-settings/PRODUCT.md).
 
 17. **Voice chat seventeenth (owner-directed 2026-07-11).** Talk to the Claude pane: a composer **mic button** (next to the paperclip — owner said "pin icon"; the pane has none, interpretation flagged in the spec) records speech and inserts the transcript via `gpt-4o-transcribe` on **Azure AI Foundry or any OpenAI-compatible endpoint**, and a **speaker toggle** speaks Claude's replies via OpenAI-voice TTS. Config lives in a new **Voice** section on the feature-16 Agent settings page, keys in the OS keychain via the 16 `SecureStorage` path. Audio capture/playback is net-new (`cpal`; upstream's `voice_input` crate was deleted in 2c-f, but `Icon::Microphone`, the `microphone_access_state()` permission API, and the bundle's `NSMicrophoneUsageDescription` all survive). Net-new module + additive settings, so low upstream-cherry-pick risk. Sub-phased 17a–17c (17a+17b bundled per the owner's bundling rule). See [17-voice-chat/PRODUCT.md](17-voice-chat/PRODUCT.md).
+
+18. **Multi-provider agent pane (Codex) eighteenth — second in the post-v1 sequence (owner-directed 2026-07-16).** Generalizes the Claude pane behind a runtime `AgentDriver` trait at the existing `TranscriptEvent` seam and lights up feature 16's stubbed `CLIAgent::Codex` via the `codex app-server` v2 protocol (the officially blessed embedder API): vendored protocol types, unified approval cards, a four-stop Access pill mapped per provider, `codex` terminal trigger, provider-tagged sessions. Deliberately sequenced **after 19** so the provider work lands on the new visual foundation instead of churning the same pane views twice. Research + coupling map recorded 2026-07-16. See [18-agent-providers/STATUS.md](18-agent-providers/STATUS.md).
+
+19. **Design system & visual overhaul nineteenth — but FIRST in the post-v1 sequence (owner-directed 2026-07-16).** The 2026-07-16 audit found no governing system behind 17 features of UI (raw literals everywhere, competing default radii, prose at terminal line-height, three hairline conventions). Feature 19 ships `design/PHILOSOPHY.md` + `twarp_core::ui::tokens` with fleet UX-gate enforcement (19a, bundled into the spec PR), then applies them: the Codex-style full-height macOS sidebar — traffic lights inside it, tab strip starting at its right edge (19b), the right panel as a floating inspector (19b), the agent pane as a calm document (19c), tab/block refinement — per-tab colors and flares are keepers (19d), and an app-wide sweep (19e). See [19-design-system/PRODUCT.md](19-design-system/PRODUCT.md).
 
 ## Out of scope for `/twarp-next`
 
