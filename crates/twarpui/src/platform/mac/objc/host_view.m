@@ -1,5 +1,6 @@
 #import "host_view.h"
 
+#import <LocalAuthentication/LocalAuthentication.h>
 #import <Metal/Metal.h>
 #import <WebKit/WebKit.h>
 #import <stdint.h>
@@ -21,6 +22,12 @@ void warp_marked_text_cleared(WarpHostView *);
 
 typedef void (*WarpBrowserStringCallback)(void *, const char *, const char *);
 typedef void (*WarpBrowserBytesCallback)(void *, const uint8_t *, uintptr_t, const char *);
+
+// Rust handler for WebAuthn (passkey) requests bridged out of a browser
+// webview. `userVerified` reports whether the local-auth (Touch ID) ceremony
+// succeeded; the handler answers the page via evaluateJavaScript.
+void warp_browser_webauthn_request(WarpHostView *, NSUInteger webViewId, const char *requestJSON,
+                                   BOOL userVerified);
 
 @class WarpNativeWebViewEntry;
 
@@ -56,6 +63,9 @@ typedef void (*WarpBrowserBytesCallback)(void *, const uint8_t *, uintptr_t, con
 @property(nonatomic) BOOL annotationCaptureRequested;
 // twarp 14l-2: the last annotation click (webview top-left coords), if any.
 @property(nonatomic, retain) NSValue *pendingAnnotationClick;
+// WebAuthn bridge backrefs — the host view owns the entry, so assign is safe.
+@property(nonatomic, assign) WarpHostView *hostView;
+@property(nonatomic) NSUInteger webViewId;
 - (instancetype)initWithContainerView:(NSView *)containerView
                               webView:(WKWebView *)webView
                 userContentController:(WKUserContentController *)userContentController;
@@ -209,6 +219,16 @@ static NSMutableSet<WarpBrowserPopup *> *warpBrowserPopups(void) {
     [webView addObserver:popup forKeyPath:@"title" options:0 context:NULL];
     [warpBrowserPopups() addObject:popup];
 
+    // Attach as a child of the twarp window rather than opening an independent
+    // top-level window. A standalone window makes AppKit's application/document
+    // termination machinery treat it as an app window: when it opens/closes
+    // while twarp is active, a quit is dispatched through
+    // NSDocumentController and the app terminates (looks like a crash on
+    // popups). A child window floats above its parent, moves/closes with it,
+    // and stays out of that machinery.
+    if (parentWindow) {
+        [parentWindow addChildWindow:window ordered:NSWindowAbove];
+    }
     [window makeKeyAndOrderFront:nil];
     return webView;
 }
@@ -335,7 +355,39 @@ static NSMutableSet<WarpBrowserPopup *> *warpBrowserPopups(void) {
         [self appendJSONString:jsonString toMessages:_networkMessages];
     } else if ([type isEqualToString:@"console"]) {
         [self appendJSONString:jsonString toMessages:_consoleMessages];
+    } else if ([type isEqualToString:@"webauthn"]) {
+        [self handleWebAuthnMessage:(NSDictionary *)message json:jsonString];
     }
+}
+
+/// WebAuthn (passkey) request from the injected page script. User
+/// verification happens here — Touch ID with password fallback — so the Rust
+/// authenticator core only has to do crypto and storage. The request is
+/// forwarded either way; Rust rejects unverified requests with
+/// NotAllowedError so the page gets a well-formed WebAuthn failure.
+- (void)handleWebAuthnMessage:(NSDictionary *)message json:(NSString *)jsonString {
+    NSString *origin = [[message objectForKey:@"origin"] isKindOfClass:[NSString class]]
+        ? [message objectForKey:@"origin"]
+        : @"this site";
+    NSString *kind = [[message objectForKey:@"kind"] isKindOfClass:[NSString class]]
+        ? [message objectForKey:@"kind"]
+        : @"get";
+    NSString *reason = [kind isEqualToString:@"create"]
+        ? [NSString stringWithFormat:@"create a passkey for %@", origin]
+        : [NSString stringWithFormat:@"sign in to %@ with a passkey", origin];
+
+    WarpHostView *hostView = self.hostView;
+    NSUInteger webViewId = self.webViewId;
+    LAContext *context = [[[LAContext alloc] init] autorelease];
+    [context evaluatePolicy:LAPolicyDeviceOwnerAuthentication
+            localizedReason:reason
+                      reply:^(BOOL success, NSError *authError) {
+                          (void)authError;
+                          dispatch_async(dispatch_get_main_queue(), ^{
+                              warp_browser_webauthn_request(hostView, webViewId,
+                                                            jsonString.UTF8String, success);
+                          });
+                      }];
 }
 
 - (void)clearAutomationMessages {
@@ -689,6 +741,11 @@ static NSMutableSet<WarpBrowserPopup *> *warpBrowserPopups(void) {
     configuration.websiteDataStore = persistentDataStore
         ? [WKWebsiteDataStore defaultDataStore]
         : [WKWebsiteDataStore nonPersistentDataStore];
+    // Let sign-in flows open popups even when the click's user-activation
+    // doesn't propagate to the window.open() call (some OAuth SDKs open the
+    // window from an async callback). createWebViewWithConfiguration: still
+    // hosts them in a real popup window.
+    configuration.preferences.javaScriptCanOpenWindowsAutomatically = YES;
     WKWebView *webView = [[[WKWebView alloc] initWithFrame:NSZeroRect
                                              configuration:configuration] autorelease];
     webView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
@@ -717,6 +774,8 @@ static NSMutableSet<WarpBrowserPopup *> *warpBrowserPopups(void) {
     webView.UIDelegate = entry;
 
     NSUInteger webViewId = nextNativeWebViewId++;
+    entry.hostView = self;
+    entry.webViewId = webViewId;
     [nativeWebViews setObject:entry forKey:@(webViewId)];
     [self addSubview:containerView positioned:NSWindowAbove relativeTo:nil];
     [self applyHiddenStateToNativeWebViewEntry:entry];

@@ -133,6 +133,7 @@ fn compile_objc_lib() {
     println!("cargo:rustc-link-lib=framework=AVFoundation");
     println!("cargo:rustc-link-lib=framework=ServiceManagement");
     println!("cargo:rustc-link-lib=framework=WebKit");
+    println!("cargo:rustc-link-lib=framework=LocalAuthentication");
     println!("cargo:rerun-if-changed=src/platform/mac/objc/app.h");
     println!("cargo:rerun-if-changed=src/platform/mac/objc/app.m");
     println!("cargo:rerun-if-changed=src/platform/mac/objc/keycode.m");

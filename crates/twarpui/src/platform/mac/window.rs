@@ -1042,6 +1042,37 @@ impl Window {
         }
     }
 
+    /// Registers the app-wide handler for WebAuthn (passkey) requests bridged
+    /// out of browser webviews. Main-thread only (like all webview shims).
+    pub fn set_browser_webauthn_handler(
+        handler: Box<dyn Fn(WindowId, BrowserWebViewId, String, bool)>,
+    ) {
+        BROWSER_WEBAUTHN_HANDLER.with(|slot| *slot.borrow_mut() = Some(handler));
+    }
+
+    /// Fire-and-forget JavaScript evaluation on a browser webview — used to
+    /// deliver asynchronous native results (e.g. WebAuthn responses) to the
+    /// page without needing an async context.
+    pub fn browser_webview_fire_javascript(
+        window_id: WindowId,
+        webview_id: BrowserWebViewId,
+        script: &str,
+    ) {
+        extern "C" fn noop_callback(_: *mut c_void, _: *const c_char, _: *const c_char) {}
+        unsafe {
+            if let Some(window) = Self::find_window_with_id(window_id) {
+                let host_view: id = msg_send![window, contentView];
+                warp_host_evaluate_javascript(
+                    host_view,
+                    webview_id,
+                    make_nsstring(script),
+                    noop_callback,
+                    ptr::null_mut(),
+                );
+            }
+        }
+    }
+
     pub fn install_browser_webview_automation_script(
         window_id: WindowId,
         webview_id: BrowserWebViewId,
@@ -1802,6 +1833,38 @@ extern "C-unwind" fn warp_update_layer(this: &Object) {
             .for_window(&Window(window.clone()))
             .frame_drawn();
     }
+}
+
+thread_local! {
+    /// App-wide WebAuthn request handler (registered by the browser engine).
+    /// Main-thread only, matching the rest of the webview bridge.
+    static BROWSER_WEBAUTHN_HANDLER: RefCell<
+        Option<Box<dyn Fn(WindowId, BrowserWebViewId, String, bool)>>,
+    > = const { RefCell::new(None) };
+}
+
+/// WebAuthn (passkey) request bridged out of a browser webview. `user_verified`
+/// is the outcome of the native Touch ID / password ceremony.
+#[no_mangle]
+extern "C-unwind" fn warp_browser_webauthn_request(
+    this: &Object,
+    webview_id: usize,
+    request_json: *const c_char,
+    user_verified: bool,
+) {
+    let window = unsafe { get_window_state(this) };
+    let window_id = window.window_id;
+    if request_json.is_null() {
+        return;
+    }
+    let request = unsafe { CStr::from_ptr(request_json) }
+        .to_string_lossy()
+        .into_owned();
+    BROWSER_WEBAUTHN_HANDLER.with(|slot| {
+        if let Some(handler) = &*slot.borrow() {
+            handler(window_id, webview_id, request, user_verified);
+        }
+    });
 }
 
 /// Returns whether this event was handled.

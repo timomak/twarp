@@ -1,3 +1,5 @@
+mod webauthn;
+
 use std::time::Duration;
 
 use instant::Instant;
@@ -179,6 +181,7 @@ impl BrowserEngine {
     pub fn new_with_profile(window_id: WindowId, profile: BrowserProfile) -> Option<Self> {
         #[cfg(target_os = "macos")]
         {
+            webauthn::install();
             let webview_id = MacWindow::create_browser_webview(window_id, profile.is_persistent())?;
             MacWindow::install_browser_webview_automation_script(
                 window_id,
@@ -819,6 +822,135 @@ const INJECTED_SCRIPT: &str = r##"
         });
         return originalSend.apply(this, arguments);
     };
+
+    // --- WebAuthn (passkey) bridge -------------------------------------
+    // Override navigator.credentials.create/get so passkey ceremonies run
+    // through twarp's software authenticator (native side does Touch ID +
+    // crypto). Existing sites see a standard PublicKeyCredential.
+    (function installWebAuthnBridge() {
+        if (!window.PublicKeyCredential || window.__twarpWebAuthnInstalled) {
+            return;
+        }
+        window.__twarpWebAuthnInstalled = true;
+
+        const pending = new Map();
+        let requestCounter = 1;
+
+        function toB64Url(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = "";
+            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+            return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+        }
+
+        function fromB64Url(value) {
+            const padded = String(value).replace(/-/g, "+").replace(/_/g, "/");
+            const binary = atob(padded + "===".slice((padded.length + 3) % 4));
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            return bytes.buffer;
+        }
+
+        function normalizeChallengeOrId(value) {
+            // WebAuthn passes BufferSource; the native side wants base64url.
+            if (value instanceof ArrayBuffer) return toB64Url(value);
+            if (ArrayBuffer.isView(value)) return toB64Url(value.buffer);
+            return String(value || "");
+        }
+
+        function post(kind, detail) {
+            const id = "wa" + requestCounter++;
+            const message = Object.assign({ type: "webauthn", id, kind, origin: location.origin }, detail);
+            return new Promise((resolve, reject) => {
+                pending.set(id, { resolve, reject });
+                try {
+                    window.webkit.messageHandlers.twarpAutomation.postMessage(message);
+                } catch (err) {
+                    pending.delete(id);
+                    reject(new DOMException("Passkey bridge unavailable", "NotAllowedError"));
+                }
+            });
+        }
+
+        // Called by native code with the ceremony result.
+        window.__twarpWebAuthnComplete = function (requestId, response) {
+            const entry = pending.get(requestId);
+            if (!entry) return;
+            pending.delete(requestId);
+            if (!response || !response.ok) {
+                const error = (response && response.error) || {};
+                entry.reject(new DOMException(error.message || "Passkey request failed", error.name || "NotAllowedError"));
+                return;
+            }
+            entry.resolve(response.credential);
+        };
+
+        function buildPublicKeyCredential(cred, extraResponse) {
+            const rawId = fromB64Url(cred.id);
+            const response = Object.assign({
+                clientDataJSON: fromB64Url(cred.clientDataJSON),
+            }, extraResponse);
+            const credential = {
+                id: cred.id,
+                rawId,
+                type: "public-key",
+                authenticatorAttachment: "platform",
+                response,
+                getClientExtensionResults() { return {}; },
+            };
+            Object.setPrototypeOf(credential, window.PublicKeyCredential.prototype);
+            return credential;
+        }
+
+        const originalCreate = navigator.credentials.create.bind(navigator.credentials);
+        const originalGet = navigator.credentials.get.bind(navigator.credentials);
+
+        navigator.credentials.create = async function (options) {
+            if (!options || !options.publicKey) return originalCreate(options);
+            const pk = options.publicKey;
+            const cred = await post("create", {
+                rpId: (pk.rp && pk.rp.id) || location.hostname,
+                challenge: normalizeChallengeOrId(pk.challenge),
+                userId: pk.user ? normalizeChallengeOrId(pk.user.id) : "",
+                userName: (pk.user && (pk.user.name || pk.user.displayName)) || "",
+                algs: (pk.pubKeyCredParams || []).map((p) => p.alg),
+                excludeIds: (pk.excludeCredentials || []).map((c) => normalizeChallengeOrId(c.id)),
+            });
+            return buildPublicKeyCredential(cred, {
+                attestationObject: fromB64Url(cred.attestationObject),
+                getAuthenticatorData() { return fromB64Url(cred.authData); },
+                getPublicKey() { return fromB64Url(cred.publicKey); },
+                getPublicKeyAlgorithm() { return cred.publicKeyAlg; },
+                getTransports() { return ["internal"]; },
+            });
+        };
+
+        navigator.credentials.get = async function (options) {
+            if (!options || !options.publicKey) return originalGet(options);
+            const pk = options.publicKey;
+            const cred = await post("get", {
+                rpId: pk.rpId || location.hostname,
+                challenge: normalizeChallengeOrId(pk.challenge),
+                allowIds: (pk.allowCredentials || []).map((c) => normalizeChallengeOrId(c.id)),
+            });
+            return buildPublicKeyCredential(cred, {
+                authenticatorData: fromB64Url(cred.authData),
+                signature: fromB64Url(cred.signature),
+                userHandle: cred.userHandle ? fromB64Url(cred.userHandle) : null,
+                getAuthenticatorData() { return fromB64Url(cred.authData); },
+            });
+        };
+
+        // Advertise platform-authenticator availability so sites offer passkeys.
+        window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = function () {
+            return Promise.resolve(true);
+        };
+        if (window.PublicKeyCredential.isConditionalMediationAvailable) {
+            window.PublicKeyCredential.isConditionalMediationAvailable = function () {
+                return Promise.resolve(false);
+            };
+        }
+    })();
 
     window.__twarpBrowserAutomation = {
         snapshot(scopeSelector, maxElements) {

@@ -2151,11 +2151,17 @@ dependencies = [
 name = "browser"
 version = "0.0.0"
 dependencies = [
+ "base64 0.22.1",
+ "ciborium",
  "futures",
  "instant",
+ "p256",
  "pathfinder_geometry",
+ "rand 0.8.6",
+ "security-framework 2.9.2",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror 2.0.17",
  "twarpui",
  "url",
