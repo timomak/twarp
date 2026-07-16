@@ -1389,15 +1389,6 @@ impl ClaudeCodeView {
         ColorU::new(accent.r, accent.g, accent.b, 52)
     }
 
-    /// A muted tab accent for *idle* header chrome (icon buttons, inactive
-    /// toggle labels), or `None` when the tab has no colour. Softer than the
-    /// full accent so "something is running right now" (full accent + badge)
-    /// still reads distinctly against idle affordances.
-    fn tab_chrome_accent(&self, app: &AppContext) -> Option<ColorU> {
-        self.tab_accent(app)
-            .map(|accent| ColorU::new(accent.r, accent.g, accent.b, 170))
-    }
-
     /// Focus the message input (PRODUCT §34: keyboard-first).
     pub fn focus(&mut self, ctx: &mut ViewContext<Self>) {
         // In raw mode the terminal owns the keyboard (PRODUCT §43).
@@ -4494,9 +4485,9 @@ impl ClaudeCodeView {
         } else if blocked || failed {
             twarp_core::ui::theme::Fill::warn().into_solid()
         } else {
-            // Idle chrome follows the tab colour (muted) when one is set.
-            self.tab_chrome_accent(app)
-                .unwrap_or_else(|| theme.main_text_color(theme.background()).into_solid())
+            // Idle chrome stays neutral gray; the accent is reserved for
+            // "something is running right now".
+            theme.sub_text_color(theme.background()).into_solid()
         };
         let label = if live {
             "Stop control"
@@ -5168,14 +5159,12 @@ impl ClaudeCodeView {
         let wash = self.accent_wash(app);
         let expanded = self.background_scripts_expanded;
 
-        // twarp 14n: idle affordances read as chrome (muted tab accent, or
-        // gray on uncoloured tabs); the full accent is reserved for
-        // "something is running right now".
+        // twarp 14n: idle affordances read as neutral gray chrome; the full
+        // accent is reserved for "something is running right now".
         let glyph_color = if active > 0 {
             accent
         } else {
-            self.tab_chrome_accent(app)
-                .unwrap_or_else(|| theme.sub_text_color(theme.background()).into_solid())
+            theme.sub_text_color(theme.background()).into_solid()
         };
         let glyph = ConstrainedBox::new(
             Icon::new(
@@ -5292,9 +5281,8 @@ impl ClaudeCodeView {
         let glyph_color = if browsing {
             self.accent(app)
         } else {
-            // Idle chrome follows the tab colour (muted) when one is set.
-            self.tab_chrome_accent(app)
-                .unwrap_or_else(|| theme.sub_text_color(theme.background()).into_solid())
+            // Idle chrome stays neutral gray.
+            theme.sub_text_color(theme.background()).into_solid()
         };
         let wash = self.accent_wash(app);
 
@@ -5358,8 +5346,7 @@ impl ClaudeCodeView {
         let glyph_color = if active > 0 {
             accent
         } else {
-            self.tab_chrome_accent(app)
-                .unwrap_or_else(|| theme.sub_text_color(theme.background()).into_solid())
+            theme.sub_text_color(theme.background()).into_solid()
         };
         let glyph = ConstrainedBox::new(
             Icon::new(
@@ -8325,11 +8312,9 @@ impl BackingView for ClaudeCodeView {
         let wash = self.accent_wash(app);
         let raw_mode = self.raw_cli.is_some();
         let theme = appearance.theme();
-        // The toggle's neutral parts (inactive label, border) also tint with
-        // the tab colour when one is set.
-        let inactive_color = self
-            .tab_chrome_accent(app)
-            .unwrap_or_else(|| theme.main_text_color(theme.background()).into_solid());
+        // The toggle's inactive label stays neutral gray; only the active
+        // segment reads in the tab accent.
+        let inactive_color = theme.sub_text_color(theme.background()).into_solid();
         let toggle_border: twarp_core::ui::theme::Fill = self
             .tab_accent(app)
             .map(|accent| ColorU::new(accent.r, accent.g, accent.b, 90).into())
