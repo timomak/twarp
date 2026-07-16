@@ -67,6 +67,20 @@ typedef void (*WarpBrowserBytesCallback)(void *, const uint8_t *, uintptr_t, con
 - (void)downloadRequest:(NSURLRequest *)request response:(NSURLResponse *)response;
 @end
 
+/// A `window.open()` popup spawned by a browser webview (OAuth/sign-in flows).
+/// The child webview MUST be built from the configuration WebKit hands to
+/// `createWebViewWithConfiguration:` — that is what wires `window.opener`,
+/// `postMessage` back to the opener, and `window.close()`; returning nil there
+/// makes sites report "your browser is blocking popups".
+@interface WarpBrowserPopup : NSObject <WKNavigationDelegate, WKUIDelegate, NSWindowDelegate>
+@property(nonatomic, retain) NSWindow *window;
+@property(nonatomic, retain) WKWebView *webView;
++ (WKWebView *)openPopupFromWebView:(WKWebView *)parentWebView
+                      configuration:(WKWebViewConfiguration *)configuration
+                forNavigationAction:(WKNavigationAction *)navigationAction
+                     windowFeatures:(WKWindowFeatures *)windowFeatures;
+@end
+
 /// Shield implementation lives after the entry interface so it can call back
 /// into the entry when capturing annotation clicks.
 @implementation WarpWebViewInputShield
@@ -104,6 +118,164 @@ typedef void (*WarpBrowserBytesCallback)(void *, const uint8_t *, uintptr_t, con
 @end
 
 static const NSUInteger WarpAutomationMessageLimit = 200;
+
+// JS dialog panels shared by pane webviews and their popup children.
+static void WarpRunJSAlert(WKWebView *webView, NSString *message, void (^completionHandler)(void)) {
+    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+    alert.messageText = webView.title.length > 0 ? webView.title : @"Browser";
+    alert.informativeText = message ?: @"";
+    [alert addButtonWithTitle:@"OK"];
+    [alert runModal];
+    completionHandler();
+}
+
+static void WarpRunJSConfirm(WKWebView *webView, NSString *message, void (^completionHandler)(BOOL)) {
+    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+    alert.messageText = webView.title.length > 0 ? webView.title : @"Browser";
+    alert.informativeText = message ?: @"";
+    [alert addButtonWithTitle:@"OK"];
+    [alert addButtonWithTitle:@"Cancel"];
+    completionHandler([alert runModal] == NSAlertFirstButtonReturn);
+}
+
+static void WarpRunJSPrompt(WKWebView *webView,
+                            NSString *prompt,
+                            NSString *defaultText,
+                            void (^completionHandler)(NSString *)) {
+    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+    alert.messageText = webView.title.length > 0 ? webView.title : @"Browser";
+    alert.informativeText = prompt ?: @"";
+    NSTextField *input = [[[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 280, 24)] autorelease];
+    input.stringValue = defaultText ?: @"";
+    alert.accessoryView = input;
+    [alert addButtonWithTitle:@"OK"];
+    [alert addButtonWithTitle:@"Cancel"];
+    completionHandler([alert runModal] == NSAlertFirstButtonReturn ? input.stringValue : nil);
+}
+
+// Live popups — the set is the strong owner; each popup removes itself when
+// its window closes.
+static NSMutableSet<WarpBrowserPopup *> *warpBrowserPopups(void) {
+    static NSMutableSet *popups = nil;
+    if (!popups) {
+        popups = [[NSMutableSet alloc] init];
+    }
+    return popups;
+}
+
+@implementation WarpBrowserPopup
+
++ (WKWebView *)openPopupFromWebView:(WKWebView *)parentWebView
+                      configuration:(WKWebViewConfiguration *)configuration
+                forNavigationAction:(WKNavigationAction *)navigationAction
+                     windowFeatures:(WKWindowFeatures *)windowFeatures {
+    (void)navigationAction;
+    CGFloat width = windowFeatures.width ? windowFeatures.width.doubleValue : 560.0;
+    CGFloat height = windowFeatures.height ? windowFeatures.height.doubleValue : 680.0;
+    width = MIN(MAX(width, 320.0), 1200.0);
+    height = MIN(MAX(height, 240.0), 1000.0);
+
+    // WebKit requires the child to be created with exactly this configuration.
+    WKWebView *webView =
+        [[[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, width, height)
+                            configuration:configuration] autorelease];
+
+    NSWindow *window = [[[NSWindow alloc]
+        initWithContentRect:NSMakeRect(0, 0, width, height)
+                  styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                            NSWindowStyleMaskResizable
+                    backing:NSBackingStoreBuffered
+                      defer:NO] autorelease];
+    window.releasedWhenClosed = NO;
+    window.title = @"Loading…";
+    webView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [window.contentView addSubview:webView];
+
+    NSWindow *parentWindow = parentWebView.window;
+    if (parentWindow) {
+        NSRect parentFrame = parentWindow.frame;
+        [window setFrameOrigin:NSMakePoint(NSMidX(parentFrame) - width / 2,
+                                           NSMidY(parentFrame) - height / 2)];
+    } else {
+        [window center];
+    }
+
+    WarpBrowserPopup *popup = [[[WarpBrowserPopup alloc] init] autorelease];
+    popup.window = window;
+    popup.webView = webView;
+    window.delegate = popup;
+    webView.UIDelegate = popup;
+    webView.navigationDelegate = popup;
+    [webView addObserver:popup forKeyPath:@"title" options:0 context:NULL];
+    [warpBrowserPopups() addObject:popup];
+
+    [window makeKeyAndOrderFront:nil];
+    return webView;
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath
+                      ofObject:(id)object
+                        change:(NSDictionary *)change
+                       context:(void *)context {
+    if ([keyPath isEqualToString:@"title"] && object == self.webView) {
+        self.window.title = self.webView.title.length > 0 ? self.webView.title : @"Browser";
+    }
+}
+
+// The page called window.close() — OAuth popups do this after handing the
+// result back to the opener.
+- (void)webViewDidClose:(WKWebView *)webView {
+    [self.window close];
+}
+
+- (void)windowWillClose:(NSNotification *)notification {
+    [self.webView removeObserver:self forKeyPath:@"title"];
+    self.webView.UIDelegate = nil;
+    self.webView.navigationDelegate = nil;
+    self.window.delegate = nil;
+    [[self retain] autorelease];
+    [warpBrowserPopups() removeObject:self];
+}
+
+- (WKWebView *)webView:(WKWebView *)webView
+    createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
+               forNavigationAction:(WKNavigationAction *)navigationAction
+                    windowFeatures:(WKWindowFeatures *)windowFeatures {
+    return [WarpBrowserPopup openPopupFromWebView:webView
+                                    configuration:configuration
+                              forNavigationAction:navigationAction
+                                   windowFeatures:windowFeatures];
+}
+
+- (void)webView:(WKWebView *)webView
+    runJavaScriptAlertPanelWithMessage:(NSString *)message
+                      initiatedByFrame:(WKFrameInfo *)frame
+                     completionHandler:(void (^)(void))completionHandler {
+    WarpRunJSAlert(webView, message, completionHandler);
+}
+
+- (void)webView:(WKWebView *)webView
+    runJavaScriptConfirmPanelWithMessage:(NSString *)message
+                        initiatedByFrame:(WKFrameInfo *)frame
+                       completionHandler:(void (^)(BOOL result))completionHandler {
+    WarpRunJSConfirm(webView, message, completionHandler);
+}
+
+- (void)webView:(WKWebView *)webView
+    runJavaScriptTextInputPanelWithPrompt:(NSString *)prompt
+                              defaultText:(NSString *)defaultText
+                         initiatedByFrame:(WKFrameInfo *)frame
+                        completionHandler:(void (^)(NSString *result))completionHandler {
+    WarpRunJSPrompt(webView, prompt, defaultText, completionHandler);
+}
+
+- (void)dealloc {
+    [_webView release];
+    [_window release];
+    [super dealloc];
+}
+
+@end
 
 @implementation WarpNativeWebViewEntry
 
@@ -280,24 +452,14 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
     runJavaScriptAlertPanelWithMessage:(NSString *)message
                       initiatedByFrame:(WKFrameInfo *)frame
                      completionHandler:(void (^)(void))completionHandler {
-    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
-    alert.messageText = webView.title.length > 0 ? webView.title : @"Browser";
-    alert.informativeText = message ?: @"";
-    [alert addButtonWithTitle:@"OK"];
-    [alert runModal];
-    completionHandler();
+    WarpRunJSAlert(webView, message, completionHandler);
 }
 
 - (void)webView:(WKWebView *)webView
     runJavaScriptConfirmPanelWithMessage:(NSString *)message
                         initiatedByFrame:(WKFrameInfo *)frame
                        completionHandler:(void (^)(BOOL result))completionHandler {
-    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
-    alert.messageText = webView.title.length > 0 ? webView.title : @"Browser";
-    alert.informativeText = message ?: @"";
-    [alert addButtonWithTitle:@"OK"];
-    [alert addButtonWithTitle:@"Cancel"];
-    completionHandler([alert runModal] == NSAlertFirstButtonReturn);
+    WarpRunJSConfirm(webView, message, completionHandler);
 }
 
 - (void)webView:(WKWebView *)webView
@@ -305,25 +467,17 @@ static const NSUInteger WarpAutomationMessageLimit = 200;
                               defaultText:(NSString *)defaultText
                          initiatedByFrame:(WKFrameInfo *)frame
                         completionHandler:(void (^)(NSString *result))completionHandler {
-    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
-    alert.messageText = webView.title.length > 0 ? webView.title : @"Browser";
-    alert.informativeText = prompt ?: @"";
-    NSTextField *input = [[[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 280, 24)] autorelease];
-    input.stringValue = defaultText ?: @"";
-    alert.accessoryView = input;
-    [alert addButtonWithTitle:@"OK"];
-    [alert addButtonWithTitle:@"Cancel"];
-    completionHandler([alert runModal] == NSAlertFirstButtonReturn ? input.stringValue : nil);
+    WarpRunJSPrompt(webView, prompt, defaultText, completionHandler);
 }
 
 - (WKWebView *)webView:(WKWebView *)webView
     createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
                forNavigationAction:(WKNavigationAction *)navigationAction
                     windowFeatures:(WKWindowFeatures *)windowFeatures {
-    if (!navigationAction.targetFrame && navigationAction.request.URL) {
-        [webView loadRequest:navigationAction.request];
-    }
-    return nil;
+    return [WarpBrowserPopup openPopupFromWebView:webView
+                                    configuration:configuration
+                              forNavigationAction:navigationAction
+                                   windowFeatures:windowFeatures];
 }
 
 @end
