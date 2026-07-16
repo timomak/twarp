@@ -2018,13 +2018,17 @@ impl View for RightPanelView {
         } else {
             super::FLOATING_PANEL_MARGIN
         };
-        let mut container = Container::new(resizable)
-            .with_margin_top(margin)
-            .with_margin_bottom(margin);
-        container = match self.panel_position {
-            super::PanelPosition::Left => container.with_margin_left(margin),
-            super::PanelPosition::Right => container.with_margin_right(margin),
-        };
-        container.finish()
+        match self.panel_position {
+            super::PanelPosition::Left => Container::new(resizable)
+                .with_margin_top(margin)
+                .with_margin_bottom(margin)
+                .with_margin_left(margin)
+                .finish(),
+            super::PanelPosition::Right => Container::new(resizable)
+                .with_margin_top(margin)
+                .with_margin_bottom(margin)
+                .with_margin_right(margin)
+                .finish(),
+        }
     }
 }

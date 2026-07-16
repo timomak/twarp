@@ -17634,6 +17634,27 @@ impl Workspace {
         panels_view.finish()
     }
 
+    fn render_tab_bar_and_panels_column(
+        &self,
+        app: &AppContext,
+        appearance: &Appearance,
+        tab_bar_mode: ShowTabBar,
+        hide_vertical_tabs: bool,
+    ) -> Box<dyn Element> {
+        let mut column = Flex::column();
+        if tab_bar_mode == ShowTabBar::Stacked {
+            column.add_child(self.render_tab_bar(self.tab_fixed_width, appearance, app));
+        }
+        let content = self.render_banner_and_active_tab(app, appearance);
+        let panels_row = self.render_panels(
+            app,
+            Shrinkable::new(1.0, content).finish(),
+            hide_vertical_tabs,
+        );
+        column.add_child(Shrinkable::new(1.0, panels_row).finish());
+        column.finish()
+    }
+
     fn tabs_panel_side(config: &HeaderToolbarChipSelection) -> PanelPosition {
         if config
             .left_items()
@@ -20415,39 +20436,25 @@ impl View for Workspace {
             // For the simplified WASM tab bar, we want to render the tab bar on top of all other content
             // so that content being added/moved around in the workspace (for example the details panel being toggled)
             // does not affect the tab.
-            let mut outer_column = Flex::column();
-            if tab_bar_mode == ShowTabBar::Stacked {
-                outer_column.add_child(self.render_tab_bar(self.tab_fixed_width, appearance, app));
-            }
-            let content = self.render_banner_and_active_tab(app, appearance);
-            // Hide the vertical tab rail for simplified WASM views (notebooks, shared sessions, etc.)
-            let panels_row = self.render_panels(app, Shrinkable::new(1.0, content).finish(), true);
-            outer_column.add_child(Shrinkable::new(1.0, panels_row).finish());
-            Container::new(outer_column.finish())
-                .with_background(util::get_terminal_background_fill(self.window_id, app))
-                .finish()
+            Container::new(self.render_tab_bar_and_panels_column(
+                app,
+                appearance,
+                tab_bar_mode,
+                true,
+            ))
+            .with_background(util::get_terminal_background_fill(self.window_id, app))
+            .finish()
         } else {
             let is_left_panel_open = self.active_tab_pane_group().as_ref(app).left_panel_open;
             let use_design_shell = design_shell_v1_enabled()
                 && is_left_panel_open
                 && !twarpui::platform::is_mobile_device();
+            let tab_bar_and_panels =
+                self.render_tab_bar_and_panels_column(app, appearance, tab_bar_mode, false);
 
             if use_design_shell {
                 let sidebar = ChildView::new(&self.left_panel_view).finish();
-                let mut right_column = Flex::column();
-                if tab_bar_mode == ShowTabBar::Stacked {
-                    right_column.add_child(self.render_tab_bar(
-                        self.tab_fixed_width,
-                        appearance,
-                        app,
-                    ));
-                }
-                let content = self.render_banner_and_active_tab(app, appearance);
-                let panels_row =
-                    self.render_panels(app, Shrinkable::new(1.0, content).finish(), false);
-                right_column.add_child(Shrinkable::new(1.0, panels_row).finish());
-
-                let right_column = Container::new(right_column.finish())
+                let right_column = Container::new(tab_bar_and_panels)
                     .with_padding_top(WORKSPACE_PADDING)
                     .with_padding_right(WORKSPACE_PADDING)
                     .with_padding_bottom(WORKSPACE_PADDING)
@@ -20462,19 +20469,7 @@ impl View for Workspace {
                 .with_background(util::get_terminal_background_fill(self.window_id, app))
                 .finish()
             } else {
-                let mut outer_column = Flex::column();
-                if tab_bar_mode == ShowTabBar::Stacked {
-                    outer_column.add_child(self.render_tab_bar(
-                        self.tab_fixed_width,
-                        appearance,
-                        app,
-                    ));
-                }
-                let content = self.render_banner_and_active_tab(app, appearance);
-                let panels_row =
-                    self.render_panels(app, Shrinkable::new(1.0, content).finish(), false);
-                outer_column.add_child(Shrinkable::new(1.0, panels_row).finish());
-                Container::new(outer_column.finish())
+                Container::new(tab_bar_and_panels)
                     .with_background(util::get_terminal_background_fill(self.window_id, app))
                     .finish()
             }

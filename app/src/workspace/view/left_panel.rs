@@ -2724,7 +2724,7 @@ impl View for LeftPanelView {
             }
         };
 
-        let mut panel_content = Container::new({
+        let panel_body = {
             let column = Flex::column();
 
             let header_left = if let Some(row) = toolbelt_button_row {
@@ -2786,35 +2786,37 @@ impl View for LeftPanelView {
             column.add_child(header_row);
             column.add_child(Shrinkable::new(1.0, content_area).finish());
             column.with_main_axis_size(MainAxisSize::Max).finish()
-        })
-        // twarp: the sidebar surface is the main terminal background (shared
-        // with the code review panel), so the card blends into the background
-        // and is set apart only by its outline/gap/shadow. Child colors derive
-        // from the theme (see the `sidebar_*` palette helpers).
-        .with_background(if use_design_shell {
-            appearance.theme().surface_1()
-        } else {
-            super::floating_panel_surface_fill(app)
-        });
-        if use_design_shell {
-            panel_content = panel_content.with_border(
-                Border::right(border::HAIRLINE_WIDTH)
-                    .with_border_fill(appearance.theme().outline()),
-            );
+        };
+
+        let panel_content = if use_design_shell {
+            Container::new(panel_body)
+                .with_background(appearance.theme().surface_1())
+                .with_border(
+                    Border::right(border::HAIRLINE_WIDTH)
+                        .with_border_fill(appearance.theme().outline()),
+                )
+                // twarp 08f polish: breathing room at the bottom edge.
+                .with_padding_bottom(SIDEBAR_BOTTOM_INSET)
+                .finish()
         } else {
             // twarp: floating-card treatment — rounded corners, a gray outline, and
             // a soft drop shadow so the sidebar reads as floating above the terminal
             // background. The edge gap (margin) is applied OUTSIDE the Resizable
             // below so the drag bar sits on the card's border, not out in the gap.
-            panel_content = panel_content
+            //
+            // twarp: the sidebar surface is the main terminal background (shared
+            // with the code review panel), so the card blends into the background
+            // and is set apart only by its outline/gap/shadow. Child colors derive
+            // from the theme (see the `sidebar_*` palette helpers).
+            Container::new(panel_body)
+                .with_background(super::floating_panel_surface_fill(app))
                 .with_corner_radius(super::floating_panel_corner_radius())
                 .with_border(super::floating_panel_border(app))
-                .with_drop_shadow(super::floating_panel_drop_shadow());
-        }
-        let panel_content = panel_content
-            // twarp 08f polish: breathing room at the bottom edge.
-            .with_padding_bottom(SIDEBAR_BOTTOM_INSET)
-            .finish();
+                .with_drop_shadow(super::floating_panel_drop_shadow())
+                // twarp 08f polish: breathing room at the bottom edge.
+                .with_padding_bottom(SIDEBAR_BOTTOM_INSET)
+                .finish()
+        };
 
         if twarpui::platform::is_mobile_device() {
             return Container::new(panel_content)
@@ -2854,14 +2856,18 @@ impl View for LeftPanelView {
         }
 
         let margin = super::FLOATING_PANEL_MARGIN;
-        let mut container = Container::new(resizable)
-            .with_margin_top(margin)
-            .with_margin_bottom(margin);
-        container = match self.panel_position {
-            super::PanelPosition::Left => container.with_margin_left(margin),
-            super::PanelPosition::Right => container.with_margin_right(margin),
-        };
-        container.finish()
+        match self.panel_position {
+            super::PanelPosition::Left => Container::new(resizable)
+                .with_margin_top(margin)
+                .with_margin_bottom(margin)
+                .with_margin_left(margin)
+                .finish(),
+            super::PanelPosition::Right => Container::new(resizable)
+                .with_margin_top(margin)
+                .with_margin_bottom(margin)
+                .with_margin_right(margin)
+                .finish(),
+        }
     }
 }
 
