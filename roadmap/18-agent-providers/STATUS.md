@@ -15,6 +15,7 @@ Make the Claude pane provider-generic and light up **Codex** as the second backe
 - [ ] **18c — approvals & access.** Unified approval card for both protocols with a guaranteed-reply invariant; four-stop Access pill (Read-only / Ask to edit / Edits allowed / Full access) mapped per provider; bypass-flag detection.
 - [ ] **18d — entry & light-up.** `codex` terminal trigger + alias expansion; settings-16 Codex adapter enabled (install/login probes, model+effort lists); login-in-a-terminal-split flow; min-version upgrade card; provider-tagged past-sessions sidebar with filter.
 - [ ] **18e — capability polish.** Fork via `thread/fork`; provider-shaped usage line (tokens/quota vs cost); steering behind a capability flag; readable provider-error ended states.
+- [ ] **18f — in-pane provider switching.** Cursor-style provider control on the composer pill, idle-only; fresh-pane seamless swap; mid-conversation handoff via transcript digest with a visible switch divider; segments persistence + stitched restore; Access-stop remap; owner-directed 2026-07-16.
 
 ## Smoke test
 

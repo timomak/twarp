@@ -88,6 +88,17 @@ Mapping (pill stop → provider-native):
 - Steering (`turn/steer`) behind `capabilities().steer` — composer stays enabled mid-turn for codex, queued send for claude (§25). Ship dark if flaky; capability-gated so it's droppable.
 - Error taxonomy: map `turn/failed.error` codes (contextWindowExceeded, usageLimitExceeded, auth) to readable ended states (§22).
 
+## 18f — in-pane provider switching (§35–§44)
+
+Owner-directed 2026-07-16 (Cursor-style switching, idle-only). Builds purely on 18a–18e primitives; no new protocol work.
+
+- **Switch affordance**: the Model·Effort pill's menu gains a provider section listing enabled `CLIAgent`s (probe state inline — a logged-out/uninstalled provider shows its blocker instead of switching, §43). Disabled while `TurnState::running` (§35).
+- **Fresh-pane switch** (§36): before the first send the driver may not even be spawned (`new_resume`-style laziness); switching is just swapping the pane's `CLIAgent` + reseeding pill defaults from `AgentSettings::chat_launch_config()` for that provider (§39). If a process was already spawned turn-free, terminate it and spawn the target lazily on first send.
+- **Handoff digest** (§37–§38): a serializer over `TranscriptItem`s (they already normalize everything user-visible): user/assistant text verbatim, tool runs as `- ran `cmd` → exit 0 (summary)`, edits as `- edited path (+a/-b)`; hard budget (~24k chars: keep the last N turns verbatim, elide older tool detail first); prefixed with a fixed system-style preamble ("You are continuing a conversation started with another assistant; do not re-introduce yourself"). Sent as the first user turn of the new session, with the user's actual message appended.
+- **Segments** (§41, §44): pane persistence grows a `segments` JSON column (additive migration on `claude_code_panes`): `[{provider, session_id, item_range}]`; the existing provider/session columns keep meaning "current segment" (18a's migration unchanged, back-compat trivial). Restore stitches each segment via its driver's `sessions().load_history`, inserting divider items; a failed segment load renders the §41 collapsed marker.
+- **Divider** = a new `TranscriptItem::ProviderSwitch{from, to, omitted: Vec<String>}` — render-only, excluded from fork turn-counting (the 7-era 1:1 user-turn parity rule; §42 keeps fork within the current segment by construction).
+- **Access remap** (§39): reuse 18c's stop→native tables; the current stop re-applies at target-session start.
+
 ## Risks
 
 1. **Protocol drift** — codex releases fast. Mitigation: pinned min version + vendored types + schema-diff check in fixtures; upgrade card rather than best-effort parsing (§20/§34).
@@ -95,6 +106,7 @@ Mapping (pill stop → provider-native):
 3. **View churn vs feature 19**: 18 lands after 19 by owner sequencing; 18 makes **no layout/style changes** (PRODUCT non-goal) so 19's restyle isn't churned.
 4. **Two-process resource creep**: one app-server per pane is fine at pane counts twarp sees; revisit shared-process if profiling says otherwise (decision 6).
 5. **Claude regressions from the extraction**: golden transcripts + the 07-era tripwires (Stop-not-SIGINT, FocusSelf, SelectableArea, persistence checklist) re-verified in 18a's PR.
+6. **Digest fidelity** (18f): the target provider only knows what the digest carries — long tool outputs and attachments are summarized/omitted (§38). Mitigation: the divider discloses omissions; the budget favors recent turns; this matches how every "continue in another model" product behaves under the hood.
 
 ## Validation
 
