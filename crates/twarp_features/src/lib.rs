@@ -802,6 +802,10 @@ pub enum FeatureFlag {
     /// instead of individual pane rows.
     VerticalTabsSummaryMode,
 
+    /// Gates the Codex-style design-system shell: full-height macOS sidebar
+    /// with the tab strip starting to its right.
+    DesignShellV1,
+
     CloudModeInputV2,
 }
 
@@ -876,6 +880,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::GeminiNotifications,
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,
+    FeatureFlag::DesignShellV1,
     FeatureFlag::CloudModeSetupV2,
     // twarp 08b: re-enable Chrome-style cross-window tab dragging (detach a tab
     // into a new window / drag it between windows). Dormant upstream; turned on
