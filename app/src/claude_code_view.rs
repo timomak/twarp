@@ -3384,6 +3384,11 @@ impl ClaudeCodeView {
             );
             ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         }
+        // A background agent retiring can be what finally flips the tab from
+        // the working spinner to the turn's ✓/✗ — repaint the tab bar.
+        if matches!(&event, TranscriptEvent::TaskNotification(_)) {
+            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+        }
         if let TranscriptEvent::Ended { reason } = &event {
             log::warn!(
                 "QDIAG turn Ended (streaming->false), had_pending_questions={}",
@@ -3874,6 +3879,21 @@ impl ClaudeCodeView {
             return Some(ConversationStatus::Blocked {});
         }
         if self.streaming {
+            return Some(ConversationStatus::InProgress);
+        }
+        // A turn can end while background sub-agents are still working — the
+        // session stays live between turns and delivers their terminal state
+        // as task notifications. Until the last one retires, the tab keeps
+        // the working spinner rather than declaring the turn complete. Gated
+        // on a live process: once `claude` is gone no notification can ever
+        // arrive, so a Running agent in a dead/restored transcript must not
+        // pin the spinner forever.
+        if self.child.is_some()
+            && self
+                .agent_runs()
+                .iter()
+                .any(|agent| agent.state.is_active())
+        {
             return Some(ConversationStatus::InProgress);
         }
         self.tab_attention.map(|succeeded| {
@@ -4664,6 +4684,12 @@ impl ClaudeCodeView {
                 .with_child(fork)
                 .finish()
         })
+        // Hoverable suppresses LeftMouseDragged by default while clicked, which
+        // starved the transcript's SelectableArea of drag events — the final
+        // response of a turn (the only message wrapped in this Hoverable) could
+        // never be drag-selected. Selection drags must pass through; hover and
+        // the pill clicks are unaffected.
+        .with_propagate_drag()
         .finish()
     }
 
