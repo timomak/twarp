@@ -609,6 +609,15 @@ struct DirectAttachment {
     thumbnail_path: Option<PathBuf>,
 }
 
+/// An `AskUserQuestion` `can_use_tool` held open for the user (PRODUCT §1):
+/// the control-protocol `request_id` to answer plus the tool's proposed
+/// `input` (its `questions`), kept so a typed free-text reply can build the
+/// `answers` without re-finding the tool card in the transcript.
+struct HeldQuestionPermission {
+    request_id: String,
+    input: serde_json::Value,
+}
+
 pub struct ClaudeCodeView {
     /// The conversation the pane renders, fed by the live driver's event stream
     /// via [`Self::on_transcript_event`] on the main thread (PRODUCT §9–§13).
@@ -805,12 +814,15 @@ pub struct ClaudeCodeView {
     /// the file ([`Self::fork_conversation`]).
     question_answer_items: HashSet<usize>,
     /// `AskUserQuestion` permissions held open for the user to answer inline
-    /// (PRODUCT §1), keyed by the gated `tool_use_id` → the control-protocol
-    /// `request_id` to answer. `claude` blocks the turn on this `can_use_tool`
-    /// until we respond; the question card stays interactive while an entry is
-    /// present, and submitting sends the picks back as the tool's `answers` so
-    /// the model continues in the *same* turn — never auto-dismissed (§54/7m).
-    pending_question_permission: HashMap<String, String>,
+    /// (PRODUCT §1), keyed by the gated `tool_use_id`. `claude` blocks the turn
+    /// on this `can_use_tool` until we respond; the question card stays
+    /// interactive while an entry is present, and submitting sends the picks
+    /// back as the tool's `answers` so the model continues in the *same* turn —
+    /// never auto-dismissed (§54/7m). The held `input` (the tool's `questions`)
+    /// rides along so a typed free-text answer can respond even when the tool
+    /// card isn't findable at the transcript top level (e.g. nested under a
+    /// Task card).
+    pending_question_permission: HashMap<String, HeldQuestionPermission>,
     /// Stable mouse handles for the question option rows (keyed by card
     /// transcript index + flattened option index) and the per-card submit
     /// buttons (keyed by card index), created on demand.
@@ -2667,44 +2679,58 @@ impl ClaudeCodeView {
         ctx: &mut ViewContext<Self>,
     ) -> bool {
         if self.pending_question_permission.is_empty() {
-            return false;
+            return self.try_answer_pending_question_dialog(message, ctx);
         }
-        // The most recent pending question card is the one on screen.
-        let Some((item, tool_use_id, input)) =
-            self.transcript.items().iter().enumerate().rev().find_map(
-                |(index, entry)| match entry {
-                    TranscriptItem::Tool {
-                        id, name, input, ..
-                    } if name == "AskUserQuestion"
+        // The most recent pending question card is the one on screen. The
+        // transcript lookup is best-effort card locking — a question raised by
+        // a Task sub-agent nests under the Task card and isn't at the top
+        // level, but the held permission must still be answered (otherwise the
+        // typed reply queues behind a turn that can't advance, PRODUCT §1).
+        let item = self.transcript.items().iter().enumerate().rev().find_map(
+            |(index, entry)| match entry {
+                TranscriptItem::Tool { id, name, .. }
+                    if name == "AskUserQuestion"
                         && self.pending_question_permission.contains_key(id) =>
-                    {
-                        Some((index, id.clone(), input.clone()))
-                    }
-                    _ => None,
-                },
-            )
-        else {
+                {
+                    Some((index, id.clone()))
+                }
+                _ => None,
+            },
+        );
+        let tool_use_id = match &item {
+            Some((_, id)) => id.clone(),
+            // No top-level card (nested / not yet streamed in): answer the
+            // only held question, or bail if several are ambiguous.
+            None if self.pending_question_permission.len() == 1 => self
+                .pending_question_permission
+                .keys()
+                .next()
+                .expect("len == 1")
+                .clone(),
+            None => return false,
+        };
+        let Some(held) = self.pending_question_permission.remove(&tool_use_id) else {
             return false;
         };
-        let Some(request_id) = self.pending_question_permission.remove(&tool_use_id) else {
-            return false;
-        };
-        log::warn!("QDIAG free-text answer to pending question item={item}");
+        log::warn!("QDIAG free-text answer to pending question item={item:?}");
         let mut answers = serde_json::Map::new();
-        for question in parse_questions(&input) {
+        for question in parse_questions(&held.input) {
             answers.insert(
                 question.question.clone(),
                 serde_json::Value::String(message.text.clone()),
             );
         }
-        let mut updated_input = input;
+        let request_id = held.request_id;
+        let mut updated_input = held.input;
         if let Some(obj) = updated_input.as_object_mut() {
             obj.insert("answers".to_owned(), serde_json::Value::Object(answers));
         }
         // Lock the card (no live controls) and show the typed reply as the
         // user's answer beneath it.
-        let picks = self.question_selected.remove(&item).unwrap_or_default();
-        self.question_submitted.insert(item, picks);
+        if let Some((item, _)) = item {
+            let picks = self.question_selected.remove(&item).unwrap_or_default();
+            self.question_submitted.insert(item, picks);
+        }
         self.transcript
             .apply(TranscriptEvent::UserMessage(message.text.clone()));
         // The bubble is display-only — the file records the answer inside the
@@ -2732,6 +2758,42 @@ impl ClaudeCodeView {
         self.scroll_to_bottom();
         ctx.notify();
         true
+    }
+
+    /// The control-channel counterpart: a typed message while an unanswered
+    /// `request_user_dialog` question (PRODUCT §24/§1) is parked releases the
+    /// dialog (cancelled, the same §26 never-hang route `submit_question_dialog`
+    /// takes) so the text can go out as the next turn instead of queueing
+    /// behind a dialog that never advances. Returns `false` either way — the
+    /// message itself still flows through the normal send path.
+    fn try_answer_pending_question_dialog(
+        &mut self,
+        _message: &OutgoingMessage,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        let Some((item, request_id)) = self.transcript.items().iter().enumerate().rev().find_map(
+            |(index, entry)| match entry {
+                TranscriptItem::Question { id, answered, .. } if !answered => {
+                    Some((index, id.clone()))
+                }
+                _ => None,
+            },
+        ) else {
+            return false;
+        };
+        // Lock the card and release the dialog; the typed text follows as the
+        // next user turn once claude ends the (now unblocked) turn.
+        self.transcript.answer_question(&request_id);
+        if let Some(picks) = self.question_selected.remove(&item) {
+            self.question_submitted.insert(item, picks);
+        }
+        if let Some(tx) = &self.message_tx {
+            let _ = tx.try_send(StdinCommand::Control {
+                request_id,
+                response: serde_json::json!({ "behavior": "cancelled" }),
+            });
+        }
+        false
     }
 
     /// Select (radio) or toggle (multi-select) an option on the
@@ -2840,7 +2902,8 @@ impl ClaudeCodeView {
         // Preferred path: a held `can_use_tool` is still parked on this question
         // (PRODUCT §1). Answer it inline — claude reads `answers` back as the
         // tool result and continues the *same* turn, so nothing is skipped.
-        if let Some(request_id) = self.pending_question_permission.remove(&tool_use_id) {
+        if let Some(held) = self.pending_question_permission.remove(&tool_use_id) {
+            let request_id = held.request_id;
             let mut updated_input = input;
             if let Some(obj) = updated_input.as_object_mut() {
                 obj.insert("answers".to_owned(), serde_json::Value::Object(answers));
@@ -3328,8 +3391,13 @@ impl ClaudeCodeView {
                         "QDIAG hold question permission tool_use_id={tool_use_id} streaming={}",
                         self.streaming,
                     );
-                    self.pending_question_permission
-                        .insert(tool_use_id.clone(), id.clone());
+                    self.pending_question_permission.insert(
+                        tool_use_id.clone(),
+                        HeldQuestionPermission {
+                            request_id: id.clone(),
+                            input: input.clone(),
+                        },
+                    );
                     // 7p: the turn is now parked on the user. Notify if
                     // they're away, and flip the tab dot to blocked.
                     self.maybe_send_attention_notification(
