@@ -1,6 +1,7 @@
 //! Implementations of the [`SecureStorage`] service for the macOS platform.
 
 use anyhow::anyhow;
+use security_framework::item::{ItemClass, ItemSearchOptions, Reference, SearchResult};
 use security_framework::os::macos::{
     keychain::SecKeychain, keychain_item::SecKeychainItem, passwords::SecKeychainItemPassword,
 };
@@ -28,9 +29,23 @@ impl SecureStorage {
 impl super::SecureStorage for SecureStorage {
     fn write_value(&self, key: &str, value: &str) -> Result<(), Error> {
         let keychain = SecKeychain::default()?;
-        keychain
-            .set_generic_password(self.service_name.as_str(), key, value.as_bytes())
-            .map_err(Into::into)
+        match keychain.set_generic_password(self.service_name.as_str(), key, value.as_bytes()) {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                // Updating in place fails when the existing item was written
+                // by a build with a different code signature: the item's ACL
+                // denies this binary. Deleting doesn't need read access, so
+                // replace the orphaned item and retry — this is what makes
+                // re-saving a key in Settings self-heal after a resign.
+                match self.delete_item_without_reading(key) {
+                    Ok(()) | Err(Error::NotFound) => {}
+                    Err(err) => return Err(err),
+                }
+                keychain
+                    .set_generic_password(self.service_name.as_str(), key, value.as_bytes())
+                    .map_err(Into::into)
+            }
+        }
     }
 
     fn read_value(&self, key: &str) -> Result<String, Error> {
@@ -40,13 +55,39 @@ impl super::SecureStorage for SecureStorage {
     }
 
     fn remove_value(&self, key: &str) -> Result<(), Error> {
-        let (_, item) = self.get_password_item(key)?;
-        item.delete();
-        Ok(())
+        // Search by reference only (no password load) so removal works even
+        // on items whose ACL denies this binary reading the secret.
+        self.delete_item_without_reading(key)
     }
 }
 
 impl SecureStorage {
+    /// Deletes the item for `key`, if any, without loading its password data.
+    /// Reading the secret is ACL-gated to the binaries that wrote it, but a
+    /// ref-only search + delete is not, so this succeeds even on items
+    /// orphaned by a code-signature change.
+    fn delete_item_without_reading(&self, key: &str) -> Result<(), Error> {
+        let results = ItemSearchOptions::new()
+            .class(ItemClass::generic_password())
+            .service(&self.service_name)
+            .account(key)
+            .load_refs(true)
+            .search()
+            .map_err(|err| {
+                if err.code() == ERR_SEC_ITEM_NOT_FOUND {
+                    Error::NotFound
+                } else {
+                    Error::Unknown(anyhow!(err))
+                }
+            })?;
+        for result in results {
+            if let SearchResult::Ref(Reference::KeychainItem(item)) = result {
+                item.delete();
+            }
+        }
+        Ok(())
+    }
+
     fn get_password_item(
         &self,
         key: &str,
