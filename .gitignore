@@ -67,3 +67,6 @@ __pycache__/
 
 # External reference codebases (not part of twarp)
 .external/
+
+# Local pre-push review approval cache
+/.pre-push-reviews/

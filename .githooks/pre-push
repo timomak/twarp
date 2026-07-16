@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+
+# Pre-Push Review gate. core.hooksPath must point at this committed .githooks dir
+# (script/bootstrap-hooks sets it): `git config core.hooksPath .githooks`.
+# Bypass: TWARP_SKIP_PUSH_REVIEW=1 (fleet/automation) or `git push --no-verify`.
+
+set -e
+
+exec "$(git rev-parse --show-toplevel)/script/pre-push-review" --pre-push

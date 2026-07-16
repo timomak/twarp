@@ -1,0 +1,252 @@
+#!/usr/bin/env bash
+# Automated pre-push review gate for twarp: every commit being pushed is reviewed by
+# the claude CLI against a trusted policy resolved from OUTSIDE the commit under
+# review (origin/master, or TWARP_PRE_PUSH_REVIEW_POLICY_FILE), so a commit cannot
+# weaken the policy that judges it. Approvals are cached per SHA in
+# .pre-push-reviews/approved-shas.jsonl; a rejected commit blocks the push.
+#
+# Escape hatches:
+#   TWARP_SKIP_PUSH_REVIEW=1   skip entirely (fleet/automation pushes — the fleet
+#                              has its own gate stages and must not double-review)
+#   git push --no-verify       one-off manual bypass (e.g. bootstrapping this gate)
+#
+# Usage:
+#   script/pre-push-review --pre-push          (from the pre-push hook, reads stdin)
+#   script/pre-push-review --commit <sha>      (review one commit manually)
+
+set -euo pipefail
+
+ZERO_SHA="0000000000000000000000000000000000000000"
+TRUSTED_BRANCH="origin/master"
+
+log() { printf '[pre-push-review] %s\n' "$*" >&2; }
+die() { log "ERROR: $*"; exit 1; }
+
+if [ "${TWARP_SKIP_PUSH_REVIEW:-}" = "1" ]; then
+  log "TWARP_SKIP_PUSH_REVIEW=1 — skipping review gate"
+  exit 0
+fi
+
+# Local-dev only; fork CI must never run (or wait on) this.
+if [ -n "${CI:-}" ]; then
+  exit 0
+fi
+
+root="$(git rev-parse --show-toplevel)"
+state_dir="${TWARP_PRE_PUSH_REVIEW_STATE_DIR:-$root/.pre-push-reviews}"
+approved_file="$state_dir/approved-shas.jsonl"
+claude_bin="${TWARP_PRE_PUSH_REVIEW_CLAUDE_BIN:-claude}"
+
+ensure_tools() {
+  command -v git >/dev/null 2>&1 || die "git is required"
+  command -v jq >/dev/null 2>&1 || die "jq is required"
+  command -v "$claude_bin" >/dev/null 2>&1 || die "claude CLI is required (or set TWARP_SKIP_PUSH_REVIEW=1)"
+}
+
+is_approved() {
+  local sha="$1"
+  [ -f "$approved_file" ] || return 1
+  jq -e --arg sha "$sha" 'select(.sha == $sha and .approved == true)' "$approved_file" >/dev/null 2>&1
+}
+
+record_approval() {
+  local sha="$1" review_file="$2"
+  mkdir -p "$state_dir"
+  jq -nc --arg sha "$sha" \
+    --arg reviewed_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+    --arg review_file "$review_file" \
+    '{sha: $sha, approved: true, reviewed_at: $reviewed_at, review_file: $review_file}' \
+    >> "$approved_file"
+}
+
+# Resolve a trusted companion file (policy/instructions/schema) from outside the
+# commit under review: env override first, else the copy on origin/master.
+# Fail-closed — never fall back to the working tree or the pushed commit.
+resolve_trusted() {
+  local rel="$1" run_dir="$2" override="${3:-}"
+  local out
+  if [ -n "$override" ]; then
+    [ -f "$override" ] || die "trusted file override does not exist: $override"
+    printf '%s\n' "$override"
+    return 0
+  fi
+  if git -C "$root" cat-file -e "$TRUSTED_BRANCH:$rel" 2>/dev/null; then
+    out="$run_dir/trusted-$(basename "$rel")"
+    git -C "$root" show "$TRUSTED_BRANCH:$rel" > "$out"
+    printf '%s\n' "$out"
+    return 0
+  fi
+  die "no trusted copy of $rel on $TRUSTED_BRANCH. Bootstrap with 'git push --no-verify' once this gate lands on master, or set the override env var."
+}
+
+write_prompt() {
+  local prompt_file="$1" sha="$2" title="$3" instructions_file="$4" policy_file="$5" schema_file="$6"
+
+  sed "s|@@COMMIT_SHA@@|${sha}|g" "$instructions_file" > "$prompt_file"
+
+  {
+    printf '\n<trusted_pre_push_review_policy>\n'
+    cat "$policy_file"
+    printf '</trusted_pre_push_review_policy>\n'
+    printf '\nReview target:\n- Commit: %s\n- Title: %s\n' "$sha" "$title"
+    cat <<'EOF'
+
+Return only a single JSON object matching the schema below. Do not wrap it in prose;
+output JSON only (a bare ```json code fence is tolerated). Keep "summary" concise but
+specific. Use "findings": [] when approved.
+
+<output_schema>
+EOF
+    cat "$schema_file"
+    printf '</output_schema>\n'
+  } >> "$prompt_file"
+}
+
+# Run the claude CLI read-only and extract + validate the schema JSON from its
+# envelope into result_file. Fail closed on any malformed output.
+invoke_claude() {
+  local worktree_dir="$1" prompt_file="$2" result_file="$3" log_file="$4"
+  local raw_file="${log_file%.log}.envelope.json"
+
+  if ! "$claude_bin" --print --output-format json --permission-mode plan \
+      --add-dir "$worktree_dir" \
+      < "$prompt_file" > "$raw_file" 2> "$log_file"; then
+    cat "$raw_file" >> "$log_file" 2>/dev/null || true
+    return 1
+  fi
+
+  jq -e '.result' "$raw_file" >/dev/null 2>&1 \
+    || { log "no .result in claude envelope. See $raw_file"; return 1; }
+
+  # Extract the outermost {...} from the result text (tolerates fences/prose).
+  if ! jq -r '.result' "$raw_file" \
+      | awk '{ buf = buf $0 "\n" }
+             END {
+               start = index(buf, "{"); if (start == 0) exit 1
+               end = 0
+               for (i = length(buf); i > 0; i--) if (substr(buf, i, 1) == "}") { end = i; break }
+               if (end < start) exit 1
+               printf "%s", substr(buf, start, end - start + 1)
+             }' \
+      | jq '.' > "$result_file" 2>/dev/null; then
+    log "claude result did not contain a parseable JSON object. See $raw_file"
+    return 1
+  fi
+
+  jq -e '(.approved | type) == "boolean"
+         and ([.verdict] | inside(["approve","request_changes","comment"]))
+         and (.summary | type) == "string"
+         and (.findings | type) == "array"' "$result_file" >/dev/null 2>&1 \
+    || { log "claude result did not match the review schema. See $result_file"; return 1; }
+}
+
+review_commit() {
+  local sha="$1"
+  local run_dir prompt_file result_file log_file worktree_dir title
+  local instructions_file policy_file schema_file approved verdict summary
+
+  git -C "$root" rev-parse --verify "${sha}^{commit}" >/dev/null 2>&1 || die "not a commit: $sha"
+  sha="$(git -C "$root" rev-parse "$sha")"
+
+  if is_approved "$sha"; then
+    log "approved SHA already cached: $sha"
+    return 0
+  fi
+
+  run_dir="$state_dir/runs/$sha"
+  prompt_file="$run_dir/prompt.md"
+  result_file="$run_dir/result.json"
+  log_file="$run_dir/review.log"
+  title="$(git -C "$root" log -1 --format=%s "$sha")"
+  mkdir -p "$run_dir"
+
+  instructions_file="$(resolve_trusted script/pre-push-review.instructions.md "$run_dir" "${TWARP_PRE_PUSH_REVIEW_INSTRUCTIONS_FILE:-}")"
+  policy_file="$(resolve_trusted script/pre-push-review.policy.md "$run_dir" "${TWARP_PRE_PUSH_REVIEW_POLICY_FILE:-}")"
+  schema_file="$(resolve_trusted script/pre-push-review.schema.json "$run_dir" "${TWARP_PRE_PUSH_REVIEW_SCHEMA_FILE:-}")"
+
+  write_prompt "$prompt_file" "$sha" "$title" "$instructions_file" "$policy_file" "$schema_file"
+
+  worktree_dir="$(mktemp -d "${TMPDIR:-/tmp}/twarp-pre-push-review.XXXXXX")"
+  rmdir "$worktree_dir"
+  log "reviewing $sha ($title)"
+  git -C "$root" worktree add --detach --quiet "$worktree_dir" "$sha"
+  cleanup() { git -C "$root" worktree remove --force "$worktree_dir" >/dev/null 2>&1 || true; }
+  trap cleanup EXIT INT TERM
+
+  if ! invoke_claude "$worktree_dir" "$prompt_file" "$result_file" "$log_file"; then
+    cleanup; trap - EXIT INT TERM
+    die "review failed for $sha. See $log_file"
+  fi
+  cleanup; trap - EXIT INT TERM
+
+  approved="$(jq -r '.approved == true and .verdict == "approve"' "$result_file")"
+  verdict="$(jq -r '.verdict' "$result_file")"
+  summary="$(jq -r '.summary' "$result_file")"
+
+  if [ "$approved" = "true" ]; then
+    record_approval "$sha" "$result_file"
+    log "approved $sha: $summary"
+    return 0
+  fi
+
+  log "BLOCKED $sha (verdict=$verdict)"
+  log "$summary"
+  jq -r '.findings[] | "  [\(.severity)] \(.title)"' "$result_file" >&2 || true
+  log "full result: $result_file"
+  return 1
+}
+
+# Compute the base for a push that creates a new remote ref.
+fallback_push_base() {
+  local local_sha="$1" base
+  if git -C "$root" rev-parse --verify "$TRUSTED_BRANCH" >/dev/null 2>&1 \
+      && base="$(git -C "$root" merge-base "$local_sha" "$TRUSTED_BRANCH")"; then
+    printf '%s\n' "$base"
+  else
+    git -C "$root" rev-list --max-parents=0 "$local_sha" | tail -1
+  fi
+}
+
+pre_push() {
+  local local_ref local_sha remote_ref remote_sha base commits sha
+  commits=""
+  while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -n "${local_sha:-}" ] || continue
+    [ "$local_sha" != "$ZERO_SHA" ] || continue  # deletion push
+    if [ "${remote_sha:-$ZERO_SHA}" = "$ZERO_SHA" ] \
+        || ! git -C "$root" cat-file -e "${remote_sha}^{commit}" 2>/dev/null; then
+      base="$(fallback_push_base "$local_sha")"
+    else
+      base="$remote_sha"
+    fi
+    commits="$commits
+$(git -C "$root" rev-list --reverse "${base}..${local_sha}" --not --remotes=origin)"
+  done
+  commits="$(printf '%s\n' "$commits" | awk 'NF && !seen[$0]++')"
+
+  if [ -z "$commits" ]; then
+    log "no new local commits need review"
+    return 0
+  fi
+
+  while read -r sha; do
+    [ -n "$sha" ] || continue
+    review_commit "$sha"
+  done <<< "$commits"
+}
+
+case "${1:-}" in
+  --pre-push)
+    ensure_tools
+    pre_push
+    ;;
+  --commit)
+    [ -n "${2:-}" ] || die "--commit requires a SHA"
+    ensure_tools
+    review_commit "$2"
+    ;;
+  *)
+    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    exit 2
+    ;;
+esac
