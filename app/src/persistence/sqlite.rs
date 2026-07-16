@@ -1285,6 +1285,7 @@ fn save_pane_state(
                 id,
                 session_id: snapshot.session_id.clone(),
                 cwd: snapshot.cwd.clone(),
+                provider: snapshot.provider.as_persistence_str().to_owned(),
             };
 
             diesel::insert_into(schema::claude_code_panes::dsl::claude_code_panes)
@@ -2554,6 +2555,9 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                     LeafContents::ClaudeCode(crate::app_state::ClaudeCodePaneSnapshot {
                         session_id: pane.session_id,
                         cwd: pane.cwd,
+                        provider: claude_code::driver::AgentProvider::from_persisted_or_default(
+                            Some(&pane.provider),
+                        ),
                     })
                 }
                 BROWSER_PANE_KIND => {

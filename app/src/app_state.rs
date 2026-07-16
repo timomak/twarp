@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use twarpui::platform::FullscreenState;
 
-use claude_code::driver::PermissionMode;
+use claude_code::driver::{AgentProvider, PermissionMode};
 use twarpui::AppContext;
 
 // twarp: 2c-d.4 — local stubs for deleted AI types referenced by persisted snapshots
@@ -1096,6 +1096,7 @@ pub struct AmbientAgentPaneSnapshot {
 pub struct ClaudeCodePaneSnapshot {
     pub session_id: Option<String>,
     pub cwd: Option<String>,
+    pub provider: AgentProvider,
 }
 
 /// Snapshot of a browser pane. Only the last committed URL is durable in v1;

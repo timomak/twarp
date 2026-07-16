@@ -54,7 +54,7 @@ use base64::Engine as _;
 use claude_code::diff::diff_for_tool;
 use claude_code::driver::{
     interrupt, send_control_response, send_interrupt, send_user_message, spawn_session, Child,
-    OutgoingImage, OutgoingMessage, PermissionMode, SpawnOptions, SpawnedSession,
+    Decision, OutgoingImage, OutgoingMessage, PermissionMode, SpawnOptions, SpawnedSession,
 };
 use claude_code::launch::LaunchOptions;
 use claude_code::{
@@ -597,7 +597,7 @@ enum StdinCommand {
     /// `request_id` to echo and the decision payload.
     Control {
         request_id: String,
-        response: serde_json::Value,
+        decision: Decision,
     },
     /// Interrupt the in-flight turn (`send_interrupt`) — the session-preserving
     /// Stop (PRODUCT §11). `request_id` is echoed on the acknowledgement.
@@ -2754,10 +2754,7 @@ impl ClaudeCodeView {
         if let Some(tx) = &self.message_tx {
             let _ = tx.try_send(StdinCommand::Control {
                 request_id,
-                response: serde_json::json!({
-                    "behavior": "allow",
-                    "updatedInput": updated_input,
-                }),
+                decision: Decision::allow_once(updated_input),
             });
         }
         // claude continues the same turn with the answer; make sure the
@@ -2804,7 +2801,7 @@ impl ClaudeCodeView {
         if let Some(tx) = &self.message_tx {
             let _ = tx.try_send(StdinCommand::Control {
                 request_id,
-                response: serde_json::json!({ "behavior": "cancelled" }),
+                decision: Decision::cancelled(),
             });
         }
         false
@@ -2925,10 +2922,7 @@ impl ClaudeCodeView {
             if let Some(tx) = &self.message_tx {
                 let _ = tx.try_send(StdinCommand::Control {
                     request_id,
-                    response: serde_json::json!({
-                        "behavior": "allow",
-                        "updatedInput": updated_input,
-                    }),
+                    decision: Decision::allow_once(updated_input),
                 });
             }
             // claude now continues the turn to produce its reply. Make sure the
@@ -2962,15 +2956,15 @@ impl ClaudeCodeView {
         let Some(input) = self.transcript.answer_permission(request_id, allow) else {
             return;
         };
-        let response = if allow {
-            serde_json::json!({ "behavior": "allow", "updatedInput": input })
+        let decision = if allow {
+            Decision::allow_once(input)
         } else {
-            serde_json::json!({ "behavior": "deny", "message": "The user declined this action." })
+            Decision::deny()
         };
         if let Some(tx) = &self.message_tx {
             let _ = tx.try_send(StdinCommand::Control {
                 request_id: request_id.to_owned(),
-                response,
+                decision,
             });
         }
         ctx.notify();
@@ -3034,7 +3028,7 @@ impl ClaudeCodeView {
         if let Some(tx) = &self.message_tx {
             let _ = tx.try_send(StdinCommand::Control {
                 request_id,
-                response: serde_json::json!({ "behavior": "cancelled" }),
+                decision: Decision::cancelled(),
             });
         }
         self.submit_message(OutgoingMessage::text(lines.join("\n")), Vec::new(), ctx);
@@ -3345,8 +3339,8 @@ impl ClaudeCodeView {
                         }
                         StdinCommand::Control {
                             request_id,
-                            response,
-                        } => send_control_response(&mut stdin, &request_id, response).await,
+                            decision,
+                        } => send_control_response(&mut stdin, &request_id, decision).await,
                         StdinCommand::Interrupt { request_id } => {
                             send_interrupt(&mut stdin, &request_id).await
                         }
@@ -3426,10 +3420,7 @@ impl ClaudeCodeView {
                 if let Some(tx) = &self.message_tx {
                     let _ = tx.try_send(StdinCommand::Control {
                         request_id: id.clone(),
-                        response: serde_json::json!({
-                            "behavior": "allow",
-                            "updatedInput": input,
-                        }),
+                        decision: Decision::allow_once(input.clone()),
                     });
                 }
                 return;

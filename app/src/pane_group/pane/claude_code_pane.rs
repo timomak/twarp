@@ -254,6 +254,7 @@ impl PaneContent for ClaudeCodePane {
         LeafContents::ClaudeCode(crate::app_state::ClaudeCodePaneSnapshot {
             session_id: has_session.then_some(session_id),
             cwd: cwd.map(|p| p.to_string_lossy().into_owned()),
+            provider: claude_code::driver::AgentProvider::Claude,
         })
     }
 
