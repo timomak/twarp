@@ -1,3 +1,4 @@
+use twarp_core::ui::tokens::{spacing, type_ramp};
 use twarpui::{
     elements::{CrossAxisAlignment, Fill, Flex, ParentElement, Shrinkable},
     presenter::ChildView,
@@ -231,9 +232,9 @@ impl View for StartupShellView {
                             border_color,
                             // Make sure the editor is the same height as the dropdown it's next to.
                             height: Some(TOP_MENU_BAR_HEIGHT),
-                            padding: Some(Coords::uniform(7.)),
-                            margin: Some(Coords::default().left(8.).right(8.)),
-                            font_size: Some(appearance.ui_font_size()),
+                            padding: Some(Coords::uniform(spacing::SM)),
+                            margin: Some(Coords::default().left(spacing::SM).right(spacing::SM)),
+                            font_size: Some(type_ramp::UI.size),
                             background: Some(theme.surface_2().into()),
                             ..Default::default()
                         })

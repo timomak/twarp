@@ -24,7 +24,11 @@ use crate::{
 use settings::Setting;
 use twarp_core::{
     settings::SyncToCloud,
-    ui::{color::blend::Blend, theme::color::internal_colors},
+    ui::{
+        color::blend::Blend,
+        theme::color::internal_colors,
+        tokens::{border, radius, spacing, type_ramp},
+    },
 };
 use twarpui::{
     elements::{
@@ -43,22 +47,22 @@ use twarpui::{
     Action, AppContext, SingletonEntity, ViewContext, ViewHandle,
 };
 
-pub const TOGGLE_BUTTON_RIGHT_PADDING: f32 = 5.;
-pub const HEADER_PADDING: f32 = 15.;
-pub const CONTENT_FONT_SIZE: f32 = 12.;
-pub const SUBHEADER_MARGIN_BOTTOM: f32 = 4.;
-pub const PAGE_TITLE_MARGIN_BOTTOM: f32 = 4.;
-pub(super) const PAGE_PADDING: f32 = 28.;
-pub(super) const HEADER_FONT_SIZE: f32 = 23.;
-pub const SUBHEADER_FONT_SIZE: f32 = 16.;
+pub const TOGGLE_BUTTON_RIGHT_PADDING: f32 = spacing::XS;
+pub const HEADER_PADDING: f32 = spacing::LG;
+pub const CONTENT_FONT_SIZE: f32 = type_ramp::LABEL.size;
+pub const SUBHEADER_MARGIN_BOTTOM: f32 = spacing::XS;
+pub const PAGE_TITLE_MARGIN_BOTTOM: f32 = spacing::XS;
+pub(super) const PAGE_PADDING: f32 = spacing::XXL;
+pub(super) const HEADER_FONT_SIZE: f32 = type_ramp::HEADING.size;
+pub const SUBHEADER_FONT_SIZE: f32 = type_ramp::HEADING.size;
 const ALTERNATING_LIST_CLOSE_BUTTON_DIAMETER: f32 = 20.0;
-const ALTERNATING_LIST_ITEM_PADDING: f32 = 8.0;
+const ALTERNATING_LIST_ITEM_PADDING: f32 = spacing::SM;
 const GREY_TEXT_OPACITY: u8 = 60;
 const MIN_PAGE_WIDTH: f32 = 520.;
 const MAX_PAGE_WIDTH: f32 = 800.;
 
 /// Left margin for top-level sidebar nav items (pages and umbrella labels).
-pub(super) const NAV_ITEM_LEFT_MARGIN: f32 = 12.;
+pub(super) const NAV_ITEM_LEFT_MARGIN: f32 = spacing::MD;
 
 pub struct SettingsPage {
     pub section: SettingsSection,
@@ -173,7 +177,7 @@ impl SettingsPage {
                 UiComponentStyles::default()
                     .set_border_width(0.)
                     .set_margin(Coords::default().left(NAV_ITEM_LEFT_MARGIN))
-                    .set_padding(Coords::uniform(8.)),
+                    .set_padding(Coords::uniform(spacing::SM)),
             )
             .build()
     }
@@ -214,15 +218,15 @@ pub fn render_customer_type_badge(appearance: &Appearance, text: String) -> Box<
             .with_style(Properties::default().weight(Weight::Medium))
             .finish(),
     )
-    .with_uniform_padding(4.)
+    .with_uniform_padding(spacing::XS)
     .with_background(
         appearance
             .theme()
             .background()
             .blend(&appearance.theme().foreground().with_opacity(25)),
     )
-    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(3.)))
-    .with_margin_left(10.)
+    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)))
+    .with_margin_left(spacing::SM)
     .finish()
 }
 
@@ -254,7 +258,7 @@ pub fn render_sub_header(
                 mouse_state,
                 custom_tooltip,
             ))
-            .with_padding_top(3.)
+            .with_padding_top(spacing::XS)
             .finish(),
         );
     }
@@ -321,7 +325,7 @@ pub fn render_sub_sub_header(
             .left()
             .finish(),
         )
-        .with_padding_bottom(4.)
+        .with_padding_bottom(spacing::XS)
         .finish(),
     );
     if let Some(LocalOnlyIconState::Visible {
@@ -340,7 +344,9 @@ pub fn render_sub_sub_header(
 
 pub fn render_separator(appearance: &Appearance) -> Box<dyn Element> {
     Container::new(Empty::new().finish())
-        .with_border(Border::bottom(2.).with_border_fill(appearance.theme().outline()))
+        .with_border(
+            Border::bottom(border::HAIRLINE_WIDTH).with_border_fill(appearance.theme().outline()),
+        )
         .with_margin_bottom(HEADER_PADDING)
         .finish()
 }
@@ -446,9 +452,9 @@ pub fn render_info_icon<T: Clone + Action>(
         .finish();
 
     Container::new(info_button)
-        .with_margin_left(4.)
+        .with_margin_left(spacing::XS)
         // Since the icon is smaller than the font, we need some margin to be in alignment.
-        .with_margin_top(1.5)
+        .with_margin_top(spacing::XXS)
         .finish()
 }
 
@@ -467,9 +473,9 @@ pub fn render_local_only_icon(
         .finish();
 
     Container::new(info_button)
-        .with_margin_left(4.)
+        .with_margin_left(spacing::XS)
         // Since the icon is smaller than the font, we need some margin to be in alignment.
-        .with_margin_top(1.5)
+        .with_margin_top(spacing::XXS)
         .finish()
 }
 
@@ -519,7 +525,7 @@ pub fn render_body_item_label_internal<T: Clone + Action>(
                     .with_height(16.)
                     .finish(),
             )
-            .with_margin_right(4.)
+            .with_margin_right(spacing::XS)
             .finish(),
         );
     }
@@ -543,7 +549,7 @@ pub fn render_body_item_label_internal<T: Clone + Action>(
                                     .into_solid(),
                             ),
                             margin: Some(Coords {
-                                left: 8.,
+                                left: spacing::SM,
                                 ..Default::default()
                             }),
                             ..Default::default()
@@ -671,9 +677,9 @@ pub fn build_toggle_element(
                     appearance.theme(),
                     appearance.theme().surface_1(),
                 )),
-                font_size: Some(12.),
+                font_size: Some(type_ramp::LABEL.size),
                 margin: Some(Coords {
-                    top: 4.,
+                    top: spacing::XS,
                     bottom: 0.,
                     left: 0.,
                     right: 0.,
@@ -718,7 +724,7 @@ pub fn render_dropdown_item_label(
                         .into_solid(),
                 ),
                 margin: Some(Coords {
-                    top: 4.,
+                    top: spacing::XS,
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -784,7 +790,7 @@ pub(crate) fn render_dropdown_item<T: Clone + Action>(
         Shrinkable::new(
             1.0,
             Container::new(dropdown_item_label)
-                .with_margin_bottom(4.)
+                .with_margin_bottom(spacing::XS)
                 .with_padding_right(16.)
                 .finish(),
         )
@@ -842,7 +848,7 @@ pub fn render_input_list<SettingsPageAction: Action + Clone>(
             disabled,
             appearance,
         ));
-        container = container.with_margin_bottom(4.);
+        container = container.with_margin_bottom(spacing::XS);
         column.add_child(container.finish());
     }
 
@@ -943,10 +949,10 @@ fn render_alternating_color_list_item<SettingsPageAction: Action + Clone>(
     )
     .with_background(background)
     .with_uniform_padding(ALTERNATING_LIST_ITEM_PADDING)
-    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
     // The bottom has a bit of extra padding b/c lines of text have more space above the text
     // than below. This visually balances that to make it look vertically centered.
-    .with_padding_bottom(ALTERNATING_LIST_ITEM_PADDING + 2.)
+    .with_padding_bottom(ALTERNATING_LIST_ITEM_PADDING + spacing::XXS)
     .finish()
 }
 
@@ -1603,9 +1609,12 @@ pub(super) trait SettingsWidget {
         let mut content = self.render(view, appearance, app);
         if highlighted {
             content = Container::new(content)
-                .with_border(Border::all(1.).with_border_fill(appearance.theme().accent()))
+                .with_border(
+                    Border::all(border::HAIRLINE_WIDTH)
+                        .with_border_fill(appearance.theme().accent()),
+                )
                 .with_background(internal_colors::accent_overlay_1(appearance.theme()))
-                .with_horizontal_padding(8.)
+                .with_horizontal_padding(spacing::SM)
                 .finish()
         }
         SavePosition::new(content, self.widget_id()).finish()
@@ -1637,8 +1646,8 @@ pub(super) fn build_reset_button(
             theme.disabled_text_color(theme.background()).into(),
         )
         .with_style(UiComponentStyles {
-            padding: Some(Coords::default().bottom(HEADER_PADDING).top(5.)),
-            font_size: Some(appearance.ui_font_size() * 0.8),
+            padding: Some(Coords::default().bottom(HEADER_PADDING).top(spacing::XS)),
+            font_size: Some(type_ramp::CAPTION.size),
             ..Default::default()
         })
         .with_text_label("Reset to default".to_owned())

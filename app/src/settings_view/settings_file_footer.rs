@@ -14,6 +14,7 @@ use crate::WorkspaceAction;
 use pathfinder_color::ColorU;
 use twarp_core::ui::color::coloru_with_opacity;
 use twarp_core::ui::theme::Fill;
+use twarp_core::ui::tokens::{border, radius, spacing, type_ramp};
 use twarpui::elements::{
     Border, Clipped, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container,
     CornerRadius, CrossAxisAlignment, Element, Empty, Expanded, Flex, Highlight, Hoverable,
@@ -24,24 +25,23 @@ use twarpui::fonts::{FamilyId, Properties, Weight};
 use twarpui::platform::Cursor;
 
 /// Horizontal + vertical padding applied to the footer inside the sidebar.
-const FOOTER_PADDING: f32 = 12.;
-/// Font size used for the button label and the alert copy; matches the
-/// Figma spec for both designs.
-const FOOTER_FONT_SIZE: f32 = 12.;
+const FOOTER_PADDING: f32 = spacing::MD;
+/// Font size used for the button label and the alert copy.
+const FOOTER_FONT_SIZE: f32 = type_ramp::LABEL.size;
 /// Height of the plain "Open settings file" button.
-const OPEN_BUTTON_HEIGHT: f32 = 32.;
+const OPEN_BUTTON_HEIGHT: f32 = spacing::XXL;
 /// Height of action buttons inside the error alert.
-const ALERT_ACTION_BUTTON_HEIGHT: f32 = 24.;
+const ALERT_ACTION_BUTTON_HEIGHT: f32 = spacing::XL;
 /// Size of the leading icons (search-sm, code-02, alert-circle, oz).
-const FOOTER_ICON_SIZE: f32 = 16.;
+const FOOTER_ICON_SIZE: f32 = spacing::LG;
 /// Size of the Oz brand mark inside the "Fix with Oz" button. Matches the
 /// Figma spec and the workspace banner's secondary-button icon sizing.
 const ALERT_OZ_ICON_SIZE: f32 = 14.;
 /// Horizontal padding inside the "Open file" / "Fix with Oz" action buttons.
 /// Matches the workspace banner's secondary button pad.
-const ALERT_BUTTON_HORIZONTAL_PADDING: f32 = 8.;
+const ALERT_BUTTON_HORIZONTAL_PADDING: f32 = spacing::SM;
 /// Spacing between the two action buttons when they fit on one row.
-const ALERT_BUTTON_SPACING: f32 = 4.;
+const ALERT_BUTTON_SPACING: f32 = spacing::XS;
 /// Maximum height of the scrollable text region inside the error alert. If
 /// the settings error's description exceeds this, the text scrolls within
 /// the alert so the footer doesn't balloon to fill the sidebar. The action
@@ -94,8 +94,7 @@ pub struct SettingsFooterMouseStates {
 
 /// Renders the plain "Open settings file" button shown in the default state.
 ///
-/// Visual spec (Figma `5655:62575`): 32px tall, full-width, 1px outlined,
-/// 4px rounded corners, `code-02` leading icon, semibold label.
+/// Full-width outlined button with a `code-02` leading icon and semibold label.
 pub fn render_open_settings_file_button(
     appearance: &Appearance,
     mouse_state: MouseStateHandle,
@@ -127,7 +126,7 @@ pub fn render_open_settings_file_button(
             .with_main_axis_alignment(MainAxisAlignment::Center)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max)
-            .with_child(Container::new(icon).with_margin_right(4.).finish())
+            .with_child(Container::new(icon).with_margin_right(spacing::XS).finish())
             .with_child(label)
             .finish();
 
@@ -135,8 +134,8 @@ pub fn render_open_settings_file_button(
         // when the sidebar (which is `Shrinkable` inside the workspace row)
         // is resized narrower than the row's natural content width.
         let mut container = Container::new(Clipped::new(row).finish())
-            .with_border(Border::all(1.).with_border_color(border_color))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
+            .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_color(border_color))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
         if state.is_hovered() {
             container = container.with_background_color(coloru_with_opacity(text_color, 10));
         }
@@ -196,7 +195,11 @@ pub fn render_settings_error_alert(
     let text_row = Flex::row()
         .with_cross_axis_alignment(CrossAxisAlignment::Start)
         .with_main_axis_size(MainAxisSize::Max)
-        .with_child(Container::new(alert_icon).with_margin_right(8.).finish())
+        .with_child(
+            Container::new(alert_icon)
+                .with_margin_right(spacing::SM)
+                .finish(),
+        )
         .with_child(Expanded::new(1., text_widget.finish()).finish())
         .finish();
 
@@ -260,8 +263,8 @@ pub fn render_settings_error_alert(
     // ── Assemble ─────────────────────────────────────────────────────────
     // Left-align the buttons with the start of the text (past the icon + gap).
     let buttons_indented = Container::new(buttons_row.finish())
-        .with_margin_left(FOOTER_ICON_SIZE + 8.)
-        .with_margin_top(8.)
+        .with_margin_left(FOOTER_ICON_SIZE + spacing::SM)
+        .with_margin_top(spacing::SM)
         .finish();
 
     // `CrossAxisAlignment::Stretch` tightens each child's cross-axis (width)
@@ -275,8 +278,8 @@ pub fn render_settings_error_alert(
 
     Container::new(alert_body)
         .with_background_color(bg_color)
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-        .with_uniform_padding(12.)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+        .with_uniform_padding(FOOTER_PADDING)
         .finish()
 }
 
@@ -337,7 +340,7 @@ fn render_alert_action_button(
                         .with_height(ALERT_OZ_ICON_SIZE)
                         .finish(),
                 )
-                .with_margin_right(4.)
+                .with_margin_right(spacing::XS)
                 .finish(),
             );
         }
@@ -352,10 +355,11 @@ fn render_alert_action_button(
         );
 
         let mut container = Container::new(row.finish())
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)))
             .with_horizontal_padding(ALERT_BUTTON_HORIZONTAL_PADDING);
         if bordered {
-            container = container.with_border(Border::all(1.).with_border_color(text_color));
+            container = container
+                .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_color(text_color));
         }
         if state.is_hovered() {
             container = container.with_background_color(coloru_with_opacity(text_color, 20));

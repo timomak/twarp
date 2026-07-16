@@ -51,8 +51,14 @@ use std::str::FromStr;
 use teams_page::{TeamsPageView, TeamsPageViewEvent};
 use twarp_core::send_telemetry_from_ctx;
 use twarp_core::{
-    channel::ChannelState, context_flag::ContextFlag, features::FeatureFlag,
-    settings::ToggleableSetting as _, ui::theme::color::internal_colors,
+    channel::ChannelState,
+    context_flag::ContextFlag,
+    features::FeatureFlag,
+    settings::ToggleableSetting as _,
+    ui::{
+        theme::color::internal_colors,
+        tokens::{border, radius, spacing, type_ramp},
+    },
 };
 use twarp_editor::editor::NavigationKey;
 use twarpify_page::{TwarpifyPageAction, TwarpifyPageView};
@@ -142,7 +148,7 @@ fn sidebar_width() -> f32 {
 }
 
 /// Width of the borders for the header and the sidebar.
-const SECTION_BORDER_WIDTH: f32 = 1.;
+const SECTION_BORDER_WIDTH: f32 = border::HAIRLINE_WIDTH;
 
 const POSITION_ID: &str = "settings_pane";
 
@@ -152,15 +158,15 @@ pub(super) fn render_beta_chip(appearance: &Appearance) -> Box<dyn Element> {
     let theme = appearance.theme();
     let chip_color = theme.sub_text_color(theme.surface_3()).into_solid();
     Container::new(
-        Text::new_inline("BETA", appearance.ui_font_family(), 10.)
+        Text::new_inline("BETA", appearance.ui_font_family(), type_ramp::CAPTION.size)
             .with_color(chip_color)
             .finish(),
     )
     .with_background(theme.surface_3())
-    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(3.)))
-    .with_horizontal_padding(4.)
-    .with_vertical_padding(1.)
-    .with_margin_left(8.)
+    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)))
+    .with_horizontal_padding(spacing::XS)
+    .with_vertical_padding(spacing::XXS)
+    .with_margin_left(spacing::SM)
     .finish()
 }
 
@@ -2085,8 +2091,8 @@ impl SettingsView {
                         .with_height(16.)
                         .finish(),
                     )
-                    .with_uniform_margin(4.)
-                    .with_margin_right(12.)
+                    .with_uniform_margin(spacing::XS)
+                    .with_margin_right(spacing::MD)
                     .finish(),
                 )
                 .with_child(
@@ -2098,9 +2104,9 @@ impl SettingsView {
                 )
                 .finish(),
         )
-        .with_margin_left(16.)
-        .with_margin_right(16.)
-        .with_margin_bottom(8.)
+        .with_margin_left(spacing::LG)
+        .with_margin_right(spacing::LG)
+        .with_margin_bottom(spacing::SM)
         .finish()
     }
 
@@ -2131,8 +2137,8 @@ impl SettingsView {
             )
             .finish(),
         )
-            .with_uniform_margin(16.)
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+        .with_uniform_margin(spacing::LG)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
         .with_background(internal_colors::fg_overlay_1(appearance.theme()))
         .finish()
     }

@@ -21,7 +21,10 @@ use crate::{
 use chrono::{DateTime, Utc};
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use std::collections::HashMap;
-use twarp_core::features::FeatureFlag;
+use twarp_core::{
+    features::FeatureFlag,
+    ui::tokens::{border, spacing, type_ramp},
+};
 use twarpui::{
     elements::{
         Align, Border, ChildView, ConstrainedBox, Container, CrossAxisAlignment, Element, Empty,
@@ -135,21 +138,21 @@ impl PlatformPageView {
                 })
                 .with_header_style(UiComponentStyles {
                     padding: Some(Coords {
-                        top: 24.,
+                        top: spacing::XL,
                         bottom: 0.,
-                        left: 24.,
-                        right: 24.,
+                        left: spacing::XL,
+                        right: spacing::XL,
                     }),
-                    font_size: Some(16.),
+                    font_size: Some(type_ramp::HEADING.size),
                     font_weight: Some(twarpui::fonts::Weight::Bold),
                     ..Default::default()
                 })
                 .with_body_style(UiComponentStyles {
                     padding: Some(Coords {
                         top: 0.,
-                        bottom: 24.,
-                        left: 24.,
-                        right: 24.,
+                        bottom: spacing::XL,
+                        left: spacing::XL,
+                        right: spacing::XL,
                     }),
                     ..Default::default()
                 })
@@ -479,9 +482,12 @@ impl PlatformPageWidget {
         header_row.add_child(Expanded::new(0.5, self.render_header_cell(appearance, "")).finish());
 
         Container::new(header_row.finish())
-            .with_margin_top(16.)
-            .with_padding_bottom(8.)
-            .with_border(Border::bottom(1.).with_border_fill(appearance.theme().outline()))
+            .with_margin_top(spacing::LG)
+            .with_padding_bottom(spacing::SM)
+            .with_border(
+                Border::bottom(border::HAIRLINE_WIDTH)
+                    .with_border_fill(appearance.theme().outline()),
+            )
             .finish()
     }
 
@@ -509,7 +515,7 @@ impl PlatformPageWidget {
             .with_color(appearance.theme().nonactive_ui_text_color().into())
             .finish(),
         )
-        .with_padding(Padding::uniform(8.))
+        .with_padding(Padding::uniform(spacing::SM))
         .finish()
     }
     fn render_api_key_row(
@@ -533,16 +539,19 @@ impl PlatformPageWidget {
         let mut row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max);
-        // TODO: use appearance.ui_font_size() instead of hardcoded 12
         row.add_child(
             Expanded::new(
                 1.,
                 Container::new(
-                    Text::new_inline(name_display, appearance.ui_font_family(), 13.)
-                        .with_color(appearance.theme().active_ui_text_color().into())
-                        .finish(),
+                    Text::new_inline(
+                        name_display,
+                        appearance.ui_font_family(),
+                        type_ramp::UI.size,
+                    )
+                    .with_color(appearance.theme().active_ui_text_color().into())
+                    .finish(),
                 )
-                .with_padding(Padding::uniform(8.))
+                .with_padding(Padding::uniform(spacing::SM))
                 .finish(),
             )
             .finish(),
@@ -554,12 +563,12 @@ impl PlatformPageWidget {
                     Text::new_inline(
                         format!("wk-**{}", key.key_suffix),
                         appearance.monospace_font_family(),
-                        12.,
+                        type_ramp::CODE.size,
                     )
                     .with_color(appearance.theme().active_ui_text_color().into())
                     .finish(),
                 )
-                .with_padding(Padding::uniform(8.))
+                .with_padding(Padding::uniform(spacing::SM))
                 .finish(),
             )
             .finish(),
@@ -573,11 +582,15 @@ impl PlatformPageWidget {
                 Expanded::new(
                     1.,
                     Container::new(
-                        Text::new_inline(scope_display, appearance.ui_font_family(), 12.)
-                            .with_color(appearance.theme().nonactive_ui_text_color().into())
-                            .finish(),
+                        Text::new_inline(
+                            scope_display,
+                            appearance.ui_font_family(),
+                            type_ramp::LABEL.size,
+                        )
+                        .with_color(appearance.theme().nonactive_ui_text_color().into())
+                        .finish(),
                     )
-                    .with_padding(Padding::uniform(8.))
+                    .with_padding(Padding::uniform(spacing::SM))
                     .finish(),
                 )
                 .finish(),
@@ -587,11 +600,11 @@ impl PlatformPageWidget {
             Expanded::new(
                 1.,
                 Container::new(
-                    Text::new_inline(created, appearance.ui_font_family(), 12.)
+                    Text::new_inline(created, appearance.ui_font_family(), type_ramp::LABEL.size)
                         .with_color(appearance.theme().nonactive_ui_text_color().into())
                         .finish(),
                 )
-                .with_padding(Padding::uniform(8.))
+                .with_padding(Padding::uniform(spacing::SM))
                 .finish(),
             )
             .finish(),
@@ -600,11 +613,15 @@ impl PlatformPageWidget {
             Expanded::new(
                 1.,
                 Container::new(
-                    Text::new_inline(last_used, appearance.ui_font_family(), 12.)
-                        .with_color(appearance.theme().nonactive_ui_text_color().into())
-                        .finish(),
+                    Text::new_inline(
+                        last_used,
+                        appearance.ui_font_family(),
+                        type_ramp::LABEL.size,
+                    )
+                    .with_color(appearance.theme().nonactive_ui_text_color().into())
+                    .finish(),
                 )
-                .with_padding(Padding::uniform(8.))
+                .with_padding(Padding::uniform(spacing::SM))
                 .finish(),
             )
             .finish(),
@@ -613,11 +630,15 @@ impl PlatformPageWidget {
             Expanded::new(
                 1.,
                 Container::new(
-                    Text::new_inline(expires_at, appearance.ui_font_family(), 12.)
-                        .with_color(appearance.theme().nonactive_ui_text_color().into())
-                        .finish(),
+                    Text::new_inline(
+                        expires_at,
+                        appearance.ui_font_family(),
+                        type_ramp::LABEL.size,
+                    )
+                    .with_color(appearance.theme().nonactive_ui_text_color().into())
+                    .finish(),
                 )
-                .with_padding(Padding::uniform(8.))
+                .with_padding(Padding::uniform(spacing::SM))
                 .finish(),
             )
             .finish(),
@@ -632,8 +653,11 @@ impl PlatformPageWidget {
         row.add_child(Expanded::new(0.5, expire_button).finish());
 
         Container::new(row.finish())
-            .with_vertical_padding(12.)
-            .with_border(Border::bottom(1.).with_border_fill(appearance.theme().outline()))
+            .with_vertical_padding(spacing::MD)
+            .with_border(
+                Border::bottom(border::HAIRLINE_WIDTH)
+                    .with_border_fill(appearance.theme().outline()),
+            )
             .finish()
     }
 
@@ -663,7 +687,7 @@ impl PlatformPageWidget {
                             .with_style(Properties::default().weight(Weight::Bold))
                             .finish(),
                         )
-                        .with_margin_top(16.)
+                        .with_margin_top(spacing::LG)
                         .finish(),
                     )
                     .with_child(
@@ -676,14 +700,14 @@ impl PlatformPageWidget {
                             .with_color(appearance.theme().active_ui_text_color().into())
                             .finish(),
                         )
-                        .with_margin_top(8.)
+                        .with_margin_top(spacing::SM)
                         .finish(),
                     )
                     .finish(),
             )
             .finish(),
         )
-        .with_margin_top(80.)
+        .with_margin_top(spacing::XXL + spacing::XL)
         .finish()
     }
 }

@@ -27,7 +27,10 @@ use crate::{
 };
 use itertools::Itertools;
 
-use twarp_core::ui::theme::color::internal_colors;
+use twarp_core::ui::{
+    theme::color::internal_colors,
+    tokens::{border, radius, spacing, type_ramp},
+};
 use twarpui::{elements::Wrap, units::Pixels};
 use twarpui::{
     elements::{
@@ -49,13 +52,12 @@ use twarpui::{
     keymap::DescriptionContext,
 };
 
-const FONT_DELTA: f32 = 2.;
-const CANCEL_SAVE_BUTTONS_SPACING: f32 = 4.0;
-const CLEAR_CANCEL_BUTTONS_SPACING: f32 = 8.0;
-const ROW_INTERNAL_VERTICAL_PADDING: f32 = 8.0;
-const ROW_LEFT_MARGIN: f32 = 20.0;
+const CANCEL_SAVE_BUTTONS_SPACING: f32 = spacing::XS;
+const CLEAR_CANCEL_BUTTONS_SPACING: f32 = spacing::SM;
+const ROW_INTERNAL_VERTICAL_PADDING: f32 = spacing::SM;
+const ROW_LEFT_MARGIN: f32 = spacing::XL;
 const ROW_HEIGHT: f32 = 28.;
-const EDIT_BUTTONS_BORDER_RADIUS: f32 = 4.0;
+const EDIT_BUTTONS_BORDER_RADIUS: f32 = radius::CHIP;
 
 pub const SEARCH_PLACEHOLDER: &str = "Search by name or by keys (ex. \"cmd d\")";
 const SHORTCUT_CONFLICT_WARNING_TEXT: &str = "This shortcut conflicts with other keybinds";
@@ -894,10 +896,10 @@ fn render_columns(
             .with_padding_left(padding.left);
     } else {
         container = container
-            .with_padding_top(10.)
-            .with_padding_bottom(10.)
-            .with_padding_right(20.)
-            .with_padding_left(20.);
+            .with_padding_top(spacing::MD)
+            .with_padding_bottom(spacing::MD)
+            .with_padding_right(spacing::XL)
+            .with_padding_left(spacing::XL);
     };
     if let Some(background) = background {
         container.with_background(background).finish()
@@ -916,11 +918,11 @@ fn render_button(
             .with_color(line_color.into())
             .finish(),
     )
-    .with_uniform_padding(4.0)
+    .with_uniform_padding(spacing::XS)
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
         EDIT_BUTTONS_BORDER_RADIUS,
     )))
-    .with_border(Border::all(1.).with_border_fill(line_color))
+    .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(line_color))
     .finish()
 }
 
@@ -981,7 +983,7 @@ impl KeybindingsWidget {
         bindings: Option<&Vec<CommandBinding>>,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        let font_size = appearance.ui_font_size() + FONT_DELTA;
+        let font_size = type_ramp::UI.size;
         let mut description = Flex::column().with_child(render_text(
             "Add your own custom keybindings to existing actions below.",
             Some(UiComponentStyles {
@@ -1022,7 +1024,7 @@ impl KeybindingsWidget {
                             }),
                             appearance,
                         ))
-                        .with_padding_right(10.)
+                        .with_padding_right(spacing::SM)
                         .finish(),
                     )
                     .with_child(
@@ -1030,7 +1032,7 @@ impl KeybindingsWidget {
                             .ui_builder()
                             .keyboard_shortcut(keystroke)
                             .with_style(UiComponentStyles {
-                                margin: Some(Coords::default().right(5.)),
+                                margin: Some(Coords::default().right(spacing::XS)),
                                 ..Default::default()
                             })
                             .build()
@@ -1051,7 +1053,7 @@ impl KeybindingsWidget {
                             }),
                             appearance,
                         ))
-                        .with_padding_left(5.)
+                        .with_padding_left(spacing::XS)
                         .finish(),
                     )
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -1138,20 +1140,20 @@ impl SettingsWidget for KeybindingsWidget {
                 Container::new(render_text(
                     "Command",
                     Some(UiComponentStyles {
-                        font_size: Some(appearance.ui_font_size() + FONT_DELTA),
+                        font_size: Some(type_ramp::UI.size),
                         ..Default::default()
                     }),
                     appearance,
                 ))
-                .with_uniform_margin(20.)
+                .with_uniform_margin(spacing::XL)
                 .finish(),
                 Container::new(ChildView::new(&view.search_bar).finish())
-                    .with_margin_right(10.)
+                    .with_margin_right(spacing::SM)
                     .finish(),
                 0.62,
                 None,
                 Some(Coords {
-                    top: 10.,
+                    top: spacing::MD,
                     bottom: 0.,
                     right: 0.,
                     left: 0.,
