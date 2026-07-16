@@ -1,7 +1,7 @@
 # 19 — Design system & visual overhaul
 
 **Phase:** spec-in-review
-**Spec PR:** (this PR — also ships 19a: `design/PHILOSOPHY.md` + `twarp_core::ui::tokens` + UI-skill wiring)
+**Spec PR:** [#215](https://github.com/timomak/twarp/pull/215) (also ships 19a: `design/PHILOSOPHY.md` + `twarp_core::ui::tokens` + UI-skill wiring)
 **Impl PRs:** —
 
 ## Scope
