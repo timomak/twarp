@@ -1389,6 +1389,15 @@ impl ClaudeCodeView {
         ColorU::new(accent.r, accent.g, accent.b, 52)
     }
 
+    /// A muted tab accent for *idle* header chrome (icon buttons, inactive
+    /// toggle labels), or `None` when the tab has no colour. Softer than the
+    /// full accent so "something is running right now" (full accent + badge)
+    /// still reads distinctly against idle affordances.
+    fn tab_chrome_accent(&self, app: &AppContext) -> Option<ColorU> {
+        self.tab_accent(app)
+            .map(|accent| ColorU::new(accent.r, accent.g, accent.b, 170))
+    }
+
     /// Focus the message input (PRODUCT §34: keyboard-first).
     pub fn focus(&mut self, ctx: &mut ViewContext<Self>) {
         // In raw mode the terminal owns the keyboard (PRODUCT §43).
@@ -4485,7 +4494,9 @@ impl ClaudeCodeView {
         } else if blocked || failed {
             twarp_core::ui::theme::Fill::warn().into_solid()
         } else {
-            theme.main_text_color(theme.background()).into_solid()
+            // Idle chrome follows the tab colour (muted) when one is set.
+            self.tab_chrome_accent(app)
+                .unwrap_or_else(|| theme.main_text_color(theme.background()).into_solid())
         };
         let label = if live {
             "Stop control"
@@ -5157,12 +5168,14 @@ impl ClaudeCodeView {
         let wash = self.accent_wash(app);
         let expanded = self.background_scripts_expanded;
 
-        // twarp 14n: idle affordances read as chrome (gray); the accent is
-        // reserved for "something is running right now".
+        // twarp 14n: idle affordances read as chrome (muted tab accent, or
+        // gray on uncoloured tabs); the full accent is reserved for
+        // "something is running right now".
         let glyph_color = if active > 0 {
             accent
         } else {
-            theme.sub_text_color(theme.background()).into_solid()
+            self.tab_chrome_accent(app)
+                .unwrap_or_else(|| theme.sub_text_color(theme.background()).into_solid())
         };
         let glyph = ConstrainedBox::new(
             Icon::new(
@@ -5279,7 +5292,9 @@ impl ClaudeCodeView {
         let glyph_color = if browsing {
             self.accent(app)
         } else {
-            theme.sub_text_color(theme.background()).into_solid()
+            // Idle chrome follows the tab colour (muted) when one is set.
+            self.tab_chrome_accent(app)
+                .unwrap_or_else(|| theme.sub_text_color(theme.background()).into_solid())
         };
         let wash = self.accent_wash(app);
 
@@ -5338,12 +5353,13 @@ impl ClaudeCodeView {
         let wash = self.accent_wash(app);
         let expanded = self.agents_panel_expanded;
 
-        // twarp 14n: gray while no agent is running (see the
+        // twarp 14n: muted while no agent is running (see the
         // background-scripts button for the rationale).
         let glyph_color = if active > 0 {
             accent
         } else {
-            theme.sub_text_color(theme.background()).into_solid()
+            self.tab_chrome_accent(app)
+                .unwrap_or_else(|| theme.sub_text_color(theme.background()).into_solid())
         };
         let glyph = ConstrainedBox::new(
             Icon::new(
@@ -8309,6 +8325,15 @@ impl BackingView for ClaudeCodeView {
         let wash = self.accent_wash(app);
         let raw_mode = self.raw_cli.is_some();
         let theme = appearance.theme();
+        // The toggle's neutral parts (inactive label, border) also tint with
+        // the tab colour when one is set.
+        let inactive_color = self
+            .tab_chrome_accent(app)
+            .unwrap_or_else(|| theme.main_text_color(theme.background()).into_solid());
+        let toggle_border: twarp_core::ui::theme::Fill = self
+            .tab_accent(app)
+            .map(|accent| ColorU::new(accent.r, accent.g, accent.b, 90).into())
+            .unwrap_or_else(|| theme.outline());
         // The bordered [ chat | raw ] segmented control, with density-specific
         // labels ("Chat UI"/"Raw CLI" wide, "Chat"/"CLI" compact).
         let segmented_toggle = |chat_label: &str, raw_label: &str| -> Box<dyn Element> {
@@ -8319,6 +8344,7 @@ impl BackingView for ClaudeCodeView {
                 self.chat_ui_button.clone(),
                 accent,
                 wash,
+                inactive_color,
                 appearance,
             );
             let raw_segment = render_mode_segment(
@@ -8328,6 +8354,7 @@ impl BackingView for ClaudeCodeView {
                 self.raw_cli_button.clone(),
                 accent,
                 wash,
+                inactive_color,
                 appearance,
             );
             Container::new(
@@ -8340,7 +8367,7 @@ impl BackingView for ClaudeCodeView {
                     .finish(),
             )
             .with_padding(Padding::uniform(2.))
-            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_border(Border::all(1.).with_border_fill(toggle_border.clone()))
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
             // #5: breathing room between the toggle and the always-visible close ✕.
             .with_margin_right(10.)
@@ -8355,10 +8382,17 @@ impl BackingView for ClaudeCodeView {
                 ("CLI", self.raw_cli_button.clone(), !self.streaming)
             };
             Container::new(render_mode_segment(
-                label, false, clickable, mouse, accent, wash, appearance,
+                label,
+                false,
+                clickable,
+                mouse,
+                accent,
+                wash,
+                inactive_color,
+                appearance,
             ))
             .with_padding(Padding::uniform(2.))
-            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_border(Border::all(1.).with_border_fill(toggle_border.clone()))
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
             .with_margin_right(10.)
             .finish()
@@ -10029,14 +10063,17 @@ fn render_mode_segment(
     mouse: MouseStateHandle,
     accent: ColorU,
     wash: ColorU,
+    inactive_color: ColorU,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
-    // #10/#11: the active section reads in the tab accent over a faint wash.
+    // #10/#11: the active section reads in the tab accent over a faint wash;
+    // the inactive-but-clickable section follows the tab colour too (muted)
+    // when one is set, so the whole toggle tints with the tab.
     let color = if active {
         accent
     } else if clickable {
-        theme.main_text_color(theme.background()).into_solid()
+        inactive_color
     } else {
         theme.nonactive_ui_text_color().into_solid()
     };
