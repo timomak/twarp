@@ -5698,6 +5698,25 @@ impl PaneGroup {
         Some(pane.claude_code_view(ctx).id())
     }
 
+    /// twarp: the Claude session id that window-level chrome (the titlebar
+    /// browser button) should bind to — the focused Claude pane's session
+    /// when one is focused, otherwise the first Claude pane in the group.
+    /// `None` when the tab has no Claude pane.
+    pub fn claude_session_id_for_chrome(&self, ctx: &AppContext) -> Option<String> {
+        self.pane_contents
+            .get(&self.focused_pane_id(ctx))
+            .and_then(|contents| contents.as_any().downcast_ref::<ClaudeCodePane>())
+            .into_iter()
+            .chain(self.panes_of::<ClaudeCodePane>())
+            .next()
+            .map(|pane| {
+                pane.claude_code_view(ctx)
+                    .as_ref(ctx)
+                    .session_id()
+                    .to_owned()
+            })
+    }
+
     /// Given a pane ID, retrieve its backing terminal pane contents, if the pane is a terminal pane.
     fn terminal_session_by_id(&self, pane_id: impl Into<PaneId>) -> Option<&TerminalPane> {
         self.pane_contents
