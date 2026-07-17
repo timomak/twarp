@@ -156,7 +156,10 @@ use twarp_core::{
     features::FeatureFlag,
     safe_error, safe_info,
     sync_queue::SyncQueue,
-    ui::theme::color::internal_colors,
+    ui::{
+        theme::color::internal_colors,
+        tokens::{border, radius, spacing, type_ramp},
+    },
 };
 use twarpui::{
     clipboard::ClipboardContent,
@@ -170,7 +173,7 @@ use twarpui::{
         MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
         Percentage, PositionedElementAnchor, PositionedElementOffsetBounds, Radius, Rect,
         Resizable, ResizableStateHandle, ScrollOffset, ScrollStateHandle, ScrollbarWidth, Stack,
-        Text, DEFAULT_UI_LINE_HEIGHT_RATIO,
+        Text,
     },
     keymap::Keystroke,
     ui_components::{
@@ -182,7 +185,7 @@ use twarpui::{
 };
 use twarpui::{
     elements::{Clipped, MainAxisSize, Shrinkable},
-    text_layout::{default_compute_baseline_position, ClipConfig},
+    text_layout::ClipConfig,
 };
 use twarpui::{
     elements::{Hoverable, SavePosition},
@@ -195,7 +198,6 @@ use twarpui::{
     ModelHandle, WeakViewHandle,
 };
 
-use crate::code::diff_card::Disclosure;
 use crate::code::footer::{CodeFooterView, CodeFooterViewEvent};
 use crate::settings::AISettings;
 use crate::settings_view::SettingsSection;
@@ -430,6 +432,21 @@ pub enum CodeReviewAction {
     ToggleStagedSection,
     /// Collapse/expand the Changes section in the sidebar (PRODUCT §4).
     ToggleChangesSection,
+    /// Select a sidebar row. Shift extends from the existing anchor;
+    /// Cmd/Ctrl toggles the row without clearing the rest of the selection.
+    SelectSidebarFile {
+        section: SidebarSection,
+        path: PathBuf,
+        extend: bool,
+        toggle: bool,
+    },
+    /// Extend an active click-drag selection through this row.
+    DragSidebarSelectionTo {
+        section: SidebarSection,
+        path: PathBuf,
+    },
+    /// Finish a click-drag selection gesture.
+    EndSidebarSelectionDrag,
     /// Stage a file (PRODUCT §11). Runs `git add -- <path>`.
     StageFile {
         path: PathBuf,
@@ -484,10 +501,154 @@ pub enum CodeReviewAction {
 /// `MouseStateHandle` the row binds to (so partial-stage rows have
 /// independent hover state) and, in 5b/5c, which set of hover-revealed
 /// affordances to surface.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum SidebarSection {
     Staged,
     Changes,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SidebarRowId {
+    section: SidebarSection,
+    path: PathBuf,
+}
+
+impl SidebarRowId {
+    fn new(section: SidebarSection, path: PathBuf) -> Self {
+        Self { section, path }
+    }
+}
+
+#[derive(Debug)]
+struct SidebarDragSelection {
+    anchor: SidebarRowId,
+    baseline: HashSet<SidebarRowId>,
+}
+
+/// Source-list selection state for the Code Review sidebar. Selection identity
+/// includes the section because a partially staged path appears once in each
+/// section and those rows have different available operations.
+#[derive(Debug, Default)]
+struct SidebarSelectionState {
+    selected: HashSet<SidebarRowId>,
+    anchor: Option<SidebarRowId>,
+    drag: Option<SidebarDragSelection>,
+}
+
+impl SidebarSelectionState {
+    fn is_selected(&self, row: &SidebarRowId) -> bool {
+        self.selected.contains(row)
+    }
+
+    fn selected_count(&self, section: SidebarSection) -> usize {
+        self.selected
+            .iter()
+            .filter(|row| row.section == section)
+            .count()
+    }
+
+    fn selected_paths(
+        &self,
+        section: SidebarSection,
+        ordered_rows: &[SidebarRowId],
+    ) -> Vec<PathBuf> {
+        ordered_rows
+            .iter()
+            .filter(|row| row.section == section && self.selected.contains(*row))
+            .map(|row| row.path.clone())
+            .collect()
+    }
+
+    fn select_range(
+        selected: &mut HashSet<SidebarRowId>,
+        ordered_rows: &[SidebarRowId],
+        anchor: &SidebarRowId,
+        target: &SidebarRowId,
+    ) {
+        let Some(anchor_index) = ordered_rows.iter().position(|row| row == anchor) else {
+            selected.insert(target.clone());
+            return;
+        };
+        let Some(target_index) = ordered_rows.iter().position(|row| row == target) else {
+            return;
+        };
+        let (start, end) = if anchor_index <= target_index {
+            (anchor_index, target_index)
+        } else {
+            (target_index, anchor_index)
+        };
+        selected.extend(ordered_rows[start..=end].iter().cloned());
+    }
+
+    fn begin_selection(
+        &mut self,
+        row: SidebarRowId,
+        ordered_rows: &[SidebarRowId],
+        extend: bool,
+        toggle: bool,
+    ) {
+        if !ordered_rows.contains(&row) {
+            return;
+        }
+
+        let range_anchor = if extend {
+            self.anchor
+                .as_ref()
+                .filter(|anchor| ordered_rows.contains(anchor))
+                .cloned()
+                .unwrap_or_else(|| row.clone())
+        } else {
+            row.clone()
+        };
+
+        if extend {
+            if !toggle {
+                self.selected.clear();
+            }
+            Self::select_range(&mut self.selected, ordered_rows, &range_anchor, &row);
+        } else if toggle {
+            if !self.selected.remove(&row) {
+                self.selected.insert(row.clone());
+            }
+            self.anchor = Some(row.clone());
+        } else {
+            self.selected.clear();
+            self.selected.insert(row.clone());
+            self.anchor = Some(row.clone());
+        }
+
+        let baseline = if toggle {
+            self.selected.clone()
+        } else {
+            HashSet::new()
+        };
+        self.drag = Some(SidebarDragSelection {
+            anchor: range_anchor,
+            baseline,
+        });
+    }
+
+    fn drag_to(&mut self, row: SidebarRowId, ordered_rows: &[SidebarRowId]) {
+        let Some(drag) = self.drag.as_ref() else {
+            return;
+        };
+        let anchor = drag.anchor.clone();
+        self.selected = drag.baseline.clone();
+        Self::select_range(&mut self.selected, ordered_rows, &anchor, &row);
+    }
+
+    fn end_drag(&mut self) {
+        self.drag = None;
+    }
+
+    fn retain_rows(&mut self, rows: &[SidebarRowId]) {
+        let rows: HashSet<_> = rows.iter().cloned().collect();
+        self.selected.retain(|row| rows.contains(row));
+        if self.anchor.as_ref().is_some_and(|row| !rows.contains(row)) {
+            self.anchor = None;
+        }
+        self.drag = None;
+    }
 }
 
 pub struct FileState {
@@ -686,6 +847,7 @@ pub enum CodeReviewViewEvent {
 #[derive(Clone, Debug, PartialEq)]
 pub enum DiscardOperationType {
     AllUncommittedChanges,
+    SelectedUncommittedChanges,
     FileUncommittedChanges,
     AllChangesAgainstBranch(Option<String>),
     FileChangesAgainstBranch(Option<String>),
@@ -696,6 +858,9 @@ impl DiscardOperationType {
         match self {
             DiscardOperationType::AllUncommittedChanges => {
                 "Discard uncommitted changes?".to_string()
+            }
+            DiscardOperationType::SelectedUncommittedChanges => {
+                "Discard selected changes?".to_string()
             }
             DiscardOperationType::FileUncommittedChanges => {
                 "Discard all uncommitted changes to file?".to_string()
@@ -710,6 +875,7 @@ impl DiscardOperationType {
     pub fn description(&self) -> Option<String> {
         match self {
             DiscardOperationType::AllUncommittedChanges => Some("You're about to discard all local changes that haven't been committed.".to_string()),
+            DiscardOperationType::SelectedUncommittedChanges => Some("You're about to discard the selected local changes.".to_string()),
             DiscardOperationType::FileUncommittedChanges => Some("This will restore this file to the last committed version and discard local edits.".to_string()),
             DiscardOperationType::AllChangesAgainstBranch(None) => Some("You're about to discard all committed and uncommitted changes.".to_string()),
             DiscardOperationType::FileChangesAgainstBranch(None) => Some("This will restore this file to the main branch version and discard all committed and uncommitted edits.".to_string()),
@@ -722,6 +888,7 @@ impl DiscardOperationType {
         matches!(
             self,
             DiscardOperationType::AllUncommittedChanges
+                | DiscardOperationType::SelectedUncommittedChanges
                 | DiscardOperationType::FileUncommittedChanges
         )
     }
@@ -792,6 +959,7 @@ struct RepositoryState {
     repo_path: PathBuf,
     state: CodeReviewViewState,
     available_branches: Vec<(String, bool)>, // (branch_name, is_main_branch)
+    sidebar_selection: SidebarSelectionState,
 
     /// Whether a file has been explicitly expanded (true) or collapsed (false).
     file_expanded: HashMap<PathBuf, bool>,
@@ -808,6 +976,7 @@ impl RepositoryState {
             repo_path,
             state: CodeReviewViewState::None,
             available_branches: Vec::new(),
+            sidebar_selection: SidebarSelectionState::default(),
             file_expanded: HashMap::new(),
             pending_file_updates: None,
             file_invalidation: FileInvalidationState::new(queue),
@@ -2759,6 +2928,7 @@ impl CodeReviewView {
                 if let Some(repo) = self.active_repo.as_mut() {
                     repo.state = CodeReviewViewState::Loaded(diff_data);
                 }
+                self.prune_sidebar_selection();
 
                 self.update_editor_comment_markers(ctx);
                 GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| {
@@ -2904,6 +3074,7 @@ impl CodeReviewView {
                 in_progress_op: diff_data.in_progress_op.clone(),
             });
         }
+        self.prune_sidebar_selection();
 
         self.recompute_merge_base_and_flush(ctx);
 
@@ -3528,7 +3699,7 @@ impl CodeReviewView {
             let full_file_path = repo_path.join(&file.file_diff.file_path);
 
             let local_code_view = ctx.add_typed_action_view(|ctx| {
-                let editor = LocalCodeEditorView::new_with_global_buffer(
+                let mut editor = LocalCodeEditorView::new_with_global_buffer(
                     &full_file_path,
                     |buffer_state, ctx| {
                         ctx.add_typed_action_view(|ctx| {
@@ -3579,6 +3750,7 @@ impl CodeReviewView {
                     })
                 }));
 
+                editor.suppress_git_blame_for_review(ctx);
                 editor
             });
 
@@ -3677,6 +3849,7 @@ impl CodeReviewView {
                             })
                         }));
                 }
+                local_code_view.suppress_git_blame_for_review(ctx);
                 // Deleted files have no file backing — no FileModel, no GlobalBufferModel.
                 // file_id() will be None for these editors; no downstream code in code_review
                 // relies on file_id for deleted entries (save/conflict flows early-return on None).
@@ -5155,6 +5328,70 @@ impl CodeReviewView {
         Shrinkable::new(1., self.render_file_sidebar(state, appearance, app)).finish()
     }
 
+    fn sidebar_rows(&self, state: &LoadedState, visible_only: bool) -> Vec<SidebarRowId> {
+        let mut rows = Vec::with_capacity(state.staged.len() + state.changes.len());
+        if !visible_only || self.staged_section_expanded {
+            rows.extend(
+                state
+                    .staged
+                    .iter()
+                    .map(|entry| SidebarRowId::new(SidebarSection::Staged, entry.path.clone())),
+            );
+        }
+        if !visible_only || self.changes_section_expanded {
+            rows.extend(
+                state
+                    .changes
+                    .iter()
+                    .map(|entry| SidebarRowId::new(SidebarSection::Changes, entry.path.clone())),
+            );
+        }
+        rows
+    }
+
+    fn selected_sidebar_paths(&self, section: SidebarSection) -> Vec<PathBuf> {
+        let Some(repo) = self.active_repo.as_ref() else {
+            return Vec::new();
+        };
+        let CodeReviewViewState::Loaded(state) = &repo.state else {
+            return Vec::new();
+        };
+        let eligible_rows: Vec<_> = match section {
+            SidebarSection::Staged => &state.staged,
+            SidebarSection::Changes => &state.changes,
+        }
+        .iter()
+        .filter(|entry| entry.status != crate::code_review::porcelain_v2::FileStatus::Unmerged)
+        .map(|entry| SidebarRowId::new(section, entry.path.clone()))
+        .collect();
+        repo.sidebar_selection
+            .selected_paths(section, &eligible_rows)
+    }
+
+    fn sidebar_paths_for_action(&self, section: SidebarSection, path: &Path) -> Vec<PathBuf> {
+        let row = SidebarRowId::new(section, path.to_path_buf());
+        let Some(repo) = self.active_repo.as_ref() else {
+            return vec![path.to_path_buf()];
+        };
+        if repo.sidebar_selection.is_selected(&row) {
+            let selected = self.selected_sidebar_paths(section);
+            if !selected.is_empty() {
+                return selected;
+            }
+        }
+        vec![path.to_path_buf()]
+    }
+
+    fn prune_sidebar_selection(&mut self) {
+        let rows = match self.state() {
+            CodeReviewViewState::Loaded(state) => self.sidebar_rows(state, false),
+            _ => Vec::new(),
+        };
+        if let Some(repo) = self.active_repo.as_mut() {
+            repo.sidebar_selection.retain_rows(&rows);
+        }
+    }
+
     fn render_file_sidebar(
         &self,
         state: &LoadedState,
@@ -5178,7 +5415,7 @@ impl CodeReviewView {
         // can see "·  0" on a clean repo.
         column.add_child(
             self.render_sidebar_section(
-                "Staged Changes",
+                "STAGED CHANGES",
                 SidebarSection::Staged,
                 &state.staged,
                 state,
@@ -5192,19 +5429,23 @@ impl CodeReviewView {
             ),
         );
         column.add_child(
-            self.render_sidebar_section(
-                "Changes",
-                SidebarSection::Changes,
-                &state.changes,
-                state,
-                self.changes_section_expanded,
-                CodeReviewAction::ToggleChangesSection,
-                self.ui_state_handles
-                    .changes_section_header_mouse_state
-                    .clone(),
-                appearance,
-                app,
-            ),
+            Container::new(
+                self.render_sidebar_section(
+                    "CHANGES",
+                    SidebarSection::Changes,
+                    &state.changes,
+                    state,
+                    self.changes_section_expanded,
+                    CodeReviewAction::ToggleChangesSection,
+                    self.ui_state_handles
+                        .changes_section_header_mouse_state
+                        .clone(),
+                    appearance,
+                    app,
+                ),
+            )
+            .with_margin_top(spacing::SM)
+            .finish(),
         );
 
         let scrollable_content = NewScrollable::vertical(
@@ -5231,9 +5472,23 @@ impl CodeReviewView {
         // Sidebar fills the panel content area; the legacy Resizable
         // splitter (sidebar-vs-diffs) is gone now that diffs open in a
         // new tab instead of inline.
-        Container::new(scrollable_content)
-            .with_horizontal_padding(8.)
-            .finish()
+        let sidebar = EventHandler::new(
+            Container::new(scrollable_content)
+                .with_horizontal_padding(spacing::SM)
+                .finish(),
+        )
+        .with_always_handle()
+        .on_left_mouse_up(|ctx, _, _| {
+            ctx.dispatch_typed_action(CodeReviewAction::EndSidebarSelectionDrag);
+            DispatchEventResult::PropagateToParent
+        })
+        .finish();
+
+        // The line-comment renderer uses this saved viewport position to
+        // decide whether its inline composer is visible. The source-list
+        // refactor removed the legacy viewport wrapper, leaving the ID absent
+        // and every comment click silently suppressed.
+        SavePosition::new(sidebar, &self.code_review_list_position_id).finish()
     }
 
     /// Render one of the two sidebar sections (Staged Changes / Changes).
@@ -5259,23 +5514,17 @@ impl CodeReviewView {
         let banner_text = format!(
             "{label} in progress — resolve conflicts then commit, or run `{abort}` in the terminal."
         );
-        let text = Text::new(
-            banner_text,
-            appearance.ui_font_family(),
-            appearance.ui_font_size(),
-        )
-        .with_color(theme.main_text_color(theme.surface_2()).into())
-        .soft_wrap(true)
-        .finish();
+        let text = Text::new(banner_text, appearance.ui_font_family(), type_ramp::UI.size)
+            .with_line_height_ratio(type_ramp::UI.line_height)
+            .with_color(theme.main_text_color(theme.background()).into())
+            .soft_wrap(true)
+            .finish();
         Container::new(text)
-            .with_vertical_padding(8.)
-            .with_horizontal_padding(10.)
-            .with_margin_bottom(6.)
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-            .with_background(twarp_core::ui::theme::Fill::Solid(
-                internal_colors::neutral_2(theme),
-            ))
-            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_uniform_padding(spacing::SM)
+            .with_margin_bottom(spacing::SM)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+            .with_background(theme.surface_overlay_1())
+            .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
             .finish()
     }
 
@@ -5289,62 +5538,104 @@ impl CodeReviewView {
         toggle_action: CodeReviewAction,
         header_mouse_state: MouseStateHandle,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
         let mut column = Flex::column()
             .with_main_axis_alignment(MainAxisAlignment::Start)
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
 
-        let chevron_char = if expanded { '▾' } else { '▸' };
-        let header_label = format!("{chevron_char} {label}  ·  {}", entries.len());
-        // twarp 05e: section header uses the main text color so it
-        // visually stands apart from the muted sub-text on file rows.
-        let header_text_color = theme.main_text_color(theme.surface_2());
-        let header_text = Text::new(
-            header_label,
-            appearance.ui_font_family(),
-            appearance.ui_font_size(),
-        )
-        .with_color(header_text_color.into())
-        .soft_wrap(false)
-        .finish();
-        let header_neutral = internal_colors::neutral_3(appearance.theme());
+        let selected_count = self
+            .active_repo
+            .as_ref()
+            .map(|repo| repo.sidebar_selection.selected_count(section))
+            .unwrap_or(0);
+        let selected_paths = self.selected_sidebar_paths(section);
+        let header_buttons = selected_paths
+            .first()
+            .and_then(|path| state.file_states.get(path))
+            .map(|file_state| match section {
+                SidebarSection::Staged => vec![file_state.unstage_button.clone()],
+                SidebarSection::Changes => vec![
+                    file_state.stage_button.clone(),
+                    file_state.discard_button.clone(),
+                ],
+            })
+            .unwrap_or_default();
+        let chevron_icon = if expanded {
+            Icon::ChevronDown
+        } else {
+            Icon::ChevronRight
+        };
         let header_element = Hoverable::new(header_mouse_state, |mouse_state| {
-            let mut container = Container::new(header_text)
-                .with_vertical_padding(6.)
-                .with_horizontal_padding(8.)
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
+            let header_color = theme.sub_text_color(theme.background());
+            let icon = ConstrainedBox::new(chevron_icon.to_warpui_icon(header_color).finish())
+                .with_width(spacing::LG)
+                .with_height(spacing::LG)
+                .finish();
+            let label = Text::new_inline(
+                label.to_string(),
+                appearance.ui_font_family(),
+                type_ramp::CAPTION.size,
+            )
+            .with_line_height_ratio(type_ramp::CAPTION.line_height)
+            .with_color(header_color.into())
+            .with_style(Properties::default().weight(Weight::Semibold))
+            .finish();
+            let count = Text::new_inline(
+                format!("· {}", entries.len()),
+                appearance.ui_font_family(),
+                type_ramp::CAPTION.size,
+            )
+            .with_line_height_ratio(type_ramp::CAPTION.line_height)
+            .with_color(header_color.into())
+            .finish();
+
+            let mut row = Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(icon)
+                .with_child(Container::new(label).with_margin_left(spacing::XS).finish())
+                .with_child(Container::new(count).with_margin_left(spacing::XS).finish())
+                .with_child(Shrinkable::new(1., Empty::new().finish()).finish());
+
+            if selected_count > 0 {
+                row.add_child(
+                    Container::new(
+                        Text::new_inline(
+                            format!("{selected_count} selected"),
+                            appearance.ui_font_family(),
+                            type_ramp::CAPTION.size,
+                        )
+                        .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                        .with_color(header_color.into())
+                        .finish(),
+                    )
+                    .with_margin_right(spacing::XS)
+                    .finish(),
+                );
+                for button in header_buttons {
+                    row.add_child(ChildView::new(&button).finish());
+                }
+            }
+
+            let mut container = Container::new(row.finish())
+                .with_vertical_padding(spacing::XS)
+                .with_horizontal_padding(spacing::SM)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
             if mouse_state.is_hovered() {
-                container =
-                    container.with_background(twarp_core::ui::theme::Fill::Solid(header_neutral));
+                container = container.with_background(theme.surface_overlay_2());
             }
             container.finish()
         })
         .on_click(move |ctx, _, _| {
             ctx.dispatch_typed_action(toggle_action.clone());
         })
+        .with_defer_events_to_children()
         .with_cursor(Cursor::PointingHand)
         .finish();
 
         column.add_child(header_element);
-
-        // twarp 05e: thin horizontal divider under each section header,
-        // for visual separation between Staged Changes / Changes and
-        // their file rows.
-        column.add_child(
-            Container::new(
-                ConstrainedBox::new(
-                    Container::new(Empty::new().finish())
-                        .with_background(theme.outline())
-                        .finish(),
-                )
-                .with_height(1.)
-                .finish(),
-            )
-            .with_margin_bottom(4.)
-            .finish(),
-        );
 
         if expanded {
             for entry in entries {
@@ -5353,91 +5644,132 @@ impl CodeReviewView {
                 let glyph = entry.status.glyph();
                 let is_conflict =
                     entry.status == crate::code_review::porcelain_v2::FileStatus::Unmerged;
-
-                // The file name + directory + `+N −M` line summary, used as the
-                // disclosure card's title row.
+                let row_id = SidebarRowId::new(section, path.clone());
+                let is_selected = self
+                    .active_repo
+                    .as_ref()
+                    .is_some_and(|repo| repo.sidebar_selection.is_selected(&row_id));
                 let title = self.render_file_sidebar_row(
                     file_state,
                     Some(entry.path.as_path()),
                     Some(glyph),
                     appearance,
                 );
-
-                // 5c (PRODUCT §10): the per-file action buttons, picked by
-                // section + status. Conflict (U) rows show only `[Resolve…]`
-                // regardless of section. These now sit in the card's trailing
-                // cluster alongside the "open file" button.
-                let cluster_buttons: Vec<ViewHandle<ActionButton>> = match (is_conflict, section) {
-                    (true, _) => file_state
-                        .map(|fs| vec![fs.resolve_button.clone()])
-                        .unwrap_or_default(),
-                    (false, SidebarSection::Staged) => file_state
-                        .map(|fs| vec![fs.unstage_button.clone()])
-                        .unwrap_or_default(),
-                    (false, SidebarSection::Changes) => file_state
-                        .map(|fs| vec![fs.stage_button.clone(), fs.discard_button.clone()])
-                        .unwrap_or_default(),
-                };
-
-                // Trailing cluster: the per-file actions, then the "open the
-                // full file with its diff" button (5e behavior, now an explicit
-                // affordance on every card rather than the whole-row click).
-                let mut trailing =
-                    Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
-                for button in cluster_buttons {
-                    trailing.add_child(
-                        Container::new(ChildView::new(&button).finish())
-                            .with_margin_left(2.)
-                            .finish(),
-                    );
-                }
+                let mut cluster_buttons: Vec<ViewHandle<ActionButton>> =
+                    match (is_conflict, section) {
+                        (true, _) => file_state
+                            .map(|fs| vec![fs.resolve_button.clone()])
+                            .unwrap_or_default(),
+                        (false, SidebarSection::Staged) => file_state
+                            .map(|fs| vec![fs.unstage_button.clone()])
+                            .unwrap_or_default(),
+                        (false, SidebarSection::Changes) => file_state
+                            .map(|fs| vec![fs.stage_button.clone(), fs.discard_button.clone()])
+                            .unwrap_or_default(),
+                    };
                 if let Some(fs) = file_state {
-                    trailing.add_child(
-                        Container::new(ChildView::new(&fs.open_diff_button).finish())
-                            .with_margin_left(2.)
-                            .finish(),
-                    );
+                    cluster_buttons.push(fs.open_diff_button.clone());
                 }
-
-                // PRODUCT §4: a partial-stage file appears in both sections with
-                // the same `FileState`; use the per-section hover handle so the
-                // two cards toggle their chevron hover independently.
                 let toggle_state = file_state
                     .map(|fs| match section {
                         SidebarSection::Staged => fs.sidebar_mouse_state_staged.clone(),
                         SidebarSection::Changes => fs.sidebar_mouse_state_changes.clone(),
                     })
                     .unwrap_or_default();
-
-                // Collapsed by default; clicking the row toggles the inline diff
-                // (ToggleFileExpanded re-renders the panel). The colored diff
-                // body — the same interactive code-review editor the diff tab
-                // uses — only builds when expanded, so collapsed cards are cheap.
                 let is_expanded = file_state.map(|fs| fs.is_expanded).unwrap_or(false);
                 let body = if is_expanded {
                     file_state.map(|fs| self.render_file_content(fs, appearance))
                 } else {
                     None
                 };
-                let toggle_path = entry.path.clone();
+                let chevron_button = file_state.map(|fs| fs.chevron_button.clone());
+                let select_path = path.clone();
+                let drag_path = path.clone();
+                let open_path = path.clone();
+                let row = Hoverable::new(toggle_state, move |mouse_state| {
+                    let mut content = Flex::row()
+                        .with_main_axis_size(MainAxisSize::Max)
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center);
+                    if let Some(button) = chevron_button {
+                        content.add_child(ChildView::new(&button).finish());
+                    } else {
+                        content.add_child(
+                            ConstrainedBox::new(Empty::new().finish())
+                                .with_width(spacing::LG)
+                                .finish(),
+                        );
+                    }
+                    content.add_child(Shrinkable::new(1., title).finish());
+                    if mouse_state.is_hovered() {
+                        for button in cluster_buttons {
+                            content.add_child(ChildView::new(&button).finish());
+                        }
+                    }
 
-                let mut disclosure = Disclosure::new(title)
-                    .expandable(true)
-                    .expanded(is_expanded)
-                    .with_mouse_state(toggle_state)
-                    .with_trailing_action(trailing.finish())
-                    .with_unboxed_body()
-                    .with_outer_margins(2., 2., 2.)
-                    .on_toggle(move |ctx| {
-                        ctx.dispatch_typed_action(CodeReviewAction::ToggleFileExpanded(
-                            toggle_path.clone(),
-                        ));
-                    });
+                    let mut container = Container::new(content.finish())
+                        .with_vertical_padding(spacing::XS)
+                        .with_horizontal_padding(spacing::SM)
+                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
+                    if is_selected {
+                        container = container.with_background(theme.surface_3());
+                    } else if mouse_state.is_hovered() {
+                        container = container.with_background(theme.surface_overlay_2());
+                    }
+
+                    EventHandler::new(container.finish())
+                        .on_left_mouse_down_with_modifiers(
+                            move |ctx, _, _, modifiers, click_count| {
+                                if click_count == 2 {
+                                    ctx.dispatch_typed_action(
+                                        CodeReviewAction::OpenFileDiffInNewTab {
+                                            path: open_path.clone(),
+                                        },
+                                    );
+                                } else {
+                                    ctx.dispatch_typed_action(
+                                        CodeReviewAction::SelectSidebarFile {
+                                            section,
+                                            path: select_path.clone(),
+                                            extend: modifiers.shift,
+                                            toggle: modifiers.cmd || modifiers.ctrl,
+                                        },
+                                    );
+                                }
+                                DispatchEventResult::StopPropagation
+                            },
+                        )
+                        .on_mouse_in(
+                            move |ctx, _, _| {
+                                ctx.dispatch_typed_action(
+                                    CodeReviewAction::DragSidebarSelectionTo {
+                                        section,
+                                        path: drag_path.clone(),
+                                    },
+                                );
+                                DispatchEventResult::PropagateToParent
+                            },
+                            None,
+                        )
+                        .finish()
+                })
+                .with_defer_events_to_children()
+                .with_propagate_drag()
+                .with_cursor(Cursor::PointingHand)
+                .finish();
+
+                let mut item = Flex::column()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                    .with_child(row);
                 if let Some(body) = body {
-                    disclosure = disclosure.with_body(body);
+                    item.add_child(
+                        Container::new(body)
+                            .with_margin_left(spacing::LG)
+                            .with_margin_right(spacing::XS)
+                            .with_margin_bottom(spacing::SM)
+                            .finish(),
+                    );
                 }
-
-                column.add_child(disclosure.render(app));
+                column.add_child(item.finish());
             }
         }
 
@@ -5477,94 +5809,62 @@ impl CodeReviewView {
         let additions = file_state.map(|fs| fs.file_diff.additions()).unwrap_or(0);
         let deletions = file_state.map(|fs| fs.file_diff.deletions()).unwrap_or(0);
 
-        // Create the main row for the file entry
         let mut file_row = Flex::row()
             .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
-
-        let mut file_and_directory = Flex::row();
-
-        const SMALLER_TEXT_RATIO: f32 = 0.9;
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        let theme = appearance.theme();
+        let mut file_and_directory =
+            Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         if let Some(glyph_char) = glyph {
             file_and_directory.add_child(
                 Container::new(
-                    Text::new(
-                        glyph_char.to_string(),
-                        appearance.ui_font_family(),
-                        appearance.ui_font_size(),
+                    ConstrainedBox::new(
+                        Text::new_inline(
+                            glyph_char.to_string(),
+                            appearance.ui_font_family(),
+                            type_ramp::LABEL.size,
+                        )
+                        .with_line_height_ratio(type_ramp::LABEL.line_height)
+                        .with_color(theme.sub_text_color(theme.background()).into())
+                        .with_style(Properties::default().weight(Weight::Semibold))
+                        .finish(),
                     )
-                    .with_color(
-                        appearance
-                            .theme()
-                            .sub_text_color(appearance.theme().surface_2())
-                            .into(),
-                    )
-                    .soft_wrap(false)
+                    .with_width(spacing::LG)
                     .finish(),
                 )
-                .with_margin_right(6.)
+                .with_margin_right(spacing::XS)
                 .finish(),
             );
         }
 
-        // File name (prominent)
         file_and_directory.add_child(
             Container::new(
-                ConstrainedBox::new(
-                    Text::new(
-                        file_name.to_string(),
-                        appearance.ui_font_family(),
-                        appearance.ui_font_size(),
-                    )
-                    .with_color(
-                        appearance
-                            .theme()
-                            .main_text_color(appearance.theme().surface_2())
-                            .into(),
-                    )
-                    .soft_wrap(false)
-                    .finish(),
+                Text::new_inline(
+                    file_name.to_string(),
+                    appearance.ui_font_family(),
+                    type_ramp::UI.size,
                 )
-                .with_max_width(190.)
+                .with_line_height_ratio(type_ramp::UI.line_height)
+                .with_color(theme.main_text_color(theme.background()).into())
                 .finish(),
             )
-            .with_margin_right(4.)
+            .with_margin_right(spacing::XS)
             .finish(),
         );
 
-        // Directory path (muted and smaller)
         if !dir_path.is_empty() {
             file_and_directory.add_child(
-                Shrinkable::new(
-                    1.,
-                    Text::new(
-                        dir_path.to_string(),
-                        appearance.ui_font_family(),
-                        appearance.ui_font_size() * SMALLER_TEXT_RATIO, // Slightly smaller
-                    )
-                    .with_color(
-                        appearance
-                            .theme()
-                            .sub_text_color(appearance.theme().surface_2())
-                            .into(),
-                    )
-                    .with_clip(ClipConfig::end())
-                    .soft_wrap(false)
-                    .with_line_height_ratio(DEFAULT_UI_LINE_HEIGHT_RATIO / SMALLER_TEXT_RATIO)
-                    .with_compute_baseline_position_fn(Box::new(|args| {
-                        // Calculate baseline position as if we were using the larger font size.
-                        // This ensures both text elements have the same baseline.
-                        let larger_font_size = args.font_size / SMALLER_TEXT_RATIO;
-                        default_compute_baseline_position(
-                            larger_font_size,
-                            DEFAULT_UI_LINE_HEIGHT_RATIO,
-                            args.ascent * (larger_font_size / args.font_size),
-                            args.descent * (larger_font_size / args.font_size),
-                        )
-                    }))
-                    .finish(),
+                Text::new(
+                    dir_path.to_string(),
+                    appearance.ui_font_family(),
+                    type_ramp::LABEL.size,
                 )
+                .with_line_height_ratio(type_ramp::LABEL.line_height)
+                .with_color(theme.sub_text_color(theme.background()).into())
+                .with_clip(ClipConfig::end())
+                .soft_wrap(false)
                 .finish(),
             );
         }
@@ -5573,24 +5873,8 @@ impl CodeReviewView {
             Shrinkable::new(1., Clipped::new(file_and_directory.finish()).finish()).finish(),
         );
 
-        // Right side: additions/deletions
-        let mut changes_text = Text::new(
-            "",
-            appearance.ui_font_family(),
-            appearance.ui_font_size() * SMALLER_TEXT_RATIO,
-        )
-        .with_line_height_ratio(DEFAULT_UI_LINE_HEIGHT_RATIO / SMALLER_TEXT_RATIO)
-        .with_compute_baseline_position_fn(Box::new(|args| {
-            // Calculate baseline position as if we were using the larger font size.
-            // This ensures all text elements have the same baseline.
-            let larger_font_size = args.font_size / SMALLER_TEXT_RATIO;
-            default_compute_baseline_position(
-                larger_font_size,
-                DEFAULT_UI_LINE_HEIGHT_RATIO,
-                args.ascent * (larger_font_size / args.font_size),
-                args.descent * (larger_font_size / args.font_size),
-            )
-        }));
+        let mut changes_text = Text::new("", appearance.ui_font_family(), type_ramp::LABEL.size)
+            .with_line_height_ratio(type_ramp::LABEL.line_height);
         if additions > 0 {
             changes_text.add_text_with_highlights(
                 format!("+{additions}"),
@@ -5616,7 +5900,7 @@ impl CodeReviewView {
         if !changes_text.text().is_empty() {
             file_row.add_child(
                 Container::new(changes_text.finish())
-                    .with_margin_left(8.)
+                    .with_margin_left(spacing::SM)
                     .finish(),
             );
         }
@@ -6233,6 +6517,7 @@ impl CodeReviewView {
         let is_discard_all = matches!(
             self.discard_dialog_state.operation_type,
             DiscardOperationType::AllUncommittedChanges
+                | DiscardOperationType::SelectedUncommittedChanges
                 | DiscardOperationType::AllChangesAgainstBranch(_)
         );
 
@@ -8000,16 +8285,56 @@ impl TypedActionView for CodeReviewView {
                 self.changes_section_expanded = !self.changes_section_expanded;
                 ctx.notify();
             }
+            CodeReviewAction::SelectSidebarFile {
+                section,
+                path,
+                extend,
+                toggle,
+            } => {
+                let ordered_rows = match self.state() {
+                    CodeReviewViewState::Loaded(state) => self.sidebar_rows(state, true),
+                    _ => return,
+                };
+                let Some(repo) = self.active_repo.as_mut() else {
+                    return;
+                };
+                repo.sidebar_selection.begin_selection(
+                    SidebarRowId::new(*section, path.clone()),
+                    &ordered_rows,
+                    *extend,
+                    *toggle,
+                );
+                ctx.notify();
+            }
+            CodeReviewAction::DragSidebarSelectionTo { section, path } => {
+                let ordered_rows = match self.state() {
+                    CodeReviewViewState::Loaded(state) => self.sidebar_rows(state, true),
+                    _ => return,
+                };
+                let Some(repo) = self.active_repo.as_mut() else {
+                    return;
+                };
+                if repo.sidebar_selection.drag.is_some() {
+                    repo.sidebar_selection
+                        .drag_to(SidebarRowId::new(*section, path.clone()), &ordered_rows);
+                    ctx.notify();
+                }
+            }
+            CodeReviewAction::EndSidebarSelectionDrag => {
+                if let Some(repo) = self.active_repo.as_mut() {
+                    repo.sidebar_selection.end_drag();
+                }
+            }
             CodeReviewAction::StageFile { path } => {
-                let path = path.clone();
+                let paths = self.sidebar_paths_for_action(SidebarSection::Changes, path);
                 self.diff_state_model.update(ctx, |model, ctx| {
-                    model.stage_file(path, ctx);
+                    model.stage_files(paths, ctx);
                 });
             }
             CodeReviewAction::UnstageFile { path } => {
-                let path = path.clone();
+                let paths = self.sidebar_paths_for_action(SidebarSection::Staged, path);
                 self.diff_state_model.update(ctx, |model, ctx| {
-                    model.unstage_file(path, ctx);
+                    model.unstage_files(paths, ctx);
                 });
             }
             CodeReviewAction::OpenConflictResolve { path } => {
@@ -8158,9 +8483,17 @@ impl TypedActionView for CodeReviewView {
                 let current_diff_mode = self.diff_state_model.as_ref(ctx).diff_mode();
 
                 if let Some(path) = file_path {
-                    // Single file remove
-                    self.discard_dialog_state.discard_file_paths = vec![path.clone()];
+                    let paths = if matches!(&current_diff_mode, DiffMode::Head) {
+                        self.sidebar_paths_for_action(SidebarSection::Changes, path)
+                    } else {
+                        vec![path.clone()]
+                    };
+                    let is_multiple = paths.len() > 1;
+                    self.discard_dialog_state.discard_file_paths = paths;
                     self.discard_dialog_state.operation_type = match current_diff_mode {
+                        DiffMode::Head if is_multiple => {
+                            DiscardOperationType::SelectedUncommittedChanges
+                        }
                         DiffMode::Head => DiscardOperationType::FileUncommittedChanges,
                         DiffMode::MainBranch => {
                             DiscardOperationType::FileChangesAgainstBranch(None)
@@ -8183,30 +8516,38 @@ impl TypedActionView for CodeReviewView {
                     if let CodeReviewViewState::Loaded(loaded) = self.state() {
                         self.discard_dialog_state.discard_file_paths =
                             loaded.file_states.keys().cloned().collect();
+                    }
+                }
 
-                        // Initialize all files as selected  by default
-                        self.discard_dialog_state.selected_files.clear();
-                        self.discard_dialog_state.file_checkbox_mouse_states.clear();
-                        for file_path in &self.discard_dialog_state.discard_file_paths {
-                            self.discard_dialog_state
-                                .selected_files
-                                .insert(file_path.clone(), true);
-                            self.discard_dialog_state
-                                .file_checkbox_mouse_states
-                                .insert(file_path.clone(), MouseStateHandle::default());
-                        }
+                let is_multiple = matches!(
+                    self.discard_dialog_state.operation_type,
+                    DiscardOperationType::AllUncommittedChanges
+                        | DiscardOperationType::SelectedUncommittedChanges
+                        | DiscardOperationType::AllChangesAgainstBranch(_)
+                );
+                self.discard_dialog_state.selected_files.clear();
+                self.discard_dialog_state.file_checkbox_mouse_states.clear();
+                if is_multiple {
+                    for file_path in &self.discard_dialog_state.discard_file_paths {
+                        self.discard_dialog_state
+                            .selected_files
+                            .insert(file_path.clone(), true);
+                        self.discard_dialog_state
+                            .file_checkbox_mouse_states
+                            .insert(file_path.clone(), MouseStateHandle::default());
                     }
                 }
                 ctx.notify();
             }
             CodeReviewAction::ConfirmDiscardFile => {
-                let is_discard_all = matches!(
+                let is_discard_multiple = matches!(
                     self.discard_dialog_state.operation_type,
                     DiscardOperationType::AllUncommittedChanges
+                        | DiscardOperationType::SelectedUncommittedChanges
                         | DiscardOperationType::AllChangesAgainstBranch(_)
                 );
 
-                if is_discard_all {
+                if is_discard_multiple {
                     // Get list of selected files
                     let selected_files: Vec<PathBuf> = self
                         .discard_dialog_state

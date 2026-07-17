@@ -12,6 +12,15 @@ use pathfinder_geometry::vector::Vector2F;
 use std::cell::RefCell;
 
 type Handler = Box<dyn FnMut(&mut EventContext, &AppContext, Vector2F) -> DispatchEventResult>;
+type ModifiedMouseHandler = Box<
+    dyn FnMut(
+        &mut EventContext,
+        &AppContext,
+        Vector2F,
+        &ModifiersState,
+        u32,
+    ) -> DispatchEventResult,
+>;
 type KeyHandler = Box<dyn FnMut(&mut EventContext, &AppContext, &Keystroke) -> DispatchEventResult>;
 type ScrollHandler = Box<
     dyn FnMut(&mut EventContext, &AppContext, &Vector2F, &ModifiersState) -> DispatchEventResult,
@@ -50,6 +59,7 @@ pub struct EventHandler {
     /// Allow this element to handle events even if a descendent already handled it.
     always_handle: bool,
     left_mouse_down: Option<RefCell<Handler>>,
+    left_mouse_down_with_modifiers: Option<RefCell<ModifiedMouseHandler>>,
     left_mouse_up: Option<RefCell<Handler>>,
     middle_mouse_down: Option<RefCell<Handler>>,
     right_mouse_down: Option<RefCell<Handler>>,
@@ -88,6 +98,7 @@ impl EventHandler {
             child,
             always_handle: false,
             left_mouse_down: None,
+            left_mouse_down_with_modifiers: None,
             left_mouse_up: None,
             middle_mouse_down: None,
             right_mouse_down: None,
@@ -135,6 +146,25 @@ impl EventHandler {
         F: 'static + FnMut(&mut EventContext, &AppContext, Vector2F) -> DispatchEventResult,
     {
         self.left_mouse_down = Some(RefCell::new(Box::new(callback)));
+        self
+    }
+
+    /// Handles a left mouse press and exposes the modifier keys and click
+    /// count carried by that mouse event. Use this for list-selection
+    /// interactions where Shift extends a range, Cmd/Ctrl toggles an item,
+    /// and double-click performs the primary action.
+    pub fn on_left_mouse_down_with_modifiers<F>(mut self, callback: F) -> Self
+    where
+        F: 'static
+            + FnMut(
+                &mut EventContext,
+                &AppContext,
+                Vector2F,
+                &ModifiersState,
+                u32,
+            ) -> DispatchEventResult,
+    {
+        self.left_mouse_down_with_modifiers = Some(RefCell::new(Box::new(callback)));
         self
     }
 
@@ -342,7 +372,22 @@ impl Element for EventHandler {
                     return true;
                 }
             }
-            Some(Event::LeftMouseDown { position, .. }) => {
+            Some(Event::LeftMouseDown {
+                position,
+                modifiers,
+                click_count,
+                ..
+            }) => {
+                if let Some(callback) = self.left_mouse_down_with_modifiers.as_ref() {
+                    let handled =
+                        match callback.borrow_mut()(ctx, app, *position, modifiers, *click_count) {
+                            DispatchEventResult::PropagateToParent => false,
+                            DispatchEventResult::StopPropagation => true,
+                        };
+                    if handled {
+                        return true;
+                    }
+                }
                 if self.dispatch_callback(self.left_mouse_down.as_ref(), ctx, *position, app) {
                     return true;
                 }

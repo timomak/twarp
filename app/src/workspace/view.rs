@@ -10428,6 +10428,16 @@ impl Workspace {
             .code_panes(ctx)
             .find_map(|(_, code_view)| code_view.as_ref(ctx).editor_view_for_path(&path).cloned());
 
+        // Review diffs own the gutter for stage/unstage/revert actions. Keep
+        // git blame out even when there is no HEAD base (for example, a brand
+        // new untracked file), where `set_pending_diff_base_on_load` below is
+        // intentionally skipped.
+        if let Some(editor) = editor_handle.clone() {
+            editor.update(ctx, |local_editor, ctx| {
+                local_editor.suppress_git_blame_for_review(ctx);
+            });
+        }
+
         // twarp 5b: enable stage / unstage / revert hunk buttons on
         // the diff pane editor. Subscribe to the resulting
         // `LocalCodeEditorEvent::StageHunkRequested` /
