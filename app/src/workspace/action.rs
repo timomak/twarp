@@ -149,6 +149,13 @@ pub enum WorkspaceAction {
     OpenBrowserSpikePane,
     // twarp: open a fresh Claude Code pane in a new tab (cmd-shift-T).
     OpenClaudeCodeInNewTab,
+    /// twarp: resume a stored Claude Code session (from `claude`'s on-disk
+    /// store) in a Claude pane — dispatched by the command palette.
+    ResumeClaudeCodeSession {
+        session_id: String,
+        jsonl_path: PathBuf,
+        cwd: PathBuf,
+    },
     AddTerminalTab {
         hide_homepage: bool,
     },
@@ -738,6 +745,7 @@ impl WorkspaceAction {
             | FocusClaudePaneForSession(_)
             | OpenBrowserSpikePane
             | OpenClaudeCodeInNewTab
+            | ResumeClaudeCodeSession { .. }
             | AddTerminalTab { .. }
             | AddTabWithShell { .. }
             | AddGetStartedTab

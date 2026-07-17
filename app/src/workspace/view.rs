@@ -8,6 +8,7 @@ pub(crate) mod free_tier_limit_hit_modal;
 pub mod global_search;
 pub(crate) mod launch_modal;
 pub(crate) mod left_panel;
+mod left_panel_slide;
 pub(crate) mod onboarding;
 pub(crate) mod openwarp_launch_modal;
 pub(crate) mod right_panel;
@@ -1005,6 +1006,9 @@ pub struct Workspace {
     // twarp: 2c-d — removed transcript_details_panel (wasm only) & ai_fact_view
     file_upload_sessions: FileUploadSessions,
     left_panel_open: bool,
+    /// In-flight sidebar slide animation (user-initiated toggles only; `None`
+    /// when idle or when the panel was shown/hidden by startup/restore).
+    left_panel_slide: Option<left_panel_slide::LeftPanelSlide>,
     vertical_tabs_panel_open: bool,
     vertical_tabs_panel: VerticalTabsPanelState,
     left_panel_view: ViewHandle<LeftPanelView>,
@@ -2796,6 +2800,7 @@ impl Workspace {
             shared_objects_creation_denied_modal,
             file_upload_sessions: Default::default(),
             left_panel_open: false,
+            left_panel_slide: None,
             vertical_tabs_panel_open: false,
             vertical_tabs_panel: Default::default(),
             left_panel_view,
@@ -7166,6 +7171,7 @@ impl Workspace {
     }
 
     fn open_left_panel(&mut self, ctx: &mut ViewContext<Self>) {
+        let slide_from = self.left_panel_visible_fraction(self.left_panel_open);
         self.left_panel_open = true;
 
         let active_pane_group = self.active_tab_pane_group().clone();
@@ -7173,7 +7179,46 @@ impl Workspace {
             pane_group.set_left_panel_open(true, ctx);
         });
 
+        self.start_left_panel_slide(slide_from, 1.0, ctx);
         ctx.notify();
+    }
+
+    /// Current visible fraction of the sidebar width: eased mid-animation,
+    /// otherwise 1.0 when open / 0.0 when closed.
+    fn left_panel_visible_fraction(&self, open: bool) -> f32 {
+        match &self.left_panel_slide {
+            Some(slide) => slide.fraction(),
+            None if open => 1.0,
+            None => 0.0,
+        }
+    }
+
+    /// Kicks off the ~150ms sidebar slide (design-shell macOS only) and arms
+    /// the self-rearming notify timer that repaints each frame. Startup and
+    /// restore paths never call this — they set `left_panel_open` directly —
+    /// so only user-initiated toggles animate.
+    fn start_left_panel_slide(&mut self, from: f32, to: f32, ctx: &mut ViewContext<Self>) {
+        if !design_shell_v1_enabled() || twarpui::platform::is_mobile_device() || from == to {
+            self.left_panel_slide = None;
+            return;
+        }
+        self.left_panel_slide = Some(left_panel_slide::LeftPanelSlide::new(from, to));
+        self.tick_left_panel_slide(ctx);
+    }
+
+    /// One animation frame: repaint, then re-arm until the ease completes.
+    fn tick_left_panel_slide(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(slide) = &self.left_panel_slide else {
+            return;
+        };
+        if slide.is_done() {
+            self.left_panel_slide = None;
+            ctx.notify();
+            return;
+        }
+        ctx.notify();
+        let timer = twarpui::r#async::Timer::after(left_panel_slide::LEFT_PANEL_SLIDE_TICK);
+        ctx.spawn(timer, |me, _, ctx| me.tick_left_panel_slide(ctx));
     }
 
     /// Auto-opens the conversation list on first app start.
@@ -7203,6 +7248,8 @@ impl Workspace {
         // For first-time-users, auto-open the conversation list for discoverability
         if !self.active_tab_pane_group().as_ref(ctx).left_panel_open {
             self.open_left_panel(ctx);
+            // First-run auto-open happens at startup — show instantly, no slide.
+            self.left_panel_slide = None;
         }
         self.left_panel_view.update(ctx, |lp, ctx| {
             lp.restore_active_view_from_snapshot(ToolPanelView::ConversationListView, ctx);
@@ -7217,6 +7264,7 @@ impl Workspace {
     }
 
     fn close_left_panel(&mut self, ctx: &mut ViewContext<Self>) {
+        let slide_from = self.left_panel_visible_fraction(self.left_panel_open);
         self.left_panel_open = false;
 
         let active_pane_group = self.active_tab_pane_group().clone();
@@ -7224,6 +7272,7 @@ impl Workspace {
             pane_group.set_left_panel_open(false, ctx);
         });
 
+        self.start_left_panel_slide(slide_from, 0.0, ctx);
         ctx.notify();
     }
 
@@ -16424,13 +16473,25 @@ impl Workspace {
             .as_ref()
             .filter(|data| data.side == TrafficLightSide::Left)
             .map(|data| data.width(zoom_factor));
-        compute_tab_bar_left_padding_value(
-            design_shell_v1_enabled(),
-            sidebar_open,
-            self.current_workspace_state.is_left_panel_open(),
-            is_window_fullscreen && cfg!(target_os = "macos"),
-            left_traffic_light_width,
-        )
+        let padding_for = |sidebar_open: bool| {
+            compute_tab_bar_left_padding_value(
+                design_shell_v1_enabled(),
+                sidebar_open,
+                self.current_workspace_state.is_left_panel_open(),
+                is_window_fullscreen && cfg!(target_os = "macos"),
+                left_traffic_light_width,
+            )
+        };
+        if self.left_panel_slide.is_some() && design_shell_v1_enabled() {
+            // Mid-slide: interpolate between the closed and open paddings by
+            // the eased fraction so the tab strip slides with the sidebar.
+            let fraction = self.left_panel_visible_fraction(sidebar_open);
+            let closed = padding_for(false);
+            let open = padding_for(true);
+            closed + (open - closed) * fraction
+        } else {
+            padding_for(sidebar_open)
+        }
     }
 
     /// Renders the tab bar contents, wrapped in hover and drag-drop behaviors.
@@ -18196,34 +18257,17 @@ impl Workspace {
     /// Computes the list of available left panel views based on current AI settings and feature flags.
     fn compute_left_panel_views(ctx: &AppContext) -> Vec<ToolPanelView> {
         let mut views = vec![];
-        if FeatureFlag::AgentViewConversationListView.is_enabled()
-            && AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
-            && *AISettings::as_ref(ctx).show_conversation_history
-        {
-            views.push(ToolPanelView::ConversationListView);
-        }
-
+        // twarp sidebar rework: the left sidebar is the file system only.
+        // Project Explorer is the sole tab; global search now lives as a
+        // collapsible section at the top of the Files view (toggled by the
+        // header's search icon), and the Claude Code session list is
+        // superseded by the pane welcome screen. The `GlobalSearch` /
+        // `ClaudeSessions` / `Shortcuts` / `ConversationListView` variants
+        // are retained only for persisted-tab back-compat — a legacy
+        // selection falls back to Project Explorer (see
+        // `LeftPanelView::update_available_views`).
         if cfg!(feature = "local_fs") && *CodeSettings::as_ref(ctx).show_project_explorer.value() {
             views.push(ToolPanelView::ProjectExplorer);
-        }
-        if cfg!(feature = "local_fs")
-            && FeatureFlag::GlobalSearch.is_enabled()
-            && *CodeSettings::as_ref(ctx).show_global_search.value()
-        {
-            views.push(ToolPanelView::GlobalSearch {
-                entry_focus: GlobalSearchEntryFocus::Results,
-            });
-        }
-        // twarp: Custom command shortcuts moved out of the toolbelt into
-        // Settings > Shortcuts (settings_view::shortcuts_page), so the sidebar
-        // is just Files | Search | Code. No `ToolPanelView::Shortcuts` is
-        // pushed here anymore.
-        // twarp 07 (7h, PRODUCT §35): the Claude Code session list — a
-        // read-only list of `claude`'s own stored sessions for the cwd. The
-        // chat itself stays a main-content pane (re-spec #70); the toolbelt
-        // button renders only when sessions exist (left_panel render filter).
-        if cfg!(feature = "local_fs") {
-            views.push(ToolPanelView::ClaudeSessions);
         }
         // twarp: Warp Drive is intentionally omitted from the left-panel toolbelt
         // — it's no longer surfaced as a sidebar tab.
@@ -18468,6 +18512,18 @@ impl TypedActionView for Workspace {
             OpenBrowserPane => self.open_browser_pane(None, ctx),
             OpenBrowserSpikePane => self.open_browser_spike_pane(ctx),
             OpenClaudeCodeInNewTab => self.open_claude_code_tab(ctx),
+            // twarp: command-palette session row — resume a stored Claude
+            // session (same path as the sidebar's ResumeClaudeSession event).
+            ResumeClaudeCodeSession {
+                session_id,
+                jsonl_path,
+                cwd,
+            } => self.open_claude_code_resume_pane(
+                session_id.clone(),
+                jsonl_path.clone(),
+                cwd.clone(),
+                ctx,
+            ),
             AddTerminalTab { hide_homepage } => {
                 self.add_new_session_tab_internal_with_default_session_mode_behavior(
                     NewSessionSource::Tab,
@@ -20190,14 +20246,21 @@ impl View for Workspace {
             .finish()
         } else {
             let is_left_panel_open = self.active_tab_pane_group().as_ref(app).left_panel_open;
+            // During the closing slide the panel must keep rendering (clipped
+            // to its shrinking width) until the animation finishes.
+            let is_left_panel_visible = is_left_panel_open || self.left_panel_slide.is_some();
             let use_design_shell = design_shell_v1_enabled()
-                && is_left_panel_open
+                && is_left_panel_visible
                 && !twarpui::platform::is_mobile_device();
             let tab_bar_and_panels =
                 self.render_tab_bar_and_panels_column(app, appearance, tab_bar_mode, false);
 
             if use_design_shell {
-                let sidebar = ChildView::new(&self.left_panel_view).finish();
+                let mut sidebar = ChildView::new(&self.left_panel_view).finish();
+                if self.left_panel_slide.is_some() {
+                    let fraction = self.left_panel_visible_fraction(is_left_panel_open);
+                    sidebar = Box::new(left_panel_slide::SlideClip::new(sidebar, fraction));
+                }
                 let right_column = Container::new(tab_bar_and_panels)
                     .with_padding_top(WORKSPACE_PADDING)
                     .with_padding_right(WORKSPACE_PADDING)
@@ -20266,7 +20329,8 @@ impl View for Workspace {
             }
         }
 
-        let is_left_panel_open = self.active_tab_pane_group().as_ref(app).left_panel_open;
+        let is_left_panel_open = self.active_tab_pane_group().as_ref(app).left_panel_open
+            || self.left_panel_slide.is_some();
         if design_shell_v1_enabled() && is_left_panel_open {
             stack.add_child(Container::new(panels).finish());
         } else {

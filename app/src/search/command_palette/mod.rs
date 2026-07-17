@@ -1,3 +1,4 @@
+pub mod claude_sessions;
 mod data_sources;
 mod files;
 mod filter_chip_renderer;
