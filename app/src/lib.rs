@@ -2618,6 +2618,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::VerticalTabsSummaryMode,
         #[cfg(feature = "design_shell_v1")]
         FeatureFlag::DesignShellV1,
+        #[cfg(feature = "codex_agent_backend")]
+        FeatureFlag::CodexAgentBackend,
         #[cfg(feature = "tab_configs")]
         FeatureFlag::TabConfigs,
         #[cfg(feature = "agent_harness")]

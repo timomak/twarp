@@ -12388,16 +12388,23 @@ impl Workspace {
         // freshly-spawned terminal for a Claude pane in place — reusing the
         // exact replace path the `claude` command uses.
         self.add_terminal_tab(true /* hide_homepage */, ctx);
-        self.open_claude_code_pane(Vec::new(), cwd, ctx);
+        self.open_claude_code_pane(
+            claude_code::driver::AgentProvider::Claude,
+            Vec::new(),
+            cwd,
+            ctx,
+        );
     }
 
     pub(crate) fn open_claude_code_pane(
         &mut self,
+        provider: claude_code::driver::AgentProvider,
         args: Vec<String>,
         cwd: Option<PathBuf>,
         ctx: &mut ViewContext<Self>,
     ) {
-        let launch = claude_code::launch::parse_launch_args(args.iter().map(String::as_str));
+        let mut launch = claude_code::launch::parse_launch_args(args.iter().map(String::as_str));
+        launch.provider = provider;
         let pane = ClaudeCodePane::new(launch, cwd, ctx);
         let pane_group = self.active_tab_pane_group().clone();
         pane_group.update(ctx, |pane_group, ctx| {
@@ -12650,8 +12657,12 @@ impl Workspace {
                 }
             }
             // twarp 07 (7b): the `claude` terminal trigger opens a Claude Code pane.
-            pane_group::Event::OpenClaudeCodePane { args, cwd } => {
-                self.open_claude_code_pane(args.clone(), cwd.clone(), ctx);
+            pane_group::Event::OpenClaudeCodePane {
+                provider,
+                args,
+                cwd,
+            } => {
+                self.open_claude_code_pane(*provider, args.clone(), cwd.clone(), ctx);
             }
             pane_group::Event::MoveToSpace {
                 cloud_object_type_and_id,

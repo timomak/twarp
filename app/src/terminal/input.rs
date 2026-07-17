@@ -2493,6 +2493,7 @@ pub enum Event {
     /// trailing positional onto the first turn (PRODUCT §2, 7g); `cwd` is the
     /// terminal's working directory.
     OpenClaudeCodePane {
+        provider: claude_code::driver::AgentProvider,
         args: Vec<String>,
         cwd: Option<std::path::PathBuf>,
     },
@@ -7351,8 +7352,13 @@ impl Input {
         &self,
         command: &str,
         ctx: &ViewContext<Self>,
-    ) -> Option<(Vec<String>, Option<PathBuf>)> {
+    ) -> Option<(
+        claude_code::driver::AgentProvider,
+        Vec<String>,
+        Option<PathBuf>,
+    )> {
         const CLAUDE_PROGRAM: &str = "claude";
+        const CODEX_PROGRAM: &str = "codex";
         // Shell "run-a-program" wrappers a user's alias may inject. Warp expands
         // aliases at submit, so the common `alias claude='command claude --flags'`
         // pattern (which adds default flags without recursing) reaches us already
@@ -7434,7 +7440,16 @@ impl Input {
             }
             break token;
         };
-        if program != CLAUDE_PROGRAM {
+        let provider = match program {
+            CLAUDE_PROGRAM => claude_code::driver::AgentProvider::Claude,
+            CODEX_PROGRAM if FeatureFlag::CodexAgentBackend.is_enabled() => {
+                claude_code::driver::AgentProvider::Codex
+            }
+            _ => return None,
+        };
+        let alias_expanded_args: Vec<String> = tokens.map(str::to_owned).collect();
+        if provider == claude_code::driver::AgentProvider::Codex && !alias_expanded_args.is_empty()
+        {
             return None;
         }
         // PRODUCT §4: if `claude` isn't installed, don't intercept — let the
@@ -7443,13 +7458,14 @@ impl Input {
         // homebrew / `~/.local/bin` `claude` is invisible to the process PATH
         // when Warp is launched from Finder/Dock, which would silently no-op
         // this trigger and run the bare command (or the user's alias) raw.
+        let program_name = match provider {
+            claude_code::driver::AgentProvider::Claude => CLAUDE_PROGRAM,
+            claude_code::driver::AgentProvider::Codex => CODEX_PROGRAM,
+        };
         #[cfg(feature = "local_tty")]
-        crate::terminal::local_shell::resolve_executable_via_login_shell(CLAUDE_PROGRAM, ctx)?;
+        crate::terminal::local_shell::resolve_executable_via_login_shell(program_name, ctx)?;
         #[cfg(not(feature = "local_tty"))]
-        crate::util::path::resolve_executable(CLAUDE_PROGRAM)?;
-
-        // The alias-expanded remainder (alias flags + the user's typed tokens).
-        let alias_expanded_args: Vec<String> = tokens.map(str::to_owned).collect();
+        crate::util::path::resolve_executable(program_name)?;
 
         // Feature 16a: fresh panes are seeded by Agent settings, not the old
         // last-used store. Explicit launch flags still win, including flags a
@@ -7461,7 +7477,7 @@ impl Input {
             .as_ref()
             .and_then(|metadata| metadata.current_working_directory())
             .map(PathBuf::from);
-        Some((args, cwd))
+        Some((provider, args, cwd))
     }
 
     /// Resolve the user's `claude` shell alias into [`LaunchOptions`] (flags
@@ -7620,8 +7636,12 @@ impl Input {
             let claude_trigger = matches!(source, CommandExecutionSource::User)
                 .then(|| self.claude_pane_trigger(command, ctx))
                 .flatten();
-            if let Some((args, cwd)) = claude_trigger {
-                ctx.emit(Event::OpenClaudeCodePane { args, cwd });
+            if let Some((provider, args, cwd)) = claude_trigger {
+                ctx.emit(Event::OpenClaudeCodePane {
+                    provider,
+                    args,
+                    cwd,
+                });
                 // We write nothing to the PTY (no block starts); the new pane
                 // opening is feedback enough, so no toast.
                 self.clear_buffer_and_reset_undo_stack(ctx);

@@ -32,6 +32,7 @@ const TWARP_OSS_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::DragTabsToWindows,
     FeatureFlag::GitBlame,
     FeatureFlag::DesignShellV1,
+    FeatureFlag::CodexAgentBackend,
 ];
 
 // Simple wrapper around twarp::run() for Twarp OSS builds.

@@ -51,10 +51,12 @@ use std::time::{Duration, Instant};
 use ::settings::Setting;
 use async_channel::Sender;
 use base64::Engine as _;
+use claude_code::codex::CodexDriver;
 use claude_code::diff::diff_for_tool;
 use claude_code::driver::{
-    interrupt, send_control_response, send_interrupt, send_user_message, spawn_session, Child,
-    Decision, OutgoingImage, OutgoingMessage, PermissionMode, SpawnOptions, SpawnedSession,
+    interrupt, send_control_response, send_interrupt, send_user_message, spawn_session,
+    AgentProvider, Child, Decision, OutgoingImage, OutgoingMessage, PermissionMode, SpawnOptions,
+    SpawnedSession,
 };
 use claude_code::launch::LaunchOptions;
 use claude_code::{
@@ -87,11 +89,11 @@ use twarpui::{
         DispatchEventResult, DropShadow, Element, EventDispatchMode, EventHandler, Expanded, Fill,
         Flex, FormattedTextElement, Highlight, HighlightedHyperlink, HighlightedRange, Hoverable,
         HyperlinkUrl, Icon, Image, MainAxisAlignment, MainAxisSize, MouseStateHandle,
-        OffsetPositioning, Padding,
-        ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementAnchor,
-        PositionedElementOffsetBounds, PulsingIcon, PulsingIconStateHandle, Radius, SavePosition,
-        ScrollTarget, ScrollToPositionMode, ScrollbarWidth, SelectableArea, SelectionHandle,
-        Shrinkable, SizeConstraintCondition, SizeConstraintSwitch, Stack, Text,
+        OffsetPositioning, Padding, ParentAnchor, ParentElement, ParentOffsetBounds,
+        PositionedElementAnchor, PositionedElementOffsetBounds, PulsingIcon,
+        PulsingIconStateHandle, Radius, SavePosition, ScrollTarget, ScrollToPositionMode,
+        ScrollbarWidth, SelectableArea, SelectionHandle, Shrinkable, SizeConstraintCondition,
+        SizeConstraintSwitch, Stack, Text,
     },
     platform::Cursor,
     presenter::ChildView,
@@ -142,10 +144,7 @@ use crate::workspace::{WorkspaceAction, WorkspaceRegistry};
 /// The executable the pane drives. Resolved on `PATH`; its absence is the
 /// unavailable state (PRODUCT §4).
 const CLAUDE_BINARY: &str = "claude";
-
-/// Pane title (PRODUCT §5) — drives the tab label via [`PaneConfiguration`].
-const PANE_TITLE: &str = "Claude Code";
-const COMPOSER_STATIC_PLACEHOLDER: &str = "Message Claude Code…";
+const CODEX_BINARY: &str = "codex";
 
 /// Zero-state "Welcome back" session list paging: how many rows show before
 /// the first "Load more" click, and how many each click reveals. The initial
@@ -165,6 +164,43 @@ const COPY_ICON_SVG_PATH: &str = "bundled/svg/copy.svg";
 /// Down-chevron for the floating "scroll to bottom" button (shown above the
 /// composer's right edge while the transcript is scrolled up off the bottom).
 const SCROLL_TO_BOTTOM_ICON_SVG_PATH: &str = "bundled/svg/chevron-down.svg";
+
+#[derive(Clone, Copy)]
+struct ProviderCopy {
+    pane_title: &'static str,
+    assistant_icon: &'static str,
+    composer_placeholder: &'static str,
+    empty_state: &'static str,
+    unavailable_title: &'static str,
+    unavailable_body: &'static str,
+    install_body: &'static str,
+    needs_attention_prefix: &'static str,
+}
+
+fn provider_copy(provider: AgentProvider) -> ProviderCopy {
+    match provider {
+        AgentProvider::Claude => ProviderCopy {
+            pane_title: "Claude Code",
+            assistant_icon: ASSISTANT_ICON_SVG_PATH,
+            composer_placeholder: "Message Claude Code…",
+            empty_state: "Type a message below — twarp drives the local `claude` CLI and renders its replies, tool calls, and diffs here. Your existing Claude Code login is used; twarp adds no account or billing.",
+            unavailable_title: "Claude Code isn't available.",
+            unavailable_body: "The `claude` command wasn't found on your PATH.",
+            install_body: "Install Claude Code (https://docs.claude.com/en/docs/claude-code), make sure `claude` is available in a terminal, then check again.",
+            needs_attention_prefix: "Claude",
+        },
+        AgentProvider::Codex => ProviderCopy {
+            pane_title: "Codex",
+            assistant_icon: ASSISTANT_ICON_SVG_PATH,
+            composer_placeholder: "Message Codex…",
+            empty_state: "Type a message below — twarp drives the local `codex app-server` CLI and renders its replies, tool calls, and diffs here. Your existing Codex login is used; twarp adds no account or billing.",
+            unavailable_title: "Codex isn't available.",
+            unavailable_body: "The `codex` command wasn't found on your PATH.",
+            install_body: "Install the Codex CLI, make sure `codex` is available in a terminal, then check again.",
+            needs_attention_prefix: "Codex",
+        },
+    }
+}
 
 /// Body / code font sizes. A point past the deleted `ai_assistant::transcript`
 /// renderer for the airier, Claude-app reading rhythm (shell-polish pass —
@@ -642,6 +678,9 @@ pub struct ClaudeCodeView {
     /// The conversation the pane renders, fed by the live driver's event stream
     /// via [`Self::on_transcript_event`] on the main thread (PRODUCT §9–§13).
     transcript: Transcript,
+    /// Provider backing this pane. Claude remains the default for old
+    /// snapshots; Codex is enabled only behind `CodexAgentBackend`.
+    provider: AgentProvider,
     /// The window this pane lives in (#10/#11), so render can look up the
     /// active tab's colour to theme the UI.
     window_id: WindowId,
@@ -1065,7 +1104,8 @@ pub struct ClaudeCodeView {
     voice_live_last: Option<Instant>,
     /// A snapshot encode pending on the capture thread (§30) — polled with
     /// `try_recv` on the voice tick so the UI thread never blocks on audio.
-    voice_live_snapshot: Option<std::sync::mpsc::Receiver<Result<Vec<u8>, crate::voice::VoiceError>>>,
+    voice_live_snapshot:
+        Option<std::sync::mpsc::Receiver<Result<Vec<u8>, crate::voice::VoiceError>>>,
     /// twarp 17 §32: transcript index of the assistant item being spoken.
     voice_tts_item: Option<usize>,
     /// The prose already queued for synthesis, verbatim — comparing against a
@@ -1110,6 +1150,7 @@ impl ClaudeCodeView {
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let LaunchOptions {
+            provider,
             prompt,
             permission_mode,
             model,
@@ -1121,8 +1162,20 @@ impl ClaudeCodeView {
         // panes. Explicit launch flags still win, but the old last-used
         // `claude_session_defaults` row no longer seeds new panes.
         let chat_config = AgentSettings::as_ref(ctx).chat_launch_config();
-        let model = model.or(chat_config.model);
-        let effort = effort.or(chat_config.effort);
+        let chat_config_matches_provider = AgentSettings::as_ref(ctx)
+            .chat_provider_agent()
+            .agent_provider()
+            == Some(provider);
+        let model = model.or_else(|| {
+            chat_config_matches_provider
+                .then(|| chat_config.model)
+                .flatten()
+        });
+        let effort = effort.or_else(|| {
+            chat_config_matches_provider
+                .then(|| chat_config.effort)
+                .flatten()
+        });
         let permission_mode = permission_mode.unwrap_or(chat_config.permission_mode);
 
         let input_editor = ctx.add_typed_action_view(|ctx| {
@@ -1152,7 +1205,7 @@ impl ClaudeCodeView {
         });
         ctx.subscribe_to_view(&input_editor, Self::handle_editor_event);
         input_editor.update(ctx, |editor, ctx| {
-            editor.set_placeholder_text(COMPOSER_STATIC_PLACEHOLDER, ctx);
+            editor.set_placeholder_text(provider_copy(provider).composer_placeholder, ctx);
         });
 
         // twarp: the zero-state session search field (mirrors the old sidebar
@@ -1178,7 +1231,8 @@ impl ClaudeCodeView {
             editor.set_placeholder_text("Search sessions", ctx);
         });
 
-        let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new(PANE_TITLE));
+        let pane_configuration =
+            ctx.add_model(|_ctx| PaneConfiguration::new(provider_copy(provider).pane_title));
 
         // `claude --resume <id>` typed at the prompt: derive the session's
         // on-disk file so the pane pre-renders its history exactly like the
@@ -1211,6 +1265,7 @@ impl ClaudeCodeView {
             history_cursor: None,
             history_draft: String::new(),
             transcript: Transcript::new(),
+            provider,
             window_id: ctx.window_id(),
             input_editor,
             pane_configuration,
@@ -1369,8 +1424,10 @@ impl ClaudeCodeView {
         // through the same ingest path as live events so tool/diff/thinking
         // card state exists — and continues live on the next message.
         if let Some(resume) = resume {
-            for event in sessions::load_history(&resume.jsonl_path) {
-                view.ingest_event(event, ctx);
+            if provider == AgentProvider::Claude {
+                for event in sessions::load_history(&resume.jsonl_path) {
+                    view.ingest_event(event, ctx);
+                }
             }
             view.resume_session_id = Some(resume.session_id);
             // PRODUCT §14: open a resumed session at its latest message, not
@@ -1401,7 +1458,7 @@ impl ClaudeCodeView {
         // sessions so the empty pane doubles as a launchpad (pick one up, or type
         // to start fresh). Skipped when the pane already has content (a resumed
         // pane or `claude <prompt>`), where the transcript replaces the panel.
-        if view.transcript.is_empty() {
+        if view.transcript.is_empty() && provider == AgentProvider::Claude {
             view.recent_sessions = view
                 .cwd
                 .as_deref()
@@ -1440,6 +1497,17 @@ impl ClaudeCodeView {
     /// so this is safe to match on to detect a session already open in a pane.
     pub fn session_id(&self) -> &str {
         &self.session_id
+    }
+
+    pub fn provider(&self) -> AgentProvider {
+        self.provider
+    }
+
+    pub fn has_provider_session(&self) -> bool {
+        match self.provider {
+            AgentProvider::Claude => self.transcript.session_id().is_some(),
+            AgentProvider::Codex => self.transcript.session_id().is_some(),
+        }
     }
 
     /// The embedded raw-CLI terminal view while raw mode is active (#14).
@@ -1497,13 +1565,21 @@ impl ClaudeCodeView {
     /// the captured login-shell PATH when available, falling back to the
     /// process PATH (which, under a GUI launch, is launchd-minimal and usually
     /// omits where `claude` lives).
-    fn claude_available(&self) -> bool {
+    fn provider_binary(&self) -> &'static str {
+        match self.provider {
+            AgentProvider::Claude => CLAUDE_BINARY,
+            AgentProvider::Codex => CODEX_BINARY,
+        }
+    }
+
+    fn provider_available(&self) -> bool {
+        let binary = self.provider_binary();
         if let Some(path) = &self.interactive_path {
-            if resolve_executable_in_path(CLAUDE_BINARY, std::ffi::OsStr::new(path)).is_some() {
+            if resolve_executable_in_path(binary, std::ffi::OsStr::new(path)).is_some() {
                 return true;
             }
         }
-        resolve_executable(CLAUDE_BINARY).is_some()
+        resolve_executable(binary).is_some()
     }
 
     /// Kick off (or refresh) the async capture of the interactive login-shell
@@ -1876,7 +1952,7 @@ impl ClaudeCodeView {
         self.composer_placeholder_generation = self.composer_placeholder_generation.wrapping_add(1);
         self.composer_placeholder_suggestion = None;
         self.input_editor.update(ctx, |editor, ctx| {
-            editor.set_placeholder_text(COMPOSER_STATIC_PLACEHOLDER, ctx);
+            editor.set_placeholder_text(provider_copy(self.provider).composer_placeholder, ctx);
         });
     }
 
@@ -3337,6 +3413,7 @@ impl ClaudeCodeView {
             }
         }
         let opts = SpawnOptions {
+            provider: self.provider,
             cwd: self
                 .cwd
                 .clone()
@@ -3385,6 +3462,7 @@ impl ClaudeCodeView {
             child,
             stdin,
             mut events,
+            codex_state,
         } = match result {
             Ok(session) => session,
             Err(err) => {
@@ -3395,7 +3473,8 @@ impl ClaudeCodeView {
                 self.resume_session_id = None;
                 self.transcript.apply(TranscriptEvent::Ended {
                     reason: claude_code::EndReason::Error(format!(
-                        "Couldn't start `claude`: {err}"
+                        "Couldn't start `{}`: {err}",
+                        self.provider_binary()
                     )),
                 });
                 ctx.notify();
@@ -3424,20 +3503,35 @@ impl ClaudeCodeView {
         // Own stdin in a background task; the view queues user turns and
         // control-protocol answers onto it (one writer, no races, §24).
         let (message_tx, message_rx) = async_channel::unbounded::<StdinCommand>();
+        let provider = self.provider;
         ctx.background_executor()
             .spawn(async move {
                 let mut stdin = stdin;
+                let codex_driver = codex_state.map(CodexDriver::new);
                 while let Ok(command) = message_rx.recv().await {
                     let wrote = match command {
-                        StdinCommand::Turn(message) => {
-                            send_user_message(&mut stdin, &message).await
-                        }
+                        StdinCommand::Turn(message) => match (provider, codex_driver.as_ref()) {
+                            (AgentProvider::Codex, Some(driver)) => {
+                                driver.send_user_message(&mut stdin, &message).await
+                            }
+                            _ => send_user_message(&mut stdin, &message).await,
+                        },
                         StdinCommand::Control {
                             request_id,
                             decision,
-                        } => send_control_response(&mut stdin, &request_id, decision).await,
+                        } => match (provider, codex_driver.as_ref()) {
+                            (AgentProvider::Codex, Some(driver)) => {
+                                driver.answer(&mut stdin, &request_id, decision).await
+                            }
+                            _ => send_control_response(&mut stdin, &request_id, decision).await,
+                        },
                         StdinCommand::Interrupt { request_id } => {
-                            send_interrupt(&mut stdin, &request_id).await
+                            match (provider, codex_driver.as_ref()) {
+                                (AgentProvider::Codex, Some(driver)) => {
+                                    driver.interrupt(&mut stdin).await
+                                }
+                                _ => send_interrupt(&mut stdin, &request_id).await,
+                            }
                         }
                     };
                     if wrote.is_err() {
@@ -3505,7 +3599,10 @@ impl ClaudeCodeView {
                     // they're away, and flip the tab dot to blocked.
                     self.maybe_send_attention_notification(
                         NotificationsTrigger::NeedsAttention,
-                        "Claude is asking you a question".to_string(),
+                        format!(
+                            "{} is asking you a question",
+                            provider_copy(self.provider).needs_attention_prefix
+                        ),
                         ctx,
                     );
                     ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
@@ -3547,7 +3644,10 @@ impl ClaudeCodeView {
         if let TranscriptEvent::PermissionRequest { tool, .. } = &event {
             self.maybe_send_attention_notification(
                 NotificationsTrigger::NeedsAttention,
-                format!("Claude needs permission to use {tool}"),
+                format!(
+                    "{} needs permission to use {tool}",
+                    provider_copy(self.provider).needs_attention_prefix
+                ),
                 ctx,
             );
             ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
@@ -4046,7 +4146,7 @@ impl ClaudeCodeView {
                 _ => None,
             })
             .filter(|title| !title.is_empty())
-            .unwrap_or_else(|| PANE_TITLE.to_owned())
+            .unwrap_or_else(|| provider_copy(self.provider).pane_title.to_owned())
     }
 
     /// The session state the tab indicator shows (7p), reusing the agent
@@ -4382,8 +4482,7 @@ impl ClaudeCodeView {
         let Some(mut config) = AgentSettings::as_ref(ctx).voice_stt_config() else {
             return;
         };
-        let Some(key) = self.voice_api_key(app_settings::VOICE_STT_API_KEY_STORAGE_KEY, ctx)
-        else {
+        let Some(key) = self.voice_api_key(app_settings::VOICE_STT_API_KEY_STORAGE_KEY, ctx) else {
             return;
         };
         config.api_key = key;
@@ -4518,18 +4617,18 @@ impl ClaudeCodeView {
         if !self.speak_replies {
             return;
         }
-        let Some((item_index, text)) = self
-            .transcript
-            .items()
-            .iter()
-            .enumerate()
-            .rev()
-            .find_map(|(index, item)| match item {
-                TranscriptItem::Assistant { text, .. } if !text.trim().is_empty() => {
-                    Some((index, text.clone()))
-                }
-                _ => None,
-            })
+        let Some((item_index, text)) =
+            self.transcript
+                .items()
+                .iter()
+                .enumerate()
+                .rev()
+                .find_map(|(index, item)| match item {
+                    TranscriptItem::Assistant { text, .. } if !text.trim().is_empty() => {
+                        Some((index, text.clone()))
+                    }
+                    _ => None,
+                })
         else {
             return;
         };
@@ -4633,8 +4732,8 @@ impl ClaudeCodeView {
                 }
                 match result {
                     Ok(pcm) => {
-                        let secs = (pcm.len() / 2) as f32
-                            / crate::voice::tts::TTS_SAMPLE_RATE as f32;
+                        let secs =
+                            (pcm.len() / 2) as f32 / crate::voice::tts::TTS_SAMPLE_RATE as f32;
                         if let Some(player) = &view.voice_player {
                             if view.voice_tts_first_chunk {
                                 view.voice_tts_first_chunk = false;
@@ -4968,7 +5067,7 @@ impl ClaudeCodeView {
         };
         let icon = ConstrainedBox::new(
             PulsingIcon::new(
-                ASSISTANT_ICON_SVG_PATH,
+                provider_copy(self.provider).assistant_icon,
                 accent,
                 self.working_icon_pulse.clone(),
             )
@@ -5089,6 +5188,7 @@ impl ClaudeCodeView {
         // permission mode); `prompt`/`resume_session_id` stay empty because the
         // `ResumeSession` itself is the resume target.
         let launch = LaunchOptions {
+            provider: self.provider,
             prompt: None,
             permission_mode: Some(self.permission_mode),
             model: self.model.clone(),
@@ -5122,7 +5222,7 @@ impl ClaudeCodeView {
             .filter(|karaoke| karaoke.item_index == index);
         let row = render_message_row(
             false,
-            ASSISTANT_ICON_SVG_PATH,
+            provider_copy(self.provider).assistant_icon,
             text,
             self.render_accent.get(),
             appearance,
@@ -5322,9 +5422,10 @@ impl ClaudeCodeView {
         let theme = appearance.theme();
         let accent = self.render_accent.get();
         let muted = theme.nonactive_ui_text_color().into_solid();
+        let copy = provider_copy(self.provider);
 
-        // Header: the Claude glyph beside a "Welcome back" heading.
-        let glyph = ConstrainedBox::new(Icon::new(ASSISTANT_ICON_SVG_PATH, accent).finish())
+        // Header: the provider glyph beside a "Welcome back" heading.
+        let glyph = ConstrainedBox::new(Icon::new(copy.assistant_icon, accent).finish())
             .with_width(28.)
             .with_height(28.)
             .finish();
@@ -5356,12 +5457,7 @@ impl ClaudeCodeView {
             // First-run: no stored sessions for this directory yet.
             let explanation = appearance
                 .ui_builder()
-                .span(
-                    "Type a message below — twarp drives the local `claude` CLI and renders its \
-                     replies, tool calls, and diffs here. Your existing Claude Code login is used; \
-                     twarp adds no account or billing."
-                        .to_owned(),
-                )
+                .span(copy.empty_state.to_owned())
                 .with_soft_wrap()
                 .with_style(UiComponentStyles {
                     font_color: Some(muted),
@@ -8254,22 +8350,19 @@ impl ClaudeCodeView {
     fn render_unavailable_state(&self, appearance: &Appearance) -> Box<dyn Element> {
         // PRODUCT §4: replaces the pane body; names the missing binary, gives an
         // install hint, no input affordances.
+        let copy = provider_copy(self.provider);
         let title = appearance
             .ui_builder()
             .span(format!(
-                "Claude Code isn't available. The `{CLAUDE_BINARY}` command wasn't found on your \
-                 PATH."
+                "{} {}",
+                copy.unavailable_title, copy.unavailable_body
             ))
             .with_soft_wrap()
             .build()
             .finish();
         let hint = appearance
             .ui_builder()
-            .span(
-                "Install Claude Code (https://docs.claude.com/en/docs/claude-code), make sure \
-                 `claude` is on your PATH, then re-open this pane."
-                    .to_owned(),
-            )
+            .span(copy.install_body.to_owned())
             .with_soft_wrap()
             .build()
             .finish();
@@ -8289,13 +8382,13 @@ impl ClaudeCodeView {
             Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_main_axis_size(MainAxisSize::Min)
-                .with_spacing(10.)
+                .with_spacing(spacing::MD)
                 .with_child(title)
                 .with_child(hint)
                 .with_child(check)
                 .finish(),
         )
-        .with_uniform_padding(15.)
+        .with_uniform_padding(spacing::LG)
         .finish()
     }
 }
@@ -8371,7 +8464,7 @@ impl View for ClaudeCodeView {
         let theme = appearance.theme();
         // PRODUCT §4: the unavailable state replaces the pane body. The pane
         // header (title) is rendered separately by `render_header_content`.
-        let contents = if self.claude_available() {
+        let contents = if self.provider_available() {
             // Owner feedback on the 7d review: the chat fills the pane and the
             // composer FLOATS above it (z-axis) at the bottom-center, instead
             // of stacking below in a flex column. `Align` is load-bearing for
@@ -9025,7 +9118,7 @@ impl BackingView for ClaudeCodeView {
             control_container_width += 132.;
         }
         HeaderContent::Standard(StandardHeader {
-            title: PANE_TITLE.to_owned(),
+            title: provider_copy(self.provider).pane_title.to_owned(),
             title_secondary: cwd,
             title_style: None,
             title_clip_config: ClipConfig::start(),
@@ -10157,9 +10250,8 @@ fn apply_karaoke_highlight(
         if start < spoken_end {
             styles.push(HighlightedRange {
                 highlight_indices: (start..spoken_end).collect(),
-                highlight: Highlight::new().with_text_style(
-                    TextStyle::new().with_background_color(karaoke.spoken_color),
-                ),
+                highlight: Highlight::new()
+                    .with_text_style(TextStyle::new().with_background_color(karaoke.spoken_color)),
             });
         }
         if spoken_end < start + sentence_chars.len() {

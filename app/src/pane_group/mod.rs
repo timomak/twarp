@@ -556,6 +556,7 @@ pub enum Event {
     },
     /// twarp 07 (7b): tell the workspace to open a Claude Code pane (PRODUCT §1).
     OpenClaudeCodePane {
+        provider: claude_code::driver::AgentProvider,
         /// The tokens after `claude` — recognized flags map onto the spawn
         /// options, the trailing positional seeds the first turn (PRODUCT §2).
         args: Vec<String>,
@@ -1838,18 +1839,22 @@ impl PaneGroup {
                     ));
                 };
                 let cwd = snapshot.cwd.map(PathBuf::from);
-                let jsonl_path = cwd
-                    .clone()
-                    .or_else(|| std::env::current_dir().ok())
-                    .and_then(|dir| claude_code::sessions::session_file(&dir, &session_id))
-                    .ok_or_else(|| {
-                        anyhow::anyhow!("Cannot locate Claude session file for {session_id}")
-                    })?;
+                let jsonl_path = match snapshot.provider {
+                    claude_code::driver::AgentProvider::Claude => cwd
+                        .clone()
+                        .or_else(|| std::env::current_dir().ok())
+                        .and_then(|dir| claude_code::sessions::session_file(&dir, &session_id))
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("Cannot locate Claude session file for {session_id}")
+                        })?,
+                    claude_code::driver::AgentProvider::Codex => PathBuf::new(),
+                };
                 let resume = crate::claude_code_view::ResumeSession {
                     session_id: session_id.clone(),
                     jsonl_path,
                 };
                 let launch = claude_code::launch::LaunchOptions {
+                    provider: snapshot.provider,
                     resume_session_id: Some(session_id),
                     ..Default::default()
                 };

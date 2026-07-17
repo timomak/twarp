@@ -3003,6 +3003,7 @@ pub enum Event {
     /// workspace to open a Claude Code pane (PRODUCT §1). Bubbled from the
     /// input's `OpenClaudeCodePane` via `handle_input_event`.
     OpenClaudeCodePane {
+        provider: claude_code::driver::AgentProvider,
         args: Vec<String>,
         cwd: Option<PathBuf>,
     },
@@ -20410,8 +20411,13 @@ impl TerminalView {
             }
             // twarp 07 (7b): bubble the input's `claude`-trigger event up to the
             // pane group / workspace, which opens the Claude Code pane.
-            InputEvent::OpenClaudeCodePane { args, cwd } => {
+            InputEvent::OpenClaudeCodePane {
+                provider,
+                args,
+                cwd,
+            } => {
                 ctx.emit(Event::OpenClaudeCodePane {
+                    provider: *provider,
                     args: args.clone(),
                     cwd: cwd.clone(),
                 });
