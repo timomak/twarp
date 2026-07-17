@@ -6433,16 +6433,30 @@ impl ClaudeCodeView {
         };
 
         let items = self.transcript.items();
+        // Completed tool runs collapse into "Worked for …" summary groups.
+        // While a turn streams, only the in-flight turn (everything after the
+        // last user message) stays uncollapsed as live activity; historical
+        // turns keep their summaries. Gating on `streaming` alone made every
+        // past group explode open the moment a message was sent, which also
+        // yanked the scroll position mid-transcript.
+        let collapse_limit = if self.streaming {
+            items
+                .iter()
+                .rposition(|item| matches!(item, TranscriptItem::User(_)))
+                .unwrap_or(0)
+        } else {
+            items.len()
+        };
         let mut index = 0;
         while index < items.len() {
             if matches!(items[index], TranscriptItem::User(_)) {
                 flush_turn(&mut turns, &mut turn_children);
             }
 
-            if !self.streaming && is_collapsible_tool_item(&items[index]) {
+            if index < collapse_limit && is_collapsible_tool_item(&items[index]) {
                 let start = index;
                 index += 1;
-                while index < items.len() && is_collapsible_tool_item(&items[index]) {
+                while index < collapse_limit && is_collapsible_tool_item(&items[index]) {
                     index += 1;
                 }
                 turn_children.push(self.render_tool_run_group(start, index, app));
