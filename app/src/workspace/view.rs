@@ -645,15 +645,22 @@ fn compute_tab_bar_left_padding_value(
     legacy_left_panel_open: bool,
     is_window_fullscreen_without_left_traffic_lights: bool,
     left_traffic_light_width: Option<f32>,
+    // Width reserved for the fixed sidebar-toggle overlay (see
+    // `render_sidebar_toggle_overlay`); 0 when the toggle is not shown as an
+    // overlay. Only applies while the sidebar is closed — when open, the
+    // overlay floats above the sidebar, not the tab strip.
+    overlay_toggle_clearance: f32,
 ) -> f32 {
     if design_shell_v1_enabled && sidebar_open {
         TAB_BAR_PADDING_LEFT
     } else if legacy_left_panel_open {
         0.
     } else if is_window_fullscreen_without_left_traffic_lights {
-        TAB_BAR_PADDING_LEFT
+        TAB_BAR_PADDING_LEFT + overlay_toggle_clearance
     } else {
-        left_traffic_light_width.unwrap_or(0.) + twarp_core::ui::tokens::spacing::LG
+        left_traffic_light_width.unwrap_or(0.)
+            + twarp_core::ui::tokens::spacing::LG
+            + overlay_toggle_clearance
     }
 }
 
@@ -16369,7 +16376,16 @@ impl Workspace {
         appearance: &Appearance,
         ctx: &AppContext,
     ) -> Option<Box<dyn Element>> {
-        if design_shell_v1_enabled() && matches!(item, HeaderToolbarItemKind::TabsPanel) {
+        if design_shell_v1_enabled()
+            && matches!(
+                item,
+                HeaderToolbarItemKind::TabsPanel | HeaderToolbarItemKind::ToolsPanel
+            )
+        {
+            // Under the design shell the sidebar toggle is pinned next to the
+            // traffic lights as a stack overlay (`add_sidebar_toggle_overlay`)
+            // so it stays still while the sidebar slides; don't also render it
+            // in the tab strip.
             return None;
         }
         if !item.is_available(ctx) {
@@ -16473,6 +16489,11 @@ impl Workspace {
             .as_ref()
             .filter(|data| data.side == TrafficLightSide::Left)
             .map(|data| data.width(zoom_factor));
+        let overlay_toggle_clearance = if self.sidebar_toggle_overlay_visible(ctx) {
+            TAB_BAR_ICON_PADDING + icons::ICON_DIMENSIONS + 8.
+        } else {
+            0.
+        };
         let padding_for = |sidebar_open: bool| {
             compute_tab_bar_left_padding_value(
                 design_shell_v1_enabled(),
@@ -16480,6 +16501,7 @@ impl Workspace {
                 self.current_workspace_state.is_left_panel_open(),
                 is_window_fullscreen && cfg!(target_os = "macos"),
                 left_traffic_light_width,
+                overlay_toggle_clearance,
             )
         };
         if self.left_panel_slide.is_some() && design_shell_v1_enabled() {
@@ -16492,6 +16514,68 @@ impl Workspace {
         } else {
             padding_for(sidebar_open)
         }
+    }
+
+    /// Whether the sidebar toggle renders as a fixed overlay pinned next to
+    /// the traffic lights (design shell only) instead of flowing inside the
+    /// tab strip. Pinning keeps the icon still while the sidebar — and the
+    /// tab strip with it — slides open/closed.
+    fn sidebar_toggle_overlay_visible(&self, ctx: &AppContext) -> bool {
+        design_shell_v1_enabled()
+            && !twarpui::platform::is_mobile_device()
+            && !self.is_theme_chooser_open()
+            && !self.current_workspace_state.is_left_panel_open()
+            && !self.left_panel_views.is_empty()
+            && HeaderToolbarItemKind::ToolsPanel.is_available(ctx)
+            && TabSettings::as_ref(ctx)
+                .header_toolbar_chip_selection
+                .contains_item(&HeaderToolbarItemKind::ToolsPanel)
+    }
+
+    /// Adds the pinned sidebar-toggle overlay to the workspace stack. The
+    /// button sits at the sidebar-closed position (right of the traffic
+    /// lights); when the sidebar is open it floats above the sidebar's
+    /// reserved traffic-light row, so it never moves during the slide.
+    fn add_sidebar_toggle_overlay(
+        &self,
+        stack: &mut Stack,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) {
+        if !self.sidebar_toggle_overlay_visible(app) {
+            return;
+        }
+        let zoom_factor = WindowSettings::as_ref(app).zoom_level.as_zoom_factor();
+        let is_window_fullscreen = app
+            .windows()
+            .platform_window(self.window_id)
+            .map(|window| window.fullscreen_state() == FullscreenState::Fullscreen)
+            .unwrap_or(false);
+        let left_traffic_light_width = traffic_light_data(app, self.window_id)
+            .filter(|data| data.side == TrafficLightSide::Left)
+            .map(|data| data.width(zoom_factor));
+        let x = compute_tab_bar_left_padding_value(
+            true,
+            false,
+            false,
+            is_window_fullscreen && cfg!(target_os = "macos"),
+            left_traffic_light_width,
+            0.,
+        ) + TAB_BAR_ICON_PADDING;
+        let y = WORKSPACE_PADDING + (TAB_BAR_HEIGHT - icons::ICON_DIMENSIONS) / 2.;
+        let button = ConstrainedBox::new(self.render_left_toggle_button(appearance, app))
+            .with_width(icons::ICON_DIMENSIONS)
+            .with_height(icons::ICON_DIMENSIONS)
+            .finish();
+        stack.add_positioned_overlay_child(
+            button,
+            OffsetPositioning::offset_from_parent(
+                vec2f(x, y),
+                ParentOffsetBounds::WindowByPosition,
+                ParentAnchor::TopLeft,
+                ChildAnchor::TopLeft,
+            ),
+        );
     }
 
     /// Renders the tab bar contents, wrapped in hover and drag-drop behaviors.
@@ -20339,6 +20423,10 @@ impl View for Workspace {
                     .with_uniform_padding(WORKSPACE_PADDING)
                     .finish(),
             );
+        }
+
+        if !use_simplified_wasm_tab_bar {
+            self.add_sidebar_toggle_overlay(&mut stack, appearance, app);
         }
 
         if !use_simplified_wasm_tab_bar
