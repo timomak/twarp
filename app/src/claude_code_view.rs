@@ -7633,7 +7633,9 @@ impl ClaudeCodeView {
         // still shows — and copies — the full name).
         if let Some(branch) = &context.branch {
             let branch_label = match density {
-                ComposerDensity::Full => branch.clone(),
+                // Even at full width, a generated branch name can dwarf the
+                // rest of the bar — cap it and let the menu show the full name.
+                ComposerDensity::Full => truncate_middle(branch, 40),
                 ComposerDensity::Compact => truncate_middle(branch, 24),
                 ComposerDensity::Tiny => truncate_middle(branch, 14),
             };
@@ -8086,29 +8088,6 @@ impl ClaudeCodeView {
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(spacing::SM);
-        if let Some(bar) = self.render_repo_context_bar(appearance, ComposerDensity::Full) {
-            // Whether the bar resolves is density-independent, so the compact
-            // and tiny tiers are always present when the full tier is.
-            let compact = self
-                .render_repo_context_bar(appearance, ComposerDensity::Compact)
-                .expect("context bar tiers resolve together");
-            let tiny = self
-                .render_repo_context_bar(appearance, ComposerDensity::Tiny)
-                .expect("context bar tiers resolve together");
-            composer_column.add_child(Box::new(SizeConstraintSwitch::new(
-                bar,
-                [
-                    (
-                        SizeConstraintCondition::WidthLessThan(COMPOSER_TINY_MAX_WIDTH),
-                        tiny,
-                    ),
-                    (
-                        SizeConstraintCondition::WidthLessThan(COMPOSER_COMPACT_MAX_WIDTH),
-                        compact,
-                    ),
-                ],
-            )));
-        }
         composer_column.add_child(input_area);
         composer_column.add_child(controls);
         // twarp 17 (PRODUCT 17 §2–§3, §8, §17): one-line voice status / error
@@ -8136,6 +8115,39 @@ impl ClaudeCodeView {
                 COMPOSER_CORNER_RADIUS,
             )))
             .finish();
+
+        // The context bar (#11) sits *above* the card, outside the bordered
+        // panel, so folder / branch / diff / PR / CI read as chrome around the
+        // input rather than content inside it.
+        let mut outer_column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(spacing::SM);
+        if let Some(bar) = self.render_repo_context_bar(appearance, ComposerDensity::Full) {
+            // Whether the bar resolves is density-independent, so the compact
+            // and tiny tiers are always present when the full tier is.
+            let compact = self
+                .render_repo_context_bar(appearance, ComposerDensity::Compact)
+                .expect("context bar tiers resolve together");
+            let tiny = self
+                .render_repo_context_bar(appearance, ComposerDensity::Tiny)
+                .expect("context bar tiers resolve together");
+            outer_column.add_child(Box::new(SizeConstraintSwitch::new(
+                bar,
+                [
+                    (
+                        SizeConstraintCondition::WidthLessThan(COMPOSER_TINY_MAX_WIDTH),
+                        tiny,
+                    ),
+                    (
+                        SizeConstraintCondition::WidthLessThan(COMPOSER_COMPACT_MAX_WIDTH),
+                        compact,
+                    ),
+                ],
+            )));
+        }
+        outer_column.add_child(composer_panel);
+        let composer_panel = outer_column.finish();
 
         let composer = Container::new(composer_panel)
             .with_padding_top(spacing::SM)
