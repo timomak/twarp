@@ -547,6 +547,14 @@ pub fn valid_model_for_provider(provider: CLIAgent, model: &str) -> Option<Strin
     provider.is_valid_model(model).then(|| model.to_owned())
 }
 
+pub fn default_model_for_provider(provider: CLIAgent) -> Option<String> {
+    provider
+        .model_options()
+        .into_iter()
+        .next()
+        .map(|option| option.id)
+}
+
 pub fn valid_chat_effort(effort: &str) -> Option<String> {
     valid_effort_for_provider(CLIAgent::Claude, effort)
 }
@@ -557,6 +565,13 @@ pub fn valid_effort_for_provider(provider: CLIAgent, effort: &str) -> Option<Str
         effort if provider.is_valid_effort(effort) => Some(effort.to_owned()),
         _ => None,
     }
+}
+
+pub fn default_effort_for_provider(provider: CLIAgent) -> Option<String> {
+    provider
+        .effort_options()
+        .first()
+        .map(|option| option.value.to_owned())
 }
 
 pub fn valid_permission_mode_for_provider(

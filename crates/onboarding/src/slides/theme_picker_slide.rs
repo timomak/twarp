@@ -25,21 +25,15 @@ use ui_components::{button, Component as _, Options as _};
 
 #[derive(Debug, Clone)]
 pub enum ThemePickerSlideEvent {
-    ThemeSelected {
-        theme_name: String,
-    },
-    SyncWithOsToggled {
-        enabled: bool,
-    },
+    ThemeSelected { theme_name: String },
+    SyncWithOsToggled { enabled: bool },
     // twarp: de-cloud (2b) — PrivacySettingsRequested deleted; it routed to the
     // (deleted) login slide's privacy-only mode.
 }
 
 #[derive(Debug, Clone)]
 pub enum ThemePickerSlideAction {
-    SelectTheme {
-        index: usize,
-    },
+    SelectTheme { index: usize },
     ToggleSyncWithOs,
     BackClicked,
     NextClicked,

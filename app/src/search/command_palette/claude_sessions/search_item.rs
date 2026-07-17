@@ -48,11 +48,7 @@ impl ClaudeSessionSearchItem {
             appearance.ui_font_family(),
             appearance.monospace_font_size(),
         )
-        .with_color(
-            item_highlight_state
-                .main_text_fill(appearance)
-                .into_solid(),
-        )
+        .with_color(item_highlight_state.main_text_fill(appearance).into_solid())
         .with_single_highlight(
             Highlight::new()
                 .with_properties(Properties::default().weight(Weight::Bold))
@@ -173,6 +169,9 @@ mod tests {
 
     #[test]
     fn dedup_key_is_session_scoped() {
-        assert_eq!(item().dedup_key().as_deref(), Some("claude-session:abc-123"));
+        assert_eq!(
+            item().dedup_key().as_deref(),
+            Some("claude-session:abc-123")
+        );
     }
 }

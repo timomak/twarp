@@ -14,12 +14,13 @@
 //! flag could break the stream contract the driver depends on. The first
 //! non-flag token starts the prompt; the prompt is everything from there on.
 
-use crate::driver::PermissionMode;
+use crate::driver::{AgentProvider, PermissionMode};
 
 /// The parsed launch request: the spawn-relevant flags plus the positional
 /// prompt (PRODUCT §2: a trailing positional becomes the first user turn).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LaunchOptions {
+    pub provider: AgentProvider,
     pub prompt: Option<String>,
     /// `--permission-mode <m>`, or `--dangerously-skip-permissions` →
     /// [`PermissionMode::BypassPermissions`].
@@ -31,6 +32,19 @@ pub struct LaunchOptions {
     /// `--resume <id>` / `-r <id>`. A bare `--resume` (the CLI's interactive
     /// picker) carries no id and is ignored — the pane has no picker.
     pub resume_session_id: Option<String>,
+}
+
+impl Default for LaunchOptions {
+    fn default() -> Self {
+        Self {
+            provider: AgentProvider::Claude,
+            prompt: None,
+            permission_mode: None,
+            model: None,
+            effort: None,
+            resume_session_id: None,
+        }
+    }
 }
 
 /// One flag's value: either attached (`--flag=value`) or the next token.

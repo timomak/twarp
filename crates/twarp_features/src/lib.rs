@@ -806,6 +806,9 @@ pub enum FeatureFlag {
     /// with the tab strip starting to its right.
     DesignShellV1,
 
+    /// Gates the Codex app-server backend for the agent pane.
+    CodexAgentBackend,
+
     CloudModeInputV2,
 }
 
@@ -881,6 +884,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,
     FeatureFlag::DesignShellV1,
+    FeatureFlag::CodexAgentBackend,
     FeatureFlag::CloudModeSetupV2,
     // twarp 08b: re-enable Chrome-style cross-window tab dragging (detach a tab
     // into a new window / drag it between windows). Dormant upstream; turned on

@@ -6,6 +6,7 @@ use std::sync::Arc;
 use twarpui::platform::FullscreenState;
 
 use claude_code::driver::{AgentProvider, PermissionMode};
+use twarp_core::features::FeatureFlag;
 use twarpui::AppContext;
 
 // twarp: 2c-d.4 — local stubs for deleted AI types referenced by persisted snapshots
@@ -683,9 +684,20 @@ impl CLIAgent {
         self.serialized_name()
     }
 
+    pub fn agent_provider(&self) -> Option<AgentProvider> {
+        match self {
+            CLIAgent::Claude => Some(AgentProvider::Claude),
+            CLIAgent::Codex => Some(AgentProvider::Codex),
+            CLIAgent::Gemini | CLIAgent::Unknown => None,
+        }
+    }
+
     fn adapter(&self) -> Option<&'static dyn CLIAgentAdapter> {
         match self {
             CLIAgent::Claude => Some(&CLAUDE_AGENT_ADAPTER),
+            CLIAgent::Codex if FeatureFlag::CodexAgentBackend.is_enabled() => {
+                Some(&CODEX_AGENT_ADAPTER)
+            }
             CLIAgent::Codex | CLIAgent::Gemini | CLIAgent::Unknown => None,
         }
     }
@@ -737,8 +749,10 @@ pub trait CLIAgentAdapter: Sync {
 }
 
 struct ClaudeAgentAdapter;
+struct CodexAgentAdapter;
 
 static CLAUDE_AGENT_ADAPTER: ClaudeAgentAdapter = ClaudeAgentAdapter;
+static CODEX_AGENT_ADAPTER: CodexAgentAdapter = CodexAgentAdapter;
 
 const CLAUDE_PERMISSION_MODES: &[PermissionMode] = &[
     PermissionMode::BypassPermissions,
@@ -765,6 +779,31 @@ const CLAUDE_EFFORT_OPTIONS: &[CLIAgentEffortOption] = &[
         label: "Max",
     },
 ];
+
+const CODEX_EFFORT_OPTIONS: &[CLIAgentEffortOption] = &[
+    CLIAgentEffortOption {
+        value: "minimal",
+        label: "Minimal",
+    },
+    CLIAgentEffortOption {
+        value: "low",
+        label: "Low",
+    },
+    CLIAgentEffortOption {
+        value: "medium",
+        label: "Medium",
+    },
+    CLIAgentEffortOption {
+        value: "high",
+        label: "High",
+    },
+    CLIAgentEffortOption {
+        value: "xhigh",
+        label: "Extra High",
+    },
+];
+
+const CODEX_MODEL_OPTIONS: &[&str] = &["gpt-5", "gpt-5.1-codex"];
 
 impl CLIAgentAdapter for ClaudeAgentAdapter {
     fn capabilities(&self) -> CLIAgentCapabilities {
@@ -841,6 +880,79 @@ impl CLIAgentAdapter for ClaudeAgentAdapter {
                 output.status.success()
                     && String::from_utf8_lossy(&output.stdout).contains("\"loggedIn\": true")
             })
+    }
+}
+
+impl CLIAgentAdapter for CodexAgentAdapter {
+    fn capabilities(&self) -> CLIAgentCapabilities {
+        CLIAgentCapabilities {
+            enabled: FeatureFlag::CodexAgentBackend.is_enabled(),
+            supports_models: true,
+            supports_effort: true,
+            // 18c adds interactive Codex approvals and the shared Access
+            // vocabulary. Do not advertise modes that can request approval
+            // while 18b intentionally has no request/response UI.
+            supports_permission_modes: false,
+        }
+    }
+
+    fn executable_name(&self) -> Option<&'static str> {
+        Some("codex")
+    }
+
+    fn spawn_spec(&self) -> CLIAgentSpawnSpec {
+        CLIAgentSpawnSpec {
+            executable_name: "codex",
+            model_flag: Some("--model"),
+            effort_flag: Some("--effort"),
+            permission_mode_flag: None,
+        }
+    }
+
+    fn permission_modes(&self) -> &'static [PermissionMode] {
+        &[]
+    }
+
+    fn model_options(&self) -> Vec<CLIAgentModelOption> {
+        if !FeatureFlag::CodexAgentBackend.is_enabled() {
+            return Vec::new();
+        }
+
+        CODEX_MODEL_OPTIONS
+            .iter()
+            .map(|model| CLIAgentModelOption {
+                id: (*model).to_owned(),
+                display_name: prettify_agent_model(model),
+            })
+            .collect()
+    }
+
+    fn is_valid_model(&self, model: &str) -> bool {
+        FeatureFlag::CodexAgentBackend.is_enabled() && CODEX_MODEL_OPTIONS.contains(&model)
+    }
+
+    fn effort_options(&self) -> &'static [CLIAgentEffortOption] {
+        if FeatureFlag::CodexAgentBackend.is_enabled() {
+            CODEX_EFFORT_OPTIONS
+        } else {
+            &[]
+        }
+    }
+
+    fn is_valid_effort(&self, effort: &str) -> bool {
+        FeatureFlag::CodexAgentBackend.is_enabled()
+            && CODEX_EFFORT_OPTIONS
+                .iter()
+                .any(|option| option.value == effort)
+    }
+
+    fn login_probe(&self) -> bool {
+        command::blocking::Command::new("codex")
+            .arg("--version")
+            .stdin(command::Stdio::null())
+            .output()
+            .ok()
+            .is_some_and(|output| output.status.success())
     }
 }
 

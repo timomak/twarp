@@ -3,9 +3,8 @@ use crate::model::{
     SelectedSettings,
 };
 use crate::slides::{
-    CustomizeUISlide, FreeUserNoAiSlide, IntentionSlide, IntroSlide,
-    OnboardingModelInfo, OnboardingSlide, ProjectSlide, ThemePickerSlide, ThemePickerSlideEvent,
-    ThirdPartySlide,
+    CustomizeUISlide, FreeUserNoAiSlide, IntentionSlide, IntroSlide, OnboardingModelInfo,
+    OnboardingSlide, ProjectSlide, ThemePickerSlide, ThemePickerSlideEvent, ThirdPartySlide,
 };
 use crate::telemetry::OnboardingEvent;
 // twarp: 2c-e — `ai` crate deleted; use the local `LLMId` substitute.

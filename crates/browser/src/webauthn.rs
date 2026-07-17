@@ -31,8 +31,8 @@ const KEYCHAIN_ACCOUNT: &str = "credentials";
 const COSE_ALG_ES256: i64 = -7;
 /// DER SubjectPublicKeyInfo header for an uncompressed P-256 point.
 const P256_SPKI_PREFIX: &[u8] = &[
-    0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08,
-    0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
+    0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a,
+    0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
 ];
 
 const FLAG_USER_PRESENT: u8 = 0x01;
@@ -157,7 +157,11 @@ fn validate_rp_id(request: &BridgeRequest) -> WebAuthnResult<String> {
         message: format!("invalid origin: {}", request.origin),
     })?;
     let host = origin.host_str().unwrap_or_default().to_owned();
-    let rp_id = request.rp_id.clone().filter(|id| !id.is_empty()).unwrap_or_else(|| host.clone());
+    let rp_id = request
+        .rp_id
+        .clone()
+        .filter(|id| !id.is_empty())
+        .unwrap_or_else(|| host.clone());
     if rp_id == host || host.ends_with(&format!(".{rp_id}")) {
         Ok(rp_id)
     } else {
@@ -203,8 +207,7 @@ fn create_credential(request: &BridgeRequest, rp_id: &str) -> WebAuthnResult<Val
         private_key: URL_SAFE_NO_PAD.encode(secret.to_bytes()),
     };
     // One passkey per (rp, user handle), like platform authenticators.
-    credentials
-        .retain(|c| !(c.rp_id == rp_id && c.user_handle == credential.user_handle));
+    credentials.retain(|c| !(c.rp_id == rp_id && c.user_handle == credential.user_handle));
     credentials.push(credential);
     save_credentials(&credentials)?;
 
@@ -213,7 +216,10 @@ fn create_credential(request: &BridgeRequest, rp_id: &str) -> WebAuthnResult<Val
     let auth_data = build_auth_data(
         rp_id,
         FLAG_USER_PRESENT | FLAG_USER_VERIFIED | FLAG_ATTESTED_CREDENTIAL_DATA,
-        Some((&cred_id, cose_public_key(point.x().unwrap(), point.y().unwrap()))),
+        Some((
+            &cred_id,
+            cose_public_key(point.x().unwrap(), point.y().unwrap()),
+        )),
     );
     let attestation_object = cbor_bytes(&ciborium::Value::Map(vec![
         (
@@ -340,8 +346,7 @@ fn load_credentials() -> Vec<StoredCredential> {
 
 #[cfg(target_os = "macos")]
 fn save_credentials(credentials: &[StoredCredential]) -> WebAuthnResult<()> {
-    let bytes = serde_json::to_vec(credentials)
-        .expect("credential serialization cannot fail");
+    let bytes = serde_json::to_vec(credentials).expect("credential serialization cannot fail");
     security_framework::passwords::set_generic_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, &bytes)
         .map_err(|err| WebAuthnError {
             name: "UnknownError",

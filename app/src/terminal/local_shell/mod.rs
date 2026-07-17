@@ -23,20 +23,35 @@ pub enum LocalShellState {
 }
 
 /// State of the interactive shell environment capture.
-/// This is used for LSP operations that need the full interactive PATH.
+/// This is used for local tools that need the user's interactive environment.
 #[cfg(feature = "local_tty")]
+#[derive(Clone, Debug)]
+pub struct InteractiveShellEnv {
+    vars: HashMap<String, String>,
+}
+
+impl InteractiveShellEnv {
+    pub fn path(&self) -> Option<String> {
+        self.vars.get("PATH").cloned()
+    }
+
+    pub fn vars(&self) -> HashMap<String, String> {
+        self.vars.clone()
+    }
+}
+
 #[derive(Debug, Default)]
 pub enum InteractiveEnvState {
-    /// Interactive PATH has not been requested yet.
+    /// Interactive environment has not been requested yet.
     #[default]
     NotRequested,
-    /// Interactive PATH capture is in progress.
+    /// Interactive environment capture is in progress.
     /// Stores senders that will be notified when capture completes.
     Pending {
-        waiters: Vec<async_channel::Sender<Option<String>>>,
+        waiters: Vec<async_channel::Sender<Option<InteractiveShellEnv>>>,
     },
-    /// Interactive PATH capture completed.
-    Ready(Option<String>),
+    /// Interactive environment capture completed.
+    Ready(Option<InteractiveShellEnv>),
 }
 
 #[derive(Debug)]
@@ -46,7 +61,7 @@ pub struct LocalShell {
     shell_path: PathBuf,
     /// The PATH sourced from the user's shell (non-interactive, fast)
     path_env_var: Option<String>,
-    /// The PATH sourced from an interactive login shell (lazy, for LSP)
+    /// The environment sourced from an interactive login shell (lazy, cached)
     #[cfg(feature = "local_tty")]
     interactive_env_state: InteractiveEnvState,
 }
@@ -154,15 +169,35 @@ impl LocalShellState {
         &mut self,
         ctx: &mut ModelContext<Self>,
     ) -> BoxFuture<'static, Option<String>> {
+        self.get_interactive_shell_env(ctx)
+            .map(|env| env.and_then(|env| env.path()))
+            .boxed()
+    }
+
+    /// Returns the exported variables from the same cached interactive login
+    /// shell capture used by [`Self::get_interactive_path_env_var`].
+    pub fn get_interactive_env_vars(
+        &mut self,
+        ctx: &mut ModelContext<Self>,
+    ) -> BoxFuture<'static, Option<HashMap<String, String>>> {
+        self.get_interactive_shell_env(ctx)
+            .map(|env| env.map(|env| env.vars()))
+            .boxed()
+    }
+
+    fn get_interactive_shell_env(
+        &mut self,
+        ctx: &mut ModelContext<Self>,
+    ) -> BoxFuture<'static, Option<InteractiveShellEnv>> {
         let LocalShellState::Loaded(local_shell) = self else {
             // Not loaded - return immediately with None
             return futures::future::ready(None).boxed();
         };
 
         match &mut local_shell.interactive_env_state {
-            InteractiveEnvState::Ready(path) => {
+            InteractiveEnvState::Ready(env) => {
                 // Already captured - return immediately with cached value
-                futures::future::ready(path.clone()).boxed()
+                futures::future::ready(env.clone()).boxed()
             }
             InteractiveEnvState::Pending { waiters } => {
                 // Capture in progress - add a new waiter
@@ -182,16 +217,16 @@ impl LocalShellState {
                 ctx.spawn(
                     async move { capture_interactive_shell_env(shell_type, shell_path).await },
                     move |me, result, _ctx| {
-                        let path = result.ok();
+                        let env = result.ok();
 
                         // Notify all waiting receivers
                         if let LocalShellState::Loaded(local_shell) = me {
                             if let InteractiveEnvState::Pending { waiters } = std::mem::replace(
                                 &mut local_shell.interactive_env_state,
-                                InteractiveEnvState::Ready(path.clone()),
+                                InteractiveEnvState::Ready(env.clone()),
                             ) {
                                 for waiter in waiters {
-                                    let _ = waiter.try_send(path.clone());
+                                    let _ = waiter.try_send(env.clone());
                                 }
                             }
                         }
@@ -268,39 +303,41 @@ pub async fn execute_command(
     }
 }
 
-// PATH is emitted between these sentinels so startup stdout from rc files
-// (fastfetch, MOTD banners, etc.) can't be mistaken for PATH content.
+// The environment is emitted between these sentinels so startup stdout from rc
+// files (fastfetch, MOTD banners, etc.) can't be mistaken for environment data.
 #[cfg(feature = "local_tty")]
-const PATH_CAPTURE_START: &str = "__WARP_PATH_CAPTURE_START__";
+const ENV_CAPTURE_START: &str = "__WARP_ENV_CAPTURE_START__";
 #[cfg(feature = "local_tty")]
-const PATH_CAPTURE_END: &str = "__WARP_PATH_CAPTURE_END__";
+const ENV_CAPTURE_END: &str = "__WARP_ENV_CAPTURE_END__";
 
 /// Returns the text between the capture sentinels, or `None` if absent.
 #[cfg(feature = "local_tty")]
-fn extract_captured_path(output: &str) -> Option<&str> {
-    let start = output.find(PATH_CAPTURE_START)? + PATH_CAPTURE_START.len();
+fn extract_captured_env(output: &str) -> Option<&str> {
+    let start = output.find(ENV_CAPTURE_START)? + ENV_CAPTURE_START.len();
     let after_start = &output[start..];
-    let end = after_start.find(PATH_CAPTURE_END)?;
+    let end = after_start.find(ENV_CAPTURE_END)?;
     Some(&after_start[..end])
 }
 
-/// Captures the PATH environment variable from an interactive login shell.
+/// Captures exported variables from an interactive login shell.
 /// This uses setsid() to start a new session (fully detaching from the terminal)
 /// and stdin(null) to prevent interactive prompts from blocking.
 #[cfg(feature = "local_tty")]
 async fn capture_interactive_shell_env(
     shell_type: ShellType,
     shell_path: PathBuf,
-) -> Result<String> {
+) -> Result<InteractiveShellEnv> {
     let command_str = match shell_type {
         ShellType::Bash | ShellType::Zsh => {
-            format!("printf '{PATH_CAPTURE_START}%s{PATH_CAPTURE_END}' \"$PATH\"")
+            format!("printf '{ENV_CAPTURE_START}\\n'; env; printf '{ENV_CAPTURE_END}\\n'")
         }
         ShellType::Fish => {
-            format!("printf '{PATH_CAPTURE_START}%s{PATH_CAPTURE_END}' (string join : $PATH)")
+            format!("printf '{ENV_CAPTURE_START}\\n'; env; printf '{ENV_CAPTURE_END}\\n'")
         }
         ShellType::PowerShell => {
-            format!("Write-Output \"{PATH_CAPTURE_START}$($env:PATH){PATH_CAPTURE_END}\"")
+            format!(
+                "Write-Output '{ENV_CAPTURE_START}'; Get-ChildItem Env: | ForEach-Object {{ Write-Output \"$($_.Name)=$($_.Value)\" }}; Write-Output '{ENV_CAPTURE_END}'"
+            )
         }
     };
 
@@ -356,7 +393,7 @@ async fn capture_interactive_shell_env(
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         log::warn!(
-            "[LSP PATH] Interactive shell capture had non-zero exit: {}",
+            "[interactive env] shell capture had non-zero exit: {}",
             stderr
         );
         // Still try to use stdout even if exit was non-zero
@@ -365,15 +402,20 @@ async fn capture_interactive_shell_env(
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    let Some(path) = extract_captured_path(&stdout) else {
-        log::warn!("[LSP PATH] capture output missing PATH sentinels; ignoring");
-        return Err(anyhow!("missing PATH capture markers"));
+    let Some(captured) = extract_captured_env(&stdout) else {
+        log::warn!("[interactive env] capture output missing sentinels; ignoring");
+        return Err(anyhow!("missing environment capture markers"));
     };
 
-    if path.is_empty() {
-        Err(anyhow!("Interactive shell returned empty PATH"))
+    let vars = captured
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .collect::<HashMap<_, _>>();
+    if !vars.contains_key("PATH") {
+        Err(anyhow!("Interactive shell environment omitted PATH"))
     } else {
-        Ok(path.to_string())
+        Ok(InteractiveShellEnv { vars })
     }
 }
 

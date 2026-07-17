@@ -21,6 +21,7 @@ use futures::stream::Stream;
 use serde_json::{json, Value};
 
 use crate::{
+    codex::{CodexDriver, CodexSessionState},
     sessions, EndReason, McpServerInfo, TaskNotification, TaskRunStatus, TodoItem, TodoStatus,
     ToolOutput, TranscriptEvent, TurnMetrics, Usage,
 };
@@ -71,6 +72,14 @@ impl DriverCapabilities {
         steering: true,
         thinking: true,
         cost: true,
+        usage_tokens: true,
+    };
+
+    pub const CODEX: Self = Self {
+        fork: false,
+        steering: false,
+        thinking: true,
+        cost: false,
         usage_tokens: true,
     };
 }
@@ -218,6 +227,7 @@ impl PermissionMode {
 /// Options for [`spawn_session`].
 #[derive(Clone, Debug)]
 pub struct SpawnOptions {
+    pub provider: AgentProvider,
     pub cwd: PathBuf,
     pub model: Option<String>,
     /// `--effort <level>` — settable but not echoed back by the headless
@@ -241,6 +251,10 @@ pub struct SpawnOptions {
     /// both resolution of the `claude` binary and the child's environment match
     /// what the user gets in a terminal. `None` → inherit the process `PATH`.
     pub path_env: Option<String>,
+    /// Environment captured from the user's interactive login shell. Codex
+    /// providers may reference credentials through arbitrary environment
+    /// variables, which GUI relaunches do not inherit from the terminal.
+    pub env_vars: Option<HashMap<String, String>>,
 }
 
 /// A live `claude` session: the child process, a writer for user messages on
@@ -251,13 +265,14 @@ pub struct SpawnedSession {
     pub child: Child,
     pub stdin: ChildStdin,
     pub events: Pin<Box<dyn Stream<Item = TranscriptEvent> + Send>>,
+    pub codex_state: Option<CodexSessionState>,
 }
 
 /// Resolve `program` to an absolute path by searching `path_env` (a
 /// `PATH`-style string). Returns `None` when `path_env` is `None` or no
 /// matching executable file is found, in which case the caller falls back to
 /// the bare program name (process-`PATH` lookup).
-fn resolve_in_path(program: &str, path_env: Option<&str>) -> Option<PathBuf> {
+pub(crate) fn resolve_in_path(program: &str, path_env: Option<&str>) -> Option<PathBuf> {
     let path_env = path_env?;
     std::env::split_paths(path_env)
         .map(|dir| dir.join(program))
@@ -267,7 +282,10 @@ fn resolve_in_path(program: &str, path_env: Option<&str>) -> Option<PathBuf> {
 /// Spawn `claude` with stream-json IO. PRODUCT §8: the session is one
 /// long-lived process driven multi-turn via stdin.
 pub fn spawn_session(opts: SpawnOptions) -> Result<SpawnedSession> {
-    CLAUDE_DRIVER.spawn(opts)
+    match opts.provider {
+        AgentProvider::Claude => CLAUDE_DRIVER.spawn(opts),
+        AgentProvider::Codex => CodexDriver::spawn(opts),
+    }
 }
 
 fn spawn_claude_session(opts: SpawnOptions) -> Result<SpawnedSession> {
@@ -355,6 +373,7 @@ fn spawn_claude_session(opts: SpawnOptions) -> Result<SpawnedSession> {
         child,
         stdin,
         events: Box::pin(events),
+        codex_state: None,
     })
 }
 

@@ -63,17 +63,35 @@ pub mod type_ramp {
     use super::TypeStyle;
 
     /// 14/1.55 — conversation prose, empty-state copy. The reading style.
-    pub const PROSE: TypeStyle = TypeStyle { size: 14.0, line_height: 1.55 };
+    pub const PROSE: TypeStyle = TypeStyle {
+        size: 14.0,
+        line_height: 1.55,
+    };
     /// 13/1.4 — interactive UI: buttons, inputs, list items, tabs.
-    pub const UI: TypeStyle = TypeStyle { size: 13.0, line_height: 1.4 };
+    pub const UI: TypeStyle = TypeStyle {
+        size: 13.0,
+        line_height: 1.4,
+    };
     /// 12/1.35 — secondary labels, meta rows, pill text.
-    pub const LABEL: TypeStyle = TypeStyle { size: 12.0, line_height: 1.35 };
+    pub const LABEL: TypeStyle = TypeStyle {
+        size: 12.0,
+        line_height: 1.35,
+    };
     /// 11/1.3 — captions, timestamps, section headers (tracked-out caps).
-    pub const CAPTION: TypeStyle = TypeStyle { size: 11.0, line_height: 1.3 };
+    pub const CAPTION: TypeStyle = TypeStyle {
+        size: 11.0,
+        line_height: 1.3,
+    };
     /// 12.5/1.45 — monospace code/paths/commands inside UI surfaces.
-    pub const CODE: TypeStyle = TypeStyle { size: 12.5, line_height: 1.45 };
+    pub const CODE: TypeStyle = TypeStyle {
+        size: 12.5,
+        line_height: 1.45,
+    };
     /// 16/1.3 — the one heading size (semibold at the call site).
-    pub const HEADING: TypeStyle = TypeStyle { size: 16.0, line_height: 1.3 };
+    pub const HEADING: TypeStyle = TypeStyle {
+        size: 16.0,
+        line_height: 1.3,
+    };
 }
 
 /// Elevation: exactly two shadows. Anything floating uses one of these; fixed

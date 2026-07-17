@@ -157,14 +157,12 @@ pub(super) fn build_diff_card(diff: ToolDiff, ctx: &mut ViewContext<ClaudeCodeVi
                 // `has_final_trailing_newline` from the tree tail, which a
                 // trailing deletion hunk breaks), stacking invisible
                 // full-height lines below the diff — the card's dead space.
-                editor_view
-                    .model
-                    .as_ref(ctx)
-                    .render_state()
-                    .clone()
-                    .update(ctx, |render_state, _ctx| {
+                editor_view.model.as_ref(ctx).render_state().clone().update(
+                    ctx,
+                    |render_state, _ctx| {
                         render_state.set_show_final_trailing_newline_when_non_empty(false);
-                    });
+                    },
+                );
             });
             let delta = DiffDelta {
                 replacement_line_range: 0..old_lines,

@@ -246,15 +246,19 @@ impl PaneContent for ClaudeCodePane {
         let view = view.as_ref(app);
         let cwd = view.cwd().cloned();
         let session_id = view.session_id().to_owned();
-        let has_session = cwd
-            .clone()
-            .or_else(|| std::env::current_dir().ok())
-            .and_then(|cwd| claude_code::sessions::session_file(&cwd, &session_id))
-            .is_some_and(|path| path.exists());
+        let provider = view.provider();
+        let has_session = match provider {
+            claude_code::driver::AgentProvider::Claude => cwd
+                .clone()
+                .or_else(|| std::env::current_dir().ok())
+                .and_then(|cwd| claude_code::sessions::session_file(&cwd, &session_id))
+                .is_some_and(|path| path.exists()),
+            claude_code::driver::AgentProvider::Codex => view.has_provider_session(),
+        };
         LeafContents::ClaudeCode(crate::app_state::ClaudeCodePaneSnapshot {
             session_id: has_session.then_some(session_id),
             cwd: cwd.map(|p| p.to_string_lossy().into_owned()),
-            provider: claude_code::driver::AgentProvider::Claude,
+            provider,
         })
     }
 

@@ -5,9 +5,7 @@ use url::{Origin, ParseError, Url};
 
 use crate::AppId;
 use crate::{
-    channel::config::{
-        ChannelConfig, McpOAuthProviderConfig, OzConfig, WarpServerConfig,
-    },
+    channel::config::{ChannelConfig, McpOAuthProviderConfig, OzConfig, WarpServerConfig},
     features::FeatureFlag,
 };
 
