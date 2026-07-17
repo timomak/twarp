@@ -7406,8 +7406,10 @@ impl Workspace {
             // `close_code_review` would null that event-driven selection (leaving
             // `available_repos` populated but `selected_repo_path` cleared), wedging
             // the panel on "Cannot detect diffs for this folder" until a terminal is
-            // opened. Only close when the active pane group has no detected repo at
-            // all; otherwise leave the working-directories selection intact.
+            // opened. When a repo is present, re-sync after the pane-group open state
+            // has been mirrored above. This calls `on_open` for the cached agent-only
+            // review view and starts loading its diffs; refreshes that happened while
+            // the panel was closed deliberately left that view dormant.
             let active_pane_group_id = self.active_tab_pane_group().id();
             let active_pane_group_has_repo = {
                 self.working_directories_model.read(ctx, |model, _| {
@@ -7417,7 +7419,12 @@ impl Workspace {
                         .unwrap_or(false)
                 })
             };
-            if !active_pane_group_has_repo {
+            if active_pane_group_has_repo {
+                let working_directories_model = self.working_directories_model.clone();
+                self.right_panel_view.update(ctx, |right_panel_view, ctx| {
+                    right_panel_view.resync_available_repos(&working_directories_model, ctx);
+                });
+            } else {
                 self.right_panel_view.update(ctx, |right_panel_view, ctx| {
                     right_panel_view.close_code_review(ctx);
                 })
