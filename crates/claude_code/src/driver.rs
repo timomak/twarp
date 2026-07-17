@@ -251,6 +251,10 @@ pub struct SpawnOptions {
     /// both resolution of the `claude` binary and the child's environment match
     /// what the user gets in a terminal. `None` → inherit the process `PATH`.
     pub path_env: Option<String>,
+    /// Environment captured from the user's interactive login shell. Codex
+    /// providers may reference credentials through arbitrary environment
+    /// variables, which GUI relaunches do not inherit from the terminal.
+    pub env_vars: Option<HashMap<String, String>>,
 }
 
 /// A live `claude` session: the child process, a writer for user messages on

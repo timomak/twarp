@@ -114,6 +114,9 @@ impl CodexDriver {
         if let Some(path_env) = &opts.path_env {
             cmd.env("PATH", path_env);
         }
+        if let Some(env_vars) = &opts.env_vars {
+            cmd.envs(env_vars);
+        }
 
         let mut child = cmd
             .spawn()

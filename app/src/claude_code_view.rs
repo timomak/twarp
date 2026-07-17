@@ -703,6 +703,14 @@ pub struct ClaudeCodeView {
     /// capture resolves (or when capture is unsupported); availability and the
     /// spawn fall back to the process `PATH` in that case.
     interactive_path: Option<String>,
+    /// Environment from the user's interactive login shell. This is required
+    /// for Codex model providers configured with shell-defined credentials,
+    /// especially after a GUI relaunch loses the terminal's environment.
+    interactive_env_vars: Option<HashMap<String, String>>,
+    /// A restored Codex pane waits for interactive environment capture before
+    /// spawning `thread/resume`, so the first resumed turn uses the same provider
+    /// credentials as a terminal-launched session.
+    codex_restore_pending: bool,
     scroll_state: ClippedScrollStateHandle,
     /// Drag-to-select state for the transcript (PRODUCT §13: the prose is
     /// read-only, but the user still needs to highlight + copy it). The
@@ -1254,6 +1262,8 @@ impl ClaudeCodeView {
             })
         });
 
+        let restored_session = resume.is_some();
+
         // PRODUCT §41: every pane-born session has its identity from birth —
         // a resumed pane adopts the resumed id, a fresh pane mints one and
         // pins it at spawn via `--session-id`. The raw-CLI toggle, the
@@ -1275,6 +1285,8 @@ impl ClaudeCodeView {
             focus_handle: None,
             cwd,
             interactive_path: None,
+            interactive_env_vars: None,
+            codex_restore_pending: restored_session && provider == AgentProvider::Codex,
             scroll_state: ClippedScrollStateHandle::default(),
             selection_handle: Default::default(),
             transcript_selection: Default::default(),
@@ -1414,8 +1426,8 @@ impl ClaudeCodeView {
             speaker_button_mouse: MouseStateHandle::default(),
         };
 
-        // PRODUCT §4: capture the login-shell PATH up front so availability
-        // detection and the spawn see the user's real PATH even under a GUI
+        // PRODUCT §4/§8: capture the login-shell environment up front so CLI
+        // discovery and restored provider credentials survive a GUI
         // (launchd-minimal) launch. Resolves asynchronously and re-renders.
         Self::capture_interactive_path(ctx);
 
@@ -1427,7 +1439,6 @@ impl ClaudeCodeView {
         // PRODUCT §36: a resumed pane renders the stored history up front —
         // through the same ingest path as live events so tool/diff/thinking
         // card state exists — and continues live on the next message.
-        let restored_session = resume.is_some();
         if let Some(resume) = resume {
             if provider == AgentProvider::Claude {
                 for event in sessions::load_history(&resume.jsonl_path) {
@@ -1457,11 +1468,6 @@ impl ClaudeCodeView {
             view.turn_started = Some(started);
             view.schedule_elapsed_tick(started, ctx);
             view.begin_session(Some(OutgoingMessage::text(prompt)), ctx);
-        } else if restored_session && provider == AgentProvider::Codex {
-            // Codex history is exposed by app-server resume/read, not a stable
-            // local JSONL. Start the driver on restore so its thread/resume
-            // response can rebuild the transcript before the next user input.
-            view.begin_session(None, ctx);
         }
 
         // twarp: a bare `claude` opens to the zero state — load the cwd's recent
@@ -1593,16 +1599,20 @@ impl ClaudeCodeView {
     }
 
     /// Kick off (or refresh) the async capture of the interactive login-shell
-    /// PATH, storing it on the view and re-rendering when it resolves. The
+    /// environment, storing its PATH and exported variables on the view. The
     /// underlying capture is cached by `LocalShellState`, so repeated calls
     /// (e.g. the "Check again" button) are cheap. No-op when the local shell
     /// integration isn't compiled in; availability then uses the process PATH.
     #[cfg(all(feature = "local_fs", feature = "local_tty"))]
     fn capture_interactive_path(ctx: &mut ViewContext<Self>) {
         let fut = LocalShellState::handle(ctx).update(ctx, |shell_state, ctx| {
-            shell_state.get_interactive_path_env_var(ctx)
+            shell_state.get_interactive_env_vars(ctx)
         });
-        ctx.spawn(fut, |me, path, ctx| {
+        ctx.spawn(fut, |me, env_vars, ctx| {
+            let path = env_vars
+                .as_ref()
+                .and_then(|env_vars| env_vars.get("PATH").cloned());
+            me.interactive_env_vars = env_vars;
             if path.is_some() && me.interactive_path != path {
                 me.interactive_path = path;
                 // The constructor's first `refresh_repo_context` ran before this
@@ -1614,13 +1624,30 @@ impl ClaudeCodeView {
                 // worktree toggle (both gated on a resolved branch) appear on a
                 // fresh chat.
                 me.refresh_repo_context(ctx);
-                ctx.notify();
             }
+            if me.codex_restore_pending {
+                me.codex_restore_pending = false;
+                // Codex history is exposed by app-server thread/resume, not a
+                // stable local JSONL. Resume only after the login-shell
+                // environment is available so provider credentials survive a
+                // Finder/Dock relaunch.
+                let first_prompt = me.pending_initial_turn.take();
+                me.begin_session(first_prompt, ctx);
+            }
+            ctx.notify();
         });
     }
 
     #[cfg(not(all(feature = "local_fs", feature = "local_tty")))]
-    fn capture_interactive_path(_ctx: &mut ViewContext<Self>) {}
+    fn capture_interactive_path(ctx: &mut ViewContext<Self>) {
+        ctx.defer(|me, ctx| {
+            if me.codex_restore_pending {
+                me.codex_restore_pending = false;
+                let first_prompt = me.pending_initial_turn.take();
+                me.begin_session(first_prompt, ctx);
+            }
+        });
+    }
 
     /// Fetch the account's model list from the Anthropic Models API once per
     /// app run (first pane wins the claim) and re-render when it lands, so the
@@ -2851,13 +2878,17 @@ impl ClaudeCodeView {
         ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         self.turn_started = Some(started);
         self.schedule_elapsed_tick(started, ctx);
-        match &self.message_tx {
-            // Session already running — write the turn to its stdin.
-            Some(tx) => {
-                let _ = tx.try_send(StdinCommand::Turn(message));
+        if self.codex_restore_pending {
+            self.pending_initial_turn = Some(message);
+        } else {
+            match &self.message_tx {
+                // Session already running — write the turn to its stdin.
+                Some(tx) => {
+                    let _ = tx.try_send(StdinCommand::Turn(message));
+                }
+                // First message: spawn the session, forwarding this as turn one.
+                None => self.begin_session(Some(message), ctx),
             }
-            // First message: spawn the session, forwarding this as turn one.
-            None => self.begin_session(Some(message), ctx),
         }
         // #7: the first user turn names the tab.
         self.update_pane_title(ctx);
@@ -3449,6 +3480,9 @@ impl ClaudeCodeView {
             allowed_tools: Vec::new(),
             mcp_config: claude_mcp_config_json(&self.session_id, ctx),
             path_env: self.interactive_path.clone(),
+            env_vars: (self.provider == AgentProvider::Codex)
+                .then(|| self.interactive_env_vars.clone())
+                .flatten(),
         };
         ctx.spawn(
             async move { spawn_session(opts) },
