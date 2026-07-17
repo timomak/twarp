@@ -27,9 +27,19 @@ use crate::{EndReason, McpServerInfo, TodoItem, TodoStatus, ToolOutput, Transcri
 pub struct CodexSessionState {
     thread_id: Arc<Mutex<Option<String>>>,
     turn_id: Arc<Mutex<Option<String>>>,
+    model: Arc<Mutex<Option<String>>>,
+    effort: Arc<Mutex<Option<String>>>,
 }
 
 impl CodexSessionState {
+    fn with_turn_overrides(model: Option<String>, effort: Option<String>) -> Self {
+        Self {
+            model: Arc::new(Mutex::new(model)),
+            effort: Arc::new(Mutex::new(effort)),
+            ..Self::default()
+        }
+    }
+
     fn set_thread_id(&self, value: String) {
         *self.thread_id.lock().expect("codex thread state poisoned") = Some(value);
     }
@@ -49,6 +59,20 @@ impl CodexSessionState {
         self.turn_id
             .lock()
             .expect("codex turn state poisoned")
+            .clone()
+    }
+
+    fn model(&self) -> Option<String> {
+        self.model
+            .lock()
+            .expect("codex model state poisoned")
+            .clone()
+    }
+
+    fn effort(&self) -> Option<String> {
+        self.effort
+            .lock()
+            .expect("codex effort state poisoned")
             .clone()
     }
 }
@@ -104,7 +128,7 @@ impl CodexDriver {
             .ok_or_else(|| anyhow!("Failed to capture codex stdout"))?;
         let stderr = child.stderr.take();
 
-        let state = CodexSessionState::default();
+        let state = CodexSessionState::with_turn_overrides(opts.model.clone(), opts.effort.clone());
         write_startup_requests(&mut stdin, &opts)?;
         if let Some(id) = opts.resume_session_id.clone().or(opts.session_id.clone()) {
             state.set_thread_id(id);
@@ -129,12 +153,14 @@ impl CodexDriver {
                 .state
                 .thread_id()
                 .ok_or_else(|| anyhow!("Codex thread is not initialized yet"))?;
+            let model = self.state.model();
+            let effort = self.state.effort();
             let request = protocol::turn_start_request(
                 protocol::next_request_id(),
                 &thread_id,
                 message,
-                None,
-                None,
+                model.as_deref(),
+                effort.as_deref(),
             );
             write_json_line(stdin, &request)
                 .await
@@ -405,11 +431,13 @@ impl CodexParser {
                 }
             }
             "turn/completed" => {
-                let reason = params
-                    .get("turn")
+                let turn = params.get("turn");
+                let reason = turn
                     .and_then(|turn| turn.get("status"))
                     .and_then(Value::as_str)
-                    .map(end_reason_from_status)
+                    .map(|status| {
+                        end_reason_from_status(status, turn.and_then(|turn| turn.get("error")))
+                    })
                     .unwrap_or(EndReason::Completed);
                 self.state.set_turn_id(None);
                 out.push_back(TranscriptEvent::Ended { reason });
@@ -468,11 +496,13 @@ impl CodexParser {
                 }
             }
             "error" => {
-                out.push_back(TranscriptEvent::Ended {
-                    reason: EndReason::Error(provider_message(
-                        params.get("error").unwrap_or(params),
-                    )),
-                });
+                if params.get("willRetry").and_then(Value::as_bool) != Some(true) {
+                    out.push_back(TranscriptEvent::Ended {
+                        reason: EndReason::Error(provider_message(
+                            params.get("error").unwrap_or(params),
+                        )),
+                    });
+                }
             }
             _ => {}
         }
@@ -666,24 +696,33 @@ fn item_id(item: &Value) -> String {
         .to_owned()
 }
 
-fn end_reason_from_status(status: &str) -> EndReason {
+fn end_reason_from_status(status: &str, error: Option<&Value>) -> EndReason {
     match status {
         "completed" => EndReason::Completed,
         "interrupted" => EndReason::Interrupted,
-        "failed" | "errored" => EndReason::Error("Codex turn failed".to_owned()),
+        "failed" | "errored" => EndReason::Error(
+            error
+                .map(provider_message)
+                .unwrap_or_else(|| "Codex turn failed".to_owned()),
+        ),
         other => EndReason::Error(format!("Codex turn ended with status `{other}`")),
     }
 }
 
 fn provider_message(value: &Value) -> String {
-    value
+    let message = value
         .get("message")
         .and_then(Value::as_str)
         .or_else(|| value.get("error").and_then(Value::as_str))
-        .map(str::to_owned)
-        .unwrap_or_else(|| {
-            serde_json::to_string(value).unwrap_or_else(|_| "Codex error".to_owned())
-        })
+        .map(str::to_owned);
+    let details = value.get("additionalDetails").and_then(Value::as_str);
+    match (message, details) {
+        (Some(message), Some(details)) if !details.is_empty() => {
+            format!("{message}\n\n{details}")
+        }
+        (Some(message), _) => message,
+        (None, _) => serde_json::to_string(value).unwrap_or_else(|_| "Codex error".to_owned()),
+    }
 }
 
 fn todo_from_plan_item(value: &Value) -> Option<TodoItem> {
@@ -789,11 +828,42 @@ mod tests {
     }
 
     #[test]
+    fn replay_suppresses_user_echo_and_retry_errors() {
+        let events = parse(&[
+            r#"{"method":"item/started","params":{"threadId":"thread-1","turnId":"turn-1","item":{"type":"userMessage","id":"user-1","content":[{"type":"text","text":"hello"}]}}}"#,
+            r#"{"method":"item/completed","params":{"threadId":"thread-1","turnId":"turn-1","item":{"type":"userMessage","id":"user-1","content":[{"type":"text","text":"hello"}]}}}"#,
+            r#"{"method":"error","params":{"error":{"message":"Reconnecting... 1/5","additionalDetails":"temporary"},"willRetry":true,"threadId":"thread-1","turnId":"turn-1"}}"#,
+            r#"{"method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-1","status":"failed","error":{"message":"Codex failed","additionalDetails":"missing key"},"items":[]}}}"#,
+        ]);
+        assert!(events
+            .iter()
+            .all(|event| !matches!(event, TranscriptEvent::UserMessage(_))));
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(&events[0], TranscriptEvent::Ended { reason: EndReason::Error(message) } if message.contains("Codex failed") && message.contains("missing key"))
+        );
+    }
+
+    #[test]
     fn interrupt_request_uses_tracked_turn_id() {
         let request = protocol::turn_interrupt_request("req-1".to_owned(), "thread-1", "turn-1");
         assert_eq!(request["method"], "turn/interrupt");
         assert_eq!(request["params"]["threadId"], "thread-1");
         assert_eq!(request["params"]["turnId"], "turn-1");
+    }
+
+    #[test]
+    fn turn_start_request_carries_explicit_model_and_effort() {
+        let request = protocol::turn_start_request(
+            "req-1".to_owned(),
+            "thread-1",
+            &OutgoingMessage::text("hello"),
+            Some("gpt-5.1-codex"),
+            Some("high"),
+        );
+        assert_eq!(request["method"], "turn/start");
+        assert_eq!(request["params"]["model"], "gpt-5.1-codex");
+        assert_eq!(request["params"]["effort"], "high");
     }
 
     #[test]

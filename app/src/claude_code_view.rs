@@ -203,13 +203,6 @@ fn provider_copy(provider: AgentProvider) -> ProviderCopy {
     }
 }
 
-fn cli_agent_for_provider(provider: AgentProvider) -> CLIAgent {
-    match provider {
-        AgentProvider::Claude => CLIAgent::Claude,
-        AgentProvider::Codex => CLIAgent::Codex,
-    }
-}
-
 /// Body / code font sizes. A point past the deleted `ai_assistant::transcript`
 /// renderer for the airier, Claude-app reading rhythm (shell-polish pass —
 /// PRODUCT §32 visual gate).
@@ -1176,29 +1169,16 @@ impl ClaudeCodeView {
         let settings = AgentSettings::as_ref(ctx);
         let chat_config = settings.chat_launch_config();
         let chat_config_matches_provider = chat_config.provider.agent_provider() == Some(provider);
-        let target_agent = cli_agent_for_provider(provider);
-        let model = model
-            .or_else(|| {
-                chat_config_matches_provider
-                    .then_some(chat_config.model)
-                    .flatten()
-            })
-            .or_else(|| {
-                (!chat_config_matches_provider)
-                    .then(|| app_settings::default_model_for_provider(target_agent))
-                    .flatten()
-            });
-        let effort = effort
-            .or_else(|| {
-                chat_config_matches_provider
-                    .then_some(chat_config.effort)
-                    .flatten()
-            })
-            .or_else(|| {
-                (!chat_config_matches_provider)
-                    .then(|| app_settings::default_effort_for_provider(target_agent))
-                    .flatten()
-            });
+        let model = model.or_else(|| {
+            chat_config_matches_provider
+                .then_some(chat_config.model)
+                .flatten()
+        });
+        let effort = effort.or_else(|| {
+            chat_config_matches_provider
+                .then_some(chat_config.effort)
+                .flatten()
+        });
         let permission_mode = permission_mode.unwrap_or(chat_config.permission_mode);
 
         let input_editor = ctx.add_typed_action_view(|ctx| {
@@ -2006,6 +1986,10 @@ impl ClaudeCodeView {
     }
 
     fn maybe_request_composer_placeholder_suggestion(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.provider != AgentProvider::Claude {
+            self.clear_composer_placeholder_suggestion(ctx);
+            return;
+        }
         if !*AgentSettings::as_ref(ctx)
             .enable_composer_placeholder_suggestions
             .value()
@@ -2128,6 +2112,10 @@ impl ClaudeCodeView {
     }
 
     fn maybe_request_reply_suggestion(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.provider != AgentProvider::Claude {
+            self.clear_reply_suggestion(ctx);
+            return;
+        }
         if !*AgentSettings::as_ref(ctx).enable_reply_suggestions.value() {
             self.clear_reply_suggestion(ctx);
             return;
