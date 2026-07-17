@@ -128,7 +128,7 @@ Steps assume a built `warp-oss`, both CLIs installed and logged in (`claude`, `c
 1. In a dogfood/twarp-oss build (flag ships enabled there), run bare `codex` at a prompt: the agent pane opens with a Codex glyph and Model·Effort pill (§1, §3). Alias/flag handling and the rest of §1–§2 land in 18d.
 2. Send "list the files here, then read one and summarize it": assistant text streams token-by-token; the command run shows live output; reasoning (if any) renders collapsed (§5).
 3. Press Stop mid-turn: the turn stops with partial content preserved; sending a follow-up works (§7).
-4. Quit twarp and relaunch **via LaunchServices (`open`, Dock, or Spotlight — never by executing the binary from a shell**, which drops the GUI session env codex's provider needs): the Codex pane restores with its prior transcript visible; sending a message resumes the same thread (§8).
+4. Quit twarp and relaunch **by running `open <path-to>/TwarpOss.app` from your shell** (on this rig the provider key reaches the app only via the shell env that `open` propagates — Dock/Spotlight launches lack it, and executing the binary directly also misbehaves): the Codex pane restores with its prior transcript visible; sending a message resumes the same thread (§8).
 
 ### 18c — approvals & access
 
