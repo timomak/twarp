@@ -400,6 +400,9 @@ impl CodexParser {
         };
         if let Some(thread) = result.get("thread") {
             self.emit_session_init(thread, result, out);
+            self.parse_thread_history(thread, out);
+        } else {
+            self.parse_thread_history(result, out);
         }
         if let Some(turn_id) = result
             .get("turn")
@@ -533,6 +536,43 @@ impl CodexParser {
         });
     }
 
+    fn parse_thread_history(&mut self, thread: &Value, out: &mut VecDeque<TranscriptEvent>) {
+        let Some(turns) = thread.get("turns").and_then(Value::as_array) else {
+            return;
+        };
+        for turn in turns {
+            let Some(items) = turn.get("items").and_then(Value::as_array) else {
+                continue;
+            };
+            for item in items {
+                self.parse_history_item(item, out);
+            }
+        }
+    }
+
+    fn parse_history_item(&mut self, item: &Value, out: &mut VecDeque<TranscriptEvent>) {
+        match item_type(item) {
+            Some("userMessage") => {
+                if let Some(text) = user_message_text(item) {
+                    if !text.is_empty() {
+                        out.push_back(TranscriptEvent::UserMessage(text));
+                    }
+                }
+            }
+            Some("commandExecution")
+            | Some("fileChange")
+            | Some("mcpToolCall")
+            | Some("webSearch") => {
+                self.parse_item_started(item, out);
+                self.parse_item_completed(item, out);
+            }
+            Some("agentMessage") | Some("reasoning") => {
+                self.parse_item_completed(item, out);
+            }
+            _ => {}
+        }
+    }
+
     fn parse_item_started(&mut self, item: &Value, out: &mut VecDeque<TranscriptEvent>) {
         match item_type(item) {
             Some("commandExecution") => {
@@ -583,11 +623,9 @@ impl CodexParser {
             Some("agentMessage") => {
                 let id = item_id(item);
                 if !self.assistant_delta_items.contains(&id) {
-                    if let Some(text) = item.get("text").and_then(Value::as_str) {
+                    if let Some(text) = agent_message_text(item) {
                         if !text.is_empty() {
-                            out.push_back(TranscriptEvent::AssistantTextDelta {
-                                text: text.to_owned(),
-                            });
+                            out.push_back(TranscriptEvent::AssistantTextDelta { text });
                         }
                     }
                 }
@@ -598,15 +636,10 @@ impl CodexParser {
                 if !self.thinking_delta_items.contains(&id) {
                     let text = item
                         .get("summary")
-                        .and_then(Value::as_array)
-                        .or_else(|| item.get("content").and_then(Value::as_array))
-                        .map(|items| {
-                            items
-                                .iter()
-                                .filter_map(Value::as_str)
-                                .collect::<Vec<_>>()
-                                .join("\n")
-                        })
+                        .and_then(text_from_content)
+                        .or_else(|| item.get("summaryText").and_then(text_from_content))
+                        .or_else(|| item.get("summary_text").and_then(text_from_content))
+                        .or_else(|| item.get("content").and_then(text_from_content))
                         .unwrap_or_default();
                     if !text.is_empty() {
                         out.push_back(TranscriptEvent::ThinkingDelta { text });
@@ -620,6 +653,18 @@ impl CodexParser {
                     .get("aggregatedOutput")
                     .and_then(Value::as_str)
                     .map(str::to_owned)
+                    .or_else(|| {
+                        let stdout = item.get("stdout").and_then(Value::as_str);
+                        let stderr = item.get("stderr").and_then(Value::as_str);
+                        match (stdout, stderr) {
+                            (Some(stdout), Some(stderr)) if !stderr.is_empty() => {
+                                Some(format!("{stdout}{stderr}"))
+                            }
+                            (Some(stdout), _) => Some(stdout.to_owned()),
+                            (None, Some(stderr)) => Some(stderr.to_owned()),
+                            (None, None) => None,
+                        }
+                    })
                     .or_else(|| self.tool_output.remove(&id))
                     .unwrap_or_default();
                 let exit_code = item.get("exitCode").and_then(Value::as_i64);
@@ -694,6 +739,60 @@ fn item_id(item: &Value) -> String {
         .and_then(Value::as_str)
         .unwrap_or("codex-item")
         .to_owned()
+}
+
+fn user_message_text(item: &Value) -> Option<String> {
+    text_from_fields(item, &["text", "inputText", "message"])
+        .or_else(|| item.get("content").and_then(text_from_content))
+        .or_else(|| item.get("input").and_then(text_from_content))
+        .or_else(|| item.get("items").and_then(text_from_content))
+        .map(|text| text.trim().to_owned())
+        .filter(|text| !text.is_empty())
+}
+
+fn agent_message_text(item: &Value) -> Option<String> {
+    text_from_fields(item, &["text", "outputText", "message"])
+        .or_else(|| item.get("content").and_then(text_from_content))
+        .map(|text| text.trim().to_owned())
+        .filter(|text| !text.is_empty())
+}
+
+fn text_from_fields(value: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        value
+            .get(*key)
+            .and_then(text_from_content)
+            .filter(|text| !text.is_empty())
+    })
+}
+
+fn text_from_content(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Array(items) => {
+            let text = items
+                .iter()
+                .filter_map(text_from_content)
+                .filter(|text| !text.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n");
+            (!text.is_empty()).then_some(text)
+        }
+        Value::Object(_) => text_from_fields(
+            value,
+            &[
+                "text",
+                "inputText",
+                "outputText",
+                "summaryText",
+                "summary_text",
+                "content",
+                "text_elements",
+                "fragments",
+            ],
+        ),
+        _ => None,
+    }
 }
 
 fn end_reason_from_status(status: &str, error: Option<&Value>) -> EndReason {
@@ -842,6 +941,27 @@ mod tests {
         assert!(
             matches!(&events[0], TranscriptEvent::Ended { reason: EndReason::Error(message) } if message.contains("Codex failed") && message.contains("missing key"))
         );
+    }
+
+    #[test]
+    fn resume_response_rebuilds_thread_history() {
+        let events = parse(&[
+            r#"{"id":"req-1","result":{"thread":{"id":"thread-1","cwd":"/repo","turns":[{"id":"turn-1","status":"completed","items":[{"id":"user-1","type":"userMessage","content":[{"type":"text","text":"list files"}]},{"id":"cmd-1","type":"commandExecution","command":"ls","cwd":"/repo","status":"completed","aggregatedOutput":"Cargo.toml\n","exitCode":0},{"id":"assistant-1","type":"agentMessage","content":[{"type":"text","text":"Cargo.toml is present."}]}]}]}}}"#,
+        ]);
+        assert!(
+            matches!(&events[0], TranscriptEvent::SessionInit { session_id, .. } if session_id == "thread-1")
+        );
+        assert!(events.iter().any(
+            |event| matches!(event, TranscriptEvent::UserMessage(text) if text == "list files")
+        ));
+        assert!(events.iter().any(|event| matches!(event, TranscriptEvent::ToolCall { id, name, .. } if id == "cmd-1" && name == "Bash")));
+        assert!(events.iter().any(|event| matches!(event, TranscriptEvent::ToolResult { id, output, is_error: false } if id == "cmd-1" && output.text == "Cargo.toml\n")));
+        assert!(events.iter().any(
+            |event| matches!(event, TranscriptEvent::AssistantTextDelta { text } if text == "Cargo.toml is present.")
+        ));
+        assert!(events
+            .iter()
+            .all(|event| !matches!(event, TranscriptEvent::Ended { .. })));
     }
 
     #[test]

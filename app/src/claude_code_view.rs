@@ -1427,6 +1427,7 @@ impl ClaudeCodeView {
         // PRODUCT §36: a resumed pane renders the stored history up front —
         // through the same ingest path as live events so tool/diff/thinking
         // card state exists — and continues live on the next message.
+        let restored_session = resume.is_some();
         if let Some(resume) = resume {
             if provider == AgentProvider::Claude {
                 for event in sessions::load_history(&resume.jsonl_path) {
@@ -1456,6 +1457,11 @@ impl ClaudeCodeView {
             view.turn_started = Some(started);
             view.schedule_elapsed_tick(started, ctx);
             view.begin_session(Some(OutgoingMessage::text(prompt)), ctx);
+        } else if restored_session && provider == AgentProvider::Codex {
+            // Codex history is exposed by app-server resume/read, not a stable
+            // local JSONL. Start the driver on restore so its thread/resume
+            // response can rebuild the transcript before the next user input.
+            view.begin_session(None, ctx);
         }
 
         // twarp: a bare `claude` opens to the zero state — load the cwd's recent
@@ -3762,6 +3768,9 @@ impl ClaudeCodeView {
         );
         self.ingest_event(event, ctx);
         if session_initialized {
+            if self.provider == AgentProvider::Codex {
+                ctx.emit(ClaudeCodeViewEvent::Pane(PaneEvent::AppStateChanged));
+            }
             self.send_pending_initial_turn();
         }
         // twarp 17 §32: sentence-by-sentence readout keeps pace with the
