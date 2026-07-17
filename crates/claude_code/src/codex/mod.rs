@@ -229,7 +229,7 @@ fn permission_mapping(mode: PermissionMode) -> (&'static str, &'static str) {
 fn ensure_minimum_cli_version(path_env: Option<&str>) -> Result<()> {
     let program = resolve_in_path(protocol::CODEX_PROGRAM, path_env)
         .unwrap_or_else(|| PathBuf::from(protocol::CODEX_PROGRAM));
-    let output = std::process::Command::new(program)
+    let output = command::blocking::Command::new(program)
         .arg("--version")
         .output()
         .map_err(|e| anyhow!("Failed to run `codex --version`: {e}"))?;

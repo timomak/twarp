@@ -142,7 +142,6 @@ pub async fn rotate_log_files() {
     if let Err(err) = rotate_files(&ChannelState::logfile_name(), max_rotation).await {
         log::error!("Failed to rotate log files: {err:?}");
     }
-
 }
 
 pub async fn rotate_files(channel_file_name: &str, max_rotation: usize) -> Result<()> {

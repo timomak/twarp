@@ -510,7 +510,6 @@ pub enum CliCommand {
 
     // twarp: de-cloud (2b) — `login` / `logout` / `whoami` commands deleted;
     // there are no accounts.
-
     /// Manage providers.
     #[command(subcommand)]
     Provider(crate::provider::ProviderCommand),

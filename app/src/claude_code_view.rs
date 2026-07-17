@@ -157,6 +157,7 @@ const ZERO_STATE_SESSIONS_PER_PAGE: usize = 10;
 /// Avatar glyphs for the message rows (the Agent-Mode shape: icon + body).
 const USER_ICON_SVG_PATH: &str = "bundled/svg/user.svg";
 const ASSISTANT_ICON_SVG_PATH: &str = "bundled/svg/claude.svg";
+const CODEX_ICON_SVG_PATH: &str = "bundled/svg/openai.svg";
 /// Branch glyph for the hover "Fork" affordance below an assistant response.
 const FORK_ICON_SVG_PATH: &str = "bundled/svg/git-branch-02.svg";
 /// Copy glyph for the hover "copy response" affordance beside the Fork button.
@@ -191,7 +192,7 @@ fn provider_copy(provider: AgentProvider) -> ProviderCopy {
         },
         AgentProvider::Codex => ProviderCopy {
             pane_title: "Codex",
-            assistant_icon: ASSISTANT_ICON_SVG_PATH,
+            assistant_icon: CODEX_ICON_SVG_PATH,
             composer_placeholder: "Message Codex…",
             empty_state: "Type a message below — twarp drives the local `codex app-server` CLI and renders its replies, tool calls, and diffs here. Your existing Codex login is used; twarp adds no account or billing.",
             unavailable_title: "Codex isn't available.",
@@ -199,6 +200,13 @@ fn provider_copy(provider: AgentProvider) -> ProviderCopy {
             install_body: "Install the Codex CLI, make sure `codex` is available in a terminal, then check again.",
             needs_attention_prefix: "Codex",
         },
+    }
+}
+
+fn cli_agent_for_provider(provider: AgentProvider) -> CLIAgent {
+    match provider {
+        AgentProvider::Claude => CLIAgent::Claude,
+        AgentProvider::Codex => CLIAgent::Codex,
     }
 }
 
@@ -720,6 +728,10 @@ pub struct ClaudeCodeView {
     /// owns the process stdin (PRODUCT §16, §24). `None` until a session is
     /// running.
     message_tx: Option<Sender<StdinCommand>>,
+    /// Codex app-server creates the real thread id asynchronously. The first
+    /// user turn waits here until `SessionInit` carries that id; Claude still
+    /// sends immediately because it owns the session id at spawn.
+    pending_initial_turn: Option<OutgoingMessage>,
     /// True while `claude` is producing output for the current turn (PRODUCT §9):
     /// the composer shows Stop and sending is disabled until the turn ends.
     streaming: bool,
@@ -1161,21 +1173,32 @@ impl ClaudeCodeView {
         // Feature 16a: the Agent settings Chat row is authoritative for fresh
         // panes. Explicit launch flags still win, but the old last-used
         // `claude_session_defaults` row no longer seeds new panes.
-        let chat_config = AgentSettings::as_ref(ctx).chat_launch_config();
-        let chat_config_matches_provider = AgentSettings::as_ref(ctx)
-            .chat_provider_agent()
-            .agent_provider()
-            == Some(provider);
-        let model = model.or_else(|| {
-            chat_config_matches_provider
-                .then(|| chat_config.model)
-                .flatten()
-        });
-        let effort = effort.or_else(|| {
-            chat_config_matches_provider
-                .then(|| chat_config.effort)
-                .flatten()
-        });
+        let settings = AgentSettings::as_ref(ctx);
+        let chat_config = settings.chat_launch_config();
+        let chat_config_matches_provider = chat_config.provider.agent_provider() == Some(provider);
+        let target_agent = cli_agent_for_provider(provider);
+        let model = model
+            .or_else(|| {
+                chat_config_matches_provider
+                    .then_some(chat_config.model)
+                    .flatten()
+            })
+            .or_else(|| {
+                (!chat_config_matches_provider)
+                    .then(|| app_settings::default_model_for_provider(target_agent))
+                    .flatten()
+            });
+        let effort = effort
+            .or_else(|| {
+                chat_config_matches_provider
+                    .then_some(chat_config.effort)
+                    .flatten()
+            })
+            .or_else(|| {
+                (!chat_config_matches_provider)
+                    .then(|| app_settings::default_effort_for_provider(target_agent))
+                    .flatten()
+            });
         let permission_mode = permission_mode.unwrap_or(chat_config.permission_mode);
 
         let input_editor = ctx.add_typed_action_view(|ctx| {
@@ -1277,6 +1300,7 @@ impl ClaudeCodeView {
             transcript_selection: Default::default(),
             child: None,
             message_tx: None,
+            pending_initial_turn: None,
             streaming: false,
             tab_attention: None,
             interrupt_pending: false,
@@ -3471,6 +3495,7 @@ impl ClaudeCodeView {
                 // A failed resume must not wedge the pane on the dead id —
                 // the next message starts fresh (PRODUCT §37).
                 self.resume_session_id = None;
+                self.pending_initial_turn = None;
                 self.transcript.apply(TranscriptEvent::Ended {
                     reason: claude_code::EndReason::Error(format!(
                         "Couldn't start `{}`: {err}",
@@ -3546,9 +3571,26 @@ impl ClaudeCodeView {
 
         // Send the first turn now that stdin is wired (PRODUCT §6).
         if let (Some(prompt), Some(tx)) = (first_prompt, &self.message_tx) {
-            let _ = tx.try_send(StdinCommand::Turn(prompt));
+            if self.provider == AgentProvider::Codex {
+                self.pending_initial_turn = Some(prompt);
+            } else {
+                let _ = tx.try_send(StdinCommand::Turn(prompt));
+            }
         }
         ctx.notify();
+    }
+
+    fn send_pending_initial_turn(&mut self) {
+        let Some(prompt) = self.pending_initial_turn.take() else {
+            return;
+        };
+        let Some(tx) = &self.message_tx else {
+            self.pending_initial_turn = Some(prompt);
+            return;
+        };
+        if tx.try_send(StdinCommand::Turn(prompt)).is_err() {
+            self.pending_initial_turn = None;
+        }
     }
 
     /// Apply one driver event on the main thread (PRODUCT §9–§13), dropping
@@ -3724,12 +3766,16 @@ impl ClaudeCodeView {
                 reason: claude_code::EndReason::Completed
             }
         );
+        let session_initialized = matches!(&event, TranscriptEvent::SessionInit { .. });
         let ended = matches!(event, TranscriptEvent::Ended { .. });
         let assistant_text_grew = matches!(
             &event,
             TranscriptEvent::AssistantTextDelta { .. } | TranscriptEvent::AssistantTextDone
         );
         self.ingest_event(event, ctx);
+        if session_initialized {
+            self.send_pending_initial_turn();
+        }
         // twarp 17 §32: sentence-by-sentence readout keeps pace with the
         // stream. Cheap when the toggle is off (single bool check).
         if assistant_text_grew {
@@ -3830,6 +3876,7 @@ impl ClaudeCodeView {
         self.interrupt_pending = false;
         self.child = None;
         self.message_tx = None;
+        self.pending_initial_turn = None;
         ctx.notify();
     }
 
@@ -3865,6 +3912,7 @@ impl ClaudeCodeView {
         self.session_epoch += 1;
         self.child = None; // kill_on_drop
         self.message_tx = None;
+        self.pending_initial_turn = None;
         self.streaming = false;
         self.interrupt_pending = false;
     }
