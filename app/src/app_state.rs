@@ -911,6 +911,10 @@ impl CLIAgentAdapter for CodexAgentAdapter {
     }
 
     fn model_options(&self) -> Vec<CLIAgentModelOption> {
+        if !FeatureFlag::CodexAgentBackend.is_enabled() {
+            return Vec::new();
+        }
+
         CODEX_MODEL_OPTIONS
             .iter()
             .map(|model| CLIAgentModelOption {
@@ -921,17 +925,22 @@ impl CLIAgentAdapter for CodexAgentAdapter {
     }
 
     fn is_valid_model(&self, model: &str) -> bool {
-        CODEX_MODEL_OPTIONS.contains(&model)
+        FeatureFlag::CodexAgentBackend.is_enabled() && CODEX_MODEL_OPTIONS.contains(&model)
     }
 
     fn effort_options(&self) -> &'static [CLIAgentEffortOption] {
-        CODEX_EFFORT_OPTIONS
+        if FeatureFlag::CodexAgentBackend.is_enabled() {
+            CODEX_EFFORT_OPTIONS
+        } else {
+            &[]
+        }
     }
 
     fn is_valid_effort(&self, effort: &str) -> bool {
-        CODEX_EFFORT_OPTIONS
-            .iter()
-            .any(|option| option.value == effort)
+        FeatureFlag::CodexAgentBackend.is_enabled()
+            && CODEX_EFFORT_OPTIONS
+                .iter()
+                .any(|option| option.value == effort)
     }
 
     fn login_probe(&self) -> bool {
