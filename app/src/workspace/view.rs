@@ -16139,6 +16139,36 @@ impl Workspace {
         .finish()
     }
 
+    /// twarp: the titlebar's browser (globe) button — sits immediately left of
+    /// the code review chip and reveals (or opens) the Browser pane bound to
+    /// the active tab's Claude session. Hidden on tabs without a Claude pane.
+    fn render_title_bar_browser_button(
+        &self,
+        appearance: &Appearance,
+        ctx: &AppContext,
+    ) -> Option<Box<dyn Element>> {
+        let session_id = self
+            .active_tab_pane_group()
+            .as_ref(ctx)
+            .claude_session_id_for_chrome(ctx)?;
+        Some(
+            Align::new(
+                self.render_tab_bar_icon_button(
+                    appearance,
+                    icons::Icon::Globe,
+                    &self.mouse_states.title_bar_browser,
+                    WorkspaceAction::FocusOrOpenBrowserForClaudeSession(session_id),
+                    "Browser".to_string(),
+                    None,
+                    false,
+                    false,
+                )
+                .finish(),
+            )
+            .finish(),
+        )
+    }
+
     fn render_tab_bar_contents(
         &self,
         hover_fixed_width: Option<f32>,
@@ -16469,10 +16499,30 @@ impl Workspace {
             );
         }
 
+        // twarp: the browser (globe) button rides along with the code review
+        // chip, sitting immediately to its left; if the chip is not configured
+        // it falls back to just before the search button.
+        let mut browser_button = self.render_title_bar_browser_button(appearance, ctx);
         for item in config.right_items() {
+            if matches!(item, HeaderToolbarItemKind::CodeReview) {
+                if let Some(button) = browser_button.take() {
+                    target.add_child(
+                        Container::new(button)
+                            .with_margin_left(TAB_BAR_ICON_PADDING)
+                            .finish(),
+                    );
+                }
+            }
             if let Some(button) = self.render_header_toolbar_button(&item, appearance, ctx) {
                 target.add_child(button);
             }
+        }
+        if let Some(button) = browser_button.take() {
+            target.add_child(
+                Container::new(button)
+                    .with_margin_left(TAB_BAR_ICON_PADDING)
+                    .finish(),
+            );
         }
 
         target.add_child(

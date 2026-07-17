@@ -533,6 +533,15 @@ pub enum ClaudeCodeViewAction {
     /// twarp 17: the composer speaker button (PRODUCT 17 §12–§14) — toggles
     /// spoken replies for this pane; while speaking it also stops playback.
     ToggleSpeakReplies,
+    /// twarp: swap between the rendered chat and the raw interactive CLI from
+    /// the header menu's segmented toggle. The menu overlay lives in this
+    /// view's own tree (unlike the old header toggle), so it dispatches the
+    /// in-pane action directly.
+    ToggleRawCli,
+    /// twarp: close the consolidated header menu (the ⋯ button's floating
+    /// card holding the Chat/Raw toggle plus the Agent-runs and Scripts
+    /// entries).
+    CloseHeaderMenu,
 }
 
 /// Actions dispatched by elements this view renders inside its **pane
@@ -561,10 +570,11 @@ pub enum ClaudeCodeCustomAction {
     /// icon button (left of the background-scripts button). Routed the same
     /// way as [`ClaudeCodeCustomAction::ToggleBackgroundPanel`].
     ToggleAgentsPanel,
-    /// twarp 14n: reveal the Browser pane bound to this session (14j) —
-    /// raises its window/tab and focuses it, wherever the user moved it.
-    /// Dispatched by the header's globe button.
-    FocusBoundBrowser,
+    /// twarp: expand / collapse the consolidated header menu — the ⋯ button's
+    /// floating card holding the Chat UI / Raw CLI toggle plus the Agent-runs
+    /// and Scripts entries. The button lives in the parent `PaneView`'s
+    /// header tree, so it routes through the pane framework.
+    ToggleHeaderMenu,
 }
 
 /// Which composer dropdown / popover is open (#13). The model picker, the
@@ -1058,8 +1068,16 @@ pub struct ClaudeCodeView {
     /// Mouse state for the header's agents icon button (left of the
     /// background-scripts button) that opens the floating panel.
     agents_button_mouse: MouseStateHandle,
-    /// twarp 14n: mouse state for the header's globe button (bound browser).
-    globe_button_mouse: MouseStateHandle,
+    /// twarp: whether the consolidated header menu (the ⋯ button's floating
+    /// card with the Chat/Raw toggle plus Agent-runs and Scripts entries) is
+    /// open. Shares the top-right anchor with the two panels — at most one of
+    /// the three is open.
+    header_menu_expanded: bool,
+    /// Mouse state for the header's ⋯ menu button.
+    header_menu_button_mouse: MouseStateHandle,
+    /// Mouse states for the header menu's "Agent runs" and "Scripts" rows.
+    header_menu_agents_row_mouse: MouseStateHandle,
+    header_menu_scripts_row_mouse: MouseStateHandle,
     /// Mouse state for the agents panel header's "Clear" button.
     agents_clear_mouse: MouseStateHandle,
     /// Memoized [`agents::collect`] output, keyed by the transcript revision
@@ -1396,7 +1414,10 @@ impl ClaudeCodeView {
             agent_row_mouse: std::cell::RefCell::new(HashMap::new()),
             agents_panel_mouse: MouseStateHandle::default(),
             agents_button_mouse: MouseStateHandle::default(),
-            globe_button_mouse: MouseStateHandle::default(),
+            header_menu_expanded: false,
+            header_menu_button_mouse: MouseStateHandle::default(),
+            header_menu_agents_row_mouse: MouseStateHandle::default(),
+            header_menu_scripts_row_mouse: MouseStateHandle::default(),
             agents_clear_mouse: MouseStateHandle::default(),
             agents_memo: std::cell::RefCell::new(None),
             computer_control: std::cell::RefCell::new(ComputerControlCoordinator::default()),
@@ -5943,46 +5964,94 @@ impl ClaudeCodeView {
         runs
     }
 
-    /// twarp: the header's **agents icon button** — the arrow-split glyph
-    /// (the transcript's sub-agent card icon) sitting to the left of the
-    /// background-scripts button, opening the floating
-    /// [`render_agents_panel`](Self::render_agents_panel). While any of this
-    /// chat's agents are still running, an accent notification bubble overlays
-    /// the glyph's top-right corner with the active count — the exact
-    /// composition of [`render_background_button`](Self::render_background_button).
-    /// twarp 14n: the header's **globe button** — the visible end of the
-    /// session↔browser binding (14j). Gray by default; accent while the agent
-    /// is actively driving its bound Browser pane (input lease held). Clicking
-    /// reveals the bound pane wherever the user moved it — another tab or its
-    /// own window.
-    fn render_globe_button(&self, app: &AppContext) -> Option<Box<dyn Element>> {
+    /// twarp: the header's consolidated **⋯ menu button** — replaces the old
+    /// row of globe / agents / scripts icons and the always-visible segmented
+    /// toggle. Opens the floating [`render_header_menu`](Self::render_header_menu)
+    /// card. While any agent run or background script is active, an accent
+    /// notification bubble overlays the glyph with the combined count — the
+    /// exact composition of [`render_background_button`](Self::render_background_button).
+    fn render_header_menu_button(&self, app: &AppContext) -> Box<dyn Element> {
+        let active_agents = self
+            .agent_runs()
+            .iter()
+            .filter(|a| !self.agents_dismissed.contains(&a.id) && a.state.is_active())
+            .count();
+        let active_scripts = self
+            .background_scripts()
+            .iter()
+            .filter(|s| !self.background_dismissed.contains(&s.id) && s.state.is_active())
+            .count();
+        let active = active_agents + active_scripts;
+
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        let browsing = self
-            .bound_browser_view(app)
-            .is_some_and(|view| view.as_ref(app).agent_lease_active());
-        let glyph_color = if browsing {
-            self.accent(app)
+        let accent = self.accent(app);
+        let wash = self.accent_wash(app);
+        let expanded = self.header_menu_expanded;
+
+        // Idle affordances read as neutral gray chrome; the full accent is
+        // reserved for "something is running right now".
+        let glyph_color = if active > 0 {
+            accent
         } else {
-            // Idle chrome stays neutral gray.
             theme.sub_text_color(theme.background()).into_solid()
         };
-        let wash = self.accent_wash(app);
-
         let glyph = ConstrainedBox::new(
-            Icon::new(crate::ui_components::icons::Icon::Globe.into(), glyph_color).finish(),
+            Icon::new(
+                crate::ui_components::icons::Icon::DotsHorizontal.into(),
+                glyph_color,
+            )
+            .finish(),
         )
         .with_width(15.)
         .with_height(15.)
         .finish();
-        let inner = Container::new(glyph)
-            .with_padding(Padding::uniform(1.))
-            .finish();
-        let button = Hoverable::new(self.globe_button_mouse.clone(), move |state| {
+
+        let mut stack = Stack::new();
+        stack.add_child(
+            Container::new(glyph)
+                .with_padding(Padding::uniform(1.))
+                .finish(),
+        );
+        if active > 0 {
+            let label = appearance
+                .ui_builder()
+                .span(active.to_string())
+                .with_style(UiComponentStyles {
+                    font_color: Some(ColorU::white()),
+                    font_size: Some(9.),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let sized = ConstrainedBox::new(Align::new(label).finish())
+                .with_min_width(13.)
+                .with_min_height(13.)
+                .finish();
+            let badge = Container::new(sized)
+                .with_padding_left(2.)
+                .with_padding_right(2.)
+                .with_background_color(accent)
+                .with_border(Border::all(1.).with_border_fill(theme.background()))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(7.)))
+                .finish();
+            stack.add_positioned_child(
+                badge,
+                OffsetPositioning::offset_from_parent(
+                    vec2f(5., -5.),
+                    ParentOffsetBounds::ParentBySize,
+                    ParentAnchor::TopRight,
+                    ChildAnchor::Center,
+                ),
+            );
+        }
+
+        let inner = stack.finish();
+        Hoverable::new(self.header_menu_button_mouse.clone(), move |state| {
             let mut body = Container::new(inner)
                 .with_padding(Padding::uniform(4.))
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)));
-            if state.is_hovered() {
+            if expanded || state.is_hovered() {
                 body = body.with_background_color(wash);
             }
             body.finish()
@@ -5990,25 +6059,191 @@ impl ClaudeCodeView {
         .with_cursor(Cursor::PointingHand)
         .on_click(|ctx, _, _| {
             ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
-                PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::FocusBoundBrowser),
+                PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleHeaderMenu),
             );
         })
-        .finish();
-        Some(button)
+        .finish()
     }
 
-    /// twarp 14n: the Browser pane bound to this session (14j), wherever it
-    /// lives.
-    fn bound_browser_view(
-        &self,
-        app: &AppContext,
-    ) -> Option<twarpui::ViewHandle<crate::browser_view::BrowserView>> {
-        app.window_ids()
-            .filter_map(|window_id| {
-                app.views_of_type::<crate::browser_view::BrowserView>(window_id)
+    /// twarp: the ⋯ button's floating menu card — the Chat UI / Raw CLI
+    /// segmented toggle on top, then the "Agent runs" and "Scripts" rows that
+    /// open the existing floating panels (which share this card's top-right
+    /// anchor, so opening one swaps the card out for the panel).
+    fn render_header_menu(&self, app: &AppContext) -> Option<Box<dyn Element>> {
+        if !self.header_menu_expanded {
+            return None;
+        }
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let accent = self.render_accent.get();
+        let wash = self.render_wash.get();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let main = theme.main_text_color(theme.background()).into_solid();
+        let inactive_color = theme.sub_text_color(theme.background()).into_solid();
+        let toggle_border: twarp_core::ui::theme::Fill = self
+            .tab_accent(app)
+            .map(|tab| ColorU::new(tab.r, tab.g, tab.b, 90).into())
+            .unwrap_or_else(|| theme.outline());
+
+        // The menu only renders in chat mode (raw mode keeps the toggle in
+        // the header), so "Chat UI" is always the active segment here.
+        let chat_segment = render_mode_segment(
+            "Chat UI",
+            true,
+            false,
+            self.chat_ui_button.clone(),
+            accent,
+            wash,
+            inactive_color,
+            appearance,
+            true,
+        );
+        let raw_segment = render_mode_segment(
+            "Raw CLI",
+            false,
+            !self.streaming, // enter raw only when idle (§42)
+            self.raw_cli_button.clone(),
+            accent,
+            wash,
+            inactive_color,
+            appearance,
+            true,
+        );
+        let toggle = Container::new(
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(2.)
+                .with_child(chat_segment)
+                .with_child(raw_segment)
+                .finish(),
+        )
+        .with_padding(Padding::uniform(2.))
+        .with_border(Border::all(1.).with_border_fill(toggle_border))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+        .finish();
+
+        let active_agents = self
+            .agent_runs()
+            .iter()
+            .filter(|a| !self.agents_dismissed.contains(&a.id) && a.state.is_active())
+            .count();
+        let active_scripts = self
+            .background_scripts()
+            .iter()
+            .filter(|s| !self.background_dismissed.contains(&s.id) && s.state.is_active())
+            .count();
+
+        // One section row: glyph + label left, a muted count right; clicking
+        // swaps this card for the section's existing floating panel.
+        let section_row = |icon: crate::ui_components::icons::Icon,
+                           label: &str,
+                           active: usize,
+                           mouse: MouseStateHandle,
+                           action: ClaudeCodeViewAction|
+         -> Box<dyn Element> {
+            let glyph_color = if active > 0 { accent } else { muted };
+            let glyph = ConstrainedBox::new(Icon::new(icon.into(), glyph_color).finish())
+                .with_width(15.)
+                .with_height(15.)
+                .finish();
+            let title = appearance
+                .ui_builder()
+                .span(label.to_owned())
+                .with_style(UiComponentStyles {
+                    font_color: Some(main),
+                    font_size: Some(12.5),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let count = appearance
+                .ui_builder()
+                .span(if active > 0 {
+                    format!("{active} running")
+                } else {
+                    String::new()
+                })
+                .with_style(UiComponentStyles {
+                    font_color: Some(muted),
+                    font_size: Some(11.),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let row = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_spacing(8.)
+                .with_child(glyph)
+                .with_child(title)
+                .with_child(
+                    Shrinkable::new(1., twarpui::elements::Empty::new().finish()).finish(),
+                )
+                .with_child(count)
+                .finish();
+            Hoverable::new(mouse, move |state| {
+                let mut body = Container::new(row)
+                    .with_padding_left(12.)
+                    .with_padding_right(12.)
+                    .with_padding_top(8.)
+                    .with_padding_bottom(8.)
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)));
+                if state.is_hovered() {
+                    body = body.with_background_color(wash);
+                }
+                body.finish()
             })
-            .flatten()
-            .find(|view| view.as_ref(app).bound_claude_session() == Some(self.session_id.as_str()))
+            .with_cursor(Cursor::PointingHand)
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(action.clone());
+            })
+            .finish()
+        };
+
+        let column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_child(
+                Container::new(Align::new(toggle).finish())
+                    .with_padding(Padding::uniform(10.))
+                    .finish(),
+            )
+            .with_child(section_row(
+                crate::ui_components::icons::Icon::ArrowSplit,
+                "Agent runs",
+                active_agents,
+                self.header_menu_agents_row_mouse.clone(),
+                ClaudeCodeViewAction::ToggleAgentsPanel,
+            ))
+            .with_child(
+                Container::new(section_row(
+                    crate::ui_components::icons::Icon::Terminal,
+                    "Scripts",
+                    active_scripts,
+                    self.header_menu_scripts_row_mouse.clone(),
+                    ClaudeCodeViewAction::ToggleBackgroundPanel,
+                ))
+                .with_padding_bottom(4.)
+                .finish(),
+            )
+            .finish();
+
+        let card = Container::new(column)
+            .with_background_color(theme.surface_1().into_solid())
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(12.)))
+            .with_drop_shadow(DropShadow::default())
+            .finish();
+        // Both min AND max width: a positioned overlay child is measured
+        // against the whole pane's constraints, so without a max the card
+        // stretches to the full pane width.
+        Some(
+            ConstrainedBox::new(card)
+                .with_min_width(240.)
+                .with_max_width(280.)
+                .finish(),
+        )
     }
 
     fn render_agents_button(&self, app: &AppContext) -> Option<Box<dyn Element>> {
@@ -8648,6 +8883,25 @@ impl View for ClaudeCodeView {
                     ),
                 );
             }
+            // twarp: the ⋯ header-menu card — third occupant of the shared
+            // top-right anchor (the toggle handlers keep at most one of the
+            // three open). Wrapped in Dismiss so a click elsewhere closes it.
+            if let Some(menu) = self.render_header_menu(app) {
+                let menu = Dismiss::new(menu)
+                    .on_dismiss(|ctx, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::CloseHeaderMenu);
+                    })
+                    .finish();
+                stack.add_positioned_child(
+                    menu,
+                    OffsetPositioning::offset_from_parent(
+                        vec2f(-12., 12.),
+                        ParentOffsetBounds::ParentBySize,
+                        ParentAnchor::TopRight,
+                        ChildAnchor::TopRight,
+                    ),
+                );
+            }
             // No horizontal padding here: the transcript scrollable spans the
             // full pane width so its overlay scrollbar hugs the right edge
             // (the prose keeps its margins via TRANSCRIPT_GUTTER inside the
@@ -8867,10 +9121,11 @@ impl TypedActionView for ClaudeCodeView {
             }
             ClaudeCodeViewAction::ToggleBackgroundPanel => {
                 self.background_scripts_expanded = !self.background_scripts_expanded;
-                // The agents panel shares the top-right anchor; keep at most
-                // one of the two open.
+                // The agents panel and the header menu share the top-right
+                // anchor; keep at most one of the three open.
                 if self.background_scripts_expanded {
                     self.agents_panel_expanded = false;
+                    self.header_menu_expanded = false;
                 }
                 ctx.notify();
             }
@@ -8894,11 +9149,20 @@ impl TypedActionView for ClaudeCodeView {
             }
             ClaudeCodeViewAction::ToggleAgentsPanel => {
                 self.agents_panel_expanded = !self.agents_panel_expanded;
-                // The background panel shares the top-right anchor; keep at
-                // most one of the two open.
+                // The background panel and the header menu share the top-right
+                // anchor; keep at most one of the three open.
                 if self.agents_panel_expanded {
                     self.background_scripts_expanded = false;
+                    self.header_menu_expanded = false;
                 }
+                ctx.notify();
+            }
+            ClaudeCodeViewAction::ToggleRawCli => {
+                self.header_menu_expanded = false;
+                self.toggle_raw_cli(ctx);
+            }
+            ClaudeCodeViewAction::CloseHeaderMenu => {
+                self.header_menu_expanded = false;
                 ctx.notify();
             }
             ClaudeCodeViewAction::ToggleAgentRow(id) => {
@@ -8970,14 +9234,15 @@ impl BackingView for ClaudeCodeView {
                 }
                 ctx.notify();
             }
-            ClaudeCodeCustomAction::FocusBoundBrowser => {
-                // twarp 14p: DEFERRED — the handler runs while this view is
-                // checked out of the registry; the workspace handler reads
-                // Claude views by session id, which would re-enter this view
-                // and abort. The deferred action runs after effects flush.
-                ctx.dispatch_typed_action_deferred(
-                    WorkspaceAction::FocusOrOpenBrowserForClaudeSession(self.session_id.clone()),
-                );
+            ClaudeCodeCustomAction::ToggleHeaderMenu => {
+                self.header_menu_expanded = !self.header_menu_expanded;
+                // The agents / background panels share the top-right anchor;
+                // opening the menu closes them.
+                if self.header_menu_expanded {
+                    self.agents_panel_expanded = false;
+                    self.background_scripts_expanded = false;
+                }
+                ctx.notify();
             }
         }
     }
@@ -9040,174 +9305,106 @@ impl BackingView for ClaudeCodeView {
             .tab_accent(app)
             .map(|accent| ColorU::new(accent.r, accent.g, accent.b, 90).into())
             .unwrap_or_else(|| theme.outline());
-        // The bordered [ chat | raw ] segmented control, with density-specific
-        // labels ("Chat UI"/"Raw CLI" wide, "Chat"/"CLI" compact).
-        let segmented_toggle = |chat_label: &str, raw_label: &str| -> Box<dyn Element> {
-            let chat_segment = render_mode_segment(
-                chat_label,
-                !raw_mode, // active when in chat
-                raw_mode,  // clickable only from raw mode (to exit)
-                self.chat_ui_button.clone(),
-                accent,
-                wash,
-                inactive_color,
-                appearance,
-            );
-            let raw_segment = render_mode_segment(
-                raw_label,
-                raw_mode,                     // active when in raw
-                !raw_mode && !self.streaming, // enter raw only when idle
-                self.raw_cli_button.clone(),
-                accent,
-                wash,
-                inactive_color,
-                appearance,
-            );
-            Container::new(
-                Flex::row()
+        // twarp: the header cluster is now a single ⋯ menu button (plus the
+        // flag-gated computer-control entry point). The globe moved to the
+        // window titlebar; the agents / background-scripts buttons and the
+        // Chat UI / Raw CLI toggle live inside the ⋯ button's floating menu.
+        //
+        // Exception: in raw mode the pane body IS the embedded terminal, so
+        // the in-pane menu overlay can't render — the header keeps the
+        // segmented toggle there as the always-visible way back (§39/§40).
+        let (left_of_overflow, control_container_width) = if raw_mode {
+            let segmented_toggle = |chat_label: &str, raw_label: &str| -> Box<dyn Element> {
+                let chat_segment = render_mode_segment(
+                    chat_label,
+                    false, // raw mode: chat is the inactive, clickable way back
+                    true,
+                    self.chat_ui_button.clone(),
+                    accent,
+                    wash,
+                    inactive_color,
+                    appearance,
+                    false,
+                );
+                let raw_segment = render_mode_segment(
+                    raw_label,
+                    true,
+                    false,
+                    self.raw_cli_button.clone(),
+                    accent,
+                    wash,
+                    inactive_color,
+                    appearance,
+                    false,
+                );
+                Container::new(
+                    Flex::row()
+                        .with_main_axis_size(MainAxisSize::Min)
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_spacing(2.)
+                        .with_child(chat_segment)
+                        .with_child(raw_segment)
+                        .finish(),
+                )
+                .with_padding(Padding::uniform(2.))
+                .with_border(Border::all(1.).with_border_fill(toggle_border.clone()))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                // #5: breathing room between the toggle and the close ✕.
+                .with_margin_right(10.)
+                .finish()
+            };
+            let left_of_overflow = Shrinkable::new(
+                1.,
+                Box::new(SizeConstraintSwitch::new(
+                    segmented_toggle("Chat UI", "Raw CLI"),
+                    [(
+                        SizeConstraintCondition::WidthLessThan(130.),
+                        segmented_toggle("Chat", "CLI"),
+                    )],
+                )),
+            )
+            .finish();
+            (left_of_overflow, 210.)
+        } else {
+            let computer_control_button = self.render_computer_control_button(app, false);
+            let has_computer_control_button = computer_control_button.is_some();
+            let assemble_cluster = |computer_control_button: Option<Box<dyn Element>>|
+             -> Box<dyn Element> {
+                let mut controls = Flex::row()
                     .with_main_axis_size(MainAxisSize::Min)
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_spacing(2.)
-                    .with_child(chat_segment)
-                    .with_child(raw_segment)
-                    .finish(),
-            )
-            .with_padding(Padding::uniform(2.))
-            .with_border(Border::all(1.).with_border_fill(toggle_border.clone()))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-            // #5: breathing room between the toggle and the always-visible close ✕.
-            .with_margin_right(10.)
-            .finish()
-        };
-        // The tightest tier keeps only the *switch-to* action as a single
-        // chip — the current mode is evident from the pane body itself.
-        let minimal_toggle = || -> Box<dyn Element> {
-            let (label, mouse, clickable) = if raw_mode {
-                ("Chat", self.chat_ui_button.clone(), true)
-            } else {
-                ("CLI", self.raw_cli_button.clone(), !self.streaming)
+                    .with_spacing(6.);
+                if let Some(button) = computer_control_button {
+                    controls = controls.with_child(button);
+                }
+                controls
+                    .with_child(
+                        Container::new(self.render_header_menu_button(app))
+                            // Breathing room between the button and the close ✕.
+                            .with_margin_right(10.)
+                            .finish(),
+                    )
+                    .finish()
             };
-            Container::new(render_mode_segment(
-                label,
-                false,
-                clickable,
-                mouse,
-                accent,
-                wash,
-                inactive_color,
-                appearance,
-            ))
-            .with_padding(Padding::uniform(2.))
-            .with_border(Border::all(1.).with_border_fill(toggle_border.clone()))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-            .with_margin_right(10.)
-            .finish()
-        };
-        // twarp: the background-scripts icon button sits to the LEFT of the
-        // toggle, opening the floating panel and badging the active run count.
-        // The agents icon button sits to ITS left (same chrome, badging running
-        // agents), the globe (14n) left of that, and the computer-control entry
-        // point leftmost when the 15b flag is on — so widen the header control
-        // budget for whichever controls are present.
-        let computer_control_button = self.render_computer_control_button(app, false);
-        let has_computer_control_button = computer_control_button.is_some();
-        let background_button = self.render_background_button(app);
-        let has_background_button = background_button.is_some();
-        let agents_button = self.render_agents_button(app);
-        let has_agents_button = agents_button.is_some();
-        let globe_button = self.render_globe_button(app);
-        let has_globe_button = globe_button.is_some();
-        let assemble_cluster = |computer_control_button: Option<Box<dyn Element>>,
-                                globe_button: Option<Box<dyn Element>>,
-                                agents_button: Option<Box<dyn Element>>,
-                                background_button: Option<Box<dyn Element>>,
-                                toggle: Box<dyn Element>|
-         -> Box<dyn Element> {
-            let mut controls = Flex::row()
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_spacing(6.);
-            if let Some(button) = computer_control_button {
-                controls = controls.with_child(button);
-            }
-            if let Some(button) = globe_button {
-                controls = controls.with_child(button);
-            }
-            if let Some(button) = agents_button {
-                controls = controls.with_child(button);
-            }
-            if let Some(button) = background_button {
-                controls = controls.with_child(button);
-            }
-            controls.with_child(toggle).finish()
-        };
-        // Responsive header controls: the cluster is a flex (Shrinkable) child
-        // of the header's control row, so in a narrow pane it receives a real
-        // bounded width and SizeConstraintSwitch can step down — first to
-        // compact (icon-only computer control, "Chat|CLI" toggle), then to
-        // minimal (a single switch-to chip). Thresholds mirror the per-control
-        // width estimates the budget below is built from.
-        let icon_count = [has_globe_button, has_agents_button, has_background_button]
-            .iter()
-            .filter(|present| **present)
-            .count() as f32;
-        let full_cluster_width = 130.
-            + 40. * icon_count
-            + if has_computer_control_button {
-                132.
-            } else {
-                0.
-            };
-        let compact_cluster_width =
-            95. + 34. * icon_count + if has_computer_control_button { 34. } else { 0. };
-        let full_cluster = assemble_cluster(
-            computer_control_button,
-            globe_button,
-            agents_button,
-            background_button,
-            segmented_toggle("Chat UI", "Raw CLI"),
-        );
-        let compact_cluster = assemble_cluster(
-            self.render_computer_control_button(app, true),
-            self.render_globe_button(app),
-            self.render_agents_button(app),
-            self.render_background_button(app),
-            segmented_toggle("Chat", "CLI"),
-        );
-        let minimal_cluster = assemble_cluster(
-            self.render_computer_control_button(app, true),
-            self.render_globe_button(app),
-            self.render_agents_button(app),
-            self.render_background_button(app),
-            minimal_toggle(),
-        );
-        let left_of_overflow = Shrinkable::new(
-            1.,
-            Box::new(SizeConstraintSwitch::new(
-                full_cluster,
-                [
-                    (
-                        SizeConstraintCondition::WidthLessThan(compact_cluster_width),
-                        minimal_cluster,
-                    ),
-                    (
+            let full_cluster = assemble_cluster(computer_control_button);
+            let compact_cluster =
+                assemble_cluster(self.render_computer_control_button(app, true));
+            let full_cluster_width = 50. + if has_computer_control_button { 132. } else { 0. };
+            let left_of_overflow = Shrinkable::new(
+                1.,
+                Box::new(SizeConstraintSwitch::new(
+                    full_cluster,
+                    [(
                         SizeConstraintCondition::WidthLessThan(full_cluster_width),
                         compact_cluster,
-                    ),
-                ],
-            )),
-        )
-        .finish();
-        let mut control_container_width = if has_background_button { 250. } else { 210. };
-        if has_agents_button {
-            control_container_width += 40.;
-        }
-        if has_globe_button {
-            control_container_width += 40.;
-        }
-        if has_computer_control_button {
-            control_container_width += 132.;
-        }
+                    )],
+                )),
+            )
+            .finish();
+            let control_container_width =
+                130. + if has_computer_control_button { 132. } else { 0. };
+            (left_of_overflow, control_container_width)
+        };
         HeaderContent::Standard(StandardHeader {
             title: provider_copy(self.provider).pane_title.to_owned(),
             title_secondary: cwd,
@@ -10860,6 +11057,11 @@ fn render_mode_segment(
     wash: ColorU,
     inactive_color: ColorU,
     appearance: &Appearance,
+    // twarp: the toggle now renders both inside the pane's own tree (the
+    // header-menu overlay → in-pane action) and in the raw-mode header (the
+    // parent `PaneView`'s tree → pane custom action, which is the only route
+    // back to this view from there).
+    dispatch_in_pane: bool,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
     // #10/#11: the active section reads in the tab accent over a faint wash;
@@ -10885,10 +11087,14 @@ fn render_mode_segment(
     if clickable {
         Hoverable::new(mouse, move |_| chip)
             .with_cursor(Cursor::PointingHand)
-            .on_click(|ctx, _, _| {
-                ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
-                    PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleRawCli),
-                );
+            .on_click(move |ctx, _, _| {
+                if dispatch_in_pane {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleRawCli);
+                } else {
+                    ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
+                        PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleRawCli),
+                    );
+                }
             })
             .finish()
     } else {
