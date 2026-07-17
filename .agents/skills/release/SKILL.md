@@ -29,10 +29,12 @@ All commands from the repo root being built (main checkout or the worktree).
    not open it):
 
    ```
-   ./script/run --release --install
+   ./script/run --release --install --dont-open
    ```
 
-   Do NOT run `open` on the app afterwards — the owner launches it themselves.
+   `--dont-open` matters: without it the script launches the freshly built
+   binary. Do NOT run `open` on the app afterwards either — the owner
+   launches it themselves.
    If a signing/keychain error appears, see the keychain-signing memory
    (WARP_SIGNING_TEAM pin) before retrying.
 3. **Zip the bundle** (stage in /tmp so the zip never lands in the repo):
