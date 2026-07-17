@@ -369,6 +369,10 @@ pub struct LocalCodeEditorView {
     file_loaded: Condition,
     /// Whether content was changed from its base.
     was_edited: bool,
+    /// Review/diff surfaces own their gutter affordances. Git blame is useful
+    /// in a normal editor, but its wide annotation column crowds those actions
+    /// and fills changed lines with meaningless `(uncommitted)` labels.
+    suppress_git_blame: bool,
     /// Content version of the base file state.
     base_content_version: Option<ContentVersion>,
     conflict_banner_mouse_states: ConflictResolutionBannerMouseStates,
@@ -602,6 +606,7 @@ impl LocalCodeEditorView {
             file_loaded: Condition::new(),
             selection_as_context_tooltip: None,
             was_edited: false,
+            suppress_git_blame: false,
             base_content_version: None,
             conflict_banner_mouse_states: Default::default(),
             default_directory: None,
@@ -1353,6 +1358,7 @@ impl LocalCodeEditorView {
     /// it's applied immediately, the diff is recomputed, and hunks are
     /// expanded so removed lines render inline.
     pub fn set_pending_diff_base_on_load(&mut self, base: String, ctx: &mut ViewContext<Self>) {
+        self.suppress_git_blame_for_review(ctx);
         if self.file_loaded(ctx) {
             self.editor.update(ctx, |editor, ctx| {
                 editor.set_base(&base, true, ctx);
@@ -1739,7 +1745,20 @@ impl LocalCodeEditorView {
     }
 
     fn git_blame_enabled(&self) -> bool {
-        FeatureFlag::GitBlame.is_enabled() && self.diff_type.is_none() && !self.is_new_file
+        FeatureFlag::GitBlame.is_enabled()
+            && self.diff_type.is_none()
+            && !self.is_new_file
+            && !self.suppress_git_blame
+    }
+
+    /// Marks this editor as a review diff. Review actions get the gutter and
+    /// blame remains available when the same file is opened normally.
+    pub fn suppress_git_blame_for_review(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.suppress_git_blame {
+            return;
+        }
+        self.suppress_git_blame = true;
+        self.clear_git_blame(ctx);
     }
 
     fn resolve_blame_request(&self, ctx: &AppContext) -> Option<BlameRequest> {

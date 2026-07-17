@@ -1095,11 +1095,13 @@ impl DiffStateModel {
         // Noop on WASM builds.
     }
 
-    /// Stage a single file (`git add -- <path>`). Refreshes the diff after
-    /// the command completes. Errors are logged but not surfaced — see
-    /// PRODUCT §14 (idempotent / race-tolerant). PRODUCT §11.
+    /// Stage one or more files in a single `git add` invocation. Refreshes the
+    /// diff once after the command completes.
     #[cfg(feature = "local_fs")]
-    pub fn stage_file(&mut self, relative_path: PathBuf, ctx: &mut ModelContext<Self>) {
+    pub fn stage_files(&mut self, relative_paths: Vec<PathBuf>, ctx: &mut ModelContext<Self>) {
+        if relative_paths.is_empty() {
+            return;
+        }
         let Some(current_repository) = &self.repository else {
             return;
         };
@@ -1107,46 +1109,19 @@ impl DiffStateModel {
             .as_ref(ctx)
             .root_dir()
             .to_local_path_lossy();
-        let rel_str = relative_path.to_string_lossy().to_string();
+        let relative_paths: Vec<String> = relative_paths
+            .into_iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
         ctx.spawn(
             async move {
-                log::debug!("[GIT OPERATION] diff_state.rs stage_file git add -- {rel_str}");
-                run_git_command(&repo_path, &["add", "--", &rel_str]).await
-            },
-            |me, result, ctx| match result {
-                Ok(_) => {
-                    me.load_diffs_for_current_repo(false, ctx);
-                    me.refresh_diff_metadata_for_current_repo(
-                        InvalidationBehavior::PromptRefresh,
-                        ctx,
-                    );
-                }
-                Err(err) => log::error!("Failed to stage file: {err}"),
-            },
-        );
-    }
-
-    #[cfg(not(feature = "local_fs"))]
-    pub fn stage_file(&mut self, _relative_path: PathBuf, _ctx: &mut ModelContext<Self>) {}
-
-    /// Unstage a single file (`git restore --staged -- <path>`). Refreshes
-    /// the diff after the command completes. PRODUCT §11.
-    #[cfg(feature = "local_fs")]
-    pub fn unstage_file(&mut self, relative_path: PathBuf, ctx: &mut ModelContext<Self>) {
-        let Some(current_repository) = &self.repository else {
-            return;
-        };
-        let repo_path = current_repository
-            .as_ref(ctx)
-            .root_dir()
-            .to_local_path_lossy();
-        let rel_str = relative_path.to_string_lossy().to_string();
-        ctx.spawn(
-            async move {
+                let mut args = vec!["add", "--"];
+                args.extend(relative_paths.iter().map(String::as_str));
                 log::debug!(
-                    "[GIT OPERATION] diff_state.rs unstage_file git restore --staged -- {rel_str}"
+                    "[GIT OPERATION] diff_state.rs stage_files git {}",
+                    args.join(" ")
                 );
-                run_git_command(&repo_path, &["restore", "--staged", "--", &rel_str]).await
+                run_git_command(&repo_path, &args).await
             },
             |me, result, ctx| match result {
                 Ok(_) => {
@@ -1156,13 +1131,71 @@ impl DiffStateModel {
                         ctx,
                     );
                 }
-                Err(err) => log::error!("Failed to unstage file: {err}"),
+                Err(err) => log::error!("Failed to stage files: {err}"),
             },
         );
     }
 
     #[cfg(not(feature = "local_fs"))]
-    pub fn unstage_file(&mut self, _relative_path: PathBuf, _ctx: &mut ModelContext<Self>) {}
+    pub fn stage_files(&mut self, _relative_paths: Vec<PathBuf>, _ctx: &mut ModelContext<Self>) {}
+
+    pub fn stage_file(&mut self, relative_path: PathBuf, ctx: &mut ModelContext<Self>) {
+        self.stage_files(vec![relative_path], ctx);
+    }
+
+    /// Unstage one or more files in a single git invocation. Repositories with
+    /// no initial commit use `git rm --cached`; all others use
+    /// `git restore --staged`.
+    #[cfg(feature = "local_fs")]
+    pub fn unstage_files(&mut self, relative_paths: Vec<PathBuf>, ctx: &mut ModelContext<Self>) {
+        if relative_paths.is_empty() {
+            return;
+        }
+        let Some(current_repository) = &self.repository else {
+            return;
+        };
+        let repo_path = current_repository
+            .as_ref(ctx)
+            .root_dir()
+            .to_local_path_lossy();
+        let has_head = self.has_head();
+        let relative_paths: Vec<String> = relative_paths
+            .into_iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
+        ctx.spawn(
+            async move {
+                let mut args = if has_head {
+                    vec!["restore", "--staged", "--"]
+                } else {
+                    vec!["rm", "--cached", "--"]
+                };
+                args.extend(relative_paths.iter().map(String::as_str));
+                log::debug!(
+                    "[GIT OPERATION] diff_state.rs unstage_files git {}",
+                    args.join(" ")
+                );
+                run_git_command(&repo_path, &args).await
+            },
+            |me, result, ctx| match result {
+                Ok(_) => {
+                    me.load_diffs_for_current_repo(false, ctx);
+                    me.refresh_diff_metadata_for_current_repo(
+                        InvalidationBehavior::PromptRefresh,
+                        ctx,
+                    );
+                }
+                Err(err) => log::error!("Failed to unstage files: {err}"),
+            },
+        );
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    pub fn unstage_files(&mut self, _relative_paths: Vec<PathBuf>, _ctx: &mut ModelContext<Self>) {}
+
+    pub fn unstage_file(&mut self, relative_path: PathBuf, ctx: &mut ModelContext<Self>) {
+        self.unstage_files(vec![relative_path], ctx);
+    }
 
     /// Stage a single hunk in the given file (PRODUCT §12). The hunk is
     /// resolved by `line_in_new_file` — the new-side line number the
