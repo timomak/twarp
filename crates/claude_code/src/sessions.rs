@@ -78,6 +78,24 @@ pub fn has_sessions(cwd: &Path) -> bool {
     })
 }
 
+/// Case-insensitive substring filter of stored sessions by `title`. Returns
+/// the indices (into the original slice) of the sessions that match `query`,
+/// preserving order. An empty/whitespace-only query is not a filter — every
+/// index is returned. Shared by the Claude pane welcome screen's sessions
+/// list (formerly the sidebar session list's local helper).
+pub fn filter_session_indices(sessions: &[StoredSession], query: &str) -> Vec<usize> {
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return (0..sessions.len()).collect();
+    }
+    sessions
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.title.to_lowercase().contains(&needle))
+        .map(|(idx, _)| idx)
+        .collect()
+}
+
 /// List stored sessions for a given cwd, most-recent first.
 ///
 /// Never returns an error: an unreadable directory or unparseable entry is

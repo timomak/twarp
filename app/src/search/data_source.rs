@@ -97,6 +97,13 @@ lazy_static! {
         primary_text: "repos:",
         aliases: vec![]
     };
+    // twarp: stored Claude Code sessions for the active cwd. "sessions:" is
+    // taken by open-session navigation, so the atom is "claude:" (alias
+    // "agents:").
+    static ref CLAUDE_SESSIONS_FILTER_ATOM: FilterAtom = FilterAtom {
+        primary_text: "claude:",
+        aliases: vec!["agents:"]
+    };
     static ref DIFFSETS_FILTER_ATOM: FilterAtom = FilterAtom {
         primary_text: "diffsets:",
         aliases: vec!["diffs:"]
@@ -222,6 +229,9 @@ pub enum QueryFilter {
 
     /// Include only conversations whose most recent directory matches the session's current working directory.
     CurrentDirectoryConversations,
+
+    /// twarp: stored Claude Code sessions for the active working directory.
+    ClaudeSessions,
 }
 
 impl QueryFilter {
@@ -263,6 +273,7 @@ impl QueryFilter {
             QueryFilter::CurrentDirectoryConversations => {
                 "Search conversations in current directory"
             }
+            QueryFilter::ClaudeSessions => "Search agent sessions",
         }
     }
 
@@ -296,6 +307,7 @@ impl QueryFilter {
             QueryFilter::BaseModels => &NO_FILTER_ATOM,
             QueryFilter::FullTerminalUseModels => &NO_FILTER_ATOM,
             QueryFilter::CurrentDirectoryConversations => &NO_FILTER_ATOM,
+            QueryFilter::ClaudeSessions => &CLAUDE_SESSIONS_FILTER_ATOM,
         }
     }
 
@@ -329,6 +341,7 @@ impl QueryFilter {
             QueryFilter::BaseModels => "base models",
             QueryFilter::FullTerminalUseModels => "full terminal use models",
             QueryFilter::CurrentDirectoryConversations => "current directory conversations",
+            QueryFilter::ClaudeSessions => "agent sessions",
         }
     }
 
@@ -370,6 +383,7 @@ impl QueryFilter {
             QueryFilter::BaseModels => None,
             QueryFilter::FullTerminalUseModels => None,
             QueryFilter::CurrentDirectoryConversations => None,
+            QueryFilter::ClaudeSessions => Some("bundled/svg/claude.svg"),
         }
     }
 }

@@ -37,6 +37,7 @@ use std::sync::Arc;
 use crate::features::FeatureFlag;
 use crate::palette::PaletteMode;
 use crate::root_view::OpenLaunchConfigArg;
+use crate::search::command_palette::claude_sessions::ClaudeSessionsDataSource;
 use crate::search::command_palette::data_sources::DataSourceStore;
 use crate::server::ids::SyncId;
 use crate::session_management::SessionSource;
@@ -78,6 +79,10 @@ const MAX_SEARCH_RESULTS: usize = 250;
 
 /// Number of recently selected items to show in the zero state.
 const NUM_RECENT_ITEMS_IN_ZERO_STATE: usize = 3;
+
+/// twarp: number of recent Claude Code sessions (for the active cwd) to show
+/// in the zero state's Suggested section.
+const NUM_RECENT_CLAUDE_SESSIONS_IN_ZERO_STATE: usize = 3;
 
 struct ViewState {
     clipped_scroll_state: ClippedScrollStateHandle,
@@ -501,12 +506,31 @@ impl View {
 
         // The binding source changed, recompute the bindings that could be suggested given the
         // current set of bindings that are focused.
-        let suggested_query_renderers = self
-            .suggested_binding_ids
-            .iter()
-            .filter_map(|binding_id| {
-                data_source_store.query_result_for_binding_id(*binding_id, ctx)
-            })
+        //
+        // twarp: the "Suggested" section leads with two hardcoded actionable
+        // rows ("Open terminal" / "Open agent panel"), then the binding-based
+        // suggestions, then up to a few recent Claude Code sessions for the
+        // active cwd.
+        let suggested_results = [
+            QueryResult::from(zero_state::SuggestedActionItem::open_terminal()),
+            QueryResult::from(zero_state::SuggestedActionItem::open_agent_panel()),
+        ]
+        .into_iter()
+        .chain(self.suggested_binding_ids.iter().filter_map(|binding_id| {
+            data_source_store.query_result_for_binding_id(*binding_id, ctx)
+        }))
+        .chain(
+            ClaudeSessionsDataSource::active_cwd(ctx)
+                .map(|cwd| ClaudeSessionsDataSource::matching_items(&cwd, ""))
+                .unwrap_or_default()
+                .into_iter()
+                .take(NUM_RECENT_CLAUDE_SESSIONS_IN_ZERO_STATE)
+                .map(QueryResult::from),
+        )
+        .collect_vec();
+
+        let suggested_query_renderers = suggested_results
+            .into_iter()
             .enumerate()
             .map(|(idx, item)| Self::create_query_result_renderer(idx, item))
             .collect_vec();
@@ -1012,6 +1036,28 @@ impl View {
                         terminal_view_id,
                     });
                 }
+            }
+            // twarp: resume a stored Claude Code session in a Claude pane.
+            CommandPaletteItemAction::ResumeClaudeSession {
+                session_id,
+                jsonl_path,
+                cwd,
+            } => {
+                ctx.dispatch_typed_action(&WorkspaceAction::ResumeClaudeCodeSession {
+                    session_id,
+                    jsonl_path,
+                    cwd,
+                });
+            }
+            // twarp: zero-state "Open terminal" — a new terminal tab.
+            CommandPaletteItemAction::OpenTerminalTab => {
+                ctx.dispatch_typed_action(&WorkspaceAction::AddTerminalTab {
+                    hide_homepage: false,
+                });
+            }
+            // twarp: zero-state "Open agent panel" — Claude pane in a new tab.
+            CommandPaletteItemAction::OpenAgentPanel => {
+                ctx.dispatch_typed_action(&WorkspaceAction::OpenClaudeCodeInNewTab);
             }
             CommandPaletteItemAction::NoOp => {
                 // No-op action (used for non-interactable separator items that don't do anything on click).

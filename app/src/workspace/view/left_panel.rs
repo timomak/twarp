@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use twarp_core::features::FeatureFlag;
 use twarp_core::ui::theme::color::internal_colors;
-use twarp_core::ui::tokens::border;
+use twarp_core::ui::tokens::{border, radius, spacing, type_ramp};
 use twarp_core::{send_telemetry_from_ctx, ui::Icon};
 use twarp_util::path::LineAndColumnArg;
 use twarpui::{
@@ -116,12 +116,13 @@ const SIDEBAR_BOTTOM_INSET: f32 = 8.;
 
 #[derive(Default)]
 struct MouseStateHandles {
-    project_explorer_button: MouseStateHandle,
+    /// twarp sidebar rework: the header's search-toggle icon button (the
+    /// pill tab switcher is gone; Files is the only tab).
     global_search_button: MouseStateHandle,
-    /// twarp 07 (7h): the session-list toolbelt button.
-    claude_sessions_button: MouseStateHandle,
     // twarp: 2c-d — conversation_list_view_button removed
     // twarp: shortcuts moved to Settings; its toolbelt mouse states removed.
+    // twarp sidebar rework: project_explorer/claude_sessions toolbelt
+    // buttons removed with the segmented switcher.
 }
 
 #[derive(Clone, Debug)]
@@ -130,6 +131,10 @@ pub enum LeftPanelAction {
     GlobalSearch {
         entry_focus: GlobalSearchEntryFocus,
     },
+    /// twarp sidebar rework: toggle the collapsible search section at the
+    /// top of the Files view (the header's search icon). Transient view
+    /// state — not persisted.
+    SearchSectionToggle,
     TwarpDrive,
     // twarp: the Shortcuts panel + its inline editor actions moved to
     // Settings > Shortcuts (see settings_view::shortcuts_page).
@@ -308,6 +313,15 @@ pub struct LeftPanelView {
     /// since `Hoverable::on_click` requires the same handle across
     /// renders to detect click cycles.
     timeline_entry_mouse_states: std::cell::RefCell<Vec<MouseStateHandle>>,
+
+    /// twarp sidebar rework: whether the collapsible search section at the
+    /// top of the Files view is expanded. Transient — never persisted.
+    search_expanded: bool,
+    /// Resizable height for the expanded search section. The drag bar sits
+    /// on the section's bottom edge so dragging down enlarges the search
+    /// results and shrinks the file tree below. Session-scoped, mirroring
+    /// the Timeline section's handle.
+    search_resizable_handle: ResizableStateHandle,
 
     /// twarp 07 (7h, PRODUCT §35): the active cwd's stored Claude Code
     /// sessions, refreshed when the tab opens or the cwd changes. Read-only —
@@ -537,6 +551,11 @@ impl LeftPanelView {
             timeline_load_more_mouse_state: MouseStateHandle::default(),
             timeline_scroll_state: twarpui::elements::ClippedScrollStateHandle::default(),
             timeline_entry_mouse_states: std::cell::RefCell::new(Vec::new()),
+            // twarp sidebar rework: search section collapsed by default;
+            // default height mirrors the Timeline section's 220px, bounded
+            // in the Resizable callback.
+            search_expanded: false,
+            search_resizable_handle: twarpui::elements::resizable_state_handle(220.0),
             claude_sessions: Vec::new(),
             has_claude_sessions: false,
             claude_session_row_mouse_states: std::cell::RefCell::new(Vec::new()),
@@ -615,25 +634,21 @@ impl LeftPanelView {
                     tooltip_keybinding_names,
                 }
             }
-            ToolPanelView::GlobalSearch { .. } => {
-                let tooltip_keybinding_names = vec![
-                    LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME,
-                    OPEN_GLOBAL_SEARCH_BINDING_NAME,
-                ];
-
-                ToolbeltButtonConfig {
-                    icon: Icon::Search,
-                    active_icon: None,
-                    label: "Search".to_string(),
-                    tooltip_text: "Global search".to_string(),
-                    action: LeftPanelAction::GlobalSearch {
-                        entry_focus: GlobalSearchEntryFocus::QueryEditor,
-                    },
-                    render_with_active_state: false,
-                    tooltip_keybinding: toolbelt_tooltip_keybinding(&tooltip_keybinding_names, ctx),
-                    tooltip_keybinding_names,
-                }
-            }
+            // twarp sidebar rework: Search is no longer a sidebar tab — it
+            // is a collapsible section at the top of the Files view. The
+            // variant stays only for persisted-tab back-compat (a legacy
+            // selection falls back to Project Explorer in
+            // `update_available_views`), so this arm is a never-rendered stub.
+            ToolPanelView::GlobalSearch { .. } => ToolbeltButtonConfig {
+                icon: Icon::Search,
+                active_icon: None,
+                label: String::new(),
+                tooltip_text: String::new(),
+                action: LeftPanelAction::ProjectExplorer,
+                render_with_active_state: false,
+                tooltip_keybinding: None,
+                tooltip_keybinding_names: vec![],
+            },
             ToolPanelView::TwarpDrive => {
                 let tooltip_keybinding_names = vec![
                     LEFT_PANEL_TWARP_DRIVE_BINDING_NAME,
@@ -666,15 +681,15 @@ impl LeftPanelView {
                 tooltip_keybinding: None,
                 tooltip_keybinding_names: vec![],
             },
-            // twarp 07 (7h, PRODUCT §35): the session-list tab. The button is
-            // filtered out of the toolbelt while the cwd has no stored
-            // sessions (see `render_toolbelt_buttons`).
+            // twarp sidebar rework: the session-list tab is gone — the Claude
+            // pane welcome screen replaces it. Variant kept for persisted-tab
+            // back-compat only; never-rendered stub falling back to Files.
             ToolPanelView::ClaudeSessions => ToolbeltButtonConfig {
                 icon: Icon::History,
                 active_icon: None,
-                label: "Code".to_owned(),
-                tooltip_text: "Claude Code sessions".to_owned(),
-                action: LeftPanelAction::ClaudeSessions,
+                label: String::new(),
+                tooltip_text: String::new(),
+                action: LeftPanelAction::ProjectExplorer,
                 render_with_active_state: false,
                 tooltip_keybinding: None,
                 tooltip_keybinding_names: vec![],
@@ -760,6 +775,29 @@ impl LeftPanelView {
             .get_global_search_view(pane_group_id)
     }
 
+    /// twarp sidebar rework: route focus into the search section's
+    /// GlobalSearchView (creating it for the active pane group if needed),
+    /// reusing the entry-focus mechanism the old Search tab used.
+    fn focus_search_section(
+        &mut self,
+        entry_focus: GlobalSearchEntryFocus,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(pane_group) = self
+            .active_pane_group
+            .as_ref()
+            .and_then(|pane_group| pane_group.upgrade(ctx))
+        else {
+            return;
+        };
+        let global_search_view =
+            self.get_or_create_global_search_view_for_pane_group(pane_group.id(), ctx);
+        global_search_view.update(ctx, |view, ctx| {
+            view.on_left_panel_focused(entry_focus, ctx);
+        });
+        ctx.focus(&global_search_view);
+    }
+
     fn active_file_tree_view(&self, app: &AppContext) -> Option<ViewHandle<FileTreeView>> {
         let pane_group_id = self
             .active_pane_group
@@ -803,6 +841,16 @@ impl LeftPanelView {
         view: ToolPanelView,
         ctx: &mut ViewContext<Self>,
     ) {
+        // twarp sidebar rework: legacy persisted tabs (Search / Code /
+        // Shortcuts / conversation list) no longer exist — fall back to the
+        // Files view, mirroring `update_available_views`.
+        let view = match view {
+            ToolPanelView::GlobalSearch { .. }
+            | ToolPanelView::ClaudeSessions
+            | ToolPanelView::Shortcuts
+            | ToolPanelView::ConversationListView => ToolPanelView::ProjectExplorer,
+            other => other,
+        };
         active_view_state::set(self, view, ctx);
     }
 
@@ -2026,6 +2074,8 @@ impl LeftPanelView {
                 LeftPanelAction::GlobalSearch { .. } => {
                     matches!(self.active_view.get(), ToolPanelView::GlobalSearch { .. })
                 }
+                // twarp sidebar rework: the search toggle is not a tab.
+                LeftPanelAction::SearchSectionToggle => false,
                 LeftPanelAction::TwarpDrive => self.active_view.get() == ToolPanelView::TwarpDrive,
                 LeftPanelAction::ClaudeSessions => {
                     self.active_view.get() == ToolPanelView::ClaudeSessions
@@ -2329,76 +2379,93 @@ impl LeftPanelView {
         .finish()
     }
 
-    /// twarp: one segment of the tool switcher, rendered as an icon + label
-    /// chip (Files | Search | Code). The active segment is a filled raised box;
-    /// inactive ones are quiet and show a subtle hover highlight. Colors are
-    /// theme-following (see the `sidebar_*` palette helpers) so the switcher
-    /// tracks the active theme alongside the rest of the sidebar.
-    fn render_pill_segment(
-        button_config: &ToolbeltButtonConfig,
-        mouse_state: MouseStateHandle,
-        appearance: &Appearance,
-    ) -> Box<dyn Element> {
-        let action = button_config.action.clone();
-        let is_active = button_config.render_with_active_state;
-        let label = button_config.label.clone();
-        let icon = if is_active {
-            button_config.active_icon.unwrap_or(button_config.icon)
-        } else {
-            button_config.icon
-        };
-        let font_size = appearance.ui_font_size();
-        let font_family = appearance.ui_font_family();
-        let pill_radius = CornerRadius::with_all(Radius::Pixels(6.));
+    /// twarp sidebar rework: compact sidebar header — a CAPTION "FILES"
+    /// section label on the left and a search icon button on the right that
+    /// toggles the collapsible search section above the file tree. The label
+    /// follows the design-token CAPTION section-header style (all-caps,
+    /// `sub_text_color`); the icon button reuses the sidebar hover/active
+    /// chip treatment the old tool-switcher pills used.
+    fn render_files_header(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let label = Text::new_inline(
+            "FILES",
+            appearance.ui_font_family(),
+            type_ramp::CAPTION.size,
+        )
+        .with_color(sidebar_subtext(appearance))
+        .with_style(Properties::default().weight(Weight::Semibold))
+        .finish();
 
-        Hoverable::new(mouse_state, move |state| {
-            let theme = appearance.theme();
-            let bg = theme.background();
-            // Active segments read at full strength; quiet ones are muted.
-            let content_fill = if is_active {
-                theme.main_text_color(bg)
-            } else {
-                theme.sub_text_color(bg)
-            };
-
-            let icon_el = ConstrainedBox::new(icon.to_warpui_icon(content_fill).finish())
-                .with_width(16.)
-                .with_height(16.)
-                .finish();
-            let label_el = Text::new_inline(label.clone(), font_family, font_size)
-                .with_color(content_fill.into())
-                .with_style(Properties::default().weight(if is_active {
-                    Weight::Medium
+        let search_active = self.search_expanded;
+        let search_button = Hoverable::new(
+            self.mouse_state_handles.global_search_button.clone(),
+            move |state| {
+                let theme = appearance.theme();
+                let bg = theme.background();
+                // Quiet when collapsed; full strength while the section is open.
+                let icon_fill = if search_active {
+                    theme.main_text_color(bg)
                 } else {
-                    Weight::Normal
-                }))
-                .finish();
-            let row = Flex::row()
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_spacing(6.0)
-                .with_child(icon_el)
-                .with_child(label_el)
-                .finish();
-
-            let mut chip = Container::new(row)
-                .with_padding_left(12.)
-                .with_padding_right(12.)
-                .with_padding_top(6.)
-                .with_padding_bottom(6.)
-                .with_corner_radius(pill_radius);
-            if is_active {
-                chip = chip.with_background_color(sidebar_pill_active(appearance));
-            } else if state.is_hovered() {
-                chip = chip.with_background_color(sidebar_row_highlight(appearance));
-            }
-            chip.finish()
-        })
-        .on_click(move |ctx, _, _| {
-            ctx.dispatch_typed_action(action.clone());
+                    theme.sub_text_color(bg)
+                };
+                let icon_el = ConstrainedBox::new(Icon::Search.to_warpui_icon(icon_fill).finish())
+                    .with_width(spacing::LG)
+                    .with_height(spacing::LG)
+                    .finish();
+                let mut chip = Container::new(icon_el)
+                    .with_uniform_padding(spacing::XS)
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)));
+                if search_active {
+                    chip = chip.with_background_color(sidebar_pill_active(appearance));
+                } else if state.is_hovered() {
+                    chip = chip.with_background_color(sidebar_row_highlight(appearance));
+                }
+                chip.finish()
+            },
+        )
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(LeftPanelAction::SearchSectionToggle);
         })
         .with_cursor(Cursor::PointingHand)
+        .finish();
+
+        Container::new(
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(label)
+                .with_child(Shrinkable::new(1.0, Empty::new().finish()).finish())
+                .with_child(search_button)
+                .finish(),
+        )
+        .with_padding_left(spacing::MD)
+        .with_padding_right(spacing::SM)
+        .with_padding_top(spacing::SM)
+        .with_padding_bottom(spacing::XS)
         .finish()
+    }
+
+    /// twarp sidebar rework: the expanded search section at the top of the
+    /// Files view — the same GlobalSearchView the old Search tab hosted,
+    /// wrapped in a `Resizable` (drag bar on its bottom edge, between the
+    /// search results and the file tree) so the tree stays visible. Mirrors
+    /// the Timeline section's resizable-body pattern.
+    fn render_search_section(&self, app: &AppContext) -> Option<Box<dyn Element>> {
+        let global_search_view = self.active_global_search_view(app)?;
+        let body = Container::new(ChildView::new(&global_search_view).finish()).finish();
+        Some(
+            Resizable::new(self.search_resizable_handle.clone(), body)
+                .with_dragbar_side(DragBarSide::Bottom)
+                .with_bounds_callback(Box::new(|window_size| {
+                    (
+                        80.0_f32.min(window_size.y()),
+                        (window_size.y() * 0.7).max(80.0),
+                    )
+                }))
+                .on_resize(|ctx, _| {
+                    ctx.notify();
+                })
+                .finish(),
+        )
     }
 }
 
@@ -2432,21 +2499,29 @@ impl LeftPanelView {
                     );
                 }
             }
+            // twarp sidebar rework: Search is no longer its own tab — the
+            // action (still dispatched by the global-search keybindings)
+            // opens the Files view with the search section expanded and
+            // routes focus into the search view.
             LeftPanelAction::GlobalSearch { entry_focus } => {
-                let was_active = self.active_view.get()
-                    == ToolPanelView::GlobalSearch {
-                        entry_focus: *entry_focus,
-                    };
-                active_view_state::set(
-                    self,
-                    ToolPanelView::GlobalSearch {
-                        entry_focus: *entry_focus,
-                    },
-                    ctx,
-                );
-                if !was_active {
+                active_view_state::set(self, ToolPanelView::ProjectExplorer, ctx);
+                let was_expanded = self.search_expanded;
+                self.search_expanded = true;
+                self.focus_search_section(*entry_focus, ctx);
+                if !was_expanded {
                     send_telemetry_from_ctx!(TelemetryEvent::GlobalSearchOpened, ctx);
                 }
+                ctx.notify();
+            }
+            // twarp sidebar rework: the header's search icon toggles the
+            // collapsible search section at the top of the Files view.
+            LeftPanelAction::SearchSectionToggle => {
+                self.search_expanded = !self.search_expanded;
+                if self.search_expanded {
+                    self.focus_search_section(GlobalSearchEntryFocus::QueryEditor, ctx);
+                    send_telemetry_from_ctx!(TelemetryEvent::GlobalSearchOpened, ctx);
+                }
+                ctx.notify();
             }
             LeftPanelAction::TwarpDrive => {
                 active_view_state::set(self, ToolPanelView::TwarpDrive, ctx);
@@ -2612,55 +2687,13 @@ impl View for LeftPanelView {
         let appearance = Appearance::as_ref(app);
         let use_design_shell = cfg!(target_os = "macos") && FeatureFlag::DesignShellV1.is_enabled();
 
-        // One stable hover handle per toolbelt segment, in the same order as
-        // `compute_left_panel_views` (Project Explorer, Global Search, Claude
-        // sessions). Shortcuts moved to Settings, so it has no segment here.
-        let mouse_state_handles = vec![
-            self.mouse_state_handles.project_explorer_button.clone(),
-            self.mouse_state_handles.global_search_button.clone(),
-            self.mouse_state_handles.claude_sessions_button.clone(),
-            // twarp: 2c-d — conversation_list_view_button removed
-        ];
-
-        // twarp 08f (PRODUCT §22): the tool switcher renders as a macOS pill
-        // segmented control — a rounded track holding one segment per
-        // destination, the active one a filled pill. Routing is unchanged: each
-        // segment dispatches the same panel-switch action as the old icon row.
-        // If there is only one button there is no switcher to show.
-        let toolbelt_button_row = if self.toolbelt_buttons.len() > 1 {
-            let segments: Vec<Box<dyn Element>> = self
-                .toolbelt_buttons
-                .iter()
-                .zip(&mouse_state_handles)
-                .filter(|(button_config, _)| {
-                    // twarp 07 (7h, PRODUCT §35): the session-list segment only
-                    // appears when the cwd has stored sessions (kept while it is
-                    // the active view so the open panel doesn't lose its tab).
-                    !matches!(button_config.action, LeftPanelAction::ClaudeSessions)
-                        || self.has_claude_sessions
-                        || self.active_view.get() == ToolPanelView::ClaudeSessions
-                })
-                .map(|(button_config, mouse_state)| {
-                    Self::render_pill_segment(button_config, mouse_state.clone(), appearance)
-                })
-                .collect();
-            Some(
-                // twarp: no recessed track behind the switcher — the segments
-                // sit directly on the panel background, with only the active
-                // segment showing a filled box.
-                Container::new(
-                    Flex::row()
-                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                        .with_spacing(2.0)
-                        .with_children(segments)
-                        .with_main_axis_size(MainAxisSize::Min)
-                        .finish(),
-                )
-                .finish(),
-            )
-        } else {
-            None
-        };
+        // twarp sidebar rework: the pill segmented tab switcher is gone —
+        // Files is the sidebar's only tab. The header is a compact row: a
+        // CAPTION "FILES" section label on the left and a search icon button
+        // on the right that toggles the collapsible search section above the
+        // file tree.
+        let files_header = (self.active_view.get() == ToolPanelView::ProjectExplorer)
+            .then(|| self.render_files_header(appearance));
 
         let content_area: Box<dyn Element> = match self.active_view.get() {
             ToolPanelView::ProjectExplorer => {
@@ -2682,13 +2715,20 @@ impl View for LeftPanelView {
                         Container::new(Empty::new().finish()).finish()
                     };
                 let timeline_element = self.render_timeline_section(appearance, app);
-                let stacked = Flex::column()
+                let mut stacked = Flex::column()
                     .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                    .with_main_axis_size(MainAxisSize::Max)
-                    .with_child(Shrinkable::new(1.0, file_tree_element).finish())
-                    .with_child(timeline_element)
-                    .finish();
-                Shrinkable::new(1.0, Container::new(stacked).finish()).finish()
+                    .with_main_axis_size(MainAxisSize::Max);
+                // twarp sidebar rework: collapsible search section at the
+                // top of the Files view (toggled by the header's search
+                // icon), mirroring the Timeline section's resizable pattern.
+                if self.search_expanded {
+                    if let Some(search_element) = self.render_search_section(app) {
+                        stacked.add_child(search_element);
+                    }
+                }
+                stacked.add_child(Shrinkable::new(1.0, file_tree_element).finish());
+                stacked.add_child(timeline_element);
+                Shrinkable::new(1.0, Container::new(stacked.finish()).finish()).finish()
             }
             ToolPanelView::GlobalSearch { .. } => {
                 if let Some(global_search_view) = self.active_global_search_view(app) {
@@ -2725,18 +2765,10 @@ impl View for LeftPanelView {
         };
 
         let panel_body = {
-            let column = Flex::column();
-
-            let header_left = if let Some(row) = toolbelt_button_row {
-                row
-            } else {
-                Flex::row().finish()
-            };
-
             // twarp 08f polish: the explicit close-panel "X" is removed — the
             // panel still toggles via its keybinding (workspace:toggle_left_panel),
             // matching the macOS-app sidebar which has no close glyph in-header.
-            let mut column = column;
+            let mut column = Flex::column();
 
             if use_design_shell {
                 let is_window_fullscreen = app
@@ -2758,32 +2790,9 @@ impl View for LeftPanelView {
                 }
             }
 
-            let header_row = Container::new(
-                ConstrainedBox::new(
-                    Flex::row()
-                        .with_main_axis_size(MainAxisSize::Max)
-                        // twarp 08 (review): center the tool switcher pills in the
-                        // sidebar header rather than left-aligning them.
-                        .with_main_axis_alignment(MainAxisAlignment::Center)
-                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                        .with_child(Shrinkable::new(1.0, header_left).finish())
-                        .finish(),
-                )
-                // twarp 08 (review): taller than a normal pane header so the
-                // taller tool-switcher pills (36 + 4 track padding) aren't
-                // clipped.
-                .with_height(44.)
-                .finish(),
-            )
-            .with_padding_left(10.)
-            .with_padding_right(10.)
-            // twarp 08 (review): real breathing room above and below the tool
-            // switcher row so the toggles don't hug the top edge / file tree.
-            .with_padding_top(8.)
-            .with_padding_bottom(8.)
-            .finish();
-
-            column.add_child(header_row);
+            if let Some(header) = files_header {
+                column.add_child(header);
+            }
             column.add_child(Shrinkable::new(1.0, content_area).finish());
             column.with_main_axis_size(MainAxisSize::Max).finish()
         };

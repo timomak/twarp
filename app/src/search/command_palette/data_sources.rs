@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use crate::drive::settings::TwarpDriveSettings;
 use crate::search::action::CommandBindingDataSource;
 use crate::search::binding_source::BindingSource;
+use crate::search::command_palette::claude_sessions::ClaudeSessionsDataSource;
 use crate::search::command_palette::files;
 use crate::search::command_palette::launch_config;
 use crate::search::command_palette::mixer::{CommandPaletteItemAction, ItemSummary};
@@ -52,6 +53,8 @@ pub struct DataSourceStore {
     historical_conversation_data_source: ModelHandle<conversations::DataSource>,
     all_conversation_data_source: ModelHandle<conversations::DataSource>,
     repo_data_source: ModelHandle<RepoDataSource>,
+    /// twarp: stored Claude Code sessions for the active cwd.
+    claude_sessions_data_source: ModelHandle<ClaudeSessionsDataSource>,
     tabs_data_source: Option<ModelHandle<tabs::DataSource>>,
 }
 
@@ -83,6 +86,8 @@ impl DataSourceStore {
 
         let repo_data_source = ctx.add_model(|_| RepoDataSource::new());
 
+        let claude_sessions_data_source = ctx.add_model(|_| ClaudeSessionsDataSource::new());
+
         Self {
             actions_data_source,
             sessions_data_source,
@@ -92,6 +97,7 @@ impl DataSourceStore {
             historical_conversation_data_source,
             all_conversation_data_source,
             repo_data_source,
+            claude_sessions_data_source,
             tabs_data_source: None,
         }
     }
@@ -185,6 +191,14 @@ impl DataSourceStore {
             mixer.add_sync_source(
                 self.repo_data_source.clone(),
                 HashSet::from([QueryFilter::Repos]),
+            );
+
+            // twarp: stored Claude Code sessions for the active cwd — runs
+            // unfiltered (title substring match) and under the "claude:" /
+            // "agents:" filter atom.
+            mixer.add_sync_source(
+                self.claude_sessions_data_source.clone(),
+                HashSet::from([QueryFilter::ClaudeSessions]),
             );
 
             ctx.notify();
@@ -315,6 +329,14 @@ impl DataSourceStore {
                 None
             }
             ItemSummary::Conversation { .. } => None, // twarp: 2c-d — AI conversations removed
+
+            ItemSummary::ClaudeSession { .. } => {
+                // twarp: like LaunchConfiguration, keep resumed Claude sessions
+                // out of the "Recent" section — reconstructing a row would
+                // re-read the on-disk store, and the zero state already offers
+                // the most recent sessions for the cwd.
+                None
+            }
 
             ItemSummary::NewConversation => {
                 // The new conversation item should not show up in the recent command list,

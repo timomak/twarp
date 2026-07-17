@@ -6,6 +6,7 @@ use crate::search::mixer::SearchMixer;
 use crate::server::ids::SyncId;
 use crate::util::bindings::CommandBinding;
 use crate::workspace::PaneViewLocator;
+use std::path::PathBuf;
 use std::sync::Arc;
 use strum_macros::IntoStaticStr;
 use twarp_util::path::LineAndColumnArg;
@@ -79,6 +80,17 @@ pub enum CommandPaletteItemAction {
     },
     /// Start a new AI conversation
     NewConversation,
+    /// twarp: resume a stored Claude Code session (from `claude`'s own
+    /// on-disk store for `cwd`) in a Claude pane.
+    ResumeClaudeSession {
+        session_id: String,
+        jsonl_path: PathBuf,
+        cwd: PathBuf,
+    },
+    /// twarp: zero-state action — open a new terminal tab.
+    OpenTerminalTab,
+    /// twarp: zero-state action — open a Claude Code (agent) pane in a new tab.
+    OpenAgentPanel,
     /// No-op action (used for non-interactable separator items that don't do anything on click).
     NoOp,
 }
@@ -144,6 +156,15 @@ impl CommandPaletteItemAction {
                 ItemSummary::Project { path: path.clone() }
             }
             CommandPaletteItemAction::NewConversation => ItemSummary::NewConversation,
+            CommandPaletteItemAction::ResumeClaudeSession { session_id, .. } => {
+                ItemSummary::ClaudeSession {
+                    session_id: session_id.clone(),
+                }
+            }
+            // twarp: the zero-state actions already live in the "Suggested"
+            // section — keep them out of "Recent" to avoid duplicate rows.
+            CommandPaletteItemAction::OpenTerminalTab
+            | CommandPaletteItemAction::OpenAgentPanel => ItemSummary::NoOp,
             CommandPaletteItemAction::NoOp => ItemSummary::NoOp,
         }
     }
@@ -202,6 +223,11 @@ pub enum ItemSummary {
     },
     Conversation {
         id: AIConversationId,
+    },
+    /// twarp: a stored Claude Code session (identified by `claude`'s own
+    /// session id).
+    ClaudeSession {
+        session_id: String,
     },
     ForkConversation,
     NewConversation,

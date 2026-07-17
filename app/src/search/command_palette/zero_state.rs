@@ -1,5 +1,7 @@
 mod items;
+mod suggested_actions;
 pub use items::Items;
+pub use suggested_actions::SuggestedActionItem;
 use twarp_core::context_flag::ContextFlag;
 use twarp_core::features::FeatureFlag;
 
@@ -108,6 +110,9 @@ impl ZeroState {
                 valid_filters.push(QueryFilter::Files);
             }
         }
+
+        // twarp: stored Claude Code sessions for the active cwd.
+        valid_filters.push(QueryFilter::ClaudeSessions);
 
         if show_twarp_drive {
             valid_filters.push(QueryFilter::Drive);

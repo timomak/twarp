@@ -121,7 +121,7 @@ use crate::computer_control::{
 };
 use crate::editor::{
     AutosuggestionLocation, AutosuggestionType, EditorOptions, EditorView, Event as EditorEvent,
-    PropagateAndNoOpNavigationKeys, TextOptions,
+    PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions,
 };
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::{
@@ -146,6 +146,14 @@ const CLAUDE_BINARY: &str = "claude";
 /// Pane title (PRODUCT §5) — drives the tab label via [`PaneConfiguration`].
 const PANE_TITLE: &str = "Claude Code";
 const COMPOSER_STATIC_PLACEHOLDER: &str = "Message Claude Code…";
+
+/// Zero-state "Welcome back" session list paging: how many rows show before
+/// the first "Load more" click, and how many each click reveals. The initial
+/// cap keeps a long history from running under the floating composer; paging
+/// (rather than a hard cap) makes the zero state a full home for past sessions
+/// now that the sidebar "Code" tab is gone.
+const ZERO_STATE_INITIAL_SESSIONS: usize = 6;
+const ZERO_STATE_SESSIONS_PER_PAGE: usize = 10;
 
 /// Avatar glyphs for the message rows (the Agent-Mode shape: icon + body).
 const USER_ICON_SVG_PATH: &str = "bundled/svg/user.svg";
@@ -441,6 +449,11 @@ pub enum ClaudeCodeViewAction {
     /// "Welcome back" panel — loads its stored history into this pane and
     /// re-attaches it, the same as a sidebar resume but in place.
     ResumeRecentSession(usize),
+    /// twarp: clear the zero-state session search field (the inline X button).
+    ClearSessionSearch,
+    /// twarp: reveal the next page of rows in the zero-state session list
+    /// (the "Load more" affordance below the visible rows).
+    ShowMoreRecentSessions,
     /// twarp: fork the conversation at the assistant response with this
     /// transcript index ("Fork conversation" — Claude's `--fork-session`).
     /// Branches the session up to that turn into a new pane to the right,
@@ -904,6 +917,19 @@ pub struct ClaudeCodeView {
     recent_sessions: Vec<sessions::StoredSession>,
     /// Pooled mouse handles for the zero-state recent-session rows.
     recent_session_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// twarp: the zero-state session search field — with the sidebar "Code"
+    /// tab gone, the "Welcome back" panel is the home for past sessions, so it
+    /// gets the same title filter the sidebar had. Single-line; the Edited
+    /// subscription re-renders (and resets paging) as the query changes.
+    session_search: ViewHandle<EditorView>,
+    /// How many filtered session rows the zero state currently shows.
+    /// Starts at [`ZERO_STATE_INITIAL_SESSIONS`]; "Load more" adds
+    /// [`ZERO_STATE_SESSIONS_PER_PAGE`]; reset whenever the query changes.
+    sessions_shown: usize,
+    /// Mouse state for the search field's inline clear (X) button.
+    session_search_clear_mouse: MouseStateHandle,
+    /// Mouse state for the session list's "Load more" row.
+    sessions_load_more_mouse: MouseStateHandle,
     /// Pooled mouse handles, per transcript index, for the hover "Fork"
     /// affordance below assistant responses: `fork_row_mouse` senses the hover
     /// over the response block, `fork_button_mouse` drives the button itself.
@@ -1129,6 +1155,29 @@ impl ClaudeCodeView {
             editor.set_placeholder_text(COMPOSER_STATIC_PLACEHOLDER, ctx);
         });
 
+        // twarp: the zero-state session search field (mirrors the old sidebar
+        // sessions search — left_panel 08e). Single line; Edited re-renders the
+        // filtered list and resets paging to the first page.
+        let session_search = ctx.add_typed_action_view(|ctx| {
+            let appearance = Appearance::as_ref(ctx);
+            let options = SingleLineEditorOptions {
+                text: TextOptions::ui_font_size(appearance),
+                propagate_and_no_op_vertical_navigation_keys:
+                    PropagateAndNoOpNavigationKeys::Always,
+                ..Default::default()
+            };
+            EditorView::single_line(options, ctx)
+        });
+        ctx.subscribe_to_view(&session_search, |me, _, event, ctx| {
+            if matches!(event, EditorEvent::Edited(_)) {
+                me.sessions_shown = ZERO_STATE_INITIAL_SESSIONS;
+                ctx.notify();
+            }
+        });
+        session_search.update(ctx, |editor, ctx| {
+            editor.set_placeholder_text("Search sessions", ctx);
+        });
+
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new(PANE_TITLE));
 
         // `claude --resume <id>` typed at the prompt: derive the session's
@@ -1249,6 +1298,10 @@ impl ClaudeCodeView {
             render_wash: std::cell::Cell::new(ColorU::new(0, 0, 0, 0)),
             recent_sessions: Vec::new(),
             recent_session_mouse: std::cell::RefCell::new(Vec::new()),
+            session_search,
+            sessions_shown: ZERO_STATE_INITIAL_SESSIONS,
+            session_search_clear_mouse: MouseStateHandle::default(),
+            sessions_load_more_mouse: MouseStateHandle::default(),
             fork_row_mouse: std::cell::RefCell::new(Vec::new()),
             fork_button_mouse: std::cell::RefCell::new(Vec::new()),
             copy_button_mouse: std::cell::RefCell::new(Vec::new()),
@@ -5319,9 +5372,52 @@ impl ClaudeCodeView {
                 .finish();
             column.add_child(explanation);
         } else {
-            // A "Sessions" section listing this directory's recent sessions,
-            // capped so a long history doesn't run under the floating composer.
-            const MAX_ROWS: usize = 6;
+            // A "Sessions" section — the home for this directory's past
+            // sessions (the sidebar list is gone): a title search bar above
+            // the rows, then the filtered list, paged so a long history
+            // doesn't run under the floating composer.
+            let query = self.session_search.as_ref(app).buffer_text(app);
+            let has_query = !query.trim().is_empty();
+            let matched = sessions::filter_session_indices(&self.recent_sessions, &query);
+
+            // The search bar: a bordered, fill-less single-line field with an
+            // inline clear (X) button while a query is active. Mirrors the old
+            // sidebar sessions search so the affordance carries over.
+            let editor_cell =
+                Shrinkable::new(1.0, ChildView::new(&self.session_search).finish()).finish();
+            let mut search_row = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_spacing(spacing::SM)
+                .with_child(editor_cell);
+            if has_query {
+                let main = theme.main_text_color(theme.background()).into_solid();
+                let clear_button =
+                    Hoverable::new(self.session_search_clear_mouse.clone(), move |state| {
+                        let fill = if state.is_hovered() { main } else { muted };
+                        ConstrainedBox::new(
+                            Icon::new(crate::ui_components::icons::Icon::X.into(), fill).finish(),
+                        )
+                        .with_width(14.)
+                        .with_height(14.)
+                        .finish()
+                    })
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(|ctx, _, _| {
+                        ctx.dispatch_typed_action(ClaudeCodeViewAction::ClearSessionSearch);
+                    })
+                    .finish();
+                search_row = search_row.with_child(clear_button);
+            }
+            let search_field = Container::new(search_row.finish())
+                .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+                .with_padding_left(spacing::SM)
+                .with_padding_right(spacing::SM)
+                .with_padding_top(spacing::SM - spacing::XXS)
+                .with_padding_bottom(spacing::SM - spacing::XXS)
+                .finish();
+
             let section = appearance
                 .ui_builder()
                 .span("Sessions".to_owned())
@@ -5332,20 +5428,50 @@ impl ClaudeCodeView {
                 })
                 .build()
                 .finish();
-            let mut rows = Flex::column()
-                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_spacing(spacing::XXS);
-            for (idx, session) in self.recent_sessions.iter().enumerate().take(MAX_ROWS) {
-                rows.add_child(self.render_recent_session_row(idx, session, app));
-            }
+
+            let body: Box<dyn Element> = if has_query && matched.is_empty() {
+                // Distinct no-match empty state — different copy from the
+                // first-run branch so "your filter hid everything" is obvious.
+                appearance
+                    .ui_builder()
+                    .span("No matching sessions".to_owned())
+                    .with_style(UiComponentStyles {
+                        font_color: Some(muted),
+                        font_size: Some(type_ramp::PROSE.size),
+                        ..Default::default()
+                    })
+                    .build()
+                    .finish()
+            } else {
+                let shown = matched.len().min(self.sessions_shown);
+                let mut rows = Flex::column()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                    .with_main_axis_size(MainAxisSize::Min)
+                    .with_spacing(spacing::XXS);
+                // Rows carry the ORIGINAL index into `recent_sessions` (the
+                // filter returns original indices) so resume targets the right
+                // session even when the list is a filtered subset.
+                for &idx in matched.iter().take(shown) {
+                    rows.add_child(self.render_recent_session_row(
+                        idx,
+                        &self.recent_sessions[idx],
+                        app,
+                    ));
+                }
+                if matched.len() > shown {
+                    rows.add_child(self.render_load_more_row(matched.len() - shown, app));
+                }
+                rows.finish()
+            };
+
             column.add_child(
                 Flex::column()
                     .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                     .with_main_axis_size(MainAxisSize::Min)
                     .with_spacing(spacing::SM)
                     .with_child(section)
-                    .with_child(rows.finish())
+                    .with_child(search_field)
+                    .with_child(body)
                     .finish(),
             );
         }
@@ -5451,6 +5577,46 @@ impl ClaudeCodeView {
         .with_cursor(Cursor::PointingHand)
         .on_click(move |ctx, _, _| {
             ctx.dispatch_typed_action(ClaudeCodeViewAction::ResumeRecentSession(idx));
+        })
+        .finish()
+    }
+
+    /// twarp: the "Load more" row at the bottom of the zero-state session list
+    /// when more filtered matches exist than are shown — a quiet text-style
+    /// affordance (muted label, accent-wash hover, like the session rows) that
+    /// reveals the next page.
+    fn render_load_more_row(&self, remaining: usize, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+
+        let label = appearance
+            .ui_builder()
+            .span(format!("Load more ({remaining})"))
+            .with_style(UiComponentStyles {
+                font_color: Some(muted),
+                font_size: Some(type_ramp::UI.size),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+
+        let highlight = self.accent_wash(app);
+        Hoverable::new(self.sessions_load_more_mouse.clone(), move |state| {
+            let mut body = Container::new(label)
+                .with_padding_left(spacing::MD)
+                .with_padding_right(spacing::MD)
+                .with_padding_top(spacing::SM)
+                .with_padding_bottom(spacing::SM)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)));
+            if state.is_hovered() {
+                body = body.with_background_color(highlight);
+            }
+            body.finish()
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(ClaudeCodeViewAction::ShowMoreRecentSessions);
         })
         .finish()
     }
@@ -8492,6 +8658,21 @@ impl TypedActionView for ClaudeCodeView {
             }
             ClaudeCodeViewAction::ResumeRecentSession(index) => {
                 self.resume_recent_session(*index, ctx)
+            }
+            ClaudeCodeViewAction::ClearSessionSearch => {
+                self.session_search
+                    .update(ctx, |editor, ctx| editor.clear_buffer(ctx));
+                // The Edited subscription also resets paging; do it here too so
+                // the reset doesn't depend on the editor emitting an event for
+                // a programmatic clear.
+                self.sessions_shown = ZERO_STATE_INITIAL_SESSIONS;
+                ctx.notify();
+            }
+            ClaudeCodeViewAction::ShowMoreRecentSessions => {
+                self.sessions_shown = self
+                    .sessions_shown
+                    .saturating_add(ZERO_STATE_SESSIONS_PER_PAGE);
+                ctx.notify();
             }
             ClaudeCodeViewAction::ForkConversation(index) => self.fork_conversation(*index, ctx),
             ClaudeCodeViewAction::CopyResponse(index) => {
