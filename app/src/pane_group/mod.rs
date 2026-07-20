@@ -2066,6 +2066,24 @@ impl PaneGroup {
             .map(|pane| pane.id())
     }
 
+    /// twarp: the agent provider and cwd of the focused pane, when the focused
+    /// pane is an agent (Claude/Codex) chat pane. Drives the provider-following
+    /// shortcuts: a split or new-agent-tab chord pressed inside a Codex pane
+    /// opens another Codex pane, not the default Claude one.
+    pub fn focused_agent_pane_context(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<(claude_code::driver::AgentProvider, Option<PathBuf>)> {
+        let focused = self.focused_pane_id(ctx);
+        self.panes_of::<ClaudeCodePane>()
+            .find(|pane| pane.id() == focused)
+            .map(|pane| {
+                let view = pane.claude_code_view(ctx);
+                let view = view.as_ref(ctx);
+                (view.provider(), view.cwd().cloned())
+            })
+    }
+
     /// twarp 14n: the Browser pane bound to the given Claude session (14j
     /// binding), if this pane group hosts it.
     pub fn find_browser_pane_bound_to_session(
@@ -6298,15 +6316,33 @@ impl TypedActionView for PaneGroup {
         use PaneGroupAction::*;
         match action {
             Add(direction) => {
-                let chosen_shell = {
-                    if let Some(model) = self.active_session_terminal_model(ctx) {
-                        let model = model.lock();
-                        model.shell_launch_state().available_shell()
-                    } else {
-                        None
-                    }
-                };
-                self.add_terminal_pane(*direction, chosen_shell, ctx);
+                // twarp: splitting from an agent pane opens another agent pane
+                // of the SAME provider (a Codex pane splits into a Codex pane)
+                // rather than a terminal — the split chords act as "another one
+                // of these next to it". Every other pane type keeps the
+                // new-terminal split.
+                if let Some((provider, cwd)) = self.focused_agent_pane_context(ctx) {
+                    let mut launch = claude_code::launch::LaunchOptions::default();
+                    launch.provider = provider;
+                    let pane = ClaudeCodePane::new(launch, cwd, ctx);
+                    self.add_pane_with_direction(
+                        *direction,
+                        pane,
+                        true, /* focus_new_pane */
+                        ctx,
+                    );
+                    ctx.emit(Event::AppStateChanged);
+                } else {
+                    let chosen_shell = {
+                        if let Some(model) = self.active_session_terminal_model(ctx) {
+                            let model = model.lock();
+                            model.shell_launch_state().available_shell()
+                        } else {
+                            None
+                        }
+                    };
+                    self.add_terminal_pane(*direction, chosen_shell, ctx);
+                }
             }
             Remove(view_id) => self.close_pane_with_confirmation(*view_id, ctx),
             RemoveActive => self.close_active_pane_with_confirmation(ctx),

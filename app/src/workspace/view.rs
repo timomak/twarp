@@ -5395,8 +5395,10 @@ impl Workspace {
                 session_id,
                 jsonl_path,
                 cwd,
+                provider,
             } => {
                 self.open_claude_code_resume_pane(
+                    *provider,
                     session_id.clone(),
                     jsonl_path.clone(),
                     cwd.clone(),
@@ -12408,16 +12410,23 @@ impl Workspace {
             None,
             ctx,
         );
+        // The new tab follows the provider of the agent pane the chord was
+        // pressed in (a Codex pane spawns a Codex tab); from any other pane
+        // it opens the default Claude pane. Read BEFORE the tab switch below
+        // moves focus off the originating pane.
+        let provider = self
+            .active_tab_pane_group()
+            .clone()
+            .read(ctx, |pane_group, ctx| {
+                pane_group.focused_agent_pane_context(ctx)
+            })
+            .map(|(provider, _)| provider)
+            .unwrap_or(claude_code::driver::AgentProvider::Claude);
         // Open a fresh tab (it becomes active and focused), then swap its
         // freshly-spawned terminal for a Claude pane in place — reusing the
         // exact replace path the `claude` command uses.
         self.add_terminal_tab(true /* hide_homepage */, ctx);
-        self.open_claude_code_pane(
-            claude_code::driver::AgentProvider::Claude,
-            Vec::new(),
-            cwd,
-            ctx,
-        );
+        self.open_claude_code_pane(provider, Vec::new(), cwd, ctx);
     }
 
     pub(crate) fn open_claude_code_pane(
@@ -12449,6 +12458,7 @@ impl Workspace {
     /// `claude --resume`.
     pub(crate) fn open_claude_code_resume_pane(
         &mut self,
+        provider: claude_code::driver::AgentProvider,
         session_id: String,
         jsonl_path: PathBuf,
         cwd: PathBuf,
@@ -12472,7 +12482,7 @@ impl Workspace {
         // Resume with the SAME defaults a freshly typed `claude` would get.
         // Feature 16a moved those defaults to Agent settings, while explicit
         // alias flags remain launch options that win over the Chat row.
-        let launch = self
+        let mut launch = self
             .get_pane_group_view(self.active_tab_index)
             .and_then(|group| {
                 group.read(ctx, |pane_group, ctx| {
@@ -12487,6 +12497,9 @@ impl Workspace {
                 })
             })
             .unwrap_or_default();
+        // The stored session dictates the agent: a Codex session must resume
+        // under the Codex driver regardless of the Claude alias defaults.
+        launch.provider = provider;
         let pane = ClaudeCodePane::new_resume(
             crate::claude_code_view::ResumeSession {
                 session_id,
@@ -18680,7 +18693,9 @@ impl TypedActionView for Workspace {
                 session_id,
                 jsonl_path,
                 cwd,
+                provider,
             } => self.open_claude_code_resume_pane(
+                *provider,
                 session_id.clone(),
                 jsonl_path.clone(),
                 cwd.clone(),

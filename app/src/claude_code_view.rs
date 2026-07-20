@@ -1491,15 +1491,16 @@ impl ClaudeCodeView {
             view.begin_session(Some(OutgoingMessage::text(prompt)), ctx);
         }
 
-        // twarp: a bare `claude` opens to the zero state — load the cwd's recent
-        // sessions so the empty pane doubles as a launchpad (pick one up, or type
-        // to start fresh). Skipped when the pane already has content (a resumed
-        // pane or `claude <prompt>`), where the transcript replaces the panel.
-        if view.transcript.is_empty() && provider == AgentProvider::Claude {
+        // twarp: a bare `claude`/`codex` opens to the zero state — load the
+        // cwd's recent sessions for the pane's own provider so the empty pane
+        // doubles as a launchpad (pick one up, or type to start fresh).
+        // Skipped when the pane already has content (a resumed pane or
+        // `claude <prompt>`), where the transcript replaces the panel.
+        if view.transcript.is_empty() {
             view.recent_sessions = view
                 .cwd
                 .as_deref()
-                .map(sessions::list_sessions)
+                .map(|cwd| sessions::list_sessions_for(provider, cwd))
                 .unwrap_or_default();
         }
 
@@ -5216,15 +5217,22 @@ impl ClaudeCodeView {
 
         // Render the stored history up front (PRODUCT §36), then key the pane's
         // identity off the resumed id so `--resume`, the raw-CLI toggle, and the
-        // history refresh all target the right session.
-        for event in sessions::load_history(&session.jsonl_path) {
-            self.ingest_event(event, ctx);
+        // history refresh all target the right session. Codex history is not
+        // readable from disk — it is replayed by the app-server's
+        // `thread/resume` response, so a Codex pane spawns eagerly below.
+        if session.provider == AgentProvider::Claude {
+            for event in sessions::load_history(&session.jsonl_path) {
+                self.ingest_event(event, ctx);
+            }
         }
         self.resume_session_id = Some(session.id.clone());
         self.session_id = session.id;
         // The panel is gone the moment the transcript has content.
         self.recent_sessions = Vec::new();
         self.recent_session_mouse.borrow_mut().clear();
+        if session.provider == AgentProvider::Codex {
+            self.begin_session(None, ctx);
+        }
 
         // Open at the latest message, name the tab from the history, and refresh
         // the composer context bar for the resumed conversation.

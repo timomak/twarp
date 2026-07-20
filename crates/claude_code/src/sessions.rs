@@ -14,21 +14,26 @@ use std::time::SystemTime;
 
 use serde_json::Value;
 
+use crate::driver::AgentProvider;
 use crate::TranscriptEvent;
 
 /// One stored session entry for a given cwd.
 #[derive(Clone, Debug)]
 pub struct StoredSession {
-    /// `claude`'s session id (file stem of the `.jsonl`).
+    /// The provider's session id (Claude: the `.jsonl` file stem; Codex: the
+    /// thread id from the rollout file's `session_meta` line).
     pub id: String,
     /// Best-effort title — the first user message, truncated. Falls back to
     /// "Untitled session" when nothing parseable is found.
     pub title: String,
     /// File modification time, used to sort recent-first.
     pub timestamp: SystemTime,
-    /// The session's `.jsonl` file path (for diagnostics; resume doesn't read
-    /// this — `claude --resume <id>` does that itself).
+    /// The session's on-disk file path (for diagnostics; resume doesn't read
+    /// this — `claude --resume <id>` / codex `thread/resume` do that
+    /// themselves).
     pub jsonl_path: PathBuf,
+    /// Which agent owns this session — resume must relaunch the same one.
+    pub provider: AgentProvider,
 }
 
 /// Encode a working directory the way `claude` does on disk: every
@@ -61,10 +66,16 @@ pub fn session_file(cwd: &Path, session_id: &str) -> Option<PathBuf> {
     sessions_dir(cwd).map(|dir| dir.join(format!("{session_id}.jsonl")))
 }
 
-/// Whether any stored session exists for this cwd — an existence-only probe
-/// (one `read_dir`, no per-file parsing) cheap enough to gate the sidebar
-/// entry's visibility on every directory change (PRODUCT §35).
+/// Whether any stored session (either provider's) exists for this cwd —
+/// cheap enough to gate the sidebar entry's visibility on every directory
+/// change (PRODUCT §35). The Claude probe is one `read_dir`; the Codex probe
+/// is an mtime-stamped cached listing (its store is not cwd-partitioned, so
+/// an uncached listing has to read each rollout file's head).
 pub fn has_sessions(cwd: &Path) -> bool {
+    has_claude_sessions(cwd) || crate::codex::sessions::has_sessions(cwd)
+}
+
+fn has_claude_sessions(cwd: &Path) -> bool {
     let Some(dir) = sessions_dir(cwd) else {
         return false;
     };
@@ -96,12 +107,33 @@ pub fn filter_session_indices(sessions: &[StoredSession], query: &str) -> Vec<us
         .collect()
 }
 
-/// List stored sessions for a given cwd, most-recent first.
+/// List stored sessions for a given cwd across both providers, most-recent
+/// first. Feeds the provider-agnostic surfaces (sidebar list, command
+/// palette); each entry carries its `provider` so resume relaunches the
+/// right agent.
+pub fn list_sessions(cwd: &Path) -> Vec<StoredSession> {
+    let mut sessions = list_claude_sessions(cwd);
+    sessions.extend(crate::codex::sessions::list_sessions(cwd));
+    sessions.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    sessions
+}
+
+/// List one provider's stored sessions for a given cwd, most-recent first —
+/// the in-pane "Welcome back" list shows only the pane's own provider
+/// (resume there re-attaches in place, so the provider cannot change).
+pub fn list_sessions_for(provider: AgentProvider, cwd: &Path) -> Vec<StoredSession> {
+    match provider {
+        AgentProvider::Claude => list_claude_sessions(cwd),
+        AgentProvider::Codex => crate::codex::sessions::list_sessions(cwd),
+    }
+}
+
+/// List stored Claude sessions for a given cwd, most-recent first.
 ///
 /// Never returns an error: an unreadable directory or unparseable entry is
 /// silently skipped (logged at `debug`). The panel can call this on every
 /// open without worrying about cascading failures (PRODUCT §50).
-pub fn list_sessions(cwd: &Path) -> Vec<StoredSession> {
+fn list_claude_sessions(cwd: &Path) -> Vec<StoredSession> {
     let Some(dir) = sessions_dir(cwd) else {
         return Vec::new();
     };
@@ -132,6 +164,7 @@ pub fn list_sessions(cwd: &Path) -> Vec<StoredSession> {
             title,
             timestamp,
             jsonl_path: path,
+            provider: AgentProvider::Claude,
         });
     }
     sessions.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
@@ -294,7 +327,7 @@ fn best_effort_title(path: &Path) -> Option<String> {
     None
 }
 
-fn short_title(text: &str) -> String {
+pub(crate) fn short_title(text: &str) -> String {
     // Generous safety cap only — the session list wraps the title across the
     // panel width (soft-wrap), so the full first message line is shown rather
     // than a 60-char preview. The cap just guards against a pathologically

@@ -1042,11 +1042,13 @@ impl View {
                 session_id,
                 jsonl_path,
                 cwd,
+                provider,
             } => {
                 ctx.dispatch_typed_action(&WorkspaceAction::ResumeClaudeCodeSession {
                     session_id,
                     jsonl_path,
                     cwd,
+                    provider,
                 });
             }
             // twarp: zero-state "Open terminal" — a new terminal tab.

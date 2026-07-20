@@ -155,6 +155,7 @@ pub enum WorkspaceAction {
         session_id: String,
         jsonl_path: PathBuf,
         cwd: PathBuf,
+        provider: claude_code::driver::AgentProvider,
     },
     AddTerminalTab {
         hide_homepage: bool,
