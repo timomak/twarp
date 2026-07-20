@@ -11832,6 +11832,36 @@ fn test_styled_blocks_from_buffer_start() {
 }
 
 #[test]
+fn test_styled_blocks_missing_initial_marker_falls_back_to_plain_text() {
+    App::test((), |mut app| async move {
+        let buffer = app.add_model(|_| Buffer::new(Box::new(|_, _| IndentBehavior::Ignore)));
+
+        buffer.update(&mut app, |buffer, _ctx| {
+            // Reproduce the malformed state observed while restoring a Claude Code diff card:
+            // text was present, but the buffer's required leading block marker was missing.
+            buffer.content = Default::default();
+            buffer.content.append_str("orphaned text");
+
+            assert_eq!(
+                buffer.styled_blocks_in_range(
+                    CharOffset::zero()..buffer.max_charoffset(),
+                    StyledBlockBoundaryBehavior::Exclusive,
+                ),
+                vec![StyledBufferBlock::Text(StyledTextBlock {
+                    block: vec![StyledBufferRun {
+                        run: "orphaned text".to_string(),
+                        text_styles: Default::default(),
+                        block_style: BufferBlockStyle::PlainText,
+                    }],
+                    style: BufferBlockStyle::PlainText,
+                    content_length: CharOffset::from(13),
+                })]
+            );
+        });
+    });
+}
+
+#[test]
 fn test_styled_block_default_boundaries() {
     // As part of CLD-1178, this tests the StyledBufferBlocks iterator at block boundaries.
     App::test((), |mut app| async move {
