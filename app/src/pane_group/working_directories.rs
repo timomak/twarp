@@ -278,17 +278,59 @@ impl WorkingDirectoriesModel {
         self.remove_inactive_code_reviews(pane_group_id);
     }
 
-    /// Remove any code review view state that is not active in any of the terminal views that belong to this pane group.
+    /// Remove any code review view state whose repository is no longer present in this
+    /// pane group.
+    ///
+    /// twarp 07: liveness must be keyed on `repository_roots`, not
+    /// `directory_to_terminal` — a repo discovered via a Claude Code pane has no
+    /// terminal mapping (the refresh inserts an *empty* terminal map for an
+    /// agent-only pane group). Retaining on the terminal mapping alone deleted the
+    /// view `store_code_review_view` had just cached, so `render_panel_content`
+    /// never found a view and the panel sat on its loading skeleton forever while
+    /// the (separately computed) diff badge kept working.
     fn remove_inactive_code_reviews(&mut self, pane_group_id: EntityId) {
         let Some(code_review_views) = self.code_review_views.get_mut(&pane_group_id) else {
             return;
         };
 
-        let Some(terminal_mapping) = self.directory_to_terminal.get(&pane_group_id) else {
+        let repository_roots = self.repository_roots.get(&pane_group_id);
+        let terminal_mapping = self.directory_to_terminal.get(&pane_group_id);
+        if repository_roots.is_none() && terminal_mapping.is_none() {
             return;
-        };
+        }
 
-        code_review_views.retain(|path, _| terminal_mapping.contains_key(path));
+        code_review_views.retain(|path, _| {
+            Self::is_code_review_repo_live(repository_roots, terminal_mapping, path)
+        });
+    }
+
+    /// Whether a cached `CodeReviewView` for `repo_path` should be kept alive:
+    /// the repo is still one of the pane group's repository roots, or still has
+    /// a terminal mapped to it.
+    fn is_code_review_repo_live(
+        repository_roots: Option<&IndexSet<PathBuf>>,
+        terminal_mapping: Option<&HashMap<PathBuf, EntityId>>,
+        repo_path: &Path,
+    ) -> bool {
+        repository_roots.is_some_and(|roots| roots.contains(repo_path))
+            || terminal_mapping.is_some_and(|mapping| mapping.contains_key(repo_path))
+    }
+
+    /// Test-only probe for the retention rule used by
+    /// [`Self::remove_inactive_code_reviews`], so the Claude-only-tab regression
+    /// can be covered without constructing a full `CodeReviewView`.
+    #[cfg(test)]
+    pub(crate) fn code_review_view_would_be_retained(
+        &self,
+        pane_group_id: EntityId,
+        repo_path: &Path,
+    ) -> bool {
+        let repository_roots = self.repository_roots.get(&pane_group_id);
+        let terminal_mapping = self.directory_to_terminal.get(&pane_group_id);
+        if repository_roots.is_none() && terminal_mapping.is_none() {
+            return true;
+        }
+        Self::is_code_review_repo_live(repository_roots, terminal_mapping, repo_path)
     }
 
     /// Get an existing CodeReviewView for a specific repository in a pane group.
