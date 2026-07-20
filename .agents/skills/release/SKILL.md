@@ -40,16 +40,15 @@ All commands from the repo root being built (main checkout or the worktree).
 3. **Zip the bundle** (stage in /tmp so the zip never lands in the repo):
 
    ```
-   ditto -c -k --keepParent target/release/bundle/osx/TwarpOss.app /tmp/TwarpOss-<tag>.zip
+   ditto -c -k --keepParent target/release/bundle/osx/Twarp.app /tmp/Twarp-<tag>.zip
    ```
 
-   (If the bundle directory name has changed — e.g. a rebrand to `Twarp.app` —
-   zip whatever `./script/run --release` actually produced and name the zip to
-   match.)
+   Zip the bundle that `./script/run --release` produced and keep the public
+   artifact name aligned with the app name.
 4. **Publish** — always pin the repo; never target warpdotdev/warp:
 
    ```
-   gh release create <tag> /tmp/TwarpOss-<tag>.zip \
+   gh release create <tag> /tmp/Twarp-<tag>.zip \
      --repo timomak/twarp --target master \
      --title "<tag>" --notes "<short changelog from git log since the previous tag>"
    ```

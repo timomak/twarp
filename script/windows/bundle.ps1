@@ -81,8 +81,8 @@ if ($CARGO_PROFILE -eq 'dev') {
 }
 # Update parameters based on the target release channel.
 #
-# APP_NAME here must match the value used in Rust as the
-# application name; see app/src/channel.rs.
+# APP_NAME is the public display name. APP_INTERNAL_NAME below remains
+# channel-specific so channels can keep separate internal state.
 #
 # WARP_BIN is the name of the binary produced by cargo;
 # BINARY_NAME is the desired name of the binary in the final package.
@@ -110,12 +110,17 @@ if ("$CHANNEL" -eq 'local') {
 } elseif ("$CHANNEL" -eq 'oss') {
     $WARP_BIN = 'twarp-oss'
     $BINARY_NAME = 'twarp-oss.exe'
-    $APP_NAME = 'TwarpOss'
+    $APP_NAME = 'Twarp'
     $FEATURES = 'release_bundle,gui,nld_improvements'
 }
 
 $BINARY_PATH = "$CARGO_TARGET_OUTPUT_DIR\$BINARY_NAME"
-$BUNDLE_ID = "dev.twarp.$APP_NAME"
+$APP_INTERNAL_NAME = $APP_NAME
+if ("$CHANNEL" -eq 'oss') {
+    # Keep the OSS channel's internal identity distinct from its public name.
+    $APP_INTERNAL_NAME = 'TwarpOss'
+}
+$BUNDLE_ID = "dev.twarp.$APP_INTERNAL_NAME"
 $INSTALLER_OUTPUT_DIR = "$WINDOWS_INSTALLER_DIR\Output"
 $INSTALLER_NAME = "$($APP_NAME)$($FILE_ENDING)"
 $INSTALLER_PATH = "$($INSTALLER_OUTPUT_DIR)\$($INSTALLER_NAME).exe"
@@ -189,6 +194,8 @@ $ISCC_ARGS = @(
     "/DMyAppExeName=$BINARY_NAME",
     "/DTargetProfileDir=$CARGO_TARGET_OUTPUT_DIR",
     "/DMyAppName=$APP_NAME",
+    "/DMyAppInternalName=$APP_INTERNAL_NAME",
+    "/DMyAppIdentifier=$BUNDLE_ID",
     "/DMyAppVersion=$env:GIT_RELEASE_TAG",
     "/DArch=$ARCH",
     "/DOutputName=$INSTALLER_NAME"

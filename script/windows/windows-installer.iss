@@ -7,6 +7,12 @@
 #ifndef MyAppName
   #define MyAppName "TwarpDev"
 #endif
+#ifndef MyAppInternalName
+  #define MyAppInternalName MyAppName
+#endif
+#ifndef MyAppIdentifier
+  #define MyAppIdentifier "dev.twarp.TwarpDev"
+#endif
 #ifndef MyAppVersion
   #define MyAppVersion "0.1.0"
 #endif
@@ -108,38 +114,38 @@ Source: "{#AssetsDir}\{#Arch}\dxil.dll"; DestDir: "{app}"
 Source: "{#TargetProfileDir}\resources\*"; DestDir: "{app}\resources"; Flags: ignoreversion recursesubdirs
 
 [Registry]
-Root: HKCU; Subkey: "SOFTWARE\Twarp.dev\{#MyAppName}"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "SOFTWARE\Twarp.dev\{#MyAppInternalName}"; Flags: uninsdeletekey
 ; cleanup "Open Twarp Here" registry entries
-Root: HKA; Subkey: "Software\Classes\Directory\shell\{#MyAppName}"; Flags: deletekey
-Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#MyAppName}"; Flags: deletekey
+Root: HKA; Subkey: "Software\Classes\Directory\shell\{#MyAppInternalName}"; Flags: deletekey
+Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#MyAppInternalName}"; Flags: deletekey
 ; Add "Open Twarp in new tab" to directory context menu
-Root: HKA; Subkey: "Software\Classes\Directory\shell\{#MyAppName}Tab"; ValueType: string; ValueName: ""; ValueData: "Open {#MyAppName} in new tab"; Flags: uninsdeletekey
-Root: HKA; Subkey: "Software\Classes\Directory\shell\{#MyAppName}Tab"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icon.ico"
-Root: HKA; Subkey: "Software\Classes\Directory\shell\{#MyAppName}Tab\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""twarp://action/new_tab?path=%1"""
+Root: HKA; Subkey: "Software\Classes\Directory\shell\{#MyAppInternalName}Tab"; ValueType: string; ValueName: ""; ValueData: "Open {#MyAppName} in new tab"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Directory\shell\{#MyAppInternalName}Tab"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icon.ico"
+Root: HKA; Subkey: "Software\Classes\Directory\shell\{#MyAppInternalName}Tab\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""twarp://action/new_tab?path=%1"""
 ; Add "Open Twarp in new tab" to directory background context menu
-Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#MyAppName}Tab"; ValueType: string; ValueName: ""; ValueData: "Open {#MyAppName} in new tab"; Flags: uninsdeletekey
-Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#MyAppName}Tab"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icon.ico"
-Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#MyAppName}Tab\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""twarp://action/new_tab?path=%V"""
+Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#MyAppInternalName}Tab"; ValueType: string; ValueName: ""; ValueData: "Open {#MyAppName} in new tab"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#MyAppInternalName}Tab"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icon.ico"
+Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#MyAppInternalName}Tab\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""twarp://action/new_tab?path=%V"""
 ; Add "Open Twarp in new window" to directory context menu
-Root: HKA; Subkey: "Software\Classes\Directory\shell\{#MyAppName}Window"; ValueType: string; ValueName: ""; ValueData: "Open {#MyAppName} in new window"; Flags: uninsdeletekey
-Root: HKA; Subkey: "Software\Classes\Directory\shell\{#MyAppName}Window"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icon.ico"
-Root: HKA; Subkey: "Software\Classes\Directory\shell\{#MyAppName}Window\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""twarp://action/new_window?path=%1"""
+Root: HKA; Subkey: "Software\Classes\Directory\shell\{#MyAppInternalName}Window"; ValueType: string; ValueName: ""; ValueData: "Open {#MyAppName} in new window"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Directory\shell\{#MyAppInternalName}Window"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icon.ico"
+Root: HKA; Subkey: "Software\Classes\Directory\shell\{#MyAppInternalName}Window\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""twarp://action/new_window?path=%1"""
 ; Add "Open Twarp in new window" to directory background context menu
-Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#MyAppName}Window"; ValueType: string; ValueName: ""; ValueData: "Open {#MyAppName} in new window"; Flags: uninsdeletekey
-Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#MyAppName}Window"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icon.ico"
-Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#MyAppName}Window\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""twarp://action/new_window?path=%V"""
+Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#MyAppInternalName}Window"; ValueType: string; ValueName: ""; ValueData: "Open {#MyAppName} in new window"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#MyAppInternalName}Window"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icon.ico"
+Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#MyAppInternalName}Window\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""twarp://action/new_window?path=%V"""
 
 [Tasks]
 Name: addToPath; Description: "Add Twarp to PATH"
 
 [UninstallDelete]
-Type: filesandordirs; Name: "{userappdata}\twarp\{#MyAppName}"
-Type: filesandordirs; Name: "{localappdata}\twarp\{#MyAppName}"
+Type: filesandordirs; Name: "{userappdata}\twarp\{#MyAppInternalName}"
+Type: filesandordirs; Name: "{localappdata}\twarp\{#MyAppInternalName}"
 Type: filesandordirs; Name: "{app}\bin"
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"; AppUserModelID: "dev.twarp.{#MyAppName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"; AppUserModelID: "dev.twarp.{#MyAppName}"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"; AppUserModelID: "{#MyAppIdentifier}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"; AppUserModelID: "{#MyAppIdentifier}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: postinstall runhidden nowait

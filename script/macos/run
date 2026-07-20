@@ -33,7 +33,7 @@ if [ "$WARP_CHANNEL" = "local" ]; then
     WARP_APP_PATH="${TARGET_DIR}/debug/bundle/osx/TwarpLocal.app"
     WARP_SCHEME_NAME="warplocal"
 else
-    WARP_APP_PATH="${TARGET_DIR}/debug/bundle/osx/TwarpOss.app"
+    WARP_APP_PATH="${TARGET_DIR}/debug/bundle/osx/Twarp.app"
     WARP_SCHEME_NAME="warposs"
 fi
 DONT_OPEN=false
@@ -77,7 +77,7 @@ while (( "$#" )); do
       if [ "$WARP_CHANNEL" = "local" ]; then
           WARP_APP_PATH="${TARGET_DIR}/release/bundle/osx/TwarpLocal.app"
       else
-          WARP_APP_PATH="${TARGET_DIR}/release/bundle/osx/TwarpOss.app"
+          WARP_APP_PATH="${TARGET_DIR}/release/bundle/osx/Twarp.app"
       fi
       PARAMS="$PARAMS $1"
       shift
@@ -88,7 +88,7 @@ while (( "$#" )); do
       if [ "$WARP_CHANNEL" = "local" ]; then
           WARP_APP_PATH="${TARGET_DIR}/${PROFILE}/bundle/osx/TwarpLocal.app"
       else
-          WARP_APP_PATH="${TARGET_DIR}/${PROFILE}/bundle/osx/TwarpOss.app"
+          WARP_APP_PATH="${TARGET_DIR}/${PROFILE}/bundle/osx/Twarp.app"
       fi
       PARAMS="$PARAMS --profile $PROFILE"
       ;;
@@ -181,6 +181,24 @@ if [ "$INSTALL" = true ] ; then
     # keeps working); the running instance just keeps the OLD code until relaunch.
     rm -rf "$INSTALL_PATH"
     ditto "$WARP_APP_PATH" "$INSTALL_PATH"
+
+    # TwarpOss.app was the old public bundle name. Remove that legacy copy only
+    # after Twarp.app has installed successfully and only when its bundle ID
+    # matches ours, so Launch Services cannot keep choosing between two paths
+    # for the same application identity. User data lives under Library and is
+    # deliberately unaffected by this bundle migration.
+    if [ "$WARP_CHANNEL" = "oss" ] && [ "$APP_NAME" = "Twarp.app" ]; then
+        LEGACY_INSTALL_PATH="/Applications/TwarpOss.app"
+        if [ -d "$LEGACY_INSTALL_PATH" ]; then
+            LEGACY_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$LEGACY_INSTALL_PATH/Contents/Info.plist" 2>/dev/null || true)"
+            if [ "$LEGACY_BUNDLE_ID" = "dev.twarp.TwarpOss" ]; then
+                echo "Removing legacy TwarpOss.app bundle (application data is preserved)..."
+                rm -rf "$LEGACY_INSTALL_PATH"
+            else
+                echo "Leaving $LEGACY_INSTALL_PATH untouched: unexpected bundle ID '$LEGACY_BUNDLE_ID'."
+            fi
+        fi
+    fi
     echo "Installed to $INSTALL_PATH — Dock/Spotlight launches will now use this build."
 fi
 
