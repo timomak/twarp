@@ -38,38 +38,27 @@ use crate::{
 use crate::{code_review::diff_state::DiffStateModel, terminal::view::TerminalView};
 use dunce::canonicalize;
 use itertools::Itertools;
-use pathfinder_geometry::vector::vec2f;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
     sync::Arc,
 };
 use twarp_core::features::FeatureFlag;
-use twarp_core::ui::tokens::{border, elevation, radius, spacing};
+use twarp_core::ui::tokens::{border, spacing, type_ramp};
 use twarp_core::ui::Icon;
 use twarp_util::path::LineAndColumnArg;
-use twarpui::color::ColorU;
 use twarpui::elements::{ChildAnchor, Empty, PositionedElementAnchor};
 use twarpui::keymap::EditableBinding;
 use twarpui::EntityId;
 use twarpui::{
     elements::{
-        resizable_state_handle, Border, Container, CornerRadius, DragBarSide, DropShadow, Element,
-        MainAxisSize, MouseStateHandle, Radius, Resizable, ResizableStateHandle,
+        resizable_state_handle, Border, Container, DragBarSide, Element, MainAxisSize,
+        MouseStateHandle, Resizable, ResizableStateHandle,
     },
     AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle, WeakViewHandle,
 };
 
-fn inspector_panel_drop_shadow() -> DropShadow {
-    let (offset_y, blur_radius, spread_radius, alpha) = elevation::PANEL;
-    DropShadow {
-        color: ColorU::new(0, 0, 0, (alpha * 255.).round() as u8),
-        offset: vec2f(0., offset_y),
-        blur_radius,
-        spread_radius,
-    }
-}
 use twarpui::{
     elements::{
         ChildView, Clipped, ConstrainedBox, CrossAxisAlignment, Flex, MainAxisAlignment,
@@ -937,13 +926,40 @@ impl RightPanelView {
         .finish()
     }
 
-    fn render_simple_header(&self, close_button: Box<dyn Element>) -> Box<dyn Element> {
-        let left_spacer = Box::new(Shrinkable::new(1.0, Empty::new().finish()));
+    fn render_simple_header(
+        &self,
+        close_button: Box<dyn Element>,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let use_design_shell = cfg!(target_os = "macos") && FeatureFlag::DesignShellV1.is_enabled();
+        let left: Box<dyn Element> = if use_design_shell {
+            Text::new_inline(
+                "CODE REVIEW".to_string(),
+                appearance.ui_font_family(),
+                type_ramp::CAPTION.size,
+            )
+            .with_line_height_ratio(type_ramp::CAPTION.line_height)
+            .with_style(Properties::default().weight(Weight::Semibold))
+            .with_color(
+                appearance
+                    .theme()
+                    .sub_text_color(appearance.theme().surface_1())
+                    .into(),
+            )
+            .finish()
+        } else {
+            Box::new(Shrinkable::new(1.0, Empty::new().finish()))
+        };
+        let mut right = Vec::new();
+        if use_design_shell {
+            right.push(self.render_maximize_pane_button());
+        }
+        right.push(close_button);
         Container::new(
             ConstrainedBox::new(
                 Flex::row()
-                    .with_child(left_spacer)
-                    .with_children(vec![close_button])
+                    .with_child(left)
+                    .with_children(right)
                     .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .finish(),
@@ -951,8 +967,16 @@ impl RightPanelView {
             .with_height(PANE_HEADER_HEIGHT)
             .finish(),
         )
-        .with_padding_left(16.)
-        .with_padding_right(HEADER_EDGE_PADDING)
+        .with_padding_left(if use_design_shell {
+            spacing::MD
+        } else {
+            CONTENT_LEFT_MARGIN
+        })
+        .with_padding_right(if use_design_shell {
+            spacing::SM
+        } else {
+            HEADER_EDGE_PADDING
+        })
         .finish()
     }
 
@@ -961,7 +985,7 @@ impl RightPanelView {
         let close_button = self.close_button(appearance, app);
 
         let Some(state) = &self.code_review_state else {
-            let simple_header = self.render_simple_header(close_button);
+            let simple_header = self.render_simple_header(close_button, appearance);
             return Flex::column()
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_child(simple_header)
@@ -977,7 +1001,7 @@ impl RightPanelView {
             .filter(|repo_path| state.available_repos.contains(repo_path));
 
         let Some(selected_repo_path) = selected_repo_path else {
-            let simple_header = self.render_simple_header(close_button);
+            let simple_header = self.render_simple_header(close_button, appearance);
 
             #[cfg(feature = "local_fs")]
             let no_repo_body = {
@@ -1027,7 +1051,7 @@ impl RightPanelView {
                 .with_child(code_review_content)
                 .finish()
         } else {
-            let simple_header = self.render_simple_header(close_button);
+            let simple_header = self.render_simple_header(close_button, appearance);
             Flex::column()
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_child(simple_header)
@@ -1052,6 +1076,59 @@ impl RightPanelView {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
+        if cfg!(target_os = "macos") && FeatureFlag::DesignShellV1.is_enabled() {
+            let theme = appearance.theme();
+            let surface = theme.surface_1();
+            let title = Text::new_inline(
+                "CODE REVIEW".to_string(),
+                appearance.ui_font_family(),
+                type_ramp::CAPTION.size,
+            )
+            .with_line_height_ratio(type_ramp::CAPTION.line_height)
+            .with_style(Properties::default().weight(Weight::Semibold))
+            .with_color(theme.sub_text_color(surface).into())
+            .finish();
+
+            let mut left_section = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_child(title);
+            if let Some(stats) = code_review_view
+                .as_ref(app)
+                .loaded_diff_stats()
+                .map(|stats| CodeReviewView::render_diff_stats(&stats, appearance))
+            {
+                left_section
+                    .add_child(Container::new(stats).with_margin_left(spacing::SM).finish());
+            }
+
+            let mut right_section = Vec::new();
+            if let Some(repo_dropdown) = self.render_repo_dropdown() {
+                right_section.push(repo_dropdown);
+            }
+            right_section.push(self.render_maximize_pane_button());
+            right_section.push(self.close_button(appearance, app));
+
+            return Container::new(
+                ConstrainedBox::new(
+                    Flex::row()
+                        .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_child(
+                            Clipped::new(Shrinkable::new(1.0, left_section.finish()).finish())
+                                .finish(),
+                        )
+                        .with_children(right_section)
+                        .finish(),
+                )
+                .with_height(PANE_HEADER_HEIGHT)
+                .finish(),
+            )
+            .with_padding_left(spacing::MD)
+            .with_padding_right(spacing::SM)
+            .finish();
+        }
+
         let theme = appearance.theme();
         let sub_text_color = theme.sub_text_color(theme.background());
 
@@ -1138,6 +1215,13 @@ impl RightPanelView {
 
     /// Legacy header layout: "Code review" title + file nav button.
     fn render_header_legacy(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
+        if cfg!(target_os = "macos") && FeatureFlag::DesignShellV1.is_enabled() {
+            if let Some(code_review_view) = self.get_active_code_review_view(app) {
+                return self.render_header(&code_review_view, appearance, app);
+            }
+            return self.render_simple_header(self.close_button(appearance, app), appearance);
+        }
+
         let file_navigation_button = {
             let current_code_review_view = self
                 .code_review_state
@@ -1968,18 +2052,16 @@ impl View for RightPanelView {
 
         let use_design_shell = cfg!(target_os = "macos") && FeatureFlag::DesignShellV1.is_enabled();
 
-        // twarp: keep the 19b inspector treatment behind DesignShellV1 so the
-        // shell restyle is reversible as one rollout unit. The legacy path keeps
-        // the existing floating-panel helpers unchanged when the flag is off.
+        // DesignShellV1 hosts Code Review as a full-height source rail. The
+        // legacy floating inspector remains the fallback on other platforms
+        // and when the shell flag is disabled.
         let panel_content = if use_design_shell {
             Container::new(panel_content)
-                .with_background(super::floating_panel_surface_fill(app))
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::PANEL)))
+                .with_background(Appearance::as_ref(app).theme().surface_1())
                 .with_border(
-                    Border::all(border::HAIRLINE_WIDTH)
+                    Border::left(border::HAIRLINE_WIDTH)
                         .with_border_fill(Appearance::as_ref(app).theme().outline()),
                 )
-                .with_drop_shadow(inspector_panel_drop_shadow())
                 .finish()
         } else {
             Container::new(panel_content)
@@ -1990,9 +2072,9 @@ impl View for RightPanelView {
                 .finish()
         };
 
-        let drag_side = match self.panel_position {
-            super::PanelPosition::Left => DragBarSide::Right,
-            super::PanelPosition::Right => DragBarSide::Left,
+        let drag_side = match (use_design_shell, self.panel_position) {
+            (true, _) | (false, super::PanelPosition::Right) => DragBarSide::Left,
+            (false, super::PanelPosition::Left) => DragBarSide::Right,
         };
         let resizable = Resizable::new(self.resizable_state_handle.clone(), panel_content)
             .with_dragbar_side(drag_side)
@@ -2005,6 +2087,10 @@ impl View for RightPanelView {
                 (min_width, max_width.max(min_width))
             }))
             .finish();
+        if use_design_shell {
+            return resizable;
+        }
+
         // The floating gap goes here, around the Resizable, so the drag bar
         // (the leftmost few px of the Resizable's child) lands on the card's
         // border rather than out in the gap.
@@ -2013,11 +2099,7 @@ impl View for RightPanelView {
         // side. The card keeps its float against the window edge / top / bottom,
         // but butts directly up to the center pane (gap removed on the inner side
         // so there's no dead strip between the card and the terminal).
-        let margin = if use_design_shell {
-            spacing::LG
-        } else {
-            super::FLOATING_PANEL_MARGIN
-        };
+        let margin = super::FLOATING_PANEL_MARGIN;
         match self.panel_position {
             super::PanelPosition::Left => Container::new(resizable)
                 .with_margin_top(margin)

@@ -1,4 +1,4 @@
-use super::{SidebarRowId, SidebarSection, SidebarSelectionState};
+use super::{sidebar_click_opens_diff, SidebarRowId, SidebarSection, SidebarSelectionState};
 use std::path::PathBuf;
 
 fn row(section: SidebarSection, path: &str) -> SidebarRowId {
@@ -64,4 +64,12 @@ fn drag_selection_extends_in_both_directions() {
     assert!(selection.is_selected(&rows[1]));
     assert!(selection.is_selected(&rows[2]));
     assert!(!selection.is_selected(&rows[3]));
+}
+
+#[test]
+fn plain_sidebar_click_opens_diff_but_multiselect_modifiers_do_not() {
+    assert!(sidebar_click_opens_diff(false, false));
+    assert!(!sidebar_click_opens_diff(true, false));
+    assert!(!sidebar_click_opens_diff(false, true));
+    assert!(!sidebar_click_opens_diff(true, true));
 }

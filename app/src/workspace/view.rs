@@ -633,6 +633,21 @@ fn design_shell_v1_enabled() -> bool {
     cfg!(target_os = "macos") && FeatureFlag::DesignShellV1.is_enabled()
 }
 
+fn should_render_code_review_rail(
+    design_shell_enabled: bool,
+    is_mobile: bool,
+    simplified_wasm_tab_bar: bool,
+    is_open: bool,
+    is_maximized: bool,
+    is_animating: bool,
+) -> bool {
+    design_shell_enabled
+        && !is_mobile
+        && !simplified_wasm_tab_bar
+        && !is_maximized
+        && (is_open || is_animating)
+}
+
 fn vertical_tabs_chrome_enabled(app: &AppContext) -> bool {
     FeatureFlag::VerticalTabs.is_enabled()
         && *TabSettings::as_ref(app).use_vertical_tabs
@@ -1015,12 +1030,16 @@ pub struct Workspace {
     left_panel_open: bool,
     /// In-flight sidebar slide animation (user-initiated toggles only; `None`
     /// when idle or when the panel was shown/hidden by startup/restore).
-    left_panel_slide: Option<left_panel_slide::LeftPanelSlide>,
+    left_panel_slide: Option<left_panel_slide::PanelSlide>,
     vertical_tabs_panel_open: bool,
     vertical_tabs_panel: VerticalTabsPanelState,
     left_panel_view: ViewHandle<LeftPanelView>,
     left_panel_views: Vec<ToolPanelView>,
     right_panel_view: ViewHandle<RightPanelView>,
+    /// In-flight Code Review source-rail slide. Closing keeps the loaded
+    /// review view alive until this reaches zero to avoid a loading flash.
+    right_panel_slide: Option<left_panel_slide::PanelSlide>,
+    right_panel_close_pending: bool,
     working_directories_model: ModelHandle<pane_group::WorkingDirectoriesModel>,
     /// twarp 07: git status model for the active *Claude-only* tab's repo.
     /// Terminal tabs each own a `GitRepoStatusModel` (see `TerminalView`), which
@@ -2813,6 +2832,8 @@ impl Workspace {
             left_panel_view,
             left_panel_views,
             right_panel_view,
+            right_panel_slide: None,
+            right_panel_close_pending: false,
             working_directories_model,
             shown_staging_banner_count: 0,
 
@@ -7209,7 +7230,7 @@ impl Workspace {
             self.left_panel_slide = None;
             return;
         }
-        self.left_panel_slide = Some(left_panel_slide::LeftPanelSlide::new(from, to));
+        self.left_panel_slide = Some(left_panel_slide::PanelSlide::new(from, to));
         self.tick_left_panel_slide(ctx);
     }
 
@@ -7224,8 +7245,54 @@ impl Workspace {
             return;
         }
         ctx.notify();
-        let timer = twarpui::r#async::Timer::after(left_panel_slide::LEFT_PANEL_SLIDE_TICK);
+        let timer = twarpui::r#async::Timer::after(left_panel_slide::PANEL_SLIDE_TICK);
         ctx.spawn(timer, |me, _, ctx| me.tick_left_panel_slide(ctx));
+    }
+
+    /// Current visible fraction of the Code Review rail. The canonical open
+    /// state changes at toggle time, while an in-flight close remains visible
+    /// until the animation reaches zero.
+    fn right_panel_visible_fraction(&self, open: bool) -> f32 {
+        match &self.right_panel_slide {
+            Some(slide) => slide.fraction(),
+            None if open => 1.0,
+            None => 0.0,
+        }
+    }
+
+    /// Starts a runtime Code Review rail transition. Startup/restore paths do
+    /// not call this helper, so persisted open state renders immediately.
+    fn start_right_panel_slide(&mut self, from: f32, to: f32, ctx: &mut ViewContext<Self>) -> bool {
+        if !design_shell_v1_enabled() || twarpui::platform::is_mobile_device() || from == to {
+            self.right_panel_slide = None;
+            return false;
+        }
+        self.right_panel_slide = Some(left_panel_slide::PanelSlide::new(from, to));
+        self.tick_right_panel_slide(ctx);
+        true
+    }
+
+    /// One Code Review rail animation frame. A completed closing transition
+    /// owns teardown so the last painted frame never swaps to a loading state.
+    fn tick_right_panel_slide(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(slide) = &self.right_panel_slide else {
+            return;
+        };
+        if slide.is_done() {
+            let completed_close = !slide.is_opening();
+            self.right_panel_slide = None;
+            if completed_close && self.right_panel_close_pending {
+                self.right_panel_close_pending = false;
+                self.right_panel_view.update(ctx, |view, ctx| {
+                    view.close_code_review(ctx);
+                });
+            }
+            ctx.notify();
+            return;
+        }
+        ctx.notify();
+        let timer = twarpui::r#async::Timer::after(left_panel_slide::PANEL_SLIDE_TICK);
+        ctx.spawn(timer, |me, _, ctx| me.tick_right_panel_slide(ctx));
     }
 
     /// Auto-opens the conversation list on first app start.
@@ -7512,6 +7579,8 @@ impl Workspace {
     ) {
         let should_open = panel_update_params.target_open_state;
         let should_close = !panel_update_params.target_open_state;
+        let was_open = self.current_workspace_state.is_code_review_panel_open;
+        let slide_from = self.right_panel_visible_fraction(was_open);
 
         // twarp 5e: workspace state is the source of truth; pane
         // groups mirror via `sync_code_review_panel_state_to_pane_groups`.
@@ -7519,9 +7588,17 @@ impl Workspace {
         let new_is_maximized = self.current_workspace_state.is_code_review_panel_maximized;
         self.sync_code_review_panel_state_to_pane_groups(ctx);
 
+        let slide_started = if new_is_maximized {
+            self.right_panel_slide = None;
+            false
+        } else {
+            self.start_right_panel_slide(slide_from, if should_open { 1.0 } else { 0.0 }, ctx)
+        };
+        self.right_panel_close_pending = should_close && slide_started;
+
         self.right_panel_view.update(ctx, |view, ctx| {
             view.set_maximized(new_is_maximized, ctx);
-            if should_close {
+            if should_close && !slide_started {
                 view.close_code_review(ctx);
             }
         });
@@ -7684,6 +7761,8 @@ impl Workspace {
         self.current_workspace_state.is_code_review_panel_maximized =
             !self.current_workspace_state.is_code_review_panel_maximized;
         let is_maximized = self.current_workspace_state.is_code_review_panel_maximized;
+        self.right_panel_slide = None;
+        self.right_panel_close_pending = false;
         self.sync_code_review_panel_state_to_pane_groups(ctx);
 
         self.right_panel_view.update(ctx, |view, ctx| {
@@ -17679,6 +17758,9 @@ impl Workspace {
                 if pane_group.is_right_panel_maximized {
                     return None;
                 }
+                if design_shell_v1_enabled() && !twarpui::platform::is_mobile_device() {
+                    return None;
+                }
                 Some(ChildView::new(&self.right_panel_view).finish())
             }
         }
@@ -20394,6 +20476,26 @@ impl View for Workspace {
             }
         }
 
+        let pane_group = self.active_tab_pane_group().as_ref(app);
+        let is_left_panel_open = pane_group.left_panel_open;
+        let is_left_panel_visible = is_left_panel_open || self.left_panel_slide.is_some();
+        let is_right_panel_open = pane_group.right_panel_open;
+        let is_right_panel_maximized = is_right_panel_open && pane_group.is_right_panel_maximized;
+        let design_shell_rails_enabled = design_shell_v1_enabled()
+            && !twarpui::platform::is_mobile_device()
+            && !use_simplified_wasm_tab_bar;
+        let is_right_panel_visible = HeaderToolbarItemKind::CodeReview.is_supported(app)
+            && should_render_code_review_rail(
+                design_shell_v1_enabled(),
+                twarpui::platform::is_mobile_device(),
+                use_simplified_wasm_tab_bar,
+                is_right_panel_open,
+                is_right_panel_maximized,
+                self.right_panel_slide.is_some(),
+            );
+        let use_docked_shell_layout =
+            design_shell_rails_enabled && (is_left_panel_visible || is_right_panel_visible);
+
         let panels = if use_simplified_wasm_tab_bar {
             // For the simplified WASM tab bar, we want to render the tab bar on top of all other content
             // so that content being added/moved around in the workspace (for example the details panel being toggled)
@@ -20407,36 +20509,52 @@ impl View for Workspace {
             .with_background(util::get_terminal_background_fill(self.window_id, app))
             .finish()
         } else {
-            let is_left_panel_open = self.active_tab_pane_group().as_ref(app).left_panel_open;
-            // During the closing slide the panel must keep rendering (clipped
-            // to its shrinking width) until the animation finishes.
-            let is_left_panel_visible = is_left_panel_open || self.left_panel_slide.is_some();
-            let use_design_shell = design_shell_v1_enabled()
-                && is_left_panel_visible
-                && !twarpui::platform::is_mobile_device();
             let tab_bar_and_panels =
                 self.render_tab_bar_and_panels_column(app, appearance, tab_bar_mode, false);
 
-            if use_design_shell {
-                let mut sidebar = ChildView::new(&self.left_panel_view).finish();
-                if self.left_panel_slide.is_some() {
-                    let fraction = self.left_panel_visible_fraction(is_left_panel_open);
-                    sidebar = Box::new(left_panel_slide::SlideClip::new(sidebar, fraction));
-                }
-                let right_column = Container::new(tab_bar_and_panels)
-                    .with_padding_top(WORKSPACE_PADDING)
-                    .with_padding_right(WORKSPACE_PADDING)
-                    .with_padding_bottom(WORKSPACE_PADDING)
-                    .finish();
+            if use_docked_shell_layout {
+                let mut shell_row = Flex::row();
 
-                Container::new(
-                    Flex::row()
-                        .with_child(sidebar)
-                        .with_child(Shrinkable::new(1.0, right_column).finish())
-                        .finish(),
-                )
-                .with_background(util::get_terminal_background_fill(self.window_id, app))
-                .finish()
+                if is_left_panel_visible {
+                    let mut sidebar = ChildView::new(&self.left_panel_view).finish();
+                    if self.left_panel_slide.is_some() {
+                        let fraction = self.left_panel_visible_fraction(is_left_panel_open);
+                        sidebar = Box::new(left_panel_slide::SlideClip::new(
+                            sidebar,
+                            fraction,
+                            left_panel_slide::SlideEdge::Left,
+                        ));
+                    }
+                    shell_row.add_child(sidebar);
+                }
+
+                let mut center_column = Container::new(tab_bar_and_panels)
+                    .with_padding_top(WORKSPACE_PADDING)
+                    .with_padding_bottom(WORKSPACE_PADDING);
+                if !is_left_panel_visible {
+                    center_column = center_column.with_padding_left(WORKSPACE_PADDING);
+                }
+                if !is_right_panel_visible {
+                    center_column = center_column.with_padding_right(WORKSPACE_PADDING);
+                }
+                shell_row.add_child(Shrinkable::new(1.0, center_column.finish()).finish());
+
+                if is_right_panel_visible {
+                    let mut review_rail = ChildView::new(&self.right_panel_view).finish();
+                    if self.right_panel_slide.is_some() {
+                        let fraction = self.right_panel_visible_fraction(is_right_panel_open);
+                        review_rail = Box::new(left_panel_slide::SlideClip::new(
+                            review_rail,
+                            fraction,
+                            left_panel_slide::SlideEdge::Right,
+                        ));
+                    }
+                    shell_row.add_child(review_rail);
+                }
+
+                Container::new(shell_row.finish())
+                    .with_background(util::get_terminal_background_fill(self.window_id, app))
+                    .finish()
             } else {
                 Container::new(tab_bar_and_panels)
                     .with_background(util::get_terminal_background_fill(self.window_id, app))
@@ -20491,9 +20609,7 @@ impl View for Workspace {
             }
         }
 
-        let is_left_panel_open = self.active_tab_pane_group().as_ref(app).left_panel_open
-            || self.left_panel_slide.is_some();
-        if design_shell_v1_enabled() && is_left_panel_open {
+        if use_docked_shell_layout {
             stack.add_child(Container::new(panels).finish());
         } else {
             stack.add_child(

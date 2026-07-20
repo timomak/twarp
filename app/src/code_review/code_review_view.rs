@@ -519,6 +519,10 @@ impl SidebarRowId {
     }
 }
 
+fn sidebar_click_opens_diff(extend: bool, toggle: bool) -> bool {
+    !extend && !toggle
+}
+
 #[derive(Debug)]
 struct SidebarDragSelection {
     anchor: SidebarRowId,
@@ -4893,17 +4897,20 @@ impl CodeReviewView {
         is_in_split_pane: bool,
         app: &twarpui::AppContext,
     ) -> Box<dyn Element> {
+        let content_header =
+            Container::new(self.render_header(state, appearance, is_in_split_pane, app))
+                .with_padding_left(spacing::MD)
+                .with_padding_right(spacing::SM)
+                .finish();
         let top_section = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_main_axis_alignment(MainAxisAlignment::Start)
-            .with_child(self.render_header(state, appearance, is_in_split_pane, app))
+            .with_child(content_header)
             .with_child(self.render_content(state, appearance, app));
 
         let top_section_with_margin = ConstrainedBox::new(
             Container::new(Shrinkable::new(1., top_section.finish()).finish())
-                .with_margin_left(CONTENT_LEFT_MARGIN)
-                .with_margin_right(CONTENT_RIGHT_MARGIN)
-                .with_margin_bottom(5.)
+                .with_margin_bottom(spacing::XS)
                 .finish(),
         )
         .with_min_width(180.)
@@ -5474,7 +5481,7 @@ impl CodeReviewView {
         // new tab instead of inline.
         let sidebar = EventHandler::new(
             Container::new(scrollable_content)
-                .with_horizontal_padding(spacing::SM)
+                .with_padding_left(spacing::SM)
                 .finish(),
         )
         .with_always_handle()
@@ -5718,20 +5725,19 @@ impl CodeReviewView {
 
                     EventHandler::new(container.finish())
                         .on_left_mouse_down_with_modifiers(
-                            move |ctx, _, _, modifiers, click_count| {
-                                if click_count == 2 {
+                            move |ctx, _, _, modifiers, _click_count| {
+                                let extend = modifiers.shift;
+                                let toggle = modifiers.cmd || modifiers.ctrl;
+                                ctx.dispatch_typed_action(CodeReviewAction::SelectSidebarFile {
+                                    section,
+                                    path: select_path.clone(),
+                                    extend,
+                                    toggle,
+                                });
+                                if sidebar_click_opens_diff(extend, toggle) {
                                     ctx.dispatch_typed_action(
                                         CodeReviewAction::OpenFileDiffInNewTab {
                                             path: open_path.clone(),
-                                        },
-                                    );
-                                } else {
-                                    ctx.dispatch_typed_action(
-                                        CodeReviewAction::SelectSidebarFile {
-                                            section,
-                                            path: select_path.clone(),
-                                            extend: modifiers.shift,
-                                            toggle: modifiers.cmd || modifiers.ctrl,
                                         },
                                     );
                                 }

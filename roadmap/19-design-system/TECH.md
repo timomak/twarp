@@ -1,6 +1,6 @@
 # Design system & visual overhaul — TECH
 
-Companion to [PRODUCT.md](PRODUCT.md); §N below references its invariants. Layout facts verified against the tree at spec time (2026-07-16).
+Companion to [PRODUCT.md](PRODUCT.md); §N below references its invariants. Layout facts were re-verified for 19g against `origin/master` on 2026-07-20.
 
 ## Sub-phases
 
@@ -11,6 +11,8 @@ Companion to [PRODUCT.md](PRODUCT.md); §N below references its invariants. Layo
 | **19c** | Agent pane restyle (conversation surface) | §14–§20 |
 | **19d** | Tab strip refinement + block state chrome | §21–§25 |
 | **19e** | Settings + app-wide sweep (literals, PhenomenonStyle, shadows, icons) | §26–§32 |
+| **19f** | Owner shell feedback: horizontal rectangle tabs, Tools rail, search icon, gear | §33–§38 |
+| **19g** | Full-height animated Code Review source rail + Files-style rows | §39–§46 |
 
 Recommended order: 19b → 19c → 19d → 19e (19b is the owner's headline; 19c is the biggest visual win; 19d/19e are mechanical and fleet-parallelizable).
 
@@ -31,7 +33,7 @@ Target: `Flex::row[ sidebar(full height), Flex::column[ tab_bar, content_row ] ]
 
 ### Seams (all verified path:line)
 
-1. **Layout inversion** — `render` (`view.rs:20375`), `render_banner_and_active_tab` (`:17028`), panel insertion (`:17653-17657`). Lift `ChildView(left_panel_view)` (gated by `pane_group.left_panel_open`) out of the row into the new top-level column. The right panel **stays** in `main_content` (decision 3: floating inspector).
+1. **Layout inversion** — `render` (`view.rs:20375`), `render_banner_and_active_tab` (`:17028`), panel insertion (`:17653-17657`). Lift `ChildView(left_panel_view)` (gated by `pane_group.left_panel_open`) out of the row into the new top-level column. The original right-panel-inside-content decision is superseded by 19g.
 2. **Tab-strip origin** — `compute_tab_bar_left_padding` (`view.rs:16565-16586`) currently returns ~`traffic_light_data.width()/zoom + 16` ≈ 80 on mac. New rule: sidebar **open** → plain `TAB_BAR_PADDING_LEFT` (the sidebar owns the clearance); sidebar **closed** → today's value. ⚠ **Trap:** the existing `current_workspace_state.is_left_panel_open()` consulted there is the **theme chooser** (`workspace/util.rs:206`), *not* the sidebar. The sidebar flag is `pane_group.left_panel_open`. Both must be handled; do not conflate.
 3. **Traffic-light zone inside the sidebar** — the buttons are real `standardWindowButton`s pinned by Auto Layout at x≈12/32/52, size 14, centerY+1 (`twarpui/src/platform/mac/objc/window.m:280-305`), compositing **over** the full-size Metal drawable (`NSFullSizeContentView`, `window.m:646`; transparent titlebar `:327`). No ObjC changes needed: the sidebar simply reserves `traffic_light_data.width()/zoom` (64, non-scaling — `traffic_lights.rs:142-148`) × the titlebar band height at its top-left (§2). Fullscreen: mirror the existing fullscreen branch (lights hidden → no reservation) (§8).
 4. **Titlebar band & window drag** — band height = `TOTAL_TAB_BAR_HEIGHT`(35)·zoom pushed from `update_titlebar_height` (`view.rs:11513-11521` → `window.m:378-386`); `mouseInTitleBar:` (`host_view.m:423-430`) makes the top band a window-drag region wherever twarp UI doesn't consume the event (`host_view.m:939-947`) — §7 comes for free, but sidebar header controls must consume their clicks (the existing pill switcher already does).
@@ -40,11 +42,11 @@ Target: `Flex::row[ sidebar(full height), Flex::column[ tab_bar, content_row ] ]
 7. **`WORKSPACE_PADDING`(1) (`view.rs:452`)** wraps the workspace; edge-to-edge sidebar needs it excluded on the left (§1).
 8. **Adjacent systems that must not regress** (§6, §9, §13): theme-chooser panel & vertical-tabs config-panel paths reusing the panel machinery (`view.rs:17431-17481`), right-panel maximize (`:17663-17685`), WASM-mobile overlay sidebar (`:20422-20461`), cross-window tab drag ghost slots injected into the strip (`:16382-16413`).
 
-**Feature flag**: the inversion ships behind `FeatureFlag` (e.g. `DesignShellV1`), default-on in dogfood, so the strip/sidebar can be A/B'd against the old layout during smoke; flag removal after owner sign-off (decision 6). The right-panel restyle (§11–§12: radius 10→14 via `radius::PANEL`, shadow → `elevation::PANEL`, margin 8→`LG` 16 on its three window edges) is unflagged.
+**Feature flag**: the inversion ships behind `FeatureFlag::DesignShellV1`, default-on in dogfood and twarp-oss, so the shell can be A/B'd against the old layout during smoke. The original floating right-panel restyle is retained only on legacy/non-design-shell paths after 19g.
 
-### Right panel (§11–§13)
+### Historical right-panel treatment (§11–§13, superseded by 19g)
 
-`right_panel.rs:1949-2000` — token swap on the same card helpers' *call sites* (not the shared fns), keep `Resizable`/`DragBarSide::Left`, maximize path untouched (`right_panel.rs:1952-1953`, `view.rs:17663-17685`).
+19b used `right_panel.rs:1949-2000` to apply a tokenized floating inspector. 19g replaces that treatment only when the macOS design shell is active; the call path remains the fallback elsewhere.
 
 ## 19c — agent pane
 
@@ -77,6 +79,38 @@ Owner smoke-tested the shipped shell 2026-07-16; four corrections, all within th
 
 Validation: PRODUCT `### 19f` smoke steps via the UX gate; the §33 revert must re-verify the 19b matrix (open/closed/fullscreen, window drag, resize) since it reshapes the same layout code.
 
+## 19g — Code Review source rail (§39–§46)
+
+### Shell ownership and layout
+
+- Generalize `app/src/workspace/view/left_panel_slide.rs` into a direction-aware side-panel slide element. It keeps the existing finite-constraint layout and self-rearming timer pattern, adds a right-edge paint direction, and unit-tests the cubic easing and directional paint offset (§40).
+- Add right-rail animation state to `Workspace`, parallel to `left_panel_slide`. Runtime open/close paths start from the current visible fraction; restore paths continue assigning persisted state directly. A pending-close bit defers `RightPanelView::close_code_review` until a closing slide completes and is cleared when the slide reverses (§40–§41).
+- Under `DesignShellV1` on desktop macOS, `Workspace::render` becomes `Flex::row[ optional Files rail, center column, optional Code Review rail ]`. The center column owns the tab strip and main content; conditional `WORKSPACE_PADDING` remains only on window edges without a rail. Non-maximized Code Review is suppressed from the legacy config-panel insertion path while maximized Code Review continues through the existing full-content path (§39, §45–§46).
+- `RightPanelView::render` keeps its `Resizable` and persisted width but uses a left drag bar, `surface_1`, and a single left `outline()` hairline under the design shell. It applies no margin, radius, or shadow. The legacy floating card remains untouched outside that path (§39, §45–§46).
+
+### Header and source-list content
+
+- `RightPanelView::render_header` becomes a compact source-list title row using `type_ramp::CAPTION`, token spacing, diff stats, optional repo dropdown, and the existing maximize/close buttons. Branch/diff-base context remains in the Code Review content toolbar, eliminating the path-heavy duplicate header (§43).
+- `CodeReviewView::render_loaded_state` stops wrapping its source list in asymmetric legacy margins. Its content toolbar receives token insets, while the scroll surface keeps only a left inset so the overlay scrollbar sits flush on the rail edge (§44).
+- Sidebar row mouse handling always updates selection first. With no selection modifier it also dispatches `OpenFileDiffInNewTab`; Shift and Command/Control gestures retain the multiselect-only path (§42). Contextual buttons continue deferring child events so file operations never trigger row opening.
+
+### Maximize, teardown, and compatibility
+
+- A maximized review never renders the docked rail or starts a rail animation. Closing maximized mode follows the existing immediate teardown; minimize restores the persisted resizable width (§45).
+- The right rail remains workspace-level across tabs, matching the existing canonical open/maximized state. Closing focus transfer happens immediately, while loaded review state remains renderable but non-interactive until the slide finishes (§41).
+- Mobile/WASM, Windows/Linux, vertical-tabs chrome, theme chooser, tab-drag overlays, and design-shell-off builds remain on their current paths (§46).
+
+### Testing and validation
+
+- Unit-test direction-independent cubic easing and left/right paint offsets in the generalized slide module (§40).
+- Extend workspace unit coverage for design-shell Code Review config-panel suppression and any extracted visibility decision helpers (§39, §45–§46).
+- Add `test_code_review_source_rail_opens_and_loads` to exercise repository detection, the workspace toggle, and loaded diff state through the headless integration runner. Keep its outer `cargo test` entry ignored while the harness has the known nested-channel-runtime panic; the direct runner remains required. Existing scroll-anchor cases are stale after the source-list refactor because they still assert inline editor text (§39, §42).
+- Run `cargo fmt -- --check`, targeted Rust tests, `cargo build --bin warp-oss`, and `cargo clippy --workspace -- -D warnings`. Manual/UX gate: PRODUCT `### 19g`, with light/dark screenshots at default and non-default zoom.
+
+### Parallelization
+
+Parallel agents are not used: shell layout, animation lifecycle, teardown timing, and source-rail rendering all meet in `Workspace::render` and `RightPanelView`, so splitting them would create overlapping edits and slow integration. The implementation stays one sub-phase on `twarp-19-code-review-rail`.
+
 ## Risks
 
 1. **19b blast radius** — the layout inversion touches the most upstream-divergent file (`workspace/view.rs`). Mitigations: feature flag, no shared-helper mutations, explicit checks on the four adjacent systems (seam 8), UX-gate rounds with the sidebar open/closed/fullscreen.
@@ -84,6 +118,8 @@ Validation: PRODUCT `### 19f` smoke steps via the UX gate; the §33 revert must 
 3. **Flex infinite-constraint SIGABRT** (dogfood-only debug_assert) — layout restructures have tripped it before (pane-header/restore history); run dogfood builds during 19b.
 4. **Type-size jump readability** (12→13/14) at non-default zoom — verify at zoom extremes (§31).
 5. **Warp upstream cherry-picks** — view.rs churn makes future ports harder; keep 19b's diff as move-not-rewrite where possible.
+6. **Animated-close lifecycle** — tearing down the cached review before paint completion causes a loading flash; defer teardown and explicitly cancel it on reversal.
+7. **Double rendering** — the rail must be suppressed from config-panel insertion only in non-maximized design-shell mode, or the same `ViewHandle` will render twice. Keep maximize on the established content path.
 
 ## Validation
 
@@ -91,4 +127,5 @@ Validation: PRODUCT `### 19f` smoke steps via the UX gate; the §33 revert must 
 - 19b: manual matrix — sidebar open/closed × fullscreen × theme-chooser open × right panel open/maximized; window drag from sidebar top band; traffic-light clicks; resize handles; persisted-width migration (§1–§13, §32).
 - 19c: golden-transcript rendering unchanged in *content* (same items, same order, same affordances) — only presentation differs; tripwire list walked one by one (§19).
 - Fleet UX gate runs on every impl PR (live screenshots on other-mac), with the new rubric items active from 19b onward.
+- 19g: run the PRODUCT 19g matrix with Files open/closed, Code Review open/closing/maximized, rapid reversal, and legacy design-shell-off fallback (§39–§46).
 - `cargo check` + targeted `cargo test -p` per touched crate; full presubmit on other-mac (this Mac can't run it fully).
