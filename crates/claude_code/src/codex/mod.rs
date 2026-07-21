@@ -5,6 +5,7 @@
 //! the UI layer.
 
 pub mod protocol;
+pub mod sessions;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;

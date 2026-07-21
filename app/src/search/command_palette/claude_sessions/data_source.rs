@@ -67,6 +67,7 @@ impl ClaudeSessionsDataSource {
                     timestamp: session.timestamp,
                     jsonl_path: session.jsonl_path,
                     cwd: cwd.clone(),
+                    provider: session.provider,
                     match_result,
                 })
             })

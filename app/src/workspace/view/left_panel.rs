@@ -195,6 +195,7 @@ pub enum LeftPanelEvent {
         session_id: String,
         jsonl_path: PathBuf,
         cwd: PathBuf,
+        provider: claude_code::driver::AgentProvider,
     },
     // twarp: 2c-d — kept for legacy call-sites; AI conversation list deleted.
     NewConversationInNewTab,
@@ -2559,6 +2560,7 @@ impl LeftPanelView {
                         session_id: session.id.clone(),
                         jsonl_path: session.jsonl_path.clone(),
                         cwd,
+                        provider: session.provider,
                     });
                 }
             }
@@ -2921,6 +2923,7 @@ mod sessions_search_tests {
             title: title.to_owned(),
             timestamp: SystemTime::UNIX_EPOCH,
             jsonl_path: PathBuf::from("/dev/null"),
+            provider: claude_code::driver::AgentProvider::Claude,
         }
     }
 

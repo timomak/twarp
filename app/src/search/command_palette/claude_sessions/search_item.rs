@@ -29,6 +29,8 @@ pub struct ClaudeSessionSearchItem {
     pub jsonl_path: PathBuf,
     /// The cwd the session belongs to (resume must launch `claude` there).
     pub cwd: PathBuf,
+    /// Which agent owns the session — resume relaunches the same one.
+    pub provider: claude_code::driver::AgentProvider,
     pub match_result: FuzzyMatchResult,
 }
 
@@ -113,6 +115,7 @@ impl SearchItem for ClaudeSessionSearchItem {
             session_id: self.session_id.clone(),
             jsonl_path: self.jsonl_path.clone(),
             cwd: self.cwd.clone(),
+            provider: self.provider,
         }
     }
 
@@ -144,6 +147,7 @@ mod tests {
             timestamp: SystemTime::UNIX_EPOCH,
             jsonl_path: PathBuf::from("/home/u/.claude/projects/x/abc-123.jsonl"),
             cwd: PathBuf::from("/repo"),
+            provider: claude_code::driver::AgentProvider::Claude,
             match_result: FuzzyMatchResult::no_match(),
         }
     }
@@ -155,6 +159,7 @@ mod tests {
                 session_id,
                 jsonl_path,
                 cwd,
+                provider: _,
             } => {
                 assert_eq!(session_id, "abc-123");
                 assert_eq!(

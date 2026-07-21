@@ -86,6 +86,7 @@ pub enum CommandPaletteItemAction {
         session_id: String,
         jsonl_path: PathBuf,
         cwd: PathBuf,
+        provider: claude_code::driver::AgentProvider,
     },
     /// twarp: zero-state action — open a new terminal tab.
     OpenTerminalTab,
