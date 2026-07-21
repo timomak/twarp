@@ -144,8 +144,8 @@ mkdir -p "$OUT_DIR"
 
 # Update parameters based on the target release channel.
 #
-# APP_NAME here must match the value used in Rust as the
-# application name; see app/src/channel.rs.
+# APP_NAME is the public display name. BUNDLE_ID below remains channel-specific
+# so channels can keep separate internal state even when they share branding.
 #
 # WARP_BIN is the name of the binary produced by cargo;
 # BINARY_NAME is the desired name of the binary in the final package.
@@ -175,7 +175,7 @@ elif [[ $RELEASE_CHANNEL = "stable" ]]; then
 elif [[ $RELEASE_CHANNEL = "oss" ]]; then
   WARP_BIN="twarp-oss"
   BINARY_NAME="twarp-oss"
-  APP_NAME="TwarpOss"
+  APP_NAME="Twarp"
 fi
 
 # Artifact-specific configuration
@@ -186,6 +186,11 @@ elif [[ "$ARTIFACT" == "app" ]]; then
 fi
 
 BUNDLE_ID="dev.twarp.$APP_NAME"
+if [[ $RELEASE_CHANNEL = "oss" ]]; then
+  # Keep the OSS channel's internal identity distinct while publishing it under
+  # the product name shown to users.
+  BUNDLE_ID="dev.twarp.TwarpOss"
+fi
 EXECUTABLE_PATH="$CARGO_TARGET_OUTPUT_DIR/$WARP_BIN"
 DEBUG_EXECUTABLE_PATH="$EXECUTABLE_PATH.debug"
 

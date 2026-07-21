@@ -52,18 +52,18 @@ Type `claude` in any tab. It doesn't scroll by as text — it opens as a **full 
 
 **Shipping next:** the full IDE pivot — file editor with LSP go-to-definition, git blame, project-wide search & replace, and a multi-provider agent settings page. Live status: [`roadmap/ROADMAP.md`](roadmap/ROADMAP.md).
 
-## Build it
+## Install or build
 
-macOS, from source, no prebuilt releases — this is enthusiast hardware:
+Download the latest signed macOS build from [GitHub Releases](https://github.com/timomak/twarp/releases/latest), or build it from source:
 
 ```bash
 ./script/bootstrap                # platform setup
 ./script/run                      # build and run (debug)
-./script/run --release --install  # build TwarpOss.app → /Applications
+./script/run --release --install  # build Twarp.app → /Applications
 ./script/presubmit                # fmt, clippy, tests
 ```
 
-Installs as `TwarpOss.app` with its own bundle ID — lives peacefully next to official Warp. Full engineering guide in [TWARP.md](TWARP.md).
+Installs as `Twarp.app` with its own bundle ID — lives peacefully next to official Warp. Full engineering guide in [TWARP.md](TWARP.md).
 
 ## Relationship to upstream
 

@@ -5627,12 +5627,10 @@ impl<'a> StyledBufferBlocks<'a> {
                             start_offset: buffer_cursor.offset(),
                         }
                     }
-                    other => {
-                        if cfg!(debug_assertions) {
-                            panic!(
-                                "Expected the buffer to start with a block marker or item, got {other:?}"
-                            );
-                        }
+                    _ => {
+                        log::error!(
+                            "Buffer is missing its initial block marker; rendering the first block as plain text"
+                        );
                         ActiveStyledBlock::Text {
                             block: ActiveTextBlock::new(
                                 BufferBlockStyle::PlainText,
