@@ -64,8 +64,8 @@ use claude_code::{
 };
 use futures::StreamExt;
 use markdown_parser::{
-    parse_markdown_with_gfm_tables, FormattedTable, FormattedText, FormattedTextInline,
-    FormattedTextLine, TableAlignment,
+    parse_markdown_with_gfm_tables, weight::CustomWeight, FormattedTable, FormattedText,
+    FormattedTextInline, FormattedTextLine, TableAlignment,
 };
 use parking_lot::RwLock;
 use pathfinder_color::ColorU;
@@ -500,6 +500,9 @@ pub enum ClaudeCodeViewAction {
     /// the clipboard — the one-click alternative to drag-selecting a long
     /// response. Shown on hover beside the Fork button.
     CopyResponse(usize),
+    /// twarp: copy one fenced code block's contents (the per-block copy button
+    /// in the transcript's code cards).
+    CopyCodeBlock(String),
     /// twarp: expand / collapse the floating background-scripts panel — the
     /// pill listing this chat's `run_in_background` Bash launches.
     ToggleBackgroundPanel,
@@ -9127,6 +9130,10 @@ impl TypedActionView for ClaudeCodeView {
                     ctx.clipboard().write(ClipboardContent::plain_text(text));
                 }
             }
+            ClaudeCodeViewAction::CopyCodeBlock(code) => {
+                ctx.clipboard()
+                    .write(ClipboardContent::plain_text(code.clone()));
+            }
             ClaudeCodeViewAction::ToggleBackgroundPanel => {
                 self.background_scripts_expanded = !self.background_scripts_expanded;
                 // The agents panel and the header menu share the top-right
@@ -10510,8 +10517,10 @@ fn render_markdown_body(
                 }
                 element.finish()
             }
-            MarkdownSegment::Code(code) => render_code_block(&code.code, appearance),
+            MarkdownSegment::Code(code) => render_code_block(&code, appearance),
             MarkdownSegment::Table(table) => render_table(table, appearance),
+            MarkdownSegment::Rule => render_thematic_break(appearance),
+            MarkdownSegment::Quote(quote) => render_blockquote(quote, appearance),
         };
         column.add_child(child);
     }
@@ -10567,11 +10576,12 @@ fn apply_karaoke_highlight(
 /// Render a GFM table (PRODUCT §13) as a real grid — a bordered, rounded box
 /// (mirroring [`render_code_block`]) holding a header row over body rows. The
 /// parser hands us each cell as a [`FormattedTextInline`], so cells keep their
-/// inline styling (bold/code/links). Columns share width equally via
-/// [`Expanded`]; per-column alignment comes from the GFM `:---:` separators.
+/// inline styling (bold/code/links). Columns size to content — short
+/// identifier columns are pinned, prose columns flex (see
+/// [`table_column_sizings`]); per-column alignment comes from the GFM `:---:`
+/// separators.
 fn render_table(table: FormattedTable, appearance: &Appearance) -> Box<dyn Element> {
     let theme = appearance.theme();
-    let header_bg = theme.surface_3().into_solid();
     let column_count = table
         .headers
         .len()
@@ -10582,39 +10592,36 @@ fn render_table(table: FormattedTable, appearance: &Appearance) -> Box<dyn Eleme
     // share of the pane. A tiny "Built?" column no longer steals half the width
     // from a paragraph-heavy "Reality" column, which keeps wide columns readable
     // instead of cramming/clipping them.
-    let col_weights = table_column_weights(&table, column_count);
+    let col_sizings = table_column_sizings(&table, column_count);
 
+    // Semibold header text over a hairline reads as a header without the heavy
+    // full-width fill band the first cut used (the fill competed with the
+    // surrounding prose; the philosophy groups with lines last, fills rarely).
     let mut grid = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
-    grid.add_child(
-        Container::new(render_table_row(
-            table.headers,
-            column_count,
-            &col_weights,
-            &align_of,
-            true,
-            appearance,
-        ))
-        .with_background_color(header_bg)
-        .finish(),
-    );
-    for (index, row) in table.rows.into_iter().enumerate() {
-        if index > 0 {
-            // A thin divider between body rows, so the grid reads as rows
-            // without heavy full-grid lines.
-            grid.add_child(
-                ConstrainedBox::new(
-                    Container::new(Flex::row().finish())
-                        .with_background_color(theme.outline().into_solid())
-                        .finish(),
-                )
-                .with_height(1.)
-                .finish(),
-            );
-        }
+    grid.add_child(render_table_row(
+        table.headers,
+        column_count,
+        &col_sizings,
+        &align_of,
+        true,
+        appearance,
+    ));
+    for row in table.rows {
+        // A thin divider under the header and between body rows, so the grid
+        // reads as rows without heavy full-grid lines.
+        grid.add_child(
+            ConstrainedBox::new(
+                Container::new(Flex::row().finish())
+                    .with_background_color(theme.outline().into_solid())
+                    .finish(),
+            )
+            .with_height(border::HAIRLINE_WIDTH)
+            .finish(),
+        );
         grid.add_child(render_table_row(
             row,
             column_count,
-            &col_weights,
+            &col_sizings,
             &align_of,
             false,
             appearance,
@@ -10622,21 +10629,37 @@ fn render_table(table: FormattedTable, appearance: &Appearance) -> Box<dyn Eleme
     }
 
     Container::new(grid.finish())
-        .with_border(Border::all(1.).with_border_fill(theme.outline()))
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
-        .with_margin_top(10.)
-        .with_margin_bottom(10.)
+        .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+        .with_margin_top(spacing::MD)
+        .with_margin_bottom(spacing::MD)
         .finish()
 }
 
-/// Per-column flex weights derived from cell content length, so wide columns get
-/// a proportional share of the pane instead of every column being forced equal.
-/// The plain-text length of each cell is a cheap proxy for how much width a
-/// column wants; weights are clamped so a one-glyph column never collapses and a
-/// single very long cell never starves its neighbours.
-fn table_column_weights(table: &FormattedTable, column_count: usize) -> Vec<f32> {
+/// How one table column gets its width.
+enum TableColumnSizing {
+    /// Short identifier-style columns ("THI-759", "Valid — keep") get the exact
+    /// width their longest cell needs, so they never soft-wrap a ticket id
+    /// across three lines just because a prose column next door is long.
+    Fixed(f32),
+    /// Prose columns share the remaining width proportionally to content.
+    Weight(f32),
+}
+
+/// Per-column sizing derived from cell content length. The plain-text length of
+/// each cell is a cheap proxy for how much width a column wants: columns whose
+/// longest cell is short are pinned to that content width; the rest share the
+/// leftover space as flex weights, clamped so a single very long cell never
+/// starves its neighbours.
+fn table_column_sizings(table: &FormattedTable, column_count: usize) -> Vec<TableColumnSizing> {
+    /// Longest-cell length (chars) at or under which a column is pinned to its
+    /// content width instead of flexing.
+    const SHORT_COLUMN_MAX_CHARS: usize = 16;
     const MIN_WEIGHT: usize = 4;
     const MAX_WEIGHT: usize = 60;
+    /// Average glyph width as a fraction of the font size — generous enough for
+    /// the UI font's wider glyphs so pinned columns still fit on one line.
+    const CHAR_WIDTH_RATIO: f32 = 0.62;
 
     let inline_len = |cell: &FormattedTextInline| -> usize {
         cell.iter().map(|frag| frag.text.chars().count()).sum()
@@ -10651,18 +10674,29 @@ fn table_column_weights(table: &FormattedTable, column_count: usize) -> Vec<f32>
     for row in &table.rows {
         consider(row);
     }
+    // If every column is short the pinning would leave the grid narrower than
+    // its border with nothing to flex, so keep at least one weighted column.
+    let widest = widths.iter().copied().max().unwrap_or(0);
     widths
         .into_iter()
-        .map(|len| len.clamp(MIN_WEIGHT, MAX_WEIGHT) as f32)
+        .map(|len| {
+            if len <= SHORT_COLUMN_MAX_CHARS && len < widest {
+                TableColumnSizing::Fixed(
+                    len as f32 * BODY_FONT_SIZE * CHAR_WIDTH_RATIO + 2. * spacing::MD,
+                )
+            } else {
+                TableColumnSizing::Weight(len.clamp(MIN_WEIGHT, MAX_WEIGHT) as f32)
+            }
+        })
         .collect()
 }
 
-/// One table row: `column_count` cells whose widths follow `col_weights` (missing
+/// One table row: `column_count` cells whose widths follow `col_sizings` (missing
 /// trailing cells are padded blank so short rows still line up under the header).
 fn render_table_row(
     mut cells: Vec<FormattedTextInline>,
     column_count: usize,
-    col_weights: &[f32],
+    col_sizings: &[TableColumnSizing],
     align_of: &impl Fn(usize) -> TableAlignment,
     header: bool,
     appearance: &Appearance,
@@ -10670,13 +10704,14 @@ fn render_table_row(
     cells.resize(column_count, Vec::new());
     let mut row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
     for (col, cell) in cells.into_iter().enumerate() {
-        row.add_child(
-            Expanded::new(
-                col_weights.get(col).copied().unwrap_or(1.),
-                render_table_cell(cell, align_of(col), header, appearance),
-            )
-            .finish(),
-        );
+        let cell = render_table_cell(cell, align_of(col), header, appearance);
+        row.add_child(match col_sizings.get(col) {
+            Some(TableColumnSizing::Fixed(width)) => {
+                ConstrainedBox::new(cell).with_width(*width).finish()
+            }
+            Some(TableColumnSizing::Weight(weight)) => Expanded::new(*weight, cell).finish(),
+            None => Expanded::new(1., cell).finish(),
+        });
     }
     row.finish()
 }
@@ -10684,7 +10719,7 @@ fn render_table_row(
 /// One table cell: the inline content, padded, horizontally aligned per the
 /// column's GFM alignment. Header cells read in the strong text color.
 fn render_table_cell(
-    inline: FormattedTextInline,
+    mut inline: FormattedTextInline,
     alignment: TableAlignment,
     header: bool,
     appearance: &Appearance,
@@ -10692,6 +10727,11 @@ fn render_table_cell(
     let theme = appearance.theme();
     let inline_code_bg = theme.surface_3().into_solid();
     let text_color = if header {
+        // Semibold + strong color carries the header now that it has no fill
+        // band behind it.
+        for fragment in &mut inline {
+            fragment.styles.weight = Some(CustomWeight::Semibold);
+        }
         theme.main_text_color(theme.background()).into_solid()
     } else {
         theme.active_ui_text_color().into_solid()
@@ -10725,23 +10765,107 @@ fn render_table_cell(
         TableAlignment::Right => Align::new(element).top_right().finish(),
     };
     Container::new(aligned)
-        .with_padding_left(10.)
-        .with_padding_right(10.)
-        .with_padding_top(6.)
-        .with_padding_bottom(6.)
+        .with_padding_left(spacing::MD)
+        .with_padding_right(spacing::MD)
+        .with_padding_top(spacing::SM)
+        .with_padding_bottom(spacing::SM)
         .finish()
+}
+
+thread_local! {
+    /// Hover state for the per-code-block copy buttons, keyed by a hash of the
+    /// block's contents. `render_code_block` is a free function shared by the
+    /// message and thinking renderers, so the pool lives beside
+    /// [`MARKDOWN_CACHE`] rather than on any one view; identical blocks
+    /// sharing a slot is harmless (the state only drives hover paint).
+    static CODE_COPY_MOUSE: std::cell::RefCell<HashMap<u64, MouseStateHandle>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+/// Bound the [`CODE_COPY_MOUSE`] pool: past the cap the whole map resets (a
+/// momentary hover-state loss, invisible in practice) instead of growing for
+/// the life of the process.
+const CODE_COPY_MOUSE_CAP: usize = 512;
+
+fn code_copy_mouse_state(code: &str) -> MouseStateHandle {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    code.hash(&mut hasher);
+    let key = hasher.finish();
+    CODE_COPY_MOUSE.with(|pool| {
+        let mut pool = pool.borrow_mut();
+        if pool.len() >= CODE_COPY_MOUSE_CAP && !pool.contains_key(&key) {
+            pool.clear();
+        }
+        pool.entry(key).or_default().clone()
+    })
 }
 
 /// Port of `ai_assistant::transcript`'s code-block branch, minus the Warp-AI
 /// affordances (paste-in-terminal / save-as-workflow / per-block selection)
 /// that don't apply to a read-only Claude Code transcript: a bordered,
-/// rounded, monospace box. The copy affordance is a later refinement.
-fn render_code_block(code: &str, appearance: &Appearance) -> Box<dyn Element> {
+/// rounded, monospace box with a header strip carrying the fence's language
+/// label and a copy button.
+fn render_code_block(
+    code: &markdown_parser::CodeBlockText,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
     let theme = appearance.theme();
-    Container::new(
+    let muted = theme.nonactive_ui_text_color().into_solid();
+
+    // Fence info strings can carry extra metadata ("python path=… start=1");
+    // only the first word is the language label.
+    let lang = code.lang.split_whitespace().next().unwrap_or("");
+    let mut header = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
+    header.add_child(
         appearance
             .ui_builder()
-            .wrappable_text(code.to_owned(), true)
+            .span(lang.to_owned())
+            .with_style(UiComponentStyles {
+                font_color: Some(muted),
+                font_size: Some(type_ramp::LABEL.size),
+                ..Default::default()
+            })
+            .build()
+            .finish(),
+    );
+    let copy_icon = ConstrainedBox::new(Icon::new(COPY_ICON_SVG_PATH, muted).finish())
+        .with_width(12.)
+        .with_height(12.)
+        .finish();
+    let code_text = code.code.clone();
+    header.add_child(
+        Hoverable::new(code_copy_mouse_state(&code.code), move |mouse| {
+            Container::new(copy_icon)
+                .with_uniform_padding(spacing::XS)
+                .with_background_color(if mouse.is_hovered() {
+                    theme.surface_3().into_solid()
+                } else {
+                    ColorU::new(0, 0, 0, 0)
+                })
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)))
+                .finish()
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(ClaudeCodeViewAction::CopyCodeBlock(code_text.clone()));
+        })
+        .finish(),
+    );
+
+    let divider = ConstrainedBox::new(
+        Container::new(Flex::row().finish())
+            .with_background_color(theme.outline().into_solid())
+            .finish(),
+    )
+    .with_height(border::HAIRLINE_WIDTH)
+    .finish();
+    let body = Container::new(
+        appearance
+            .ui_builder()
+            .wrappable_text(code.code.clone(), true)
             .with_style(UiComponentStyles {
                 font_family_id: Some(appearance.monospace_font_family()),
                 font_size: Some(CODE_FONT_SIZE),
@@ -10750,12 +10874,93 @@ fn render_code_block(code: &str, appearance: &Appearance) -> Box<dyn Element> {
             .build()
             .finish(),
     )
-    .with_uniform_padding(12.)
-    .with_border(Border::all(1.).with_border_fill(theme.outline()))
-    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
-    .with_margin_top(10.)
-    .with_margin_bottom(10.)
+    .with_uniform_padding(spacing::MD)
+    .finish();
+
+    let column = Flex::column()
+        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+        .with_child(
+            // Tighter vertical padding than the body so the strip reads as
+            // chrome, not content; identical horizontal padding per the Card
+            // anatomy.
+            Container::new(header.finish())
+                .with_padding_left(spacing::MD)
+                .with_padding_right(spacing::MD)
+                .with_padding_top(spacing::XS)
+                .with_padding_bottom(spacing::XS)
+                .finish(),
+        )
+        .with_child(divider)
+        .with_child(body)
+        .finish();
+
+    Container::new(column)
+        .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+        .with_margin_top(spacing::MD)
+        .with_margin_bottom(spacing::MD)
+        .finish()
+}
+
+/// A markdown `---` thematic break: the hairline the parser promises but
+/// `FormattedTextElement` would flatten to a blank line.
+fn render_thematic_break(appearance: &Appearance) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    Container::new(
+        ConstrainedBox::new(
+            Container::new(Flex::row().finish())
+                .with_background_color(theme.outline().into_solid())
+                .finish(),
+        )
+        .with_height(border::HAIRLINE_WIDTH)
+        .finish(),
+    )
+    .with_margin_top(spacing::LG)
+    .with_margin_bottom(spacing::LG)
     .finish()
+}
+
+/// A `> ` blockquote run: a 2px neutral bar down the left, muted prose to the
+/// right — the standard chat-app callout shape, kept neutral so it never
+/// competes with semantic color.
+fn render_blockquote(quote: FormattedText, appearance: &Appearance) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let element = FormattedTextElement::new(
+        quote,
+        BODY_FONT_SIZE,
+        appearance.ui_font_family(),
+        appearance.monospace_font_family(),
+        theme.nonactive_ui_text_color().into_solid(),
+        HighlightedHyperlink::default(),
+    )
+    .with_inline_code_properties(
+        Some(theme.nonactive_ui_text_color().into()),
+        Some(theme.surface_3().into_solid()),
+    )
+    .register_default_click_handlers(|url, ctx, _| {
+        ctx.dispatch_typed_action(ClaudeCodeViewAction::OpenUrl(url));
+    })
+    .with_line_height_ratio(type_ramp::PROSE.line_height)
+    .set_selectable(true)
+    .finish();
+    let bar = Container::new(Flex::column().finish())
+        .with_background_color(theme.outline().into_solid())
+        .finish();
+    let row = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+        .with_child(ConstrainedBox::new(bar).with_width(2.).finish())
+        .with_child(
+            Expanded::new(
+                1.,
+                Container::new(element).with_padding_left(spacing::MD).finish(),
+            )
+            .finish(),
+        )
+        .finish();
+    Container::new(row)
+        .with_margin_top(spacing::SM)
+        .with_margin_bottom(spacing::SM)
+        .finish()
 }
 
 /// Out-of-band notice (turn interrupted / session ended) — a subtle themed row.
@@ -10946,6 +11151,13 @@ enum MarkdownSegment {
     /// real grid instead of flattening back to literal `| a | b |` pipe-text
     /// (which is what a `FormattedTextElement` does with a `Table` line).
     Table(FormattedTable),
+    /// A `---` thematic break. The parser emits it, but `FormattedTextElement`
+    /// flattens it to a blank line — split it out so it paints as a hairline.
+    Rule,
+    /// A `> `-prefixed blockquote run. The parser has no quote support, so the
+    /// lines arrive as plain paragraphs carrying the literal `>` marker; the
+    /// splitter strips the markers and groups consecutive quote lines here.
+    Quote(FormattedText),
 }
 
 /// Port of `ai_assistant::utils::translate_formatted_text_into_markdown_segments`
@@ -10954,35 +11166,80 @@ enum MarkdownSegment {
 fn split_markdown_segments(formatted: FormattedText) -> Vec<MarkdownSegment> {
     let mut segments = Vec::new();
     let mut running_prose: Vec<FormattedTextLine> = Vec::new();
+    let mut running_quote: Vec<FormattedTextLine> = Vec::new();
+
+    let mut flush_prose = |running: &mut Vec<FormattedTextLine>, segments: &mut Vec<_>| {
+        if !running.is_empty() {
+            segments.push(MarkdownSegment::Prose(FormattedText::new_trimmed(
+                std::mem::take(running),
+            )));
+        }
+    };
+    let flush_quote = |running: &mut Vec<FormattedTextLine>, segments: &mut Vec<MarkdownSegment>| {
+        if !running.is_empty() {
+            segments.push(MarkdownSegment::Quote(FormattedText::new_trimmed(
+                std::mem::take(running),
+            )));
+        }
+    };
 
     for line in formatted.lines {
+        // A consecutive run of `> ` paragraphs groups into one quote segment;
+        // any other line type ends the run.
+        if let Some(stripped) = strip_blockquote_marker(&line) {
+            flush_prose(&mut running_prose, &mut segments);
+            running_quote.push(stripped);
+            continue;
+        }
+        // A blank line between two quote lines keeps the quote together (the
+        // parser hands paragraphs over with interleaved breaks).
+        if matches!(line, FormattedTextLine::LineBreak) && !running_quote.is_empty() {
+            running_quote.push(line);
+            continue;
+        }
+        flush_quote(&mut running_quote, &mut segments);
         match line {
             FormattedTextLine::CodeBlock(mut code) => {
-                if !running_prose.is_empty() {
-                    segments.push(MarkdownSegment::Prose(FormattedText::new_trimmed(
-                        std::mem::take(&mut running_prose),
-                    )));
-                }
+                flush_prose(&mut running_prose, &mut segments);
                 code.code = code.code.trim().to_string();
                 segments.push(MarkdownSegment::Code(code));
             }
             FormattedTextLine::Table(table) => {
-                if !running_prose.is_empty() {
-                    segments.push(MarkdownSegment::Prose(FormattedText::new_trimmed(
-                        std::mem::take(&mut running_prose),
-                    )));
-                }
+                flush_prose(&mut running_prose, &mut segments);
                 segments.push(MarkdownSegment::Table(table));
+            }
+            FormattedTextLine::HorizontalRule => {
+                flush_prose(&mut running_prose, &mut segments);
+                segments.push(MarkdownSegment::Rule);
             }
             other => running_prose.push(other),
         }
     }
-    if !running_prose.is_empty() {
-        segments.push(MarkdownSegment::Prose(FormattedText::new_trimmed(
-            running_prose,
-        )));
-    }
+    flush_quote(&mut running_quote, &mut segments);
+    flush_prose(&mut running_prose, &mut segments);
     segments
+}
+
+/// If `line` is a paragraph carrying a literal `> ` blockquote marker (the
+/// parser has no quote grammar, so the marker survives into the first inline
+/// fragment), return a copy with the marker stripped. `None` for everything
+/// else.
+fn strip_blockquote_marker(line: &FormattedTextLine) -> Option<FormattedTextLine> {
+    let FormattedTextLine::Line(fragments) = line else {
+        return None;
+    };
+    let first = fragments.first()?;
+    let rest = first.text.strip_prefix('>')?;
+    // `>` glued to non-space text (e.g. a pasted `>>>` shell prompt) is not a
+    // quote; require the marker to be `>` alone or `> …`.
+    let rest = if rest.is_empty() {
+        rest
+    } else {
+        rest.strip_prefix(' ')?
+    };
+    let mut fragments = fragments.clone();
+    fragments[0].text = rest.to_owned();
+    Some(FormattedTextLine::Line(fragments))
 }
 
 /// A muted, rounded context pill for the composer's controls row (the Claude-app
@@ -11453,9 +11710,52 @@ fn merge_mcp_servers(
 #[cfg(test)]
 mod tests {
     use super::{
-        format_metrics_line, queue_preview, should_hold_question_permission, truncate_middle,
+        format_metrics_line, parse_markdown_cached, queue_preview,
+        should_hold_question_permission, split_markdown_segments, truncate_middle,
+        MarkdownSegment,
     };
     use claude_code::TurnMetrics;
+
+    #[test]
+    fn horizontal_rules_split_into_rule_segments() {
+        let formatted = parse_markdown_cached("before\n\n---\n\nafter").unwrap();
+        let segments = split_markdown_segments(formatted);
+        assert!(
+            segments
+                .iter()
+                .any(|s| matches!(s, MarkdownSegment::Rule)),
+            "a --- between paragraphs must produce a Rule segment"
+        );
+    }
+
+    #[test]
+    fn blockquote_lines_group_and_lose_their_markers() {
+        let formatted = parse_markdown_cached("intro\n\n> quoted one\n> quoted two\n\noutro").unwrap();
+        let segments = split_markdown_segments(formatted);
+        let quotes: Vec<_> = segments
+            .iter()
+            .filter_map(|s| match s {
+                MarkdownSegment::Quote(text) => Some(text.raw_text()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(quotes.len(), 1, "consecutive quote lines share one segment");
+        assert!(quotes[0].contains("quoted one") && quotes[0].contains("quoted two"));
+        assert!(!quotes[0].contains('>'), "the > markers are stripped");
+    }
+
+    #[test]
+    fn glued_gt_is_not_a_blockquote() {
+        // A pasted `>>>` prompt (no space after `>`) stays prose.
+        let formatted = parse_markdown_cached(">>> import this").unwrap();
+        let segments = split_markdown_segments(formatted);
+        assert!(
+            !segments
+                .iter()
+                .any(|s| matches!(s, MarkdownSegment::Quote(_))),
+            ">>> without a following space must not become a quote"
+        );
+    }
 
     #[test]
     fn truncate_middle_keeps_short_names_and_middle_truncates_long_ones() {
