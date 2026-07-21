@@ -4319,7 +4319,7 @@ impl ClaudeCodeView {
         Some(ctx.window_id()) != ctx.windows().active_window()
     }
 
-    /// Fire a desktop notification titled with the pane's tab title (7p),
+    /// Fire a desktop notification titled with the tab's display title (7p),
     /// through the same workspace handler as the terminal's command-completion
     /// notifications (sound setting, permission-failure banner). Mirrors
     /// `send_agent_desktop_notification_or_show_banner`'s setting gates, minus
@@ -4350,10 +4350,13 @@ impl ClaudeCodeView {
         if !enabled || !self.is_navigated_away_from_window(ctx) {
             return;
         }
-        let content = trigger.create_notification_content(self.derived_tab_title(), body);
-        ctx.emit(ClaudeCodeViewEvent::Pane(PaneEvent::SendNotification(
-            content,
-        )));
+        // The pane group bakes the title from the tab's display title (custom
+        // rename included), falling back to our derived title.
+        ctx.emit(ClaudeCodeViewEvent::Pane(PaneEvent::SendChatNotification {
+            trigger,
+            body,
+            fallback_title: self.derived_tab_title(),
+        }));
     }
 
     /// Drive the "Working · <elapsed>" counter (#7) on a steady 1 s cadence.

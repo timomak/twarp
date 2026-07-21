@@ -2050,7 +2050,9 @@ pub struct BlockNotification {
 }
 
 /// The reason for sending/discovering the notification
-#[derive(Copy, Clone, Debug, Serialize)]
+// PartialEq/Eq because 7p carries this inside `PaneEvent::SendChatNotification`,
+// and `PaneEvent` derives them.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum NotificationsTrigger {
     LongRunningCommand(bool /* command_succeeded */, Duration),
     AgentTaskCompleted(bool /* task_succeeded */),
