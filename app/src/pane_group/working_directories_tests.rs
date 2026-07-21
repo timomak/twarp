@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use repo_metadata::repositories::DetectedRepositories;
 use twarpui::{App, EntityId};
@@ -434,6 +434,64 @@ fn clear_selected_review_repo_removes_only_the_targeted_pane_group_entry() {
             assert_eq!(
                 model.get_selected_review_repo(pane_group_b),
                 Some(repo_b.as_path()),
+            );
+        });
+    });
+}
+
+#[test]
+fn code_review_view_survives_in_claude_only_pane_group() {
+    // twarp 07: a tab created via OpenClaudeCodeInNewTab (⌘⇧T) has a Claude
+    // Code pane and no terminal, so the refresh records its repo in
+    // `repository_roots` but inserts an *empty* `directory_to_terminal` map.
+    // The code-review view GC used to retain only terminal-mapped repos, which
+    // deleted the view immediately after `store_code_review_view` cached it —
+    // the Open Changes panel then rendered its loading skeleton forever (while
+    // the separately-computed diff badge kept working). The retention rule must
+    // treat repository-root membership as liveness.
+    App::test((), |mut app| async move {
+        let detected_repos_handle = app.add_singleton_model(|_| DetectedRepositories::default());
+
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let repo_root = temp_dir.path().join("repo");
+        fs::create_dir_all(&repo_root).expect("create repo");
+        let canonical_repo_root = dunce::canonicalize(&repo_root).expect("canonical repo root");
+
+        detected_repos_handle.update(&mut app, |repos, _ctx| {
+            let canonical =
+                twarp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                    canonical_repo_root.as_path(),
+                )
+                .expect("canonicalized path");
+            repos.insert_test_repo_root(canonical);
+        });
+
+        let pane_group_id = EntityId::new();
+        let claude_pane = EntityId::new();
+
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
+        working_directories_handle.update(&mut app, |model, ctx| {
+            // Claude-only pane group: no terminal cwds, only a directory cwd.
+            model.refresh_working_directories_for_pane_group(
+                pane_group_id,
+                vec![],
+                vec![],
+                vec![(claude_pane, repo_root.to_string_lossy().to_string())],
+                None,
+                Some(claude_pane),
+                ctx,
+            );
+
+            assert!(
+                model.code_review_view_would_be_retained(pane_group_id, &canonical_repo_root),
+                "repo discovered via a Claude pane (no terminal mapping) must keep its review view"
+            );
+            assert!(
+                !model.code_review_view_would_be_retained(
+                    pane_group_id,
+                    Path::new("/some/other/repo")
+                ),
+                "repos no longer in the pane group are still garbage collected"
             );
         });
     });
