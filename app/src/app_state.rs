@@ -425,6 +425,9 @@ pub enum ConversationStatus {
     Failed,
     Cancelled,
     Success,
+    /// Completed successfully but the user hasn't looked at the pane yet —
+    /// rendered as a blue check so reviewed and unreviewed chats read apart.
+    SuccessUnseen,
     Blocked {},
     Error,
     Other,
@@ -437,6 +440,7 @@ impl std::fmt::Display for ConversationStatus {
             ConversationStatus::Failed => "failed",
             ConversationStatus::Cancelled => "cancelled",
             ConversationStatus::Success => "success",
+            ConversationStatus::SuccessUnseen => "success (unreviewed)",
             ConversationStatus::Blocked {} => "blocked",
             ConversationStatus::Error => "error",
             ConversationStatus::Other => "other",
@@ -467,6 +471,7 @@ impl ConversationStatus {
             ConversationStatus::Done | ConversationStatus::Success => {
                 (Icon::Check, theme.ansi_fg_green())
             }
+            ConversationStatus::SuccessUnseen => (Icon::Check, theme.ansi_fg_blue()),
             ConversationStatus::Failed | ConversationStatus::Error => {
                 (Icon::Triangle, theme.ansi_fg_red())
             }
