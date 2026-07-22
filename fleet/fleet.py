@@ -3,7 +3,7 @@
 
 Roles (all driven from this file):
   dispatch   pick eligible, file-disjoint, dependency-unblocked items and lease them
-  worker     author one item on its pod (codex / claude) -> push branch
+  worker     author one item on its pod (codex / claude); harness commits + pushes the branch
   gate       build + targeted tests for a branch on the pod that authored it
   supervise  bors-style merge queue: speculative-merge each green branch, re-gate, auto-merge
   run        full loop: dispatch -> workers (parallel) -> gate -> supervise
@@ -38,6 +38,9 @@ SELF_WT = SELF_REPO.parent / (SELF_REPO.name + "-fleet-wt")
 LOG = SELF_REPO / "fleet" / "runs"
 ROADMAP = SELF_REPO / "roadmap" / "ROADMAP.md"
 GOLDEN = SELF_REPO / "fleet" / "golden"
+WORKER_POLICY = SELF_REPO / "fleet" / "WORKER.md"
+
+EXPECTED_FORK_REPO = "timomak/twarp"
 
 SELF = os.environ.get("FLEET_SELF", "local")   # which pod this process runs on; set by --self
 ACTIVE_PODS = []                               # filled by cmd_run / _resolve_pods
@@ -150,6 +153,42 @@ def sh(cmd, cwd=None, timeout=None, check=False):
     if check and r.returncode != 0:
         raise RuntimeError(f"cmd failed ({r.returncode}): {cmd}\n{r.stdout}\n{r.stderr}")
     return r
+
+
+def github_repo_from_remote(remote):
+    """Return owner/repo for the supported GitHub HTTPS/SSH remote forms."""
+    remote = remote.strip().rstrip("/")
+    patterns = (
+        r"https://github\.com/([^/]+/[^/]+?)(?:\.git)?$",
+        r"ssh://git@github\.com/([^/]+/[^/]+?)(?:\.git)?$",
+        r"git@github\.com:([^/]+/[^/]+?)(?:\.git)?$",
+    )
+    for pattern in patterns:
+        if match := re.fullmatch(pattern, remote):
+            return match.group(1)
+    return None
+
+
+def require_fork_repo_config():
+    """Fail closed before the fleet performs any GitHub write."""
+    configured = cfg().get("repo")
+    if configured != EXPECTED_FORK_REPO:
+        raise RuntimeError(
+            f"fleet GitHub writes require repo={EXPECTED_FORK_REPO!r}; found {configured!r}"
+        )
+
+
+def require_fork_origin(name):
+    """Verify a pod's `origin` still resolves to the writable fork before authoring/pushing."""
+    require_fork_repo_config()
+    repo = node_repo(name)
+    result = bash_on(name, f"cd {repo}\ngit remote get-url origin\n", timeout=30)
+    remote = result.stdout.strip().splitlines()[-1] if result.returncode == 0 and result.stdout.strip() else ""
+    actual = github_repo_from_remote(remote)
+    if actual != EXPECTED_FORK_REPO:
+        raise RuntimeError(
+            f"fleet pod {name!r} origin must be {EXPECTED_FORK_REPO}; found {remote or '<missing>'!r}"
+        )
 
 
 # ---------- node/pod layer ----------
@@ -479,23 +518,44 @@ def _resolve_pods_for_status(q):
 
 
 # ---------- worker ----------
-def write_prompt(it):
+def worker_policy_text():
+    """Load the canonical role policy; a missing/empty policy stops authoring."""
+    try:
+        policy = WORKER_POLICY.read_text().strip()
+    except OSError as error:
+        raise RuntimeError(f"cannot load fleet worker policy: {WORKER_POLICY}") from error
+    if not policy:
+        raise RuntimeError(f"fleet worker policy is empty: {WORKER_POLICY}")
+    return policy
+
+
+def render_worker_prompt(it, task_context=None):
+    """Combine immutable fleet authority with one assignment-specific prompt."""
+    verify = it.get("verify") or DEFAULT_VERIFY
+    task_context = task_context or (
+        "Implement the assignment now. Make only the requested changes and keep the diff scoped."
+    )
+    return (
+        "<fleet_worker_policy>\n"
+        f"{worker_policy_text()}\n"
+        "</fleet_worker_policy>\n\n"
+        "<fleet_assignment>\n"
+        f"Task ID: {it['id']}\n"
+        f"Task: {it['task']}\n"
+        f"Verification command: {verify}\n"
+        "</fleet_assignment>\n\n"
+        "<task_context>\n"
+        f"{task_context}\n"
+        "</task_context>\n\n"
+        "When done, ensure the working tree contains only the intended changes. "
+        f"Output one final line: WORKER_DONE {it['id']}\n"
+    )
+
+
+def write_prompt(it, task_context=None):
     LOG.mkdir(parents=True, exist_ok=True)
     p = LOG / f"{it['id']}.prompt.txt"
-    body = (
-        f"You are a twarp fleet worker. Read AGENTS.md at the repo root first (origin-only, never "
-        f"upstream, never merge, stay in scope). You are on a fresh branch off origin/master in a "
-        f"dedicated worktree. Implement EXACTLY this task and nothing else:\n\n{it['task']}\n\n"
-        f"When done, ensure the working tree contains only the intended changes. Do not commit or "
-        f"push — the fleet harness handles that. Output one final line: WORKER_DONE {it['id']}\n"
-    )
-    p.write_text(body)
-    return p
-
-def write_text_prompt(iid, text):
-    LOG.mkdir(parents=True, exist_ok=True)
-    p = LOG / f"{iid}.prompt.txt"
-    p.write_text(text)
+    p.write_text(render_worker_prompt(it, task_context))
     return p
 
 def worker_claude(it, name, ref="origin/master", prompt_text=None):
@@ -503,17 +563,19 @@ def worker_claude(it, name, ref="origin/master", prompt_text=None):
     iid = it["id"]; repo = node_repo(name); wt = Path(node_wt(name)) / iid
     if name != SELF:
         return False, f"claude pod {name} is not self — claude can only author locally"
+    require_fork_origin(name)
     sh(["git", "-C", repo, "fetch", "-q", "origin"], check=True)
     sh(["git", "-C", repo, "worktree", "remove", "--force", str(wt)])
     sh(f"rm -rf {wt}")
     sh(["git", "-C", repo, "worktree", "prune"])
     sh(["git", "-C", repo, "branch", "-D", f"fleet/{iid}"])
     sh(["git", "-C", repo, "worktree", "add", "-B", f"fleet/{iid}", str(wt), ref], check=True)
-    prompt = write_prompt(it) if prompt_text is None else write_text_prompt(iid, prompt_text)
+    prompt = write_prompt(it, prompt_text)
     say(f"  [{iid}] claude worker authoring on {name}…")
     r = sh(["claude", "-p", prompt.read_text(), "--dangerously-skip-permissions"],
            cwd=str(wt), timeout=1200)
     (LOG / f"{iid}.author.log").write_text(r.stdout + "\n---STDERR---\n" + r.stderr)
+    require_fork_origin(name)
     sh(["git", "-C", str(wt), "add", "-A"], check=True)
     diff = sh(["git", "-C", str(wt), "diff", "--cached", "--stat"]).stdout.strip()
     if not diff:
@@ -525,7 +587,8 @@ def worker_claude(it, name, ref="origin/master", prompt_text=None):
 def worker_codex(it, name, ref="origin/master", prompt_text=None):
     """Author on a codex pod (local if self, else over SSH)."""
     iid = it["id"]; wt = f"{node_wt(name)}/{iid}"
-    prompt = write_prompt(it) if prompt_text is None else write_text_prompt(iid, prompt_text)
+    require_fork_origin(name)
+    prompt = write_prompt(it, prompt_text)
     put_file(name, prompt, f"/tmp/fleet_{iid}.prompt")
     bash_on(name, fresh_worktree(name, wt, ref=ref, branch=f"fleet/{iid}"), timeout=120, check=True)
     say(f"  [{iid}] codex worker authoring on {name}…")
@@ -540,6 +603,7 @@ def worker_codex(it, name, ref="origin/master", prompt_text=None):
     _collect_codex_session(iid, name, auth_start)   # structured author trace (parity with driver.jsonl)
     if "CODEX_EXIT_0" not in r.stdout:
         return False, f"codex did not exit clean: {r.stdout.strip()[-200:]}"
+    require_fork_origin(name)
     commit = (f"set -e\ncd {wt}\ngit add -A\n"
               f"if git diff --cached --quiet; then echo NO_CHANGES; exit 0; fi\n"
               f"git commit -q -m 'fleet({iid}): {it['title']}'\n"
@@ -926,6 +990,7 @@ def speculative_gate(it):
     return verdict, r.stdout.strip().splitlines()[-6:]
 
 def auto_merge(iid, title):
+    require_fork_repo_config()
     repo = cfg()["repo"]
     make_pr(iid, title)   # idempotent — PR already opened during iterate()
     r = sh(["gh", "pr", "merge", f"fleet/{iid}", "--repo", repo, "--squash", "--delete-branch"],
@@ -936,6 +1001,7 @@ def auto_merge(iid, title):
 # ---------- per-PR loop: fix-until-green + staff-architect review ----------
 def make_pr(iid, title):
     """Open a PR for fleet/<id> if one isn't already open (idempotent). gh runs on the self pod."""
+    require_fork_repo_config()
     repo = cfg()["repo"]; base = cfg()["base"]
     ex = sh(["gh", "pr", "list", "--repo", repo, "--head", f"fleet/{iid}", "--json", "number",
              "-q", ".[0].number"], cwd=str(SELF_REPO))
@@ -952,10 +1018,9 @@ def fix_agent(it, errors):
     """Re-run the item's pod agent ON ITS EXISTING branch with the failure as context."""
     iid = it["id"]; name = it.get("node") or codex_node() or ACTIVE_PODS[0]
     fix_prompt = (
-        f"You are fixing your own branch fleet/{iid} (task: {it['title']}). Read AGENTS.md. The fleet "
-        f"gate FAILED — fix the ROOT CAUSE, stay in scope, do not revert prior good work.\n\n"
-        f"Original task: {it['task']}\n\nFAILURE OUTPUT:\n{errors}\n\n"
-        f"Output one final line: WORKER_DONE {iid}")
+        f"The gate failed for the existing fleet/{iid} branch. Fix the root cause without reverting "
+        f"prior good work or broadening the assignment.\n\nFailure output:\n{errors}"
+    )
     return author(it, name, ref=f"origin/fleet/{iid}", prompt_text=fix_prompt)
 
 def _parse_arch(out):
