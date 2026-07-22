@@ -28,6 +28,12 @@ green branches.
 | `python3 fleet/fleet.py supervise <id>` | Speculative-merge + gate a branch (debug) |
 | `python3 fleet/fleet.py uxgate [test]` | Render twarp on the build node's real display, capture a screenshot, diff vs golden |
 
+Fleet authoring policy is defined in [`WORKER.md`](WORKER.md). The orchestrator embeds that file in
+every initial and repair prompt; the repository-root `AGENTS.md` intentionally contains only rules
+that apply to both interactive and fleet work. Workers only author and validate files. The harness
+owns commits, pushes, PRs, and merges, and fails closed if its configured repository or a pod's
+`origin` is not `timomak/twarp`.
+
 ## UX / visual gate
 
 `uxgate` renders twarp on **other-mac's built-in display** (Option A — lid open, no extra hardware),
