@@ -121,4 +121,7 @@ pub mod border {
 pub mod measure {
     /// Maximum content width for prose columns, centered in the pane.
     pub const PROSE_MAX_WIDTH: f32 = 720.0;
+    /// Maximum height for menus and popovers before their contents scroll.
+    /// Keeps floating chrome inside typical laptop-height windows.
+    pub const POPOVER_MAX_HEIGHT: f32 = 560.0;
 }

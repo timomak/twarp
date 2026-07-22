@@ -126,10 +126,7 @@ fn head_meta(path: &Path, cwd: &Path) -> Option<String> {
     if payload.get("cwd").and_then(Value::as_str).map(Path::new) != Some(cwd) {
         return None;
     }
-    payload
-        .get("id")
-        .and_then(Value::as_str)
-        .map(str::to_owned)
+    payload.get("id").and_then(Value::as_str).map(str::to_owned)
 }
 
 /// Parse a rollout file's head: the `session_meta` first line gives the id

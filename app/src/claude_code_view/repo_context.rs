@@ -1,5 +1,5 @@
-//! The composer context bar (#11): folder, git branch, diff size, PR number,
-//! and CI status shown above the message input.
+//! Repository context for the agent pane's Environment menu: folder, branch,
+//! local changes, pull request, and CI status.
 //!
 //! Self-contained and best-effort. Rather than wire the pane into the
 //! `GitStatusUpdateModel` (which needs a pre-watched repo and only knows the
@@ -40,7 +40,7 @@ pub(super) struct CiCheck {
     pub url: Option<String>,
 }
 
-/// The resolved context shown in the composer bar (#11). Every field is
+/// The resolved context shown in the Environment menu. Every field is
 /// independently optional — a non-repo cwd still yields a `folder`.
 #[derive(Clone, Debug, Default)]
 pub(super) struct RepoContext {
@@ -55,8 +55,14 @@ pub(super) struct RepoContext {
     /// The repo's GitHub web URL (`https://github.com/owner/repo`), derived from
     /// `origin`. Lets the branch menu open `…/tree/<branch>`.
     pub repo_web_url: Option<String>,
-    pub added: Option<usize>,
-    pub removed: Option<usize>,
+    /// Uncommitted working-tree changes from `git diff --shortstat`.
+    pub local_added: Option<usize>,
+    pub local_removed: Option<usize>,
+    /// The current pull request's full diff. Kept separate from the local
+    /// counts so the Environment menu never labels PR-wide totals as local
+    /// edits.
+    pub pr_added: Option<usize>,
+    pub pr_removed: Option<usize>,
     pub pr_number: Option<u64>,
     /// The PR's own web URL, when one exists.
     pub pr_url: Option<String>,
@@ -70,8 +76,8 @@ impl RepoContext {
     /// still render the folder, but there's no git/PR context to show.
     pub(super) fn is_effectively_empty(&self) -> bool {
         self.branch.is_none()
-            && self.added.is_none()
-            && self.removed.is_none()
+            && self.local_added.is_none()
+            && self.local_removed.is_none()
             && self.pr_number.is_none()
             && self.ci.is_none()
     }
@@ -122,11 +128,11 @@ fn remote_to_web_url(remote: &str) -> Option<String> {
         Some(format!("https://{host}/{path}"))
     } else if stripped.starts_with("https://") || stripped.starts_with("http://") {
         Some(stripped.to_owned())
-    } else if let Some(rest) = stripped.strip_prefix("ssh://git@") {
-        // `ssh://git@host/owner/repo`
-        Some(format!("https://{rest}"))
     } else {
-        None
+        // `ssh://git@host/owner/repo`
+        stripped
+            .strip_prefix("ssh://git@")
+            .map(|rest| format!("https://{rest}"))
     }
 }
 
@@ -191,21 +197,21 @@ pub(super) fn parse(output: &str, folder: Option<String>) -> RepoContext {
 
     if let Some(line) = diff_line {
         let (added, removed) = parse_shortstat(line);
-        context.added = added;
-        context.removed = removed;
+        context.local_added = added;
+        context.local_removed = removed;
     }
 
     // The PR JSON (when `gh` produced any) carries the PR's own diff, number,
-    // and check rollup — preferred over the working-tree shortstat so the bar
-    // matches the PR the way GitHub shows it.
+    // and check rollup. Keep its totals separate from the working tree: they
+    // answer different questions and must not overwrite one another.
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(pr_json.trim()) {
         context.pr_number = value.get("number").and_then(|v| v.as_u64());
         context.pr_url = value.get("url").and_then(|v| v.as_str()).map(str::to_owned);
         if let Some(additions) = value.get("additions").and_then(|v| v.as_u64()) {
-            context.added = Some(additions as usize);
+            context.pr_added = Some(additions as usize);
         }
         if let Some(deletions) = value.get("deletions").and_then(|v| v.as_u64()) {
-            context.removed = Some(deletions as usize);
+            context.pr_removed = Some(deletions as usize);
         }
         if let Some(checks) = value.get("statusCheckRollup").and_then(|v| v.as_array()) {
             context.ci = aggregate_ci(checks);
@@ -324,9 +330,10 @@ mod tests {
         let context = parse(output, Some("twarp".to_owned()));
         assert_eq!(context.folder.as_deref(), Some("twarp"));
         assert_eq!(context.branch.as_deref(), Some("feature/x"));
-        // PR diff overrides the working-tree shortstat.
-        assert_eq!(context.added, Some(748));
-        assert_eq!(context.removed, Some(10));
+        assert_eq!(context.local_added, Some(12));
+        assert_eq!(context.local_removed, Some(4));
+        assert_eq!(context.pr_added, Some(748));
+        assert_eq!(context.pr_removed, Some(10));
         assert_eq!(context.pr_number, Some(86));
         assert_eq!(context.ci, Some(CiState::Passing));
     }
@@ -336,8 +343,10 @@ mod tests {
         let output = "@@BRANCH@@\nmain\n@@DIFF@@\n 1 file changed, 5 insertions(+)\n@@PR@@\n";
         let context = parse(output, Some("twarp".to_owned()));
         assert_eq!(context.branch.as_deref(), Some("main"));
-        assert_eq!(context.added, Some(5));
-        assert_eq!(context.removed, None);
+        assert_eq!(context.local_added, Some(5));
+        assert_eq!(context.local_removed, None);
+        assert_eq!(context.pr_added, None);
+        assert_eq!(context.pr_removed, None);
         assert_eq!(context.pr_number, None);
         assert_eq!(context.ci, None);
     }
