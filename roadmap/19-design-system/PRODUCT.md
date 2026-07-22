@@ -1,12 +1,12 @@
 # Design system & visual overhaul — PRODUCT
 
-Companion to [TECH.md](TECH.md). Behavior is written as numbered, testable invariants; TECH.md references these numbers. Sub-phase tags (19a–19e) are defined in TECH.md.
+Companion to [TECH.md](TECH.md). Behavior is written as numbered, testable invariants; TECH.md references these numbers. Sub-phase tags (19a–19g) are defined in TECH.md.
 
 Figma: none provided — the visual reference is the **OpenAI Codex desktop app** (owner-supplied screenshot, 2026-07-16) and the rules codified in [`design/PHILOSOPHY.md`](../../design/PHILOSOPHY.md).
 
 ## Summary
 
-Bring twarp's whole non-terminal UI up to the restraint level of the Codex desktop app: a written design philosophy with an enforced token system (19a), a **full-height, macOS-native-feeling left sidebar** with the traffic lights inside it and the tab strip beginning to its right (19b), the same principles applied to the right code-review panel (19b), a document-calm agent pane (19c), refined tabs and block chrome (19d), and an app-wide sweep that retires the legacy inconsistencies (19e). Pure restyle: no feature behavior, keybinding, or persistence semantics change.
+Bring twarp's whole non-terminal UI up to the restraint level of the Codex desktop app: a written design philosophy with an enforced token system (19a), full-height source rails on both sides of the workspace (19b/19g), a document-calm agent pane (19c), refined tabs and block chrome (19d), and an app-wide sweep that retires the legacy inconsistencies (19e). The shell changes preserve keybindings and persistence while 19g deliberately makes a plain Code Review row click open its diff, matching Files.
 
 ## Problem
 
@@ -17,14 +17,14 @@ Seventeen features shipped without a design system. The audit (2026-07-16) found
 **Goals**
 
 - One binding philosophy + token set (`design/PHILOSOPHY.md`, `twarp_core::ui::tokens`), enforced via the UI skill and the fleet UX gate.
-- The Codex shell: full-height left sidebar owning the window's left edge (traffic lights composite over its top), tab strip starting to its right; right panel as a polished floating inspector.
+- The Codex shell: full-height source rails owning the window's left and right edges, with the tab strip and workspace bounded between them.
 - The agent pane as a calm document (prose measure, turn rhythm, one card anatomy, collapsed tool-run groups).
 - Tab strip refinement that **keeps per-tab colors** — they are twarp's identity. *(Flares were retained through 19d, then dropped in 19f by owner direction: plain rectangles.)*
 - Sweeps that retire whole violation classes (raw literals, PhenomenonStyle, ad-hoc shadows, duplicate icons).
 
 **Non-goals**
 
-- **No functional changes.** Every action, keybinding, toggle, persistence behavior, and feature works exactly as before; this feature only changes how things look and are laid out.
+- **No unrelated functional changes.** Existing actions, keybindings, toggle behavior, persistence, resize bounds, and maximize behavior remain intact. The one intentional interaction refinement is Code Review's Files-style click-to-open behavior (§42).
 - **No terminal-grid changes.** Cell metrics, terminal fonts, PTY rendering are untouched.
 - **No provider work.** The multi-provider agent pane is feature 18 and lands after 19.
 - **No new components beyond the philosophy's anatomies** — this is consolidation, not invention.
@@ -32,11 +32,11 @@ Seventeen features shipped without a design system. The audit (2026-07-16) found
 
 ## Load-bearing decisions (surfaced for review)
 
-Owner-approved 2026-07-16 unless marked **(provisional)**.
+Owner-approved 2026-07-16, with the Code Review rail direction updated 2026-07-20.
 
 1. **19 ships before 18** (visual overhaul before the Codex backend).
 2. **True Codex layout for the left sidebar** — full height including the titlebar corner, traffic lights over the sidebar, tab strip shifted right (not the cheaper "edge-to-edge below the strip" variant). Feasibility confirmed: the titlebar is already transparent full-size-content-view with real repositioned buttons compositing over the Metal layer.
-3. **(provisional) Right panel keeps the floating-inspector form**, restyled to tokens (radius 14, panel shadow, 16px margins) — this matches the Codex app itself, whose right rail floats while its sidebar is anchored. Its maximize mode is unchanged. If the owner prefers a full-height anchored right panel for symmetry, that swaps in at spec review, not later.
+3. **The right panel is a full-height anchored source rail** (owner direction 2026-07-20, superseding the provisional floating-inspector choice). It mirrors the Files shell treatment and motion while preserving maximize mode.
 4. **(provisional) Sidebar and panel surfaces are neutral** (macOS source-list style). The per-tab color stays on tab chips and text accents — as it actually behaves today. **Open question:** whether the sidebar gets an *optional, very subtle* active-tab tint wash (~3%) as a twarp signature; recommendation is to ship neutral first and evaluate.
 5. **19a (philosophy + tokens) is bundled into this spec PR** — docs plus a constants module with no consumers; nothing smoke-testable ships without it (the owner's bundling rule).
 6. **Restyle behind a feature flag only where layout moves** (the 19b shell inversion); token/type/color swaps within existing layouts ship unflagged.
@@ -56,11 +56,11 @@ Owner-approved 2026-07-16 unless marked **(provisional)**.
 9. With the sidebar **closed**, nothing about today's window chrome regresses: traffic lights sit over the (transparent) titlebar band, tabs start after the clearance, window drag works.
 10. On Windows/Linux, the sidebar keeps its current (pre-19b) presentation; no full-height/titlebar work is attempted where the native affordances don't exist.
 
-### The shell: right panel (code review / Open Changes) — 19b
+### The shell: right panel (code review / Open Changes) — 19b / 19g
 
-11. The right panel renders as a **floating inspector card**: panel-radius corners, the panel elevation shadow, a 1px hairline, and consistent margins from the window's top/right/bottom edges — visually calm, matching the Codex right rail.
-12. Its contents (repo dropdown, code review view, maximize button) and behaviors (toggle keybinding, resize from the left edge, maximize-to-fill) are unchanged. Maximized mode fills the content area edge-to-edge as today.
-13. Left sidebar and right panel can be open simultaneously without visual collision; the terminal content area shrinks between them as today.
+11. On macOS with the design shell enabled, Code Review renders as a **full-height source rail** flush with the right window edge: square outer corners, no inset margin, no shadow, a neutral surface, and one 1px hairline on its inner edge.
+12. Its contents (repo dropdown, code review view, maximize and close controls) and shell behaviors (toggle keybinding, resize from the left edge, persisted width, maximize-to-fill) remain available. Maximized mode fills the content area edge-to-edge without source-rail chrome.
+13. Left Files and right Code Review rails can be open simultaneously without overlap. The tab strip and workspace resize between them, and each rail keeps its own scroll and selection state.
 
 ### Agent pane as a document — 19c
 
@@ -99,6 +99,17 @@ Owner-approved 2026-07-16 unless marked **(provisional)**.
 37. **The top-right avatar/profile control is replaced by a plain gear glyph** — no background fill, no avatar imagery. Clicking it navigates directly to Settings. Its previous dropdown menu is **deleted**; anything that menu offered remains reachable through an existing home (Settings, the command palette, or the menu bar) — no capability is lost without an alternate path.
 38. §33–§37 render correctly in light and dark themes and at non-default zoom, and none of them change persisted state shape (§32 holds across this round).
 
+### Code Review source rail (owner direction, 2026-07-20) — 19g
+
+39. A non-maximized Code Review panel occupies the full window height and right edge under the macOS design shell. The tab strip ends at the rail's inner seam instead of continuing above it. Disabling the design shell or running on Windows/Linux retains the legacy panel presentation.
+40. Opening and closing the rail uses the same approximately 150ms ease-out edge slide as Files. The workspace width changes with the visible rail width; the rail is not visually squashed. Rapidly reversing the toggle continues from the current visible fraction without jumping, and partially visible rail content does not accept pointer events.
+41. Closing animation retains the loaded repository and file list until the rail has fully left the window, then performs the existing Code Review teardown. Reopening during the close reverses the animation and cancels teardown, with no loading-state flash. Restored startup state appears immediately rather than replaying an entrance animation.
+42. Code Review uses the Files source-list interaction model: a plain click selects a row and opens or focuses its diff in the main workspace; Shift-click extends the selection and Command/Control-click toggles selection without opening a diff. Hover exposes the existing contextual stage/unstage/discard/open actions. Selection and action behavior for multiple files remains intact.
+43. The rail header uses chrome typography and source-list density: a `CAPTION` "CODE REVIEW" label, diff statistics, repository selection when multiple repositories are available, and quiet maximize/close actions. Diff-base and git-operation controls remain directly below as the content toolbar; the previous path-heavy duplicate header is removed.
+44. Staged Changes and Changes remain independently collapsible source-list sections with caption headers, counts, rounded hover/selection fills, no per-row borders, and a scrollbar flush with the rail's right edge. Removing outer panel rounding does not remove list-row selection fills.
+45. Maximizing Code Review bypasses the rail slide and fills the content area as before. Minimizing returns to the persisted rail width. Closing a maximized review remains immediate, and opening a workspace with a persisted maximized review does not briefly render the docked rail.
+46. Both rails together, Code Review alone, Files alone, and neither rail render correctly in light and dark themes and at non-default zoom, without breaking tab-strip controls, window dragging, resize handles, mobile overlays, or vertical-tabs legacy paths.
+
 ## Open questions
 
 - Invariant 4 note: should the neutral sidebar carry an optional ~3% active-tab tint wash as a twarp signature? (Recommendation: ship neutral, evaluate after 19b.)
@@ -117,7 +128,7 @@ Steps assume a built `twarp-oss` launched fresh. Each sub-phase's steps validate
 5. Drag the sidebar's right edge: it resizes within its existing min/max; quit and relaunch: the width persists (§6, §32).
 6. Switch between the sidebar tools (files / search / drive / agent sessions): each renders with section headers and hover/selection fills, no divider lines between rows (§5, §6).
 7. Enter macOS fullscreen: the sidebar's top reservation collapses (no dead zone); exit fullscreen: traffic lights return over the sidebar (§8).
-8. Open the right panel (code review): it floats as a rounded card with a shadow, inset from the window's top/right/bottom edges; its maximize button still fills the content area; toggling it closed/open works (§11–§12).
+8. Open the right panel (code review): it renders as a square, full-height right source rail with a single inner hairline; its maximize button still fills the content area; toggling it closed/open works (§11–§12).
 9. Open both panels at once with a terminal in the middle: no visual overlap or clipping (§13).
 10. Repeat steps 1–3 in a light theme and a dark theme: the sidebar surface is distinct from the content in both, separated by a 1px hairline (§4, §31).
 
@@ -153,3 +164,13 @@ Steps assume a built `twarp-oss` launched fresh. Each sub-phase's steps validate
 4. The far right of the tab strip shows a **search icon** with no persistent text input; clicking it opens the search UI (§36).
 5. The top-right corner shows a **plain gear glyph with no background or avatar**; clicking it opens Settings directly — no dropdown menu appears (§37).
 6. Repeat steps 1–5 in a light theme and a dark theme (§38).
+
+### 19g — Code Review source rail
+
+1. Toggle Code Review open and closed. It slides from the right edge over approximately 150ms while the central workspace resizes; reversing the toggle mid-slide is continuous, and restored startup state does not animate (§39–§41).
+2. With Code Review open, confirm it runs from the top to bottom window edge with no outer margin, rounded shell corner, or shadow; its left hairline is visible and the tab strip ends at that seam (§39).
+3. Open Files and Code Review together. Resize each from its inner edge, switch tabs, and confirm the center workspace remains usable and both persisted widths survive relaunch (§13, §46).
+4. Plain-click a changed file: it becomes selected and its diff opens or focuses in the main workspace. Shift-click and Command/Control-click other rows: the multiselection changes without opening another diff, and bulk stage/unstage/discard actions still target the selection (§42).
+5. Verify the compact `CODE REVIEW` header, diff statistics, repository selector when applicable, maximize/close controls, and the diff-base/git toolbar. Collapse and expand both file sections; hover rows and use their contextual actions (§43–§44).
+6. Maximize, minimize, and close Code Review. Maximized content is edge-to-edge, minimize restores the rail width, and close from maximized mode is immediate (§45).
+7. Repeat steps 1–6 in light and dark themes and at a non-default zoom. Also confirm the legacy presentation remains on a build without the macOS design shell (§46).

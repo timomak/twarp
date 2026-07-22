@@ -1,4 +1,6 @@
-use super::{compute_tab_bar_left_padding_value, TAB_BAR_PADDING_LEFT};
+use super::{
+    compute_tab_bar_left_padding_value, should_render_code_review_rail, TAB_BAR_PADDING_LEFT,
+};
 use twarp_core::ui::tokens::spacing;
 
 #[test]
@@ -39,4 +41,24 @@ fn tab_bar_left_padding_design_shell_closed_reserves_overlay_toggle_space() {
         compute_tab_bar_left_padding_value(true, false, false, false, Some(64.), 36.),
         64. + spacing::LG + 36.
     );
+}
+
+#[test]
+fn code_review_rail_stays_visible_during_close_animation() {
+    assert!(should_render_code_review_rail(
+        true, false, false, false, false, true,
+    ));
+}
+
+#[test]
+fn code_review_rail_is_suppressed_when_maximized_or_outside_design_shell() {
+    assert!(!should_render_code_review_rail(
+        true, false, false, true, true, false,
+    ));
+    assert!(!should_render_code_review_rail(
+        false, false, false, true, false, false,
+    ));
+    assert!(!should_render_code_review_rail(
+        true, true, false, true, false, false,
+    ));
 }

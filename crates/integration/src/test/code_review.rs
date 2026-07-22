@@ -141,16 +141,7 @@ fn mutate_test_file(before_line_number: usize, prefix: &'static str) -> TestStep
     .set_post_step_pause(Duration::from_millis(250))
 }
 
-fn code_review_scroll_anchor_builder(
-    insertion_line_number: usize,
-    insertion_prefix: &'static str,
-) -> Builder {
-    FeatureFlag::CodeReviewScrollPreservation.set_enabled(true);
-    FeatureFlag::IncrementalAutoReload.set_enabled(true);
-    let inserted_line_text = inserted_lines(insertion_prefix)
-        .into_iter()
-        .next()
-        .expect("inserted lines should not be empty");
+fn code_review_panel_load_builder() -> Builder {
     new_builder()
         .use_tmp_filesystem_for_test_root_directory()
         .with_setup(|utils| {
@@ -189,6 +180,24 @@ fn code_review_scroll_anchor_builder(
                 .set_timeout(Duration::from_secs(20))
                 .add_assertion(assert_code_review_loaded()),
         )
+}
+
+pub fn test_code_review_source_rail_opens_and_loads() -> Builder {
+    FeatureFlag::DesignShellV1.set_enabled(true);
+    code_review_panel_load_builder()
+}
+
+fn code_review_scroll_anchor_builder(
+    insertion_line_number: usize,
+    insertion_prefix: &'static str,
+) -> Builder {
+    FeatureFlag::CodeReviewScrollPreservation.set_enabled(true);
+    FeatureFlag::IncrementalAutoReload.set_enabled(true);
+    let inserted_line_text = inserted_lines(insertion_prefix)
+        .into_iter()
+        .next()
+        .expect("inserted lines should not be empty");
+    code_review_panel_load_builder()
         .with_step(scroll_code_review_to_target_line())
         .with_step(mutate_test_file(insertion_line_number, insertion_prefix))
         .with_step(

@@ -1,26 +1,27 @@
-//! Slide open/close animation for the left sidebar.
+//! Slide open/close animation for full-height side rails.
 //!
 //! warpui has no transition framework (`render()` never re-runs on its own),
 //! so the workspace view drives this with the self-rearming `notify()` timer
 //! pattern (see `design/PHILOSOPHY.md` "Motion"): each tick computes an
 //! eased progress from an `Instant` start time and calls `ctx.notify()` again
-//! until the ~150ms ease is done. Only user-initiated toggles animate —
-//! startup/restore paths assign `left_panel_open` directly and never create a
-//! [`LeftPanelSlide`], so the panel appears at full width instantly there.
+//! until the ~150ms ease is done. Runtime transitions animate; startup/restore
+//! paths assign visibility directly and never create a [`PanelSlide`], so
+//! restored panels appear at full width instantly.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use instant::Instant;
 use pathfinder_geometry::vector::{vec2f, Vector2F};
 use twarpui::{
     elements::Point, event::DispatchedEvent, AfterLayoutContext, AppContext, ClipBounds, Element,
     EventContext, LayoutContext, PaintContext, SizeConstraint,
 };
 
-/// Total duration of the sidebar slide.
-pub(super) const LEFT_PANEL_SLIDE_DURATION: Duration = Duration::from_millis(150);
+/// Total duration of a side-rail slide.
+pub(super) const PANEL_SLIDE_DURATION: Duration = Duration::from_millis(150);
 
 /// Interval between animation frames (self-rearming timer ticks).
-pub(super) const LEFT_PANEL_SLIDE_TICK: Duration = Duration::from_millis(8);
+pub(super) const PANEL_SLIDE_TICK: Duration = Duration::from_millis(8);
 
 fn ease_out_cubic(t: f32) -> f32 {
     let inv = 1.0 - t.clamp(0.0, 1.0);
@@ -31,13 +32,13 @@ fn ease_out_cubic(t: f32) -> f32 {
 /// visible-width fractions (0.0 = fully hidden, 1.0 = fully open); starting
 /// from the current fraction means a rapid re-toggle mid-animation reverses
 /// smoothly instead of jumping.
-pub(super) struct LeftPanelSlide {
+pub(super) struct PanelSlide {
     started_at: Instant,
     from: f32,
     to: f32,
 }
 
-impl LeftPanelSlide {
+impl PanelSlide {
     pub(super) fn new(from: f32, to: f32) -> Self {
         Self {
             started_at: Instant::now(),
@@ -49,7 +50,7 @@ impl LeftPanelSlide {
     /// Current visible fraction of the panel width, eased.
     pub(super) fn fraction(&self) -> f32 {
         let t = self.started_at.elapsed().as_secs_f32()
-            / LEFT_PANEL_SLIDE_DURATION.as_secs_f32().max(f32::EPSILON);
+            / PANEL_SLIDE_DURATION.as_secs_f32().max(f32::EPSILON);
         self.from + (self.to - self.from) * ease_out_cubic(t)
     }
 
@@ -59,18 +60,32 @@ impl LeftPanelSlide {
     }
 
     pub(super) fn is_done(&self) -> bool {
-        self.started_at.elapsed() >= LEFT_PANEL_SLIDE_DURATION
+        self.started_at.elapsed() >= PANEL_SLIDE_DURATION
+    }
+}
+
+/// Window edge a rail enters from and exits through.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum SlideEdge {
+    Left,
+    Right,
+}
+
+fn paint_shift(edge: SlideEdge, visible_width: f32, child_width: f32) -> f32 {
+    match edge {
+        SlideEdge::Left => visible_width - child_width,
+        SlideEdge::Right => 0.0,
     }
 }
 
 /// Clips its child to `fraction` of the child's natural width and paints it
-/// shifted left by the hidden remainder, so the panel slides in from (and out
-/// to) the left edge instead of squishing. The child is laid out with the
-/// unmodified (finite) incoming constraint, so the sidebar's own
-/// `Resizable`-driven width is respected and no infinite-constraint
+/// translated toward `edge`, so the panel slides instead of squishing. The
+/// child is laid out with the unmodified (finite) incoming constraint, so the
+/// rail's own `Resizable`-driven width is respected and no infinite-constraint
 /// `debug_assert` in `Flex` can trip.
 pub(super) struct SlideClip {
     child: Box<dyn Element>,
+    edge: SlideEdge,
     /// Visible fraction of the child's width, in `[0, 1]`.
     fraction: f32,
     origin: Option<Point>,
@@ -79,9 +94,10 @@ pub(super) struct SlideClip {
 }
 
 impl SlideClip {
-    pub(super) fn new(child: Box<dyn Element>, fraction: f32) -> Self {
+    pub(super) fn new(child: Box<dyn Element>, fraction: f32, edge: SlideEdge) -> Self {
         Self {
             child,
+            edge,
             fraction: fraction.clamp(0.0, 1.0),
             origin: None,
             size: None,
@@ -123,13 +139,12 @@ impl Element for SlideClip {
             return;
         }
 
-        // Clip to the visible strip, then paint the child shifted left by the
-        // hidden remainder so its right edge tracks the strip's right edge
-        // (a slide, not a reveal-in-place).
+        // Clip to the visible strip, then translate the child toward its
+        // configured window edge (a slide, not a reveal-in-place).
         let Some(bounds) = ctx.scene.visible_rect(origin_point, size) else {
             return;
         };
-        let shift = size.x() - child_size.x();
+        let shift = paint_shift(self.edge, size.x(), child_size.x());
         ctx.scene.start_layer(ClipBounds::BoundedBy(bounds));
         self.child.paint(origin + vec2f(shift, 0.0), ctx, app);
         ctx.scene.stop_layer();
@@ -158,3 +173,7 @@ impl Element for SlideClip {
         self.origin
     }
 }
+
+#[cfg(test)]
+#[path = "left_panel_slide_tests.rs"]
+mod tests;
