@@ -6066,9 +6066,12 @@ impl PaneGroup {
         // then a failure, then in-progress, then a quiet "finished".
         fn urgency(status: &ConversationStatus) -> u8 {
             match status {
-                ConversationStatus::Blocked {} => 3,
-                ConversationStatus::Error => 2,
-                ConversationStatus::InProgress => 1,
+                ConversationStatus::Blocked {} => 4,
+                ConversationStatus::Error => 3,
+                ConversationStatus::InProgress => 2,
+                // An unreviewed ✓ outranks a reviewed one so a split with any
+                // unseen completion keeps the blue check.
+                ConversationStatus::SuccessUnseen => 1,
                 _ => 0,
             }
         }

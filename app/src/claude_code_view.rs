@@ -754,11 +754,21 @@ pub struct ClaudeCodeView {
     /// error and keeps the session resumable.
     interrupt_pending: bool,
     /// The last turn's outcome, for the tab status dot (7p): `Some(true)`
-    /// finished cleanly, `Some(false)` failed. Cleared when the user comes
-    /// back to the pane (focus) — so a background tab keeps its ✓/✗ until
-    /// revisited — and masked by the in-progress/blocked states while the
-    /// next turn runs. Stop (`Interrupted`) sets nothing: the user did it.
+    /// finished cleanly, `Some(false)` failed. On revisit (focus) a ✗ is
+    /// cleared, while a ✓ merely flips from unreviewed blue to reviewed green
+    /// (see [`Self::tab_attention_seen`]); both are masked by the
+    /// in-progress/blocked states while the next turn runs. Stop
+    /// (`Interrupted`) sets nothing: the user did it.
     tab_attention: Option<bool>,
+    /// Whether the user has visited the pane since [`Self::tab_attention`] was
+    /// set. A completed turn shows a blue ✓ until the first revisit, then a
+    /// green ✓ — so reviewed and unreviewed chats read apart at a glance.
+    tab_attention_seen: bool,
+    /// A turn completed while background scripts / sub-agents were still
+    /// running: the ✓ and the desktop notification are held here (the
+    /// notification body) until the last one retires, so the chat isn't
+    /// declared complete while work is still in flight.
+    deferred_completion: Option<String>,
     /// Stable mouse-state handles kept across renders so a click's
     /// mousedown/mouseup hit the same handle.
     submit_button: MouseStateHandle,
@@ -1308,6 +1318,8 @@ impl ClaudeCodeView {
             pending_initial_turn: None,
             streaming: false,
             tab_attention: None,
+            tab_attention_seen: false,
+            deferred_completion: None,
             interrupt_pending: false,
             submit_button: MouseStateHandle::default(),
             refresh_button: MouseStateHandle::default(),
@@ -3756,15 +3768,26 @@ impl ClaudeCodeView {
             // away user. Interrupted/Exited stay quiet — the user caused
             // the former, and the latter is either a mode-change restart
             // or follows an Error that already reported.
+            // Whatever completion was still held for a previous turn is
+            // superseded by this turn's outcome.
+            self.deferred_completion = None;
             match reason {
                 claude_code::EndReason::Completed => {
-                    self.tab_attention = Some(true);
                     let body = self.last_assistant_text().unwrap_or_default();
-                    self.maybe_send_attention_notification(
-                        NotificationsTrigger::AgentTaskCompleted(true),
-                        body,
-                        ctx,
-                    );
+                    if self.has_active_background_work() {
+                        // Background scripts / sub-agents are still running:
+                        // hold the ✓ and the notification until the last one
+                        // retires (`maybe_fire_deferred_completion`).
+                        self.deferred_completion = Some(body);
+                    } else {
+                        self.tab_attention = Some(true);
+                        self.tab_attention_seen = false;
+                        self.maybe_send_attention_notification(
+                            NotificationsTrigger::AgentTaskCompleted(true),
+                            body,
+                            ctx,
+                        );
+                    }
                     // twarp 17 (PRODUCT 17 §13/§18, §32): speak whatever the
                     // live pump hasn't yet — for a turn that streamed with the
                     // toggle on this is just the trailing partial sentence; with
@@ -3774,6 +3797,7 @@ impl ClaudeCodeView {
                 }
                 claude_code::EndReason::Error(message) => {
                     self.tab_attention = Some(false);
+                    self.tab_attention_seen = false;
                     let message = message.clone();
                     self.maybe_send_attention_notification(
                         NotificationsTrigger::AgentTaskCompleted(false),
@@ -3850,6 +3874,9 @@ impl ClaudeCodeView {
         if self.scroll_state.is_at_bottom(AUTOSCROLL_STICK_SLACK) {
             self.scroll_to_bottom();
         }
+        // Runs after `ingest_event` so the agent/script memos see the event
+        // that may have just retired the last piece of background work.
+        self.maybe_fire_deferred_completion(ctx);
         ctx.notify();
     }
 
@@ -4263,28 +4290,73 @@ impl ClaudeCodeView {
         // on a live process: once `claude` is gone no notification can ever
         // arrive, so a Running agent in a dead/restored transcript must not
         // pin the spinner forever.
-        if self.child.is_some()
-            && self
-                .agent_runs()
-                .iter()
-                .any(|agent| agent.state.is_active())
-        {
+        if self.has_active_background_work() {
             return Some(ConversationStatus::InProgress);
         }
         self.tab_attention.map(|succeeded| {
             if succeeded {
-                ConversationStatus::Success
+                if self.tab_attention_seen {
+                    ConversationStatus::Success
+                } else {
+                    ConversationStatus::SuccessUnseen
+                }
             } else {
                 ConversationStatus::Error
             }
         })
     }
 
-    /// Drop the ✓/✗ attention dot once the user has seen the pane (7p).
+    /// Whether background scripts or sub-agents launched by this chat are still
+    /// running. Gated on a live process: once `claude` is gone no task
+    /// notification can ever arrive, so a Running entry in a dead/restored
+    /// transcript must not count as in-flight work forever.
+    fn has_active_background_work(&self) -> bool {
+        self.child.is_some()
+            && (self
+                .agent_runs()
+                .iter()
+                .any(|agent| agent.state.is_active())
+                || self
+                    .background_scripts()
+                    .iter()
+                    .any(|script| script.state.is_active()))
+    }
+
+    /// A turn completed while background work was still running; once the last
+    /// script/agent retires (and no new turn has started), deliver the held ✓
+    /// and desktop notification. Called after every ingested transcript event.
+    fn maybe_fire_deferred_completion(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.deferred_completion.is_none() || self.streaming || self.has_active_background_work()
+        {
+            return;
+        }
+        let body = self.deferred_completion.take().unwrap_or_default();
+        self.tab_attention = Some(true);
+        self.tab_attention_seen = false;
+        self.maybe_send_attention_notification(
+            NotificationsTrigger::AgentTaskCompleted(true),
+            body,
+            ctx,
+        );
+        ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+    }
+
+    /// The user has seen the pane (7p): a failure's ✗ is dropped, and a
+    /// completed turn's blue ✓ turns into the reviewed green ✓ (it stays until
+    /// the next turn overwrites it).
     fn clear_tab_attention(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.tab_attention.take().is_some() {
-            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
-            ctx.notify();
+        match self.tab_attention {
+            Some(true) if !self.tab_attention_seen => {
+                self.tab_attention_seen = true;
+                ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+                ctx.notify();
+            }
+            Some(false) => {
+                self.tab_attention = None;
+                ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+                ctx.notify();
+            }
+            _ => {}
         }
     }
 
