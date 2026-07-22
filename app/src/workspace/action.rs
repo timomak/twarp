@@ -278,6 +278,9 @@ pub enum WorkspaceAction {
     OpenTwarpDrive,
     /// Toggles the right panel. This happens as an explicit action from the user.
     ToggleRightPanel,
+    /// Opens the right panel without closing it when it is already visible.
+    /// Used by in-pane entry points such as the agent Environment menu.
+    OpenRightPanel,
     /// Opens the code review panel (right panel) without toggling. If already open,
     /// switches to the target pane's repo. Used by vertical tabs diff stats chip.
     OpenCodeReviewPanel(PaneViewLocator),
@@ -823,6 +826,7 @@ impl WorkspaceAction {
             | OpenTwarpDrive
             | ClosePanel
             | ToggleRightPanel
+            | OpenRightPanel
             | OpenCodeReviewPanel(..)
             | ToggleVerticalTabsSettingsPopup
             | SetVerticalTabsDisplayGranularity(_)

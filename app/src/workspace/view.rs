@@ -19238,6 +19238,24 @@ impl TypedActionView for Workspace {
                 let pane_group_handle = self.active_tab_pane_group().clone();
                 self.toggle_right_panel(&pane_group_handle, ctx);
             }
+            OpenRightPanel => {
+                let pane_group_handle = self.active_tab_pane_group().clone();
+                if self.current_workspace_state.is_code_review_panel_open {
+                    #[cfg(feature = "local_fs")]
+                    self.setup_code_review_panel(None, ctx);
+                } else {
+                    self.update_right_panel_open_state(
+                        RightPanelUpdateParams {
+                            pane_group: &pane_group_handle,
+                            target_open_state: true,
+                            entrypoint: Some(CodeReviewPaneEntrypoint::RightPanel),
+                            cli_agent: None,
+                            review_pane_context: None,
+                        },
+                        ctx,
+                    );
+                }
+            }
             #[cfg(feature = "local_fs")]
             OpenCodeReviewPanel(locator) => {
                 let pane_group_handle = self

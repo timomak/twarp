@@ -71,7 +71,7 @@ use parking_lot::RwLock;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use twarp_core::features::FeatureFlag;
-use twarp_core::ui::tokens::{border, measure, radius, spacing, type_ramp};
+use twarp_core::ui::tokens::{border, elevation, measure, radius, spacing, type_ramp};
 use twarp_editor::editor::NavigationKey;
 use twarpui::assets::asset_cache::AssetSource;
 use twarpui::clipboard::ClipboardContent;
@@ -203,6 +203,10 @@ fn provider_copy(provider: AgentProvider) -> ProviderCopy {
     }
 }
 
+fn supports_raw_cli(provider: AgentProvider) -> bool {
+    matches!(provider, AgentProvider::Claude)
+}
+
 /// Body / code font sizes. A point past the deleted `ai_assistant::transcript`
 /// renderer for the airier, Claude-app reading rhythm (shell-polish pass —
 /// PRODUCT §32 visual gate).
@@ -222,6 +226,8 @@ const COMPOSER_MAX_WIDTH: f32 = 760.;
 /// to the pane's top-right, narrow enough to clear the centered reading column
 /// behind it, but wide enough for the inline agent / script rows it expands.
 const HEADER_MENU_MAX_WIDTH: f32 = 360.;
+/// Saved-position id for anchoring the floating menu to its ⋯ trigger.
+const HEADER_MENU_BUTTON_POSITION_ID: &str = "claude_header_menu_button";
 /// Duration of the header menu's inline section reveal (Agent runs / Scripts
 /// expanding in place).
 const HEADER_MENU_REVEAL_DURATION: Duration = Duration::from_millis(150);
@@ -265,7 +271,7 @@ const SENT_IMAGE_SIZE: f32 = 120.;
 const PILL_CORNER_RADIUS: f32 = radius::CHIP;
 const HEADING_FONT_SIZE: f32 = type_ramp::HEADING.size;
 
-/// Below this composer width the context bar and controls row step down to
+/// Below this composer width the controls row steps down to
 /// their compact tier (folder pill dropped, branch truncated, MCP chip
 /// dropped) — roughly a half-window pane.
 const COMPOSER_COMPACT_MAX_WIDTH: f32 = 560.;
@@ -274,7 +280,7 @@ const COMPOSER_COMPACT_MAX_WIDTH: f32 = 560.;
 /// three-up pane.
 const COMPOSER_TINY_MAX_WIDTH: f32 = 430.;
 
-/// Density tier for the composer's context bar and controls row. The composer
+/// Density tier for the composer's controls row. The composer
 /// is width-capped and shrinks with the pane; each row is wrapped in a
 /// [`SizeConstraintSwitch`] that steps down through these tiers at layout
 /// time so three side-by-side Claude panes degrade gracefully instead of
@@ -287,7 +293,7 @@ enum ComposerDensity {
 }
 
 /// Middle-truncate `text` to at most `max_chars` characters (branch names in
-/// the compact context bar): `feature/very-long-branch-name` →
+/// the Environment menu): `feature/very-long-branch-name` →
 /// `feature/ve…ch-name`.
 fn truncate_middle(text: &str, max_chars: usize) -> String {
     let count = text.chars().count();
@@ -430,13 +436,18 @@ pub enum ClaudeCodeViewAction {
     /// Close whatever composer dropdown is open (#13). Dispatched by the menu's
     /// click-outside [`Dismiss`] scrim.
     CloseComposerMenu,
+    /// Close the header's Environment / Activity menu.
+    CloseHeaderMenu,
+    /// Open the code-review panel for this pane's repository without closing
+    /// an already-visible panel.
+    OpenChanges,
     /// twarp: copy a string (branch name, PR URL, …) to the clipboard and close
     /// the open menu.
     CopyToClipboard(String),
     /// twarp: open the current branch on GitHub (`…/tree/<branch>`).
     OpenBranchInGitHub,
     /// twarp: check out a different local branch from the branch menu, then
-    /// refresh the context bar. Runs `git checkout <name>` in the cwd.
+    /// refresh Environment. Runs `git checkout <name>` in the cwd.
     CheckoutBranch(String),
     /// twarp: open a PR for the current branch (`gh pr create --web`) when none
     /// exists yet — the "Create PR" pill.
@@ -561,20 +572,9 @@ pub enum ClaudeCodeCustomAction {
     /// lifecycle for this Claude session. Header chrome must route through a
     /// pane custom action because it is rendered by the parent `PaneView`.
     ToggleComputerControl,
-    /// twarp: expand / collapse the floating background-scripts panel from the
-    /// header's icon button (left of the Chat UI / Raw CLI toggle). The button
-    /// lives in the parent `PaneView`'s header tree, so it routes through the
-    /// pane framework rather than dispatching the in-pane
-    /// [`ClaudeCodeViewAction::ToggleBackgroundPanel`] directly.
-    ToggleBackgroundPanel,
-    /// twarp: expand / collapse the floating agents panel from the header's
-    /// icon button (left of the background-scripts button). Routed the same
-    /// way as [`ClaudeCodeCustomAction::ToggleBackgroundPanel`].
-    ToggleAgentsPanel,
-    /// twarp: expand / collapse the consolidated header menu — the ⋯ button's
-    /// floating card holding the Chat UI / Raw CLI toggle plus the Agent-runs
-    /// and Scripts entries. The button lives in the parent `PaneView`'s
-    /// header tree, so it routes through the pane framework.
+    /// Expand / collapse the consolidated Environment / Activity menu. The
+    /// button lives in the parent `PaneView` header tree, so it routes through
+    /// the pane framework.
     ToggleHeaderMenu,
 }
 
@@ -614,9 +614,8 @@ impl ComposerMenu {
         }
     }
 
-    /// Whether this menu's trigger pill lives in the context bar *above* the
-    /// input (branch / CI / PR) — those menus drop *downward*; the bottom
-    /// control pills (permission / model / effort / context) open *upward*.
+    /// Whether this menu renders inline in Environment instead of as a
+    /// composer-anchored popover.
     fn opens_downward(self) -> bool {
         matches!(
             self,
@@ -940,7 +939,7 @@ pub struct ClaudeCodeView {
     /// across renders so the pulse keeps a continuous clock; the element
     /// self-schedules repaints while it's on screen.
     working_icon_pulse: PulsingIconStateHandle,
-    /// Folder / branch / diff / PR / CI shown in the composer context bar (#11).
+    /// Folder / branch / local diff / PR / CI shown in Environment.
     /// `None` until the first async `git`/`gh` probe resolves; refreshed on open
     /// and after each turn.
     repo_context: Option<RepoContext>,
@@ -1010,12 +1009,10 @@ pub struct ClaudeCodeView {
     fork_button_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
     /// Like [`Self::fork_button_mouse`], for the copy-response button beside it.
     copy_button_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
-    /// Mouse handles for the context-bar pills (#11): branch / CI / PR / the
-    /// Create-PR button / the worktree toggle.
+    /// Mouse handles for the Environment menu's branch / CI / PR actions.
     branch_pill_mouse: MouseStateHandle,
     ci_pill_mouse: MouseStateHandle,
     pr_pill_mouse: MouseStateHandle,
-    worktree_toggle_mouse: MouseStateHandle,
     /// Pooled mouse handles for the branch / CI menu rows (#11).
     branch_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
     ci_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
@@ -1069,10 +1066,7 @@ pub struct ClaudeCodeView {
     /// Stable per-row mouse handles for the agent rows, keyed by launch id and
     /// created on demand (the `background_row_mouse` pattern).
     agent_row_mouse: std::cell::RefCell<HashMap<String, MouseStateHandle>>,
-    /// twarp: whether the consolidated header menu (the ⋯ button's floating
-    /// card with the Chat/Raw toggle plus Agent-runs and Scripts sections) is
-    /// open. It stays open until the ⋯ button is toggled again — clicking
-    /// elsewhere does NOT dismiss it.
+    /// Whether the consolidated Environment / Activity header menu is open.
     header_menu_expanded: bool,
     /// In-flight reveal animation for one of the menu's inline sections
     /// (Agent runs / Scripts expanding or collapsing in place). `None` when no
@@ -1080,6 +1074,15 @@ pub struct ClaudeCodeView {
     header_menu_reveal: Option<(HeaderMenuSection, SectionReveal)>,
     /// Mouse state for the header's ⋯ menu button.
     header_menu_button_mouse: MouseStateHandle,
+    /// Scroll position for Environment / Activity when expanded activity rows
+    /// exceed the popover height cap.
+    header_menu_scroll_state: ClippedScrollStateHandle,
+    /// Mouse states for the Environment section's top-level actions.
+    header_menu_changes_row_mouse: MouseStateHandle,
+    header_menu_local_row_mouse: MouseStateHandle,
+    header_menu_commit_row_mouse: MouseStateHandle,
+    header_menu_compare_row_mouse: MouseStateHandle,
+    header_menu_raw_cli_row_mouse: MouseStateHandle,
     /// Mouse states for the header menu's "Agent runs" and "Scripts" rows.
     header_menu_agents_row_mouse: MouseStateHandle,
     header_menu_scripts_row_mouse: MouseStateHandle,
@@ -1404,7 +1407,6 @@ impl ClaudeCodeView {
             branch_pill_mouse: MouseStateHandle::default(),
             ci_pill_mouse: MouseStateHandle::default(),
             pr_pill_mouse: MouseStateHandle::default(),
-            worktree_toggle_mouse: MouseStateHandle::default(),
             branch_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
             ci_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
             use_worktree: false,
@@ -1420,6 +1422,12 @@ impl ClaudeCodeView {
             header_menu_expanded: false,
             header_menu_reveal: None,
             header_menu_button_mouse: MouseStateHandle::default(),
+            header_menu_scroll_state: ClippedScrollStateHandle::default(),
+            header_menu_changes_row_mouse: MouseStateHandle::default(),
+            header_menu_local_row_mouse: MouseStateHandle::default(),
+            header_menu_commit_row_mouse: MouseStateHandle::default(),
+            header_menu_compare_row_mouse: MouseStateHandle::default(),
+            header_menu_raw_cli_row_mouse: MouseStateHandle::default(),
             header_menu_agents_row_mouse: MouseStateHandle::default(),
             header_menu_scripts_row_mouse: MouseStateHandle::default(),
             agents_clear_mouse: MouseStateHandle::default(),
@@ -1513,8 +1521,7 @@ impl ClaudeCodeView {
         // until the user sends something.
         view.update_pane_title(ctx);
 
-        // #11: populate the composer context bar (folder / branch / diff / PR /
-        // CI) for the pane's directory.
+        // Populate Environment for the pane's directory.
         view.refresh_repo_context(ctx);
         view.maybe_request_composer_placeholder_suggestion(ctx);
 
@@ -1690,11 +1697,11 @@ impl ClaudeCodeView {
         });
     }
 
-    /// Refresh the composer context bar (#11): run `git`/`gh` in the user's
+    /// Refresh Environment: run `git`/`gh` in the user's
     /// login shell (so they resolve and the right repo/PR are visible) and store
     /// the parsed folder / branch / diff / PR / CI. Best-effort and off the main
     /// thread — a missing repo, absent `gh`, or a slow network call just leaves
-    /// the bar partial or unchanged. Called on open and after each turn (the
+    /// the menu partial or unchanged. Called on open and after each turn (the
     /// agent may have edited files, committed, or pushed).
     #[cfg(all(feature = "local_fs", feature = "local_tty"))]
     fn refresh_repo_context(&self, ctx: &mut ViewContext<Self>) {
@@ -1736,8 +1743,8 @@ impl ClaudeCodeView {
     fn refresh_repo_context(&self, _ctx: &mut ViewContext<Self>) {}
 
     /// Run a one-off `git`/`gh` command in the user's login shell from the cwd,
-    /// then refresh the context bar (#11). Best-effort: any failure leaves the
-    /// bar unchanged. Shared by the branch-switch and Create-PR menu actions.
+    /// then refresh Environment. Best-effort: any failure leaves the context
+    /// unchanged. Shared by the branch-switch and Create-PR menu actions.
     #[cfg(all(feature = "local_fs", feature = "local_tty"))]
     fn run_repo_command(&self, command: String, ctx: &mut ViewContext<Self>) {
         use crate::terminal::local_shell::execute_command;
@@ -1771,6 +1778,10 @@ impl ClaudeCodeView {
     /// the bar so it reflects the new branch / diff / PR.
     fn checkout_branch(&mut self, branch: String, ctx: &mut ViewContext<Self>) {
         self.composer_menu = None;
+        if self.streaming {
+            ctx.notify();
+            return;
+        }
         let escaped = branch.replace('\'', r"'\''");
         self.run_repo_command(format!("git checkout '{escaped}' 2>/dev/null"), ctx);
         ctx.notify();
@@ -1839,6 +1850,17 @@ impl ClaudeCodeView {
                 // keypress; the composer behaviors below keep Esc otherwise.
                 if self.voice_recorder.is_some() {
                     self.cancel_voice_recording(ctx);
+                    return;
+                }
+                if self.header_menu_expanded {
+                    self.header_menu_expanded = false;
+                    self.header_menu_reveal = None;
+                    self.composer_menu = None;
+                    ctx.notify();
+                    return;
+                }
+                if self.composer_menu.take().is_some() {
+                    ctx.notify();
                     return;
                 }
                 self.clear_reply_suggestion(ctx);
@@ -2028,11 +2050,11 @@ impl ClaudeCodeView {
         if let Some(branch) = &context.branch {
             parts.push(format!("branch {branch}"));
         }
-        if context.added.is_some() || context.removed.is_some() {
+        if context.local_added.is_some() || context.local_removed.is_some() {
             parts.push(format!(
                 "diff +{} -{}",
-                context.added.unwrap_or_default(),
-                context.removed.unwrap_or_default()
+                context.local_added.unwrap_or_default(),
+                context.local_removed.unwrap_or_default()
             ));
         }
         if let Some(pr_number) = context.pr_number {
@@ -3996,6 +4018,9 @@ impl ClaudeCodeView {
     /// terminal session running `claude --resume <session_id>`, which
     /// [`Self::enter_raw_mode`] embeds.
     fn toggle_raw_cli(&mut self, ctx: &mut ViewContext<Self>) {
+        if !supports_raw_cli(self.provider) {
+            return;
+        }
         if self.raw_cli.is_some() {
             self.exit_raw_mode(ctx);
             return;
@@ -5302,7 +5327,7 @@ impl ClaudeCodeView {
         }
 
         // Open at the latest message, name the tab from the history, and refresh
-        // the composer context bar for the resumed conversation.
+        // Environment for the resumed conversation.
         self.scroll_to_bottom();
         self.update_pane_title(ctx);
         self.refresh_repo_context(ctx);
@@ -6013,7 +6038,7 @@ impl ClaudeCodeView {
         }
 
         let inner = stack.finish();
-        Hoverable::new(self.header_menu_button_mouse.clone(), move |state| {
+        let button = Hoverable::new(self.header_menu_button_mouse.clone(), move |state| {
             let mut body = Container::new(inner)
                 .with_padding(Padding::uniform(4.))
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)));
@@ -6028,15 +6053,14 @@ impl ClaudeCodeView {
                 PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleHeaderMenu),
             );
         })
-        .finish()
+        .finish();
+        SavePosition::new(button, HEADER_MENU_BUTTON_POSITION_ID).finish()
     }
 
-    /// twarp: the ⋯ button's floating menu card — the Chat UI / Raw CLI
-    /// segmented toggle on top, then the "Agent runs" and "Scripts" section
-    /// rows. Clicking a section row expands its rows *inline* inside this
-    /// card (an accordion with a ~150ms reveal ease; see [`SectionReveal`]) —
-    /// the sections have no separate floating panels. The card itself stays
-    /// open until the ⋯ button is toggled again.
+    /// The ⋯ button's sectioned session inspector. Repository state and git
+    /// entry points live in Environment instead of consuming a row above the
+    /// composer; agent/script activity remains expandable inline. Claude's raw
+    /// CLI is a secondary action at the bottom and is never shown for Codex.
     fn render_header_menu(&self, app: &AppContext) -> Option<Box<dyn Element>> {
         if !self.header_menu_expanded {
             return None;
@@ -6047,49 +6071,8 @@ impl ClaudeCodeView {
         let wash = self.render_wash.get();
         let muted = theme.nonactive_ui_text_color().into_solid();
         let main = theme.main_text_color(theme.background()).into_solid();
-        let inactive_color = theme.sub_text_color(theme.background()).into_solid();
-        let toggle_border: twarp_core::ui::theme::Fill = self
-            .tab_accent(app)
-            .map(|tab| ColorU::new(tab.r, tab.g, tab.b, 90).into())
-            .unwrap_or_else(|| theme.outline());
-
-        // The menu only renders in chat mode (raw mode keeps the toggle in
-        // the header), so "Chat UI" is always the active segment here.
-        let chat_segment = render_mode_segment(
-            "Chat UI",
-            true,
-            false,
-            self.chat_ui_button.clone(),
-            accent,
-            wash,
-            inactive_color,
-            appearance,
-            true,
-        );
-        let raw_segment = render_mode_segment(
-            "Raw CLI",
-            false,
-            !self.streaming, // enter raw only when idle (§42)
-            self.raw_cli_button.clone(),
-            accent,
-            wash,
-            inactive_color,
-            appearance,
-            true,
-        );
-        let toggle = Container::new(
-            Flex::row()
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_spacing(2.)
-                .with_child(chat_segment)
-                .with_child(raw_segment)
-                .finish(),
-        )
-        .with_padding(Padding::uniform(2.))
-        .with_border(Border::all(1.).with_border_fill(toggle_border))
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-        .finish();
+        let green = theme.ui_green_color();
+        let red = theme.ui_error_color();
 
         // Rows the user cleared are hidden but still live in the transcript,
         // so filter them out here (not in the memos, which stay pure
@@ -6104,7 +6087,10 @@ impl ClaudeCodeView {
             .iter()
             .filter(|s| !self.background_dismissed.contains(&s.id))
             .collect();
-        let active_agents = visible_agents.iter().filter(|a| a.state.is_active()).count();
+        let active_agents = visible_agents
+            .iter()
+            .filter(|a| a.state.is_active())
+            .count();
         let active_scripts = visible_scripts
             .iter()
             .filter(|s| s.state.is_active())
@@ -6169,9 +6155,7 @@ impl ClaudeCodeView {
                 .with_spacing(8.)
                 .with_child(glyph)
                 .with_child(title)
-                .with_child(
-                    Shrinkable::new(1., twarpui::elements::Empty::new().finish()).finish(),
-                )
+                .with_child(Shrinkable::new(1., twarpui::elements::Empty::new().finish()).finish())
                 .with_child(count);
             if expanded && clearable {
                 let clear_label = appearance
@@ -6245,25 +6229,295 @@ impl ClaudeCodeView {
             .finish()
         };
 
-        let mut column = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_child(
-                Container::new(Align::new(toggle).finish())
-                    .with_padding(Padding::uniform(10.))
+        let section_heading = |label: &str| -> Box<dyn Element> {
+            Container::new(
+                appearance
+                    .ui_builder()
+                    .span(label.to_owned())
+                    .with_style(UiComponentStyles {
+                        font_color: Some(muted),
+                        font_size: Some(type_ramp::CAPTION.size),
+                        ..Default::default()
+                    })
+                    .build()
                     .finish(),
             )
-            .with_child(section_row(
-                crate::ui_components::icons::Icon::ArrowSplit,
-                "Agent runs",
-                active_agents,
-                self.agents_panel_expanded,
-                visible_agents.iter().any(|a| !a.state.is_active()),
-                self.header_menu_agents_row_mouse.clone(),
-                self.agents_clear_mouse.clone(),
-                ClaudeCodeViewAction::ToggleAgentsPanel,
-                ClaudeCodeViewAction::ClearAgents,
+            .with_padding_left(spacing::MD)
+            .with_padding_right(spacing::MD)
+            .with_padding_top(spacing::MD)
+            .with_padding_bottom(spacing::XS)
+            .finish()
+        };
+        let meta_text = |text: String, color: ColorU| -> Box<dyn Element> {
+            appearance
+                .ui_builder()
+                .span(text)
+                .with_style(UiComponentStyles {
+                    font_color: Some(color),
+                    font_size: Some(type_ramp::LABEL.size),
+                    ..Default::default()
+                })
+                .build()
+                .finish()
+        };
+        let menu_row = |icon: crate::ui_components::icons::Icon,
+                        label: String,
+                        trailing: Option<Box<dyn Element>>,
+                        mouse: MouseStateHandle,
+                        action: Option<ClaudeCodeViewAction>,
+                        position_id: Option<&'static str>|
+         -> Box<dyn Element> {
+            let enabled = action.is_some();
+            let row_color = if enabled { main } else { muted };
+            let glyph = ConstrainedBox::new(Icon::new(icon.into(), row_color).finish())
+                .with_width(spacing::LG)
+                .with_height(spacing::LG)
+                .finish();
+            let title = appearance
+                .ui_builder()
+                .span(label)
+                .with_style(UiComponentStyles {
+                    font_color: Some(row_color),
+                    font_size: Some(type_ramp::UI.size),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let mut contents = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_spacing(spacing::SM)
+                .with_child(glyph)
+                .with_child(title)
+                .with_child(Shrinkable::new(1., twarpui::elements::Empty::new().finish()).finish());
+            if let Some(trailing) = trailing {
+                contents.add_child(trailing);
+            }
+            let contents = contents.finish();
+            let row: Box<dyn Element> = if let Some(action) = action {
+                Hoverable::new(mouse, move |state| {
+                    let mut body = Container::new(contents)
+                        .with_padding_left(spacing::MD)
+                        .with_padding_right(spacing::MD)
+                        .with_padding_top(spacing::SM)
+                        .with_padding_bottom(spacing::SM)
+                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
+                    if state.is_hovered() {
+                        body = body.with_background_color(wash);
+                    }
+                    body.finish()
+                })
+                .with_cursor(Cursor::PointingHand)
+                .on_click(move |ctx, _, _| ctx.dispatch_typed_action(action.clone()))
+                .finish()
+            } else {
+                Container::new(contents)
+                    .with_padding_left(spacing::MD)
+                    .with_padding_right(spacing::MD)
+                    .with_padding_top(spacing::SM)
+                    .with_padding_bottom(spacing::SM)
+                    .finish()
+            };
+            if let Some(position_id) = position_id {
+                SavePosition::new(row, position_id).finish()
+            } else {
+                row
+            }
+        };
+        let separator = || -> Box<dyn Element> {
+            Container::new(
+                ConstrainedBox::new(twarpui::elements::Empty::new().finish())
+                    .with_height(border::HAIRLINE_WIDTH)
+                    .finish(),
+            )
+            .with_margin_left(spacing::MD)
+            .with_margin_right(spacing::MD)
+            .with_margin_top(spacing::SM)
+            .with_background_color(theme.outline().into())
+            .finish()
+        };
+        let inline_environment_menu = |menu: Box<dyn Element>| -> Box<dyn Element> {
+            Container::new(menu)
+                .with_margin_left(spacing::LG)
+                .with_margin_right(spacing::SM)
+                .with_padding(Padding::uniform(spacing::SM))
+                .with_background_color(theme.surface_2().into_solid())
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+                .finish()
+        };
+
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min);
+
+        column.add_child(section_heading("Environment"));
+        let context = self.repo_context.as_ref();
+        let changes = context.and_then(|context| {
+            (context.local_added.is_some() || context.local_removed.is_some()).then(|| {
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(spacing::XS)
+                    .with_child(meta_text(
+                        format!("+{}", context.local_added.unwrap_or_default()),
+                        green,
+                    ))
+                    .with_child(meta_text(
+                        format!("−{}", context.local_removed.unwrap_or_default()),
+                        red,
+                    ))
+                    .finish()
+            })
+        });
+        column.add_child(menu_row(
+            crate::ui_components::icons::Icon::Diff,
+            "Changes".to_owned(),
+            changes,
+            self.header_menu_changes_row_mouse.clone(),
+            context
+                .and_then(|context| context.branch.as_ref())
+                .map(|_| ClaudeCodeViewAction::OpenChanges),
+            None,
+        ));
+        let local_meta = context
+            .and_then(|context| context.folder.as_ref())
+            .map(|folder| {
+                let label = if self.use_worktree {
+                    "Worktree".to_owned()
+                } else {
+                    truncate_middle(folder, 24)
+                };
+                meta_text(label, if self.use_worktree { accent } else { muted })
+            });
+        let can_toggle_worktree = self.message_tx.is_none()
+            && context
+                .and_then(|context| context.branch.as_ref())
+                .is_some();
+        column.add_child(menu_row(
+            crate::ui_components::icons::Icon::Laptop,
+            "Local".to_owned(),
+            local_meta,
+            self.header_menu_local_row_mouse.clone(),
+            can_toggle_worktree.then_some(ClaudeCodeViewAction::ToggleWorktree),
+            None,
+        ));
+        if let Some(branch) = context.and_then(|context| context.branch.as_ref()) {
+            let branch_trailing = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(spacing::XS)
+                .with_child(meta_text(truncate_middle(branch, 24), muted))
+                .with_child(
+                    ConstrainedBox::new(
+                        Icon::new(crate::ui_components::icons::Icon::ChevronDown.into(), muted)
+                            .finish(),
+                    )
+                    .with_width(spacing::MD)
+                    .with_height(spacing::MD)
+                    .finish(),
+                )
+                .finish();
+            column.add_child(menu_row(
+                crate::ui_components::icons::Icon::GitBranch,
+                "Branch".to_owned(),
+                Some(branch_trailing),
+                self.branch_pill_mouse.clone(),
+                Some(ClaudeCodeViewAction::ToggleComposerMenu(
+                    ComposerMenu::Branch,
+                )),
+                Some(ComposerMenu::Branch.anchor_id()),
             ));
+            if self.composer_menu == Some(ComposerMenu::Branch) {
+                if let Some(menu) = self.render_branch_menu(appearance) {
+                    column.add_child(inline_environment_menu(menu));
+                }
+            }
+            column.add_child(menu_row(
+                crate::ui_components::icons::Icon::GitCommit,
+                "Commit or push".to_owned(),
+                None,
+                self.header_menu_commit_row_mouse.clone(),
+                Some(ClaudeCodeViewAction::OpenChanges),
+                None,
+            ));
+            column.add_child(menu_row(
+                crate::ui_components::icons::Icon::SwitchHorizontal01,
+                "Compare branch".to_owned(),
+                Some(
+                    ConstrainedBox::new(
+                        Icon::new(
+                            crate::ui_components::icons::Icon::LinkExternal.into(),
+                            muted,
+                        )
+                        .finish(),
+                    )
+                    .with_width(spacing::LG)
+                    .with_height(spacing::LG)
+                    .finish(),
+                ),
+                self.header_menu_compare_row_mouse.clone(),
+                Some(ClaudeCodeViewAction::OpenChanges),
+                None,
+            ));
+        }
+        if let Some(pr_number) = context.and_then(|context| context.pr_number) {
+            column.add_child(menu_row(
+                crate::ui_components::icons::Icon::Github,
+                format!("Pull request #{pr_number}"),
+                None,
+                self.pr_pill_mouse.clone(),
+                Some(ClaudeCodeViewAction::ToggleComposerMenu(ComposerMenu::Pr)),
+                Some(ComposerMenu::Pr.anchor_id()),
+            ));
+            if self.composer_menu == Some(ComposerMenu::Pr) {
+                if let Some(menu) = self.render_pr_menu(appearance) {
+                    column.add_child(inline_environment_menu(menu));
+                }
+            }
+        } else if context
+            .is_some_and(|context| context.branch.is_some() && context.repo_web_url.is_some())
+        {
+            column.add_child(menu_row(
+                crate::ui_components::icons::Icon::Github,
+                "Create pull request".to_owned(),
+                None,
+                self.pr_pill_mouse.clone(),
+                Some(ClaudeCodeViewAction::CreatePr),
+                None,
+            ));
+        }
+        if let Some(ci) = context.and_then(|context| context.ci) {
+            let ci_color = match ci {
+                CiState::Passing => green,
+                CiState::Failing => red,
+                CiState::Pending => theme.ui_warning_color(),
+            };
+            column.add_child(menu_row(
+                crate::ui_components::icons::Icon::Github,
+                "Checks".to_owned(),
+                Some(meta_text(ci.label().to_owned(), ci_color)),
+                self.ci_pill_mouse.clone(),
+                Some(ClaudeCodeViewAction::ToggleComposerMenu(ComposerMenu::Ci)),
+                Some(ComposerMenu::Ci.anchor_id()),
+            ));
+            if self.composer_menu == Some(ComposerMenu::Ci) {
+                if let Some(menu) = self.render_ci_menu(appearance) {
+                    column.add_child(inline_environment_menu(menu));
+                }
+            }
+        }
+
+        column.add_child(separator());
+        column.add_child(section_heading("Activity"));
+        column.add_child(section_row(
+            crate::ui_components::icons::Icon::ArrowSplit,
+            "Agent runs",
+            active_agents,
+            self.agents_panel_expanded,
+            visible_agents.iter().any(|a| !a.state.is_active()),
+            self.header_menu_agents_row_mouse.clone(),
+            self.agents_clear_mouse.clone(),
+            ClaudeCodeViewAction::ToggleAgentsPanel,
+            ClaudeCodeViewAction::ClearAgents,
+        ));
         // The expanded flag stays set while a collapse animation runs (the
         // body must remain in the tree to shrink); the reveal fraction is
         // what actually eases the body open and closed.
@@ -6310,18 +6564,63 @@ impl ClaudeCodeView {
                 self.header_menu_section_fraction(HeaderMenuSection::Scripts),
             )));
         }
+        if supports_raw_cli(self.provider) {
+            column.add_child(separator());
+            column.add_child(menu_row(
+                crate::ui_components::icons::Icon::Terminal,
+                "Open Claude CLI".to_owned(),
+                Some(
+                    ConstrainedBox::new(
+                        Icon::new(
+                            crate::ui_components::icons::Icon::LinkExternal.into(),
+                            muted,
+                        )
+                        .finish(),
+                    )
+                    .with_width(spacing::LG)
+                    .with_height(spacing::LG)
+                    .finish(),
+                ),
+                self.header_menu_raw_cli_row_mouse.clone(),
+                (!self.streaming).then_some(ClaudeCodeViewAction::ToggleRawCli),
+                None,
+            ));
+        }
         column.add_child(
             ConstrainedBox::new(twarpui::elements::Empty::new().finish())
-                .with_height(4.)
+                .with_height(spacing::XS)
                 .finish(),
         );
         let column = column.finish();
+        let column = ClippedScrollable::vertical(
+            self.header_menu_scroll_state.clone(),
+            column,
+            ScrollbarWidth::Auto,
+            theme.nonactive_ui_detail().into(),
+            theme.active_ui_detail().into(),
+            Fill::None,
+        )
+        .with_overlayed_scrollbar()
+        .finish();
 
         let card = Container::new(column)
             .with_background_color(theme.surface_1().into_solid())
-            .with_border(Border::all(1.).with_border_fill(theme.outline()))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(12.)))
-            .with_drop_shadow(DropShadow::default())
+            .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::PANEL)))
+            .finish();
+        let card = Dismiss::new(card)
+            .on_dismiss(|ctx, _| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::CloseHeaderMenu);
+            })
+            .finish();
+        let (offset_y, blur_radius, spread_radius, alpha) = elevation::POPOVER;
+        let card = Container::new(card)
+            .with_drop_shadow(DropShadow {
+                color: ColorU::new(0, 0, 0, (alpha * 255.).round() as u8),
+                offset: vec2f(0., offset_y),
+                blur_radius,
+                spread_radius,
+            })
             .finish();
         // Both min AND max width: a positioned overlay child is measured
         // against the whole pane's constraints, so without a max the card
@@ -6330,6 +6629,7 @@ impl ClaudeCodeView {
             ConstrainedBox::new(card)
                 .with_min_width(240.)
                 .with_max_width(HEADER_MENU_MAX_WIDTH)
+                .with_max_height(measure::POPOVER_MAX_HEIGHT)
                 .finish(),
         )
     }
@@ -7549,32 +7849,36 @@ impl ClaudeCodeView {
             index += 1;
         }
 
-        // Switch to another local branch, most-recent first (capped).
-        let others: Vec<String> = context
-            .branches
-            .iter()
-            .filter(|b| **b != branch)
-            .take(8)
-            .cloned()
-            .collect();
-        if !others.is_empty() {
-            column.add_child(menu_header("Switch to", muted, appearance));
-            for name in others {
-                column.add_child(menu_action_row(
-                    &name,
-                    text_color,
-                    pool_mouse(&mut rows, index),
-                    {
-                        let name = name.clone();
-                        move |ctx| {
-                            ctx.dispatch_typed_action(ClaudeCodeViewAction::CheckoutBranch(
-                                name.clone(),
-                            ))
-                        }
-                    },
-                    appearance,
-                ));
-                index += 1;
+        // Switching branches under a live agent can invalidate its cwd and
+        // edits. Keep read-only branch actions available, but only expose the
+        // switch list while idle.
+        if !self.streaming {
+            let others: Vec<String> = context
+                .branches
+                .iter()
+                .filter(|b| **b != branch)
+                .take(8)
+                .cloned()
+                .collect();
+            if !others.is_empty() {
+                column.add_child(menu_header("Switch to", muted, appearance));
+                for name in others {
+                    column.add_child(menu_action_row(
+                        &name,
+                        text_color,
+                        pool_mouse(&mut rows, index),
+                        {
+                            let name = name.clone();
+                            move |ctx| {
+                                ctx.dispatch_typed_action(ClaudeCodeViewAction::CheckoutBranch(
+                                    name.clone(),
+                                ))
+                            }
+                        },
+                        appearance,
+                    ));
+                    index += 1;
+                }
             }
         }
         Some(column.finish())
@@ -7589,9 +7893,9 @@ impl ClaudeCodeView {
         }
         let theme = appearance.theme();
         let muted = theme.nonactive_ui_text_color().into_solid();
-        let green = ColorU::new(0, 142, 65, 255);
-        let red = ColorU::new(188, 54, 42, 255);
-        let amber = ColorU::new(194, 128, 0, 255);
+        let green = theme.ui_green_color();
+        let red = theme.ui_error_color();
+        let amber = theme.ui_warning_color();
 
         let mut rows = self.ci_menu_row_mouse.borrow_mut();
         let mut column = Flex::column()
@@ -7680,196 +7984,6 @@ impl ClaudeCodeView {
                 .with_child(menu_header(&header, muted, appearance))
                 .with_child(open)
                 .with_child(copy)
-                .finish(),
-        )
-    }
-
-    /// The composer context bar (#11): a row of pills above the input — folder,
-    /// branch (→ branch menu), `+added −removed`, PR #n / Create PR, CI (→ check
-    /// menu), and the worktree toggle. Each pill appears only when resolved
-    /// ([`RepoContext`]); the whole bar is hidden until the first probe returns
-    /// and stays hidden if nothing (not even a folder) resolved.
-    ///
-    /// `density` steps the bar down in a narrow pane: compact drops the folder
-    /// pill (the cwd already lives in the pane header) and middle-truncates the
-    /// branch; tiny also drops the `+N −M` diff counts. Whether the bar renders
-    /// at all is density-independent, so callers can build every tier for a
-    /// [`SizeConstraintSwitch`] whenever the full tier resolves.
-    fn render_repo_context_bar(
-        &self,
-        appearance: &Appearance,
-        density: ComposerDensity,
-    ) -> Option<Box<dyn Element>> {
-        let context = self.repo_context.as_ref()?;
-        if context.folder.is_none() && context.is_effectively_empty() {
-            return None;
-        }
-        let theme = appearance.theme();
-        let text_color = theme.main_text_color(theme.surface_2()).into_solid();
-        let accent = self.render_accent.get();
-        // #3: semantic colours — green additions, red deletions (and the same
-        // green/red/amber for CI as before).
-        let green = ColorU::new(0, 142, 65, 255);
-        let red = ColorU::new(188, 54, 42, 255);
-        let wash = self.render_wash.get();
-        // Semantic CI / diff colour for a state (mirroring success/error/warn).
-        let ci_color = |ci: CiState| match ci {
-            CiState::Passing => green,
-            CiState::Failing => red,
-            CiState::Pending => ColorU::new(194, 128, 0, 255),
-        };
-
-        let mut row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(6.);
-
-        // Folder — static (#11). Full tier only: the cwd already reads in the
-        // pane header, so it is the first pill to go in a narrow pane.
-        if density == ComposerDensity::Full {
-            if let Some(folder) = &context.folder {
-                row.add_child(render_context_pill(
-                    folder.clone(),
-                    text_color,
-                    wash,
-                    appearance,
-                ));
-            }
-        }
-        // Branch — clickable, opens the branch menu (copy / open on GitHub /
-        // switch). Always shown when resolved, including on the default branch;
-        // long names are middle-truncated below the full tier (the branch menu
-        // still shows — and copies — the full name).
-        if let Some(branch) = &context.branch {
-            let branch_label = match density {
-                // Even at full width, a generated branch name can dwarf the
-                // rest of the bar — cap it and let the menu show the full name.
-                ComposerDensity::Full => truncate_middle(branch, 40),
-                ComposerDensity::Compact => truncate_middle(branch, 24),
-                ComposerDensity::Tiny => truncate_middle(branch, 14),
-            };
-            row.add_child(render_context_menu_pill(
-                branch_label,
-                accent,
-                wash,
-                self.branch_pill_mouse.clone(),
-                ComposerMenu::Branch.anchor_id(),
-                |ctx| {
-                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
-                        ComposerMenu::Branch,
-                    ))
-                },
-                appearance,
-            ));
-        }
-        // Diff `+N −M` — static, as one unit. Dropped at the tiny tier.
-        if density != ComposerDensity::Tiny
-            && (context.added.is_some() || context.removed.is_some())
-        {
-            let added = context.added.unwrap_or(0);
-            let removed = context.removed.unwrap_or(0);
-            row.add_child(
-                Container::new(
-                    Flex::row()
-                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                        .with_spacing(4.)
-                        .with_child(context_segment(appearance, format!("+{added}"), green))
-                        .with_child(context_segment(
-                            appearance,
-                            format!("\u{2212}{removed}"),
-                            red,
-                        ))
-                        .finish(),
-                )
-                .with_padding_left(8.)
-                .with_padding_right(8.)
-                .with_padding_top(3.)
-                .with_padding_bottom(3.)
-                .with_background_color(wash)
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
-                .finish(),
-            );
-        }
-        // PR — `PR #n` opens its menu when one exists; otherwise a "Create PR"
-        // button when we have a branch on a GitHub remote.
-        if let Some(pr) = context.pr_number {
-            row.add_child(render_context_menu_pill(
-                format!("PR #{pr}"),
-                accent,
-                wash,
-                self.pr_pill_mouse.clone(),
-                ComposerMenu::Pr.anchor_id(),
-                |ctx| {
-                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
-                        ComposerMenu::Pr,
-                    ))
-                },
-                appearance,
-            ));
-        } else if context.branch.is_some() && context.repo_web_url.is_some() {
-            row.add_child(
-                Container::new(
-                    Hoverable::new(self.pr_pill_mouse.clone(), {
-                        let pill =
-                            render_context_pill("Create PR".to_owned(), accent, wash, appearance);
-                        move |_| pill
-                    })
-                    .with_cursor(Cursor::PointingHand)
-                    .on_click(|ctx, _, _| {
-                        ctx.dispatch_typed_action(ClaudeCodeViewAction::CreatePr);
-                    })
-                    .finish(),
-                )
-                .finish(),
-            );
-        }
-        // CI — clickable, opens the per-check menu.
-        if let Some(ci) = context.ci {
-            row.add_child(render_context_menu_pill(
-                ci.label().to_owned(),
-                ci_color(ci),
-                wash,
-                self.ci_pill_mouse.clone(),
-                ComposerMenu::Ci.anchor_id(),
-                |ctx| {
-                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
-                        ComposerMenu::Ci,
-                    ))
-                },
-                appearance,
-            ));
-        }
-        // Worktree toggle (#11): only meaningful before a session starts — it
-        // governs where the *first* turn spawns. Hidden once live.
-        if self.message_tx.is_none() && context.branch.is_some() {
-            let on = self.use_worktree;
-            let label = format!("{} worktree", if on { "\u{2611}" } else { "\u{2610}" });
-            row.add_child(
-                Container::new(
-                    Hoverable::new(self.worktree_toggle_mouse.clone(), {
-                        let pill = render_context_pill(
-                            label,
-                            if on { accent } else { text_color },
-                            wash,
-                            appearance,
-                        );
-                        move |_| pill
-                    })
-                    .with_cursor(Cursor::PointingHand)
-                    .on_click(|ctx, _, _| {
-                        ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleWorktree);
-                    })
-                    .finish(),
-                )
-                .finish(),
-            );
-        }
-
-        Some(
-            Flex::row()
-                .with_main_axis_size(MainAxisSize::Max)
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_child(row.finish())
                 .finish(),
         )
     }
@@ -8187,12 +8301,8 @@ impl ClaudeCodeView {
         };
         let input_area = card_column.finish();
 
-        // Composer column, top → bottom: context bar (#11) above the input;
-        // the input card; then the control pills (#4) below the input, outside
-        // the card. The open dropdown / popover (#13/#2) is no longer a column
-        // child — it floats as a positioned overlay anchored to its trigger
-        // pill (below), so it overlaps neighbouring content instead of pushing
-        // the layout open between the pills and the input.
+        // Composer column, top → bottom: input card, then controls that affect
+        // sending. Repository/environment chrome moved to the header menu.
         let mut composer_column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
@@ -8225,39 +8335,6 @@ impl ClaudeCodeView {
             )))
             .finish();
 
-        // The context bar (#11) sits *above* the card, outside the bordered
-        // panel, so folder / branch / diff / PR / CI read as chrome around the
-        // input rather than content inside it.
-        let mut outer_column = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(spacing::SM);
-        if let Some(bar) = self.render_repo_context_bar(appearance, ComposerDensity::Full) {
-            // Whether the bar resolves is density-independent, so the compact
-            // and tiny tiers are always present when the full tier is.
-            let compact = self
-                .render_repo_context_bar(appearance, ComposerDensity::Compact)
-                .expect("context bar tiers resolve together");
-            let tiny = self
-                .render_repo_context_bar(appearance, ComposerDensity::Tiny)
-                .expect("context bar tiers resolve together");
-            outer_column.add_child(Box::new(SizeConstraintSwitch::new(
-                bar,
-                [
-                    (
-                        SizeConstraintCondition::WidthLessThan(COMPOSER_TINY_MAX_WIDTH),
-                        tiny,
-                    ),
-                    (
-                        SizeConstraintCondition::WidthLessThan(COMPOSER_COMPACT_MAX_WIDTH),
-                        compact,
-                    ),
-                ],
-            )));
-        }
-        outer_column.add_child(composer_panel);
-        let composer_panel = outer_column.finish();
-
         let composer = Container::new(composer_panel)
             .with_padding_top(spacing::SM)
             .with_padding_bottom(spacing::MD)
@@ -8279,11 +8356,11 @@ impl ClaudeCodeView {
         .then(|| self.render_scroll_to_bottom_button(appearance));
 
         // The open dropdown floats above everything, anchored to the trigger
-        // pill's saved position (#11/#13). Context-bar pills (branch / CI / PR)
-        // sit above the input, so their menus drop downward; the bottom control
-        // pills open upward. A click-outside `Dismiss` scrim closes it.
+        // pill's saved position (#13). Environment menus render inline in the
+        // header card; bottom control pills open upward.
         let open_menu = self
             .composer_menu
+            .filter(|menu| !(self.header_menu_expanded && menu.opens_downward()))
             .zip(self.render_composer_menu(appearance));
 
         // Nothing floats over the composer — return it bare.
@@ -8553,18 +8630,16 @@ impl View for ClaudeCodeView {
                     ChildAnchor::BottomMiddle,
                 ),
             );
-            // twarp: the ⋯ header-menu card, pinned to the pane's top-right
-            // above the transcript. The Agent-runs / Scripts sections expand
-            // inline inside it. Deliberately NOT wrapped in Dismiss: the menu
-            // stays open until the ⋯ button is toggled again, so clicking the
-            // transcript or composer never closes it out from under the user.
+            // Anchor the menu to the ⋯ trigger in the pane header. `Dismiss`
+            // closes it on an outside click without swallowing that click.
             if let Some(menu) = self.render_header_menu(app) {
-                stack.add_positioned_child(
+                stack.add_positioned_overlay_child(
                     menu,
-                    OffsetPositioning::offset_from_parent(
-                        vec2f(-12., 12.),
-                        ParentOffsetBounds::ParentBySize,
-                        ParentAnchor::TopRight,
+                    OffsetPositioning::offset_from_save_position_element(
+                        HEADER_MENU_BUTTON_POSITION_ID,
+                        vec2f(0., spacing::SM),
+                        PositionedElementOffsetBounds::WindowByPosition,
+                        PositionedElementAnchor::BottomRight,
                         ChildAnchor::TopRight,
                     ),
                 );
@@ -8702,6 +8777,23 @@ impl TypedActionView for ClaudeCodeView {
                 if self.composer_menu.take().is_some() {
                     ctx.notify();
                 }
+            }
+            ClaudeCodeViewAction::CloseHeaderMenu => {
+                if self.header_menu_expanded {
+                    self.header_menu_expanded = false;
+                    self.header_menu_reveal = None;
+                    if self.composer_menu.is_some_and(ComposerMenu::opens_downward) {
+                        self.composer_menu = None;
+                    }
+                    ctx.notify();
+                }
+            }
+            ClaudeCodeViewAction::OpenChanges => {
+                self.header_menu_expanded = false;
+                self.header_menu_reveal = None;
+                self.composer_menu = None;
+                ctx.dispatch_typed_action(&WorkspaceAction::OpenRightPanel);
+                ctx.notify();
             }
             ClaudeCodeViewAction::CopyToClipboard(text) => {
                 ctx.clipboard()
@@ -8873,18 +8965,21 @@ impl BackingView for ClaudeCodeView {
         match custom_action {
             ClaudeCodeCustomAction::ToggleRawCli => self.toggle_raw_cli(ctx),
             ClaudeCodeCustomAction::ToggleComputerControl => self.toggle_computer_control(ctx),
-            ClaudeCodeCustomAction::ToggleBackgroundPanel => {
-                self.toggle_header_menu_section(HeaderMenuSection::Scripts, ctx);
-            }
-            ClaudeCodeCustomAction::ToggleAgentsPanel => {
-                self.toggle_header_menu_section(HeaderMenuSection::Agents, ctx);
-            }
             ClaudeCodeCustomAction::ToggleHeaderMenu => {
-                self.header_menu_expanded = !self.header_menu_expanded;
+                let opening = !self.header_menu_expanded;
+                self.header_menu_expanded = opening;
+                if opening {
+                    self.refresh_repo_context(ctx);
+                }
                 // Section expanded state persists across close/reopen; only
                 // an in-flight reveal animation is dropped (it would tick a
                 // card that is no longer on screen).
                 self.header_menu_reveal = None;
+                if !self.header_menu_expanded
+                    && self.composer_menu.is_some_and(ComposerMenu::opens_downward)
+                {
+                    self.composer_menu = None;
+                }
                 ctx.notify();
             }
         }
@@ -8950,8 +9045,8 @@ impl BackingView for ClaudeCodeView {
             .unwrap_or_else(|| theme.outline());
         // twarp: the header cluster is now a single ⋯ menu button (plus the
         // flag-gated computer-control entry point). The globe moved to the
-        // window titlebar; the agents / background-scripts buttons and the
-        // Chat UI / Raw CLI toggle live inside the ⋯ button's floating menu.
+        // window titlebar; repository context and activity now live inside
+        // the ⋯ button's floating menu.
         //
         // Exception: in raw mode the pane body IS the embedded terminal, so
         // the in-pane menu overlay can't render — the header keeps the
@@ -8967,7 +9062,6 @@ impl BackingView for ClaudeCodeView {
                     wash,
                     inactive_color,
                     appearance,
-                    false,
                 );
                 let raw_segment = render_mode_segment(
                     raw_label,
@@ -8978,7 +9072,6 @@ impl BackingView for ClaudeCodeView {
                     wash,
                     inactive_color,
                     appearance,
-                    false,
                 );
                 Container::new(
                     Flex::row()
@@ -9011,28 +9104,32 @@ impl BackingView for ClaudeCodeView {
         } else {
             let computer_control_button = self.render_computer_control_button(app, false);
             let has_computer_control_button = computer_control_button.is_some();
-            let assemble_cluster = |computer_control_button: Option<Box<dyn Element>>|
-             -> Box<dyn Element> {
-                let mut controls = Flex::row()
-                    .with_main_axis_size(MainAxisSize::Min)
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_spacing(6.);
-                if let Some(button) = computer_control_button {
-                    controls = controls.with_child(button);
-                }
-                controls
-                    .with_child(
-                        Container::new(self.render_header_menu_button(app))
-                            // Breathing room between the button and the close ✕.
-                            .with_margin_right(10.)
-                            .finish(),
-                    )
-                    .finish()
-            };
+            let assemble_cluster =
+                |computer_control_button: Option<Box<dyn Element>>| -> Box<dyn Element> {
+                    let mut controls = Flex::row()
+                        .with_main_axis_size(MainAxisSize::Min)
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_spacing(6.);
+                    if let Some(button) = computer_control_button {
+                        controls = controls.with_child(button);
+                    }
+                    controls
+                        .with_child(
+                            Container::new(self.render_header_menu_button(app))
+                                // Breathing room between the button and the close ✕.
+                                .with_margin_right(10.)
+                                .finish(),
+                        )
+                        .finish()
+                };
             let full_cluster = assemble_cluster(computer_control_button);
-            let compact_cluster =
-                assemble_cluster(self.render_computer_control_button(app, true));
-            let full_cluster_width = 50. + if has_computer_control_button { 132. } else { 0. };
+            let compact_cluster = assemble_cluster(self.render_computer_control_button(app, true));
+            let full_cluster_width = 50.
+                + if has_computer_control_button {
+                    132.
+                } else {
+                    0.
+                };
             let left_of_overflow = Shrinkable::new(
                 1.,
                 Box::new(SizeConstraintSwitch::new(
@@ -9044,8 +9141,12 @@ impl BackingView for ClaudeCodeView {
                 )),
             )
             .finish();
-            let control_container_width =
-                130. + if has_computer_control_button { 132. } else { 0. };
+            let control_container_width = 130.
+                + if has_computer_control_button {
+                    132.
+                } else {
+                    0.
+                };
             (left_of_overflow, control_container_width)
         };
         HeaderContent::Standard(StandardHeader {
@@ -10580,7 +10681,9 @@ fn render_blockquote(quote: FormattedText, appearance: &Appearance) -> Box<dyn E
         .with_child(
             Expanded::new(
                 1.,
-                Container::new(element).with_padding_left(spacing::MD).finish(),
+                Container::new(element)
+                    .with_padding_left(spacing::MD)
+                    .finish(),
             )
             .finish(),
         )
@@ -10803,7 +10906,8 @@ fn split_markdown_segments(formatted: FormattedText) -> Vec<MarkdownSegment> {
             )));
         }
     };
-    let flush_quote = |running: &mut Vec<FormattedTextLine>, segments: &mut Vec<MarkdownSegment>| {
+    let flush_quote = |running: &mut Vec<FormattedTextLine>,
+                       segments: &mut Vec<MarkdownSegment>| {
         if !running.is_empty() {
             segments.push(MarkdownSegment::Quote(FormattedText::new_trimmed(
                 std::mem::take(running),
@@ -10870,12 +10974,7 @@ fn strip_blockquote_marker(line: &FormattedTextLine) -> Option<FormattedTextLine
     Some(FormattedTextLine::Line(fragments))
 }
 
-/// A muted, rounded context pill for the composer's controls row (the Claude-app
-/// cwd / "Local" chips). Non-interactive — purely informational, so it carries no
-/// mouse handlers.
-/// One plain coloured text segment of the composer context bar (#11). Unlike
-/// [`render_pill`] there's no chip chrome — the bar reads as a quiet status
-/// line above the input.
+/// One plain coloured text segment used by compact controls and status rows.
 fn context_segment(appearance: &Appearance, text: String, color: ColorU) -> Box<dyn Element> {
     appearance
         .ui_builder()
@@ -10950,11 +11049,6 @@ fn render_mode_segment(
     wash: ColorU,
     inactive_color: ColorU,
     appearance: &Appearance,
-    // twarp: the toggle now renders both inside the pane's own tree (the
-    // header-menu overlay → in-pane action) and in the raw-mode header (the
-    // parent `PaneView`'s tree → pane custom action, which is the only route
-    // back to this view from there).
-    dispatch_in_pane: bool,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
     // #10/#11: the active section reads in the tab accent over a faint wash;
@@ -10981,13 +11075,9 @@ fn render_mode_segment(
         Hoverable::new(mouse, move |_| chip)
             .with_cursor(Cursor::PointingHand)
             .on_click(move |ctx, _, _| {
-                if dispatch_in_pane {
-                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleRawCli);
-                } else {
-                    ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
-                        PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleRawCli),
-                    );
-                }
+                ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
+                    PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleRawCli),
+                );
             })
             .finish()
     } else {
@@ -11125,58 +11215,6 @@ fn render_pill(label: &str, bg: ColorU, appearance: &Appearance) -> Box<dyn Elem
 /// The §25 permission-mode selector pill: the muted pill chrome with hover +
 /// pointer affordance; a click dispatches the cycle action. The label carries
 /// a chevron-ish suffix so it reads as a control, not a static chip.
-/// A context-bar pill (#11) with arbitrary `color` text on the tab wash — the
-/// shared chrome for the folder / branch / diff / PR / CI chips. Static (no
-/// interaction); [`render_context_menu_pill`] adds the click + anchor.
-fn render_context_pill(
-    label: String,
-    color: ColorU,
-    bg: ColorU,
-    appearance: &Appearance,
-) -> Box<dyn Element> {
-    Container::new(
-        appearance
-            .ui_builder()
-            .span(label)
-            .with_style(UiComponentStyles {
-                font_color: Some(color),
-                font_size: Some(type_ramp::LABEL.size),
-                ..Default::default()
-            })
-            .build()
-            .finish(),
-    )
-    .with_padding_left(spacing::SM)
-    .with_padding_right(spacing::SM)
-    .with_padding_top(spacing::XS)
-    .with_padding_bottom(spacing::XS)
-    .with_background_color(bg)
-    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
-    .finish()
-}
-
-/// A clickable context-bar pill (#11) that opens a floating menu — hover +
-/// pointer affordance, `SavePosition`-wrapped so the dropdown can anchor to it.
-fn render_context_menu_pill(
-    label: String,
-    color: ColorU,
-    bg: ColorU,
-    mouse_state: MouseStateHandle,
-    position_id: &str,
-    on_click: impl Fn(&mut twarpui::EventContext) + 'static,
-    appearance: &Appearance,
-) -> Box<dyn Element> {
-    let pill = render_context_pill(format!("{label} ▾"), color, bg, appearance);
-    SavePosition::new(
-        Hoverable::new(mouse_state, move |_| pill)
-            .with_cursor(Cursor::PointingHand)
-            .on_click(move |ctx, _, _| on_click(ctx))
-            .finish(),
-        position_id,
-    )
-    .finish()
-}
-
 fn render_clickable_pill(
     label: &str,
     mouse_state: MouseStateHandle,
@@ -11476,27 +11514,32 @@ impl Element for RevealClip {
 #[cfg(test)]
 mod tests {
     use super::{
-        format_metrics_line, parse_markdown_cached, queue_preview,
-        should_hold_question_permission, split_markdown_segments, truncate_middle,
-        MarkdownSegment,
+        format_metrics_line, parse_markdown_cached, queue_preview, should_hold_question_permission,
+        split_markdown_segments, supports_raw_cli, truncate_middle, MarkdownSegment,
     };
+    use claude_code::driver::AgentProvider;
     use claude_code::TurnMetrics;
+
+    #[test]
+    fn raw_cli_entry_is_claude_only() {
+        assert!(supports_raw_cli(AgentProvider::Claude));
+        assert!(!supports_raw_cli(AgentProvider::Codex));
+    }
 
     #[test]
     fn horizontal_rules_split_into_rule_segments() {
         let formatted = parse_markdown_cached("before\n\n---\n\nafter").unwrap();
         let segments = split_markdown_segments(formatted);
         assert!(
-            segments
-                .iter()
-                .any(|s| matches!(s, MarkdownSegment::Rule)),
+            segments.iter().any(|s| matches!(s, MarkdownSegment::Rule)),
             "a --- between paragraphs must produce a Rule segment"
         );
     }
 
     #[test]
     fn blockquote_lines_group_and_lose_their_markers() {
-        let formatted = parse_markdown_cached("intro\n\n> quoted one\n> quoted two\n\noutro").unwrap();
+        let formatted =
+            parse_markdown_cached("intro\n\n> quoted one\n> quoted two\n\noutro").unwrap();
         let segments = split_markdown_segments(formatted);
         let quotes: Vec<_> = segments
             .iter()

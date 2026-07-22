@@ -6346,9 +6346,7 @@ impl TypedActionView for PaneGroup {
                     launch.provider = provider;
                     let pane = ClaudeCodePane::new(launch, cwd, ctx);
                     self.add_pane_with_direction(
-                        *direction,
-                        pane,
-                        true, /* focus_new_pane */
+                        *direction, pane, true, /* focus_new_pane */
                         ctx,
                     );
                     ctx.emit(Event::AppStateChanged);
