@@ -42,6 +42,7 @@ mod repo_context;
 mod thinking;
 mod todos;
 mod tool_cards;
+mod turn_presentation;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -71,6 +72,7 @@ use parking_lot::RwLock;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use twarp_core::features::FeatureFlag;
+use twarp_core::ui::theme::AnsiColorIdentifier;
 use twarp_core::ui::tokens::{border, elevation, measure, radius, spacing, type_ramp};
 use twarp_editor::editor::NavigationKey;
 use twarpui::assets::asset_cache::AssetSource;
@@ -110,7 +112,10 @@ use self::composer::{SuggestionKind, SuggestionQuery};
 use self::diff_cards::DiffCard;
 use self::repo_context::{CiState, RepoContext};
 use self::thinking::ThinkingUi;
-use self::tool_cards::{render_tool_card, tool_icon, ToolCardUi};
+use self::tool_cards::{render_tool_card, ToolCardUi};
+use self::turn_presentation::{
+    file_edit_summaries, project_turns, FileEditSummary, TurnPresentation,
+};
 use crate::agent_suggestions::{
     ComposerPlaceholderSuggestionContext, DefaultSuggestionProvider, ReplySuggestionContext,
     SuggestionContext, SuggestionProvider,
@@ -395,9 +400,11 @@ pub enum ClaudeCodeViewAction {
     ScrollToBottom,
     /// Expand / collapse the tool card with this tool-use id (PRODUCT §19).
     ToggleToolCard(String),
-    /// Expand / collapse a completed consecutive run of tool cards in the
-    /// document transcript (19c §16).
-    ToggleToolRunGroup(usize),
+    /// Expand / collapse the chronological work hidden behind a completed
+    /// turn's compact final-result presentation.
+    ToggleCompletedTurn(usize),
+    /// Open one file listed by a completed turn's edit artifact card.
+    OpenArtifactFile(String),
     /// Expand / collapse the thinking card at this transcript index
     /// (PRODUCT §22).
     ToggleThinking(usize),
@@ -777,11 +784,13 @@ pub struct ClaudeCodeView {
     /// choice), keyed by tool-use id. An entry is created when the card's
     /// `ToolCall` event arrives (PRODUCT §16, §19).
     tool_card_ui: HashMap<String, ToolCardUi>,
-    /// Transcript-index keys for completed consecutive tool runs the user has
-    /// expanded from their collapsed "Worked for ..." summary row.
-    expanded_tool_run_groups: HashSet<usize>,
-    /// Stable mouse state for each collapsed tool-run disclosure row.
-    tool_run_group_mouse: std::cell::RefCell<HashMap<usize, MouseStateHandle>>,
+    /// User-message transcript indices for completed turns whose chronological
+    /// work disclosure is expanded.
+    expanded_completed_turns: HashSet<usize>,
+    /// Stable mouse state for each completed-turn disclosure row.
+    completed_turn_mouse: std::cell::RefCell<HashMap<usize, MouseStateHandle>>,
+    /// Stable mouse state for each clickable file in a completed edit artifact.
+    artifact_file_mouse: std::cell::RefCell<HashMap<(usize, String), MouseStateHandle>>,
     /// The feature-05 diff views backing `Edit`/`MultiEdit`/`Write` cards
     /// (PRODUCT §20), keyed by tool-use id. Built when the `ToolCall` event
     /// arrives; render-time only reads.
@@ -1328,8 +1337,9 @@ impl ClaudeCodeView {
             refresh_button: MouseStateHandle::default(),
             stop_button: MouseStateHandle::default(),
             tool_card_ui: HashMap::new(),
-            expanded_tool_run_groups: HashSet::new(),
-            tool_run_group_mouse: Default::default(),
+            expanded_completed_turns: HashSet::new(),
+            completed_turn_mouse: Default::default(),
+            artifact_file_mouse: Default::default(),
             diff_cards: HashMap::new(),
             thinking_ui: HashMap::new(),
             todos_expanded: true,
@@ -4152,8 +4162,9 @@ impl ClaudeCodeView {
         }
         self.transcript.clear();
         self.tool_card_ui.clear();
-        self.expanded_tool_run_groups.clear();
-        self.tool_run_group_mouse.borrow_mut().clear();
+        self.expanded_completed_turns.clear();
+        self.completed_turn_mouse.borrow_mut().clear();
+        self.artifact_file_mouse.borrow_mut().clear();
         self.diff_cards.clear();
         self.thinking_ui.clear();
         // The rebuilt transcript carries no live control requests, so drop any
@@ -5465,6 +5476,44 @@ impl ClaudeCodeView {
         .finish()
     }
 
+    /// A settled turn leads with the final answer as plain document prose. The
+    /// provider glyph belongs to the live chronological timeline; omitting it
+    /// here gives the result the same quiet hierarchy as the Codex reference
+    /// while preserving Fork and Copy on hover.
+    fn render_final_assistant_response(&self, index: usize, app: &AppContext) -> Box<dyn Element> {
+        let Some(TranscriptItem::Assistant { text, .. }) = self.transcript.items().get(index)
+        else {
+            return Container::new(Flex::column().finish()).finish();
+        };
+        let appearance = Appearance::as_ref(app);
+        let text_color = appearance
+            .theme()
+            .main_text_color(appearance.theme().background())
+            .into_solid();
+        let response = Container::new(render_markdown_body(text, text_color, appearance, None))
+            .with_horizontal_padding(spacing::LG)
+            .with_vertical_padding(spacing::SM)
+            .finish();
+
+        let fork_visible = self.render_fork_affordance(index, true, app);
+        let fork_hidden = self.render_fork_affordance(index, false, app);
+        let row_mouse = pooled_mouse_state(&self.fork_row_mouse, index);
+        Hoverable::new(row_mouse, move |state| {
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_child(response)
+                .with_child(if state.is_hovered() {
+                    fork_visible
+                } else {
+                    fork_hidden
+                })
+                .finish()
+        })
+        .with_propagate_drag()
+        .finish()
+    }
+
     /// The full prose of the reply ending at transcript `index`: every
     /// assistant text segment since the previous user turn, joined with blank
     /// lines. Tool cards, thinking blocks, and metrics between the segments are
@@ -5473,6 +5522,15 @@ impl ClaudeCodeView {
         let items = self.transcript.items();
         if index >= items.len() {
             return String::new();
+        }
+        if project_turns(items, self.streaming)
+            .iter()
+            .any(|turn| turn.compact && turn.final_response == Some(index))
+        {
+            return match &items[index] {
+                TranscriptItem::Assistant { text, .. } => text.trim().to_owned(),
+                _ => String::new(),
+            };
         }
         let start = items[..index]
             .iter()
@@ -6993,55 +7051,40 @@ impl ClaudeCodeView {
             .with_spacing(spacing::XL)
             .with_main_axis_size(MainAxisSize::Min);
 
-        let mut turn_children: Vec<Box<dyn Element>> = Vec::new();
-        let flush_turn = |turns: &mut Flex, turn_children: &mut Vec<Box<dyn Element>>| {
-            if turn_children.is_empty() {
-                return;
+        let items = self.transcript.items();
+        let mut next_index = 0;
+        for turn in project_turns(items, self.streaming) {
+            // Defensive prefix handling: restored/provider transcripts can
+            // contain a notice before their first user message.
+            for (index, item) in items.iter().enumerate().take(turn.start).skip(next_index) {
+                turns.add_child(self.render_item(index, item, app));
             }
-            let mut turn = Flex::column()
+
+            let mut content = Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_main_axis_size(MainAxisSize::Min);
-            for child in turn_children.drain(..) {
-                turn.add_child(child);
-            }
-            turns.add_child(turn.finish());
-        };
-
-        let items = self.transcript.items();
-        // Completed tool runs collapse into "Worked for …" summary groups.
-        // While a turn streams, only the in-flight turn (everything after the
-        // last user message) stays uncollapsed as live activity; historical
-        // turns keep their summaries. Gating on `streaming` alone made every
-        // past group explode open the moment a message was sent, which also
-        // yanked the scroll position mid-transcript.
-        let collapse_limit = if self.streaming {
-            items
-                .iter()
-                .rposition(|item| matches!(item, TranscriptItem::User(_)))
-                .unwrap_or(0)
-        } else {
-            items.len()
-        };
-        let mut index = 0;
-        while index < items.len() {
-            if matches!(items[index], TranscriptItem::User(_)) {
-                flush_turn(&mut turns, &mut turn_children);
-            }
-
-            if index < collapse_limit && is_collapsible_tool_item(&items[index]) {
-                let start = index;
-                index += 1;
-                while index < collapse_limit && is_collapsible_tool_item(&items[index]) {
-                    index += 1;
+            if turn.compact {
+                content.add_child(self.render_item(turn.start, &items[turn.start], app));
+                if !turn.hidden_work.is_empty() {
+                    content.add_child(self.render_completed_turn_work(&turn, app));
                 }
-                turn_children.push(self.render_tool_run_group(start, index, app));
-                continue;
+                if let Some(final_response) = turn.final_response {
+                    content.add_child(self.render_final_assistant_response(final_response, app));
+                }
+                if let Some(artifacts) = self.render_file_edit_artifacts(&turn, app) {
+                    content.add_child(artifacts);
+                }
+            } else {
+                for (index, item) in items.iter().enumerate().take(turn.end).skip(turn.start) {
+                    content.add_child(self.render_item(index, item, app));
+                }
             }
-
-            turn_children.push(self.render_item(index, &items[index], app));
-            index += 1;
+            turns.add_child(content.finish());
+            next_index = turn.end;
         }
-        flush_turn(&mut turns, &mut turn_children);
+        for (index, item) in items.iter().enumerate().skip(next_index) {
+            turns.add_child(self.render_item(index, item, app));
+        }
 
         // #7: a live status line below the last message while a turn streams —
         // an animated label + elapsed, replacing the composer's "Working…".
@@ -7152,85 +7195,315 @@ impl ClaudeCodeView {
         .finish()
     }
 
-    fn render_tool_run_group(
+    /// The quiet, turn-wide disclosure shown after work settles. Expanding it
+    /// restores every hidden item in its original order; the transcript model
+    /// itself is never summarized or discarded.
+    fn render_completed_turn_work(
         &self,
-        start: usize,
-        end_exclusive: usize,
+        turn: &TurnPresentation,
         app: &AppContext,
     ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        let count = end_exclusive.saturating_sub(start);
-        let action_label = if count == 1 {
-            "1 action".to_owned()
-        } else {
-            format!("{count} actions")
+        let label = match self.turn_duration(turn) {
+            Some(duration) => format!("Worked for {}", thinking::format_compact_elapsed(duration)),
+            None => "Worked".to_owned(),
         };
-        let title = match self.turn_duration_for_tool_group(end_exclusive) {
-            Some(duration) => {
-                format!(
-                    "Worked for {} · {action_label}",
-                    thinking::format_compact_elapsed(duration)
-                )
-            }
-            None => format!("Worked · {action_label}"),
-        };
-
-        let title = Text::new_inline(title, appearance.ui_font_family(), type_ramp::UI.size)
-            .with_color(theme.main_text_color(theme.background()).into())
+        let muted = theme.sub_text_color(theme.background()).into_solid();
+        let title = Text::new_inline(label, appearance.ui_font_family(), type_ramp::UI.size)
+            .with_color(muted)
             .with_selectable(false)
             .finish();
-        let first_tool_name = self.transcript.items()[start..end_exclusive]
-            .iter()
-            .find_map(|item| match item {
-                TranscriptItem::Tool { name, .. } => Some(name.as_str()),
-                _ => None,
-            })
-            .unwrap_or("Tool");
-        let glyph = Icon::new(
-            tool_icon(first_tool_name).into(),
-            crate::ui_components::blended_colors::neutral_7(theme),
+        let expanded = self.expanded_completed_turns.contains(&turn.start);
+        let chevron = Icon::new(
+            if expanded {
+                crate::ui_components::icons::Icon::ChevronDown
+            } else {
+                crate::ui_components::icons::Icon::ChevronRight
+            }
+            .into(),
+            muted,
         );
-        let expanded = self.expanded_tool_run_groups.contains(&start);
+        let chevron = ConstrainedBox::new(chevron.finish())
+            .with_width(spacing::LG)
+            .with_height(spacing::LG)
+            .finish();
+        let row = Container::new(
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(spacing::XS)
+                .with_child(title)
+                .with_child(chevron)
+                .finish(),
+        )
+        .with_horizontal_padding(spacing::LG)
+        .with_vertical_padding(spacing::SM)
+        .with_border(Border::bottom(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
+        .finish();
         let mouse_state = self
-            .tool_run_group_mouse
+            .completed_turn_mouse
             .borrow_mut()
-            .entry(start)
+            .entry(turn.start)
             .or_default()
             .clone();
+        let start = turn.start;
+        let header = Hoverable::new(mouse_state, |_| row)
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleCompletedTurn(start));
+            })
+            .with_cursor(Cursor::PointingHand)
+            .finish();
 
-        let mut disclosure = inline_action::Disclosure::new(title)
-            .with_glyph(glyph)
-            .expandable(true)
-            .expanded(expanded)
-            .with_mouse_state(mouse_state)
-            .on_toggle(move |ctx| {
-                ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleToolRunGroup(start));
-            });
+        let mut disclosure = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_child(header);
         if expanded {
-            let mut body = Flex::column()
+            let mut work = Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_main_axis_size(MainAxisSize::Min)
                 .with_spacing(spacing::SM);
-            for index in start..end_exclusive {
-                body.add_child(self.render_item(index, &self.transcript.items()[index], app));
+            for &index in &turn.hidden_work {
+                work.add_child(self.render_item(index, &self.transcript.items()[index], app));
             }
-            disclosure = disclosure.with_body(body.finish()).with_unboxed_body();
+            disclosure.add_child(
+                Container::new(work.finish())
+                    .with_margin_top(spacing::SM)
+                    .with_margin_bottom(spacing::SM)
+                    .finish(),
+            );
         }
-        disclosure.render(app)
+        disclosure.finish()
     }
 
-    fn turn_duration_for_tool_group(&self, after_index: usize) -> Option<Duration> {
-        for item in self.transcript.items().iter().skip(after_index) {
-            match item {
-                TranscriptItem::Metrics(metrics) => {
-                    return metrics.duration_ms.map(Duration::from_millis);
+    fn turn_duration(&self, turn: &TurnPresentation) -> Option<Duration> {
+        self.transcript.items()[turn.start + 1..turn.end]
+            .iter()
+            .find_map(|item| match item {
+                TranscriptItem::Metrics(metrics) => metrics.duration_ms.map(Duration::from_millis),
+                _ => None,
+            })
+    }
+
+    /// Consolidate successful Edit/Write calls into one durable result card.
+    /// The full inline diffs remain available inside the expanded work row;
+    /// this card is the calm, post-completion inventory with direct file-open
+    /// actions.
+    fn render_file_edit_artifacts(
+        &self,
+        turn: &TurnPresentation,
+        app: &AppContext,
+    ) -> Option<Box<dyn Element>> {
+        let mut files: Vec<FileEditSummary> = Vec::new();
+        for &index in &turn.file_edits {
+            let TranscriptItem::Tool { id, input, .. } = &self.transcript.items()[index] else {
+                continue;
+            };
+            let summaries = match self.diff_cards.get(id) {
+                Some(card) => vec![FileEditSummary {
+                    path: card.file_path.clone(),
+                    added: card.added,
+                    removed: card.removed,
+                }],
+                None => file_edit_summaries(input),
+            };
+            for summary in summaries {
+                if let Some(existing) = files
+                    .iter_mut()
+                    .find(|existing| existing.path == summary.path)
+                {
+                    existing.added += summary.added;
+                    existing.removed += summary.removed;
+                } else {
+                    files.push(summary);
                 }
-                TranscriptItem::User(_) => return None,
-                _ => {}
             }
         }
-        None
+        if files.is_empty() {
+            return None;
+        }
+
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let main = theme.main_text_color(theme.background()).into_solid();
+        let green: ColorU = AnsiColorIdentifier::Green
+            .to_ansi_color(&theme.terminal_colors().normal)
+            .into();
+        let red: ColorU = AnsiColorIdentifier::Red
+            .to_ansi_color(&theme.terminal_colors().normal)
+            .into();
+        let total_added = files.iter().map(|file| file.added).sum::<usize>();
+        let total_removed = files.iter().map(|file| file.removed).sum::<usize>();
+        let title = if files.len() == 1 {
+            "Edited 1 file".to_owned()
+        } else {
+            format!("Edited {} files", files.len())
+        };
+
+        let glyph = ConstrainedBox::new(
+            Icon::new(
+                crate::ui_components::icons::Icon::Pencil.into(),
+                crate::ui_components::blended_colors::neutral_7(theme),
+            )
+            .finish(),
+        )
+        .with_width(spacing::LG)
+        .with_height(spacing::LG)
+        .finish();
+        let glyph = Container::new(glyph)
+            .with_padding(Padding::uniform(spacing::SM))
+            .with_background(theme.surface_overlay_1())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)))
+            .finish();
+        let stats = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(spacing::XS)
+            .with_child(
+                Text::new_inline(
+                    format!("+{total_added}"),
+                    appearance.ui_font_family(),
+                    type_ramp::LABEL.size,
+                )
+                .with_color(green)
+                .with_selectable(false)
+                .finish(),
+            )
+            .with_child(
+                Text::new_inline(
+                    format!("−{total_removed}"),
+                    appearance.ui_font_family(),
+                    type_ramp::LABEL.size,
+                )
+                .with_color(red)
+                .with_selectable(false)
+                .finish(),
+            )
+            .finish();
+        let heading = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Start)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(spacing::XXS)
+            .with_child(
+                Text::new_inline(title, appearance.ui_font_family(), type_ramp::UI.size)
+                    .with_color(main)
+                    .with_selectable(false)
+                    .finish(),
+            )
+            .with_child(stats)
+            .finish();
+        let header = Container::new(
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(spacing::MD)
+                .with_child(glyph)
+                .with_child(heading)
+                .finish(),
+        )
+        .with_horizontal_padding(spacing::LG)
+        .with_vertical_padding(spacing::MD)
+        .finish();
+
+        let mut card = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_child(header);
+        for file in files {
+            let file_stats = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(spacing::XS)
+                .with_child(
+                    Text::new_inline(
+                        format!("+{}", file.added),
+                        appearance.ui_font_family(),
+                        type_ramp::LABEL.size,
+                    )
+                    .with_color(green)
+                    .with_selectable(false)
+                    .finish(),
+                )
+                .with_child(
+                    Text::new_inline(
+                        format!("−{}", file.removed),
+                        appearance.ui_font_family(),
+                        type_ramp::LABEL.size,
+                    )
+                    .with_color(red)
+                    .with_selectable(false)
+                    .finish(),
+                )
+                .finish();
+            let path = file.path;
+            let row = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_spacing(spacing::SM)
+                .with_child(
+                    Expanded::new(
+                        1.,
+                        Text::new_inline(
+                            path.clone(),
+                            appearance.monospace_font_family(),
+                            type_ramp::CODE.size,
+                        )
+                        .with_color(main)
+                        .with_selectable(true)
+                        .finish(),
+                    )
+                    .finish(),
+                )
+                .with_child(file_stats)
+                .with_child(
+                    ConstrainedBox::new(
+                        Icon::new(
+                            crate::ui_components::icons::Icon::LinkExternal.into(),
+                            theme.sub_text_color(theme.background()).into_solid(),
+                        )
+                        .finish(),
+                    )
+                    .with_width(spacing::LG)
+                    .with_height(spacing::LG)
+                    .finish(),
+                )
+                .finish();
+            let mouse_state = self
+                .artifact_file_mouse
+                .borrow_mut()
+                .entry((turn.start, path.clone()))
+                .or_default()
+                .clone();
+            let open_path = path;
+            let outline = theme.outline();
+            let hover_fill = theme.surface_overlay_1();
+            let row = Hoverable::new(mouse_state, move |state| {
+                let mut container = Container::new(row)
+                    .with_horizontal_padding(spacing::LG)
+                    .with_vertical_padding(spacing::MD)
+                    .with_border(Border::top(border::HAIRLINE_WIDTH).with_border_fill(outline));
+                if state.is_hovered() {
+                    container = container.with_background(hover_fill);
+                }
+                container.finish()
+            })
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::OpenArtifactFile(
+                    open_path.clone(),
+                ));
+            })
+            .with_cursor(Cursor::PointingHand)
+            .finish();
+            card.add_child(row);
+        }
+
+        Some(
+            Container::new(card.finish())
+                .with_background(theme.background())
+                .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+                .with_margin_left(spacing::LG)
+                .with_margin_right(spacing::LG)
+                .with_margin_top(spacing::SM)
+                .finish(),
+        )
     }
 
     /// twarp 08d (PRODUCT §13–§16): the bottom gradient fade-out band.
@@ -8725,11 +8998,23 @@ impl TypedActionView for ClaudeCodeView {
                 ctx.notify();
             }
             ClaudeCodeViewAction::ToggleToolCard(id) => self.toggle_tool_card(id, ctx),
-            ClaudeCodeViewAction::ToggleToolRunGroup(start) => {
-                if !self.expanded_tool_run_groups.remove(start) {
-                    self.expanded_tool_run_groups.insert(*start);
+            ClaudeCodeViewAction::ToggleCompletedTurn(start) => {
+                if !self.expanded_completed_turns.remove(start) {
+                    self.expanded_completed_turns.insert(*start);
                 }
                 ctx.notify();
+            }
+            ClaudeCodeViewAction::OpenArtifactFile(path) => {
+                let path = PathBuf::from(path);
+                let full_path = if path.is_absolute() {
+                    path
+                } else {
+                    self.cwd.as_ref().map(|cwd| cwd.join(&path)).unwrap_or(path)
+                };
+                ctx.dispatch_typed_action(&WorkspaceAction::OpenFileInNewTab {
+                    full_path,
+                    line_and_column: None,
+                });
             }
             ClaudeCodeViewAction::ToggleThinking(index) => self.toggle_thinking(*index, ctx),
             ClaudeCodeViewAction::ToggleTodos => {
@@ -10030,19 +10315,17 @@ fn render_message_row(
     let theme = appearance.theme();
 
     if is_user {
-        // iMessage-style outgoing bubble: a tab-accent filled, rounded card that
-        // hugs its content and is pushed to the right edge of the transcript.
-        // No avatar glyph — like the sender's own bubble in Messages.
-        let text_color = theme
-            .main_text_color(twarp_core::ui::theme::Fill::Solid(accent))
-            .into_solid();
+        // Quiet outgoing bubble: a neutral wash keeps the tab accent reserved
+        // for identity/status and matches the completed-result hierarchy.
+        let bubble_fill = theme.surface_overlay_2();
+        let text_color = theme.main_text_color(bubble_fill).into_solid();
         let bubble = Container::new(render_markdown_body(text, text_color, appearance, None))
             .with_padding(
                 Padding::uniform(spacing::SM)
                     .with_left(spacing::LG)
                     .with_right(spacing::LG),
             )
-            .with_background_color(accent)
+            .with_background(bubble_fill)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
                 MESSAGE_CORNER_RADIUS,
             )));
@@ -10858,15 +11141,6 @@ fn render_error(message: &str, appearance: &Appearance) -> Box<dyn Element> {
     .with_padding_left(TRANSCRIPT_LEFT_MARGIN)
     .with_padding_right(spacing::XL)
     .finish()
-}
-
-fn is_collapsible_tool_item(item: &TranscriptItem) -> bool {
-    match item {
-        TranscriptItem::Tool { name, status, .. } => {
-            *status != ToolStatus::Running && name != "AskUserQuestion" && name != "ExitPlanMode"
-        }
-        _ => false,
-    }
 }
 
 /// A contiguous run of a message's markdown: prose (rendered via
