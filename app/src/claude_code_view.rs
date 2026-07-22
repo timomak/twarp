@@ -218,14 +218,16 @@ const COMPOSER_MAX_HEIGHT: f32 = 184.;
 /// The floating composer's width cap — it stays a centered card even in a
 /// wide pane (the chat behind it is full-width).
 const COMPOSER_MAX_WIDTH: f32 = 760.;
-/// Width cap for the floating background-scripts panel (twarp): a compact status
-/// card pinned to the pane's top-right, narrow enough to clear the centered
-/// reading column behind it.
-const BACKGROUND_PANEL_MAX_WIDTH: f32 = 360.;
-/// Width cap for the floating agents panel (twarp): the background panel's
-/// twin, pinned to the same top-right anchor (only one of the two is open at
-/// a time).
-const AGENTS_PANEL_MAX_WIDTH: f32 = 360.;
+/// Width cap for the ⋯ header menu card (twarp): a compact status card pinned
+/// to the pane's top-right, narrow enough to clear the centered reading column
+/// behind it, but wide enough for the inline agent / script rows it expands.
+const HEADER_MENU_MAX_WIDTH: f32 = 360.;
+/// Duration of the header menu's inline section reveal (Agent runs / Scripts
+/// expanding in place).
+const HEADER_MENU_REVEAL_DURATION: Duration = Duration::from_millis(150);
+/// Interval between reveal animation frames (self-rearming `notify()` ticks —
+/// warpui has no transition framework; see `left_panel_slide.rs`).
+const HEADER_MENU_REVEAL_TICK: Duration = Duration::from_millis(8);
 /// Width cap for a composer pill's dropdown popover (permission / model /
 /// effort / context / branch / CI / PR). Keeps the menu a compact card anchored
 /// to its pill rather than stretching to the pane edge (issue #1).
@@ -541,10 +543,6 @@ pub enum ClaudeCodeViewAction {
     /// view's own tree (unlike the old header toggle), so it dispatches the
     /// in-pane action directly.
     ToggleRawCli,
-    /// twarp: close the consolidated header menu (the ⋯ button's floating
-    /// card holding the Chat/Raw toggle plus the Agent-runs and Scripts
-    /// entries).
-    CloseHeaderMenu,
 }
 
 /// Actions dispatched by elements this view renders inside its **pane
@@ -1043,12 +1041,7 @@ pub struct ClaudeCodeView {
     /// launch id and created on demand (the `sent_image_mouse` pattern) so hover
     /// state survives across renders even though the rows are derived.
     background_row_mouse: std::cell::RefCell<HashMap<String, MouseStateHandle>>,
-    /// Mouse state for the panel's header (the collapse/expand toggle).
-    background_panel_mouse: MouseStateHandle,
-    /// Mouse state for the header's background-scripts icon button (left of the
-    /// Chat UI / Raw CLI toggle) that opens the floating panel.
-    background_button_mouse: MouseStateHandle,
-    /// Mouse state for the panel header's "Clear" button (clears non-running
+    /// Mouse state for the Scripts section's "Clear" button (clears non-running
     /// scripts).
     background_clear_mouse: MouseStateHandle,
     /// twarp: whether the floating agents panel is expanded. The panel lists
@@ -1066,22 +1059,21 @@ pub struct ClaudeCodeView {
     /// Stable per-row mouse handles for the agent rows, keyed by launch id and
     /// created on demand (the `background_row_mouse` pattern).
     agent_row_mouse: std::cell::RefCell<HashMap<String, MouseStateHandle>>,
-    /// Mouse state for the agents panel's header (the collapse/expand toggle).
-    agents_panel_mouse: MouseStateHandle,
-    /// Mouse state for the header's agents icon button (left of the
-    /// background-scripts button) that opens the floating panel.
-    agents_button_mouse: MouseStateHandle,
     /// twarp: whether the consolidated header menu (the ⋯ button's floating
-    /// card with the Chat/Raw toggle plus Agent-runs and Scripts entries) is
-    /// open. Shares the top-right anchor with the two panels — at most one of
-    /// the three is open.
+    /// card with the Chat/Raw toggle plus Agent-runs and Scripts sections) is
+    /// open. It stays open until the ⋯ button is toggled again — clicking
+    /// elsewhere does NOT dismiss it.
     header_menu_expanded: bool,
+    /// In-flight reveal animation for one of the menu's inline sections
+    /// (Agent runs / Scripts expanding or collapsing in place). `None` when no
+    /// section is animating; the expanded flags alone then decide visibility.
+    header_menu_reveal: Option<(HeaderMenuSection, SectionReveal)>,
     /// Mouse state for the header's ⋯ menu button.
     header_menu_button_mouse: MouseStateHandle,
     /// Mouse states for the header menu's "Agent runs" and "Scripts" rows.
     header_menu_agents_row_mouse: MouseStateHandle,
     header_menu_scripts_row_mouse: MouseStateHandle,
-    /// Mouse state for the agents panel header's "Clear" button.
+    /// Mouse state for the Agent-runs section's "Clear" button.
     agents_clear_mouse: MouseStateHandle,
     /// Memoized [`agents::collect`] output, keyed by the transcript revision
     /// it was derived from — same rationale as [`Self::background_scripts_memo`].
@@ -1408,16 +1400,13 @@ impl ClaudeCodeView {
             background_expanded_rows: HashSet::new(),
             background_dismissed: HashSet::new(),
             background_row_mouse: std::cell::RefCell::new(HashMap::new()),
-            background_panel_mouse: MouseStateHandle::default(),
-            background_button_mouse: MouseStateHandle::default(),
             background_clear_mouse: MouseStateHandle::default(),
             agents_panel_expanded: false,
             agent_expanded_rows: HashSet::new(),
             agents_dismissed: HashSet::new(),
             agent_row_mouse: std::cell::RefCell::new(HashMap::new()),
-            agents_panel_mouse: MouseStateHandle::default(),
-            agents_button_mouse: MouseStateHandle::default(),
             header_menu_expanded: false,
+            header_menu_reveal: None,
             header_menu_button_mouse: MouseStateHandle::default(),
             header_menu_agents_row_mouse: MouseStateHandle::default(),
             header_menu_scripts_row_mouse: MouseStateHandle::default(),
@@ -5851,118 +5840,10 @@ impl ClaudeCodeView {
         scripts
     }
 
-    /// twarp: the header's **background-scripts icon button** — a terminal
-    /// glyph sitting to the left of the Chat UI / Raw CLI toggle that opens the
-    /// floating [`render_background_panel`](Self::render_background_panel)
-    /// menu. While any of this chat's `run_in_background` Bash launches are
-    /// still running, a small accent notification bubble overlays the glyph's
-    /// top-right corner with the active count.
-    ///
-    /// The button is always present (even before this chat launches anything),
-    /// so background scripts have a stable, discoverable home rather than an
-    /// affordance that pops in and out. It lives in the parent `PaneView`'s
-    /// header tree, so its click routes through
-    /// [`ClaudeCodeCustomAction::ToggleBackgroundPanel`] rather than dispatching
-    /// the in-pane action directly.
-    fn render_background_button(&self, app: &AppContext) -> Option<Box<dyn Element>> {
-        let scripts = self.background_scripts();
-        let active = scripts
-            .iter()
-            .filter(|s| !self.background_dismissed.contains(&s.id) && s.state.is_active())
-            .count();
-
-        let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
-        let accent = self.accent(app);
-        let wash = self.accent_wash(app);
-        let expanded = self.background_scripts_expanded;
-
-        // twarp 14n: idle affordances read as neutral gray chrome; the full
-        // accent is reserved for "something is running right now".
-        let glyph_color = if active > 0 {
-            accent
-        } else {
-            theme.sub_text_color(theme.background()).into_solid()
-        };
-        let glyph = ConstrainedBox::new(
-            Icon::new(
-                crate::ui_components::icons::Icon::Terminal.into(),
-                glyph_color,
-            )
-            .finish(),
-        )
-        .with_width(15.)
-        .with_height(15.)
-        .finish();
-
-        // Compose the glyph with the floating notification bubble. The badge is
-        // anchored to the glyph's top-right corner, nudged out so it reads as an
-        // overlay rather than part of the icon.
-        let mut stack = Stack::new();
-        stack.add_child(
-            Container::new(glyph)
-                .with_padding(Padding::uniform(1.))
-                .finish(),
-        );
-        if active > 0 {
-            let label = appearance
-                .ui_builder()
-                .span(active.to_string())
-                .with_style(UiComponentStyles {
-                    font_color: Some(ColorU::white()),
-                    font_size: Some(9.),
-                    ..Default::default()
-                })
-                .build()
-                .finish();
-            let sized = ConstrainedBox::new(Align::new(label).finish())
-                .with_min_width(13.)
-                .with_min_height(13.)
-                .finish();
-            let badge = Container::new(sized)
-                .with_padding_left(2.)
-                .with_padding_right(2.)
-                .with_background_color(accent)
-                .with_border(Border::all(1.).with_border_fill(theme.background()))
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(7.)))
-                .finish();
-            stack.add_positioned_child(
-                badge,
-                OffsetPositioning::offset_from_parent(
-                    vec2f(5., -5.),
-                    ParentOffsetBounds::ParentBySize,
-                    ParentAnchor::TopRight,
-                    ChildAnchor::Center,
-                ),
-            );
-        }
-
-        let inner = stack.finish();
-        let button = Hoverable::new(self.background_button_mouse.clone(), move |state| {
-            let mut body = Container::new(inner)
-                .with_padding(Padding::uniform(4.))
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)));
-            // Highlight while the panel is open (or hovered) so the button reads
-            // as the panel's toggle, mirroring the active segment of the toggle.
-            if expanded || state.is_hovered() {
-                body = body.with_background_color(wash);
-            }
-            body.finish()
-        })
-        .with_cursor(Cursor::PointingHand)
-        .on_click(|ctx, _, _| {
-            ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
-                PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleBackgroundPanel),
-            );
-        })
-        .finish();
-        Some(button)
-    }
-
     /// twarp: the per-chat agents list, derived from the transcript via
     /// [`agents::collect`] and memoized on the transcript's revision — the
-    /// [`Self::background_scripts`] twin. Both the header button and the
-    /// floating panel read it each render.
+    /// [`Self::background_scripts`] twin. The ⋯ header menu (button badge and
+    /// inline section) reads it each render.
     fn agent_runs(&self) -> std::rc::Rc<Vec<agents::AgentRun>> {
         let revision = self.transcript.revision();
         if let Some((rev, agents)) = self.agents_memo.borrow().as_ref() {
@@ -5982,8 +5863,7 @@ impl ClaudeCodeView {
     /// row of globe / agents / scripts icons and the always-visible segmented
     /// toggle. Opens the floating [`render_header_menu`](Self::render_header_menu)
     /// card. While any agent run or background script is active, an accent
-    /// notification bubble overlays the glyph with the combined count — the
-    /// exact composition of [`render_background_button`](Self::render_background_button).
+    /// notification bubble overlays the glyph with the combined count.
     fn render_header_menu_button(&self, app: &AppContext) -> Box<dyn Element> {
         let active_agents = self
             .agent_runs()
@@ -6080,9 +5960,11 @@ impl ClaudeCodeView {
     }
 
     /// twarp: the ⋯ button's floating menu card — the Chat UI / Raw CLI
-    /// segmented toggle on top, then the "Agent runs" and "Scripts" rows that
-    /// open the existing floating panels (which share this card's top-right
-    /// anchor, so opening one swaps the card out for the panel).
+    /// segmented toggle on top, then the "Agent runs" and "Scripts" section
+    /// rows. Clicking a section row expands its rows *inline* inside this
+    /// card (an accordion with a ~150ms reveal ease; see [`SectionReveal`]) —
+    /// the sections have no separate floating panels. The card itself stays
+    /// open until the ⋯ button is toggled again.
     fn render_header_menu(&self, app: &AppContext) -> Option<Box<dyn Element>> {
         if !self.header_menu_expanded {
             return None;
@@ -6137,24 +6019,39 @@ impl ClaudeCodeView {
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
         .finish();
 
-        let active_agents = self
-            .agent_runs()
+        // Rows the user cleared are hidden but still live in the transcript,
+        // so filter them out here (not in the memos, which stay pure
+        // derivations).
+        let agent_runs = self.agent_runs();
+        let visible_agents: Vec<&AgentRun> = agent_runs
             .iter()
-            .filter(|a| !self.agents_dismissed.contains(&a.id) && a.state.is_active())
-            .count();
-        let active_scripts = self
-            .background_scripts()
+            .filter(|a| !self.agents_dismissed.contains(&a.id))
+            .collect();
+        let scripts = self.background_scripts();
+        let visible_scripts: Vec<&BackgroundScript> = scripts
             .iter()
-            .filter(|s| !self.background_dismissed.contains(&s.id) && s.state.is_active())
+            .filter(|s| !self.background_dismissed.contains(&s.id))
+            .collect();
+        let active_agents = visible_agents.iter().filter(|a| a.state.is_active()).count();
+        let active_scripts = visible_scripts
+            .iter()
+            .filter(|s| s.state.is_active())
             .count();
 
-        // One section row: glyph + label left, a muted count right; clicking
-        // swaps this card for the section's existing floating panel.
+        // One section row: glyph + label left, a muted count / Clear / chevron
+        // right; clicking expands the section's rows inline underneath (the
+        // reveal-eased accordion). Clear lives inside the row, so the row
+        // defers its click to the child to keep a Clear tap from also
+        // collapsing the section.
         let section_row = |icon: crate::ui_components::icons::Icon,
                            label: &str,
                            active: usize,
+                           expanded: bool,
+                           clearable: bool,
                            mouse: MouseStateHandle,
-                           action: ClaudeCodeViewAction|
+                           clear_mouse: MouseStateHandle,
+                           action: ClaudeCodeViewAction,
+                           clear_action: ClaudeCodeViewAction|
          -> Box<dyn Element> {
             let glyph_color = if active > 0 { accent } else { muted };
             let glyph = ConstrainedBox::new(Icon::new(icon.into(), glyph_color).finish())
@@ -6185,7 +6082,16 @@ impl ClaudeCodeView {
                 })
                 .build()
                 .finish();
-            let row = Flex::row()
+            let chevron_icon = if expanded {
+                crate::ui_components::icons::Icon::ChevronUp
+            } else {
+                crate::ui_components::icons::Icon::ChevronDown
+            };
+            let chevron = ConstrainedBox::new(Icon::new(chevron_icon.into(), muted).finish())
+                .with_width(14.)
+                .with_height(14.)
+                .finish();
+            let mut row = Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_spacing(8.)
@@ -6194,8 +6100,38 @@ impl ClaudeCodeView {
                 .with_child(
                     Shrinkable::new(1., twarpui::elements::Empty::new().finish()).finish(),
                 )
-                .with_child(count)
+                .with_child(count);
+            if expanded && clearable {
+                let clear_label = appearance
+                    .ui_builder()
+                    .span("Clear".to_owned())
+                    .with_style(UiComponentStyles {
+                        font_color: Some(muted),
+                        font_size: Some(11.),
+                        ..Default::default()
+                    })
+                    .build()
+                    .finish();
+                let clear = Hoverable::new(clear_mouse, move |state| {
+                    let mut body = Container::new(clear_label)
+                        .with_padding_left(8.)
+                        .with_padding_right(8.)
+                        .with_padding_top(3.)
+                        .with_padding_bottom(3.)
+                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
+                    if state.is_hovered() {
+                        body = body.with_background_color(wash);
+                    }
+                    body.finish()
+                })
+                .with_cursor(Cursor::PointingHand)
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(clear_action.clone());
+                })
                 .finish();
+                row = row.with_child(clear);
+            }
+            let row = row.with_child(chevron).finish();
             Hoverable::new(mouse, move |state| {
                 let mut body = Container::new(row)
                     .with_padding_left(12.)
@@ -6209,13 +6145,35 @@ impl ClaudeCodeView {
                 body.finish()
             })
             .with_cursor(Cursor::PointingHand)
+            .with_defer_events_to_children()
             .on_click(move |ctx, _, _| {
                 ctx.dispatch_typed_action(action.clone());
             })
             .finish()
         };
 
-        let column = Flex::column()
+        // A section's inline empty-state line (shown instead of rows so an
+        // expanded section with nothing to list doesn't look broken).
+        let empty_line = |text: &str| -> Box<dyn Element> {
+            Container::new(
+                appearance
+                    .ui_builder()
+                    .span(text.to_owned())
+                    .with_style(UiComponentStyles {
+                        font_color: Some(muted),
+                        font_size: Some(11.5),
+                        ..Default::default()
+                    })
+                    .build()
+                    .finish(),
+            )
+            .with_padding_left(35.)
+            .with_padding_right(12.)
+            .with_padding_bottom(8.)
+            .finish()
+        };
+
+        let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
             .with_child(
@@ -6227,21 +6185,65 @@ impl ClaudeCodeView {
                 crate::ui_components::icons::Icon::ArrowSplit,
                 "Agent runs",
                 active_agents,
+                self.agents_panel_expanded,
+                visible_agents.iter().any(|a| !a.state.is_active()),
                 self.header_menu_agents_row_mouse.clone(),
+                self.agents_clear_mouse.clone(),
                 ClaudeCodeViewAction::ToggleAgentsPanel,
-            ))
-            .with_child(
-                Container::new(section_row(
-                    crate::ui_components::icons::Icon::Terminal,
-                    "Scripts",
-                    active_scripts,
-                    self.header_menu_scripts_row_mouse.clone(),
-                    ClaudeCodeViewAction::ToggleBackgroundPanel,
-                ))
-                .with_padding_bottom(4.)
+                ClaudeCodeViewAction::ClearAgents,
+            ));
+        // The expanded flag stays set while a collapse animation runs (the
+        // body must remain in the tree to shrink); the reveal fraction is
+        // what actually eases the body open and closed.
+        if self.agents_panel_expanded {
+            let mut body = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_main_axis_size(MainAxisSize::Min);
+            if visible_agents.is_empty() {
+                body.add_child(empty_line("No agents"));
+            } else {
+                for agent in visible_agents.iter() {
+                    body.add_child(self.render_agent_row(agent, app));
+                }
+            }
+            column.add_child(Box::new(RevealClip::new(
+                body.finish(),
+                self.header_menu_section_fraction(HeaderMenuSection::Agents),
+            )));
+        }
+        column.add_child(section_row(
+            crate::ui_components::icons::Icon::Terminal,
+            "Scripts",
+            active_scripts,
+            self.background_scripts_expanded,
+            visible_scripts.iter().any(|s| !s.state.is_active()),
+            self.header_menu_scripts_row_mouse.clone(),
+            self.background_clear_mouse.clone(),
+            ClaudeCodeViewAction::ToggleBackgroundPanel,
+            ClaudeCodeViewAction::ClearBackgroundScripts,
+        ));
+        if self.background_scripts_expanded {
+            let mut body = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_main_axis_size(MainAxisSize::Min);
+            if visible_scripts.is_empty() {
+                body.add_child(empty_line("No background scripts"));
+            } else {
+                for script in visible_scripts.iter() {
+                    body.add_child(self.render_background_row(script, app));
+                }
+            }
+            column.add_child(Box::new(RevealClip::new(
+                body.finish(),
+                self.header_menu_section_fraction(HeaderMenuSection::Scripts),
+            )));
+        }
+        column.add_child(
+            ConstrainedBox::new(twarpui::elements::Empty::new().finish())
+                .with_height(4.)
                 .finish(),
-            )
-            .finish();
+        );
+        let column = column.finish();
 
         let card = Container::new(column)
             .with_background_color(theme.surface_1().into_solid())
@@ -6255,286 +6257,99 @@ impl ClaudeCodeView {
         Some(
             ConstrainedBox::new(card)
                 .with_min_width(240.)
-                .with_max_width(280.)
+                .with_max_width(HEADER_MENU_MAX_WIDTH)
                 .finish(),
         )
     }
 
-    fn render_agents_button(&self, app: &AppContext) -> Option<Box<dyn Element>> {
-        let agent_runs = self.agent_runs();
-        let active = agent_runs
-            .iter()
-            .filter(|a| !self.agents_dismissed.contains(&a.id) && a.state.is_active())
-            .count();
-
-        let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
-        let accent = self.accent(app);
-        let wash = self.accent_wash(app);
-        let expanded = self.agents_panel_expanded;
-
-        // twarp 14n: muted while no agent is running (see the
-        // background-scripts button for the rationale).
-        let glyph_color = if active > 0 {
-            accent
-        } else {
-            theme.sub_text_color(theme.background()).into_solid()
-        };
-        let glyph = ConstrainedBox::new(
-            Icon::new(
-                crate::ui_components::icons::Icon::ArrowSplit.into(),
-                glyph_color,
-            )
-            .finish(),
-        )
-        .with_width(15.)
-        .with_height(15.)
-        .finish();
-
-        let mut stack = Stack::new();
-        stack.add_child(
-            Container::new(glyph)
-                .with_padding(Padding::uniform(1.))
-                .finish(),
-        );
-        if active > 0 {
-            let label = appearance
-                .ui_builder()
-                .span(active.to_string())
-                .with_style(UiComponentStyles {
-                    font_color: Some(ColorU::white()),
-                    font_size: Some(9.),
-                    ..Default::default()
-                })
-                .build()
-                .finish();
-            let sized = ConstrainedBox::new(Align::new(label).finish())
-                .with_min_width(13.)
-                .with_min_height(13.)
-                .finish();
-            let badge = Container::new(sized)
-                .with_padding_left(2.)
-                .with_padding_right(2.)
-                .with_background_color(accent)
-                .with_border(Border::all(1.).with_border_fill(theme.background()))
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(7.)))
-                .finish();
-            stack.add_positioned_child(
-                badge,
-                OffsetPositioning::offset_from_parent(
-                    vec2f(5., -5.),
-                    ParentOffsetBounds::ParentBySize,
-                    ParentAnchor::TopRight,
-                    ChildAnchor::Center,
-                ),
-            );
-        }
-
-        let inner = stack.finish();
-        let button = Hoverable::new(self.agents_button_mouse.clone(), move |state| {
-            let mut body = Container::new(inner)
-                .with_padding(Padding::uniform(4.))
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)));
-            if expanded || state.is_hovered() {
-                body = body.with_background_color(wash);
-            }
-            body.finish()
-        })
-        .with_cursor(Cursor::PointingHand)
-        .on_click(|ctx, _, _| {
-            ctx.dispatch_typed_action::<PaneHeaderAction<(), ClaudeCodeCustomAction>>(
-                PaneHeaderAction::CustomAction(ClaudeCodeCustomAction::ToggleAgentsPanel),
-            );
-        })
-        .finish();
-        Some(button)
-    }
-
-    /// twarp: the floating **agents** panel — the background-scripts panel's
-    /// twin, listing the sub-agents (`Task`/`Agent` tool calls) Claude
-    /// launched in this session. Derived fresh from the transcript each render
-    /// via [`agents::collect`] — twarp keeps no separate model — so it stays
-    /// in lock-step with the conversation. Read-only: twarp can observe an
-    /// agent (type, description, state, returned result) but can't spawn or
-    /// stop one; those are Claude's tool calls.
-    ///
-    /// Opened from the header's
-    /// [`render_agents_button`](Self::render_agents_button); floats nothing
-    /// unless expanded. It shares the background panel's top-right anchor —
-    /// the toggle handlers keep at most one of the two open.
-    fn render_agents_panel(&self, app: &AppContext) -> Option<Box<dyn Element>> {
-        if !self.agents_panel_expanded {
-            return None;
-        }
-        let agent_runs = self.agent_runs();
-        // Rows the user cleared are hidden but still live in the transcript,
-        // so filter them out here (not in the memo, which stays a pure
-        // derivation).
-        let visible: Vec<&AgentRun> = agent_runs
-            .iter()
-            .filter(|a| !self.agents_dismissed.contains(&a.id))
-            .collect();
-
-        let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
-        let accent = self.render_accent.get();
-        let wash = self.render_wash.get();
-        let muted = theme.nonactive_ui_text_color().into_solid();
-        let main = theme.main_text_color(theme.background()).into_solid();
-
-        let active = visible.iter().filter(|a| a.state.is_active()).count();
-        let clearable = visible.iter().any(|a| !a.state.is_active());
-
-        // Header: arrow-split glyph + title + a muted count, then a chevron.
-        // The whole row toggles the panel — the background panel's chrome.
-        let glyph = ConstrainedBox::new(
-            Icon::new(crate::ui_components::icons::Icon::ArrowSplit.into(), accent).finish(),
-        )
-        .with_width(15.)
-        .with_height(15.)
-        .finish();
-        let title = appearance
-            .ui_builder()
-            .span("Agents".to_owned())
-            .with_style(UiComponentStyles {
-                font_color: Some(main),
-                font_size: Some(12.5),
-                ..Default::default()
-            })
-            .build()
-            .finish();
-        let count_text = if visible.is_empty() {
-            "none".to_owned()
-        } else if active > 0 {
-            format!("{} · {active} running", visible.len())
-        } else {
-            format!(
-                "{} agent{}",
-                visible.len(),
-                if visible.len() == 1 { "" } else { "s" }
-            )
-        };
-        let count = appearance
-            .ui_builder()
-            .span(count_text)
-            .with_style(UiComponentStyles {
-                font_color: Some(muted),
-                font_size: Some(11.),
-                ..Default::default()
-            })
-            .build()
-            .finish();
-        let chevron = ConstrainedBox::new(
-            Icon::new(crate::ui_components::icons::Icon::ChevronUp.into(), muted).finish(),
-        )
-        .with_width(14.)
-        .with_height(14.)
-        .finish();
-
-        // Title cluster left; count / Clear / chevron pinned to the right
-        // edge (the expanding spacer soaks up the middle).
-        let mut header_row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_spacing(8.)
-            .with_child(glyph)
-            .with_child(title)
-            .with_child(Shrinkable::new(1., twarpui::elements::Empty::new().finish()).finish())
-            .with_child(count);
-        if clearable {
-            let clear_label = appearance
-                .ui_builder()
-                .span("Clear".to_owned())
-                .with_style(UiComponentStyles {
-                    font_color: Some(muted),
-                    font_size: Some(11.),
-                    ..Default::default()
-                })
-                .build()
-                .finish();
-            let clear = Hoverable::new(self.agents_clear_mouse.clone(), move |state| {
-                let mut body = Container::new(clear_label)
-                    .with_padding_left(8.)
-                    .with_padding_right(8.)
-                    .with_padding_top(3.)
-                    .with_padding_bottom(3.)
-                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
-                if state.is_hovered() {
-                    body = body.with_background_color(wash);
+    /// Current reveal fraction (0 collapsed → 1 open) for a header-menu
+    /// section: the in-flight animation's eased value while that section is
+    /// animating, else fully open/closed per its expanded flag.
+    fn header_menu_section_fraction(&self, section: HeaderMenuSection) -> f32 {
+        match &self.header_menu_reveal {
+            Some((s, reveal)) if *s == section => reveal.fraction(),
+            _ => {
+                let expanded = match section {
+                    HeaderMenuSection::Agents => self.agents_panel_expanded,
+                    HeaderMenuSection::Scripts => self.background_scripts_expanded,
+                };
+                if expanded {
+                    1.0
+                } else {
+                    0.0
                 }
-                body.finish()
-            })
-            .with_cursor(Cursor::PointingHand)
-            .on_click(|ctx, _, _| {
-                ctx.dispatch_typed_action(ClaudeCodeViewAction::ClearAgents);
-            })
-            .finish();
-            header_row = header_row.with_child(clear);
-        }
-        let header_inner = header_row.with_child(chevron).finish();
-        let header = Hoverable::new(self.agents_panel_mouse.clone(), move |state| {
-            let mut body = Container::new(header_inner)
-                .with_padding_left(12.)
-                .with_padding_right(12.)
-                .with_padding_top(9.)
-                .with_padding_bottom(9.)
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(10.)));
-            if state.is_hovered() {
-                body = body.with_background_color(wash);
-            }
-            body.finish()
-        })
-        .with_cursor(Cursor::PointingHand)
-        .with_defer_events_to_children()
-        .on_click(|ctx, _, _| {
-            ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleAgentsPanel);
-        })
-        .finish();
-
-        let mut column = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_child(header);
-
-        if visible.is_empty() {
-            // Empty state: the button is always present, so an opened panel
-            // with nothing to show says so rather than looking broken.
-            let empty = appearance
-                .ui_builder()
-                .span("No agents".to_owned())
-                .with_style(UiComponentStyles {
-                    font_color: Some(muted),
-                    font_size: Some(11.5),
-                    ..Default::default()
-                })
-                .build()
-                .finish();
-            column.add_child(
-                Container::new(empty)
-                    .with_padding_left(12.)
-                    .with_padding_right(12.)
-                    .with_padding_bottom(10.)
-                    .finish(),
-            );
-        } else {
-            for agent in visible.iter() {
-                column.add_child(self.render_agent_row(agent, app));
             }
         }
-
-        let card = Container::new(column.finish())
-            .with_background_color(theme.surface_1().into_solid())
-            .with_border(Border::all(1.).with_border_fill(theme.outline()))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(12.)))
-            .with_drop_shadow(DropShadow::default())
-            .finish();
-        Some(
-            ConstrainedBox::new(card)
-                .with_max_width(AGENTS_PANEL_MAX_WIDTH)
-                .finish(),
-        )
     }
 
+    /// Toggle one of the header menu's inline sections with the reveal ease.
+    /// Opening a section snaps the other closed (an accordion — at most one
+    /// section open). Closing leaves the expanded flag set until the collapse
+    /// animation lands; [`Self::tick_header_menu_reveal`] clears it once the
+    /// body has fully shrunk. Starting from the current fraction means a rapid
+    /// re-toggle mid-animation reverses smoothly instead of jumping.
+    fn toggle_header_menu_section(
+        &mut self,
+        section: HeaderMenuSection,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let expanded = match section {
+            HeaderMenuSection::Agents => self.agents_panel_expanded,
+            HeaderMenuSection::Scripts => self.background_scripts_expanded,
+        };
+        let from = self.header_menu_section_fraction(section);
+        let to = match &self.header_menu_reveal {
+            // Mid-animation re-toggle: reverse towards the opposite end.
+            Some((s, reveal)) if *s == section => 1.0 - reveal.to,
+            _ if expanded => 0.0,
+            _ => 1.0,
+        };
+        if to > 0.5 {
+            match section {
+                HeaderMenuSection::Agents => {
+                    self.agents_panel_expanded = true;
+                    self.background_scripts_expanded = false;
+                }
+                HeaderMenuSection::Scripts => {
+                    self.background_scripts_expanded = true;
+                    self.agents_panel_expanded = false;
+                }
+            }
+        }
+        self.header_menu_reveal = Some((section, SectionReveal::new(from, to)));
+        self.tick_header_menu_reveal(ctx);
+    }
+
+    /// One reveal animation frame: repaint, then re-arm until the ease
+    /// completes (the self-rearming `notify()` timer pattern — warpui never
+    /// re-runs `render()` on its own; see `left_panel_slide.rs`). A collapse
+    /// that finishes clears the section's expanded flag so the body leaves
+    /// the element tree.
+    fn tick_header_menu_reveal(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some((section, reveal)) = &self.header_menu_reveal else {
+            return;
+        };
+        let section = *section;
+        let closing = reveal.to <= 0.0;
+        if reveal.is_done() {
+            if closing {
+                match section {
+                    HeaderMenuSection::Agents => self.agents_panel_expanded = false,
+                    HeaderMenuSection::Scripts => self.background_scripts_expanded = false,
+                }
+            }
+            self.header_menu_reveal = None;
+            ctx.notify();
+            return;
+        }
+        ctx.notify();
+        ctx.spawn(
+            async move {
+                Timer::after(HEADER_MENU_REVEAL_TICK).await;
+            },
+            |me, _, ctx| me.tick_header_menu_reveal(ctx),
+        );
+    }
     /// One agent row in the expanded panel: a status glyph + "<type>:
     /// <description>" + the state label, expanding on click into the agent's
     /// returned result — the background-script row's chrome.
@@ -6657,208 +6472,6 @@ impl ClaudeCodeView {
             );
         }
         body.finish()
-    }
-
-    /// twarp: the floating **background-scripts** panel — a per-chat status
-    /// widget for the `run_in_background` Bash commands Claude launched in this
-    /// session (a dev server, a watcher, a long build). Derived fresh from the
-    /// transcript each render via [`background_scripts::collect`] — twarp keeps no
-    /// separate model — so it stays in lock-step with the conversation and needs
-    /// no teardown. Read-only: twarp can observe a background script (command,
-    /// state, captured output) but can't start, poll, or kill it; those are
-    /// Claude's tool calls.
-    ///
-    /// Opened from the header's
-    /// [`render_background_button`](Self::render_background_button); returns
-    /// `None` (floats nothing) unless the panel is expanded and this chat
-    /// launched at least one background script. When shown it is the open menu:
-    /// a header row (click to close) over one row per script, each expanding
-    /// again to its captured output.
-    fn render_background_panel(&self, app: &AppContext) -> Option<Box<dyn Element>> {
-        // twarp: the panel is now opened from the header's background-scripts
-        // icon button (left of the Chat UI / Raw CLI toggle). It only floats
-        // while expanded; collapsed, the header button is the sole affordance.
-        if !self.background_scripts_expanded {
-            return None;
-        }
-        let scripts = self.background_scripts();
-        // Rows the user cleared are hidden but still live in the transcript, so
-        // filter them out here (not in the memo, which stays a pure derivation).
-        let visible: Vec<&BackgroundScript> = scripts
-            .iter()
-            .filter(|s| !self.background_dismissed.contains(&s.id))
-            .collect();
-
-        let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
-        let accent = self.render_accent.get();
-        let wash = self.render_wash.get();
-        let muted = theme.nonactive_ui_text_color().into_solid();
-        let main = theme.main_text_color(theme.background()).into_solid();
-
-        let active = visible.iter().filter(|s| s.state.is_active()).count();
-        // Something is clearable iff a visible row is no longer running.
-        let clearable = visible.iter().any(|s| !s.state.is_active());
-        let expanded = self.background_scripts_expanded;
-
-        // Header: terminal glyph + title + a muted count, then a chevron whose
-        // direction tracks the expand state. The whole row toggles the panel.
-        let glyph = ConstrainedBox::new(
-            Icon::new(crate::ui_components::icons::Icon::Terminal.into(), accent).finish(),
-        )
-        .with_width(15.)
-        .with_height(15.)
-        .finish();
-        let title = appearance
-            .ui_builder()
-            .span("Background scripts".to_owned())
-            .with_style(UiComponentStyles {
-                font_color: Some(main),
-                font_size: Some(12.5),
-                ..Default::default()
-            })
-            .build()
-            .finish();
-        let count_text = if visible.is_empty() {
-            "none".to_owned()
-        } else if active > 0 {
-            format!("{} · {active} running", visible.len())
-        } else {
-            format!(
-                "{} script{}",
-                visible.len(),
-                if visible.len() == 1 { "" } else { "s" }
-            )
-        };
-        let count = appearance
-            .ui_builder()
-            .span(count_text)
-            .with_style(UiComponentStyles {
-                font_color: Some(muted),
-                font_size: Some(11.),
-                ..Default::default()
-            })
-            .build()
-            .finish();
-        let chevron_icon = if expanded {
-            crate::ui_components::icons::Icon::ChevronUp
-        } else {
-            crate::ui_components::icons::Icon::ChevronDown
-        };
-        let chevron = ConstrainedBox::new(Icon::new(chevron_icon.into(), muted).finish())
-            .with_width(14.)
-            .with_height(14.)
-            .finish();
-
-        // "Clear" button — only when there's something non-running to clear. It
-        // lives inside the header row, so the header defers its click to the
-        // child (below) to keep a Clear tap from also toggling the panel.
-        // Title cluster left; count / Clear / chevron pinned to the right
-        // edge (the expanding spacer soaks up the middle).
-        let mut header_row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_spacing(8.)
-            .with_child(glyph)
-            .with_child(title)
-            .with_child(Shrinkable::new(1., twarpui::elements::Empty::new().finish()).finish())
-            .with_child(count);
-        if clearable {
-            let clear_label = appearance
-                .ui_builder()
-                .span("Clear".to_owned())
-                .with_style(UiComponentStyles {
-                    font_color: Some(muted),
-                    font_size: Some(11.),
-                    ..Default::default()
-                })
-                .build()
-                .finish();
-            let clear = Hoverable::new(self.background_clear_mouse.clone(), move |state| {
-                let mut body = Container::new(clear_label)
-                    .with_padding_left(8.)
-                    .with_padding_right(8.)
-                    .with_padding_top(3.)
-                    .with_padding_bottom(3.)
-                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
-                if state.is_hovered() {
-                    body = body.with_background_color(wash);
-                }
-                body.finish()
-            })
-            .with_cursor(Cursor::PointingHand)
-            .on_click(|ctx, _, _| {
-                ctx.dispatch_typed_action(ClaudeCodeViewAction::ClearBackgroundScripts);
-            })
-            .finish();
-            header_row = header_row.with_child(clear);
-        }
-        let header_inner = header_row.with_child(chevron).finish();
-        let header = Hoverable::new(self.background_panel_mouse.clone(), move |state| {
-            let mut body = Container::new(header_inner)
-                .with_padding_left(12.)
-                .with_padding_right(12.)
-                .with_padding_top(9.)
-                .with_padding_bottom(9.)
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(10.)));
-            if state.is_hovered() {
-                body = body.with_background_color(wash);
-            }
-            body.finish()
-        })
-        .with_cursor(Cursor::PointingHand)
-        .with_defer_events_to_children()
-        .on_click(|ctx, _, _| {
-            ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleBackgroundPanel);
-        })
-        .finish();
-
-        let mut column = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_child(header);
-
-        if expanded {
-            if visible.is_empty() {
-                // Empty state: the button is always present now, so an opened
-                // panel with nothing to show says so rather than looking broken.
-                let empty = appearance
-                    .ui_builder()
-                    .span("No background scripts".to_owned())
-                    .with_style(UiComponentStyles {
-                        font_color: Some(muted),
-                        font_size: Some(11.5),
-                        ..Default::default()
-                    })
-                    .build()
-                    .finish();
-                column.add_child(
-                    Container::new(empty)
-                        .with_padding_left(12.)
-                        .with_padding_right(12.)
-                        .with_padding_bottom(10.)
-                        .finish(),
-                );
-            } else {
-                for script in visible.iter() {
-                    column.add_child(self.render_background_row(script, app));
-                }
-            }
-        }
-
-        // The card: a surface that floats above the transcript, shadowed like the
-        // composer menus so it reads as an overlay.
-        let card = Container::new(column.finish())
-            .with_background_color(theme.surface_1().into_solid())
-            .with_border(Border::all(1.).with_border_fill(theme.outline()))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(12.)))
-            .with_drop_shadow(DropShadow::default())
-            .finish();
-        Some(
-            ConstrainedBox::new(card)
-                .with_max_width(BACKGROUND_PANEL_MAX_WIDTH)
-                .finish(),
-        )
     }
 
     /// One background-script row in the expanded panel: a status glyph + the
@@ -8868,44 +8481,12 @@ impl View for ClaudeCodeView {
                     ChildAnchor::BottomMiddle,
                 ),
             );
-            // twarp: the floating background-scripts panel, pinned to the pane's
-            // top-right above the transcript so a long-running dev server / watcher
-            // Claude launched stays visible while the conversation scrolls under
-            // it. `None` (and so nothing floated) until this chat launches one.
-            if let Some(panel) = self.render_background_panel(app) {
-                stack.add_positioned_child(
-                    panel,
-                    OffsetPositioning::offset_from_parent(
-                        vec2f(-12., 12.),
-                        ParentOffsetBounds::ParentBySize,
-                        ParentAnchor::TopRight,
-                        ChildAnchor::TopRight,
-                    ),
-                );
-            }
-            // twarp: the floating agents panel — the background panel's twin,
-            // sharing its top-right anchor. The toggle handlers keep at most
-            // one of the two expanded, so they never overlap.
-            if let Some(panel) = self.render_agents_panel(app) {
-                stack.add_positioned_child(
-                    panel,
-                    OffsetPositioning::offset_from_parent(
-                        vec2f(-12., 12.),
-                        ParentOffsetBounds::ParentBySize,
-                        ParentAnchor::TopRight,
-                        ChildAnchor::TopRight,
-                    ),
-                );
-            }
-            // twarp: the ⋯ header-menu card — third occupant of the shared
-            // top-right anchor (the toggle handlers keep at most one of the
-            // three open). Wrapped in Dismiss so a click elsewhere closes it.
+            // twarp: the ⋯ header-menu card, pinned to the pane's top-right
+            // above the transcript. The Agent-runs / Scripts sections expand
+            // inline inside it. Deliberately NOT wrapped in Dismiss: the menu
+            // stays open until the ⋯ button is toggled again, so clicking the
+            // transcript or composer never closes it out from under the user.
             if let Some(menu) = self.render_header_menu(app) {
-                let menu = Dismiss::new(menu)
-                    .on_dismiss(|ctx, _| {
-                        ctx.dispatch_typed_action(ClaudeCodeViewAction::CloseHeaderMenu);
-                    })
-                    .finish();
                 stack.add_positioned_child(
                     menu,
                     OffsetPositioning::offset_from_parent(
@@ -9138,14 +8719,7 @@ impl TypedActionView for ClaudeCodeView {
                     .write(ClipboardContent::plain_text(code.clone()));
             }
             ClaudeCodeViewAction::ToggleBackgroundPanel => {
-                self.background_scripts_expanded = !self.background_scripts_expanded;
-                // The agents panel and the header menu share the top-right
-                // anchor; keep at most one of the three open.
-                if self.background_scripts_expanded {
-                    self.agents_panel_expanded = false;
-                    self.header_menu_expanded = false;
-                }
-                ctx.notify();
+                self.toggle_header_menu_section(HeaderMenuSection::Scripts, ctx);
             }
             ClaudeCodeViewAction::ToggleBackgroundScript(id) => {
                 if !self.background_expanded_rows.remove(id) {
@@ -9166,22 +8740,11 @@ impl TypedActionView for ClaudeCodeView {
                 ctx.notify();
             }
             ClaudeCodeViewAction::ToggleAgentsPanel => {
-                self.agents_panel_expanded = !self.agents_panel_expanded;
-                // The background panel and the header menu share the top-right
-                // anchor; keep at most one of the three open.
-                if self.agents_panel_expanded {
-                    self.background_scripts_expanded = false;
-                    self.header_menu_expanded = false;
-                }
-                ctx.notify();
+                self.toggle_header_menu_section(HeaderMenuSection::Agents, ctx);
             }
             ClaudeCodeViewAction::ToggleRawCli => {
                 self.header_menu_expanded = false;
                 self.toggle_raw_cli(ctx);
-            }
-            ClaudeCodeViewAction::CloseHeaderMenu => {
-                self.header_menu_expanded = false;
-                ctx.notify();
             }
             ClaudeCodeViewAction::ToggleAgentRow(id) => {
                 if !self.agent_expanded_rows.remove(id) {
@@ -9239,27 +8802,17 @@ impl BackingView for ClaudeCodeView {
             ClaudeCodeCustomAction::ToggleRawCli => self.toggle_raw_cli(ctx),
             ClaudeCodeCustomAction::ToggleComputerControl => self.toggle_computer_control(ctx),
             ClaudeCodeCustomAction::ToggleBackgroundPanel => {
-                self.background_scripts_expanded = !self.background_scripts_expanded;
-                if self.background_scripts_expanded {
-                    self.agents_panel_expanded = false;
-                }
-                ctx.notify();
+                self.toggle_header_menu_section(HeaderMenuSection::Scripts, ctx);
             }
             ClaudeCodeCustomAction::ToggleAgentsPanel => {
-                self.agents_panel_expanded = !self.agents_panel_expanded;
-                if self.agents_panel_expanded {
-                    self.background_scripts_expanded = false;
-                }
-                ctx.notify();
+                self.toggle_header_menu_section(HeaderMenuSection::Agents, ctx);
             }
             ClaudeCodeCustomAction::ToggleHeaderMenu => {
                 self.header_menu_expanded = !self.header_menu_expanded;
-                // The agents / background panels share the top-right anchor;
-                // opening the menu closes them.
-                if self.header_menu_expanded {
-                    self.agents_panel_expanded = false;
-                    self.background_scripts_expanded = false;
-                }
+                // Section expanded state persists across close/reopen; only
+                // an in-flight reveal animation is dropped (it would tick a
+                // card that is no longer on screen).
+                self.header_menu_reveal = None;
                 ctx.notify();
             }
         }
@@ -11708,6 +11261,144 @@ fn merge_mcp_servers(
         return;
     };
     servers.extend(std::mem::take(config_servers));
+}
+
+/// Which of the ⋯ header menu's inline sections a reveal animation targets.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HeaderMenuSection {
+    Agents,
+    Scripts,
+}
+
+/// In-flight reveal animation for a header-menu section body. warpui has no
+/// transition framework (`render()` never re-runs on its own), so
+/// [`ClaudeCodeView::tick_header_menu_reveal`] drives this with the
+/// self-rearming `notify()` timer pattern: each tick computes an eased
+/// fraction from the `Instant` start time until the ~150ms ease is done —
+/// `left_panel_slide::LeftPanelSlide`'s shape, vertical instead of
+/// horizontal.
+struct SectionReveal {
+    started_at: Instant,
+    from: f32,
+    to: f32,
+}
+
+impl SectionReveal {
+    fn new(from: f32, to: f32) -> Self {
+        Self {
+            started_at: Instant::now(),
+            from,
+            to,
+        }
+    }
+
+    /// Current visible fraction of the section body's height, eased
+    /// (ease-out cubic, the sidebar slide's curve).
+    fn fraction(&self) -> f32 {
+        let t = self.started_at.elapsed().as_secs_f32()
+            / HEADER_MENU_REVEAL_DURATION.as_secs_f32().max(f32::EPSILON);
+        let inv = 1.0 - t.clamp(0.0, 1.0);
+        let eased = 1.0 - inv * inv * inv;
+        self.from + (self.to - self.from) * eased
+    }
+
+    fn is_done(&self) -> bool {
+        self.started_at.elapsed() >= HEADER_MENU_REVEAL_DURATION
+    }
+}
+
+/// Clips its child to `fraction` of the child's natural height so a header-menu
+/// section's rows ease open (and closed) in place — the vertical sibling of
+/// `left_panel_slide::SlideClip`, revealing top-down without shifting the
+/// child. The child is laid out with its unmodified incoming constraint; only
+/// the reported height (and the paint clip) shrink to the fraction.
+struct RevealClip {
+    child: Box<dyn Element>,
+    /// Visible fraction of the child's height, in `[0, 1]`.
+    fraction: f32,
+    origin: Option<twarpui::elements::Point>,
+    size: Option<pathfinder_geometry::vector::Vector2F>,
+}
+
+impl RevealClip {
+    fn new(child: Box<dyn Element>, fraction: f32) -> Self {
+        Self {
+            child,
+            fraction: fraction.clamp(0.0, 1.0),
+            origin: None,
+            size: None,
+        }
+    }
+}
+
+impl Element for RevealClip {
+    fn layout(
+        &mut self,
+        mut constraint: twarpui::SizeConstraint,
+        ctx: &mut twarpui::LayoutContext,
+        app: &AppContext,
+    ) -> pathfinder_geometry::vector::Vector2F {
+        // The child sizes itself to its full height; only the animated
+        // visible height is reported upward. Relax the min so the column
+        // can't force us taller than the animated height.
+        constraint.min.set_y(0.0);
+        let child_size = self.child.layout(constraint, ctx, app);
+        let size = vec2f(child_size.x(), (child_size.y() * self.fraction).round());
+        self.size = Some(size);
+        size
+    }
+
+    fn after_layout(&mut self, ctx: &mut twarpui::AfterLayoutContext, app: &AppContext) {
+        self.child.after_layout(ctx, app);
+    }
+
+    fn paint(
+        &mut self,
+        origin: pathfinder_geometry::vector::Vector2F,
+        ctx: &mut twarpui::PaintContext,
+        app: &AppContext,
+    ) {
+        let Some(size) = self.size else {
+            return;
+        };
+        let origin_point = twarpui::elements::Point::from_vec2f(origin, ctx.scene.z_index());
+        self.origin = Some(origin_point);
+        if size.y() <= 0.0 {
+            return;
+        }
+        // Clip to the visible strip and paint the child top-anchored, so rows
+        // reveal downward from under the section header.
+        let Some(bounds) = ctx.scene.visible_rect(origin_point, size) else {
+            return;
+        };
+        ctx.scene
+            .start_layer(twarpui::ClipBounds::BoundedBy(bounds));
+        self.child.paint(origin, ctx, app);
+        ctx.scene.stop_layer();
+    }
+
+    fn dispatch_event(
+        &mut self,
+        event: &twarpui::event::DispatchedEvent,
+        ctx: &mut twarpui::EventContext,
+        app: &AppContext,
+    ) -> bool {
+        // The reveal lasts ~150ms; suppress child hit-testing while partially
+        // hidden so clicks can't land on half-revealed rows.
+        if self.fraction >= 1.0 {
+            self.child.dispatch_event(event, ctx, app)
+        } else {
+            false
+        }
+    }
+
+    fn size(&self) -> Option<pathfinder_geometry::vector::Vector2F> {
+        self.size
+    }
+
+    fn origin(&self) -> Option<twarpui::elements::Point> {
+        self.origin
+    }
 }
 
 #[cfg(test)]
