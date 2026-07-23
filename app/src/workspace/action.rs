@@ -104,6 +104,9 @@ pub enum WorkspaceAction {
     },
     CreateScratchProject,
     CreateProjectFromFolder,
+    OpenProjectLibraryEntry {
+        path: PathBuf,
+    },
     ToggleProjectExpanded(EntityId),
     NewProjectChat {
         project_id: EntityId,
@@ -789,6 +792,7 @@ impl WorkspaceAction {
             | ToggleProjectsSidebar
             | CreateScratchProject
             | CreateProjectFromFolder
+            | OpenProjectLibraryEntry { .. }
             | NewProjectChat { .. }
             | NewProjectChatInDirectory { .. }
             | ToggleRightTool(_) => true,

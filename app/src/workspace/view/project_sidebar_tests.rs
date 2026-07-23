@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use super::{
-    project_disambiguation, project_matches_search, project_title, resolve_project_directory,
-    should_responsively_collapse_right_tool, toggle_right_tool_state,
+    merged_project_targets, project_disambiguation, project_matches_search, project_title,
+    resolve_project_directory, should_responsively_collapse_right_tool, toggle_right_tool_state,
+    ProjectListTarget,
 };
 use crate::app_state::RightToolKind;
 use crate::workspace::view::ProjectDirectoryResolution;
@@ -61,6 +62,26 @@ fn project_search_is_case_insensitive_and_preserves_empty_query() {
         "missing",
         ["repository".to_owned()]
     ));
+}
+
+#[test]
+fn merged_projects_keep_live_tabs_and_add_only_unopened_library_entries() {
+    let alpha = PathBuf::from("/work/alpha");
+    let beta = PathBuf::from("/work/beta");
+    let targets = merged_project_targets(
+        &[Some(alpha.clone()), None, Some(alpha.clone())],
+        [alpha, beta.clone(), beta.clone()],
+    );
+
+    assert_eq!(
+        targets,
+        vec![
+            ProjectListTarget::LiveTab(0),
+            ProjectListTarget::LiveTab(1),
+            ProjectListTarget::LiveTab(2),
+            ProjectListTarget::Library(beta),
+        ]
+    );
 }
 
 #[test]

@@ -1,5 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
+use settings::Setting as _;
 use twarp_core::ui::theme::Fill as ThemeFill;
 use twarp_core::ui::tokens::{border, radius, spacing, type_ramp};
 use twarp_core::ui::Icon;
@@ -18,6 +22,7 @@ use twarpui::{AppContext, EntityId, SingletonEntity};
 use crate::app_state::RightToolKind;
 use crate::appearance::Appearance;
 use crate::code::editor::{add_color, remove_color};
+use crate::projects::ProjectManagementModel;
 use crate::tab::tab_position_id;
 use crate::terminal::resizable_data::{
     ModalType, ResizableData, DEFAULT_CODE_REVIEW_TOOL_WIDTH, DEFAULT_FILES_TOOL_WIDTH,
@@ -25,6 +30,7 @@ use crate::terminal::resizable_data::{
 };
 use crate::util::traffic_lights::{traffic_light_data, TrafficLightSide};
 use crate::window_settings::WindowSettings;
+use crate::workspace::tab_settings::TabSettings;
 use crate::workspace::{TabContextMenuAnchor, WorkspaceAction};
 use crate::FeatureFlag;
 
@@ -33,6 +39,28 @@ use super::{ProjectDirectoryResolution, Workspace, TOTAL_TAB_BAR_HEIGHT};
 pub(super) const PROJECTS_SIDEBAR_POSITION_ID: &str = "workspace_view:projects_sidebar";
 const RIGHT_ACTIVITY_STRIP_WIDTH: f32 = spacing::XXL + spacing::SM;
 const MINIMUM_CENTER_WORKSPACE_WIDTH: f32 = 480.;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum ProjectListTarget {
+    LiveTab(usize),
+    Library(PathBuf),
+}
+
+fn merged_project_targets(
+    local_roots: &[Option<PathBuf>],
+    library_paths: impl IntoIterator<Item = PathBuf>,
+) -> Vec<ProjectListTarget> {
+    let mut targets: Vec<_> = (0..local_roots.len())
+        .map(ProjectListTarget::LiveTab)
+        .collect();
+    let local_roots: HashSet<_> = local_roots.iter().flatten().cloned().collect();
+    let mut seen_library_paths = HashSet::new();
+    targets.extend(library_paths.into_iter().filter_map(|path| {
+        (!local_roots.contains(&path) && seen_library_paths.insert(path.clone()))
+            .then_some(ProjectListTarget::Library(path))
+    }));
+    targets
+}
 
 fn should_responsively_collapse_right_tool(
     window_width: f32,
@@ -182,31 +210,76 @@ impl Workspace {
             .unwrap_or_default()
     }
 
-    pub(super) fn project_matches_query(&self, index: usize, app: &AppContext) -> bool {
-        let Some(tab) = self.tabs.get(index) else {
-            return false;
-        };
-        let pane_group = tab.pane_group.as_ref(app);
-        let roots = self.project_roots(tab.pane_group.id(), app);
-        let custom_title = pane_group.custom_title(app);
-        let display_title = pane_group.display_title(app);
-        let title = project_title(
-            custom_title.as_deref(),
-            tab.project_root.as_deref(),
-            &roots,
-            &display_title,
-        );
-        let mut fields = vec![title, display_title];
-        fields.extend(roots.iter().map(|root| root.display().to_string()));
-        if let Some(root) = tab.project_root.as_ref() {
-            fields.push(root.display().to_string());
+    pub(super) fn project_list_targets(&self, app: &AppContext) -> Vec<ProjectListTarget> {
+        let local_roots: Vec<_> = self
+            .tabs
+            .iter()
+            .map(|tab| tab.project_root.clone())
+            .collect();
+        let library_paths = ProjectManagementModel::as_ref(app).project_paths_by_recency();
+        merged_project_targets(&local_roots, library_paths)
+    }
+
+    fn project_target_title(&self, target: &ProjectListTarget, app: &AppContext) -> String {
+        match target {
+            ProjectListTarget::LiveTab(index) => {
+                let Some(tab) = self.tabs.get(*index) else {
+                    return "Untitled project".to_owned();
+                };
+                let pane_group = tab.pane_group.as_ref(app);
+                let roots = self.project_roots(tab.pane_group.id(), app);
+                project_title(
+                    pane_group.custom_title(app).as_deref(),
+                    tab.project_root.as_deref(),
+                    &roots,
+                    &pane_group.display_title(app),
+                )
+            }
+            ProjectListTarget::Library(path) => project_title(None, Some(path), &[], ""),
+        }
+    }
+
+    fn project_title_occurrences(&self, title: &str, app: &AppContext) -> usize {
+        self.project_list_targets(app)
+            .iter()
+            .filter(|target| {
+                self.project_target_title(target, app)
+                    .eq_ignore_ascii_case(title)
+            })
+            .count()
+    }
+
+    pub(super) fn project_target_matches_query(
+        &self,
+        target: &ProjectListTarget,
+        app: &AppContext,
+    ) -> bool {
+        let mut fields = vec![self.project_target_title(target, app)];
+        match target {
+            ProjectListTarget::LiveTab(index) => {
+                let Some(tab) = self.tabs.get(*index) else {
+                    return false;
+                };
+                let pane_group = tab.pane_group.as_ref(app);
+                fields.push(pane_group.display_title(app));
+                fields.extend(
+                    self.project_roots(tab.pane_group.id(), app)
+                        .iter()
+                        .map(|root| root.display().to_string()),
+                );
+                if let Some(root) = tab.project_root.as_ref() {
+                    fields.push(root.display().to_string());
+                }
+            }
+            ProjectListTarget::Library(path) => fields.push(path.display().to_string()),
         }
         project_matches_search(&self.vertical_tabs_panel.search_query, fields)
     }
 
-    pub(super) fn matching_project_indices(&self, app: &AppContext) -> Vec<usize> {
-        (0..self.tabs.len())
-            .filter(|index| self.project_matches_query(*index, app))
+    pub(super) fn matching_project_targets(&self, app: &AppContext) -> Vec<ProjectListTarget> {
+        self.project_list_targets(app)
+            .into_iter()
+            .filter(|target| self.project_target_matches_query(target, app))
             .collect()
     }
 
@@ -336,21 +409,7 @@ impl Workspace {
             &roots,
             &display_title,
         );
-        let duplicate_count = self
-            .tabs
-            .iter()
-            .filter(|other| {
-                let other_group = other.pane_group.as_ref(app);
-                let other_roots = self.project_roots(other.pane_group.id(), app);
-                project_title(
-                    other_group.custom_title(app).as_deref(),
-                    other.project_root.as_deref(),
-                    &other_roots,
-                    &other_group.display_title(app),
-                )
-                .eq_ignore_ascii_case(&title)
-            })
-            .count();
+        let duplicate_count = self.project_title_occurrences(&title, app);
         let disambiguation = (duplicate_count > 1).then(|| {
             let root = tab
                 .project_root
@@ -358,7 +417,8 @@ impl Workspace {
                 .or_else(|| (roots.len() == 1).then(|| roots[0].as_path()));
             project_disambiguation(root, index)
         });
-        if !self.project_matches_query(index, app) {
+        let target = ProjectListTarget::LiveTab(index);
+        if !self.project_target_matches_query(&target, app) {
             return None;
         }
 
@@ -367,9 +427,9 @@ impl Workspace {
         let active = index == self.active_tab_index();
         let keyboard_focused = self.projects_search_open
             && self
-                .matching_project_indices(app)
+                .matching_project_targets(app)
                 .get(self.projects_search_selection)
-                .is_some_and(|selected| *selected == index);
+                .is_some_and(|selected| selected == &target);
         let is_renaming = self.current_workspace_state.tab_being_renamed() == Some(index);
         let chats = pane_group.project_chat_items(app);
         let attention = pane_group.claude_code_tab_status(app);
@@ -592,22 +652,126 @@ impl Workspace {
         Some(group.finish())
     }
 
+    fn render_library_project_row(
+        &self,
+        path: PathBuf,
+        app: &AppContext,
+    ) -> Option<Box<dyn Element>> {
+        let target = ProjectListTarget::Library(path.clone());
+        if !self.project_target_matches_query(&target, app) {
+            return None;
+        }
+
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let title = self.project_target_title(&target, app);
+        let disambiguation = (self.project_title_occurrences(&title, app) > 1)
+            .then(|| project_disambiguation(Some(&path), 0));
+        let keyboard_focused = self.projects_search_open
+            && self
+                .matching_project_targets(app)
+                .get(self.projects_search_selection)
+                .is_some_and(|selected| selected == &target);
+        let color: ThemeFill = FeatureFlag::DirectoryTabColors
+            .is_enabled()
+            .then(|| {
+                TabSettings::as_ref(app)
+                    .directory_tab_colors
+                    .value()
+                    .color_for_directory(&path)
+                    .and_then(|color| color.ansi_color())
+            })
+            .flatten()
+            .map(|color| {
+                ThemeFill::Solid(color.to_tab_color(&theme.terminal_colors().normal).into())
+            })
+            .unwrap_or_else(|| theme.hint_text_color(theme.background()));
+
+        let mut labels = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+        labels.add_child(
+            Text::new_inline(title, appearance.ui_font_family(), type_ramp::UI.size)
+                .with_line_height_ratio(type_ramp::UI.line_height)
+                .with_clip(twarpui::text_layout::ClipConfig::end())
+                .with_color(theme.main_text_color(theme.background()).into())
+                .finish(),
+        );
+        if let Some(disambiguation) = disambiguation {
+            labels.add_child(
+                Text::new_inline(
+                    disambiguation,
+                    appearance.ui_font_family(),
+                    type_ramp::CAPTION.size,
+                )
+                .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                .with_clip(twarpui::text_layout::ClipConfig::end())
+                .with_color(theme.hint_text_color(theme.background()).into())
+                .finish(),
+            );
+        }
+
+        Some(
+            Hoverable::new(
+                twarpui::elements::MouseStateHandle::default(),
+                move |state| {
+                    let identity =
+                        ConstrainedBox::new(Icon::CircleFilled.to_warpui_icon(color).finish())
+                            .with_width(spacing::MD)
+                            .with_height(spacing::MD)
+                            .finish();
+                    let contents = Flex::row()
+                        .with_main_axis_size(MainAxisSize::Max)
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_spacing(spacing::SM)
+                        .with_child(identity)
+                        .with_child(Shrinkable::new(1., labels.finish()).finish())
+                        .finish();
+                    let mut container = Container::new(contents)
+                        .with_padding_left(spacing::SM)
+                        .with_padding_right(spacing::SM)
+                        .with_padding_top(spacing::XS)
+                        .with_padding_bottom(spacing::XS)
+                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
+                    if keyboard_focused {
+                        container = container.with_background(theme.surface_3());
+                    } else if state.is_hovered() {
+                        container = container.with_background(theme.surface_overlay_2());
+                    }
+                    container.finish()
+                },
+            )
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(WorkspaceAction::OpenProjectLibraryEntry {
+                    path: path.clone(),
+                })
+            })
+            .with_cursor(Cursor::PointingHand)
+            .finish(),
+        )
+    }
+
     pub(super) fn render_projects_sidebar(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         let mut list = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
         let mut visible_projects = 0;
-        for index in 0..self.tabs.len() {
-            if let Some(row) = self.render_project_row(index, app) {
+        let targets = self.project_list_targets(app);
+        for target in &targets {
+            let row = match target {
+                ProjectListTarget::LiveTab(index) => self.render_project_row(*index, app),
+                ProjectListTarget::Library(path) => {
+                    self.render_library_project_row(path.clone(), app)
+                }
+            };
+            if let Some(row) = row {
                 list.add_child(row);
                 visible_projects += 1;
             }
         }
-        if self.tabs.is_empty()
+        if targets.is_empty()
             || (visible_projects == 0 && !self.vertical_tabs_panel.search_query.is_empty())
         {
-            let label = if self.tabs.is_empty() {
-                "No projects open"
+            let label = if targets.is_empty() {
+                "No projects yet"
             } else {
                 "No matching projects"
             };
@@ -621,7 +785,7 @@ impl Workspace {
                 .with_uniform_padding(spacing::MD)
                 .finish(),
             );
-            if self.tabs.is_empty() {
+            if targets.is_empty() {
                 list.add_child(
                     Hoverable::new(
                         twarpui::elements::MouseStateHandle::default(),

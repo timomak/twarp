@@ -1,5 +1,8 @@
 use std::sync::mpsc::SyncSender;
-use std::{collections::HashMap, path::PathBuf};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    path::PathBuf,
+};
 
 use chrono::Utc;
 use twarpui::{Entity, ModelContext, SingletonEntity};
@@ -29,6 +32,17 @@ impl Entity for ProjectManagementModel {
 
 impl SingletonEntity for ProjectManagementModel {}
 
+fn project_identity(path: PathBuf) -> PathBuf {
+    #[cfg(feature = "local_fs")]
+    {
+        dunce::canonicalize(&path).unwrap_or(path)
+    }
+    #[cfg(not(feature = "local_fs"))]
+    {
+        path
+    }
+}
+
 impl ProjectManagementModel {
     /// Create a new Projects model with persisted data
     pub fn new(
@@ -38,10 +52,22 @@ impl ProjectManagementModel {
     ) -> Self {
         log::debug!("Loading {} persisted projects", persisted_projects.len());
 
-        let projects = persisted_projects
-            .into_iter()
-            .map(|project| (PathBuf::from(&project.path), project))
-            .collect();
+        let mut projects = HashMap::new();
+        for mut project in persisted_projects {
+            let path = project_identity(PathBuf::from(&project.path));
+            project.path = path.to_string_lossy().into_owned();
+            match projects.entry(path) {
+                Entry::Vacant(entry) => {
+                    entry.insert(project);
+                }
+                Entry::Occupied(mut entry)
+                    if project.last_used_at() > entry.get().last_used_at() =>
+                {
+                    entry.insert(project);
+                }
+                Entry::Occupied(_) => {}
+            }
+        }
 
         Self {
             projects,
@@ -51,6 +77,7 @@ impl ProjectManagementModel {
 
     /// Add a project to the list. If it already exists, update the last_opened_ts.
     pub fn upsert_project(&mut self, path: PathBuf, ctx: &mut ModelContext<Self>) {
+        let path = project_identity(path);
         let now = Utc::now().naive_utc();
 
         let project = if let Some(existing_project) = self.projects.get_mut(&path) {
@@ -75,6 +102,22 @@ impl ProjectManagementModel {
         self.projects.values()
     }
 
+    /// Returns project directories in stable most-recently-used order.
+    ///
+    /// This is the app-wide project library presented by every Projects sidebar.
+    /// Cloning the paths keeps view code from holding model borrows while it builds
+    /// rows or dispatches actions.
+    pub fn project_paths_by_recency(&self) -> Vec<PathBuf> {
+        let mut projects: Vec<_> = self.projects.iter().collect();
+        projects.sort_by(|(left_path, left), (right_path, right)| {
+            right
+                .last_used_at()
+                .cmp(&left.last_used_at())
+                .then_with(|| left_path.cmp(right_path))
+        });
+        projects.into_iter().map(|(path, _)| path.clone()).collect()
+    }
+
     /// Save a project to the database
     fn save_project(&self, project: Project) {
         if let Some(sender) = &self.model_event_sender {
@@ -85,3 +128,7 @@ impl ProjectManagementModel {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "projects_tests.rs"]
+mod tests;

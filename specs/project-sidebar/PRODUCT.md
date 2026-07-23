@@ -2,7 +2,7 @@
 
 ## Summary
 
-Replace twarp's horizontal tab strip with a full-height Projects sidebar modeled on the restraint and navigation clarity of the Codex desktop app. Each existing tab becomes one directory-aware project row that can start and surface chats in that project context, while Files and Code Review move into a mutually exclusive right-side tool rail so the center workspace gains vertical room and remains focused on the active pane.
+Replace twarp's horizontal tab strip with a full-height Projects sidebar modeled on the restraint and navigation clarity of the Codex desktop app. Folder-backed projects form a persistent app-wide library visible in every window, while each open tab remains that window's live project instance. Projects can start and surface chats in their directory context, and Files and Code Review move into a mutually exclusive right-side tool rail so the center workspace gains vertical room and remains focused on the active pane.
 
 ## Problem
 
@@ -15,6 +15,7 @@ The Codex desktop sidebar demonstrates a calmer hierarchy: primary work is selec
 **Goals**
 
 - Make projects the primary navigation surface and give every open tab a stable project row.
+- Keep folder-backed projects available across relaunches and in every new or existing window, even when no tab for that project is open locally.
 - Let users create a project from an existing directory and start a new chat directly in any project's directory context.
 - Remove the horizontal tab strip without replacing it with another full-width top bar.
 - Move Files and Code Review to a single right-side tool host with VS Code-style icon toggles.
@@ -24,7 +25,8 @@ The Codex desktop sidebar demonstrates a calmer hierarchy: primary work is selec
 
 **Non-goals**
 
-- No persistent folder registry separate from open tabs. In this version, a project row is a direct presentation of an open tab; choosing a folder creates another tab-backed project.
+- Scratch projects without an assigned directory remain window-local until they gain a folder identity; they do not create permanent anonymous library entries.
+- The global project library does not mirror one live pane tree into multiple windows. Opening a library project creates a normal live tab in that window, while another window's instance remains independent.
 - No grouping of multiple tabs by repository, even when they use the same folder.
 - No nested pane, file, terminal, or generic session rows beneath a project. Only chats associated with that project may appear as child rows.
 - No pinned-project or recent-project section in this version.
@@ -86,13 +88,13 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 ### Project and tab identity
 
-20. Every open tab renders as exactly one project row, and every project row corresponds to exactly one open tab. Two tabs using the same repository remain two independently selectable rows.
+20. Every open tab renders as exactly one live project row. In addition, every registered folder-backed project that is not open in the current window renders as exactly one library row. If one or more local tabs use that folder, the extra library row is omitted; multiple local tabs using the same repository remain independently selectable rows.
 
-21. Activating a project row activates the corresponding tab with its live pane tree unchanged. Terminals, agent sessions, browsers, editors, running commands, scroll positions, selections, and split ratios continue from their existing state; activation never restarts or recreates the work.
+21. Activating a live project row activates the corresponding tab with its live pane tree unchanged. Terminals, agent sessions, browsers, editors, running commands, scroll positions, selections, and split ratios continue from their existing state; activation never restarts or recreates the work. Activating an unopened library row creates and activates a normal project tab rooted at that directory in the current window.
 
 22. The active project has one clearly selected row. Inactive rows use neutral styling; hover and selection follow source-list row anatomy with no per-row outlines or divider lines.
 
-23. A project row is one compact line by default. It contains a fixed identity slot, a single-line title that truncates with an end ellipsis, and a trailing action/status area. Expanded projects may show genuine chat child rows, but never placeholder children such as `No chats` or `No files`.
+23. A project row is one compact line by default. It contains a fixed identity slot, a single-line title that truncates with an end ellipsis, and a trailing action/status area. Only a live local project can expand to show genuine chat child rows; an unopened library row has no synthetic children. Neither kind renders placeholders such as `No chats` or `No files`.
 
 24. A project row's visible title uses this user-observable priority:
     1. The tab's custom name, when one has been set.
@@ -106,31 +108,31 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 27. Hovering or focusing a truncated project row exposes the complete title and useful folder/repository context without changing the row's height.
 
-28. Existing per-tab colors remain attached to the corresponding project. The color renders as a small dot in the row's fixed identity slot; it never paints the whole sidebar or competes with semantic success, warning, error, and diff colors. A project without an assigned color renders a neutral dot.
+28. Existing per-tab colors remain attached to the corresponding live project. A library row uses the persisted directory color, and a project opened from that row inherits it. The color renders as a small dot in the row's fixed identity slot; it never paints the whole sidebar or competes with semantic success, warning, error, and diff colors. A project without an assigned color renders a neutral dot.
 
 29. Each project row has at most one attention indicator in its trailing status slot. A blocked agent or error outranks passive running activity; the same state is not duplicated elsewhere on that row.
 
 30. Working-tree line counts do not appear on every project row. The active project's current diff count appears on the Code Review activity icon, where it identifies the tool that owns the data.
 
-31. Hovering or keyboard-focusing a project row reveals quiet new-chat and more-actions controls without shifting or truncating the title differently; close remains in the more-actions menu and available through established shortcuts and middle-click behavior.
+31. Hovering or keyboard-focusing a live project row reveals quiet new-chat and more-actions controls without shifting or truncating the title differently; close remains in the more-actions menu and available through established shortcuts and middle-click behavior. An unopened library row remains a simple open target and does not expose tab-only actions until opened.
 
 32. Double-clicking a project title enters the existing rename flow. Rename commits and cancellation behave as they do for tabs today, and the renamed title remains associated with that project across restore.
 
-33. The project context menu retains all applicable tab actions, including rename/reset name, close variants, color, metadata copy, save configuration, and sharing actions that are available for that tab.
+33. A live project's context menu retains all applicable tab actions, including rename/reset name, close variants, color, metadata copy, save configuration, and sharing actions that are available for that tab. Library rows do not pretend to support actions that require a live tab.
 
 ### Project navigation and manipulation
 
-34. Clicking a project row activates it immediately. Clicking its close or menu affordance performs only that affordance and never activates the row as a side effect.
+34. Clicking a live project row activates it immediately. Clicking an unopened library row opens that directory as a local project in the current window; if it became open locally before the action completed, the existing local instance is activated instead of creating another. Clicking a live row's close or menu affordance performs only that affordance and never activates the row as a side effect.
 
-35. Project rows can be reordered by dragging vertically. The insertion position is visible, auto-scroll works near the top and bottom edges, and dropping preserves the new order across restore.
+35. Live project rows can be reordered by dragging vertically. The insertion position is visible, auto-scroll works near the top and bottom edges, and dropping preserves the new order across restore. Unopened library rows are ordered by most-recent use and are not draggable because they have no live view tree to move.
 
 36. Dragging a project out of the sidebar can detach it into a new window, and dragging it into another twarp window can insert it into that window's Projects list. The live view tree and project identity move without restarting processes.
 
 37. If a drag is cancelled or released on an invalid target, the project returns to its prior position with no duplication, closure, or state loss.
 
-38. Closing the active project activates the nearest surviving row, preferring the following row and then the previous row. The center workspace and open right tool retarget to the newly active project without closing the shell rails.
+38. Closing the active project activates the nearest surviving live row, preferring the following row and then the previous row. The center workspace and open right tool retarget to the newly active project without closing the shell rails. Closing a folder-backed project's last local tab does not delete it from the library; it returns to its unopened state in that window.
 
-39. When the final project closes in a context that permits an empty window, the Projects list shows a compact `No projects open` state with a single `New project` action, and the center shows the existing welcome/new-session surface. When the platform or user setting closes the window with its final tab, that behavior remains unchanged.
+39. When the final live project closes in a context that permits an empty window, the center shows the existing welcome/new-session surface while registered library projects remain selectable. `No projects yet` with a single `New project` action appears only when there are neither live projects nor registered folder-backed projects. When the platform or user setting closes the window with its final tab, that behavior remains unchanged.
 
 40. Existing project/tab navigation shortcuts continue to work without a visible horizontal strip, including next/previous project, direct numeric selection where supported, recently used switching, new project, close project, and reopen closed project.
 
@@ -144,7 +146,7 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 44. Choosing `Start from scratch` creates and activates a standard untitled project, then shows the existing welcome/new-session surface. Terminal, agent, browser, file, worktree, tab-configuration, and other enabled creation paths remain available from that surface, the command palette, existing shortcuts, or their other established homes.
 
-45. Choosing `Use an existing folder` opens the native directory picker. After the user selects a readable directory, twarp creates and activates a new project backed by that directory, uses its basename as the initial project title, and shows the welcome/new-session surface with the selected directory already set as the project context.
+45. Choosing `Use an existing folder` opens the native directory picker. After the user selects a readable directory, twarp registers it in the app-wide project library, creates and activates a new project backed by that directory in the current window, uses its basename as the initial project title, and shows the welcome/new-session surface with the selected directory already set as the project context. Every open window reflects the new library entry without relaunching.
 
 46. Cancelling the directory picker creates nothing and preserves the previously active project, focus, project order, and scroll position.
 
@@ -172,7 +174,7 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 57. Invoking search from the Projects header replaces the header label/actions with a focused single-line search field without opening another panel.
 
-58. Search filters the open project rows case-insensitively by custom title, display title, folder/repository name, full path, branch, and active pane title. Matching does not mutate row order.
+58. Search filters both live and unopened library rows case-insensitively. Live rows match custom title, display title, folder/repository name, full path, branch, and active pane title; library rows match folder name and full path. Matching does not mutate row order.
 
 59. Search results update as the user types. The currently active project remains active even when filtered out; the center workspace never changes merely because a query changes.
 
@@ -182,7 +184,7 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 62. Clearing the query restores every row and the prior list scroll position. Closing and reopening the Projects sidebar does not preserve a stale query.
 
-63. Command-palette search remains available independently. Project search is scoped only to open project rows and does not replace command, file, setting, or session search.
+63. Command-palette search remains available independently. Project search is scoped to the shared project library plus the current window's live scratch projects and does not replace command, file, setting, or session search.
 
 ### Right activity strip and tool host
 
@@ -262,7 +264,7 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 97. The active right tool, right rail open/closed state, Files width, and Code Review width are workspace/window-level preferences. Tool content such as expanded folders, selected files, selected review repository, and scroll positions remains project-specific where it is project-specific today.
 
-98. Relaunching restores project order, active project, project identity, left-rail visibility and width, active right tool, right-rail visibility, and each tool's width without briefly rendering the old horizontal strip.
+98. Relaunching restores project order, active project, project identity, the app-wide folder library, left-rail visibility and width, active right tool, right-rail visibility, and each tool's width without briefly rendering the old horizontal strip.
 
 99. Runtime rail opening and closing use an approximately 150ms edge transition consistent with the current source rails. Switching Files ↔ Code Review is a direct content transition and does not animate the entire rail off-screen.
 
@@ -271,3 +273,17 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 101. Theme changes, zoom changes, window resizing, and fullscreen transitions preserve active project/tool state. Light and dark themes use adaptive neutral surfaces and semantic colors; no sidebar or rail is pinned to a light-only appearance.
 
 102. If the project-sidebar feature is disabled or the platform is outside its initial scope, the current horizontal-tab and panel layout remains available with no persistence loss. Moving between supported versions does not delete tab, panel, or width data.
+
+### Cross-window project library
+
+103. Folder-backed projects are app-wide identities keyed by their assigned directory. Registering or reopening the same canonical directory refreshes the existing library entry rather than adding duplicate unopened rows.
+
+104. A new window immediately shows the same registered folder-backed projects as every other window, in most-recently-used order, without copying or moving another window's tabs.
+
+105. Opening a library row in one window creates an independent live tab in that window. Closing, splitting, renaming, or changing pane state in that instance does not mutate a live instance in another window.
+
+106. Adding or reopening a folder-backed project updates the Projects list in all currently open windows. Each window preserves its own active tab, focus, search query, scroll position, and sidebar width while incorporating the library change.
+
+107. If a registered directory is missing or unreadable, it remains visible with its stored name and path. Attempting to open it creates no tab and shows the same concise, retryable folder-unavailable error used by folder creation.
+
+108. Scratch projects remain live tab rows only in the window that owns them. They restore with that saved window, but they do not appear as anonymous entries in unrelated new windows.

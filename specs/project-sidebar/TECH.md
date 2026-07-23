@@ -2,7 +2,7 @@
 
 ## Context
 
-This plan implements [`PRODUCT.md`](./PRODUCT.md) without introducing a second project or chat registry. The existing tab list remains the source of truth: one `TabData` is one project, its `PaneGroup` remains the live project workspace, and the project row is a new presentation of that state. This preserves running processes, pane identity, split layouts, restore behavior, tab actions, and cross-window transfer.
+This plan implements [`PRODUCT.md`](./PRODUCT.md) by combining the existing app-wide persisted project registry with each window's tab list. `ProjectManagementModel` and the existing `projects` table remain the source of truth for known folder-backed directories; one `TabData` remains one live project instance whose `PaneGroup` owns the working view tree. The sidebar merges these two layers rather than duplicating either one.
 
 The current macOS design shell already renders full-height left and right rails around the workspace in `app/src/workspace/view.rs:20497-20595`, but it still renders the horizontal tab bar inside the center column. The left rail is implemented by `LeftPanelView` and owns Files/search/Timeline (`app/src/workspace/view/left_panel.rs:407-435`, `2688-2765`); the right rail is implemented by `RightPanelView` and owns Code Review (`app/src/workspace/view/right_panel.rs:417-430`, `2041-2092`). The project-sidebar shell must change the ownership of those surfaces rather than stack another navigation layer on top.
 
@@ -14,23 +14,26 @@ The principal existing state and behavior to preserve are:
 - `CrossWindowTabDrag` and `Workspace::on_tab_drag` already reorder or transfer a complete pane-group view tree (`app/src/workspace/cross_window_tab_drag.rs`, `app/src/workspace/view.rs:10921-11107`). The sidebar should supply a vertical drop surface to this machinery.
 - Claude/Codex chat panes already expose working directory, provider, session ID, title, and attention status (`app/src/claude_code_view.rs:1541-1563`, `4282-4335`). `PaneGroup` can already focus a pane by ID and enumerate Claude Code working directories (`app/src/pane_group/mod.rs:4637-4649`, `6087-6095`).
 - Window/tab restoration is represented by `WindowSnapshot` and `TabSnapshot` (`app/src/app_state.rs:1044-1080`) and stored in the SQLite `windows` and `tabs` tables (`crates/persistence/src/schema.rs:385-391`, `465-490`; `app/src/persistence/sqlite.rs:857-875`, `2637-2773`). New shell state must round-trip through this path while retaining legacy fields.
+- `ProjectManagementModel` is already an app singleton backed by the SQLite `projects` table and emits `ProjectEvent` when a folder is registered (`app/src/projects.rs`, `app/src/persistence/sqlite.rs:1500-1529`). Command search already consumes this model as a recent-project library. The sidebar should reuse it rather than create another persistence layer.
 - `design_shell_v1_enabled()` is macOS-only and currently suppresses legacy vertical tabs (`app/src/workspace/view.rs:632-655`). The new shell needs a separate flag layered on top of Design Shell v1 so the existing layout remains a safe fallback.
 - `design/PHILOSOPHY.md:69-75` currently mandates a horizontal tab strip and identifies the left sidebar as Tools. The PRODUCT spec explicitly supersedes those rules, so implementation must update the checked-in shell rules in the same change.
 
 ### Architectural decisions
 
-1. **Project equals tab.** `Workspace.tabs` remains the ordered project collection. No folder database, recent-project model, or duplicated project entity is added.
+1. **Project library and live project are separate layers.** `ProjectManagementModel` owns unique persisted folder identities, while `Workspace.tabs` owns ordered live instances and scratch projects. A sidebar row resolves to one layer or the other.
 2. **Project identity is keyed by pane-group `EntityId` at runtime.** UI callbacks resolve the current tab index at dispatch time so reorder, close, and cross-window moves cannot leave stale index captures.
 3. **An assigned project root is stable and optional.** It is stored on the tab, moves with the tab, and does not change when a pane or chat changes directory. Derived working directories remain available for legacy and multi-folder projects.
 4. **Chat children are live panes in the project `PaneGroup`.** They are not global session-history entries. Closing a chat pane removes its child row; restoring its pane restores the child row.
 5. **Shell visibility is window-owned.** Project sidebar visibility/width and active right tool are not properties of the active project. Files and Code Review content remain project-owned through `WorkingDirectoriesModel`.
 6. **The horizontal and project-sidebar shells coexist behind flags.** The new code path does not reinterpret the legacy vertical-tabs setting or delete legacy panel data.
+7. **Opening is local; discovery is global.** Selecting an unopened library entry creates a normal tab in the current workspace. Existing tabs in other windows are not transferred, cloned, or mutated.
 
 ### Data flow
 
 ```mermaid
 flowchart LR
-    Tabs["Workspace.tabs\nordered source of truth"] --> Sidebar["Projects sidebar\npresentation + search"]
+    Registry["ProjectManagementModel\npersisted folder library"] --> Sidebar["Projects sidebar\nmerged presentation + search"]
+    Tabs["Workspace.tabs\nlive window instances"] --> Sidebar
     Tabs --> Active["Active PaneGroup\ncenter workspace"]
     Active --> Chats["Live Claude/Codex panes\nchat child rows"]
     Active --> Directories["WorkingDirectoriesModel"]
@@ -38,6 +41,7 @@ flowchart LR
     Directories --> Review["Code Review tool view"]
     Sidebar --> Actions["Existing Workspace/tab actions"]
     Actions --> Tabs
+    Actions --> Registry
     Root["Tab project_root\noptional stable directory"] --> Sidebar
     Root --> NewChat["New chat cwd"]
     NewChat --> Active
@@ -131,9 +135,24 @@ Extend `ResizableData` with separate modal types/handles:
 
 Retain `LeftPanelWidth` and `RightPanelWidth` for the legacy shell. Each new handle uses the existing min/max constraints and resize implementation, but Files and Code Review no longer share a width.
 
-### 4. Render Projects directly from `Workspace.tabs`
+### 4. Merge the global project library with live window tabs
 
-Create `app/src/workspace/view/project_sidebar.rs` containing the sidebar-specific `impl Workspace` render/actions and pure row-building helpers. Rendering within `Workspace` avoids a mirrored project model and gives the view direct access to existing tab mouse, rename, draggable, color, and menu state.
+Keep `app/src/workspace/view/project_sidebar.rs` as the sidebar-specific `impl Workspace`, but build its row targets from both `ProjectManagementModel::all_projects()` and `Workspace.tabs`. Rendering within `Workspace` still gives live rows direct access to tab mouse, rename, draggable, color, and menu state; library rows remain lightweight path targets.
+
+Add a cloneable target type used consistently by rendering and keyboard search:
+
+```rust
+enum ProjectListTarget {
+    LiveTab(usize),
+    Library(PathBuf),
+}
+```
+
+Build live rows first in tab order. Collect their assigned canonical roots into a set, then append registry entries whose paths are not represented by a local tab, sorted by descending `last_used_at` and stable path tie-breaker. Multiple local tabs with the same root remain multiple live rows; there is never an additional unopened row for that same root.
+
+Library rows use the directory basename and parent-path context, derive their dot from the existing `DirectoryTabColors` setting, and have no tab-only menu, rename, status, drag, or chat children. Their click target dispatches a path-based workspace action. Both row kinds share the same source-list anatomy and search field.
+
+Subscribe every `Workspace` to `ProjectManagementModel`. An add/update event only calls `ctx.notify()`; it does not change local active selection, focus, or scroll state. This makes a project registered in one window appear in all others immediately.
 
 Build a pure view model on each render:
 
@@ -158,7 +177,7 @@ struct ProjectChatRowData {
 }
 ```
 
-Title selection follows PRODUCT invariant 24 exactly: custom title, assigned/single unambiguous folder basename, existing `PaneGroup::display_title`, then `Untitled project`. Run a second pass over normalized visible titles to add the shortest unique parent-folder, branch, or ordinal disambiguator only to collisions. Search uses normalized case-insensitive text assembled from custom/display title, all current roots and repositories, branch metadata, and active pane title; it filters the row list without activating or reordering tabs.
+Title selection follows PRODUCT invariant 24 exactly: custom title, assigned/single unambiguous folder basename, existing `PaneGroup::display_title`, then `Untitled project`. Run a second pass over normalized visible titles to add the shortest unique parent-folder, branch, or ordinal disambiguator only to collisions. Search uses normalized case-insensitive text assembled from custom/display title, all current roots and repositories, branch metadata, and active pane title for live rows, and folder name plus full path for library rows. It filters the merged target list without activating or reordering tabs. Up/Down/Enter use that same target list so keyboard focus cannot diverge from rendering.
 
 The sidebar has four fixed/rendered regions:
 
@@ -169,13 +188,14 @@ The sidebar has four fixed/rendered regions:
 
 Rows use source-list anatomy from `design/PHILOSOPHY.md`: theme tokens, `surface_1`, `surface_overlay_2` hover, `surface_3` selection, one inner `outline()` hairline, no row borders, and shared naked/action-button themes. The header owns a window-drag region only where there is no interactive child. There is no logo or permanent placeholder child text.
 
-If the last tab closes but the window remains alive, render the existing welcome surface in the center and a compact `No projects open` list state with one create action. Preserve the platform's existing close-last-tab policy.
+If the last tab closes but the window remains alive, retain all registry rows and render the existing welcome surface in the center. Render `No projects yet` only when both the registry and live tabs are empty. Preserve the platform's existing close-last-tab policy.
 
 ### 5. Route project interactions through existing tab behavior
 
 Add project-specific actions whose payload is a pane-group ID rather than a tab index. At execution, resolve the current index from `Workspace.tabs` and invoke the established action:
 
 - project click → `activate_tab`;
+- unopened library click → validate the path, activate an already-open local tab if one appeared concurrently, otherwise call the existing folder-project constructor;
 - rename/double-click → existing tab rename editor and commit/cancel path;
 - more menu → `TabData::menu_items` with the resolved index;
 - close/middle-click/shortcuts → existing close actions and nearest-tab fallback;
@@ -183,6 +203,8 @@ Add project-specific actions whose payload is a pane-group ID rather than a tab 
 - context menu, color, save/share/copy metadata → existing tab actions.
 
 This keeps project selection a presentation change. A child action must stop propagation so new-chat/menu/close never activates the row accidentally.
+
+The path-based open action reuses `create_folder_project`, including canonicalization, readability checks, the existing unavailable-folder toast, project-model upsert, welcome/terminal construction, assigned-root setup, and app-state save. It never uses cross-window tab transfer: an open instance in another window is intentionally independent.
 
 For drag and drop, generalize the current layout boolean in `CrossWindowTabDrag` into a presentation enum such as `HorizontalTabs`, `LegacyVerticalTabs`, and `ProjectSidebar`. Register the Projects list rectangle and each row's `tab_position_id(index)` as vertical drop targets. Reuse the existing reorder/detach/insert state machine and `TransferredTab`; only the hit-testing axis, insertion marker, preview, and edge auto-scroll differ. Invalid/cancelled drops leave the source collection untouched.
 
@@ -199,15 +221,15 @@ enum NewProjectSource {
 fn create_project(source: NewProjectSource, ctx: &mut ViewContext<Workspace>);
 ```
 
-`Scratch` creates the same untitled tab/pane-group and welcome/new-session surface used by ordinary new-tab creation, but records an initialized rootless project. `ExistingFolder` performs validation before modifying `Workspace.tabs`:
+`Scratch` creates the same untitled tab/pane-group and welcome/new-session surface used by ordinary new-tab creation, but records an initialized rootless project and does not register it globally. `ExistingFolder` performs validation before modifying `Workspace.tabs`:
 
 1. open `FilePickerConfiguration::folders_only()` as `open_repository` does today (`app/src/workspace/view.rs:10842-10874`);
 2. on selection, canonicalize off the render path and verify directory/readability;
-3. only after success create the tab/pane group, assign `project_root`, register the directory with project management/working-directories state, and activate it;
+3. only after success upsert the canonical directory in `ProjectManagementModel`, create the tab/pane group, assign `project_root`, register the directory with working-directories state, and activate it;
 4. initialize the welcome/new-session surface with that root as its context instead of immediately opening an unrelated terminal;
 5. on cancellation or failure, do not append a tab or disturb focus/order/scroll.
 
-The folder basename is context, not a forced custom tab title. This lets user rename/reset continue to follow existing semantics while the title resolver naturally displays the basename. Selecting an already-used folder intentionally creates another independent tab-backed project.
+The folder basename is context, not a forced custom tab title. This lets user rename/reset continue to follow existing semantics while the title resolver naturally displays the basename. Selecting an already-used folder through the create menu intentionally creates another independent tab-backed project. Selecting the library row itself activates an existing local instance when present and creates at most one new local instance per action.
 
 Keep browser, terminal, worktree, and other pane-level creation in their existing command/menu homes. The horizontal strip may be removed only after an audit confirms every former top-strip action has another visible, palette, menu, or keybinding home.
 
@@ -381,6 +403,7 @@ Extend `app/src/persistence/sqlite_tests.rs` with round trips for:
 - Projects open/width, active right tool/open state, and independent Files/Code Review widths;
 - null-column migration fallbacks from legacy left/right panel states;
 - flag-on save followed by flag-off load/save followed by flag-on load, proving neither state family is erased (95–102).
+- project-registry entries surviving after their last live tab closes and appearing after constructing a fresh workspace (103–108).
 
 ### Workspace and view tests
 
@@ -393,6 +416,8 @@ Add focused workspace tests for:
 - `New chat` activates the target project, creates a distinct pane with the correct cwd and configured provider, and never replaces an existing chat (49–52, 56);
 - child click activates and focuses the existing pane/session (53–55);
 - active-project changes retarget Files and Code Review while retaining selected tool and width (67–75, 82–87).
+- merged target construction deduplicates unopened roots against local tabs, preserves duplicate local tabs, and keeps scratch tabs local (20–23, 103–108);
+- selecting a library row opens it only in the current workspace, while a project-model event rerenders every subscribed workspace without changing selection (103–108).
 
 ### Integration coverage
 
@@ -400,13 +425,14 @@ Add a project-sidebar integration scenario under `crates/integration` and regist
 
 The scenario should:
 
-1. create two folder-backed projects, including the same folder twice, and verify independent rows;
+1. create two folder-backed projects, including the same folder twice, and verify independent local rows;
 2. start two chats in one project and assert both inherited cwd values;
 3. switch projects and child chats and verify pane/session identity is unchanged;
 4. open Files, switch to Code Review, return to Files, and assert project retargeting plus independent widths;
 5. reorder, detach/reattach when the harness supports multiple windows, close, save, and restore;
 6. verify no horizontal tab-strip element exists while the flag is enabled;
 7. disable the flag and run an existing horizontal-shell smoke test.
+8. create a second window, verify it shows the registered folders without receiving the first window's tabs, open one library row there, and verify both windows retain independent live instances.
 
 Retain existing Files/global-search, Code Review, tab restore, and cross-window drag suites as regressions.
 
@@ -424,7 +450,7 @@ Validate the complete PRODUCT invariant set on macOS:
 | 64–81 | Tool icon mouse/keyboard states, direct switching, separate widths, Files tree/search/Timeline, project switches and loading/unsupported states. |
 | 82–87 | Full Code Review workflow, diff badge, header without duplicate close, maximize/minimize and switching to Files. |
 | 88–94 | Global chrome duplicate/action audit and hidden legacy layout settings under the feature. |
-| 95–102 | Relaunch, flag rollback/forward, animations, rapid reversal, theme/zoom/resize/fullscreen, fallback platforms. |
+| 95–108 | Relaunch, flag rollback/forward, animations, rapid reversal, theme/zoom/resize/fullscreen, fallback platforms, global library visibility, live cross-window updates, independent per-window instances, and unavailable stored paths. |
 
 Run the visual pass in light and dark themes at default and non-default zoom, with short/long/localized titles, reduced window widths, and VoiceOver. Attach screenshots or video for Projects open/closed, Files, Code Review, maximized Code Review, search, empty state, folder error, duplicate names, and narrow responsive collapse.
 
@@ -456,6 +482,12 @@ Mitigation: keep new state solely on `Workspace`, route actions at the feature b
 `WorkingDirectoriesModel` intentionally changes as panes change and canonicalizes paths during refresh. Treating its first root as the permanent project root would silently reassign projects.
 
 Mitigation: persist an explicit optional `project_root`, perform only a one-time legacy inference, and use a resolver that does not mutate the assignment. Keep canonicalization/validation off the render path.
+
+### Global library and live tabs are confused
+
+Treating registry entries as tabs would imply pane state, menus, drag, and chat children that do not exist; treating tabs as the registry would make projects disappear from new windows.
+
+Mitigation: use an explicit `ProjectListTarget` and exhaustive handling. Only `LiveTab` targets receive tab behavior; only `Library` targets use path-based open. Pure merged-list tests cover deduplication and scratch projects.
 
 ### Chat rows become another session database
 
@@ -489,7 +521,7 @@ Mitigation: give the pure layout policy a small token-derived hysteresis margin:
 
 ## Explicitly deferred
 
-- Persistent/recent/pinned projects separate from open tabs.
+- Pinning, manual ordering, or grouping of the persistent project library; unopened entries remain most-recently-used.
 - Grouping multiple tabs by repository.
 - Non-chat child rows or global chat-history children.
 - Windows/Linux/WASM project-sidebar rollout.
