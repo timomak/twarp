@@ -759,18 +759,21 @@ impl DiffStateModel {
             handle.abort();
         }
 
-        let Some(current_repository) = &self.repository else {
-            // No repository bound (the one-shot detection in `new` lost a
-            // startup race or transiently failed). Retry the binding instead
-            // of silently no-oping forever — `set_active_repository` will
-            // load metadata and re-trigger diff loading once bound.
+        let current_repository_path = if let Some(current_repository) = &self.repository {
+            current_repository
+                .as_ref(ctx)
+                .root_dir()
+                .to_local_path_lossy()
+        } else {
+            // Repository watching is asynchronous and can lag behind startup.
+            // Diff calculation only needs the known repository path, so load
+            // immediately while binding continues in the background.
+            let Some(repo_path) = self.repo_path.clone().map(PathBuf::from) else {
+                return;
+            };
             self.bind_repository(ctx);
-            return;
+            repo_path
         };
-        let current_repository_path = current_repository
-            .as_ref(ctx)
-            .root_dir()
-            .to_local_path_lossy();
         let mode = self.mode.clone();
         self.state = InternalDiffState::Loading;
         self.computing_diffs_abort_handle = Some(ctx.spawn(
@@ -1374,13 +1377,18 @@ impl DiffStateModel {
         if !self.metadata_refresh_enabled {
             return;
         }
-        let Some(current_repository) = &self.repository else {
-            return;
+        let current_repository_path = if let Some(current_repository) = &self.repository {
+            current_repository
+                .as_ref(ctx)
+                .root_dir()
+                .to_local_path_lossy()
+        } else {
+            let Some(repo_path) = self.repo_path.clone().map(PathBuf::from) else {
+                return;
+            };
+            self.bind_repository(ctx);
+            repo_path
         };
-        let current_repository_path = current_repository
-            .as_ref(ctx)
-            .root_dir()
-            .to_local_path_lossy();
         if let Some(handle) = self.computing_metadata_abort_handle.take() {
             handle.abort();
         }
@@ -1495,6 +1503,13 @@ impl DiffStateModel {
             },
             |_, _| {},
         );
+
+        // Repository detection can finish after Code Review has already opened.
+        // The initial load then returned early while `repository` was None; now
+        // that the handle is bound, complete that deferred diff load immediately.
+        if self.metadata_refresh_enabled {
+            self.load_diffs_for_current_repo(false, ctx);
+        }
     }
 
     #[cfg(feature = "local_fs")]

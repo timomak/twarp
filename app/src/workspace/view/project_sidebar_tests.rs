@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use super::{
-    merged_project_targets, project_disambiguation, project_matches_search, project_title,
-    resolve_project_directory, should_responsively_collapse_right_tool, toggle_right_tool_state,
-    ProjectListTarget,
+    code_review_tool_is_open, merged_project_targets, project_disambiguation,
+    project_matches_search, project_tab_title, project_title, resolve_project_directory,
+    should_responsively_collapse_right_tool, toggle_right_tool_state, ProjectListTarget,
 };
 use crate::app_state::RightToolKind;
 use crate::workspace::view::ProjectDirectoryResolution;
@@ -52,6 +52,15 @@ fn project_title_uses_only_unambiguous_derived_root() {
 }
 
 #[test]
+fn project_tab_title_keeps_the_saved_tab_name() {
+    assert_eq!(
+        project_tab_title(Some("bruno v3"), "Claude Code"),
+        "bruno v3"
+    );
+    assert_eq!(project_tab_title(None, "Claude Code"), "Claude Code");
+}
+
+#[test]
 fn project_search_is_case_insensitive_and_preserves_empty_query() {
     assert!(project_matches_search(
         "REPO",
@@ -65,7 +74,7 @@ fn project_search_is_case_insensitive_and_preserves_empty_query() {
 }
 
 #[test]
-fn merged_projects_keep_live_tabs_and_add_only_unopened_library_entries() {
+fn merged_projects_group_live_tabs_by_directory_and_add_only_unopened_library_entries() {
     let alpha = PathBuf::from("/work/alpha");
     let beta = PathBuf::from("/work/beta");
     let targets = merged_project_targets(
@@ -76,9 +85,8 @@ fn merged_projects_keep_live_tabs_and_add_only_unopened_library_entries() {
     assert_eq!(
         targets,
         vec![
-            ProjectListTarget::LiveTab(0),
-            ProjectListTarget::LiveTab(1),
-            ProjectListTarget::LiveTab(2),
+            ProjectListTarget::LiveProject(vec![0, 2]),
+            ProjectListTarget::LiveProject(vec![1]),
             ProjectListTarget::Library(beta),
         ]
     );
@@ -110,6 +118,13 @@ fn right_tool_host_toggles_switches_and_clears_maximize() {
     );
     assert!(!closed.open);
     assert!(closed.clear_code_review_maximize);
+}
+
+#[test]
+fn code_review_open_state_follows_the_shared_tool_host() {
+    assert!(code_review_tool_is_open(RightToolKind::CodeReview, true));
+    assert!(!code_review_tool_is_open(RightToolKind::CodeReview, false));
+    assert!(!code_review_tool_is_open(RightToolKind::Files, true));
 }
 
 #[test]

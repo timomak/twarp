@@ -1369,8 +1369,15 @@ impl Workspace {
                 let matches = me.matching_project_targets(ctx);
                 if let Some(target) = matches.get(me.projects_search_selection).cloned() {
                     match target {
-                        project_sidebar::ProjectListTarget::LiveTab(index) => {
-                            me.activate_tab(index, ctx);
+                        project_sidebar::ProjectListTarget::LiveProject(tab_indices) => {
+                            if let Some(index) = tab_indices
+                                .iter()
+                                .copied()
+                                .find(|index| *index == me.active_tab_index())
+                                .or_else(|| tab_indices.first().copied())
+                            {
+                                me.activate_tab(index, ctx);
+                            }
                         }
                         project_sidebar::ProjectListTarget::Library(path) => {
                             #[cfg(feature = "local_fs")]
@@ -3228,6 +3235,11 @@ impl Workspace {
                 self.projects_sidebar_open = window_snapshot.projects_sidebar_open;
                 self.right_tool = window_snapshot.right_tool.unwrap_or(RightToolKind::Files);
                 self.right_tool_open = window_snapshot.right_tool_open;
+                self.current_workspace_state.is_code_review_panel_open =
+                    project_sidebar::code_review_tool_is_open(
+                        self.right_tool,
+                        self.right_tool_open,
+                    );
 
                 window_snapshot
                     .tabs
@@ -3247,6 +3259,11 @@ impl Workspace {
                         self.tabs[tab_index].project_root = saved_tab.project_root.clone();
                         self.tabs[tab_index].project_root_initialized =
                             saved_tab.project_root_initialized;
+                        if let Some(project_root) = saved_tab.project_root.clone() {
+                            ProjectManagementModel::handle(ctx).update(ctx, |projects, ctx| {
+                                projects.upsert_project(project_root, ctx);
+                            });
+                        }
 
                         let pane_group = self.tabs[tab_index].pane_group.clone();
 
@@ -19161,6 +19178,14 @@ impl Workspace {
         }
         self.right_tool = transition.tool;
         self.right_tool_open = transition.open;
+        self.current_workspace_state.is_code_review_panel_open =
+            project_sidebar::code_review_tool_is_open(self.right_tool, self.right_tool_open);
+        self.sync_code_review_panel_state_to_pane_groups(ctx);
+        if !self.current_workspace_state.is_code_review_panel_open {
+            self.right_panel_view.update(ctx, |view, ctx| {
+                view.close_code_review(ctx);
+            });
+        }
         if transition.open {
             match transition.tool {
                 RightToolKind::Files => {
@@ -21376,6 +21401,22 @@ impl View for Workspace {
                     .with_background(util::get_terminal_background_fill(self.window_id, app))
                     .finish()
             }
+        };
+        // The project shell is itself the full-window chrome. Workspace views can
+        // be measured intrinsically by an ancestor before the final window pass;
+        // without an explicit finite boundary that unbounded height reaches the
+        // sidebar, right tool, and activity strip and produces NaN paint bounds.
+        let panels = if use_project_shell {
+            if let Some(bounds) = app.window_bounds(&self.window_id) {
+                ConstrainedBox::new(panels)
+                    .with_width(bounds.width())
+                    .with_height(bounds.height())
+                    .finish()
+            } else {
+                panels
+            }
+        } else {
+            panels
         };
         let mut stack = Stack::new();
 
