@@ -40,6 +40,7 @@ mod diff_cards;
 mod inline_action;
 mod repo_context;
 mod thinking;
+mod timeline;
 mod todos;
 mod tool_cards;
 mod turn_presentation;
@@ -84,18 +85,19 @@ use twarpui::platform::{FilePickerConfiguration, MicrophoneAccessState};
 use twarpui::r#async::Timer;
 use twarpui::ui_components::button::ButtonVariant;
 use twarpui::ui_components::slider::SliderStateHandle;
+use twarpui::units::IntoPixels;
 use twarpui::{
     elements::{
-        Align, Border, CacheOption, ChildAnchor, Clipped, ClippedScrollStateHandle,
+        Align, AnchorPair, Border, CacheOption, ChildAnchor, Clipped, ClippedScrollStateHandle,
         ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss,
-        DispatchEventResult, DropShadow, Element, EventDispatchMode, EventHandler, Expanded, Fill,
-        Flex, FormattedTextElement, Highlight, HighlightedHyperlink, HighlightedRange, Hoverable,
-        HyperlinkUrl, Icon, Image, MainAxisAlignment, MainAxisSize, MouseStateHandle,
-        OffsetPositioning, Padding, ParentAnchor, ParentElement, ParentOffsetBounds,
-        PositionedElementAnchor, PositionedElementOffsetBounds, PulsingIcon,
+        DispatchEventResult, DropShadow, Element, Empty, EventDispatchMode, EventHandler, Expanded,
+        Fill, Flex, FormattedTextElement, Highlight, HighlightedHyperlink, HighlightedRange,
+        Hoverable, HyperlinkUrl, Icon, Image, MainAxisAlignment, MainAxisSize, MouseStateHandle,
+        OffsetPositioning, OffsetType, Padding, ParentAnchor, ParentElement, ParentOffsetBounds,
+        PositionedElementAnchor, PositionedElementOffsetBounds, PositioningAxis, PulsingIcon,
         PulsingIconStateHandle, Radius, SavePosition, ScrollTarget, ScrollToPositionMode,
         ScrollbarWidth, SelectableArea, SelectionHandle, Shrinkable, SizeConstraintCondition,
-        SizeConstraintSwitch, Stack, Text,
+        SizeConstraintSwitch, Stack, Text, XAxisAnchor, YAxisAnchor,
     },
     platform::Cursor,
     presenter::ChildView,
@@ -112,6 +114,7 @@ use self::composer::{SuggestionKind, SuggestionQuery};
 use self::diff_cards::DiffCard;
 use self::repo_context::{CiState, RepoContext};
 use self::thinking::ThinkingUi;
+use self::timeline::{project_timeline, TimelineEntry};
 use self::tool_cards::{render_tool_card, ToolCardUi};
 use self::turn_presentation::{
     file_edit_summaries, project_turns, FileEditSummary, TurnPresentation,
@@ -257,11 +260,10 @@ const TRANSCRIPT_FADE_HEIGHT: f32 = 150.;
 /// scrollable so the overlay scrollbar can hug the pane's right edge while the
 /// prose keeps its breathing room.
 const TRANSCRIPT_GUTTER: f32 = spacing::LG;
-/// Position id of the zero-height sentinel pinned to the end of the transcript.
-/// Bottom-stick auto-scroll (PRODUCT §14) scrolls this into view to follow
-/// streaming output and to open a resumed session at its latest message.
-const TRANSCRIPT_BOTTOM_POSITION_ID: &str = "claude_transcript_bottom";
 const COMPOSER_CORNER_RADIUS: f32 = radius::PANEL;
+/// A short conversation does not need a navigator; showing one would add
+/// chrome without improving orientation.
+const TIMELINE_MIN_TURNS: usize = 3;
 /// Slack (px) for the streaming follow-to-bottom check. While following, the
 /// view sits exactly at the bottom; this only absorbs sub-pixel/line-height
 /// rounding so a genuine upward scroll (tens of px) reliably pauses the follow.
@@ -398,6 +400,9 @@ pub enum ClaudeCodeViewAction {
     /// "scroll to bottom" button shown above the composer when the user has
     /// scrolled up off the bottom.
     ScrollToBottom,
+    /// Jump to the user message that starts a turn from the compact timeline
+    /// shown at the left edge of wide agent panes.
+    JumpToTurn(usize),
     /// Expand / collapse the tool card with this tool-use id (PRODUCT §19).
     ToggleToolCard(String),
     /// Expand / collapse the chronological work hidden behind a completed
@@ -729,6 +734,12 @@ pub struct ClaudeCodeView {
     /// credentials as a terminal-launched session.
     codex_restore_pending: bool,
     scroll_state: ClippedScrollStateHandle,
+    /// Per-view namespace for transcript position ids. Position caches are
+    /// window-global, so session ids alone are not enough when the same
+    /// conversation is open in two side-by-side panes.
+    timeline_position_key: String,
+    /// Stable hover/click state for each user-turn marker.
+    timeline_turn_mouse: std::cell::RefCell<HashMap<usize, MouseStateHandle>>,
     /// Drag-to-select state for the transcript (PRODUCT §13: the prose is
     /// read-only, but the user still needs to highlight + copy it). The
     /// [`SelectableArea`] wrapping the transcript drives the gesture; the
@@ -1323,6 +1334,8 @@ impl ClaudeCodeView {
             interactive_env_vars: None,
             codex_restore_pending: restored_session && provider == AgentProvider::Codex,
             scroll_state: ClippedScrollStateHandle::default(),
+            timeline_position_key: uuid::Uuid::new_v4().to_string(),
+            timeline_turn_mouse: Default::default(),
             selection_handle: Default::default(),
             transcript_selection: Default::default(),
             child: None,
@@ -4161,6 +4174,7 @@ impl ClaudeCodeView {
             return;
         }
         self.transcript.clear();
+        self.timeline_turn_mouse.borrow_mut().clear();
         self.tool_card_ui.clear();
         self.expanded_completed_turns.clear();
         self.completed_turn_mouse.borrow_mut().clear();
@@ -4239,9 +4253,53 @@ impl ClaudeCodeView {
     /// at the bottom.
     fn scroll_to_bottom(&self) {
         self.scroll_state.scroll_to_position(ScrollTarget {
-            position_id: TRANSCRIPT_BOTTOM_POSITION_ID.to_owned(),
+            position_id: self.transcript_bottom_position_id(),
             mode: ScrollToPositionMode::FullyIntoView,
         });
+    }
+
+    fn transcript_top_position_id(&self) -> String {
+        format!("agent_transcript_top:{}", self.timeline_position_key)
+    }
+
+    fn transcript_bottom_position_id(&self) -> String {
+        format!("agent_transcript_bottom:{}", self.timeline_position_key)
+    }
+
+    fn transcript_viewport_position_id(&self) -> String {
+        format!("agent_transcript_viewport:{}", self.timeline_position_key)
+    }
+
+    fn turn_position_id(&self, turn_start: usize) -> String {
+        format!(
+            "agent_transcript_turn:{}:{turn_start}",
+            self.timeline_position_key
+        )
+    }
+
+    /// Align a selected turn with the top of the viewport. Saved turn bounds
+    /// and the top sentinel share the same scroll translation, so subtracting
+    /// them yields an exact document offset even when the pane is scrolled.
+    /// Fall back to the scrollable's built-in position targeting during the
+    /// first frame, before saved geometry exists.
+    fn jump_to_turn(&self, turn_start: usize, ctx: &ViewContext<Self>) {
+        let turn_position_id = self.turn_position_id(turn_start);
+        let top_position_id = self.transcript_top_position_id();
+        match (
+            ctx.element_position_by_id(&turn_position_id),
+            ctx.element_position_by_id(&top_position_id),
+        ) {
+            (Some(turn), Some(top)) => {
+                let target = (turn.min_y() - top.min_y())
+                    .max(0.0)
+                    .min(self.scroll_state.max_scroll().as_f32());
+                self.scroll_state.scroll_to(target.into_pixels());
+            }
+            _ => self.scroll_state.scroll_to_position(ScrollTarget {
+                position_id: turn_position_id,
+                mode: ScrollToPositionMode::TopIntoView,
+            }),
+        }
     }
 
     /// twarp: the floating circular "scroll to bottom" button. Returned only
@@ -7032,6 +7090,216 @@ impl ClaudeCodeView {
         body.finish()
     }
 
+    /// Resolve a marker's document-relative position and whether its turn
+    /// intersects the current viewport. Saved positions are scroll-translated,
+    /// but subtracting the saved document-top position cancels that translation.
+    fn timeline_marker_layout(
+        &self,
+        entry: &TimelineEntry,
+        entry_index: usize,
+        entry_count: usize,
+        app: &AppContext,
+    ) -> (f32, bool) {
+        let fallback_ratio = (entry_index + 1) as f32 / (entry_count + 1) as f32;
+        let geometry = (
+            app.element_position_by_id_at_last_frame(
+                self.window_id,
+                self.transcript_top_position_id(),
+            ),
+            app.element_position_by_id_at_last_frame(
+                self.window_id,
+                self.transcript_bottom_position_id(),
+            ),
+            app.element_position_by_id_at_last_frame(
+                self.window_id,
+                self.transcript_viewport_position_id(),
+            ),
+            app.element_position_by_id_at_last_frame(
+                self.window_id,
+                self.turn_position_id(entry.turn_start),
+            ),
+        );
+        let (Some(document_top), Some(document_bottom), Some(viewport), Some(turn)) = geometry
+        else {
+            let visible = self.scroll_state.is_at_bottom(AUTOSCROLL_STICK_SLACK)
+                && entry_index + 1 == entry_count;
+            return (fallback_ratio, visible);
+        };
+
+        let document_height = document_bottom.max_y() - document_top.min_y();
+        if document_height <= border::HAIRLINE_WIDTH {
+            return (fallback_ratio, false);
+        }
+
+        let turn_top = (turn.min_y() - document_top.min_y()).max(0.0);
+        let turn_bottom = (turn.max_y() - document_top.min_y()).max(turn_top);
+        let viewport_height = viewport.height();
+        let scroll_top = self.scroll_state.scroll_start().as_f32();
+        let visible = turn_bottom >= scroll_top && turn_top <= scroll_top + viewport_height;
+
+        let mut ratio = (turn_top / document_height).clamp(0.0, 1.0);
+        // Keep the marker's hit target inside the rail at both extremes.
+        if viewport_height > spacing::LG {
+            let inset_ratio = spacing::SM / viewport_height;
+            ratio = ratio.clamp(inset_ratio, 1.0 - inset_ratio);
+        }
+        (ratio, visible)
+    }
+
+    fn render_timeline_preview(entry: &TimelineEntry, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let surface = theme.surface_1();
+        let mut content = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(spacing::XS)
+            .with_child(
+                Text::new_inline(
+                    entry.prompt_preview.clone(),
+                    appearance.ui_font_family(),
+                    type_ramp::UI.size,
+                )
+                .with_color(theme.main_text_color(surface.clone()).into_solid())
+                .with_selectable(false)
+                .finish(),
+            );
+        if let Some(response) = &entry.response_preview {
+            content.add_child(
+                Text::new_inline(
+                    response.clone(),
+                    appearance.ui_font_family(),
+                    type_ramp::LABEL.size,
+                )
+                .with_color(theme.sub_text_color(surface.clone()).into_solid())
+                .with_selectable(false)
+                .finish(),
+            );
+        }
+
+        let card = Container::new(content.finish())
+            .with_padding(Padding::uniform(spacing::MD))
+            .with_background_color(surface.into_solid())
+            .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::PANEL)))
+            .finish();
+        let (offset_y, blur_radius, spread_radius, alpha) = elevation::POPOVER;
+        Container::new(card)
+            .with_drop_shadow(DropShadow {
+                color: ColorU::new(0, 0, 0, (alpha * 255.0).round() as u8),
+                offset: vec2f(0.0, offset_y),
+                blur_radius,
+                spread_radius,
+            })
+            .finish()
+    }
+
+    fn render_timeline_marker(
+        &self,
+        entry: &TimelineEntry,
+        visible: bool,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let mouse = self
+            .timeline_turn_mouse
+            .borrow_mut()
+            .entry(entry.turn_start)
+            .or_default()
+            .clone();
+        let turn_start = entry.turn_start;
+        let entry = TimelineEntry {
+            turn_start,
+            prompt_preview: entry.prompt_preview.clone(),
+            response_preview: entry.response_preview.clone(),
+        };
+
+        Hoverable::new(mouse, move |state| {
+            let hovered = state.is_hovered();
+            let marker_width = if hovered {
+                spacing::XL
+            } else if visible {
+                spacing::LG
+            } else {
+                spacing::SM
+            };
+            let marker_color = if hovered {
+                theme.main_text_color(theme.background()).into_solid()
+            } else if visible {
+                theme.sub_text_color(theme.background()).into_solid()
+            } else {
+                theme.outline().into_solid()
+            };
+            let marker = ConstrainedBox::new(
+                Container::new(Empty::new().finish())
+                    .with_background_color(marker_color)
+                    .finish(),
+            )
+            .with_width(marker_width)
+            .with_height(border::HAIRLINE_WIDTH)
+            .finish();
+            let target = ConstrainedBox::new(Align::new(marker).left().finish())
+                .with_width(spacing::XXL)
+                .with_height(spacing::MD)
+                .finish();
+
+            let mut marker_stack = Stack::new().with_child(target);
+            if hovered {
+                marker_stack.add_positioned_overlay_child(
+                    Self::render_timeline_preview(&entry, appearance),
+                    OffsetPositioning::offset_from_parent(
+                        vec2f(spacing::XS, 0.0),
+                        ParentOffsetBounds::Unbounded,
+                        ParentAnchor::MiddleRight,
+                        ChildAnchor::MiddleLeft,
+                    ),
+                );
+            }
+            marker_stack.finish()
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(ClaudeCodeViewAction::JumpToTurn(turn_start));
+        })
+        .finish()
+    }
+
+    fn render_timeline(&self, entries: &[TimelineEntry], app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let mut rail = Stack::new().with_event_dispatch_mode(EventDispatchMode::Waterfall);
+        // A full-constraint inert child gives percentage-positioned markers the
+        // same height as the transcript viewport without creating a hit target.
+        rail.add_child(Align::new(Empty::new().finish()).finish());
+        for (index, entry) in entries.iter().enumerate() {
+            let (ratio, visible) = self.timeline_marker_layout(entry, index, entries.len(), app);
+            rail.add_positioned_overlay_child(
+                self.render_timeline_marker(entry, visible, appearance),
+                OffsetPositioning::from_axes(
+                    PositioningAxis::relative_to_parent(
+                        ParentOffsetBounds::Unbounded,
+                        OffsetType::Pixel(spacing::SM),
+                        AnchorPair::new(XAxisAnchor::Left, XAxisAnchor::Left),
+                    ),
+                    PositioningAxis::relative_to_parent(
+                        ParentOffsetBounds::Unbounded,
+                        OffsetType::Percentage(ratio),
+                        AnchorPair::new(YAxisAnchor::Top, YAxisAnchor::Middle),
+                    ),
+                ),
+            );
+        }
+
+        // The rail must never compete with prose or message avatars. It appears
+        // only when the pane is wider than the complete document measure plus
+        // its two horizontal gutters.
+        Box::new(SizeConstraintSwitch::new(
+            rail.finish(),
+            [(
+                SizeConstraintCondition::WidthLessThan(measure::PROSE_MAX_WIDTH + spacing::XXL),
+                Align::new(Empty::new().finish()).finish(),
+            )],
+        ))
+    }
+
     /// Render the transcript into a [`UniformList`] (PRODUCT §14) wrapped in a
     /// vertical [`Scrollable`], mirroring [`GlobalSearchView::render_results`].
     /// Bottom-stick auto-scroll (PRODUCT §14) layers on in 7c when content
@@ -7052,6 +7320,7 @@ impl ClaudeCodeView {
             .with_main_axis_size(MainAxisSize::Min);
 
         let items = self.transcript.items();
+        let timeline_entries = project_timeline(items, self.streaming);
         let mut next_index = 0;
         for turn in project_turns(items, self.streaming) {
             // Defensive prefix handling: restored/provider transcripts can
@@ -7079,7 +7348,12 @@ impl ClaudeCodeView {
                     content.add_child(self.render_item(index, item, app));
                 }
             }
-            turns.add_child(content.finish());
+            let position_id = self.turn_position_id(turn.start);
+            turns.add_child(
+                SavePosition::new(content.finish(), &position_id)
+                    .for_single_frame()
+                    .finish(),
+            );
             next_index = turn.end;
         }
         for (index, item) in items.iter().enumerate().skip(next_index) {
@@ -7103,25 +7377,44 @@ impl ClaudeCodeView {
                 .finish(),
         );
 
-        // PRODUCT §14: a zero-height marker pinned to the end of the transcript.
+        // PRODUCT §14: a minimal marker pinned to the end of the transcript.
         // [`Self::scroll_to_bottom`] scrolls this into view to follow streaming
         // output and to open a resumed session at its latest message.
+        let bottom_position_id = self.transcript_bottom_position_id();
         turns.add_child(
             SavePosition::new(
                 ConstrainedBox::new(Container::new(Flex::row().finish()).finish())
-                    .with_height(1.)
+                    .with_height(border::HAIRLINE_WIDTH)
                     .finish(),
-                TRANSCRIPT_BOTTOM_POSITION_ID,
+                &bottom_position_id,
             )
+            .for_single_frame()
             .finish(),
         );
+
+        let top_position_id = self.transcript_top_position_id();
+        let document = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_child(
+                SavePosition::new(
+                    ConstrainedBox::new(Empty::new().finish())
+                        .with_height(border::HAIRLINE_WIDTH)
+                        .finish(),
+                    &top_position_id,
+                )
+                .for_single_frame()
+                .finish(),
+            )
+            .with_child(turns.finish())
+            .finish();
 
         // The composer floats over the bottom of the pane; this clearance is
         // inside the scroll content so the newest message can scroll out from
         // underneath it (PRODUCT §15).
         let content = Container::new(
             Align::new(
-                ConstrainedBox::new(turns.finish())
+                ConstrainedBox::new(document)
                     .with_max_width(measure::PROSE_MAX_WIDTH)
                     .finish(),
             )
@@ -7159,7 +7452,7 @@ impl ClaudeCodeView {
         .finish();
 
         let selection = self.transcript_selection.clone();
-        SelectableArea::new(
+        let selectable = SelectableArea::new(
             self.selection_handle.clone(),
             move |args, ctx, _| {
                 // A mouse-down on the transcript is consumed by this
@@ -7192,7 +7485,19 @@ impl ClaudeCodeView {
             },
             scrollable,
         )
-        .finish()
+        .finish();
+        let viewport_position_id = self.transcript_viewport_position_id();
+        let selectable = SavePosition::new(selectable, &viewport_position_id)
+            .for_single_frame()
+            .finish();
+
+        let mut transcript_stack =
+            Stack::new().with_event_dispatch_mode(EventDispatchMode::Waterfall);
+        transcript_stack.add_child(selectable);
+        if timeline_entries.len() >= TIMELINE_MIN_TURNS {
+            transcript_stack.add_child(self.render_timeline(&timeline_entries, app));
+        }
+        transcript_stack.finish()
     }
 
     /// The quiet, turn-wide disclosure shown after work settles. Expanding it
@@ -8995,6 +9300,10 @@ impl TypedActionView for ClaudeCodeView {
             ClaudeCodeViewAction::Stop => self.stop(ctx),
             ClaudeCodeViewAction::ScrollToBottom => {
                 self.scroll_to_bottom();
+                ctx.notify();
+            }
+            ClaudeCodeViewAction::JumpToTurn(turn_start) => {
+                self.jump_to_turn(*turn_start, ctx);
                 ctx.notify();
             }
             ClaudeCodeViewAction::ToggleToolCard(id) => self.toggle_tool_card(id, ctx),
