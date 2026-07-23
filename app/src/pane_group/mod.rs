@@ -6363,31 +6363,15 @@ impl TypedActionView for PaneGroup {
         use PaneGroupAction::*;
         match action {
             Add(direction) => {
-                // twarp: splitting from an agent pane opens another agent pane
-                // of the SAME provider (a Codex pane splits into a Codex pane)
-                // rather than a terminal — the split chords act as "another one
-                // of these next to it". Every other pane type keeps the
-                // new-terminal split.
-                if let Some((provider, cwd)) = self.focused_agent_pane_context(ctx) {
-                    let mut launch = claude_code::launch::LaunchOptions::default();
-                    launch.provider = provider;
-                    let pane = ClaudeCodePane::new(launch, cwd, ctx);
-                    self.add_pane_with_direction(
-                        *direction, pane, true, /* focus_new_pane */
-                        ctx,
-                    );
-                    ctx.emit(Event::AppStateChanged);
-                } else {
-                    let chosen_shell = {
-                        if let Some(model) = self.active_session_terminal_model(ctx) {
-                            let model = model.lock();
-                            model.shell_launch_state().available_shell()
-                        } else {
-                            None
-                        }
-                    };
-                    self.add_terminal_pane(*direction, chosen_shell, ctx);
-                }
+                let chosen_shell = {
+                    if let Some(model) = self.active_session_terminal_model(ctx) {
+                        let model = model.lock();
+                        model.shell_launch_state().available_shell()
+                    } else {
+                        None
+                    }
+                };
+                self.add_terminal_pane(*direction, chosen_shell, ctx);
             }
             Remove(view_id) => self.close_pane_with_confirmation(*view_id, ctx),
             RemoveActive => self.close_active_pane_with_confirmation(ctx),
