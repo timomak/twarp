@@ -379,13 +379,25 @@ impl Element for EventHandler {
                 ..
             }) => {
                 if let Some(callback) = self.left_mouse_down_with_modifiers.as_ref() {
-                    let handled =
-                        match callback.borrow_mut()(ctx, app, *position, modifiers, *click_count) {
+                    // Same in-bounds gate as `dispatch_callback`; without it every
+                    // handler in a list fires for a press anywhere in the window.
+                    let in_bounds = ctx
+                        .visible_rect(self.origin.unwrap(), self.size().unwrap())
+                        .is_some_and(|rect| rect.contains_point(*position));
+                    if in_bounds {
+                        let handled = match callback.borrow_mut()(
+                            ctx,
+                            app,
+                            *position,
+                            modifiers,
+                            *click_count,
+                        ) {
                             DispatchEventResult::PropagateToParent => false,
                             DispatchEventResult::StopPropagation => true,
                         };
-                    if handled {
-                        return true;
+                        if handled {
+                            return true;
+                        }
                     }
                 }
                 if self.dispatch_callback(self.left_mouse_down.as_ref(), ctx, *position, app) {
