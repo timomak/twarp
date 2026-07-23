@@ -8,7 +8,8 @@ use twarp_graphql::scalars::time::ServerTimestamp;
 use crate::{
     app_state::{
         AppState, CodePaneSnapShot, CodePaneTabSnapshot, LeafContents, LeafSnapshot,
-        PaneNodeSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
+        LeftPanelDisplayedTab, LeftPanelSnapshot, PaneNodeSnapshot, RightPanelSnapshot,
+        RightToolKind, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
     },
     cloud_object::{CloudObjectPermissions, Owner},
     code::editor_management::CodeSource,
@@ -119,6 +120,8 @@ fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapsh
     WindowSnapshot {
         tabs: vec![TabSnapshot {
             custom_title: None,
+            project_root: None,
+            project_root_initialized: true,
             root: PaneNodeSnapshot::Leaf(LeafSnapshot {
                 is_focused: true,
                 custom_vertical_tabs_title: None,
@@ -155,6 +158,12 @@ fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapsh
         vertical_tabs_panel_open,
         left_panel_width: None,
         right_panel_width: None,
+        projects_sidebar_open: true,
+        projects_sidebar_width: None,
+        right_tool: None,
+        right_tool_open: false,
+        files_tool_width: None,
+        code_review_tool_width: None,
     }
 }
 
@@ -192,6 +201,135 @@ fn test_sqlite_round_trips_vertical_tabs_panel_open() {
 }
 
 #[test]
+fn test_sqlite_round_trips_project_sidebar_state() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+
+    let mut window = test_terminal_window_snapshot(false);
+    window.tabs[0].custom_title = Some("API work".to_owned());
+    window.tabs[0].project_root = Some(PathBuf::from("/tmp/project-root"));
+    window.tabs[0].project_root_initialized = true;
+    window.projects_sidebar_open = false;
+    window.projects_sidebar_width = Some(264.);
+    window.right_tool = Some(RightToolKind::CodeReview);
+    window.right_tool_open = true;
+    window.files_tool_width = Some(312.);
+    window.code_review_tool_width = Some(488.);
+
+    let app_state = AppState {
+        windows: vec![window],
+        active_window_index: Some(0),
+        block_lists: Default::default(),
+        running_mcp_servers: Default::default(),
+    };
+    save_app_state(&mut conn, &app_state).expect("app state should save");
+
+    let restored = read_sqlite_data(&mut conn, None)
+        .expect("app state should load")
+        .app_state;
+    let window = &restored.windows[0];
+    assert!(!window.projects_sidebar_open);
+    assert_eq!(window.projects_sidebar_width, Some(264.));
+    assert_eq!(window.right_tool, Some(RightToolKind::CodeReview));
+    assert!(window.right_tool_open);
+    assert_eq!(window.files_tool_width, Some(312.));
+    assert_eq!(window.code_review_tool_width, Some(488.));
+    assert_eq!(window.tabs[0].custom_title.as_deref(), Some("API work"));
+    assert_eq!(
+        window.tabs[0].project_root.as_deref(),
+        Some(std::path::Path::new("/tmp/project-root"))
+    );
+    assert!(window.tabs[0].project_root_initialized);
+}
+
+#[cfg(unix)]
+#[test]
+fn test_sqlite_round_trips_non_utf8_project_root() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+    let raw_path = b"/tmp/project-\xff".to_vec();
+    let project_root = PathBuf::from(OsString::from_vec(raw_path.clone()));
+    let mut window = test_terminal_window_snapshot(false);
+    window.tabs[0].project_root = Some(project_root);
+
+    save_app_state(
+        &mut conn,
+        &AppState {
+            windows: vec![window],
+            active_window_index: Some(0),
+            block_lists: Default::default(),
+            running_mcp_servers: Default::default(),
+        },
+    )
+    .expect("app state should save");
+    let restored = read_sqlite_data(&mut conn, None)
+        .expect("app state should load")
+        .app_state;
+
+    assert_eq!(
+        restored.windows[0].tabs[0]
+            .project_root
+            .as_deref()
+            .expect("project root should restore")
+            .as_os_str()
+            .as_bytes(),
+        raw_path
+    );
+}
+
+#[test]
+fn test_sqlite_project_sidebar_legacy_null_fallbacks() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+    let mut window = test_terminal_window_snapshot(false);
+    window.tabs[0].left_panel = Some(LeftPanelSnapshot {
+        left_panel_displayed_tab: LeftPanelDisplayedTab::FileTree,
+        pane_group_id: "legacy-pane-group".to_owned(),
+        width: 275,
+    });
+    window.tabs[0].right_panel = Some(RightPanelSnapshot {
+        pane_group_id: "legacy-pane-group".to_owned(),
+        width: 525,
+        is_maximized: false,
+    });
+    save_app_state(
+        &mut conn,
+        &AppState {
+            windows: vec![window],
+            active_window_index: Some(0),
+            block_lists: Default::default(),
+            running_mcp_servers: Default::default(),
+        },
+    )
+    .expect("app state should save");
+    conn.batch_execute(
+        "UPDATE windows SET projects_sidebar_open = NULL, projects_sidebar_width = NULL, \
+         right_tool_kind = NULL, right_tool_open = NULL, files_tool_width = NULL, \
+         code_review_tool_width = NULL; \
+         UPDATE tabs SET project_root_initialized = NULL",
+    )
+    .expect("legacy columns should be nulled");
+
+    let restored = read_sqlite_data(&mut conn, None)
+        .expect("app state should load")
+        .app_state;
+    let window = &restored.windows[0];
+    assert!(window.projects_sidebar_open);
+    assert_eq!(window.projects_sidebar_width, Some(275.));
+    assert_eq!(window.files_tool_width, Some(275.));
+    assert_eq!(window.code_review_tool_width, Some(525.));
+    assert_eq!(window.right_tool, Some(RightToolKind::CodeReview));
+    assert!(window.right_tool_open);
+    assert!(!window.tabs[0].project_root_initialized);
+}
+
+#[test]
 fn test_sqlite_round_trips_custom_vertical_tabs_title() {
     let tempdir = tempfile::tempdir().expect("tempdir should be created");
     let database_path = tempdir.path().join("warp.sqlite");
@@ -201,6 +339,8 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
         windows: vec![WindowSnapshot {
             tabs: vec![TabSnapshot {
                 custom_title: None,
+                project_root: None,
+                project_root_initialized: true,
                 root: PaneNodeSnapshot::Leaf(LeafSnapshot {
                     is_focused: true,
                     custom_vertical_tabs_title: Some("Production API".to_string()),
@@ -237,6 +377,12 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
             vertical_tabs_panel_open: false,
             left_panel_width: None,
             right_panel_width: None,
+            projects_sidebar_open: true,
+            projects_sidebar_width: None,
+            right_tool: None,
+            right_tool_open: false,
+            files_tool_width: None,
+            code_review_tool_width: None,
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
@@ -272,6 +418,8 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
         windows: vec![WindowSnapshot {
             tabs: vec![TabSnapshot {
                 custom_title: None,
+                project_root: None,
+                project_root_initialized: true,
                 root: PaneNodeSnapshot::Leaf(LeafSnapshot {
                     is_focused: true,
                     custom_vertical_tabs_title: None,
@@ -308,6 +456,12 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
             vertical_tabs_panel_open: false,
             left_panel_width: None,
             right_panel_width: None,
+            projects_sidebar_open: true,
+            projects_sidebar_width: None,
+            right_tool: None,
+            right_tool_open: false,
+            files_tool_width: None,
+            code_review_tool_width: None,
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),

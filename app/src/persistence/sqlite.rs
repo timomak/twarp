@@ -106,8 +106,8 @@ use crate::workspaces::workspace::WorkspaceUid;
 use crate::{
     app_state::{
         AppState, BranchSnapshot, CodePaneSnapShot, CodePaneTabSnapshot, LeafContents,
-        LeafSnapshot, NotebookPaneSnapshot, PaneFlex, PaneNodeSnapshot, SplitDirection,
-        TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
+        LeafSnapshot, NotebookPaneSnapshot, PaneFlex, PaneNodeSnapshot, RightToolKind,
+        SplitDirection, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
     },
     workspaces::user_profiles::UserProfileWithUID,
 };
@@ -832,6 +832,12 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                 twarp_drive_index_width: window.twarp_drive_index_width,
                 left_panel_open: Some(window.left_panel_open),
                 vertical_tabs_panel_open: Some(window.vertical_tabs_panel_open),
+                projects_sidebar_open: Some(window.projects_sidebar_open),
+                projects_sidebar_width: window.projects_sidebar_width,
+                right_tool_kind: window.right_tool.map(RightToolKind::as_i32),
+                right_tool_open: Some(window.right_tool_open),
+                files_tool_width: window.files_tool_width,
+                code_review_tool_width: window.code_review_tool_width,
                 fullscreen_state: window.fullscreen_state as i32,
                 agent_management_filters: None,
             };
@@ -867,6 +873,8 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                         SelectedTabColor::Unset => None,
                         _ => serde_yaml::to_string(&tab.selected_color).ok(),
                     },
+                    project_root: tab.project_root.clone().map(encode_path),
+                    project_root_initialized: Some(tab.project_root_initialized),
                 })
                 .collect();
 
@@ -2667,6 +2675,8 @@ fn read_sqlite_data(
                     Some(TabSnapshot {
                         root,
                         custom_title: tab.custom_title,
+                        project_root: tab.project_root.map(decode_path),
+                        project_root_initialized: tab.project_root_initialized.unwrap_or(false),
                         default_directory_color: None,
                         selected_color: tab
                             .color
@@ -2757,6 +2767,27 @@ fn read_sqlite_data(
                     .is_some()
             });
 
+            let right_tool = window
+                .right_tool_kind
+                .and_then(RightToolKind::from_i32)
+                .or_else(|| {
+                    saved_tabs
+                        .get(tab_index)
+                        .and_then(|tab| tab.right_panel.as_ref())
+                        .map(|_| RightToolKind::CodeReview)
+                })
+                .or_else(|| {
+                    saved_tabs
+                        .get(tab_index)
+                        .and_then(|tab| tab.left_panel.as_ref())
+                        .map(|_| RightToolKind::Files)
+                });
+            let is_right_tool_open = window.right_tool_open.unwrap_or_else(|| {
+                saved_tabs
+                    .get(tab_index)
+                    .is_some_and(|tab| tab.right_panel.is_some() || tab.left_panel.is_some())
+            });
+
             WindowSnapshot {
                 tabs: saved_tabs,
                 active_tab_index: tab_index,
@@ -2771,6 +2802,12 @@ fn read_sqlite_data(
                 fullscreen_state: fullscreen_state_val,
                 left_panel_width,
                 right_panel_width,
+                projects_sidebar_open: window.projects_sidebar_open.unwrap_or(true),
+                projects_sidebar_width: window.projects_sidebar_width.or(left_panel_width),
+                right_tool,
+                right_tool_open: is_right_tool_open,
+                files_tool_width: window.files_tool_width.or(left_panel_width),
+                code_review_tool_width: window.code_review_tool_width.or(right_panel_width),
             }
         })
         .collect();

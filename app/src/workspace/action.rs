@@ -4,12 +4,12 @@ use std::sync::Arc;
 
 use twarp_util::path::LineAndColumnArg;
 
-use crate::app_state::AIConversationId;
+use crate::app_state::{AIConversationId, RightToolKind};
 use crate::auth::auth_manager::LoginGatedFeature;
 use crate::drive::items::TwarpDriveItemId;
 use crate::drive::CloudObjectTypeAndId;
 use crate::palette::PaletteMode;
-use crate::pane_group::PaneGroup;
+use crate::pane_group::{PaneGroup, PaneId};
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search;
 use crate::server::ids::SyncId;
@@ -97,6 +97,27 @@ pub enum WorkspaceAction {
     ActivatePrevTab,
     ActivateNextTab,
     ActivateLastTab,
+    ToggleProjectsSidebar,
+    ToggleProjectsSearch,
+    ToggleProjectCreateMenu {
+        position: Vector2F,
+    },
+    CreateScratchProject,
+    CreateProjectFromFolder,
+    ToggleProjectExpanded(EntityId),
+    NewProjectChat {
+        project_id: EntityId,
+        position: Vector2F,
+    },
+    NewProjectChatInDirectory {
+        project_id: EntityId,
+        directory: PathBuf,
+    },
+    FocusProjectChat {
+        project_id: EntityId,
+        pane_id: PaneId,
+    },
+    ToggleRightTool(RightToolKind),
     CyclePrevSession,
     CycleNextSession,
     MoveActiveTabLeft,
@@ -764,7 +785,13 @@ impl WorkspaceAction {
             | NewCodeFile
             | OpenRepository { .. }
             | SelectTabConfig(_)
-            | ToggleVerticalTabsPanel => true,
+            | ToggleVerticalTabsPanel
+            | ToggleProjectsSidebar
+            | CreateScratchProject
+            | CreateProjectFromFolder
+            | NewProjectChat { .. }
+            | NewProjectChatInDirectory { .. }
+            | ToggleRightTool(_) => true,
             CopyVersion(_)
             | ConfigureKeybindingSettings { .. }
             | ExportAllTwarpDriveObjects
@@ -792,6 +819,10 @@ impl WorkspaceAction {
             | ToggleSyntaxHighlighting
             | OpenLaunchConfigSaveModal
             | ToggleTabRightClickMenu { .. }
+            | ToggleProjectsSearch
+            | ToggleProjectCreateMenu { .. }
+            | ToggleProjectExpanded(_)
+            | FocusProjectChat { .. }
             | ToggleVerticalTabsPaneContextMenu { .. }
             | OpenNewSessionMenu { .. }
             | ToggleTabConfigsMenu

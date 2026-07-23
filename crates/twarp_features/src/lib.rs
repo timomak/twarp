@@ -806,6 +806,10 @@ pub enum FeatureFlag {
     /// with the tab strip starting to its right.
     DesignShellV1,
 
+    /// Replaces the horizontal tab strip with a Projects source list and hosts
+    /// Files / Code Review in a mutually exclusive right-side tool rail.
+    ProjectSidebar,
+
     /// Gates the Codex app-server backend for the agent pane.
     CodexAgentBackend,
 
@@ -884,6 +888,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,
     FeatureFlag::DesignShellV1,
+    FeatureFlag::ProjectSidebar,
     FeatureFlag::CodexAgentBackend,
     FeatureFlag::CloudModeSetupV2,
     // twarp 08b: re-enable Chrome-style cross-window tab dragging (detach a tab

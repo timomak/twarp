@@ -10,6 +10,7 @@ use crate::pane_group::{PaneGroup, PaneId};
 use crate::terminal::model::terminal_model::ConversationTranscriptViewerStatus;
 use crate::ui_components::conversation_status::{render_status_element, STATUS_ELEMENT_PADDING};
 use settings::Setting as _;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -201,6 +202,11 @@ pub struct PaneNameMenuTarget {
 #[derive(Clone)]
 pub struct TabData {
     pub pane_group: ViewHandle<PaneGroup>,
+    /// Stable directory assigned when the tab-backed project is created.
+    /// Pane working-directory changes do not rewrite this identity.
+    pub project_root: Option<PathBuf>,
+    /// False only for restored rows written before project roots existed.
+    pub project_root_initialized: bool,
     pub tab_mouse_state: MouseStateHandle,
     pub close_mouse_state: MouseStateHandle,
     pub tooltip_mouse_state: MouseStateHandle,
@@ -221,6 +227,8 @@ impl TabData {
     pub fn new(pane_group: ViewHandle<PaneGroup>) -> Self {
         Self {
             pane_group,
+            project_root: None,
+            project_root_initialized: true,
             tab_mouse_state: Default::default(),
             close_mouse_state: Default::default(),
             tooltip_mouse_state: Default::default(),

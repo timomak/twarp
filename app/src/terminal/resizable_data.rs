@@ -15,6 +15,9 @@ pub const DEFAULT_TWARP_DRIVE_INDEX_WIDTH: f32 = 300.;
 pub const DEFAULT_SETTINGS_PANEL_WIDTH: f32 = 194.;
 pub const DEFAULT_LEFT_PANEL_WIDTH: f32 = 240.;
 pub const DEFAULT_RIGHT_PANEL_WIDTH: f32 = 480.;
+pub const DEFAULT_PROJECTS_SIDEBAR_WIDTH: f32 = 240.;
+pub const DEFAULT_FILES_TOOL_WIDTH: f32 = 300.;
+pub const DEFAULT_CODE_REVIEW_TOOL_WIDTH: f32 = 480.;
 /// A naming system for the ResizableStateHandles
 pub enum ModalType {
     UniversalSearchWidth,
@@ -24,6 +27,9 @@ pub enum ModalType {
     SettingsPanelWidth,
     LeftPanelWidth,
     RightPanelWidth,
+    ProjectsSidebarWidth,
+    FilesToolWidth,
+    CodeReviewToolWidth,
 }
 
 /// A grouping of state handles for the resizables that should be stored and loaded as a part
@@ -36,6 +42,9 @@ pub struct ModalSizes {
     pub settings_panel_width: ResizableStateHandle,
     pub left_panel_width: ResizableStateHandle,
     pub right_panel_width: ResizableStateHandle,
+    pub projects_sidebar_width: ResizableStateHandle,
+    pub files_tool_width: ResizableStateHandle,
+    pub code_review_tool_width: ResizableStateHandle,
 }
 
 impl ModalSizes {
@@ -62,6 +71,18 @@ impl ModalSizes {
         let right_panel_width = window_snapshot
             .right_panel_width
             .unwrap_or(right_panel_size);
+        let projects_sidebar_width = window_snapshot
+            .projects_sidebar_width
+            .or(window_snapshot.left_panel_width)
+            .unwrap_or(DEFAULT_PROJECTS_SIDEBAR_WIDTH);
+        let files_tool_width = window_snapshot
+            .files_tool_width
+            .or(window_snapshot.left_panel_width)
+            .unwrap_or(DEFAULT_FILES_TOOL_WIDTH);
+        let code_review_tool_width = window_snapshot
+            .code_review_tool_width
+            .or(window_snapshot.right_panel_width)
+            .unwrap_or(DEFAULT_CODE_REVIEW_TOOL_WIDTH);
 
         Self {
             universal_search_width: resizable_state_handle(universal_search_width),
@@ -71,6 +92,9 @@ impl ModalSizes {
             settings_panel_width: resizable_state_handle(settings_panel_width),
             left_panel_width: resizable_state_handle(left_panel_width),
             right_panel_width: resizable_state_handle(right_panel_width),
+            projects_sidebar_width: resizable_state_handle(projects_sidebar_width),
+            files_tool_width: resizable_state_handle(files_tool_width),
+            code_review_tool_width: resizable_state_handle(code_review_tool_width),
         }
     }
 
@@ -83,6 +107,9 @@ impl ModalSizes {
             settings_panel_width: resizable_state_handle(DEFAULT_SETTINGS_PANEL_WIDTH),
             left_panel_width: resizable_state_handle(left_default),
             right_panel_width: resizable_state_handle(right_default),
+            projects_sidebar_width: resizable_state_handle(DEFAULT_PROJECTS_SIDEBAR_WIDTH),
+            files_tool_width: resizable_state_handle(DEFAULT_FILES_TOOL_WIDTH),
+            code_review_tool_width: resizable_state_handle(DEFAULT_CODE_REVIEW_TOOL_WIDTH),
         }
     }
 
@@ -96,6 +123,9 @@ impl ModalSizes {
             ModalType::SettingsPanelWidth => self.settings_panel_width.clone(),
             ModalType::LeftPanelWidth => self.left_panel_width.clone(),
             ModalType::RightPanelWidth => self.right_panel_width.clone(),
+            ModalType::ProjectsSidebarWidth => self.projects_sidebar_width.clone(),
+            ModalType::FilesToolWidth => self.files_tool_width.clone(),
+            ModalType::CodeReviewToolWidth => self.code_review_tool_width.clone(),
         }
     }
 }
@@ -111,6 +141,9 @@ impl Default for ModalSizes {
             settings_panel_width: resizable_state_handle(DEFAULT_SETTINGS_PANEL_WIDTH),
             left_panel_width: resizable_state_handle(DEFAULT_LEFT_PANEL_WIDTH),
             right_panel_width: resizable_state_handle(DEFAULT_RIGHT_PANEL_WIDTH),
+            projects_sidebar_width: resizable_state_handle(DEFAULT_PROJECTS_SIDEBAR_WIDTH),
+            files_tool_width: resizable_state_handle(DEFAULT_FILES_TOOL_WIDTH),
+            code_review_tool_width: resizable_state_handle(DEFAULT_CODE_REVIEW_TOOL_WIDTH),
         }
     }
 }

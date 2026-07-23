@@ -43,6 +43,12 @@ pub struct Window {
     pub agent_management_filters: Option<String>,
     pub left_panel_open: Option<bool>,
     pub vertical_tabs_panel_open: Option<bool>,
+    pub projects_sidebar_open: Option<bool>,
+    pub projects_sidebar_width: Option<f32>,
+    pub right_tool_kind: Option<i32>,
+    pub right_tool_open: Option<bool>,
+    pub files_tool_width: Option<f32>,
+    pub code_review_tool_width: Option<f32>,
 }
 
 #[derive(Identifiable, Insertable, Queryable)]
@@ -342,6 +348,12 @@ pub struct NewWindow {
     pub agent_management_filters: Option<String>,
     pub left_panel_open: Option<bool>,
     pub vertical_tabs_panel_open: Option<bool>,
+    pub projects_sidebar_open: Option<bool>,
+    pub projects_sidebar_width: Option<f32>,
+    pub right_tool_kind: Option<i32>,
+    pub right_tool_open: Option<bool>,
+    pub files_tool_width: Option<f32>,
+    pub code_review_tool_width: Option<f32>,
 }
 
 #[derive(Identifiable, Queryable, Associations)]
@@ -351,6 +363,8 @@ pub struct Tab {
     pub window_id: i32,
     pub custom_title: Option<String>,
     pub color: Option<String>,
+    pub project_root: Option<Vec<u8>>,
+    pub project_root_initialized: Option<bool>,
 }
 
 #[derive(Insertable)]
@@ -359,6 +373,8 @@ pub struct NewTab {
     pub window_id: i32,
     pub custom_title: Option<String>,
     pub color: Option<String>,
+    pub project_root: Option<Vec<u8>>,
+    pub project_root_initialized: Option<bool>,
 }
 
 /// The panes data model includes pane_nodes, pane_leaves and pane_branches.

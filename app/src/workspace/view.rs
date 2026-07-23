@@ -11,6 +11,7 @@ pub(crate) mod left_panel;
 mod left_panel_slide;
 pub(crate) mod onboarding;
 pub(crate) mod openwarp_launch_modal;
+mod project_sidebar;
 pub(crate) mod right_panel;
 mod startup_directory;
 #[cfg(test)]
@@ -39,8 +40,8 @@ pub(crate) use onboarding::OnboardingTutorial;
 // facts::*).
 use crate::app_state::{
     LeafContents, LeafSnapshot, LeftPanelDisplayedTab, LeftPanelSnapshot, NotebookPaneSnapshot,
-    PaneNodeSnapshot, PaneUuid, RightPanelSnapshot, SettingsPaneSnapshot, TabSnapshot,
-    TerminalPaneSnapshot, WindowSnapshot, WorkflowPaneSnapshot,
+    PaneNodeSnapshot, PaneUuid, RightPanelSnapshot, RightToolKind, SettingsPaneSnapshot,
+    TabSnapshot, TerminalPaneSnapshot, WindowSnapshot, WorkflowPaneSnapshot,
 };
 use crate::code_review::diff_state::DiffStateModel;
 #[cfg(feature = "local_fs")]
@@ -136,8 +137,8 @@ use crate::server::network_log_pane_manager::NetworkLogPaneManager;
 // twarp: 2c-d — removed AIClient import (server_api::ai module deleted)
 use crate::server::server_api::auth::AuthClient;
 use crate::settings::{
-    AISettings, AISettingsChangedEvent, CodeSettings, CodeSettingsChangedEvent, CtrlTabBehavior,
-    DefaultSessionMode, InputModeSettings,
+    AISettings, AISettingsChangedEvent, AgentSettings, CodeSettings, CodeSettingsChangedEvent,
+    CtrlTabBehavior, DefaultSessionMode, InputModeSettings,
 };
 use crate::settings_view::pane_manager::SettingsPaneManager;
 use crate::settings_view::{SettingsSection, SettingsView, SettingsViewEvent};
@@ -252,7 +253,8 @@ use crate::terminal::model::blockgrid::BlockGrid;
 use crate::terminal::model::session::Session;
 use crate::terminal::model::session::SessionId;
 use crate::terminal::resizable_data::{
-    ModalSizes, ModalType, ResizableData, DEFAULT_LEFT_PANEL_WIDTH, DEFAULT_RIGHT_PANEL_WIDTH,
+    ModalSizes, ModalType, ResizableData, DEFAULT_CODE_REVIEW_TOOL_WIDTH, DEFAULT_FILES_TOOL_WIDTH,
+    DEFAULT_LEFT_PANEL_WIDTH, DEFAULT_PROJECTS_SIDEBAR_WIDTH, DEFAULT_RIGHT_PANEL_WIDTH,
 };
 use crate::terminal::safe_mode_settings::SafeModeSettings;
 use crate::terminal::session_settings::{
@@ -633,6 +635,10 @@ fn design_shell_v1_enabled() -> bool {
     cfg!(target_os = "macos") && FeatureFlag::DesignShellV1.is_enabled()
 }
 
+pub(super) fn project_sidebar_enabled() -> bool {
+    design_shell_v1_enabled() && FeatureFlag::ProjectSidebar.is_enabled()
+}
+
 fn should_render_code_review_rail(
     design_shell_enabled: bool,
     is_mobile: bool,
@@ -880,6 +886,19 @@ struct ModalWithTab<V> {
 struct PendingSessionConfigReplacement {
     old_pane_group_id: EntityId,
 }
+
+enum NewProjectSource {
+    Scratch,
+    ExistingFolder(PathBuf),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ProjectDirectoryResolution {
+    Resolved(PathBuf),
+    ChooseFrom(Vec<PathBuf>),
+    Unavailable,
+}
+
 enum PendingSessionConfigTabConfigChipTutorial {
     WhenBootstrapped {
         has_project: bool,
@@ -894,6 +913,8 @@ pub struct TransferredTab {
     pub pane_group: ViewHandle<PaneGroup>,
     pub color: Option<AnsiColorIdentifier>,
     pub custom_title: Option<String>,
+    pub project_root: Option<PathBuf>,
+    pub project_root_initialized: bool,
     pub left_panel_open: bool,
     pub vertical_tabs_panel_open: bool,
     pub right_panel_open: bool,
@@ -939,6 +960,16 @@ pub struct Workspace {
     tab_rename_editor: ViewHandle<EditorView>,
     pane_rename_editor: ViewHandle<EditorView>,
     vertical_tabs_search_input: ViewHandle<EditorView>,
+    projects_search_open: bool,
+    projects_search_selection: usize,
+    projects_expanded: HashSet<EntityId>,
+    projects_scroll_state: twarpui::elements::ClippedScrollStateHandle,
+    projects_search_mouse_state: MouseStateHandle,
+    projects_create_mouse_state: MouseStateHandle,
+    projects_toggle_mouse_state: MouseStateHandle,
+    projects_settings_mouse_state: MouseStateHandle,
+    files_tool_mouse_state: MouseStateHandle,
+    code_review_tool_mouse_state: MouseStateHandle,
     tips_completed: ModelHandle<TipsCompleted>,
     user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
     server_api: Arc<ServerApi>,
@@ -1028,6 +1059,9 @@ pub struct Workspace {
     // twarp: 2c-d — removed transcript_details_panel (wasm only) & ai_fact_view
     file_upload_sessions: FileUploadSessions,
     left_panel_open: bool,
+    projects_sidebar_open: bool,
+    right_tool: RightToolKind,
+    right_tool_open: bool,
     /// In-flight sidebar slide animation (user-initiated toggles only; `None`
     /// when idle or when the panel was shown/hidden by startup/restore).
     left_panel_slide: Option<left_panel_slide::PanelSlide>,
@@ -1300,11 +1334,43 @@ impl Workspace {
         ctx.subscribe_to_view(&editor, |me, editor_view, event, ctx| match event {
             EditorEvent::Edited(_) => {
                 me.vertical_tabs_panel.search_query = editor_view.as_ref(ctx).buffer_text(ctx);
+                me.projects_search_selection = 0;
                 ctx.notify();
             }
             EditorEvent::Escape => {
                 me.vertical_tabs_panel.search_query.clear();
+                me.projects_search_open = false;
+                me.projects_search_selection = 0;
+                editor_view.update(ctx, |editor, ctx| {
+                    editor.clear_buffer_and_reset_undo_stack(ctx)
+                });
                 me.focus_active_tab(ctx);
+                ctx.notify();
+            }
+            EditorEvent::Navigate(NavigationKey::Up) if me.projects_search_open => {
+                let matches = me.matching_project_indices(ctx);
+                if !matches.is_empty() {
+                    me.projects_search_selection = me
+                        .projects_search_selection
+                        .checked_sub(1)
+                        .unwrap_or(matches.len() - 1);
+                    ctx.notify();
+                }
+            }
+            EditorEvent::Navigate(NavigationKey::Down) if me.projects_search_open => {
+                let matches = me.matching_project_indices(ctx);
+                if !matches.is_empty() {
+                    me.projects_search_selection =
+                        (me.projects_search_selection + 1) % matches.len();
+                    ctx.notify();
+                }
+            }
+            EditorEvent::Enter if me.projects_search_open => {
+                let matches = me.matching_project_indices(ctx);
+                if let Some(index) = matches.get(me.projects_search_selection).copied() {
+                    me.activate_tab(index, ctx);
+                    me.toggle_projects_search(ctx);
+                }
             }
             _ => {}
         });
@@ -2774,6 +2840,16 @@ impl Workspace {
             tab_rename_editor: Self::tab_rename_editor(ctx),
             pane_rename_editor: Self::pane_rename_editor(ctx),
             vertical_tabs_search_input: Self::vertical_tabs_search_input(ctx),
+            projects_search_open: false,
+            projects_search_selection: 0,
+            projects_expanded: HashSet::new(),
+            projects_scroll_state: Default::default(),
+            projects_search_mouse_state: Default::default(),
+            projects_create_mouse_state: Default::default(),
+            projects_toggle_mouse_state: Default::default(),
+            projects_settings_mouse_state: Default::default(),
+            files_tool_mouse_state: Default::default(),
+            code_review_tool_mouse_state: Default::default(),
             tips_completed,
             user_default_shell_unsupported_banner_model_handle,
             server_api,
@@ -2826,6 +2902,9 @@ impl Workspace {
             shared_objects_creation_denied_modal,
             file_upload_sessions: Default::default(),
             left_panel_open: false,
+            projects_sidebar_open: true,
+            right_tool: RightToolKind::Files,
+            right_tool_open: false,
             left_panel_slide: None,
             vertical_tabs_panel_open: false,
             vertical_tabs_panel: Default::default(),
@@ -3129,6 +3208,9 @@ impl Workspace {
             } => {
                 let active_tab_index = window_snapshot.active_tab_index;
                 let restored_left_panel_open = window_snapshot.left_panel_open;
+                self.projects_sidebar_open = window_snapshot.projects_sidebar_open;
+                self.right_tool = window_snapshot.right_tool.unwrap_or(RightToolKind::Files);
+                self.right_tool_open = window_snapshot.right_tool_open;
 
                 window_snapshot
                     .tabs
@@ -3145,6 +3227,9 @@ impl Workspace {
                         self.tabs[tab_index].default_directory_color =
                             saved_tab.default_directory_color;
                         self.tabs[tab_index].selected_color = saved_tab.selected_color;
+                        self.tabs[tab_index].project_root = saved_tab.project_root.clone();
+                        self.tabs[tab_index].project_root_initialized =
+                            saved_tab.project_root_initialized;
 
                         let pane_group = self.tabs[tab_index].pane_group.clone();
 
@@ -3232,6 +3317,8 @@ impl Workspace {
             NewWorkspaceSource::TransferredTab {
                 tab_color,
                 custom_title,
+                project_root,
+                project_root_initialized,
                 left_panel_open,
                 right_panel_open,
                 is_right_panel_maximized,
@@ -3247,6 +3334,10 @@ impl Workspace {
                 );
                 if let (Some(color), Some(tab)) = (tab_color, self.tabs.last_mut()) {
                     tab.selected_color = SelectedTabColor::Color(color);
+                }
+                if let Some(tab) = self.tabs.last_mut() {
+                    tab.project_root = project_root;
+                    tab.project_root_initialized = project_root_initialized;
                 }
                 if self.left_panel_visibility_across_tabs_enabled(ctx) {
                     self.left_panel_open = left_panel_open;
@@ -3268,6 +3359,8 @@ impl Workspace {
             NewWorkspaceSource::TransferredTab {
                 tab_color,
                 custom_title,
+                project_root,
+                project_root_initialized,
                 left_panel_open,
                 is_tab_drag_preview,
                 ..
@@ -3281,6 +3374,10 @@ impl Workspace {
                 );
                 if let (Some(color), Some(tab)) = (tab_color, self.tabs.last_mut()) {
                     tab.selected_color = SelectedTabColor::Color(color);
+                }
+                if let Some(tab) = self.tabs.last_mut() {
+                    tab.project_root = project_root;
+                    tab.project_root_initialized = project_root_initialized;
                 }
                 if self.left_panel_visibility_across_tabs_enabled(ctx) {
                     self.left_panel_open = left_panel_open;
@@ -4059,6 +4156,18 @@ impl Workspace {
         self.current_workspace_state.is_command_search_open
     }
 
+    #[cfg(feature = "integration_tests")]
+    pub fn project_sidebar_test_state(&self) -> (bool, &'static str, bool) {
+        (
+            self.projects_sidebar_open,
+            match self.right_tool {
+                RightToolKind::Files => "files",
+                RightToolKind::CodeReview => "code_review",
+            },
+            self.right_tool_open,
+        )
+    }
+
     /// Retrieves the Pane Group view for the passed tab index.
     pub fn get_pane_group_view(&self, index: usize) -> Option<&ViewHandle<PaneGroup>> {
         self.tabs.get(index).map(|s| &s.pane_group)
@@ -4101,6 +4210,8 @@ impl Workspace {
             pane_group,
             color,
             custom_title,
+            project_root: tab.project_root.clone(),
+            project_root_initialized: tab.project_root_initialized,
             left_panel_open,
             vertical_tabs_panel_open,
             right_panel_open,
@@ -7765,7 +7876,15 @@ impl Workspace {
         let is_maximized = self.current_workspace_state.is_code_review_panel_maximized;
         self.right_panel_slide = None;
         self.right_panel_close_pending = false;
-        self.sync_code_review_panel_state_to_pane_groups(ctx);
+        if project_sidebar_enabled() {
+            for tab in &self.tabs {
+                tab.pane_group.update(ctx, |pane_group, _| {
+                    pane_group.is_right_panel_maximized = is_maximized;
+                });
+            }
+        } else {
+            self.sync_code_review_panel_state_to_pane_groups(ctx);
+        }
 
         self.right_panel_view.update(ctx, |view, ctx| {
             view.set_maximized(is_maximized, ctx);
@@ -9058,6 +9177,14 @@ impl Workspace {
                 TabSnapshot {
                     root,
                     custom_title: pane_group.custom_title(app),
+                    project_root: self
+                        .tabs
+                        .get(tab_index)
+                        .and_then(|tab| tab.project_root.clone()),
+                    project_root_initialized: self
+                        .tabs
+                        .get(tab_index)
+                        .is_none_or(|tab| tab.project_root_initialized),
                     default_directory_color: self
                         .tabs
                         .get(tab_index)
@@ -9131,6 +9258,25 @@ impl Workspace {
                 .unwrap_or(DEFAULT_RIGHT_PANEL_WIDTH)
         });
 
+        let projects_sidebar_width = modal_sizes.map(|ms| {
+            ms.projects_sidebar_width
+                .lock()
+                .map(|guard| guard.size())
+                .unwrap_or(DEFAULT_PROJECTS_SIDEBAR_WIDTH)
+        });
+        let files_tool_width = modal_sizes.map(|ms| {
+            ms.files_tool_width
+                .lock()
+                .map(|guard| guard.size())
+                .unwrap_or(DEFAULT_FILES_TOOL_WIDTH)
+        });
+        let code_review_tool_width = modal_sizes.map(|ms| {
+            ms.code_review_tool_width
+                .lock()
+                .map(|guard| guard.size())
+                .unwrap_or(DEFAULT_CODE_REVIEW_TOOL_WIDTH)
+        });
+
         WindowSnapshot {
             tabs,
             active_tab_index,
@@ -9145,6 +9291,12 @@ impl Workspace {
             vertical_tabs_panel_open: self.vertical_tabs_panel_open,
             left_panel_width,
             right_panel_width,
+            projects_sidebar_open: self.projects_sidebar_open,
+            projects_sidebar_width,
+            right_tool: Some(self.right_tool),
+            right_tool_open: self.right_tool_open,
+            files_tool_width,
+            code_review_tool_width,
         }
     }
 
@@ -11016,7 +11168,7 @@ impl Workspace {
             // Both are frozen for the duration of the drag so the floating
             // ghost chip mirrors what was on screen when the drag began,
             // even if the user toggles their layout mid-drag.
-            let was_vertical_layout = uses_vertical_tabs(ctx);
+            let was_vertical_layout = uses_vertical_tabs(ctx) || project_sidebar_enabled();
             let source_element_size = ctx
                 .element_position_by_id(tab_position_id(current_index))
                 .map(|rect| rect.size())
@@ -11087,7 +11239,7 @@ impl Workspace {
             return;
         }
 
-        let new_index = if vertical_tabs_chrome_enabled(ctx) {
+        let new_index = if vertical_tabs_chrome_enabled(ctx) || project_sidebar_enabled() {
             self.calculate_updated_tab_index_vertical(current_index, position, ctx)
         } else {
             self.calculate_updated_tab_index(current_index, position, ctx)
@@ -11289,6 +11441,8 @@ impl Workspace {
             pane_group,
             color,
             draggable_state,
+            project_root,
+            project_root_initialized,
             ..
         } = transferred_tab;
         ctx.subscribe_to_view(&pane_group, move |me, pane_group, event, ctx| {
@@ -11299,6 +11453,8 @@ impl Workspace {
         let mut tab_data = TabData::new(pane_group);
         tab_data.selected_color = color.map_or(SelectedTabColor::Unset, SelectedTabColor::Color);
         tab_data.draggable_state = draggable_state;
+        tab_data.project_root = project_root;
+        tab_data.project_root_initialized = project_root_initialized;
         self.tabs.insert(index, tab_data);
         self.activate_tab_internal(index, ctx);
         ctx.notify();
@@ -11351,7 +11507,7 @@ impl Workspace {
             let last = visible_tabs.last().expect("non-empty").1.center();
             (last.y() - first.y()).abs() > (last.x() - first.x()).abs()
         } else {
-            self.vertical_tabs_panel_open
+            self.vertical_tabs_panel_open || project_sidebar_enabled()
         };
 
         if is_vertical {
@@ -12317,6 +12473,24 @@ impl Workspace {
                 ctx,
             );
         });
+
+        if let Some(tab) = self
+            .tabs
+            .iter_mut()
+            .find(|tab| tab.pane_group.id() == pane_group_id && !tab.project_root_initialized)
+        {
+            let roots: Vec<_> = self
+                .working_directories_model
+                .as_ref(ctx)
+                .most_recent_directories_for_pane_group(pane_group_id)
+                .map(|directories| directories.map(|directory| directory.path).collect())
+                .unwrap_or_default();
+            if roots.len() == 1 {
+                tab.project_root = roots.into_iter().next();
+            }
+            tab.project_root_initialized = true;
+            ctx.dispatch_global_action("workspace:save_app", ());
+        }
 
         // twarp 07: this refresh fires on focus/CD/detection for the active tab.
         // If that tab is a Claude-only pane group, (re)point the workspace-held
@@ -16748,6 +16922,38 @@ impl Workspace {
         );
     }
 
+    fn add_projects_sidebar_toggle_overlay(&self, stack: &mut Stack, app: &AppContext) {
+        if self.projects_sidebar_open || !project_sidebar_enabled() {
+            return;
+        }
+        let zoom_factor = WindowSettings::as_ref(app).zoom_level.as_zoom_factor();
+        let fullscreen = app
+            .windows()
+            .platform_window(self.window_id)
+            .is_some_and(|window| window.fullscreen_state() == FullscreenState::Fullscreen);
+        let traffic_light_width = (!fullscreen)
+            .then(|| traffic_light_data(app, self.window_id))
+            .flatten()
+            .filter(|data| data.side == TrafficLightSide::Left)
+            .map(|data| data.width(zoom_factor))
+            .unwrap_or_default();
+        let button_size = twarp_core::ui::tokens::spacing::XXL;
+        let x = traffic_light_width + twarp_core::ui::tokens::spacing::SM;
+        let y = (TOTAL_TAB_BAR_HEIGHT - button_size) / 2.;
+        stack.add_positioned_overlay_child(
+            ConstrainedBox::new(self.render_projects_reopen_button(app))
+                .with_width(button_size)
+                .with_height(button_size)
+                .finish(),
+            OffsetPositioning::offset_from_parent(
+                vec2f(x, y),
+                ParentOffsetBounds::WindowByPosition,
+                ParentAnchor::TopLeft,
+                ChildAnchor::TopLeft,
+            ),
+        );
+    }
+
     /// Renders the tab bar contents, wrapped in hover and drag-drop behaviors.
     fn render_tab_bar(
         &self,
@@ -17705,14 +17911,28 @@ impl Workspace {
         if tab_bar_mode == ShowTabBar::Stacked {
             column.add_child(self.render_tab_bar(self.tab_fixed_width, appearance, app));
         }
+        column.add_child(
+            Shrinkable::new(
+                1.0,
+                self.render_workspace_panels_column(app, appearance, hide_vertical_tabs),
+            )
+            .finish(),
+        );
+        column.finish()
+    }
+
+    fn render_workspace_panels_column(
+        &self,
+        app: &AppContext,
+        appearance: &Appearance,
+        hide_vertical_tabs: bool,
+    ) -> Box<dyn Element> {
         let content = self.render_banner_and_active_tab(app, appearance);
-        let panels_row = self.render_panels(
+        self.render_panels(
             app,
             Shrinkable::new(1.0, content).finish(),
             hide_vertical_tabs,
-        );
-        column.add_child(Shrinkable::new(1.0, panels_row).finish());
-        column.finish()
+        )
     }
 
     fn tabs_panel_side(config: &HeaderToolbarChipSelection) -> PanelPosition {
@@ -18576,6 +18796,362 @@ impl Workspace {
         // Open the URL on desktop. This does nothing if the app isn't installed.
         crate::uri::web_intent_parser::open_url_on_desktop(url);
     }
+
+    fn toggle_projects_search(&mut self, ctx: &mut ViewContext<Self>) {
+        self.projects_search_open = !self.projects_search_open;
+        self.projects_search_selection = 0;
+        if self.projects_search_open {
+            self.vertical_tabs_search_input.update(ctx, |editor, ctx| {
+                editor.set_placeholder_text("Search projects...", ctx);
+            });
+            ctx.focus(&self.vertical_tabs_search_input);
+        } else {
+            self.vertical_tabs_panel.search_query.clear();
+            self.vertical_tabs_search_input.update(ctx, |editor, ctx| {
+                editor.clear_buffer_and_reset_undo_stack(ctx)
+            });
+            self.focus_active_tab(ctx);
+        }
+        ctx.notify();
+    }
+
+    fn toggle_project_create_menu(&mut self, position: Vector2F, ctx: &mut ViewContext<Self>) {
+        if self.show_new_session_dropdown_menu.is_some() {
+            self.close_new_session_dropdown_menu(ctx);
+            return;
+        }
+        const PROJECT_CREATE_MENU_WIDTH: f32 = 268.;
+        let items = vec![
+            MenuItemFields::new("Start from scratch")
+                .with_icon(icons::Icon::Plus)
+                .with_on_select_action(WorkspaceAction::CreateScratchProject)
+                .into_item(),
+            MenuItemFields::new("Use an existing folder")
+                .with_icon(icons::Icon::Folder)
+                .with_on_select_action(WorkspaceAction::CreateProjectFromFolder)
+                .into_item(),
+        ];
+        self.new_session_dropdown_menu
+            .update(ctx, |menu, view_ctx| {
+                menu.set_width(PROJECT_CREATE_MENU_WIDTH);
+                menu.set_items(items, view_ctx);
+                menu.reset_selection(view_ctx);
+            });
+        self.show_new_session_dropdown_menu = Some(position);
+        ctx.focus(&self.new_session_dropdown_menu);
+        ctx.notify();
+    }
+
+    #[cfg(feature = "local_fs")]
+    fn create_folder_project(&mut self, path: &str, ctx: &mut ViewContext<Self>) {
+        let validated = std::fs::canonicalize(PathBuf::from(path))
+            .ok()
+            .filter(|path| path.is_dir())
+            .filter(|path| std::fs::read_dir(path).is_ok());
+        let Some(project_root) = validated else {
+            let window_id = ctx.window_id();
+            ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                toast_stack.add_ephemeral_toast(
+                    DismissibleToast::error("That folder is unavailable or unreadable".to_owned()),
+                    window_id,
+                    ctx,
+                );
+            });
+            return;
+        };
+        self.create_project(NewProjectSource::ExistingFolder(project_root), ctx);
+    }
+
+    fn create_project(&mut self, source: NewProjectSource, ctx: &mut ViewContext<Self>) {
+        match source {
+            NewProjectSource::Scratch => {
+                if FeatureFlag::WelcomeTab.is_enabled() {
+                    self.add_welcome_tab(ctx);
+                } else {
+                    self.add_terminal_tab(false, ctx);
+                }
+                if let Some(tab) = self.tabs.get_mut(self.active_tab_index) {
+                    tab.project_root = None;
+                    tab.project_root_initialized = true;
+                }
+            }
+            NewProjectSource::ExistingFolder(project_root) => {
+                ProjectManagementModel::handle(ctx).update(ctx, |projects, ctx| {
+                    projects.upsert_project(project_root.clone(), ctx);
+                });
+                if FeatureFlag::WelcomeTab.is_enabled() {
+                    self.add_tab_with_pane_layout(
+                        PanesLayout::Snapshot(Box::new(PaneNodeSnapshot::Leaf(LeafSnapshot {
+                            is_focused: true,
+                            custom_vertical_tabs_title: None,
+                            contents: LeafContents::Welcome {
+                                startup_directory: Some(project_root.clone()),
+                            },
+                        }))),
+                        Arc::new(HashMap::new()),
+                        None,
+                        ctx,
+                    );
+                } else {
+                    self.add_tab_with_pane_layout(
+                        PanesLayout::SingleTerminal(Box::new(NewTerminalOptions {
+                            initial_directory: Some(project_root.clone()),
+                            hide_homepage: false,
+                            ..Default::default()
+                        })),
+                        Arc::new(HashMap::new()),
+                        None,
+                        ctx,
+                    );
+                }
+                if let Some(tab) = self.tabs.get_mut(self.active_tab_index) {
+                    tab.project_root = Some(project_root);
+                    tab.project_root_initialized = true;
+                }
+            }
+        }
+        ctx.dispatch_global_action("workspace:save_app", ());
+        ctx.notify();
+    }
+
+    fn open_project_folder_picker(&mut self, ctx: &mut ViewContext<Self>) {
+        #[cfg(feature = "local_fs")]
+        ctx.open_file_picker(
+            |result, ctx| match result {
+                Ok(paths) => {
+                    let Some(path) = paths.into_iter().next() else {
+                        return;
+                    };
+                    if let Some(handle) = ctx.handle().upgrade(ctx) {
+                        handle.update(ctx, |workspace, ctx| {
+                            workspace.create_folder_project(&path, ctx)
+                        });
+                    }
+                }
+                Err(err) => {
+                    let window_id = ctx.window_id();
+                    ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                        toast_stack.add_ephemeral_toast(
+                            DismissibleToast::error(format!("{err}")),
+                            window_id,
+                            ctx,
+                        );
+                    });
+                }
+            },
+            FilePickerConfiguration::new().folders_only(),
+        );
+    }
+
+    fn project_directory(
+        &self,
+        project_id: EntityId,
+        ctx: &AppContext,
+    ) -> ProjectDirectoryResolution {
+        let Some(tab) = self
+            .tabs
+            .iter()
+            .find(|tab| tab.pane_group.id() == project_id)
+        else {
+            return ProjectDirectoryResolution::Unavailable;
+        };
+        let directories = self
+            .working_directories_model
+            .as_ref(ctx)
+            .most_recent_directories_for_pane_group(project_id)
+            .into_iter()
+            .flatten()
+            .map(|directory| directory.path);
+        project_sidebar::resolve_project_directory(tab.project_root.clone(), directories)
+    }
+
+    fn new_project_chat(
+        &mut self,
+        project_id: EntityId,
+        position: Vector2F,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(index) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.pane_group.id() == project_id)
+        else {
+            return;
+        };
+        let resolution = self.project_directory(project_id, ctx);
+        match resolution {
+            ProjectDirectoryResolution::Resolved(cwd) => {
+                self.create_project_chat_in_directory(project_id, cwd, ctx);
+            }
+            ProjectDirectoryResolution::ChooseFrom(roots) => {
+                const PROJECT_DIRECTORY_MENU_WIDTH: f32 = 300.;
+                let items: Vec<_> = roots
+                    .into_iter()
+                    .map(|directory| {
+                        let title = directory
+                            .file_name()
+                            .map(|name| name.to_string_lossy().into_owned())
+                            .filter(|name| !name.is_empty())
+                            .unwrap_or_else(|| directory.display().to_string());
+                        MenuItemFields::new(title)
+                            .with_icon(icons::Icon::Folder)
+                            .with_on_select_action(WorkspaceAction::NewProjectChatInDirectory {
+                                project_id,
+                                directory,
+                            })
+                            .into_item()
+                    })
+                    .collect();
+                self.new_session_dropdown_menu.update(ctx, |menu, ctx| {
+                    menu.set_width(PROJECT_DIRECTORY_MENU_WIDTH);
+                    menu.set_items(items, ctx);
+                    menu.reset_selection(ctx);
+                });
+                self.show_new_session_dropdown_menu = Some(position);
+                ctx.focus(&self.new_session_dropdown_menu);
+                ctx.notify();
+            }
+            ProjectDirectoryResolution::Unavailable => {
+                let window_id = ctx.window_id();
+                ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                    toast_stack.add_ephemeral_toast(
+                        DismissibleToast::error(
+                            "Choose an available project folder before starting a chat".to_owned(),
+                        ),
+                        window_id,
+                        ctx,
+                    );
+                });
+            }
+        }
+        let _ = index;
+    }
+
+    fn create_project_chat_in_directory(
+        &mut self,
+        project_id: EntityId,
+        cwd: PathBuf,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(index) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.pane_group.id() == project_id)
+        else {
+            return;
+        };
+        if !cwd.is_dir() || std::fs::read_dir(&cwd).is_err() {
+            let window_id = ctx.window_id();
+            ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                toast_stack.add_ephemeral_toast(
+                    DismissibleToast::error(
+                        "That project folder is no longer available".to_owned(),
+                    ),
+                    window_id,
+                    ctx,
+                );
+            });
+            return;
+        }
+        self.close_new_session_dropdown_menu(ctx);
+        self.activate_tab_internal(index, ctx);
+        let chat_config = AgentSettings::as_ref(ctx).chat_launch_config();
+        let provider = chat_config
+            .provider
+            .agent_provider()
+            .unwrap_or(claude_code::driver::AgentProvider::Claude);
+        let launch = claude_code::launch::LaunchOptions {
+            provider,
+            model: chat_config.model,
+            effort: chat_config.effort,
+            permission_mode: Some(chat_config.permission_mode),
+            ..Default::default()
+        };
+        let pane = ClaudeCodePane::new(launch, Some(cwd), ctx);
+        let pane_group = self.tabs[index].pane_group.clone();
+        pane_group.update(ctx, |pane_group, ctx| {
+            pane_group.add_pane_with_direction(Direction::Right, pane, true, ctx);
+        });
+        self.projects_expanded.insert(project_id);
+        self.refresh_working_directories_for_pane_group(&pane_group, ctx);
+        ctx.notify();
+    }
+
+    fn focus_project_chat(
+        &mut self,
+        project_id: EntityId,
+        pane_id: PaneId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(index) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.pane_group.id() == project_id)
+        else {
+            return;
+        };
+        self.activate_tab_internal(index, ctx);
+        self.tabs[index].pane_group.update(ctx, |pane_group, ctx| {
+            pane_group.focus_pane(pane_id, true, ctx);
+        });
+        ctx.notify();
+    }
+
+    fn toggle_right_tool(&mut self, tool: RightToolKind, ctx: &mut ViewContext<Self>) {
+        let transition = project_sidebar::toggle_right_tool_state(
+            self.right_tool,
+            self.right_tool_open,
+            tool,
+            self.current_workspace_state.is_code_review_panel_maximized,
+        );
+        if transition.clear_code_review_maximize {
+            self.clear_project_code_review_maximized(ctx);
+        }
+        self.right_tool = transition.tool;
+        self.right_tool_open = transition.open;
+        if transition.open {
+            match transition.tool {
+                RightToolKind::Files => {
+                    self.left_panel_view.update(ctx, |files, ctx| {
+                        files.restore_active_view_from_snapshot(ToolPanelView::ProjectExplorer, ctx)
+                    });
+                }
+                RightToolKind::CodeReview => {
+                    #[cfg(feature = "local_fs")]
+                    self.setup_code_review_panel(None, ctx);
+                }
+            }
+        }
+        ctx.dispatch_global_action("workspace:save_app", ());
+        ctx.notify();
+    }
+
+    fn clear_project_code_review_maximized(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.current_workspace_state.is_code_review_panel_maximized {
+            return;
+        }
+        self.current_workspace_state.is_code_review_panel_maximized = false;
+        for tab in &self.tabs {
+            tab.pane_group.update(ctx, |pane_group, _| {
+                pane_group.is_right_panel_maximized = false;
+            });
+        }
+        self.right_panel_view.update(ctx, |view, ctx| {
+            view.set_maximized(false, ctx);
+        });
+    }
+
+    fn open_project_files_search(&mut self, ctx: &mut ViewContext<Self>) {
+        self.clear_project_code_review_maximized(ctx);
+        self.right_tool = RightToolKind::Files;
+        self.right_tool_open = true;
+        self.left_panel_view.update(ctx, |files, ctx| {
+            files.open_project_search(GlobalSearchEntryFocus::QueryEditor, ctx)
+        });
+        ctx.dispatch_global_action("workspace:save_app", ());
+        ctx.notify();
+    }
+
     // twarp: 2c-d — bulk stubs
     fn load_cloud_conversation_into_new_transcript_viewer<A, C>(&mut self, _: A, _: &mut C) {}
     pub fn open_cloud_conversation_from_server_token<A, C>(&mut self, _: A, _: &mut C) {}
@@ -18601,6 +19177,28 @@ impl TypedActionView for Workspace {
                     WarpA11yRole::UserAction,
                 ))
             }
+            WorkspaceAction::ToggleProjectsSidebar => {
+                ActionAccessibilityContent::Custom(AccessibilityContent::new_without_help(
+                    "Toggle Projects sidebar".to_owned(),
+                    WarpA11yRole::UserAction,
+                ))
+            }
+            WorkspaceAction::ToggleProjectsSearch => {
+                ActionAccessibilityContent::Custom(AccessibilityContent::new_without_help(
+                    "Search open projects".to_owned(),
+                    WarpA11yRole::UserAction,
+                ))
+            }
+            WorkspaceAction::ToggleRightTool(tool) => {
+                let name = match tool {
+                    RightToolKind::Files => "Toggle Files tool",
+                    RightToolKind::CodeReview => "Toggle Code Review tool",
+                };
+                ActionAccessibilityContent::Custom(AccessibilityContent::new_without_help(
+                    name.to_owned(),
+                    WarpA11yRole::UserAction,
+                ))
+            }
             _ => ActionAccessibilityContent::from_debug(),
         }
     }
@@ -18623,6 +19221,47 @@ impl TypedActionView for Workspace {
             OpenLaunchConfigSaveModal => self.open_launch_config_save_modal(ctx),
             ActivateNextTab => self.activate_next_tab(ctx),
             ActivateLastTab => self.activate_last_tab(ctx),
+            ToggleProjectsSidebar => {
+                self.projects_sidebar_open = !self.projects_sidebar_open;
+                if self.projects_sidebar_open {
+                    self.projects_search_open = false;
+                    self.vertical_tabs_panel.search_query.clear();
+                    self.vertical_tabs_search_input.update(ctx, |editor, ctx| {
+                        editor.clear_buffer_and_reset_undo_stack(ctx)
+                    });
+                }
+                ctx.dispatch_global_action("workspace:save_app", ());
+                ctx.notify();
+            }
+            ToggleProjectsSearch => self.toggle_projects_search(ctx),
+            ToggleProjectCreateMenu { position } => self.toggle_project_create_menu(*position, ctx),
+            CreateScratchProject => {
+                self.close_new_session_dropdown_menu(ctx);
+                self.create_project(NewProjectSource::Scratch, ctx);
+            }
+            CreateProjectFromFolder => {
+                self.close_new_session_dropdown_menu(ctx);
+                self.open_project_folder_picker(ctx);
+            }
+            ToggleProjectExpanded(project_id) => {
+                if !self.projects_expanded.remove(project_id) {
+                    self.projects_expanded.insert(*project_id);
+                }
+                ctx.notify();
+            }
+            NewProjectChat {
+                project_id,
+                position,
+            } => self.new_project_chat(*project_id, *position, ctx),
+            NewProjectChatInDirectory {
+                project_id,
+                directory,
+            } => self.create_project_chat_in_directory(*project_id, directory.clone(), ctx),
+            FocusProjectChat {
+                project_id,
+                pane_id,
+            } => self.focus_project_chat(*project_id, *pane_id, ctx),
+            ToggleRightTool(tool) => self.toggle_right_tool(*tool, ctx),
             CyclePrevSession => self.cycle_prev_session(ctx),
             CycleNextSession => self.cycle_next_session(ctx),
             MoveActiveTabLeft => self.move_tab(self.active_tab_index, TabMovement::Left, ctx),
@@ -19189,6 +19828,16 @@ impl TypedActionView for Workspace {
                 }
             }
             ToggleLeftPanel => {
+                if project_sidebar_enabled() {
+                    self.projects_sidebar_open = !self.projects_sidebar_open;
+                    if self.projects_sidebar_open {
+                        self.projects_search_open = false;
+                        self.vertical_tabs_panel.search_query.clear();
+                    }
+                    ctx.dispatch_global_action("workspace:save_app", ());
+                    ctx.notify();
+                    return;
+                }
                 let active_pane_group = self.active_tab_pane_group().clone();
                 let was_open = active_pane_group.read(ctx, |pg, _| pg.left_panel_open);
 
@@ -19235,10 +19884,23 @@ impl TypedActionView for Workspace {
                 }
             }
             ToggleRightPanel => {
+                if project_sidebar_enabled() {
+                    self.toggle_right_tool(RightToolKind::CodeReview, ctx);
+                    return;
+                }
                 let pane_group_handle = self.active_tab_pane_group().clone();
                 self.toggle_right_panel(&pane_group_handle, ctx);
             }
             OpenRightPanel => {
+                if project_sidebar_enabled() {
+                    self.right_tool = RightToolKind::CodeReview;
+                    self.right_tool_open = true;
+                    #[cfg(feature = "local_fs")]
+                    self.setup_code_review_panel(None, ctx);
+                    ctx.dispatch_global_action("workspace:save_app", ());
+                    ctx.notify();
+                    return;
+                }
                 let pane_group_handle = self.active_tab_pane_group().clone();
                 if self.current_workspace_state.is_code_review_panel_open {
                     #[cfg(feature = "local_fs")]
@@ -19285,13 +19947,21 @@ impl TypedActionView for Workspace {
                                 diff_state_model,
                                 terminal_view,
                             };
-                            self.open_right_panel(
-                                &context,
-                                &pane_group_handle,
-                                CodeReviewPaneEntrypoint::GitDiffChip,
-                                None,
-                                ctx,
-                            );
+                            if project_sidebar_enabled() {
+                                self.right_tool = RightToolKind::CodeReview;
+                                self.right_tool_open = true;
+                                self.setup_code_review_panel(Some(&context), ctx);
+                                ctx.dispatch_global_action("workspace:save_app", ());
+                                ctx.notify();
+                            } else {
+                                self.open_right_panel(
+                                    &context,
+                                    &pane_group_handle,
+                                    CodeReviewPaneEntrypoint::GitDiffChip,
+                                    None,
+                                    ctx,
+                                );
+                            }
                         }
                     }
                 }
@@ -20151,6 +20821,10 @@ impl TypedActionView for Workspace {
                 );
             }
             ToggleProjectExplorer => {
+                if project_sidebar_enabled() {
+                    self.toggle_right_tool(RightToolKind::Files, ctx);
+                    return;
+                }
                 if *CodeSettings::as_ref(ctx).show_project_explorer {
                     let is_showing = self.left_panel_view.as_ref(ctx).active_view()
                         == ToolPanelView::ProjectExplorer;
@@ -20171,6 +20845,10 @@ impl TypedActionView for Workspace {
                 }
             }
             ToggleGlobalSearch => {
+                if project_sidebar_enabled() {
+                    self.open_project_files_search(ctx);
+                    return;
+                }
                 if FeatureFlag::GlobalSearch.is_enabled()
                     && *CodeSettings::as_ref(ctx).show_global_search
                 {
@@ -20193,6 +20871,10 @@ impl TypedActionView for Workspace {
                 });
             }
             OpenGlobalSearch => {
+                if project_sidebar_enabled() {
+                    self.open_project_files_search(ctx);
+                    return;
+                }
                 if FeatureFlag::GlobalSearch.is_enabled()
                     && *CodeSettings::as_ref(ctx).show_global_search
                 {
@@ -20510,6 +21192,9 @@ impl View for Workspace {
         }
 
         let pane_group = self.active_tab_pane_group().as_ref(app);
+        let use_project_shell = project_sidebar_enabled()
+            && !twarpui::platform::is_mobile_device()
+            && !use_simplified_wasm_tab_bar;
         let is_left_panel_open = pane_group.left_panel_open;
         let is_left_panel_visible = is_left_panel_open || self.left_panel_slide.is_some();
         let is_right_panel_open = pane_group.right_panel_open;
@@ -20526,10 +21211,44 @@ impl View for Workspace {
                 is_right_panel_maximized,
                 self.right_panel_slide.is_some(),
             );
-        let use_docked_shell_layout =
-            design_shell_rails_enabled && (is_left_panel_visible || is_right_panel_visible);
+        let use_docked_shell_layout = use_project_shell
+            || (design_shell_rails_enabled && (is_left_panel_visible || is_right_panel_visible));
 
-        let panels = if use_simplified_wasm_tab_bar {
+        let panels = if use_project_shell {
+            let code_review_maximized = self.right_tool_open
+                && self.right_tool == RightToolKind::CodeReview
+                && self.current_workspace_state.is_code_review_panel_maximized;
+            let right_tool_responsively_collapsed = self.right_tool_open
+                && !code_review_maximized
+                && self.right_tool_collapsed_for_window(app);
+            let mut shell_row = Flex::row();
+            if self.projects_sidebar_open {
+                shell_row.add_child(self.render_projects_sidebar(app));
+            }
+
+            let center: Box<dyn Element> = if code_review_maximized {
+                ChildView::new(&self.right_panel_view).finish()
+            } else {
+                self.render_workspace_panels_column(app, appearance, false)
+            };
+            shell_row.add_child(Shrinkable::new(1., center).finish());
+
+            if self.right_tool_open && !code_review_maximized && !right_tool_responsively_collapsed
+            {
+                match self.right_tool {
+                    RightToolKind::Files => {
+                        shell_row.add_child(ChildView::new(&self.left_panel_view).finish())
+                    }
+                    RightToolKind::CodeReview => {
+                        shell_row.add_child(ChildView::new(&self.right_panel_view).finish())
+                    }
+                }
+            }
+            shell_row.add_child(self.render_right_activity_strip(app));
+            Container::new(shell_row.finish())
+                .with_background(util::get_terminal_background_fill(self.window_id, app))
+                .finish()
+        } else if use_simplified_wasm_tab_bar {
             // For the simplified WASM tab bar, we want to render the tab bar on top of all other content
             // so that content being added/moved around in the workspace (for example the details panel being toggled)
             // does not affect the tab.
@@ -20652,8 +21371,11 @@ impl View for Workspace {
             );
         }
 
-        if !use_simplified_wasm_tab_bar {
+        if !use_simplified_wasm_tab_bar && !use_project_shell {
             self.add_sidebar_toggle_overlay(&mut stack, appearance, app);
+        }
+        if use_project_shell {
+            self.add_projects_sidebar_toggle_overlay(&mut stack, app);
         }
 
         if !use_simplified_wasm_tab_bar
@@ -20770,7 +21492,7 @@ impl View for Workspace {
 
         if let Some((tab_idx, right_click_menu_anchor)) = self.show_tab_right_click_menu {
             let is_vertical = vertical_tabs_chrome_enabled(app) && self.vertical_tabs_panel_open;
-            if tab_bar_mode.has_tab_bar() || is_vertical {
+            if tab_bar_mode.has_tab_bar() || is_vertical || use_project_shell {
                 let positioning = match (is_vertical, right_click_menu_anchor) {
                     (true, TabContextMenuAnchor::VerticalTabsKebab) => {
                         // Anchor depends on which side the tabs panel is configured on.
@@ -21598,13 +22320,19 @@ impl View for Workspace {
 /// tab bar and/or vertical tabs panel). Both must be considered because a
 /// window with vertical tabs still renders the horizontal bar at the top.
 pub(crate) fn tab_bar_rects_for_window(window_id: WindowId, app: &AppContext) -> Vec<RectF> {
-    let mut rects = Vec::with_capacity(2);
+    let mut rects = Vec::with_capacity(3);
     if let Some(rect) = app.element_position_by_id_at_last_frame(window_id, TAB_BAR_POSITION_ID) {
         rects.push(rect);
     }
     if let Some(rect) =
         app.element_position_by_id_at_last_frame(window_id, VERTICAL_TABS_PANEL_POSITION_ID)
     {
+        rects.push(rect);
+    }
+    if let Some(rect) = app.element_position_by_id_at_last_frame(
+        window_id,
+        project_sidebar::PROJECTS_SIDEBAR_POSITION_ID,
+    ) {
         rects.push(rect);
     }
     rects

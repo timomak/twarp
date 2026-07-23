@@ -388,6 +388,8 @@ diesel::table! {
         window_id -> Integer,
         custom_title -> Nullable<Text>,
         color -> Nullable<Text>,
+        project_root -> Nullable<Binary>,
+        project_root_initialized -> Nullable<Bool>,
     }
 }
 
@@ -478,6 +480,12 @@ diesel::table! {
         agent_management_filters -> Nullable<Text>,
         left_panel_open -> Nullable<Bool>,
         vertical_tabs_panel_open -> Nullable<Bool>,
+        projects_sidebar_open -> Nullable<Bool>,
+        projects_sidebar_width -> Nullable<Float>,
+        right_tool_kind -> Nullable<Integer>,
+        right_tool_open -> Nullable<Bool>,
+        files_tool_width -> Nullable<Float>,
+        code_review_tool_width -> Nullable<Float>,
     }
 }
 

@@ -84,6 +84,14 @@ use twarpui::{
 };
 use twarpui::{SingletonEntity, ViewContext};
 
+#[derive(Clone, Debug)]
+pub struct ProjectChatItem {
+    pub pane_id: PaneId,
+    pub session_id: String,
+    pub title: String,
+    pub status: Option<crate::app_state::ConversationStatus>,
+}
+
 // twarp: 2c-d.4 — SerializedBlockListItem now from crate::app_state
 #[cfg(feature = "local_fs")]
 use crate::app_state::CodePaneSnapShot;
@@ -2064,6 +2072,25 @@ impl PaneGroup {
                     && pane.claude_code_view(ctx).as_ref(ctx).session_id() == session_id
             })
             .map(|pane| pane.id())
+    }
+
+    /// Chat rows for the tab-backed project sidebar. This deliberately exposes
+    /// only live agent panes owned by this PaneGroup; global session history is
+    /// not a second project/chat registry.
+    pub fn project_chat_items(&self, ctx: &AppContext) -> Vec<ProjectChatItem> {
+        self.panes_of::<ClaudeCodePane>()
+            .filter(|pane| !self.is_pane_hidden_for_close(pane.id()))
+            .map(|pane| {
+                let view = pane.claude_code_view(ctx);
+                let view_ref = view.as_ref(ctx);
+                ProjectChatItem {
+                    pane_id: pane.id(),
+                    session_id: view_ref.session_id().to_owned(),
+                    title: pane.title(ctx),
+                    status: view_ref.tab_status(),
+                }
+            })
+            .collect()
     }
 
     /// twarp: the agent provider and cwd of the focused pane, when the focused
