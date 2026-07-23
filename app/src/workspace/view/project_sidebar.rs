@@ -39,6 +39,8 @@ use super::{ProjectDirectoryResolution, Workspace, TOTAL_TAB_BAR_HEIGHT};
 pub(super) const PROJECTS_SIDEBAR_POSITION_ID: &str = "workspace_view:projects_sidebar";
 const RIGHT_ACTIVITY_STRIP_WIDTH: f32 = spacing::XXL + spacing::SM;
 const MINIMUM_CENTER_WORKSPACE_WIDTH: f32 = 480.;
+const MINIMUM_PROJECTS_SIDEBAR_WIDTH: f32 = 144.;
+const MAXIMUM_PROJECTS_SIDEBAR_WIDTH_RATIO: f32 = 0.4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ProjectListTarget {
@@ -364,29 +366,34 @@ impl Workspace {
             .finish()
         };
 
+        let actions = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(button(
+                Icon::Search,
+                self.projects_search_mouse_state.clone(),
+                WorkspaceAction::ToggleProjectsSearch,
+            ))
+            .with_child(button(
+                Icon::Plus,
+                self.projects_create_mouse_state.clone(),
+                WorkspaceAction::ToggleProjectCreateMenu {
+                    position: Default::default(),
+                },
+            ))
+            .with_child(button(
+                Icon::ChevronLeft,
+                self.projects_toggle_mouse_state.clone(),
+                WorkspaceAction::ToggleProjectsSidebar,
+            ))
+            .finish();
+
         Container::new(
             Flex::row()
                 .with_main_axis_size(MainAxisSize::Max)
+                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_child(label)
-                .with_child(Shrinkable::new(1., Empty::new().finish()).finish())
-                .with_child(button(
-                    Icon::Search,
-                    self.projects_search_mouse_state.clone(),
-                    WorkspaceAction::ToggleProjectsSearch,
-                ))
-                .with_child(button(
-                    Icon::Plus,
-                    self.projects_create_mouse_state.clone(),
-                    WorkspaceAction::ToggleProjectCreateMenu {
-                        position: Default::default(),
-                    },
-                ))
-                .with_child(button(
-                    Icon::ChevronLeft,
-                    self.projects_toggle_mouse_state.clone(),
-                    WorkspaceAction::ToggleProjectsSidebar,
-                ))
+                .with_child(actions)
                 .finish(),
         )
         .with_padding_left(spacing::MD)
@@ -447,7 +454,7 @@ impl Workspace {
         let title_element: Box<dyn Element> = if is_renaming {
             ChildView::new(&self.tab_rename_editor).finish()
         } else {
-            let mut labels = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+            let mut labels = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Start);
             labels.add_child(
                 Text::new_inline(
                     title.clone(),
@@ -455,7 +462,6 @@ impl Workspace {
                     type_ramp::UI.size,
                 )
                 .with_line_height_ratio(type_ramp::UI.line_height)
-                .with_clip(twarpui::text_layout::ClipConfig::end())
                 .with_color(theme.main_text_color(theme.background()).into())
                 .finish(),
             );
@@ -467,7 +473,6 @@ impl Workspace {
                         type_ramp::CAPTION.size,
                     )
                     .with_line_height_ratio(type_ramp::CAPTION.line_height)
-                    .with_clip(twarpui::text_layout::ClipConfig::end())
                     .with_color(theme.hint_text_color(theme.background()).into())
                     .finish(),
                 );
@@ -687,11 +692,10 @@ impl Workspace {
             })
             .unwrap_or_else(|| theme.hint_text_color(theme.background()));
 
-        let mut labels = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+        let mut labels = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Start);
         labels.add_child(
             Text::new_inline(title, appearance.ui_font_family(), type_ramp::UI.size)
                 .with_line_height_ratio(type_ramp::UI.line_height)
-                .with_clip(twarpui::text_layout::ClipConfig::end())
                 .with_color(theme.main_text_color(theme.background()).into())
                 .finish(),
         );
@@ -703,7 +707,6 @@ impl Workspace {
                     type_ramp::CAPTION.size,
                 )
                 .with_line_height_ratio(type_ramp::CAPTION.line_height)
-                .with_clip(twarpui::text_layout::ClipConfig::end())
                 .with_color(theme.hint_text_color(theme.background()).into())
                 .finish(),
             );
@@ -918,6 +921,13 @@ impl Workspace {
             Resizable::new(handle, content)
                 .with_dragbar_side(DragBarSide::Right)
                 .on_resize(|ctx, _| ctx.notify())
+                .with_bounds_callback(Box::new(|window_size| {
+                    let max_width = window_size.x() * MAXIMUM_PROJECTS_SIDEBAR_WIDTH_RATIO;
+                    (
+                        MINIMUM_PROJECTS_SIDEBAR_WIDTH,
+                        max_width.max(MINIMUM_PROJECTS_SIDEBAR_WIDTH),
+                    )
+                }))
                 .finish(),
             PROJECTS_SIDEBAR_POSITION_ID,
         )

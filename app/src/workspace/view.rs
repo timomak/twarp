@@ -21283,7 +21283,9 @@ impl View for Workspace {
             let right_tool_responsively_collapsed = self.right_tool_open
                 && !code_review_maximized
                 && self.right_tool_collapsed_for_window(app);
-            let mut shell_row = Flex::row();
+            let mut shell_row = Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
             if self.projects_sidebar_open {
                 shell_row.add_child(self.render_projects_sidebar(app));
             }
