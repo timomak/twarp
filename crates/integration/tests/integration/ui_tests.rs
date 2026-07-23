@@ -47,7 +47,7 @@ integration_tests! {
     test_waterfall_input_after_command_execution,
     test_waterfall_input_alt_grid,
     test_undo_redo,
-    #[cfg(target_os="macos")]
+    #[cfg(target_os = "macos")]
     // TODO(alokedesai): Add support for cascading windows when opening new windows via winit.
     test_add_windows_correct_position_and_cascade,
     #[ignore = "Affected by agent_view feature flag UI changes"]
@@ -143,6 +143,8 @@ integration_tests! {
     test_paste_and_type_characters_before_bootstrap,
     #[ignore = "Outer harness starts channel runtime inside runtime; direct integration runner passes"]
     test_code_review_source_rail_opens_and_loads,
+    #[cfg(target_os="macos")]
+    test_project_sidebar_shell_smoke,
     #[ignore = "Flaking on CI - KC looking into 3/31/26"]
     test_code_review_scroll_anchor_preserved_when_inserting_above,
     #[ignore = "Flaking on CI - KC looking into 3/31/26"]

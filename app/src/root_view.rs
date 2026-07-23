@@ -585,6 +585,8 @@ pub fn create_transferred_window(
                 NewWorkspaceSource::TransferredTab {
                     tab_color: transferred_tab.color,
                     custom_title: transferred_tab.custom_title.clone(),
+                    project_root: transferred_tab.project_root.clone(),
+                    project_root_initialized: transferred_tab.project_root_initialized,
                     left_panel_open: transferred_tab.left_panel_open,
                     vertical_tabs_panel_open: transferred_tab.vertical_tabs_panel_open,
                     right_panel_open: transferred_tab.right_panel_open,
@@ -1419,6 +1421,10 @@ pub enum NewWorkspaceSource {
         tab_color: Option<AnsiColorIdentifier>,
         /// Custom title from the source tab
         custom_title: Option<String>,
+        /// Stable directory identity for the tab-backed project.
+        project_root: Option<PathBuf>,
+        /// Whether legacy root inference has already run.
+        project_root_initialized: bool,
         /// Whether the left panel was open in the source tab
         left_panel_open: bool,
         /// Captured from the source window so detached tabs inherit the panel state.

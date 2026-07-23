@@ -411,9 +411,14 @@ impl LeftPanelView {
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let resizable_data_handle = ResizableData::handle(ctx);
+        let width_kind = if super::project_sidebar_enabled() {
+            ModalType::FilesToolWidth
+        } else {
+            ModalType::LeftPanelWidth
+        };
         let resizable_state_handle = match resizable_data_handle
             .as_ref(ctx)
-            .get_handle(ctx.window_id(), ModalType::LeftPanelWidth)
+            .get_handle(ctx.window_id(), width_kind)
         {
             Some(handle) => handle,
             None => {
@@ -797,6 +802,17 @@ impl LeftPanelView {
             view.on_left_panel_focused(entry_focus, ctx);
         });
         ctx.focus(&global_search_view);
+    }
+
+    pub(crate) fn open_project_search(
+        &mut self,
+        entry_focus: GlobalSearchEntryFocus,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.search_expanded = true;
+        active_view_state::set(self, ToolPanelView::ProjectExplorer, ctx);
+        self.focus_search_section(entry_focus, ctx);
+        ctx.notify();
     }
 
     fn active_file_tree_view(&self, app: &AppContext) -> Option<ViewHandle<FileTreeView>> {
@@ -2688,6 +2704,7 @@ impl View for LeftPanelView {
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let use_design_shell = cfg!(target_os = "macos") && FeatureFlag::DesignShellV1.is_enabled();
+        let use_project_shell = super::project_sidebar_enabled();
 
         // twarp sidebar rework: the pill segmented tab switcher is gone —
         // Files is the sidebar's only tab. The header is a compact row: a
@@ -2772,7 +2789,7 @@ impl View for LeftPanelView {
             // matching the macOS-app sidebar which has no close glyph in-header.
             let mut column = Flex::column();
 
-            if use_design_shell {
+            if use_design_shell && !use_project_shell {
                 let is_window_fullscreen = app
                     .windows()
                     .platform_window(self.window_id)
@@ -2800,12 +2817,14 @@ impl View for LeftPanelView {
         };
 
         let panel_content = if use_design_shell {
+            let seam = if use_project_shell {
+                Border::left(border::HAIRLINE_WIDTH).with_border_fill(appearance.theme().outline())
+            } else {
+                Border::right(border::HAIRLINE_WIDTH).with_border_fill(appearance.theme().outline())
+            };
             Container::new(panel_body)
                 .with_background(appearance.theme().surface_1())
-                .with_border(
-                    Border::right(border::HAIRLINE_WIDTH)
-                        .with_border_fill(appearance.theme().outline()),
-                )
+                .with_border(seam)
                 // twarp 08f polish: breathing room at the bottom edge.
                 .with_padding_bottom(SIDEBAR_BOTTOM_INSET)
                 .finish()
@@ -2836,7 +2855,11 @@ impl View for LeftPanelView {
         }
 
         let drag_side = if use_design_shell {
-            DragBarSide::Right
+            if use_project_shell {
+                DragBarSide::Left
+            } else {
+                DragBarSide::Right
+            }
         } else {
             match self.panel_position {
                 super::PanelPosition::Left => DragBarSide::Right,

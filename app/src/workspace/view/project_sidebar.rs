@@ -1,0 +1,908 @@
+use std::path::{Path, PathBuf};
+
+use twarp_core::ui::theme::Fill as ThemeFill;
+use twarp_core::ui::tokens::{border, radius, spacing, type_ramp};
+use twarp_core::ui::Icon;
+use twarpui::elements::{
+    resizable_state_handle, Border, ChildView, ClippedScrollable, ConstrainedBox, Container,
+    CornerRadius, CrossAxisAlignment, DragAxis, DragBarSide, Draggable, Element, Empty,
+    Fill as ElementFill, Flex, Hoverable, MainAxisAlignment, MainAxisSize, ParentElement, Radius,
+    Resizable, SavePosition, ScrollbarWidth, Shrinkable, Text,
+};
+use twarpui::fonts::{Properties, Weight};
+use twarpui::platform::{Cursor, FullscreenState};
+use twarpui::ui_components::button::Button;
+use twarpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use twarpui::{AppContext, EntityId, SingletonEntity};
+
+use crate::app_state::RightToolKind;
+use crate::appearance::Appearance;
+use crate::code::editor::{add_color, remove_color};
+use crate::tab::tab_position_id;
+use crate::terminal::resizable_data::{
+    ModalType, ResizableData, DEFAULT_CODE_REVIEW_TOOL_WIDTH, DEFAULT_FILES_TOOL_WIDTH,
+    DEFAULT_PROJECTS_SIDEBAR_WIDTH,
+};
+use crate::util::traffic_lights::{traffic_light_data, TrafficLightSide};
+use crate::window_settings::WindowSettings;
+use crate::workspace::{TabContextMenuAnchor, WorkspaceAction};
+use crate::FeatureFlag;
+
+use super::{ProjectDirectoryResolution, Workspace, TOTAL_TAB_BAR_HEIGHT};
+
+pub(super) const PROJECTS_SIDEBAR_POSITION_ID: &str = "workspace_view:projects_sidebar";
+const RIGHT_ACTIVITY_STRIP_WIDTH: f32 = spacing::XXL + spacing::SM;
+const MINIMUM_CENTER_WORKSPACE_WIDTH: f32 = 480.;
+
+fn should_responsively_collapse_right_tool(
+    window_width: f32,
+    projects_width: f32,
+    tool_width: f32,
+) -> bool {
+    window_width - projects_width - tool_width - RIGHT_ACTIVITY_STRIP_WIDTH
+        < MINIMUM_CENTER_WORKSPACE_WIDTH
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct RightToolTransition {
+    pub tool: RightToolKind,
+    pub open: bool,
+    pub clear_code_review_maximize: bool,
+}
+
+pub(super) fn toggle_right_tool_state(
+    current_tool: RightToolKind,
+    currently_open: bool,
+    clicked_tool: RightToolKind,
+    code_review_maximized: bool,
+) -> RightToolTransition {
+    let closes_current = currently_open && current_tool == clicked_tool;
+    RightToolTransition {
+        tool: clicked_tool,
+        open: !closes_current,
+        clear_code_review_maximize: code_review_maximized
+            && (clicked_tool != RightToolKind::CodeReview || closes_current),
+    }
+}
+
+fn project_title(
+    custom_title: Option<&str>,
+    project_root: Option<&Path>,
+    derived_roots: &[PathBuf],
+    display_title: &str,
+) -> String {
+    if let Some(custom_title) = custom_title.filter(|title| !title.trim().is_empty()) {
+        return custom_title.to_owned();
+    }
+    let root = project_root.or_else(|| (derived_roots.len() == 1).then(|| &*derived_roots[0]));
+    if let Some(folder) = root.and_then(Path::file_name) {
+        let folder = folder.to_string_lossy();
+        if !folder.is_empty() {
+            return folder.into_owned();
+        }
+    }
+    if !display_title.trim().is_empty() {
+        return display_title.to_owned();
+    }
+    "Untitled project".to_owned()
+}
+
+fn project_matches_search(query: &str, fields: impl IntoIterator<Item = String>) -> bool {
+    let query = query.trim().to_lowercase();
+    query.is_empty()
+        || fields
+            .into_iter()
+            .any(|field| field.to_lowercase().contains(&query))
+}
+
+fn project_disambiguation(root: Option<&Path>, ordinal: usize) -> String {
+    let folder = root
+        .and_then(Path::file_name)
+        .map(|part| part.to_string_lossy());
+    let parent = root
+        .and_then(Path::parent)
+        .and_then(Path::file_name)
+        .map(|part| part.to_string_lossy());
+    match (parent, folder) {
+        (Some(parent), Some(folder)) if !parent.is_empty() && !folder.is_empty() => {
+            format!("{parent}/{folder}")
+        }
+        (_, Some(folder)) if !folder.is_empty() => folder.into_owned(),
+        _ => format!("Project {}", ordinal + 1),
+    }
+}
+
+pub(super) fn resolve_project_directory(
+    assigned_root: Option<PathBuf>,
+    candidate_roots: impl IntoIterator<Item = PathBuf>,
+) -> ProjectDirectoryResolution {
+    if let Some(root) = assigned_root {
+        return if root.is_dir() && std::fs::read_dir(&root).is_ok() {
+            ProjectDirectoryResolution::Resolved(root)
+        } else {
+            ProjectDirectoryResolution::Unavailable
+        };
+    }
+    let mut roots = Vec::new();
+    for root in candidate_roots {
+        if root.is_dir() && std::fs::read_dir(&root).is_ok() && !roots.contains(&root) {
+            roots.push(root);
+        }
+    }
+    match roots.len() {
+        0 => ProjectDirectoryResolution::Unavailable,
+        1 => ProjectDirectoryResolution::Resolved(roots.remove(0)),
+        _ => ProjectDirectoryResolution::ChooseFrom(roots),
+    }
+}
+
+impl Workspace {
+    pub(super) fn right_tool_collapsed_for_window(&self, app: &AppContext) -> bool {
+        let Some(bounds) = app.window_bounds(&self.window_id) else {
+            return false;
+        };
+        let modal_sizes = ResizableData::handle(app)
+            .as_ref(app)
+            .get_all_handles(self.window_id);
+        let projects_width = if self.projects_sidebar_open {
+            modal_sizes
+                .and_then(|sizes| {
+                    sizes
+                        .projects_sidebar_width
+                        .lock()
+                        .ok()
+                        .map(|state| state.size())
+                })
+                .unwrap_or(DEFAULT_PROJECTS_SIDEBAR_WIDTH)
+        } else {
+            0.
+        };
+        let tool_width = match self.right_tool {
+            RightToolKind::Files => modal_sizes
+                .and_then(|sizes| sizes.files_tool_width.lock().ok().map(|state| state.size()))
+                .unwrap_or(DEFAULT_FILES_TOOL_WIDTH),
+            RightToolKind::CodeReview => modal_sizes
+                .and_then(|sizes| {
+                    sizes
+                        .code_review_tool_width
+                        .lock()
+                        .ok()
+                        .map(|state| state.size())
+                })
+                .unwrap_or(DEFAULT_CODE_REVIEW_TOOL_WIDTH),
+        };
+        should_responsively_collapse_right_tool(bounds.width(), projects_width, tool_width)
+    }
+
+    fn project_roots(&self, project_id: EntityId, app: &AppContext) -> Vec<PathBuf> {
+        self.working_directories_model
+            .as_ref(app)
+            .most_recent_directories_for_pane_group(project_id)
+            .map(|directories| directories.map(|directory| directory.path).collect())
+            .unwrap_or_default()
+    }
+
+    pub(super) fn project_matches_query(&self, index: usize, app: &AppContext) -> bool {
+        let Some(tab) = self.tabs.get(index) else {
+            return false;
+        };
+        let pane_group = tab.pane_group.as_ref(app);
+        let roots = self.project_roots(tab.pane_group.id(), app);
+        let custom_title = pane_group.custom_title(app);
+        let display_title = pane_group.display_title(app);
+        let title = project_title(
+            custom_title.as_deref(),
+            tab.project_root.as_deref(),
+            &roots,
+            &display_title,
+        );
+        let mut fields = vec![title, display_title];
+        fields.extend(roots.iter().map(|root| root.display().to_string()));
+        if let Some(root) = tab.project_root.as_ref() {
+            fields.push(root.display().to_string());
+        }
+        project_matches_search(&self.vertical_tabs_panel.search_query, fields)
+    }
+
+    pub(super) fn matching_project_indices(&self, app: &AppContext) -> Vec<usize> {
+        (0..self.tabs.len())
+            .filter(|index| self.project_matches_query(*index, app))
+            .collect()
+    }
+
+    fn render_project_header(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        if self.projects_search_open {
+            return Container::new(
+                Flex::row()
+                    .with_main_axis_size(MainAxisSize::Max)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_child(
+                        Shrinkable::new(
+                            1.,
+                            ChildView::new(&self.vertical_tabs_search_input).finish(),
+                        )
+                        .finish(),
+                    )
+                    .with_child(
+                        Hoverable::new(self.projects_search_mouse_state.clone(), move |state| {
+                            let color = if state.is_hovered() {
+                                theme.main_text_color(theme.background())
+                            } else {
+                                theme.sub_text_color(theme.background())
+                            };
+                            Container::new(Icon::X.to_warpui_icon(color).finish())
+                                .with_uniform_padding(spacing::XS)
+                                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                                    radius::CHIP,
+                                )))
+                                .finish()
+                        })
+                        .on_click(|ctx, _, _| {
+                            ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectsSearch)
+                        })
+                        .with_cursor(Cursor::PointingHand)
+                        .finish(),
+                    )
+                    .finish(),
+            )
+            .with_padding_left(spacing::MD)
+            .with_padding_right(spacing::SM)
+            .with_padding_top(spacing::SM)
+            .with_padding_bottom(spacing::XS)
+            .finish();
+        }
+
+        let label = Text::new_inline(
+            "PROJECTS",
+            appearance.ui_font_family(),
+            type_ramp::CAPTION.size,
+        )
+        .with_line_height_ratio(type_ramp::CAPTION.line_height)
+        .with_color(theme.sub_text_color(theme.background()).into())
+        .with_style(Properties::default().weight(Weight::Semibold))
+        .finish();
+
+        let button = |icon: Icon,
+                      mouse_state: twarpui::elements::MouseStateHandle,
+                      action: WorkspaceAction| {
+            Hoverable::new(mouse_state, move |state| {
+                let color = if state.is_hovered() {
+                    theme.main_text_color(theme.background())
+                } else {
+                    theme.sub_text_color(theme.background())
+                };
+                let mut container = Container::new(icon.to_warpui_icon(color).finish())
+                    .with_uniform_padding(spacing::XS)
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)));
+                if state.is_hovered() {
+                    container = container.with_background(theme.surface_overlay_2());
+                }
+                container.finish()
+            })
+            .on_click(move |ctx, _, position| match action {
+                WorkspaceAction::ToggleProjectCreateMenu { .. } => {
+                    ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectCreateMenu { position })
+                }
+                _ => ctx.dispatch_typed_action(action.clone()),
+            })
+            .with_cursor(Cursor::PointingHand)
+            .finish()
+        };
+
+        Container::new(
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(label)
+                .with_child(Shrinkable::new(1., Empty::new().finish()).finish())
+                .with_child(button(
+                    Icon::Search,
+                    self.projects_search_mouse_state.clone(),
+                    WorkspaceAction::ToggleProjectsSearch,
+                ))
+                .with_child(button(
+                    Icon::Plus,
+                    self.projects_create_mouse_state.clone(),
+                    WorkspaceAction::ToggleProjectCreateMenu {
+                        position: Default::default(),
+                    },
+                ))
+                .with_child(button(
+                    Icon::ChevronLeft,
+                    self.projects_toggle_mouse_state.clone(),
+                    WorkspaceAction::ToggleProjectsSidebar,
+                ))
+                .finish(),
+        )
+        .with_padding_left(spacing::MD)
+        .with_padding_right(spacing::SM)
+        .with_padding_top(spacing::SM)
+        .with_padding_bottom(spacing::XS)
+        .finish()
+    }
+
+    fn render_project_row(&self, index: usize, app: &AppContext) -> Option<Box<dyn Element>> {
+        let tab = self.tabs.get(index)?;
+        let project_id = tab.pane_group.id();
+        let pane_group = tab.pane_group.as_ref(app);
+        let custom_title = pane_group.custom_title(app);
+        let display_title = pane_group.display_title(app);
+        let roots = self.project_roots(project_id, app);
+        let title = project_title(
+            custom_title.as_deref(),
+            tab.project_root.as_deref(),
+            &roots,
+            &display_title,
+        );
+        let duplicate_count = self
+            .tabs
+            .iter()
+            .filter(|other| {
+                let other_group = other.pane_group.as_ref(app);
+                let other_roots = self.project_roots(other.pane_group.id(), app);
+                project_title(
+                    other_group.custom_title(app).as_deref(),
+                    other.project_root.as_deref(),
+                    &other_roots,
+                    &other_group.display_title(app),
+                )
+                .eq_ignore_ascii_case(&title)
+            })
+            .count();
+        let disambiguation = (duplicate_count > 1).then(|| {
+            let root = tab
+                .project_root
+                .as_deref()
+                .or_else(|| (roots.len() == 1).then(|| roots[0].as_path()));
+            project_disambiguation(root, index)
+        });
+        if !self.project_matches_query(index, app) {
+            return None;
+        }
+
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let active = index == self.active_tab_index();
+        let keyboard_focused = self.projects_search_open
+            && self
+                .matching_project_indices(app)
+                .get(self.projects_search_selection)
+                .is_some_and(|selected| *selected == index);
+        let is_renaming = self.current_workspace_state.tab_being_renamed() == Some(index);
+        let chats = pane_group.project_chat_items(app);
+        let attention = pane_group.claude_code_tab_status(app);
+        let has_chats = !chats.is_empty();
+        let expanded = self.projects_expanded.contains(&project_id);
+        let row_mouse_state = tab.tab_mouse_state.clone();
+        let chat_mouse_state = tab.close_mouse_state.clone();
+        let menu_mouse_state = tab.tooltip_mouse_state.clone();
+        let color: ThemeFill = tab
+            .color()
+            .map(|color| {
+                ThemeFill::Solid(color.to_tab_color(&theme.terminal_colors().normal).into())
+            })
+            .unwrap_or_else(|| theme.hint_text_color(theme.background()));
+        let title_element: Box<dyn Element> = if is_renaming {
+            ChildView::new(&self.tab_rename_editor).finish()
+        } else {
+            let mut labels = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+            labels.add_child(
+                Text::new_inline(
+                    title.clone(),
+                    appearance.ui_font_family(),
+                    type_ramp::UI.size,
+                )
+                .with_line_height_ratio(type_ramp::UI.line_height)
+                .with_clip(twarpui::text_layout::ClipConfig::end())
+                .with_color(theme.main_text_color(theme.background()).into())
+                .finish(),
+            );
+            if let Some(disambiguation) = disambiguation {
+                labels.add_child(
+                    Text::new_inline(
+                        disambiguation,
+                        appearance.ui_font_family(),
+                        type_ramp::CAPTION.size,
+                    )
+                    .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                    .with_clip(twarpui::text_layout::ClipConfig::end())
+                    .with_color(theme.hint_text_color(theme.background()).into())
+                    .finish(),
+                );
+            }
+            labels.finish()
+        };
+
+        let row = Hoverable::new(row_mouse_state, move |state| {
+            let identity = ConstrainedBox::new(Icon::CircleFilled.to_warpui_icon(color).finish())
+                .with_width(spacing::MD)
+                .with_height(spacing::MD)
+                .finish();
+            let mut contents = Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(spacing::SM)
+                .with_child(identity)
+                .with_child(Shrinkable::new(1., title_element).finish());
+
+            if has_chats {
+                let disclosure_icon = if expanded {
+                    Icon::ChevronDown
+                } else {
+                    Icon::ChevronRight
+                };
+                contents.add_child(
+                    Hoverable::new(twarpui::elements::MouseStateHandle::default(), move |_| {
+                        disclosure_icon
+                            .to_warpui_icon(theme.sub_text_color(theme.background()))
+                            .finish()
+                    })
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectExpanded(
+                            project_id,
+                        ))
+                    })
+                    .with_cursor(Cursor::PointingHand)
+                    .finish(),
+                );
+            }
+            if let Some(status) = attention.as_ref() {
+                contents.add_child(status.render_icon(appearance).finish());
+            }
+            if state.is_hovered() {
+                contents.add_child(
+                    Hoverable::new(chat_mouse_state.clone(), move |_| {
+                        Icon::Plus
+                            .to_warpui_icon(theme.sub_text_color(theme.background()))
+                            .finish()
+                    })
+                    .on_click(move |ctx, _, position| {
+                        ctx.dispatch_typed_action(WorkspaceAction::NewProjectChat {
+                            project_id,
+                            position,
+                        })
+                    })
+                    .with_cursor(Cursor::PointingHand)
+                    .finish(),
+                );
+                contents.add_child(
+                    Hoverable::new(menu_mouse_state.clone(), move |_| {
+                        Icon::DotsHorizontal
+                            .to_warpui_icon(theme.sub_text_color(theme.background()))
+                            .finish()
+                    })
+                    .on_click(move |ctx, _, position| {
+                        ctx.dispatch_typed_action(WorkspaceAction::ToggleTabRightClickMenu {
+                            tab_index: index,
+                            anchor: TabContextMenuAnchor::Pointer(position),
+                        })
+                    })
+                    .with_cursor(Cursor::PointingHand)
+                    .finish(),
+                );
+            }
+
+            let mut container = Container::new(contents.finish())
+                .with_padding_left(spacing::SM)
+                .with_padding_right(spacing::SM)
+                .with_padding_top(spacing::XS)
+                .with_padding_bottom(spacing::XS)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
+            if active || keyboard_focused {
+                container = container.with_background(theme.surface_3());
+            } else if state.is_hovered() {
+                container = container.with_background(theme.surface_overlay_2());
+            }
+            container.finish()
+        })
+        .on_click(move |ctx, _, _| ctx.dispatch_typed_action(WorkspaceAction::ActivateTab(index)))
+        .on_double_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(WorkspaceAction::RenameTab(index))
+        })
+        .on_right_click(move |ctx, _, position| {
+            ctx.dispatch_typed_action(WorkspaceAction::ToggleTabRightClickMenu {
+                tab_index: index,
+                anchor: TabContextMenuAnchor::Pointer(position),
+            })
+        })
+        .on_middle_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(WorkspaceAction::CloseTab(index))
+        })
+        .with_defer_events_to_children()
+        .with_cursor(Cursor::PointingHand)
+        .finish();
+
+        let draggable = Draggable::new(tab.draggable_state.clone(), row)
+            .on_drag_start(|ctx, _, _| ctx.dispatch_typed_action(WorkspaceAction::StartTabDrag))
+            .on_drag(move |ctx, _, rect, _| {
+                ctx.dispatch_typed_action(WorkspaceAction::DragTab {
+                    tab_index: index,
+                    tab_position: rect,
+                })
+            })
+            .on_drop(|ctx, _, _, _| ctx.dispatch_typed_action(WorkspaceAction::DropTab));
+        let draggable = if FeatureFlag::DragTabsToWindows.is_enabled() {
+            draggable
+        } else {
+            draggable.with_drag_axis(DragAxis::VerticalOnly)
+        };
+        let row = SavePosition::new(draggable.finish(), &tab_position_id(index)).finish();
+
+        let mut group = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+        group.add_child(row);
+        if expanded {
+            for chat in chats {
+                let chat_active = pane_group.focused_pane_id(app) == chat.pane_id;
+                let chat_title = chat.title;
+                let chat_status = chat.status;
+                group.add_child(
+                    Hoverable::new(
+                        twarpui::elements::MouseStateHandle::default(),
+                        move |state| {
+                            let mut row = Flex::row()
+                                .with_main_axis_size(MainAxisSize::Max)
+                                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                                .with_child(
+                                    Shrinkable::new(
+                                        1.,
+                                        Text::new_inline(
+                                            chat_title.clone(),
+                                            appearance.ui_font_family(),
+                                            type_ramp::LABEL.size,
+                                        )
+                                        .with_line_height_ratio(type_ramp::LABEL.line_height)
+                                        .with_clip(twarpui::text_layout::ClipConfig::end())
+                                        .with_color(theme.sub_text_color(theme.background()).into())
+                                        .finish(),
+                                    )
+                                    .finish(),
+                                );
+                            if let Some(status) = chat_status.as_ref() {
+                                row.add_child(status.render_icon(appearance).finish());
+                            }
+                            let mut container = Container::new(row.finish())
+                                .with_padding_left(spacing::XXL)
+                                .with_padding_right(spacing::SM)
+                                .with_padding_top(spacing::XS)
+                                .with_padding_bottom(spacing::XS)
+                                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                                    radius::CARD,
+                                )));
+                            if chat_active {
+                                container = container.with_background(theme.surface_3());
+                            } else if state.is_hovered() {
+                                container = container.with_background(theme.surface_overlay_2());
+                            }
+                            container.finish()
+                        },
+                    )
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(WorkspaceAction::FocusProjectChat {
+                            project_id,
+                            pane_id: chat.pane_id,
+                        })
+                    })
+                    .with_cursor(Cursor::PointingHand)
+                    .finish(),
+                );
+            }
+        }
+        Some(group.finish())
+    }
+
+    pub(super) fn render_projects_sidebar(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let mut list = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+        let mut visible_projects = 0;
+        for index in 0..self.tabs.len() {
+            if let Some(row) = self.render_project_row(index, app) {
+                list.add_child(row);
+                visible_projects += 1;
+            }
+        }
+        if self.tabs.is_empty()
+            || (visible_projects == 0 && !self.vertical_tabs_panel.search_query.is_empty())
+        {
+            let label = if self.tabs.is_empty() {
+                "No projects open"
+            } else {
+                "No matching projects"
+            };
+            list.add_child(
+                Container::new(
+                    Text::new_inline(label, appearance.ui_font_family(), type_ramp::PROSE.size)
+                        .with_line_height_ratio(type_ramp::PROSE.line_height)
+                        .with_color(theme.sub_text_color(theme.background()).into())
+                        .finish(),
+                )
+                .with_uniform_padding(spacing::MD)
+                .finish(),
+            );
+            if self.tabs.is_empty() {
+                list.add_child(
+                    Hoverable::new(
+                        twarpui::elements::MouseStateHandle::default(),
+                        move |state| {
+                            let mut button = Container::new(
+                                Flex::row()
+                                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                                    .with_spacing(spacing::SM)
+                                    .with_child(
+                                        Icon::Plus
+                                            .to_warpui_icon(
+                                                theme.main_text_color(theme.background()),
+                                            )
+                                            .finish(),
+                                    )
+                                    .with_child(
+                                        Text::new_inline(
+                                            "New project",
+                                            appearance.ui_font_family(),
+                                            type_ramp::UI.size,
+                                        )
+                                        .with_line_height_ratio(type_ramp::UI.line_height)
+                                        .with_color(
+                                            theme.main_text_color(theme.background()).into(),
+                                        )
+                                        .finish(),
+                                    )
+                                    .finish(),
+                            )
+                            .with_uniform_padding(spacing::SM)
+                            .with_corner_radius(
+                                CornerRadius::with_all(Radius::Pixels(radius::CARD)),
+                            );
+                            if state.is_hovered() {
+                                button = button.with_background(theme.surface_overlay_2());
+                            }
+                            button.finish()
+                        },
+                    )
+                    .on_click(|ctx, _, position| {
+                        ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectCreateMenu {
+                            position,
+                        })
+                    })
+                    .with_cursor(Cursor::PointingHand)
+                    .finish(),
+                );
+            }
+        }
+
+        let scrollable = ClippedScrollable::vertical(
+            self.projects_scroll_state.clone(),
+            list.finish(),
+            ScrollbarWidth::Auto,
+            theme.nonactive_ui_detail().into(),
+            theme.active_ui_detail().into(),
+            ElementFill::None,
+        )
+        .with_overlayed_scrollbar()
+        .finish();
+
+        let settings = Hoverable::new(self.projects_settings_mouse_state.clone(), move |state| {
+            let mut row = Container::new(
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(spacing::SM)
+                    .with_child(
+                        Icon::Settings
+                            .to_warpui_icon(theme.sub_text_color(theme.background()))
+                            .finish(),
+                    )
+                    .with_child(
+                        Text::new_inline(
+                            "Settings",
+                            appearance.ui_font_family(),
+                            type_ramp::UI.size,
+                        )
+                        .with_line_height_ratio(type_ramp::UI.line_height)
+                        .with_color(theme.main_text_color(theme.background()).into())
+                        .finish(),
+                    )
+                    .finish(),
+            )
+            .with_uniform_padding(spacing::SM)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
+            if state.is_hovered() {
+                row = row.with_background(theme.surface_overlay_2());
+            }
+            row.finish()
+        })
+        .on_click(|ctx, _, _| ctx.dispatch_typed_action(WorkspaceAction::ShowSettings))
+        .with_cursor(Cursor::PointingHand)
+        .finish();
+
+        let mut column = Flex::column()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+        let is_fullscreen = app
+            .windows()
+            .platform_window(self.window_id)
+            .is_some_and(|window| window.fullscreen_state() == FullscreenState::Fullscreen);
+        let zoom = WindowSettings::as_ref(app).zoom_level.as_zoom_factor();
+        if !is_fullscreen
+            && traffic_light_data(app, self.window_id)
+                .is_some_and(|data| data.side == TrafficLightSide::Left && data.width(zoom) > 0.)
+        {
+            column.add_child(
+                ConstrainedBox::new(Empty::new().finish())
+                    .with_height(TOTAL_TAB_BAR_HEIGHT)
+                    .finish(),
+            );
+        }
+        column.add_child(self.render_project_header(app));
+        column.add_child(Shrinkable::new(1., scrollable).finish());
+        column.add_child(
+            Container::new(settings)
+                .with_uniform_padding(spacing::SM)
+                .finish(),
+        );
+
+        let content = Container::new(column.finish())
+            .with_background(theme.surface_1())
+            .with_border(Border::right(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
+            .finish();
+        let handle = ResizableData::handle(app)
+            .as_ref(app)
+            .get_handle(self.window_id, ModalType::ProjectsSidebarWidth)
+            .unwrap_or_else(|| resizable_state_handle(DEFAULT_PROJECTS_SIDEBAR_WIDTH));
+        SavePosition::new(
+            Resizable::new(handle, content)
+                .with_dragbar_side(DragBarSide::Right)
+                .on_resize(|ctx, _| ctx.notify())
+                .finish(),
+            PROJECTS_SIDEBAR_POSITION_ID,
+        )
+        .finish()
+    }
+
+    fn render_activity_button(
+        &self,
+        tool: RightToolKind,
+        icon: Icon,
+        mouse_state: twarpui::elements::MouseStateHandle,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let active = self.right_tool_open && self.right_tool == tool;
+        let tooltip_label = match tool {
+            RightToolKind::Files => "Files",
+            RightToolKind::CodeReview => "Code Review",
+        };
+        let ui_builder = appearance.ui_builder().clone();
+        let tooltip = ui_builder
+            .tool_tip(tooltip_label.to_owned())
+            .build()
+            .finish();
+        let diff_stats = (tool == RightToolKind::CodeReview)
+            .then(|| self.right_panel_view.as_ref(app).loaded_diff_stats(app))
+            .flatten()
+            .filter(|stats| stats.files_changed > 0);
+        let color = if active {
+            theme.main_text_color(theme.background())
+        } else {
+            theme.sub_text_color(theme.background())
+        };
+        let mut contents = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(icon.to_warpui_icon(color).finish());
+        if let Some(stats) = diff_stats {
+            contents.add_child(
+                Flex::row()
+                    .with_spacing(spacing::XXS)
+                    .with_child(
+                        Text::new_inline(
+                            format!("+{}", stats.total_additions),
+                            appearance.ui_font_family(),
+                            type_ramp::CAPTION.size,
+                        )
+                        .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                        .with_color(add_color(appearance))
+                        .finish(),
+                    )
+                    .with_child(
+                        Text::new_inline(
+                            format!("-{}", stats.total_deletions),
+                            appearance.ui_font_family(),
+                            type_ramp::CAPTION.size,
+                        )
+                        .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                        .with_color(remove_color(appearance))
+                        .finish(),
+                    )
+                    .finish(),
+            );
+        }
+        let default_styles = UiComponentStyles {
+            border_radius: Some(CornerRadius::with_all(Radius::Pixels(radius::CHIP))),
+            padding: Some(Coords::uniform(spacing::SM)),
+            ..Default::default()
+        };
+        let hovered_styles = UiComponentStyles {
+            background: Some(theme.surface_overlay_2().into()),
+            ..default_styles
+        };
+        let active_styles = UiComponentStyles {
+            background: Some(theme.surface_3().into()),
+            ..default_styles
+        };
+        let mut button = Button::new(
+            mouse_state,
+            default_styles,
+            Some(hovered_styles),
+            None,
+            None,
+        )
+        .with_custom_label(contents.finish())
+        .with_tooltip(move || tooltip);
+        if active {
+            button = button.active().with_active_styles(active_styles);
+        }
+        button
+            .build()
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(WorkspaceAction::ToggleRightTool(tool))
+            })
+            .finish()
+    }
+
+    pub(super) fn render_right_activity_strip(&self, app: &AppContext) -> Box<dyn Element> {
+        let theme = Appearance::as_ref(app).theme();
+        ConstrainedBox::new(
+            Container::new(
+                Flex::column()
+                    .with_main_axis_alignment(MainAxisAlignment::Start)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(spacing::XS)
+                    .with_child(self.render_activity_button(
+                        RightToolKind::Files,
+                        Icon::Folder,
+                        self.files_tool_mouse_state.clone(),
+                        app,
+                    ))
+                    .with_child(self.render_activity_button(
+                        RightToolKind::CodeReview,
+                        Icon::Code1,
+                        self.code_review_tool_mouse_state.clone(),
+                        app,
+                    ))
+                    .finish(),
+            )
+            .with_background(theme.surface_1())
+            .with_border(Border::left(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
+            .with_padding_top(spacing::SM)
+            .finish(),
+        )
+        .with_width(RIGHT_ACTIVITY_STRIP_WIDTH)
+        .finish()
+    }
+
+    pub(super) fn render_projects_reopen_button(&self, app: &AppContext) -> Box<dyn Element> {
+        let theme = Appearance::as_ref(app).theme();
+        Hoverable::new(self.projects_toggle_mouse_state.clone(), move |state| {
+            let mut button = Container::new(
+                Icon::ChevronRight
+                    .to_warpui_icon(theme.main_text_color(theme.background()))
+                    .finish(),
+            )
+            .with_uniform_padding(spacing::XS)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)));
+            if state.is_hovered() {
+                button = button.with_background(theme.surface_overlay_2());
+            }
+            button.finish()
+        })
+        .on_click(|ctx, _, _| ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectsSidebar))
+        .with_cursor(Cursor::PointingHand)
+        .finish()
+    }
+}
+
+#[cfg(test)]
+#[path = "project_sidebar_tests.rs"]
+mod tests;

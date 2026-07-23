@@ -86,6 +86,10 @@ impl ClaudeCodePane {
     pub fn cwd(&self, ctx: &AppContext) -> Option<PathBuf> {
         self.claude_code_view(ctx).as_ref(ctx).cwd().cloned()
     }
+
+    pub fn title(&self, ctx: &AppContext) -> String {
+        self.pane_configuration.as_ref(ctx).title().to_owned()
+    }
 }
 
 impl PaneContent for ClaudeCodePane {

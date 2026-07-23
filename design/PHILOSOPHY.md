@@ -27,7 +27,7 @@ Every view belongs to exactly one class, and the class decides its density:
 |---|---|---|
 | **terminal** | the grid, PTY output | Exempt. User font settings govern. |
 | **conversation** | agent pane transcript, empty states | `PROSE` type, max measure 720 centered, `XL` (24) rhythm between turns, no boxes around plain text. |
-| **chrome** | tab strip, sidebar, panels, composer, settings, pills, meta rows | `UI`/`LABEL`/`CAPTION` type, `SM`/`MD` gaps, hairlines only where actionable. |
+| **chrome** | Projects sidebar, tool rails, composer, settings, pills, meta rows | `UI`/`LABEL`/`CAPTION` type, `SM`/`MD` gaps, hairlines only where actionable. |
 
 ## Tokens
 
@@ -46,7 +46,7 @@ Values live in `tokens.rs`; this table is the human-readable mirror. **No raw nu
 - **Grouping order: whitespace → fill → border.** Prefer a gap; if structure needs more, a 2–4% alpha fill (`surface_overlay_1`); a hairline only for actionable surfaces.
 - **Full-bleed saturated tints are banned.** State color on a large region (error block, selected row) renders as: 2px left accent bar + 3–4% alpha wash + normal text — never a saturated background band.
 - **`PhenomenonStyle` is deprecated.** Its hardcoded hex palette ignores the active theme. No new uses; existing uses migrate to theme roles during sweeps.
-- **Per-tab color, precisely scoped.** The tab's color paints: the tab chip (state-opacity fills + border) and designated text accents (pane-header title, agent-pane accent). It does not paint surfaces. Panels and the sidebar are neutral so the chips read as identity, not wallpaper.
+- **Per-project color, precisely scoped.** The tab-backed project's color paints its identity dot and designated text accents (pane-header title, agent-pane accent). It does not paint surfaces. Panels and the sidebar are neutral so color reads as identity, not wallpaper.
 
 ## Typography rules
 
@@ -68,10 +68,10 @@ One skeleton per component class. Deviating from an anatomy is a violation even 
 
 ## Shell rules
 
-- **Left sidebar is a macOS source list**: full window height including the titlebar corner — the traffic lights float over its top area (they are real AppKit buttons compositing above the Metal layer; nothing may be placed under them at x ≈ 12–66 of the top band). Neutral surface distinct from content by a hairline seam, edge-to-edge (no floating-card margins, radius, or shadow when docked). `CAPTION` section headers, list-row anatomy, selection pills.
-- **Tab strip** starts right of the sidebar when it is open, and owns the traffic-light clearance when it is closed. The strip's bottom hairline is the one horizontal rule in the chrome.
-- **Tabs are a horizontal strip of plain rectangles, and they keep their colors** (owner-directed 2026-07-16: no flares, no rounded-top silhouettes, and never a vertical tab list in the sidebar — the sidebar is the Tools panel). Rules on top: the active tab must win contrast against every neighbor; one indicator glyph slot per tab; a given piece of status appears exactly once in the chrome (no duplicated diff counters).
-- **Code Review is the right-side source rail**: full window height, neutral `surface_1`, edge-to-edge against the right window edge, and separated from the workspace by one left `outline()` hairline. Like the left source list, it has no docked-panel margin, outer radius, or shadow. Its open/close transition mirrors the left rail's ~150ms edge slide; maximized mode still fills the content area edge-to-edge.
+- **Projects owns the left source list** on supported macOS builds: full window height including the titlebar corner, with no logo. The traffic lights float over its reserved top area (they are real AppKit buttons compositing above the Metal layer; nothing interactive may sit beneath them). The list is neutral, edge-to-edge, separated from content by one `outline()` hairline, and uses `CAPTION` headers plus source-list rows.
+- **Open tabs are presented as Projects rows.** There is no global horizontal tab strip and no replacement toolbar consuming its height. Each row preserves the tab's live identity, ordering, color dot, rename/menu behavior, and drag behavior; chat panes may appear as compact children.
+- **Files and Code Review share one right-side tool host.** A stable narrow activity strip selects either tool, never both. The active rail is full height, neutral `surface_1`, edge-to-edge, and separated by one left `outline()` hairline. Files and Code Review retain independent widths and project-specific content state.
+- **Legacy and unsupported shells remain valid fallback layouts.** When the Projects shell feature is disabled, the existing horizontal-tab and panel rules continue to apply without erasing either shell's persisted state.
 - **Window dragging** must keep working from any empty spot in the top band, including over the sidebar's header.
 
 ## Motion

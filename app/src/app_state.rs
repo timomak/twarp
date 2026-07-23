@@ -1055,11 +1055,42 @@ pub struct WindowSnapshot {
     pub vertical_tabs_panel_open: bool,
     pub left_panel_width: Option<f32>,
     pub right_panel_width: Option<f32>,
+    pub projects_sidebar_open: bool,
+    pub projects_sidebar_width: Option<f32>,
+    pub right_tool: Option<RightToolKind>,
+    pub right_tool_open: bool,
+    pub files_tool_width: Option<f32>,
+    pub code_review_tool_width: Option<f32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RightToolKind {
+    Files,
+    CodeReview,
+}
+
+impl RightToolKind {
+    pub fn as_i32(self) -> i32 {
+        match self {
+            Self::Files => 0,
+            Self::CodeReview => 1,
+        }
+    }
+
+    pub fn from_i32(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Files),
+            1 => Some(Self::CodeReview),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TabSnapshot {
     pub custom_title: Option<String>,
+    pub project_root: Option<PathBuf>,
+    pub project_root_initialized: bool,
     pub root: PaneNodeSnapshot,
     pub default_directory_color: Option<AnsiColorIdentifier>,
     pub selected_color: SelectedTabColor,

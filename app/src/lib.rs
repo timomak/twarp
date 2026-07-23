@@ -44,6 +44,8 @@ mod antivirus;
 mod app_menus;
 mod app_services;
 mod app_state;
+#[cfg(feature = "integration_tests")]
+pub use app_state::RightToolKind;
 mod auth;
 mod banner;
 mod billing;
@@ -2618,6 +2620,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::VerticalTabsSummaryMode,
         #[cfg(feature = "design_shell_v1")]
         FeatureFlag::DesignShellV1,
+        #[cfg(feature = "project_sidebar")]
+        FeatureFlag::ProjectSidebar,
         #[cfg(feature = "codex_agent_backend")]
         FeatureFlag::CodexAgentBackend,
         #[cfg(feature = "tab_configs")]

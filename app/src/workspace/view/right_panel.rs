@@ -35,7 +35,10 @@ use crate::{
     drive::panel::{MAX_SIDEBAR_WIDTH_RATIO, MIN_SIDEBAR_WIDTH},
     terminal::resizable_data::{ModalType, ResizableData},
 };
-use crate::{code_review::diff_state::DiffStateModel, terminal::view::TerminalView};
+use crate::{
+    code_review::diff_state::{DiffStateModel, DiffStats},
+    terminal::view::TerminalView,
+};
 use dunce::canonicalize;
 use itertools::Itertools;
 use std::{
@@ -419,9 +422,14 @@ impl RightPanelView {
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let resizable_data_handle = ResizableData::handle(ctx);
+        let width_kind = if super::project_sidebar_enabled() {
+            ModalType::CodeReviewToolWidth
+        } else {
+            ModalType::RightPanelWidth
+        };
         let resizable_state_handle = match resizable_data_handle
             .as_ref(ctx)
-            .get_handle(ctx.window_id(), ModalType::RightPanelWidth)
+            .get_handle(ctx.window_id(), width_kind)
         {
             Some(handle) => handle,
             None => {
@@ -891,6 +899,9 @@ impl RightPanelView {
     }
 
     fn close_button(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
+        if super::project_sidebar_enabled() {
+            return Empty::new().finish();
+        }
         let ui_builder = appearance.ui_builder().clone();
         let tooltip_keybinding =
             keybinding_name_to_display_string(TOGGLE_RIGHT_PANEL_BINDING_NAME, app);
@@ -1373,6 +1384,12 @@ impl RightPanelView {
         self.working_directories_model
             .as_ref(ctx)
             .get_code_review_view(pane_group_id, selected_repo_path)
+    }
+
+    pub(crate) fn loaded_diff_stats(&self, ctx: &AppContext) -> Option<DiffStats> {
+        self.get_active_code_review_view(ctx)?
+            .as_ref(ctx)
+            .loaded_diff_stats()
     }
 
     fn is_maximized(&self, app: &AppContext) -> bool {
