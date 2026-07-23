@@ -1329,7 +1329,7 @@ impl Workspace {
             EditorView::single_line(options, ctx)
         });
         editor.update(ctx, |editor, ctx| {
-            editor.set_placeholder_text("Search tabs...", ctx);
+            editor.set_placeholder_text("Search projects...", ctx);
         });
         ctx.subscribe_to_view(&editor, |me, editor_view, event, ctx| match event {
             EditorEvent::Edited(_) => {
@@ -1348,7 +1348,7 @@ impl Workspace {
                 ctx.notify();
             }
             EditorEvent::Navigate(NavigationKey::Up) if me.projects_search_open => {
-                let matches = me.matching_project_indices(ctx);
+                let matches = me.matching_project_targets(ctx);
                 if !matches.is_empty() {
                     me.projects_search_selection = me
                         .projects_search_selection
@@ -1358,7 +1358,7 @@ impl Workspace {
                 }
             }
             EditorEvent::Navigate(NavigationKey::Down) if me.projects_search_open => {
-                let matches = me.matching_project_indices(ctx);
+                let matches = me.matching_project_targets(ctx);
                 if !matches.is_empty() {
                     me.projects_search_selection =
                         (me.projects_search_selection + 1) % matches.len();
@@ -1366,9 +1366,19 @@ impl Workspace {
                 }
             }
             EditorEvent::Enter if me.projects_search_open => {
-                let matches = me.matching_project_indices(ctx);
-                if let Some(index) = matches.get(me.projects_search_selection).copied() {
-                    me.activate_tab(index, ctx);
+                let matches = me.matching_project_targets(ctx);
+                if let Some(target) = matches.get(me.projects_search_selection).cloned() {
+                    match target {
+                        project_sidebar::ProjectListTarget::LiveTab(index) => {
+                            me.activate_tab(index, ctx);
+                        }
+                        project_sidebar::ProjectListTarget::Library(path) => {
+                            #[cfg(feature = "local_fs")]
+                            me.open_project_library_entry(&path, ctx);
+                            #[cfg(not(feature = "local_fs"))]
+                            let _ = path;
+                        }
+                    }
                     me.toggle_projects_search(ctx);
                 }
             }
@@ -2695,6 +2705,13 @@ impl Workspace {
         let tab_settings_handle = TabSettings::handle(ctx);
         ctx.subscribe_to_model(&tab_settings_handle, |me, _, event, ctx| {
             me.handle_tab_settings_change(event, ctx)
+        });
+
+        // Folder-backed projects are an app-wide library. A project registered
+        // in one window should appear in every other Projects sidebar without
+        // changing that window's local selection, focus, or scroll state.
+        ctx.subscribe_to_model(&ProjectManagementModel::handle(ctx), |_me, _, _, ctx| {
+            ctx.notify();
         });
 
         ctx.subscribe_to_model(&CodeSettings::handle(ctx), |me, _, event, ctx| {
@@ -18862,6 +18879,41 @@ impl Workspace {
         self.create_project(NewProjectSource::ExistingFolder(project_root), ctx);
     }
 
+    #[cfg(feature = "local_fs")]
+    fn open_project_library_entry(&mut self, path: &Path, ctx: &mut ViewContext<Self>) {
+        let Some(project_root) = std::fs::canonicalize(path)
+            .ok()
+            .filter(|path| path.is_dir())
+            .filter(|path| std::fs::read_dir(path).is_ok())
+        else {
+            let window_id = ctx.window_id();
+            ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                toast_stack.add_ephemeral_toast(
+                    DismissibleToast::error("That folder is unavailable or unreadable".to_owned()),
+                    window_id,
+                    ctx,
+                );
+            });
+            return;
+        };
+
+        // Model events and user actions can race. If this project became local
+        // after the row rendered, activate it instead of opening a duplicate.
+        if let Some(index) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.project_root.as_ref() == Some(&project_root))
+        {
+            ProjectManagementModel::handle(ctx).update(ctx, |projects, ctx| {
+                projects.upsert_project(project_root, ctx);
+            });
+            self.activate_tab(index, ctx);
+            return;
+        }
+
+        self.create_project(NewProjectSource::ExistingFolder(project_root), ctx);
+    }
+
     fn create_project(&mut self, source: NewProjectSource, ctx: &mut ViewContext<Self>) {
         match source {
             NewProjectSource::Scratch => {
@@ -19185,7 +19237,13 @@ impl TypedActionView for Workspace {
             }
             WorkspaceAction::ToggleProjectsSearch => {
                 ActionAccessibilityContent::Custom(AccessibilityContent::new_without_help(
-                    "Search open projects".to_owned(),
+                    "Search projects".to_owned(),
+                    WarpA11yRole::UserAction,
+                ))
+            }
+            WorkspaceAction::OpenProjectLibraryEntry { path } => {
+                ActionAccessibilityContent::Custom(AccessibilityContent::new_without_help(
+                    format!("Open project {}", path.display()),
                     WarpA11yRole::UserAction,
                 ))
             }
@@ -19242,6 +19300,10 @@ impl TypedActionView for Workspace {
             CreateProjectFromFolder => {
                 self.close_new_session_dropdown_menu(ctx);
                 self.open_project_folder_picker(ctx);
+            }
+            OpenProjectLibraryEntry { path } => {
+                #[cfg(feature = "local_fs")]
+                self.open_project_library_entry(path, ctx);
             }
             ToggleProjectExpanded(project_id) => {
                 if !self.projects_expanded.remove(project_id) {
