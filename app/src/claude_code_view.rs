@@ -9947,7 +9947,8 @@ impl ClaudeCodeView {
             .with_child(
                 appearance
                     .ui_builder()
-                    .span("Question".to_owned())
+                    .span(question_card_title(questions).to_owned())
+                    .with_line_height_ratio(type_ramp::UI.line_height)
                     .with_style(UiComponentStyles {
                         font_color: Some(text_color),
                         font_size: Some(type_ramp::UI.size),
@@ -9969,12 +9970,32 @@ impl ClaudeCodeView {
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_main_axis_size(MainAxisSize::Min)
                 .with_spacing(spacing::SM);
+            // A single question promotes its short semantic header into the
+            // card header above. Multi-question cards need each header beside
+            // its own prompt so none of the provider payload is discarded.
+            if questions.len() > 1 && !question.header.trim().is_empty() {
+                block.add_child(
+                    appearance
+                        .ui_builder()
+                        .span(question.header.clone())
+                        .with_soft_wrap()
+                        .with_line_height_ratio(type_ramp::LABEL.line_height)
+                        .with_style(UiComponentStyles {
+                            font_color: Some(muted),
+                            font_size: Some(type_ramp::LABEL.size),
+                            ..Default::default()
+                        })
+                        .build()
+                        .finish(),
+                );
+            }
             if !question.question.trim().is_empty() {
                 block.add_child(
                     appearance
                         .ui_builder()
                         .span(question.question.clone())
                         .with_soft_wrap()
+                        .with_line_height_ratio(type_ramp::PROSE.line_height)
                         .with_style(UiComponentStyles {
                             font_color: Some(text_color),
                             font_size: Some(type_ramp::PROSE.size),
@@ -10001,6 +10022,7 @@ impl ClaudeCodeView {
                         appearance
                             .ui_builder()
                             .span(marker.to_owned())
+                            .with_line_height_ratio(type_ramp::PROSE.line_height)
                             .with_style(UiComponentStyles {
                                 font_color: Some(if is_selected { accent } else { muted }),
                                 font_size: Some(type_ramp::PROSE.size),
@@ -10018,6 +10040,7 @@ impl ClaudeCodeView {
                             .ui_builder()
                             .span(option.label.clone())
                             .with_soft_wrap()
+                            .with_line_height_ratio(type_ramp::UI.line_height)
                             .with_style(UiComponentStyles {
                                 font_color: Some(text_color),
                                 font_size: Some(type_ramp::UI.size),
@@ -10033,6 +10056,7 @@ impl ClaudeCodeView {
                                 .ui_builder()
                                 .span(description.clone())
                                 .with_soft_wrap()
+                                .with_line_height_ratio(type_ramp::CAPTION.line_height)
                                 .with_style(UiComponentStyles {
                                     font_color: Some(muted),
                                     font_size: Some(type_ramp::CAPTION.size),
@@ -10155,6 +10179,17 @@ struct ParsedQuestion {
     question: String,
     multi: bool,
     options: Vec<ParsedQuestionOption>,
+}
+
+/// The card title should carry the provider's semantic label when there is one
+/// question. A multi-question card keeps the generic plural title because each
+/// question renders its own header beside its prompt.
+fn question_card_title(questions: &[ParsedQuestion]) -> &str {
+    match questions {
+        [question] if !question.header.trim().is_empty() => question.header.trim(),
+        [_, _, ..] => "Questions",
+        _ => "Question",
+    }
 }
 
 /// A one-line, human summary of the concrete action a permission prompt grants
@@ -11788,11 +11823,13 @@ impl Element for RevealClip {
 #[cfg(test)]
 mod tests {
     use super::{
-        format_metrics_line, parse_markdown_cached, queue_preview, should_hold_question_permission,
-        split_markdown_segments, supports_raw_cli, truncate_middle, MarkdownSegment,
+        format_metrics_line, parse_markdown_cached, parse_questions, question_card_title,
+        queue_preview, should_hold_question_permission, split_markdown_segments, supports_raw_cli,
+        truncate_middle, MarkdownSegment,
     };
     use claude_code::driver::AgentProvider;
     use claude_code::TurnMetrics;
+    use serde_json::json;
 
     #[test]
     fn raw_cli_entry_is_claude_only() {
@@ -11866,6 +11903,54 @@ mod tests {
         assert!(should_hold_question_permission("AskUserQuestion"));
         assert!(!should_hold_question_permission("Bash"));
         assert!(!should_hold_question_permission("Write"));
+    }
+
+    #[test]
+    fn question_parser_preserves_all_visible_payload_fields() {
+        let questions = parse_questions(&json!({
+            "questions": [{
+                "header": "Safety net",
+                "question": "How should this be guarded?",
+                "multiSelect": true,
+                "options": [{
+                    "label": "Daily sync job",
+                    "description": "Automatically repairs a mismatch within a day."
+                }]
+            }]
+        }));
+
+        assert_eq!(questions.len(), 1);
+        assert_eq!(questions[0].header, "Safety net");
+        assert_eq!(questions[0].question, "How should this be guarded?");
+        assert!(questions[0].multi);
+        assert_eq!(questions[0].options.len(), 1);
+        assert_eq!(questions[0].options[0].label, "Daily sync job");
+        assert_eq!(
+            questions[0].options[0].description.as_deref(),
+            Some("Automatically repairs a mismatch within a day.")
+        );
+    }
+
+    #[test]
+    fn question_card_title_uses_semantic_header_without_losing_multi_headers() {
+        let single = parse_questions(&json!({
+            "questions": [{"header": "  Safety net  ", "question": "Guard it?"}]
+        }));
+        assert_eq!(question_card_title(&single), "Safety net");
+
+        let multiple = parse_questions(&json!({
+            "questions": [
+                {"header": "Backend", "question": "Which service?"},
+                {"header": "Rollout", "question": "Which cohort?"}
+            ]
+        }));
+        assert_eq!(question_card_title(&multiple), "Questions");
+
+        let unlabeled = parse_questions(&json!({
+            "questions": [{"question": "Proceed?"}]
+        }));
+        assert_eq!(question_card_title(&unlabeled), "Question");
+        assert_eq!(question_card_title(&[]), "Question");
     }
 
     #[test]
