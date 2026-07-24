@@ -14,7 +14,7 @@ The Codex desktop sidebar demonstrates a calmer hierarchy: primary work is selec
 
 **Goals**
 
-- Make projects the primary navigation surface and give every open tab a stable project row.
+- Make projects the primary navigation surface and show each open tab as one chat directly beneath its assigned project.
 - Keep folder-backed projects available across relaunches and in every new or existing window, even when no tab for that project is open locally.
 - Let users create a project from an existing directory and start a new chat directly in any project's directory context.
 - Remove the horizontal tab strip without replacing it with another full-width top bar.
@@ -27,8 +27,7 @@ The Codex desktop sidebar demonstrates a calmer hierarchy: primary work is selec
 
 - Scratch projects without an assigned directory remain window-local until they gain a folder identity; they do not create permanent anonymous library entries.
 - The global project library does not mirror one live pane tree into multiple windows. Opening a library project creates a normal live tab in that window, while another window's instance remains independent.
-- No grouping of multiple tabs by repository, even when they use the same folder.
-- No nested pane, file, terminal, or generic session rows beneath a project. Only chats associated with that project may appear as child rows.
+- No hierarchy deeper than Project → Chat. Panes, files, terminals, and agent sessions inside a tab never become additional sidebar levels.
 - No pinned-project or recent-project section in this version.
 - No Codex-specific destinations such as Pull requests, Scheduled, or Plugins unless twarp later gains equivalent first-class products.
 - No changes to terminal-grid density, pane splitting, agent transcript behavior, file editing, or Code Review operations.
@@ -74,7 +73,7 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 13. When macOS traffic lights are visible, the sidebar reserves their hit area at the top. No project row, button, search field, status, or drag target overlaps that area.
 
-14. Below the traffic-light area, the sidebar begins with a compact Projects header. It contains the text label `PROJECTS`, a search affordance, a create affordance, and the sidebar toggle when that control is not already adjacent to the traffic lights.
+14. Below the traffic-light area, the sidebar begins with a compact Projects header. It contains the text label `PROJECTS`, a search affordance, and a create affordance. The sidebar toggle stays pinned beside the traffic lights in both open and closed states, so opening the sidebar never shifts the control.
 
 15. The create affordance opens a compact menu with two project-level choices: `Start from scratch` and `Use an existing folder`. The detailed behavior of both choices is defined in the Project creation and chats section.
 
@@ -88,49 +87,45 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 ### Project and tab identity
 
-20. Every open tab renders as exactly one live project row. In addition, every registered folder-backed project that is not open in the current window renders as exactly one library row. If one or more local tabs use that folder, the extra library row is omitted; multiple local tabs using the same repository remain independently selectable rows.
+20. Each assigned directory renders as one project parent row. Every open tab assigned to that directory renders as one direct chat child. A registered directory with no open tabs renders as a library project row with no children. Rootless scratch tabs are grouped under a window-local untitled project.
 
-21. Activating a live project row activates the corresponding tab with its live pane tree unchanged. Terminals, agent sessions, browsers, editors, running commands, scroll positions, selections, and split ratios continue from their existing state; activation never restarts or recreates the work. Activating an unopened library row creates and activates a normal project tab rooted at that directory in the current window.
+21. Activating a chat child activates its corresponding tab with the live pane tree unchanged. Terminals, agent sessions, browsers, editors, running commands, scroll positions, selections, and split ratios continue from their existing state. Activating an unopened library project creates a normal tab rooted at that directory.
 
-22. The active project has one clearly selected row. Inactive rows use neutral styling; hover and selection follow source-list row anatomy with no per-row outlines or divider lines.
+22. The active chat has one clearly selected child row. Its project parent remains visibly identifiable without competing with the active-child selection. Inactive rows use neutral source-list styling with no per-row outlines or divider lines.
 
-23. A project row is one compact line by default. It contains a fixed identity slot, a single-line title that truncates with an end ellipsis, and a trailing action/status area. Only a live local project can expand to show genuine chat child rows; an unopened library row has no synthetic children. Neither kind renders placeholders such as `No chats` or `No files`.
+23. A project parent and each chat child are one compact line. Chats are always rendered directly below their project; there is no disclosure-created third level and no placeholder such as `No chats` or `No files`.
 
-24. A project row's visible title uses this user-observable priority:
-    1. The tab's custom name, when one has been set.
-    2. The single project/repository folder name, when one unambiguous folder is known.
-    3. The tab's existing display title.
-    4. `Untitled project` only when none of the above is available.
+24. A project parent uses its assigned folder basename, falling back to `Untitled project`. A chat child uses the tab's custom name first and its existing display title second. This preserves every pre-migration tab label as a visible chat title.
 
-25. When multiple open rows would have the same visible title, each duplicate gains a quiet disambiguating sublabel using the shortest useful folder, parent-folder, branch, or ordinal context. Unique rows remain single-line so uncommon collisions do not reduce list capacity for everyone.
+25. Duplicate project basenames gain a quiet shortest-useful parent-path sublabel. Chat names may repeat within a project because each maps to a distinct live tab.
 
-26. A tab spanning more than one repository or root remains one project row. Its title follows invariant 24 and its tooltip/accessible description identifies it as a multi-folder project; the sidebar does not split or duplicate the tab.
+26. A tab remains one chat even when its pane tree spans multiple repositories or roots. Its assigned `project_root` determines its project parent; changing an individual pane cwd does not reparent it.
 
-27. Hovering or focusing a truncated project row exposes the complete title and useful folder/repository context without changing the row's height.
+27. Hovering or focusing a truncated project or chat row exposes its complete title and useful folder context without changing row height.
 
-28. Existing per-tab colors remain attached to the corresponding live project. A library row uses the persisted directory color, and a project opened from that row inherits it. The color renders as a small dot in the row's fixed identity slot; it never paints the whole sidebar or competes with semantic success, warning, error, and diff colors. A project without an assigned color renders a neutral dot.
+28. Existing colors remain attached to project identity. The project parent renders the small color dot, library rows use the persisted directory color, and every new chat created or promoted into that project inherits the same selected/default colors. A project without an assigned color renders a neutral dot.
 
-29. Each project row has at most one attention indicator in its trailing status slot. A blocked agent or error outranks passive running activity; the same state is not duplicated elsewhere on that row.
+29. Each chat child has at most one attention indicator in its trailing status slot. A blocked agent or error outranks passive running activity; the same state is not duplicated on the project parent.
 
-30. Working-tree line counts do not appear on every project row. The active project's current diff count appears on the Code Review activity icon, where it identifies the tool that owns the data.
+30. Working-tree counts do not appear on project/chat rows or the far-right activity strip. For an agent tab, its three-dot Environment menu shows the changed-file count and available addition/deletion totals beside `Changes`.
 
-31. Hovering or keyboard-focusing a live project row reveals quiet new-chat and more-actions controls without shifting or truncating the title differently; close remains in the more-actions menu and available through established shortcuts and middle-click behavior. An unopened library row remains a simple open target and does not expose tab-only actions until opened.
+31. Hovering a live project parent reveals the single new-chat `+`. Chat children never render a `+`; they reveal only their more-actions control. An unopened library row remains a simple open target.
 
-32. Double-clicking a project title enters the existing rename flow. Rename commits and cancellation behave as they do for tabs today, and the renamed title remains associated with that project across restore.
+32. Double-clicking a chat title enters the existing tab rename flow. Rename commits and cancellation behave as they do today and persist across restore.
 
-33. A live project's context menu retains all applicable tab actions, including rename/reset name, close variants, color, metadata copy, save configuration, and sharing actions that are available for that tab. Library rows do not pretend to support actions that require a live tab.
+33. A chat's context menu retains all applicable tab actions, including rename/reset name, close variants, color, metadata copy, save configuration, and sharing. Library rows do not expose tab-only actions.
 
 ### Project navigation and manipulation
 
-34. Clicking a live project row activates it immediately. Clicking an unopened library row opens that directory as a local project in the current window; if it became open locally before the action completed, the existing local instance is activated instead of creating another. Clicking a live row's close or menu affordance performs only that affordance and never activates the row as a side effect.
+34. Clicking a chat activates it immediately. Clicking a live project parent keeps or activates its current chat. Clicking an unopened library row opens that directory locally. Clicking a child menu performs only that action and does not trigger the parent.
 
-35. Live project rows can be reordered by dragging vertically. The insertion position is visible, auto-scroll works near the top and bottom edges, and dropping preserves the new order across restore. Unopened library rows are ordered by most-recent use and are not draggable because they have no live view tree to move.
+35. Chat children can be reordered through the existing tab drag behavior and keep that order across restore. Unopened library projects remain ordered by most-recent use and are not draggable live views.
 
-36. Dragging a project out of the sidebar can detach it into a new window, and dragging it into another twarp window can insert it into that window's Projects list. The live view tree and project identity move without restarting processes.
+36. Existing cross-window tab drag continues to move a chat's live pane tree and assigned project identity without restarting processes.
 
 37. If a drag is cancelled or released on an invalid target, the project returns to its prior position with no duplication, closure, or state loss.
 
-38. Closing the active project activates the nearest surviving live row, preferring the following row and then the previous row. The center workspace and open right tool retarget to the newly active project without closing the shell rails. Closing a folder-backed project's last local tab does not delete it from the library; it returns to its unopened state in that window.
+38. Closing the active chat activates the nearest surviving chat. Closing a folder-backed project's final local chat does not delete the library project; it returns to its unopened state in that window.
 
 39. When the final live project closes in a context that permits an empty window, the center shows the existing welcome/new-session surface while registered library projects remain selectable. `No projects yet` with a single `New project` action appears only when there are neither live projects nor registered folder-backed projects. When the platform or user setting closes the window with its final tab, that behavior remains unchanged.
 
@@ -154,37 +149,31 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 48. Selecting a directory already used by another open project creates another independent project, consistent with invariant 20. Renaming either project changes only its display title and never renames or moves the directory.
 
-49. A project with one unambiguous directory exposes a `New chat` action on hover/focus and in its context menu. The same action is keyboard-accessible and is available whether or not that project is active.
+49. A live project with one unambiguous directory exposes a single `New chat` action on its parent row. Chat rows do not expose this action.
 
-50. Invoking `New chat` activates the project, creates a fresh agent chat in its center workspace, focuses the empty composer, and sets the project's directory as the chat's initial working directory. It does not reuse, clear, or replace an existing chat.
+50. Invoking `New chat` creates and activates a fresh tab directly under the project, focuses its empty agent composer, and uses the project's directory as the initial working directory. It does not reuse, clear, replace, or split an existing tab.
 
 51. Before the first message is sent, the composer visibly identifies the inherited project directory. Sending the first message requires no additional directory selection or manual `cd` step.
 
 52. Commands, file references, and agent operations in a newly created chat resolve from the inherited project directory unless the user explicitly changes that chat's working context. Changing a chat's working context does not reassign or rename the project.
 
-53. A project can expand to show its associated chats as compact child rows beneath the project row. Only chats belonging to that project appear there; terminal panes, editors, browsers, and unrelated sessions do not become child rows.
+53. A project always shows its open tabs as compact, direct chat children. A tab with several panels is still one chat row; its panes never appear as nested sidebar rows.
 
-54. Clicking a chat child row activates its project and resumes that chat's existing state rather than creating a copy. The active chat has a clear selected state, and a long chat title truncates with its full title available on hover/focus.
+54. Clicking a chat child activates its tab and resumes its existing state rather than creating a copy. The active chat has a clear selected state, and a long title truncates with its full title available on hover/focus.
 
-55. A project with no chats renders no placeholder child row. The project row and its `New chat` action remain available, keeping empty projects compact.
+55. A project with no open chats renders no placeholder child row. The project parent remains compact.
+
+56a. When the current tab has multiple panels, dragging one panel onto any project promotes that panel into a new tab/chat directly under the target project. The source tab keeps its remaining panels. Single-panel tabs are not split by this gesture, and invalid/cancelled drops restore the source unchanged.
 
 56. For a multi-folder project with no unambiguous primary directory, `New chat` asks the user to choose one of that project's directories before creating the chat. Cancelling creates no chat; an unavailable directory produces a retryable error without changing the active chat.
 
-### Project search
+### Search and global destinations
 
-57. Invoking search from the Projects header replaces the header label/actions with a focused single-line search field without opening another panel.
+57. The Projects-header search icon opens the same command palette as Cmd+P. It is not a separate `Search projects` mode and does not replace the header with a project filter field.
 
-58. Search filters both live and unopened library rows case-insensitively. Live rows match custom title, display title, folder/repository name, full path, branch, and active pane title; library rows match folder name and full path. Matching does not mutate row order.
+58. File search remains Cmd+Shift+F and opens inside Files. Its initial empty state fits within the resizable search section and never paints over the file tree.
 
-59. Search results update as the user types. The currently active project remains active even when filtered out; the center workspace never changes merely because a query changes.
-
-60. Up and Down move through matching rows, Enter activates the focused result and closes search, and Escape clears and closes search while preserving the previously active project.
-
-61. A query with no matches shows `No matching projects` and keeps the search field editable. It never offers to search files or create a project implicitly.
-
-62. Clearing the query restores every row and the prior list scroll position. Closing and reopening the Projects sidebar does not preserve a stale query.
-
-63. Command-palette search remains available independently. Project search is scoped to the shared project library plus the current window's live scratch projects and does not replace command, file, setting, or session search.
+59. Settings is a global destination. Opening Settings creates or focuses its normal settings tab but never adds a project parent or chat child to the Projects hierarchy.
 
 ### Right activity strip and tool host
 
@@ -192,7 +181,7 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 65. Clicking an inactive tool icon opens its content rail and makes it active. Clicking the other icon switches the existing rail directly to that tool without first closing the rail or animating it out and back in.
 
-66. Clicking the already-active tool icon closes the content rail but leaves the activity strip visible. Reopening restores that tool's previous width and project-specific scroll/selection state.
+66. Clicking the already-active tool icon closes the content rail but leaves the activity strip visible. Cmd+Shift+`+` performs the same toggle for the last selected tool; reopening restores that tool, width, and project-specific scroll/selection state.
 
 67. Files and Code Review are mutually exclusive in the right content rail. They never render side by side, and neither can remain in the left Projects sidebar.
 
@@ -230,7 +219,7 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 82. Code Review retains repository selection, loading and unsupported states, staged/unstaged sections, multiselect, stage/unstage/discard actions, commit flows, diff opening, comments, and refresh behavior.
 
-83. A compact semantic badge on the Code Review activity icon shows the active project's current additions and deletions. The badge appears only when there are changes, uses semantic diff colors, and is not duplicated in global shell chrome.
+83. The Code Review activity icon remains icon-only. Agent tabs surface changed-file and line totals beside `Changes` in their three-dot Environment menu; Code Review may retain detailed statistics inside its own content header.
 
 84. Code Review's content header retains the `CODE REVIEW` label, repository selection when needed, diff statistics, maximize, and contextual actions. The activity icon replaces the header's redundant close button; clicking the active icon closes the rail.
 
@@ -242,11 +231,11 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 ### Global chrome consolidation
 
-88. Search appears once in global shell chrome: in the Projects header for project filtering. Command search remains available through its shortcut/command palette, and Files search appears only inside Files when invoked.
+88. Search appears once in global shell chrome: the Projects-header icon opens Cmd+P command search. Files search appears only inside Files when invoked.
 
 89. Settings appears once in global shell chrome: in the Projects footer. The removed horizontal strip leaves no duplicate gear or avatar control.
 
-90. Code Review status appears once in global shell chrome: on its right activity icon. A given additions/deletions count is not repeated in the Projects row or a removed top strip.
+90. Code-change counts are absent from the far-right activity strip and Projects rows. Agent tabs show them in the Environment menu; detailed Code Review content can show its own contextual totals.
 
 91. New-project creation appears once as the Projects-header create affordance. Contextual pane-level creation actions remain where they create a pane or split rather than a project.
 
@@ -258,7 +247,7 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 ### Persistence and transitions
 
-95. Existing open tabs migrate visually to project rows without changing their order, active selection, names, colors, pane contents, processes, or restore identity.
+95. Existing open tabs migrate visually to direct chat rows beneath their assigned project without changing order, active selection, names, project colors, pane contents, processes, or restore identity.
 
 96. The Projects sidebar's open/closed state and width are workspace/window-level preferences. Switching projects never changes the left rail's visibility or width.
 

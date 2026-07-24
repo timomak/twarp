@@ -55,11 +55,13 @@ pub enum PaneViewEvent {
     },
     DroppedOnTabBar {
         origin: ActionOrigin,
+        project_target: Option<crate::workspace::ProjectSidebarPaneDropTarget>,
     },
     DraggedOntoTabBar {
         origin: ActionOrigin,
         tab_hover_index: TabBarHoverIndex,
         hidden_pane_preview_direction: Direction,
+        project_target: Option<crate::workspace::ProjectSidebarPaneDropTarget>,
     },
     PaneDraggedOutsideTabBarOrPaneGroup,
     PaneDragEnded,
@@ -301,19 +303,26 @@ impl<P: BackingView> PaneView<P> {
                 self.is_being_dragged = false;
                 ctx.notify();
             }
-            header::Event::DroppedOnTabBar { origin } => {
+            header::Event::DroppedOnTabBar {
+                origin,
+                project_target,
+            } => {
                 // If we're handling a drop event for a workspace pane, we want to get rid of the neutral background that obscures it.
                 if matches!(origin, ActionOrigin::Pane) {
                     self.is_being_dragged = false;
                 }
 
-                ctx.emit(PaneViewEvent::DroppedOnTabBar { origin: *origin });
+                ctx.emit(PaneViewEvent::DroppedOnTabBar {
+                    origin: *origin,
+                    project_target: project_target.clone(),
+                });
                 ctx.notify();
             }
             header::Event::DraggedOverTabBar {
                 origin,
                 tab_hover_index,
                 hidden_pane_preview_direction,
+                project_target,
             } => {
                 // Adds a neutral background to the pane if it's being dragged over the workspace tab group.
                 if matches!(origin, ActionOrigin::Pane) {
@@ -324,6 +333,7 @@ impl<P: BackingView> PaneView<P> {
                     origin: *origin,
                     tab_hover_index: *tab_hover_index,
                     hidden_pane_preview_direction: *hidden_pane_preview_direction,
+                    project_target: project_target.clone(),
                 });
                 ctx.notify();
             }

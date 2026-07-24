@@ -55,7 +55,8 @@ pub(super) struct RepoContext {
     /// The repo's GitHub web URL (`https://github.com/owner/repo`), derived from
     /// `origin`. Lets the branch menu open `…/tree/<branch>`.
     pub repo_web_url: Option<String>,
-    /// Uncommitted working-tree changes from `git diff --shortstat`.
+    /// Uncommitted working-tree changes, including staged and untracked files.
+    pub local_files_changed: Option<usize>,
     pub local_added: Option<usize>,
     pub local_removed: Option<usize>,
     /// The current pull request's full diff. Kept separate from the local
@@ -76,6 +77,7 @@ impl RepoContext {
     /// still render the folder, but there's no git/PR context to show.
     pub(super) fn is_effectively_empty(&self) -> bool {
         self.branch.is_none()
+            && self.local_files_changed.is_none()
             && self.local_added.is_none()
             && self.local_removed.is_none()
             && self.pr_number.is_none()
@@ -111,7 +113,9 @@ pub(super) fn build_command(cwd: &Path) -> String {
          echo '@@DEFAULT@@'; git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null\n\
          echo '@@BRANCHES@@'; git branch --format='%(refname:short)' --sort=-committerdate 2>/dev/null\n\
          echo '@@REMOTE@@'; git remote get-url origin 2>/dev/null\n\
-         echo '@@DIFF@@'; git diff --shortstat 2>/dev/null\n\
+         echo '@@STATUS@@'; git status --porcelain=v1 2>/dev/null\n\
+         echo '@@DIFF@@'; git diff --shortstat HEAD 2>/dev/null\n\
+         git ls-files --others --exclude-standard -z 2>/dev/null | while IFS= read -r -d '' file; do lines=$(wc -l < \"$file\" 2>/dev/null || printf '0'); printf ' 1 file changed, %s insertions(+)\\n' \"$lines\"; done\n\
          echo '@@PR@@'; gh pr view --json number,additions,deletions,url,statusCheckRollup 2>/dev/null\n"
     )
 }
@@ -149,7 +153,8 @@ pub(super) fn parse(output: &str, folder: Option<String>) -> RepoContext {
     let mut default_lines: Vec<&str> = Vec::new();
     let mut branch_list: Vec<String> = Vec::new();
     let mut remote_line: Option<&str> = None;
-    let mut diff_line: Option<&str> = None;
+    let mut status_lines = 0;
+    let mut diff_lines: Vec<&str> = Vec::new();
     let mut pr_json = String::new();
     for line in output.lines() {
         match line.trim() {
@@ -157,6 +162,7 @@ pub(super) fn parse(output: &str, folder: Option<String>) -> RepoContext {
             "@@DEFAULT@@" => section = "default",
             "@@BRANCHES@@" => section = "branches",
             "@@REMOTE@@" => section = "remote",
+            "@@STATUS@@" => section = "status",
             "@@DIFF@@" => section = "diff",
             "@@PR@@" => section = "pr",
             _ => match section {
@@ -166,7 +172,8 @@ pub(super) fn parse(output: &str, folder: Option<String>) -> RepoContext {
                 "remote" if remote_line.is_none() && !line.trim().is_empty() => {
                     remote_line = Some(line)
                 }
-                "diff" if diff_line.is_none() && !line.trim().is_empty() => diff_line = Some(line),
+                "status" if !line.trim().is_empty() => status_lines += 1,
+                "diff" if !line.trim().is_empty() => diff_lines.push(line),
                 "pr" => {
                     pr_json.push_str(line);
                     pr_json.push('\n');
@@ -195,10 +202,15 @@ pub(super) fn parse(output: &str, folder: Option<String>) -> RepoContext {
         .map(str::to_owned)
         .or_else(|| context.default_branch.clone());
 
-    if let Some(line) = diff_line {
+    context.local_files_changed = (status_lines > 0).then_some(status_lines);
+    for line in diff_lines {
         let (added, removed) = parse_shortstat(line);
-        context.local_added = added;
-        context.local_removed = removed;
+        if let Some(added) = added {
+            context.local_added = Some(context.local_added.unwrap_or_default() + added);
+        }
+        if let Some(removed) = removed {
+            context.local_removed = Some(context.local_removed.unwrap_or_default() + removed);
+        }
     }
 
     // The PR JSON (when `gh` produced any) carries the PR's own diff, number,
@@ -349,6 +361,15 @@ mod tests {
         assert_eq!(context.pr_removed, None);
         assert_eq!(context.pr_number, None);
         assert_eq!(context.ci, None);
+    }
+
+    #[test]
+    fn counts_changed_files_and_sums_tracked_and_untracked_stats() {
+        let output = "@@BRANCH@@\nmain\n@@STATUS@@\n M tracked.rs\n?? new.rs\n@@DIFF@@\n 1 file changed, 5 insertions(+), 2 deletions(-)\n 1 file changed, 9 insertions(+)\n@@PR@@\n";
+        let context = parse(output, Some("twarp".to_owned()));
+        assert_eq!(context.local_files_changed, Some(2));
+        assert_eq!(context.local_added, Some(14));
+        assert_eq!(context.local_removed, Some(2));
     }
 
     #[test]

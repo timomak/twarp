@@ -78,7 +78,11 @@ fn merged_projects_group_live_tabs_by_directory_and_add_only_unopened_library_en
     let alpha = PathBuf::from("/work/alpha");
     let beta = PathBuf::from("/work/beta");
     let targets = merged_project_targets(
-        &[Some(alpha.clone()), None, Some(alpha.clone())],
+        [
+            (0, Some(alpha.clone())),
+            (1, None),
+            (2, Some(alpha.clone())),
+        ],
         [alpha, beta.clone(), beta.clone()],
     );
 

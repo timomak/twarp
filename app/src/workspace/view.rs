@@ -367,7 +367,7 @@ use super::close_session_confirmation_dialog::{
 use super::native_modal::{NativeModal, NativeModalEvent};
 use super::one_time_modal_model::OneTimeModalEvent;
 // twarp: 2c-d — removed rewind_confirmation_dialog (deleted module)
-use super::{ActiveSession, TabBarDropTargetData, TabBarLocation};
+use super::{ActiveSession, ProjectSidebarPaneDropTarget, TabBarDropTargetData, TabBarLocation};
 
 use super::tab_settings::{
     DirectoryTabColor, HeaderToolbarChipSelection, NewTabPlacement, TabSettings,
@@ -954,6 +954,7 @@ pub struct Workspace {
     pub(crate) tabs: Vec<TabData>,
     active_tab_index: usize,
     pub(crate) hovered_tab_index: Option<TabBarHoverIndex>,
+    hovered_project_pane_drop_target: Option<ProjectSidebarPaneDropTarget>,
     tab_bar_hover_state: MouseStateHandle,
     tab_fixed_width: Option<f32>,
     traffic_light_mouse_states: TrafficLightMouseStates,
@@ -2859,6 +2860,7 @@ impl Workspace {
             tabs: Vec::new(),
             active_tab_index: 0,
             hovered_tab_index: None,
+            hovered_project_pane_drop_target: None,
             tab_bar_hover_state: Default::default(),
             traffic_light_mouse_states: Default::default(),
             tab_rename_editor: Self::tab_rename_editor(ctx),
@@ -10326,6 +10328,49 @@ impl Workspace {
         }
     }
 
+    fn add_project_chat_from_existing_pane(
+        &mut self,
+        pane: Box<dyn AnyPaneContent>,
+        target: ProjectSidebarPaneDropTarget,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let inherited_colors = self
+            .tabs
+            .iter()
+            .find(|tab| tab.project_root == target.project_root)
+            .map(|tab| (tab.selected_color, tab.default_directory_color));
+        let configured_directory_color = target.project_root.as_ref().and_then(|root| {
+            TabSettings::as_ref(ctx)
+                .directory_tab_colors
+                .value()
+                .color_for_directory(root)
+                .and_then(|color| color.ansi_color())
+        });
+        let insert_index = target.tab_insert_index.min(self.tabs.len());
+
+        self.add_tab_from_existing_pane(pane, insert_index, ctx);
+        let active_index = self.active_tab_index;
+        if let Some(tab) = self.tabs.get_mut(active_index) {
+            tab.project_root = target.project_root.clone();
+            tab.project_root_initialized = true;
+            if let Some((selected, default)) = inherited_colors {
+                tab.selected_color = selected;
+                tab.default_directory_color = default;
+            } else {
+                tab.default_directory_color = configured_directory_color;
+            }
+        }
+        if let Some(project_root) = target.project_root {
+            ProjectManagementModel::handle(ctx).update(ctx, |projects, ctx| {
+                projects.upsert_project(project_root, ctx);
+            });
+        }
+        let pane_group = self.tabs[active_index].pane_group.clone();
+        self.refresh_working_directories_for_pane_group(&pane_group, ctx);
+        ctx.dispatch_global_action("workspace:save_app", ());
+        ctx.notify();
+    }
+
     pub fn add_tab_for_cloud_notebook(
         &mut self,
         notebook_id: SyncId,
@@ -13351,7 +13396,36 @@ impl Workspace {
             }
             #[cfg(not(feature = "local_fs"))]
             pane_group::Event::RemoteRepoNavigated { .. } => {}
-            pane_group::Event::DroppedOnTabBar { origin, pane_id } => {
+            pane_group::Event::DroppedOnTabBar {
+                origin,
+                pane_id,
+                project_target,
+            } => {
+                if let Some(target) = project_target {
+                    let target_available = target
+                        .project_root
+                        .as_ref()
+                        .is_none_or(|root| root.is_dir() && std::fs::read_dir(root).is_ok());
+                    if !target_available {
+                        pane_group.update(ctx, |pane_group, ctx| {
+                            pane_group.cancel_pane_move(ctx);
+                        });
+                        let window_id = ctx.window_id();
+                        ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                            toast_stack.add_ephemeral_toast(
+                                DismissibleToast::error(
+                                    "That project folder is no longer available".to_owned(),
+                                ),
+                                window_id,
+                                ctx,
+                            );
+                        });
+                        self.hovered_project_pane_drop_target = None;
+                        self.hovered_tab_index = None;
+                        ctx.notify();
+                        return;
+                    }
+                }
                 if let Some(hovered_tab_index) = self.hovered_tab_index {
                     match hovered_tab_index {
                         TabBarHoverIndex::BeforeTab(workspace_tab_index) => {
@@ -13373,6 +13447,11 @@ impl Workspace {
                             };
 
                             if let Some(pane) = pane {
+                                if let Some(target) = project_target.clone() {
+                                    self.add_project_chat_from_existing_pane(pane, target, ctx);
+                                    return;
+                                }
+
                                 self.add_tab_from_existing_pane(pane, workspace_tab_index, ctx);
 
                                 // If the setting is enabled, preserve the color of the original pane's
@@ -13576,11 +13655,18 @@ impl Workspace {
                     });
                 }
             }
-            pane_group::Event::UpdateHoveredTabIndex { tab_hover_index } => {
+            pane_group::Event::UpdateHoveredTabIndex {
+                tab_hover_index,
+                project_target,
+            } => {
                 self.hovered_tab_index = Some(*tab_hover_index);
+                self.hovered_project_pane_drop_target = project_target.clone();
                 ctx.notify();
             }
-            pane_group::Event::ClearHoveredTabIndex => self.hovered_tab_index = None,
+            pane_group::Event::ClearHoveredTabIndex => {
+                self.hovered_tab_index = None;
+                self.hovered_project_pane_drop_target = None;
+            }
             pane_group::Event::OpenTwarpDriveObjectInPane(uid) => {
                 self.open_twarp_drive_object_in_new_pane(uid, ctx);
             }
@@ -16957,7 +17043,7 @@ impl Workspace {
     }
 
     fn add_projects_sidebar_toggle_overlay(&self, stack: &mut Stack, app: &AppContext) {
-        if self.projects_sidebar_open || !project_sidebar_enabled() {
+        if !project_sidebar_enabled() {
             return;
         }
         let zoom_factor = WindowSettings::as_ref(app).zoom_level.as_zoom_factor();
@@ -18849,6 +18935,25 @@ impl Workspace {
         ctx.notify();
     }
 
+    fn toggle_projects_sidebar(&mut self, ctx: &mut ViewContext<Self>) {
+        let slide_from = self.left_panel_visible_fraction(self.projects_sidebar_open);
+        self.projects_sidebar_open = !self.projects_sidebar_open;
+        if self.projects_sidebar_open {
+            self.projects_search_open = false;
+            self.vertical_tabs_panel.search_query.clear();
+            self.vertical_tabs_search_input.update(ctx, |editor, ctx| {
+                editor.clear_buffer_and_reset_undo_stack(ctx)
+            });
+        }
+        self.start_left_panel_slide(
+            slide_from,
+            if self.projects_sidebar_open { 1.0 } else { 0.0 },
+            ctx,
+        );
+        ctx.dispatch_global_action("workspace:save_app", ());
+        ctx.notify();
+    }
+
     fn toggle_project_create_menu(&mut self, position: Vector2F, ctx: &mut ViewContext<Self>) {
         if self.show_new_session_dropdown_menu.is_some() {
             self.close_new_session_dropdown_menu(ctx);
@@ -19123,7 +19228,12 @@ impl Workspace {
             return;
         }
         self.close_new_session_dropdown_menu(ctx);
-        self.activate_tab_internal(index, ctx);
+        let project_root = self.tabs[index].project_root.clone();
+        let insert_index = self
+            .tabs
+            .iter()
+            .rposition(|tab| tab.project_root == project_root)
+            .map_or(self.tabs.len(), |index| index + 1);
         let chat_config = AgentSettings::as_ref(ctx).chat_launch_config();
         let provider = chat_config
             .provider
@@ -19137,13 +19247,14 @@ impl Workspace {
             ..Default::default()
         };
         let pane = ClaudeCodePane::new(launch, Some(cwd), ctx);
-        let pane_group = self.tabs[index].pane_group.clone();
-        pane_group.update(ctx, |pane_group, ctx| {
-            pane_group.add_pane_with_direction(Direction::Right, pane, true, ctx);
-        });
-        self.projects_expanded.insert(project_id);
-        self.refresh_working_directories_for_pane_group(&pane_group, ctx);
-        ctx.notify();
+        self.add_project_chat_from_existing_pane(
+            Box::new(pane),
+            ProjectSidebarPaneDropTarget {
+                project_root,
+                tab_insert_index: insert_index,
+            },
+            ctx,
+        );
     }
 
     fn focus_project_chat(
@@ -19167,6 +19278,10 @@ impl Workspace {
     }
 
     fn toggle_right_tool(&mut self, tool: RightToolKind, ctx: &mut ViewContext<Self>) {
+        let previous_tool = self.right_tool;
+        let was_open = self.right_tool_open;
+        let code_review_close_was_pending = self.right_panel_close_pending;
+        let slide_from = self.right_panel_visible_fraction(was_open);
         let transition = project_sidebar::toggle_right_tool_state(
             self.right_tool,
             self.right_tool_open,
@@ -19181,7 +19296,23 @@ impl Workspace {
         self.current_workspace_state.is_code_review_panel_open =
             project_sidebar::code_review_tool_is_open(self.right_tool, self.right_tool_open);
         self.sync_code_review_panel_state_to_pane_groups(ctx);
-        if !self.current_workspace_state.is_code_review_panel_open {
+
+        let slide_started = if transition.open != was_open {
+            self.start_right_panel_slide(slide_from, if transition.open { 1.0 } else { 0.0 }, ctx)
+        } else {
+            self.right_panel_slide = None;
+            false
+        };
+        let code_review_was_open = was_open && previous_tool == RightToolKind::CodeReview;
+        let defer_code_review_close = code_review_was_open && !transition.open && slide_started;
+        self.right_panel_close_pending = defer_code_review_close;
+        let switching_away_during_close = code_review_close_was_pending
+            && !(transition.open && transition.tool == RightToolKind::CodeReview);
+        if switching_away_during_close
+            || (code_review_was_open
+                && !self.current_workspace_state.is_code_review_panel_open
+                && !defer_code_review_close)
+        {
             self.right_panel_view.update(ctx, |view, ctx| {
                 view.close_code_review(ctx);
             });
@@ -19304,18 +19435,7 @@ impl TypedActionView for Workspace {
             OpenLaunchConfigSaveModal => self.open_launch_config_save_modal(ctx),
             ActivateNextTab => self.activate_next_tab(ctx),
             ActivateLastTab => self.activate_last_tab(ctx),
-            ToggleProjectsSidebar => {
-                self.projects_sidebar_open = !self.projects_sidebar_open;
-                if self.projects_sidebar_open {
-                    self.projects_search_open = false;
-                    self.vertical_tabs_panel.search_query.clear();
-                    self.vertical_tabs_search_input.update(ctx, |editor, ctx| {
-                        editor.clear_buffer_and_reset_undo_stack(ctx)
-                    });
-                }
-                ctx.dispatch_global_action("workspace:save_app", ());
-                ctx.notify();
-            }
+            ToggleProjectsSidebar => self.toggle_projects_sidebar(ctx),
             ToggleProjectsSearch => self.toggle_projects_search(ctx),
             ToggleProjectCreateMenu { position } => self.toggle_project_create_menu(*position, ctx),
             CreateScratchProject => {
@@ -19916,13 +20036,7 @@ impl TypedActionView for Workspace {
             }
             ToggleLeftPanel => {
                 if project_sidebar_enabled() {
-                    self.projects_sidebar_open = !self.projects_sidebar_open;
-                    if self.projects_sidebar_open {
-                        self.projects_search_open = false;
-                        self.vertical_tabs_panel.search_query.clear();
-                    }
-                    ctx.dispatch_global_action("workspace:save_app", ());
-                    ctx.notify();
+                    self.toggle_projects_sidebar(ctx);
                     return;
                 }
                 let active_pane_group = self.active_tab_pane_group().clone();
@@ -19972,7 +20086,7 @@ impl TypedActionView for Workspace {
             }
             ToggleRightPanel => {
                 if project_sidebar_enabled() {
-                    self.toggle_right_tool(RightToolKind::CodeReview, ctx);
+                    self.toggle_right_tool(self.right_tool, ctx);
                     return;
                 }
                 let pane_group_handle = self.active_tab_pane_group().clone();
@@ -21308,11 +21422,24 @@ impl View for Workspace {
             let right_tool_responsively_collapsed = self.right_tool_open
                 && !code_review_maximized
                 && self.right_tool_collapsed_for_window(app);
+            let projects_sidebar_visible =
+                self.projects_sidebar_open || self.left_panel_slide.is_some();
+            let right_tool_visible = (self.right_tool_open || self.right_panel_slide.is_some())
+                && !code_review_maximized
+                && !right_tool_responsively_collapsed;
             let mut shell_row = Flex::row()
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
-            if self.projects_sidebar_open {
-                shell_row.add_child(self.render_projects_sidebar(app));
+            if projects_sidebar_visible {
+                let mut projects_sidebar = self.render_projects_sidebar(app);
+                if self.left_panel_slide.is_some() {
+                    projects_sidebar = Box::new(left_panel_slide::SlideClip::new(
+                        projects_sidebar,
+                        self.left_panel_visible_fraction(self.projects_sidebar_open),
+                        left_panel_slide::SlideEdge::Left,
+                    ));
+                }
+                shell_row.add_child(projects_sidebar);
             }
 
             let center: Box<dyn Element> = if code_review_maximized {
@@ -21322,16 +21449,19 @@ impl View for Workspace {
             };
             shell_row.add_child(Shrinkable::new(1., center).finish());
 
-            if self.right_tool_open && !code_review_maximized && !right_tool_responsively_collapsed
-            {
-                match self.right_tool {
-                    RightToolKind::Files => {
-                        shell_row.add_child(ChildView::new(&self.left_panel_view).finish())
-                    }
-                    RightToolKind::CodeReview => {
-                        shell_row.add_child(ChildView::new(&self.right_panel_view).finish())
-                    }
+            if right_tool_visible {
+                let mut right_tool: Box<dyn Element> = match self.right_tool {
+                    RightToolKind::Files => ChildView::new(&self.left_panel_view).finish(),
+                    RightToolKind::CodeReview => ChildView::new(&self.right_panel_view).finish(),
+                };
+                if self.right_panel_slide.is_some() {
+                    right_tool = Box::new(left_panel_slide::SlideClip::new(
+                        right_tool,
+                        self.right_panel_visible_fraction(self.right_tool_open),
+                        left_panel_slide::SlideEdge::Right,
+                    ));
                 }
+                shell_row.add_child(right_tool);
             }
             shell_row.add_child(self.render_right_activity_strip(app));
             Container::new(shell_row.finish())

@@ -9,10 +9,10 @@ use twarp_util::path::LineAndColumnArg;
 use twarpui::{
     elements::{
         new_scrollable::{NewScrollable, ScrollableAppearance, SingleAxisConfig},
-        resizable_state_handle, Border, ChildView, ConstrainedBox, Container, CornerRadius,
-        CrossAxisAlignment, DragBarSide, Element, Empty, Flex, Hoverable, MainAxisAlignment,
-        MainAxisSize, MouseStateHandle, ParentElement, Radius, Resizable, ResizableStateHandle,
-        ScrollbarWidth, Shrinkable, Text,
+        resizable_state_handle, Border, ChildView, Clipped, ConstrainedBox, Container,
+        CornerRadius, CrossAxisAlignment, DragBarSide, Element, Empty, Flex, Hoverable,
+        MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Resizable,
+        ResizableStateHandle, ScrollbarWidth, Shrinkable, Text,
     },
     fonts::{Properties, Weight},
     platform::{Cursor, FullscreenState},
@@ -561,7 +561,7 @@ impl LeftPanelView {
             // default height mirrors the Timeline section's 220px, bounded
             // in the Resizable callback.
             search_expanded: false,
-            search_resizable_handle: twarpui::elements::resizable_state_handle(220.0),
+            search_resizable_handle: twarpui::elements::resizable_state_handle(320.0),
             claude_sessions: Vec::new(),
             has_claude_sessions: false,
             claude_session_row_mouse_states: std::cell::RefCell::new(Vec::new()),
@@ -728,6 +728,9 @@ impl LeftPanelView {
         }
 
         let global_search_view = ctx.add_typed_action_view(GlobalSearchView::new);
+        global_search_view.update(ctx, |view, ctx| {
+            view.set_embedded_in_files_sidebar(true, ctx);
+        });
 
         ctx.subscribe_to_view(&global_search_view, |me, _, event, ctx| {
             me.handle_global_search_event(event, ctx);
@@ -2468,7 +2471,12 @@ impl LeftPanelView {
     /// the Timeline section's resizable-body pattern.
     fn render_search_section(&self, app: &AppContext) -> Option<Box<dyn Element>> {
         let global_search_view = self.active_global_search_view(app)?;
-        let body = Container::new(ChildView::new(&global_search_view).finish()).finish();
+        // The search form is taller than the historical 220px section. Clip
+        // its full-height/zero-state body to the resizable section so it can
+        // never paint over the file tree below.
+        let body =
+            Container::new(Clipped::new(ChildView::new(&global_search_view).finish()).finish())
+                .finish();
         Some(
             Resizable::new(self.search_resizable_handle.clone(), body)
                 .with_dragbar_side(DragBarSide::Bottom)

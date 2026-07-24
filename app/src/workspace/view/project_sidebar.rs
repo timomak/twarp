@@ -9,7 +9,7 @@ use twarp_core::ui::tokens::{border, radius, spacing, type_ramp};
 use twarp_core::ui::Icon;
 use twarpui::elements::{
     resizable_state_handle, Border, ChildView, ClippedScrollable, ConstrainedBox, Container,
-    CornerRadius, CrossAxisAlignment, DragAxis, DragBarSide, Draggable, Element, Empty,
+    CornerRadius, CrossAxisAlignment, DragAxis, DragBarSide, Draggable, DropTarget, Element, Empty,
     Fill as ElementFill, Flex, Hoverable, MainAxisAlignment, MainAxisSize, ParentElement, Radius,
     Resizable, SavePosition, ScrollbarWidth, Shrinkable, Text,
 };
@@ -21,8 +21,9 @@ use twarpui::{AppContext, EntityId, SingletonEntity};
 
 use crate::app_state::RightToolKind;
 use crate::appearance::Appearance;
-use crate::code::editor::{add_color, remove_color};
+use crate::palette::PaletteMode;
 use crate::projects::ProjectManagementModel;
+use crate::server::telemetry::PaletteSource;
 use crate::tab::tab_position_id;
 use crate::terminal::resizable_data::{
     ModalType, ResizableData, DEFAULT_CODE_REVIEW_TOOL_WIDTH, DEFAULT_FILES_TOOL_WIDTH,
@@ -31,7 +32,10 @@ use crate::terminal::resizable_data::{
 use crate::util::traffic_lights::{traffic_light_data, TrafficLightSide};
 use crate::window_settings::WindowSettings;
 use crate::workspace::tab_settings::TabSettings;
-use crate::workspace::{TabContextMenuAnchor, WorkspaceAction};
+use crate::workspace::{
+    ProjectSidebarPaneDropTarget, ProjectSidebarPaneDropTargetData, TabContextMenuAnchor,
+    WorkspaceAction,
+};
 use crate::FeatureFlag;
 
 use super::{ProjectDirectoryResolution, Workspace, TOTAL_TAB_BAR_HEIGHT};
@@ -49,26 +53,30 @@ pub(super) enum ProjectListTarget {
 }
 
 fn merged_project_targets(
-    local_roots: &[Option<PathBuf>],
+    local_roots: impl IntoIterator<Item = (usize, Option<PathBuf>)>,
     library_paths: impl IntoIterator<Item = PathBuf>,
 ) -> Vec<ProjectListTarget> {
+    let local_roots: Vec<_> = local_roots.into_iter().collect();
     let mut grouped_live_projects: Vec<(Option<PathBuf>, Vec<usize>)> = Vec::new();
-    for (tab_index, root) in local_roots.iter().enumerate() {
+    for (tab_index, root) in &local_roots {
         if let Some((_, tab_indices)) = root.as_ref().and_then(|root| {
             grouped_live_projects
                 .iter_mut()
                 .find(|(candidate, _)| candidate.as_ref() == Some(root))
         }) {
-            tab_indices.push(tab_index);
+            tab_indices.push(*tab_index);
         } else {
-            grouped_live_projects.push((root.clone(), vec![tab_index]));
+            grouped_live_projects.push((root.clone(), vec![*tab_index]));
         }
     }
     let mut targets: Vec<_> = grouped_live_projects
         .into_iter()
         .map(|(_, tab_indices)| ProjectListTarget::LiveProject(tab_indices))
         .collect();
-    let local_roots: HashSet<_> = local_roots.iter().flatten().cloned().collect();
+    let local_roots: HashSet<_> = local_roots
+        .iter()
+        .filter_map(|(_, root)| root.clone())
+        .collect();
     let mut seen_library_paths = HashSet::new();
     targets.extend(library_paths.into_iter().filter_map(|path| {
         (!local_roots.contains(&path) && seen_library_paths.insert(path.clone()))
@@ -245,13 +253,14 @@ impl Workspace {
     }
 
     pub(super) fn project_list_targets(&self, app: &AppContext) -> Vec<ProjectListTarget> {
-        let local_roots: Vec<_> = self
+        let local_roots = self
             .tabs
             .iter()
-            .map(|tab| tab.project_root.clone())
-            .collect();
+            .enumerate()
+            .filter(|(_, tab)| !tab.pane_group.as_ref(app).has_settings_panes())
+            .map(|(index, tab)| (index, tab.project_root.clone()));
         let library_paths = ProjectManagementModel::as_ref(app).project_paths_by_recency();
-        merged_project_targets(&local_roots, library_paths)
+        merged_project_targets(local_roots, library_paths)
     }
 
     fn project_target_title(&self, target: &ProjectListTarget, app: &AppContext) -> String {
@@ -408,7 +417,10 @@ impl Workspace {
             .with_child(button(
                 Icon::Search,
                 self.projects_search_mouse_state.clone(),
-                WorkspaceAction::ToggleProjectsSearch,
+                WorkspaceAction::TogglePalette {
+                    mode: PaletteMode::Command,
+                    source: PaletteSource::TitleBarSearchBar,
+                },
             ))
             .with_child(button(
                 Icon::Plus,
@@ -416,11 +428,6 @@ impl Workspace {
                 WorkspaceAction::ToggleProjectCreateMenu {
                     position: Default::default(),
                 },
-            ))
-            .with_child(button(
-                Icon::ChevronLeft,
-                self.projects_toggle_mouse_state.clone(),
-                WorkspaceAction::ToggleProjectsSidebar,
             ))
             .finish();
 
@@ -438,6 +445,12 @@ impl Workspace {
         .with_padding_top(spacing::SM)
         .with_padding_bottom(spacing::XS)
         .finish()
+    }
+
+    fn project_pane_drag_active(&self, app: &AppContext) -> bool {
+        self.tabs
+            .iter()
+            .any(|tab| tab.pane_group.as_ref(app).any_pane_being_dragged(app))
     }
 
     fn render_live_project_group(
@@ -466,6 +479,19 @@ impl Workspace {
                 .matching_project_targets(app)
                 .get(self.projects_search_selection)
                 .is_some_and(|selected| selected == &target);
+        let pane_drop_target = ProjectSidebarPaneDropTarget {
+            project_root: selected_tab.project_root.clone(),
+            tab_insert_index: tab_indices
+                .iter()
+                .copied()
+                .max()
+                .map_or(self.tabs.len(), |index| index + 1),
+        };
+        let pane_drop_active = self
+            .hovered_project_pane_drop_target
+            .as_ref()
+            .is_some_and(|target| target == &pane_drop_target);
+        let pane_drag_active = self.project_pane_drag_active(app);
         let color: ThemeFill = selected_tab
             .color()
             .map(|color| {
@@ -497,7 +523,7 @@ impl Workspace {
                         )
                         .finish(),
                     );
-                if state.is_hovered() {
+                if state.is_hovered() && !pane_drag_active {
                     contents.add_child(
                         Hoverable::new(twarpui::elements::MouseStateHandle::default(), move |_| {
                             sidebar_icon(Icon::Plus, theme.sub_text_color(theme.background()))
@@ -518,7 +544,7 @@ impl Workspace {
                     .with_padding_top(spacing::XS)
                     .with_padding_bottom(spacing::XS)
                     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
-                if keyboard_focused {
+                if pane_drop_active || keyboard_focused {
                     container = container.with_background(theme.surface_3());
                 } else if state.is_hovered() {
                     container = container.with_background(theme.surface_overlay_2());
@@ -531,6 +557,13 @@ impl Workspace {
         })
         .with_defer_events_to_children()
         .with_cursor(Cursor::PointingHand)
+        .finish();
+        let project_row = DropTarget::new(
+            project_row,
+            ProjectSidebarPaneDropTargetData {
+                target: pane_drop_target,
+            },
+        )
         .finish();
 
         let mut group = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
@@ -545,7 +578,6 @@ impl Workspace {
 
     fn render_project_tab_row(&self, index: usize, app: &AppContext) -> Option<Box<dyn Element>> {
         let tab = self.tabs.get(index)?;
-        let project_id = tab.pane_group.id();
         let pane_group = tab.pane_group.as_ref(app);
         let custom_title = pane_group.custom_title(app);
         let display_title = pane_group.display_title(app);
@@ -554,12 +586,9 @@ impl Workspace {
         let theme = appearance.theme();
         let active = index == self.active_tab_index();
         let is_renaming = self.current_workspace_state.tab_being_renamed() == Some(index);
-        let chats = pane_group.project_chat_items(app);
         let attention = pane_group.claude_code_tab_status(app);
-        let has_chats = chats.len() > 1;
-        let expanded = self.projects_expanded.contains(&project_id);
+        let pane_drag_active = self.project_pane_drag_active(app);
         let row_mouse_state = tab.tab_mouse_state.clone();
-        let chat_mouse_state = tab.close_mouse_state.clone();
         let menu_mouse_state = tab.tooltip_mouse_state.clone();
         let title_element: Box<dyn Element> = if is_renaming {
             ChildView::new(&self.tab_rename_editor).finish()
@@ -585,42 +614,10 @@ impl Workspace {
                 .with_spacing(spacing::SM)
                 .with_child(Shrinkable::new(1., title_element).finish());
 
-            if has_chats {
-                let disclosure_icon = if expanded {
-                    Icon::ChevronDown
-                } else {
-                    Icon::ChevronRight
-                };
-                contents.add_child(
-                    Hoverable::new(twarpui::elements::MouseStateHandle::default(), move |_| {
-                        sidebar_icon(disclosure_icon, theme.sub_text_color(theme.background()))
-                    })
-                    .on_click(move |ctx, _, _| {
-                        ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectExpanded(
-                            project_id,
-                        ))
-                    })
-                    .with_cursor(Cursor::PointingHand)
-                    .finish(),
-                );
-            }
             if let Some(status) = attention.as_ref() {
                 contents.add_child(status.render_icon(appearance).finish());
             }
-            if state.is_hovered() {
-                contents.add_child(
-                    Hoverable::new(chat_mouse_state.clone(), move |_| {
-                        sidebar_icon(Icon::Plus, theme.sub_text_color(theme.background()))
-                    })
-                    .on_click(move |ctx, _, position| {
-                        ctx.dispatch_typed_action(WorkspaceAction::NewProjectChat {
-                            project_id,
-                            position,
-                        })
-                    })
-                    .with_cursor(Cursor::PointingHand)
-                    .finish(),
-                );
+            if state.is_hovered() && !pane_drag_active {
                 contents.add_child(
                     Hoverable::new(menu_mouse_state.clone(), move |_| {
                         sidebar_icon(
@@ -684,67 +681,7 @@ impl Workspace {
             draggable.with_drag_axis(DragAxis::VerticalOnly)
         };
         let row = SavePosition::new(draggable.finish(), &tab_position_id(index)).finish();
-
-        let mut group = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
-        group.add_child(row);
-        if has_chats && expanded {
-            for chat in chats {
-                let chat_active = pane_group.focused_pane_id(app) == chat.pane_id;
-                let chat_title = chat.title;
-                let chat_status = chat.status;
-                group.add_child(
-                    Hoverable::new(
-                        twarpui::elements::MouseStateHandle::default(),
-                        move |state| {
-                            let mut row = Flex::row()
-                                .with_main_axis_size(MainAxisSize::Max)
-                                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                                .with_child(
-                                    Shrinkable::new(
-                                        1.,
-                                        Text::new_inline(
-                                            chat_title.clone(),
-                                            appearance.ui_font_family(),
-                                            type_ramp::LABEL.size,
-                                        )
-                                        .with_line_height_ratio(type_ramp::LABEL.line_height)
-                                        .with_clip(twarpui::text_layout::ClipConfig::end())
-                                        .with_color(theme.sub_text_color(theme.background()).into())
-                                        .finish(),
-                                    )
-                                    .finish(),
-                                );
-                            if let Some(status) = chat_status.as_ref() {
-                                row.add_child(status.render_icon(appearance).finish());
-                            }
-                            let mut container = Container::new(row.finish())
-                                .with_padding_left(spacing::XXL)
-                                .with_padding_right(spacing::SM)
-                                .with_padding_top(spacing::XS)
-                                .with_padding_bottom(spacing::XS)
-                                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
-                                    radius::CARD,
-                                )));
-                            if chat_active {
-                                container = container.with_background(theme.surface_3());
-                            } else if state.is_hovered() {
-                                container = container.with_background(theme.surface_overlay_2());
-                            }
-                            container.finish()
-                        },
-                    )
-                    .on_click(move |ctx, _, _| {
-                        ctx.dispatch_typed_action(WorkspaceAction::FocusProjectChat {
-                            project_id,
-                            pane_id: chat.pane_id,
-                        })
-                    })
-                    .with_cursor(Cursor::PointingHand)
-                    .finish(),
-                );
-            }
-        }
-        Some(group.finish())
+        Some(row)
     }
 
     fn render_library_project_row(
@@ -802,38 +739,53 @@ impl Workspace {
             );
         }
 
+        let pane_drop_target = ProjectSidebarPaneDropTarget {
+            project_root: Some(path.clone()),
+            tab_insert_index: self.tabs.len(),
+        };
+        let pane_drop_active = self
+            .hovered_project_pane_drop_target
+            .as_ref()
+            .is_some_and(|target| target == &pane_drop_target);
+        let row = Hoverable::new(
+            twarpui::elements::MouseStateHandle::default(),
+            move |state| {
+                let identity = sidebar_icon(Icon::CircleFilled, color);
+                let contents = Flex::row()
+                    .with_main_axis_size(MainAxisSize::Max)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(spacing::SM)
+                    .with_child(identity)
+                    .with_child(Shrinkable::new(1., labels.finish()).finish())
+                    .finish();
+                let mut container = Container::new(contents)
+                    .with_padding_left(spacing::SM)
+                    .with_padding_right(spacing::SM)
+                    .with_padding_top(spacing::XS)
+                    .with_padding_bottom(spacing::XS)
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
+                if pane_drop_active || keyboard_focused {
+                    container = container.with_background(theme.surface_3());
+                } else if state.is_hovered() {
+                    container = container.with_background(theme.surface_overlay_2());
+                }
+                container.finish()
+            },
+        )
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(WorkspaceAction::OpenProjectLibraryEntry {
+                path: path.clone(),
+            })
+        })
+        .with_cursor(Cursor::PointingHand)
+        .finish();
         Some(
-            Hoverable::new(
-                twarpui::elements::MouseStateHandle::default(),
-                move |state| {
-                    let identity = sidebar_icon(Icon::CircleFilled, color);
-                    let contents = Flex::row()
-                        .with_main_axis_size(MainAxisSize::Max)
-                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                        .with_spacing(spacing::SM)
-                        .with_child(identity)
-                        .with_child(Shrinkable::new(1., labels.finish()).finish())
-                        .finish();
-                    let mut container = Container::new(contents)
-                        .with_padding_left(spacing::SM)
-                        .with_padding_right(spacing::SM)
-                        .with_padding_top(spacing::XS)
-                        .with_padding_bottom(spacing::XS)
-                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
-                    if keyboard_focused {
-                        container = container.with_background(theme.surface_3());
-                    } else if state.is_hovered() {
-                        container = container.with_background(theme.surface_overlay_2());
-                    }
-                    container.finish()
+            DropTarget::new(
+                row,
+                ProjectSidebarPaneDropTargetData {
+                    target: pane_drop_target,
                 },
             )
-            .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(WorkspaceAction::OpenProjectLibraryEntry {
-                    path: path.clone(),
-                })
-            })
-            .with_cursor(Cursor::PointingHand)
             .finish(),
         )
     }
@@ -1037,45 +989,14 @@ impl Workspace {
             .tool_tip(tooltip_label.to_owned())
             .build()
             .finish();
-        let diff_stats = (tool == RightToolKind::CodeReview)
-            .then(|| self.right_panel_view.as_ref(app).loaded_diff_stats(app))
-            .flatten()
-            .filter(|stats| stats.files_changed > 0);
         let color = if active {
             theme.main_text_color(theme.background())
         } else {
             theme.sub_text_color(theme.background())
         };
-        let mut contents = Flex::column()
+        let contents = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(sidebar_icon(icon, color));
-        if let Some(stats) = diff_stats {
-            contents.add_child(
-                Flex::row()
-                    .with_spacing(spacing::XXS)
-                    .with_child(
-                        Text::new_inline(
-                            format!("+{}", stats.total_additions),
-                            appearance.ui_font_family(),
-                            type_ramp::CAPTION.size,
-                        )
-                        .with_line_height_ratio(type_ramp::CAPTION.line_height)
-                        .with_color(add_color(appearance))
-                        .finish(),
-                    )
-                    .with_child(
-                        Text::new_inline(
-                            format!("-{}", stats.total_deletions),
-                            appearance.ui_font_family(),
-                            type_ramp::CAPTION.size,
-                        )
-                        .with_line_height_ratio(type_ramp::CAPTION.line_height)
-                        .with_color(remove_color(appearance))
-                        .finish(),
-                    )
-                    .finish(),
-            );
-        }
         let default_styles = UiComponentStyles {
             border_radius: Some(CornerRadius::with_all(Radius::Pixels(radius::CHIP))),
             padding: Some(Coords::uniform(spacing::SM)),
@@ -1142,9 +1063,14 @@ impl Workspace {
 
     pub(super) fn render_projects_reopen_button(&self, app: &AppContext) -> Box<dyn Element> {
         let theme = Appearance::as_ref(app).theme();
+        let icon = if self.projects_sidebar_open {
+            Icon::ChevronLeft
+        } else {
+            Icon::ChevronRight
+        };
         Hoverable::new(self.projects_toggle_mouse_state.clone(), move |state| {
             let mut button = Container::new(sidebar_icon(
-                Icon::ChevronRight,
+                icon,
                 theme.main_text_color(theme.background()),
             ))
             .with_uniform_padding(spacing::XS)

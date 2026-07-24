@@ -627,6 +627,7 @@ pub enum Event {
     DroppedOnTabBar {
         origin: ActionOrigin,
         pane_id: PaneId,
+        project_target: Option<crate::workspace::ProjectSidebarPaneDropTarget>,
     },
     /// Switches the focus to the specified tab and moves the given
     /// pane_id into the tab as a hidden pane. This will insert it into the pane
@@ -642,6 +643,7 @@ pub enum Event {
     /// as a header is dragged
     UpdateHoveredTabIndex {
         tab_hover_index: TabBarHoverIndex,
+        project_target: Option<crate::workspace::ProjectSidebarPaneDropTarget>,
     },
     /// Clears the hovered tab index so it no longer appears as highlighted drop target
     ClearHoveredTabIndex,
@@ -1149,6 +1151,12 @@ impl PaneGroup {
             .any(|pane_id| pane_id.is_code_pane())
     }
 
+    /// Returns true if this pane group is the window-global Settings destination.
+    /// Settings tabs are intentionally omitted from the Projects hierarchy.
+    pub fn has_settings_panes(&self) -> bool {
+        self.panes_of::<SettingsPane>().next().is_some()
+    }
+
     pub fn active_file_model(&self) -> &ModelHandle<ActiveFileModel> {
         &self.active_file_model
     }
@@ -1214,10 +1222,20 @@ impl PaneGroup {
                     ctx.emit(Event::ClearHoveredTabIndex);
                     self.move_pane(pane_id, *target_id, *direction, ctx);
                 }
-                PaneViewEvent::DroppedOnTabBar { origin } => {
+                PaneViewEvent::DroppedOnTabBar {
+                    origin,
+                    project_target,
+                } => {
+                    if project_target.is_some()
+                        && (pane_id.is_settings_pane() || !self.panes.is_pane_hidden(&pane_id))
+                    {
+                        ctx.emit(Event::ClearHoveredTabIndex);
+                        return;
+                    }
                     ctx.emit(Event::DroppedOnTabBar {
                         origin: *origin,
                         pane_id,
+                        project_target: project_target.clone(),
                     });
                     ctx.emit(Event::ClearHoveredTabIndex);
                 }
@@ -1225,8 +1243,20 @@ impl PaneGroup {
                     origin,
                     tab_hover_index,
                     hidden_pane_preview_direction,
+                    project_target,
                 } => {
                     if matches!(origin, ActionOrigin::Pane) {
+                        if project_target.is_some() && pane_id.is_settings_pane() {
+                            ctx.emit(Event::ClearHoveredTabIndex);
+                            return;
+                        }
+                        if project_target.is_some()
+                            && self.panes.visible_pane_count() <= 1
+                            && !self.panes.is_pane_hidden(&pane_id)
+                        {
+                            ctx.emit(Event::ClearHoveredTabIndex);
+                            return;
+                        }
                         // Clear hidden closed panes since dragging invalidates undo functionality
                         self.clear_hidden_closed_panes(ctx);
 
@@ -1247,6 +1277,7 @@ impl PaneGroup {
 
                     ctx.emit(Event::UpdateHoveredTabIndex {
                         tab_hover_index: *tab_hover_index,
+                        project_target: project_target.clone(),
                     })
                 }
 
@@ -4270,6 +4301,14 @@ impl PaneGroup {
     pub fn hide_pane_for_move(&mut self, id: PaneId, ctx: &mut ViewContext<Self>) {
         self.panes.hide_pane_for_move(id);
 
+        ctx.notify();
+        ctx.emit(Event::TerminalViewStateChanged);
+        ctx.emit(Event::AppStateChanged);
+    }
+
+    /// Cancels a pane promotion/reorder preview without changing the pane tree.
+    pub fn cancel_pane_move(&mut self, ctx: &mut ViewContext<Self>) {
+        self.panes.clear_hidden_panes_from_move();
         ctx.notify();
         ctx.emit(Event::TerminalViewStateChanged);
         ctx.emit(Event::AppStateChanged);

@@ -862,8 +862,8 @@ pub fn init(app: &mut AppContext) {
         .with_custom_action(CustomAction::ToggleLeftPanel),
         EditableBinding::new(
             TOGGLE_RIGHT_PANEL_BINDING_NAME,
-            BindingDescription::new("Toggle code review")
-                .with_custom_description(bindings::MAC_MENUS_CONTEXT, "Toggle Code Review"),
+            BindingDescription::new("Toggle right sidebar")
+                .with_custom_description(bindings::MAC_MENUS_CONTEXT, "Toggle Right Sidebar"),
             WorkspaceAction::ToggleRightPanel,
         )
         .with_enabled(|| cfg!(feature = "local_fs"))
@@ -1593,6 +1593,22 @@ pub struct VerticalTabsPaneDropTargetData {
     pub tab_hover_index: TabBarHoverIndex,
 }
 
+/// A Projects-sidebar destination for promoting a pane into its own chat tab.
+///
+/// The target carries the folder identity separately from the tab insertion
+/// index so unopened library projects can accept a pane without first creating
+/// an empty placeholder tab.
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct ProjectSidebarPaneDropTarget {
+    pub project_root: Option<std::path::PathBuf>,
+    pub tab_insert_index: usize,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct ProjectSidebarPaneDropTargetData {
+    pub target: ProjectSidebarPaneDropTarget,
+}
+
 #[derive(PartialEq, Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum TabBarLocation {
     TabIndex(usize),
@@ -1606,6 +1622,12 @@ impl DropTargetData for TabBarDropTargetData {
 }
 
 impl DropTargetData for VerticalTabsPaneDropTargetData {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl DropTargetData for ProjectSidebarPaneDropTargetData {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

@@ -6469,19 +6469,23 @@ impl ClaudeCodeView {
         column.add_child(section_heading("Environment"));
         let context = self.repo_context.as_ref();
         let changes = context.and_then(|context| {
-            (context.local_added.is_some() || context.local_removed.is_some()).then(|| {
-                Flex::row()
+            (context.local_files_changed.is_some()
+                || context.local_added.is_some()
+                || context.local_removed.is_some())
+            .then(|| {
+                let mut stats = Flex::row()
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_spacing(spacing::XS)
-                    .with_child(meta_text(
-                        format!("+{}", context.local_added.unwrap_or_default()),
-                        green,
-                    ))
-                    .with_child(meta_text(
-                        format!("−{}", context.local_removed.unwrap_or_default()),
-                        red,
-                    ))
-                    .finish()
+                    .with_spacing(spacing::XS);
+                if let Some(files) = context.local_files_changed {
+                    stats.add_child(meta_text(files.to_string(), muted));
+                }
+                if let Some(added) = context.local_added {
+                    stats.add_child(meta_text(format!("+{added}"), green));
+                }
+                if let Some(removed) = context.local_removed {
+                    stats.add_child(meta_text(format!("−{removed}"), red));
+                }
+                stats.finish()
             })
         });
         column.add_child(menu_row(
@@ -10662,7 +10666,12 @@ fn render_message_row(
         // Quiet outgoing bubble: a neutral wash keeps the tab accent reserved
         // for identity/status and matches the completed-result hierarchy.
         let bubble_fill = theme.surface_overlay_2();
-        let text_color = theme.main_text_color(bubble_fill).into_solid();
+        // `surface_overlay_2` can be translucent. Asking the theme for text
+        // contrast against that uncomposited fill can choose light text even
+        // though the visible bubble is light, producing white-on-gray turns.
+        // Use the canvas foreground role so user messages stay readable in
+        // both light and dark themes.
+        let text_color = theme.main_text_color(theme.background()).into_solid();
         let bubble = Container::new(render_markdown_body(text, text_color, appearance, None))
             .with_padding(
                 Padding::uniform(spacing::SM)
