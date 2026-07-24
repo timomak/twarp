@@ -1776,6 +1776,7 @@ impl CodeView {
                         drag_location: PaneDragDropLocation::TabBar(data.tab_bar_location),
                         drag_position,
                         precomputed_tab_hover_index: None,
+                        project_target: None,
                     },
                 );
             } else {
@@ -1812,6 +1813,7 @@ impl CodeView {
                     PaneHeaderAction::<CodeViewAction, CodeViewAction>::PaneHeaderDropped {
                         origin: ActionOrigin::EditorTab(index),
                         drop_location: PaneDragDropLocation::TabBar(data.tab_bar_location),
+                        project_target: None,
                     },
                 );
             }

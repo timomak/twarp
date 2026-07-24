@@ -18,7 +18,10 @@ use crate::{
     tab::tab_position_id,
     terminal::view::TerminalAction,
     view_components::{FeaturePopup, NewFeaturePopupEvent, NewFeaturePopupLabel},
-    workspace::{TabBarLocation, VerticalTabsPaneDropTargetData},
+    workspace::{
+        ProjectSidebarPaneDropTarget, ProjectSidebarPaneDropTargetData, TabBarLocation,
+        VerticalTabsPaneDropTargetData,
+    },
 };
 
 use crate::workspace::TabBarDropTargetData;
@@ -78,6 +81,7 @@ pub enum Event<A: ActionPayload, B: ActionPayload> {
         origin: ActionOrigin,
         tab_hover_index: TabBarHoverIndex,
         hidden_pane_preview_direction: Direction,
+        project_target: Option<ProjectSidebarPaneDropTarget>,
     },
     /// The pane header was dragged over some part of the terminal that is not the pane group
     /// or tab bar
@@ -87,6 +91,7 @@ pub enum Event<A: ActionPayload, B: ActionPayload> {
     /// A pane or file tab was dropped on the workspace tab bar.
     DroppedOnTabBar {
         origin: ActionOrigin,
+        project_target: Option<ProjectSidebarPaneDropTarget>,
     },
     // This header was dropped on a place outside of the pane group or tab bar
     PaneDroppedOutsideofTabBarOrPaneGroup,
@@ -115,10 +120,12 @@ pub enum PaneHeaderAction<A: ActionPayload, B: ActionPayload> {
         /// such as vertical tabs. When absent, the hover index is derived from
         /// the drag geometry and tab bar location.
         precomputed_tab_hover_index: Option<TabBarHoverIndex>,
+        project_target: Option<ProjectSidebarPaneDropTarget>,
     },
     PaneHeaderDropped {
         origin: ActionOrigin,
         drop_location: PaneDragDropLocation, // Represents what kind of drop target the pane was dropped over
+        project_target: Option<ProjectSidebarPaneDropTarget>,
     },
     PaneHeaderClicked,
 }
@@ -954,6 +961,7 @@ impl<P: BackingView> TypedActionView for PaneHeader<P> {
                 drag_location,
                 drag_position,
                 precomputed_tab_hover_index,
+                project_target,
             } => match drag_location {
                 PaneDragDropLocation::TabBar(tab_bar_location) => {
                     if matches!(origin, ActionOrigin::Pane) {
@@ -973,6 +981,7 @@ impl<P: BackingView> TypedActionView for PaneHeader<P> {
                         } else {
                             Direction::Left
                         },
+                        project_target: project_target.clone(),
                     });
                 }
                 PaneDragDropLocation::PaneGroup(target_id) => {
@@ -1000,11 +1009,15 @@ impl<P: BackingView> TypedActionView for PaneHeader<P> {
             PaneHeaderAction::PaneHeaderDropped {
                 origin,
                 drop_location,
+                project_target,
             } => {
                 match drop_location {
                     PaneDragDropLocation::TabBar(_) => {
                         self.is_visible_in_pane_group = true;
-                        ctx.emit(Event::DroppedOnTabBar { origin: *origin })
+                        ctx.emit(Event::DroppedOnTabBar {
+                            origin: *origin,
+                            project_target: project_target.clone(),
+                        })
                     }
                     PaneDragDropLocation::PaneGroup(_) => {
                         ctx.emit(Event::PaneDroppedWithinPaneGroup)
@@ -1076,6 +1089,9 @@ pub fn render_pane_header_draggable<P: BackingView>(
                 || drop_target_data
                     .as_any()
                     .is::<VerticalTabsPaneDropTargetData>()
+                || drop_target_data
+                    .as_any()
+                    .is::<ProjectSidebarPaneDropTargetData>()
             {
                 AcceptedByDropTarget::Yes
             } else {
@@ -1100,6 +1116,7 @@ pub fn render_pane_header_draggable<P: BackingView>(
                     drag_location: PaneDragDropLocation::PaneGroup(pane_drop_data.id),
                     drag_position,
                     precomputed_tab_hover_index: None,
+                    project_target: None,
                 });
             } else if let Some(data) =
                 data.and_then(|data| data.as_any().downcast_ref::<TabBarDropTargetData>())
@@ -1112,6 +1129,7 @@ pub fn render_pane_header_draggable<P: BackingView>(
                     drag_location: PaneDragDropLocation::TabBar(data.tab_bar_location),
                     drag_position,
                     precomputed_tab_hover_index: None,
+                    project_target: None,
                 })
             } else if let Some(data) = data.and_then(|data| {
                 data.as_any()
@@ -1125,6 +1143,25 @@ pub fn render_pane_header_draggable<P: BackingView>(
                     drag_location: PaneDragDropLocation::TabBar(data.tab_bar_location),
                     drag_position,
                     precomputed_tab_hover_index: Some(data.tab_hover_index),
+                    project_target: None,
+                })
+            } else if let Some(data) = data.and_then(|data| {
+                data.as_any()
+                    .downcast_ref::<ProjectSidebarPaneDropTargetData>()
+            }) {
+                ctx.dispatch_typed_action(PaneHeaderAction::<
+                    P::PaneHeaderOverflowMenuAction,
+                    P::CustomAction,
+                >::PaneHeaderDragged {
+                    origin: ActionOrigin::Pane,
+                    drag_location: PaneDragDropLocation::TabBar(TabBarLocation::AfterTabIndex(
+                        data.target.tab_insert_index,
+                    )),
+                    drag_position,
+                    precomputed_tab_hover_index: Some(TabBarHoverIndex::BeforeTab(
+                        data.target.tab_insert_index,
+                    )),
+                    project_target: Some(data.target.clone()),
                 })
             } else {
                 ctx.dispatch_typed_action(PaneHeaderAction::<
@@ -1135,6 +1172,7 @@ pub fn render_pane_header_draggable<P: BackingView>(
                     drag_location: PaneDragDropLocation::Other,
                     drag_position,
                     precomputed_tab_hover_index: None,
+                    project_target: None,
                 })
             }
         })
@@ -1148,6 +1186,7 @@ pub fn render_pane_header_draggable<P: BackingView>(
                 >::PaneHeaderDropped {
                     origin: ActionOrigin::Pane,
                     drop_location: PaneDragDropLocation::TabBar(data.tab_bar_location),
+                    project_target: None,
                 })
             } else if let Some(data) = data.and_then(|data| {
                 data.as_any()
@@ -1159,6 +1198,21 @@ pub fn render_pane_header_draggable<P: BackingView>(
                 >::PaneHeaderDropped {
                     origin: ActionOrigin::Pane,
                     drop_location: PaneDragDropLocation::TabBar(data.tab_bar_location),
+                    project_target: None,
+                })
+            } else if let Some(data) = data.and_then(|data| {
+                data.as_any()
+                    .downcast_ref::<ProjectSidebarPaneDropTargetData>()
+            }) {
+                ctx.dispatch_typed_action(PaneHeaderAction::<
+                    P::PaneHeaderOverflowMenuAction,
+                    P::CustomAction,
+                >::PaneHeaderDropped {
+                    origin: ActionOrigin::Pane,
+                    drop_location: PaneDragDropLocation::TabBar(TabBarLocation::AfterTabIndex(
+                        data.target.tab_insert_index,
+                    )),
+                    project_target: Some(data.target.clone()),
                 })
             } else if let Some(data) =
                 data.and_then(|data| data.as_any().downcast_ref::<PaneDropTargetData>())
@@ -1169,6 +1223,7 @@ pub fn render_pane_header_draggable<P: BackingView>(
                 >::PaneHeaderDropped {
                     origin: ActionOrigin::Pane,
                     drop_location: PaneDragDropLocation::PaneGroup(data.id),
+                    project_target: None,
                 })
             } else {
                 ctx.dispatch_typed_action(PaneHeaderAction::<
@@ -1177,6 +1232,7 @@ pub fn render_pane_header_draggable<P: BackingView>(
                 >::PaneHeaderDropped {
                     origin: ActionOrigin::Pane,
                     drop_location: PaneDragDropLocation::Other,
+                    project_target: None,
                 })
             }
         })

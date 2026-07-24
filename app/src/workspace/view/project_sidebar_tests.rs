@@ -78,7 +78,11 @@ fn merged_projects_group_live_tabs_by_directory_and_add_only_unopened_library_en
     let alpha = PathBuf::from("/work/alpha");
     let beta = PathBuf::from("/work/beta");
     let targets = merged_project_targets(
-        &[Some(alpha.clone()), None, Some(alpha.clone())],
+        [
+            (0, Some(alpha.clone())),
+            (1, None),
+            (2, Some(alpha.clone())),
+        ],
         [alpha, beta.clone(), beta.clone()],
     );
 
@@ -110,6 +114,10 @@ fn right_tool_host_toggles_switches_and_clears_maximize() {
     assert_eq!(switched.tool, RightToolKind::Files);
     assert!(switched.clear_code_review_maximize);
 
+    let search = toggle_right_tool_state(RightToolKind::Files, true, RightToolKind::Search, false);
+    assert!(search.open);
+    assert_eq!(search.tool, RightToolKind::Search);
+
     let closed = toggle_right_tool_state(
         RightToolKind::CodeReview,
         true,
@@ -125,6 +133,7 @@ fn code_review_open_state_follows_the_shared_tool_host() {
     assert!(code_review_tool_is_open(RightToolKind::CodeReview, true));
     assert!(!code_review_tool_is_open(RightToolKind::CodeReview, false));
     assert!(!code_review_tool_is_open(RightToolKind::Files, true));
+    assert!(!code_review_tool_is_open(RightToolKind::Search, true));
 }
 
 #[test]

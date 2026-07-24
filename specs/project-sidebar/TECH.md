@@ -2,7 +2,7 @@
 
 ## Context
 
-This plan implements [`PRODUCT.md`](./PRODUCT.md) by combining the existing app-wide persisted project registry with each window's tab list. `ProjectManagementModel` and the existing `projects` table remain the source of truth for known folder-backed directories; one `TabData` remains one live project instance whose `PaneGroup` owns the working view tree. The sidebar merges these two layers rather than duplicating either one.
+This plan implements [`PRODUCT.md`](./PRODUCT.md) by combining the existing app-wide persisted project registry with each window's tab list. `ProjectManagementModel` and the existing `projects` table remain the source of truth for known folder-backed directories; one `TabData` is one direct chat child whose `PaneGroup` owns the working view tree. Tabs sharing `project_root` render under one project parent.
 
 The current macOS design shell already renders full-height left and right rails around the workspace in `app/src/workspace/view.rs:20497-20595`, but it still renders the horizontal tab bar inside the center column. The left rail is implemented by `LeftPanelView` and owns Files/search/Timeline (`app/src/workspace/view/left_panel.rs:407-435`, `2688-2765`); the right rail is implemented by `RightPanelView` and owns Code Review (`app/src/workspace/view/right_panel.rs:417-430`, `2041-2092`). The project-sidebar shell must change the ownership of those surfaces rather than stack another navigation layer on top.
 
@@ -20,10 +20,10 @@ The principal existing state and behavior to preserve are:
 
 ### Architectural decisions
 
-1. **Project library and live project are separate layers.** `ProjectManagementModel` owns unique persisted folder identities, while `Workspace.tabs` owns ordered live instances and scratch projects. A sidebar row resolves to one layer or the other.
+1. **Project library and live chats are separate layers.** `ProjectManagementModel` owns unique persisted folder identities, while `Workspace.tabs` owns ordered live chats and scratch tabs. Sidebar parents come from the folder layer; direct children come from tabs.
 2. **Project identity is keyed by pane-group `EntityId` at runtime.** UI callbacks resolve the current tab index at dispatch time so reorder, close, and cross-window moves cannot leave stale index captures.
 3. **An assigned project root is stable and optional.** It is stored on the tab, moves with the tab, and does not change when a pane or chat changes directory. Derived working directories remain available for legacy and multi-folder projects.
-4. **Chat children are live panes in the project `PaneGroup`.** They are not global session-history entries. Closing a chat pane removes its child row; restoring its pane restores the child row.
+4. **Chat children are tabs, not panes.** A tab remains one chat row even when its `PaneGroup` contains multiple panels. Closing/restoring a tab removes/restores that direct child row.
 5. **Shell visibility is window-owned.** Project sidebar visibility/width and active right tool are not properties of the active project. Files and Code Review content remain project-owned through `WorkingDirectoriesModel`.
 6. **The horizontal and project-sidebar shells coexist behind flags.** The new code path does not reinterpret the legacy vertical-tabs setting or delete legacy panel data.
 7. **Opening is local; discovery is global.** Selecting an unopened library entry creates a normal tab in the current workspace. Existing tabs in other windows are not transferred, cloned, or mutated.
@@ -33,9 +33,9 @@ The principal existing state and behavior to preserve are:
 ```mermaid
 flowchart LR
     Registry["ProjectManagementModel\npersisted folder library"] --> Sidebar["Projects sidebar\nmerged presentation + search"]
-    Tabs["Workspace.tabs\nlive window instances"] --> Sidebar
+    Tabs["Workspace.tabs\ndirect chat children"] --> Sidebar
     Tabs --> Active["Active PaneGroup\ncenter workspace"]
-    Active --> Chats["Live Claude/Codex panes\nchat child rows"]
+    Active --> Panes["PaneGroup\nterminal/editor/agent panels"]
     Active --> Directories["WorkingDirectoriesModel"]
     Directories --> Files["Files tool view"]
     Directories --> Review["Code Review tool view"]
@@ -44,8 +44,23 @@ flowchart LR
     Actions --> Registry
     Root["Tab project_root\noptional stable directory"] --> Sidebar
     Root --> NewChat["New chat cwd"]
-    NewChat --> Active
+    NewChat --> Tabs
 ```
+
+### 2026-07-24 implementation refinement (authoritative)
+
+This refinement supersedes any older detail later in this plan that describes one tab as one project, pane-level chat nesting, project-only search, embedded Files search, or diff totals on the activity icon.
+
+- `ProjectListTarget::LiveProject(Vec<usize>)` groups real tab indices by exact optional `TabData::project_root`; `Library(PathBuf)` represents a registered directory with no local tab. Settings pane groups are filtered before merging and therefore never become project/chat rows.
+- The hierarchy is exactly Project → Chat. A chat is an existing workspace tab. Its title, status, context menu, drag state, colors, persistence, and live pane tree continue through existing tab machinery. There is no expanded-chat set in the presentation and no pane enumeration for sidebar nesting.
+- `New chat` constructs a `ClaudeCodePane` with the resolved project cwd, wraps it in a new `PaneGroup`/`TabData`, inserts it after the project's last tab, assigns the target `project_root`, inherits project colors, activates it, refreshes working directories, and saves app state.
+- A pane-header drag accepts `ProjectSidebarPaneDropTargetData { project_root, tab_insert_index }`. Only a source tab with more than one visible pane may preview the promotion. Drop removes the hidden source pane, creates a new tab at the project insertion point, assigns the target root/colors, and leaves the source tab's remaining panes intact. Invalid/cancelled drops clear the hidden-move preview.
+- `Workspace.projects_sidebar_open`, `right_tool`, and `right_tool_open` remain the persisted canonical shell state. `PanelSlide`/`SlideClip` animate explicit left/right edge toggles from the current fraction. The Projects toggle is always a traffic-light-adjacent overlay. Switching right tools swaps content without an edge animation; Cmd+Shift+`+` toggles the remembered `right_tool`.
+- The Projects search icon dispatches the Cmd+P command palette action. Cmd+Shift+F activates a dedicated Search right tool backed by the active pane group's existing `GlobalSearchView`; Files contains no search overlay.
+- The right activity strip renders icon-only Files, Search, and Code Review controls. Agent `RepoContext` supplies changed-file/addition/deletion totals to the agent header's `Changes` row, including staged changes and untracked-file counts.
+- `RightToolKind::Search` persists as value `2`. Search reuses `LeftPanelView` and the Files utility width, but switches its active `ToolPanelView` to `GlobalSearch`; this avoids a second search model while keeping Files and Search as mutually exclusive shell destinations.
+- `LeftPanelView` tracks whether the project shell is actively presenting Files; file-tree subscriptions use that state instead of the legacy `PaneGroup::left_panel_open` flag. This keeps folder expansion populated after Files moves to the right rail without leaving hidden trees active.
+- A plain Code Review file-row click dispatches `ToggleFileExpanded` after updating selection. Shift/Cmd/Ctrl clicks remain selection-only, and the explicit diff action continues to dispatch `OpenFileDiffInNewTab`.
 
 ## Proposed changes
 
@@ -104,6 +119,7 @@ Keep the canonical state on `Workspace`, not in the active `PaneGroup`:
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RightTool {
     Files,
+    Search,
     CodeReview,
 }
 
@@ -283,7 +299,7 @@ The Projects and tool rails are edge-to-edge and use one hairline at each inner 
 
 When Projects is closed, render its compact reopen control in the traffic-light-adjacent overlay that the current shell already uses for left-panel recovery. Reopening restores the saved Projects width, list scroll, and focused row; the overlay must not reserve a full center toolbar row.
 
-Keep the current approximately 150ms self-rearming slide animation for explicit open/close. Switching Files ↔ Code Review swaps the child in the already-open rail without an edge slide. Reversing a transition starts from the current visible fraction. Clip and disable pointer hit-testing outside the visible fraction.
+Keep the current approximately 150ms self-rearming slide animation for explicit open/close. Switching Files ↔ Search ↔ Code Review swaps the child in the already-open rail without an edge slide. Reversing a transition starts from the current visible fraction. Clip and disable pointer hit-testing outside the visible fraction.
 
 Add a pure layout policy that receives window width, saved rail widths, activity-strip width, and minimum center width. When the layout would violate the center minimum, set `responsive_collapsed = true`; clear it when enough width returns. Do not modify `active_tool` or persisted widths during this temporary collapse.
 
@@ -292,19 +308,20 @@ Add a pure layout policy that receives window width, saved rail widths, activity
 Create `app/src/workspace/view/right_tool_host.rs` for `RightTool`, toggle/reducer helpers, activity-strip rendering, and layout policy. The state transition is deterministic:
 
 - click inactive tool → set it active and open;
-- click the other tool → switch directly, keep rail open;
+- click another tool → switch directly, keep rail open;
 - click active tool → set rail closed and remember it as preferred;
 - click active Code Review while maximized → exit maximize and close its content, leaving the activity strip available;
-- switch away from maximized Code Review → clear maximize before showing Files;
+- switch away from maximized Code Review → clear maximize before showing Files or Search;
 - responsive collapse → hide content only, preserving the active/preferred tool.
 
-The strip renders Files then Code Review in a stable order with shared icon-button styling, tooltips, accessible labels, keyboard focus, and an active indicator beyond color. Reuse the active project's existing diff-state calculation for the Code Review badge, but move its presentation out of top chrome and use semantic addition/deletion tokens.
+The strip renders Files, Search, then Code Review in a stable order with shared icon-button styling, tooltips, accessible labels, keyboard focus, and an active indicator beyond color. Diff totals render in the agent Environment menu, not on the strip.
 
-Move Files/search/Timeline content out of left-shell ownership. To limit flag-off risk, extract the current implementation into a semantically named `FilesToolView` while retaining a legacy left-panel adapter/type alias for the old shell. Under the project-sidebar flag it:
+Move Files/Search/Timeline content out of left-shell ownership. The implementation reuses `LeftPanelView` as the utility-rail content host while making Files and Search distinct `ToolPanelView` destinations. Under the project-sidebar flag it:
 
 - binds to `FilesToolWidth`;
 - renders a left seam and left resize handle because it is now on the right;
-- continues to use the same project-keyed file tree, global search, Timeline, and scroll state from `WorkingDirectoriesModel`;
+- renders only file tree and Timeline for Files;
+- renders the project-keyed `GlobalSearchView` for Search, sharing the Files utility-width handle but not its content surface;
 - keeps tree indentation/disclosures unchanged.
 
 Keep `RightPanelView` as the Code Review content implementation initially, binding it to `CodeReviewToolWidth` under the new shell. Hide its redundant close button only under `ProjectSidebar`; the activity icon becomes the close target. Preserve repository selection, staged/unstaged operations, commit/diff flows, loading/unsupported states, and project retargeting (`app/src/workspace/view/right_panel.rs:605-665`).
@@ -314,7 +331,7 @@ When the active project changes, `set_active_tab_index` retargets both tool view
 Route existing commands as follows under the feature flag:
 
 - `ToggleProjectExplorer` → toggle `RightTool::Files`;
-- global/project file search → activate Files, expand/focus its search section;
+- global/project file search → toggle or activate `RightTool::Search` and focus its query field;
 - Code Review toggle/events → toggle `RightTool::CodeReview`;
 - maximize Code Review → occupy the center-plus-tool content area while leaving Projects and the activity strip rendered;
 - Files selected while Code Review is maximized → exit maximize and open Files at its saved width.
