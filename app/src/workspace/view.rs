@@ -3435,8 +3435,12 @@ impl Workspace {
 
         let active_pane_group = self.active_tab_pane_group().clone();
         let working_directories_model = self.working_directories_model.clone();
+        let project_files_visible = project_sidebar_enabled()
+            && self.right_tool_open
+            && self.right_tool == RightToolKind::Files;
         self.left_panel_view.update(ctx, |left_panel, ctx| {
             left_panel.set_active_pane_group(active_pane_group, &working_directories_model, ctx);
+            left_panel.set_project_files_visible(project_files_visible, ctx);
         });
     }
 
@@ -19338,6 +19342,10 @@ impl Workspace {
                 }
             }
         }
+        let project_files_visible = transition.open && transition.tool == RightToolKind::Files;
+        self.left_panel_view.update(ctx, |files, ctx| {
+            files.set_project_files_visible(project_files_visible, ctx);
+        });
         ctx.dispatch_global_action("workspace:save_app", ());
         ctx.notify();
     }
@@ -20104,6 +20112,9 @@ impl TypedActionView for Workspace {
                 if project_sidebar_enabled() {
                     self.right_tool = RightToolKind::CodeReview;
                     self.right_tool_open = true;
+                    self.left_panel_view.update(ctx, |files, ctx| {
+                        files.set_project_files_visible(false, ctx);
+                    });
                     #[cfg(feature = "local_fs")]
                     self.setup_code_review_panel(None, ctx);
                     ctx.dispatch_global_action("workspace:save_app", ());
@@ -20159,6 +20170,9 @@ impl TypedActionView for Workspace {
                             if project_sidebar_enabled() {
                                 self.right_tool = RightToolKind::CodeReview;
                                 self.right_tool_open = true;
+                                self.left_panel_view.update(ctx, |files, ctx| {
+                                    files.set_project_files_visible(false, ctx);
+                                });
                                 self.setup_code_review_panel(Some(&context), ctx);
                                 ctx.dispatch_global_action("workspace:save_app", ());
                                 ctx.notify();

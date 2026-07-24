@@ -59,6 +59,8 @@ This refinement supersedes any older detail later in this plan that describes on
 - The Projects search icon dispatches the Cmd+P command palette action. Cmd+Shift+F activates a dedicated Search right tool backed by the active pane group's existing `GlobalSearchView`; Files contains no search overlay.
 - The right activity strip renders icon-only Files, Search, and Code Review controls. Agent `RepoContext` supplies changed-file/addition/deletion totals to the agent header's `Changes` row, including staged changes and untracked-file counts.
 - `RightToolKind::Search` persists as value `2`. Search reuses `LeftPanelView` and the Files utility width, but switches its active `ToolPanelView` to `GlobalSearch`; this avoids a second search model while keeping Files and Search as mutually exclusive shell destinations.
+- `LeftPanelView` tracks whether the project shell is actively presenting Files; file-tree subscriptions use that state instead of the legacy `PaneGroup::left_panel_open` flag. This keeps folder expansion populated after Files moves to the right rail without leaving hidden trees active.
+- A plain Code Review file-row click dispatches `ToggleFileExpanded` after updating selection. Shift/Cmd/Ctrl clicks remain selection-only, and the explicit diff action continues to dispatch `OpenFileDiffInNewTab`.
 
 ## Proposed changes
 

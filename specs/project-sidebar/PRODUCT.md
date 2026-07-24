@@ -217,7 +217,7 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 ### Code Review tool
 
-82. Code Review retains repository selection, loading and unsupported states, staged/unstaged sections, multiselect, stage/unstage/discard actions, commit flows, diff opening, comments, and refresh behavior.
+82. Code Review retains repository selection, loading and unsupported states, staged/unstaged sections, multiselect, stage/unstage/discard actions, commit flows, comments, and refresh behavior. A plain file-row click expands or collapses that diff inside the sidebar; opening the full diff in a center tab remains an explicit row action.
 
 83. The Code Review activity icon remains icon-only. Agent tabs surface changed-file and line totals beside `Changes` in their three-dot Environment menu; Code Review may retain detailed statistics inside its own content header.
 

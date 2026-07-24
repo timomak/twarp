@@ -102,6 +102,20 @@ fn sidebar_pill_track(appearance: &Appearance) -> twarpui::color::ColorU {
     appearance.theme().surface_1().into_solid()
 }
 
+fn file_tree_subscription_active(
+    use_project_shell: bool,
+    project_files_visible: bool,
+    legacy_left_panel_open: bool,
+    file_tree_selected: bool,
+) -> bool {
+    file_tree_selected
+        && if use_project_shell {
+            project_files_visible
+        } else {
+            legacy_left_panel_open
+        }
+}
+
 /// twarp 08f polish: shared horizontal content inset for the sidebar panels
 /// (file tree, Warp Drive). The macOS sidebar gives rows a little breathing
 /// room from the edge instead of the old flush 2px; the sessions/shortcuts
@@ -307,6 +321,10 @@ pub struct LeftPanelView {
     /// renders to detect click cycles.
     timeline_entry_mouse_states: std::cell::RefCell<Vec<MouseStateHandle>>,
 
+    /// The project shell currently presents this view as the Files tool.
+    /// The legacy shell derives visibility from `PaneGroup::left_panel_open`.
+    project_files_visible: bool,
+
     /// twarp 07 (7h, PRODUCT §35): the active cwd's stored Claude Code
     /// sessions, refreshed when the tab opens or the cwd changes. Read-only —
     /// `claude` owns the store.
@@ -471,8 +489,12 @@ impl LeftPanelView {
                 let file_tree_view =
                     me.get_or_create_file_tree_view_for_pane_group(active_pane_group.id(), ctx);
 
-                let is_visible =
-                    active_pane_group.as_ref(ctx).left_panel_open && me.is_file_tree_active();
+                let is_visible = file_tree_subscription_active(
+                    super::project_sidebar_enabled(),
+                    me.project_files_visible,
+                    active_pane_group.as_ref(ctx).left_panel_open,
+                    me.is_file_tree_active(),
+                );
                 file_tree_view.update(ctx, |view, ctx| {
                     view.set_root_directories(directories, ctx);
                     view.set_has_terminal_session(has_terminal_session, ctx);
@@ -540,6 +562,7 @@ impl LeftPanelView {
             timeline_load_more_mouse_state: MouseStateHandle::default(),
             timeline_scroll_state: twarpui::elements::ClippedScrollStateHandle::default(),
             timeline_entry_mouse_states: std::cell::RefCell::new(Vec::new()),
+            project_files_visible: false,
             claude_sessions: Vec::new(),
             has_claude_sessions: false,
             claude_session_row_mouse_states: std::cell::RefCell::new(Vec::new()),
@@ -790,6 +813,18 @@ impl LeftPanelView {
         ctx.notify();
     }
 
+    pub(crate) fn set_project_files_visible(&mut self, visible: bool, ctx: &mut ViewContext<Self>) {
+        if self.project_files_visible == visible {
+            return;
+        }
+        self.project_files_visible = visible;
+        self.update_active_file_tree_subscription_state(ctx);
+        if visible {
+            self.auto_expand_active_file_tree_to_most_recent_directory(ctx);
+        }
+        ctx.notify();
+    }
+
     fn active_file_tree_view(&self, app: &AppContext) -> Option<ViewHandle<FileTreeView>> {
         let pane_group_id = self
             .active_pane_group
@@ -919,7 +954,12 @@ impl LeftPanelView {
 
         let file_tree_view = self.get_or_create_file_tree_view_for_pane_group(pane_group_id, ctx);
         let left_panel_open = pane_group.as_ref(ctx).left_panel_open;
-        let is_visible = left_panel_open && self.is_file_tree_active();
+        let is_visible = file_tree_subscription_active(
+            super::project_sidebar_enabled(),
+            self.project_files_visible,
+            left_panel_open,
+            self.is_file_tree_active(),
+        );
         file_tree_view.update(ctx, |view, ctx| {
             view.set_root_directories(directories, ctx);
             view.set_has_terminal_session(has_terminal_session, ctx);
@@ -2589,8 +2629,12 @@ impl LeftPanelView {
             return;
         };
 
-        let is_visible = active_pane_group.as_ref(ctx).left_panel_open
-            && self.active_view.get() == ToolPanelView::ProjectExplorer;
+        let is_visible = file_tree_subscription_active(
+            super::project_sidebar_enabled(),
+            self.project_files_visible,
+            active_pane_group.as_ref(ctx).left_panel_open,
+            self.active_view.get() == ToolPanelView::ProjectExplorer,
+        );
 
         if let Some(file_tree_view) = self
             .working_directories_model
@@ -2866,6 +2910,29 @@ fn deduplicate_by_directory_name(directories: Vec<PathBuf>) -> Vec<PathBuf> {
         .into_iter()
         .filter(|path| seen_paths.insert(path.clone()))
         .collect()
+}
+
+#[cfg(test)]
+mod file_tree_visibility_tests {
+    use super::file_tree_subscription_active;
+
+    #[test]
+    fn project_shell_uses_right_files_tool_visibility() {
+        assert!(file_tree_subscription_active(true, true, false, true));
+        assert!(!file_tree_subscription_active(true, false, true, true));
+    }
+
+    #[test]
+    fn legacy_shell_uses_left_panel_visibility() {
+        assert!(file_tree_subscription_active(false, false, true, true));
+        assert!(!file_tree_subscription_active(false, true, false, true));
+    }
+
+    #[test]
+    fn inactive_file_tree_never_subscribes() {
+        assert!(!file_tree_subscription_active(true, true, true, false));
+        assert!(!file_tree_subscription_active(false, true, true, false));
+    }
 }
 
 #[cfg(test)]

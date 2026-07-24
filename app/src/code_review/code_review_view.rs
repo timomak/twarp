@@ -519,7 +519,7 @@ impl SidebarRowId {
     }
 }
 
-fn sidebar_click_opens_diff(extend: bool, toggle: bool) -> bool {
+fn sidebar_click_toggles_inline_diff(extend: bool, toggle: bool) -> bool {
     !extend && !toggle
 }
 
@@ -5322,10 +5322,9 @@ impl CodeReviewView {
     }
 
     /// Renders the content area: the sidebar (Staged Changes / Changes
-    /// sections) full-width. The panel surface is static — clicking a
-    /// row dispatches `OpenFileDiffInNewTab` which opens the file's
-    /// diff in a new tab in the main editor area (or focuses the
-    /// already-open tab). PRODUCT §4 + §8 revised.
+    /// sections) full-width. A plain row click expands its diff inline;
+    /// modifier clicks preserve multi-selection, and the explicit hover
+    /// action remains available for opening the full diff in a new tab.
     fn render_content(
         &self,
         state: &LoadedState,
@@ -5692,7 +5691,7 @@ impl CodeReviewView {
                 let chevron_button = file_state.map(|fs| fs.chevron_button.clone());
                 let select_path = path.clone();
                 let drag_path = path.clone();
-                let open_path = path.clone();
+                let expand_path = path.clone();
                 let row = Hoverable::new(toggle_state, move |mouse_state| {
                     let mut content = Flex::row()
                         .with_main_axis_size(MainAxisSize::Max)
@@ -5734,11 +5733,9 @@ impl CodeReviewView {
                                     extend,
                                     toggle,
                                 });
-                                if sidebar_click_opens_diff(extend, toggle) {
+                                if sidebar_click_toggles_inline_diff(extend, toggle) {
                                     ctx.dispatch_typed_action(
-                                        CodeReviewAction::OpenFileDiffInNewTab {
-                                            path: open_path.clone(),
-                                        },
+                                        CodeReviewAction::ToggleFileExpanded(expand_path.clone()),
                                     );
                                 }
                                 DispatchEventResult::StopPropagation
@@ -8357,9 +8354,9 @@ impl TypedActionView for CodeReviewView {
                 });
             }
             CodeReviewAction::OpenFileDiffInNewTab { path } => {
-                // 5e: clicking a sidebar row opens the file's diff as a
-                // new tab in the main editor area (or focuses the
-                // already-open tab). The workspace handler runs the
+                // The explicit row action opens the file's diff as a new tab
+                // in the main editor area (or focuses the existing tab). The
+                // row itself expands inline. The workspace handler runs the
                 // open-or-focus flow and applies the diff base via
                 // `LocalCodeEditorView::set_pending_diff_base_on_load`.
                 let Some(repo_path) = self.repo_path() else {
