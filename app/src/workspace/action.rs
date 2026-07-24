@@ -149,6 +149,15 @@ pub enum WorkspaceAction {
         tab_index: usize,
         anchor: TabContextMenuAnchor,
     },
+    ToggleProjectRightClickMenu {
+        tab_index: usize,
+        tab_indices: Vec<usize>,
+        anchor: TabContextMenuAnchor,
+    },
+    ToggleProjectChatRightClickMenu {
+        tab_index: usize,
+        anchor: TabContextMenuAnchor,
+    },
     ToggleVerticalTabsPaneContextMenu {
         tab_index: usize,
         target: VerticalTabsPaneContextMenuTarget,
@@ -249,6 +258,10 @@ pub enum WorkspaceAction {
     ToggleTabColor {
         color: AnsiColorIdentifier,
         tab_index: usize,
+    },
+    ToggleProjectColor {
+        color: AnsiColorIdentifier,
+        tab_indices: Vec<usize>,
     },
     SetActiveTabColor {
         color: AnsiColorIdentifier,
@@ -765,6 +778,7 @@ impl WorkspaceAction {
             | CloseTabsRight(_)
             | CloseTabsRightActiveTab
             | ToggleTabColor { .. }
+            | ToggleProjectColor { .. }
             | SetActiveTabColor { .. }
             | ResetActiveTabColor
             | AddDefaultTab
@@ -823,6 +837,8 @@ impl WorkspaceAction {
             | ToggleSyntaxHighlighting
             | OpenLaunchConfigSaveModal
             | ToggleTabRightClickMenu { .. }
+            | ToggleProjectRightClickMenu { .. }
+            | ToggleProjectChatRightClickMenu { .. }
             | ToggleProjectsSearch
             | ToggleProjectCreateMenu { .. }
             | ToggleProjectExpanded(_)

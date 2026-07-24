@@ -4608,6 +4608,56 @@ impl Workspace {
         ctx.notify();
     }
 
+    pub fn toggle_project_color(
+        &mut self,
+        tab_indices: &[usize],
+        color: AnsiColorIdentifier,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(representative_index) = tab_indices
+            .iter()
+            .copied()
+            .find(|index| self.tabs.get(*index).is_some())
+        else {
+            log::warn!("Not toggling project color: project has no valid tab indices");
+            return;
+        };
+        let is_same = self.tabs[representative_index].color() == Some(color);
+        let selected_color = if is_same {
+            send_telemetry_from_ctx!(
+                TelemetryEvent::TabOperations {
+                    action: TabTelemetryAction::ResetColor,
+                },
+                ctx
+            );
+            if FeatureFlag::DirectoryTabColors.is_enabled() {
+                SelectedTabColor::Cleared
+            } else {
+                SelectedTabColor::Unset
+            }
+        } else {
+            send_telemetry_from_ctx!(
+                TelemetryEvent::TabOperations {
+                    action: TabTelemetryAction::SetColor,
+                },
+                ctx
+            );
+            SelectedTabColor::Color(color)
+        };
+
+        for index in tab_indices.iter().copied() {
+            if let Some(tab) = self.tabs.get_mut(index) {
+                tab.selected_color = selected_color;
+            }
+        }
+        self.persist_directory_color_for_project(
+            representative_index,
+            if is_same { None } else { Some(color) },
+            ctx,
+        );
+        ctx.notify();
+    }
+
     pub fn set_tab_color(
         &mut self,
         index: usize,
@@ -4995,6 +5045,37 @@ impl Workspace {
         let path = PathBuf::from(cwd);
         let new_color = match color {
             Some(c) => DirectoryTabColor::Color(c),
+            None => DirectoryTabColor::Suppressed,
+        };
+        TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+            let new_value = settings
+                .directory_tab_colors
+                .value()
+                .with_color(&path, new_color);
+            let _ = settings.directory_tab_colors.set_value(new_value, ctx);
+        });
+    }
+
+    /// Persists the Projects-sidebar color against the assigned project root,
+    /// rather than whichever directory an individual chat has navigated into.
+    fn persist_directory_color_for_project(
+        &self,
+        representative_index: usize,
+        color: Option<AnsiColorIdentifier>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if !FeatureFlag::DirectoryTabColors.is_enabled() {
+            return;
+        }
+        let Some(path) = self
+            .tabs
+            .get(representative_index)
+            .and_then(|tab| tab.project_root.clone())
+        else {
+            return;
+        };
+        let new_color = match color {
+            Some(color) => DirectoryTabColor::Color(color),
             None => DirectoryTabColor::Suppressed,
         };
         TabSettings::handle(ctx).update(ctx, |settings, ctx| {
@@ -6177,6 +6258,57 @@ impl Workspace {
 
         let tab = &self.tabs[tab_index];
         let menu_items = tab.menu_items(tab_index, self.tabs.len(), ctx);
+        ctx.update_view(&self.tab_right_click_menu, |context_menu, view_ctx| {
+            context_menu.set_items(menu_items, view_ctx);
+        });
+        self.show_tab_right_click_menu = Some((tab_index, anchor));
+        ctx.focus(&self.tab_right_click_menu);
+        ctx.notify();
+    }
+
+    pub fn toggle_project_right_click_menu(
+        &mut self,
+        tab_index: usize,
+        tab_indices: Vec<usize>,
+        anchor: TabContextMenuAnchor,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.show_tab_right_click_menu.is_some() {
+            self.show_tab_right_click_menu = None;
+            ctx.notify();
+            return;
+        }
+
+        let Some(tab) = self.tabs.get(tab_index) else {
+            log::warn!("Tried to open a context menu for a missing project tab");
+            return;
+        };
+        let menu_items = tab.project_menu_items(tab_index, self.tabs.len(), tab_indices, ctx);
+        ctx.update_view(&self.tab_right_click_menu, |context_menu, view_ctx| {
+            context_menu.set_items(menu_items, view_ctx);
+        });
+        self.show_tab_right_click_menu = Some((tab_index, anchor));
+        ctx.focus(&self.tab_right_click_menu);
+        ctx.notify();
+    }
+
+    pub fn toggle_project_chat_right_click_menu(
+        &mut self,
+        tab_index: usize,
+        anchor: TabContextMenuAnchor,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.show_tab_right_click_menu.is_some() {
+            self.show_tab_right_click_menu = None;
+            ctx.notify();
+            return;
+        }
+
+        let Some(tab) = self.tabs.get(tab_index) else {
+            log::warn!("Tried to open a context menu for a missing project chat");
+            return;
+        };
+        let menu_items = tab.project_chat_menu_items(tab_index, self.tabs.len(), ctx);
         ctx.update_view(&self.tab_right_click_menu, |context_menu, view_ctx| {
             context_menu.set_items(menu_items, view_ctx);
         });
@@ -19630,6 +19762,16 @@ impl TypedActionView for Workspace {
             ToggleTabRightClickMenu { tab_index, anchor } => {
                 self.toggle_tab_right_click_menu(*tab_index, *anchor, ctx)
             }
+            ToggleProjectRightClickMenu {
+                tab_index,
+                tab_indices,
+                anchor,
+            } => {
+                self.toggle_project_right_click_menu(*tab_index, tab_indices.clone(), *anchor, ctx)
+            }
+            ToggleProjectChatRightClickMenu { tab_index, anchor } => {
+                self.toggle_project_chat_right_click_menu(*tab_index, *anchor, ctx)
+            }
             ToggleVerticalTabsPaneContextMenu {
                 tab_index,
                 target,
@@ -19934,6 +20076,9 @@ impl TypedActionView for Workspace {
             SetA11yVerbosityLevel(verbosity) => self.set_a11y_verbosity(*verbosity, ctx),
             ToggleNotifications => self.toggle_notifications(ctx),
             ToggleTabColor { color, tab_index } => self.toggle_tab_color(*tab_index, *color, ctx),
+            ToggleProjectColor { color, tab_indices } => {
+                self.toggle_project_color(tab_indices, *color, ctx)
+            }
             SetActiveTabColor { color } => self.set_active_tab_color(*color, ctx),
             ResetActiveTabColor => self.reset_active_tab_color(ctx),
             RunCustomShortcut { id } => self.run_custom_shortcut(*id, ctx),

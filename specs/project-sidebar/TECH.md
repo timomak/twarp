@@ -214,10 +214,11 @@ Add project-specific actions whose payload is a pane-group ID rather than a tab 
 - project click → `activate_tab`;
 - unopened library click → validate the path, activate an already-open local tab if one appeared concurrently, otherwise call the existing folder-project constructor;
 - rename/double-click → existing tab rename editor and commit/cancel path;
-- more menu → `TabData::menu_items` with the resolved index;
+- project more menu → the existing `TabData` menu sections with project-scoped color actions that update every grouped tab and persist against the assigned project root;
+- chat more menu and chat right-click → the same existing `TabData` menu sections with the color section omitted;
 - close/middle-click/shortcuts → existing close actions and nearest-tab fallback;
 - next/previous/direct/recent selection → unchanged tab commands;
-- context menu, color, save/share/copy metadata → existing tab actions.
+- chat context menu, save/share/copy metadata → existing tab actions; project color → one project-scoped action over the group's current tab indices.
 
 This keeps project selection a presentation change. A child action must stop propagation so new-chat/menu/close never activates the row accidentally.
 

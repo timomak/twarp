@@ -555,6 +555,7 @@ impl Workspace {
             .is_some_and(|target| target == &pane_drop_target);
         let pane_drag_active = self.project_pane_drag_active(app);
         let menu_mouse_state = selected_tab.tooltip_mouse_state.clone();
+        let project_tab_indices = tab_indices.to_vec();
         let color: ThemeFill = selected_tab
             .color()
             .map(|color| {
@@ -600,8 +601,9 @@ impl Workspace {
                             .finish()
                     })
                     .on_click(move |ctx, _, position| {
-                        ctx.dispatch_typed_action(WorkspaceAction::ToggleTabRightClickMenu {
+                        ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectRightClickMenu {
                             tab_index: selected_index,
+                            tab_indices: project_tab_indices.clone(),
                             anchor: TabContextMenuAnchor::Pointer(position),
                         })
                     })
@@ -688,6 +690,8 @@ impl Workspace {
         let is_renaming = self.current_workspace_state.tab_being_renamed() == Some(index);
         let attention = pane_group.claude_code_tab_status(app);
         let row_mouse_state = tab.tab_mouse_state.clone();
+        let menu_mouse_state = tab.tooltip_mouse_state.clone();
+        let pane_drag_active = self.project_pane_drag_active(app);
         let title_element: Box<dyn Element> = if is_renaming {
             ChildView::new(&self.tab_rename_editor).finish()
         } else {
@@ -715,6 +719,28 @@ impl Workspace {
             if let Some(status) = attention.as_ref() {
                 contents.add_child(status.render_icon(appearance).finish());
             }
+            if state.is_hovered() && !pane_drag_active && !is_renaming {
+                let menu = Hoverable::new(menu_mouse_state.clone(), move |button_state| {
+                    let color = if button_state.is_hovered() {
+                        theme.main_text_color(theme.background())
+                    } else {
+                        theme.sub_text_color(theme.background())
+                    };
+                    Container::new(sidebar_icon(Icon::DotsHorizontal, color))
+                        .with_padding_left(spacing::XS)
+                        .with_padding_right(spacing::XS)
+                        .finish()
+                })
+                .on_click(move |ctx, _, position| {
+                    ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectChatRightClickMenu {
+                        tab_index: index,
+                        anchor: TabContextMenuAnchor::Pointer(position),
+                    })
+                })
+                .with_cursor(Cursor::PointingHand)
+                .finish();
+                contents.add_child(menu);
+            }
             let mut container = Container::new(contents.finish())
                 .with_padding_left(spacing::SM)
                 .with_padding_right(spacing::SM)
@@ -733,7 +759,7 @@ impl Workspace {
             ctx.dispatch_typed_action(WorkspaceAction::RenameTab(index))
         })
         .on_right_click(move |ctx, _, position| {
-            ctx.dispatch_typed_action(WorkspaceAction::ToggleTabRightClickMenu {
+            ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectChatRightClickMenu {
                 tab_index: index,
                 anchor: TabContextMenuAnchor::Pointer(position),
             })
