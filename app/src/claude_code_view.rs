@@ -212,7 +212,61 @@ fn provider_copy(provider: AgentProvider) -> ProviderCopy {
 }
 
 fn supports_raw_cli(provider: AgentProvider) -> bool {
-    matches!(provider, AgentProvider::Claude)
+    matches!(provider, AgentProvider::Claude | AgentProvider::Codex)
+}
+
+fn raw_cli_menu_label(provider: AgentProvider) -> &'static str {
+    match provider {
+        AgentProvider::Claude => "Open Claude CLI",
+        AgentProvider::Codex => "Open Codex CLI",
+    }
+}
+
+fn build_raw_cli_flags(
+    provider: AgentProvider,
+    model: Option<&str>,
+    effort: Option<&str>,
+    permission_mode: PermissionMode,
+) -> String {
+    let mut flags = Vec::new();
+    if let Some(model) = model {
+        flags.push(format!(
+            "--model {}",
+            shell_words::quote(model).into_owned()
+        ));
+    }
+    match provider {
+        AgentProvider::Claude => {
+            if let Some(effort) = effort {
+                flags.push(format!(
+                    "--effort {}",
+                    shell_words::quote(effort).into_owned()
+                ));
+            }
+            flags.push(format!(
+                "--permission-mode {}",
+                permission_mode.as_cli_arg()
+            ));
+        }
+        AgentProvider::Codex => {
+            if let Some(effort) = effort {
+                let config = format!("model_reasoning_effort=\"{effort}\"");
+                flags.push(format!(
+                    "--config {}",
+                    shell_words::quote(&config).into_owned()
+                ));
+            }
+            let (sandbox, approval) = match permission_mode {
+                PermissionMode::Plan => ("read-only", "never"),
+                PermissionMode::Default | PermissionMode::AcceptEdits => {
+                    ("workspace-write", "never")
+                }
+                PermissionMode::BypassPermissions => ("danger-full-access", "never"),
+            };
+            flags.push(format!("--sandbox {sandbox} --ask-for-approval {approval}"));
+        }
+    }
+    flags.join(" ")
 }
 
 /// Body / code font sizes. A point past the deleted `ai_assistant::transcript`
@@ -340,28 +394,17 @@ pub enum ClaudeCodeViewEvent {
     /// workspace so the tab bar repaints — the view's own `notify()` only
     /// redraws the pane body.
     TabStatusChanged,
-    /// twarp 07 (7i, PRODUCT §39): swap this pane for the raw interactive
-    /// `claude` CLI resuming `session_id` — handled by the pane group as a
-    /// temporary pane replacement.
+    /// Swap this pane for the provider's raw interactive CLI resuming
+    /// `session_id`. The pane group creates and embeds the terminal.
     SwapToRawCli {
+        provider: AgentProvider,
         session_id: String,
         cwd: Option<PathBuf>,
-        /// The resolved `claude` executable, an absolute path whenever it can
-        /// be found on the captured login-shell PATH (PRODUCT §43). Resolved
-        /// here (the view holds `interactive_path`) rather than in the pane,
-        /// which only sees the launchd-minimal process PATH under a GUI launch
-        /// and would fall back to a bare `claude` — a bare token gets eaten by
-        /// the `claude`-at-submit trigger, so the CLI never starts and the pane
-        /// shows an empty terminal (the release-only "Raw CLI does nothing").
-        claude_binary: String,
-        /// The alias-derived default flags (`--effort` / `--model` /
-        /// `--permission-mode`) to re-apply on the raw-CLI command line. Raw
-        /// mode launches the binary by absolute path (PRODUCT §43), which
-        /// sidesteps the shell alias that supplied those defaults — so without
-        /// passing them explicitly the CLI falls back to its own config
-        /// defaults (e.g. xhigh effort instead of the alias's `--effort
-        /// medium`), and the two modes disagree on an empty chat. Pre-joined
-        /// and shell-quoted by the view, which owns the parsed flags.
+        /// Resolved against the captured login-shell PATH so GUI launches can
+        /// find the same provider executable as an interactive terminal.
+        binary: String,
+        /// Provider-native model, effort, and access flags, pre-joined and
+        /// shell-quoted by the view that owns those settings.
         flags: String,
     },
     /// twarp: fork this conversation into a new pane (PRODUCT "Fork
@@ -761,6 +804,9 @@ pub struct ClaudeCodeView {
     /// user turn waits here until `SessionInit` carries that id; Claude still
     /// sends immediately because it owns the session id at spawn.
     pending_initial_turn: Option<OutgoingMessage>,
+    /// A provider process is being created on the background executor. Kept
+    /// separately from `child`, which is populated only after spawn resolves.
+    session_spawn_pending: bool,
     /// True while `claude` is producing output for the current turn (PRODUCT §9):
     /// the composer shows Stop and sending is disabled until the turn ends.
     streaming: bool,
@@ -840,6 +886,9 @@ pub struct ClaudeCodeView {
     /// The embedded raw-CLI terminal while raw mode is active (PRODUCT §39).
     /// `None` in rendered-chat mode.
     raw_cli: Option<RawCliSession>,
+    /// A Codex CLI switch requested before app-server has returned the real
+    /// thread id. The switch completes as soon as `SessionInit` arrives.
+    raw_cli_pending: bool,
     /// The active composer suggestion query (`/` or `@`), `None` when the
     /// panel is closed (PRODUCT §15a, 7j).
     suggestion_query: Option<SuggestionQuery>,
@@ -1341,6 +1390,7 @@ impl ClaudeCodeView {
             child: None,
             message_tx: None,
             pending_initial_turn: None,
+            session_spawn_pending: false,
             streaming: false,
             tab_attention: None,
             tab_attention_seen: false,
@@ -1366,6 +1416,7 @@ impl ClaudeCodeView {
             raw_cli_button: MouseStateHandle::default(),
             chat_ui_button: MouseStateHandle::default(),
             raw_cli: None,
+            raw_cli_pending: false,
             suggestion_query: None,
             suggestions: Vec::new(),
             suggestion_selected: 0,
@@ -3555,6 +3606,7 @@ impl ClaudeCodeView {
                 .then(|| self.interactive_env_vars.clone())
                 .flatten(),
         };
+        self.session_spawn_pending = true;
         ctx.spawn(
             async move { spawn_session(opts) },
             move |view, result, ctx| view.on_session_spawned(epoch, result, first_prompt, ctx),
@@ -3581,6 +3633,7 @@ impl ClaudeCodeView {
         if epoch != self.session_epoch {
             return;
         }
+        self.session_spawn_pending = false;
         let SpawnedSession {
             child,
             stdin,
@@ -3591,6 +3644,7 @@ impl ClaudeCodeView {
             Err(err) => {
                 // PRODUCT §28/§30: surface the spawn failure verbatim.
                 self.streaming = false;
+                self.raw_cli_pending = false;
                 // A failed resume must not wedge the pane on the dead id —
                 // the next message starts fresh (PRODUCT §37).
                 self.resume_session_id = None;
@@ -3889,6 +3943,10 @@ impl ClaudeCodeView {
                 ctx.emit(ClaudeCodeViewEvent::Pane(PaneEvent::AppStateChanged));
             }
             self.send_pending_initial_turn();
+            if self.raw_cli_pending && !self.streaming {
+                self.raw_cli_pending = false;
+                self.open_raw_cli(ctx);
+            }
         }
         // twarp 17 §32: sentence-by-sentence readout keeps pace with the
         // stream. Cheap when the toggle is off (single bool check).
@@ -4020,7 +4078,7 @@ impl ClaudeCodeView {
         ctx.notify();
     }
 
-    /// Kill the live `claude` process (if any) and keep the conversation as
+    /// Kill the live provider process (if any) and keep the conversation as
     /// the resume target for the next spawn. The epoch bump makes the killed
     /// session's EOF/events stale so they can't spam the transcript or wipe
     /// the next session's handles.
@@ -4034,12 +4092,10 @@ impl ClaudeCodeView {
         self.interrupt_pending = false;
     }
 
-    /// twarp 07 (7i, PRODUCT §39/§42): flip between the rendered chat and the
-    /// raw interactive CLI. Entering is disabled while a turn streams (§42 —
-    /// same rule as the mode selector); the headless process is detached
-    /// first (one driver at a time) and the host pane group hands back a real
-    /// terminal session running `claude --resume <session_id>`, which
-    /// [`Self::enter_raw_mode`] embeds.
+    /// Flip between the rendered chat and the provider's raw interactive CLI.
+    /// Codex needs its app-server thread id before `codex resume` can launch,
+    /// so a fresh pane initializes the thread first and completes the switch
+    /// when `SessionInit` arrives.
     fn toggle_raw_cli(&mut self, ctx: &mut ViewContext<Self>) {
         if !supports_raw_cli(self.provider) {
             return;
@@ -4051,6 +4107,18 @@ impl ClaudeCodeView {
         if self.streaming {
             return;
         }
+        if self.provider == AgentProvider::Codex && !self.has_provider_session() {
+            self.raw_cli_pending = true;
+            if !self.codex_restore_pending && !self.session_spawn_pending && self.child.is_none() {
+                self.begin_session(None, ctx);
+            }
+            ctx.notify();
+            return;
+        }
+        self.open_raw_cli(ctx);
+    }
+
+    fn open_raw_cli(&mut self, ctx: &mut ViewContext<Self>) {
         // twarp 17 (PRODUCT 17 §9): switching to Raw CLI cancels a live
         // recording silently and stops any spoken reply.
         self.cancel_voice_recording(ctx);
@@ -4059,57 +4127,33 @@ impl ClaudeCodeView {
         }
         self.detach_live_session();
         ctx.emit(ClaudeCodeViewEvent::SwapToRawCli {
+            provider: self.provider,
             session_id: self.session_id.clone(),
             cwd: self.cwd.clone(),
-            claude_binary: self.resolve_claude_binary(),
-            flags: self.raw_cli_flags(),
+            binary: self.resolve_provider_binary(),
+            flags: build_raw_cli_flags(
+                self.provider,
+                self.model.as_deref(),
+                self.effort.as_deref(),
+                self.permission_mode,
+            ),
         });
         ctx.notify();
     }
 
-    /// The alias-derived defaults to re-apply when launching the raw CLI by
-    /// absolute path (which bypasses the shell alias). Mirrors the flags the
-    /// headless spawn passes (`SpawnOptions` → `driver::spawn_session`), so the
-    /// chat UI and the raw CLI agree on effort / model / permission mode on an
-    /// empty chat rather than the CLI silently falling back to its own config
-    /// defaults. Values are single-quoted so a model id never splits a token.
-    fn raw_cli_flags(&self) -> String {
-        let mut flags = Vec::new();
-        if let Some(effort) = &self.effort {
-            flags.push(format!("--effort '{effort}'"));
-        }
-        if let Some(model) = &self.model {
-            flags.push(format!("--model '{model}'"));
-        }
-        // Always set: the chat UI always spawns with an explicit
-        // `--permission-mode` (`driver::spawn_session`), so passing the view's
-        // current mode keeps the two modes in lockstep — e.g. an alias's
-        // `--dangerously-skip-permissions` (→ bypassPermissions) carries over.
-        flags.push(format!(
-            "--permission-mode {}",
-            self.permission_mode.as_cli_arg()
-        ));
-        flags.join(" ")
-    }
-
-    /// Resolve the `claude` executable to launch in raw mode. Prefers an
-    /// absolute path off the captured login-shell PATH (mirrors
-    /// [`Self::claude_available`]); falls back to the process PATH, then to the
-    /// bare command. An absolute path is required so the raw-CLI command isn't
-    /// intercepted by the `claude`-at-submit trigger (PRODUCT §43) — under a
-    /// GUI launch the process PATH is launchd-minimal and omits where `claude`
-    /// lives, so a bare fallback would be eaten by the trigger and never run.
-    fn resolve_claude_binary(&self) -> String {
+    /// Resolve the provider executable against the captured login-shell PATH.
+    /// An absolute path also prevents the terminal's bare-agent trigger from
+    /// intercepting the command and opening a second rich pane.
+    fn resolve_provider_binary(&self) -> String {
+        let binary = self.provider_binary();
         if let Some(path) = &self.interactive_path {
-            if let Some(resolved) =
-                resolve_executable_in_path(CLAUDE_BINARY, std::ffi::OsStr::new(path))
-            {
+            if let Some(resolved) = resolve_executable_in_path(binary, std::ffi::OsStr::new(path)) {
                 return resolved.display().to_string();
             }
         }
-        resolve_executable(CLAUDE_BINARY)
+        resolve_executable(binary)
             .map(|path| path.display().to_string())
-            .unwrap_or_else(|| CLAUDE_BINARY.to_owned())
+            .unwrap_or_else(|| binary.to_owned())
     }
 
     /// twarp 07 (7i, PRODUCT §39): embed the raw-CLI terminal the pane group
@@ -4136,20 +4180,39 @@ impl ClaudeCodeView {
         ctx.notify();
     }
 
-    /// twarp 07 (7i, PRODUCT §40/§42/§44): leave raw mode — drop the embedded
-    /// session (killing the CLI's PTY), re-read the conversation's on-disk
-    /// history so raw-mode turns appear in the transcript, and hand focus
-    /// back to the composer. The next message resumes the conversation live.
+    /// Leave raw mode, reload the provider-owned conversation, and hand focus
+    /// back to the composer. Claude reloads its JSONL directly; Codex resumes
+    /// app-server so its stable API replays the thread history.
     fn exit_raw_mode(&mut self, ctx: &mut ViewContext<Self>) {
         let Some(raw_cli) = self.raw_cli.take() else {
             return;
         };
         ctx.unsubscribe_to_view(&raw_cli.view);
         drop(raw_cli);
-        self.refresh_from_disk(ctx);
         self.resume_session_id = Some(self.session_id.clone());
+        match self.provider {
+            AgentProvider::Claude => self.refresh_from_disk(ctx),
+            AgentProvider::Codex => {
+                self.clear_transcript_for_reload();
+                self.begin_session(None, ctx);
+            }
+        }
         ctx.focus(&self.input_editor);
         ctx.notify();
+    }
+
+    fn clear_transcript_for_reload(&mut self) {
+        self.transcript.clear();
+        self.timeline_turn_mouse.borrow_mut().clear();
+        self.tool_card_ui.clear();
+        self.expanded_completed_turns.clear();
+        self.completed_turn_mouse.borrow_mut().clear();
+        self.artifact_file_mouse.borrow_mut().clear();
+        self.diff_cards.clear();
+        self.thinking_ui.clear();
+        self.pending_question_permission.clear();
+        self.question_answer_items.clear();
+        self.streaming = false;
     }
 
     /// twarp 07 (7i, PRODUCT §40): returning from raw-CLI mode — re-read the
@@ -4173,25 +4236,11 @@ impl ClaudeCodeView {
             // rather than blanking it (PRODUCT §29 defensive).
             return;
         }
-        self.transcript.clear();
-        self.timeline_turn_mouse.borrow_mut().clear();
-        self.tool_card_ui.clear();
-        self.expanded_completed_turns.clear();
-        self.completed_turn_mouse.borrow_mut().clear();
-        self.artifact_file_mouse.borrow_mut().clear();
-        self.diff_cards.clear();
-        self.thinking_ui.clear();
-        // The rebuilt transcript carries no live control requests, so drop any
-        // held question permission (its `claude` process is gone). Typed
-        // answers rebuild from the file as tool results, not user bubbles, so
-        // their live-echo indices are stale too.
-        self.pending_question_permission.clear();
-        self.question_answer_items.clear();
+        self.clear_transcript_for_reload();
         for event in history {
             self.ingest_event(event, ctx);
         }
         self.resume_session_id = Some(self.session_id.clone());
-        self.streaming = false;
         self.scroll_to_bottom();
         ctx.notify();
     }
@@ -6175,8 +6224,8 @@ impl ClaudeCodeView {
 
     /// The ⋯ button's sectioned session inspector. Repository state and git
     /// entry points live in Environment instead of consuming a row above the
-    /// composer; agent/script activity remains expandable inline. Claude's raw
-    /// CLI is a secondary action at the bottom and is never shown for Codex.
+    /// composer; agent/script activity remains expandable inline. The current
+    /// provider's raw CLI is a secondary action at the bottom.
     fn render_header_menu(&self, app: &AppContext) -> Option<Box<dyn Element>> {
         if !self.header_menu_expanded {
             return None;
@@ -6688,7 +6737,7 @@ impl ClaudeCodeView {
             column.add_child(separator());
             column.add_child(menu_row(
                 crate::ui_components::icons::Icon::Terminal,
-                "Open Claude CLI".to_owned(),
+                raw_cli_menu_label(self.provider).to_owned(),
                 Some(
                     ConstrainedBox::new(
                         Icon::new(
@@ -9614,9 +9663,9 @@ impl BackingView for ClaudeCodeView {
                     .map(|p| p.display().to_string())
             })
             .map(|cwd| format!(" — {cwd}"));
-        // PRODUCT §39 (7i): the Raw CLI toggle — embeds the real interactive
-        // `claude` (resuming this conversation) in place of the chat, and
-        // back. Entering is hidden while a turn streams (§42); in raw mode
+        // PRODUCT §39 (7i): the Raw CLI toggle — embeds the provider's real
+        // interactive CLI (resuming this conversation) in place of the chat,
+        // and back. Entering is hidden while a turn streams (§42); in raw mode
         // the button always shows, labeled as the way back. The header lives
         // in the parent PaneView's tree, so the click must dispatch the pane
         // framework's CustomAction (handled by the header view and routed
@@ -12141,18 +12190,33 @@ impl Element for RevealClip {
 #[cfg(test)]
 mod tests {
     use super::{
-        format_metrics_line, parse_markdown_cached, parse_questions, question_card_title,
-        queue_preview, should_hold_question_permission, split_markdown_segments, supports_raw_cli,
-        truncate_middle, MarkdownSegment,
+        build_raw_cli_flags, format_metrics_line, parse_markdown_cached, parse_questions,
+        question_card_title, queue_preview, raw_cli_menu_label, should_hold_question_permission,
+        split_markdown_segments, supports_raw_cli, truncate_middle, MarkdownSegment,
     };
-    use claude_code::driver::AgentProvider;
+    use claude_code::driver::{AgentProvider, PermissionMode};
     use claude_code::TurnMetrics;
     use serde_json::json;
 
     #[test]
-    fn raw_cli_entry_is_claude_only() {
+    fn raw_cli_entry_is_available_for_both_providers() {
         assert!(supports_raw_cli(AgentProvider::Claude));
-        assert!(!supports_raw_cli(AgentProvider::Codex));
+        assert!(supports_raw_cli(AgentProvider::Codex));
+        assert_eq!(raw_cli_menu_label(AgentProvider::Codex), "Open Codex CLI");
+    }
+
+    #[test]
+    fn codex_raw_cli_flags_use_native_reasoning_and_access_options() {
+        let flags = build_raw_cli_flags(
+            AgentProvider::Codex,
+            Some("gpt-5.4"),
+            Some("high"),
+            PermissionMode::AcceptEdits,
+        );
+        assert!(flags.contains("--model gpt-5.4"));
+        assert!(flags.contains("model_reasoning_effort=\"high\""));
+        assert!(flags.contains("--sandbox workspace-write"));
+        assert!(flags.contains("--ask-for-approval never"));
     }
 
     #[test]

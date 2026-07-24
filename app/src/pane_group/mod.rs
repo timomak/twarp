@@ -3996,12 +3996,12 @@ impl PaneGroup {
     }
 
     /// twarp 07 (7i, PRODUCT §39/§43): a real terminal session for the
-    /// Claude pane's **raw-CLI mode** — created with the group's own
+    /// agent pane's **raw-CLI mode** — created with the group's own
     /// resources (the same `create_session` every terminal pane uses) but
     /// handed to [`ClaudeCodeView`] to embed, not mounted in the pane tree.
     /// The session lives exactly as long as the view holds the returned
     /// manager handle; dropping it halts the event loop and kills the PTY.
-    pub(in crate::pane_group) fn create_raw_claude_terminal(
+    pub(in crate::pane_group) fn create_raw_agent_terminal(
         &self,
         cwd: Option<PathBuf>,
         ctx: &mut ViewContext<Self>,

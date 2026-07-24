@@ -11,6 +11,7 @@
 
 use std::path::PathBuf;
 
+use claude_code::driver::AgentProvider;
 use claude_code::launch::LaunchOptions;
 use twarpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle};
 
@@ -21,6 +22,39 @@ use super::{
     view::PaneView, DetachType, PaneConfiguration, PaneContent, PaneGroup, PaneId, ShareableLink,
     ShareableLinkError,
 };
+
+fn raw_cli_command(
+    provider: AgentProvider,
+    binary: &str,
+    flags: &str,
+    session_id: &str,
+    cwd: Option<&std::path::Path>,
+) -> String {
+    let persisted_claude_session = provider == AgentProvider::Claude
+        && cwd
+            .map(std::path::Path::to_path_buf)
+            .or_else(|| std::env::current_dir().ok())
+            .and_then(|cwd| claude_code::sessions::session_file(&cwd, session_id))
+            .is_some_and(|path| path.exists());
+    let binary = shell_words::quote(binary);
+    let session_id = shell_words::quote(session_id);
+    let flags = if flags.is_empty() {
+        String::new()
+    } else {
+        format!(" {flags}")
+    };
+    match provider {
+        AgentProvider::Claude => {
+            let session_arg = if persisted_claude_session {
+                format!("--resume {session_id}")
+            } else {
+                format!("--session-id {session_id}")
+            };
+            format!("exec {binary}{flags} {session_arg}")
+        }
+        AgentProvider::Codex => format!("exec {binary} resume{flags} {session_id}"),
+    }
+}
 
 pub struct ClaudeCodePane {
     view: ViewHandle<PaneView<ClaudeCodeView>>,
@@ -109,7 +143,7 @@ impl PaneContent for ClaudeCodePane {
         let claude_code_view = self.claude_code_view(ctx);
         let pane_id = self.id();
 
-        let claude_view_for_raw_cli = claude_code_view.clone();
+        let agent_view_for_raw_cli = claude_code_view.clone();
         ctx.subscribe_to_view(&claude_code_view, move |pane_group, _, event, ctx| {
             match event {
                 ClaudeCodeViewEvent::Pane(pane_event) => {
@@ -127,64 +161,22 @@ impl PaneContent for ClaudeCodePane {
                 // pane itself never changes, so the layout can't (PRODUCT
                 // §39: same tab position).
                 ClaudeCodeViewEvent::SwapToRawCli {
+                    provider,
                     session_id,
                     cwd,
-                    claude_binary,
+                    binary,
                     flags,
                 } => {
                     let (manager, terminal) =
-                        pane_group.create_raw_claude_terminal(cwd.clone(), ctx);
+                        pane_group.create_raw_agent_terminal(cwd.clone(), ctx);
+                    let command =
+                        raw_cli_command(*provider, binary, flags, session_id, cwd.as_deref());
                     terminal.update(ctx, |terminal, ctx| {
-                        // #6: no floating "← Claude Code" overlay — the header's
-                        // Chat UI / Raw CLI section toggle is the way back.
-                        // Launch by ABSOLUTE path: the `claude`-at-submit
-                        // trigger peels `exec` as an alias wrapper and would
-                        // intercept a bare `claude` here — opening a second
-                        // Claude pane instead of running the CLI (the 7i
-                        // "terminal + duplicate pane" bug). A path token is
-                        // never intercepted (PRODUCT §3), and a quoted full
-                        // path also sidesteps shell aliases entirely — so the
-                        // alias's *default flags* (effort / model / permission
-                        // mode) are re-applied explicitly via `flags`, kept in
-                        // lockstep with the chat UI's headless spawn (§43;
-                        // otherwise the CLI falls back to its own config
-                        // defaults, e.g. xhigh effort over the alias's medium).
-                        // `claude_binary` is
-                        // resolved by the view against the login-shell PATH —
-                        // the pane only sees the launchd-minimal process PATH
-                        // under a GUI launch, where a bare-`claude` fallback
-                        // would be eaten by the trigger and never start (the
-                        // release-only "Raw CLI shows an empty terminal" bug).
-                        // Session ids are UUIDs (shell-safe); `exec` makes the
-                        // PTY *be* the CLI, so the CLI exiting ends the session
-                        // — the §44 auto-return signal.
-                        let claude = claude_binary.clone();
-                        let flags = flags.clone();
-                        // `--resume <id>` only when the session is actually on
-                        // disk. A fresh pane (or one whose first turn hasn't
-                        // completed) has no `.jsonl` yet, so `--resume` would
-                        // fail instantly and the CLI's immediate exit bounces
-                        // straight back to the chat — the "View CLI breaks and
-                        // reverts to UI" report. In that case start a fresh
-                        // interactive session pinned to the pane's own id
-                        // (`--session-id`, a real flag) so returning still
-                        // re-reads the right history (§44).
-                        let persisted = cwd
-                            .clone()
-                            .or_else(|| std::env::current_dir().ok())
-                            .and_then(|cwd| claude_code::sessions::session_file(&cwd, session_id))
-                            .is_some_and(|path| path.exists());
-                        let session_arg = if persisted {
-                            format!("--resume {session_id}")
-                        } else {
-                            format!("--session-id {session_id}")
-                        };
-                        terminal.set_pending_command(
-                            &format!("exec '{claude}' {flags} {session_arg}"),
-                            ctx,
-                        );
+                        // `exec` makes CLI exit the terminal's exit signal; the
+                        // absolute provider path avoids the bare-agent trigger.
+                        terminal.set_pending_command(&command, ctx);
                     });
-                    claude_view_for_raw_cli.update(ctx, |view, ctx| {
+                    agent_view_for_raw_cli.update(ctx, |view, ctx| {
                         view.enter_raw_mode(manager, terminal, ctx);
                     });
                     // #14: make this pane the active one as raw mode opens. The
@@ -330,5 +322,26 @@ impl PaneContent for ClaudeCodePane {
 
     fn is_pane_being_dragged(&self, ctx: &AppContext) -> bool {
         self.view.as_ref(ctx).is_being_dragged()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::raw_cli_command;
+    use claude_code::driver::AgentProvider;
+
+    #[test]
+    fn codex_raw_cli_resumes_the_pane_thread() {
+        let command = raw_cli_command(
+            AgentProvider::Codex,
+            "/Applications/Codex CLI/codex",
+            "--model gpt-5.4 --sandbox workspace-write --ask-for-approval never",
+            "thread-123",
+            None,
+        );
+        assert_eq!(
+            command,
+            "exec '/Applications/Codex CLI/codex' resume --model gpt-5.4 --sandbox workspace-write --ask-for-approval never thread-123"
+        );
     }
 }
