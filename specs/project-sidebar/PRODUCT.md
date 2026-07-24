@@ -111,11 +111,11 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 30. Working-tree counts do not appear on project/chat rows or the far-right activity strip. For an agent tab, its three-dot Environment menu shows the changed-file count and available addition/deletion totals beside `Changes`.
 
-31. Hovering a live project parent reveals the single new-chat `+`. Chat children never render a `+`; they reveal only their more-actions control. An unopened library row remains a simple open target.
+31. Hovering a live project parent reveals both its three-dot project menu and the new-chat `+`. Chat children never render a `+`; each reveals its own three-dot more-actions control, which opens the same menu as right-clicking that chat. An unopened library row remains a simple open target.
 
 32. Double-clicking a chat title enters the existing tab rename flow. Rename commits and cancellation behave as they do today and persist across restore.
 
-33. A chat's context menu retains all applicable tab actions, including rename/reset name, close variants, color, metadata copy, save configuration, and sharing. Library rows do not expose tab-only actions.
+33. A chat's context menu retains all applicable chat/tab actions, including rename/reset name, close variants, metadata copy, save configuration, and sharing, but never exposes color assignment. Color assignment appears only in the parent project's menu and applies to every existing chat in that project; newly created chats inherit it. Library rows do not expose tab-only actions.
 
 ### Project navigation and manipulation
 

@@ -262,6 +262,54 @@ impl TabData {
         pane_name_target: Option<PaneNameMenuTarget>,
         ctx: &AppContext,
     ) -> Vec<MenuItem<WorkspaceAction>> {
+        self.menu_items_with_color_target(
+            index,
+            tabs_len,
+            pane_name_target,
+            Some(TabColorMenuTarget::Tab(index)),
+            ctx,
+        )
+    }
+
+    /// Returns the menu shown for a chat row in the Projects sidebar. Colors
+    /// belong to the parent project, so this intentionally omits the tab-color
+    /// section while retaining the chat's normal tab actions.
+    pub fn project_chat_menu_items(
+        &self,
+        index: usize,
+        tabs_len: usize,
+        ctx: &AppContext,
+    ) -> Vec<MenuItem<WorkspaceAction>> {
+        self.menu_items_with_color_target(index, tabs_len, None, None, ctx)
+    }
+
+    /// Returns the menu shown for a project parent. The representative tab
+    /// still supplies the existing tab actions, while color actions target
+    /// every chat currently grouped beneath the project.
+    pub fn project_menu_items(
+        &self,
+        index: usize,
+        tabs_len: usize,
+        project_tab_indices: Vec<usize>,
+        ctx: &AppContext,
+    ) -> Vec<MenuItem<WorkspaceAction>> {
+        self.menu_items_with_color_target(
+            index,
+            tabs_len,
+            None,
+            Some(TabColorMenuTarget::Project(project_tab_indices)),
+            ctx,
+        )
+    }
+
+    fn menu_items_with_color_target(
+        &self,
+        index: usize,
+        tabs_len: usize,
+        pane_name_target: Option<PaneNameMenuTarget>,
+        color_target: Option<TabColorMenuTarget>,
+        ctx: &AppContext,
+    ) -> Vec<MenuItem<WorkspaceAction>> {
         let appearance = Appearance::as_ref(ctx);
         let terminal_colors = appearance.theme().terminal_colors().normal;
         let mut menu_items = vec![];
@@ -272,12 +320,14 @@ impl TabData {
             self.modify_tab_menu_items(index, tabs_len, pane_name_target, ctx),
             self.close_tab_menu_items(index, tabs_len, ctx),
             Self::save_config_menu_items(index),
-            self.color_option_menu_items(index, terminal_colors, ctx),
+            color_target.map_or_else(Vec::new, |target| {
+                self.color_option_menu_items(target, terminal_colors, ctx)
+            }),
         ] {
-            if menu_items
-                .last()
-                .is_some_and(|item| !matches!(item, MenuItem::Separator))
-            {
+            if section_items.is_empty() {
+                continue;
+            }
+            if !menu_items.is_empty() {
                 menu_items.push(MenuItem::Separator);
             }
             menu_items.extend(section_items);
@@ -604,14 +654,14 @@ impl TabData {
 
     fn color_option_menu_items(
         &self,
-        index: usize,
+        target: TabColorMenuTarget,
         terminal_colors: AnsiColors,
         ctx: &AppContext,
     ) -> Vec<MenuItem<WorkspaceAction>> {
         if FeatureFlag::DirectoryTabColors.is_enabled() {
-            self.dot_color_option_menu_items(index, terminal_colors)
+            self.dot_color_option_menu_items(target, terminal_colors)
         } else {
-            self.legacy_color_option_menu_items(index, terminal_colors, ctx)
+            self.legacy_color_option_menu_items(target, terminal_colors, ctx)
         }
     }
 
@@ -619,7 +669,7 @@ impl TabData {
     /// Rendered as a single custom menu item with individually clickable dots.
     fn dot_color_option_menu_items(
         &self,
-        index: usize,
+        target: TabColorMenuTarget,
         terminal_colors: AnsiColors,
     ) -> Vec<MenuItem<WorkspaceAction>> {
         let effective_color = self.color();
@@ -654,6 +704,7 @@ impl TabData {
                             None => tab_color_reset_shortcut_tooltip(app),
                             Some(id) => tab_color_shortcut_tooltip(id, app),
                         };
+                        let action_target = target.clone();
 
                         let dot = render_color_dot(
                             mouse_state,
@@ -667,15 +718,9 @@ impl TabData {
                         )
                         .on_click(move |ctx, _, _| {
                             if let Some(color) = ansi_id {
-                                ctx.dispatch_typed_action(WorkspaceAction::ToggleTabColor {
-                                    color,
-                                    tab_index: index,
-                                });
+                                ctx.dispatch_typed_action(action_target.action(color));
                             } else if let Some(color) = effective_color {
-                                ctx.dispatch_typed_action(WorkspaceAction::ToggleTabColor {
-                                    color,
-                                    tab_index: index,
-                                });
+                                ctx.dispatch_typed_action(action_target.action(color));
                             }
                             ctx.dispatch_typed_action(MenuAction::Close(true));
                         });
@@ -695,7 +740,7 @@ impl TabData {
     /// Legacy icon-based color picker with toggle behavior.
     fn legacy_color_option_menu_items(
         &self,
-        index: usize,
+        target: TabColorMenuTarget,
         terminal_colors: AnsiColors,
         ctx: &AppContext,
     ) -> Vec<MenuItem<WorkspaceAction>> {
@@ -715,13 +760,31 @@ impl TabData {
                     )
                     .no_highlight_on_hover()
                     .with_tooltip(tab_color_shortcut_tooltip(*color_option, ctx))
-                    .with_on_select_action(WorkspaceAction::ToggleTabColor {
-                        color: *color_option,
-                        tab_index: index,
-                    })
+                    .with_on_select_action(target.action(*color_option))
                 })
                 .collect(),
         }]
+    }
+}
+
+#[derive(Clone)]
+enum TabColorMenuTarget {
+    Tab(usize),
+    Project(Vec<usize>),
+}
+
+impl TabColorMenuTarget {
+    fn action(&self, color: AnsiColorIdentifier) -> WorkspaceAction {
+        match self {
+            Self::Tab(tab_index) => WorkspaceAction::ToggleTabColor {
+                color,
+                tab_index: *tab_index,
+            },
+            Self::Project(tab_indices) => WorkspaceAction::ToggleProjectColor {
+                color,
+                tab_indices: tab_indices.clone(),
+            },
+        }
     }
 }
 
