@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 
 use super::{
     code_review_tool_is_open, merged_project_targets, project_disambiguation,
-    project_matches_search, project_tab_title, project_title, resolve_project_directory,
-    should_responsively_collapse_right_tool, toggle_right_tool_state, ProjectListTarget,
+    project_matches_search, project_root_for_new_tab, project_tab_title, project_title,
+    resolve_project_directory, should_responsively_collapse_right_tool, toggle_right_tool_state,
+    ProjectListTarget,
 };
 use crate::app_state::RightToolKind;
 use crate::workspace::view::ProjectDirectoryResolution;
@@ -134,6 +135,19 @@ fn code_review_open_state_follows_the_shared_tool_host() {
     assert!(!code_review_tool_is_open(RightToolKind::CodeReview, false));
     assert!(!code_review_tool_is_open(RightToolKind::Files, true));
     assert!(!code_review_tool_is_open(RightToolKind::Search, true));
+}
+
+#[test]
+fn new_tab_inherits_only_an_active_folder_project_in_the_project_shell() {
+    let root = PathBuf::from("/tmp/project");
+
+    assert_eq!(
+        project_root_for_new_tab(true, false, Some(&root)),
+        Some(root.clone())
+    );
+    assert_eq!(project_root_for_new_tab(false, false, Some(&root)), None);
+    assert_eq!(project_root_for_new_tab(true, true, Some(&root)), None);
+    assert_eq!(project_root_for_new_tab(true, false, None), None);
 }
 
 #[test]

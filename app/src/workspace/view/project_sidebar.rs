@@ -120,6 +120,18 @@ pub(super) fn code_review_tool_is_open(tool: RightToolKind, tool_host_open: bool
     tool_host_open && tool == RightToolKind::CodeReview
 }
 
+pub(super) fn project_root_for_new_tab(
+    project_shell_enabled: bool,
+    source_has_settings: bool,
+    source_project_root: Option<&Path>,
+) -> Option<PathBuf> {
+    if project_shell_enabled && !source_has_settings {
+        source_project_root.map(Path::to_path_buf)
+    } else {
+        None
+    }
+}
+
 fn project_title(
     custom_title: Option<&str>,
     project_root: Option<&Path>,
@@ -1070,14 +1082,9 @@ impl Workspace {
 
     pub(super) fn render_projects_reopen_button(&self, app: &AppContext) -> Box<dyn Element> {
         let theme = Appearance::as_ref(app).theme();
-        let icon = if self.projects_sidebar_open {
-            Icon::ChevronLeft
-        } else {
-            Icon::ChevronRight
-        };
         Hoverable::new(self.projects_toggle_mouse_state.clone(), move |state| {
             let mut button = Container::new(sidebar_icon(
-                icon,
+                Icon::Menu,
                 theme.main_text_color(theme.background()),
             ))
             .with_uniform_padding(spacing::XS)

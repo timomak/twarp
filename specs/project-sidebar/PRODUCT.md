@@ -153,6 +153,8 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 50. Invoking `New chat` creates and activates a fresh tab directly under the project, focuses its empty agent composer, and uses the project's directory as the initial working directory. It does not reuse, clear, replace, or split an existing tab.
 
+50a. Pressing Cmd+T while a folder-backed project chat is active keeps the normal new-tab content behavior, but assigns the new tab to that same project and preserves the project's selected/default color. It appears as a direct chat child rather than a duplicate top-level project. Cmd+T from Settings or outside the Projects shell retains its existing behavior.
+
 51. Before the first message is sent, the composer visibly identifies the inherited project directory. Sending the first message requires no additional directory selection or manual `cd` step.
 
 52. Commands, file references, and agent operations in a newly created chat resolve from the inherited project directory unless the user explicitly changes that chat's working context. Changing a chat's working context does not reassign or rename the project.
