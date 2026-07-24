@@ -49,15 +49,16 @@ flowchart LR
 
 ### 2026-07-24 implementation refinement (authoritative)
 
-This refinement supersedes any older detail later in this plan that describes one tab as one project, pane-level chat nesting, project-only search, or diff totals on the activity icon.
+This refinement supersedes any older detail later in this plan that describes one tab as one project, pane-level chat nesting, project-only search, embedded Files search, or diff totals on the activity icon.
 
 - `ProjectListTarget::LiveProject(Vec<usize>)` groups real tab indices by exact optional `TabData::project_root`; `Library(PathBuf)` represents a registered directory with no local tab. Settings pane groups are filtered before merging and therefore never become project/chat rows.
 - The hierarchy is exactly Project → Chat. A chat is an existing workspace tab. Its title, status, context menu, drag state, colors, persistence, and live pane tree continue through existing tab machinery. There is no expanded-chat set in the presentation and no pane enumeration for sidebar nesting.
 - `New chat` constructs a `ClaudeCodePane` with the resolved project cwd, wraps it in a new `PaneGroup`/`TabData`, inserts it after the project's last tab, assigns the target `project_root`, inherits project colors, activates it, refreshes working directories, and saves app state.
 - A pane-header drag accepts `ProjectSidebarPaneDropTargetData { project_root, tab_insert_index }`. Only a source tab with more than one visible pane may preview the promotion. Drop removes the hidden source pane, creates a new tab at the project insertion point, assigns the target root/colors, and leaves the source tab's remaining panes intact. Invalid/cancelled drops clear the hidden-move preview.
 - `Workspace.projects_sidebar_open`, `right_tool`, and `right_tool_open` remain the persisted canonical shell state. `PanelSlide`/`SlideClip` animate explicit left/right edge toggles from the current fraction. The Projects toggle is always a traffic-light-adjacent overlay. Switching right tools swaps content without an edge animation; Cmd+Shift+`+` toggles the remembered `right_tool`.
-- The Projects search icon dispatches the Cmd+P command palette action. Cmd+Shift+F continues to open the embedded Files search, whose body is clipped to its resizable section and suppresses the large pre-search empty state.
-- The right activity strip renders icon-only Files and Code Review controls. Agent `RepoContext` supplies changed-file/addition/deletion totals to the agent header's `Changes` row, including staged changes and untracked-file counts.
+- The Projects search icon dispatches the Cmd+P command palette action. Cmd+Shift+F activates a dedicated Search right tool backed by the active pane group's existing `GlobalSearchView`; Files contains no search overlay.
+- The right activity strip renders icon-only Files, Search, and Code Review controls. Agent `RepoContext` supplies changed-file/addition/deletion totals to the agent header's `Changes` row, including staged changes and untracked-file counts.
+- `RightToolKind::Search` persists as value `2`. Search reuses `LeftPanelView` and the Files utility width, but switches its active `ToolPanelView` to `GlobalSearch`; this avoids a second search model while keeping Files and Search as mutually exclusive shell destinations.
 
 ## Proposed changes
 
@@ -116,6 +117,7 @@ Keep the canonical state on `Workspace`, not in the active `PaneGroup`:
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RightTool {
     Files,
+    Search,
     CodeReview,
 }
 
@@ -295,7 +297,7 @@ The Projects and tool rails are edge-to-edge and use one hairline at each inner 
 
 When Projects is closed, render its compact reopen control in the traffic-light-adjacent overlay that the current shell already uses for left-panel recovery. Reopening restores the saved Projects width, list scroll, and focused row; the overlay must not reserve a full center toolbar row.
 
-Keep the current approximately 150ms self-rearming slide animation for explicit open/close. Switching Files ↔ Code Review swaps the child in the already-open rail without an edge slide. Reversing a transition starts from the current visible fraction. Clip and disable pointer hit-testing outside the visible fraction.
+Keep the current approximately 150ms self-rearming slide animation for explicit open/close. Switching Files ↔ Search ↔ Code Review swaps the child in the already-open rail without an edge slide. Reversing a transition starts from the current visible fraction. Clip and disable pointer hit-testing outside the visible fraction.
 
 Add a pure layout policy that receives window width, saved rail widths, activity-strip width, and minimum center width. When the layout would violate the center minimum, set `responsive_collapsed = true`; clear it when enough width returns. Do not modify `active_tool` or persisted widths during this temporary collapse.
 
@@ -304,19 +306,20 @@ Add a pure layout policy that receives window width, saved rail widths, activity
 Create `app/src/workspace/view/right_tool_host.rs` for `RightTool`, toggle/reducer helpers, activity-strip rendering, and layout policy. The state transition is deterministic:
 
 - click inactive tool → set it active and open;
-- click the other tool → switch directly, keep rail open;
+- click another tool → switch directly, keep rail open;
 - click active tool → set rail closed and remember it as preferred;
 - click active Code Review while maximized → exit maximize and close its content, leaving the activity strip available;
-- switch away from maximized Code Review → clear maximize before showing Files;
+- switch away from maximized Code Review → clear maximize before showing Files or Search;
 - responsive collapse → hide content only, preserving the active/preferred tool.
 
-The strip renders Files then Code Review in a stable order with shared icon-button styling, tooltips, accessible labels, keyboard focus, and an active indicator beyond color. Reuse the active project's existing diff-state calculation for the Code Review badge, but move its presentation out of top chrome and use semantic addition/deletion tokens.
+The strip renders Files, Search, then Code Review in a stable order with shared icon-button styling, tooltips, accessible labels, keyboard focus, and an active indicator beyond color. Diff totals render in the agent Environment menu, not on the strip.
 
-Move Files/search/Timeline content out of left-shell ownership. To limit flag-off risk, extract the current implementation into a semantically named `FilesToolView` while retaining a legacy left-panel adapter/type alias for the old shell. Under the project-sidebar flag it:
+Move Files/Search/Timeline content out of left-shell ownership. The implementation reuses `LeftPanelView` as the utility-rail content host while making Files and Search distinct `ToolPanelView` destinations. Under the project-sidebar flag it:
 
 - binds to `FilesToolWidth`;
 - renders a left seam and left resize handle because it is now on the right;
-- continues to use the same project-keyed file tree, global search, Timeline, and scroll state from `WorkingDirectoriesModel`;
+- renders only file tree and Timeline for Files;
+- renders the project-keyed `GlobalSearchView` for Search, sharing the Files utility-width handle but not its content surface;
 - keeps tree indentation/disclosures unchanged.
 
 Keep `RightPanelView` as the Code Review content implementation initially, binding it to `CodeReviewToolWidth` under the new shell. Hide its redundant close button only under `ProjectSidebar`; the activity icon becomes the close target. Preserve repository selection, staged/unstaged operations, commit/diff flows, loading/unsupported states, and project retargeting (`app/src/workspace/view/right_panel.rs:605-665`).
@@ -326,7 +329,7 @@ When the active project changes, `set_active_tab_index` retargets both tool view
 Route existing commands as follows under the feature flag:
 
 - `ToggleProjectExplorer` → toggle `RightTool::Files`;
-- global/project file search → activate Files, expand/focus its search section;
+- global/project file search → toggle or activate `RightTool::Search` and focus its query field;
 - Code Review toggle/events → toggle `RightTool::CodeReview`;
 - maximize Code Review → occupy the center-plus-tool content area while leaving Projects and the activity strip rendered;
 - Files selected while Code Review is maximized → exit maximize and open Files at its saved width.

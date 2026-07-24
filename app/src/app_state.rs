@@ -1067,6 +1067,7 @@ pub struct WindowSnapshot {
 pub enum RightToolKind {
     Files,
     CodeReview,
+    Search,
 }
 
 impl RightToolKind {
@@ -1074,6 +1075,7 @@ impl RightToolKind {
         match self {
             Self::Files => 0,
             Self::CodeReview => 1,
+            Self::Search => 2,
         }
     }
 
@@ -1081,6 +1083,7 @@ impl RightToolKind {
         match value {
             0 => Some(Self::Files),
             1 => Some(Self::CodeReview),
+            2 => Some(Self::Search),
             _ => None,
         }
     }

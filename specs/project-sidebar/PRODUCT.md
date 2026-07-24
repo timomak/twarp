@@ -2,7 +2,7 @@
 
 ## Summary
 
-Replace twarp's horizontal tab strip with a full-height Projects sidebar modeled on the restraint and navigation clarity of the Codex desktop app. Folder-backed projects form a persistent app-wide library visible in every window, while each open tab remains that window's live project instance. Projects can start and surface chats in their directory context, and Files and Code Review move into a mutually exclusive right-side tool rail so the center workspace gains vertical room and remains focused on the active pane.
+Replace twarp's horizontal tab strip with a full-height Projects sidebar modeled on the restraint and navigation clarity of the Codex desktop app. Folder-backed projects form a persistent app-wide library visible in every window, while each open tab remains that window's live project instance. Projects can start and surface chats in their directory context, and Files, Search, and Code Review move into a mutually exclusive right-side tool rail so the center workspace gains vertical room and remains focused on the active pane.
 
 ## Problem
 
@@ -18,7 +18,7 @@ The Codex desktop sidebar demonstrates a calmer hierarchy: primary work is selec
 - Keep folder-backed projects available across relaunches and in every new or existing window, even when no tab for that project is open locally.
 - Let users create a project from an existing directory and start a new chat directly in any project's directory context.
 - Remove the horizontal tab strip without replacing it with another full-width top bar.
-- Move Files and Code Review to a single right-side tool host with VS Code-style icon toggles.
+- Move Files, Search, and Code Review to a single right-side tool host with VS Code-style icon toggles.
 - Preserve tab identity and behavior: running processes, pane layouts, names, colors, order, restore, close, drag, and cross-window movement.
 - Preserve Files, project search, Timeline, Code Review, and their existing project-specific state.
 - Make the shell calm, compact, keyboard-accessible, and visually consistent in light and dark themes.
@@ -61,7 +61,7 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 8. The Projects sidebar can be toggled closed and reopened. Closing it gives its full width back to the center workspace and leaves a compact reopen control adjacent to the traffic-light area; reopening it restores its previous width, scroll position, and focused project row.
 
-9. The narrow right activity strip remains visible when neither Files nor Code Review is open, so both tools have a stable, discoverable entry point. It is hidden only when an existing distraction-free or zen mode hides application chrome.
+9. The narrow right activity strip remains visible when no right tool is open, so Files, Search, and Code Review have stable, discoverable entry points. It is hidden only when an existing distraction-free or zen mode hides application chrome.
 
 10. Opening both a left Projects sidebar and a right tool rail never overlays or clips the center workspace. At narrow widths, the center yields until its minimum usable width is reached; responsive behavior then temporarily collapses the right tool rail before allowing unusable center content. This temporary collapse does not overwrite the user's open-tool preference, and the rail returns when the window again has enough width.
 
@@ -171,23 +171,23 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 57. The Projects-header search icon opens the same command palette as Cmd+P. It is not a separate `Search projects` mode and does not replace the header with a project filter field.
 
-58. File search remains Cmd+Shift+F and opens inside Files. Its initial empty state fits within the resizable search section and never paints over the file tree.
+58. File search remains Cmd+Shift+F and opens the dedicated Search tool in the right rail. Search and Files never share or overlap the same content surface.
 
 59. Settings is a global destination. Opening Settings creates or focuses its normal settings tab but never adds a project parent or chat child to the Projects hierarchy.
 
 ### Right activity strip and tool host
 
-64. The far-right activity strip contains two primary icons in a stable order: Files and Code Review. Each icon has a tooltip, accessible label, focus state, and active state; icon shape is not the sole active-state signal.
+64. The far-right activity strip contains three primary icons in a stable order: Files, Search, and Code Review. Each icon has a tooltip, accessible label, focus state, and active state; icon shape is not the sole active-state signal.
 
 65. Clicking an inactive tool icon opens its content rail and makes it active. Clicking the other icon switches the existing rail directly to that tool without first closing the rail or animating it out and back in.
 
 66. Clicking the already-active tool icon closes the content rail but leaves the activity strip visible. Cmd+Shift+`+` performs the same toggle for the last selected tool; reopening restores that tool, width, and project-specific scroll/selection state.
 
-67. Files and Code Review are mutually exclusive in the right content rail. They never render side by side, and neither can remain in the left Projects sidebar.
+67. Files, Search, and Code Review are mutually exclusive in the right content rail. They never render side by side, and none can remain in the left Projects sidebar.
 
 68. Files and Code Review remember independent widths. Switching tools does not force the narrower Files preference onto Code Review or the wider Code Review preference onto Files.
 
-69. The right tool rail follows the active project. Switching projects leaves the selected tool and rail width unchanged while replacing its contents with the new active project's Files or Code Review state.
+69. The right tool rail follows the active project. Switching projects leaves the selected tool and rail width unchanged while replacing its contents with the new active project's Files, Search, or Code Review state.
 
 70. If a newly active project is still resolving its local or remote roots, the selected right tool remains open and shows its existing loading state. The shell does not close, switch tools, or show stale content from the previous project.
 
@@ -195,7 +195,7 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 72. The existing `Toggle Project Explorer` action opens or focuses Files in the right rail. Invoking it again while Files is active closes the rail.
 
-73. The existing global/project-search action opens Files in the right rail with its search section expanded and focused. Search results remain scoped to the active project.
+73. The existing global/project-search action opens or toggles the dedicated Search tool and focuses its query field. Search results remain scoped to the active project.
 
 74. The existing Code Review toggle opens or focuses Code Review in the right rail. Invoking it again while Code Review is active closes the rail.
 
@@ -205,11 +205,11 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 76. Files retains the active project's existing roots, expansion state, selection, hidden-file preference, file operations, drag/drop behavior, context menus, and open-in-editor flows.
 
-77. The Files rail header uses the label `FILES` and contains its contextual search affordance. It does not repeat the project name when that name is already selected in Projects.
+77. The Files rail header uses the label `FILES` and contains a contextual search affordance that switches to the dedicated Search tool. It does not repeat the project name when that name is already selected in Projects.
 
 78. Opening a file from Files opens or focuses it in the active project's center workspace. It never creates or activates a different project unless the user explicitly chooses an existing new-tab/new-project action.
 
-79. Project-wide search remains a collapsible or otherwise on-demand section within Files rather than a third permanent activity icon in this version. Closing search returns the full rail height to the file tree.
+79. Project-wide search is a dedicated Search destination and third permanent activity icon. Files always gives its full rail height to the file tree and Timeline.
 
 80. Timeline remains part of Files and is collapsed by default. Expanding it reduces only the Files tree's available height, remains independently resizable/scrollable, and does not affect the Projects list or center workspace height.
 
@@ -231,7 +231,7 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 ### Global chrome consolidation
 
-88. Search appears once in global shell chrome: the Projects-header icon opens Cmd+P command search. Files search appears only inside Files when invoked.
+88. Command search and file search have distinct homes: the Projects-header icon opens Cmd+P, while the right-rail Search icon and Cmd+Shift+F open project-wide file search.
 
 89. Settings appears once in global shell chrome: in the Projects footer. The removed horizontal strip leaves no duplicate gear or avatar control.
 
@@ -255,7 +255,7 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 98. Relaunching restores project order, active project, project identity, the app-wide folder library, left-rail visibility and width, active right tool, right-rail visibility, and each tool's width without briefly rendering the old horizontal strip.
 
-99. Runtime rail opening and closing use an approximately 150ms edge transition consistent with the current source rails. Switching Files ↔ Code Review is a direct content transition and does not animate the entire rail off-screen.
+99. Runtime rail opening and closing use an approximately 150ms edge transition consistent with the current source rails. Switching Files ↔ Search ↔ Code Review is a direct content transition and does not animate the entire rail off-screen.
 
 100. Rapidly reversing an open/close transition continues from the rail's current visible position without jumping, flashing stale content, or accepting pointer input outside the visible portion.
 

@@ -970,6 +970,7 @@ pub struct Workspace {
     projects_toggle_mouse_state: MouseStateHandle,
     projects_settings_mouse_state: MouseStateHandle,
     files_tool_mouse_state: MouseStateHandle,
+    search_tool_mouse_state: MouseStateHandle,
     code_review_tool_mouse_state: MouseStateHandle,
     tips_completed: ModelHandle<TipsCompleted>,
     user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
@@ -2875,6 +2876,7 @@ impl Workspace {
             projects_toggle_mouse_state: Default::default(),
             projects_settings_mouse_state: Default::default(),
             files_tool_mouse_state: Default::default(),
+            search_tool_mouse_state: Default::default(),
             code_review_tool_mouse_state: Default::default(),
             tips_completed,
             user_default_shell_unsupported_banner_model_handle,
@@ -4198,6 +4200,7 @@ impl Workspace {
             self.projects_sidebar_open,
             match self.right_tool {
                 RightToolKind::Files => "files",
+                RightToolKind::Search => "search",
                 RightToolKind::CodeReview => "code_review",
             },
             self.right_tool_open,
@@ -19324,6 +19327,11 @@ impl Workspace {
                         files.restore_active_view_from_snapshot(ToolPanelView::ProjectExplorer, ctx)
                     });
                 }
+                RightToolKind::Search => {
+                    self.left_panel_view.update(ctx, |search, ctx| {
+                        search.open_project_search(GlobalSearchEntryFocus::QueryEditor, ctx)
+                    });
+                }
                 RightToolKind::CodeReview => {
                     #[cfg(feature = "local_fs")]
                     self.setup_code_review_panel(None, ctx);
@@ -19349,15 +19357,14 @@ impl Workspace {
         });
     }
 
-    fn open_project_files_search(&mut self, ctx: &mut ViewContext<Self>) {
-        self.clear_project_code_review_maximized(ctx);
-        self.right_tool = RightToolKind::Files;
-        self.right_tool_open = true;
-        self.left_panel_view.update(ctx, |files, ctx| {
-            files.open_project_search(GlobalSearchEntryFocus::QueryEditor, ctx)
-        });
-        ctx.dispatch_global_action("workspace:save_app", ());
-        ctx.notify();
+    fn open_project_search(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.right_tool_open || self.right_tool != RightToolKind::Search {
+            self.toggle_right_tool(RightToolKind::Search, ctx);
+        } else {
+            self.left_panel_view.update(ctx, |search, ctx| {
+                search.open_project_search(GlobalSearchEntryFocus::QueryEditor, ctx)
+            });
+        }
     }
 
     // twarp: 2c-d — bulk stubs
@@ -19406,6 +19413,7 @@ impl TypedActionView for Workspace {
             WorkspaceAction::ToggleRightTool(tool) => {
                 let name = match tool {
                     RightToolKind::Files => "Toggle Files tool",
+                    RightToolKind::Search => "Toggle Search tool",
                     RightToolKind::CodeReview => "Toggle Code Review tool",
                 };
                 ActionAccessibilityContent::Custom(AccessibilityContent::new_without_help(
@@ -21047,7 +21055,7 @@ impl TypedActionView for Workspace {
             }
             ToggleGlobalSearch => {
                 if project_sidebar_enabled() {
-                    self.open_project_files_search(ctx);
+                    self.toggle_right_tool(RightToolKind::Search, ctx);
                     return;
                 }
                 if FeatureFlag::GlobalSearch.is_enabled()
@@ -21073,7 +21081,7 @@ impl TypedActionView for Workspace {
             }
             OpenGlobalSearch => {
                 if project_sidebar_enabled() {
-                    self.open_project_files_search(ctx);
+                    self.open_project_search(ctx);
                     return;
                 }
                 if FeatureFlag::GlobalSearch.is_enabled()
@@ -21452,6 +21460,7 @@ impl View for Workspace {
             if right_tool_visible {
                 let mut right_tool: Box<dyn Element> = match self.right_tool {
                     RightToolKind::Files => ChildView::new(&self.left_panel_view).finish(),
+                    RightToolKind::Search => ChildView::new(&self.left_panel_view).finish(),
                     RightToolKind::CodeReview => ChildView::new(&self.right_panel_view).finish(),
                 };
                 if self.right_panel_slide.is_some() {

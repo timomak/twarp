@@ -228,7 +228,7 @@ impl Workspace {
             0.
         };
         let tool_width = match self.right_tool {
-            RightToolKind::Files => modal_sizes
+            RightToolKind::Files | RightToolKind::Search => modal_sizes
                 .and_then(|sizes| sizes.files_tool_width.lock().ok().map(|state| state.size()))
                 .unwrap_or(DEFAULT_FILES_TOOL_WIDTH),
             RightToolKind::CodeReview => modal_sizes
@@ -982,6 +982,7 @@ impl Workspace {
         let active = self.right_tool_open && self.right_tool == tool;
         let tooltip_label = match tool {
             RightToolKind::Files => "Files",
+            RightToolKind::Search => "Search",
             RightToolKind::CodeReview => "Code Review",
         };
         let ui_builder = appearance.ui_builder().clone();
@@ -1042,6 +1043,12 @@ impl Workspace {
                         RightToolKind::Files,
                         Icon::Folder,
                         self.files_tool_mouse_state.clone(),
+                        app,
+                    ))
+                    .with_child(self.render_activity_button(
+                        RightToolKind::Search,
+                        Icon::Search,
+                        self.search_tool_mouse_state.clone(),
                         app,
                     ))
                     .with_child(self.render_activity_button(

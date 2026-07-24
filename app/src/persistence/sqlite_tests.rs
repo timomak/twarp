@@ -212,7 +212,7 @@ fn test_sqlite_round_trips_project_sidebar_state() {
     window.tabs[0].project_root_initialized = true;
     window.projects_sidebar_open = false;
     window.projects_sidebar_width = Some(264.);
-    window.right_tool = Some(RightToolKind::CodeReview);
+    window.right_tool = Some(RightToolKind::Search);
     window.right_tool_open = true;
     window.files_tool_width = Some(312.);
     window.code_review_tool_width = Some(488.);
@@ -231,7 +231,7 @@ fn test_sqlite_round_trips_project_sidebar_state() {
     let window = &restored.windows[0];
     assert!(!window.projects_sidebar_open);
     assert_eq!(window.projects_sidebar_width, Some(264.));
-    assert_eq!(window.right_tool, Some(RightToolKind::CodeReview));
+    assert_eq!(window.right_tool, Some(RightToolKind::Search));
     assert!(window.right_tool_open);
     assert_eq!(window.files_tool_width, Some(312.));
     assert_eq!(window.code_review_tool_width, Some(488.));

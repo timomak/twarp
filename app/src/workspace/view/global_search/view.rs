@@ -353,10 +353,6 @@ pub struct GlobalSearchView {
     replace_error: Option<String>,
     replace_summary: Option<ReplaceApplySummary>,
     search_results_stale: bool,
-    /// The Files sidebar already supplies the surrounding context and has
-    /// limited vertical space, so its embedded search omits the large
-    /// marketing-style pre-search empty state.
-    show_pre_search_zero_state: bool,
 }
 
 impl Entity for GlobalSearchView {
@@ -889,13 +885,7 @@ impl GlobalSearchView {
             replace_error: None,
             replace_summary: None,
             search_results_stale: false,
-            show_pre_search_zero_state: true,
         }
-    }
-
-    pub fn set_embedded_in_files_sidebar(&mut self, embedded: bool, ctx: &mut ViewContext<Self>) {
-        self.show_pre_search_zero_state = !embedded;
-        ctx.notify();
     }
 
     pub fn on_left_panel_focused(
@@ -2684,9 +2674,8 @@ impl View for GlobalSearchView {
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_child(header_section);
 
-        let should_render_pre_search_zero_state = self.show_pre_search_zero_state
-            && self.last_searched_pattern.is_none()
-            && self.query_editor.as_ref(app).is_empty(app);
+        let should_render_pre_search_zero_state =
+            self.last_searched_pattern.is_none() && self.query_editor.as_ref(app).is_empty(app);
 
         if let Some(preview) = &self.replace_preview {
             body = body.with_child(
