@@ -504,6 +504,7 @@ impl Workspace {
             .as_ref()
             .is_some_and(|target| target == &pane_drop_target);
         let pane_drag_active = self.project_pane_drag_active(app);
+        let menu_mouse_state = selected_tab.tooltip_mouse_state.clone();
         let color: ThemeFill = selected_tab
             .color()
             .map(|color| {
@@ -515,39 +516,76 @@ impl Workspace {
             twarpui::elements::MouseStateHandle::default(),
             move |state| {
                 let identity = sidebar_icon(Icon::CircleFilled, color);
-                let mut contents = Flex::row()
-                    .with_main_axis_size(MainAxisSize::Max)
+                let project_identity = Flex::row()
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_spacing(spacing::SM)
                     .with_child(identity)
                     .with_child(
-                        Shrinkable::new(
-                            1.,
-                            Text::new_inline(
-                                title.clone(),
-                                appearance.ui_font_family(),
-                                type_ramp::UI.size,
-                            )
-                            .with_line_height_ratio(type_ramp::UI.line_height)
-                            .with_clip(twarpui::text_layout::ClipConfig::end())
-                            .with_color(theme.main_text_color(theme.background()).into())
-                            .finish(),
+                        Text::new_inline(
+                            title.clone(),
+                            appearance.ui_font_family(),
+                            type_ramp::UI.size,
                         )
+                        .with_line_height_ratio(type_ramp::UI.line_height)
+                        .with_clip(twarpui::text_layout::ClipConfig::end())
+                        .with_color(theme.main_text_color(theme.background()).into())
                         .finish(),
-                    );
+                    )
+                    .finish();
+                let mut contents = Flex::row()
+                    .with_main_axis_size(MainAxisSize::Max)
+                    .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_child(Shrinkable::new(1., project_identity).finish());
                 if state.is_hovered() && !pane_drag_active {
+                    let menu = Hoverable::new(menu_mouse_state.clone(), move |button_state| {
+                        let color = if button_state.is_hovered() {
+                            theme.main_text_color(theme.background())
+                        } else {
+                            theme.sub_text_color(theme.background())
+                        };
+                        Container::new(sidebar_icon(Icon::DotsHorizontal, color))
+                            .with_padding_left(spacing::XS)
+                            .with_padding_right(spacing::XS)
+                            .finish()
+                    })
+                    .on_click(move |ctx, _, position| {
+                        ctx.dispatch_typed_action(WorkspaceAction::ToggleTabRightClickMenu {
+                            tab_index: selected_index,
+                            anchor: TabContextMenuAnchor::Pointer(position),
+                        })
+                    })
+                    .with_cursor(Cursor::PointingHand)
+                    .finish();
+                    let new_chat = Hoverable::new(
+                        twarpui::elements::MouseStateHandle::default(),
+                        move |button_state| {
+                            let color = if button_state.is_hovered() {
+                                theme.main_text_color(theme.background())
+                            } else {
+                                theme.sub_text_color(theme.background())
+                            };
+                            Container::new(sidebar_icon(Icon::Plus, color))
+                                .with_padding_left(spacing::XS)
+                                .with_padding_right(spacing::XS)
+                                .finish()
+                        },
+                    )
+                    .on_click(move |ctx, _, position| {
+                        ctx.dispatch_typed_action(WorkspaceAction::NewProjectChat {
+                            project_id,
+                            position,
+                        })
+                    })
+                    .with_cursor(Cursor::PointingHand)
+                    .finish();
                     contents.add_child(
-                        Hoverable::new(twarpui::elements::MouseStateHandle::default(), move |_| {
-                            sidebar_icon(Icon::Plus, theme.sub_text_color(theme.background()))
-                        })
-                        .on_click(move |ctx, _, position| {
-                            ctx.dispatch_typed_action(WorkspaceAction::NewProjectChat {
-                                project_id,
-                                position,
-                            })
-                        })
-                        .with_cursor(Cursor::PointingHand)
-                        .finish(),
+                        Flex::row()
+                            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                            .with_spacing(spacing::XXS)
+                            .with_child(menu)
+                            .with_child(new_chat)
+                            .finish(),
                     );
                 }
                 let mut container = Container::new(contents.finish())
@@ -599,9 +637,7 @@ impl Workspace {
         let active = index == self.active_tab_index();
         let is_renaming = self.current_workspace_state.tab_being_renamed() == Some(index);
         let attention = pane_group.claude_code_tab_status(app);
-        let pane_drag_active = self.project_pane_drag_active(app);
         let row_mouse_state = tab.tab_mouse_state.clone();
-        let menu_mouse_state = tab.tooltip_mouse_state.clone();
         let title_element: Box<dyn Element> = if is_renaming {
             ChildView::new(&self.tab_rename_editor).finish()
         } else {
@@ -629,25 +665,6 @@ impl Workspace {
             if let Some(status) = attention.as_ref() {
                 contents.add_child(status.render_icon(appearance).finish());
             }
-            if state.is_hovered() && !pane_drag_active {
-                contents.add_child(
-                    Hoverable::new(menu_mouse_state.clone(), move |_| {
-                        sidebar_icon(
-                            Icon::DotsHorizontal,
-                            theme.sub_text_color(theme.background()),
-                        )
-                    })
-                    .on_click(move |ctx, _, position| {
-                        ctx.dispatch_typed_action(WorkspaceAction::ToggleTabRightClickMenu {
-                            tab_index: index,
-                            anchor: TabContextMenuAnchor::Pointer(position),
-                        })
-                    })
-                    .with_cursor(Cursor::PointingHand)
-                    .finish(),
-                );
-            }
-
             let mut container = Container::new(contents.finish())
                 .with_padding_left(spacing::SM)
                 .with_padding_right(spacing::SM)
