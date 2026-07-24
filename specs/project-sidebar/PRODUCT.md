@@ -73,7 +73,9 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 13. When macOS traffic lights are visible, the sidebar reserves their hit area at the top. No project row, button, search field, status, or drag target overlaps that area.
 
-14. Below the traffic-light area, the sidebar begins with a compact Projects header. It contains the text label `PROJECTS`, a search affordance, and a create affordance. The sidebar toggle stays pinned beside the traffic lights in both open and closed states, so opening the sidebar never shifts the control.
+14. The traffic-light band contains a matched pair of quiet outline controls: the sidebar toggle and, while the sidebar is open, command search. They use the same icon size, color roles, hit area, hover treatment, and visual weight. Below that band, the sidebar begins with compact global session actions followed by a Projects header containing the text label `PROJECTS` and a create affordance. The sidebar toggle stays pinned beside the traffic lights in both open and closed states, so opening the sidebar never shifts the control.
+
+14a. The global actions are `New session` and `Search sessions…`. `New session` creates a fresh agent chat in the active folder-backed project and inherits its directory and color; outside a folder project it creates a normal unassigned agent session. `Search sessions…` opens the existing stored-agent-session search for the active directory. The actions use standard source-list rows, not bordered cards.
 
 15. The create affordance opens a compact menu with two project-level choices: `Start from scratch` and `Use an existing folder`. The detailed behavior of both choices is defined in the Project creation and chats section.
 
@@ -153,7 +155,7 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 50. Invoking `New chat` creates and activates a fresh tab directly under the project, focuses its empty agent composer, and uses the project's directory as the initial working directory. It does not reuse, clear, replace, or split an existing tab.
 
-50a. Pressing Cmd+T while a folder-backed project chat is active keeps the normal new-tab content behavior, but assigns the new tab to that same project and preserves the project's selected/default color. It appears as a direct chat child rather than a duplicate top-level project. Cmd+T from Settings or outside the Projects shell retains its existing behavior.
+50a. Pressing Cmd+T or invoking the new-agent-session action while a folder-backed project chat is active keeps the normal new-tab content behavior, but assigns the new tab to that same project and preserves the project's selected/default color. It appears as a direct chat child rather than a duplicate top-level project. These actions from Settings or outside the Projects shell retain their existing unassigned behavior.
 
 51. Before the first message is sent, the composer visibly identifies the inherited project directory. Sending the first message requires no additional directory selection or manual `cd` step.
 
@@ -171,7 +173,7 @@ This spec supersedes the 2026-07-16 direction that required a horizontal tab str
 
 ### Search and global destinations
 
-57. The Projects-header search icon opens the same command palette as Cmd+P. It is not a separate `Search projects` mode and does not replace the header with a project filter field.
+57. The search icon beside the sidebar toggle opens the same command palette as Cmd+P. It is not a separate `Search projects` mode and does not replace the Projects header with a project filter field.
 
 58. File search remains Cmd+Shift+F and opens the dedicated Search tool in the right rail. Search and Files never share or overlap the same content surface.
 
