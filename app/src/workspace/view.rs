@@ -12725,6 +12725,44 @@ impl Workspace {
         true
     }
 
+    fn inherited_project_for_new_tab(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<(PathBuf, SelectedTabColor, Option<AnsiColorIdentifier>)> {
+        self.tabs.get(self.active_tab_index).and_then(|tab| {
+            let source_has_settings = tab.pane_group.as_ref(ctx).has_settings_panes();
+            project_sidebar::project_root_for_new_tab(
+                project_sidebar_enabled(),
+                source_has_settings,
+                tab.project_root.as_deref(),
+            )
+            .map(|project_root| {
+                (
+                    project_root,
+                    tab.selected_color,
+                    tab.default_directory_color,
+                )
+            })
+        })
+    }
+
+    fn apply_inherited_project_to_active_tab(
+        &mut self,
+        inherited_project: Option<(PathBuf, SelectedTabColor, Option<AnsiColorIdentifier>)>,
+    ) {
+        let Some((project_root, selected_color, default_directory_color)) = inherited_project
+        else {
+            return;
+        };
+        let Some(tab) = self.tabs.get_mut(self.active_tab_index) else {
+            return;
+        };
+        tab.project_root = Some(project_root);
+        tab.project_root_initialized = true;
+        tab.selected_color = selected_color;
+        tab.default_directory_color = default_directory_color;
+    }
+
     /// twarp 07 (7b): open a Claude Code pane in the active tab's pane group and
     /// focus it — the destination of the `claude` terminal trigger (PRODUCT §1,
     /// §5). `args` are the tokens after `claude`: recognized flags (incl. the
@@ -12743,6 +12781,8 @@ impl Workspace {
     /// pane's working directory (same rule as a new terminal tab), so Claude
     /// starts in the same repo (PRODUCT §4).
     pub(crate) fn open_claude_code_tab(&mut self, ctx: &mut ViewContext<Self>) {
+        let source_pane_group_id = self.active_tab_pane_group().id();
+        let inherited_project = self.inherited_project_for_new_tab(ctx);
         let cwd = self.get_new_tab_startup_directory(
             NewSessionSource::Tab,
             Some(ctx.window_id()),
@@ -12765,6 +12805,9 @@ impl Workspace {
         // freshly-spawned terminal for a Claude pane in place — reusing the
         // exact replace path the `claude` command uses.
         self.add_terminal_tab(true /* hide_homepage */, ctx);
+        if self.active_tab_pane_group().id() != source_pane_group_id {
+            self.apply_inherited_project_to_active_tab(inherited_project);
+        }
         self.open_claude_code_pane(provider, Vec::new(), cwd, ctx);
     }
 
@@ -17079,6 +17122,20 @@ impl Workspace {
                 ChildAnchor::TopLeft,
             ),
         );
+        if self.projects_sidebar_open {
+            stack.add_positioned_overlay_child(
+                ConstrainedBox::new(self.render_projects_search_button(app))
+                    .with_width(button_size)
+                    .with_height(button_size)
+                    .finish(),
+                OffsetPositioning::offset_from_parent(
+                    vec2f(x + button_size, y),
+                    ParentOffsetBounds::WindowByPosition,
+                    ParentAnchor::TopLeft,
+                    ChildAnchor::TopLeft,
+                ),
+            );
+        }
     }
 
     /// Renders the tab bar contents, wrapped in hover and drag-drop behaviors.
@@ -19593,21 +19650,7 @@ impl TypedActionView for Workspace {
             }
             AddDefaultTab => {
                 let source_pane_group_id = self.active_tab_pane_group().id();
-                let inherited_project = self.tabs.get(self.active_tab_index).and_then(|tab| {
-                    let source_has_settings = tab.pane_group.as_ref(ctx).has_settings_panes();
-                    project_sidebar::project_root_for_new_tab(
-                        project_sidebar_enabled(),
-                        source_has_settings,
-                        tab.project_root.as_deref(),
-                    )
-                    .map(|project_root| {
-                        (
-                            project_root,
-                            tab.selected_color,
-                            tab.default_directory_color,
-                        )
-                    })
-                });
+                let inherited_project = self.inherited_project_for_new_tab(ctx);
                 let effective_mode = AISettings::as_ref(ctx).default_session_mode(ctx);
                 match effective_mode {
                     DefaultSessionMode::TabConfig => {
@@ -19644,16 +19687,7 @@ impl TypedActionView for Workspace {
                     }
                 }
                 if self.active_tab_pane_group().id() != source_pane_group_id {
-                    if let Some((project_root, selected_color, default_directory_color)) =
-                        inherited_project
-                    {
-                        if let Some(tab) = self.tabs.get_mut(self.active_tab_index) {
-                            tab.project_root = Some(project_root);
-                            tab.project_root_initialized = true;
-                            tab.selected_color = selected_color;
-                            tab.default_directory_color = default_directory_color;
-                        }
-                    }
+                    self.apply_inherited_project_to_active_tab(inherited_project);
                 }
             }
             OpenBrowserPane => self.open_browser_pane(None, ctx),

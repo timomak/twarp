@@ -169,6 +169,13 @@ fn sidebar_icon(icon: Icon, color: ThemeFill) -> Box<dyn Element> {
         .finish()
 }
 
+fn sidebar_chrome_icon(icon: Icon, color: ThemeFill) -> Box<dyn Element> {
+    ConstrainedBox::new(icon.to_warpui_icon(color).finish())
+        .with_width(spacing::LG)
+        .with_height(spacing::LG)
+        .finish()
+}
+
 fn project_matches_search(query: &str, fields: impl IntoIterator<Item = String>) -> bool {
     let query = query.trim().to_lowercase();
     query.is_empty()
@@ -397,16 +404,14 @@ impl Workspace {
         .with_style(Properties::default().weight(Weight::Semibold))
         .finish();
 
-        let button = |icon: Icon,
-                      mouse_state: twarpui::elements::MouseStateHandle,
-                      action: WorkspaceAction| {
+        let create_button = |mouse_state: twarpui::elements::MouseStateHandle| {
             Hoverable::new(mouse_state, move |state| {
                 let color = if state.is_hovered() {
                     theme.main_text_color(theme.background())
                 } else {
                     theme.sub_text_color(theme.background())
                 };
-                let mut container = Container::new(sidebar_icon(icon, color))
+                let mut container = Container::new(sidebar_icon(Icon::Plus, color))
                     .with_uniform_padding(spacing::XS)
                     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)));
                 if state.is_hovered() {
@@ -414,34 +419,12 @@ impl Workspace {
                 }
                 container.finish()
             })
-            .on_click(move |ctx, _, position| match action {
-                WorkspaceAction::ToggleProjectCreateMenu { .. } => {
-                    ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectCreateMenu { position })
-                }
-                _ => ctx.dispatch_typed_action(action.clone()),
+            .on_click(|ctx, _, position| {
+                ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectCreateMenu { position })
             })
             .with_cursor(Cursor::PointingHand)
             .finish()
         };
-
-        let actions = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(button(
-                Icon::Search,
-                self.projects_search_mouse_state.clone(),
-                WorkspaceAction::TogglePalette {
-                    mode: PaletteMode::Command,
-                    source: PaletteSource::TitleBarSearchBar,
-                },
-            ))
-            .with_child(button(
-                Icon::Plus,
-                self.projects_create_mouse_state.clone(),
-                WorkspaceAction::ToggleProjectCreateMenu {
-                    position: Default::default(),
-                },
-            ))
-            .finish();
 
         Container::new(
             Flex::row()
@@ -449,13 +432,80 @@ impl Workspace {
                 .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_child(label)
-                .with_child(actions)
+                .with_child(create_button(self.projects_create_mouse_state.clone()))
                 .finish(),
         )
         .with_padding_left(spacing::MD)
         .with_padding_right(spacing::SM)
         .with_padding_top(spacing::SM)
         .with_padding_bottom(spacing::XS)
+        .finish()
+    }
+
+    fn render_sidebar_action(
+        &self,
+        icon: Icon,
+        label: &'static str,
+        action: WorkspaceAction,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        Hoverable::new(
+            twarpui::elements::MouseStateHandle::default(),
+            move |state| {
+                let contents = Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(spacing::SM)
+                    .with_child(sidebar_icon(icon, theme.sub_text_color(theme.background())))
+                    .with_child(
+                        Text::new_inline(label, appearance.ui_font_family(), type_ramp::UI.size)
+                            .with_line_height_ratio(type_ramp::UI.line_height)
+                            .with_color(theme.main_text_color(theme.background()).into())
+                            .finish(),
+                    )
+                    .finish();
+                let mut row = Container::new(contents)
+                    .with_uniform_padding(spacing::SM)
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
+                if state.is_hovered() {
+                    row = row.with_background(theme.surface_overlay_2());
+                }
+                row.finish()
+            },
+        )
+        .on_click(move |ctx, _, _| ctx.dispatch_typed_action(action.clone()))
+        .with_cursor(Cursor::PointingHand)
+        .finish()
+    }
+
+    fn render_sidebar_actions(&self, app: &AppContext) -> Box<dyn Element> {
+        Container::new(
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_spacing(spacing::XXS)
+                .with_child(self.render_sidebar_action(
+                    Icon::NewConversation,
+                    "New session",
+                    WorkspaceAction::OpenClaudeCodeInNewTab,
+                    app,
+                ))
+                .with_child(self.render_sidebar_action(
+                    Icon::Search,
+                    "Search sessions…",
+                    WorkspaceAction::OpenPalette {
+                        mode: PaletteMode::Command,
+                        source: PaletteSource::TitleBarSearchBar,
+                        query: Some("claude: ".to_owned()),
+                    },
+                    app,
+                ))
+                .finish(),
+        )
+        .with_padding_left(spacing::SM)
+        .with_padding_right(spacing::SM)
+        .with_padding_top(spacing::SM)
+        .with_padding_bottom(spacing::MD)
         .finish()
     }
 
@@ -966,6 +1016,7 @@ impl Workspace {
                     .finish(),
             );
         }
+        column.add_child(self.render_sidebar_actions(app));
         column.add_child(self.render_project_header(app));
         column.add_child(Shrinkable::new(1., scrollable).finish());
         column.add_child(
@@ -1098,20 +1149,49 @@ impl Workspace {
     }
 
     pub(super) fn render_projects_reopen_button(&self, app: &AppContext) -> Box<dyn Element> {
+        self.render_projects_top_button(
+            Icon::LayoutAlt01,
+            self.projects_toggle_mouse_state.clone(),
+            WorkspaceAction::ToggleProjectsSidebar,
+            app,
+        )
+    }
+
+    pub(super) fn render_projects_search_button(&self, app: &AppContext) -> Box<dyn Element> {
+        self.render_projects_top_button(
+            Icon::Search,
+            self.projects_search_mouse_state.clone(),
+            WorkspaceAction::TogglePalette {
+                mode: PaletteMode::Command,
+                source: PaletteSource::TitleBarSearchBar,
+            },
+            app,
+        )
+    }
+
+    fn render_projects_top_button(
+        &self,
+        icon: Icon,
+        mouse_state: twarpui::elements::MouseStateHandle,
+        action: WorkspaceAction,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
         let theme = Appearance::as_ref(app).theme();
-        Hoverable::new(self.projects_toggle_mouse_state.clone(), move |state| {
-            let mut button = Container::new(sidebar_icon(
-                Icon::Menu,
-                theme.main_text_color(theme.background()),
-            ))
-            .with_uniform_padding(spacing::XS)
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)));
+        Hoverable::new(mouse_state, move |state| {
+            let color = if state.is_hovered() {
+                theme.main_text_color(theme.background())
+            } else {
+                theme.sub_text_color(theme.background())
+            };
+            let mut button = Container::new(sidebar_chrome_icon(icon, color))
+                .with_uniform_padding(spacing::SM)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)));
             if state.is_hovered() {
                 button = button.with_background(theme.surface_overlay_2());
             }
             button.finish()
         })
-        .on_click(|ctx, _, _| ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectsSidebar))
+        .on_click(move |ctx, _, _| ctx.dispatch_typed_action(action.clone()))
         .with_cursor(Cursor::PointingHand)
         .finish()
     }
