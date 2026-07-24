@@ -19592,6 +19592,22 @@ impl TypedActionView for Workspace {
                 self.close_tabs_direction(self.active_tab_index, TabMovement::Right, false, ctx)
             }
             AddDefaultTab => {
+                let source_pane_group_id = self.active_tab_pane_group().id();
+                let inherited_project = self.tabs.get(self.active_tab_index).and_then(|tab| {
+                    let source_has_settings = tab.pane_group.as_ref(ctx).has_settings_panes();
+                    project_sidebar::project_root_for_new_tab(
+                        project_sidebar_enabled(),
+                        source_has_settings,
+                        tab.project_root.as_deref(),
+                    )
+                    .map(|project_root| {
+                        (
+                            project_root,
+                            tab.selected_color,
+                            tab.default_directory_color,
+                        )
+                    })
+                });
                 let effective_mode = AISettings::as_ref(ctx).default_session_mode(ctx);
                 match effective_mode {
                     DefaultSessionMode::TabConfig => {
@@ -19624,6 +19640,18 @@ impl TypedActionView for Workspace {
                             self.add_welcome_tab(ctx);
                         } else {
                             self.add_terminal_tab(false, ctx);
+                        }
+                    }
+                }
+                if self.active_tab_pane_group().id() != source_pane_group_id {
+                    if let Some((project_root, selected_color, default_directory_color)) =
+                        inherited_project
+                    {
+                        if let Some(tab) = self.tabs.get_mut(self.active_tab_index) {
+                            tab.project_root = Some(project_root);
+                            tab.project_root_initialized = true;
+                            tab.selected_color = selected_color;
+                            tab.default_directory_color = default_directory_color;
                         }
                     }
                 }
