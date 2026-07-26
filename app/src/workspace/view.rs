@@ -21,6 +21,7 @@ mod vertical_tabs;
 #[cfg(target_family = "wasm")]
 mod wasm_view;
 
+use self::project_sidebar::ProjectSidebarMouseStates;
 use self::vertical_tabs::telemetry::{VerticalTabsDisplayOption, VerticalTabsTelemetryEvent};
 use self::vertical_tabs::{
     render_detail_sidecar, render_settings_popup, VerticalTabsPanelState,
@@ -969,6 +970,7 @@ pub struct Workspace {
     projects_create_mouse_state: MouseStateHandle,
     projects_toggle_mouse_state: MouseStateHandle,
     projects_settings_mouse_state: MouseStateHandle,
+    projects_sidebar_mouse_states: ProjectSidebarMouseStates,
     files_tool_mouse_state: MouseStateHandle,
     search_tool_mouse_state: MouseStateHandle,
     code_review_tool_mouse_state: MouseStateHandle,
@@ -2875,6 +2877,7 @@ impl Workspace {
             projects_create_mouse_state: Default::default(),
             projects_toggle_mouse_state: Default::default(),
             projects_settings_mouse_state: Default::default(),
+            projects_sidebar_mouse_states: Default::default(),
             files_tool_mouse_state: Default::default(),
             search_tool_mouse_state: Default::default(),
             code_review_tool_mouse_state: Default::default(),

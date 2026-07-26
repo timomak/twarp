@@ -11,6 +11,10 @@ use crate::Builder;
 use super::new_builder;
 
 const PROJECTS_SIDEBAR_POSITION_ID: &str = "workspace_view:projects_sidebar";
+const FIRST_PROJECT_ROW_POSITION_ID: &str = "workspace_view:projects_sidebar:project_row:0";
+const FIRST_PROJECT_MENU_POSITION_ID: &str = "workspace_view:projects_sidebar:project_menu:0";
+const FIRST_PROJECT_NEW_CHAT_POSITION_ID: &str =
+    "workspace_view:projects_sidebar:project_new_chat:0";
 const TAB_BAR_POSITION_ID: &str = "workspace_view:tab_bar";
 
 pub fn test_project_sidebar_shell_smoke() -> Builder {
@@ -43,6 +47,32 @@ pub fn test_project_sidebar_shell_smoke() -> Builder {
                                         )
                                         .is_none(),
                                 "expected Projects to replace the horizontal tab strip"
+                            )
+                        })
+                    },
+                ),
+        )
+        .with_step(
+            new_step_with_default_assertions("Hovering a project reveals its actions")
+                .with_hover_over_saved_position(FIRST_PROJECT_ROW_POSITION_ID)
+                .add_named_assertion(
+                    "Project menu and new-chat actions are visible",
+                    |app, window_id| {
+                        let workspace = workspace_view(app, window_id);
+                        workspace.read(app, |_, ctx| {
+                            async_assert!(
+                                ctx.element_position_by_id_at_last_frame(
+                                    window_id,
+                                    FIRST_PROJECT_MENU_POSITION_ID,
+                                )
+                                .is_some()
+                                    && ctx
+                                        .element_position_by_id_at_last_frame(
+                                            window_id,
+                                            FIRST_PROJECT_NEW_CHAT_POSITION_ID,
+                                        )
+                                        .is_some(),
+                                "expected project hover to reveal both trailing actions"
                             )
                         })
                     },
