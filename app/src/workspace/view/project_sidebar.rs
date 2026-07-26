@@ -1,5 +1,6 @@
 use std::{
-    collections::HashSet,
+    cell::RefCell,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -41,10 +42,57 @@ use crate::FeatureFlag;
 use super::{ProjectDirectoryResolution, Workspace, TOTAL_TAB_BAR_HEIGHT};
 
 pub(super) const PROJECTS_SIDEBAR_POSITION_ID: &str = "workspace_view:projects_sidebar";
+const PROJECT_ROW_POSITION_ID_PREFIX: &str = "workspace_view:projects_sidebar:project_row";
+const PROJECT_MENU_POSITION_ID_PREFIX: &str = "workspace_view:projects_sidebar:project_menu";
+const PROJECT_NEW_CHAT_POSITION_ID_PREFIX: &str =
+    "workspace_view:projects_sidebar:project_new_chat";
 const RIGHT_ACTIVITY_STRIP_WIDTH: f32 = spacing::XXL + spacing::SM;
 const MINIMUM_CENTER_WORKSPACE_WIDTH: f32 = 480.;
 const MINIMUM_PROJECTS_SIDEBAR_WIDTH: f32 = 144.;
 const MAXIMUM_PROJECTS_SIDEBAR_WIDTH_RATIO: f32 = 0.4;
+
+#[derive(Clone, Default)]
+struct ProjectRowMouseStates {
+    row: twarpui::elements::MouseStateHandle,
+    menu: twarpui::elements::MouseStateHandle,
+    new_chat: twarpui::elements::MouseStateHandle,
+}
+
+#[derive(Default)]
+pub(super) struct ProjectSidebarMouseStates {
+    project_rows: RefCell<HashMap<Option<PathBuf>, ProjectRowMouseStates>>,
+    new_session: twarpui::elements::MouseStateHandle,
+    search_sessions: twarpui::elements::MouseStateHandle,
+    empty_new_project: twarpui::elements::MouseStateHandle,
+}
+
+impl ProjectSidebarMouseStates {
+    fn project_row(&self, project_root: Option<PathBuf>) -> ProjectRowMouseStates {
+        self.project_rows
+            .borrow_mut()
+            .entry(project_root)
+            .or_default()
+            .clone()
+    }
+
+    fn retain_project_rows(&self, project_roots: &HashSet<Option<PathBuf>>) {
+        self.project_rows
+            .borrow_mut()
+            .retain(|project_root, _| project_roots.contains(project_root));
+    }
+}
+
+fn project_row_position_id(first_tab_index: usize) -> String {
+    format!("{PROJECT_ROW_POSITION_ID_PREFIX}:{first_tab_index}")
+}
+
+fn project_menu_position_id(first_tab_index: usize) -> String {
+    format!("{PROJECT_MENU_POSITION_ID_PREFIX}:{first_tab_index}")
+}
+
+fn project_new_chat_position_id(first_tab_index: usize) -> String {
+    format!("{PROJECT_NEW_CHAT_POSITION_ID_PREFIX}:{first_tab_index}")
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ProjectListTarget {
@@ -444,6 +492,7 @@ impl Workspace {
 
     fn render_sidebar_action(
         &self,
+        mouse_state: twarpui::elements::MouseStateHandle,
         icon: Icon,
         label: &'static str,
         action: WorkspaceAction,
@@ -451,29 +500,26 @@ impl Workspace {
     ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        Hoverable::new(
-            twarpui::elements::MouseStateHandle::default(),
-            move |state| {
-                let contents = Flex::row()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_spacing(spacing::SM)
-                    .with_child(sidebar_icon(icon, theme.sub_text_color(theme.background())))
-                    .with_child(
-                        Text::new_inline(label, appearance.ui_font_family(), type_ramp::UI.size)
-                            .with_line_height_ratio(type_ramp::UI.line_height)
-                            .with_color(theme.main_text_color(theme.background()).into())
-                            .finish(),
-                    )
-                    .finish();
-                let mut row = Container::new(contents)
-                    .with_uniform_padding(spacing::SM)
-                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
-                if state.is_hovered() {
-                    row = row.with_background(theme.surface_overlay_2());
-                }
-                row.finish()
-            },
-        )
+        Hoverable::new(mouse_state, move |state| {
+            let contents = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(spacing::SM)
+                .with_child(sidebar_icon(icon, theme.sub_text_color(theme.background())))
+                .with_child(
+                    Text::new_inline(label, appearance.ui_font_family(), type_ramp::UI.size)
+                        .with_line_height_ratio(type_ramp::UI.line_height)
+                        .with_color(theme.main_text_color(theme.background()).into())
+                        .finish(),
+                )
+                .finish();
+            let mut row = Container::new(contents)
+                .with_uniform_padding(spacing::SM)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
+            if state.is_hovered() {
+                row = row.with_background(theme.surface_overlay_2());
+            }
+            row.finish()
+        })
         .on_click(move |ctx, _, _| ctx.dispatch_typed_action(action.clone()))
         .with_cursor(Cursor::PointingHand)
         .finish()
@@ -485,12 +531,14 @@ impl Workspace {
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_spacing(spacing::XXS)
                 .with_child(self.render_sidebar_action(
+                    self.projects_sidebar_mouse_states.new_session.clone(),
                     Icon::NewConversation,
                     "New session",
                     WorkspaceAction::OpenClaudeCodeInNewTab,
                     app,
                 ))
                 .with_child(self.render_sidebar_action(
+                    self.projects_sidebar_mouse_states.search_sessions.clone(),
                     Icon::Search,
                     "Search sessions…",
                     WorkspaceAction::OpenPalette {
@@ -554,8 +602,17 @@ impl Workspace {
             .as_ref()
             .is_some_and(|target| target == &pane_drop_target);
         let pane_drag_active = self.project_pane_drag_active(app);
-        let menu_mouse_state = selected_tab.tooltip_mouse_state.clone();
+        let ProjectRowMouseStates {
+            row: row_mouse_state,
+            menu: menu_mouse_state,
+            new_chat: new_chat_mouse_state,
+        } = self
+            .projects_sidebar_mouse_states
+            .project_row(selected_tab.project_root.clone());
         let project_tab_indices = tab_indices.to_vec();
+        let row_position_id = project_row_position_id(first_index);
+        let menu_position_id = project_menu_position_id(first_index);
+        let new_chat_position_id = project_new_chat_position_id(first_index);
         let color: ThemeFill = selected_tab
             .color()
             .map(|color| {
@@ -563,108 +620,108 @@ impl Workspace {
             })
             .unwrap_or_else(|| theme.hint_text_color(theme.background()));
 
-        let project_row = Hoverable::new(
-            twarpui::elements::MouseStateHandle::default(),
-            move |state| {
-                let identity = sidebar_icon(Icon::CircleFilled, color);
-                let project_identity = Flex::row()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_spacing(spacing::SM)
-                    .with_child(identity)
-                    .with_child(
-                        Text::new_inline(
-                            title.clone(),
-                            appearance.ui_font_family(),
-                            type_ramp::UI.size,
-                        )
-                        .with_line_height_ratio(type_ramp::UI.line_height)
-                        .with_clip(twarpui::text_layout::ClipConfig::end())
-                        .with_color(theme.main_text_color(theme.background()).into())
+        let project_row = Hoverable::new(row_mouse_state, move |state| {
+            let identity = sidebar_icon(Icon::CircleFilled, color);
+            let project_identity = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(spacing::SM)
+                .with_child(identity)
+                .with_child(
+                    Text::new_inline(
+                        title.clone(),
+                        appearance.ui_font_family(),
+                        type_ramp::UI.size,
+                    )
+                    .with_line_height_ratio(type_ramp::UI.line_height)
+                    .with_clip(twarpui::text_layout::ClipConfig::end())
+                    .with_color(theme.main_text_color(theme.background()).into())
+                    .finish(),
+                )
+                .finish();
+            let mut contents = Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(Shrinkable::new(1., project_identity).finish());
+            if state.is_hovered() && !pane_drag_active {
+                let menu = Hoverable::new(menu_mouse_state.clone(), move |button_state| {
+                    let color = if button_state.is_hovered() {
+                        theme.main_text_color(theme.background())
+                    } else {
+                        theme.sub_text_color(theme.background())
+                    };
+                    Container::new(sidebar_icon(Icon::DotsHorizontal, color))
+                        .with_padding_left(spacing::XS)
+                        .with_padding_right(spacing::XS)
+                        .finish()
+                })
+                .on_click(move |ctx, _, position| {
+                    ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectRightClickMenu {
+                        tab_index: selected_index,
+                        tab_indices: project_tab_indices.clone(),
+                        anchor: TabContextMenuAnchor::Pointer(position),
+                    })
+                })
+                .with_cursor(Cursor::PointingHand)
+                .finish();
+                let menu = SavePosition::new(menu, &menu_position_id).finish();
+                let new_chat = Hoverable::new(new_chat_mouse_state.clone(), move |button_state| {
+                    let color = if button_state.is_hovered() {
+                        theme.main_text_color(theme.background())
+                    } else {
+                        theme.sub_text_color(theme.background())
+                    };
+                    Container::new(sidebar_icon(Icon::Plus, color))
+                        .with_padding_left(spacing::XS)
+                        .with_padding_right(spacing::XS)
+                        .finish()
+                })
+                .on_click(move |ctx, _, position| {
+                    ctx.dispatch_typed_action(WorkspaceAction::NewProjectChat {
+                        project_id,
+                        position,
+                    })
+                })
+                .with_cursor(Cursor::PointingHand)
+                .finish();
+                let new_chat = SavePosition::new(new_chat, &new_chat_position_id).finish();
+                contents.add_child(
+                    Flex::row()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_spacing(spacing::XXS)
+                        .with_child(menu)
+                        .with_child(new_chat)
                         .finish(),
-                    )
-                    .finish();
-                let mut contents = Flex::row()
-                    .with_main_axis_size(MainAxisSize::Max)
-                    .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_child(Shrinkable::new(1., project_identity).finish());
-                if state.is_hovered() && !pane_drag_active {
-                    let menu = Hoverable::new(menu_mouse_state.clone(), move |button_state| {
-                        let color = if button_state.is_hovered() {
-                            theme.main_text_color(theme.background())
-                        } else {
-                            theme.sub_text_color(theme.background())
-                        };
-                        Container::new(sidebar_icon(Icon::DotsHorizontal, color))
-                            .with_padding_left(spacing::XS)
-                            .with_padding_right(spacing::XS)
-                            .finish()
-                    })
-                    .on_click(move |ctx, _, position| {
-                        ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectRightClickMenu {
-                            tab_index: selected_index,
-                            tab_indices: project_tab_indices.clone(),
-                            anchor: TabContextMenuAnchor::Pointer(position),
-                        })
-                    })
-                    .with_cursor(Cursor::PointingHand)
-                    .finish();
-                    let new_chat = Hoverable::new(
-                        twarpui::elements::MouseStateHandle::default(),
-                        move |button_state| {
-                            let color = if button_state.is_hovered() {
-                                theme.main_text_color(theme.background())
-                            } else {
-                                theme.sub_text_color(theme.background())
-                            };
-                            Container::new(sidebar_icon(Icon::Plus, color))
-                                .with_padding_left(spacing::XS)
-                                .with_padding_right(spacing::XS)
-                                .finish()
-                        },
-                    )
-                    .on_click(move |ctx, _, position| {
-                        ctx.dispatch_typed_action(WorkspaceAction::NewProjectChat {
-                            project_id,
-                            position,
-                        })
-                    })
-                    .with_cursor(Cursor::PointingHand)
-                    .finish();
-                    contents.add_child(
-                        Flex::row()
-                            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                            .with_spacing(spacing::XXS)
-                            .with_child(menu)
-                            .with_child(new_chat)
-                            .finish(),
-                    );
-                }
-                let mut container = Container::new(contents.finish())
-                    .with_padding_left(spacing::SM)
-                    .with_padding_right(spacing::SM)
-                    .with_padding_top(spacing::XS)
-                    .with_padding_bottom(spacing::XS)
-                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
-                if pane_drop_active || keyboard_focused {
-                    container = container.with_background(theme.surface_3());
-                } else if state.is_hovered() {
-                    container = container.with_background(theme.surface_overlay_2());
-                }
-                container.finish()
-            },
-        )
+                );
+            }
+            let mut container = Container::new(contents.finish())
+                .with_padding_left(spacing::SM)
+                .with_padding_right(spacing::SM)
+                .with_padding_top(spacing::XS)
+                .with_padding_bottom(spacing::XS)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
+            if pane_drop_active || keyboard_focused {
+                container = container.with_background(theme.surface_3());
+            } else if state.is_hovered() {
+                container = container.with_background(theme.surface_overlay_2());
+            }
+            container.finish()
+        })
         .on_click(move |ctx, _, _| {
             ctx.dispatch_typed_action(WorkspaceAction::ActivateTab(selected_index))
         })
         .with_defer_events_to_children()
         .with_cursor(Cursor::PointingHand)
         .finish();
-        let project_row = DropTarget::new(
-            project_row,
-            ProjectSidebarPaneDropTargetData {
-                target: pane_drop_target,
-            },
+        let project_row = SavePosition::new(
+            DropTarget::new(
+                project_row,
+                ProjectSidebarPaneDropTargetData {
+                    target: pane_drop_target,
+                },
+            )
+            .finish(),
+            &row_position_id,
         )
         .finish();
 
@@ -852,31 +909,32 @@ impl Workspace {
             .hovered_project_pane_drop_target
             .as_ref()
             .is_some_and(|target| target == &pane_drop_target);
-        let row = Hoverable::new(
-            twarpui::elements::MouseStateHandle::default(),
-            move |state| {
-                let identity = sidebar_icon(Icon::CircleFilled, color);
-                let contents = Flex::row()
-                    .with_main_axis_size(MainAxisSize::Max)
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_spacing(spacing::SM)
-                    .with_child(identity)
-                    .with_child(Shrinkable::new(1., labels.finish()).finish())
-                    .finish();
-                let mut container = Container::new(contents)
-                    .with_padding_left(spacing::SM)
-                    .with_padding_right(spacing::SM)
-                    .with_padding_top(spacing::XS)
-                    .with_padding_bottom(spacing::XS)
-                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
-                if pane_drop_active || keyboard_focused {
-                    container = container.with_background(theme.surface_3());
-                } else if state.is_hovered() {
-                    container = container.with_background(theme.surface_overlay_2());
-                }
-                container.finish()
-            },
-        )
+        let row_mouse_state = self
+            .projects_sidebar_mouse_states
+            .project_row(Some(path.clone()))
+            .row;
+        let row = Hoverable::new(row_mouse_state, move |state| {
+            let identity = sidebar_icon(Icon::CircleFilled, color);
+            let contents = Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(spacing::SM)
+                .with_child(identity)
+                .with_child(Shrinkable::new(1., labels.finish()).finish())
+                .finish();
+            let mut container = Container::new(contents)
+                .with_padding_left(spacing::SM)
+                .with_padding_right(spacing::SM)
+                .with_padding_top(spacing::XS)
+                .with_padding_bottom(spacing::XS)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
+            if pane_drop_active || keyboard_focused {
+                container = container.with_background(theme.surface_3());
+            } else if state.is_hovered() {
+                container = container.with_background(theme.surface_overlay_2());
+            }
+            container.finish()
+        })
         .on_click(move |ctx, _, _| {
             ctx.dispatch_typed_action(WorkspaceAction::OpenProjectLibraryEntry {
                 path: path.clone(),
@@ -901,6 +959,18 @@ impl Workspace {
         let mut list = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
         let mut visible_projects = 0;
         let targets = self.project_list_targets(app);
+        let project_roots = targets
+            .iter()
+            .map(|target| match target {
+                ProjectListTarget::LiveProject(tab_indices) => tab_indices
+                    .first()
+                    .and_then(|index| self.tabs.get(*index))
+                    .and_then(|tab| tab.project_root.clone()),
+                ProjectListTarget::Library(path) => Some(path.clone()),
+            })
+            .collect();
+        self.projects_sidebar_mouse_states
+            .retain_project_rows(&project_roots);
         for target in &targets {
             let row = match target {
                 ProjectListTarget::LiveProject(tab_indices) => {
@@ -936,7 +1006,7 @@ impl Workspace {
             if targets.is_empty() {
                 list.add_child(
                     Hoverable::new(
-                        twarpui::elements::MouseStateHandle::default(),
+                        self.projects_sidebar_mouse_states.empty_new_project.clone(),
                         move |state| {
                             let mut button = Container::new(
                                 Flex::row()
