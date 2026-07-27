@@ -767,17 +767,17 @@ impl Workspace {
         };
 
         let row = Hoverable::new(row_mouse_state, move |state| {
-            let mut contents = Flex::row()
-                .with_main_axis_size(MainAxisSize::Max)
+            // Trailing cluster (status icon + hover menu) pinned to the row's
+            // right edge; the title takes the remaining width on the left.
+            let mut trailing = Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_spacing(spacing::SM)
-                .with_child(Shrinkable::new(1., title_element).finish());
+                .with_spacing(spacing::SM);
 
             if let Some(status) = attention.as_ref() {
                 // `Icon::layout` greedily takes `constraint.max`, so an
                 // unconstrained icon swallows the whole row and shrinks the
                 // title to nothing — box it like `sidebar_icon` does.
-                contents.add_child(
+                trailing.add_child(
                     ConstrainedBox::new(status.render_icon(appearance).finish())
                         .with_width(spacing::MD)
                         .with_height(spacing::MD)
@@ -804,8 +804,15 @@ impl Workspace {
                 })
                 .with_cursor(Cursor::PointingHand)
                 .finish();
-                contents.add_child(menu);
+                trailing.add_child(menu);
             }
+            let contents = Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(spacing::SM)
+                .with_child(Shrinkable::new(1., title_element).finish())
+                .with_child(trailing.finish());
             let mut container = Container::new(contents.finish())
                 .with_padding_left(spacing::SM)
                 .with_padding_right(spacing::SM)
