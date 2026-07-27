@@ -774,7 +774,15 @@ impl Workspace {
                 .with_child(Shrinkable::new(1., title_element).finish());
 
             if let Some(status) = attention.as_ref() {
-                contents.add_child(status.render_icon(appearance).finish());
+                // `Icon::layout` greedily takes `constraint.max`, so an
+                // unconstrained icon swallows the whole row and shrinks the
+                // title to nothing — box it like `sidebar_icon` does.
+                contents.add_child(
+                    ConstrainedBox::new(status.render_icon(appearance).finish())
+                        .with_width(spacing::MD)
+                        .with_height(spacing::MD)
+                        .finish(),
+                );
             }
             if state.is_hovered() && !pane_drag_active && !is_renaming {
                 let menu = Hoverable::new(menu_mouse_state.clone(), move |button_state| {
