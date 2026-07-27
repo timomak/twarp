@@ -170,6 +170,8 @@ const CODEX_ICON_SVG_PATH: &str = "bundled/svg/openai.svg";
 const FORK_ICON_SVG_PATH: &str = "bundled/svg/git-branch-02.svg";
 /// Copy glyph for the hover "copy response" affordance beside the Fork button.
 const COPY_ICON_SVG_PATH: &str = "bundled/svg/copy.svg";
+/// Pencil glyph for the hover "Edit" affordance below a sent user message.
+const EDIT_ICON_SVG_PATH: &str = "bundled/svg/pencil-line.svg";
 /// Down-chevron for the floating "scroll to bottom" button (shown above the
 /// composer's right edge while the transcript is scrolled up off the bottom).
 const SCROLL_TO_BOTTOM_ICON_SVG_PATH: &str = "bundled/svg/chevron-down.svg";
@@ -568,6 +570,10 @@ pub enum ClaudeCodeViewAction {
     /// the clipboard — the one-click alternative to drag-selecting a long
     /// response. Shown on hover beside the Fork button.
     CopyResponse(usize),
+    /// twarp: load the sent user message at this transcript index back into the
+    /// composer for revision. Shown on hover below a user bubble; prefills and
+    /// focuses the composer — sending goes through the normal Submit path.
+    EditUserMessage(usize),
     /// twarp: copy one fenced code block's contents (the per-block copy button
     /// in the transcript's code cards).
     CopyCodeBlock(String),
@@ -1078,6 +1084,11 @@ pub struct ClaudeCodeView {
     fork_button_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
     /// Like [`Self::fork_button_mouse`], for the copy-response button beside it.
     copy_button_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Pooled mouse handles, per transcript index, for the hover "Edit"
+    /// affordance below sent user messages: `user_row_mouse` senses the hover
+    /// over the bubble, `edit_button_mouse` drives the pill itself.
+    user_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    edit_button_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
     /// Mouse handles for the Environment menu's branch / CI / PR actions.
     branch_pill_mouse: MouseStateHandle,
     ci_pill_mouse: MouseStateHandle,
@@ -1478,6 +1489,8 @@ impl ClaudeCodeView {
             fork_row_mouse: std::cell::RefCell::new(Vec::new()),
             fork_button_mouse: std::cell::RefCell::new(Vec::new()),
             copy_button_mouse: std::cell::RefCell::new(Vec::new()),
+            user_row_mouse: std::cell::RefCell::new(Vec::new()),
+            edit_button_mouse: std::cell::RefCell::new(Vec::new()),
             branch_pill_mouse: MouseStateHandle::default(),
             ci_pill_mouse: MouseStateHandle::default(),
             pr_pill_mouse: MouseStateHandle::default(),
@@ -5768,6 +5781,85 @@ impl ClaudeCodeView {
             .finish()
     }
 
+    /// twarp: the "✎ Edit" button shown under a sent user message on hover.
+    /// Right-aligned under the bubble to match its alignment. Same
+    /// visible/transparent-placeholder mechanics as
+    /// [`Self::render_fork_affordance`] — identical layout in both states so
+    /// the hover bounds never change.
+    fn render_edit_affordance(
+        &self,
+        index: usize,
+        visible: bool,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let label_color = if visible {
+            theme.nonactive_ui_text_color().into_solid()
+        } else {
+            ColorU::new(0, 0, 0, 0)
+        };
+        let pill_bg = if visible {
+            self.accent_wash(app)
+        } else {
+            ColorU::new(0, 0, 0, 0)
+        };
+        let edit_mouse = pooled_mouse_state(&self.edit_button_mouse, index);
+
+        let icon = ConstrainedBox::new(Icon::new(EDIT_ICON_SVG_PATH, label_color).finish())
+            .with_width(12.)
+            .with_height(12.)
+            .finish();
+        let label = appearance
+            .ui_builder()
+            .span("Edit")
+            .with_style(UiComponentStyles {
+                font_color: Some(label_color),
+                font_size: Some(type_ramp::LABEL.size),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+        let pill = Container::new(
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(spacing::XS)
+                .with_child(icon)
+                .with_child(label)
+                .finish(),
+        )
+        .with_padding_left(spacing::SM)
+        .with_padding_right(spacing::SM)
+        .with_padding_top(spacing::XS)
+        .with_padding_bottom(spacing::XS)
+        .with_background_color(pill_bg)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
+        .finish();
+
+        let button = Hoverable::new(edit_mouse, move |_| pill);
+        // Only the painted state is interactive — the transparent placeholder
+        // must not catch clicks or show the pointer cursor in the empty gap.
+        let button = if visible {
+            button
+                .with_cursor(Cursor::PointingHand)
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(ClaudeCodeViewAction::EditUserMessage(index));
+                })
+        } else {
+            button
+        };
+        Container::new(
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_main_axis_alignment(MainAxisAlignment::End)
+                .with_child(button.finish())
+                .finish(),
+        )
+        .with_margin_bottom(spacing::SM)
+        .finish()
+    }
+
     fn render_body(&self, app: &AppContext) -> Box<dyn Element> {
         if self.transcript.is_empty() {
             // Zero state when no session has produced anything — a "Welcome
@@ -9525,6 +9617,17 @@ impl TypedActionView for ClaudeCodeView {
                     ctx.clipboard().write(ClipboardContent::plain_text(text));
                 }
             }
+            ClaudeCodeViewAction::EditUserMessage(index) => {
+                let text = match self.transcript.items().get(*index) {
+                    Some(TranscriptItem::User(text)) => text.clone(),
+                    _ => return,
+                };
+                self.input_editor.update(ctx, |editor, ctx| {
+                    editor.set_buffer_text(&text, ctx);
+                });
+                ctx.focus(&self.input_editor);
+                ctx.notify();
+            }
             ClaudeCodeViewAction::CopyCodeBlock(code) => {
                 ctx.clipboard()
                     .write(ClipboardContent::plain_text(code.clone()));
@@ -9855,7 +9958,7 @@ impl ClaudeCodeView {
                     None,
                 );
                 // #8: any images sent with this turn preview above the bubble.
-                match self.sent_images.get(&index) {
+                let row = match self.sent_images.get(&index) {
                     Some(paths) if !paths.is_empty() => Flex::column()
                         .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                         .with_main_axis_size(MainAxisSize::Min)
@@ -9864,7 +9967,27 @@ impl ClaudeCodeView {
                         .with_child(bubble)
                         .finish(),
                     _ => bubble,
-                }
+                };
+                // Hover "Edit" affordance below the bubble — same
+                // stable-layout visible/hidden toggle as the Fork affordance
+                // under assistant responses (see render_assistant_response).
+                let edit_visible = self.render_edit_affordance(index, true, app);
+                let edit_hidden = self.render_edit_affordance(index, false, app);
+                let row_mouse = pooled_mouse_state(&self.user_row_mouse, index);
+                Hoverable::new(row_mouse, move |state| {
+                    Flex::column()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                        .with_main_axis_size(MainAxisSize::Min)
+                        .with_child(row)
+                        .with_child(if state.is_hovered() {
+                            edit_visible
+                        } else {
+                            edit_hidden
+                        })
+                        .finish()
+                })
+                .with_propagate_drag()
+                .finish()
             }
             TranscriptItem::Assistant { text, .. } => {
                 self.render_assistant_response(index, text, self.is_reply_end(index), app)
