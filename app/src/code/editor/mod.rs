@@ -17,7 +17,7 @@ pub mod view;
 pub use comment_editor::{CommentEditor, CommentEditorEvent};
 pub use comments::EditorCommentsModel;
 pub use comments::EditorReviewComment;
-pub(crate) use diff::{add_color, remove_color};
+pub(crate) use diff::{add_color, add_overlay_color, remove_color, remove_overlay_color};
 pub use element::GutterHoverTarget;
 pub use nav_bar::NavBarBehavior;
 pub use nav_bar::NavBarStageButtonState;

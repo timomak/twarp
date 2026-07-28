@@ -3,9 +3,12 @@
 //!
 //! 21a ships the list page (grouping, CI/review badges, browser-pane open);
 //! 21b adds the native in-page detail view (Conversation/Checks tabs + merge
-//! box). The Files (diff) tab follows in 21c.
+//! box); 21c adds the Files tab (per-file diff cards with inline review
+//! threads).
 
 pub mod detail_page;
+pub mod diff;
+pub mod files_tab;
 pub mod list_page;
 pub mod store;
 

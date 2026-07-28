@@ -67,6 +67,12 @@ pub enum PullRequestsPageAction {
     RefreshDetail,
     /// Checks tab: open a check's details page in the built-in Browser pane.
     OpenCheck(String),
+    /// Files tab: expand/collapse a file card by file index (21c).
+    ToggleFileCard(u64),
+    /// Files tab: expand/collapse one resolved review thread by thread index.
+    ToggleFileThread(u64),
+    /// Files tab: expand/collapse a file's outdated/other-threads section.
+    ToggleFileThreads(u64),
 }
 
 /// Per-row hover states, keyed by PR number.
@@ -180,7 +186,7 @@ impl PullRequestsPageState {
                 ctx.dispatch_typed_action(&WorkspaceAction::OpenUrlInBrowserPane(url.clone()));
             }
             SetDetailTab(_) | RequestMerge(_) | ConfirmMerge | CancelMerge | MarkReady
-            | RefreshDetail => {
+            | RefreshDetail | ToggleFileCard(_) | ToggleFileThread(_) | ToggleFileThreads(_) => {
                 if let Some(mut detail) = self.detail.take() {
                     detail.handle_action(action, ctx);
                     self.detail = Some(detail);
