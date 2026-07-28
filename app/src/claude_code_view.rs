@@ -334,26 +334,8 @@ const SENT_IMAGE_SIZE: f32 = 120.;
 const PILL_CORNER_RADIUS: f32 = radius::CHIP;
 const HEADING_FONT_SIZE: f32 = type_ramp::HEADING.size;
 
-/// Below this composer width the controls row steps down to
-/// their compact tier (folder pill dropped, branch truncated, MCP chip
-/// dropped) — roughly a half-window pane.
-const COMPOSER_COMPACT_MAX_WIDTH: f32 = 560.;
-/// Below this width they step down again to the tiny tier (diff counts and
-/// the read-only info chips dropped, branch truncated harder) — roughly a
-/// three-up pane.
-const COMPOSER_TINY_MAX_WIDTH: f32 = 430.;
-
-/// Density tier for the composer's controls row. The composer
-/// is width-capped and shrinks with the pane; each row is wrapped in a
-/// [`SizeConstraintSwitch`] that steps down through these tiers at layout
-/// time so three side-by-side Claude panes degrade gracefully instead of
-/// overflowing pills off the card.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ComposerDensity {
-    Full,
-    Compact,
-    Tiny,
-}
+/// How long the send ⇄ stop glyph morph runs.
+const ACTION_ANIM_DURATION: Duration = Duration::from_millis(220);
 
 /// Middle-truncate `text` to at most `max_chars` characters (branch names in
 /// the Environment menu): `feature/very-long-branch-name` →
@@ -479,6 +461,8 @@ pub enum ClaudeCodeViewAction {
     /// Accept the composer suggestion at this index (PRODUCT §15a, 7j) —
     /// clicked in the suggestions panel; Enter accepts the highlighted one.
     AcceptSuggestion(usize),
+    /// Remove the pending inline slash-command token (the ✕ on the chip).
+    ClearSlashCommand,
     /// Remove an attachment chip (PRODUCT §15b, 7j): the image stays
     /// mentioned in the text (so `claude` can still read it) but is no longer
     /// sent as an inline image block.
@@ -853,6 +837,9 @@ pub struct ClaudeCodeView {
     /// Stable mouse-state handles kept across renders so a click's
     /// mousedown/mouseup hit the same handle.
     submit_button: MouseStateHandle,
+    /// Start of the send ⇄ stop glyph morph, `None` when settled. Stamped on
+    /// every `streaming` flip; a 16ms notify() chain repaints until done.
+    action_anim_started: Option<Instant>,
     refresh_button: MouseStateHandle,
     stop_button: MouseStateHandle,
     /// Per-tool-card UI state (stable mouse handle + the user's expand/collapse
@@ -917,6 +904,12 @@ pub struct ClaudeCodeView {
     /// Stable per-row mouse handles for the suggestions panel, grown on
     /// demand (the Timeline/shortcut-row pattern).
     suggestion_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// An accepted `/` command held as an inline token above the input
+    /// (Codex-style) rather than as literal text. Prepended as `/name` to the
+    /// outgoing message on submit; the ✕ on the token clears it.
+    pending_slash_command: Option<String>,
+    /// Mouse state for the pending slash-command token's ✕.
+    slash_chip_mouse: MouseStateHandle,
     /// Monotonic cancellation token for chat reply ghost-text generation. Any
     /// user edit, focus loss, or new turn increments it so stale provider
     /// results cannot repopulate the composer.
@@ -969,8 +962,6 @@ pub struct ClaudeCodeView {
     queue_expanded: std::collections::HashSet<usize>,
     /// Mouse state for the clickable model-selector pill (PRODUCT §52, 7m).
     model_pill_mouse: MouseStateHandle,
-    /// Mouse state for the clickable effort-selector pill (PRODUCT §52, 7m).
-    effort_pill_mouse: MouseStateHandle,
     /// Mouse state for a plan card's Approve / Keep-planning controls
     /// (PRODUCT §56, 7n). Shared across cards — a session shows one plan at a
     /// time in practice.
@@ -1039,15 +1030,10 @@ pub struct ClaudeCodeView {
     /// Slider state for the effort picker (#13). Persisted so the thumb keeps
     /// its position across renders.
     effort_slider: SliderStateHandle,
-    /// Mouse state for the clickable context-usage chip that opens the context
-    /// breakdown popover (#13).
-    context_button: MouseStateHandle,
     /// Pooled mouse handles for the model-picker rows (#13).
     model_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
     /// Pooled mouse handles for the permission-picker rows (#2).
     permission_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
-    /// Mouse state for the MCP viewer pill (feature 13).
-    mcp_pill_mouse: MouseStateHandle,
     /// Pooled mouse handles for the MCP popover's server rows (feature 13).
     mcp_menu_row_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
     /// Which MCP server row is expanded in the viewer popover, if any
@@ -1420,6 +1406,7 @@ impl ClaudeCodeView {
             deferred_completion: None,
             interrupt_pending: false,
             submit_button: MouseStateHandle::default(),
+            action_anim_started: None,
             refresh_button: MouseStateHandle::default(),
             stop_button: MouseStateHandle::default(),
             tool_card_ui: HashMap::new(),
@@ -1444,6 +1431,8 @@ impl ClaudeCodeView {
             suggestions: Vec::new(),
             suggestion_selected: 0,
             suggestion_row_mouse: std::cell::RefCell::new(Vec::new()),
+            pending_slash_command: None,
+            slash_chip_mouse: MouseStateHandle::default(),
             reply_suggestion_generation: 0,
             composer_placeholder_generation: 0,
             composer_placeholder_suggestion: None,
@@ -1462,7 +1451,6 @@ impl ClaudeCodeView {
             queue_send_mouse: std::cell::RefCell::new(Vec::new()),
             queue_expanded: std::collections::HashSet::new(),
             model_pill_mouse: MouseStateHandle::default(),
-            effort_pill_mouse: MouseStateHandle::default(),
             plan_approve_mouse: MouseStateHandle::default(),
             plan_keep_mouse: MouseStateHandle::default(),
             session_epoch: 0,
@@ -1479,10 +1467,8 @@ impl ClaudeCodeView {
             composer_menu: None,
             drag_active: false,
             effort_slider: SliderStateHandle::default(),
-            context_button: MouseStateHandle::default(),
             model_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
             permission_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
-            mcp_pill_mouse: MouseStateHandle::default(),
             mcp_menu_row_mouse: std::cell::RefCell::new(Vec::new()),
             mcp_expanded_server: None,
             turn_started: None,
@@ -2405,7 +2391,19 @@ impl ClaudeCodeView {
         let text = self
             .input_editor
             .read(ctx, |editor, ctx| editor.buffer_text(ctx));
-        let new_text = composer::apply_suggestion(&text, &query, &accepted);
+        // Codex-style: an accepted `/` command becomes an inline token above
+        // the input, not literal text — the token text is stripped from the
+        // draft and `/name` is re-prefixed at submit time.
+        let new_text = match query.kind {
+            SuggestionKind::SlashCommand => {
+                self.pending_slash_command = Some(accepted);
+                let mut remaining = String::with_capacity(text.len());
+                remaining.push_str(&text[..query.token_range.start]);
+                remaining.push_str(text[query.token_range.end..].trim_start());
+                remaining
+            }
+            SuggestionKind::FileMention => composer::apply_suggestion(&text, &query, &accepted),
+        };
         self.input_editor
             .update(ctx, |editor, ctx| editor.set_buffer_text(&new_text, ctx));
         self.suggestion_query = None;
@@ -2444,16 +2442,38 @@ impl ClaudeCodeView {
             .with_width(14.)
             .with_height(14.)
             .finish();
-            let label = appearance
-                .ui_builder()
-                .span(suggestion.clone())
-                .with_style(UiComponentStyles {
-                    font_family_id: Some(appearance.monospace_font_family()),
-                    font_size: Some(12.5),
-                    ..Default::default()
-                })
-                .build()
-                .finish();
+            // Codex-style: the typed prefix reads in the main text colour, the
+            // unmatched remainder muted — so the eye lands on what was matched.
+            let text_color = theme.main_text_color(theme.surface_1()).into_solid();
+            let name_span = |text: &str, color: ColorU| {
+                appearance
+                    .ui_builder()
+                    .span(text.to_owned())
+                    .with_style(UiComponentStyles {
+                        font_color: Some(color),
+                        font_size: Some(12.5),
+                        ..Default::default()
+                    })
+                    .build()
+                    .finish()
+            };
+            let label: Box<dyn Element> = if !query.query.is_empty()
+                && suggestion.len() > query.query.len()
+                && suggestion.is_char_boundary(query.query.len())
+                && suggestion
+                    .to_lowercase()
+                    .starts_with(&query.query.to_lowercase())
+            {
+                let (matched, rest) = suggestion.split_at(query.query.len());
+                Flex::row()
+                    .with_main_axis_size(MainAxisSize::Min)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_child(name_span(matched, text_color))
+                    .with_child(name_span(rest, theme.nonactive_ui_text_color().into_solid()))
+                    .finish()
+            } else {
+                name_span(suggestion, text_color)
+            };
             // For `/` commands, show the skill's description beneath the name
             // (issue #3) when we discovered one on disk.
             let description = (query.kind == SuggestionKind::SlashCommand)
@@ -2463,6 +2483,8 @@ impl ClaudeCodeView {
                         .and_then(|index| index.descriptions.get(suggestion))
                 })
                 .flatten();
+            // Codex-style: the description trails on the same line, muted, so
+            // each suggestion stays a single scannable row.
             let label_block: Box<dyn Element> = if let Some(description) = description {
                 let desc = appearance
                     .ui_builder()
@@ -2474,10 +2496,10 @@ impl ClaudeCodeView {
                     })
                     .build()
                     .finish();
-                Flex::column()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_main_axis_size(MainAxisSize::Min)
-                    .with_spacing(1.)
+                    .with_spacing(8.)
                     .with_child(label)
                     .with_child(desc)
                     .finish()
@@ -2510,11 +2532,74 @@ impl ClaudeCodeView {
                     .finish(),
             );
         }
+        // No border card: the panel reads as part of the composer, separated
+        // from the input by whitespace alone (Codex-style).
         Some(
             Container::new(rows.finish())
                 .with_padding(Padding::uniform(4.))
-                .with_border(Border::all(1.).with_border_fill(theme.outline()))
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                .finish(),
+        )
+    }
+
+    /// The pending slash-command token (Codex-style): an accepted `/` command
+    /// rendered as an accent-coloured inline chip above the input — icon +
+    /// prettified name + ✕. Clicking it removes the token. `None` when no
+    /// command is pending.
+    fn render_slash_token(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+        let name = self.pending_slash_command.as_ref()?;
+        let theme = appearance.theme();
+        let accent = self.render_accent.get();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let icon = ConstrainedBox::new(
+            Icon::new(
+                crate::ui_components::icons::Icon::SlashCommands.into(),
+                accent,
+            )
+            .finish(),
+        )
+        .with_width(14.)
+        .with_height(14.)
+        .finish();
+        let label = appearance
+            .ui_builder()
+            .span(prettify_slash_command(name))
+            .with_style(UiComponentStyles {
+                font_color: Some(accent),
+                font_size: Some(12.5),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+        let close = appearance
+            .ui_builder()
+            .span("\u{2715}".to_owned())
+            .with_style(UiComponentStyles {
+                font_color: Some(muted),
+                font_size: Some(11.),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+        let chip = Flex::row()
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(6.)
+            .with_child(icon)
+            .with_child(label)
+            .with_child(close)
+            .finish();
+        let chip = Hoverable::new(self.slash_chip_mouse.clone(), move |_| chip)
+            .with_cursor(Cursor::PointingHand)
+            .on_click(|ctx, _, _| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::ClearSlashCommand);
+            })
+            .finish();
+        // Keep the chip its natural width (the card column stretches children).
+        Some(
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_child(chip)
                 .finish(),
         )
     }
@@ -2943,13 +3028,20 @@ impl ClaudeCodeView {
     /// (type-ahead, PRODUCT §53) and dispatched when the turn completes —
     /// the composer input is never disabled.
     fn submit(&mut self, ctx: &mut ViewContext<Self>) {
-        let text = self
+        let typed = self
             .input_editor
             .read(ctx, |editor, ctx| editor.buffer_text(ctx).trim().to_owned());
-        if text.is_empty() {
-            // PRODUCT §15: empty / whitespace-only messages are a no-op.
-            return;
-        }
+        // An accepted slash-command token rides as a `/name` prefix; with a
+        // token, an empty draft still submits (the bare command).
+        let text = match self.pending_slash_command.take() {
+            Some(name) if typed.is_empty() => format!("/{name}"),
+            Some(name) => format!("/{name} {typed}"),
+            None if typed.is_empty() => {
+                // PRODUCT §15: empty / whitespace-only messages are a no-op.
+                return;
+            }
+            None => typed,
+        };
         // PRODUCT §15b (7j) / §49–§51 (7l): mention-derived images plus the
         // directly-attached ones (paste / drop / picker) ride along as inline
         // image blocks; the mention text stays for context. Captured now (files
@@ -3022,6 +3114,7 @@ impl ClaudeCodeView {
         }
         let started = Instant::now();
         self.streaming = true;
+        self.animate_action_button(ctx);
         ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         self.turn_started = Some(started);
         self.schedule_elapsed_tick(started, ctx);
@@ -3129,6 +3222,7 @@ impl ClaudeCodeView {
         if !self.streaming {
             let started = Instant::now();
             self.streaming = true;
+            self.animate_action_button(ctx);
             ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
             self.turn_started = Some(started);
             self.schedule_elapsed_tick(started, ctx);
@@ -3298,6 +3392,7 @@ impl ClaudeCodeView {
             if !self.streaming {
                 let started = Instant::now();
                 self.streaming = true;
+                self.animate_action_button(ctx);
                 ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
                 self.turn_started = Some(started);
                 self.schedule_elapsed_tick(started, ctx);
@@ -3421,6 +3516,7 @@ impl ClaudeCodeView {
             .apply(TranscriptEvent::UserMessage(message.text.clone()));
         let started = Instant::now();
         self.streaming = true;
+        self.animate_action_button(ctx);
         ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         self.turn_started = Some(started);
         self.schedule_elapsed_tick(started, ctx);
@@ -3676,6 +3772,7 @@ impl ClaudeCodeView {
             Err(err) => {
                 // PRODUCT §28/§30: surface the spawn failure verbatim.
                 self.streaming = false;
+                self.animate_action_button(ctx);
                 self.raw_cli_pending = false;
                 // A failed resume must not wedge the pane on the dead id —
                 // the next message starts fresh (PRODUCT §37).
@@ -3890,6 +3987,7 @@ impl ClaudeCodeView {
                 !self.pending_question_permission.is_empty(),
             );
             self.streaming = false;
+            self.animate_action_button(ctx);
             // A turn that ended (e.g. Stop) with a question still parked can no
             // longer have that permission answered — `claude` has released it.
             // Drop the held requests; the idle card stays answerable as a
@@ -4092,6 +4190,7 @@ impl ClaudeCodeView {
             return;
         }
         self.streaming = false;
+        self.animate_action_button(ctx);
         // 7p: the working spinner in the tab must stop with the stream.
         ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         self.interrupt_pending = false;
@@ -4624,6 +4723,34 @@ impl ClaudeCodeView {
     /// re-renders the status line on a regular beat. Stale chains die on their
     /// own: when the turn ends `streaming` is false, and when a new turn starts
     /// its fresh `turn_started` `Instant` no longer matches the captured one.
+    /// Kick the send ⇄ stop morph: stamp the animation start and drive a short
+    /// notify() chain so the incoming glyph scales/fades in (the render loop
+    /// never re-runs on its own — the elapsed-label timer pattern).
+    fn animate_action_button(&mut self, ctx: &mut ViewContext<Self>) {
+        let started = Instant::now();
+        self.action_anim_started = Some(started);
+        self.schedule_action_anim_tick(started, ctx);
+        ctx.notify();
+    }
+
+    fn schedule_action_anim_tick(&self, started: Instant, ctx: &mut ViewContext<Self>) {
+        ctx.spawn(
+            async move {
+                Timer::after(Duration::from_millis(16)).await;
+            },
+            move |me, _, ctx| {
+                if me.action_anim_started == Some(started) {
+                    ctx.notify();
+                    if started.elapsed() < ACTION_ANIM_DURATION {
+                        me.schedule_action_anim_tick(started, ctx);
+                    } else {
+                        me.action_anim_started = None;
+                    }
+                }
+            },
+        );
+    }
+
     fn schedule_elapsed_tick(&self, started: Instant, ctx: &mut ViewContext<Self>) {
         ctx.spawn(
             async move {
@@ -8026,9 +8153,18 @@ impl ClaudeCodeView {
     /// four modes, like the model picker. Static while a turn streams (the mode
     /// applies between turns).
     fn render_permission_control(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
         let label = prettify_permission_mode(self.permission_mode.as_cli_arg());
+        // Codex-style: the permission mode is the one control that earns
+        // colour — permissive modes read as a warning, the rest stay muted.
+        let color = match self.permission_mode {
+            PermissionMode::BypassPermissions | PermissionMode::AcceptEdits => {
+                theme.ui_warning_color()
+            }
+            _ => theme.nonactive_ui_text_color().into_solid(),
+        };
         if self.streaming {
-            render_pill(&label, self.render_wash.get(), appearance)
+            render_pill(&label, color, appearance)
         } else {
             render_clickable_pill(
                 &label,
@@ -8038,105 +8174,41 @@ impl ClaudeCodeView {
                         ComposerMenu::Permission,
                     ))
                 },
-                self.render_wash.get(),
+                color,
                 ComposerMenu::Permission.anchor_id(),
                 appearance,
             )
         }
     }
 
-    /// The context-usage chip (#13): the live context-window fill, clickable to
-    /// open the context breakdown popover. Read-only, so it opens even
-    /// mid-turn.
-    fn render_context_control(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let label = self
-            .transcript
-            .usage()
-            .and_then(format_context)
-            .unwrap_or_else(|| "Context".to_owned());
-        render_clickable_pill(
-            &label,
-            self.context_button.clone(),
-            |ctx| {
-                ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
-                    ComposerMenu::Context,
-                ))
-            },
-            self.render_wash.get(),
-            ComposerMenu::Context.anchor_id(),
-            appearance,
-        )
-    }
-
-    /// The model chip (#13): the active model; clicking opens the model
-    /// dropdown. Static while a turn streams (changing model restarts the
-    /// session, §25).
+    /// The session chip (#13, Codex-style): one flat `model · effort ▾`
+    /// control whose menu holds every session knob — model list, effort
+    /// slider, context usage, MCP servers. Always clickable: the read-only
+    /// sections (context, MCP) stay useful mid-turn, and the menu itself
+    /// hides the model/effort controls while a turn streams (§25: changing
+    /// them restarts the session).
     fn render_model_control(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let label = self
+        let muted = appearance.theme().nonactive_ui_text_color().into_solid();
+        let model = self
             .model
             .as_deref()
             .map(prettify_model)
             .or_else(|| self.transcript.model().map(prettify_model))
-            .unwrap_or_else(|| "Model".to_owned());
-        if self.streaming {
-            render_pill(&label, self.render_wash.get(), appearance)
-        } else {
-            render_clickable_pill(
-                &label,
-                self.model_pill_mouse.clone(),
-                |ctx| {
-                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
-                        ComposerMenu::Model,
-                    ))
-                },
-                self.render_wash.get(),
-                ComposerMenu::Model.anchor_id(),
-                appearance,
-            )
-        }
-    }
-
-    /// The effort chip (#13): the selected effort; clicking opens the effort
-    /// slider. Static while a turn streams.
-    fn render_effort_control(&self, appearance: &Appearance) -> Box<dyn Element> {
+            .unwrap_or_else(|| "Default".to_owned());
         let label = match self.effort.as_deref() {
-            Some(effort) => format!("Effort: {effort}"),
-            None => "Effort".to_owned(),
+            Some(effort) => format!("{model} · {effort}"),
+            None => model,
         };
-        if self.streaming {
-            render_pill(&label, self.render_wash.get(), appearance)
-        } else {
-            render_clickable_pill(
-                &label,
-                self.effort_pill_mouse.clone(),
-                |ctx| {
-                    ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
-                        ComposerMenu::Effort,
-                    ))
-                },
-                self.render_wash.get(),
-                ComposerMenu::Effort.anchor_id(),
-                appearance,
-            )
-        }
-    }
-
-    /// The MCP viewer pill (feature 13): `MCP · N` where N is the count of
-    /// servers the session reported at init. Read-only, so — unlike the
-    /// permission / model / effort pills — it stays clickable mid-stream (like
-    /// the context chip).
-    fn render_mcp_control(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let label = format!("MCP · {}", self.transcript.mcp_servers().len());
         render_clickable_pill(
             &label,
-            self.mcp_pill_mouse.clone(),
+            self.model_pill_mouse.clone(),
             |ctx| {
                 ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleComposerMenu(
-                    ComposerMenu::Mcp,
+                    ComposerMenu::Model,
                 ))
             },
-            self.render_wash.get(),
-            ComposerMenu::Mcp.anchor_id(),
+            muted,
+            ComposerMenu::Model.anchor_id(),
             appearance,
         )
     }
@@ -8400,8 +8472,20 @@ impl ClaudeCodeView {
         let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(2.)
-            .with_child(menu_header("Model", muted, appearance));
+            .with_spacing(2.);
+        // §25: model / effort changes restart the session, so those controls
+        // hide while a turn streams — the read-only sections below stay.
+        if self.streaming {
+            column.add_child(menu_header("Model", muted, appearance));
+            column.add_child(context_segment(
+                appearance,
+                "Model & effort lock while a turn is running.".to_owned(),
+                muted,
+            ));
+            column.add_child(self.render_session_menu_extras(appearance));
+            return column.finish();
+        }
+        column.add_child(menu_header("Model", muted, appearance));
         for (index, (value, label)) in self.model_menu_entries().into_iter().enumerate() {
             let selected = current == value.as_deref();
             let mouse = {
@@ -8437,7 +8521,36 @@ impl ClaudeCodeView {
                     .finish(),
             );
         }
+        // Codex-style: the model menu carries the effort slider too, so one
+        // control governs both knobs.
+        column.add_child(
+            Container::new(self.render_effort_menu(appearance))
+                .with_padding_top(spacing::SM)
+                .finish(),
+        );
+        column.add_child(self.render_session_menu_extras(appearance));
         column.finish()
+    }
+
+    /// The read-only tail of the session chip's menu: context-window usage and
+    /// the MCP server list, folded in under the model/effort controls so one
+    /// chip carries every session knob (Codex-style).
+    fn render_session_menu_extras(&self, appearance: &Appearance) -> Box<dyn Element> {
+        Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(2.)
+            .with_child(
+                Container::new(self.render_context_panel(appearance))
+                    .with_padding_top(spacing::SM)
+                    .finish(),
+            )
+            .with_child(
+                Container::new(self.render_mcp_menu(appearance))
+                    .with_padding_top(spacing::SM)
+                    .finish(),
+            )
+            .finish()
     }
 
     /// The effort slider (#13): a continuous slider snapped to the
@@ -8866,53 +8979,70 @@ impl ClaudeCodeView {
 
         // #13: the Send / Stop action. Built per density tier below, so a
         // closure rather than a one-shot element.
+        // Codex-style: the action is a compact filled circle — the pane accent
+        // with an ↑ while idle (#10: tab colour, not theme accent), swapping to
+        // a ■ stop glyph while a turn streams.
+        const ACTION_DIAMETER: f32 = 28.;
         let make_action = || -> Box<dyn Element> {
-            if self.streaming {
-                appearance
-                    .ui_builder()
-                    .button(ButtonVariant::Outlined, self.stop_button.clone())
-                    .with_text_label("Stop".to_owned())
-                    .build()
-                    .on_click(|ctx, _, _| {
-                        ctx.dispatch_typed_action(ClaudeCodeViewAction::Stop);
-                    })
-                    .finish()
+            let accent = self.render_accent.get();
+            let text_color = contrasting_text(accent);
+            let (glyph, mouse, action) = if self.streaming {
+                (
+                    "\u{25A0}",
+                    self.stop_button.clone(),
+                    ClaudeCodeViewAction::Stop,
+                )
             } else {
-                let label = if self.transcript.is_empty() {
-                    "Start session"
-                } else {
-                    "Send"
-                };
-                // #10: the primary button is the pane's accent (the tab colour),
-                // not the theme accent — so a custom-coloured button rather than
-                // ButtonVariant::Accent. The label colour contrasts the fill.
-                let accent = self.render_accent.get();
-                let text_color = contrasting_text(accent);
-                let button_label = appearance
-                    .ui_builder()
-                    .span(label.to_owned())
-                    .with_style(UiComponentStyles {
-                        font_color: Some(text_color),
-                        font_size: Some(type_ramp::UI.size),
-                        ..Default::default()
-                    })
-                    .build()
-                    .finish();
-                let button = Container::new(button_label)
-                    .with_padding_left(spacing::MD)
-                    .with_padding_right(spacing::MD)
-                    .with_padding_top(spacing::SM)
-                    .with_padding_bottom(spacing::SM)
+                (
+                    "\u{2191}",
+                    self.submit_button.clone(),
+                    ClaudeCodeViewAction::Submit,
+                )
+            };
+            // Morph: on a streaming flip the incoming glyph scales and fades
+            // in over ACTION_ANIM_DURATION (an eased notify()-chain repaint).
+            let progress = self
+                .action_anim_started
+                .map(|started| {
+                    (started.elapsed().as_secs_f32()
+                        / ACTION_ANIM_DURATION.as_secs_f32())
+                    .clamp(0., 1.)
+                })
+                .unwrap_or(1.);
+            let eased = 1. - (1. - progress).powi(3);
+            let glyph_color = ColorU::new(
+                text_color.r,
+                text_color.g,
+                text_color.b,
+                (55. + 200. * eased) as u8,
+            );
+            let label = appearance
+                .ui_builder()
+                .span(glyph.to_owned())
+                .with_style(UiComponentStyles {
+                    font_color: Some(glyph_color),
+                    font_size: Some(type_ramp::UI.size * (0.55 + 0.45 * eased)),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+            let button = ConstrainedBox::new(
+                Container::new(Align::new(label).finish())
                     .with_background_color(accent)
-                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
-                    .finish();
-                Hoverable::new(self.submit_button.clone(), move |_| button)
-                    .with_cursor(Cursor::PointingHand)
-                    .on_click(|ctx, _, _| {
-                        ctx.dispatch_typed_action(ClaudeCodeViewAction::Submit);
-                    })
-                    .finish()
-            }
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                        ACTION_DIAMETER / 2.,
+                    )))
+                    .finish(),
+            )
+            .with_width(ACTION_DIAMETER)
+            .with_height(ACTION_DIAMETER)
+            .finish();
+            Hoverable::new(mouse, move |_| button)
+                .with_cursor(Cursor::PointingHand)
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(action.clone());
+                })
+                .finish()
         };
 
         // PRODUCT §51 (7l): the "＋ attach" control opens the OS file picker.
@@ -8940,59 +9070,33 @@ impl ClaudeCodeView {
         // right. (#7: the streaming indicator moved out of here to below the
         // last message.)
         //
-        // Responsive: in a narrow pane the read-only info chips step out first
-        // (compact drops `MCP · N`, tiny also drops the context-usage and
-        // effort chips) so the interactive controls and the Send/Stop action
-        // never overflow the card. Every tier is built up front and a
-        // SizeConstraintSwitch picks one at layout time.
-        let controls_for = |density: ComposerDensity| -> Box<dyn Element> {
-            let left = Flex::row()
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_spacing(spacing::SM)
-                .with_child(self.render_permission_control(appearance))
-                .with_child(make_attach())
-                // twarp 17 (PRODUCT 17 §1, §12): voice input + spoken replies.
-                .with_child(self.render_mic_button(appearance))
-                .with_child(self.render_speaker_button(appearance))
-                .finish();
-
-            let mut right = Flex::row()
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_spacing(spacing::SM);
-            if density == ComposerDensity::Full {
-                right.add_child(self.render_mcp_control(appearance));
-            }
-            if density != ComposerDensity::Tiny {
-                right.add_child(self.render_context_control(appearance));
-            }
-            right.add_child(self.render_model_control(appearance));
-            if density != ComposerDensity::Tiny {
-                right.add_child(self.render_effort_control(appearance));
-            }
-            right.add_child(make_action());
-
-            Flex::row()
-                .with_main_axis_size(MainAxisSize::Max)
-                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_child(left)
-                .with_child(right.finish())
-                .finish()
-        };
-        let controls: Box<dyn Element> = Box::new(SizeConstraintSwitch::new(
-            controls_for(ComposerDensity::Full),
-            [
-                (
-                    SizeConstraintCondition::WidthLessThan(COMPOSER_TINY_MAX_WIDTH),
-                    controls_for(ComposerDensity::Tiny),
-                ),
-                (
-                    SizeConstraintCondition::WidthLessThan(COMPOSER_COMPACT_MAX_WIDTH),
-                    controls_for(ComposerDensity::Compact),
-                ),
-            ],
-        ));
+        // Codex-style: the right side is just the single session chip
+        // (model · effort, with context + MCP folded into its menu) and the
+        // action circle, so the row fits every pane width without the old
+        // per-density chip-dropping tiers.
+        let left = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(spacing::SM)
+            .with_child(self.render_permission_control(appearance))
+            .with_child(make_attach())
+            // twarp 17 (PRODUCT 17 §1, §12): voice input + spoken replies.
+            .with_child(self.render_mic_button(appearance))
+            .with_child(self.render_speaker_button(appearance))
+            .finish();
+        let right = Flex::row()
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(spacing::SM)
+            .with_child(self.render_model_control(appearance))
+            .with_child(make_action())
+            .finish();
+        let controls: Box<dyn Element> = Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(left)
+            .with_child(right)
+            .finish();
 
         let mut card_column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
@@ -9013,6 +9117,11 @@ impl ClaudeCodeView {
         // one back to a plain mention.
         if let Some(chips) = self.render_attachment_chips(appearance) {
             card_column.add_child(chips);
+        }
+        // Codex-style: an accepted `/` command sits as an inline token at the
+        // top of the input card; submit re-prefixes it as `/name`.
+        if let Some(token) = self.render_slash_token(appearance) {
+            card_column.add_child(token);
         }
         // 7l: while a file drag hovers the pane, replace the editor with a
         // "Drop to attach" hint and light the card up — the composer becomes the
@@ -9514,6 +9623,11 @@ impl TypedActionView for ClaudeCodeView {
                 // A click steals focus from the editor; give it back so
                 // typing flows on (PRODUCT §15).
                 ctx.focus(&self.input_editor);
+            }
+            ClaudeCodeViewAction::ClearSlashCommand => {
+                self.pending_slash_command = None;
+                ctx.focus(&self.input_editor);
+                ctx.notify();
             }
             ClaudeCodeViewAction::RemoveAttachment(path) => {
                 self.attachment_optouts.insert(PathBuf::from(path));
@@ -12020,61 +12134,53 @@ fn contrasting_text(bg: ColorU) -> ColorU {
     }
 }
 
-fn render_pill(label: &str, bg: ColorU, appearance: &Appearance) -> Box<dyn Element> {
-    let theme = appearance.theme();
+/// A flat, Codex-style composer chip: plain coloured text, no background wash
+/// — hierarchy comes from the text colour, not chrome.
+fn render_pill(label: &str, text_color: ColorU, appearance: &Appearance) -> Box<dyn Element> {
     Container::new(
         appearance
             .ui_builder()
             .span(label.to_owned())
             .with_style(UiComponentStyles {
-                font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+                font_color: Some(text_color),
                 font_size: Some(type_ramp::LABEL.size),
                 ..Default::default()
             })
             .build()
             .finish(),
     )
-    .with_padding_left(spacing::SM)
-    .with_padding_right(spacing::SM)
     .with_padding_top(spacing::XS)
     .with_padding_bottom(spacing::XS)
     .with_margin_right(spacing::SM)
-    .with_background_color(bg)
-    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
     .finish()
 }
 
-/// The §25 permission-mode selector pill: the muted pill chrome with hover +
+/// The §25 permission-mode selector pill: flat coloured text with hover +
 /// pointer affordance; a click dispatches the cycle action. The label carries
 /// a chevron-ish suffix so it reads as a control, not a static chip.
 fn render_clickable_pill(
     label: &str,
     mouse_state: MouseStateHandle,
     on_click: impl Fn(&mut twarpui::EventContext) + 'static,
-    bg: ColorU,
+    text_color: ColorU,
     position_id: &str,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
-    let theme = appearance.theme();
     let label = format!("{label} ▾");
     let pill = Container::new(
         appearance
             .ui_builder()
             .span(label)
             .with_style(UiComponentStyles {
-                font_color: Some(theme.nonactive_ui_text_color().into_solid()),
+                font_color: Some(text_color),
                 font_size: Some(type_ramp::LABEL.size),
                 ..Default::default()
             })
             .build()
             .finish(),
     )
-    .with_padding_left(spacing::SM)
-    .with_padding_right(spacing::SM)
     .with_padding_top(spacing::XS)
     .with_padding_bottom(spacing::XS)
-    .with_background_color(bg)
-    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_CORNER_RADIUS)))
     .finish();
     // Wrap the pill in a `SavePosition` so the open dropdown can anchor its
     // floating overlay to this trigger (#11/#13).
@@ -12095,6 +12201,22 @@ fn render_clickable_pill(
 /// prepends (`claude-fable-5[1m]` → `fable-5[1m]`).
 fn prettify_model(model: &str) -> String {
     model.strip_prefix("claude-").unwrap_or(model).to_owned()
+}
+
+/// Prettify a slash-command name for its inline token (Codex-style):
+/// `validate-plan` → `Validate Plan`.
+fn prettify_slash_command(name: &str) -> String {
+    name.split(['-', '_'])
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Shorten a slash-command description to a single readable line for the
@@ -12127,33 +12249,6 @@ fn prettify_permission_mode(mode: &str) -> String {
         "plan" => "Plan".to_owned(),
         "bypassPermissions" => "Bypass".to_owned(),
         other => other.to_owned(),
-    }
-}
-
-/// The context chip label — `used / window`, e.g. `26K / 1M`. `None` until
-/// `claude` reports a context window (the first turn's `result`).
-fn format_context(usage: Usage) -> Option<String> {
-    let window = usage.context_window?;
-    Some(format!(
-        "{} / {}",
-        format_token_count(usage.context_used()),
-        format_token_count(window),
-    ))
-}
-
-/// Compact token count: `938` → `938`, `26370` → `26K`, `1000000` → `1M`.
-fn format_token_count(n: u64) -> String {
-    if n >= 1_000_000 {
-        let m = n as f64 / 1_000_000.0;
-        if (m - m.round()).abs() < 0.05 {
-            format!("{}M", m.round() as u64)
-        } else {
-            format!("{m:.1}M")
-        }
-    } else if n >= 1_000 {
-        format!("{}K", (n as f64 / 1_000.0).round() as u64)
-    } else {
-        n.to_string()
     }
 }
 

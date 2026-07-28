@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use twarpui::{Entity, ModelContext, SingletonEntity};
 
 use crate::code_review::github_author::parse_github_origin;
+use crate::pull_requests::diff::{parse_pr_diff, parse_review_threads, PrFileDiff, PrReviewThread};
 
 /// How many PRs one fetch requests from `gh pr list`.
 const PR_LIST_LIMIT: u32 = 50;
@@ -25,8 +26,9 @@ const PR_DETAIL_JSON_FIELDS: &str = "number,title,body,author,state,isDraft,merg
 const TIMELINE_PAGE_SIZE: u32 = 50;
 
 /// GraphQL query fetching the PR-level conversation timeline: issue comments
-/// plus reviews (with their top-level bodies and states). Line-anchored review
-/// threads are 21c.
+/// plus reviews (with their top-level bodies, states, and line-comment
+/// counts — the latter lets 21c render "N comments on files" one-liners for
+/// body-less COMMENTED reviews).
 const TIMELINE_QUERY: &str = "\
 query($owner: String!, $name: String!, $number: Int!, $last: Int!) {
   repository(owner: $owner, name: $name) {
@@ -37,7 +39,35 @@ query($owner: String!, $name: String!, $number: Int!, $last: Int!) {
       }
       reviews(last: $last) {
         totalCount
-        nodes { author { login } createdAt body state }
+        nodes { author { login } createdAt body state comments { totalCount } }
+      }
+    }
+  }
+}";
+
+/// How many review threads (and comments per thread) one Files fetch requests.
+const REVIEW_THREADS_PAGE_SIZE: u32 = 100;
+const THREAD_COMMENTS_PAGE_SIZE: u32 = 50;
+
+/// GraphQL query fetching the line-anchored review threads for the Files tab
+/// (21c).
+const REVIEW_THREADS_QUERY: &str = "\
+query($owner: String!, $name: String!, $number: Int!, $first: Int!, $comments: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviewThreads(first: $first) {
+        totalCount
+        nodes {
+          isResolved
+          isOutdated
+          path
+          line
+          startLine
+          diffSide
+          comments(first: $comments) {
+            nodes { author { login } createdAt body }
+          }
+        }
       }
     }
   }
@@ -270,6 +300,22 @@ pub struct PrTimelineItem {
     /// Markdown body; may be empty for state-only reviews (Approved etc).
     pub body: String,
     pub kind: PrTimelineKind,
+    /// For reviews: how many line comments the review carries (Files tab).
+    pub file_comments: u64,
+}
+
+/// Cached Files-tab state for the one open PR (21c): the parsed per-file
+/// diff plus the line-anchored review threads.
+#[derive(Clone, Debug, Default)]
+pub struct PrFilesData {
+    pub files: Vec<PrFileDiff>,
+    pub threads: Vec<PrReviewThread>,
+    /// True when GitHub reported more review threads than one page holds.
+    pub threads_truncated: bool,
+    pub error: Option<String>,
+    pub loading: bool,
+    /// True once at least one files fetch completed (success or error).
+    pub fetched: bool,
 }
 
 /// Cached detail-fetch state for the one open PR.
@@ -287,6 +333,8 @@ pub struct PrDetailData {
     pub mutating: bool,
     /// The last mutation's gh error output, if it failed.
     pub mutation_error: Option<String>,
+    /// The Files tab's diff + review threads (fetched on first tab open).
+    pub files: PrFilesData,
 }
 
 /// A successful detail fetch's payload.
@@ -296,6 +344,13 @@ struct DetailPayload {
     truncated: bool,
 }
 
+/// A successful Files (diff + threads) fetch's payload.
+struct FilesPayload {
+    files: Vec<PrFileDiff>,
+    threads: Vec<PrReviewThread>,
+    threads_truncated: bool,
+}
+
 /// A background detail-fetch or mutation result, streamed back to the model.
 enum DetailMessage {
     Fetch {
@@ -303,6 +358,12 @@ enum DetailMessage {
         number: u64,
         generation: u64,
         outcome: Result<DetailPayload, String>,
+    },
+    Files {
+        repo: PathBuf,
+        number: u64,
+        generation: u64,
+        outcome: Result<FilesPayload, String>,
     },
     Mutation {
         repo: PathBuf,
@@ -342,6 +403,9 @@ pub struct PullRequestsStoreModel {
     detail: Option<((PathBuf, u64), PrDetailData)>,
     /// Bumped on every detail fetch/close so stale results are dropped.
     detail_generation: u64,
+    /// Bumped on every Files fetch/close; separate from `detail_generation`
+    /// so a detail refresh doesn't invalidate an in-flight Files fetch.
+    files_generation: u64,
     detail_tx: async_channel::Sender<DetailMessage>,
 }
 
@@ -369,6 +433,7 @@ impl PullRequestsStoreModel {
             fetch_tx,
             detail: None,
             detail_generation: 0,
+            files_generation: 0,
             detail_tx,
         }
     }
@@ -500,7 +565,52 @@ impl PullRequestsStoreModel {
     pub fn close_detail(&mut self, ctx: &mut ModelContext<Self>) {
         self.detail = None;
         self.detail_generation += 1;
+        self.files_generation += 1;
         ctx.notify();
+    }
+
+    /// Fetch the Files-tab data (diff + review threads) if it hasn't been
+    /// fetched or started yet. Called when the Files tab opens.
+    pub fn ensure_files(&mut self, number: u64, ctx: &mut ModelContext<Self>) {
+        let up_to_date = self
+            .detail_data(number)
+            .is_some_and(|data| data.files.fetched || data.files.loading);
+        if !up_to_date {
+            self.fetch_files(number, ctx);
+        }
+    }
+
+    /// (Re-)fetch the PR diff + review threads on the background executor.
+    pub fn fetch_files(&mut self, number: u64, ctx: &mut ModelContext<Self>) {
+        let Some(repo) = self.selected.clone() else {
+            return;
+        };
+        let key = (repo.clone(), number);
+        let Some((existing, data)) = self.detail.as_mut() else {
+            return;
+        };
+        if *existing != key {
+            return;
+        }
+        data.files.loading = true;
+        self.files_generation += 1;
+        let generation = self.files_generation;
+        ctx.notify();
+
+        let tx = self.detail_tx.clone();
+        ctx.background_executor()
+            .spawn(async move {
+                let outcome = fetch_pr_files(&repo, number);
+                let _ = tx
+                    .send(DetailMessage::Files {
+                        repo,
+                        number,
+                        generation,
+                        outcome,
+                    })
+                    .await;
+            })
+            .detach();
     }
 
     /// (Re-)fetch the detail + timeline for `number` in the selected repo on
@@ -637,6 +747,34 @@ impl PullRequestsStoreModel {
                         data.error = None;
                     }
                     Err(error) => data.error = Some(error),
+                }
+                ctx.notify();
+            }
+            DetailMessage::Files {
+                repo,
+                number,
+                generation,
+                outcome,
+            } => {
+                if generation != self.files_generation {
+                    return; // Superseded (or the detail was closed).
+                }
+                let Some((key, data)) = self.detail.as_mut() else {
+                    return;
+                };
+                if *key != (repo, number) {
+                    return;
+                }
+                data.files.loading = false;
+                data.files.fetched = true;
+                match outcome {
+                    Ok(payload) => {
+                        data.files.files = payload.files;
+                        data.files.threads = payload.threads;
+                        data.files.threads_truncated = payload.threads_truncated;
+                        data.files.error = None;
+                    }
+                    Err(error) => data.files.error = Some(error),
                 }
                 ctx.notify();
             }
@@ -792,6 +930,51 @@ fn fetch_pr_detail(repo: &Path, number: u64) -> Result<DetailPayload, String> {
     })
 }
 
+/// Blocking Files-tab fetch for one PR: the unified diff (`gh pr diff`) plus
+/// the line-anchored review threads (GraphQL). Background executor only.
+fn fetch_pr_files(repo: &Path, number: u64) -> Result<FilesPayload, String> {
+    let slug = github_slug(repo)?;
+    let n = number.to_string();
+    let diff = run_in_repo(repo, "gh", &["pr", "diff", &n, "--repo", &slug])?;
+    let files = parse_pr_diff(&diff);
+
+    let (owner, name) = slug
+        .split_once('/')
+        .ok_or_else(|| format!("Unexpected repo slug: {slug}"))?;
+    let query = format!("query={REVIEW_THREADS_QUERY}");
+    let owner_arg = format!("owner={owner}");
+    let name_arg = format!("name={name}");
+    let number_arg = format!("number={number}");
+    let first_arg = format!("first={REVIEW_THREADS_PAGE_SIZE}");
+    let comments_arg = format!("comments={THREAD_COMMENTS_PAGE_SIZE}");
+    let threads_json = run_in_repo(
+        repo,
+        "gh",
+        &[
+            "api",
+            "graphql",
+            "-f",
+            &query,
+            "-F",
+            &owner_arg,
+            "-F",
+            &name_arg,
+            "-F",
+            &number_arg,
+            "-F",
+            &first_arg,
+            "-F",
+            &comments_arg,
+        ],
+    )?;
+    let (threads, threads_truncated) = parse_review_threads(&threads_json)?;
+    Ok(FilesPayload {
+        files,
+        threads,
+        threads_truncated,
+    })
+}
+
 /// Parse `gh pr view --json` output into a [`PrDetail`].
 pub(crate) fn parse_pr_detail(json: &str) -> Result<PrDetail, String> {
     let value: serde_json::Value = serde_json::from_str(json)
@@ -882,9 +1065,10 @@ fn check_duration(started: &str, completed: &str) -> Option<String> {
 }
 
 /// Parse the [`TIMELINE_QUERY`] response into oldest-first conversation items
-/// plus a truncation flag. Pending reviews and body-less `COMMENTED` reviews
-/// are skipped; body-less Approved/Changes-requested reviews are kept (the
-/// state itself is the content).
+/// plus a truncation flag. Pending reviews and empty `COMMENTED` reviews are
+/// skipped; body-less Approved/Changes-requested reviews are kept (the state
+/// itself is the content), and body-less `COMMENTED` reviews that carry line
+/// comments are kept so the UI can link them to the Files tab (21c).
 pub(crate) fn parse_timeline(json: &str) -> Result<(Vec<PrTimelineItem>, bool), String> {
     let value: serde_json::Value = serde_json::from_str(json)
         .map_err(|err| format!("Could not parse the timeline response: {err}"))?;
@@ -936,6 +1120,7 @@ pub(crate) fn parse_timeline(json: &str) -> Result<(Vec<PrTimelineItem>, bool), 
                 created_at,
                 body,
                 kind: PrTimelineKind::Comment,
+                file_comments: 0,
             }
         })
         .collect();
@@ -948,9 +1133,13 @@ pub(crate) fn parse_timeline(json: &str) -> Result<(Vec<PrTimelineItem>, bool), 
             _ => continue, // PENDING and unknown states are not shown.
         };
         let (author, created_at, body) = node_common(node);
-        if body.trim().is_empty() && state == PrReviewState::Commented {
-            // A body-less "commented" review is a thread container; its
-            // line comments are 21c.
+        let file_comments = node
+            .pointer("/comments/totalCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        if body.trim().is_empty() && state == PrReviewState::Commented && file_comments == 0 {
+            // A body-less "commented" review with no line comments has
+            // nothing to show.
             continue;
         }
         items.push(PrTimelineItem {
@@ -958,6 +1147,7 @@ pub(crate) fn parse_timeline(json: &str) -> Result<(Vec<PrTimelineItem>, bool), 
             created_at,
             body,
             kind: PrTimelineKind::Review(state),
+            file_comments,
         });
     }
     // RFC 3339 UTC timestamps sort chronologically as strings.
@@ -1327,23 +1517,24 @@ mod tests {
                     ]
                 },
                 "reviews": {
-                    "totalCount": 3,
+                    "totalCount": 4,
                     "nodes": [
                         {"author": {"login": "carol"}, "createdAt": "2026-07-22T00:00:00Z", "body": "Nit inside", "state": "CHANGES_REQUESTED"},
                         {"author": {"login": "carol"}, "createdAt": "2026-07-24T00:00:00Z", "body": "", "state": "APPROVED"},
-                        {"author": {"login": "dave"}, "createdAt": "2026-07-22T12:00:00Z", "body": "", "state": "COMMENTED"}
+                        {"author": {"login": "dave"}, "createdAt": "2026-07-22T12:00:00Z", "body": "", "state": "COMMENTED"},
+                        {"author": {"login": "erin"}, "createdAt": "2026-07-25T00:00:00Z", "body": "", "state": "COMMENTED", "comments": {"totalCount": 3}}
                     ]
                 }
             }}}
         }"#;
         let (items, truncated) = parse_timeline(json).unwrap();
-        // The body-less COMMENTED review (a thread container) is dropped; the
-        // body-less APPROVED review is kept.
-        assert_eq!(items.len(), 4);
+        // The empty COMMENTED review is dropped; the body-less APPROVED
+        // review and the COMMENTED review carrying line comments are kept.
+        assert_eq!(items.len(), 5);
         assert!(!truncated);
         assert_eq!(
             items.iter().map(|i| i.author.as_str()).collect::<Vec<_>>(),
-            ["alice", "carol", "bob", "carol"]
+            ["alice", "carol", "bob", "carol", "erin"]
         );
         assert_eq!(
             items[1].kind,
@@ -1354,6 +1545,11 @@ mod tests {
             PrTimelineKind::Review(PrReviewState::Approved)
         );
         assert_eq!(items[0].kind, PrTimelineKind::Comment);
+        assert_eq!(
+            items[4].kind,
+            PrTimelineKind::Review(PrReviewState::Commented)
+        );
+        assert_eq!(items[4].file_comments, 3);
     }
 
     #[test]
