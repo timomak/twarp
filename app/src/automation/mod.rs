@@ -4,6 +4,7 @@
 //! 20a ships the shell: sidebar entry points, pane plumbing, and placeholder
 //! page content. Later phases (20b+) fill in the real page content.
 
+pub mod mcps_page;
 pub mod pane_manager;
 pub mod view;
 

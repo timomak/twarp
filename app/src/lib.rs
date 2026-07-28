@@ -95,8 +95,10 @@ mod image_view;
 // twarp: 2c-f — `input_classifier` module deleted along with the crate.
 mod interval_timer;
 mod linear;
+// twarp 20b: user-managed shared MCP-server registry (Automation > MCPs).
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod login_item;
+mod mcp_registry;
 mod menu;
 mod modal;
 mod network;
@@ -1088,6 +1090,7 @@ fn initialize_app(
         persisted_mcp_server_installations,
         mcp_servers_to_restore,
         persisted_claude_session_defaults,
+        persisted_mcp_registry,
     ) = sqlite_data
         .map(|sqlite_data| {
             (
@@ -1108,10 +1111,12 @@ fn initialize_app(
                 sqlite_data.mcp_server_installations,
                 sqlite_data.mcp_servers_to_restore,
                 sqlite_data.claude_session_defaults,
+                sqlite_data.mcp_registry,
             )
         })
         .unwrap_or_else(|| {
             (
+                Default::default(),
                 Default::default(),
                 Default::default(),
                 Default::default(),
@@ -1675,6 +1680,12 @@ fn initialize_app(
         crate::claude_code_session_defaults::ClaudeSessionDefaultsModel::new(
             persisted_claude_session_defaults,
         )
+    });
+
+    // twarp 20b: the user-managed MCP-server registry (Automation > MCPs),
+    // read synchronously by the MCPs page and the session spawn paths.
+    ctx.add_singleton_model(move |_| {
+        crate::mcp_registry::McpRegistryModel::new(persisted_mcp_registry)
     });
 
     // Subscribe WorkflowAliases to the UpdateManager so that it can be notified when objects are

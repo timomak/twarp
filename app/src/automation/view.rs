@@ -1,6 +1,7 @@
-//! twarp 20a: the full-page main-pane view backing the automation surfaces
-//! (Scheduled Tasks / Skills / MCPs). Placeholder content only — later phases
-//! replace the body with the real page content per [`AutomationPage`].
+//! twarp 20a/20b: the full-page main-pane view backing the automation surfaces
+//! (Scheduled Tasks / Skills / MCPs). The MCPs page is a real management UI
+//! over the MCP-server registry ([`super::mcps_page`]); the other pages remain
+//! placeholders until their phases land.
 
 use twarp_core::ui::tokens::{spacing, type_ramp};
 use twarpui::elements::{
@@ -18,6 +19,7 @@ use crate::pane_group::{
     BackingView, PaneConfiguration, PaneEvent,
 };
 
+use super::mcps_page::{McpsPageAction, McpsPageState};
 use super::AutomationPage;
 
 /// A pane view showing one automation page as a centered full-page column.
@@ -25,15 +27,19 @@ pub struct AutomationView {
     page: AutomationPage,
     pane_configuration: ModelHandle<PaneConfiguration>,
     focus_handle: Option<PaneFocusHandle>,
+    /// Present iff `page == AutomationPage::Mcps` (twarp 20b).
+    mcps_state: Option<McpsPageState>,
 }
 
 impl AutomationView {
     pub fn new(page: AutomationPage, ctx: &mut ViewContext<Self>) -> Self {
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new(page.title()));
+        let mcps_state = (page == AutomationPage::Mcps).then(|| McpsPageState::new(ctx));
         Self {
             page,
             pane_configuration,
             focus_handle: None,
+            mcps_state,
         }
     }
 
@@ -44,18 +50,8 @@ impl AutomationView {
     pub fn pane_configuration(&self) -> ModelHandle<PaneConfiguration> {
         self.pane_configuration.clone()
     }
-}
 
-impl Entity for AutomationView {
-    type Event = PaneEvent;
-}
-
-impl View for AutomationView {
-    fn ui_name() -> &'static str {
-        "AutomationView"
-    }
-
-    fn render(&self, app: &AppContext) -> Box<dyn Element> {
+    fn render_placeholder(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
@@ -93,15 +89,41 @@ impl View for AutomationView {
     }
 }
 
-/// Actions supported by the pane header's overflow menu (currently none).
+impl Entity for AutomationView {
+    type Event = PaneEvent;
+}
+
+impl View for AutomationView {
+    fn ui_name() -> &'static str {
+        "AutomationView"
+    }
+
+    fn render(&self, app: &AppContext) -> Box<dyn Element> {
+        match &self.mcps_state {
+            Some(state) => state.render(app),
+            None => self.render_placeholder(app),
+        }
+    }
+}
+
+/// Actions supported by the automation pages.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AutomationViewAction {}
+pub enum AutomationViewAction {
+    /// MCPs page controls (twarp 20b).
+    Mcps(McpsPageAction),
+}
 
 impl TypedActionView for AutomationView {
     type Action = AutomationViewAction;
 
-    fn handle_action(&mut self, _action: &Self::Action, _ctx: &mut ViewContext<Self>) {
-        // AutomationViewAction is currently uninhabited.
+    fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
+        match action {
+            AutomationViewAction::Mcps(action) => {
+                if let Some(state) = self.mcps_state.as_mut() {
+                    state.handle_action(action, ctx);
+                }
+            }
+        }
     }
 }
 
@@ -123,7 +145,7 @@ impl BackingView for AutomationView {
     }
 
     fn focus_contents(&mut self, _ctx: &mut ViewContext<Self>) {
-        // Placeholder page has no focusable content yet.
+        // The page has no single natural focus target.
     }
 
     fn render_header_content(

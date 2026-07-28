@@ -51,6 +51,9 @@ pub struct ThreadStartParams<'a> {
     pub cwd: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<&'a str>,
+    /// twarp 20b: `config.toml`-style overrides (e.g. `mcp_servers`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<&'a Value>,
     pub sandbox: &'static str,
     pub approval_policy: &'static str,
     pub approvals_reviewer: &'static str,
@@ -65,6 +68,9 @@ pub struct ThreadResumeParams<'a> {
     pub cwd: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<&'a str>,
+    /// twarp 20b: `config.toml`-style overrides (e.g. `mcp_servers`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<&'a Value>,
     pub sandbox: &'static str,
     pub approval_policy: &'static str,
     pub approvals_reviewer: &'static str,
@@ -116,6 +122,7 @@ pub fn thread_start_request(
     id: String,
     cwd: &Path,
     model: Option<&str>,
+    config: Option<&Value>,
     sandbox: &'static str,
     approval_policy: &'static str,
 ) -> Value {
@@ -126,6 +133,7 @@ pub fn thread_start_request(
         params: ThreadStartParams {
             cwd: cwd.as_ref(),
             model,
+            config,
             sandbox,
             approval_policy,
             approvals_reviewer: "user",
@@ -140,6 +148,7 @@ pub fn thread_resume_request(
     thread_id: &str,
     cwd: &Path,
     model: Option<&str>,
+    config: Option<&Value>,
     sandbox: &'static str,
     approval_policy: &'static str,
 ) -> Value {
@@ -151,6 +160,7 @@ pub fn thread_resume_request(
             thread_id,
             cwd: cwd.as_ref(),
             model,
+            config,
             sandbox,
             approval_policy,
             approvals_reviewer: "user",

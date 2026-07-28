@@ -244,6 +244,11 @@ pub struct SpawnOptions {
     pub allowed_tools: Vec<String>,
     /// Inline JSON or a config path passed to `claude --mcp-config`.
     pub mcp_config: Option<String>,
+    /// twarp 20b: Codex-only `config.toml`-style overrides (e.g. the user's
+    /// MCP-server registry as `{"mcp_servers": {...}}`), passed as the
+    /// `config` object of the app-server `thread/start` / `thread/resume`
+    /// request. Ignored by the Claude spawn path.
+    pub codex_config_overrides: Option<serde_json::Value>,
     /// `PATH` to run `claude` under. macOS GUI apps launched via Finder/`open`
     /// inherit launchd's minimal `PATH`, which omits the user's shell dirs
     /// (Homebrew, `~/.local/bin`, version managers) where `claude` usually

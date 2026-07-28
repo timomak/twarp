@@ -3614,6 +3614,13 @@ impl ClaudeCodeView {
             permission_mode: self.permission_mode,
             allowed_tools: Vec::new(),
             mcp_config: claude_mcp_config_json(&self.session_id, ctx),
+            // twarp 20b: registry servers reach Codex as config overrides on
+            // the app-server thread/start (resume included).
+            codex_config_overrides: (self.provider == AgentProvider::Codex)
+                .then(|| {
+                    crate::mcp_registry::McpRegistryModel::as_ref(ctx).codex_config_overrides()
+                })
+                .flatten(),
             path_env: self.interactive_path.clone(),
             env_vars: (self.provider == AgentProvider::Codex)
                 .then(|| self.interactive_env_vars.clone())
@@ -12134,6 +12141,12 @@ fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> 
     #[cfg(not(target_family = "wasm"))]
     {
         let mut servers = serde_json::Map::new();
+        // twarp 20b: user-managed registry entries first, so the built-ins
+        // merged below keep priority on a name collision.
+        merge_mcp_servers(
+            &mut servers,
+            crate::mcp_registry::McpRegistryModel::as_ref(app).claude_mcp_config_json(),
+        );
         // twarp 14j: session-scoped endpoint — browser tools target/open
         // panes in THIS session's tab and stay bound to them across moves.
         merge_mcp_servers(
