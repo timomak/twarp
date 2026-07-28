@@ -4160,16 +4160,19 @@ impl PaneGroup {
             }
             PaneEvent::SendChatNotification {
                 trigger,
-                body,
                 fallback_title,
             } => {
-                // Title the notification after the tab (custom rename
+                // State-first notification: the title is the outcome
+                // ("Completed"), the body names the tab (custom rename
                 // included) — the chat view can't see the tab title itself.
-                let mut title = self.display_title(ctx);
-                if title.trim().is_empty() {
-                    title = fallback_title.clone();
+                let mut tab_title = self.display_title(ctx);
+                if tab_title.trim().is_empty() {
+                    tab_title = fallback_title.clone();
                 }
-                let notification = trigger.create_notification_content(title, body.clone());
+                let notification = BlockNotification {
+                    title: trigger.chat_state_title().to_owned(),
+                    body: tab_title,
+                };
                 ctx.emit(Event::SendNotification {
                     notification,
                     pane_id,
