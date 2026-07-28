@@ -2079,6 +2079,18 @@ impl NotificationsTrigger {
         }
     }
 
+    /// The state-first title for a chat pane's notification (7p): the outcome
+    /// alone ("Completed"), with the tab named in the body.
+    pub fn chat_state_title(&self) -> &'static str {
+        use NotificationsTrigger::*;
+        match self {
+            LongRunningCommand(true, _) | AgentTaskCompleted(true) => "Completed",
+            LongRunningCommand(false, _) | AgentTaskCompleted(false) => "Failed",
+            NeedsAttention => "Needs attention",
+            PasswordPrompt => "Waiting for a password",
+        }
+    }
+
     /// Notifications have the following format
     /// - title: "'{start_of_command}...' {trigger_specific_details}"
     /// - body: "{additional_context} ...{end_of_output}"

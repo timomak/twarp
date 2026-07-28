@@ -185,7 +185,6 @@ struct ProviderCopy {
     unavailable_title: &'static str,
     unavailable_body: &'static str,
     install_body: &'static str,
-    needs_attention_prefix: &'static str,
 }
 
 fn provider_copy(provider: AgentProvider) -> ProviderCopy {
@@ -198,7 +197,6 @@ fn provider_copy(provider: AgentProvider) -> ProviderCopy {
             unavailable_title: "Claude Code isn't available.",
             unavailable_body: "The `claude` command wasn't found on your PATH.",
             install_body: "Install Claude Code (https://docs.claude.com/en/docs/claude-code), make sure `claude` is available in a terminal, then check again.",
-            needs_attention_prefix: "Claude",
         },
         AgentProvider::Codex => ProviderCopy {
             pane_title: "Codex",
@@ -208,7 +206,6 @@ fn provider_copy(provider: AgentProvider) -> ProviderCopy {
             unavailable_title: "Codex isn't available.",
             unavailable_body: "The `codex` command wasn't found on your PATH.",
             install_body: "Install the Codex CLI, make sure `codex` is available in a terminal, then check again.",
-            needs_attention_prefix: "Codex",
         },
     }
 }
@@ -830,10 +827,10 @@ pub struct ClaudeCodeView {
     /// green ✓ — so reviewed and unreviewed chats read apart at a glance.
     tab_attention_seen: bool,
     /// A turn completed while background scripts / sub-agents were still
-    /// running: the ✓ and the desktop notification are held here (the
-    /// notification body) until the last one retires, so the chat isn't
-    /// declared complete while work is still in flight.
-    deferred_completion: Option<String>,
+    /// running: the ✓ and the desktop notification are held until the last
+    /// one retires, so the chat isn't declared complete while work is still
+    /// in flight.
+    deferred_completion: bool,
     /// Stable mouse-state handles kept across renders so a click's
     /// mousedown/mouseup hit the same handle.
     submit_button: MouseStateHandle,
@@ -1403,7 +1400,7 @@ impl ClaudeCodeView {
             streaming: false,
             tab_attention: None,
             tab_attention_seen: false,
-            deferred_completion: None,
+            deferred_completion: false,
             interrupt_pending: false,
             submit_button: MouseStateHandle::default(),
             action_anim_started: None,
@@ -3921,14 +3918,7 @@ impl ClaudeCodeView {
                     );
                     // 7p: the turn is now parked on the user. Notify if
                     // they're away, and flip the tab dot to blocked.
-                    self.maybe_send_attention_notification(
-                        NotificationsTrigger::NeedsAttention,
-                        format!(
-                            "{} is asking you a question",
-                            provider_copy(self.provider).needs_attention_prefix
-                        ),
-                        ctx,
-                    );
+                    self.maybe_send_attention_notification(NotificationsTrigger::NeedsAttention, ctx);
                     ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
                     ctx.notify();
                     return;
@@ -3965,15 +3955,8 @@ impl ClaudeCodeView {
         // the turn on the user — notify if they're away. The tab flips to
         // blocked once the card lands in the transcript below. The held
         // AskUserQuestion path notified above and returned.
-        if let TranscriptEvent::PermissionRequest { tool, .. } = &event {
-            self.maybe_send_attention_notification(
-                NotificationsTrigger::NeedsAttention,
-                format!(
-                    "{} needs permission to use {tool}",
-                    provider_copy(self.provider).needs_attention_prefix
-                ),
-                ctx,
-            );
+        if let TranscriptEvent::PermissionRequest { .. } = &event {
+            self.maybe_send_attention_notification(NotificationsTrigger::NeedsAttention, ctx);
             ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         }
         // A background agent retiring can be what finally flips the tab from
@@ -3999,21 +3982,19 @@ impl ClaudeCodeView {
             // or follows an Error that already reported.
             // Whatever completion was still held for a previous turn is
             // superseded by this turn's outcome.
-            self.deferred_completion = None;
+            self.deferred_completion = false;
             match reason {
                 claude_code::EndReason::Completed => {
-                    let body = self.last_assistant_text().unwrap_or_default();
                     if self.has_active_background_work() {
                         // Background scripts / sub-agents are still running:
                         // hold the ✓ and the notification until the last one
                         // retires (`maybe_fire_deferred_completion`).
-                        self.deferred_completion = Some(body);
+                        self.deferred_completion = true;
                     } else {
                         self.tab_attention = Some(true);
                         self.tab_attention_seen = false;
                         self.maybe_send_attention_notification(
                             NotificationsTrigger::AgentTaskCompleted(true),
-                            body,
                             ctx,
                         );
                     }
@@ -4024,13 +4005,11 @@ impl ClaudeCodeView {
                     // branch — interrupted turns stay silent.
                     self.pump_live_tts(true, ctx);
                 }
-                claude_code::EndReason::Error(message) => {
+                claude_code::EndReason::Error(_) => {
                     self.tab_attention = Some(false);
                     self.tab_attention_seen = false;
-                    let message = message.clone();
                     self.maybe_send_attention_notification(
                         NotificationsTrigger::AgentTaskCompleted(false),
-                        message,
                         ctx,
                     );
                 }
@@ -4614,18 +4593,13 @@ impl ClaudeCodeView {
     /// script/agent retires (and no new turn has started), deliver the held ✓
     /// and desktop notification. Called after every ingested transcript event.
     fn maybe_fire_deferred_completion(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.deferred_completion.is_none() || self.streaming || self.has_active_background_work()
-        {
+        if !self.deferred_completion || self.streaming || self.has_active_background_work() {
             return;
         }
-        let body = self.deferred_completion.take().unwrap_or_default();
+        self.deferred_completion = false;
         self.tab_attention = Some(true);
         self.tab_attention_seen = false;
-        self.maybe_send_attention_notification(
-            NotificationsTrigger::AgentTaskCompleted(true),
-            body,
-            ctx,
-        );
+        self.maybe_send_attention_notification(NotificationsTrigger::AgentTaskCompleted(true), ctx);
         ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
     }
 
@@ -4648,9 +4622,8 @@ impl ClaudeCodeView {
         }
     }
 
-    /// The tail of the assistant's latest prose, as the completion
-    /// notification's body (7p) — the end of the reply is what the user
-    /// missed (`create_notification_content` truncates from the front).
+    /// The tail of the assistant's latest prose, as the scheduled-run outcome
+    /// summary (20d).
     fn last_assistant_text(&self) -> Option<String> {
         self.transcript
             .items()
@@ -4671,7 +4644,8 @@ impl ClaudeCodeView {
         Some(ctx.window_id()) != ctx.windows().active_window()
     }
 
-    /// Fire a desktop notification titled with the tab's display title (7p),
+    /// Fire a desktop notification titled with the outcome, naming the tab in
+    /// the body (7p),
     /// through the same workspace handler as the terminal's command-completion
     /// notifications (sound setting, permission-failure banner). Mirrors
     /// `send_agent_desktop_notification_or_show_banner`'s setting gates, minus
@@ -4681,7 +4655,6 @@ impl ClaudeCodeView {
     fn maybe_send_attention_notification(
         &mut self,
         trigger: NotificationsTrigger,
-        body: String,
         ctx: &mut ViewContext<Self>,
     ) {
         let session_settings = SessionSettings::as_ref(ctx);
@@ -4702,11 +4675,10 @@ impl ClaudeCodeView {
         if !enabled || !self.is_navigated_away_from_window(ctx) {
             return;
         }
-        // The pane group bakes the title from the tab's display title (custom
+        // The pane group bakes the body from the tab's display title (custom
         // rename included), falling back to our derived title.
         ctx.emit(ClaudeCodeViewEvent::Pane(PaneEvent::SendChatNotification {
             trigger,
-            body,
             fallback_title: self.derived_tab_title(),
         }));
     }

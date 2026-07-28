@@ -1142,14 +1142,13 @@ pub enum PaneEvent {
     /// user is away). Routed through the pane group to the workspace's
     /// existing `send_desktop_notification` handler.
     SendNotification(BlockNotification),
-    /// Like `SendNotification`, but the title isn't baked yet: the pane group
+    /// Like `SendNotification`, but the body isn't baked yet: the pane group
     /// fills it in with the tab's display title (custom rename included),
     /// which the emitting view can't see. Used by the chat pane so its
-    /// completion/attention notifications are titled after the tab.
+    /// notifications read state-first ("Completed") with the tab named below.
     SendChatNotification {
         trigger: NotificationsTrigger,
-        body: String,
-        /// Title to use if the tab's display title resolves to empty.
+        /// Body to use if the tab's display title resolves to empty.
         fallback_title: String,
     },
     /// A remote server resolved the repo root for a session in this pane.

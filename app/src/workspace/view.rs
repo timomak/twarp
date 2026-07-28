@@ -13200,7 +13200,6 @@ impl Workspace {
                 me.maybe_notify_scheduled_run_ended(
                     &task_name,
                     *success,
-                    summary,
                     run_pane_group_id,
                     run_pane_id,
                     ctx,
@@ -13229,7 +13228,6 @@ impl Workspace {
         &mut self,
         task_name: &str,
         success: bool,
-        summary: &str,
         run_pane_group_id: EntityId,
         run_pane_id: PaneId,
         ctx: &mut ViewContext<Self>,
@@ -13257,11 +13255,10 @@ impl Workspace {
             return;
         }
 
-        let status = if success { "finished" } else { "failed" };
-        let title = format!("Scheduled task '{task_name}' {status}");
-        // Newlines render as awkward gaps in macOS notifications (see
-        // `create_notification_content`).
-        let body = summary.replace('\n', " ").trim().to_string();
+        // State-first, matching the chat pane's 7p notifications: the outcome
+        // is the title, the task is named in the body.
+        let title = if success { "Completed" } else { "Failed" }.to_owned();
+        let body = format!("Scheduled task '{task_name}'");
 
         let notification_data = NotificationContext::BlockOrigin {
             window_id: ctx.window_id(),
