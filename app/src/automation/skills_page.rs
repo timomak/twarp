@@ -83,6 +83,9 @@ struct SkillForm {
 pub struct SkillsPageState {
     scroll_state: ClippedScrollStateHandle,
     new_button: ViewHandle<ActionButton>,
+    /// Dedicated CTA for the empty state (20e) — a view handle can't be
+    /// mounted both in the header and in the empty state at once.
+    empty_new_button: ViewHandle<ActionButton>,
     rows: HashMap<String, RowUi>,
     adopt_buttons: HashMap<String, ViewHandle<ActionButton>>,
     form: Option<SkillForm>,
@@ -97,9 +100,15 @@ impl SkillsPageState {
                 ctx.dispatch_typed_action(AutomationViewAction::Skills(SkillsPageAction::OpenNew));
             })
         });
+        let empty_new_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("New skill", PrimaryTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(AutomationViewAction::Skills(SkillsPageAction::OpenNew));
+            })
+        });
         let mut state = Self {
             scroll_state: Default::default(),
             new_button,
+            empty_new_button,
             rows: HashMap::new(),
             adopt_buttons: HashMap::new(),
             form: None,
@@ -287,31 +296,35 @@ impl SkillsPageState {
 
         let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
 
+        // 20e: while the empty state (with its own CTA) shows, the header's
+        // New-skill button is hidden — one clear next action, not two.
+        let show_empty_state = store.skills().is_empty() && self.form.is_none();
+
         // Header: title left, New-skill button right.
-        column.add_child(
-            Flex::row()
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_child(
-                    Shrinkable::new(
-                        1.,
-                        Align::new(
-                            Text::new_inline(
-                                "Skills",
-                                appearance.ui_font_family(),
-                                type_ramp::HEADING.size,
-                            )
-                            .with_line_height_ratio(type_ramp::HEADING.line_height)
-                            .with_color(theme.main_text_color(theme.background()).into())
-                            .finish(),
+        let mut header = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(
+                Shrinkable::new(
+                    1.,
+                    Align::new(
+                        Text::new_inline(
+                            "Skills",
+                            appearance.ui_font_family(),
+                            type_ramp::HEADING.size,
                         )
-                        .left()
+                        .with_line_height_ratio(type_ramp::HEADING.line_height)
+                        .with_color(theme.main_text_color(theme.background()).into())
                         .finish(),
                     )
+                    .left()
                     .finish(),
                 )
-                .with_child(ChildView::new(&self.new_button).finish())
                 .finish(),
-        );
+            );
+        if !show_empty_state {
+            header.add_child(ChildView::new(&self.new_button).finish());
+        }
+        column.add_child(header.finish());
         column.add_child(
             Container::new(
                 Text::new_inline(
@@ -333,21 +346,13 @@ impl SkillsPageState {
         }
 
         let skills = store.skills();
-        if skills.is_empty() && self.form.is_none() {
-            column.add_child(
-                Container::new(
-                    Text::new_inline(
-                        "No skills yet.",
-                        appearance.ui_font_family(),
-                        type_ramp::PROSE.size,
-                    )
-                    .with_line_height_ratio(type_ramp::PROSE.line_height)
-                    .with_color(theme.sub_text_color(theme.background()).into())
-                    .finish(),
-                )
-                .with_margin_bottom(spacing::LG)
-                .finish(),
-            );
+        if show_empty_state {
+            column.add_child(super::render_empty_state(
+                twarp_core::ui::Icon::BookOpen,
+                "No skills yet.",
+                &self.empty_new_button,
+                app,
+            ));
         }
         for skill in skills {
             column.add_child(self.render_row(skill, app));

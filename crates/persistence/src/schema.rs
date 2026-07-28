@@ -106,6 +106,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    automation_panes (id) {
+        id -> Integer,
+        kind -> Text,
+        page -> Text,
+    }
+}
+
+diesel::table! {
     browser_panes (id) {
         id -> Integer,
         kind -> Text,
@@ -596,6 +604,7 @@ diesel::table! {
 
 diesel::joinable!(ambient_agent_panes -> pane_nodes (id));
 diesel::joinable!(app -> windows (active_window_id));
+diesel::joinable!(automation_panes -> pane_nodes (id));
 diesel::joinable!(browser_panes -> pane_nodes (id));
 diesel::joinable!(claude_code_panes -> pane_nodes (id));
 diesel::joinable!(code_pane_tabs -> code_panes (code_pane_id));
@@ -612,6 +621,7 @@ diesel::joinable!(workspace_language_server -> workspace_metadata (workspace_id)
 diesel::allow_tables_to_appear_in_same_query!(
     ambient_agent_panes,
     app,
+    automation_panes,
     browser_panes,
     claude_code_panes,
     claude_session_defaults,

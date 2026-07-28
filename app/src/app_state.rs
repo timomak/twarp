@@ -1165,8 +1165,8 @@ pub enum LeafContents {
     /// backing log is an in-memory ring buffer that starts empty on launch.
     NetworkLog,
     /// twarp 20a: an automation page pane (Scheduled Tasks / Skills / MCPs).
-    /// Not persisted yet — the pages are cheap to reopen from the sidebar and
-    /// carry no state worth restoring while they're placeholders.
+    /// Persisted (20e) by which page it displays; the page content itself is
+    /// re-read from the backing singleton models on restore.
     Automation(crate::automation::AutomationPage),
     /// twarp 07: a Claude Code pane. Persisted *only* once its session exists
     /// on disk (see [`ClaudeCodePaneSnapshot`] and `is_persisted`): twarp keeps
@@ -1206,9 +1206,7 @@ impl LeafContents {
             // Network log: the backing log is an in-memory ring buffer that
             // starts empty on launch; persisting would also regress back to
             // an on-disk log via the app-state database.
-            LeafContents::NetworkLog | LeafContents::BrowserSpike | LeafContents::Automation(_) => {
-                false
-            }
+            LeafContents::NetworkLog | LeafContents::BrowserSpike => false,
             LeafContents::Browser(snapshot) => snapshot.url.is_some(),
             // twarp 07: a Claude Code pane is restorable only once `claude` has
             // written its session `.jsonl` (i.e. the first turn completed and a
@@ -1216,7 +1214,9 @@ impl LeafContents {
             // to `--resume`, so don't persist it — a `pane_nodes` row with no
             // resumable session would restore to an empty pane.
             LeafContents::ClaudeCode(snapshot) => snapshot.session_id.is_some(),
-            LeafContents::Terminal(_)
+            // twarp 20e: automation panes persist which page they show.
+            LeafContents::Automation(_)
+            | LeafContents::Terminal(_)
             | LeafContents::Notebook(_)
             | LeafContents::AIDocument(_)
             | LeafContents::Code(_)

@@ -93,6 +93,9 @@ struct McpEditor {
 pub struct McpsPageState {
     scroll_state: ClippedScrollStateHandle,
     add_button: ViewHandle<ActionButton>,
+    /// Dedicated CTA for the empty state (20e) — a view handle can't be
+    /// mounted both in the header and in the empty state at once.
+    empty_add_button: ViewHandle<ActionButton>,
     rows: HashMap<String, RowUi>,
     editor: Option<McpEditor>,
 }
@@ -104,9 +107,15 @@ impl McpsPageState {
                 ctx.dispatch_typed_action(AutomationViewAction::Mcps(McpsPageAction::OpenAdd));
             })
         });
+        let empty_add_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Add MCP server", PrimaryTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(AutomationViewAction::Mcps(McpsPageAction::OpenAdd));
+            })
+        });
         let mut state = Self {
             scroll_state: Default::default(),
             add_button,
+            empty_add_button,
             rows: HashMap::new(),
             editor: None,
         };
@@ -375,31 +384,35 @@ impl McpsPageState {
 
         let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
 
+        // 20e: while the empty state (with its own CTA) shows, the header's
+        // Add button is hidden — one clear next action, not two.
+        let show_empty_state = registry.servers().is_empty() && self.editor.is_none();
+
         // Header: title left, Add button right.
-        column.add_child(
-            Flex::row()
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_child(
-                    Shrinkable::new(
-                        1.,
-                        Align::new(
-                            Text::new_inline(
-                                "MCPs",
-                                appearance.ui_font_family(),
-                                type_ramp::HEADING.size,
-                            )
-                            .with_line_height_ratio(type_ramp::HEADING.line_height)
-                            .with_color(theme.main_text_color(theme.background()).into())
-                            .finish(),
+        let mut header = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(
+                Shrinkable::new(
+                    1.,
+                    Align::new(
+                        Text::new_inline(
+                            "MCPs",
+                            appearance.ui_font_family(),
+                            type_ramp::HEADING.size,
                         )
-                        .left()
+                        .with_line_height_ratio(type_ramp::HEADING.line_height)
+                        .with_color(theme.main_text_color(theme.background()).into())
                         .finish(),
                     )
+                    .left()
                     .finish(),
                 )
-                .with_child(ChildView::new(&self.add_button).finish())
                 .finish(),
-        );
+            );
+        if !show_empty_state {
+            header.add_child(ChildView::new(&self.add_button).finish());
+        }
+        column.add_child(header.finish());
         column.add_child(
             Container::new(
                 Text::new_inline(
@@ -421,21 +434,13 @@ impl McpsPageState {
         }
 
         let servers = registry.servers();
-        if servers.is_empty() && self.editor.is_none() {
-            column.add_child(
-                Container::new(
-                    Text::new_inline(
-                        "No MCP servers configured yet.",
-                        appearance.ui_font_family(),
-                        type_ramp::PROSE.size,
-                    )
-                    .with_line_height_ratio(type_ramp::PROSE.line_height)
-                    .with_color(theme.sub_text_color(theme.background()).into())
-                    .finish(),
-                )
-                .with_margin_bottom(spacing::LG)
-                .finish(),
-            );
+        if show_empty_state {
+            column.add_child(super::render_empty_state(
+                twarp_core::ui::Icon::Dataflow,
+                "No MCP servers configured yet.",
+                &self.empty_add_button,
+                app,
+            ));
         }
         for entry in servers {
             column.add_child(self.render_row(entry, app));
