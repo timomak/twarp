@@ -67,6 +67,7 @@ pub(super) struct ProjectSidebarMouseStates {
     scheduled_tasks: twarpui::elements::MouseStateHandle,
     skills: twarpui::elements::MouseStateHandle,
     mcps: twarpui::elements::MouseStateHandle,
+    pull_requests: twarpui::elements::MouseStateHandle,
 }
 
 impl ProjectSidebarMouseStates {
@@ -627,6 +628,15 @@ impl Workspace {
                         app,
                     ),
                 )
+                // twarp 21a: Pull Requests page entry point, directly below
+                // the automation rows.
+                .with_child(self.render_sidebar_action(
+                    self.projects_sidebar_mouse_states.pull_requests.clone(),
+                    Icon::GitPullRequest,
+                    "Pull Requests",
+                    WorkspaceAction::ShowPullRequests,
+                    app,
+                ))
                 .with_child(self.render_sidebar_action(
                     self.projects_sidebar_mouse_states.search_sessions.clone(),
                     Icon::Search,

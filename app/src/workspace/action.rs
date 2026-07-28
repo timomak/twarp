@@ -223,6 +223,10 @@ pub enum WorkspaceAction {
     ShowSkills,
     /// twarp 20a: open the MCPs automation page in a main pane.
     ShowMcps,
+    /// twarp 21a: open the Pull Requests page in a main pane.
+    ShowPullRequests,
+    /// twarp 21a: open a URL in a built-in Browser pane (PR-row click).
+    OpenUrlInBrowserPane(String),
     ShowSettingsPage(SettingsSection),
     ShowSettingsPageWithSearch {
         search_query: String,
@@ -789,6 +793,7 @@ impl WorkspaceAction {
             | ResetActiveTabColor
             | AddDefaultTab
             | OpenBrowserPane
+            | OpenUrlInBrowserPane(_)
             | FocusOrOpenBrowserForClaudeSession(_)
             | FocusClaudePaneForSession(_)
             | OpenBrowserSpikePane
@@ -823,6 +828,7 @@ impl WorkspaceAction {
             | ShowScheduledTasks
             | ShowSkills
             | ShowMcps
+            | ShowPullRequests
             | ShowSettingsPage(_)
             | ShowSettingsPageWithSearch { .. }
             | ShowThemeChooser(_)
