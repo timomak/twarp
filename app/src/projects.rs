@@ -17,8 +17,10 @@ pub enum ProjectEvent {
     },
     #[expect(unused, reason = "TODO(jparker): #pod-code-mode wip")]
     Removed { path: PathBuf },
-    #[expect(unused, reason = "TODO(jparker): #pod-code-mode wip")]
-    Updated { path: PathBuf },
+    Updated {
+        #[expect(unused, reason = "listeners re-read the model on notify")]
+        path: PathBuf,
+    },
 }
 
 pub struct ProjectManagementModel {
@@ -90,12 +92,60 @@ impl ProjectManagementModel {
                 path: path.to_string_lossy().to_string(),
                 added_ts: now,
                 last_opened_ts: Some(now),
+                name: None,
             };
             self.projects.insert(path.clone(), project.clone());
             project
         };
         self.save_project(project);
         ctx.emit(ProjectEvent::Added { path });
+    }
+
+    /// The user-chosen display name for a project, if one was set via
+    /// "Rename project" in the sidebar.
+    pub fn project_name(&self, path: &PathBuf) -> Option<String> {
+        let path = project_identity(path.clone());
+        self.projects
+            .get(&path)
+            .and_then(|project| project.name.clone())
+            .filter(|name| !name.trim().is_empty())
+    }
+
+    /// Sets (or clears, with `None` / blank) the custom display name for a
+    /// project. Upserts the project row so renaming a live project that was
+    /// never opened through the library still persists.
+    pub fn set_project_name(
+        &mut self,
+        path: PathBuf,
+        name: Option<String>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let path = project_identity(path);
+        let name = name
+            .map(|name| name.trim().to_owned())
+            .filter(|name| !name.is_empty());
+        let now = Utc::now().naive_utc();
+        let project = match self.projects.get_mut(&path) {
+            Some(existing_project) => {
+                if existing_project.name == name {
+                    return;
+                }
+                existing_project.name = name;
+                existing_project.clone()
+            }
+            None => {
+                let project = Project {
+                    path: path.to_string_lossy().to_string(),
+                    added_ts: now,
+                    last_opened_ts: Some(now),
+                    name,
+                };
+                self.projects.insert(path.clone(), project.clone());
+                project
+            }
+        };
+        self.save_project(project);
+        ctx.emit(ProjectEvent::Updated { path });
     }
 
     pub fn all_projects(&self) -> impl Iterator<Item = &Project> {

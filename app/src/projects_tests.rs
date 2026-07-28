@@ -21,16 +21,19 @@ fn project_paths_are_sorted_by_recency_then_path() {
                 path: "/work/zeta".to_owned(),
                 added_ts: timestamp(1),
                 last_opened_ts: Some(timestamp(2)),
+                name: None,
             },
             Project {
                 path: "/work/beta".to_owned(),
                 added_ts: timestamp(1),
                 last_opened_ts: Some(timestamp(3)),
+                name: None,
             },
             Project {
                 path: "/work/alpha".to_owned(),
                 added_ts: timestamp(1),
                 last_opened_ts: Some(timestamp(3)),
+                name: None,
             },
         ];
         app.add_singleton_model(|ctx| ProjectManagementModel::new(projects, None, ctx));
@@ -63,11 +66,13 @@ fn canonical_project_paths_collapse_to_one_library_identity() {
                 path: canonical_path.to_string_lossy().into_owned(),
                 added_ts: timestamp(1),
                 last_opened_ts: Some(timestamp(2)),
+                name: None,
             },
             Project {
                 path: alias_path.to_string_lossy().into_owned(),
                 added_ts: timestamp(1),
                 last_opened_ts: Some(timestamp(3)),
+                name: None,
             },
         ];
         app.add_singleton_model(|ctx| ProjectManagementModel::new(projects, None, ctx));

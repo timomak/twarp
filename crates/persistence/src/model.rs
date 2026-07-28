@@ -234,6 +234,9 @@ pub struct Project {
     pub path: String,
     pub added_ts: NaiveDateTime,
     pub last_opened_ts: Option<NaiveDateTime>,
+    /// User-chosen display name shown in the Projects sidebar; `None` falls
+    /// back to the folder basename.
+    pub name: Option<String>,
 }
 
 impl Project {

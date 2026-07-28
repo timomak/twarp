@@ -328,7 +328,10 @@ impl Workspace {
             .tabs
             .iter()
             .enumerate()
-            .filter(|(_, tab)| !tab.pane_group.as_ref(app).has_settings_panes())
+            .filter(|(_, tab)| {
+                let pane_group = tab.pane_group.as_ref(app);
+                !pane_group.has_settings_panes() && !pane_group.has_automation_panes()
+            })
             .map(|(index, tab)| (index, tab.project_root.clone()));
         let library_paths = ProjectManagementModel::as_ref(app).project_paths_by_recency();
         merged_project_targets(local_roots, library_paths)
@@ -342,14 +345,25 @@ impl Workspace {
                 };
                 let pane_group = tab.pane_group.as_ref(app);
                 let roots = self.project_roots(tab.pane_group.id(), app);
+                let custom_name = tab
+                    .project_root
+                    .as_ref()
+                    .and_then(|root| ProjectManagementModel::as_ref(app).project_name(root));
                 project_title(
-                    None,
+                    custom_name.as_deref(),
                     tab.project_root.as_deref(),
                     &roots,
                     &pane_group.display_title(app),
                 )
             }
-            ProjectListTarget::Library(path) => project_title(None, Some(path), &[], ""),
+            ProjectListTarget::Library(path) => project_title(
+                ProjectManagementModel::as_ref(app)
+                    .project_name(path)
+                    .as_deref(),
+                Some(path),
+                &[],
+                "",
+            ),
         }
     }
 
@@ -502,18 +516,35 @@ impl Workspace {
         action: WorkspaceAction,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        self.render_sidebar_action_with_count(mouse_state, icon, label, None, action, app)
+        self.render_sidebar_action_with_count(mouse_state, icon, label, None, false, action, app)
+    }
+
+    /// Whether the active tab is showing the given automation page — used to
+    /// highlight that page's sidebar row while it is open and active.
+    fn active_tab_shows_automation_page(
+        &self,
+        page: crate::automation::AutomationPage,
+        app: &AppContext,
+    ) -> bool {
+        self.tabs.get(self.active_tab_index()).is_some_and(|tab| {
+            tab.pane_group
+                .as_ref(app)
+                .automation_pages(app)
+                .contains(&page)
+        })
     }
 
     /// twarp 20e: like [`Self::render_sidebar_action`] but with an optional
     /// right-aligned count (used by the automation rows; `Some(0)` renders no
-    /// badge).
+    /// badge) and an `active` highlight for the row whose page is showing in
+    /// the active tab.
     fn render_sidebar_action_with_count(
         &self,
         mouse_state: twarpui::elements::MouseStateHandle,
         icon: Icon,
         label: &'static str,
         count: Option<usize>,
+        active: bool,
         action: WorkspaceAction,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -558,7 +589,9 @@ impl Workspace {
             let mut row = Container::new(contents)
                 .with_uniform_padding(spacing::SM)
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
-            if state.is_hovered() {
+            if active {
+                row = row.with_background(theme.surface_3());
+            } else if state.is_hovered() {
                 row = row.with_background(theme.surface_overlay_2());
             }
             row.finish()
@@ -596,6 +629,10 @@ impl Workspace {
                                 .filter(|task| task.enabled)
                                 .count(),
                         ),
+                        self.active_tab_shows_automation_page(
+                            crate::automation::AutomationPage::ScheduledTasks,
+                            app,
+                        ),
                         WorkspaceAction::ShowScheduledTasks,
                         app,
                     ),
@@ -609,6 +646,10 @@ impl Workspace {
                             crate::skills_store::SkillsStoreModel::as_ref(app)
                                 .skills()
                                 .len(),
+                        ),
+                        self.active_tab_shows_automation_page(
+                            crate::automation::AutomationPage::Skills,
+                            app,
                         ),
                         WorkspaceAction::ShowSkills,
                         app,
@@ -624,16 +665,25 @@ impl Workspace {
                                 .servers()
                                 .len(),
                         ),
+                        self.active_tab_shows_automation_page(
+                            crate::automation::AutomationPage::Mcps,
+                            app,
+                        ),
                         WorkspaceAction::ShowMcps,
                         app,
                     ),
                 )
                 // twarp 21a: Pull Requests page entry point, directly below
                 // the automation rows.
-                .with_child(self.render_sidebar_action(
+                .with_child(self.render_sidebar_action_with_count(
                     self.projects_sidebar_mouse_states.pull_requests.clone(),
                     Icon::GitPullRequest,
                     "Pull Requests",
+                    None,
+                    self.active_tab_shows_automation_page(
+                        crate::automation::AutomationPage::PullRequests,
+                        app,
+                    ),
                     WorkspaceAction::ShowPullRequests,
                     app,
                 ))
@@ -720,23 +770,25 @@ impl Workspace {
             })
             .unwrap_or_else(|| theme.hint_text_color(theme.background()));
 
+        let rename_root = selected_tab.project_root.clone();
+        let is_renaming_project =
+            rename_root.is_some() && self.project_being_renamed == rename_root;
+        let title_element: Box<dyn Element> = if is_renaming_project {
+            ChildView::new(&self.project_rename_editor).finish()
+        } else {
+            Text::new_inline(title.clone(), appearance.ui_font_family(), type_ramp::UI.size)
+                .with_line_height_ratio(type_ramp::UI.line_height)
+                .with_clip(twarpui::text_layout::ClipConfig::end())
+                .with_color(theme.main_text_color(theme.background()).into())
+                .finish()
+        };
         let project_row = Hoverable::new(row_mouse_state, move |state| {
             let identity = sidebar_icon(Icon::CircleFilled, color);
             let project_identity = Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_spacing(spacing::SM)
                 .with_child(identity)
-                .with_child(
-                    Text::new_inline(
-                        title.clone(),
-                        appearance.ui_font_family(),
-                        type_ramp::UI.size,
-                    )
-                    .with_line_height_ratio(type_ramp::UI.line_height)
-                    .with_clip(twarpui::text_layout::ClipConfig::end())
-                    .with_color(theme.main_text_color(theme.background()).into())
-                    .finish(),
-                )
+                .with_child(title_element)
                 .finish();
             let mut contents = Flex::row()
                 .with_main_axis_size(MainAxisSize::Max)
@@ -809,6 +861,11 @@ impl Workspace {
         })
         .on_click(move |ctx, _, _| {
             ctx.dispatch_typed_action(WorkspaceAction::ActivateTab(selected_index))
+        })
+        .on_double_click(move |ctx, _, _| {
+            if let Some(project_root) = rename_root.clone() {
+                ctx.dispatch_typed_action(WorkspaceAction::RenameProject { project_root })
+            }
         })
         .with_defer_events_to_children()
         .with_cursor(Cursor::PointingHand)
@@ -885,26 +942,25 @@ impl Workspace {
                 );
             }
             if state.is_hovered() && !pane_drag_active && !is_renaming {
-                let menu = Hoverable::new(menu_mouse_state.clone(), move |button_state| {
+                // Archive closes the session tab; it stays resumable from
+                // past sessions. The full menu remains on right-click.
+                let archive = Hoverable::new(menu_mouse_state.clone(), move |button_state| {
                     let color = if button_state.is_hovered() {
                         theme.main_text_color(theme.background())
                     } else {
                         theme.sub_text_color(theme.background())
                     };
-                    Container::new(sidebar_icon(Icon::DotsHorizontal, color))
+                    Container::new(sidebar_icon(Icon::Archive, color))
                         .with_padding_left(spacing::XS)
                         .with_padding_right(spacing::XS)
                         .finish()
                 })
-                .on_click(move |ctx, _, position| {
-                    ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectChatRightClickMenu {
-                        tab_index: index,
-                        anchor: TabContextMenuAnchor::Pointer(position),
-                    })
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(WorkspaceAction::CloseTab(index))
                 })
                 .with_cursor(Cursor::PointingHand)
                 .finish();
-                trailing.add_child(menu);
+                trailing.add_child(archive);
             }
             let contents = Flex::row()
                 .with_main_axis_size(MainAxisSize::Max)
@@ -996,13 +1052,16 @@ impl Workspace {
             })
             .unwrap_or_else(|| theme.hint_text_color(theme.background()));
 
+        let is_renaming_project = self.project_being_renamed.as_ref() == Some(&path);
         let mut labels = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Start);
-        labels.add_child(
+        labels.add_child(if is_renaming_project {
+            ChildView::new(&self.project_rename_editor).finish()
+        } else {
             Text::new_inline(title, appearance.ui_font_family(), type_ramp::UI.size)
                 .with_line_height_ratio(type_ramp::UI.line_height)
                 .with_color(theme.main_text_color(theme.background()).into())
-                .finish(),
-        );
+                .finish()
+        });
         if let Some(disambiguation) = disambiguation {
             labels.add_child(
                 Text::new_inline(
@@ -1050,9 +1109,17 @@ impl Workspace {
             }
             container.finish()
         })
-        .on_click(move |ctx, _, _| {
-            ctx.dispatch_typed_action(WorkspaceAction::OpenProjectLibraryEntry {
-                path: path.clone(),
+        .on_click({
+            let path = path.clone();
+            move |ctx, _, _| {
+                ctx.dispatch_typed_action(WorkspaceAction::OpenProjectLibraryEntry {
+                    path: path.clone(),
+                })
+            }
+        })
+        .on_double_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(WorkspaceAction::RenameProject {
+                project_root: path.clone(),
             })
         })
         .with_cursor(Cursor::PointingHand)
@@ -1177,6 +1244,10 @@ impl Workspace {
         .with_overlayed_scrollbar()
         .finish();
 
+        let settings_active = self
+            .tabs
+            .get(self.active_tab_index())
+            .is_some_and(|tab| tab.pane_group.as_ref(app).has_settings_panes());
         let settings = Hoverable::new(self.projects_settings_mouse_state.clone(), move |state| {
             let mut row = Container::new(
                 Flex::row()
@@ -1200,7 +1271,9 @@ impl Workspace {
             )
             .with_uniform_padding(spacing::SM)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
-            if state.is_hovered() {
+            if settings_active {
+                row = row.with_background(theme.surface_3());
+            } else if state.is_hovered() {
                 row = row.with_background(theme.surface_overlay_2());
             }
             row.finish()

@@ -129,6 +129,11 @@ pub enum WorkspaceAction {
     MoveTabRight(usize),
     RenameTab(usize),
     ResetTabName(usize),
+    /// Opens the inline rename editor on a Projects-sidebar project row. The
+    /// custom name persists on the `projects` table keyed by root path.
+    RenameProject {
+        project_root: std::path::PathBuf,
+    },
     RenamePane(PaneViewLocator),
     ResetPaneName(PaneViewLocator),
     RenameActiveTab,
@@ -776,6 +781,7 @@ impl WorkspaceAction {
             | DropTab
             | RenameTab(_)
             | ResetTabName(_)
+            | RenameProject { .. }
             | RenamePane(_)
             | ResetPaneName(_)
             | RenameActiveTab

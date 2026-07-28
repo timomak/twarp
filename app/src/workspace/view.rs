@@ -963,6 +963,8 @@ pub struct Workspace {
     traffic_light_mouse_states: TrafficLightMouseStates,
     tab_rename_editor: ViewHandle<EditorView>,
     pane_rename_editor: ViewHandle<EditorView>,
+    pub(crate) project_rename_editor: ViewHandle<EditorView>,
+    pub(crate) project_being_renamed: Option<PathBuf>,
     vertical_tabs_search_input: ViewHandle<EditorView>,
     projects_search_open: bool,
     projects_search_selection: usize,
@@ -1418,6 +1420,94 @@ impl Workspace {
             me.handle_tab_rename_editor_event(event, ctx);
         });
         editor
+    }
+
+    fn project_rename_editor(ctx: &mut ViewContext<Self>) -> ViewHandle<EditorView> {
+        let editor = {
+            ctx.add_typed_action_view(|ctx| {
+                let appearance = Appearance::as_ref(ctx);
+                let options = SingleLineEditorOptions {
+                    text: TextOptions::ui_text(
+                        Some(Self::tab_rename_editor_font_size(ctx, appearance)),
+                        appearance,
+                    ),
+                    ..Default::default()
+                };
+                EditorView::single_line(options, ctx)
+            })
+        };
+        ctx.subscribe_to_view(&editor, move |me, _, event, ctx| {
+            me.handle_project_rename_editor_event(event, ctx);
+        });
+        editor
+    }
+
+    pub fn handle_project_rename_editor_event(
+        &mut self,
+        event: &EditorEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.project_being_renamed.is_some() {
+            match event {
+                EditorEvent::Blurred | EditorEvent::Enter => {
+                    self.finish_project_rename(ctx);
+                }
+                EditorEvent::Escape => {
+                    self.cancel_project_rename(ctx);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub fn rename_project(&mut self, project_root: PathBuf, ctx: &mut ViewContext<Self>) {
+        let current = crate::projects::ProjectManagementModel::as_ref(ctx)
+            .project_name(&project_root)
+            .or_else(|| {
+                project_root
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .unwrap_or_default();
+        self.project_being_renamed = Some(project_root);
+        let font_size = Self::tab_rename_editor_font_size(ctx, Appearance::as_ref(ctx));
+        self.project_rename_editor.update(ctx, move |editor, ctx| {
+            editor.clear_buffer_and_reset_undo_stack(ctx);
+            editor.set_font_size(font_size, ctx);
+            editor.insert_selected_text(&current, ctx);
+        });
+        ctx.focus(&self.project_rename_editor);
+        ctx.notify();
+    }
+
+    fn finish_project_rename(&mut self, ctx: &mut ViewContext<Self>) {
+        if let Some(project_root) = self.project_being_renamed.take() {
+            let title = self.project_rename_editor.as_ref(ctx).buffer_text(ctx);
+            let name = Some(title.trim().to_owned()).filter(|title| !title.is_empty());
+            // A name matching the folder basename is equivalent to no custom
+            // name — store None so the title keeps tracking the folder.
+            let default_name = project_root
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned());
+            let name = name.filter(|name| Some(name) != default_name.as_ref());
+            crate::projects::ProjectManagementModel::handle(ctx).update(ctx, |model, ctx| {
+                model.set_project_name(project_root, name, ctx);
+            });
+            self.project_rename_editor.update(ctx, |editor, ctx| {
+                editor.clear_buffer_and_reset_undo_stack(ctx);
+            });
+            ctx.notify();
+        }
+    }
+
+    fn cancel_project_rename(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.project_being_renamed.take().is_some() {
+            self.project_rename_editor.update(ctx, |editor, ctx| {
+                editor.clear_buffer_and_reset_undo_stack(ctx);
+            });
+            self.focus_active_tab(ctx);
+            ctx.notify();
+        }
     }
 
     fn pane_rename_editor(ctx: &mut ViewContext<Self>) -> ViewHandle<EditorView> {
@@ -2883,6 +2973,8 @@ impl Workspace {
             traffic_light_mouse_states: Default::default(),
             tab_rename_editor: Self::tab_rename_editor(ctx),
             pane_rename_editor: Self::pane_rename_editor(ctx),
+            project_rename_editor: Self::project_rename_editor(ctx),
+            project_being_renamed: None,
             vertical_tabs_search_input: Self::vertical_tabs_search_input(ctx),
             projects_search_open: false,
             projects_search_selection: 0,
@@ -6966,11 +7058,12 @@ impl Workspace {
 
     /// twarp 20a/20e: opens an automation page (Scheduled Tasks / Skills /
     /// MCPs) as a full-page main pane. At most one pane per page per window:
-    /// if one is already open, focus it; otherwise swap it into the CURRENT
-    /// tab's active pane (owner-directed in 20e — no new tab/project, unlike
-    /// Settings), the same `replace_pane` move the Claude-pane terminal
-    /// trigger uses. Persistence is unaffected: the pane snapshots through
-    /// `AutomationPane::snapshot` regardless of how it was opened.
+    /// if one is already open, focus it; otherwise open it in its own tab,
+    /// like Settings — swapping it into the current tab replaced a live chat
+    /// pane and made the page masquerade as a session row in the Projects
+    /// sidebar (owner-reversed the 20e replace_pane behavior). The tab is
+    /// omitted from the Projects hierarchy via
+    /// `PaneGroup::has_automation_panes`.
     fn open_automation_pane(&mut self, page: AutomationPage, ctx: &mut ViewContext<Self>) {
         let manager = AutomationPaneManager::handle(ctx);
         if let Some(locator) = manager.as_ref(ctx).find_pane(ctx.window_id(), page) {
@@ -6978,12 +7071,17 @@ impl Workspace {
             return;
         }
 
-        let pane = crate::pane_group::AutomationPane::new(page, ctx);
-        let pane_group = self.active_tab_pane_group().clone();
-        pane_group.update(ctx, |pane_group, ctx| {
-            let target = pane_group.focused_pane_id(ctx);
-            pane_group.replace_pane(target, pane, false /* is_temporary */, ctx);
-        });
+        let panes_layout = PanesLayout::Snapshot(Box::new(PaneNodeSnapshot::Leaf(LeafSnapshot {
+            is_focused: true,
+            custom_vertical_tabs_title: None,
+            contents: LeafContents::Automation(page),
+        })));
+        self.add_tab_with_pane_layout(
+            panes_layout,
+            Arc::new(HashMap::new()),
+            Some(page.title().to_owned()),
+            ctx,
+        );
     }
 
     /// twarp 21a: opens the Pull Requests page (an [`AutomationPage`] variant,
@@ -19932,6 +20030,7 @@ impl TypedActionView for Workspace {
             MoveTabLeft(index) => self.move_tab(*index, TabMovement::Left, ctx),
             MoveTabRight(index) => self.move_tab(*index, TabMovement::Right, ctx),
             RenameTab(index) => self.rename_tab(*index, ctx),
+            RenameProject { project_root } => self.rename_project(project_root.clone(), ctx),
             ResetTabName(index) => self.clear_tab_name(*index, ctx),
             RenamePane(locator) => self.rename_pane(*locator, ctx),
             ResetPaneName(locator) => self.clear_pane_name(*locator, ctx),
