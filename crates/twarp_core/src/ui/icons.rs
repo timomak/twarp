@@ -174,6 +174,8 @@ pub enum Icon {
     Navigation,
     Bell,
     GitBranch,
+    /// twarp 21a: the Pull Requests sidebar row + page.
+    GitPullRequest,
     CheckSkinny,
     Lock,
     Save,
@@ -479,6 +481,7 @@ impl From<Icon> for &'static str {
             Icon::Navigation => "bundled/svg/navigation.svg",
             Icon::Bell => "bundled/svg/bell.svg",
             Icon::GitBranch => "bundled/svg/git-branch-02.svg",
+            Icon::GitPullRequest => "bundled/svg/git-pull-request.svg",
             Icon::CheckSkinny => "bundled/svg/check-skinny.svg",
             Icon::Lock => "bundled/svg/lock-unlocked-01.svg",
             Icon::Save => "bundled/svg/download-01.svg",

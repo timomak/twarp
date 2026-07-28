@@ -19,6 +19,8 @@ use crate::pane_group::{
     BackingView, PaneConfiguration, PaneEvent,
 };
 
+use crate::pull_requests::list_page::{PullRequestsPageAction, PullRequestsPageState};
+
 use super::mcps_page::{McpsPageAction, McpsPageState};
 use super::scheduled_tasks_page::{ScheduledTasksPageAction, ScheduledTasksPageState};
 use super::skills_page::{SkillsPageAction, SkillsPageState};
@@ -35,6 +37,8 @@ pub struct AutomationView {
     skills_state: Option<SkillsPageState>,
     /// Present iff `page == AutomationPage::ScheduledTasks` (twarp 20d).
     scheduled_state: Option<ScheduledTasksPageState>,
+    /// Present iff `page == AutomationPage::PullRequests` (twarp 21a).
+    pull_requests_state: Option<PullRequestsPageState>,
 }
 
 impl AutomationView {
@@ -67,6 +71,20 @@ impl AutomationView {
             });
             ScheduledTasksPageState::new(ctx)
         });
+        let pull_requests_state = (page == AutomationPage::PullRequests).then(|| {
+            // PR lists arrive asynchronously (background `gh` fetches);
+            // resync the header controls and re-render when the store
+            // notifies.
+            let store = crate::pull_requests::PullRequestsStoreModel::handle(ctx);
+            ctx.observe(&store, |view: &mut Self, _, ctx| {
+                if let Some(mut state) = view.pull_requests_state.take() {
+                    state.sync(ctx);
+                    view.pull_requests_state = Some(state);
+                }
+                ctx.notify();
+            });
+            PullRequestsPageState::new(ctx)
+        });
         Self {
             page,
             pane_configuration,
@@ -74,6 +92,7 @@ impl AutomationView {
             mcps_state,
             skills_state,
             scheduled_state,
+            pull_requests_state,
         }
     }
 
@@ -142,6 +161,9 @@ impl View for AutomationView {
         if let Some(state) = &self.scheduled_state {
             return state.render(app);
         }
+        if let Some(state) = &self.pull_requests_state {
+            return state.render(app);
+        }
         self.render_placeholder(app)
     }
 }
@@ -155,6 +177,8 @@ pub enum AutomationViewAction {
     Skills(SkillsPageAction),
     /// Scheduled Tasks page controls (twarp 20d).
     ScheduledTasks(ScheduledTasksPageAction),
+    /// Pull Requests page controls (twarp 21a).
+    PullRequests(PullRequestsPageAction),
 }
 
 impl TypedActionView for AutomationView {
@@ -177,6 +201,12 @@ impl TypedActionView for AutomationView {
                 if let Some(mut state) = self.scheduled_state.take() {
                     state.handle_action(action, ctx);
                     self.scheduled_state = Some(state);
+                }
+            }
+            AutomationViewAction::PullRequests(action) => {
+                if let Some(mut state) = self.pull_requests_state.take() {
+                    state.handle_action(action, ctx);
+                    self.pull_requests_state = Some(state);
                 }
             }
         }

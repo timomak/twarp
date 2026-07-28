@@ -28,6 +28,9 @@ pub enum AutomationPage {
     ScheduledTasks,
     Skills,
     Mcps,
+    /// twarp 21a: the Pull Requests page reuses the automation pane shell
+    /// (pane manager, persistence, sidebar-open plumbing) wholesale.
+    PullRequests,
 }
 
 impl AutomationPage {
@@ -37,6 +40,7 @@ impl AutomationPage {
             AutomationPage::ScheduledTasks => "Scheduled Tasks",
             AutomationPage::Skills => "Skills",
             AutomationPage::Mcps => "MCPs",
+            AutomationPage::PullRequests => "Pull Requests",
         }
     }
 
@@ -48,6 +52,7 @@ impl AutomationPage {
             AutomationPage::ScheduledTasks => "scheduled_tasks",
             AutomationPage::Skills => "skills",
             AutomationPage::Mcps => "mcps",
+            AutomationPage::PullRequests => "pull_requests",
         }
     }
 
@@ -58,6 +63,7 @@ impl AutomationPage {
             "scheduled_tasks" => Some(AutomationPage::ScheduledTasks),
             "skills" => Some(AutomationPage::Skills),
             "mcps" => Some(AutomationPage::Mcps),
+            "pull_requests" => Some(AutomationPage::PullRequests),
             _ => None,
         }
     }
@@ -68,6 +74,7 @@ impl AutomationPage {
             AutomationPage::ScheduledTasks => "No scheduled tasks yet.",
             AutomationPage::Skills => "No skills yet.",
             AutomationPage::Mcps => "No MCP servers configured yet.",
+            AutomationPage::PullRequests => "No pull requests.",
         }
     }
 }

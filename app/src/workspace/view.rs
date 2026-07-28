@@ -6986,6 +6986,38 @@ impl Workspace {
         });
     }
 
+    /// twarp 21a: opens the Pull Requests page (an [`AutomationPage`] variant,
+    /// reusing the automation pane shell). Before opening, seed the PR store
+    /// with the known project roots (live tabs + library, deduped) and default
+    /// the repo picker to the active tab's project — this also kicks off a
+    /// fresh fetch on every open.
+    fn open_pull_requests_pane(&mut self, ctx: &mut ViewContext<Self>) {
+        let mut projects: Vec<PathBuf> = Vec::new();
+        let mut push = |path: Option<PathBuf>| {
+            if let Some(path) = path {
+                if !projects.contains(&path) {
+                    projects.push(path);
+                }
+            }
+        };
+        let default = self
+            .tabs
+            .get(self.active_tab_index)
+            .and_then(|tab| tab.project_root.clone());
+        push(default.clone());
+        for tab in &self.tabs {
+            push(tab.project_root.clone());
+        }
+        for path in crate::projects::ProjectManagementModel::as_ref(ctx).project_paths_by_recency()
+        {
+            push(Some(path));
+        }
+        crate::pull_requests::PullRequestsStoreModel::handle(ctx).update(ctx, |store, ctx| {
+            store.set_projects(projects, default, ctx);
+        });
+        self.open_automation_pane(AutomationPage::PullRequests, ctx);
+    }
+
     /// Open a file from the given session as a notebook pane.
     #[cfg(feature = "local_fs")]
     fn open_file_notebook(
@@ -20249,6 +20281,8 @@ impl TypedActionView for Workspace {
             ShowScheduledTasks => self.open_automation_pane(AutomationPage::ScheduledTasks, ctx),
             ShowSkills => self.open_automation_pane(AutomationPage::Skills, ctx),
             ShowMcps => self.open_automation_pane(AutomationPage::Mcps, ctx),
+            ShowPullRequests => self.open_pull_requests_pane(ctx),
+            OpenUrlInBrowserPane(url) => self.open_browser_pane(Some(url.clone()), ctx),
             ShowSettingsPage(section) => self.show_settings_with_section(Some(*section), ctx),
             ShowSettingsPageWithSearch {
                 search_query,

@@ -99,6 +99,7 @@ mod linear;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod login_item;
 mod mcp_registry;
+mod pull_requests;
 // twarp 20c: twarp-managed shared-skills store (Automation > Skills).
 mod menu;
 mod modal;
@@ -1709,6 +1710,10 @@ fn initialize_app(
     ctx.add_singleton_model(move |ctx| {
         crate::skills_store::SkillsStoreModel::new(persisted_shared_skills, ctx)
     });
+
+    // twarp 21a: the per-repo GitHub pull-request cache backing the Pull
+    // Requests page; fetches run `gh` on the background executor.
+    ctx.add_singleton_model(|ctx| crate::pull_requests::PullRequestsStoreModel::new(ctx));
 
     // twarp 20d: the scheduled-tasks scheduler — owns the task list + run
     // history and ticks on the background executor; fires are handled by the
