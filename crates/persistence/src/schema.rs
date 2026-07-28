@@ -249,6 +249,20 @@ diesel::table! {
 }
 
 diesel::table! {
+    mcp_servers (id) {
+        id -> Text,
+        name -> Text,
+        transport -> Text,
+        command -> Nullable<Text>,
+        args -> Nullable<Text>,
+        url -> Nullable<Text>,
+        env -> Nullable<Text>,
+        enabled_claude -> Bool,
+        enabled_codex -> Bool,
+    }
+}
+
+diesel::table! {
     notebook_panes (id) {
         id -> Integer,
         kind -> Text,
@@ -561,6 +575,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     browser_panes,
     claude_code_panes,
     claude_session_defaults,
+    mcp_servers,
     pane_branches,
     pane_leaves,
     pane_nodes,

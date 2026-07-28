@@ -221,6 +221,25 @@ pub struct PersistedData {
     /// mode), or `None` if no Claude pane has run yet. Seeds new panes so they
     /// inherit the previous session instead of the `claude` shell alias.
     pub claude_session_defaults: Option<PersistedClaudeSessionDefaults>,
+    /// twarp 20b: the user-managed MCP-server registry (Automation > MCPs),
+    /// injected into provider sessions at spawn.
+    pub mcp_registry: Vec<PersistedMcpServer>,
+}
+
+/// twarp 20b: one row of the shared MCP-server registry (`mcp_servers`).
+/// `args` is a JSON array of strings; `env` a JSON string->string object.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PersistedMcpServer {
+    pub id: String,
+    pub name: String,
+    /// "stdio" | "http"
+    pub transport: String,
+    pub command: Option<String>,
+    pub args: Option<String>,
+    pub url: Option<String>,
+    pub env: Option<String>,
+    pub enabled_claude: bool,
+    pub enabled_codex: bool,
 }
 
 /// twarp 07: the last-used Claude session settings persisted in the single
@@ -364,6 +383,11 @@ pub enum ModelEvent {
     /// twarp 07: persist the last-used Claude session settings (single row).
     UpsertClaudeSessionDefaults {
         defaults: PersistedClaudeSessionDefaults,
+    },
+    /// twarp 20b: replace the whole MCP-server registry with the given rows
+    /// (the registry is small; delete+insert keeps the write path trivial).
+    ReplaceMcpServers {
+        servers: Vec<PersistedMcpServer>,
     },
     UpsertCodebaseIndexMetadata {
         index_metadata: Box<CodeWorkspaceMetadata>,

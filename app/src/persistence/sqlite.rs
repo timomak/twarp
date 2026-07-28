@@ -54,7 +54,7 @@ use super::model::{
 use super::schema;
 use super::{
     BlockCompleted, FinishedCommandMetadata, ModelEvent, PersistedClaudeSessionDefaults,
-    PersistedData, StartedCommandMetadata, WriterHandles,
+    PersistedData, PersistedMcpServer, StartedCommandMetadata, WriterHandles,
 };
 use crate::app_state::AIConversationId;
 use crate::app_state::AIDocumentId;
@@ -624,6 +624,9 @@ fn handle_model_event(event: ModelEvent, connection: &mut SqliteConnection) -> a
         ModelEvent::UpsertClaudeSessionDefaults { defaults } => {
             upsert_claude_session_defaults(connection, defaults)
                 .context("error upserting claude session defaults")
+        }
+        ModelEvent::ReplaceMcpServers { servers } => {
+            replace_mcp_servers(connection, servers).context("error replacing mcp servers")
         }
         ModelEvent::UpsertMCPServerEnvironmentVariables {
             mcp_server_uuid,
@@ -3170,6 +3173,7 @@ fn read_sqlite_data(
     let mcp_server_installations = get_all_mcp_server_installations(conn)?;
     let mcp_servers_to_restore = get_mcp_servers_to_restore(conn)?;
     let claude_session_defaults = get_claude_session_defaults(conn)?;
+    let mcp_registry = get_mcp_registry(conn)?;
 
     Ok(PersistedData {
         app_state,
@@ -3191,7 +3195,32 @@ fn read_sqlite_data(
         mcp_server_installations,
         mcp_servers_to_restore,
         claude_session_defaults,
+        mcp_registry,
     })
+}
+
+/// twarp 20b: read the whole MCP-server registry, ordered by name for a
+/// stable page listing.
+fn get_mcp_registry(conn: &mut SqliteConnection) -> Result<Vec<PersistedMcpServer>, Error> {
+    use schema::mcp_servers::dsl;
+    let rows = dsl::mcp_servers
+        .order(dsl::name.asc())
+        .select(model::McpServer::as_select())
+        .load(conn)?;
+    Ok(rows
+        .into_iter()
+        .map(|row| PersistedMcpServer {
+            id: row.id,
+            name: row.name,
+            transport: row.transport,
+            command: row.command,
+            args: row.args,
+            url: row.url,
+            env: row.env,
+            enabled_claude: row.enabled_claude,
+            enabled_codex: row.enabled_codex,
+        })
+        .collect())
 }
 
 /// twarp 07: read the single last-used Claude settings row, if present.
@@ -3514,6 +3543,34 @@ fn upsert_claude_session_defaults(
                 permission_mode: defaults.permission_mode,
             })
             .execute(conn)?;
+        Ok(())
+    })
+}
+
+/// twarp 20b: replace the whole `mcp_servers` registry with the given rows
+/// (delete+insert in one transaction, mirroring `claude_session_defaults`).
+fn replace_mcp_servers(
+    conn: &mut SqliteConnection,
+    servers: Vec<PersistedMcpServer>,
+) -> Result<(), Error> {
+    conn.transaction::<(), Error, _>(|conn| {
+        diesel::delete(schema::mcp_servers::dsl::mcp_servers).execute(conn)?;
+
+        for server in servers {
+            diesel::insert_into(schema::mcp_servers::dsl::mcp_servers)
+                .values(model::McpServer {
+                    id: server.id,
+                    name: server.name,
+                    transport: server.transport,
+                    command: server.command,
+                    args: server.args,
+                    url: server.url,
+                    env: server.env,
+                    enabled_claude: server.enabled_claude,
+                    enabled_codex: server.enabled_codex,
+                })
+                .execute(conn)?;
+        }
         Ok(())
     })
 }

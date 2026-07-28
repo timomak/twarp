@@ -13,11 +13,11 @@ use super::schema::{
     cloud_objects_refreshes, code_pane_tabs, code_panes, code_review_panes, commands,
     current_user_information, env_var_collection_panes, folders, generic_string_objects,
     ignored_suggestions, mcp_environment_variables, mcp_server_installations, mcp_server_panes,
-    notebook_panes, notebooks, object_actions, object_metadata, object_permissions, pane_branches,
-    pane_leaves, pane_nodes, panels, project_rules, projects, server_experiments, settings_panes,
-    tabs, team_members, team_settings, teams, terminal_panes, user_profiles, welcome_panes,
-    windows, workflow_panes, workflows, workspace_language_server, workspace_metadata,
-    workspace_teams, workspaces,
+    mcp_servers, notebook_panes, notebooks, object_actions, object_metadata, object_permissions,
+    pane_branches, pane_leaves, pane_nodes, panels, project_rules, projects, server_experiments,
+    settings_panes, tabs, team_members, team_settings, teams, terminal_panes, user_profiles,
+    welcome_panes, windows, workflow_panes, workflows, workspace_language_server,
+    workspace_metadata, workspace_teams, workspaces,
 };
 
 #[derive(Insertable)]
@@ -757,6 +757,24 @@ pub struct ClaudeSessionDefaults {
     pub effort: Option<String>,
     /// `PermissionMode::as_cli_arg()` (e.g. "bypassPermissions"), or `None`.
     pub permission_mode: Option<String>,
+}
+
+/// twarp 20b: one user-managed MCP-server registry entry (Automation > MCPs
+/// page), injected into provider sessions at spawn. `id` is a UUID string;
+/// `args` is a JSON array of strings and `env` a JSON string->string object.
+#[derive(Insertable, Queryable, Selectable)]
+#[diesel(table_name = mcp_servers)]
+pub struct McpServer {
+    pub id: String,
+    pub name: String,
+    /// "stdio" | "http"
+    pub transport: String,
+    pub command: Option<String>,
+    pub args: Option<String>,
+    pub url: Option<String>,
+    pub env: Option<String>,
+    pub enabled_claude: bool,
+    pub enabled_codex: bool,
 }
 
 #[derive(Insertable)]
