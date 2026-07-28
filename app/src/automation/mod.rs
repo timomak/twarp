@@ -6,6 +6,7 @@
 
 pub mod mcps_page;
 pub mod pane_manager;
+pub mod skills_page;
 pub mod view;
 
 /// Which automation page a pane displays. One [`view::AutomationView`] type is

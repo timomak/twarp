@@ -54,7 +54,7 @@ use super::model::{
 use super::schema;
 use super::{
     BlockCompleted, FinishedCommandMetadata, ModelEvent, PersistedClaudeSessionDefaults,
-    PersistedData, PersistedMcpServer, StartedCommandMetadata, WriterHandles,
+    PersistedData, PersistedMcpServer, PersistedSharedSkill, StartedCommandMetadata, WriterHandles,
 };
 use crate::app_state::AIConversationId;
 use crate::app_state::AIDocumentId;
@@ -627,6 +627,9 @@ fn handle_model_event(event: ModelEvent, connection: &mut SqliteConnection) -> a
         }
         ModelEvent::ReplaceMcpServers { servers } => {
             replace_mcp_servers(connection, servers).context("error replacing mcp servers")
+        }
+        ModelEvent::ReplaceSharedSkills { skills } => {
+            replace_shared_skills(connection, skills).context("error replacing shared skills")
         }
         ModelEvent::UpsertMCPServerEnvironmentVariables {
             mcp_server_uuid,
@@ -3174,6 +3177,7 @@ fn read_sqlite_data(
     let mcp_servers_to_restore = get_mcp_servers_to_restore(conn)?;
     let claude_session_defaults = get_claude_session_defaults(conn)?;
     let mcp_registry = get_mcp_registry(conn)?;
+    let shared_skills = get_shared_skills(conn)?;
 
     Ok(PersistedData {
         app_state,
@@ -3196,6 +3200,7 @@ fn read_sqlite_data(
         mcp_servers_to_restore,
         claude_session_defaults,
         mcp_registry,
+        shared_skills,
     })
 }
 
@@ -3568,6 +3573,45 @@ fn replace_mcp_servers(
                     env: server.env,
                     enabled_claude: server.enabled_claude,
                     enabled_codex: server.enabled_codex,
+                })
+                .execute(conn)?;
+        }
+        Ok(())
+    })
+}
+
+/// twarp 20c: read the shared-skills toggle table, ordered by name.
+fn get_shared_skills(conn: &mut SqliteConnection) -> Result<Vec<PersistedSharedSkill>, Error> {
+    use schema::shared_skills::dsl;
+    let rows = dsl::shared_skills
+        .order(dsl::name.asc())
+        .select(model::SharedSkill::as_select())
+        .load(conn)?;
+    Ok(rows
+        .into_iter()
+        .map(|row| PersistedSharedSkill {
+            name: row.name,
+            enabled_claude: row.enabled_claude,
+            enabled_codex: row.enabled_codex,
+        })
+        .collect())
+}
+
+/// twarp 20c: replace the whole `shared_skills` toggle table with the given
+/// rows (delete+insert in one transaction, mirroring `mcp_servers`).
+fn replace_shared_skills(
+    conn: &mut SqliteConnection,
+    skills: Vec<PersistedSharedSkill>,
+) -> Result<(), Error> {
+    conn.transaction::<(), Error, _>(|conn| {
+        diesel::delete(schema::shared_skills::dsl::shared_skills).execute(conn)?;
+
+        for skill in skills {
+            diesel::insert_into(schema::shared_skills::dsl::shared_skills)
+                .values(model::SharedSkill {
+                    name: skill.name,
+                    enabled_claude: skill.enabled_claude,
+                    enabled_codex: skill.enabled_codex,
                 })
                 .execute(conn)?;
         }

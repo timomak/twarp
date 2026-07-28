@@ -99,6 +99,7 @@ mod linear;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod login_item;
 mod mcp_registry;
+// twarp 20c: twarp-managed shared-skills store (Automation > Skills).
 mod menu;
 mod modal;
 mod network;
@@ -125,6 +126,7 @@ mod search_bar;
 mod server;
 mod session_management;
 mod shell_indicator;
+mod skills_store;
 mod suggestions;
 mod system;
 mod tab;
@@ -1091,6 +1093,7 @@ fn initialize_app(
         mcp_servers_to_restore,
         persisted_claude_session_defaults,
         persisted_mcp_registry,
+        persisted_shared_skills,
     ) = sqlite_data
         .map(|sqlite_data| {
             (
@@ -1112,10 +1115,12 @@ fn initialize_app(
                 sqlite_data.mcp_servers_to_restore,
                 sqlite_data.claude_session_defaults,
                 sqlite_data.mcp_registry,
+                sqlite_data.shared_skills,
             )
         })
         .unwrap_or_else(|| {
             (
+                Default::default(),
                 Default::default(),
                 Default::default(),
                 Default::default(),
@@ -1686,6 +1691,13 @@ fn initialize_app(
     // read synchronously by the MCPs page and the session spawn paths.
     ctx.add_singleton_model(move |_| {
         crate::mcp_registry::McpRegistryModel::new(persisted_mcp_registry)
+    });
+
+    // twarp 20c: the twarp-managed shared-skills store (~/.twarp/skills),
+    // scanned + materialized to both providers on a background thread at
+    // startup and after every Skills-page mutation.
+    ctx.add_singleton_model(move |ctx| {
+        crate::skills_store::SkillsStoreModel::new(persisted_shared_skills, ctx)
     });
 
     // Subscribe WorkflowAliases to the UpdateManager so that it can be notified when objects are
