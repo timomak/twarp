@@ -715,7 +715,7 @@ fn parse_args(text: &str) -> Vec<String> {
     text.split_whitespace().map(str::to_owned).collect()
 }
 
-fn new_single_line_editor(
+pub(super) fn new_single_line_editor(
     placeholder: &str,
     initial: &str,
     ctx: &mut ViewContext<AutomationView>,
@@ -737,7 +737,7 @@ fn new_single_line_editor(
     })
 }
 
-fn new_multiline_editor(
+pub(super) fn new_multiline_editor(
     placeholder: &str,
     initial: &str,
     ctx: &mut ViewContext<AutomationView>,
@@ -761,7 +761,7 @@ fn new_multiline_editor(
 }
 
 /// A labeled form field: caption label above a hairline-bordered editor.
-fn render_form_field(
+pub(super) fn render_form_field(
     label: &str,
     editor: &ViewHandle<EditorView>,
     appearance: &Appearance,
@@ -790,7 +790,11 @@ fn render_form_field(
     .finish()
 }
 
-fn render_form_label(text: &str, size: f32, appearance: &Appearance) -> Box<dyn Element> {
+pub(super) fn render_form_label(
+    text: &str,
+    size: f32,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
     let theme = appearance.theme();
     Container::new(
         Text::new_inline(text.to_owned(), appearance.ui_font_family(), size)
@@ -803,7 +807,7 @@ fn render_form_label(text: &str, size: f32, appearance: &Appearance) -> Box<dyn 
 }
 
 /// A provider switch with its caption label to the left.
-fn render_labeled_switch(
+pub(super) fn render_labeled_switch(
     label: &str,
     checked: bool,
     state: SwitchStateHandle,

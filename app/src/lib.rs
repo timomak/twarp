@@ -1094,6 +1094,8 @@ fn initialize_app(
         persisted_claude_session_defaults,
         persisted_mcp_registry,
         persisted_shared_skills,
+        persisted_scheduled_tasks,
+        persisted_scheduled_task_runs,
     ) = sqlite_data
         .map(|sqlite_data| {
             (
@@ -1116,10 +1118,14 @@ fn initialize_app(
                 sqlite_data.claude_session_defaults,
                 sqlite_data.mcp_registry,
                 sqlite_data.shared_skills,
+                sqlite_data.scheduled_tasks,
+                sqlite_data.scheduled_task_runs,
             )
         })
         .unwrap_or_else(|| {
             (
+                Default::default(),
+                Default::default(),
                 Default::default(),
                 Default::default(),
                 Default::default(),
@@ -1698,6 +1704,17 @@ fn initialize_app(
     // startup and after every Skills-page mutation.
     ctx.add_singleton_model(move |ctx| {
         crate::skills_store::SkillsStoreModel::new(persisted_shared_skills, ctx)
+    });
+
+    // twarp 20d: the scheduled-tasks scheduler — owns the task list + run
+    // history and ticks on the background executor; fires are handled by the
+    // workspace (see `WorkspaceView::handle_scheduler_fires`).
+    ctx.add_singleton_model(move |ctx| {
+        crate::automation::scheduler::SchedulerModel::new(
+            persisted_scheduled_tasks,
+            persisted_scheduled_task_runs,
+            ctx,
+        )
     });
 
     // Subscribe WorkflowAliases to the UpdateManager so that it can be notified when objects are

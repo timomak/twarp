@@ -54,7 +54,8 @@ use super::model::{
 use super::schema;
 use super::{
     BlockCompleted, FinishedCommandMetadata, ModelEvent, PersistedClaudeSessionDefaults,
-    PersistedData, PersistedMcpServer, PersistedSharedSkill, StartedCommandMetadata, WriterHandles,
+    PersistedData, PersistedMcpServer, PersistedScheduledTask, PersistedScheduledTaskRun,
+    PersistedSharedSkill, StartedCommandMetadata, WriterHandles,
 };
 use crate::app_state::AIConversationId;
 use crate::app_state::AIDocumentId;
@@ -630,6 +631,16 @@ fn handle_model_event(event: ModelEvent, connection: &mut SqliteConnection) -> a
         }
         ModelEvent::ReplaceSharedSkills { skills } => {
             replace_shared_skills(connection, skills).context("error replacing shared skills")
+        }
+        ModelEvent::ReplaceScheduledTasks { tasks } => {
+            replace_scheduled_tasks(connection, tasks).context("error replacing scheduled tasks")
+        }
+        ModelEvent::UpsertScheduledTaskRun { run } => {
+            upsert_scheduled_task_run(connection, run).context("error upserting scheduled task run")
+        }
+        ModelEvent::DeleteScheduledTaskRuns { task_id } => {
+            delete_scheduled_task_runs(connection, task_id)
+                .context("error deleting scheduled task runs")
         }
         ModelEvent::UpsertMCPServerEnvironmentVariables {
             mcp_server_uuid,
@@ -3178,6 +3189,8 @@ fn read_sqlite_data(
     let claude_session_defaults = get_claude_session_defaults(conn)?;
     let mcp_registry = get_mcp_registry(conn)?;
     let shared_skills = get_shared_skills(conn)?;
+    let scheduled_tasks = get_scheduled_tasks(conn)?;
+    let scheduled_task_runs = get_scheduled_task_runs(conn)?;
 
     Ok(PersistedData {
         app_state,
@@ -3201,7 +3214,142 @@ fn read_sqlite_data(
         claude_session_defaults,
         mcp_registry,
         shared_skills,
+        scheduled_tasks,
+        scheduled_task_runs,
     })
+}
+
+/// twarp 20d: read all scheduled tasks, ordered by name for a stable listing.
+fn get_scheduled_tasks(conn: &mut SqliteConnection) -> Result<Vec<PersistedScheduledTask>, Error> {
+    use schema::scheduled_tasks::dsl;
+    let rows = dsl::scheduled_tasks
+        .order(dsl::name.asc())
+        .select(model::ScheduledTask::as_select())
+        .load(conn)?;
+    Ok(rows
+        .into_iter()
+        .map(|row| PersistedScheduledTask {
+            id: row.id,
+            name: row.name,
+            prompt: row.prompt,
+            cwd: row.cwd,
+            schedule: row.schedule,
+            provider: row.provider,
+            fallback_provider: row.fallback_provider,
+            model: row.model,
+            effort: row.effort,
+            permission_mode: row.permission_mode,
+            enabled: row.enabled,
+            catch_up: row.catch_up,
+            next_run_at: row.next_run_at,
+            created_at: row.created_at,
+        })
+        .collect())
+}
+
+/// twarp 20d: read the whole run-history table, newest first.
+fn get_scheduled_task_runs(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<PersistedScheduledTaskRun>, Error> {
+    use schema::scheduled_task_runs::dsl;
+    let rows = dsl::scheduled_task_runs
+        .order(dsl::started_at.desc())
+        .select(model::ScheduledTaskRun::as_select())
+        .load(conn)?;
+    Ok(rows
+        .into_iter()
+        .map(|row| PersistedScheduledTaskRun {
+            id: row.id,
+            task_id: row.task_id,
+            started_at: row.started_at,
+            finished_at: row.finished_at,
+            provider_used: row.provider_used,
+            outcome: row.outcome,
+            session_id: row.session_id,
+            summary: row.summary,
+        })
+        .collect())
+}
+
+/// twarp 20d: number of run-history rows kept per task.
+const SCHEDULED_TASK_RUNS_KEPT: i64 = 20;
+
+/// twarp 20d: replace the whole `scheduled_tasks` table (delete+insert in one
+/// transaction, mirroring `mcp_servers`).
+fn replace_scheduled_tasks(
+    conn: &mut SqliteConnection,
+    tasks: Vec<PersistedScheduledTask>,
+) -> Result<(), Error> {
+    conn.transaction::<(), Error, _>(|conn| {
+        diesel::delete(schema::scheduled_tasks::dsl::scheduled_tasks).execute(conn)?;
+        for task in tasks {
+            diesel::insert_into(schema::scheduled_tasks::dsl::scheduled_tasks)
+                .values(model::ScheduledTask {
+                    id: task.id,
+                    name: task.name,
+                    prompt: task.prompt,
+                    cwd: task.cwd,
+                    schedule: task.schedule,
+                    provider: task.provider,
+                    fallback_provider: task.fallback_provider,
+                    model: task.model,
+                    effort: task.effort,
+                    permission_mode: task.permission_mode,
+                    enabled: task.enabled,
+                    catch_up: task.catch_up,
+                    next_run_at: task.next_run_at,
+                    created_at: task.created_at,
+                })
+                .execute(conn)?;
+        }
+        Ok(())
+    })
+}
+
+/// twarp 20d: insert or (matched by id) update one run-history row, then
+/// prune that task's history to the newest [`SCHEDULED_TASK_RUNS_KEPT`] rows.
+fn upsert_scheduled_task_run(
+    conn: &mut SqliteConnection,
+    run: PersistedScheduledTaskRun,
+) -> Result<(), Error> {
+    use schema::scheduled_task_runs::dsl;
+    conn.transaction::<(), Error, _>(|conn| {
+        let task_id = run.task_id.clone();
+        diesel::replace_into(dsl::scheduled_task_runs)
+            .values(model::ScheduledTaskRun {
+                id: run.id,
+                task_id: run.task_id,
+                started_at: run.started_at,
+                finished_at: run.finished_at,
+                provider_used: run.provider_used,
+                outcome: run.outcome,
+                session_id: run.session_id,
+                summary: run.summary,
+            })
+            .execute(conn)?;
+
+        // Prune: keep the newest N rows for this task.
+        let keep_ids: Vec<String> = dsl::scheduled_task_runs
+            .filter(dsl::task_id.eq(&task_id))
+            .order(dsl::started_at.desc())
+            .limit(SCHEDULED_TASK_RUNS_KEPT)
+            .select(dsl::id)
+            .load(conn)?;
+        diesel::delete(
+            dsl::scheduled_task_runs
+                .filter(dsl::task_id.eq(&task_id))
+                .filter(dsl::id.ne_all(keep_ids)),
+        )
+        .execute(conn)?;
+        Ok(())
+    })
+}
+
+/// twarp 20d: drop the run history of a deleted task.
+fn delete_scheduled_task_runs(conn: &mut SqliteConnection, task_id: String) -> Result<(), Error> {
+    use schema::scheduled_task_runs::dsl;
+    diesel::delete(dsl::scheduled_task_runs.filter(dsl::task_id.eq(task_id))).execute(conn)?;
+    Ok(())
 }
 
 /// twarp 20b: read the whole MCP-server registry, ordered by name for a

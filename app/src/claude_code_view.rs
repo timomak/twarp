@@ -396,6 +396,18 @@ pub enum ClaudeCodeViewEvent {
     /// workspace so the tab bar repaints — the view's own `notify()` only
     /// redraws the pane body.
     TabStatusChanged,
+    /// twarp 20d: a turn ended, with its outcome. Emitted on every
+    /// `TranscriptEvent::Ended`; the scheduler subscribes to panes it spawned
+    /// (keyed by `session_id`) to record scheduled-run results and drive the
+    /// fallback-provider retry.
+    SessionEnded {
+        session_id: String,
+        /// `EndReason::Completed` only; interrupted/exited/error all count as
+        /// failure for a scheduled run.
+        success: bool,
+        /// The last assistant text (success) or the error message.
+        summary: String,
+    },
     /// Swap this pane for the provider's raw interactive CLI resuming
     /// `session_id`. The pane group creates and embeds the terminal.
     SwapToRawCli {
@@ -3926,6 +3938,20 @@ impl ClaudeCodeView {
                 }
                 claude_code::EndReason::Interrupted | claude_code::EndReason::Exited => {}
             }
+            // twarp 20d: report the turn's outcome for scheduled-run tracking.
+            let (success, summary) = match reason {
+                claude_code::EndReason::Completed => {
+                    (true, self.last_assistant_text().unwrap_or_default())
+                }
+                claude_code::EndReason::Error(message) => (false, message.clone()),
+                claude_code::EndReason::Interrupted => (false, "Interrupted.".to_owned()),
+                claude_code::EndReason::Exited => (false, "Session exited.".to_owned()),
+            };
+            ctx.emit(ClaudeCodeViewEvent::SessionEnded {
+                session_id: self.session_id.clone(),
+                success,
+                summary,
+            });
             ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         }
         // PRODUCT §53 (7m): a turn that completed cleanly (or was interrupted —

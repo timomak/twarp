@@ -6,6 +6,8 @@
 
 pub mod mcps_page;
 pub mod pane_manager;
+pub mod scheduled_tasks_page;
+pub mod scheduler;
 pub mod skills_page;
 pub mod view;
 

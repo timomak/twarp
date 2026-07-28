@@ -20,6 +20,7 @@ use crate::pane_group::{
 };
 
 use super::mcps_page::{McpsPageAction, McpsPageState};
+use super::scheduled_tasks_page::{ScheduledTasksPageAction, ScheduledTasksPageState};
 use super::skills_page::{SkillsPageAction, SkillsPageState};
 use super::AutomationPage;
 
@@ -32,6 +33,8 @@ pub struct AutomationView {
     mcps_state: Option<McpsPageState>,
     /// Present iff `page == AutomationPage::Skills` (twarp 20c).
     skills_state: Option<SkillsPageState>,
+    /// Present iff `page == AutomationPage::ScheduledTasks` (twarp 20d).
+    scheduled_state: Option<ScheduledTasksPageState>,
 }
 
 impl AutomationView {
@@ -50,12 +53,27 @@ impl AutomationView {
             });
             SkillsPageState::new(ctx)
         });
+        let scheduled_state = (page == AutomationPage::ScheduledTasks).then(|| {
+            // Task/run state changes asynchronously (tick loop, run
+            // completions); keep row UI in sync and re-render when the
+            // scheduler notifies.
+            let scheduler = crate::automation::scheduler::SchedulerModel::handle(ctx);
+            ctx.observe(&scheduler, |view: &mut Self, _, ctx| {
+                if let Some(mut state) = view.scheduled_state.take() {
+                    state.sync_from_model(ctx);
+                    view.scheduled_state = Some(state);
+                }
+                ctx.notify();
+            });
+            ScheduledTasksPageState::new(ctx)
+        });
         Self {
             page,
             pane_configuration,
             focus_handle: None,
             mcps_state,
             skills_state,
+            scheduled_state,
         }
     }
 
@@ -121,6 +139,9 @@ impl View for AutomationView {
         if let Some(state) = &self.skills_state {
             return state.render(app);
         }
+        if let Some(state) = &self.scheduled_state {
+            return state.render(app);
+        }
         self.render_placeholder(app)
     }
 }
@@ -132,6 +153,8 @@ pub enum AutomationViewAction {
     Mcps(McpsPageAction),
     /// Skills page controls (twarp 20c).
     Skills(SkillsPageAction),
+    /// Scheduled Tasks page controls (twarp 20d).
+    ScheduledTasks(ScheduledTasksPageAction),
 }
 
 impl TypedActionView for AutomationView {
@@ -148,6 +171,12 @@ impl TypedActionView for AutomationView {
                 if let Some(mut state) = self.skills_state.take() {
                     state.handle_action(action, ctx);
                     self.skills_state = Some(state);
+                }
+            }
+            AutomationViewAction::ScheduledTasks(action) => {
+                if let Some(mut state) = self.scheduled_state.take() {
+                    state.handle_action(action, ctx);
+                    self.scheduled_state = Some(state);
                 }
             }
         }

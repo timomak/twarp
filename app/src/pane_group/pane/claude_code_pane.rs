@@ -190,6 +190,9 @@ impl PaneContent for ClaudeCodePane {
                 // file; open it as a resumed session in a fresh split to the
                 // right, inheriting the parent pane's launch settings and cwd.
                 // The forking pane and its session are untouched.
+                // twarp 20d: scheduled-run bookkeeping only; the workspace's
+                // per-fired-pane subscription consumes this.
+                ClaudeCodeViewEvent::SessionEnded { .. } => {}
                 ClaudeCodeViewEvent::ForkSession {
                     resume,
                     launch,
