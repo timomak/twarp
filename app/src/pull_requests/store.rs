@@ -17,6 +17,32 @@ const PR_LIST_LIMIT: u32 = 50;
 /// The `--json` fields requested from `gh pr list`.
 const PR_LIST_JSON_FIELDS: &str = "number,title,author,isDraft,state,reviewDecision,mergeable,updatedAt,url,headRefName,statusCheckRollup";
 
+/// The `--json` fields requested from `gh pr view` for the detail page (21b).
+const PR_DETAIL_JSON_FIELDS: &str = "number,title,body,author,state,isDraft,mergeable,mergeStateStatus,reviewDecision,baseRefName,headRefName,additions,deletions,changedFiles,url,createdAt,statusCheckRollup";
+
+/// How many timeline nodes (comments / reviews) one detail fetch requests.
+/// Older items beyond this are dropped; the UI notes the truncation.
+const TIMELINE_PAGE_SIZE: u32 = 50;
+
+/// GraphQL query fetching the PR-level conversation timeline: issue comments
+/// plus reviews (with their top-level bodies and states). Line-anchored review
+/// threads are 21c.
+const TIMELINE_QUERY: &str = "\
+query($owner: String!, $name: String!, $number: Int!, $last: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      comments(last: $last) {
+        totalCount
+        nodes { author { login } createdAt body }
+      }
+      reviews(last: $last) {
+        totalCount
+        nodes { author { login } createdAt body state }
+      }
+    }
+  }
+}";
+
 /// The state filter shown in the page header. `Draft` is `--state open`
 /// narrowed client-side to draft PRs (gh has no draft state).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
@@ -125,6 +151,166 @@ pub struct RepoPrData {
     pub fetched: bool,
 }
 
+/// A merge strategy for `gh pr merge` (21b merge box).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PrMergeMethod {
+    Merge,
+    Squash,
+    Rebase,
+}
+
+impl PrMergeMethod {
+    pub const ALL: [PrMergeMethod; 3] = [
+        PrMergeMethod::Merge,
+        PrMergeMethod::Squash,
+        PrMergeMethod::Rebase,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            PrMergeMethod::Merge => "Merge",
+            PrMergeMethod::Squash => "Squash",
+            PrMergeMethod::Rebase => "Rebase",
+        }
+    }
+
+    /// Stable string used as the action payload.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PrMergeMethod::Merge => "merge",
+            PrMergeMethod::Squash => "squash",
+            PrMergeMethod::Rebase => "rebase",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|m| m.as_str() == s)
+    }
+
+    /// The `gh pr merge` flag backing this method.
+    fn gh_flag(self) -> &'static str {
+        match self {
+            PrMergeMethod::Merge => "--merge",
+            PrMergeMethod::Squash => "--squash",
+            PrMergeMethod::Rebase => "--rebase",
+        }
+    }
+}
+
+/// One CI check row parsed from `statusCheckRollup` (21b Checks tab).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrCheck {
+    pub name: String,
+    pub state: PrCiState,
+    /// Web URL for the check's details page (may be empty).
+    pub details_url: String,
+    /// Human "4m 12s" duration when start/completion timestamps exist.
+    pub duration: Option<String>,
+}
+
+/// The full PR detail parsed from `gh pr view --json` (21b).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrDetail {
+    pub number: u64,
+    pub title: String,
+    /// Raw markdown description body.
+    pub body: String,
+    pub author: String,
+    /// `OPEN` / `CLOSED` / `MERGED`.
+    pub state: String,
+    pub is_draft: bool,
+    /// `MERGEABLE` / `CONFLICTING` / `UNKNOWN`.
+    pub mergeable: String,
+    /// `CLEAN` / `BLOCKED` / `BEHIND` / `DIRTY` / `UNSTABLE` / …
+    pub merge_state_status: String,
+    pub review_decision: Option<PrReviewDecision>,
+    pub base_ref: String,
+    pub head_ref: String,
+    pub additions: u64,
+    pub deletions: u64,
+    pub changed_files: u64,
+    pub url: String,
+    pub created_at: String,
+    pub checks: Vec<PrCheck>,
+}
+
+/// The state of one PR review in the timeline.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PrReviewState {
+    Approved,
+    ChangesRequested,
+    Commented,
+    Dismissed,
+}
+
+impl PrReviewState {
+    pub fn label(self) -> &'static str {
+        match self {
+            PrReviewState::Approved => "approved",
+            PrReviewState::ChangesRequested => "requested changes",
+            PrReviewState::Commented => "reviewed",
+            PrReviewState::Dismissed => "review dismissed",
+        }
+    }
+}
+
+/// What kind of conversation entry a timeline item is.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PrTimelineKind {
+    Comment,
+    Review(PrReviewState),
+}
+
+/// One PR-level conversation item (issue comment or review body), 21b.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrTimelineItem {
+    pub author: String,
+    /// Raw RFC 3339 timestamp (sorts chronologically as a string).
+    pub created_at: String,
+    /// Markdown body; may be empty for state-only reviews (Approved etc).
+    pub body: String,
+    pub kind: PrTimelineKind,
+}
+
+/// Cached detail-fetch state for the one open PR.
+#[derive(Clone, Debug, Default)]
+pub struct PrDetailData {
+    pub detail: Option<PrDetail>,
+    pub timeline: Vec<PrTimelineItem>,
+    /// True when GitHub reported more comments/reviews than one page holds.
+    pub timeline_truncated: bool,
+    pub error: Option<String>,
+    pub loading: bool,
+    /// True once at least one detail fetch completed (success or error).
+    pub fetched: bool,
+    /// True while a merge / mark-ready subprocess is running.
+    pub mutating: bool,
+    /// The last mutation's gh error output, if it failed.
+    pub mutation_error: Option<String>,
+}
+
+/// A successful detail fetch's payload.
+struct DetailPayload {
+    detail: PrDetail,
+    timeline: Vec<PrTimelineItem>,
+    truncated: bool,
+}
+
+/// A background detail-fetch or mutation result, streamed back to the model.
+enum DetailMessage {
+    Fetch {
+        repo: PathBuf,
+        number: u64,
+        generation: u64,
+        outcome: Result<DetailPayload, String>,
+    },
+    Mutation {
+        repo: PathBuf,
+        number: u64,
+        outcome: Result<(), String>,
+    },
+}
+
 /// One background fetch's result, streamed back to the model.
 struct FetchResult {
     repo: PathBuf,
@@ -151,6 +337,12 @@ pub struct PullRequestsStoreModel {
     /// fetch is in flight always win.
     generation: u64,
     fetch_tx: async_channel::Sender<FetchResult>,
+    /// The one open detail view's data, keyed by (repo, PR number). Only one
+    /// PR detail is open at a time (list ↔ detail navigation is page-level).
+    detail: Option<((PathBuf, u64), PrDetailData)>,
+    /// Bumped on every detail fetch/close so stale results are dropped.
+    detail_generation: u64,
+    detail_tx: async_channel::Sender<DetailMessage>,
 }
 
 impl PullRequestsStoreModel {
@@ -161,6 +353,12 @@ impl PullRequestsStoreModel {
             |model: &mut Self, result, ctx| model.apply_fetch(result, ctx),
             |_, _| {},
         );
+        let (detail_tx, detail_rx) = async_channel::unbounded::<DetailMessage>();
+        let _ = ctx.spawn_stream_local(
+            detail_rx,
+            |model: &mut Self, message, ctx| model.apply_detail_message(message, ctx),
+            |_, _| {},
+        );
         Self {
             projects: Vec::new(),
             selected: None,
@@ -169,6 +367,9 @@ impl PullRequestsStoreModel {
             data: HashMap::new(),
             generation: 0,
             fetch_tx,
+            detail: None,
+            detail_generation: 0,
+            detail_tx,
         }
     }
 
@@ -287,6 +488,182 @@ impl PullRequestsStoreModel {
         }
         ctx.notify();
     }
+
+    /// Detail data for `number` in the currently selected repo, if a detail
+    /// fetch has been started for it.
+    pub fn detail_data(&self, number: u64) -> Option<&PrDetailData> {
+        let ((repo, n), data) = self.detail.as_ref()?;
+        (Some(repo.as_path()) == self.selected_repo() && *n == number).then_some(data)
+    }
+
+    /// Drop the open detail (back-to-list). In-flight results become stale.
+    pub fn close_detail(&mut self, ctx: &mut ModelContext<Self>) {
+        self.detail = None;
+        self.detail_generation += 1;
+        ctx.notify();
+    }
+
+    /// (Re-)fetch the detail + timeline for `number` in the selected repo on
+    /// the background executor. Opening a different PR replaces the cached
+    /// detail; refreshing the same PR keeps stale data visible while loading.
+    pub fn fetch_detail(&mut self, number: u64, ctx: &mut ModelContext<Self>) {
+        let Some(repo) = self.selected.clone() else {
+            return;
+        };
+        let key = (repo.clone(), number);
+        match &mut self.detail {
+            Some((existing, data)) if *existing == key => data.loading = true,
+            _ => {
+                self.detail = Some((
+                    key,
+                    PrDetailData {
+                        loading: true,
+                        ..Default::default()
+                    },
+                ));
+            }
+        }
+        self.detail_generation += 1;
+        let generation = self.detail_generation;
+        ctx.notify();
+
+        let tx = self.detail_tx.clone();
+        ctx.background_executor()
+            .spawn(async move {
+                let outcome = fetch_pr_detail(&repo, number);
+                let _ = tx
+                    .send(DetailMessage::Fetch {
+                        repo,
+                        number,
+                        generation,
+                        outcome,
+                    })
+                    .await;
+            })
+            .detach();
+    }
+
+    /// Run `gh pr merge` with the chosen strategy. On success the detail and
+    /// the list both refetch; on failure gh's error message is surfaced.
+    pub fn merge_pr(&mut self, number: u64, method: PrMergeMethod, ctx: &mut ModelContext<Self>) {
+        self.run_mutation(
+            number,
+            move |repo, slug| {
+                let n = number.to_string();
+                run_in_repo(
+                    repo,
+                    "gh",
+                    &["pr", "merge", &n, "--repo", slug, method.gh_flag()],
+                )
+                .map(|_| ())
+            },
+            ctx,
+        );
+    }
+
+    /// Run `gh pr ready` to take a draft PR out of draft.
+    pub fn mark_ready(&mut self, number: u64, ctx: &mut ModelContext<Self>) {
+        self.run_mutation(
+            number,
+            move |repo, slug| {
+                let n = number.to_string();
+                run_in_repo(repo, "gh", &["pr", "ready", &n, "--repo", slug]).map(|_| ())
+            },
+            ctx,
+        );
+    }
+
+    /// Spawn one mutating gh call for the open detail PR on the background
+    /// executor. `run` receives the repo path and its resolved origin slug
+    /// (fork discipline: every mutating gh call pins `--repo <origin slug>`).
+    fn run_mutation(
+        &mut self,
+        number: u64,
+        run: impl FnOnce(&Path, &str) -> Result<(), String> + Send + 'static,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(repo) = self.selected.clone() else {
+            return;
+        };
+        let Some((key, data)) = self.detail.as_mut() else {
+            return;
+        };
+        if *key != (repo.clone(), number) || data.mutating {
+            return;
+        }
+        data.mutating = true;
+        data.mutation_error = None;
+        ctx.notify();
+
+        let tx = self.detail_tx.clone();
+        ctx.background_executor()
+            .spawn(async move {
+                let outcome = github_slug(&repo).and_then(|slug| run(&repo, &slug));
+                let _ = tx
+                    .send(DetailMessage::Mutation {
+                        repo,
+                        number,
+                        outcome,
+                    })
+                    .await;
+            })
+            .detach();
+    }
+
+    fn apply_detail_message(&mut self, message: DetailMessage, ctx: &mut ModelContext<Self>) {
+        match message {
+            DetailMessage::Fetch {
+                repo,
+                number,
+                generation,
+                outcome,
+            } => {
+                if generation != self.detail_generation {
+                    return; // Superseded (or the detail was closed).
+                }
+                let Some((key, data)) = self.detail.as_mut() else {
+                    return;
+                };
+                if *key != (repo, number) {
+                    return;
+                }
+                data.loading = false;
+                data.fetched = true;
+                match outcome {
+                    Ok(payload) => {
+                        data.detail = Some(payload.detail);
+                        data.timeline = payload.timeline;
+                        data.timeline_truncated = payload.truncated;
+                        data.error = None;
+                    }
+                    Err(error) => data.error = Some(error),
+                }
+                ctx.notify();
+            }
+            DetailMessage::Mutation {
+                repo,
+                number,
+                outcome,
+            } => {
+                let Some((key, data)) = self.detail.as_mut() else {
+                    return;
+                };
+                if *key != (repo, number) {
+                    return;
+                }
+                data.mutating = false;
+                match outcome {
+                    Ok(()) => {
+                        // The world changed: refetch the detail and the list.
+                        self.fetch_detail(number, ctx);
+                        self.refresh(ctx);
+                    }
+                    Err(error) => data.mutation_error = Some(error),
+                }
+                ctx.notify();
+            }
+        }
+    }
 }
 
 impl Entity for PullRequestsStoreModel {
@@ -360,6 +737,232 @@ fn fetch_viewer_login(repo: &Path) -> Option<String> {
     run_in_repo(repo, "gh", &["api", "user", "--jq", ".login"])
         .ok()
         .filter(|login| !login.is_empty())
+}
+
+/// Blocking detail + timeline fetch for one PR. Background executor only.
+fn fetch_pr_detail(repo: &Path, number: u64) -> Result<DetailPayload, String> {
+    let slug = github_slug(repo)?;
+    let n = number.to_string();
+    let json = run_in_repo(
+        repo,
+        "gh",
+        &[
+            "pr",
+            "view",
+            &n,
+            "--repo",
+            &slug,
+            "--json",
+            PR_DETAIL_JSON_FIELDS,
+        ],
+    )?;
+    let detail = parse_pr_detail(&json)?;
+
+    let (owner, name) = slug
+        .split_once('/')
+        .ok_or_else(|| format!("Unexpected repo slug: {slug}"))?;
+    let query = format!("query={TIMELINE_QUERY}");
+    let owner_arg = format!("owner={owner}");
+    let name_arg = format!("name={name}");
+    let number_arg = format!("number={number}");
+    let last_arg = format!("last={TIMELINE_PAGE_SIZE}");
+    let timeline_json = run_in_repo(
+        repo,
+        "gh",
+        &[
+            "api",
+            "graphql",
+            "-f",
+            &query,
+            "-F",
+            &owner_arg,
+            "-F",
+            &name_arg,
+            "-F",
+            &number_arg,
+            "-F",
+            &last_arg,
+        ],
+    )?;
+    let (timeline, truncated) = parse_timeline(&timeline_json)?;
+    Ok(DetailPayload {
+        detail,
+        timeline,
+        truncated,
+    })
+}
+
+/// Parse `gh pr view --json` output into a [`PrDetail`].
+pub(crate) fn parse_pr_detail(json: &str) -> Result<PrDetail, String> {
+    let value: serde_json::Value = serde_json::from_str(json)
+        .map_err(|err| format!("Could not parse `gh pr view` output: {err}"))?;
+    let str_field = |key: &str| {
+        value
+            .get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let u64_field = |key: &str| value.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
+    let checks = value
+        .get("statusCheckRollup")
+        .and_then(|v| v.as_array())
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .map(parse_check_row)
+        .collect();
+    Ok(PrDetail {
+        number: u64_field("number"),
+        title: str_field("title"),
+        body: str_field("body"),
+        author: value
+            .get("author")
+            .and_then(|a| a.get("login"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned(),
+        state: str_field("state"),
+        is_draft: value
+            .get("isDraft")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        mergeable: str_field("mergeable"),
+        merge_state_status: str_field("mergeStateStatus"),
+        review_decision: parse_review_decision(
+            value.get("reviewDecision").and_then(|v| v.as_str()),
+        ),
+        base_ref: str_field("baseRefName"),
+        head_ref: str_field("headRefName"),
+        additions: u64_field("additions"),
+        deletions: u64_field("deletions"),
+        changed_files: u64_field("changedFiles"),
+        url: str_field("url"),
+        created_at: str_field("createdAt"),
+        checks,
+    })
+}
+
+/// Parse one `statusCheckRollup` item into a check row. CheckRun items carry
+/// `name`/`detailsUrl`/timestamps; classic StatusContext items carry
+/// `context`/`targetUrl`.
+fn parse_check_row(check: &serde_json::Value) -> PrCheck {
+    let str_of = |key: &str| check.get(key).and_then(|v| v.as_str()).unwrap_or_default();
+    let name = match str_of("name") {
+        "" => str_of("context"),
+        name => name,
+    };
+    let details_url = match str_of("detailsUrl") {
+        "" => str_of("targetUrl"),
+        url => url,
+    };
+    PrCheck {
+        name: name.to_owned(),
+        state: classify_check(check),
+        details_url: details_url.to_owned(),
+        duration: check_duration(str_of("startedAt"), str_of("completedAt")),
+    }
+}
+
+/// "4m 12s"-style duration between two RFC 3339 timestamps, if both parse.
+fn check_duration(started: &str, completed: &str) -> Option<String> {
+    let start = chrono::DateTime::parse_from_rfc3339(started).ok()?;
+    let end = chrono::DateTime::parse_from_rfc3339(completed).ok()?;
+    let secs = (end - start).num_seconds();
+    if secs < 0 {
+        return None;
+    }
+    Some(if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        format!("{}m {}s", secs / 60, secs % 60)
+    } else {
+        format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
+    })
+}
+
+/// Parse the [`TIMELINE_QUERY`] response into oldest-first conversation items
+/// plus a truncation flag. Pending reviews and body-less `COMMENTED` reviews
+/// are skipped; body-less Approved/Changes-requested reviews are kept (the
+/// state itself is the content).
+pub(crate) fn parse_timeline(json: &str) -> Result<(Vec<PrTimelineItem>, bool), String> {
+    let value: serde_json::Value = serde_json::from_str(json)
+        .map_err(|err| format!("Could not parse the timeline response: {err}"))?;
+    let pr = value
+        .pointer("/data/repository/pullRequest")
+        .ok_or_else(|| "The timeline response has no pull request.".to_owned())?;
+
+    let connection = |key: &str| {
+        let nodes = pr
+            .pointer(&format!("/{key}/nodes"))
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let total = pr
+            .pointer(&format!("/{key}/totalCount"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let truncated = total > nodes.len() as u64;
+        (nodes, truncated)
+    };
+    let node_common = |node: &serde_json::Value| {
+        let author = node
+            .pointer("/author/login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let created_at = node
+            .get("createdAt")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let body = node
+            .get("body")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        (author, created_at, body)
+    };
+
+    let (comment_nodes, comments_truncated) = connection("comments");
+    let (review_nodes, reviews_truncated) = connection("reviews");
+
+    let mut items: Vec<PrTimelineItem> = comment_nodes
+        .iter()
+        .map(|node| {
+            let (author, created_at, body) = node_common(node);
+            PrTimelineItem {
+                author,
+                created_at,
+                body,
+                kind: PrTimelineKind::Comment,
+            }
+        })
+        .collect();
+    for node in &review_nodes {
+        let state = match node.get("state").and_then(|v| v.as_str()).unwrap_or("") {
+            "APPROVED" => PrReviewState::Approved,
+            "CHANGES_REQUESTED" => PrReviewState::ChangesRequested,
+            "COMMENTED" => PrReviewState::Commented,
+            "DISMISSED" => PrReviewState::Dismissed,
+            _ => continue, // PENDING and unknown states are not shown.
+        };
+        let (author, created_at, body) = node_common(node);
+        if body.trim().is_empty() && state == PrReviewState::Commented {
+            // A body-less "commented" review is a thread container; its
+            // line comments are 21c.
+            continue;
+        }
+        items.push(PrTimelineItem {
+            author,
+            created_at,
+            body,
+            kind: PrTimelineKind::Review(state),
+        });
+    }
+    // RFC 3339 UTC timestamps sort chronologically as strings.
+    items.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    Ok((items, comments_truncated || reviews_truncated))
 }
 
 /// Parse `gh pr list --json` output into row entries.
@@ -620,6 +1223,164 @@ mod tests {
         assert_eq!(relative_updated_at("2026-07-20T00:00:00Z", now), "8d ago");
         assert_eq!(relative_updated_at("2026-01-01T00:00:00Z", now), "6mo ago");
         assert_eq!(relative_updated_at("not-a-date", now), "");
+    }
+
+    #[test]
+    fn parses_gh_pr_view_detail_json() {
+        let json = r###"{
+            "number": 42,
+            "title": "Add the thing",
+            "body": "## Summary\nDoes the thing.",
+            "author": {"login": "timomak"},
+            "state": "OPEN",
+            "isDraft": false,
+            "mergeable": "MERGEABLE",
+            "mergeStateStatus": "CLEAN",
+            "reviewDecision": "APPROVED",
+            "baseRefName": "master",
+            "headRefName": "feat/thing",
+            "additions": 120,
+            "deletions": 7,
+            "changedFiles": 5,
+            "url": "https://github.com/timomak/twarp/pull/42",
+            "createdAt": "2026-07-20T10:00:00Z",
+            "statusCheckRollup": [
+                {
+                    "name": "build",
+                    "status": "COMPLETED",
+                    "conclusion": "SUCCESS",
+                    "startedAt": "2026-07-20T10:00:00Z",
+                    "completedAt": "2026-07-20T10:04:12Z",
+                    "detailsUrl": "https://ci.example/build"
+                },
+                {
+                    "context": "legacy-status",
+                    "state": "FAILURE",
+                    "targetUrl": "https://ci.example/legacy"
+                }
+            ]
+        }"###;
+        let detail = parse_pr_detail(json).unwrap();
+        assert_eq!(detail.number, 42);
+        assert_eq!(detail.body, "## Summary\nDoes the thing.");
+        assert_eq!(detail.author, "timomak");
+        assert_eq!(detail.mergeable, "MERGEABLE");
+        assert_eq!(detail.merge_state_status, "CLEAN");
+        assert_eq!(detail.base_ref, "master");
+        assert_eq!(detail.head_ref, "feat/thing");
+        assert_eq!(
+            (detail.additions, detail.deletions, detail.changed_files),
+            (120, 7, 5)
+        );
+        assert_eq!(detail.checks.len(), 2);
+
+        let build = &detail.checks[0];
+        assert_eq!(build.name, "build");
+        assert_eq!(build.state, PrCiState::Passing);
+        assert_eq!(build.details_url, "https://ci.example/build");
+        assert_eq!(build.duration.as_deref(), Some("4m 12s"));
+
+        // Classic StatusContext shape: `context`/`targetUrl`/`state`.
+        let legacy = &detail.checks[1];
+        assert_eq!(legacy.name, "legacy-status");
+        assert_eq!(legacy.state, PrCiState::Failing);
+        assert_eq!(legacy.details_url, "https://ci.example/legacy");
+        assert_eq!(legacy.duration, None);
+    }
+
+    #[test]
+    fn detail_parse_tolerates_missing_fields() {
+        let detail = parse_pr_detail(r#"{"number": 3}"#).unwrap();
+        assert_eq!(detail.number, 3);
+        assert_eq!(detail.body, "");
+        assert!(detail.checks.is_empty());
+        assert!(parse_pr_detail("not json").is_err());
+    }
+
+    #[test]
+    fn check_duration_buckets() {
+        assert_eq!(
+            check_duration("2026-07-20T10:00:00Z", "2026-07-20T10:00:45Z").as_deref(),
+            Some("45s")
+        );
+        assert_eq!(
+            check_duration("2026-07-20T10:00:00Z", "2026-07-20T11:30:00Z").as_deref(),
+            Some("1h 30m")
+        );
+        // Reversed or unparseable timestamps yield no duration.
+        assert_eq!(
+            check_duration("2026-07-20T10:00:00Z", "2026-07-20T09:00:00Z"),
+            None
+        );
+        assert_eq!(check_duration("", "2026-07-20T10:00:00Z"), None);
+    }
+
+    #[test]
+    fn parses_graphql_timeline_oldest_first() {
+        let json = r#"{
+            "data": {"repository": {"pullRequest": {
+                "comments": {
+                    "totalCount": 2,
+                    "nodes": [
+                        {"author": {"login": "alice"}, "createdAt": "2026-07-21T00:00:00Z", "body": "Looks interesting"},
+                        {"author": {"login": "bob"}, "createdAt": "2026-07-23T00:00:00Z", "body": "Ping"}
+                    ]
+                },
+                "reviews": {
+                    "totalCount": 3,
+                    "nodes": [
+                        {"author": {"login": "carol"}, "createdAt": "2026-07-22T00:00:00Z", "body": "Nit inside", "state": "CHANGES_REQUESTED"},
+                        {"author": {"login": "carol"}, "createdAt": "2026-07-24T00:00:00Z", "body": "", "state": "APPROVED"},
+                        {"author": {"login": "dave"}, "createdAt": "2026-07-22T12:00:00Z", "body": "", "state": "COMMENTED"}
+                    ]
+                }
+            }}}
+        }"#;
+        let (items, truncated) = parse_timeline(json).unwrap();
+        // The body-less COMMENTED review (a thread container) is dropped; the
+        // body-less APPROVED review is kept.
+        assert_eq!(items.len(), 4);
+        assert!(!truncated);
+        assert_eq!(
+            items.iter().map(|i| i.author.as_str()).collect::<Vec<_>>(),
+            ["alice", "carol", "bob", "carol"]
+        );
+        assert_eq!(
+            items[1].kind,
+            PrTimelineKind::Review(PrReviewState::ChangesRequested)
+        );
+        assert_eq!(
+            items[3].kind,
+            PrTimelineKind::Review(PrReviewState::Approved)
+        );
+        assert_eq!(items[0].kind, PrTimelineKind::Comment);
+    }
+
+    #[test]
+    fn timeline_truncation_and_errors() {
+        let json = r#"{
+            "data": {"repository": {"pullRequest": {
+                "comments": {"totalCount": 80, "nodes": [
+                    {"author": {"login": "a"}, "createdAt": "2026-07-21T00:00:00Z", "body": "x"}
+                ]},
+                "reviews": {"totalCount": 0, "nodes": []}
+            }}}
+        }"#;
+        let (items, truncated) = parse_timeline(json).unwrap();
+        assert_eq!(items.len(), 1);
+        assert!(truncated);
+
+        assert!(parse_timeline(r#"{"data": {"repository": null}}"#).is_err());
+        assert!(parse_timeline("nope").is_err());
+    }
+
+    #[test]
+    fn merge_method_round_trip() {
+        for method in PrMergeMethod::ALL {
+            assert_eq!(PrMergeMethod::from_str(method.as_str()), Some(method));
+        }
+        assert_eq!(PrMergeMethod::Squash.gh_flag(), "--squash");
+        assert_eq!(PrMergeMethod::from_str("bogus"), None);
     }
 
     #[test]

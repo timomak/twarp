@@ -2,8 +2,10 @@
 //! project's GitHub pull requests, fetched via the `gh` CLI.
 //!
 //! 21a ships the list page (grouping, CI/review badges, browser-pane open);
-//! a native detail view follows in 21b.
+//! 21b adds the native in-page detail view (Conversation/Checks tabs + merge
+//! box). The Files (diff) tab follows in 21c.
 
+pub mod detail_page;
 pub mod list_page;
 pub mod store;
 

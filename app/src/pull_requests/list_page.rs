@@ -23,6 +23,7 @@ use twarpui::{
 
 use crate::appearance::Appearance;
 use crate::automation::view::{AutomationView, AutomationViewAction};
+use crate::pull_requests::detail_page::PrDetailState;
 use crate::pull_requests::store::{
     group_prs, relative_updated_at, PrCiState, PrEntry, PrStateFilter, PullRequestsStoreModel,
 };
@@ -34,7 +35,7 @@ use crate::view_components::{
 use crate::workspace::WorkspaceAction;
 
 /// Content column width; matches the automation pages.
-const CONTENT_MAX_WIDTH: f32 = 720.;
+pub(crate) const CONTENT_MAX_WIDTH: f32 = 720.;
 
 /// Actions dispatched by the Pull Requests page's controls, wrapped in
 /// [`AutomationViewAction::PullRequests`].
@@ -45,11 +46,27 @@ pub enum PullRequestsPageAction {
     /// Set the state filter by [`PrStateFilter::as_str`] payload.
     SetFilter(String),
     Refresh,
-    /// Row click: open the PR. 21a routes to the built-in Browser pane; 21b
-    /// will route this to a native detail view instead.
-    OpenPr(String),
+    /// Row click: open the native in-page detail view for this PR (21b).
+    OpenDetail(u64),
     /// Open the PR in the OS browser (the row's trailing affordance).
     OpenExternal(String),
+    /// Detail view: return to the list.
+    BackToList,
+    /// Detail view: switch tabs by `PrDetailTab::as_str` payload.
+    SetDetailTab(String),
+    /// Detail merge box: arm a merge strategy (`PrMergeMethod::as_str`
+    /// payload) — first click of the two-click confirm.
+    RequestMerge(String),
+    /// Detail merge box: run the armed merge (second click).
+    ConfirmMerge,
+    /// Detail merge box: disarm the pending merge.
+    CancelMerge,
+    /// Detail merge box: take a draft PR out of draft (`gh pr ready`).
+    MarkReady,
+    /// Detail view: refetch the open PR's detail + timeline.
+    RefreshDetail,
+    /// Checks tab: open a check's details page in the built-in Browser pane.
+    OpenCheck(String),
 }
 
 /// Per-row hover states, keyed by PR number.
@@ -68,6 +85,9 @@ pub struct PullRequestsPageState {
     /// mounted in two places at once).
     empty_refresh_button: ViewHandle<ActionButton>,
     rows: RefCell<HashMap<u64, RowMouseStates>>,
+    /// The open in-page detail view, if a row was clicked (21b). Not
+    /// persisted: after a restart the page reopens on the list.
+    detail: Option<PrDetailState>,
 }
 
 impl PullRequestsPageState {
@@ -81,6 +101,7 @@ impl PullRequestsPageState {
             refresh_button,
             empty_refresh_button,
             rows: Default::default(),
+            detail: None,
         };
         state.sync(ctx);
         state
@@ -116,6 +137,10 @@ impl PullRequestsPageState {
             })
         });
         self.filter_dropdown = new_filter_dropdown(filter, ctx);
+        if let Some(mut detail) = self.detail.take() {
+            detail.sync(ctx);
+            self.detail = Some(detail);
+        }
     }
 
     pub fn handle_action(
@@ -126,6 +151,8 @@ impl PullRequestsPageState {
         use PullRequestsPageAction::*;
         match action {
             SelectRepo(path) => {
+                // Changing repos invalidates the open detail — back to list.
+                self.close_detail(ctx);
                 let path = PathBuf::from(path);
                 PullRequestsStoreModel::handle(ctx)
                     .update(ctx, |store, ctx| store.select_repo(path, ctx));
@@ -141,15 +168,39 @@ impl PullRequestsPageState {
             Refresh => {
                 PullRequestsStoreModel::handle(ctx).update(ctx, |store, ctx| store.refresh(ctx));
             }
-            OpenPr(url) => {
+            OpenDetail(number) => {
+                let number = *number;
+                self.detail = Some(PrDetailState::new(number, ctx));
+                PullRequestsStoreModel::handle(ctx)
+                    .update(ctx, |store, ctx| store.fetch_detail(number, ctx));
+            }
+            BackToList => self.close_detail(ctx),
+            OpenExternal(url) => ctx.open_url(url),
+            OpenCheck(url) => {
                 ctx.dispatch_typed_action(&WorkspaceAction::OpenUrlInBrowserPane(url.clone()));
             }
-            OpenExternal(url) => ctx.open_url(url),
+            SetDetailTab(_) | RequestMerge(_) | ConfirmMerge | CancelMerge | MarkReady
+            | RefreshDetail => {
+                if let Some(mut detail) = self.detail.take() {
+                    detail.handle_action(action, ctx);
+                    self.detail = Some(detail);
+                }
+            }
         }
         ctx.notify();
     }
 
+    /// Drop the open detail view (and its cached data in the store).
+    fn close_detail(&mut self, ctx: &mut ViewContext<AutomationView>) {
+        if self.detail.take().is_some() {
+            PullRequestsStoreModel::handle(ctx).update(ctx, |store, ctx| store.close_detail(ctx));
+        }
+    }
+
     pub fn render(&self, app: &AppContext) -> Box<dyn Element> {
+        if let Some(detail) = &self.detail {
+            return detail.render(app);
+        }
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         let store = PullRequestsStoreModel::as_ref(app);
@@ -407,7 +458,7 @@ impl PullRequestsPageState {
         }
 
         let open_action =
-            AutomationViewAction::PullRequests(PullRequestsPageAction::OpenPr(pr.url.clone()));
+            AutomationViewAction::PullRequests(PullRequestsPageAction::OpenDetail(pr.number));
         let body = Hoverable::new(states.row, move |state| {
             let mut row = Container::new(
                 Flex::row()
@@ -463,7 +514,11 @@ impl PullRequestsPageState {
 }
 
 /// A small outlined pill badge in the given accent color.
-fn render_badge(text: &'static str, color: ColorU, appearance: &Appearance) -> Box<dyn Element> {
+pub(crate) fn render_badge(
+    text: &'static str,
+    color: ColorU,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
     Container::new(
         Text::new_inline(text, appearance.ui_font_family(), type_ramp::CAPTION.size)
             .with_line_height_ratio(type_ramp::CAPTION.line_height)
