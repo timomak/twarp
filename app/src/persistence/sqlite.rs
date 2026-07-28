@@ -1037,6 +1037,7 @@ fn save_pane_state(
         }
         LeafContents::NetworkLog
         | LeafContents::BrowserSpike
+        | LeafContents::Automation(_)
         | LeafContents::Browser(_)
         | LeafContents::ClaudeCode(_) => {
             // These pane types are filtered out before this function is
@@ -1302,6 +1303,7 @@ fn save_pane_state(
         }
         LeafContents::NetworkLog
         | LeafContents::BrowserSpike
+        | LeafContents::Automation(_)
         | LeafContents::Browser(_)
         | LeafContents::ClaudeCode(_) => {
             // Unreachable: filtered by `is_persisted` in `save_app_state`.

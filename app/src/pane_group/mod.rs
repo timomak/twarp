@@ -215,6 +215,7 @@ mod tests;
 
 pub use crate::code_review::CodeReviewPanelArg;
 // twarp: 2c-d — CodeDiffPane / ExecutionProfileEditorPane / AIFactPane removed (AI panes deleted)
+pub use pane::automation_pane::AutomationPane;
 pub use pane::browser_pane::BrowserPane;
 pub use pane::browser_spike_pane::BrowserSpikePane;
 pub use pane::claude_code_pane::ClaudeCodePane; // twarp 07 (7b)
@@ -1808,6 +1809,21 @@ impl PaneGroup {
                     )),
                 };
 
+                let pane_id = pane.as_pane().id();
+                pane_contents.insert(pane_id, pane);
+                let focus = InitialFocus {
+                    focused_pane: leaf.is_focused.then_some(pane_id),
+                    active_session: None,
+                };
+                Ok((PaneData::new(pane_id), focus))
+            }
+            // twarp 20a: automation panes are never persisted (see
+            // `LeafContents::is_persisted`), but this arm is still reachable
+            // via `add_tab_with_pane_layout` when the sidebar opens a page in
+            // a new tab (mirroring how Settings tabs are opened).
+            LeafContents::Automation(page) => {
+                let pane: Box<dyn AnyPaneContent + 'static> =
+                    Box::new(AutomationPane::new(page, ctx));
                 let pane_id = pane.as_pane().id();
                 pane_contents.insert(pane_id, pane);
                 let focus = InitialFocus {

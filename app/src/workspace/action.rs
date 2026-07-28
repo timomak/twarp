@@ -217,6 +217,12 @@ pub enum WorkspaceAction {
         keybinding_name: Option<String>,
     },
     ShowSettings,
+    /// twarp 20a: open the Scheduled Tasks automation page in a main pane.
+    ShowScheduledTasks,
+    /// twarp 20a: open the Skills automation page in a main pane.
+    ShowSkills,
+    /// twarp 20a: open the MCPs automation page in a main pane.
+    ShowMcps,
     ShowSettingsPage(SettingsSection),
     ShowSettingsPageWithSearch {
         search_query: String,
@@ -814,6 +820,9 @@ impl WorkspaceAction {
             | ConfigureKeybindingSettings { .. }
             | ExportAllTwarpDriveObjects
             | ShowSettings
+            | ShowScheduledTasks
+            | ShowSkills
+            | ShowMcps
             | ShowSettingsPage(_)
             | ShowSettingsPageWithSearch { .. }
             | ShowThemeChooser(_)

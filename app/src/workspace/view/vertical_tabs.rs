@@ -3202,6 +3202,9 @@ impl PaneGroup {
             IPaneType::ExecutionProfileEditor => TypedPane::ExecutionProfileEditor,
             IPaneType::GetStarted
             | IPaneType::NetworkLog
+            // twarp 20a: automation pages have no vertical-tab-specific row
+            // content.
+            | IPaneType::Automation
             // twarp 14a: temporary native browser spike has no specialized
             // vertical-tab row content.
             | IPaneType::BrowserSpike

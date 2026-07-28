@@ -47,6 +47,7 @@ mod app_state;
 #[cfg(feature = "integration_tests")]
 pub use app_state::RightToolKind;
 mod auth;
+mod automation;
 mod banner;
 mod billing;
 #[cfg(not(target_family = "wasm"))]

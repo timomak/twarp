@@ -64,6 +64,9 @@ pub(super) struct ProjectSidebarMouseStates {
     new_session: twarpui::elements::MouseStateHandle,
     search_sessions: twarpui::elements::MouseStateHandle,
     empty_new_project: twarpui::elements::MouseStateHandle,
+    scheduled_tasks: twarpui::elements::MouseStateHandle,
+    skills: twarpui::elements::MouseStateHandle,
+    mcps: twarpui::elements::MouseStateHandle,
 }
 
 impl ProjectSidebarMouseStates {
@@ -1130,6 +1133,41 @@ impl Workspace {
         column.add_child(self.render_sidebar_actions(app));
         column.add_child(self.render_project_header(app));
         column.add_child(Shrinkable::new(1., scrollable).finish());
+        // twarp 20a: automation entry points — each opens a full-page main
+        // pane (Scheduled Tasks / Skills / MCPs).
+        column.add_child(
+            Container::new(
+                Flex::column()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                    .with_spacing(spacing::XXS)
+                    .with_child(self.render_sidebar_action(
+                        self.projects_sidebar_mouse_states.scheduled_tasks.clone(),
+                        Icon::Clock,
+                        "Scheduled Tasks",
+                        WorkspaceAction::ShowScheduledTasks,
+                        app,
+                    ))
+                    .with_child(self.render_sidebar_action(
+                        self.projects_sidebar_mouse_states.skills.clone(),
+                        Icon::BookOpen,
+                        "Skills",
+                        WorkspaceAction::ShowSkills,
+                        app,
+                    ))
+                    .with_child(self.render_sidebar_action(
+                        self.projects_sidebar_mouse_states.mcps.clone(),
+                        Icon::Dataflow,
+                        "MCPs",
+                        WorkspaceAction::ShowMcps,
+                        app,
+                    ))
+                    .finish(),
+            )
+            .with_padding_left(spacing::SM)
+            .with_padding_right(spacing::SM)
+            .with_padding_top(spacing::SM)
+            .finish(),
+        );
         column.add_child(
             Container::new(settings)
                 .with_uniform_padding(spacing::SM)
