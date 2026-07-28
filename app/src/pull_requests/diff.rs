@@ -263,6 +263,8 @@ pub struct PrThreadComment {
 /// One line-anchored GitHub review thread.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrReviewThread {
+    /// The GraphQL node id, used by the 21d reply/resolve mutations.
+    pub id: String,
     pub path: String,
     pub line: Option<u64>,
     pub start_line: Option<u64>,
@@ -320,6 +322,11 @@ pub fn parse_review_threads(json: &str) -> Result<(Vec<PrReviewThread>, bool), S
                 })
                 .collect();
             PrReviewThread {
+                id: node
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_owned(),
                 path: node
                     .get("path")
                     .and_then(|v| v.as_str())
@@ -536,6 +543,7 @@ Binary files a/img.png and b/img.png differ
 
     fn thread(path: &str, line: Option<u64>, side: PrDiffSide, outdated: bool) -> PrReviewThread {
         PrReviewThread {
+            id: String::new(),
             path: path.into(),
             line,
             start_line: None,
@@ -576,6 +584,7 @@ Binary files a/img.png and b/img.png differ
             "data": {"repository": {"pullRequest": {"reviewThreads": {
                 "totalCount": 2,
                 "nodes": [{
+                    "id": "PRRT_node1",
                     "isResolved": true,
                     "isOutdated": false,
                     "path": "src/lib.rs",
@@ -593,6 +602,7 @@ Binary files a/img.png and b/img.png differ
         assert!(truncated); // totalCount 2, one node returned.
         assert_eq!(threads.len(), 1);
         let t = &threads[0];
+        assert_eq!(t.id, "PRRT_node1");
         assert!(t.is_resolved);
         assert!(!t.is_outdated);
         assert_eq!(t.path, "src/lib.rs");

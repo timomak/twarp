@@ -58,6 +58,7 @@ query($owner: String!, $name: String!, $number: Int!, $first: Int!, $comments: I
       reviewThreads(first: $first) {
         totalCount
         nodes {
+          id
           isResolved
           isOutdated
           path
@@ -71,6 +72,24 @@ query($owner: String!, $name: String!, $number: Int!, $first: Int!, $comments: I
       }
     }
   }
+}";
+
+/// GraphQL mutation replying to one review thread by node id (21d).
+const THREAD_REPLY_MUTATION: &str = "\
+mutation($threadId: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $threadId, body: $body}) {
+    comment { id }
+  }
+}";
+
+/// GraphQL mutations resolving / unresolving one review thread (21d).
+const RESOLVE_THREAD_MUTATION: &str = "\
+mutation($threadId: ID!) {
+  resolveReviewThread(input: {threadId: $threadId}) { thread { id } }
+}";
+const UNRESOLVE_THREAD_MUTATION: &str = "\
+mutation($threadId: ID!) {
+  unresolveReviewThread(input: {threadId: $threadId}) { thread { id } }
 }";
 
 /// The state filter shown in the page header. `Draft` is `--state open`
@@ -683,23 +702,115 @@ impl PullRequestsStoreModel {
         );
     }
 
+    /// Post a PR-level comment (`gh pr comment --body-file -`, body piped via
+    /// stdin so no shell-quoting issues). Returns true when the mutation was
+    /// actually started (21d).
+    pub fn comment_pr(&mut self, number: u64, body: String, ctx: &mut ModelContext<Self>) -> bool {
+        self.run_mutation(
+            number,
+            move |repo, slug| {
+                let n = number.to_string();
+                run_in_repo_with_stdin(
+                    repo,
+                    "gh",
+                    &["pr", "comment", &n, "--repo", slug, "--body-file", "-"],
+                    &body,
+                )
+                .map(|_| ())
+            },
+            ctx,
+        )
+    }
+
+    /// Reply to one inline review thread by GraphQL node id (21d). The id was
+    /// fetched from the origin-slug reviewThreads query, so the write stays
+    /// pinned to the fork.
+    pub fn reply_thread(
+        &mut self,
+        number: u64,
+        thread_id: String,
+        body: String,
+        ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        self.run_mutation(
+            number,
+            move |repo, _slug| {
+                run_graphql_mutation(
+                    repo,
+                    THREAD_REPLY_MUTATION,
+                    &[("threadId", &thread_id), ("body", &body)],
+                )
+            },
+            ctx,
+        )
+    }
+
+    /// Resolve / unresolve one review thread by GraphQL node id (21d).
+    pub fn set_thread_resolved(
+        &mut self,
+        number: u64,
+        thread_id: String,
+        resolved: bool,
+        ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        let mutation = if resolved {
+            RESOLVE_THREAD_MUTATION
+        } else {
+            UNRESOLVE_THREAD_MUTATION
+        };
+        self.run_mutation(
+            number,
+            move |repo, _slug| run_graphql_mutation(repo, mutation, &[("threadId", &thread_id)]),
+            ctx,
+        )
+    }
+
+    /// Submit a batched review (verdict + summary + drafted line comments) as
+    /// one REST call: `gh api repos/{slug}/pulls/{n}/reviews --input -` with
+    /// the JSON payload (built by
+    /// [`crate::pull_requests::review::build_review_payload`]) piped via
+    /// stdin. Creates the review and its comments atomically (21d).
+    pub fn submit_review(
+        &mut self,
+        number: u64,
+        payload: String,
+        ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        self.run_mutation(
+            number,
+            move |repo, slug| {
+                let endpoint = format!("repos/{slug}/pulls/{number}/reviews");
+                run_in_repo_with_stdin(
+                    repo,
+                    "gh",
+                    &["api", "--method", "POST", &endpoint, "--input", "-"],
+                    &payload,
+                )
+                .map(|_| ())
+            },
+            ctx,
+        )
+    }
+
     /// Spawn one mutating gh call for the open detail PR on the background
     /// executor. `run` receives the repo path and its resolved origin slug
     /// (fork discipline: every mutating gh call pins `--repo <origin slug>`).
+    /// Returns true when the mutation was actually started (false when
+    /// another one is already in flight or the detail doesn't match).
     fn run_mutation(
         &mut self,
         number: u64,
         run: impl FnOnce(&Path, &str) -> Result<(), String> + Send + 'static,
         ctx: &mut ModelContext<Self>,
-    ) {
+    ) -> bool {
         let Some(repo) = self.selected.clone() else {
-            return;
+            return false;
         };
         let Some((key, data)) = self.detail.as_mut() else {
-            return;
+            return false;
         };
         if *key != (repo.clone(), number) || data.mutating {
-            return;
+            return false;
         }
         data.mutating = true;
         data.mutation_error = None;
@@ -718,6 +829,7 @@ impl PullRequestsStoreModel {
                     .await;
             })
             .detach();
+        true
     }
 
     fn apply_detail_message(&mut self, message: DetailMessage, ctx: &mut ModelContext<Self>) {
@@ -790,10 +902,15 @@ impl PullRequestsStoreModel {
                     return;
                 }
                 data.mutating = false;
+                let files_fetched = data.files.fetched;
                 match outcome {
                     Ok(()) => {
-                        // The world changed: refetch the detail and the list.
+                        // The world changed: refetch the detail, the list, and
+                        // (if it was open) the Files tab's diff + threads.
                         self.fetch_detail(number, ctx);
+                        if files_fetched {
+                            self.fetch_files(number, ctx);
+                        }
                         self.refresh(ctx);
                     }
                     Err(error) => data.mutation_error = Some(error),
@@ -834,6 +951,65 @@ fn run_in_repo(repo: &Path, program: &str, args: &[&str]) -> Result<String, Stri
         });
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+/// Like [`run_in_repo`], but pipes `stdin` into the child. Blocking —
+/// background executor only.
+fn run_in_repo_with_stdin(
+    repo: &Path,
+    program: &str,
+    args: &[&str],
+    stdin: &str,
+) -> Result<String, String> {
+    use std::io::Write;
+    let mut child = std::process::Command::new(program)
+        .args(args)
+        .current_dir(repo)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|err| {
+            if err.kind() == std::io::ErrorKind::NotFound {
+                format!("`{program}` was not found on your PATH.")
+            } else {
+                format!("failed to run `{program}`: {err}")
+            }
+        })?;
+    if let Some(mut pipe) = child.stdin.take() {
+        pipe.write_all(stdin.as_bytes())
+            .map_err(|err| format!("failed to write to `{program}`: {err}"))?;
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|err| format!("failed to run `{program}`: {err}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        return Err(if stderr.is_empty() {
+            format!("`{program}` exited with {}", output.status)
+        } else {
+            stderr.to_owned()
+        });
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+/// Run one `gh api graphql` mutation with string variables. GraphQL errors
+/// come back with exit status != 0 from gh, surfacing via stderr.
+fn run_graphql_mutation(
+    repo: &Path,
+    mutation: &str,
+    variables: &[(&str, &str)],
+) -> Result<(), String> {
+    let query = format!("query={mutation}");
+    let mut args: Vec<String> = vec!["api".into(), "graphql".into(), "-f".into(), query];
+    for (key, value) in variables {
+        args.push("-f".into());
+        args.push(format!("{key}={value}"));
+    }
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_in_repo(repo, "gh", &arg_refs).map(|_| ())
 }
 
 /// Resolve the repo's ORIGIN remote (never upstream) to `owner/repo`.
