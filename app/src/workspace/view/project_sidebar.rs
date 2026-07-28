@@ -65,8 +65,7 @@ pub(super) struct ProjectSidebarMouseStates {
     search_sessions: twarpui::elements::MouseStateHandle,
     empty_new_project: twarpui::elements::MouseStateHandle,
     scheduled_tasks: twarpui::elements::MouseStateHandle,
-    skills: twarpui::elements::MouseStateHandle,
-    mcps: twarpui::elements::MouseStateHandle,
+    plugins: twarpui::elements::MouseStateHandle,
     pull_requests: twarpui::elements::MouseStateHandle,
 }
 
@@ -637,39 +636,23 @@ impl Workspace {
                         app,
                     ),
                 )
+                // twarp 23b: one Plugins row replaces the Skills and MCPs
+                // rows; count = number of plugins.
                 .with_child(
                     self.render_sidebar_action_with_count(
-                        self.projects_sidebar_mouse_states.skills.clone(),
-                        Icon::BookOpen,
-                        "Skills",
-                        Some(
-                            crate::skills_store::SkillsStoreModel::as_ref(app)
-                                .skills()
-                                .len(),
-                        ),
-                        self.active_tab_shows_automation_page(
-                            crate::automation::AutomationPage::Skills,
-                            app,
-                        ),
-                        WorkspaceAction::ShowSkills,
-                        app,
-                    ),
-                )
-                .with_child(
-                    self.render_sidebar_action_with_count(
-                        self.projects_sidebar_mouse_states.mcps.clone(),
+                        self.projects_sidebar_mouse_states.plugins.clone(),
                         Icon::Dataflow,
-                        "MCPs",
+                        "Plugins",
                         Some(
-                            crate::mcp_registry::McpRegistryModel::as_ref(app)
-                                .servers()
+                            crate::plugin_registry::PluginRegistryModel::as_ref(app)
+                                .plugins()
                                 .len(),
                         ),
                         self.active_tab_shows_automation_page(
-                            crate::automation::AutomationPage::Mcps,
+                            crate::automation::AutomationPage::Plugins,
                             app,
                         ),
-                        WorkspaceAction::ShowMcps,
+                        WorkspaceAction::ShowPlugins,
                         app,
                     ),
                 )

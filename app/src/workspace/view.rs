@@ -20400,8 +20400,11 @@ impl TypedActionView for Workspace {
             }
             ShowSettings => self.show_settings(ctx),
             ShowScheduledTasks => self.open_automation_pane(AutomationPage::ScheduledTasks, ctx),
-            ShowSkills => self.open_automation_pane(AutomationPage::Skills, ctx),
-            ShowMcps => self.open_automation_pane(AutomationPage::Mcps, ctx),
+            // twarp 23b: the Skills and MCPs pages merged into Plugins; the
+            // legacy actions keep working and route to the same page.
+            ShowPlugins | ShowSkills | ShowMcps => {
+                self.open_automation_pane(AutomationPage::Plugins, ctx)
+            }
             ShowPullRequests => self.open_pull_requests_pane(ctx),
             ReviewPrWithClaude { prompt, cwd } => {
                 self.open_pr_review_claude_tab(prompt.clone(), cwd.clone(), ctx)

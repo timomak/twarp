@@ -28,7 +28,7 @@ pub static CLOUD_AGENT: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand
 
 pub const ADD_MCP: StaticCommand = StaticCommand {
     name: "/add-mcp",
-    description: "Add new MCP server",
+    description: "Add new plugin (MCP server)",
     icon_path: "bundled/svg/dataflow.svg",
     availability: Availability::AI_ENABLED,
     auto_enter_ai_mode: false,
@@ -179,7 +179,7 @@ pub const OPEN_PROJECT_RULES: StaticCommand = StaticCommand {
 
 pub const OPEN_MCP_SERVERS: StaticCommand = StaticCommand {
     name: "/open-mcp-servers",
-    description: "Open MCP servers",
+    description: "Open plugins",
     icon_path: "bundled/svg/dataflow.svg",
     availability: Availability::AI_ENABLED,
     auto_enter_ai_mode: false,

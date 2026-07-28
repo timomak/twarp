@@ -267,6 +267,17 @@ diesel::table! {
         env -> Nullable<Text>,
         enabled_claude -> Bool,
         enabled_codex -> Bool,
+        plugin_id -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    plugins (id) {
+        id -> Text,
+        name -> Text,
+        description -> Text,
+        enabled_claude -> Bool,
+        enabled_codex -> Bool,
     }
 }
 
@@ -307,6 +318,7 @@ diesel::table! {
         name -> Text,
         enabled_claude -> Bool,
         enabled_codex -> Bool,
+        plugin_id -> Nullable<Text>,
     }
 }
 
@@ -628,6 +640,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     claude_session_defaults,
     mcp_servers,
     pane_branches,
+    plugins,
     pane_leaves,
     pane_nodes,
     panels,

@@ -69,6 +69,9 @@ pub struct McpServerEntry {
     pub env: BTreeMap<String, String>,
     pub enabled_claude: bool,
     pub enabled_codex: bool,
+    /// twarp 23a: owning plugin's UUID ([`crate::plugin_registry`]); `None`
+    /// until the next load's orphan migration adopts the entry.
+    pub plugin_id: Option<String>,
 }
 
 impl McpServerEntry {
@@ -94,6 +97,7 @@ impl McpServerEntry {
             env,
             enabled_claude: row.enabled_claude,
             enabled_codex: row.enabled_codex,
+            plugin_id: row.plugin_id,
         })
     }
 
@@ -110,6 +114,7 @@ impl McpServerEntry {
                 .then(|| serde_json::to_string(&self.env).unwrap_or_default()),
             enabled_claude: self.enabled_claude,
             enabled_codex: self.enabled_codex,
+            plugin_id: self.plugin_id.clone(),
         }
     }
 
@@ -233,19 +238,28 @@ impl McpRegistryModel {
     }
 
     /// Registry contribution to the Claude `--mcp-config` inline JSON:
-    /// `{"mcpServers": {...}}` over the Claude-enabled entries, or `None` when
-    /// there are none. Built-ins are merged on top by the caller, so they win
-    /// name collisions.
-    pub fn claude_mcp_config_json(&self) -> Option<String> {
-        let servers = claude_mcp_servers_map(&self.servers);
+    /// `{"mcpServers": {...}}` over the Claude-enabled entries whose owning
+    /// plugin is also Claude-enabled (twarp 23a: effective enablement =
+    /// component AND plugin; see `plugin_toggles`), or `None` when there are
+    /// none. Built-ins are merged on top by the caller, so they win name
+    /// collisions.
+    pub fn claude_mcp_config_json(
+        &self,
+        plugin_toggles: &BTreeMap<String, (bool, bool)>,
+    ) -> Option<String> {
+        let servers = claude_mcp_servers_map(&self.servers, plugin_toggles);
         (!servers.is_empty()).then(|| serde_json::json!({ "mcpServers": servers }).to_string())
     }
 
     /// Registry contribution to the Codex app-server `thread/start` `config`
-    /// overrides: `{"mcp_servers": {...}}` over the Codex-enabled entries, or
-    /// `None` when there are none.
-    pub fn codex_config_overrides(&self) -> Option<serde_json::Value> {
-        let servers = codex_mcp_servers_map(&self.servers);
+    /// overrides: `{"mcp_servers": {...}}` over the Codex-enabled entries
+    /// whose owning plugin is also Codex-enabled, or `None` when there are
+    /// none.
+    pub fn codex_config_overrides(
+        &self,
+        plugin_toggles: &BTreeMap<String, (bool, bool)>,
+    ) -> Option<serde_json::Value> {
+        let servers = codex_mcp_servers_map(&self.servers, plugin_toggles);
         (!servers.is_empty()).then(|| serde_json::json!({ "mcp_servers": servers }))
     }
 
@@ -267,20 +281,48 @@ impl McpRegistryModel {
     }
 }
 
+/// twarp 23a: whether a component's owning plugin allows the given provider.
+/// Entries with no / a dangling plugin fail open (the next load's migration
+/// adopts them into a plugin of their own).
+fn plugin_allows(
+    plugin_toggles: &BTreeMap<String, (bool, bool)>,
+    plugin_id: Option<&str>,
+    claude: bool,
+) -> bool {
+    match plugin_id.and_then(|id| plugin_toggles.get(id)) {
+        Some(&(enabled_claude, enabled_codex)) => {
+            if claude {
+                enabled_claude
+            } else {
+                enabled_codex
+            }
+        }
+        None => true,
+    }
+}
+
 fn claude_mcp_servers_map(
     servers: &[McpServerEntry],
+    plugin_toggles: &BTreeMap<String, (bool, bool)>,
 ) -> serde_json::Map<String, serde_json::Value> {
     servers
         .iter()
-        .filter(|s| s.enabled_claude)
+        .filter(|s| {
+            s.enabled_claude && plugin_allows(plugin_toggles, s.plugin_id.as_deref(), true)
+        })
         .map(|s| (s.name.clone(), s.claude_config_value()))
         .collect()
 }
 
-fn codex_mcp_servers_map(servers: &[McpServerEntry]) -> serde_json::Map<String, serde_json::Value> {
+fn codex_mcp_servers_map(
+    servers: &[McpServerEntry],
+    plugin_toggles: &BTreeMap<String, (bool, bool)>,
+) -> serde_json::Map<String, serde_json::Value> {
     servers
         .iter()
-        .filter(|s| s.enabled_codex)
+        .filter(|s| {
+            s.enabled_codex && plugin_allows(plugin_toggles, s.plugin_id.as_deref(), false)
+        })
         .map(|s| (s.name.clone(), s.codex_config_value()))
         .collect()
 }
@@ -306,6 +348,7 @@ mod tests {
             env: BTreeMap::from([("TOKEN".to_owned(), "abc".to_owned())]),
             enabled_claude: true,
             enabled_codex: true,
+            plugin_id: Some("plug-stdio".to_owned()),
         }
     }
 
@@ -320,13 +363,14 @@ mod tests {
             env: BTreeMap::new(),
             enabled_claude: true,
             enabled_codex: false,
+            plugin_id: Some("plug-http".to_owned()),
         }
     }
 
     #[test]
     fn claude_config_renders_stdio_and_http() {
         let servers = vec![stdio_entry("local"), http_entry("remote")];
-        let map = claude_mcp_servers_map(&servers);
+        let map = claude_mcp_servers_map(&servers, &BTreeMap::new());
         assert_eq!(
             serde_json::Value::Object(map),
             serde_json::json!({
@@ -349,7 +393,7 @@ mod tests {
         // `remote` has enabled_codex = false, so only `local` shows up, in
         // config.toml-override shape (no "type" discriminator).
         let servers = vec![stdio_entry("local"), http_entry("remote")];
-        let map = codex_mcp_servers_map(&servers);
+        let map = codex_mcp_servers_map(&servers, &BTreeMap::new());
         assert_eq!(
             serde_json::Value::Object(map),
             serde_json::json!({
@@ -360,6 +404,46 @@ mod tests {
                 },
             })
         );
+    }
+
+    #[test]
+    fn disabled_plugin_drops_its_servers_from_both_configs() {
+        // `local` belongs to plug-stdio, which is Claude-disabled; `remote`
+        // belongs to plug-http, still Claude-enabled. The component bit stays
+        // true — only the plugin AND changes the output.
+        let servers = vec![stdio_entry("local"), http_entry("remote")];
+        let toggles = BTreeMap::from([
+            ("plug-stdio".to_owned(), (false, true)),
+            ("plug-http".to_owned(), (true, true)),
+        ]);
+        let claude = claude_mcp_servers_map(&servers, &toggles);
+        assert_eq!(
+            claude.keys().collect::<Vec<_>>(),
+            vec![&"remote".to_owned()]
+        );
+        // Codex: `local`'s plugin allows Codex, `remote` is Codex-disabled at
+        // the component level.
+        let codex = codex_mcp_servers_map(&servers, &toggles);
+        assert_eq!(codex.keys().collect::<Vec<_>>(), vec![&"local".to_owned()]);
+
+        // Fully-disabled plugin -> empty config (None from the JSON helpers).
+        let all_off = BTreeMap::from([
+            ("plug-stdio".to_owned(), (false, false)),
+            ("plug-http".to_owned(), (false, false)),
+        ]);
+        let model = McpRegistryModel {
+            servers: servers.clone(),
+        };
+        assert_eq!(model.claude_mcp_config_json(&all_off), None);
+        assert_eq!(model.codex_config_overrides(&all_off), None);
+    }
+
+    #[test]
+    fn entries_without_plugins_fail_open() {
+        let mut entry = stdio_entry("local");
+        entry.plugin_id = None;
+        let map = claude_mcp_servers_map(&[entry], &BTreeMap::new());
+        assert!(map.contains_key("local"));
     }
 
     #[test]

@@ -62,6 +62,16 @@ pub struct SkillEntry {
     pub codex_conflict: bool,
 }
 
+/// Per-skill persisted state: component toggles + owning plugin (twarp 23a).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SkillToggles {
+    pub enabled_claude: bool,
+    pub enabled_codex: bool,
+    /// Owning plugin's UUID ([`crate::plugin_registry`]); `None` until the
+    /// next load's orphan migration (or a Plugins-page save) adopts it.
+    pub plugin_id: Option<String>,
+}
+
 /// A real (non-symlink) skill directory in `~/.claude/skills` that can be
 /// adopted: moved into the store with a symlink left in its place.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -354,8 +364,8 @@ pub struct SkillsStoreModel {
     paths: Option<SkillsPaths>,
     skills: Vec<SkillEntry>,
     adoptable: Vec<AdoptableSkill>,
-    /// name -> (enabled_claude, enabled_codex); persisted to `shared_skills`.
-    toggles: BTreeMap<String, (bool, bool)>,
+    /// name -> toggles + plugin membership; persisted to `shared_skills`.
+    toggles: BTreeMap<String, SkillToggles>,
     scan_tx: async_channel::Sender<ScanResult>,
 }
 
@@ -373,7 +383,16 @@ impl SkillsStoreModel {
             adoptable: Vec::new(),
             toggles: persisted
                 .into_iter()
-                .map(|row| (row.name, (row.enabled_claude, row.enabled_codex)))
+                .map(|row| {
+                    (
+                        row.name,
+                        SkillToggles {
+                            enabled_claude: row.enabled_claude,
+                            enabled_codex: row.enabled_codex,
+                            plugin_id: row.plugin_id,
+                        },
+                    )
+                })
                 .collect(),
             scan_tx,
         };
@@ -405,18 +424,54 @@ impl SkillsStoreModel {
 
     /// Flip one provider-enable bit, persist, and re-materialize.
     pub fn toggle_enabled(&mut self, name: &str, claude: bool, ctx: &mut ModelContext<Self>) {
-        let entry = self.toggles.entry(name.to_owned()).or_insert((true, true));
+        let entry = self.toggles.entry(name.to_owned()).or_insert(SkillToggles {
+            enabled_claude: true,
+            enabled_codex: true,
+            plugin_id: None,
+        });
         if claude {
-            entry.0 = !entry.0;
+            entry.enabled_claude = !entry.enabled_claude;
         } else {
-            entry.1 = !entry.1;
+            entry.enabled_codex = !entry.enabled_codex;
         }
         if let Some(skill) = self.skills.iter_mut().find(|s| s.name == name) {
-            skill.enabled_claude = self.toggles[name].0;
-            skill.enabled_codex = self.toggles[name].1;
+            skill.enabled_claude = self.toggles[name].enabled_claude;
+            skill.enabled_codex = self.toggles[name].enabled_codex;
         }
         self.persist_toggles(ctx);
         self.request_refresh(ctx);
+    }
+
+    /// twarp 23a/23b: set a skill's toggles and plugin membership in one shot
+    /// (used by the Plugins page when saving a plugin), persist, and
+    /// re-materialize.
+    pub fn set_component(
+        &mut self,
+        name: &str,
+        enabled_claude: bool,
+        enabled_codex: bool,
+        plugin_id: Option<String>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.toggles.insert(
+            name.to_owned(),
+            SkillToggles {
+                enabled_claude,
+                enabled_codex,
+                plugin_id,
+            },
+        );
+        if let Some(skill) = self.skills.iter_mut().find(|s| s.name == name) {
+            skill.enabled_claude = enabled_claude;
+            skill.enabled_codex = enabled_codex;
+        }
+        self.persist_toggles(ctx);
+        self.request_refresh(ctx);
+    }
+
+    /// The owning plugin recorded for a skill, if any.
+    pub fn plugin_id_of(&self, name: &str) -> Option<String> {
+        self.toggles.get(name).and_then(|t| t.plugin_id.clone())
     }
 
     /// Create a new skill from the inline form, then rescan.
@@ -457,7 +512,30 @@ impl SkillsStoreModel {
         let Some(paths) = self.paths.clone() else {
             return;
         };
-        let toggles = self.toggles.clone();
+        // twarp 23a: the materializer filters on EFFECTIVE enablement —
+        // component toggle AND the owning plugin's toggle. Skills with no /
+        // a dangling plugin fail open.
+        let plugin_toggles =
+            crate::plugin_registry::PluginRegistryModel::as_ref(ctx).provider_toggles_by_id();
+        let toggles: BTreeMap<String, (bool, bool)> = self
+            .toggles
+            .iter()
+            .map(|(name, t)| {
+                let (plugin_claude, plugin_codex) = t
+                    .plugin_id
+                    .as_deref()
+                    .and_then(|id| plugin_toggles.get(id))
+                    .copied()
+                    .unwrap_or((true, true));
+                (
+                    name.clone(),
+                    (
+                        t.enabled_claude && plugin_claude,
+                        t.enabled_codex && plugin_codex,
+                    ),
+                )
+            })
+            .collect();
         let tx = self.scan_tx.clone();
         ctx.background_executor()
             .spawn(async move {
@@ -469,6 +547,22 @@ impl SkillsStoreModel {
     }
 
     fn apply_scan(&mut self, result: ScanResult, ctx: &mut ModelContext<Self>) {
+        // Ensure every on-disk skill has a persisted toggle row, so the next
+        // load's orphan migration can adopt it into a plugin (twarp 23a).
+        let mut toggles_changed = false;
+        for skill in &result.skills {
+            if !self.toggles.contains_key(&skill.name) {
+                self.toggles.insert(
+                    skill.name.clone(),
+                    SkillToggles {
+                        enabled_claude: true,
+                        enabled_codex: true,
+                        plugin_id: None,
+                    },
+                );
+                toggles_changed = true;
+            }
+        }
         self.skills = result
             .skills
             .into_iter()
@@ -476,7 +570,7 @@ impl SkillsStoreModel {
                 let (enabled_claude, enabled_codex) = self
                     .toggles
                     .get(&skill.name)
-                    .copied()
+                    .map(|t| (t.enabled_claude, t.enabled_codex))
                     .unwrap_or((true, true));
                 SkillEntry {
                     name: skill.name,
@@ -489,6 +583,9 @@ impl SkillsStoreModel {
             })
             .collect();
         self.adoptable = result.adoptable;
+        if toggles_changed {
+            self.persist_toggles(ctx);
+        }
         ctx.notify();
     }
 
@@ -500,13 +597,12 @@ impl SkillsStoreModel {
                 skills: self
                     .toggles
                     .iter()
-                    .map(
-                        |(name, (enabled_claude, enabled_codex))| PersistedSharedSkill {
-                            name: name.clone(),
-                            enabled_claude: *enabled_claude,
-                            enabled_codex: *enabled_codex,
-                        },
-                    )
+                    .map(|(name, t)| PersistedSharedSkill {
+                        name: name.clone(),
+                        enabled_claude: t.enabled_claude,
+                        enabled_codex: t.enabled_codex,
+                        plugin_id: t.plugin_id.clone(),
+                    })
                     .collect(),
             };
             if let Err(err) = sender.send(event) {
