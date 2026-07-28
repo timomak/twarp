@@ -9,7 +9,7 @@ use twarp_core::ui::theme::Fill as ThemeFill;
 use twarp_core::ui::tokens::{border, radius, spacing, type_ramp};
 use twarp_core::ui::Icon;
 use twarpui::elements::{
-    resizable_state_handle, Border, ChildView, ClippedScrollable, ConstrainedBox, Container,
+    resizable_state_handle, Align, Border, ChildView, ClippedScrollable, ConstrainedBox, Container,
     CornerRadius, CrossAxisAlignment, DragAxis, DragBarSide, Draggable, DropTarget, Element, Empty,
     Fill as ElementFill, Flex, Hoverable, MainAxisAlignment, MainAxisSize, ParentElement, Radius,
     Resizable, SavePosition, ScrollbarWidth, Shrinkable, Text,
@@ -501,20 +501,59 @@ impl Workspace {
         action: WorkspaceAction,
         app: &AppContext,
     ) -> Box<dyn Element> {
+        self.render_sidebar_action_with_count(mouse_state, icon, label, None, action, app)
+    }
+
+    /// twarp 20e: like [`Self::render_sidebar_action`] but with an optional
+    /// right-aligned count (used by the automation rows; `Some(0)` renders no
+    /// badge).
+    fn render_sidebar_action_with_count(
+        &self,
+        mouse_state: twarpui::elements::MouseStateHandle,
+        icon: Icon,
+        label: &'static str,
+        count: Option<usize>,
+        action: WorkspaceAction,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         Hoverable::new(mouse_state, move |state| {
-            let contents = Flex::row()
+            let mut contents = Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_spacing(spacing::SM)
                 .with_child(sidebar_icon(icon, theme.sub_text_color(theme.background())))
                 .with_child(
-                    Text::new_inline(label, appearance.ui_font_family(), type_ramp::UI.size)
-                        .with_line_height_ratio(type_ramp::UI.line_height)
-                        .with_color(theme.main_text_color(theme.background()).into())
+                    Shrinkable::new(
+                        1.,
+                        Align::new(
+                            Text::new_inline(
+                                label,
+                                appearance.ui_font_family(),
+                                type_ramp::UI.size,
+                            )
+                            .with_line_height_ratio(type_ramp::UI.line_height)
+                            .with_color(theme.main_text_color(theme.background()).into())
+                            .finish(),
+                        )
+                        .left()
                         .finish(),
-                )
-                .finish();
+                    )
+                    .finish(),
+                );
+            if let Some(count) = count.filter(|count| *count > 0) {
+                contents.add_child(
+                    Text::new_inline(
+                        count.to_string(),
+                        appearance.ui_font_family(),
+                        type_ramp::LABEL.size,
+                    )
+                    .with_line_height_ratio(type_ramp::LABEL.line_height)
+                    .with_color(theme.sub_text_color(theme.background()).into())
+                    .finish(),
+                );
+            }
+            let contents = contents.finish();
             let mut row = Container::new(contents)
                 .with_uniform_padding(spacing::SM)
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
@@ -540,6 +579,54 @@ impl Workspace {
                     WorkspaceAction::OpenClaudeCodeInNewTab,
                     app,
                 ))
+                // twarp 20a/20e: automation entry points, owner-placed
+                // directly under "New session". Each swaps a full-page
+                // automation pane into the current tab.
+                .with_child(
+                    self.render_sidebar_action_with_count(
+                        self.projects_sidebar_mouse_states.scheduled_tasks.clone(),
+                        Icon::Clock,
+                        "Scheduled Tasks",
+                        // Enabled tasks only — the number that will actually run.
+                        Some(
+                            crate::automation::scheduler::SchedulerModel::as_ref(app)
+                                .tasks()
+                                .iter()
+                                .filter(|task| task.enabled)
+                                .count(),
+                        ),
+                        WorkspaceAction::ShowScheduledTasks,
+                        app,
+                    ),
+                )
+                .with_child(
+                    self.render_sidebar_action_with_count(
+                        self.projects_sidebar_mouse_states.skills.clone(),
+                        Icon::BookOpen,
+                        "Skills",
+                        Some(
+                            crate::skills_store::SkillsStoreModel::as_ref(app)
+                                .skills()
+                                .len(),
+                        ),
+                        WorkspaceAction::ShowSkills,
+                        app,
+                    ),
+                )
+                .with_child(
+                    self.render_sidebar_action_with_count(
+                        self.projects_sidebar_mouse_states.mcps.clone(),
+                        Icon::Dataflow,
+                        "MCPs",
+                        Some(
+                            crate::mcp_registry::McpRegistryModel::as_ref(app)
+                                .servers()
+                                .len(),
+                        ),
+                        WorkspaceAction::ShowMcps,
+                        app,
+                    ),
+                )
                 .with_child(self.render_sidebar_action(
                     self.projects_sidebar_mouse_states.search_sessions.clone(),
                     Icon::Search,
@@ -1133,41 +1220,6 @@ impl Workspace {
         column.add_child(self.render_sidebar_actions(app));
         column.add_child(self.render_project_header(app));
         column.add_child(Shrinkable::new(1., scrollable).finish());
-        // twarp 20a: automation entry points — each opens a full-page main
-        // pane (Scheduled Tasks / Skills / MCPs).
-        column.add_child(
-            Container::new(
-                Flex::column()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                    .with_spacing(spacing::XXS)
-                    .with_child(self.render_sidebar_action(
-                        self.projects_sidebar_mouse_states.scheduled_tasks.clone(),
-                        Icon::Clock,
-                        "Scheduled Tasks",
-                        WorkspaceAction::ShowScheduledTasks,
-                        app,
-                    ))
-                    .with_child(self.render_sidebar_action(
-                        self.projects_sidebar_mouse_states.skills.clone(),
-                        Icon::BookOpen,
-                        "Skills",
-                        WorkspaceAction::ShowSkills,
-                        app,
-                    ))
-                    .with_child(self.render_sidebar_action(
-                        self.projects_sidebar_mouse_states.mcps.clone(),
-                        Icon::Dataflow,
-                        "MCPs",
-                        WorkspaceAction::ShowMcps,
-                        app,
-                    ))
-                    .finish(),
-            )
-            .with_padding_left(spacing::SM)
-            .with_padding_right(spacing::SM)
-            .with_padding_top(spacing::SM)
-            .finish(),
-        );
         column.add_child(
             Container::new(settings)
                 .with_uniform_padding(spacing::SM)

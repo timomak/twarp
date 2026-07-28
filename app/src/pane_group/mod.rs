@@ -1817,10 +1817,11 @@ impl PaneGroup {
                 };
                 Ok((PaneData::new(pane_id), focus))
             }
-            // twarp 20a: automation panes are never persisted (see
-            // `LeafContents::is_persisted`), but this arm is still reachable
-            // via `add_tab_with_pane_layout` when the sidebar opens a page in
-            // a new tab (mirroring how Settings tabs are opened).
+            // twarp 20e: reachable both on restart restore (the pane persists
+            // which page it displays, like Settings) and via
+            // `add_tab_with_pane_layout` when the sidebar opens a page in a
+            // new tab. The pane carries no other state; content is re-read
+            // from the backing singleton models.
             LeafContents::Automation(page) => {
                 let pane: Box<dyn AnyPaneContent + 'static> =
                     Box::new(AutomationPane::new(page, ctx));

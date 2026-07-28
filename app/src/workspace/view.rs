@@ -6964,10 +6964,13 @@ impl Workspace {
         );
     }
 
-    /// twarp 20a: opens an automation page (Scheduled Tasks / Skills / MCPs)
-    /// as a full-page main pane. At most one pane per page per window: if one
-    /// is already open, focus it; otherwise open it in a new tab (mirroring
-    /// [`Self::open_settings_pane`]).
+    /// twarp 20a/20e: opens an automation page (Scheduled Tasks / Skills /
+    /// MCPs) as a full-page main pane. At most one pane per page per window:
+    /// if one is already open, focus it; otherwise swap it into the CURRENT
+    /// tab's active pane (owner-directed in 20e — no new tab/project, unlike
+    /// Settings), the same `replace_pane` move the Claude-pane terminal
+    /// trigger uses. Persistence is unaffected: the pane snapshots through
+    /// `AutomationPane::snapshot` regardless of how it was opened.
     fn open_automation_pane(&mut self, page: AutomationPage, ctx: &mut ViewContext<Self>) {
         let manager = AutomationPaneManager::handle(ctx);
         if let Some(locator) = manager.as_ref(ctx).find_pane(ctx.window_id(), page) {
@@ -6975,17 +6978,12 @@ impl Workspace {
             return;
         }
 
-        let panes_layout = PanesLayout::Snapshot(Box::new(PaneNodeSnapshot::Leaf(LeafSnapshot {
-            is_focused: true,
-            custom_vertical_tabs_title: None,
-            contents: LeafContents::Automation(page),
-        })));
-        self.add_tab_with_pane_layout(
-            panes_layout,
-            Arc::new(HashMap::new()),
-            Some(page.title().to_owned()),
-            ctx,
-        );
+        let pane = crate::pane_group::AutomationPane::new(page, ctx);
+        let pane_group = self.active_tab_pane_group().clone();
+        pane_group.update(ctx, |pane_group, ctx| {
+            let target = pane_group.focused_pane_id(ctx);
+            pane_group.replace_pane(target, pane, false /* is_temporary */, ctx);
+        });
     }
 
     /// Open a file from the given session as a notebook pane.
@@ -13050,16 +13048,33 @@ impl Workspace {
         scheduler.update(ctx, |model, mctx| {
             model.on_fire_spawned(&fire.run_id, session_id, mctx);
         });
-        ctx.subscribe_to_view(&claude_view, move |_me: &mut Self, _, event, ctx| {
+        // Captured eagerly (rather than dereferencing the pane-group handle at
+        // completion time) so the closure stays safe even if the run's tab was
+        // closed before the session ended.
+        let task_name = fire.task_name.clone();
+        let run_pane_group_id = pane_group.id();
+        let run_pane_id = pane_group.as_ref(ctx).focused_pane_id(ctx);
+        ctx.subscribe_to_view(&claude_view, move |me: &mut Self, _, event, ctx| {
             if let crate::claude_code_view::ClaudeCodeViewEvent::SessionEnded {
                 session_id,
                 success,
                 summary,
             } = event
             {
-                SchedulerModel::handle(ctx).update(ctx, |model, mctx| {
-                    model.on_session_ended(session_id, *success, summary.clone(), mctx);
+                let was_scheduled_run = SchedulerModel::handle(ctx).update(ctx, |model, mctx| {
+                    model.on_session_ended(session_id, *success, summary.clone(), mctx)
                 });
+                if !was_scheduled_run {
+                    return;
+                }
+                me.maybe_notify_scheduled_run_ended(
+                    &task_name,
+                    *success,
+                    summary,
+                    run_pane_group_id,
+                    run_pane_id,
+                    ctx,
+                );
             }
         });
 
@@ -13068,6 +13083,83 @@ impl Workspace {
         if previous_tab != self.active_tab_index && previous_tab < self.tab_count() {
             self.activate_tab_internal(previous_tab, ctx);
         }
+    }
+
+    /// twarp 20e: desktop-notify that a scheduled run finished/failed when the
+    /// user isn't looking at it. Scheduled runs live in a background tab, so
+    /// the Claude view's own completion notification (7p) — gated on the
+    /// WINDOW being unfocused — misses the common case: the app is focused
+    /// but the run's tab isn't active. This covers exactly that case; when
+    /// the window is unfocused the view's own notification already fired, so
+    /// we stay silent to avoid a duplicate. Same settings gates and delivery
+    /// pipeline as 7p (mode + agent-task-completed toggles, sound setting,
+    /// permission-failure banner). The tab attention dot comes free from the
+    /// Claude view itself.
+    fn maybe_notify_scheduled_run_ended(
+        &mut self,
+        task_name: &str,
+        success: bool,
+        summary: &str,
+        run_pane_group_id: EntityId,
+        run_pane_id: PaneId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let session_settings = SessionSettings::as_ref(ctx);
+        if !session_settings
+            .notifications
+            .is_supported_on_current_platform()
+        {
+            return;
+        }
+        let settings = session_settings.notifications.value().clone();
+        if !matches!(settings.mode, NotificationsMode::Enabled)
+            || !settings.is_agent_task_completed_enabled
+        {
+            return;
+        }
+        // Window unfocused → the Claude view's own 7p notification covers it.
+        if Some(ctx.window_id()) != ctx.windows().active_window() {
+            return;
+        }
+        // Run's tab is the active tab → the user is watching; the pane itself
+        // is the signal.
+        if self.active_tab_pane_group().id() == run_pane_group_id {
+            return;
+        }
+
+        let status = if success { "finished" } else { "failed" };
+        let title = format!("Scheduled task '{task_name}' {status}");
+        // Newlines render as awkward gaps in macOS notifications (see
+        // `create_notification_content`).
+        let body = summary.replace('\n', " ").trim().to_string();
+
+        let notification_data = NotificationContext::BlockOrigin {
+            window_id: ctx.window_id(),
+            pane_group_id: run_pane_group_id,
+            pane_id: run_pane_id,
+        };
+        let Ok(notification_data_str) = serde_json::to_string(&notification_data) else {
+            return;
+        };
+        let play_sound = SessionSettings::as_ref(ctx)
+            .notifications
+            .play_notification_sound;
+        ctx.send_desktop_notification(
+            UserNotification::new_with_sound(title, body, Some(notification_data_str), play_sound),
+            move |workspace, notification_error, ctx| {
+                if let NotificationSendError::Other { error_message } = &notification_error {
+                    log::error!(
+                        "Unknown error when sending scheduled-task notification. error_msg: {error_message}"
+                    );
+                }
+                workspace.show_notification_error(
+                    notification_error,
+                    run_pane_group_id,
+                    run_pane_id,
+                    ctx,
+                );
+            },
+        );
     }
 
     pub(crate) fn open_claude_code_pane(

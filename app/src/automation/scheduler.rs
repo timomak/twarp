@@ -585,18 +585,23 @@ impl SchedulerModel {
     }
 
     /// A pane session ended; if it backs one of our runs, record the outcome
-    /// (and maybe fire the fallback).
+    /// (and maybe fire the fallback). Returns whether this end FINISHED an
+    /// active run: later manual turns in the same pane return `false` (the
+    /// active-run entry is consumed on the first end), and so does a failure
+    /// that retries with the fallback provider (the retry pane's own end
+    /// reports the final outcome). The workspace uses this to notify exactly
+    /// once per scheduled run (20e).
     pub fn on_session_ended(
         &mut self,
         session_id: &str,
         success: bool,
         summary: String,
         ctx: &mut ModelContext<Self>,
-    ) {
+    ) -> bool {
         let Some(active) = self.active_by_session.remove(session_id) else {
-            return;
+            return false;
         };
-        self.finish_attempt_inner(active, success, summary, ctx);
+        self.finish_attempt_inner(active, success, summary, ctx)
     }
 
     /// Finish the attempt backing `run_id` (used for spawn failures, where no
@@ -624,26 +629,29 @@ impl SchedulerModel {
         self.finish_attempt_inner(active, success, summary, ctx);
     }
 
+    /// Returns whether the run reached a final outcome (`false` = a fallback
+    /// retry was fired instead; the retry attempt reports the real outcome).
     fn finish_attempt_inner(
         &mut self,
         active: ActiveRun,
         success: bool,
         summary: String,
         ctx: &mut ModelContext<Self>,
-    ) {
+    ) -> bool {
         let now = now_unix();
         let fallback = self.get(&active.task_id).and_then(|task| {
             task.fallback_provider
                 .filter(|fallback| *fallback != task.provider)
         });
 
-        match resolve_attempt(success, active.attempt, fallback) {
+        let finished = match resolve_attempt(success, active.attempt, fallback) {
             AttemptResolution::Finished(outcome) => {
                 self.update_run(&active.run_id, ctx, |run| {
                     run.outcome = outcome;
                     run.finished_at = Some(now);
                     run.summary = Some(summary.clone());
                 });
+                true
             }
             AttemptResolution::RetryWithFallback(fallback) => {
                 // Retry ONCE with the fallback provider, on the same run row.
@@ -653,9 +661,11 @@ impl SchedulerModel {
                 });
                 let task_id = active.task_id.clone();
                 self.fire(&task_id, 2, Some(active.run_id.clone()), ctx);
+                false
             }
-        }
+        };
         ctx.notify();
+        finished
     }
 
     /// Queue one fire attempt. `attempt` 1 creates a fresh run row; attempt 2

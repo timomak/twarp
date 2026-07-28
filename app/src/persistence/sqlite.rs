@@ -29,7 +29,9 @@ use itertools::Itertools;
 use libsqlite3_sys as sqlite3;
 use num_traits::FromPrimitive;
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
-use persistence::model::{AMBIENT_AGENT_PANE_KIND, BROWSER_PANE_KIND, CLAUDE_CODE_PANE_KIND};
+use persistence::model::{
+    AMBIENT_AGENT_PANE_KIND, AUTOMATION_PANE_KIND, BROWSER_PANE_KIND, CLAUDE_CODE_PANE_KIND,
+};
 use twarp_graphql::scalars::time::ServerTimestamp;
 use twarpui::platform::FullscreenState;
 use twarpui::windowing::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH};
@@ -794,6 +796,10 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
         diesel::delete(schema::ambient_agent_panes::dsl::ambient_agent_panes).execute(conn)?;
         diesel::delete(schema::welcome_panes::dsl::welcome_panes).execute(conn)?;
         diesel::delete(schema::browser_panes::dsl::browser_panes).execute(conn)?;
+        // twarp 20e: `automation_panes.id REFERENCES pane_nodes(id)` (no ON
+        // DELETE CASCADE), so clear it before `pane_nodes` like every other
+        // kind-specific pane table — see the claude_code_panes note below.
+        diesel::delete(schema::automation_panes::dsl::automation_panes).execute(conn)?;
         // twarp 07: `claude_code_panes.id REFERENCES pane_nodes(id)` (no ON
         // DELETE CASCADE), so it must be cleared before the `pane_nodes` delete
         // below — exactly like every other kind-specific pane table above. It
@@ -1038,6 +1044,8 @@ fn save_pane_state(
         LeafContents::Code(_) => CODE_PANE_KIND,
         LeafContents::Workflow(_) => WORKFLOW_PANE_KIND,
         LeafContents::Settings(_) => SETTINGS_PANE_KIND,
+        // twarp 20e: automation panes persist which page they display.
+        LeafContents::Automation(_) => AUTOMATION_PANE_KIND,
         LeafContents::AIFact(_) => AI_FACT_PANE_KIND,
         LeafContents::CodeReview(_) => CODE_REVIEW_PANE_KIND,
         LeafContents::AmbientAgent(_) => AMBIENT_AGENT_PANE_KIND,
@@ -1054,7 +1062,6 @@ fn save_pane_state(
         }
         LeafContents::NetworkLog
         | LeafContents::BrowserSpike
-        | LeafContents::Automation(_)
         | LeafContents::Browser(_)
         | LeafContents::ClaudeCode(_) => {
             // These pane types are filtered out before this function is
@@ -1222,6 +1229,18 @@ fn save_pane_state(
                 .values(settings_pane)
                 .execute(conn)?;
         }
+        // twarp 20e: only the displayed page is stored; the page content is
+        // re-read from the backing singleton models on restore.
+        LeafContents::Automation(page) => {
+            let automation_pane = model::NewAutomationPane {
+                id,
+                page: page.as_persistence_str().to_owned(),
+            };
+
+            diesel::insert_into(schema::automation_panes::dsl::automation_panes)
+                .values(automation_pane)
+                .execute(conn)?;
+        }
         LeafContents::AIFact(_ai_fact_pane_snapshot) => {
             let ai_fact = model::NewAIFactPane { id };
 
@@ -1320,7 +1339,6 @@ fn save_pane_state(
         }
         LeafContents::NetworkLog
         | LeafContents::BrowserSpike
-        | LeafContents::Automation(_)
         | LeafContents::Browser(_)
         | LeafContents::ClaudeCode(_) => {
             // Unreachable: filtered by `is_persisted` in `save_app_state`.
@@ -2508,6 +2526,21 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                         current_page,
                         search_query: None,
                     })
+                }
+                // twarp 20e: rebuild the automation pane on its saved page.
+                // An unknown page string (from a newer build's snapshot)
+                // falls back to Scheduled Tasks rather than dropping the tab.
+                AUTOMATION_PANE_KIND => {
+                    let automation_pane = schema::automation_panes::dsl::automation_panes
+                        .find(node.id)
+                        .select(model::AutomationPane::as_select())
+                        .first(conn)?;
+
+                    let page = crate::automation::AutomationPage::from_persistence_str(
+                        &automation_pane.page,
+                    )
+                    .unwrap_or(crate::automation::AutomationPage::ScheduledTasks);
+                    LeafContents::Automation(page)
                 }
                 AI_FACT_PANE_KIND => LeafContents::AIFact(AIFactPaneSnapshot::Personal),
                 MCP_SERVER_PANE_KIND => {

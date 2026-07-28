@@ -1176,6 +1176,10 @@ fn initialize_app(
 
     ctx.add_singleton_model(|_| SettingsPaneManager::new());
     ctx.add_singleton_model(|_| NetworkLogPaneManager::default());
+    // twarp 20e: tracks open automation panes (one per page per window). Was
+    // never registered in 20a; any automation-pane open or restore panicked
+    // on the unregistered singleton.
+    ctx.add_singleton_model(|_| crate::automation::pane_manager::AutomationPaneManager::default());
     ctx.add_singleton_model(|_| pricing::PricingInfoModel::new());
     ctx.add_singleton_model(|ctx| {
         // Not using the *Provider types isn't ideal, but it's worth it for the ability to move managed secrets to a separate crate.
