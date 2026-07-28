@@ -1,7 +1,8 @@
-//! twarp 21b: the native PR detail view, rendered in-page by the Pull
+//! twarp 21b/21c: the native PR detail view, rendered in-page by the Pull
 //! Requests surface when a list row is clicked. Tabs: Conversation (markdown
-//! description + PR-level comment/review timeline + merge box) and Checks
-//! (per-check CI rows). The Files (diff) tab is a disabled stub until 21c.
+//! description + PR-level comment/review timeline + merge box), Checks
+//! (per-check CI rows), and Files (per-file diff cards with inline review
+//! threads — [`crate::pull_requests::files_tab`]).
 //!
 //! Markdown bodies render through the read-only comment markdown editor
 //! ([`crate::code::editor::comment_editor::create_readonly_comment_markdown_editor`]),
@@ -31,6 +32,7 @@ use crate::appearance::Appearance;
 use crate::automation::view::{AutomationView, AutomationViewAction};
 use crate::code::editor::comment_editor::create_readonly_comment_markdown_editor;
 use crate::notebooks::editor::view::RichTextEditorView;
+use crate::pull_requests::files_tab::{FilesTabState, FILES_CONTENT_MAX_WIDTH};
 use crate::pull_requests::list_page::{render_badge, PullRequestsPageAction, CONTENT_MAX_WIDTH};
 use crate::pull_requests::store::{
     relative_updated_at, PrCheck, PrCiState, PrDetail, PrDetailData, PrMergeMethod, PrReviewState,
@@ -40,22 +42,27 @@ use crate::view_components::action_button::{
     ActionButton, NakedTheme, PrimaryTheme, SecondaryTheme,
 };
 
-/// The detail view's tabs. Files (the diff view) is 21c; it renders as a
-/// disabled stub for now.
+/// The detail view's tabs.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum PrDetailTab {
     #[default]
     Conversation,
     Checks,
+    Files,
 }
 
 impl PrDetailTab {
-    pub const ALL: [PrDetailTab; 2] = [PrDetailTab::Conversation, PrDetailTab::Checks];
+    pub const ALL: [PrDetailTab; 3] = [
+        PrDetailTab::Conversation,
+        PrDetailTab::Checks,
+        PrDetailTab::Files,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             PrDetailTab::Conversation => "Conversation",
             PrDetailTab::Checks => "Checks",
+            PrDetailTab::Files => "Files",
         }
     }
 
@@ -64,6 +71,7 @@ impl PrDetailTab {
         match self {
             PrDetailTab::Conversation => "conversation",
             PrDetailTab::Checks => "checks",
+            PrDetailTab::Files => "files",
         }
     }
 
@@ -106,6 +114,10 @@ pub struct PrDetailState {
     external_state: MouseStateHandle,
     tab_states: RefCell<HashMap<&'static str, MouseStateHandle>>,
     check_states: RefCell<HashMap<usize, MouseStateHandle>>,
+    /// Hover states for the "N comments on files" timeline links (21c).
+    timeline_states: RefCell<HashMap<usize, MouseStateHandle>>,
+    /// The Files tab's UI state (21c).
+    files_tab: FilesTabState,
 }
 
 impl PrDetailState {
@@ -161,6 +173,8 @@ impl PrDetailState {
             external_state: Default::default(),
             tab_states: Default::default(),
             check_states: Default::default(),
+            timeline_states: Default::default(),
+            files_tab: Default::default(),
         }
     }
 
@@ -204,6 +218,8 @@ impl PrDetailState {
                 .collect();
         }
 
+        self.files_tab.sync(self.number, ctx);
+
         if self.buttons_disabled != mutating {
             self.buttons_disabled = mutating;
             for (_, button) in &self.merge_buttons {
@@ -232,8 +248,18 @@ impl PrDetailState {
                 if let Some(tab) = PrDetailTab::from_str(tab) {
                     self.tab = tab;
                     self.pending_merge = None;
+                    if tab == PrDetailTab::Files {
+                        // First open of the Files tab kicks off the diff +
+                        // review-threads fetch.
+                        let number = self.number;
+                        PullRequestsStoreModel::handle(ctx)
+                            .update(ctx, |store, ctx| store.ensure_files(number, ctx));
+                    }
                 }
             }
+            ToggleFileCard(index) => self.files_tab.toggle_file(*index as usize),
+            ToggleFileThread(index) => self.files_tab.toggle_thread(*index as usize),
+            ToggleFileThreads(index) => self.files_tab.toggle_floating(*index as usize),
             RequestMerge(method) => {
                 if let Some(method) = PrMergeMethod::from_str(method) {
                     self.pending_merge = Some(method);
@@ -257,8 +283,18 @@ impl PrDetailState {
             }
             RefreshDetail => {
                 let number = self.number;
-                PullRequestsStoreModel::handle(ctx)
-                    .update(ctx, |store, ctx| store.fetch_detail(number, ctx));
+                let refresh_files = {
+                    let store = PullRequestsStoreModel::as_ref(ctx);
+                    store
+                        .detail_data(number)
+                        .is_some_and(|data| data.files.fetched)
+                };
+                PullRequestsStoreModel::handle(ctx).update(ctx, |store, ctx| {
+                    store.fetch_detail(number, ctx);
+                    if refresh_files {
+                        store.fetch_files(number, ctx);
+                    }
+                });
             }
             _ => {}
         }
@@ -290,6 +326,7 @@ impl PrDetailState {
                         self.render_conversation(&mut column, detail, data, app)
                     }
                     PrDetailTab::Checks => self.render_checks(&mut column, detail, app),
+                    PrDetailTab::Files => self.files_tab.render(&mut column, &data.files, app),
                 }
             }
             _ => {
@@ -310,9 +347,14 @@ impl PrDetailState {
             }
         }
 
+        // Diffs want more horizontal room than prose.
+        let max_width = match self.tab {
+            PrDetailTab::Files => FILES_CONTENT_MAX_WIDTH,
+            _ => CONTENT_MAX_WIDTH,
+        };
         let content = Container::new(
             ConstrainedBox::new(column.finish())
-                .with_max_width(CONTENT_MAX_WIDTH)
+                .with_max_width(max_width)
                 .finish(),
         )
         .with_uniform_padding(spacing::XL)
@@ -443,7 +485,7 @@ impl PrDetailState {
         column.finish()
     }
 
-    /// Conversation | Checks | Files(disabled 21c stub).
+    /// Conversation | Checks | Files.
     fn render_tab_bar(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
@@ -493,23 +535,6 @@ impl PrDetailState {
                 .finish(),
             );
         }
-        // 21c stub: the Files (diff) tab exists but is disabled.
-        row.add_child(
-            Container::new(
-                Text::new_inline(
-                    "Files (soon)",
-                    appearance.ui_font_family(),
-                    type_ramp::UI.size,
-                )
-                .with_line_height_ratio(type_ramp::UI.line_height)
-                .with_color(theme.outline().into_solid())
-                .finish(),
-            )
-            .with_horizontal_padding(spacing::XS)
-            .with_padding_bottom(spacing::XXS)
-            .finish(),
-        );
-
         Container::new(row.finish())
             .with_margin_bottom(spacing::MD)
             .with_border(Border::bottom(1.).with_border_fill(theme.outline()))
@@ -599,6 +624,37 @@ impl PrDetailState {
         let body: Box<dyn Element> = match self.timeline_editors.get(index).and_then(Option::as_ref)
         {
             Some(editor) => ChildView::new(editor).finish(),
+            // A body-less review carrying line comments links to the Files
+            // tab (21c) where its threads render inline.
+            None if item.file_comments > 0 && matches!(item.kind, PrTimelineKind::Review(_)) => {
+                let main = theme.main_text_color(theme.background());
+                let label = format!(
+                    "{} comment{} on files — view in the Files tab",
+                    item.file_comments,
+                    if item.file_comments == 1 { "" } else { "s" }
+                );
+                let family = appearance.ui_font_family();
+                let state = self
+                    .timeline_states
+                    .borrow_mut()
+                    .entry(index)
+                    .or_default()
+                    .clone();
+                Hoverable::new(state, move |hover| {
+                    let color = if hover.is_hovered() { main } else { sub };
+                    Text::new(label.clone(), family.clone(), type_ramp::UI.size)
+                        .with_line_height_ratio(type_ramp::UI.line_height)
+                        .with_color(color.into())
+                        .finish()
+                })
+                .on_click(|ctx, _, _| {
+                    ctx.dispatch_typed_action(action(PullRequestsPageAction::SetDetailTab(
+                        PrDetailTab::Files.as_str().to_owned(),
+                    )))
+                })
+                .with_cursor(Cursor::PointingHand)
+                .finish()
+            }
             None => Flex::row().with_main_axis_size(MainAxisSize::Min).finish(),
         };
         render_timeline_card(&item.author, verb, verb_color, &when, body, app)
@@ -995,6 +1051,7 @@ mod tests {
         for tab in PrDetailTab::ALL {
             assert_eq!(PrDetailTab::from_str(tab.as_str()), Some(tab));
         }
-        assert_eq!(PrDetailTab::from_str("files"), None);
+        assert_eq!(PrDetailTab::from_str("files"), Some(PrDetailTab::Files));
+        assert_eq!(PrDetailTab::from_str("bogus"), None);
     }
 }
