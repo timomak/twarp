@@ -1164,6 +1164,10 @@ pub enum LeafContents {
     /// The in-app network log pane. Not persisted across restarts because the
     /// backing log is an in-memory ring buffer that starts empty on launch.
     NetworkLog,
+    /// twarp 20a: an automation page pane (Scheduled Tasks / Skills / MCPs).
+    /// Not persisted yet — the pages are cheap to reopen from the sidebar and
+    /// carry no state worth restoring while they're placeholders.
+    Automation(crate::automation::AutomationPage),
     /// twarp 07: a Claude Code pane. Persisted *only* once its session exists
     /// on disk (see [`ClaudeCodePaneSnapshot`] and `is_persisted`): twarp keeps
     /// no transcript store of its own, so restoration is a `claude --resume` of
@@ -1202,7 +1206,9 @@ impl LeafContents {
             // Network log: the backing log is an in-memory ring buffer that
             // starts empty on launch; persisting would also regress back to
             // an on-disk log via the app-state database.
-            LeafContents::NetworkLog | LeafContents::BrowserSpike => false,
+            LeafContents::NetworkLog | LeafContents::BrowserSpike | LeafContents::Automation(_) => {
+                false
+            }
             LeafContents::Browser(snapshot) => snapshot.url.is_some(),
             // twarp 07: a Claude Code pane is restorable only once `claude` has
             // written its session `.jsonl` (i.e. the first turn completed and a

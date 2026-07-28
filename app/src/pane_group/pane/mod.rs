@@ -9,6 +9,7 @@
 //! The [`PaneId`] must be created via a [`PaneView<BackingView>`]. The [`PaneId`] is consequently
 //! used to render a [`PaneView`] which internally renders the pane, including the [`BackingView`].
 // twarp: 2c-d — code_diff_pane / code_diff_pane_model / execution_profile_editor_pane removed (AI panes)
+pub(super) mod automation_pane;
 pub(super) mod browser_pane;
 pub(super) mod browser_spike_pane;
 // twarp 07 (7b): the Claude Code main-content pane host.
@@ -32,6 +33,7 @@ pub mod workflow_pane;
 
 use std::{any::Any, fmt::Display};
 
+use crate::automation::view::AutomationView;
 use crate::browser_spike_view::BrowserSpikeView;
 use crate::browser_view::BrowserView;
 use crate::pane_group::focus_state::PaneFocusHandle;
@@ -141,6 +143,8 @@ impl Display for IPaneId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub(crate) enum IPaneType {
     Terminal,
+    /// twarp 20a: an automation page pane (Scheduled Tasks / Skills / MCPs).
+    Automation,
     Notebook,
     File,
     Code,
@@ -172,6 +176,7 @@ impl Display for IPaneType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             IPaneType::Terminal => write!(f, "Terminal"),
+            IPaneType::Automation => write!(f, "Automation"),
             IPaneType::Notebook => write!(f, "Notebook"),
             IPaneType::File => write!(f, "File"),
             IPaneType::Code => write!(f, "Code"),
@@ -279,6 +284,11 @@ impl PaneId {
         Self::new_from_ctx(IPaneType::NetworkLog, ctx)
     }
 
+    /// twarp 20a: creates a [`PaneId`] from a [`ViewContext<PaneView<AutomationView>>`].
+    pub fn from_automation_pane_ctx(ctx: &ViewContext<PaneView<AutomationView>>) -> Self {
+        Self::new_from_ctx(IPaneType::Automation, ctx)
+    }
+
     /// Creates a [`PaneId`] from a [`ViewContext<PaneView<ImageView>>`].
     pub fn from_image_pane_ctx(ctx: &ViewContext<PaneView<ImageView>>) -> Self {
         Self::new_from_ctx(IPaneType::Image, ctx)
@@ -368,6 +378,13 @@ impl PaneId {
         network_log_pane_view: &ViewHandle<PaneView<NetworkLogView>>,
     ) -> Self {
         Self::new(IPaneType::NetworkLog, network_log_pane_view)
+    }
+
+    /// twarp 20a: creates a [`PaneId`] from a [`PaneView<AutomationView>`] entity ID.
+    pub fn from_automation_pane_view(
+        automation_pane_view: &ViewHandle<PaneView<AutomationView>>,
+    ) -> Self {
+        Self::new(IPaneType::Automation, automation_pane_view)
     }
 
     /// Creates a [`PaneId`] from a [`PaneView<ImageView>`] entity ID.
@@ -502,6 +519,9 @@ impl PaneId {
             }
             IPaneType::NetworkLog => {
                 ChildView::<PaneView<NetworkLogView>>::with_id(self.0.pane_view_id).finish()
+            }
+            IPaneType::Automation => {
+                ChildView::<PaneView<AutomationView>>::with_id(self.0.pane_view_id).finish()
             }
             IPaneType::Image => {
                 ChildView::<PaneView<ImageView>>::with_id(self.0.pane_view_id).finish()

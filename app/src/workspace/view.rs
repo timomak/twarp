@@ -119,6 +119,8 @@ use super::WorkspaceRegistry;
 use crate::app_state::ClientProfileId;
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::auth_state::AuthState;
+use crate::automation::pane_manager::AutomationPaneManager;
+use crate::automation::AutomationPage;
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeManager;
 use crate::code::editor_management::CodeSource;
@@ -6945,6 +6947,30 @@ impl Workspace {
             panes_layout,
             Arc::new(HashMap::new()),
             Some("Settings".to_owned()),
+            ctx,
+        );
+    }
+
+    /// twarp 20a: opens an automation page (Scheduled Tasks / Skills / MCPs)
+    /// as a full-page main pane. At most one pane per page per window: if one
+    /// is already open, focus it; otherwise open it in a new tab (mirroring
+    /// [`Self::open_settings_pane`]).
+    fn open_automation_pane(&mut self, page: AutomationPage, ctx: &mut ViewContext<Self>) {
+        let manager = AutomationPaneManager::handle(ctx);
+        if let Some(locator) = manager.as_ref(ctx).find_pane(ctx.window_id(), page) {
+            self.focus_pane(locator, ctx);
+            return;
+        }
+
+        let panes_layout = PanesLayout::Snapshot(Box::new(PaneNodeSnapshot::Leaf(LeafSnapshot {
+            is_focused: true,
+            custom_vertical_tabs_title: None,
+            contents: LeafContents::Automation(page),
+        })));
+        self.add_tab_with_pane_layout(
+            panes_layout,
+            Arc::new(HashMap::new()),
+            Some(page.title().to_owned()),
             ctx,
         );
     }
@@ -20030,6 +20056,9 @@ impl TypedActionView for Workspace {
                 self.show_keyboard_settings(keybinding_name.as_deref(), ctx)
             }
             ShowSettings => self.show_settings(ctx),
+            ShowScheduledTasks => self.open_automation_pane(AutomationPage::ScheduledTasks, ctx),
+            ShowSkills => self.open_automation_pane(AutomationPage::Skills, ctx),
+            ShowMcps => self.open_automation_pane(AutomationPage::Mcps, ctx),
             ShowSettingsPage(section) => self.show_settings_with_section(Some(*section), ctx),
             ShowSettingsPageWithSearch {
                 search_query,
