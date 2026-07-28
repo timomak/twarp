@@ -1,8 +1,8 @@
 # 23 — Plugins: unify Skills + MCPs
 
-**Phase:** spec-in-review
+**Phase:** impl-in-review (spec + impl bundled)
 **Spec PR:** [#281](https://github.com/timomak/twarp/pull/281)
-**Impl PRs:** —
+**Impl PRs:** bundled in [#281](https://github.com/timomak/twarp/pull/281) (23a–23c)
 
 ## Scope
 
@@ -24,11 +24,13 @@ Owner-directed 2026-07-28 (Codex-app "Plugins" parity discussion).
 
 ## Sub-phases
 
-- [ ] **23a — plugin registry + migration** (bundled with 23b per the
+- [x] **23a — plugin registry + migration** (bundled with 23b per the
       not-independently-testable rule)
-- [ ] **23b — Plugins page** (replaces Skills + MCPs pages)
-- [ ] **23c — gallery + renames** (presets as cards, Claude pill, labels)
+- [x] **23b — Plugins page** (replaces Skills + MCPs pages)
+- [x] **23c — gallery + renames** (presets as cards, Claude pill, labels)
 
 ## Smoke test
 
 _(authored in PRODUCT.md)_
+
+Smoke test (PRODUCT.md steps 1-9) still needs an owner `./script/run` pass.

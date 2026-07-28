@@ -63,11 +63,19 @@ skills migrate losslessly into single-component plugins.
   - **Metadata:** name (required, unique), description (optional).
   - **MCP servers section:** zero or more servers, each with the existing
     transport/command/args/URL/env form and per-provider toggles.
-  - **Skills section:** zero or more skills, each either created inline
-    (name + description, as on the current Skills page) or attached from the
-    existing store; per-provider toggles; conflict badges (existing
-    `claude_conflict` / `codex_conflict` states) surface unchanged.
+  - **Skills section:** zero or more skills created inline (name +
+    description, as on the current Skills page); per-provider toggles;
+    conflict badges (existing `claude_conflict` / `codex_conflict` states)
+    surface unchanged. There is no "attach existing skill" picker — after
+    migration every skill already belongs to a plugin, and adopting a skill
+    from `~/.claude/skills` immediately creates a single-skill plugin.
 - A plugin must contain at least one component to save.
+- Removing a component while editing does not delete or orphan it: at save
+  time the removed server/skill spins out into its own single-component
+  plugin.
+- **Deleting a plugin deletes its components**: member servers leave the
+  registry and member skills leave the store (their symlinks/prompt
+  artifacts are cleaned up).
 
 ### Quick add → gallery
 
@@ -84,13 +92,19 @@ skills migrate losslessly into single-component plugins.
 - On first launch after upgrade, every existing MCP-registry entry becomes a
   plugin with that one server, and every shared skill becomes a plugin with
   that one skill. Names, env, and per-provider toggles carry over exactly.
+- Edge case: a skill directory that exists on disk but was never toggled
+  (no `shared_skills` row) is adopted one launch late — the first scan
+  backfills its toggle row and the next load's migration wraps it in a
+  plugin. Until then it stays enabled (fail-open), matching pre-23 behavior.
 - Agent sessions behave identically before and after migration: the same
   servers are injected, the same skills are materialized.
 
 ### Renamed surfaces
 
-- Claude-pane composer pill: `MCP · N` → `Plugins · N`; popover header
-  "Plugins" (contents unchanged — it still lists the session's MCP servers).
+- Claude-pane MCP popover (reached via the session chip's menu since PR
+  #272 — the standalone `MCP · N` pill no longer exists): header "Plugins",
+  empty state "No plugins connected." (contents unchanged — it still lists
+  the session's MCP servers, and the claude-CLI hint line stays).
 - Command palette / slash commands: `/add-mcp` and `/open-mcp-servers` keep
   their names (muscle memory) but descriptions say "plugin"; menu binding
   labels say "Open Plugins".
@@ -122,5 +136,6 @@ previous build. Build twarp (`./script/run`).
    with a token; new Claude session lists it.
 7. Delete the "test" plugin: its skill leaves `~/.claude/skills` and
    `~/.codex/prompts`; new sessions no longer get the server.
-8. Claude pane composer shows `Plugins · N`; popover header reads "Plugins".
+8. Claude pane session-chip menu's MCP section header reads "Plugins"
+   (and "No plugins connected." when the session has none).
 9. Restart twarp: plugins, toggles, and built-ins render identically.

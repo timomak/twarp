@@ -74,7 +74,18 @@ resolve with the existing `unique_name` suffixing (`slack`, `slack-2`).
 - Built-in section: static descriptors for `twarp-browser` /
   `twarp-computer-control` (reuse the existing built-in rows from
   `mcps_page.rs`, restyled as cards).
-- Claude pill/popover rename in `claude_code_view.rs` is string-only.
+- Claude popover rename in `claude_code_view.rs` is string-only (the
+  standalone `MCP · N` pill was folded into the session chip's menu by PR
+  #272, so only the popover header/empty-state strings change).
+- Editor semantics: no attach-existing-skill picker (post-migration every
+  skill has a plugin); adopt creates a single-skill plugin immediately;
+  components removed during edit spin out into single-component plugins at
+  save; deleting a plugin deletes its member servers/skills. Sub-form
+  actions are keyed by stable UUIDs, not indices, so Remove can't stale
+  sibling callbacks.
+- Skills materializer: toggle rows now carry `plugin_id`; `apply_scan`
+  backfills toggle rows for on-disk skills so the next load's migration
+  adopts them (one-launch-late, fail-open in the interim).
 - Follow `warp-ui-guidelines` + tokens (`type_ramp`, `spacing`, `radius`);
   no new colors outside the theme.
 
