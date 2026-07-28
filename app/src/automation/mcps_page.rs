@@ -40,12 +40,109 @@ use super::view::{AutomationView, AutomationViewAction};
 /// Content column width; matches the conversation measure used app-wide.
 const CONTENT_MAX_WIDTH: f32 = 720.;
 
+/// A quick-add template: one click opens the Add form prefilled with the
+/// service's known transport/command/URL and the env keys it needs, leaving
+/// only credentials for the user to paste in.
+struct McpPreset {
+    /// Stable key used in actions and as the base for generated names.
+    key: &'static str,
+    label: &'static str,
+    transport: McpTransport,
+    command: Option<&'static str>,
+    args: &'static [&'static str],
+    url: Option<&'static str>,
+    /// Env keys prefilled as `KEY=` lines for the user to complete.
+    env_keys: &'static [&'static str],
+}
+
+impl McpPreset {
+    fn entry(&self, name: String) -> McpServerEntry {
+        McpServerEntry {
+            name,
+            transport: self.transport,
+            command: self.command.map(str::to_owned),
+            args: self.args.iter().map(|a| (*a).to_owned()).collect(),
+            url: self.url.map(str::to_owned),
+            env: self
+                .env_keys
+                .iter()
+                .map(|k| ((*k).to_owned(), String::new()))
+                .collect(),
+            enabled_claude: true,
+            enabled_codex: true,
+            ..Default::default()
+        }
+    }
+}
+
+const PRESETS: &[McpPreset] = &[
+    McpPreset {
+        key: "slack",
+        label: "Slack",
+        transport: McpTransport::Stdio,
+        command: Some("npx"),
+        args: &["-y", "@modelcontextprotocol/server-slack"],
+        url: None,
+        env_keys: &["SLACK_BOT_TOKEN", "SLACK_TEAM_ID"],
+    },
+    McpPreset {
+        key: "composio",
+        label: "Composio",
+        transport: McpTransport::Http,
+        command: None,
+        args: &[],
+        url: Some("https://mcp.composio.dev/YOUR_SERVER_ID"),
+        env_keys: &[],
+    },
+    McpPreset {
+        key: "notion",
+        label: "Notion",
+        transport: McpTransport::Http,
+        command: None,
+        args: &[],
+        url: Some("https://mcp.notion.com/mcp"),
+        env_keys: &[],
+    },
+    McpPreset {
+        key: "linear",
+        label: "Linear",
+        transport: McpTransport::Http,
+        command: None,
+        args: &[],
+        url: Some("https://mcp.linear.app/mcp"),
+        env_keys: &[],
+    },
+    McpPreset {
+        key: "gmail",
+        label: "Gmail",
+        transport: McpTransport::Stdio,
+        command: Some("npx"),
+        args: &["-y", "@gongrzhe/server-gmail-autoauth-mcp"],
+        url: None,
+        env_keys: &[],
+    },
+];
+
+/// `base`, or the first `base-2`, `base-3`, … not already in the registry, so
+/// the same preset can be added multiple times (e.g. two Slack workspaces).
+fn unique_name(registry: &McpRegistryModel, base: &str) -> String {
+    if !registry.name_taken(base, None) {
+        return base.to_owned();
+    }
+    (2..)
+        .map(|i| format!("{base}-{i}"))
+        .find(|name| !registry.name_taken(name, None))
+        .expect("unbounded suffix search always terminates")
+}
+
 /// Actions dispatched by the MCPs page's controls, wrapped in
 /// [`AutomationViewAction::Mcps`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McpsPageAction {
     /// Open the inline editor with a blank form.
     OpenAdd,
+    /// Open the inline editor prefilled from the named quick-add preset.
+    OpenPreset(String),
     /// Open the inline editor pre-filled from the given registry entry.
     OpenEdit(String),
     Delete(String),
@@ -96,6 +193,8 @@ pub struct McpsPageState {
     /// Dedicated CTA for the empty state (20e) — a view handle can't be
     /// mounted both in the header and in the empty state at once.
     empty_add_button: ViewHandle<ActionButton>,
+    /// One button per [`PRESETS`] entry, in the same order.
+    preset_buttons: Vec<ViewHandle<ActionButton>>,
     rows: HashMap<String, RowUi>,
     editor: Option<McpEditor>,
 }
@@ -112,10 +211,23 @@ impl McpsPageState {
                 ctx.dispatch_typed_action(AutomationViewAction::Mcps(McpsPageAction::OpenAdd));
             })
         });
+        let preset_buttons = PRESETS
+            .iter()
+            .map(|preset| {
+                ctx.add_typed_action_view(move |_| {
+                    ActionButton::new(preset.label, SecondaryTheme).on_click(move |ctx| {
+                        ctx.dispatch_typed_action(AutomationViewAction::Mcps(
+                            McpsPageAction::OpenPreset(preset.key.to_owned()),
+                        ));
+                    })
+                })
+            })
+            .collect();
         let mut state = Self {
             scroll_state: Default::default(),
             add_button,
             empty_add_button,
+            preset_buttons,
             rows: HashMap::new(),
             editor: None,
         };
@@ -172,6 +284,15 @@ impl McpsPageState {
         match action {
             McpsPageAction::OpenAdd => {
                 self.editor = Some(self.new_editor(None, ctx));
+            }
+            McpsPageAction::OpenPreset(key) => {
+                if let Some(preset) = PRESETS.iter().find(|p| p.key == key) {
+                    let name = unique_name(McpRegistryModel::as_ref(ctx), preset.key);
+                    // The entry's id stays empty, so the editor opens in Add
+                    // mode and Save assigns a fresh id — adding the same
+                    // preset repeatedly yields independent entries.
+                    self.editor = Some(self.new_editor(Some(preset.entry(name)), ctx));
+                }
             }
             McpsPageAction::OpenEdit(id) => {
                 let entry = McpRegistryModel::as_ref(ctx).get(id).cloned();
@@ -427,6 +548,34 @@ impl McpsPageState {
             .with_margin_top(spacing::XS)
             .with_margin_bottom(spacing::LG)
             .finish(),
+        );
+
+        // Quick add: one button per preset; clicking opens the Add form
+        // prefilled, so only credentials are left to paste in.
+        column.add_child(
+            Container::new(
+                Text::new_inline(
+                    "QUICK ADD",
+                    appearance.ui_font_family(),
+                    type_ramp::CAPTION.size,
+                )
+                .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                .with_color(theme.sub_text_color(theme.background()).into())
+                .finish(),
+            )
+            .with_margin_bottom(spacing::SM)
+            .finish(),
+        );
+        let mut preset_row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(spacing::SM);
+        for button in &self.preset_buttons {
+            preset_row.add_child(ChildView::new(button).finish());
+        }
+        column.add_child(
+            Container::new(preset_row.finish())
+                .with_margin_bottom(spacing::LG)
+                .finish(),
         );
 
         if let Some(editor) = &self.editor {
