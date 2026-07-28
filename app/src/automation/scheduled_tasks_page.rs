@@ -29,9 +29,10 @@ use crate::automation::scheduler::{
     provider_from_name, provider_name, schedule_summary, validate_schedule, RunOutcome,
     ScheduledTaskEntry, SchedulerModel, TaskRunEntry,
 };
-use crate::editor::EditorView;
+use crate::editor::{Event as EditorEvent, EditorView};
+use crate::search_bar::SearchBar;
 use crate::view_components::{
-    action_button::{ActionButton, DangerSecondaryTheme, PrimaryTheme, SecondaryTheme},
+    action_button::{ActionButton, DangerSecondaryTheme, NakedTheme, PrimaryTheme, SecondaryTheme},
     dropdown::DropdownItem,
     Dropdown,
 };
@@ -59,6 +60,8 @@ pub enum ScheduledTasksPageAction {
     RunNow(String),
     /// Open the stored session backing a run (session id + task cwd).
     ViewSession(String, String),
+    /// List filter chip ("all" | "active" | "paused").
+    SetFilter(String),
     /// Editor: schedule preset chip ("hourly" | "daily" | "weekly" | "custom").
     SetPreset(String),
     /// Editor: weekly day-of-week ("0".."6").
@@ -86,6 +89,46 @@ struct RowUi {
     edit_button: ViewHandle<ActionButton>,
     delete_button: ViewHandle<ActionButton>,
     confirm_delete_button: ViewHandle<ActionButton>,
+}
+
+/// Which subset of tasks the list shows.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum TaskFilter {
+    All,
+    Active,
+    Paused,
+}
+
+impl TaskFilter {
+    const ALL: [TaskFilter; 3] = [TaskFilter::All, TaskFilter::Active, TaskFilter::Paused];
+
+    fn as_str(self) -> &'static str {
+        match self {
+            TaskFilter::All => "all",
+            TaskFilter::Active => "active",
+            TaskFilter::Paused => "paused",
+        }
+    }
+
+    fn from_str(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|f| f.as_str() == value)
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            TaskFilter::All => "All",
+            TaskFilter::Active => "Active",
+            TaskFilter::Paused => "Paused",
+        }
+    }
+
+    fn matches(self, task: &ScheduledTaskEntry) -> bool {
+        match self {
+            TaskFilter::All => true,
+            TaskFilter::Active => task.enabled,
+            TaskFilter::Paused => !task.enabled,
+        }
+    }
 }
 
 /// The schedule preset selected in the editor.
@@ -206,6 +249,10 @@ pub struct ScheduledTasksPageState {
     /// Dedicated CTA for the empty state (20e) — a view handle can't be
     /// mounted both in the header and in the empty state at once.
     empty_add_button: ViewHandle<ActionButton>,
+    search_editor: ViewHandle<EditorView>,
+    search_bar: ViewHandle<SearchBar>,
+    filter: TaskFilter,
+    filter_chips: Vec<ViewHandle<ActionButton>>,
     rows: HashMap<String, RowUi>,
     /// Task id whose Delete button is currently in its Confirm stage.
     pending_delete: Option<String>,
@@ -226,10 +273,26 @@ impl ScheduledTasksPageState {
                 ctx.dispatch_typed_action(action(ScheduledTasksPageAction::OpenAdd));
             })
         });
+        let search_editor = new_single_line_editor("Search scheduled tasks", "", ctx);
+        // The list is filtered from the buffer at render time; typing just
+        // needs to trigger a re-render.
+        ctx.subscribe_to_view(&search_editor, |_, _, event, ctx| {
+            if matches!(event, EditorEvent::Edited(_)) {
+                ctx.notify();
+            }
+        });
+        let search_bar = {
+            let editor = search_editor.clone();
+            ctx.add_typed_action_view(|_| SearchBar::new(editor))
+        };
         let mut state = Self {
             scroll_state: Default::default(),
             add_button,
             empty_add_button,
+            search_editor,
+            search_bar,
+            filter: TaskFilter::All,
+            filter_chips: Self::new_filter_chips(TaskFilter::All, ctx),
             rows: HashMap::new(),
             pending_delete: None,
             editor: None,
@@ -346,6 +409,12 @@ impl ScheduledTasksPageState {
             ViewSession(session_id, cwd) => {
                 self.open_session(session_id, cwd, ctx);
             }
+            SetFilter(value) => {
+                if let Some(filter) = TaskFilter::from_str(value) {
+                    self.filter = filter;
+                    self.filter_chips = Self::new_filter_chips(filter, ctx);
+                }
+            }
             SetPreset(value) => {
                 if let (Some(editor), Some(preset)) =
                     (self.editor.as_mut(), SchedulePreset::from_str(value))
@@ -432,6 +501,30 @@ impl ScheduledTasksPageState {
             cwd,
             provider: AgentProvider::Claude,
         });
+    }
+
+    fn new_filter_chips(
+        selected: TaskFilter,
+        ctx: &mut ViewContext<AutomationView>,
+    ) -> Vec<ViewHandle<ActionButton>> {
+        TaskFilter::ALL
+            .into_iter()
+            .map(|filter| {
+                let value = filter.as_str().to_owned();
+                ctx.add_typed_action_view(move |_| {
+                    let button = if filter == selected {
+                        ActionButton::new(filter.label(), SecondaryTheme)
+                    } else {
+                        ActionButton::new(filter.label(), NakedTheme)
+                    };
+                    button.on_click(move |ctx| {
+                        ctx.dispatch_typed_action(action(ScheduledTasksPageAction::SetFilter(
+                            value.clone(),
+                        )));
+                    })
+                })
+            })
+            .collect()
     }
 
     fn new_preset_chips(
@@ -830,6 +923,25 @@ impl ScheduledTasksPageState {
             .finish(),
         );
 
+        if !show_empty_state {
+            column.add_child(
+                Container::new(ChildView::new(&self.search_bar).finish())
+                    .with_margin_bottom(spacing::MD)
+                    .finish(),
+            );
+            let mut chips = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(spacing::XS);
+            for chip in &self.filter_chips {
+                chips.add_child(ChildView::new(chip).finish());
+            }
+            column.add_child(
+                Container::new(chips.finish())
+                    .with_margin_bottom(spacing::MD)
+                    .finish(),
+            );
+        }
+
         if let Some(editor) = &self.editor {
             column.add_child(self.render_editor(editor, app));
             if let Some(id) = editor.existing_id.as_deref() {
@@ -848,7 +960,30 @@ impl ScheduledTasksPageState {
                 app,
             ));
         }
-        for task in tasks {
+        let query = self
+            .search_editor
+            .as_ref(app)
+            .buffer_text(app)
+            .trim()
+            .to_lowercase();
+        let visible: Vec<&ScheduledTaskEntry> = tasks
+            .iter()
+            .filter(|t| self.filter.matches(t))
+            .filter(|t| query.is_empty() || t.name.to_lowercase().contains(&query))
+            .collect();
+        if !show_empty_state && visible.is_empty() {
+            column.add_child(
+                Text::new_inline(
+                    "No tasks match.",
+                    appearance.ui_font_family(),
+                    type_ramp::UI.size,
+                )
+                .with_line_height_ratio(type_ramp::UI.line_height)
+                .with_color(theme.sub_text_color(theme.background()).into())
+                .finish(),
+            );
+        }
+        for task in visible {
             column.add_child(self.render_row(task, app));
         }
 
@@ -904,24 +1039,30 @@ impl ScheduledTasksPageState {
             None => provider_label(task.provider).to_owned(),
         };
         let mut sub = format!("{} · {}", schedule_summary(&task.schedule), chain);
-        if let Some(next) = task.next_run_at.filter(|_| task.enabled) {
-            sub.push_str(&format!(" · next {}", format_unix(next)));
+        if !task.enabled {
+            sub.push_str(" · Paused");
+        } else if let Some(next) = task.next_run_at {
+            sub.push_str(&format!(" · Next run {}", format_relative(next)));
         }
 
-        let status = if scheduler.is_running(&task.id) {
+        let running = scheduler.is_running(&task.id);
+        // Only surface a third line while running or after a failure — healthy
+        // rows stay at two lines like the reference layout.
+        let status = if running {
             Some(("Running…".to_owned(), theme.active_ui_detail()))
         } else {
-            scheduler.last_run(&task.id).map(|run| {
-                let label = run_one_liner(run);
-                let color = match run.outcome {
-                    RunOutcome::Success => theme.sub_text_color(theme.background()),
-                    RunOutcome::Running => theme.active_ui_detail(),
-                    RunOutcome::Error | RunOutcome::BothFailed => theme.ui_error_color().into(),
-                };
-                (label, color)
-            })
+            scheduler
+                .last_run(&task.id)
+                .filter(|run| matches!(run.outcome, RunOutcome::Error | RunOutcome::BothFailed))
+                .map(|run| (run_one_liner(run), theme.ui_error_color().into()))
         };
 
+        // Paused rows render dimmed.
+        let name_color = if task.enabled {
+            theme.main_text_color(theme.background())
+        } else {
+            theme.sub_text_color(theme.background())
+        };
         let mut labels = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_child(
@@ -931,7 +1072,7 @@ impl ScheduledTasksPageState {
                     type_ramp::UI.size,
                 )
                 .with_line_height_ratio(type_ramp::UI.line_height)
-                .with_color(theme.main_text_color(theme.background()).into())
+                .with_color(name_color.into())
                 .finish(),
             )
             .with_child(
@@ -974,17 +1115,37 @@ impl ScheduledTasksPageState {
             .with_child(ChildView::new(delete_button).finish())
             .finish();
 
+        // Leading status glyph: running clock, paused play affordance,
+        // otherwise a quiet circle — the reference list's left rail.
+        let (glyph, glyph_color) = if running {
+            (twarp_core::ui::Icon::ClockLoader, theme.active_ui_detail())
+        } else if task.enabled {
+            (
+                twarp_core::ui::Icon::Circle,
+                theme.sub_text_color(theme.background()),
+            )
+        } else {
+            (
+                twarp_core::ui::Icon::Play,
+                theme.sub_text_color(theme.background()),
+            )
+        };
+        let glyph = ConstrainedBox::new(glyph.to_warpui_icon(glyph_color).finish())
+            .with_width(spacing::LG)
+            .with_height(spacing::LG)
+            .finish();
+
         Container::new(
             Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(spacing::MD)
+                .with_child(glyph)
                 .with_child(Shrinkable::new(1., labels.finish()).finish())
                 .with_child(controls)
                 .finish(),
         )
-        .with_uniform_padding(spacing::MD)
-        .with_margin_bottom(spacing::SM)
-        .with_border(Border::all(1.).with_border_fill(theme.outline()))
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+        .with_padding_top(spacing::SM)
+        .with_padding_bottom(spacing::SM)
         .finish()
     }
 
@@ -1250,6 +1411,24 @@ fn format_unix(ts: i64) -> String {
         .single()
         .map(|dt| dt.format("%b %-d %H:%M").to_string())
         .unwrap_or_default()
+}
+
+/// "in 2 minutes" / "in 15 hours" / "in 3 days" for a future unix timestamp.
+/// Kept fresh by the page's 30 s repaint tick (see `AutomationView::new`).
+fn format_relative(ts: i64) -> String {
+    let delta = ts - chrono::Utc::now().timestamp();
+    if delta <= 60 {
+        return "in under a minute".to_owned();
+    }
+    let (value, unit) = if delta < 3600 {
+        (delta / 60, "minute")
+    } else if delta < 86_400 {
+        (delta / 3600, "hour")
+    } else {
+        (delta / 86_400, "day")
+    };
+    let plural = if value == 1 { "" } else { "s" };
+    format!("in {value} {unit}{plural}")
 }
 
 /// One-line run description for the list row and history strip.

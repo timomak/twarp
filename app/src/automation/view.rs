@@ -69,6 +69,10 @@ impl AutomationView {
                 }
                 ctx.notify();
             });
+            // The list shows relative "Next run in …" labels; repaint on a
+            // 30 s beat so they don't go stale (the scheduler only notifies
+            // when a run fires or finishes).
+            Self::schedule_relative_time_tick(ctx);
             ScheduledTasksPageState::new(ctx)
         });
         let pull_requests_state = (page == AutomationPage::PullRequests).then(|| {
@@ -94,6 +98,22 @@ impl AutomationView {
             scheduled_state,
             pull_requests_state,
         }
+    }
+
+    /// Self-rearming 30 s `notify()` so the Scheduled Tasks list's relative
+    /// times re-render (warpui never re-runs `render()` on its own).
+    fn schedule_relative_time_tick(ctx: &mut ViewContext<Self>) {
+        ctx.spawn(
+            async {
+                twarpui::r#async::Timer::after(std::time::Duration::from_secs(30)).await;
+            },
+            |me: &mut Self, _, ctx| {
+                if me.scheduled_state.is_some() {
+                    ctx.notify();
+                    Self::schedule_relative_time_tick(ctx);
+                }
+            },
+        );
     }
 
     pub fn page(&self) -> AutomationPage {
