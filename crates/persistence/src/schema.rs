@@ -263,6 +263,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    shared_skills (name) {
+        name -> Text,
+        enabled_claude -> Bool,
+        enabled_codex -> Bool,
+    }
+}
+
+diesel::table! {
     notebook_panes (id) {
         id -> Integer,
         kind -> Text,
@@ -580,6 +588,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     pane_leaves,
     pane_nodes,
     panels,
+    shared_skills,
     tabs,
     windows,
 );

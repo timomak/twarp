@@ -224,6 +224,17 @@ pub struct PersistedData {
     /// twarp 20b: the user-managed MCP-server registry (Automation > MCPs),
     /// injected into provider sessions at spawn.
     pub mcp_registry: Vec<PersistedMcpServer>,
+    /// twarp 20c: per-provider enable toggles for the shared-skills store
+    /// (`~/.twarp/skills`); content on disk is the source of truth.
+    pub shared_skills: Vec<PersistedSharedSkill>,
+}
+
+/// twarp 20c: one row of the shared-skills toggle table (`shared_skills`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PersistedSharedSkill {
+    pub name: String,
+    pub enabled_claude: bool,
+    pub enabled_codex: bool,
 }
 
 /// twarp 20b: one row of the shared MCP-server registry (`mcp_servers`).
@@ -388,6 +399,11 @@ pub enum ModelEvent {
     /// (the registry is small; delete+insert keeps the write path trivial).
     ReplaceMcpServers {
         servers: Vec<PersistedMcpServer>,
+    },
+    /// twarp 20c: replace the whole shared-skills toggle table with the given
+    /// rows (small table; delete+insert keeps the write path trivial).
+    ReplaceSharedSkills {
+        skills: Vec<PersistedSharedSkill>,
     },
     UpsertCodebaseIndexMetadata {
         index_metadata: Box<CodeWorkspaceMetadata>,

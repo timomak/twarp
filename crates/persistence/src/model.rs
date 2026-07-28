@@ -15,8 +15,8 @@ use super::schema::{
     ignored_suggestions, mcp_environment_variables, mcp_server_installations, mcp_server_panes,
     mcp_servers, notebook_panes, notebooks, object_actions, object_metadata, object_permissions,
     pane_branches, pane_leaves, pane_nodes, panels, project_rules, projects, server_experiments,
-    settings_panes, tabs, team_members, team_settings, teams, terminal_panes, user_profiles,
-    welcome_panes, windows, workflow_panes, workflows, workspace_language_server,
+    settings_panes, shared_skills, tabs, team_members, team_settings, teams, terminal_panes,
+    user_profiles, welcome_panes, windows, workflow_panes, workflows, workspace_language_server,
     workspace_metadata, workspace_teams, workspaces,
 };
 
@@ -773,6 +773,17 @@ pub struct McpServer {
     pub args: Option<String>,
     pub url: Option<String>,
     pub env: Option<String>,
+    pub enabled_claude: bool,
+    pub enabled_codex: bool,
+}
+
+/// twarp 20c: per-provider enable toggles for one skill in the twarp-managed
+/// shared-skills store (`~/.twarp/skills/<name>`). Content on disk is the
+/// source of truth; this row only records materialization enablement.
+#[derive(Insertable, Queryable, Selectable)]
+#[diesel(table_name = shared_skills)]
+pub struct SharedSkill {
+    pub name: String,
     pub enabled_claude: bool,
     pub enabled_codex: bool,
 }

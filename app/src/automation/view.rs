@@ -20,6 +20,7 @@ use crate::pane_group::{
 };
 
 use super::mcps_page::{McpsPageAction, McpsPageState};
+use super::skills_page::{SkillsPageAction, SkillsPageState};
 use super::AutomationPage;
 
 /// A pane view showing one automation page as a centered full-page column.
@@ -29,17 +30,32 @@ pub struct AutomationView {
     focus_handle: Option<PaneFocusHandle>,
     /// Present iff `page == AutomationPage::Mcps` (twarp 20b).
     mcps_state: Option<McpsPageState>,
+    /// Present iff `page == AutomationPage::Skills` (twarp 20c).
+    skills_state: Option<SkillsPageState>,
 }
 
 impl AutomationView {
     pub fn new(page: AutomationPage, ctx: &mut ViewContext<Self>) -> Self {
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new(page.title()));
         let mcps_state = (page == AutomationPage::Mcps).then(|| McpsPageState::new(ctx));
+        let skills_state = (page == AutomationPage::Skills).then(|| {
+            // Skills arrive asynchronously (background scans); keep row UI in
+            // sync and re-render when the store model notifies.
+            let store = crate::skills_store::SkillsStoreModel::handle(ctx);
+            ctx.observe(&store, |view: &mut Self, _, ctx| {
+                if let Some(state) = view.skills_state.as_mut() {
+                    state.sync_rows(ctx);
+                }
+                ctx.notify();
+            });
+            SkillsPageState::new(ctx)
+        });
         Self {
             page,
             pane_configuration,
             focus_handle: None,
             mcps_state,
+            skills_state,
         }
     }
 
@@ -99,10 +115,13 @@ impl View for AutomationView {
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
-        match &self.mcps_state {
-            Some(state) => state.render(app),
-            None => self.render_placeholder(app),
+        if let Some(state) = &self.mcps_state {
+            return state.render(app);
         }
+        if let Some(state) = &self.skills_state {
+            return state.render(app);
+        }
+        self.render_placeholder(app)
     }
 }
 
@@ -111,6 +130,8 @@ impl View for AutomationView {
 pub enum AutomationViewAction {
     /// MCPs page controls (twarp 20b).
     Mcps(McpsPageAction),
+    /// Skills page controls (twarp 20c).
+    Skills(SkillsPageAction),
 }
 
 impl TypedActionView for AutomationView {
@@ -121,6 +142,12 @@ impl TypedActionView for AutomationView {
             AutomationViewAction::Mcps(action) => {
                 if let Some(state) = self.mcps_state.as_mut() {
                     state.handle_action(action, ctx);
+                }
+            }
+            AutomationViewAction::Skills(action) => {
+                if let Some(mut state) = self.skills_state.take() {
+                    state.handle_action(action, ctx);
+                    self.skills_state = Some(state);
                 }
             }
         }
