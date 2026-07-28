@@ -903,6 +903,24 @@ impl Workspace {
         let active = index == self.active_tab_index();
         let is_renaming = self.current_workspace_state.tab_being_renamed() == Some(index);
         let attention = pane_group.claude_code_tab_status(app);
+        // An unreviewed-completion ✓ paints in the tab's theme color so the
+        // signal reads as belonging to its project; other statuses keep their
+        // semantic colors (blocked yellow, error red, …).
+        let attention_icon: Option<Box<dyn Element>> = attention.as_ref().map(|status| {
+            let (icon, color) = status.status_icon_and_color(theme);
+            let fill = if matches!(status, crate::app_state::ConversationStatus::SuccessUnseen) {
+                tab.color()
+                    .map(|tab_color| {
+                        ThemeFill::Solid(
+                            tab_color.to_tab_color(&theme.terminal_colors().normal).into(),
+                        )
+                    })
+                    .unwrap_or_else(|| ThemeFill::from(color))
+            } else {
+                ThemeFill::from(color)
+            };
+            icon.to_warpui_icon(fill).finish()
+        });
         let row_mouse_state = tab.tab_mouse_state.clone();
         let menu_mouse_state = tab.tooltip_mouse_state.clone();
         let pane_drag_active = self.project_pane_drag_active(app);
@@ -930,12 +948,12 @@ impl Workspace {
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_spacing(spacing::SM);
 
-            if let Some(status) = attention.as_ref() {
+            if let Some(status_icon) = attention_icon {
                 // `Icon::layout` greedily takes `constraint.max`, so an
                 // unconstrained icon swallows the whole row and shrinks the
                 // title to nothing — box it like `sidebar_icon` does.
                 trailing.add_child(
-                    ConstrainedBox::new(status.render_icon(appearance).finish())
+                    ConstrainedBox::new(status_icon)
                         .with_width(spacing::MD)
                         .with_height(spacing::MD)
                         .finish(),
