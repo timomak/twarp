@@ -3723,7 +3723,10 @@ impl ClaudeCodeView {
             // the app-server thread/start (resume included).
             codex_config_overrides: (self.provider == AgentProvider::Codex)
                 .then(|| {
-                    crate::mcp_registry::McpRegistryModel::as_ref(ctx).codex_config_overrides()
+                    crate::mcp_registry::McpRegistryModel::as_ref(ctx).codex_config_overrides(
+                        &crate::plugin_registry::PluginRegistryModel::as_ref(ctx)
+                            .provider_toggles_by_id(),
+                    )
                 })
                 .flatten(),
             path_env: self.interactive_path.clone(),
@@ -12238,7 +12241,10 @@ fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> 
         // merged below keep priority on a name collision.
         merge_mcp_servers(
             &mut servers,
-            crate::mcp_registry::McpRegistryModel::as_ref(app).claude_mcp_config_json(),
+            crate::mcp_registry::McpRegistryModel::as_ref(app).claude_mcp_config_json(
+                &crate::plugin_registry::PluginRegistryModel::as_ref(app)
+                    .provider_toggles_by_id(),
+            ),
         );
         // twarp 14j: session-scoped endpoint — browser tools target/open
         // panes in THIS session's tab and stay bound to them across moves.

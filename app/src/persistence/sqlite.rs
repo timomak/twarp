@@ -56,8 +56,8 @@ use super::model::{
 use super::schema;
 use super::{
     BlockCompleted, FinishedCommandMetadata, ModelEvent, PersistedClaudeSessionDefaults,
-    PersistedData, PersistedMcpServer, PersistedScheduledTask, PersistedScheduledTaskRun,
-    PersistedSharedSkill, StartedCommandMetadata, WriterHandles,
+    PersistedData, PersistedMcpServer, PersistedPlugin, PersistedScheduledTask,
+    PersistedScheduledTaskRun, PersistedSharedSkill, StartedCommandMetadata, WriterHandles,
 };
 use crate::app_state::AIConversationId;
 use crate::app_state::AIDocumentId;
@@ -633,6 +633,9 @@ fn handle_model_event(event: ModelEvent, connection: &mut SqliteConnection) -> a
         }
         ModelEvent::ReplaceSharedSkills { skills } => {
             replace_shared_skills(connection, skills).context("error replacing shared skills")
+        }
+        ModelEvent::ReplacePlugins { plugins } => {
+            replace_plugins(connection, plugins).context("error replacing plugins")
         }
         ModelEvent::ReplaceScheduledTasks { tasks } => {
             replace_scheduled_tasks(connection, tasks).context("error replacing scheduled tasks")
@@ -3222,6 +3225,7 @@ fn read_sqlite_data(
     let claude_session_defaults = get_claude_session_defaults(conn)?;
     let mcp_registry = get_mcp_registry(conn)?;
     let shared_skills = get_shared_skills(conn)?;
+    let plugins = get_plugins(conn)?;
     let scheduled_tasks = get_scheduled_tasks(conn)?;
     let scheduled_task_runs = get_scheduled_task_runs(conn)?;
 
@@ -3247,6 +3251,7 @@ fn read_sqlite_data(
         claude_session_defaults,
         mcp_registry,
         shared_skills,
+        plugins,
         scheduled_tasks,
         scheduled_task_runs,
     })
@@ -3405,6 +3410,7 @@ fn get_mcp_registry(conn: &mut SqliteConnection) -> Result<Vec<PersistedMcpServe
             env: row.env,
             enabled_claude: row.enabled_claude,
             enabled_codex: row.enabled_codex,
+            plugin_id: row.plugin_id,
         })
         .collect())
 }
@@ -3754,6 +3760,7 @@ fn replace_mcp_servers(
                     env: server.env,
                     enabled_claude: server.enabled_claude,
                     enabled_codex: server.enabled_codex,
+                    plugin_id: server.plugin_id,
                 })
                 .execute(conn)?;
         }
@@ -3774,6 +3781,7 @@ fn get_shared_skills(conn: &mut SqliteConnection) -> Result<Vec<PersistedSharedS
             name: row.name,
             enabled_claude: row.enabled_claude,
             enabled_codex: row.enabled_codex,
+            plugin_id: row.plugin_id,
         })
         .collect())
 }
@@ -3793,6 +3801,48 @@ fn replace_shared_skills(
                     name: skill.name,
                     enabled_claude: skill.enabled_claude,
                     enabled_codex: skill.enabled_codex,
+                    plugin_id: skill.plugin_id,
+                })
+                .execute(conn)?;
+        }
+        Ok(())
+    })
+}
+
+/// twarp 23a: read the whole `plugins` table, ordered by name for a stable
+/// page listing.
+fn get_plugins(conn: &mut SqliteConnection) -> Result<Vec<PersistedPlugin>, Error> {
+    use schema::plugins::dsl;
+    let rows = dsl::plugins
+        .order(dsl::name.asc())
+        .select(model::Plugin::as_select())
+        .load(conn)?;
+    Ok(rows
+        .into_iter()
+        .map(|row| PersistedPlugin {
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            enabled_claude: row.enabled_claude,
+            enabled_codex: row.enabled_codex,
+        })
+        .collect())
+}
+
+/// twarp 23a: replace the whole `plugins` table with the given rows
+/// (delete+insert in one transaction, mirroring `mcp_servers`).
+fn replace_plugins(conn: &mut SqliteConnection, plugins: Vec<PersistedPlugin>) -> Result<(), Error> {
+    conn.transaction::<(), Error, _>(|conn| {
+        diesel::delete(schema::plugins::dsl::plugins).execute(conn)?;
+
+        for plugin in plugins {
+            diesel::insert_into(schema::plugins::dsl::plugins)
+                .values(model::Plugin {
+                    id: plugin.id,
+                    name: plugin.name,
+                    description: plugin.description,
+                    enabled_claude: plugin.enabled_claude,
+                    enabled_codex: plugin.enabled_codex,
                 })
                 .execute(conn)?;
         }

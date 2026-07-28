@@ -227,6 +227,9 @@ pub struct PersistedData {
     /// twarp 20c: per-provider enable toggles for the shared-skills store
     /// (`~/.twarp/skills`); content on disk is the source of truth.
     pub shared_skills: Vec<PersistedSharedSkill>,
+    /// twarp 23a: the plugin grouping layer above `mcp_registry` and
+    /// `shared_skills` (Automation > Plugins).
+    pub plugins: Vec<PersistedPlugin>,
     /// twarp 20d: locally scheduled agent tasks (Automation > Scheduled
     /// Tasks) and their pruned run history.
     pub scheduled_tasks: Vec<PersistedScheduledTask>,
@@ -274,6 +277,20 @@ pub struct PersistedSharedSkill {
     pub name: String,
     pub enabled_claude: bool,
     pub enabled_codex: bool,
+    /// twarp 23a: owning plugin's UUID; `None` = not yet migrated.
+    pub plugin_id: Option<String>,
+}
+
+/// twarp 23a: one row of the `plugins` table — a named bundle of MCP servers
+/// and/or skills with plugin-level per-provider toggles. Components point
+/// back via `plugin_id` on `mcp_servers` / `shared_skills`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PersistedPlugin {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub enabled_claude: bool,
+    pub enabled_codex: bool,
 }
 
 /// twarp 20b: one row of the shared MCP-server registry (`mcp_servers`).
@@ -290,6 +307,8 @@ pub struct PersistedMcpServer {
     pub env: Option<String>,
     pub enabled_claude: bool,
     pub enabled_codex: bool,
+    /// twarp 23a: owning plugin's UUID; `None` = not yet migrated.
+    pub plugin_id: Option<String>,
 }
 
 /// twarp 07: the last-used Claude session settings persisted in the single
@@ -443,6 +462,11 @@ pub enum ModelEvent {
     /// rows (small table; delete+insert keeps the write path trivial).
     ReplaceSharedSkills {
         skills: Vec<PersistedSharedSkill>,
+    },
+    /// twarp 23a: replace the whole `plugins` table with the given rows
+    /// (small table; delete+insert keeps the write path trivial).
+    ReplacePlugins {
+        plugins: Vec<PersistedPlugin>,
     },
     /// twarp 20d: replace the whole scheduled-tasks table with the given rows
     /// (small table; delete+insert keeps the write path trivial).

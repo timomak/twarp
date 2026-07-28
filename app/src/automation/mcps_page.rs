@@ -510,6 +510,7 @@ impl McpsPageState {
                 .collect(),
             enabled_claude: editor.enabled_claude,
             enabled_codex: editor.enabled_codex,
+            plugin_id: None,
         };
         McpRegistryModel::handle(ctx).update(ctx, |m, mctx| m.upsert(entry, mctx));
         self.editor = None;

@@ -99,6 +99,7 @@ mod linear;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod login_item;
 mod mcp_registry;
+pub mod plugin_registry;
 mod pull_requests;
 // twarp 20c: twarp-managed shared-skills store (Automation > Skills).
 mod menu;
@@ -1049,6 +1050,9 @@ fn initialize_app(
     let persistence_writer = PersistenceWriter::new(writer_handles);
 
     let model_event_sender = persistence_writer.sender();
+    // twarp 23a: a second sender for persisting the orphan-plugin migration
+    // results below (the first is moved into GlobalResourceHandles).
+    let migration_event_sender = persistence_writer.sender();
 
     let tips_handle = ctx.add_model(|_| user_defaults_on_startup.tips_data);
     let user_default_shell_unsupported_banner_model_handle =
@@ -1095,6 +1099,7 @@ fn initialize_app(
         persisted_claude_session_defaults,
         persisted_mcp_registry,
         persisted_shared_skills,
+        persisted_plugins,
         persisted_scheduled_tasks,
         persisted_scheduled_task_runs,
     ) = sqlite_data
@@ -1119,12 +1124,14 @@ fn initialize_app(
                 sqlite_data.claude_session_defaults,
                 sqlite_data.mcp_registry,
                 sqlite_data.shared_skills,
+                sqlite_data.plugins,
                 sqlite_data.scheduled_tasks,
                 sqlite_data.scheduled_task_runs,
             )
         })
         .unwrap_or_else(|| {
             (
+                Default::default(),
                 Default::default(),
                 Default::default(),
                 Default::default(),
@@ -1698,17 +1705,57 @@ fn initialize_app(
         )
     });
 
-    // twarp 20b: the user-managed MCP-server registry (Automation > MCPs),
-    // read synchronously by the MCPs page and the session spawn paths.
+    // twarp 23a: adopt orphan servers / skills (pre-plugin rows) into
+    // single-component plugins, persisting the migrated rows when anything
+    // changed. Idempotent — a no-op once every component has an owning plugin.
+    let migrated = crate::plugin_registry::migrate_orphans(
+        persisted_plugins,
+        persisted_mcp_registry,
+        persisted_shared_skills,
+    );
+    if migrated.changed {
+        if let Some(sender) = &migration_event_sender {
+            use crate::persistence::ModelEvent;
+            for event in [
+                ModelEvent::ReplacePlugins {
+                    plugins: migrated.plugins.clone(),
+                },
+                ModelEvent::ReplaceMcpServers {
+                    servers: migrated.servers.clone(),
+                },
+                ModelEvent::ReplaceSharedSkills {
+                    skills: migrated.skills.clone(),
+                },
+            ] {
+                if let Err(err) = sender.send(event) {
+                    log::error!("Failed to persist plugin migration: {err}");
+                }
+            }
+        }
+    }
+
+    // twarp 23a: the plugin registry (Automation > Plugins) — must register
+    // before the skills store, whose materializer reads plugin toggles.
+    let plugin_registry_model = crate::plugin_registry::PluginRegistryModel::new(
+        migrated.plugins,
+        &migrated.servers,
+        &migrated.skills,
+    );
+    ctx.add_singleton_model(move |_| plugin_registry_model);
+
+    // twarp 20b: the user-managed MCP-server registry (Automation > Plugins),
+    // read synchronously by the Plugins page and the session spawn paths.
+    let migrated_servers = migrated.servers;
     ctx.add_singleton_model(move |_| {
-        crate::mcp_registry::McpRegistryModel::new(persisted_mcp_registry)
+        crate::mcp_registry::McpRegistryModel::new(migrated_servers)
     });
 
     // twarp 20c: the twarp-managed shared-skills store (~/.twarp/skills),
     // scanned + materialized to both providers on a background thread at
-    // startup and after every Skills-page mutation.
+    // startup and after every Plugins-page mutation.
+    let migrated_skills = migrated.skills;
     ctx.add_singleton_model(move |ctx| {
-        crate::skills_store::SkillsStoreModel::new(persisted_shared_skills, ctx)
+        crate::skills_store::SkillsStoreModel::new(migrated_skills, ctx)
     });
 
     // twarp 21a: the per-repo GitHub pull-request cache backing the Pull

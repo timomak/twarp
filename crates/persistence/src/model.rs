@@ -15,7 +15,7 @@ use super::schema::{
     generic_string_objects, ignored_suggestions, mcp_environment_variables,
     mcp_server_installations, mcp_server_panes, mcp_servers, notebook_panes, notebooks,
     object_actions, object_metadata, object_permissions, pane_branches, pane_leaves, pane_nodes,
-    panels, project_rules, projects, scheduled_task_runs, scheduled_tasks, server_experiments,
+    panels, plugins, project_rules, projects, scheduled_task_runs, scheduled_tasks, server_experiments,
     settings_panes, shared_skills, tabs, team_members, team_settings, teams, terminal_panes,
     user_profiles, welcome_panes, windows, workflow_panes, workflows, workspace_language_server,
     workspace_metadata, workspace_teams, workspaces,
@@ -799,6 +799,21 @@ pub struct McpServer {
     pub env: Option<String>,
     pub enabled_claude: bool,
     pub enabled_codex: bool,
+    /// twarp 23a: owning plugin's UUID; NULL = not yet migrated.
+    pub plugin_id: Option<String>,
+}
+
+/// twarp 23a: one plugin — a named bundle of MCP servers and/or skills with
+/// plugin-level per-provider toggles. Components point back here via their
+/// `plugin_id` columns.
+#[derive(Insertable, Queryable, Selectable)]
+#[diesel(table_name = plugins)]
+pub struct Plugin {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub enabled_claude: bool,
+    pub enabled_codex: bool,
 }
 
 /// twarp 20c: per-provider enable toggles for one skill in the twarp-managed
@@ -810,6 +825,8 @@ pub struct SharedSkill {
     pub name: String,
     pub enabled_claude: bool,
     pub enabled_codex: bool,
+    /// twarp 23a: owning plugin's UUID; NULL = not yet migrated.
+    pub plugin_id: Option<String>,
 }
 
 /// twarp 20d: one locally scheduled agent task (Automation > Scheduled
