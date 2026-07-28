@@ -1,7 +1,7 @@
 //! twarp 20d: the real Scheduled Tasks automation page — a management UI over
 //! the local task scheduler ([`super::scheduler`]).
 //!
-//! Layout mirrors [`super::mcps_page`]: a centered chrome-class column with
+//! Layout mirrors [`super::plugins_page`]: a centered chrome-class column with
 //! the task list as rows (name, human schedule + next run, provider chain,
 //! enabled switch, status, Run now / Edit / Delete-with-confirm), an inline
 //! expanding editor (no modals) with schedule preset chips, and a run-history
@@ -38,7 +38,7 @@ use crate::view_components::{
 };
 use crate::workspace::WorkspaceAction;
 
-use super::mcps_page::{
+use super::plugins_page::{
     new_multiline_editor, new_single_line_editor, render_form_field, render_form_label,
     render_labeled_switch,
 };

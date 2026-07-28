@@ -224,9 +224,13 @@ pub enum WorkspaceAction {
     ShowSettings,
     /// twarp 20a: open the Scheduled Tasks automation page in a main pane.
     ShowScheduledTasks,
-    /// twarp 20a: open the Skills automation page in a main pane.
+    /// twarp 23b: open the Plugins automation page in a main pane.
+    ShowPlugins,
+    /// twarp 20a (legacy alias, kept so keybinding configs don't churn):
+    /// routes to the Plugins page.
     ShowSkills,
-    /// twarp 20a: open the MCPs automation page in a main pane.
+    /// twarp 20a (legacy alias, kept so keybinding configs don't churn):
+    /// routes to the Plugins page.
     ShowMcps,
     /// twarp 21a: open the Pull Requests page in a main pane.
     ShowPullRequests,
@@ -832,6 +836,7 @@ impl WorkspaceAction {
             | ExportAllTwarpDriveObjects
             | ShowSettings
             | ShowScheduledTasks
+            | ShowPlugins
             | ShowSkills
             | ShowMcps
             | ShowPullRequests

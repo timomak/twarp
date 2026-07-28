@@ -1,5 +1,5 @@
-//! twarp 20: the automation sidebar surfaces — Scheduled Tasks, Skills, and
-//! MCPs — each opening a dedicated full-page main-pane view.
+//! twarp 20/23: the automation sidebar surfaces — Scheduled Tasks and
+//! Plugins — each opening a dedicated full-page main-pane view.
 //!
 //! 20a ships the shell: sidebar entry points, pane plumbing, and placeholder
 //! page content. Later phases (20b+) fill in the real page content.
@@ -14,11 +14,10 @@ use twarpui::{AppContext, SingletonEntity, ViewHandle};
 use crate::appearance::Appearance;
 use crate::view_components::action_button::ActionButton;
 
-pub mod mcps_page;
 pub mod pane_manager;
+pub mod plugins_page;
 pub mod scheduled_tasks_page;
 pub mod scheduler;
-pub mod skills_page;
 pub mod view;
 
 /// Which automation page a pane displays. One [`view::AutomationView`] type is
@@ -26,8 +25,8 @@ pub mod view;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum AutomationPage {
     ScheduledTasks,
-    Skills,
-    Mcps,
+    /// twarp 23b: the Plugins page replaces the former Skills and MCPs pages.
+    Plugins,
     /// twarp 21a: the Pull Requests page reuses the automation pane shell
     /// (pane manager, persistence, sidebar-open plumbing) wholesale.
     PullRequests,
@@ -38,8 +37,7 @@ impl AutomationPage {
     pub fn title(self) -> &'static str {
         match self {
             AutomationPage::ScheduledTasks => "Scheduled Tasks",
-            AutomationPage::Skills => "Skills",
-            AutomationPage::Mcps => "MCPs",
+            AutomationPage::Plugins => "Plugins",
             AutomationPage::PullRequests => "Pull Requests",
         }
     }
@@ -50,19 +48,19 @@ impl AutomationPage {
     pub fn as_persistence_str(self) -> &'static str {
         match self {
             AutomationPage::ScheduledTasks => "scheduled_tasks",
-            AutomationPage::Skills => "skills",
-            AutomationPage::Mcps => "mcps",
+            AutomationPage::Plugins => "plugins",
             AutomationPage::PullRequests => "pull_requests",
         }
     }
 
     /// Inverse of [`AutomationPage::as_persistence_str`]. Unknown values
-    /// (from a newer build's snapshot) fall back to `None`.
+    /// (from a newer build's snapshot) fall back to `None`. The legacy
+    /// `"skills"` / `"mcps"` values (pre-23 snapshots) map to the Plugins
+    /// page that replaced both, so restored panes don't dead-end.
     pub fn from_persistence_str(s: &str) -> Option<Self> {
         match s {
             "scheduled_tasks" => Some(AutomationPage::ScheduledTasks),
-            "skills" => Some(AutomationPage::Skills),
-            "mcps" => Some(AutomationPage::Mcps),
+            "plugins" | "skills" | "mcps" => Some(AutomationPage::Plugins),
             "pull_requests" => Some(AutomationPage::PullRequests),
             _ => None,
         }
@@ -72,14 +70,13 @@ impl AutomationPage {
     pub fn placeholder_body(self) -> &'static str {
         match self {
             AutomationPage::ScheduledTasks => "No scheduled tasks yet.",
-            AutomationPage::Skills => "No skills yet.",
-            AutomationPage::Mcps => "No MCP servers configured yet.",
+            AutomationPage::Plugins => "No plugins configured yet.",
             AutomationPage::PullRequests => "No pull requests.",
         }
     }
 }
 
-/// twarp 20e: the shared empty state used by all three automation pages —
+/// twarp 20e: the shared empty state used by the automation pages —
 /// icon, one-line hint, and a primary action, centered in the content column
 /// (per the philosophy's empty-state anatomy: "one clear next action, never a
 /// bare void"). `button` must be a dedicated handle (not the header's Add
@@ -116,4 +113,38 @@ pub(crate) fn render_empty_state(
     .with_margin_top(spacing::XXL)
     .with_margin_bottom(spacing::XXL)
     .finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persistence_str_roundtrips() {
+        for page in [
+            AutomationPage::ScheduledTasks,
+            AutomationPage::Plugins,
+            AutomationPage::PullRequests,
+        ] {
+            assert_eq!(
+                AutomationPage::from_persistence_str(page.as_persistence_str()),
+                Some(page)
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_skills_and_mcps_pages_restore_as_plugins() {
+        // twarp 23b: `automation_panes.page` values written by pre-23 builds
+        // must keep restoring (both surfaces merged into Plugins).
+        assert_eq!(
+            AutomationPage::from_persistence_str("skills"),
+            Some(AutomationPage::Plugins)
+        );
+        assert_eq!(
+            AutomationPage::from_persistence_str("mcps"),
+            Some(AutomationPage::Plugins)
+        );
+        assert_eq!(AutomationPage::from_persistence_str("bogus"), None);
+    }
 }
