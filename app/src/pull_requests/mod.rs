@@ -5,7 +5,10 @@
 //! 21b adds the native in-page detail view (Conversation/Checks tabs + merge
 //! box); 21c adds the Files tab (per-file diff cards with inline review
 //! threads); 21d adds the review write path (PR comments, thread replies and
-//! resolution, drafted inline comments batched into one submitted review).
+//! resolution, drafted inline comments batched into one submitted review);
+//! 21e adds the header's "Review with Claude" (seeded review pane in a new
+//! tab) and "Checkout" (detached PR worktree) actions plus the
+//! "Needs your review" list group.
 
 pub mod detail_page;
 pub mod diff;

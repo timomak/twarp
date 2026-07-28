@@ -1,5 +1,6 @@
 //! twarp 21a: the Pull Requests list page — a centered full-page column with a
-//! repo picker, state filter, and grouped PR rows ("Yours" / "Others") with
+//! repo picker, state filter, and grouped PR rows ("Needs your review" /
+//! "Yours" / "Others") with
 //! CI, review-decision, draft, and conflict badges. Layout mirrors the
 //! automation pages ([`crate::automation::scheduled_tasks_page`]).
 
@@ -103,6 +104,14 @@ pub enum PullRequestsPageAction {
     ConfirmSubmitReview,
     /// Review bar: disarm the pending submit.
     CancelSubmitReview,
+    /// Detail header: open a Claude pane in a new tab seeded with a review
+    /// prompt for this PR (21e).
+    ReviewWithClaude,
+    /// Detail header: fetch the PR head and materialize it as a detached git
+    /// worktree under `~/.twarp/pr-worktrees/`, then open a tab there (21e).
+    CheckoutPr,
+    /// Detail header: copy the PR's branch name to the clipboard (21e).
+    CopyBranchName,
 }
 
 /// Per-row hover states, keyed by PR number.
@@ -331,9 +340,13 @@ impl PullRequestsPageState {
                     .borrow_mut()
                     .retain(|number, _| current.contains(number));
             }
-            let (yours, others) = group_prs(&data.prs, store.viewer());
+            let (needs_review, yours, others) = group_prs(&data.prs, store.viewer());
             let now = chrono::Utc::now();
-            for (label, group) in [("Yours", yours), ("Others", others)] {
+            for (label, group) in [
+                ("Needs your review", needs_review),
+                ("Yours", yours),
+                ("Others", others),
+            ] {
                 if group.is_empty() {
                     continue;
                 }

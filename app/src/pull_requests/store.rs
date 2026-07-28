@@ -16,7 +16,7 @@ use crate::pull_requests::diff::{parse_pr_diff, parse_review_threads, PrFileDiff
 const PR_LIST_LIMIT: u32 = 50;
 
 /// The `--json` fields requested from `gh pr list`.
-const PR_LIST_JSON_FIELDS: &str = "number,title,author,isDraft,state,reviewDecision,mergeable,updatedAt,url,headRefName,statusCheckRollup";
+const PR_LIST_JSON_FIELDS: &str = "number,title,author,isDraft,state,reviewDecision,mergeable,updatedAt,url,headRefName,statusCheckRollup,reviewRequests";
 
 /// The `--json` fields requested from `gh pr view` for the detail page (21b).
 const PR_DETAIL_JSON_FIELDS: &str = "number,title,body,author,state,isDraft,mergeable,mergeStateStatus,reviewDecision,baseRefName,headRefName,additions,deletions,changedFiles,url,createdAt,statusCheckRollup";
@@ -188,6 +188,9 @@ pub struct PrEntry {
     pub url: String,
     pub head_ref: String,
     pub ci: Option<PrCiState>,
+    /// Logins (users) / slugs (teams) the PR requests a review from (21e:
+    /// drives the "Needs your review" list group).
+    pub requested_reviewers: Vec<String>,
 }
 
 /// Cached fetch state for one repo.
@@ -354,6 +357,25 @@ pub struct PrDetailData {
     pub mutation_error: Option<String>,
     /// The Files tab's diff + review threads (fetched on first tab open).
     pub files: PrFilesData,
+    /// 21e: the one-shot PR-worktree checkout's state.
+    pub checkout: PrCheckoutState,
+}
+
+/// 21e: state of the detail header's "Checkout" flow: fetch `pull/<n>/head`
+/// and materialize it as a detached git worktree, never touching the user's
+/// checked-out branches.
+#[derive(Clone, Debug, Default)]
+pub struct PrCheckoutState {
+    /// True while the fetch + worktree-add subprocesses run.
+    pub running: bool,
+    /// The last checkout's error output, if it failed.
+    pub error: Option<String>,
+    /// The created (or reused) worktree path, shown inline once ready.
+    pub path: Option<PathBuf>,
+    /// Set when a checkout just succeeded; consumed once by the detail page
+    /// (via [`PullRequestsStoreModel::take_checkout_pending_open`]) to open a
+    /// tab at the worktree.
+    pending_open: Option<PathBuf>,
 }
 
 /// A successful detail fetch's payload.
@@ -388,6 +410,12 @@ enum DetailMessage {
         repo: PathBuf,
         number: u64,
         outcome: Result<(), String>,
+    },
+    /// 21e: a finished PR-worktree checkout (the worktree path on success).
+    Checkout {
+        repo: PathBuf,
+        number: u64,
+        outcome: Result<PathBuf, String>,
     },
 }
 
@@ -792,6 +820,48 @@ impl PullRequestsStoreModel {
         )
     }
 
+    /// 21e: fetch the PR head and materialize it as a detached git worktree
+    /// under `~/.twarp/pr-worktrees/` on the background executor. Reuses an
+    /// existing worktree directory as-is.
+    pub fn checkout_pr(&mut self, number: u64, ctx: &mut ModelContext<Self>) {
+        let Some(repo) = self.selected.clone() else {
+            return;
+        };
+        let Some((key, data)) = self.detail.as_mut() else {
+            return;
+        };
+        if *key != (repo.clone(), number) || data.checkout.running {
+            return;
+        }
+        data.checkout.running = true;
+        data.checkout.error = None;
+        ctx.notify();
+
+        let tx = self.detail_tx.clone();
+        ctx.background_executor()
+            .spawn(async move {
+                let outcome = checkout_pr_worktree(&repo, number);
+                let _ = tx
+                    .send(DetailMessage::Checkout {
+                        repo,
+                        number,
+                        outcome,
+                    })
+                    .await;
+            })
+            .detach();
+    }
+
+    /// 21e: consume the just-checked-out worktree path (once). The detail
+    /// page calls this from its store-observer to open a tab at the worktree
+    /// exactly one time per successful checkout.
+    pub fn take_checkout_pending_open(&mut self, number: u64) -> Option<PathBuf> {
+        let ((_, n), data) = self.detail.as_mut()?;
+        (*n == number)
+            .then(|| data.checkout.pending_open.take())
+            .flatten()
+    }
+
     /// Spawn one mutating gh call for the open detail PR on the background
     /// executor. `run` receives the repo path and its resolved origin slug
     /// (fork discipline: every mutating gh call pins `--repo <origin slug>`).
@@ -917,6 +987,28 @@ impl PullRequestsStoreModel {
                 }
                 ctx.notify();
             }
+            DetailMessage::Checkout {
+                repo,
+                number,
+                outcome,
+            } => {
+                let Some((key, data)) = self.detail.as_mut() else {
+                    return;
+                };
+                if *key != (repo, number) {
+                    return;
+                }
+                data.checkout.running = false;
+                match outcome {
+                    Ok(path) => {
+                        data.checkout.error = None;
+                        data.checkout.path = Some(path.clone());
+                        data.checkout.pending_open = Some(path);
+                    }
+                    Err(error) => data.checkout.error = Some(error),
+                }
+                ctx.notify();
+            }
         }
     }
 }
@@ -1012,8 +1104,42 @@ fn run_graphql_mutation(
     run_in_repo(repo, "gh", &arg_refs).map(|_| ())
 }
 
+/// 21e: fetch `pull/<number>/head` from origin and materialize it as a git
+/// worktree at `~/.twarp/pr-worktrees/<repo>-<number>`, checked out DETACHED
+/// so the user's local branches (in the main checkout or elsewhere) are never
+/// disturbed. An existing worktree directory is reused as-is (no re-fetch —
+/// remove it with `git worktree remove` to get a fresh one). Blocking —
+/// background executor only.
+fn checkout_pr_worktree(repo: &Path, number: u64) -> Result<PathBuf, String> {
+    let repo_name = repo
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "repo".to_owned());
+    let base = dirs::home_dir()
+        .ok_or_else(|| "Could not resolve your home directory.".to_owned())?
+        .join(".twarp")
+        .join("pr-worktrees");
+    let path = base.join(format!("{repo_name}-{number}"));
+    if path.exists() {
+        return Ok(path);
+    }
+    std::fs::create_dir_all(&base)
+        .map_err(|err| format!("Could not create {}: {err}", base.display()))?;
+    let refspec = format!("pull/{number}/head");
+    run_in_repo(repo, "git", &["fetch", "origin", &refspec])
+        .map_err(|err| format!("Fetching {refspec} failed: {err}"))?;
+    let path_arg = path.to_string_lossy().into_owned();
+    run_in_repo(
+        repo,
+        "git",
+        &["worktree", "add", "--detach", &path_arg, "FETCH_HEAD"],
+    )
+    .map_err(|err| format!("Creating the worktree failed: {err}"))?;
+    Ok(path)
+}
+
 /// Resolve the repo's ORIGIN remote (never upstream) to `owner/repo`.
-fn github_slug(repo: &Path) -> Result<String, String> {
+pub(crate) fn github_slug(repo: &Path) -> Result<String, String> {
     let url = run_in_repo(repo, "git", &["remote", "get-url", "origin"])
         .map_err(|err| format!("Could not read the origin remote: {err}"))?;
     let (owner, name) = parse_github_origin(&url)
@@ -1373,6 +1499,21 @@ fn parse_pr_entry(value: &serde_json::Value) -> PrEntry {
         url: str_field("url"),
         head_ref: str_field("headRefName"),
         ci: aggregate_ci(checks),
+        requested_reviewers: value
+            .get("reviewRequests")
+            .and_then(|v| v.as_array())
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|node| {
+                // User nodes carry `login`; team nodes carry `slug`/`name`.
+                node.get("login")
+                    .or_else(|| node.get("slug"))
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned)
+            })
+            .collect(),
     }
 }
 
@@ -1398,11 +1539,23 @@ pub(crate) fn filter_entries(prs: Vec<PrEntry>, filter: PrStateFilter) -> Vec<Pr
 pub(crate) fn group_prs<'a>(
     prs: &'a [PrEntry],
     viewer: Option<&str>,
-) -> (Vec<&'a PrEntry>, Vec<&'a PrEntry>) {
-    match viewer {
-        Some(viewer) if !viewer.is_empty() => prs.iter().partition(|pr| pr.author == viewer),
-        _ => (Vec::new(), prs.iter().collect()),
+) -> (Vec<&'a PrEntry>, Vec<&'a PrEntry>, Vec<&'a PrEntry>) {
+    let Some(viewer) = viewer.filter(|v| !v.is_empty()) else {
+        return (Vec::new(), Vec::new(), prs.iter().collect());
+    };
+    let mut needs_review = Vec::new();
+    let mut yours = Vec::new();
+    let mut others = Vec::new();
+    for pr in prs {
+        if pr.author == viewer {
+            yours.push(pr);
+        } else if pr.requested_reviewers.iter().any(|r| r == viewer) {
+            needs_review.push(pr);
+        } else {
+            others.push(pr);
+        }
     }
+    (needs_review, yours, others)
 }
 
 /// Classify one `statusCheckRollup` item (local copy of
@@ -1501,6 +1654,7 @@ mod tests {
                 "updatedAt": "2026-07-20T12:00:00Z",
                 "url": "https://github.com/timomak/twarp/pull/13",
                 "headRefName": "draft/thing",
+                "reviewRequests": [{"login": "timomak"}, {"slug": "core-team"}],
                 "statusCheckRollup": [
                     {"status": "IN_PROGRESS"},
                     {"conclusion": "FAILURE"}
@@ -1523,6 +1677,7 @@ mod tests {
         assert!(!first.conflicting);
         assert_eq!(first.head_ref, "fix/widget");
         assert_eq!(first.ci, Some(PrCiState::Passing));
+        assert!(first.requested_reviewers.is_empty());
 
         let second = &prs[1];
         assert!(second.is_draft);
@@ -1533,6 +1688,8 @@ mod tests {
         );
         // A failure anywhere in the rollup wins over the in-progress check.
         assert_eq!(second.ci, Some(PrCiState::Failing));
+        // User nodes carry `login`, team nodes `slug` — both are kept.
+        assert_eq!(second.requested_reviewers, ["timomak", "core-team"]);
     }
 
     #[test]
@@ -1561,12 +1718,24 @@ mod tests {
     #[test]
     fn groups_by_viewer_login() {
         let prs = parse_pr_list(sample_json()).unwrap();
-        let (yours, others) = group_prs(&prs, Some("timomak"));
+        // #13 requests a review from the viewer → "Needs your review"; the
+        // viewer's own #12 → "Yours".
+        let (needs_review, yours, others) = group_prs(&prs, Some("timomak"));
+        assert_eq!(needs_review.len(), 1);
+        assert_eq!(needs_review[0].number, 13);
         assert_eq!(yours.len(), 1);
         assert_eq!(yours[0].number, 12);
-        assert_eq!(others.len(), 1);
+        assert!(others.is_empty());
 
-        let (yours, others) = group_prs(&prs, None);
+        // A different viewer: no requests, nothing theirs.
+        let (needs_review, yours, others) = group_prs(&prs, Some("carol"));
+        assert!(needs_review.is_empty());
+        assert!(yours.is_empty());
+        assert_eq!(others.len(), 2);
+
+        // No viewer login → everything lands in "Others".
+        let (needs_review, yours, others) = group_prs(&prs, None);
+        assert!(needs_review.is_empty());
         assert!(yours.is_empty());
         assert_eq!(others.len(), 2);
     }

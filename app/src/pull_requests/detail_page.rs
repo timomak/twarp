@@ -36,14 +36,19 @@ use crate::code::editor::comment_editor::{
 use crate::notebooks::editor::view::RichTextEditorView;
 use crate::pull_requests::files_tab::{FilesTabState, FILES_CONTENT_MAX_WIDTH};
 use crate::pull_requests::list_page::{render_badge, PullRequestsPageAction, CONTENT_MAX_WIDTH};
-use crate::pull_requests::review::{build_review_payload, PrReviewEvent};
+use crate::pull_requests::review::{
+    build_claude_review_prompt, build_review_payload, PrReviewEvent,
+};
 use crate::pull_requests::store::{
-    relative_updated_at, PrCheck, PrCiState, PrDetail, PrDetailData, PrMergeMethod, PrReviewState,
-    PrTimelineItem, PrTimelineKind, PullRequestsStoreModel,
+    github_slug, relative_updated_at, PrCheck, PrCiState, PrDetail, PrDetailData, PrMergeMethod,
+    PrReviewState, PrTimelineItem, PrTimelineKind, PullRequestsStoreModel,
 };
 use crate::view_components::action_button::{
     ActionButton, NakedTheme, PrimaryTheme, SecondaryTheme,
 };
+use crate::view_components::DismissibleToast;
+use crate::workspace::{ToastStack, WorkspaceAction};
+use twarpui::clipboard::ClipboardContent;
 
 /// The detail view's tabs.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
@@ -109,8 +114,16 @@ pub struct PrDetailState {
     cancel_button: ViewHandle<ActionButton>,
     ready_button: ViewHandle<ActionButton>,
     refresh_button: ViewHandle<ActionButton>,
+    /// 21e: header "Review with Claude" (new-tab review pane) button.
+    claude_button: ViewHandle<ActionButton>,
+    /// 21e: header "Checkout" (detached PR worktree) button.
+    checkout_button: ViewHandle<ActionButton>,
+    /// 21e: hover state for the copy-branch-name affordance.
+    copy_branch_state: MouseStateHandle,
     /// The armed merge strategy awaiting its second (confirm) click.
     pending_merge: Option<PrMergeMethod>,
+    /// 21e: mirrors the store's checkout-running flag onto the button.
+    checkout_disabled: bool,
     /// True while the store reports a mutation in flight (buttons disabled).
     buttons_disabled: bool,
     back_state: MouseStateHandle,
@@ -178,6 +191,16 @@ impl PrDetailState {
                 ctx.dispatch_typed_action(action(PullRequestsPageAction::RefreshDetail));
             })
         });
+        let claude_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Review with Claude", SecondaryTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(action(PullRequestsPageAction::ReviewWithClaude));
+            })
+        });
+        let checkout_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Checkout", SecondaryTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(action(PullRequestsPageAction::CheckoutPr));
+            })
+        });
         let comment_editor = create_editable_comment_markdown_editor(None, ctx);
         let comment_button = ctx.add_typed_action_view(|_| {
             ActionButton::new("Comment", PrimaryTheme).on_click(|ctx| {
@@ -217,7 +240,11 @@ impl PrDetailState {
             cancel_button,
             ready_button,
             refresh_button,
+            claude_button,
+            checkout_button,
+            copy_branch_state: Default::default(),
             pending_merge: None,
+            checkout_disabled: false,
             buttons_disabled: false,
             back_state: Default::default(),
             external_state: Default::default(),
@@ -250,7 +277,7 @@ impl PrDetailState {
     /// content changed and keep the action buttons' disabled state in step
     /// with in-flight mutations.
     pub fn sync(&mut self, ctx: &mut ViewContext<AutomationView>) {
-        let (fingerprint, body, bodies, mutating, mutation_error) = {
+        let (fingerprint, body, bodies, mutating, mutation_error, checkout_running) = {
             let store = PullRequestsStoreModel::as_ref(ctx);
             let Some(data) = store.detail_data(self.number) else {
                 return;
@@ -264,8 +291,26 @@ impl PrDetailState {
                     .collect::<Vec<_>>(),
                 data.mutating,
                 data.mutation_error.clone(),
+                data.checkout.running,
             )
         };
+
+        // 21e: a just-finished checkout opens a tab at the worktree once.
+        let number = self.number;
+        let pending_open = PullRequestsStoreModel::handle(ctx)
+            .update(ctx, |store, _| store.take_checkout_pending_open(number));
+        if let Some(path) = pending_open {
+            show_toast(
+                DismissibleToast::success(format!("PR worktree ready at {}", path.display())),
+                ctx,
+            );
+            ctx.dispatch_typed_action(&WorkspaceAction::OpenProjectLibraryEntry { path });
+        }
+        if self.checkout_disabled != checkout_running {
+            self.checkout_disabled = checkout_running;
+            self.checkout_button
+                .update(ctx, |b, ctx| b.set_disabled(checkout_running, ctx));
+        }
 
         // 21d: settle in-flight comment / review submissions. Only success
         // clears the composer / drafts — a failure keeps everything typed.
@@ -476,6 +521,55 @@ impl PrDetailState {
                 }
             }
             CancelSubmitReview => self.pending_review_submit = false,
+            // 21e: header actions.
+            ReviewWithClaude => {
+                let (repo, title) = {
+                    let store = PullRequestsStoreModel::as_ref(ctx);
+                    let Some(repo) = store.selected_repo().map(|p| p.to_path_buf()) else {
+                        return;
+                    };
+                    let title = store
+                        .detail_data(self.number)
+                        .and_then(|data| data.detail.as_ref())
+                        .map(|detail| detail.title.clone())
+                        .unwrap_or_default();
+                    (repo, title)
+                };
+                // Resolving the origin slug is one fast local
+                // `git remote get-url`; pinning it into the prompt keeps
+                // every gh call the session runs on the fork.
+                match github_slug(&repo) {
+                    Ok(slug) => {
+                        let prompt = build_claude_review_prompt(self.number, &title, &slug);
+                        ctx.dispatch_typed_action(&WorkspaceAction::ReviewPrWithClaude {
+                            prompt,
+                            cwd: repo,
+                        });
+                    }
+                    Err(error) => show_toast(
+                        DismissibleToast::error(format!("Couldn't start the review: {error}")),
+                        ctx,
+                    ),
+                }
+            }
+            CheckoutPr => {
+                let number = self.number;
+                PullRequestsStoreModel::handle(ctx)
+                    .update(ctx, |store, ctx| store.checkout_pr(number, ctx));
+            }
+            CopyBranchName => {
+                let branch = PullRequestsStoreModel::as_ref(ctx)
+                    .detail_data(self.number)
+                    .and_then(|data| data.detail.as_ref())
+                    .map(|detail| detail.head_ref.clone());
+                if let Some(branch) = branch.filter(|b| !b.is_empty()) {
+                    ctx.clipboard().write(ClipboardContent::plain_text(branch));
+                    show_toast(
+                        DismissibleToast::success("Branch name copied".to_owned()),
+                        ctx,
+                    );
+                }
+            }
             _ => {}
         }
     }
@@ -642,6 +736,8 @@ impl PrDetailState {
             let (label, color) = state_badge(detail, theme);
             header.add_child(render_badge(label, color, appearance));
         }
+        header.add_child(ChildView::new(&self.claude_button).finish());
+        header.add_child(ChildView::new(&self.checkout_button).finish());
         header.add_child(ChildView::new(&self.review_button).finish());
         header.add_child(ChildView::new(&self.refresh_button).finish());
 
@@ -683,17 +779,71 @@ impl PrDetailState {
             if !created.is_empty() {
                 meta.push_str(&format!(" · opened {created}"));
             }
-            column.add_child(
-                Container::new(
+            let mut meta_row = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(spacing::XS)
+                .with_child(
                     Text::new(meta, appearance.ui_font_family(), type_ramp::CAPTION.size)
                         .with_line_height_ratio(type_ramp::CAPTION.line_height)
                         .with_color(sub.into())
                         .finish(),
-                )
-                .with_margin_top(spacing::XS)
-                .with_margin_bottom(spacing::SM)
-                .finish(),
+                );
+            // 21e: copy-branch-name affordance next to the branch in the
+            // meta line.
+            if !detail.head_ref.is_empty() {
+                let copy = Hoverable::new(self.copy_branch_state.clone(), move |state| {
+                    let color = if state.is_hovered() { main } else { sub };
+                    ConstrainedBox::new(Icon::Copy.to_warpui_icon(color).finish())
+                        .with_width(type_ramp::CAPTION.size)
+                        .with_height(type_ramp::CAPTION.size)
+                        .finish()
+                })
+                .on_click(|ctx, _, _| {
+                    ctx.dispatch_typed_action(action(PullRequestsPageAction::CopyBranchName))
+                })
+                .with_cursor(Cursor::PointingHand)
+                .finish();
+                meta_row.add_child(copy);
+            }
+            column.add_child(
+                Container::new(meta_row.finish())
+                    .with_margin_top(spacing::XS)
+                    .with_margin_bottom(spacing::SM)
+                    .finish(),
             );
+        }
+
+        // 21e: inline checkout status under the meta line.
+        if let Some(data) = data {
+            let checkout = &data.checkout;
+            let note: Option<(String, ColorU)> = if checkout.running {
+                Some(("Creating the PR worktree…".to_owned(), sub.into()))
+            } else if let Some(error) = &checkout.error {
+                Some((
+                    format!("Checkout failed: {error}"),
+                    theme.ui_error_color().into(),
+                ))
+            } else {
+                checkout.path.as_ref().map(|path| {
+                    (
+                        format!("Worktree (detached): {}", path.display()),
+                        sub.into(),
+                    )
+                })
+            };
+            if let Some((text, color)) = note {
+                column.add_child(
+                    Container::new(
+                        Text::new(text, appearance.ui_font_family(), type_ramp::CAPTION.size)
+                            .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                            .with_color(color.into())
+                            .finish(),
+                    )
+                    .with_margin_bottom(spacing::SM)
+                    .finish(),
+                );
+            }
         }
         column.finish()
     }
@@ -1398,6 +1548,14 @@ pub(crate) fn merge_summary(detail: &PrDetail) -> (String, bool) {
         "DIRTY" => ("This branch has merge conflicts.".to_owned(), false),
         _ => ("Mergeability is still being computed.".to_owned(), false),
     }
+}
+
+/// 21e: pop one ephemeral toast on this window's stack.
+fn show_toast(toast: DismissibleToast<WorkspaceAction>, ctx: &mut ViewContext<AutomationView>) {
+    let window_id = ctx.window_id();
+    ToastStack::handle(ctx).update(ctx, |stack, ctx| {
+        stack.add_ephemeral_toast(toast, window_id, ctx);
+    });
 }
 
 /// Fingerprint of the markdown content backing the editors.

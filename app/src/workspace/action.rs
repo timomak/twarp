@@ -230,6 +230,12 @@ pub enum WorkspaceAction {
     ShowMcps,
     /// twarp 21a: open the Pull Requests page in a main pane.
     ShowPullRequests,
+    /// twarp 21e: open a Claude Code pane in a new tab seeded with a
+    /// PR-review prompt, cwd'd at the PR's local checkout.
+    ReviewPrWithClaude {
+        prompt: String,
+        cwd: PathBuf,
+    },
     /// twarp 21a: open a URL in a built-in Browser pane (PR-row click).
     OpenUrlInBrowserPane(String),
     ShowSettingsPage(SettingsSection),
@@ -835,6 +841,7 @@ impl WorkspaceAction {
             | ShowSkills
             | ShowMcps
             | ShowPullRequests
+            | ReviewPrWithClaude { .. }
             | ShowSettingsPage(_)
             | ShowSettingsPageWithSearch { .. }
             | ShowThemeChooser(_)

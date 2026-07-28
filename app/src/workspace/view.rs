@@ -13113,6 +13113,31 @@ impl Workspace {
         self.open_claude_code_pane(provider, Vec::new(), cwd, ctx);
     }
 
+    /// twarp 21e: open a Claude Code pane in a NEW tab seeded with a
+    /// PR-review prompt — the Pull Requests detail header's "Review with
+    /// Claude". Mirrors [`Self::open_scheduled_task_pane`]'s tab + replace
+    /// recipe, but stays on the new tab: the session is a normal interactive
+    /// pane the user reads and steers.
+    pub(crate) fn open_pr_review_claude_tab(
+        &mut self,
+        prompt: String,
+        cwd: PathBuf,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.add_terminal_tab(true /* hide_homepage */, ctx);
+        let launch = claude_code::launch::LaunchOptions {
+            prompt: Some(prompt),
+            ..Default::default()
+        };
+        let pane = ClaudeCodePane::new(launch, Some(cwd), ctx);
+        let pane_group = self.active_tab_pane_group().clone();
+        pane_group.update(ctx, |pane_group, ctx| {
+            let target = pane_group.focused_pane_id(ctx);
+            pane_group.replace_pane(target, pane, false /* is_temporary */, ctx);
+        });
+        self.refresh_working_directories_for_pane_group(&pane_group, ctx);
+    }
+
     /// twarp 20d: drain the scheduler's queued fire requests and open one
     /// Claude Code pane per request. Runs on the main thread as the handler of
     /// [`crate::automation::scheduler::SchedulerEvent::FireRequested`].
@@ -20378,6 +20403,9 @@ impl TypedActionView for Workspace {
             ShowSkills => self.open_automation_pane(AutomationPage::Skills, ctx),
             ShowMcps => self.open_automation_pane(AutomationPage::Mcps, ctx),
             ShowPullRequests => self.open_pull_requests_pane(ctx),
+            ReviewPrWithClaude { prompt, cwd } => {
+                self.open_pr_review_claude_tab(prompt.clone(), cwd.clone(), ctx)
+            }
             OpenUrlInBrowserPane(url) => self.open_browser_pane(Some(url.clone()), ctx),
             ShowSettingsPage(section) => self.show_settings_with_section(Some(*section), ctx),
             ShowSettingsPageWithSearch {

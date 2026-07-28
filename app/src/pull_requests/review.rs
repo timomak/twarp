@@ -199,6 +199,33 @@ pub fn build_review_payload(event: PrReviewEvent, body: &str, drafts: &[PrDraftC
     payload.to_string()
 }
 
+/// 21e: the seed prompt for a "Review with Claude" pane. The session is a
+/// normal interactive Claude pane cwd'd at the local checkout; the prompt
+/// pins every `gh` call to the origin slug (fork discipline) and asks for a
+/// structured verdict so the review is skimmable. Importing the findings back
+/// into the draft-review system is future work (needs structured output).
+pub fn build_claude_review_prompt(number: u64, title: &str, slug: &str) -> String {
+    format!(
+        "Review pull request #{number} (\"{title}\") on {slug}.\n\
+         \n\
+         1. Run `gh pr view {number} --repo {slug}` to read the description and metadata.\n\
+         2. Run `gh pr diff {number} --repo {slug}` to read the full diff.\n\
+         3. Review the changes for correctness, edge cases, missing tests, and clarity. \
+         Read the surrounding files in this checkout wherever the diff alone is ambiguous.\n\
+         \n\
+         This is a READ-ONLY review: do not push, comment on, approve, or modify the pull \
+         request or this repository.\n\
+         \n\
+         End your final reply with exactly this structure:\n\
+         \n\
+         VERDICT: APPROVE | REQUEST_CHANGES | COMMENT\n\
+         SUMMARY: <one short paragraph>\n\
+         FINDINGS:\n\
+         - <file>:<line> — <issue>\n\
+         (or `- none`)"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
