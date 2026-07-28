@@ -14,10 +14,10 @@ use super::schema::{
     current_user_information, env_var_collection_panes, folders, generic_string_objects,
     ignored_suggestions, mcp_environment_variables, mcp_server_installations, mcp_server_panes,
     mcp_servers, notebook_panes, notebooks, object_actions, object_metadata, object_permissions,
-    pane_branches, pane_leaves, pane_nodes, panels, project_rules, projects, server_experiments,
-    settings_panes, shared_skills, tabs, team_members, team_settings, teams, terminal_panes,
-    user_profiles, welcome_panes, windows, workflow_panes, workflows, workspace_language_server,
-    workspace_metadata, workspace_teams, workspaces,
+    pane_branches, pane_leaves, pane_nodes, panels, project_rules, projects, scheduled_task_runs,
+    scheduled_tasks, server_experiments, settings_panes, shared_skills, tabs, team_members,
+    team_settings, teams, terminal_panes, user_profiles, welcome_panes, windows, workflow_panes,
+    workflows, workspace_language_server, workspace_metadata, workspace_teams, workspaces,
 };
 
 #[derive(Insertable)]
@@ -786,6 +786,45 @@ pub struct SharedSkill {
     pub name: String,
     pub enabled_claude: bool,
     pub enabled_codex: bool,
+}
+
+/// twarp 20d: one locally scheduled agent task (Automation > Scheduled
+/// Tasks). `id` is a UUID string; `schedule` a 5-field cron expression;
+/// times are unix seconds.
+#[derive(Insertable, Queryable, Selectable)]
+#[diesel(table_name = scheduled_tasks)]
+pub struct ScheduledTask {
+    pub id: String,
+    pub name: String,
+    pub prompt: String,
+    pub cwd: String,
+    pub schedule: String,
+    /// "claude" | "codex"
+    pub provider: String,
+    pub fallback_provider: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub permission_mode: Option<String>,
+    pub enabled: bool,
+    pub catch_up: bool,
+    pub next_run_at: Option<i64>,
+    pub created_at: i64,
+}
+
+/// twarp 20d: one run-history row for a scheduled task (pruned to the newest
+/// ~20 rows per task on insert).
+#[derive(Insertable, Queryable, Selectable)]
+#[diesel(table_name = scheduled_task_runs)]
+pub struct ScheduledTaskRun {
+    pub id: String,
+    pub task_id: String,
+    pub started_at: i64,
+    pub finished_at: Option<i64>,
+    pub provider_used: String,
+    /// "running" | "success" | "error" | "both_failed"
+    pub outcome: String,
+    pub session_id: Option<String>,
+    pub summary: Option<String>,
 }
 
 #[derive(Insertable)]

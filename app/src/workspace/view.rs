@@ -2558,6 +2558,19 @@ impl Workspace {
             Self::handle_network_status_event,
         );
 
+        // twarp 20d: scheduled tasks fire by queueing requests on the
+        // scheduler singleton and emitting FireRequested. Every workspace
+        // subscribes; the queue drain makes the hand-off single-consumer, so
+        // exactly one window opens each run's pane.
+        ctx.subscribe_to_model(
+            &crate::automation::scheduler::SchedulerModel::handle(ctx),
+            |me, _, event, ctx| match event {
+                crate::automation::scheduler::SchedulerEvent::FireRequested => {
+                    me.handle_scheduler_fires(ctx);
+                }
+            },
+        );
+
         let palette =
             ctx.add_typed_action_view(|ctx| CommandPalette::new(NavigationMode::Normal, ctx));
         ctx.subscribe_to_view(&palette, |me, _, event, ctx| {
@@ -12970,6 +12983,91 @@ impl Workspace {
             self.apply_inherited_project_to_active_tab(inherited_project);
         }
         self.open_claude_code_pane(provider, Vec::new(), cwd, ctx);
+    }
+
+    /// twarp 20d: drain the scheduler's queued fire requests and open one
+    /// Claude Code pane per request. Runs on the main thread as the handler of
+    /// [`crate::automation::scheduler::SchedulerEvent::FireRequested`].
+    pub(crate) fn handle_scheduler_fires(&mut self, ctx: &mut ViewContext<Self>) {
+        use crate::automation::scheduler::SchedulerModel;
+        let fires = SchedulerModel::handle(ctx).update(ctx, |model, _| model.take_pending_fires());
+        for fire in fires {
+            self.open_scheduled_task_pane(fire, ctx);
+        }
+    }
+
+    /// twarp 20d: open one scheduled run as a REAL Claude Code pane in a new
+    /// tab — pre-seeded with the task prompt so the session starts
+    /// immediately — then re-activate the previously active tab so the run
+    /// happens in the background while staying fully inspectable. Completion
+    /// is reported back to the scheduler via the pane's `SessionEnded` event.
+    fn open_scheduled_task_pane(
+        &mut self,
+        fire: crate::automation::scheduler::FireRequest,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        use crate::automation::scheduler::SchedulerModel;
+        let scheduler = SchedulerModel::handle(ctx);
+
+        let cwd = PathBuf::from(&fire.cwd);
+        if !cwd.is_dir() {
+            let reason = format!("Working directory {} does not exist.", fire.cwd);
+            scheduler.update(ctx, |model, mctx| {
+                model.on_fire_failed(&fire.run_id, reason, mctx);
+            });
+            return;
+        }
+
+        // New-tab-then-replace, mirroring `open_claude_code_tab`. Tab
+        // creation activates the new tab; the previously active index is
+        // still valid (tabs insert at the end or after the active one), so we
+        // restore it below.
+        let previous_tab = self.active_tab_index;
+        self.add_terminal_tab(true /* hide_homepage */, ctx);
+
+        let launch = claude_code::launch::LaunchOptions {
+            provider: fire.provider,
+            prompt: Some(fire.prompt.clone()),
+            permission_mode: Some(fire.permission_mode),
+            model: fire.model.clone(),
+            effort: fire.effort.clone(),
+            resume_session_id: None,
+        };
+        let pane = ClaudeCodePane::new(launch, Some(cwd), ctx);
+        let claude_view = pane.claude_code_view(ctx);
+        let pane_group = self.active_tab_pane_group().clone();
+        pane_group.update(ctx, |pane_group, ctx| {
+            let target = pane_group.focused_pane_id(ctx);
+            pane_group.replace_pane(target, pane, false /* is_temporary */, ctx);
+        });
+        self.refresh_working_directories_for_pane_group(&pane_group, ctx);
+
+        // Bind the run to its session and watch for the turn's end. The
+        // subscription lives as long as the pane; ended events for later
+        // manual turns in the same pane are ignored by the scheduler (the
+        // active-run entry is consumed on the first end).
+        let session_id = claude_view.as_ref(ctx).session_id().to_owned();
+        scheduler.update(ctx, |model, mctx| {
+            model.on_fire_spawned(&fire.run_id, session_id, mctx);
+        });
+        ctx.subscribe_to_view(&claude_view, move |_me: &mut Self, _, event, ctx| {
+            if let crate::claude_code_view::ClaudeCodeViewEvent::SessionEnded {
+                session_id,
+                success,
+                summary,
+            } = event
+            {
+                SchedulerModel::handle(ctx).update(ctx, |model, mctx| {
+                    model.on_session_ended(session_id, *success, summary.clone(), mctx);
+                });
+            }
+        });
+
+        // Give the user their tab back: the scheduled run should not steal
+        // focus from whatever they were doing.
+        if previous_tab != self.active_tab_index && previous_tab < self.tab_count() {
+            self.activate_tab_internal(previous_tab, ctx);
+        }
     }
 
     pub(crate) fn open_claude_code_pane(

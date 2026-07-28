@@ -227,6 +227,45 @@ pub struct PersistedData {
     /// twarp 20c: per-provider enable toggles for the shared-skills store
     /// (`~/.twarp/skills`); content on disk is the source of truth.
     pub shared_skills: Vec<PersistedSharedSkill>,
+    /// twarp 20d: locally scheduled agent tasks (Automation > Scheduled
+    /// Tasks) and their pruned run history.
+    pub scheduled_tasks: Vec<PersistedScheduledTask>,
+    pub scheduled_task_runs: Vec<PersistedScheduledTaskRun>,
+}
+
+/// twarp 20d: one row of the `scheduled_tasks` table. `schedule` is a 5-field
+/// cron expression; times are unix seconds.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PersistedScheduledTask {
+    pub id: String,
+    pub name: String,
+    pub prompt: String,
+    pub cwd: String,
+    pub schedule: String,
+    /// "claude" | "codex"
+    pub provider: String,
+    pub fallback_provider: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub permission_mode: Option<String>,
+    pub enabled: bool,
+    pub catch_up: bool,
+    pub next_run_at: Option<i64>,
+    pub created_at: i64,
+}
+
+/// twarp 20d: one row of the `scheduled_task_runs` history table.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PersistedScheduledTaskRun {
+    pub id: String,
+    pub task_id: String,
+    pub started_at: i64,
+    pub finished_at: Option<i64>,
+    pub provider_used: String,
+    /// "running" | "success" | "error" | "both_failed"
+    pub outcome: String,
+    pub session_id: Option<String>,
+    pub summary: Option<String>,
 }
 
 /// twarp 20c: one row of the shared-skills toggle table (`shared_skills`).
@@ -404,6 +443,20 @@ pub enum ModelEvent {
     /// rows (small table; delete+insert keeps the write path trivial).
     ReplaceSharedSkills {
         skills: Vec<PersistedSharedSkill>,
+    },
+    /// twarp 20d: replace the whole scheduled-tasks table with the given rows
+    /// (small table; delete+insert keeps the write path trivial).
+    ReplaceScheduledTasks {
+        tasks: Vec<PersistedScheduledTask>,
+    },
+    /// twarp 20d: insert or (matched by id) update one run-history row, then
+    /// prune that task's history to the newest ~20 rows.
+    UpsertScheduledTaskRun {
+        run: PersistedScheduledTaskRun,
+    },
+    /// twarp 20d: drop the run history of a deleted task.
+    DeleteScheduledTaskRuns {
+        task_id: String,
     },
     UpsertCodebaseIndexMetadata {
         index_metadata: Box<CodeWorkspaceMetadata>,

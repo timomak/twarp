@@ -263,6 +263,38 @@ diesel::table! {
 }
 
 diesel::table! {
+    scheduled_tasks (id) {
+        id -> Text,
+        name -> Text,
+        prompt -> Text,
+        cwd -> Text,
+        schedule -> Text,
+        provider -> Text,
+        fallback_provider -> Nullable<Text>,
+        model -> Nullable<Text>,
+        effort -> Nullable<Text>,
+        permission_mode -> Nullable<Text>,
+        enabled -> Bool,
+        catch_up -> Bool,
+        next_run_at -> Nullable<BigInt>,
+        created_at -> BigInt,
+    }
+}
+
+diesel::table! {
+    scheduled_task_runs (id) {
+        id -> Text,
+        task_id -> Text,
+        started_at -> BigInt,
+        finished_at -> Nullable<BigInt>,
+        provider_used -> Text,
+        outcome -> Text,
+        session_id -> Nullable<Text>,
+        summary -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
     shared_skills (name) {
         name -> Text,
         enabled_claude -> Bool,
@@ -588,6 +620,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     pane_leaves,
     pane_nodes,
     panels,
+    scheduled_task_runs,
+    scheduled_tasks,
     shared_skills,
     tabs,
     windows,
