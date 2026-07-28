@@ -47,7 +47,7 @@ impl AutomationPane {
         self.view.as_ref(ctx).child(ctx)
     }
 
-    fn page(&self, ctx: &AppContext) -> AutomationPage {
+    pub fn page(&self, ctx: &AppContext) -> AutomationPage {
         self.automation_view(ctx).as_ref(ctx).page()
     }
 }

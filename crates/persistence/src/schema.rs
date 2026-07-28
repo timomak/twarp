@@ -427,6 +427,7 @@ diesel::table! {
         path -> Text,
         added_ts -> Timestamp,
         last_opened_ts -> Nullable<Timestamp>,
+        name -> Nullable<Text>,
     }
 }
 

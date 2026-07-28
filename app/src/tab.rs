@@ -293,13 +293,23 @@ impl TabData {
         project_tab_indices: Vec<usize>,
         ctx: &AppContext,
     ) -> Vec<MenuItem<WorkspaceAction>> {
-        self.menu_items_with_color_target(
+        let mut menu_items = vec![];
+        if let Some(project_root) = self.project_root.clone() {
+            menu_items.push(
+                MenuItemFields::new("Rename project")
+                    .with_on_select_action(WorkspaceAction::RenameProject { project_root })
+                    .into_item(),
+            );
+            menu_items.push(MenuItem::Separator);
+        }
+        menu_items.extend(self.menu_items_with_color_target(
             index,
             tabs_len,
             None,
             Some(TabColorMenuTarget::Project(project_tab_indices)),
             ctx,
-        )
+        ));
+        menu_items
     }
 
     fn menu_items_with_color_target(

@@ -1158,6 +1158,21 @@ impl PaneGroup {
         self.panes_of::<SettingsPane>().next().is_some()
     }
 
+    /// Returns true if this pane group contains an automation page pane
+    /// (Scheduled Tasks / Skills / MCPs / Pull Requests). Like Settings tabs,
+    /// these are intentionally omitted from the Projects hierarchy.
+    pub fn has_automation_panes(&self) -> bool {
+        self.panes_of::<AutomationPane>().next().is_some()
+    }
+
+    /// The automation pages displayed by panes in this group, if any. Used by
+    /// the Projects sidebar to highlight the active page's row.
+    pub fn automation_pages(&self, ctx: &AppContext) -> Vec<crate::automation::AutomationPage> {
+        self.panes_of::<AutomationPane>()
+            .map(|pane| pane.page(ctx))
+            .collect()
+    }
+
     pub fn active_file_model(&self) -> &ModelHandle<ActiveFileModel> {
         &self.active_file_model
     }
