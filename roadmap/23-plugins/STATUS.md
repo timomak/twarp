@@ -1,7 +1,7 @@
 # 23 — Plugins: unify Skills + MCPs
 
 **Phase:** spec-in-review
-**Spec PR:** —
+**Spec PR:** [#281](https://github.com/timomak/twarp/pull/281)
 **Impl PRs:** —
 
 ## Scope
