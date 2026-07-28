@@ -8206,7 +8206,7 @@ impl ClaudeCodeView {
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(2.)
-            .with_child(menu_header("MCP servers", muted, appearance));
+            .with_child(menu_header("Plugins", muted, appearance));
 
         let servers = self.transcript.mcp_servers();
         if servers.is_empty() {
@@ -8214,7 +8214,7 @@ impl ClaudeCodeView {
             // points at the CLI as the place to add servers.
             column.add_child(context_segment(
                 appearance,
-                "No MCP servers connected.".to_owned(),
+                "No plugins connected.".to_owned(),
                 muted,
             ));
             column.add_child(context_segment(
