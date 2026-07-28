@@ -73,6 +73,36 @@ pub enum PullRequestsPageAction {
     ToggleFileThread(u64),
     /// Files tab: expand/collapse a file's outdated/other-threads section.
     ToggleFileThreads(u64),
+    /// Conversation tab: submit the PR-level comment composer (21d).
+    SubmitComment,
+    /// Files tab: open/close the inline reply editor on a thread (by thread
+    /// index, 21d).
+    ToggleThreadReply(u64),
+    /// Files tab: submit the open reply editor on a thread.
+    SubmitThreadReply(u64),
+    /// Files tab: resolve (true) / unresolve one review thread by index.
+    SetThreadResolved(u64, bool),
+    /// Files tab: open a draft-comment editor at (file, hunk, line) indices.
+    StartDraftComment(u64, u64, u64),
+    /// Files tab: close the open draft editor without saving.
+    CancelDraftComment,
+    /// Files tab: commit the open draft editor into the local drafts list.
+    SaveDraftComment,
+    /// Discard one pending draft by draft index.
+    DiscardDraft(u64),
+    /// Discard all pending drafts (two-click: first click arms).
+    DiscardAllDrafts,
+    /// Detail header: show/hide the review bar.
+    ToggleReviewBar,
+    /// Review bar: choose the verdict (`PrReviewEvent::as_str` payload).
+    SetReviewEvent(String),
+    /// Review bar: submit — arms a confirm for Approve / Request changes,
+    /// submits directly for Comment.
+    RequestSubmitReview,
+    /// Review bar: run the armed submit (second click).
+    ConfirmSubmitReview,
+    /// Review bar: disarm the pending submit.
+    CancelSubmitReview,
 }
 
 /// Per-row hover states, keyed by PR number.
@@ -185,8 +215,8 @@ impl PullRequestsPageState {
             OpenCheck(url) => {
                 ctx.dispatch_typed_action(&WorkspaceAction::OpenUrlInBrowserPane(url.clone()));
             }
-            SetDetailTab(_) | RequestMerge(_) | ConfirmMerge | CancelMerge | MarkReady
-            | RefreshDetail | ToggleFileCard(_) | ToggleFileThread(_) | ToggleFileThreads(_) => {
+            // Everything else is detail-scoped (tabs, merge box, 21d writes).
+            _ => {
                 if let Some(mut detail) = self.detail.take() {
                     detail.handle_action(action, ctx);
                     self.detail = Some(detail);

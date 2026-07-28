@@ -1,6 +1,7 @@
-//! twarp 21c: the PR detail view's Files tab — per-file collapsible diff
-//! cards with GitHub review threads rendered inline at their anchored lines.
-//! Read-only; drafting/replying to threads is 21d.
+//! twarp 21c/21d: the PR detail view's Files tab — per-file collapsible diff
+//! cards with GitHub review threads rendered inline at their anchored lines,
+//! plus the 21d write path: thread replies, resolve/unresolve, and locally
+//! drafted inline comments (amber pending cards) batched into one review.
 //!
 //! Diff line colors reuse the code_review/Open Changes palette
 //! ([`crate::code::editor::add_overlay_color`] etc). Long lines clip instead
@@ -27,14 +28,18 @@ use twarpui::{
 
 use crate::appearance::Appearance;
 use crate::automation::view::{AutomationView, AutomationViewAction};
-use crate::code::editor::comment_editor::create_readonly_comment_markdown_editor;
+use crate::code::editor::comment_editor::{
+    create_editable_comment_markdown_editor, create_readonly_comment_markdown_editor,
+};
 use crate::code::editor::{add_color, add_overlay_color, remove_color, remove_overlay_color};
 use crate::notebooks::editor::view::RichTextEditorView;
 use crate::pull_requests::diff::{
     anchor_threads, default_expanded, total_line_count, FileThreadAnchors, PrDiffLine,
-    PrDiffLineKind, PrFileDiff, PrFileStatus, PrReviewThread, BIG_PR_TOTAL_LINE_THRESHOLD,
+    PrDiffLineKind, PrDiffSide, PrFileDiff, PrFileStatus, PrReviewThread,
+    BIG_PR_TOTAL_LINE_THRESHOLD,
 };
 use crate::pull_requests::list_page::PullRequestsPageAction;
+use crate::pull_requests::review::{PrDraftComment, ReviewDrafts};
 use crate::pull_requests::store::{relative_updated_at, PrFilesData, PullRequestsStoreModel};
 
 /// The Files tab renders wider than the conversation column.
@@ -48,6 +53,12 @@ const LINE_NUMBER_WIDTH: f32 = 44.;
 
 /// Width of the `+`/`−` marker column.
 const MARKER_WIDTH: f32 = 16.;
+
+/// Width of the leading draft-comment ("+" on hover) gutter column (21d).
+const DRAFT_COL_WIDTH: f32 = 18.;
+
+/// Left indent of inline thread / draft cards, past the gutters.
+const THREAD_INDENT: f32 = DRAFT_COL_WIDTH + LINE_NUMBER_WIDTH * 2. + MARKER_WIDTH;
 
 fn action(action: PullRequestsPageAction) -> AutomationViewAction {
     AutomationViewAction::PullRequests(action)
@@ -75,6 +86,17 @@ pub struct FilesTabState {
     comment_editors: Vec<Vec<ViewHandle<RichTextEditorView>>>,
     file_states: RefCell<HashMap<usize, MouseStateHandle>>,
     misc_states: RefCell<HashMap<String, MouseStateHandle>>,
+    /// The accumulating local review drafts (21d).
+    drafts: ReviewDrafts,
+    /// The one open inline draft editor, anchored at (file, hunk, line).
+    draft_editor: Option<((usize, usize, usize), ViewHandle<RichTextEditorView>)>,
+    /// Open reply editors, keyed by thread index.
+    reply_editors: HashMap<usize, ViewHandle<RichTextEditorView>>,
+    /// An in-flight thread mutation: (thread index, true for a reply / false
+    /// for resolve-unresolve). The reply editor closes on success.
+    thread_op: Option<(usize, bool)>,
+    /// The last reply/resolve failure, shown under the affected thread.
+    thread_error: Option<(usize, String)>,
 }
 
 impl FilesTabState {
@@ -86,6 +108,23 @@ impl FilesTabState {
             let Some(data) = store.detail_data(number) else {
                 return;
             };
+            // Settle an in-flight thread mutation (21d): close the reply
+            // editor on success, surface the error under the thread on
+            // failure. The store refetches the files data on success.
+            if let Some((thread_idx, is_reply)) = self.thread_op {
+                if !data.mutating {
+                    self.thread_op = None;
+                    match &data.mutation_error {
+                        None => {
+                            if is_reply {
+                                self.reply_editors.remove(&thread_idx);
+                            }
+                            self.thread_error = None;
+                        }
+                        Some(error) => self.thread_error = Some((thread_idx, error.clone())),
+                    }
+                }
+            }
             if !data.files.fetched {
                 return;
             }
@@ -102,6 +141,10 @@ impl FilesTabState {
         self.expanded_overrides.clear();
         self.thread_expanded.clear();
         self.floating_expanded.clear();
+        // Thread indices shift on refetch: drop index-keyed editor state. The
+        // accumulated review drafts survive (they anchor by path/line/side).
+        self.reply_editors.clear();
+        self.draft_editor = None;
         self.default_expanded = default_expanded(&files);
         self.anchors = anchor_threads(&files, &threads);
         let max_width = Some(Pixels::new(THREAD_EDITOR_MAX_WIDTH));
@@ -136,6 +179,144 @@ impl FilesTabState {
             .copied()
             .unwrap_or(false);
         self.floating_expanded.insert(file_index, !current);
+    }
+
+    pub fn drafts(&self) -> &ReviewDrafts {
+        &self.drafts
+    }
+
+    pub fn drafts_mut(&mut self) -> &mut ReviewDrafts {
+        &mut self.drafts
+    }
+
+    /// Clear the drafts after a successful review submit.
+    pub fn clear_drafts(&mut self) {
+        self.drafts.clear();
+        self.draft_editor = None;
+    }
+
+    /// Open/close the inline reply editor on one thread (21d).
+    pub fn toggle_reply(&mut self, thread_idx: usize, ctx: &mut ViewContext<AutomationView>) {
+        if self.reply_editors.remove(&thread_idx).is_none() {
+            self.reply_editors.insert(
+                thread_idx,
+                create_editable_comment_markdown_editor(None, ctx),
+            );
+        }
+    }
+
+    /// Submit the open reply editor on one thread via the store (21d).
+    pub fn submit_reply(
+        &mut self,
+        number: u64,
+        thread_idx: usize,
+        ctx: &mut ViewContext<AutomationView>,
+    ) {
+        let Some(editor) = self.reply_editors.get(&thread_idx) else {
+            return;
+        };
+        let body = editor.as_ref(ctx).model().as_ref(ctx).markdown(ctx);
+        if body.trim().is_empty() {
+            return;
+        }
+        let Some(thread_id) = self.thread_id(number, thread_idx, ctx) else {
+            return;
+        };
+        let started = PullRequestsStoreModel::handle(ctx).update(ctx, |store, ctx| {
+            store.reply_thread(number, thread_id, body, ctx)
+        });
+        if started {
+            self.thread_op = Some((thread_idx, true));
+            self.thread_error = None;
+        }
+    }
+
+    /// Resolve / unresolve one thread via the store (21d).
+    pub fn set_thread_resolved(
+        &mut self,
+        number: u64,
+        thread_idx: usize,
+        resolved: bool,
+        ctx: &mut ViewContext<AutomationView>,
+    ) {
+        let Some(thread_id) = self.thread_id(number, thread_idx, ctx) else {
+            return;
+        };
+        let started = PullRequestsStoreModel::handle(ctx).update(ctx, |store, ctx| {
+            store.set_thread_resolved(number, thread_id, resolved, ctx)
+        });
+        if started {
+            self.thread_op = Some((thread_idx, false));
+            self.thread_error = None;
+        }
+    }
+
+    fn thread_id(
+        &self,
+        number: u64,
+        thread_idx: usize,
+        ctx: &ViewContext<AutomationView>,
+    ) -> Option<String> {
+        let store = PullRequestsStoreModel::as_ref(ctx);
+        let id = &store.detail_data(number)?.files.threads.get(thread_idx)?.id;
+        (!id.is_empty()).then(|| id.clone())
+    }
+
+    /// Open the inline draft editor at one diff position (21d). Reuses the
+    /// open editor's position slot — only one draft is edited at a time.
+    pub fn start_draft(
+        &mut self,
+        position: (usize, usize, usize),
+        ctx: &mut ViewContext<AutomationView>,
+    ) {
+        match &mut self.draft_editor {
+            Some((existing, _)) => *existing = position,
+            None => {
+                self.draft_editor =
+                    Some((position, create_editable_comment_markdown_editor(None, ctx)));
+            }
+        }
+    }
+
+    pub fn cancel_draft(&mut self) {
+        self.draft_editor = None;
+    }
+
+    /// Commit the open draft editor into the local drafts list, mapping the
+    /// diff position to GitHub's (path, line, side) coordinates: RIGHT/new
+    /// numbering for add+context lines, LEFT/old numbering for deletions.
+    pub fn save_draft(&mut self, number: u64, ctx: &mut ViewContext<AutomationView>) {
+        let Some((position, editor)) = &self.draft_editor else {
+            return;
+        };
+        let position = *position;
+        let body = editor.as_ref(ctx).model().as_ref(ctx).markdown(ctx);
+        if body.trim().is_empty() {
+            return;
+        }
+        let coords = {
+            let store = PullRequestsStoreModel::as_ref(ctx);
+            store.detail_data(number).and_then(|data| {
+                let file = data.files.files.get(position.0)?;
+                let line = file.hunks.get(position.1)?.lines.get(position.2)?;
+                let (side, number) = match line.kind {
+                    PrDiffLineKind::Delete => (PrDiffSide::Left, line.old_line?),
+                    _ => (PrDiffSide::Right, line.new_line?),
+                };
+                Some((file.path.clone(), number, side))
+            })
+        };
+        let Some((path, line, side)) = coords else {
+            return;
+        };
+        self.drafts.add(PrDraftComment {
+            path,
+            line,
+            side,
+            position,
+            body,
+        });
+        self.draft_editor = None;
     }
 
     fn is_file_expanded(&self, index: usize) -> bool {
@@ -237,14 +418,25 @@ impl FilesTabState {
             for (hunk_idx, hunk) in file.hunks.iter().enumerate() {
                 card.add_child(hunk_header_row(&hunk.header, app));
                 for (line_idx, line) in hunk.lines.iter().enumerate() {
-                    card.add_child(diff_line_row(line, app));
-                    let Some(anchored) = anchors.and_then(|a| a.inline.get(&(hunk_idx, line_idx)))
-                    else {
-                        continue;
-                    };
-                    for &thread_idx in anchored {
-                        if let Some(thread) = threads.get(thread_idx) {
-                            card.add_child(self.render_thread(thread_idx, thread, true, app));
+                    let position = (index, hunk_idx, line_idx);
+                    card.add_child(self.diff_line_row(position, line, app));
+                    for draft_idx in self.drafts.at_position(position) {
+                        if let Some(draft) = self.drafts.drafts().get(draft_idx) {
+                            card.add_child(self.render_pending_draft(draft_idx, draft, app));
+                        }
+                    }
+                    if let Some((open, editor)) = &self.draft_editor {
+                        if *open == position {
+                            card.add_child(self.render_draft_editor(editor, app));
+                        }
+                    }
+                    if let Some(anchored) =
+                        anchors.and_then(|a| a.inline.get(&(hunk_idx, line_idx)))
+                    {
+                        for &thread_idx in anchored {
+                            if let Some(thread) = threads.get(thread_idx) {
+                                card.add_child(self.render_thread(thread_idx, thread, true, app));
+                            }
                         }
                     }
                 }
@@ -386,11 +578,7 @@ impl FilesTabState {
         let sub = theme.sub_text_color(theme.background());
         let main = theme.main_text_color(theme.background());
         let family = appearance.ui_font_family();
-        let indent = if indented {
-            LINE_NUMBER_WIDTH * 2. + MARKER_WIDTH
-        } else {
-            spacing::SM
-        };
+        let indent = if indented { THREAD_INDENT } else { spacing::SM };
 
         let expanded = !thread.is_resolved
             || self
@@ -488,6 +676,65 @@ impl FilesTabState {
             {
                 body.add_child(ChildView::new(editor).finish());
             }
+        }
+
+        // 21d: reply / resolve write affordances.
+        if let Some((error_idx, error)) = &self.thread_error {
+            if *error_idx == thread_idx {
+                body.add_child(
+                    Text::new(error.clone(), family, type_ramp::CAPTION.size)
+                        .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                        .with_color(theme.ui_error_color())
+                        .finish(),
+                );
+            }
+        }
+        if let Some(editor) = self.reply_editors.get(&thread_idx) {
+            body.add_child(ChildView::new(editor).finish());
+            body.add_child(
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_main_axis_size(MainAxisSize::Min)
+                    .with_spacing(spacing::SM)
+                    .with_child(self.text_affordance(
+                        &format!("reply-send-{thread_idx}"),
+                        "Send reply",
+                        PullRequestsPageAction::SubmitThreadReply(thread_idx as u64),
+                        app,
+                    ))
+                    .with_child(self.text_affordance(
+                        &format!("reply-cancel-{thread_idx}"),
+                        "Cancel",
+                        PullRequestsPageAction::ToggleThreadReply(thread_idx as u64),
+                        app,
+                    ))
+                    .finish(),
+            );
+        } else {
+            let mut footer = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(spacing::SM)
+                .with_child(self.text_affordance(
+                    &format!("reply-{thread_idx}"),
+                    "Reply",
+                    PullRequestsPageAction::ToggleThreadReply(thread_idx as u64),
+                    app,
+                ));
+            if !thread.id.is_empty() {
+                let (label, resolve): (&'static str, bool) = if thread.is_resolved {
+                    ("Unresolve", false)
+                } else {
+                    ("Resolve", true)
+                };
+                footer.add_child(self.text_affordance(
+                    &format!("resolve-{thread_idx}"),
+                    label,
+                    PullRequestsPageAction::SetThreadResolved(thread_idx as u64, resolve),
+                    app,
+                ));
+            }
+            body.add_child(footer.finish());
         }
 
         Container::new(
@@ -592,68 +839,289 @@ fn hunk_header_row(header: &str, app: &AppContext) -> Box<dyn Element> {
     .finish()
 }
 
-/// One diff line: dual line-number gutter, marker, monospace content, and an
-/// add/delete background overlay matching the Open Changes palette.
-fn diff_line_row(line: &PrDiffLine, app: &AppContext) -> Box<dyn Element> {
-    let appearance = Appearance::as_ref(app);
-    let theme = appearance.theme();
-    let sub = theme.sub_text_color(theme.background());
-    let main = theme.main_text_color(theme.background());
-    let mono = appearance.monospace_font_family();
-    let size = appearance.monospace_font_size();
+impl FilesTabState {
+    /// One diff line: draft-"+" gutter (hover affordance, 21d), dual
+    /// line-number gutter, marker, monospace content, and an add/delete
+    /// background overlay matching the Open Changes palette.
+    fn diff_line_row(
+        &self,
+        position: (usize, usize, usize),
+        line: &PrDiffLine,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let sub = theme.sub_text_color(theme.background());
+        let main = theme.main_text_color(theme.background());
+        let mono = appearance.monospace_font_family();
+        let size = appearance.monospace_font_size();
+        let (file_idx, hunk_idx, line_idx) = position;
 
-    let (marker, background): (&str, Option<ColorU>) = match line.kind {
-        PrDiffLineKind::Add => ("+", Some(add_overlay_color(appearance))),
-        PrDiffLineKind::Delete => ("−", Some(remove_overlay_color(appearance))),
-        PrDiffLineKind::Context => ("", None),
-    };
-    let number = |n: Option<u64>| {
-        ConstrainedBox::new(
-            Text::new(
-                n.map(|n| n.to_string()).unwrap_or_default(),
-                mono.clone(),
-                type_ramp::CAPTION.size,
-            )
-            .with_line_height_ratio(type_ramp::CAPTION.line_height)
-            .with_color(sub.into())
-            .soft_wrap(false)
-            .finish(),
-        )
-        .with_width(LINE_NUMBER_WIDTH)
-        .finish()
-    };
+        let (marker, background): (&str, Option<ColorU>) = match line.kind {
+            PrDiffLineKind::Add => ("+", Some(add_overlay_color(appearance))),
+            PrDiffLineKind::Delete => ("−", Some(remove_overlay_color(appearance))),
+            PrDiffLineKind::Context => ("", None),
+        };
+        // Lines carrying a side-appropriate number can take a draft comment.
+        let can_draft = match line.kind {
+            PrDiffLineKind::Delete => line.old_line.is_some(),
+            _ => line.new_line.is_some(),
+        };
+        let row_state = self
+            .misc_states
+            .borrow_mut()
+            .entry(format!("line-{file_idx}-{hunk_idx}-{line_idx}"))
+            .or_default()
+            .clone();
+        let plus_state = self
+            .misc_states
+            .borrow_mut()
+            .entry(format!("line-plus-{file_idx}-{hunk_idx}-{line_idx}"))
+            .or_default()
+            .clone();
+        let text = line.text.clone();
+        let (old_line, new_line) = (line.old_line, line.new_line);
+        let accent = theme.accent().into_solid();
 
-    let row = Flex::row()
-        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-        .with_child(number(line.old_line))
-        .with_child(number(line.new_line))
-        .with_child(
-            ConstrainedBox::new(
-                Text::new_inline(marker, mono.clone(), size)
-                    .with_color(main.into())
-                    .finish(),
-            )
-            .with_width(MARKER_WIDTH)
-            .finish(),
-        )
-        .with_child(
-            Shrinkable::new(
-                1.,
-                Text::new(line.text.clone(), mono, size)
-                    .with_color(main.into())
+        Hoverable::new(row_state, move |row_hover| {
+            let number = |n: Option<u64>| {
+                ConstrainedBox::new(
+                    Text::new(
+                        n.map(|n| n.to_string()).unwrap_or_default(),
+                        mono.clone(),
+                        type_ramp::CAPTION.size,
+                    )
+                    .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                    .with_color(sub.into())
                     .soft_wrap(false)
-                    .with_clip(ClipConfig::end())
+                    .finish(),
+                )
+                .with_width(LINE_NUMBER_WIDTH)
+                .finish()
+            };
+            let plus: Box<dyn Element> = if can_draft && row_hover.is_hovered() {
+                Hoverable::new(plus_state.clone(), move |hover| {
+                    let color: ColorU = if hover.is_hovered() {
+                        accent
+                    } else {
+                        main.into()
+                    };
+                    ConstrainedBox::new(
+                        Text::new_inline("+", mono.clone(), size)
+                            .with_color(color)
+                            .finish(),
+                    )
+                    .with_width(DRAFT_COL_WIDTH)
+                    .finish()
+                })
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(action(PullRequestsPageAction::StartDraftComment(
+                        file_idx as u64,
+                        hunk_idx as u64,
+                        line_idx as u64,
+                    )))
+                })
+                .with_cursor(Cursor::PointingHand)
+                .finish()
+            } else {
+                ConstrainedBox::new(Flex::row().with_main_axis_size(MainAxisSize::Min).finish())
+                    .with_width(DRAFT_COL_WIDTH)
+                    .finish()
+            };
+            let row = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(plus)
+                .with_child(number(old_line))
+                .with_child(number(new_line))
+                .with_child(
+                    ConstrainedBox::new(
+                        Text::new_inline(marker, mono.clone(), size)
+                            .with_color(main.into())
+                            .finish(),
+                    )
+                    .with_width(MARKER_WIDTH)
+                    .finish(),
+                )
+                .with_child(
+                    Shrinkable::new(
+                        1.,
+                        Text::new(text.clone(), mono.clone(), size)
+                            .with_color(main.into())
+                            .soft_wrap(false)
+                            .with_clip(ClipConfig::end())
+                            .finish(),
+                    )
+                    .finish(),
+                )
+                .finish();
+            let mut container = Container::new(row).with_horizontal_padding(spacing::XS);
+            if let Some(background) = background {
+                container = container.with_background(background);
+            }
+            container.finish()
+        })
+        .finish()
+    }
+
+    /// One amber "pending" card for a locally drafted comment (21d), with a
+    /// per-draft discard affordance.
+    fn render_pending_draft(
+        &self,
+        draft_idx: usize,
+        draft: &PrDraftComment,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let amber = theme.ui_warning_color();
+        let main = theme.main_text_color(theme.background());
+        let sub = theme.sub_text_color(theme.background());
+        let family = appearance.ui_font_family();
+        let discard_state = self
+            .misc_states
+            .borrow_mut()
+            .entry(format!("draft-x-{draft_idx}"))
+            .or_default()
+            .clone();
+
+        let header = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(spacing::XS)
+            .with_child(
+                Text::new_inline("Pending", family.clone(), type_ramp::CAPTION.size)
+                    .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                    .with_color(amber)
                     .finish(),
             )
-            .finish(),
+            .with_child(
+                Text::new_inline(
+                    "part of your unsubmitted review",
+                    family.clone(),
+                    type_ramp::CAPTION.size,
+                )
+                .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                .with_color(sub.into())
+                .finish(),
+            )
+            .with_child(Shrinkable::new(1., Flex::row().finish()).finish())
+            .with_child(
+                Hoverable::new(discard_state, move |hover| {
+                    let color = if hover.is_hovered() { main } else { sub };
+                    Text::new_inline("Discard", family.clone(), type_ramp::CAPTION.size)
+                        .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                        .with_color(color.into())
+                        .finish()
+                })
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(action(PullRequestsPageAction::DiscardDraft(
+                        draft_idx as u64,
+                    )))
+                })
+                .with_cursor(Cursor::PointingHand)
+                .finish(),
+            )
+            .finish();
+
+        let body = Text::new(
+            draft.body.clone(),
+            appearance.ui_font_family(),
+            type_ramp::UI.size,
         )
+        .with_line_height_ratio(type_ramp::UI.line_height)
+        .with_color(main.into())
         .finish();
 
-    let mut container = Container::new(row).with_horizontal_padding(spacing::XS);
-    if let Some(background) = background {
-        container = container.with_background(background);
+        Container::new(
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_spacing(spacing::XS)
+                .with_child(header)
+                .with_child(body)
+                .finish(),
+        )
+        .with_uniform_padding(spacing::SM)
+        .with_margin_left(THREAD_INDENT)
+        .with_margin_right(spacing::SM)
+        .with_margin_top(spacing::XXS)
+        .with_margin_bottom(spacing::XXS)
+        .with_border(Border::all(1.).with_border_fill(amber))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+        .finish()
     }
-    container.finish()
+
+    /// The inline draft editor card (21d): editable markdown editor plus
+    /// "Add review comment" / "Cancel" affordances.
+    fn render_draft_editor(
+        &self,
+        editor: &ViewHandle<RichTextEditorView>,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let theme = Appearance::as_ref(app).theme();
+        let buttons = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(spacing::SM)
+            .with_child(self.text_affordance(
+                "draft-save",
+                "Add review comment",
+                PullRequestsPageAction::SaveDraftComment,
+                app,
+            ))
+            .with_child(self.text_affordance(
+                "draft-cancel",
+                "Cancel",
+                PullRequestsPageAction::CancelDraftComment,
+                app,
+            ))
+            .finish();
+        Container::new(
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                .with_spacing(spacing::XS)
+                .with_child(ChildView::new(editor).finish())
+                .with_child(buttons)
+                .finish(),
+        )
+        .with_uniform_padding(spacing::SM)
+        .with_margin_left(THREAD_INDENT)
+        .with_margin_right(spacing::SM)
+        .with_margin_top(spacing::XXS)
+        .with_margin_bottom(spacing::XXS)
+        .with_border(Border::all(1.).with_border_fill(theme.ui_warning_color()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+        .finish()
+    }
+
+    /// A small hover-highlighted clickable text label dispatching one action.
+    fn text_affordance(
+        &self,
+        key: &str,
+        label: &'static str,
+        page_action: PullRequestsPageAction,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let main = theme.main_text_color(theme.background());
+        let sub = theme.sub_text_color(theme.background());
+        let family = appearance.ui_font_family();
+        let state = self
+            .misc_states
+            .borrow_mut()
+            .entry(key.to_owned())
+            .or_default()
+            .clone();
+        Hoverable::new(state, move |hover| {
+            let color = if hover.is_hovered() { main } else { sub };
+            Text::new_inline(label, family.clone(), type_ramp::CAPTION.size)
+                .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                .with_color(color.into())
+                .finish()
+        })
+        .on_click(move |ctx, _, _| ctx.dispatch_typed_action(action(page_action.clone())))
+        .with_cursor(Cursor::PointingHand)
+        .finish()
+    }
 }
 
 /// A padded single-line note inside a card or the tab body.

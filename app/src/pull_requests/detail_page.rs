@@ -30,10 +30,13 @@ use twarpui::{
 
 use crate::appearance::Appearance;
 use crate::automation::view::{AutomationView, AutomationViewAction};
-use crate::code::editor::comment_editor::create_readonly_comment_markdown_editor;
+use crate::code::editor::comment_editor::{
+    create_editable_comment_markdown_editor, create_readonly_comment_markdown_editor,
+};
 use crate::notebooks::editor::view::RichTextEditorView;
 use crate::pull_requests::files_tab::{FilesTabState, FILES_CONTENT_MAX_WIDTH};
 use crate::pull_requests::list_page::{render_badge, PullRequestsPageAction, CONTENT_MAX_WIDTH};
+use crate::pull_requests::review::{build_review_payload, PrReviewEvent};
 use crate::pull_requests::store::{
     relative_updated_at, PrCheck, PrCiState, PrDetail, PrDetailData, PrMergeMethod, PrReviewState,
     PrTimelineItem, PrTimelineKind, PullRequestsStoreModel,
@@ -116,8 +119,28 @@ pub struct PrDetailState {
     check_states: RefCell<HashMap<usize, MouseStateHandle>>,
     /// Hover states for the "N comments on files" timeline links (21c).
     timeline_states: RefCell<HashMap<usize, MouseStateHandle>>,
+    /// Hover states for the 21d review-bar pills.
+    misc_states: RefCell<HashMap<String, MouseStateHandle>>,
     /// The Files tab's UI state (21c).
     files_tab: FilesTabState,
+    /// 21d: the Conversation tab's PR-comment composer.
+    comment_editor: ViewHandle<RichTextEditorView>,
+    comment_button: ViewHandle<ActionButton>,
+    /// True while a submitted comment's mutation is in flight (the composer
+    /// clears only on success, so a failure keeps the text).
+    comment_submitting: bool,
+    comment_error: Option<String>,
+    /// 21d: the review bar (drafted inline comments + verdict + summary).
+    review_bar_open: bool,
+    review_summary_editor: ViewHandle<RichTextEditorView>,
+    review_button: ViewHandle<ActionButton>,
+    submit_review_button: ViewHandle<ActionButton>,
+    confirm_review_button: ViewHandle<ActionButton>,
+    cancel_review_button: ViewHandle<ActionButton>,
+    /// True after the first Submit click when the verdict needs a confirm.
+    pending_review_submit: bool,
+    review_submitting: bool,
+    review_error: Option<String>,
 }
 
 impl PrDetailState {
@@ -155,6 +178,33 @@ impl PrDetailState {
                 ctx.dispatch_typed_action(action(PullRequestsPageAction::RefreshDetail));
             })
         });
+        let comment_editor = create_editable_comment_markdown_editor(None, ctx);
+        let comment_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Comment", PrimaryTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(action(PullRequestsPageAction::SubmitComment));
+            })
+        });
+        let review_summary_editor = create_editable_comment_markdown_editor(None, ctx);
+        let review_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Review", SecondaryTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(action(PullRequestsPageAction::ToggleReviewBar));
+            })
+        });
+        let submit_review_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Submit review", PrimaryTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(action(PullRequestsPageAction::RequestSubmitReview));
+            })
+        });
+        let confirm_review_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Confirm", PrimaryTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(action(PullRequestsPageAction::ConfirmSubmitReview));
+            })
+        });
+        let cancel_review_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Cancel", NakedTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(action(PullRequestsPageAction::CancelSubmitReview));
+            })
+        });
         Self {
             number,
             tab: PrDetailTab::default(),
@@ -174,7 +224,21 @@ impl PrDetailState {
             tab_states: Default::default(),
             check_states: Default::default(),
             timeline_states: Default::default(),
+            misc_states: Default::default(),
             files_tab: Default::default(),
+            comment_editor,
+            comment_button,
+            comment_submitting: false,
+            comment_error: None,
+            review_bar_open: false,
+            review_summary_editor,
+            review_button,
+            submit_review_button,
+            confirm_review_button,
+            cancel_review_button,
+            pending_review_submit: false,
+            review_submitting: false,
+            review_error: None,
         }
     }
 
@@ -186,7 +250,7 @@ impl PrDetailState {
     /// content changed and keep the action buttons' disabled state in step
     /// with in-flight mutations.
     pub fn sync(&mut self, ctx: &mut ViewContext<AutomationView>) {
-        let (fingerprint, body, bodies, mutating) = {
+        let (fingerprint, body, bodies, mutating, mutation_error) = {
             let store = PullRequestsStoreModel::as_ref(ctx);
             let Some(data) = store.detail_data(self.number) else {
                 return;
@@ -199,8 +263,46 @@ impl PrDetailState {
                     .map(|item| item.body.clone())
                     .collect::<Vec<_>>(),
                 data.mutating,
+                data.mutation_error.clone(),
             )
         };
+
+        // 21d: settle in-flight comment / review submissions. Only success
+        // clears the composer / drafts — a failure keeps everything typed.
+        if !mutating {
+            if self.comment_submitting {
+                self.comment_submitting = false;
+                match &mutation_error {
+                    None => {
+                        self.comment_error = None;
+                        self.comment_editor
+                            .update(ctx, |editor, ctx| editor.reset_with_markdown("", ctx));
+                    }
+                    Some(error) => self.comment_error = Some(error.clone()),
+                }
+            }
+            if self.review_submitting {
+                self.review_submitting = false;
+                match &mutation_error {
+                    None => {
+                        self.review_error = None;
+                        self.review_bar_open = false;
+                        self.files_tab.clear_drafts();
+                        self.review_summary_editor
+                            .update(ctx, |editor, ctx| editor.reset_with_markdown("", ctx));
+                    }
+                    Some(error) => self.review_error = Some(error.clone()),
+                }
+            }
+        }
+
+        // Keep the header Review button's label in step with the draft count.
+        let review_label = match self.files_tab.drafts().len() {
+            0 => "Review".to_owned(),
+            n => format!("Review ({n})"),
+        };
+        self.review_button
+            .update(ctx, |b, ctx| b.set_label(review_label, ctx));
 
         if self.content_rev != Some(fingerprint) {
             self.content_rev = Some(fingerprint);
@@ -229,6 +331,9 @@ impl PrDetailState {
                 &self.confirm_button,
                 &self.ready_button,
                 &self.refresh_button,
+                &self.comment_button,
+                &self.submit_review_button,
+                &self.confirm_review_button,
             ] {
                 button.update(ctx, |b, ctx| b.set_disabled(mutating, ctx));
             }
@@ -296,7 +401,109 @@ impl PrDetailState {
                     }
                 });
             }
+            // 21d: the review write path.
+            SubmitComment => {
+                let body = self
+                    .comment_editor
+                    .as_ref(ctx)
+                    .model()
+                    .as_ref(ctx)
+                    .markdown(ctx);
+                if body.trim().is_empty() {
+                    return;
+                }
+                let number = self.number;
+                let started = PullRequestsStoreModel::handle(ctx)
+                    .update(ctx, |store, ctx| store.comment_pr(number, body, ctx));
+                if started {
+                    self.comment_submitting = true;
+                    self.comment_error = None;
+                }
+            }
+            ToggleThreadReply(idx) => self.files_tab.toggle_reply(*idx as usize, ctx),
+            SubmitThreadReply(idx) => {
+                let number = self.number;
+                self.files_tab.submit_reply(number, *idx as usize, ctx);
+            }
+            SetThreadResolved(idx, resolved) => {
+                let number = self.number;
+                self.files_tab
+                    .set_thread_resolved(number, *idx as usize, *resolved, ctx);
+            }
+            StartDraftComment(file, hunk, line) => {
+                self.files_tab
+                    .start_draft((*file as usize, *hunk as usize, *line as usize), ctx);
+            }
+            CancelDraftComment => self.files_tab.cancel_draft(),
+            SaveDraftComment => {
+                let number = self.number;
+                self.files_tab.save_draft(number, ctx);
+            }
+            DiscardDraft(idx) => {
+                self.files_tab.drafts_mut().discard(*idx as usize);
+                self.pending_review_submit = false;
+            }
+            DiscardAllDrafts => {
+                self.files_tab.drafts_mut().discard_all();
+                self.pending_review_submit = false;
+            }
+            ToggleReviewBar => {
+                self.review_bar_open = !self.review_bar_open;
+                self.pending_review_submit = false;
+                self.files_tab.drafts_mut().disarm_discard_all();
+            }
+            SetReviewEvent(value) => {
+                if let Some(event) = PrReviewEvent::from_str(value) {
+                    self.files_tab.drafts_mut().set_event(event);
+                    self.pending_review_submit = false;
+                }
+            }
+            RequestSubmitReview => {
+                let event = self.files_tab.drafts().event();
+                if event.needs_confirm() {
+                    self.pending_review_submit = true;
+                    let label = format!("Confirm: {}", event.label().to_lowercase());
+                    self.confirm_review_button
+                        .update(ctx, |b, ctx| b.set_label(label, ctx));
+                } else {
+                    self.submit_review(ctx);
+                }
+            }
+            ConfirmSubmitReview => {
+                if self.pending_review_submit {
+                    self.pending_review_submit = false;
+                    self.submit_review(ctx);
+                }
+            }
+            CancelSubmitReview => self.pending_review_submit = false,
             _ => {}
+        }
+    }
+
+    /// Build the review payload from the drafts + summary and hand it to the
+    /// store as one atomic REST submit (21d).
+    fn submit_review(&mut self, ctx: &mut ViewContext<AutomationView>) {
+        let body = self
+            .review_summary_editor
+            .as_ref(ctx)
+            .model()
+            .as_ref(ctx)
+            .markdown(ctx);
+        let event = self.files_tab.drafts().event();
+        if event == PrReviewEvent::Comment
+            && self.files_tab.drafts().is_empty()
+            && body.trim().is_empty()
+        {
+            // Nothing to submit.
+            return;
+        }
+        let payload = build_review_payload(event, &body, self.files_tab.drafts().drafts());
+        let number = self.number;
+        let started = PullRequestsStoreModel::handle(ctx)
+            .update(ctx, |store, ctx| store.submit_review(number, payload, ctx));
+        if started {
+            self.review_submitting = true;
+            self.review_error = None;
         }
     }
 
@@ -321,6 +528,11 @@ impl PrDetailState {
             Some(data) if data.detail.is_some() => {
                 let detail = data.detail.as_ref().unwrap();
                 column.add_child(self.render_tab_bar(app));
+                // 21d: the review bar sits above every tab's content while
+                // drafts exist (or when opened from the header).
+                if self.review_bar_open || !self.files_tab.drafts().is_empty() {
+                    column.add_child(self.render_review_bar(app));
+                }
                 match self.tab {
                     PrDetailTab::Conversation => {
                         self.render_conversation(&mut column, detail, data, app)
@@ -430,6 +642,7 @@ impl PrDetailState {
             let (label, color) = state_badge(detail, theme);
             header.add_child(render_badge(label, color, appearance));
         }
+        header.add_child(ChildView::new(&self.review_button).finish());
         header.add_child(ChildView::new(&self.refresh_button).finish());
 
         if let Some(detail) = detail {
@@ -596,7 +809,212 @@ impl PrDetailState {
             );
         }
 
+        column.add_child(self.render_composer(app));
         column.add_child(self.render_merge_box(detail, data, app));
+    }
+
+    /// 21d: the PR-level comment composer at the Conversation tab's bottom.
+    fn render_composer(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_spacing(spacing::XS)
+            .with_child(
+                Text::new_inline(
+                    "Add a comment",
+                    appearance.ui_font_family(),
+                    type_ramp::LABEL.size,
+                )
+                .with_line_height_ratio(type_ramp::LABEL.line_height)
+                .with_color(theme.sub_text_color(theme.background()).into())
+                .finish(),
+            )
+            .with_child(ChildView::new(&self.comment_editor).finish());
+        if let Some(error) = &self.comment_error {
+            column.add_child(
+                Text::new(
+                    error.clone(),
+                    appearance.ui_font_family(),
+                    type_ramp::CAPTION.size,
+                )
+                .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                .with_color(theme.ui_error_color())
+                .finish(),
+            );
+        }
+        column.add_child(
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_child(ChildView::new(&self.comment_button).finish())
+                .finish(),
+        );
+
+        Container::new(column.finish())
+            .with_uniform_padding(spacing::MD)
+            .with_margin_top(spacing::SM)
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+            .finish()
+    }
+
+    /// 21d: the review bar — pending-draft count, verdict pills, summary
+    /// editor, discard-all, and the (two-click for consequential verdicts)
+    /// Submit controls. Errors surface inline; drafts survive failures.
+    fn render_review_bar(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let sub = theme.sub_text_color(theme.background());
+        let main = theme.main_text_color(theme.background());
+        let family = appearance.ui_font_family();
+        let drafts = self.files_tab.drafts();
+
+        let count_label = match drafts.len() {
+            0 => "Review this pull request".to_owned(),
+            1 => "1 pending review comment".to_owned(),
+            n => format!("{n} pending review comments"),
+        };
+        let mut top_row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(spacing::SM)
+            .with_child(
+                Shrinkable::new(
+                    1.,
+                    Align::new(
+                        Text::new(count_label, family.clone(), type_ramp::UI.size)
+                            .with_line_height_ratio(type_ramp::UI.line_height)
+                            .with_color(main.into())
+                            .finish(),
+                    )
+                    .left()
+                    .finish(),
+                )
+                .finish(),
+            );
+        if !drafts.is_empty() {
+            let discard_label: &'static str = if drafts.discard_all_armed() {
+                "Click again to discard all"
+            } else {
+                "Discard all"
+            };
+            let discard_color: ColorU = if drafts.discard_all_armed() {
+                theme.ui_error_color()
+            } else {
+                sub.into()
+            };
+            top_row.add_child(self.review_pill(
+                "discard-all",
+                discard_label,
+                discard_color,
+                false,
+                PullRequestsPageAction::DiscardAllDrafts,
+                app,
+            ));
+        }
+
+        let mut pills = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(spacing::XS);
+        for event in PrReviewEvent::ALL {
+            let selected = event == drafts.event();
+            let color: ColorU = if selected {
+                theme.accent().into_solid()
+            } else {
+                sub.into()
+            };
+            pills.add_child(self.review_pill(
+                event.as_str(),
+                event.label(),
+                color,
+                selected,
+                PullRequestsPageAction::SetReviewEvent(event.as_str().to_owned()),
+                app,
+            ));
+        }
+
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_spacing(spacing::SM)
+            .with_child(top_row.finish())
+            .with_child(pills.finish())
+            .with_child(
+                Text::new_inline("Summary (optional)", family.clone(), type_ramp::LABEL.size)
+                    .with_line_height_ratio(type_ramp::LABEL.line_height)
+                    .with_color(sub.into())
+                    .finish(),
+            )
+            .with_child(ChildView::new(&self.review_summary_editor).finish());
+        if let Some(error) = &self.review_error {
+            column.add_child(
+                Text::new(error.clone(), family, type_ramp::CAPTION.size)
+                    .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                    .with_color(theme.ui_error_color())
+                    .finish(),
+            );
+        }
+        let mut buttons = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(spacing::XS);
+        if self.pending_review_submit {
+            buttons.add_child(ChildView::new(&self.confirm_review_button).finish());
+            buttons.add_child(ChildView::new(&self.cancel_review_button).finish());
+        } else {
+            buttons.add_child(ChildView::new(&self.submit_review_button).finish());
+        }
+        column.add_child(buttons.finish());
+
+        Container::new(column.finish())
+            .with_uniform_padding(spacing::MD)
+            .with_margin_bottom(spacing::MD)
+            .with_border(Border::all(1.).with_border_fill(theme.ui_warning_color()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+            .finish()
+    }
+
+    /// A small outlined clickable pill for the review bar.
+    fn review_pill(
+        &self,
+        key: &str,
+        label: &'static str,
+        color: ColorU,
+        selected: bool,
+        page_action: PullRequestsPageAction,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let main = theme.main_text_color(theme.background());
+        let family = appearance.ui_font_family();
+        let state = self
+            .misc_states
+            .borrow_mut()
+            .entry(key.to_owned())
+            .or_default()
+            .clone();
+        Hoverable::new(state, move |hover| {
+            let text_color = if selected || hover.is_hovered() {
+                main.into()
+            } else {
+                color
+            };
+            Container::new(
+                Text::new_inline(label, family.clone(), type_ramp::CAPTION.size)
+                    .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                    .with_color(text_color)
+                    .finish(),
+            )
+            .with_horizontal_padding(spacing::SM)
+            .with_vertical_padding(spacing::XXS)
+            .with_border(Border::all(1.).with_border_fill(color))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+            .finish()
+        })
+        .on_click(move |ctx, _, _| ctx.dispatch_typed_action(action(page_action.clone())))
+        .with_cursor(Cursor::PointingHand)
+        .finish()
     }
 
     fn render_timeline_item(
