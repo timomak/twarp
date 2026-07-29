@@ -1955,19 +1955,15 @@ impl PaneGroup {
                 }
             }
             LeafContents::Welcome { startup_directory } => {
-                if !FeatureFlag::WelcomeTab.is_enabled() {
-                    Err(anyhow::anyhow!("Welcome pane not supported"))
-                } else {
-                    let pane: Box<dyn AnyPaneContent + 'static> =
-                        Box::new(WelcomePane::new(startup_directory, ctx));
-                    let pane_id = pane.as_pane().id();
-                    pane_contents.insert(pane_id, pane);
-                    let focus = InitialFocus {
-                        focused_pane: leaf.is_focused.then_some(pane_id),
-                        active_session: None,
-                    };
-                    Ok((PaneData::new(pane_id), focus))
-                }
+                let pane: Box<dyn AnyPaneContent + 'static> =
+                    Box::new(WelcomePane::new(startup_directory, ctx));
+                let pane_id = pane.as_pane().id();
+                pane_contents.insert(pane_id, pane);
+                let focus = InitialFocus {
+                    focused_pane: leaf.is_focused.then_some(pane_id),
+                    active_session: None,
+                };
+                Ok((PaneData::new(pane_id), focus))
             }
         };
 
@@ -2942,9 +2938,7 @@ impl PaneGroup {
 
         // Notify any restored panes that they belong to this pane group.
         pane_group.reattach_panes(ctx);
-        if FeatureFlag::DragTabsToWindows.is_enabled() {
-            pane_group.focus(ctx);
-        }
+        pane_group.focus(ctx);
         ctx.notify();
 
         // Recreate hidden child agent panes for any child conversations

@@ -1,9 +1,7 @@
-//! Header layout used when the `GitOperationsInCodeReview` feature flag is
-//! enabled. This replaces the legacy header (which lives in the parent module)
-//! with a simplified layout: the diff-mode dropdown on the left, and file-nav /
-//! overflow / maximize buttons on the right.
-//!
-//! Separated into its own module so the two codepaths are easy to distinguish.
+//! Code review header layout: the diff-mode dropdown on the left, and
+//! file-nav / overflow / maximize buttons on the right. This is the canonical
+//! header (the legacy layout still lives in the parent module for upstream
+//! merge compatibility but is no longer rendered).
 
 use crate::code_review::code_review_view::{
     CodeReviewAction, CodeReviewHeaderFields, PrimaryGitActionMode,
@@ -12,7 +10,6 @@ use crate::code_review::diff_selector::DiffSelector;
 use crate::menu::Menu;
 use crate::view_components::action_button::ActionButton;
 use pathfinder_geometry::vector::vec2f;
-use twarp_core::features::FeatureFlag;
 use twarpui::elements::{
     ChildAnchor, ChildView, Clipped, ConstrainedBox, Container, CrossAxisAlignment, Flex,
     MainAxisAlignment, MainAxisSize, OffsetPositioning, ParentAnchor, ParentElement,
@@ -25,9 +22,8 @@ use crate::appearance::Appearance;
 use super::CodeReviewHeader;
 
 impl CodeReviewHeader {
-    /// Entry-point for the new header layout (feature-flagged behind
-    /// `GitOperationsInCodeReview`). Renders a single row: diff-mode dropdown
-    /// on the left, action buttons on the right.
+    /// Entry-point for the header layout. Renders a single row: diff-mode
+    /// dropdown on the left, action buttons on the right.
     pub fn render_new(
         &self,
         appearance: &Appearance,
@@ -97,10 +93,6 @@ impl CodeReviewHeader {
     fn render_git_operations_button(
         code_review_header_fields: &CodeReviewHeaderFields,
     ) -> Option<Box<dyn Element>> {
-        if !FeatureFlag::GitOperationsInCodeReview.is_enabled() {
-            return None;
-        }
-
         let mut row = Flex::row().with_child(
             ChildView::new(&code_review_header_fields.git_primary_action_button).finish(),
         );

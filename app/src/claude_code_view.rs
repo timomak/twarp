@@ -5290,7 +5290,7 @@ impl ClaudeCodeView {
     }
 
     fn computer_control_entrypoint_available() -> bool {
-        crate::computer_control::platform_supported() && FeatureFlag::LocalComputerUse.is_enabled()
+        crate::computer_control::platform_supported()
     }
 
     fn computer_control_session_label(&self) -> String {
@@ -12247,7 +12247,7 @@ fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> 
             crate::browser_mcp::BrowserMcpBridge::as_ref(app)
                 .mcp_config_json_for_session(session_id),
         );
-        if FeatureFlag::LocalComputerUse.is_enabled() {
+        if crate::computer_control::platform_supported() {
             merge_mcp_servers(
                 &mut servers,
                 crate::computer_control::ComputerControlMcpBridge::as_ref(app).mcp_config_json(),

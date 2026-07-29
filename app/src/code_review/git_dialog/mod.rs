@@ -141,8 +141,7 @@ fn show_toast(msg: impl Into<String>, ctx: &mut ViewContext<GitDialog>) {
 /// with the manual-type placeholder and pr.rs goes straight to
 /// `gh pr create --fill`.
 fn should_send_git_ops_ai_request(app: &AppContext) -> bool {
-    FeatureFlag::GitOperationsInCodeReview.is_enabled()
-        && AISettings::as_ref(app).is_git_operations_autogen_enabled(app)
+    AISettings::as_ref(app).is_git_operations_autogen_enabled(app)
         && UserWorkspaces::as_ref(app).ai_allowed_for_current_team()
 }
 

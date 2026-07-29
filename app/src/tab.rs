@@ -2023,11 +2023,6 @@ impl UiComponent for TabComponent<'_> {
                     });
                 })
                 .on_drop(|ctx, _, _, _| ctx.dispatch_typed_action(WorkspaceAction::DropTab));
-            let draggable = if FeatureFlag::DragTabsToWindows.is_enabled() {
-                draggable
-            } else {
-                draggable.with_drag_axis(DragAxis::HorizontalOnly)
-            };
             let tab_with_drag: Box<dyn Element> = draggable.finish();
             SavePosition::new(tab_with_drag, &tab_position_id(tab_index)).finish()
         };

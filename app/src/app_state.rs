@@ -702,10 +702,8 @@ impl CLIAgent {
     fn adapter(&self) -> Option<&'static dyn CLIAgentAdapter> {
         match self {
             CLIAgent::Claude => Some(&CLAUDE_AGENT_ADAPTER),
-            CLIAgent::Codex if FeatureFlag::CodexAgentBackend.is_enabled() => {
-                Some(&CODEX_AGENT_ADAPTER)
-            }
-            CLIAgent::Codex | CLIAgent::Gemini | CLIAgent::Unknown => None,
+            CLIAgent::Codex => Some(&CODEX_AGENT_ADAPTER),
+            CLIAgent::Gemini | CLIAgent::Unknown => None,
         }
     }
 }
@@ -899,7 +897,7 @@ impl CLIAgentAdapter for ClaudeAgentAdapter {
 impl CLIAgentAdapter for CodexAgentAdapter {
     fn capabilities(&self) -> CLIAgentCapabilities {
         CLIAgentCapabilities {
-            enabled: FeatureFlag::CodexAgentBackend.is_enabled(),
+            enabled: true,
             supports_models: true,
             supports_effort: true,
             // 18c adds interactive Codex approvals and the shared Access
@@ -927,10 +925,6 @@ impl CLIAgentAdapter for CodexAgentAdapter {
     }
 
     fn model_options(&self) -> Vec<CLIAgentModelOption> {
-        if !FeatureFlag::CodexAgentBackend.is_enabled() {
-            return Vec::new();
-        }
-
         match crate::codex_models::discovered() {
             Some(models) => models
                 .iter()
@@ -950,9 +944,6 @@ impl CLIAgentAdapter for CodexAgentAdapter {
     }
 
     fn is_valid_model(&self, model: &str) -> bool {
-        if !FeatureFlag::CodexAgentBackend.is_enabled() {
-            return false;
-        }
         crate::codex_models::FALLBACK_MODELS
             .iter()
             .any(|(id, _)| *id == model)
@@ -961,18 +952,13 @@ impl CLIAgentAdapter for CodexAgentAdapter {
     }
 
     fn effort_options(&self) -> &'static [CLIAgentEffortOption] {
-        if FeatureFlag::CodexAgentBackend.is_enabled() {
-            CODEX_EFFORT_OPTIONS
-        } else {
-            &[]
-        }
+        CODEX_EFFORT_OPTIONS
     }
 
     fn is_valid_effort(&self, effort: &str) -> bool {
-        FeatureFlag::CodexAgentBackend.is_enabled()
-            && CODEX_EFFORT_OPTIONS
-                .iter()
-                .any(|option| option.value == effort)
+        CODEX_EFFORT_OPTIONS
+            .iter()
+            .any(|option| option.value == effort)
     }
 
     fn login_probe(&self) -> bool {
