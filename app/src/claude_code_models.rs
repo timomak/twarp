@@ -13,12 +13,27 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use std::time::Duration;
 
-/// `--model` aliases the `claude` CLI accepts (per its `--help`: "an alias for
-/// the latest model (e.g. 'fable', 'opus', or 'sonnet')"). Shown when the
-/// Models API is unreachable or no API key is configured. Aliases always track
-/// the latest model in their tier, so this list only grows when Anthropic
-/// introduces a new tier — not on every model launch.
-pub const FALLBACK_MODEL_ALIASES: &[&str] = &["fable", "opus", "sonnet", "haiku"];
+/// `--model` values the `claude` CLI accepts, shown when the Models API is
+/// unreachable or no API key is configured (subscription OAuth can't call it,
+/// so this is the common case). `(value, display name)` pairs: the tier
+/// aliases first (per `claude --help` they always track the latest model in
+/// their tier), then the exact model IDs current as of 2026-07 so a specific
+/// version (Opus 4.8 vs Opus 5, …) is directly selectable. The exact-ID tail
+/// needs a refresh when Anthropic ships new models.
+pub const FALLBACK_MODELS: &[(&str, &str)] = &[
+    ("fable", "Fable (latest)"),
+    ("opus", "Opus (latest)"),
+    ("sonnet", "Sonnet (latest)"),
+    ("haiku", "Haiku (latest)"),
+    ("claude-fable-5", "Claude Fable 5"),
+    ("claude-opus-5", "Claude Opus 5"),
+    ("claude-opus-4-8", "Claude Opus 4.8"),
+    ("claude-opus-4-7", "Claude Opus 4.7"),
+    ("claude-opus-4-6", "Claude Opus 4.6"),
+    ("claude-sonnet-5", "Claude Sonnet 5"),
+    ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
+    ("claude-haiku-4-5", "Claude Haiku 4.5"),
+];
 
 /// One selectable model from `GET /v1/models`.
 #[derive(Debug, Clone)]

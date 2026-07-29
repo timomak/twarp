@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn codex_adapter_configuration_is_exposed() {
     assert!(!CODEX_AGENT_ADAPTER.model_options().is_empty());
-    assert!(CODEX_AGENT_ADAPTER.is_valid_model(CODEX_MODEL_OPTIONS[0]));
+    assert!(CODEX_AGENT_ADAPTER.is_valid_model(crate::codex_models::FALLBACK_MODELS[0].0));
     assert!(!CODEX_AGENT_ADAPTER.effort_options().is_empty());
     assert!(CODEX_AGENT_ADAPTER.is_valid_effort(CODEX_EFFORT_OPTIONS[0].value));
     assert!(!CODEX_AGENT_ADAPTER.capabilities().supports_permission_modes);
