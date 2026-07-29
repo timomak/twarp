@@ -2601,8 +2601,10 @@ impl ClaudeCodeView {
         )
     }
 
-    /// The attachment chips row (PRODUCT §15b): a thumbnail + name per
-    /// pending image, with an ✕ that drops it back to a plain text mention.
+    /// The attachment thumbnails row (PRODUCT §15b): a Codex-style square
+    /// thumbnail card per pending image, with a circular ✕ badge over the
+    /// top-right corner. Removing a mention-sourced image drops it back to a
+    /// plain text mention; removing a direct attachment discards it.
     /// `None` when nothing is attached.
     fn render_attachment_chips(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
         if self.pending_images.is_empty() && self.direct_attachments.is_empty() {
@@ -2611,7 +2613,7 @@ impl ClaudeCodeView {
         let theme = appearance.theme();
         let mut row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_spacing(6.);
+            .with_spacing(spacing::SM);
         for (index, path) in self.pending_images.iter().enumerate() {
             let chip_mouse = {
                 let mut states = self.attachment_chip_mouse.borrow_mut();
@@ -2620,69 +2622,14 @@ impl ClaudeCodeView {
                 }
                 states[index].clone()
             };
-            let thumbnail = ConstrainedBox::new(
-                Image::new(
-                    AssetSource::LocalFile {
-                        path: path.display().to_string(),
-                    },
-                    CacheOption::BySize,
-                )
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-                .finish(),
-            )
-            .with_width(24.)
-            .with_height(24.)
-            .finish();
-            let name = appearance
-                .ui_builder()
-                .span(
-                    path.file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| path.display().to_string()),
-                )
-                .with_style(UiComponentStyles {
-                    font_size: Some(11.5),
-                    ..Default::default()
-                })
-                .build()
-                .finish();
-            let remove = appearance
-                .ui_builder()
-                .span("\u{2715}".to_owned())
-                .with_style(UiComponentStyles {
-                    font_color: Some(theme.nonactive_ui_text_color().into_solid()),
-                    font_size: Some(11.5),
-                    ..Default::default()
-                })
-                .build()
-                .finish();
-            let chip = Container::new(
-                Flex::row()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_spacing(6.)
-                    .with_child(thumbnail)
-                    .with_child(name)
-                    .with_child(remove)
-                    .finish(),
-            )
-            .with_padding_left(6.)
-            .with_padding_right(6.)
-            .with_padding_top(3.)
-            .with_padding_bottom(3.)
-            .with_background_color(theme.surface_2().into_solid())
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
-            .finish();
+            let preview = Self::attachment_preview_image(path);
             let chip_path = path.display().to_string();
-            row.add_child(
-                Hoverable::new(chip_mouse, move |_| chip)
-                    .with_cursor(Cursor::PointingHand)
-                    .on_click(move |ctx, _, _| {
-                        ctx.dispatch_typed_action(ClaudeCodeViewAction::RemoveAttachment(
-                            chip_path.clone(),
-                        ));
-                    })
-                    .finish(),
-            );
+            row.add_child(Self::attachment_thumbnail_card(
+                appearance,
+                preview,
+                chip_mouse,
+                ClaudeCodeViewAction::RemoveAttachment(chip_path),
+            ));
         }
         // PRODUCT §49–§51 (7l): directly-attached images (paste / drop /
         // picker). A file-sourced attachment shows a thumbnail; a pasted one
@@ -2697,77 +2644,107 @@ impl ClaudeCodeView {
                 states[index].clone()
             };
             let preview: Box<dyn Element> = match &attachment.thumbnail_path {
-                Some(path) => ConstrainedBox::new(
-                    Image::new(
-                        AssetSource::LocalFile {
-                            path: path.display().to_string(),
-                        },
-                        CacheOption::BySize,
-                    )
-                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-                    .finish(),
-                )
-                .with_width(24.)
-                .with_height(24.)
-                .finish(),
-                None => ConstrainedBox::new(
-                    Icon::new(
-                        crate::ui_components::icons::Icon::Image.into(),
-                        theme.nonactive_ui_text_color().into_solid(),
+                Some(path) => Self::attachment_preview_image(path),
+                None => Container::new(
+                    Align::new(
+                        ConstrainedBox::new(
+                            Icon::new(
+                                crate::ui_components::icons::Icon::Image.into(),
+                                theme.nonactive_ui_text_color().into_solid(),
+                            )
+                            .finish(),
+                        )
+                        .with_width(spacing::LG)
+                        .with_height(spacing::LG)
+                        .finish(),
                     )
                     .finish(),
                 )
-                .with_width(16.)
-                .with_height(16.)
+                .with_background_color(theme.surface_2().into_solid())
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
                 .finish(),
             };
-            let name = appearance
-                .ui_builder()
-                .span(attachment.label.clone())
-                .with_style(UiComponentStyles {
-                    font_size: Some(11.5),
-                    ..Default::default()
-                })
-                .build()
-                .finish();
-            let remove = appearance
-                .ui_builder()
-                .span("\u{2715}".to_owned())
-                .with_style(UiComponentStyles {
-                    font_color: Some(theme.nonactive_ui_text_color().into_solid()),
-                    font_size: Some(11.5),
-                    ..Default::default()
-                })
-                .build()
-                .finish();
-            let chip = Container::new(
-                Flex::row()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_spacing(6.)
-                    .with_child(preview)
-                    .with_child(name)
-                    .with_child(remove)
-                    .finish(),
-            )
-            .with_padding_left(6.)
-            .with_padding_right(6.)
-            .with_padding_top(3.)
-            .with_padding_bottom(3.)
-            .with_background_color(theme.surface_2().into_solid())
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
-            .finish();
-            row.add_child(
-                Hoverable::new(chip_mouse, move |_| chip)
-                    .with_cursor(Cursor::PointingHand)
-                    .on_click(move |ctx, _, _| {
-                        ctx.dispatch_typed_action(ClaudeCodeViewAction::RemoveDirectAttachment(
-                            index,
-                        ));
-                    })
-                    .finish(),
-            );
+            row.add_child(Self::attachment_thumbnail_card(
+                appearance,
+                preview,
+                chip_mouse,
+                ClaudeCodeViewAction::RemoveDirectAttachment(index),
+            ));
         }
         Some(row.finish())
+    }
+
+    /// A cover-cropped square preview image for an attachment card.
+    fn attachment_preview_image(path: &Path) -> Box<dyn Element> {
+        Image::new(
+            AssetSource::LocalFile {
+                path: path.display().to_string(),
+            },
+            CacheOption::BySize,
+        )
+        .cover()
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+        .finish()
+    }
+
+    /// A Codex-style attachment card: a large rounded square thumbnail with a
+    /// circular ✕ badge overlapping its top-right corner. Only the badge is
+    /// clickable; clicking it dispatches `remove_action`.
+    fn attachment_thumbnail_card(
+        appearance: &Appearance,
+        preview: Box<dyn Element>,
+        chip_mouse: MouseStateHandle,
+        remove_action: ClaudeCodeViewAction,
+    ) -> Box<dyn Element> {
+        // Thumbnail edge: a size, not a spacing step — no token exists for
+        // element dimensions.
+        const THUMB_SIZE: f32 = 56.0;
+        const BADGE_SIZE: f32 = 18.0;
+        let theme = appearance.theme();
+        let card = Container::new(
+            ConstrainedBox::new(preview)
+                .with_width(THUMB_SIZE)
+                .with_height(THUMB_SIZE)
+                .finish(),
+        )
+        .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+        .finish();
+        let glyph = appearance
+            .ui_builder()
+            .span("\u{2715}".to_owned())
+            .with_style(UiComponentStyles {
+                font_color: Some(theme.background().into_solid()),
+                font_size: Some(type_ramp::CAPTION.size),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+        let badge = Container::new(Align::new(glyph).finish())
+            .with_background_color(theme.foreground().into_solid())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(BADGE_SIZE / 2.)))
+            .finish();
+        let badge = ConstrainedBox::new(badge)
+            .with_width(BADGE_SIZE)
+            .with_height(BADGE_SIZE)
+            .finish();
+        let badge = Hoverable::new(chip_mouse, move |_| badge)
+            .with_cursor(Cursor::PointingHand)
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(remove_action.clone());
+            })
+            .finish();
+        let mut stack = Stack::new().with_child(card);
+        stack.add_positioned_child(
+            badge,
+            OffsetPositioning::offset_from_parent(
+                vec2f(-spacing::XS, spacing::XS),
+                ParentOffsetBounds::Unbounded,
+                ParentAnchor::TopRight,
+                ChildAnchor::TopRight,
+            ),
+        );
+        stack.finish()
     }
 
     /// The queued (type-ahead) messages waiting to dispatch (PRODUCT §54, 7m):
