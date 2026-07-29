@@ -29,12 +29,16 @@ All commands from the repo root being built (main checkout or the worktree).
    not open it):
 
    ```
-   ./script/run --release --install --dont-open
+   ./script/run --release --install --dont-open --features local_computer_use
    ```
 
    `--dont-open` matters: without it the script launches the freshly built
    binary. Do NOT run `open` on the app afterwards either — the owner
    launches it themselves.
+   `--features local_computer_use` matters too: the "take control" /
+   computer-use feature (15) is gated on that cargo feature, it is NOT in
+   the default set, and there is no runtime toggle — a release built
+   without it silently drops the feature (happened on v2026.07.28).
    If a signing/keychain error appears, see the keychain-signing memory
    (WARP_SIGNING_TEAM pin) before retrying.
 3. **Zip the bundle** (stage in /tmp so the zip never lands in the repo):
