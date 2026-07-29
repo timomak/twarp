@@ -782,6 +782,10 @@ const CLAUDE_EFFORT_OPTIONS: &[CLIAgentEffortOption] = &[
         label: "High",
     },
     CLIAgentEffortOption {
+        value: "xhigh",
+        label: "Extra High",
+    },
+    CLIAgentEffortOption {
         value: "max",
         label: "Max",
     },
@@ -810,7 +814,6 @@ const CODEX_EFFORT_OPTIONS: &[CLIAgentEffortOption] = &[
     },
 ];
 
-const CODEX_MODEL_OPTIONS: &[&str] = &["gpt-5", "gpt-5.1-codex"];
 
 impl CLIAgentAdapter for ClaudeAgentAdapter {
     fn capabilities(&self) -> CLIAgentCapabilities {
@@ -848,18 +851,21 @@ impl CLIAgentAdapter for ClaudeAgentAdapter {
                     display_name: model.display_name.clone(),
                 })
                 .collect(),
-            None => crate::claude_code_models::FALLBACK_MODEL_ALIASES
+            None => crate::claude_code_models::FALLBACK_MODELS
                 .iter()
-                .map(|alias| CLIAgentModelOption {
-                    id: (*alias).to_owned(),
-                    display_name: prettify_agent_model(alias),
+                .map(|(id, name)| CLIAgentModelOption {
+                    id: (*id).to_owned(),
+                    display_name: (*name).to_owned(),
                 })
                 .collect(),
         }
     }
 
     fn is_valid_model(&self, model: &str) -> bool {
-        if crate::claude_code_models::FALLBACK_MODEL_ALIASES.contains(&model) {
+        if crate::claude_code_models::FALLBACK_MODELS
+            .iter()
+            .any(|(id, _)| *id == model)
+        {
             return true;
         }
 
@@ -925,17 +931,33 @@ impl CLIAgentAdapter for CodexAgentAdapter {
             return Vec::new();
         }
 
-        CODEX_MODEL_OPTIONS
-            .iter()
-            .map(|model| CLIAgentModelOption {
-                id: (*model).to_owned(),
-                display_name: prettify_agent_model(model),
-            })
-            .collect()
+        match crate::codex_models::discovered() {
+            Some(models) => models
+                .iter()
+                .map(|model| CLIAgentModelOption {
+                    id: model.id.clone(),
+                    display_name: model.display_name.clone(),
+                })
+                .collect(),
+            None => crate::codex_models::FALLBACK_MODELS
+                .iter()
+                .map(|(id, name)| CLIAgentModelOption {
+                    id: (*id).to_owned(),
+                    display_name: (*name).to_owned(),
+                })
+                .collect(),
+        }
     }
 
     fn is_valid_model(&self, model: &str) -> bool {
-        FeatureFlag::CodexAgentBackend.is_enabled() && CODEX_MODEL_OPTIONS.contains(&model)
+        if !FeatureFlag::CodexAgentBackend.is_enabled() {
+            return false;
+        }
+        crate::codex_models::FALLBACK_MODELS
+            .iter()
+            .any(|(id, _)| *id == model)
+            || crate::codex_models::discovered()
+                .is_some_and(|models| models.iter().any(|entry| entry.id == model))
     }
 
     fn effort_options(&self) -> &'static [CLIAgentEffortOption] {
@@ -960,14 +982,6 @@ impl CLIAgentAdapter for CodexAgentAdapter {
             .output()
             .ok()
             .is_some_and(|output| output.status.success())
-    }
-}
-
-fn prettify_agent_model(model: &str) -> String {
-    let mut chars = model.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
     }
 }
 

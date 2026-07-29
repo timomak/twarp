@@ -362,7 +362,7 @@ fn truncate_middle(text: &str, max_chars: usize) -> String {
 /// is write-only — the headless stream never echoes it back — so the pill shows
 /// the selection. A value an older CLI rejects surfaces as a spawn error
 /// (PRODUCT §30), never a hang.
-const EFFORT_CYCLE: &[&str] = &["default", "low", "medium", "high", "max"];
+const EFFORT_CYCLE: &[&str] = &["default", "low", "medium", "high", "xhigh", "max"];
 
 /// Events the pane view emits to its host [`ClaudeCodePane`]. 7b only needs
 /// `Close` (so the pane-header close button works); 7c adds session-lifecycle
@@ -8382,22 +8382,39 @@ impl ClaudeCodeView {
     }
 
     /// Rows for the model dropdown: "Default" (no `--model`, let the CLI
-    /// choose) first, then either the models discovered from the Anthropic
-    /// Models API (full IDs, newest first) or — until/unless discovery
-    /// succeeds — the built-in alias fallback. A current selection that isn't
-    /// in the list (an alias picked before discovery landed, or a launch-flag
-    /// model) gets its own row so it stays visible and re-selectable.
+    /// choose) first, then the provider's model list — for Claude, the models
+    /// discovered from the Anthropic Models API or (until/unless discovery
+    /// succeeds) the built-in alias + exact-ID fallback; for Codex, the CLI's
+    /// own `~/.codex/models_cache.json` or a static fallback. A current
+    /// selection that isn't in the list (picked before discovery landed, or a
+    /// launch-flag model) gets its own row so it stays visible and
+    /// re-selectable.
     fn model_menu_entries(&self) -> Vec<(Option<String>, String)> {
         let mut entries = vec![(None, "Default".to_owned())];
-        match crate::claude_code_models::discovered() {
-            Some(models) => {
-                for model in models {
-                    entries.push((Some(model.id.clone()), model.display_name.clone()));
+        if self.provider == AgentProvider::Codex {
+            match crate::codex_models::discovered() {
+                Some(models) => {
+                    for model in models {
+                        entries.push((Some(model.id.clone()), model.display_name.clone()));
+                    }
+                }
+                None => {
+                    for (id, name) in crate::codex_models::FALLBACK_MODELS {
+                        entries.push((Some((*id).to_owned()), (*name).to_owned()));
+                    }
                 }
             }
-            None => {
-                for alias in crate::claude_code_models::FALLBACK_MODEL_ALIASES {
-                    entries.push((Some((*alias).to_owned()), prettify_model(alias)));
+        } else {
+            match crate::claude_code_models::discovered() {
+                Some(models) => {
+                    for model in models {
+                        entries.push((Some(model.id.clone()), model.display_name.clone()));
+                    }
+                }
+                None => {
+                    for (id, name) in crate::claude_code_models::FALLBACK_MODELS {
+                        entries.push((Some((*id).to_owned()), (*name).to_owned()));
+                    }
                 }
             }
         }
