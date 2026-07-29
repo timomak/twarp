@@ -17,8 +17,8 @@ use twarpui::{
     elements::{
         new_scrollable::{NewScrollable, ScrollableAppearance, SingleAxisConfig},
         Align, Border, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container,
-        CornerRadius, CrossAxisAlignment, Element, Flex, MainAxisSize, ParentElement, Radius,
-        ScrollbarWidth, Shrinkable, Text,
+        CornerRadius, CrossAxisAlignment, Element, Flex, Hoverable, MainAxisSize, MouseStateHandle,
+        ParentElement, Radius, ScrollbarWidth, Shrinkable, Text,
     },
     ui_components::switch::SwitchStateHandle,
     AppContext, SingletonEntity, ViewContext, ViewHandle,
@@ -29,7 +29,7 @@ use crate::automation::scheduler::{
     provider_from_name, provider_name, schedule_summary, validate_schedule, RunOutcome,
     ScheduledTaskEntry, SchedulerModel, TaskRunEntry,
 };
-use crate::editor::{Event as EditorEvent, EditorView};
+use crate::editor::{EditorView, Event as EditorEvent};
 use crate::search_bar::SearchBar;
 use crate::view_components::{
     action_button::{ActionButton, DangerSecondaryTheme, NakedTheme, PrimaryTheme, SecondaryTheme},
@@ -62,6 +62,9 @@ pub enum ScheduledTasksPageAction {
     ViewSession(String, String),
     /// List filter chip ("all" | "active" | "paused").
     SetFilter(String),
+    /// Empty-state suggestion row: open the Add form prefilled from the
+    /// template with this id.
+    UseSuggestion(String),
     /// Editor: schedule preset chip ("hourly" | "daily" | "weekly" | "custom").
     SetPreset(String),
     /// Editor: weekly day-of-week ("0".."6").
@@ -130,6 +133,54 @@ impl TaskFilter {
         }
     }
 }
+
+/// A canned task template surfaced under the empty state (the reference
+/// layout's Suggestions section) — clicking one opens the Add form prefilled.
+struct TaskSuggestion {
+    id: &'static str,
+    name: &'static str,
+    schedule_label: &'static str,
+    cron: &'static str,
+    description: &'static str,
+    prompt: &'static str,
+    icon: twarp_core::ui::Icon,
+}
+
+const SUGGESTIONS: [TaskSuggestion; 3] = [
+    TaskSuggestion {
+        id: "morning-brief",
+        name: "Morning repo brief",
+        schedule_label: "Weekdays at 9:00 AM",
+        cron: "0 9 * * 1-5",
+        description: "Start each weekday with a summary of new commits, open PRs, and failing CI",
+        prompt: "Summarize activity in this repository since yesterday: new commits, \
+                 open pull requests, failing CI, and anything that needs my attention. \
+                 Keep it short and actionable.",
+        icon: twarp_core::ui::Icon::Bell,
+    },
+    TaskSuggestion {
+        id: "nightly-triage",
+        name: "Nightly triage",
+        schedule_label: "Daily at 10:00 PM",
+        cron: "0 22 * * *",
+        description: "Sweep the repo for TODOs, flaky tests, and stale branches every night",
+        prompt: "Triage this repository: list new TODO/FIXME comments, tests that look \
+                 flaky or are skipped, and branches with no activity for two weeks. \
+                 Propose one cleanup for tomorrow.",
+        icon: twarp_core::ui::Icon::Bug,
+    },
+    TaskSuggestion {
+        id: "weekly-review",
+        name: "Weekly review",
+        schedule_label: "Fridays at 4:00 PM",
+        cron: "0 16 * * 5",
+        description: "Turn your recent work into a concise status update every Friday",
+        prompt: "Look at the commits and merged pull requests from the last week and \
+                 write a concise status update: what shipped, what's in progress, and \
+                 what's next.",
+        icon: twarp_core::ui::Icon::CalendarCheck,
+    },
+];
 
 /// The schedule preset selected in the editor.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -253,6 +304,8 @@ pub struct ScheduledTasksPageState {
     search_bar: ViewHandle<SearchBar>,
     filter: TaskFilter,
     filter_chips: Vec<ViewHandle<ActionButton>>,
+    /// One persistent hover state per suggestion row, keyed by template id.
+    suggestion_hover: HashMap<&'static str, MouseStateHandle>,
     rows: HashMap<String, RowUi>,
     /// Task id whose Delete button is currently in its Confirm stage.
     pending_delete: Option<String>,
@@ -293,6 +346,10 @@ impl ScheduledTasksPageState {
             search_bar,
             filter: TaskFilter::All,
             filter_chips: Self::new_filter_chips(TaskFilter::All, ctx),
+            suggestion_hover: SUGGESTIONS
+                .iter()
+                .map(|s| (s.id, MouseStateHandle::default()))
+                .collect(),
             rows: HashMap::new(),
             pending_delete: None,
             editor: None,
@@ -408,6 +465,30 @@ impl ScheduledTasksPageState {
             }
             ViewSession(session_id, cwd) => {
                 self.open_session(session_id, cwd, ctx);
+            }
+            UseSuggestion(id) => {
+                if let Some(template) = SUGGESTIONS.iter().find(|s| s.id == id) {
+                    self.pending_delete = None;
+                    let entry = ScheduledTaskEntry {
+                        id: String::new(),
+                        name: template.name.to_owned(),
+                        prompt: template.prompt.to_owned(),
+                        cwd: dirs::home_dir()
+                            .map(|home| home.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                        schedule: template.cron.to_owned(),
+                        provider: AgentProvider::Claude,
+                        fallback_provider: None,
+                        model: None,
+                        effort: None,
+                        permission_mode: None,
+                        enabled: true,
+                        catch_up: false,
+                        next_run_at: None,
+                        created_at: 0,
+                    };
+                    self.editor = Some(self.new_editor(Some(entry), ctx));
+                }
             }
             SetFilter(value) => {
                 if let Some(filter) = TaskFilter::from_str(value) {
@@ -955,10 +1036,13 @@ impl ScheduledTasksPageState {
         if show_empty_state {
             column.add_child(super::render_empty_state(
                 twarp_core::ui::Icon::Clock,
-                "No scheduled tasks yet.",
+                "Automate twarp on a schedule",
+                "Run an agent on a cron — daily briefs, nightly triage, repo monitors. \
+                 Each run lands as a background tab you can inspect.",
                 &self.empty_add_button,
                 app,
             ));
+            column.add_child(self.render_suggestions(app));
         }
         let query = self
             .search_editor
@@ -1147,6 +1231,112 @@ impl ScheduledTasksPageState {
         .with_padding_top(spacing::SM)
         .with_padding_bottom(spacing::SM)
         .finish()
+    }
+
+    /// The Suggestions section under the empty state: canned task templates
+    /// as hoverable rows — tinted icon chip, name + schedule, description.
+    /// Clicking one opens the Add form prefilled.
+    fn render_suggestions(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let sub = theme.sub_text_color(theme.background());
+
+        let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+        column.add_child(
+            Container::new(
+                Text::new_inline(
+                    "SUGGESTIONS",
+                    appearance.ui_font_family(),
+                    type_ramp::CAPTION.size,
+                )
+                .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                .with_color(sub.into())
+                .finish(),
+            )
+            .with_margin_bottom(spacing::SM)
+            .finish(),
+        );
+
+        for (index, suggestion) in SUGGESTIONS.iter().enumerate() {
+            let Some(state) = self.suggestion_hover.get(suggestion.id) else {
+                continue;
+            };
+            // Rotate through the tinted chip colors so the list reads as a
+            // set of distinct, lively entry points rather than a gray column.
+            let (icon_color, tint) = match index % 3 {
+                0 => (theme.accent(), theme.accent_overlay()),
+                1 => (theme.ui_green_color().into(), theme.green_overlay_1()),
+                _ => (theme.ui_yellow_color().into(), theme.yellow_overlay_1()),
+            };
+            let icon = suggestion.icon;
+            let name = suggestion.name;
+            let schedule_label = suggestion.schedule_label;
+            let description = suggestion.description;
+            let family = appearance.ui_font_family();
+            let main = theme.main_text_color(theme.background());
+            let row = Hoverable::new(state.clone(), move |hover| {
+                let title_row = Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(spacing::SM)
+                    .with_child(
+                        Text::new_inline(name, family, type_ramp::UI.size)
+                            .with_line_height_ratio(type_ramp::UI.line_height)
+                            .with_color(main.into())
+                            .finish(),
+                    )
+                    .with_child(
+                        Text::new_inline(schedule_label, family, type_ramp::CAPTION.size)
+                            .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                            .with_color(sub.into())
+                            .finish(),
+                    )
+                    .finish();
+                let labels = Flex::column()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                    .with_spacing(spacing::XXS)
+                    .with_child(title_row)
+                    .with_child(
+                        Text::new(description, family, type_ramp::CAPTION.size)
+                            .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                            .with_color(sub.into())
+                            .finish(),
+                    )
+                    .finish();
+                let mut container = Container::new(
+                    Flex::row()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_spacing(spacing::MD)
+                        .with_child(super::render_icon_chip(
+                            icon,
+                            icon_color,
+                            tint,
+                            spacing::LG,
+                            spacing::SM,
+                        ))
+                        .with_child(Shrinkable::new(1., labels).finish())
+                        .finish(),
+                )
+                .with_uniform_padding(spacing::MD)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
+                if hover.is_hovered() {
+                    container = container.with_background(theme.surface_overlay_1());
+                }
+                container.finish()
+            });
+            let id = suggestion.id;
+            column.add_child(
+                row.on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(action(ScheduledTasksPageAction::UseSuggestion(
+                        id.to_owned(),
+                    )));
+                })
+                .finish(),
+            );
+        }
+
+        Container::new(column.finish())
+            .with_margin_top(spacing::LG)
+            .finish()
     }
 
     /// The inline Add / Edit form.

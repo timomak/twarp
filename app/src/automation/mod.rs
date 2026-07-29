@@ -4,10 +4,12 @@
 //! 20a ships the shell: sidebar entry points, pane plumbing, and placeholder
 //! page content. Later phases (20b+) fill in the real page content.
 
-use twarp_core::ui::tokens::{spacing, type_ramp};
+use twarp_core::ui::theme::Fill;
+use twarp_core::ui::tokens::{radius, spacing, type_ramp};
 use twarp_core::ui::Icon;
 use twarpui::elements::{
-    ChildView, ConstrainedBox, Container, CrossAxisAlignment, Element, Flex, ParentElement, Text,
+    ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Flex,
+    ParentElement, Radius, Text,
 };
 use twarpui::{AppContext, SingletonEntity, ViewHandle};
 
@@ -76,13 +78,37 @@ impl AutomationPage {
     }
 }
 
+/// A square icon chip on a tinted fill — the accent that keeps empty states
+/// and suggestion rows from reading as a bare gray void. `icon_size` should be
+/// a spacing token; the chip adds `padding` around it.
+pub(crate) fn render_icon_chip(
+    icon: Icon,
+    icon_color: Fill,
+    tint: Fill,
+    icon_size: f32,
+    padding: f32,
+) -> Box<dyn Element> {
+    Container::new(
+        ConstrainedBox::new(icon.to_warpui_icon(icon_color).finish())
+            .with_width(icon_size)
+            .with_height(icon_size)
+            .finish(),
+    )
+    .with_uniform_padding(padding)
+    .with_background(tint)
+    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+    .finish()
+}
+
 /// twarp 20e: the shared empty state used by the automation pages —
-/// icon, one-line hint, and a primary action, centered in the content column
-/// (per the philosophy's empty-state anatomy: "one clear next action, never a
-/// bare void"). `button` must be a dedicated handle (not the header's Add
-/// button); one view handle cannot be mounted in two places at once.
+/// tinted icon chip, a headline, one supporting line, and a primary action,
+/// centered in the content column (per the philosophy's empty-state anatomy:
+/// "one clear next action, never a bare void"). `button` must be a dedicated
+/// handle (not the header's Add button); one view handle cannot be mounted in
+/// two places at once.
 pub(crate) fn render_empty_state(
     icon: Icon,
+    headline: &'static str,
     hint: &'static str,
     button: &ViewHandle<ActionButton>,
     app: &AppContext,
@@ -95,19 +121,38 @@ pub(crate) fn render_empty_state(
         Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(spacing::MD)
+            .with_child(render_icon_chip(
+                icon,
+                theme.accent(),
+                theme.accent_overlay(),
+                spacing::XL,
+                spacing::MD,
+            ))
             .with_child(
-                ConstrainedBox::new(icon.to_warpui_icon(sub).finish())
-                    .with_width(spacing::XL)
-                    .with_height(spacing::XL)
+                Container::new(
+                    Text::new_inline(
+                        headline,
+                        appearance.ui_font_family(),
+                        type_ramp::HEADING.size,
+                    )
+                    .with_line_height_ratio(type_ramp::HEADING.line_height)
+                    .with_color(theme.main_text_color(theme.background()).into())
                     .finish(),
+                )
+                .with_margin_top(spacing::XS)
+                .finish(),
             )
             .with_child(
-                Text::new_inline(hint, appearance.ui_font_family(), type_ramp::PROSE.size)
+                Text::new(hint, appearance.ui_font_family(), type_ramp::PROSE.size)
                     .with_line_height_ratio(type_ramp::PROSE.line_height)
                     .with_color(sub.into())
                     .finish(),
             )
-            .with_child(ChildView::new(button).finish())
+            .with_child(
+                Container::new(ChildView::new(button).finish())
+                    .with_margin_top(spacing::SM)
+                    .finish(),
+            )
             .finish(),
     )
     .with_margin_top(spacing::XXL)

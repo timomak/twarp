@@ -302,7 +302,8 @@ impl PullRequestsPageState {
         if store.selected_repo().is_none() {
             column.add_child(crate::automation::render_empty_state(
                 Icon::GitPullRequest,
-                "Open a project to see its pull requests.",
+                "No project open",
+                "Open a project with a GitHub remote to see its pull requests here.",
                 &self.empty_refresh_button,
                 app,
             ));
@@ -326,7 +327,8 @@ impl PullRequestsPageState {
         } else if data.is_some_and(|data| data.prs.is_empty()) {
             column.add_child(crate::automation::render_empty_state(
                 Icon::GitPullRequest,
-                "No pull requests match this filter.",
+                "All clear",
+                "No pull requests match this filter — refresh to check for new ones.",
                 &self.empty_refresh_button,
                 app,
             ));
