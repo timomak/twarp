@@ -817,14 +817,14 @@ pub struct ClaudeCodeView {
     interrupt_pending: bool,
     /// The last turn's outcome, for the tab status dot (7p): `Some(true)`
     /// finished cleanly, `Some(false)` failed. On revisit (focus) a ✗ is
-    /// cleared, while a ✓ merely flips from unreviewed blue to reviewed green
+    /// cleared, while a ✓ merely flips from unreviewed blue to a muted neutral
     /// (see [`Self::tab_attention_seen`]); both are masked by the
     /// in-progress/blocked states while the next turn runs. Stop
     /// (`Interrupted`) sets nothing: the user did it.
     tab_attention: Option<bool>,
     /// Whether the user has visited the pane since [`Self::tab_attention`] was
     /// set. A completed turn shows a blue ✓ until the first revisit, then a
-    /// green ✓ — so reviewed and unreviewed chats read apart at a glance.
+    /// muted neutral ✓ — so reviewed and unreviewed chats read apart at a glance.
     tab_attention_seen: bool,
     /// A turn completed while background scripts / sub-agents were still
     /// running: the ✓ and the desktop notification are held until the last
