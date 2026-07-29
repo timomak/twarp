@@ -2690,7 +2690,7 @@ impl View for LeftPanelView {
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let use_design_shell = cfg!(target_os = "macos") && FeatureFlag::DesignShellV1.is_enabled();
+        let use_design_shell = cfg!(target_os = "macos");
         let use_project_shell = super::project_sidebar_enabled();
 
         let tool_header = match self.active_view.get() {

@@ -635,11 +635,11 @@ pub(super) fn floating_panel_border(app: &AppContext) -> Border {
 }
 
 fn design_shell_v1_enabled() -> bool {
-    cfg!(target_os = "macos") && FeatureFlag::DesignShellV1.is_enabled()
+    cfg!(target_os = "macos")
 }
 
 pub(super) fn project_sidebar_enabled() -> bool {
-    design_shell_v1_enabled() && FeatureFlag::ProjectSidebar.is_enabled()
+    design_shell_v1_enabled()
 }
 
 fn should_render_code_review_rail(
@@ -3678,18 +3678,8 @@ impl Workspace {
         let open_twarp_drive = if !show_warp_home {
             if self.should_trigger_get_started_onboarding(ctx) {
                 self.trigger_get_started_onboarding(ctx);
-            } else if FeatureFlag::WelcomeTab.is_enabled() {
-                self.add_welcome_tab(ctx);
             } else {
-                self.add_new_session_tab_with_default_mode(
-                    NewSessionSource::Window,
-                    previous_active_window,
-                    shell,
-                    None,  /* ai_conversation */
-                    false, /* hide_homepage */
-                    ctx,
-                );
-                self.check_and_trigger_onboarding(ctx);
+                self.add_welcome_tab(ctx);
             }
             false
         } else {
@@ -11521,9 +11511,7 @@ impl Workspace {
         }
 
         let source_is_single_tab = self.tabs.len() == 1;
-        if (is_drag_outside_tab_bar || source_is_single_tab)
-            && FeatureFlag::DragTabsToWindows.is_enabled()
-        {
+        if is_drag_outside_tab_bar || source_is_single_tab {
             let source_was_single_tab = source_is_single_tab;
             if !source_was_single_tab {
                 if let Some(tab_data) = self.tabs.get_mut(current_index) {
@@ -19606,11 +19594,7 @@ impl Workspace {
     fn create_project(&mut self, source: NewProjectSource, ctx: &mut ViewContext<Self>) {
         match source {
             NewProjectSource::Scratch => {
-                if FeatureFlag::WelcomeTab.is_enabled() {
-                    self.add_welcome_tab(ctx);
-                } else {
-                    self.add_terminal_tab(false, ctx);
-                }
+                self.add_welcome_tab(ctx);
                 if let Some(tab) = self.tabs.get_mut(self.active_tab_index) {
                     tab.project_root = None;
                     tab.project_root_initialized = true;
@@ -19620,31 +19604,18 @@ impl Workspace {
                 ProjectManagementModel::handle(ctx).update(ctx, |projects, ctx| {
                     projects.upsert_project(project_root.clone(), ctx);
                 });
-                if FeatureFlag::WelcomeTab.is_enabled() {
-                    self.add_tab_with_pane_layout(
-                        PanesLayout::Snapshot(Box::new(PaneNodeSnapshot::Leaf(LeafSnapshot {
-                            is_focused: true,
-                            custom_vertical_tabs_title: None,
-                            contents: LeafContents::Welcome {
-                                startup_directory: Some(project_root.clone()),
-                            },
-                        }))),
-                        Arc::new(HashMap::new()),
-                        None,
-                        ctx,
-                    );
-                } else {
-                    self.add_tab_with_pane_layout(
-                        PanesLayout::SingleTerminal(Box::new(NewTerminalOptions {
-                            initial_directory: Some(project_root.clone()),
-                            hide_homepage: false,
-                            ..Default::default()
-                        })),
-                        Arc::new(HashMap::new()),
-                        None,
-                        ctx,
-                    );
-                }
+                self.add_tab_with_pane_layout(
+                    PanesLayout::Snapshot(Box::new(PaneNodeSnapshot::Leaf(LeafSnapshot {
+                        is_focused: true,
+                        custom_vertical_tabs_title: None,
+                        contents: LeafContents::Welcome {
+                            startup_directory: Some(project_root.clone()),
+                        },
+                    }))),
+                    Arc::new(HashMap::new()),
+                    None,
+                    ctx,
+                );
                 if let Some(tab) = self.tabs.get_mut(self.active_tab_index) {
                     tab.project_root = Some(project_root);
                     tab.project_root_initialized = true;
@@ -20193,11 +20164,7 @@ impl TypedActionView for Workspace {
                     // Terminal and Agent are handled by the existing path
                     // (add_terminal_tab applies DefaultSessionMode::Agent internally).
                     DefaultSessionMode::Terminal | DefaultSessionMode::Agent => {
-                        if FeatureFlag::WelcomeTab.is_enabled() {
-                            self.add_welcome_tab(ctx);
-                        } else {
-                            self.add_terminal_tab(false, ctx);
-                        }
+                        self.add_welcome_tab(ctx);
                     }
                 }
                 if self.active_tab_pane_group().id() != source_pane_group_id {
@@ -22982,22 +22949,20 @@ impl View for Workspace {
 
         // Cross-window ghost drag: floating chip that follows the cursor in the
         // target window. Added last so it renders on top of all other content.
-        if FeatureFlag::DragTabsToWindows.is_enabled() {
-            if let Some(ghost) =
-                CrossWindowTabDrag::as_ref(app).ghost_state_for_window(self.window_id)
-            {
-                let appearance = Appearance::as_ref(app);
-                let chip_origin = ghost.cursor_in_window - ghost.cursor_offset_in_element;
-                stack.add_positioned_overlay_child(
-                    render_cross_window_ghost_chip(&ghost, appearance, app),
-                    OffsetPositioning::offset_from_parent(
-                        chip_origin,
-                        ParentOffsetBounds::Unbounded,
-                        ParentAnchor::TopLeft,
-                        ChildAnchor::TopLeft,
-                    ),
-                );
-            }
+        if let Some(ghost) =
+            CrossWindowTabDrag::as_ref(app).ghost_state_for_window(self.window_id)
+        {
+            let appearance = Appearance::as_ref(app);
+            let chip_origin = ghost.cursor_in_window - ghost.cursor_offset_in_element;
+            stack.add_positioned_overlay_child(
+                render_cross_window_ghost_chip(&ghost, appearance, app),
+                OffsetPositioning::offset_from_parent(
+                    chip_origin,
+                    ParentOffsetBounds::Unbounded,
+                    ParentAnchor::TopLeft,
+                    ChildAnchor::TopLeft,
+                ),
+            );
         }
 
         let window_corner_radius = app.windows().window_corner_radius();

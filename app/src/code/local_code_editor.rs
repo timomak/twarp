@@ -1745,8 +1745,7 @@ impl LocalCodeEditorView {
     }
 
     fn git_blame_enabled(&self) -> bool {
-        FeatureFlag::GitBlame.is_enabled()
-            && self.diff_type.is_none()
+        self.diff_type.is_none()
             && !self.is_new_file
             && !self.suppress_git_blame
     }

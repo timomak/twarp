@@ -1147,7 +1147,7 @@ impl PluginsPageState {
             "Drives the in-app browser pane for the active session.",
             appearance,
         ));
-        if FeatureFlag::LocalComputerUse.is_enabled() {
+        if crate::computer_control::platform_supported() {
             column.add_child(render_builtin_card(
                 "twarp-computer-control",
                 "Injects mouse/keyboard events for UI debugging.",

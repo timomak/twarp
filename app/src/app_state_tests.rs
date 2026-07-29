@@ -1,19 +1,7 @@
 use super::*;
 
 #[test]
-fn codex_adapter_configuration_is_hidden_when_feature_is_disabled() {
-    let _guard = FeatureFlag::CodexAgentBackend.override_enabled(false);
-
-    assert!(CODEX_AGENT_ADAPTER.model_options().is_empty());
-    assert!(!CODEX_AGENT_ADAPTER.is_valid_model(CODEX_MODEL_OPTIONS[0]));
-    assert!(CODEX_AGENT_ADAPTER.effort_options().is_empty());
-    assert!(!CODEX_AGENT_ADAPTER.is_valid_effort(CODEX_EFFORT_OPTIONS[0].value));
-}
-
-#[test]
-fn codex_adapter_configuration_is_exposed_when_feature_is_enabled() {
-    let _guard = FeatureFlag::CodexAgentBackend.override_enabled(true);
-
+fn codex_adapter_configuration_is_exposed() {
     assert!(!CODEX_AGENT_ADAPTER.model_options().is_empty());
     assert!(CODEX_AGENT_ADAPTER.is_valid_model(CODEX_MODEL_OPTIONS[0]));
     assert!(!CODEX_AGENT_ADAPTER.effort_options().is_empty());

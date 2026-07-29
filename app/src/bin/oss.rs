@@ -9,32 +9,14 @@ use twarp_core::{
     AppId,
 };
 
-// twarp: feature 05 (Open Changes rework) builds on top of the right-side
-// Code Review panel layout that upstream gates behind a Preview flag. The
-// rework IS the canonical layout for twarp, so enable the flag in OSS by
-// default — otherwise `cargo run` (which defaults to twarp-oss) hides the
-// reworked sidebar entirely.
-//
-// twarp: feature 08 (macOS UI overhaul, sub-phase 8b/8c) gates drag-a-tab-out
-// / drag-between-windows behind DragTabsToWindows, which upstream ships only in
-// DOGFOOD_FLAGS. twarp-oss (the default `./script/run` binary) never enables the
-// dogfood set, so without this the tab drag axis stays locked to horizontal and
-// detach-to-new-window never fires. Force-enable it for the OSS build.
-//
-// twarp: feature 11a (Git blame gutter) is smoke-tested through the default
-// twarp-oss binary. Keep the feature flag boundary in code, but enable it for
-// this fork's dev binary so the gutter path is live in fleet UX gates.
-//
-// twarp: feature 19b (Codex shell) is likewise gated in code so the layout can
-// be A/B'd, but the default OSS worker build should expose it for UX gates.
-const TWARP_OSS_FLAGS: &[FeatureFlag] = &[
-    FeatureFlag::GitOperationsInCodeReview,
-    FeatureFlag::DragTabsToWindows,
-    FeatureFlag::GitBlame,
-    FeatureFlag::DesignShellV1,
-    FeatureFlag::ProjectSidebar,
-    FeatureFlag::CodexAgentBackend,
-];
+// twarp: shipped twarp features are product, not experiments. The flags that
+// used to be force-enabled here (GitOperationsInCodeReview, DragTabsToWindows,
+// GitBlame, DesignShellV1, ProjectSidebar, CodexAgentBackend, LocalComputerUse,
+// MarkdownImages, WelcomeTab, EditableMarkdownMermaid) have had their call-site
+// gating removed entirely — the enabled behavior is now unconditional product
+// code. This list stays as an empty slice so future twarp-only flags have an
+// obvious place to be enabled for the OSS build.
+const TWARP_OSS_FLAGS: &[FeatureFlag] = &[];
 
 // Simple wrapper around twarp::run() for Twarp OSS builds.
 fn main() -> Result<()> {

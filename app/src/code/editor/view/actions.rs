@@ -1167,12 +1167,10 @@ impl TypedActionView for CodeEditorView {
                 }
             }
             BlameAnnotationClicked { line, sha } => {
-                if FeatureFlag::GitBlame.is_enabled() {
-                    ctx.emit(CodeEditorEvent::BlameAnnotationClicked {
-                        line: line.clone(),
-                        sha: sha.clone(),
-                    });
-                }
+                ctx.emit(CodeEditorEvent::BlameAnnotationClicked {
+                    line: line.clone(),
+                    sha: sha.clone(),
+                });
             }
             NewCommentOnLine { line: line_info } => {
                 if FeatureFlag::InlineCodeReview.is_enabled() {
