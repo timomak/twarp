@@ -486,9 +486,7 @@ impl TelemetryEventDesc for CodeReviewTelemetryEventDiscriminants {
             Self::CommentsReceived | Self::CommentsAttached => {
                 EnablementState::Flag(FeatureFlag::PRCommentsV2)
             }
-            Self::GitButtonTriggered | Self::GitDialogCompleted => {
-                EnablementState::Flag(FeatureFlag::GitOperationsInCodeReview)
-            }
+            Self::GitButtonTriggered | Self::GitDialogCompleted => EnablementState::Always,
             _ => EnablementState::Always,
         }
     }

@@ -5146,9 +5146,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ToggleSharedBlockTitleGenerationSetting => {
                 EnablementState::Flag(FeatureFlag::SharedBlockTitleGeneration)
             }
-            Self::ToggleGitOperationsAutogenSetting => {
-                EnablementState::Flag(FeatureFlag::GitOperationsInCodeReview)
-            }
+            Self::ToggleGitOperationsAutogenSetting => EnablementState::Always,
             Self::ZeroStatePromptSuggestionUsed => EnablementState::Always,
             Self::AgentModeCodeSuggestionEditedByUser
             | Self::AgentModeCodeFilesNavigated

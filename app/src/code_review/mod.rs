@@ -82,8 +82,7 @@ pub fn init(app: &mut AppContext) {
             CodeReviewAction::ToggleFileSidebar,
         )
         .with_context_predicate(id!("CodeReviewView_NotEditing"))
-        .with_key_binding("f")
-        .with_enabled(|| crate::features::FeatureFlag::GitOperationsInCodeReview.is_enabled()),
+        .with_key_binding("f"),
     ]);
 
     app.register_fixed_bindings([FixedBinding::custom(

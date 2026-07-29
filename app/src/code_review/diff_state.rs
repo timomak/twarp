@@ -1689,27 +1689,24 @@ impl DiffStateModel {
             None
         };
 
-        let (unpushed_commits, upstream_ref) =
-            if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
-                let upstream_branch = run_git_command(
-                    &repo_path,
-                    &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
-                )
-                .await
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty());
-                let unpushed = get_unpushed_commits(
-                    &repo_path,
-                    Some(current_branch_name.as_str()),
-                    upstream_branch.as_deref(),
-                )
-                .await
-                .unwrap_or_default();
-                (unpushed, upstream_branch)
-            } else {
-                (Vec::new(), None)
-            };
+        let (unpushed_commits, upstream_ref) = {
+            let upstream_branch = run_git_command(
+                &repo_path,
+                &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+            )
+            .await
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+            let unpushed = get_unpushed_commits(
+                &repo_path,
+                Some(current_branch_name.as_str()),
+                upstream_branch.as_deref(),
+            )
+            .await
+            .unwrap_or_default();
+            (unpushed, upstream_branch)
+        };
 
         Ok(DiffMetadata {
             main_branch_name,
@@ -1825,11 +1822,8 @@ impl DiffStateModel {
             ctx.emit(DiffStateModelEvent::CurrentBranchChanged);
 
             // Refresh PR info on branch change (network call, not on every tick).
-            if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
-                self.refresh_pr_info(ctx);
-            }
-        } else if FeatureFlag::GitOperationsInCodeReview.is_enabled()
-            && self.pr_info().is_none()
+            self.refresh_pr_info(ctx);
+        } else if self.pr_info().is_none()
             && !self.is_pr_info_refreshing()
             && self.pr_info_attempted_for_branch != current_branch
         {

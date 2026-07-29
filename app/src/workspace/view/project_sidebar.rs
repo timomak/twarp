@@ -1009,11 +1009,6 @@ impl Workspace {
                 })
             })
             .on_drop(|ctx, _, _, _| ctx.dispatch_typed_action(WorkspaceAction::DropTab));
-        let draggable = if FeatureFlag::DragTabsToWindows.is_enabled() {
-            draggable
-        } else {
-            draggable.with_drag_axis(DragAxis::VerticalOnly)
-        };
         let row = SavePosition::new(draggable.finish(), &tab_position_id(index)).finish();
         Some(row)
     }

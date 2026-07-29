@@ -7442,9 +7442,7 @@ impl Input {
         };
         let provider = match program {
             CLAUDE_PROGRAM => claude_code::driver::AgentProvider::Claude,
-            CODEX_PROGRAM if FeatureFlag::CodexAgentBackend.is_enabled() => {
-                claude_code::driver::AgentProvider::Codex
-            }
+            CODEX_PROGRAM => claude_code::driver::AgentProvider::Codex,
             _ => return None,
         };
         let alias_expanded_args: Vec<String> = tokens.map(str::to_owned).collect();

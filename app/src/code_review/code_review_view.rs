@@ -1472,12 +1472,7 @@ impl CodeReviewView {
         });
 
         let header_dropdown_button = ctx.add_typed_action_view(|_ctx| {
-            let theme: Arc<dyn ActionButtonTheme> =
-                if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
-                    Arc::new(NakedTheme)
-                } else {
-                    Arc::new(PaneHeaderTheme)
-                };
+            let theme: Arc<dyn ActionButtonTheme> = Arc::new(NakedTheme);
             ActionButton::new_with_boxed_theme("", theme)
                 .with_icon(Icon::DotsVertical)
                 .on_click(|ctx| ctx.dispatch_typed_action(CodeReviewAction::OpenHeaderMenu))
@@ -2687,9 +2682,7 @@ impl CodeReviewView {
                 self.fetch_branches_and_setup_dropdown(ctx);
                 self.load_diffs_for_active_repo(false, ctx);
                 self.update_aggregate_stats(ctx);
-                if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
-                    self.update_git_operations_ui(ctx);
-                }
+                self.update_git_operations_ui(ctx);
             }
             DiffStateModelEvent::DiffMetadataChanged(InvalidationBehavior::AllLockedIndex) => {
                 // The git index is locked (e.g. during pull/merge). Cancel
@@ -2701,15 +2694,11 @@ impl CodeReviewView {
             DiffStateModelEvent::DiffMetadataChanged(InvalidationBehavior::Files(files)) => {
                 self.invalidate_files(files.clone(), ctx);
                 self.update_aggregate_stats(ctx);
-                if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
-                    self.update_git_operations_ui(ctx);
-                }
+                self.update_git_operations_ui(ctx);
             }
             DiffStateModelEvent::DiffMetadataChanged(InvalidationBehavior::PromptRefresh) => {
                 self.update_aggregate_stats(ctx);
-                if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
-                    self.update_git_operations_ui(ctx);
-                }
+                self.update_git_operations_ui(ctx);
             }
             DiffStateModelEvent::CurrentBranchChanged => {
                 self.update_diff_selector_selection(ctx);
@@ -2728,9 +2717,7 @@ impl CodeReviewView {
                 // After the view state is refreshed with fresh diffs, re-evaluate
                 // the git operations button (Commit / Push / Create PR) so that
                 // e.g. committing shows "Push" instead of staying on "Commit".
-                if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
-                    self.update_git_operations_ui(ctx);
-                }
+                self.update_git_operations_ui(ctx);
             }
         }
     }
@@ -5040,8 +5027,7 @@ impl CodeReviewView {
             || FeatureFlag::DiffSetAsContext.is_enabled()
             || FeatureFlag::FileAndDiffSetComments.is_enabled();
         let has_changes = matches!(self.state(), CodeReviewViewState::Loaded(loaded) if !loaded.to_diff_stats().has_no_changes());
-        let has_header_menu_items =
-            has_menu_flags && (!FeatureFlag::GitOperationsInCodeReview.is_enabled() || has_changes);
+        let has_header_menu_items = has_menu_flags && has_changes;
 
         let code_review_header_fields = CodeReviewHeaderFields {
             is_in_split_pane,
@@ -5065,13 +5051,9 @@ impl CodeReviewView {
             git_operations_menu_open: self.git_operations_menu_open,
         };
 
-        let header = if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
-            self.header
-                .render_new(appearance, &code_review_header_fields)
-        } else {
-            self.header
-                .render(state, appearance, &code_review_header_fields, app)
-        };
+        let header = self
+            .header
+            .render_new(appearance, &code_review_header_fields);
         SavePosition::new(header, &self.header_position_id).finish()
     }
 
@@ -7810,52 +7792,7 @@ impl CodeReviewView {
 
     /// Items for the header overflow menu (three-dots button).
     fn header_menu_items(&self, ctx: &mut ViewContext<Self>) -> Vec<MenuItem<CodeReviewAction>> {
-        if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
-            self.header_menu_items_new(ctx)
-        } else {
-            self.header_menu_items_legacy(ctx)
-        }
-    }
-
-    /// Legacy menu items — gated on FileAndDiffSetComments only.
-    fn header_menu_items_legacy(
-        &self,
-        ctx: &mut ViewContext<Self>,
-    ) -> Vec<MenuItem<CodeReviewAction>> {
-        let mut items = Vec::new();
-
-        if !FeatureFlag::FileAndDiffSetComments.is_enabled() {
-            return items;
-        }
-
-        let mut has_changes = false;
-        if let CodeReviewViewState::Loaded(loaded) = self.state() {
-            has_changes = !loaded.to_diff_stats().has_no_changes();
-        }
-
-        if FeatureFlag::DiffSetAsContext.is_enabled() && has_changes {
-            items.push(
-                MenuItemFields::new("Add diff set as context")
-                    .with_icon(Icon::Paperclip)
-                    .with_on_select_action(CodeReviewAction::AddDiffSetAsContext(DiffSetScope::All))
-                    .into_item(),
-            );
-        }
-
-        let (comment_label, comment_icon) = if self.get_existing_diffset_comment(ctx).is_some() {
-            ("Show saved comment", Icon::MessageText)
-        } else {
-            ("Add comment", Icon::MessagePlusSquare)
-        };
-
-        items.push(
-            MenuItemFields::new(comment_label)
-                .with_icon(comment_icon)
-                .with_on_select_action(CodeReviewAction::OpenCommentComposerFromHeader)
-                .into_item(),
-        );
-
-        items
+        self.header_menu_items_new(ctx)
     }
 
     /// New menu items — individually gated, includes discard and AI check.
