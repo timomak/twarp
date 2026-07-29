@@ -1019,11 +1019,22 @@ impl Entity for PullRequestsStoreModel {
 
 impl SingletonEntity for PullRequestsStoreModel {}
 
+/// When the app is launched from Finder, PATH is the minimal launchd default
+/// and misses the Homebrew bin dirs where `gh` is typically installed.
+fn path_with_homebrew() -> String {
+    let mut path = String::from("/opt/homebrew/bin:/usr/local/bin:");
+    if let Ok(existing) = std::env::var("PATH") {
+        path.push_str(&existing);
+    }
+    path
+}
+
 /// Run a command in `cwd`, returning trimmed stdout on success and a
 /// human-readable error otherwise. Blocking — background executor only.
 fn run_in_repo(repo: &Path, program: &str, args: &[&str]) -> Result<String, String> {
     let output = std::process::Command::new(program)
         .args(args)
+        .env("PATH", path_with_homebrew())
         .current_dir(repo)
         .output()
         .map_err(|err| {
@@ -1056,6 +1067,7 @@ fn run_in_repo_with_stdin(
     use std::io::Write;
     let mut child = std::process::Command::new(program)
         .args(args)
+        .env("PATH", path_with_homebrew())
         .current_dir(repo)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
