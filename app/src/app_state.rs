@@ -468,8 +468,10 @@ impl ConversationStatus {
         use twarp_core::ui::Icon;
         match self {
             ConversationStatus::InProgress => (Icon::ClockLoader, theme.ansi_fg_magenta()),
+            // A reviewed ✓ is deliberately muted: color is reserved for states
+            // that still want the user's attention (see `SuccessUnseen`).
             ConversationStatus::Done | ConversationStatus::Success => {
-                (Icon::Check, theme.ansi_fg_green())
+                (Icon::Check, internal_colors::neutral_5(theme))
             }
             ConversationStatus::SuccessUnseen => (Icon::Check, theme.ansi_fg_blue()),
             ConversationStatus::Failed | ConversationStatus::Error => {
