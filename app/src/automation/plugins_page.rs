@@ -630,9 +630,7 @@ impl PluginsPageState {
         });
         let cancel_button = ctx.add_typed_action_view(|_| {
             ActionButton::new("Cancel", SecondaryTheme).on_click(|ctx| {
-                ctx.dispatch_typed_action(AutomationViewAction::Plugins(
-                    PluginsPageAction::Cancel,
-                ));
+                ctx.dispatch_typed_action(AutomationViewAction::Plugins(PluginsPageAction::Cancel));
             })
         });
 
@@ -1116,7 +1114,9 @@ impl PluginsPageState {
         if show_empty_state {
             column.add_child(super::render_empty_state(
                 twarp_core::ui::Icon::Dataflow,
-                "No plugins configured yet.",
+                "Work with your favorite tools",
+                "A plugin bundles MCP servers and skills for every new Claude and Codex \
+                 session — pick one from Quick Add above or build your own.",
                 &self.empty_add_button,
                 app,
             ));
@@ -1336,7 +1336,9 @@ impl PluginsPageState {
                 .finish(),
             )
             .with_child(
-                Text::new_inline(
+                // Soft-wrapped: long store paths must never paint under the
+                // Adopt button (Text::new_inline overflows its box).
+                Text::new(
                     skill.path.to_string_lossy().into_owned(),
                     appearance.monospace_font_family(),
                     type_ramp::CAPTION.size,
@@ -1349,6 +1351,7 @@ impl PluginsPageState {
 
         let mut row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(spacing::MD)
             .with_child(Shrinkable::new(1., labels).finish());
         if let Some(button) = self.adopt_buttons.get(&skill.name) {
             row = row.with_child(ChildView::new(button).finish());
@@ -1713,7 +1716,11 @@ fn parse_args(text: &str) -> Vec<String> {
     text.split_whitespace().map(str::to_owned).collect()
 }
 
-fn set_editor_text(handle: &ViewHandle<EditorView>, text: &str, ctx: &mut ViewContext<AutomationView>) {
+fn set_editor_text(
+    handle: &ViewHandle<EditorView>,
+    text: &str,
+    ctx: &mut ViewContext<AutomationView>,
+) {
     let text = text.to_owned();
     handle.update(ctx, |editor, ctx| {
         editor.set_buffer_text_ignoring_undo(&text, ctx);
