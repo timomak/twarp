@@ -27,6 +27,13 @@ use twarp_core::{
 //
 // twarp: feature 19b (Codex shell) is likewise gated in code so the layout can
 // be A/B'd, but the default OSS worker build should expose it for UX gates.
+//
+// twarp: owner decision 2026-07-29 — shipped twarp features are product, not
+// experiments. Anything the fork relies on that upstream parks in
+// DOGFOOD_FLAGS (never applied to the Oss channel) belongs here, or it goes
+// silently dark in every `./script/run` build. LocalComputerUse (feature 15
+// "take control") shipped that way in v2026.07.28; MarkdownImages, WelcomeTab,
+// and EditableMarkdownMermaid were dark the same way.
 const TWARP_OSS_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::GitOperationsInCodeReview,
     FeatureFlag::DragTabsToWindows,
@@ -34,6 +41,10 @@ const TWARP_OSS_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::DesignShellV1,
     FeatureFlag::ProjectSidebar,
     FeatureFlag::CodexAgentBackend,
+    FeatureFlag::LocalComputerUse,
+    FeatureFlag::MarkdownImages,
+    FeatureFlag::WelcomeTab,
+    FeatureFlag::EditableMarkdownMermaid,
 ];
 
 // Simple wrapper around twarp::run() for Twarp OSS builds.
