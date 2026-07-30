@@ -12419,6 +12419,7 @@ dependencies = [
  "notify-debouncer-full",
  "num-traits",
  "num_cpus",
+ "oauth2",
  "objc",
  "objc2-foundation 0.3.2",
  "onboarding",

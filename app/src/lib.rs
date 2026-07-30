@@ -99,6 +99,7 @@ mod linear;
 // twarp 20b: user-managed shared MCP-server registry (Automation > MCPs).
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod login_item;
+mod mcp_oauth;
 mod mcp_registry;
 pub mod plugin_registry;
 mod pull_requests;
@@ -1749,6 +1750,16 @@ fn initialize_app(
     let migrated_servers = migrated.servers;
     ctx.add_singleton_model(move |_| {
         crate::mcp_registry::McpRegistryModel::new(migrated_servers)
+    });
+
+    // twarp 24b: per-server connection + OAuth state for remote MCP servers.
+    // Registers after the registry because its startup restore reads it.
+    ctx.add_singleton_model(crate::mcp_oauth::McpOauthModel::new);
+    crate::mcp_oauth::McpOauthModel::handle(ctx).update(ctx, |oauth, ctx| {
+        let entries = crate::mcp_registry::McpRegistryModel::as_ref(ctx)
+            .servers()
+            .to_vec();
+        oauth.restore(&entries, ctx);
     });
 
     // twarp 20c: the twarp-managed shared-skills store (~/.twarp/skills),

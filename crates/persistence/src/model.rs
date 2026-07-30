@@ -801,6 +801,10 @@ pub struct McpServer {
     pub enabled_codex: bool,
     /// twarp 23a: owning plugin's UUID; NULL = not yet migrated.
     pub plugin_id: Option<String>,
+    /// twarp 24a: JSON object of extra HTTP headers for remote servers.
+    pub headers: Option<String>,
+    /// twarp 24a: "none" | "headers" | "oauth"; NULL on pre-24a rows.
+    pub auth: Option<String>,
 }
 
 /// twarp 23a: one plugin — a named bundle of MCP servers and/or skills with

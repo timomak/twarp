@@ -254,6 +254,7 @@ warp_multi_agent_api.workspace = true
 remote_server.workspace = true
 repo_metadata.workspace = true
 vim.workspace = true
+oauth2.workspace = true
 rmcp = { workspace = true, features = ["client"] }
 twarp_isolation_platform.workspace = true
 twarp_ripgrep.workspace = true

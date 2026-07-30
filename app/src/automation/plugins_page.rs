@@ -34,7 +34,10 @@ use crate::appearance::Appearance;
 use crate::editor::{
     EditorOptions, EditorView, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions,
 };
-use crate::mcp_registry::{McpRegistryModel, McpServerEntry, McpTransport};
+use crate::mcp_oauth::{McpAuthStatus, McpOauthModel};
+use crate::mcp_registry::{
+    is_bearer_authorization, McpAuth, McpRegistryModel, McpServerEntry, McpTransport,
+};
 use crate::plugin_registry::{PluginEntry, PluginRegistryModel};
 use crate::skills_store::{is_valid_skill_name, AdoptableSkill, SkillsStoreModel};
 use crate::view_components::{
@@ -187,6 +190,15 @@ pub enum PluginsPageAction {
     SetServerTransport(String, String),
     ToggleServerClaude(String),
     ToggleServerCodex(String),
+    /// twarp 24c: show/hide a server sub-form's Advanced section (transport,
+    /// stdio fields, env, headers).
+    ToggleServerAdvanced(String),
+    /// twarp 24c: save the plugin, then probe/authorize this server.
+    ConnectServer(String),
+    /// twarp 24c: drop this server's stored OAuth tokens.
+    DisconnectServer(String),
+    /// twarp 24c: abandon a consent flow that is waiting on the browser.
+    CancelServerConnect(String),
     AddSkill,
     RemoveSkill(String),
     ToggleSkillClaude(String),
@@ -217,8 +229,23 @@ struct ServerForm {
     args_editor: ViewHandle<EditorView>,
     url_editor: ViewHandle<EditorView>,
     env_editor: ViewHandle<EditorView>,
+    /// twarp 24a: `Header-Name: value`, one per line.
+    headers_editor: ViewHandle<EditorView>,
     transport_dropdown: ViewHandle<Dropdown<AutomationViewAction>>,
     transport: McpTransport,
+    /// twarp 24a: preserved across edits — the OAuth grant belongs to the
+    /// server, not to whatever the form last rendered.
+    auth: McpAuth,
+    /// twarp 24c: whether the Advanced section is expanded. Collapsed by
+    /// default so a hosted server is just Name + URL + Connect.
+    advanced_open: bool,
+    /// Separate handles because an [`ActionButton`]'s label is fixed at
+    /// construction and only one of each pair is ever mounted.
+    show_advanced_button: ViewHandle<ActionButton>,
+    hide_advanced_button: ViewHandle<ActionButton>,
+    connect_button: ViewHandle<ActionButton>,
+    disconnect_button: ViewHandle<ActionButton>,
+    cancel_connect_button: ViewHandle<ActionButton>,
     enabled_claude: bool,
     enabled_codex: bool,
     claude_switch: SwitchStateHandle,
@@ -468,6 +495,12 @@ impl PluginsPageState {
                 {
                     if let Some(form) = editor.servers.iter_mut().find(|f| &f.key == key) {
                         form.transport = transport;
+                        // Command/Arguments live behind Advanced, so switching
+                        // to stdio has to reveal them or Save would fail on
+                        // fields the user can't see (twarp 24c).
+                        if transport == McpTransport::Stdio {
+                            form.advanced_open = true;
+                        }
                     }
                 }
             }
@@ -479,6 +512,27 @@ impl PluginsPageState {
             PluginsPageAction::ToggleServerCodex(key) => {
                 if let Some(form) = self.server_form_mut(key) {
                     form.enabled_codex = !form.enabled_codex;
+                }
+            }
+            PluginsPageAction::ToggleServerAdvanced(key) => {
+                if let Some(form) = self.server_form_mut(key) {
+                    form.advanced_open = !form.advanced_open;
+                }
+            }
+            PluginsPageAction::ConnectServer(key) => {
+                // Connecting needs a persisted id for the OAuth callback to
+                // route back to, so save first (P5) — a validation failure
+                // leaves the editor open with its error and connects nothing.
+                self.save(Some(key.clone()), ctx);
+            }
+            PluginsPageAction::DisconnectServer(key) => {
+                if let Some(id) = self.server_form_id(key) {
+                    McpOauthModel::handle(ctx).update(ctx, |m, mctx| m.disconnect(&id, mctx));
+                }
+            }
+            PluginsPageAction::CancelServerConnect(key) => {
+                if let Some(id) = self.server_form_id(key) {
+                    McpOauthModel::handle(ctx).update(ctx, |m, mctx| m.cancel(&id, mctx));
                 }
             }
             PluginsPageAction::AddSkill => {
@@ -512,7 +566,7 @@ impl PluginsPageState {
                     editor.enabled_codex = !editor.enabled_codex;
                 }
             }
-            PluginsPageAction::Save => self.save(ctx),
+            PluginsPageAction::Save => self.save(None, ctx),
             PluginsPageAction::Cancel => self.editor = None,
         }
         self.sync_rows(ctx);
@@ -539,6 +593,8 @@ impl PluginsPageState {
         };
         for server_id in &entry.server_ids {
             McpRegistryModel::handle(ctx).update(ctx, |m, mctx| m.delete(server_id, mctx));
+            // twarp 24b: a deleted server's keychain material goes with it.
+            McpOauthModel::handle(ctx).update(ctx, |m, mctx| m.forget(server_id, mctx));
         }
         for skill_name in &entry.skill_names {
             SkillsStoreModel::handle(ctx).update(ctx, |m, mctx| m.delete(skill_name, mctx));
@@ -684,6 +740,14 @@ impl PluginsPageState {
             .collect::<Vec<_>>()
             .join("\n");
         let env_editor = new_multiline_editor("KEY=value, one per line", &env_text, ctx);
+        let headers_text = entry
+            .headers
+            .iter()
+            .map(|(k, v)| format!("{k}: {v}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let headers_editor =
+            new_multiline_editor("Header-Name: value, one per line", &headers_text, ctx);
 
         let transport = entry.transport;
         let dropdown_key = key.clone();
@@ -724,6 +788,42 @@ impl PluginsPageState {
             })
         });
 
+        let show_advanced_button = server_action_button(
+            "Advanced",
+            SecondaryTheme,
+            &key,
+            PluginsPageAction::ToggleServerAdvanced,
+            ctx,
+        );
+        let hide_advanced_button = server_action_button(
+            "Hide advanced",
+            SecondaryTheme,
+            &key,
+            PluginsPageAction::ToggleServerAdvanced,
+            ctx,
+        );
+        let connect_button = server_action_button(
+            "Connect",
+            PrimaryTheme,
+            &key,
+            PluginsPageAction::ConnectServer,
+            ctx,
+        );
+        let disconnect_button = server_action_button(
+            "Disconnect",
+            SecondaryTheme,
+            &key,
+            PluginsPageAction::DisconnectServer,
+            ctx,
+        );
+        let cancel_connect_button = server_action_button(
+            "Cancel",
+            SecondaryTheme,
+            &key,
+            PluginsPageAction::CancelServerConnect,
+            ctx,
+        );
+
         ServerForm {
             key,
             existing_id,
@@ -732,14 +832,35 @@ impl PluginsPageState {
             args_editor,
             url_editor,
             env_editor,
+            headers_editor,
             transport_dropdown,
             transport,
+            auth: entry.auth,
+            // A stdio server has nothing to connect to, so its fields are the
+            // point — open Advanced for it and leave remote servers minimal.
+            advanced_open: transport == McpTransport::Stdio,
+            show_advanced_button,
+            hide_advanced_button,
+            connect_button,
+            disconnect_button,
+            cancel_connect_button,
             enabled_claude: entry.enabled_claude,
             enabled_codex: entry.enabled_codex,
             claude_switch: Default::default(),
             codex_switch: Default::default(),
             remove_button,
         }
+    }
+
+    /// The registry id behind a server sub-form, once it has been saved.
+    fn server_form_id(&self, key: &str) -> Option<String> {
+        self.editor
+            .as_ref()?
+            .servers
+            .iter()
+            .find(|form| form.key == key)?
+            .existing_id
+            .clone()
     }
 
     fn new_skill_form(
@@ -784,7 +905,14 @@ impl PluginsPageState {
     /// Validate the form and commit it: upsert the plugin, upsert / create
     /// its components with membership, and spin removed components out into
     /// plugins of their own (they stay usable rather than silently orphaned).
-    fn save(&mut self, ctx: &mut ViewContext<AutomationView>) {
+    /// Commit the editor. `connect_form_key`, when set, is the server
+    /// sub-form whose Connect button triggered the save: after the commit its
+    /// saved entry is handed to [`McpOauthModel::connect`] (twarp 24c).
+    fn save(
+        &mut self,
+        connect_form_key: Option<String>,
+        ctx: &mut ViewContext<AutomationView>,
+    ) {
         let Some(editor) = self.editor.as_mut() else {
             return;
         };
@@ -807,6 +935,9 @@ impl PluginsPageState {
 
         // Server sub-form validation.
         let mut server_entries = Vec::new();
+        // twarp 24c: sub-form key -> saved registry id, so Connect can find
+        // the entry it just committed.
+        let mut form_ids: Vec<(String, String)> = Vec::new();
         if error.is_none() {
             let own_server_ids: Vec<String> = editor
                 .servers
@@ -819,6 +950,8 @@ impl PluginsPageState {
                 let args_text = text(&form.args_editor);
                 let url = text(&form.url_editor);
                 let env_text = form.env_editor.as_ref(ctx).buffer_text(ctx);
+                let headers_text = form.headers_editor.as_ref(ctx).buffer_text(ctx);
+                let headers = parse_headers(&headers_text);
 
                 if server_name.is_empty() {
                     error = Some("Every server needs a name.".to_owned());
@@ -842,6 +975,14 @@ impl PluginsPageState {
                     ));
                 } else if form.transport == McpTransport::Http && url.is_empty() {
                     error = Some(format!("Server \"{server_name}\": URL is required."));
+                } else if form.transport == McpTransport::Http && !valid_http_url(&url) {
+                    error = Some(format!(
+                        "Server \"{server_name}\": URL must start with http:// or https://."
+                    ));
+                } else if headers.is_none() {
+                    error = Some(format!(
+                        "Server \"{server_name}\": each header must read \"Name: value\"."
+                    ));
                 }
                 if error.is_some() {
                     break;
@@ -872,7 +1013,19 @@ impl PluginsPageState {
                     enabled_claude: form.enabled_claude,
                     enabled_codex: form.enabled_codex,
                     plugin_id: None, // set below once the plugin id is final
+                    headers: headers.clone().unwrap_or_default(),
+                    // An existing OAuth grant survives an edit; otherwise the
+                    // presence of headers is what distinguishes static auth
+                    // from none.
+                    auth: match form.auth {
+                        McpAuth::Oauth => McpAuth::Oauth,
+                        _ if headers.as_ref().is_some_and(|h| !h.is_empty()) => McpAuth::Headers,
+                        _ => McpAuth::None,
+                    },
                 });
+                if let Some(entry) = server_entries.last() {
+                    form_ids.push((form.key.clone(), entry.id.clone()));
+                }
             }
         }
 
@@ -974,6 +1127,19 @@ impl PluginsPageState {
         PluginRegistryModel::handle(ctx).update(ctx, |m, mctx| m.upsert(entry, mctx));
         self.editor = None;
         self.sync_rows(ctx);
+
+        // twarp 24c: Connect probes the server that was just committed, so the
+        // OAuth callback has a persisted id to route back to.
+        if let Some(server_id) = connect_form_key.and_then(|key| {
+            form_ids
+                .into_iter()
+                .find(|(form_key, _)| *form_key == key)
+                .map(|(_, id)| id)
+        }) {
+            if let Some(saved) = McpRegistryModel::as_ref(ctx).get(&server_id).cloned() {
+                McpOauthModel::handle(ctx).update(ctx, |m, mctx| m.connect(&saved, mctx));
+            }
+        }
     }
 
     /// A server removed from a plugin becomes a single-server plugin of its
@@ -1352,6 +1518,12 @@ impl PluginsPageState {
             .with_color(theme.sub_text_color(theme.background()).into())
             .finish(),
         );
+        // twarp 24c: connection status for the card's remote servers, so a
+        // server needing authorization is visible without opening the editor
+        // (P9). Stdio-only plugins show nothing.
+        for status in remote_server_statuses(entry, app) {
+            labels = labels.with_child(render_status_chip(&status, appearance));
+        }
         if let Some(conflict) = plugin_conflict_note(entry, app) {
             labels = labels.with_child(
                 Text::new_inline(
@@ -1531,7 +1703,11 @@ impl PluginsPageState {
             .finish(),
         );
         for server in &editor.servers {
-            form.add_child(self.render_server_form(server, appearance));
+            let status = McpOauthModel::as_ref(app).status_for_form(
+                server.existing_id.as_deref(),
+                server.transport,
+            );
+            form.add_child(self.render_server_form(server, &status, appearance, app));
         }
         form.add_child(
             Container::new(
@@ -1634,8 +1810,47 @@ impl PluginsPageState {
             .finish()
     }
 
-    /// One server sub-form: transport picker + fields + toggles + Remove.
-    fn render_server_form(&self, form: &ServerForm, appearance: &Appearance) -> Box<dyn Element> {
+    /// twarp 24c: the status chip plus whichever of Connect / Cancel /
+    /// Disconnect applies to the server's current state.
+    fn render_connect_row(
+        &self,
+        form: &ServerForm,
+        status: &McpAuthStatus,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let button = match status {
+            McpAuthStatus::WaitingForBrowser => Some(&form.cancel_connect_button),
+            // A probe in flight has nothing to cancel — it settles on its own.
+            McpAuthStatus::Connecting => None,
+            McpAuthStatus::Connected { .. } => Some(&form.disconnect_button),
+            _ => Some(&form.connect_button),
+        };
+
+        let mut row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(spacing::MD);
+        if let Some(button) = button {
+            row = row.with_child(ChildView::new(button).finish());
+        }
+        row = row.with_child(
+            Shrinkable::new(1., render_status_chip(status, appearance)).finish(),
+        );
+
+        Container::new(row.finish())
+            .with_margin_bottom(spacing::SM)
+            .finish()
+    }
+
+    /// One server sub-form: name, remote URL + Connect, an Advanced
+    /// disclosure holding transport / stdio fields / headers / env, then the
+    /// provider toggles and Remove (twarp 24c).
+    fn render_server_form(
+        &self,
+        form: &ServerForm,
+        status: &McpAuthStatus,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
         let theme = appearance.theme();
         let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
 
@@ -1654,44 +1869,95 @@ impl PluginsPageState {
         );
 
         column.add_child(render_form_field("Name", &form.name_editor, appearance));
+
+        // twarp 24c: remote-first. A hosted server is Name + URL + Connect;
+        // everything a local process needs lives behind Advanced.
+        if form.transport == McpTransport::Http {
+            column.add_child(render_form_field(
+                "Server URL",
+                &form.url_editor,
+                appearance,
+            ));
+            column.add_child(self.render_connect_row(form, status, appearance));
+        }
+
         column.add_child(
             Container::new(
-                Flex::column()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Start)
-                    .with_child(render_form_label(
-                        "Transport",
-                        type_ramp::LABEL.size,
-                        appearance,
-                    ))
-                    .with_child(ChildView::new(&form.transport_dropdown).finish())
-                    .finish(),
+                ChildView::new(if form.advanced_open {
+                    &form.hide_advanced_button
+                } else {
+                    &form.show_advanced_button
+                })
+                .finish(),
             )
             .with_margin_bottom(spacing::SM)
             .finish(),
         );
 
-        match form.transport {
-            McpTransport::Stdio => {
-                column.add_child(render_form_field(
-                    "Command",
-                    &form.command_editor,
-                    appearance,
-                ));
-                column.add_child(render_form_field(
-                    "Arguments",
-                    &form.args_editor,
-                    appearance,
-                ));
+        if form.advanced_open {
+            column.add_child(
+                Container::new(
+                    Flex::column()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                        .with_child(render_form_label(
+                            "Transport",
+                            type_ramp::LABEL.size,
+                            appearance,
+                        ))
+                        .with_child(ChildView::new(&form.transport_dropdown).finish())
+                        .finish(),
+                )
+                .with_margin_bottom(spacing::SM)
+                .finish(),
+            );
+
+            match form.transport {
+                McpTransport::Stdio => {
+                    column.add_child(render_form_field(
+                        "Command",
+                        &form.command_editor,
+                        appearance,
+                    ));
+                    column.add_child(render_form_field(
+                        "Arguments",
+                        &form.args_editor,
+                        appearance,
+                    ));
+                }
+                McpTransport::Http => {
+                    column.add_child(render_form_field(
+                        "Headers",
+                        &form.headers_editor,
+                        appearance,
+                    ));
+                }
             }
-            McpTransport::Http => {
-                column.add_child(render_form_field("URL", &form.url_editor, appearance));
-            }
+            column.add_child(render_form_field(
+                "Environment variables",
+                &form.env_editor,
+                appearance,
+            ));
         }
-        column.add_child(render_form_field(
-            "Environment variables",
-            &form.env_editor,
-            appearance,
-        ));
+
+        // twarp 24a: Codex's mcp_servers config can only carry a bearer token.
+        if form.enabled_codex && codex_unsupported_headers(form, app) {
+            column.add_child(
+                Container::new(
+                    Text::new(
+                        "Codex can't send custom headers; only an Authorization: Bearer \
+                         header reaches it."
+                            .to_owned(),
+                        appearance.ui_font_family(),
+                        type_ramp::CAPTION.size,
+                    )
+                    .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                    .with_color(theme.ui_warning_color())
+                    .finish(),
+                )
+                .with_margin_bottom(spacing::SM)
+                .finish(),
+            );
+        }
 
         let claude_key = form.key.clone();
         let codex_key = form.key.clone();
@@ -1837,6 +2103,48 @@ fn plugin_conflict_note(entry: &PluginEntry, app: &AppContext) -> Option<String>
     }
 }
 
+/// twarp 24a: parse the Headers field. `None` means at least one non-blank
+/// line isn't `Name: value`, which blocks Save (P4).
+fn parse_headers(text: &str) -> Option<std::collections::BTreeMap<String, String>> {
+    let mut headers = std::collections::BTreeMap::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let (name, value) = line.split_once(':')?;
+        let name = name.trim();
+        let value = value.trim();
+        if name.is_empty() || value.is_empty() {
+            return None;
+        }
+        headers.insert(name.to_owned(), value.to_owned());
+    }
+    Some(headers)
+}
+
+/// twarp 24c: a remote server's URL must be syntactically usable before we
+/// try to connect to it (P4).
+fn valid_http_url(url: &str) -> bool {
+    url::Url::parse(url).is_ok_and(|parsed| matches!(parsed.scheme(), "http" | "https"))
+}
+
+/// twarp 24c: one server sub-form button whose action carries the form key.
+fn server_action_button(
+    label: &'static str,
+    theme: impl crate::view_components::action_button::ActionButtonTheme + 'static,
+    key: &str,
+    action: fn(String) -> PluginsPageAction,
+    ctx: &mut ViewContext<AutomationView>,
+) -> ViewHandle<ActionButton> {
+    let key = key.to_owned();
+    ctx.add_typed_action_view(move |_| {
+        ActionButton::new(label, theme).on_click(move |ctx| {
+            ctx.dispatch_typed_action(AutomationViewAction::Plugins(action(key.clone())));
+        })
+    })
+}
+
 fn parse_args(text: &str) -> Vec<String> {
     if text.is_empty() {
         return Vec::new();
@@ -1931,6 +2239,83 @@ pub(super) fn render_form_field(
     )
     .with_margin_bottom(spacing::SM)
     .finish()
+}
+
+/// twarp 24c: one status per remote server in the plugin, prefixed with the
+/// server name when the plugin has more than one.
+fn remote_server_statuses(entry: &PluginEntry, app: &AppContext) -> Vec<McpAuthStatus> {
+    let registry = McpRegistryModel::as_ref(app);
+    let oauth = McpOauthModel::as_ref(app);
+    let remote: Vec<&McpServerEntry> = entry
+        .server_ids
+        .iter()
+        .filter_map(|id| registry.get(id))
+        .filter(|server| server.transport == McpTransport::Http)
+        .collect();
+    let multiple = remote.len() > 1;
+    remote
+        .into_iter()
+        .map(|server| {
+            let status = oauth.status(server);
+            if multiple {
+                status.prefixed(&server.name)
+            } else {
+                status
+            }
+        })
+        .collect()
+}
+
+/// twarp 24a: whether the Headers field currently holds something Codex
+/// can't express. Reads the editor rather than the saved entry so the warning
+/// tracks what the user is typing.
+fn codex_unsupported_headers(form: &ServerForm, app: &AppContext) -> bool {
+    if form.transport != McpTransport::Http {
+        return false;
+    }
+    let text = form.headers_editor.as_ref(app).buffer_text(app);
+    parse_headers(&text).is_some_and(|headers| {
+        headers
+            .iter()
+            .any(|(name, value)| !is_bearer_authorization(name, value))
+    })
+}
+
+/// twarp 24c: the connection-status chip shown on a server row — label plus,
+/// for errors and static-auth prompts, the detail text underneath (P9).
+fn render_status_chip(status: &McpAuthStatus, appearance: &Appearance) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let color: twarpui::color::ColorU = match status {
+        McpAuthStatus::Error(_) => theme.ui_error_color(),
+        McpAuthStatus::Connected { .. } => theme.ui_green_color(),
+        _ => theme.sub_text_color(theme.background()).into(),
+    };
+
+    let mut column = Flex::column()
+        .with_cross_axis_alignment(CrossAxisAlignment::Start)
+        .with_child(
+            Text::new_inline(
+                status.label(),
+                appearance.ui_font_family(),
+                type_ramp::CAPTION.size,
+            )
+            .with_line_height_ratio(type_ramp::CAPTION.line_height)
+            .with_color(color)
+            .finish(),
+        );
+    if let Some(detail) = status.detail() {
+        column = column.with_child(
+            Text::new(
+                detail.to_owned(),
+                appearance.ui_font_family(),
+                type_ramp::CAPTION.size,
+            )
+            .with_line_height_ratio(type_ramp::CAPTION.line_height)
+            .with_color(theme.sub_text_color(theme.background()).into())
+            .finish(),
+        );
+    }
+    column.finish()
 }
 
 pub(super) fn render_form_label(
@@ -2054,4 +2439,42 @@ fn render_builtin_card(
     .with_border(Border::all(1.).with_border_fill(theme.outline()))
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
     .finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn headers_parse_from_name_colon_value_lines() {
+        let headers = parse_headers("Authorization: Bearer abc\n\n  X-Api-Key:  secret  \n")
+            .expect("valid header lines");
+        assert_eq!(headers["Authorization"], "Bearer abc");
+        // Surrounding whitespace is the user's, not the value's.
+        assert_eq!(headers["X-Api-Key"], "secret");
+        // A value may itself contain colons (e.g. a URL).
+        let headers = parse_headers("Referer: https://example.com/x").expect("valid");
+        assert_eq!(headers["Referer"], "https://example.com/x");
+    }
+
+    #[test]
+    fn malformed_header_lines_block_save() {
+        // twarp 24a P4: anything that isn't `Name: value` is rejected rather
+        // than silently dropped, so a typo can't become a missing credential.
+        assert!(parse_headers("Authorization Bearer abc").is_none());
+        assert!(parse_headers(": no-name").is_none());
+        assert!(parse_headers("No-Value:").is_none());
+        // Blank input and blank lines are fine.
+        assert_eq!(parse_headers("").unwrap().len(), 0);
+        assert_eq!(parse_headers("\n  \n").unwrap().len(), 0);
+    }
+
+    #[test]
+    fn only_http_urls_are_connectable() {
+        assert!(valid_http_url("https://mcp.composio.dev/abc"));
+        assert!(valid_http_url("http://localhost:8000/mcp"));
+        assert!(!valid_http_url("mcp.composio.dev/abc"));
+        assert!(!valid_http_url("file:///etc/passwd"));
+        assert!(!valid_http_url(""));
+    }
 }

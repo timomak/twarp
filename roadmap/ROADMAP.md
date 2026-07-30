@@ -3,7 +3,7 @@
 Single source of truth for what's being built next. `/twarp-next` reads this file every invocation; the user reads it to see status at a glance.
 
 **Currently active:** `18-agent-providers` — Multi-provider agent pane (Codex backend; 18a merged, 18b–18f paused pending owner go-ahead)
-**Next up:** `24-plugin-auth` — remote-first Plugins add flow + MCP OAuth (spec in review)
+**Next up:** `24-plugin-auth` — remote-first Plugins add flow + MCP OAuth (impl in review, #299)
 
 ## Features
 
@@ -29,7 +29,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 18 | [Multi-provider agent pane (Codex)](18-agent-providers/STATUS.md) | impl-pending (18a merged; paused) | [#218](https://github.com/timomak/twarp/pull/218) | — |
 | 19 | [Design system & visual overhaul](19-design-system/STATUS.md) | merged (incl. 19f feedback round) | [#215](https://github.com/timomak/twarp/pull/215) | 19b [#219](https://github.com/timomak/twarp/pull/219), 19c [#221](https://github.com/timomak/twarp/pull/221), 19d [#222](https://github.com/timomak/twarp/pull/222), 19e (fleet), 19f [#228](https://github.com/timomak/twarp/pull/228) |
 | 23 | [Plugins: unify Skills + MCPs](23-plugins/STATUS.md) | impl-in-review | [#281](https://github.com/timomak/twarp/pull/281) | bundled in [#281](https://github.com/timomak/twarp/pull/281) |
-| 24 | [Plugin auth: remote-first add flow + MCP OAuth](24-plugin-auth/STATUS.md) | spec-in-review | — | — |
+| 24 | [Plugin auth: remote-first add flow + MCP OAuth](24-plugin-auth/STATUS.md) | impl-in-review | [#297](https://github.com/timomak/twarp/pull/297) | 24a–24c bundled [#299](https://github.com/timomak/twarp/pull/299) |
 
 _Features 20–22 (automation shell / PR pages / MCP quick-add) shipped owner-directed without roadmap dirs; see git history (PRs #265–#276)._
 
