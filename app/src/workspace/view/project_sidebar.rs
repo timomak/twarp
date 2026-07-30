@@ -11,7 +11,8 @@ use twarp_core::ui::Icon;
 use twarpui::elements::{
     resizable_state_handle, Align, Border, ChildView, ClippedScrollable, ConstrainedBox, Container,
     CornerRadius, CrossAxisAlignment, DragAxis, DragBarSide, Draggable, DropTarget, Element, Empty,
-    Fill as ElementFill, Flex, Hoverable, MainAxisAlignment, MainAxisSize, ParentElement, Radius,
+    Expanded, Fill as ElementFill, Flex, Hoverable, MainAxisAlignment, MainAxisSize, ParentElement,
+    Radius,
     Resizable, SavePosition, ScrollbarWidth, Shrinkable, Text,
 };
 use twarpui::fonts::{Properties, Weight};
@@ -776,7 +777,9 @@ impl Workspace {
             .finish()
         };
         let project_row = Hoverable::new(row_mouse_state, move |state| {
-            let identity = sidebar_icon(Icon::CircleFilled, color);
+            let identity = Container::new(sidebar_icon(Icon::CircleFilled, color))
+                .with_padding_left(spacing::XS)
+                .finish();
             let project_identity = Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_spacing(spacing::SM)
@@ -1096,7 +1099,9 @@ impl Workspace {
             .project_row(Some(path.clone()))
             .row;
         let row = Hoverable::new(row_mouse_state, move |state| {
-            let identity = sidebar_icon(Icon::CircleFilled, color);
+            let identity = Container::new(sidebar_icon(Icon::CircleFilled, color))
+                .with_padding_left(spacing::XS)
+                .finish();
             let contents = Flex::row()
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -1310,7 +1315,7 @@ impl Workspace {
         }
         column.add_child(self.render_sidebar_actions(app));
         column.add_child(self.render_project_header(app));
-        column.add_child(Shrinkable::new(1., scrollable).finish());
+        column.add_child(Expanded::new(1., scrollable).finish());
         column.add_child(
             Container::new(settings)
                 .with_uniform_padding(spacing::SM)
