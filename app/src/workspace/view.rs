@@ -4518,6 +4518,14 @@ impl Workspace {
 
         self.active_tab_index = index;
 
+        // twarp 7p: viewing a tab acknowledges its Claude panes' completion
+        // marks — the "unreviewed" colored ✓ goes muted, a ✗ drops. Keyboard
+        // focus alone can miss this (a sidebar tab-row click may never focus
+        // the chat pane), so tab activation is the authoritative signal.
+        self.active_tab_pane_group().clone().update(ctx, |pane_group, ctx| {
+            pane_group.mark_claude_code_attention_seen(ctx);
+        });
+
         if self.vertical_tabs_panel_open && vertical_tabs_chrome_enabled(ctx) {
             self.vertical_tabs_panel.scroll_to_tab(index);
         }
