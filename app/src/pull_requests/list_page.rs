@@ -46,6 +46,8 @@ pub enum PullRequestsPageAction {
     SelectRepo(String),
     /// Set the state filter by [`PrStateFilter::as_str`] payload.
     SetFilter(String),
+    /// Narrow the list to one author login (empty payload = all authors).
+    SetAuthorFilter(String),
     Refresh,
     /// Row click: open the native in-page detail view for this PR (21b).
     OpenDetail(u64),
@@ -124,6 +126,8 @@ struct RowMouseStates {
 pub struct PullRequestsPageState {
     scroll_state: ClippedScrollStateHandle,
     repo_dropdown: Option<ViewHandle<Dropdown<AutomationViewAction>>>,
+    /// Author narrowing; only shown once the fetched list has ≥ 2 authors.
+    author_dropdown: Option<ViewHandle<Dropdown<AutomationViewAction>>>,
     filter_dropdown: ViewHandle<Dropdown<AutomationViewAction>>,
     refresh_button: ViewHandle<ActionButton>,
     /// Dedicated handle for the empty state's CTA (a view handle cannot be
@@ -142,6 +146,7 @@ impl PullRequestsPageState {
         let mut state = Self {
             scroll_state: Default::default(),
             repo_dropdown: None,
+            author_dropdown: None,
             filter_dropdown: new_filter_dropdown(PrStateFilter::default(), ctx),
             refresh_button,
             empty_refresh_button,
@@ -155,12 +160,14 @@ impl PullRequestsPageState {
     /// Rebuild the dropdowns from the store (project list, selection, and
     /// filter all change out from under the page).
     pub fn sync(&mut self, ctx: &mut ViewContext<AutomationView>) {
-        let (projects, selected, filter) = {
+        let (projects, selected, filter, authors, author_filter) = {
             let store = PullRequestsStoreModel::as_ref(ctx);
             (
                 store.projects().to_vec(),
                 store.selected_repo().map(Path::to_path_buf),
                 store.filter(),
+                store.authors(),
+                store.author_filter().map(str::to_owned),
             )
         };
         self.repo_dropdown = (!projects.is_empty()).then(|| {
@@ -181,6 +188,10 @@ impl PullRequestsPageState {
                 dropdown
             })
         });
+        // Author dropdown only earns its header slot once there's an actual
+        // choice to make (≥ 2 distinct authors in the fetched list).
+        self.author_dropdown = (authors.len() > 1)
+            .then(|| new_author_dropdown(&authors, author_filter.as_deref(), ctx));
         self.filter_dropdown = new_filter_dropdown(filter, ctx);
         if let Some(mut detail) = self.detail.take() {
             detail.sync(ctx);
@@ -209,6 +220,12 @@ impl PullRequestsPageState {
                         .update(ctx, |store, ctx| store.set_filter(filter, ctx));
                     self.sync(ctx);
                 }
+            }
+            SetAuthorFilter(author) => {
+                let author = (!author.is_empty()).then(|| author.clone());
+                PullRequestsStoreModel::handle(ctx)
+                    .update(ctx, |store, ctx| store.set_author_filter(author, ctx));
+                self.sync(ctx);
             }
             Refresh => {
                 PullRequestsStoreModel::handle(ctx).update(ctx, |store, ctx| store.refresh(ctx));
@@ -278,6 +295,9 @@ impl PullRequestsPageState {
         if let Some(repo_dropdown) = &self.repo_dropdown {
             header.add_child(ChildView::new(repo_dropdown).finish());
         }
+        if let Some(author_dropdown) = &self.author_dropdown {
+            header.add_child(ChildView::new(author_dropdown).finish());
+        }
         header.add_child(ChildView::new(&self.filter_dropdown).finish());
         header.add_child(ChildView::new(&self.refresh_button).finish());
         column.add_child(header.finish());
@@ -324,7 +344,12 @@ impl PullRequestsPageState {
                 .with_margin_top(spacing::LG)
                 .finish(),
             );
-        } else if data.is_some_and(|data| data.prs.is_empty()) {
+        } else if data.is_some_and(|data| {
+            !data
+                .prs
+                .iter()
+                .any(|pr| store.author_filter().is_none_or(|author| pr.author == author))
+        }) {
             column.add_child(crate::automation::render_empty_state(
                 Icon::GitPullRequest,
                 "All clear",
@@ -342,7 +367,15 @@ impl PullRequestsPageState {
                     .borrow_mut()
                     .retain(|number, _| current.contains(number));
             }
-            let (needs_review, yours, others) = group_prs(&data.prs, store.viewer());
+            // The author narrowing is client-side, over the state-filtered
+            // list `gh` returned.
+            let filtered: Vec<crate::pull_requests::store::PrEntry> = data
+                .prs
+                .iter()
+                .filter(|pr| store.author_filter().is_none_or(|author| pr.author == author))
+                .cloned()
+                .collect();
+            let (needs_review, yours, others) = group_prs(&filtered, store.viewer());
             let now = chrono::Utc::now();
             for (label, group) in [
                 ("Needs your review", needs_review),
@@ -597,6 +630,35 @@ fn project_label(path: &Path) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.to_string_lossy().into_owned())
+}
+
+/// Author narrowing: "All authors" plus one item per distinct author login in
+/// the fetched list. The item payload is the login; empty = no narrowing.
+fn new_author_dropdown(
+    authors: &[String],
+    selected: Option<&str>,
+    ctx: &mut ViewContext<AutomationView>,
+) -> ViewHandle<Dropdown<AutomationViewAction>> {
+    let author_action = |author: &str| {
+        AutomationViewAction::PullRequests(PullRequestsPageAction::SetAuthorFilter(
+            author.to_owned(),
+        ))
+    };
+    let items = std::iter::once(DropdownItem::new("All authors".to_owned(), author_action("")))
+        .chain(
+            authors
+                .iter()
+                .map(|author| DropdownItem::new(author.clone(), author_action(author))),
+        )
+        .collect();
+    let selected_action = author_action(selected.unwrap_or(""));
+    ctx.add_typed_action_view(|ctx| {
+        let mut dropdown = Dropdown::new(ctx);
+        dropdown.set_items(items, ctx);
+        dropdown.set_selected_by_action(selected_action, ctx);
+        dropdown.set_top_bar_max_width(160.);
+        dropdown
+    })
 }
 
 fn new_filter_dropdown(

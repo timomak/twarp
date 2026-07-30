@@ -437,6 +437,10 @@ pub struct PullRequestsStoreModel {
     projects: Vec<PathBuf>,
     selected: Option<PathBuf>,
     filter: PrStateFilter,
+    /// Author login the list is narrowed to (`None` = all authors). Applied
+    /// client-side over the fetched list, so it composes with the state
+    /// filter without another `gh` call.
+    author_filter: Option<String>,
     /// The `gh api user` login, used for the "Yours"/"Others" grouping.
     viewer: Option<String>,
     data: HashMap<PathBuf, RepoPrData>,
@@ -474,6 +478,7 @@ impl PullRequestsStoreModel {
             projects: Vec::new(),
             selected: None,
             filter: PrStateFilter::default(),
+            author_filter: None,
             viewer: None,
             data: HashMap::new(),
             generation: 0,
@@ -499,6 +504,27 @@ impl PullRequestsStoreModel {
 
     pub fn viewer(&self) -> Option<&str> {
         self.viewer.as_deref()
+    }
+
+    pub fn author_filter(&self) -> Option<&str> {
+        self.author_filter.as_deref()
+    }
+
+    /// Distinct author logins in the selected repo's fetched list, sorted
+    /// case-insensitively — the author dropdown's items.
+    pub fn authors(&self) -> Vec<String> {
+        let Some(data) = self.selected_data() else {
+            return Vec::new();
+        };
+        let mut authors: Vec<String> = data
+            .prs
+            .iter()
+            .map(|pr| pr.author.clone())
+            .filter(|author| !author.is_empty())
+            .collect();
+        authors.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        authors.dedup();
+        authors
     }
 
     /// Cached data for the selected repo, if any fetch has been started.
@@ -530,7 +556,19 @@ impl PullRequestsStoreModel {
             return;
         }
         self.selected = Some(repo);
+        // Author sets differ per repo; a carried-over filter would silently
+        // show an empty list.
+        self.author_filter = None;
         self.refresh(ctx);
+    }
+
+    /// Set the author narrowing (`None` = all). Client-side only — no refetch.
+    pub fn set_author_filter(&mut self, author: Option<String>, ctx: &mut ModelContext<Self>) {
+        if self.author_filter == author {
+            return;
+        }
+        self.author_filter = author;
+        ctx.notify();
     }
 
     pub fn set_filter(&mut self, filter: PrStateFilter, ctx: &mut ModelContext<Self>) {
@@ -595,6 +633,17 @@ impl PullRequestsStoreModel {
             Ok(prs) => {
                 entry.prs = prs;
                 entry.error = None;
+                // Drop an author narrowing whose author no longer appears —
+                // otherwise the page would sit on an empty list with the
+                // vanished login still pinned in the dropdown.
+                if let Some(author) = &self.author_filter {
+                    let present = self
+                        .selected_data()
+                        .is_some_and(|data| data.prs.iter().any(|pr| &pr.author == author));
+                    if !present {
+                        self.author_filter = None;
+                    }
+                }
             }
             Err(error) => entry.error = Some(error),
         }
