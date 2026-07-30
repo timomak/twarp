@@ -1224,7 +1224,12 @@ impl ScheduledTasksPageState {
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_spacing(spacing::MD)
                 .with_child(glyph)
-                .with_child(Shrinkable::new(1., labels.finish()).finish())
+                // Align::left makes the label column fill the row so the
+                // controls land on the right edge (bare Shrinkable is
+                // flex-loose and leaves them hugging the text).
+                .with_child(
+                    Shrinkable::new(1., Align::new(labels.finish()).left().finish()).finish(),
+                )
                 .with_child(controls)
                 .finish(),
         )

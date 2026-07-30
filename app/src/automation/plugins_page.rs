@@ -13,13 +13,15 @@
 use std::collections::HashMap;
 
 use twarp_core::features::FeatureFlag;
+use twarp_core::ui::external_product_icon::ExternalProductIcon;
 use twarp_core::ui::tokens::{radius, spacing, type_ramp};
+use twarp_core::ui::Icon;
 use twarpui::{
     elements::{
         new_scrollable::{NewScrollable, ScrollableAppearance, SingleAxisConfig},
         Align, Border, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container,
-        CornerRadius, CrossAxisAlignment, Element, Flex, MainAxisSize, ParentElement, Radius,
-        ScrollbarWidth, Shrinkable, Text,
+        CornerRadius, CrossAxisAlignment, Element, Expanded, Flex, Hoverable, MainAxisSize,
+        MouseStateHandle, ParentElement, Radius, ScrollbarWidth, Shrinkable, Text,
     },
     ui_components::{
         components::{UiComponent, UiComponentStyles},
@@ -269,7 +271,9 @@ pub struct PluginsPageState {
     /// both in the header and in the empty state at once.
     empty_add_button: ViewHandle<ActionButton>,
     /// One button per [`PRESETS`] entry, in the same order.
-    preset_buttons: Vec<ViewHandle<ActionButton>>,
+    /// One persistent hover state per quick-add gallery card, keyed by
+    /// [`PRESETS`] key.
+    preset_hover: HashMap<&'static str, MouseStateHandle>,
     rows: HashMap<String, RowUi>,
     adopt_buttons: HashMap<String, ViewHandle<ActionButton>>,
     editor: Option<PluginEditor>,
@@ -293,23 +297,15 @@ impl PluginsPageState {
                 ));
             })
         });
-        let preset_buttons = PRESETS
+        let preset_hover = PRESETS
             .iter()
-            .map(|preset| {
-                ctx.add_typed_action_view(move |_| {
-                    ActionButton::new(preset.label, SecondaryTheme).on_click(move |ctx| {
-                        ctx.dispatch_typed_action(AutomationViewAction::Plugins(
-                            PluginsPageAction::OpenPreset(preset.key.to_owned()),
-                        ));
-                    })
-                })
-            })
+            .map(|preset| (preset.key, MouseStateHandle::default()))
             .collect();
         let mut state = Self {
             scroll_state: Default::default(),
             add_button,
             empty_add_button,
-            preset_buttons,
+            preset_hover,
             rows: HashMap::new(),
             adopt_buttons: HashMap::new(),
             editor: None,
@@ -1095,15 +1091,35 @@ impl PluginsPageState {
             .with_margin_bottom(spacing::SM)
             .finish(),
         );
-        let mut preset_row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_spacing(spacing::SM);
-        for button in &self.preset_buttons {
-            preset_row.add_child(ChildView::new(button).finish());
+        // Two-column gallery of brand-icon cards (the reference layout's
+        // Featured grid); an odd trailing preset gets an empty filler cell so
+        // it keeps half-width.
+        let mut gallery = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+        for pair in PRESETS.chunks(2) {
+            let mut row = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                .with_spacing(spacing::SM);
+            for preset in pair {
+                row.add_child(Expanded::new(1., self.render_preset_card(preset, app)).finish());
+            }
+            if pair.len() == 1 {
+                row.add_child(
+                    Expanded::new(
+                        1.,
+                        Flex::row().with_main_axis_size(MainAxisSize::Min).finish(),
+                    )
+                    .finish(),
+                );
+            }
+            gallery.add_child(
+                Container::new(row.finish())
+                    .with_margin_bottom(spacing::SM)
+                    .finish(),
+            );
         }
         column.add_child(
-            Container::new(preset_row.finish())
-                .with_margin_bottom(spacing::LG)
+            Container::new(gallery.finish())
+                .with_margin_bottom(spacing::MD)
                 .finish(),
         );
 
@@ -1145,12 +1161,14 @@ impl PluginsPageState {
         column.add_child(render_builtin_card(
             "twarp-browser",
             "Drives the in-app browser pane for the active session.",
+            Icon::Globe4,
             appearance,
         ));
         if crate::computer_control::platform_supported() {
             column.add_child(render_builtin_card(
                 "twarp-computer-control",
                 "Injects mouse/keyboard events for UI debugging.",
+                Icon::Navigation,
                 appearance,
             ));
         }
@@ -1212,13 +1230,92 @@ impl PluginsPageState {
 
     /// One plugin card: name + description + component summary left;
     /// plugin-level C/X switches, Edit, Delete right.
+    /// One quick-add gallery card: brand-icon chip + label + description,
+    /// hoverable; clicking opens the Add form prefilled from the preset.
+    fn render_preset_card(
+        &self,
+        preset: &'static PluginPreset,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let Some(state) = self.preset_hover.get(preset.key) else {
+            return Flex::row().with_main_axis_size(MainAxisSize::Min).finish();
+        };
+
+        let family = appearance.ui_font_family();
+        let main = theme.main_text_color(theme.background());
+        let sub = theme.sub_text_color(theme.background());
+        let key = preset.key;
+        let card = Hoverable::new(state.clone(), move |hover| {
+            let icon_color = main;
+            let chip = match ExternalProductIcon::from_string(key) {
+                Some(product) => super::render_chip(
+                    product.to_warpui_icon(icon_color).finish(),
+                    theme.surface_overlay_1(),
+                    spacing::XL,
+                    spacing::SM,
+                ),
+                None => super::render_icon_chip(
+                    Icon::Dataflow,
+                    icon_color,
+                    theme.surface_overlay_1(),
+                    spacing::XL,
+                    spacing::SM,
+                ),
+            };
+            let labels = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                .with_spacing(spacing::XXS)
+                .with_child(
+                    Text::new_inline(preset.label, family, type_ramp::UI.size)
+                        .with_line_height_ratio(type_ramp::UI.line_height)
+                        .with_color(main.into())
+                        .finish(),
+                )
+                .with_child(
+                    Text::new(preset.description, family, type_ramp::CAPTION.size)
+                        .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                        .with_color(sub.into())
+                        .finish(),
+                )
+                .finish();
+            let mut container = Container::new(
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(spacing::MD)
+                    .with_child(chip)
+                    .with_child(Shrinkable::new(1., Align::new(labels).left().finish()).finish())
+                    .finish(),
+            )
+            .with_uniform_padding(spacing::MD)
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
+            if hover.is_hovered() {
+                container = container.with_background(theme.surface_overlay_1());
+            }
+            container.finish()
+        });
+        card.on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(AutomationViewAction::Plugins(
+                PluginsPageAction::OpenPreset(key.to_owned()),
+            ));
+        })
+        .finish()
+    }
+
     fn render_card(&self, entry: &PluginEntry, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         let Some(row_ui) = self.rows.get(&entry.id) else {
             // A plugin created outside this view's actions; drawn without
             // controls until the next sync.
-            return render_builtin_card(&entry.name, &entry.component_summary(), appearance);
+            return render_builtin_card(
+                &entry.name,
+                &entry.component_summary(),
+                Icon::Dataflow,
+                appearance,
+            );
         };
 
         let mut labels = Flex::column()
@@ -1304,10 +1401,37 @@ impl PluginsPageState {
             .with_child(ChildView::new(delete_button).finish())
             .finish();
 
+        // Brand chip when the plugin is named after a known product,
+        // otherwise the generic dataflow mark.
+        let icon_color = theme.main_text_color(theme.background());
+        let chip = match ExternalProductIcon::from_string(&entry.name) {
+            Some(product) => super::render_chip(
+                product.to_warpui_icon(icon_color).finish(),
+                theme.surface_overlay_1(),
+                spacing::XL,
+                spacing::SM,
+            ),
+            None => super::render_icon_chip(
+                Icon::Dataflow,
+                icon_color,
+                theme.surface_overlay_1(),
+                spacing::XL,
+                spacing::SM,
+            ),
+        };
+
         Container::new(
             Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_child(Shrinkable::new(1., labels.finish()).finish())
+                .with_spacing(spacing::MD)
+                .with_child(chip)
+                // Align::left inside the Shrinkable makes the label column
+                // greedily fill the row, pushing the controls to the right
+                // edge (a bare Shrinkable is flex-loose and leaves the
+                // controls hugging the text).
+                .with_child(
+                    Shrinkable::new(1., Align::new(labels.finish()).left().finish()).finish(),
+                )
                 .with_child(controls)
                 .finish(),
         )
@@ -1352,7 +1476,14 @@ impl PluginsPageState {
         let mut row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(spacing::MD)
-            .with_child(Shrinkable::new(1., labels).finish());
+            .with_child(super::render_icon_chip(
+                Icon::BookOpen,
+                theme.sub_text_color(theme.background()),
+                theme.surface_overlay_1(),
+                spacing::LG,
+                spacing::SM,
+            ))
+            .with_child(Shrinkable::new(1., Align::new(labels).left().finish()).finish());
         if let Some(button) = self.adopt_buttons.get(&skill.name) {
             row = row.with_child(ChildView::new(button).finish());
         }
@@ -1854,7 +1985,12 @@ pub(super) fn render_labeled_switch(
 }
 
 /// A read-only card for a built-in plugin (no switches, no Edit / Delete).
-fn render_builtin_card(name: &str, summary: &str, appearance: &Appearance) -> Box<dyn Element> {
+fn render_builtin_card(
+    name: &str,
+    summary: &str,
+    icon: Icon,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
     let theme = appearance.theme();
     let labels = Flex::column()
         .with_cross_axis_alignment(CrossAxisAlignment::Start)
@@ -1901,7 +2037,15 @@ fn render_builtin_card(name: &str, summary: &str, appearance: &Appearance) -> Bo
     Container::new(
         Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(Shrinkable::new(1., labels).finish())
+            .with_spacing(spacing::MD)
+            .with_child(super::render_icon_chip(
+                icon,
+                theme.main_text_color(theme.background()),
+                theme.surface_overlay_1(),
+                spacing::XL,
+                spacing::SM,
+            ))
+            .with_child(Shrinkable::new(1., Align::new(labels).left().finish()).finish())
             .with_child(chip)
             .finish(),
     )

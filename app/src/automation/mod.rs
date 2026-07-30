@@ -88,8 +88,24 @@ pub(crate) fn render_icon_chip(
     icon_size: f32,
     padding: f32,
 ) -> Box<dyn Element> {
+    render_chip(
+        icon.to_warpui_icon(icon_color).finish(),
+        tint,
+        icon_size,
+        padding,
+    )
+}
+
+/// [`render_icon_chip`] for an arbitrary icon element (e.g. an
+/// [`twarp_core::ui::ExternalProductIcon`] brand mark).
+pub(crate) fn render_chip(
+    icon_element: Box<dyn Element>,
+    tint: Fill,
+    icon_size: f32,
+    padding: f32,
+) -> Box<dyn Element> {
     Container::new(
-        ConstrainedBox::new(icon.to_warpui_icon(icon_color).finish())
+        ConstrainedBox::new(icon_element)
             .with_width(icon_size)
             .with_height(icon_size)
             .finish(),
