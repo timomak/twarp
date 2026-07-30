@@ -281,8 +281,7 @@ impl CodexDriver {
     pub fn realtime_stop<'a>(&'a self, stdin: &'a mut ChildStdin) -> DriverFuture<'a, ()> {
         Box::pin(async move {
             let thread_id = self.realtime_thread_id()?;
-            let request =
-                protocol::realtime_stop_request(protocol::next_request_id(), &thread_id);
+            let request = protocol::realtime_stop_request(protocol::next_request_id(), &thread_id);
             write_json_line(stdin, &request)
                 .await
                 .context("write thread/realtime/stop to codex stdin")
@@ -980,7 +979,10 @@ fn parse_realtime_audio(params: &Value) -> Option<RealtimeEvent> {
             .get("sampleRate")
             .and_then(Value::as_u64)
             .unwrap_or(24_000) as u32,
-        channels: audio.get("numChannels").and_then(Value::as_u64).unwrap_or(1) as u16,
+        channels: audio
+            .get("numChannels")
+            .and_then(Value::as_u64)
+            .unwrap_or(1) as u16,
     })
 }
 

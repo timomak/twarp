@@ -608,6 +608,9 @@ pub enum ClaudeCodeViewAction {
     ToggleRealtimeCall,
     /// twarp 25: mute/unmute the microphone without ending the call (§13).
     ToggleRealtimeMute,
+    /// twarp 25: re-establish a failed call (§20) without losing the
+    /// transcript or reopening the pane.
+    RetryRealtimeCall,
     /// twarp 17: the composer speaker button (PRODUCT 17 §12–§14) — toggles
     /// spoken replies for this pane; while speaking it also stops playback.
     /// twarp: swap between the rendered chat and the raw interactive CLI from
@@ -1270,6 +1273,10 @@ pub struct ClaudeCodeView {
     realtime_muted: bool,
     /// Mouse state for the composer call button.
     call_button_mouse: MouseStateHandle,
+    /// Mouse state for the call panel's Mute / End / Retry buttons.
+    call_mute_button_mouse: MouseStateHandle,
+    call_end_button_mouse: MouseStateHandle,
+    call_retry_button_mouse: MouseStateHandle,
 }
 
 impl ClaudeCodeView {
@@ -1563,6 +1570,9 @@ impl ClaudeCodeView {
             realtime_player: None,
             realtime_muted: false,
             call_button_mouse: MouseStateHandle::default(),
+            call_mute_button_mouse: MouseStateHandle::default(),
+            call_end_button_mouse: MouseStateHandle::default(),
+            call_retry_button_mouse: MouseStateHandle::default(),
         };
 
         // PRODUCT §4/§8: capture the login-shell environment up front so CLI
@@ -3133,7 +3143,8 @@ impl ClaudeCodeView {
                 let _ = tx.try_send(StdinCommand::Realtime(RealtimeCommand::Speech {
                     text: message.text.clone(),
                 }));
-                self.transcript.apply(TranscriptEvent::UserMessage(message.text));
+                self.transcript
+                    .apply(TranscriptEvent::UserMessage(message.text));
                 ctx.notify();
                 return;
             }
@@ -5200,6 +5211,19 @@ impl ClaudeCodeView {
         self.realtime_muted = false;
     }
 
+    /// §20/§22: re-establish a failed call. The transcript is untouched and the
+    /// pane never has to be reopened — the failure state is just cleared and
+    /// the session started again.
+    fn retry_realtime_call(&mut self, ctx: &mut ViewContext<Self>) {
+        if !matches!(self.realtime, Some(RealtimeState::Failed(_))) {
+            return;
+        }
+        log::info!("twarp 25: retrying the realtime call");
+        self.teardown_realtime_audio();
+        self.realtime = None;
+        self.toggle_realtime_call(ctx);
+    }
+
     /// §13: mute stops feeding the session; the agent may still finish talking.
     fn toggle_realtime_mute(&mut self, ctx: &mut ViewContext<Self>) {
         if self.realtime.is_none() {
@@ -5213,7 +5237,11 @@ impl ClaudeCodeView {
     }
 
     /// Realtime session events (PRODUCT 25 §8, §14, §20).
-    fn on_realtime_event(&mut self, event: claude_code::RealtimeEvent, ctx: &mut ViewContext<Self>) {
+    fn on_realtime_event(
+        &mut self,
+        event: claude_code::RealtimeEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
         match event {
             claude_code::RealtimeEvent::Started => {
                 self.realtime = Some(RealtimeState::Live);
@@ -5304,10 +5332,7 @@ impl ClaudeCodeView {
                 }
             }
         }
-        let data = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &drained.pcm,
-        );
+        let data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &drained.pcm);
         let _ = tx.try_send(StdinCommand::Realtime(RealtimeCommand::Audio {
             data,
             sample_rate: drained.sample_rate,
@@ -8924,6 +8949,175 @@ impl ClaudeCodeView {
     /// twarp 17 (PRODUCT 17 §1, §4–§5): the composer mic button, right of the
     /// paperclip. Idle → muted glyph; recording → pulsing accent glyph plus an
     /// m:ss elapsed label; transcribing → muted glyph plus an ellipsis label.
+    /// twarp 25 (PRODUCT 25 §25–§30): the floating call panel. A detached card
+    /// over the pane — the transcript stays visible and scrollable behind it.
+    /// Chrome surface class, so every value comes from `tokens.rs`.
+    fn render_call_panel(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+        let state = self.realtime.as_ref()?;
+        let theme = appearance.theme();
+        let accent = self.render_accent.get();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let warn = twarp_core::ui::theme::Fill::warn().into_solid();
+        let speaking = self
+            .realtime_player
+            .as_ref()
+            .is_some_and(|player| player.is_active());
+
+        // §8: every label below is a real event, never an assumption. A
+        // connecting call must never claim to be listening.
+        let (status, status_color): (String, ColorU) = match state {
+            RealtimeState::Connecting => ("Connecting…".to_owned(), muted),
+            RealtimeState::Failed(message) => (message.clone(), warn),
+            RealtimeState::Live if self.realtime_muted => ("Muted".to_owned(), muted),
+            RealtimeState::Live if speaking => ("Speaking".to_owned(), accent),
+            RealtimeState::Live => ("Listening".to_owned(), accent),
+        };
+
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(spacing::SM);
+
+        // Title row: a live dot + the voice carrying the conversation.
+        let dot = ConstrainedBox::new(
+            Container::new(Empty::new().finish())
+                .with_background_color(match state {
+                    RealtimeState::Failed(_) => warn,
+                    RealtimeState::Connecting => muted,
+                    RealtimeState::Live => accent,
+                })
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                .finish(),
+        )
+        // Empty stubs lay out at the constraint's max, so the dot MUST be
+        // constrained on both axes or it fills the card.
+        .with_width(8.)
+        .with_height(8.)
+        .finish();
+        column.add_child(
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(spacing::SM)
+                .with_child(dot)
+                .with_child(
+                    appearance
+                        .ui_builder()
+                        .span("Voice".to_owned())
+                        .with_style(UiComponentStyles {
+                            font_color: Some(
+                                theme.main_text_color(theme.background()).into_solid(),
+                            ),
+                            font_size: Some(type_ramp::UI.size),
+                            ..Default::default()
+                        })
+                        .build()
+                        .finish(),
+                )
+                .with_child(
+                    appearance
+                        .ui_builder()
+                        .span(claude_code::codex::protocol::DEFAULT_REALTIME_VOICE.to_owned())
+                        .with_style(UiComponentStyles {
+                            font_color: Some(muted),
+                            font_size: Some(type_ramp::CAPTION.size),
+                            ..Default::default()
+                        })
+                        .build()
+                        .finish(),
+                )
+                .finish(),
+        );
+
+        // The status line — the panel's whole job.
+        column.add_child(
+            appearance
+                .ui_builder()
+                .wrappable_text(status, true)
+                .with_style(UiComponentStyles {
+                    font_color: Some(status_color),
+                    font_size: Some(type_ramp::LABEL.size),
+                    ..Default::default()
+                })
+                .build()
+                .finish(),
+        );
+
+        // Controls. A failed call offers Retry (the computer-control pattern);
+        // a live one offers Mute + End.
+        let mut controls = Flex::row()
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(spacing::SM);
+        match state {
+            RealtimeState::Failed(_) => {
+                controls.add_child(call_panel_button(
+                    appearance,
+                    "Retry",
+                    accent,
+                    self.call_retry_button_mouse.clone(),
+                    ClaudeCodeViewAction::RetryRealtimeCall,
+                ));
+                controls.add_child(call_panel_button(
+                    appearance,
+                    "Dismiss",
+                    muted,
+                    self.call_end_button_mouse.clone(),
+                    ClaudeCodeViewAction::ToggleRealtimeCall,
+                ));
+            }
+            _ => {
+                controls.add_child(call_panel_button(
+                    appearance,
+                    if self.realtime_muted {
+                        "Unmute"
+                    } else {
+                        "Mute"
+                    },
+                    muted,
+                    self.call_mute_button_mouse.clone(),
+                    ClaudeCodeViewAction::ToggleRealtimeMute,
+                ));
+                controls.add_child(call_panel_button(
+                    appearance,
+                    "End",
+                    warn,
+                    self.call_end_button_mouse.clone(),
+                    ClaudeCodeViewAction::ToggleRealtimeCall,
+                ));
+            }
+        }
+        column.add_child(controls.finish());
+
+        let card = Container::new(
+            Container::new(column.finish())
+                .with_padding(Padding::uniform(spacing::MD))
+                .finish(),
+        )
+        .with_background_color(theme.surface_1().into_solid())
+        .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::PANEL)))
+        .finish();
+        // A detached surface, so PANEL elevation — not the POPOVER shadow menus
+        // use.
+        let (offset_y, blur_radius, spread_radius, alpha) = elevation::PANEL;
+        let card = Container::new(card)
+            .with_drop_shadow(DropShadow {
+                color: ColorU::new(0, 0, 0, (alpha * 255.).round() as u8),
+                offset: vec2f(0., offset_y),
+                blur_radius,
+                spread_radius,
+            })
+            .finish();
+        // Both min AND max width: a positioned overlay child is measured
+        // against the whole pane's constraints and would otherwise stretch.
+        Some(
+            ConstrainedBox::new(card)
+                .with_min_width(200.)
+                .with_max_width(320.)
+                .finish(),
+        )
+    }
+
     /// twarp 25 (PRODUCT 25 §5): the call button, right of the mic. Present
     /// only on Codex panes — the provider that can hold a spoken conversation.
     /// Accent while a call is up, muted otherwise; warn while failed.
@@ -9293,13 +9487,31 @@ impl ClaudeCodeView {
             .filter(|menu| !(self.header_menu_expanded && menu.opens_downward()))
             .zip(self.render_composer_menu(appearance));
 
+        // twarp 25 §25: the call panel floats over the pane while a call is up.
+        let call_panel = self.render_call_panel(appearance);
+
         // Nothing floats over the composer — return it bare.
-        if scroll_button.is_none() && open_menu.is_none() {
+        if scroll_button.is_none() && open_menu.is_none() && call_panel.is_none() {
             return composer;
         }
 
         let mut stack = Stack::new();
         stack.add_child(composer);
+        // §25/§27: an *overlay* child so it paints above the transcript and its
+        // clicks land (the same hit-test reason as the scroll button below);
+        // the transcript keeps its own drag and wheel gestures because the
+        // panel only covers its own rect.
+        if let Some(panel) = call_panel {
+            stack.add_positioned_overlay_child(
+                panel,
+                OffsetPositioning::offset_from_parent(
+                    vec2f(TRANSCRIPT_GUTTER, -spacing::SM),
+                    ParentOffsetBounds::Unbounded,
+                    ParentAnchor::TopLeft,
+                    ChildAnchor::BottomLeft,
+                ),
+            );
+        }
         // Anchor the button's bottom-right just above the composer's top-right
         // (indented by the composer's own right gutter so it lines up with the
         // input card's edge). It rides with the centered, width-capped composer
@@ -9715,6 +9927,7 @@ impl TypedActionView for ClaudeCodeView {
             ClaudeCodeViewAction::ToggleVoiceRecording => self.toggle_voice_recording(ctx),
             ClaudeCodeViewAction::ToggleRealtimeCall => self.toggle_realtime_call(ctx),
             ClaudeCodeViewAction::ToggleRealtimeMute => self.toggle_realtime_mute(ctx),
+            ClaudeCodeViewAction::RetryRealtimeCall => self.retry_realtime_call(ctx),
             ClaudeCodeViewAction::RemoveDirectAttachment(index) => {
                 if *index < self.direct_attachments.len() {
                     self.direct_attachments.remove(*index);
@@ -12190,6 +12403,44 @@ fn render_context_progress(fraction: f32, filled: ColorU, track: ColorU) -> Box<
 
 /// Black or white, whichever reads better on `bg` (#10) — for the primary
 /// button label on an arbitrary tab colour.
+/// twarp 25: one text button in the call panel. A pill, not a bordered card —
+/// a hairline would claim this is an actionable *artifact* rather than a
+/// control (PHILOSOPHY: "a border means you can act on this").
+fn call_panel_button(
+    appearance: &Appearance,
+    label: &str,
+    color: ColorU,
+    mouse: MouseStateHandle,
+    action: ClaudeCodeViewAction,
+) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let label = appearance
+        .ui_builder()
+        .span(label.to_owned())
+        .with_style(UiComponentStyles {
+            font_color: Some(color),
+            font_size: Some(type_ramp::LABEL.size),
+            ..Default::default()
+        })
+        .build()
+        .finish();
+    Hoverable::new(mouse, move |_| {
+        Container::new(label)
+            .with_padding_left(spacing::SM)
+            .with_padding_right(spacing::SM)
+            .with_padding_top(spacing::XS)
+            .with_padding_bottom(spacing::XS)
+            .with_background_color(theme.surface_2().into_solid())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)))
+            .finish()
+    })
+    .with_cursor(Cursor::PointingHand)
+    .on_click(move |ctx, _, _| {
+        ctx.dispatch_typed_action(action.clone());
+    })
+    .finish()
+}
+
 /// twarp 25 §14 (barge-in): whether a captured chunk is loud enough to be
 /// someone talking rather than room noise. Deliberately crude — this only
 /// decides when to duck the agent's audio, and the far side's own VAD decides
