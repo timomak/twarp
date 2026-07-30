@@ -8,6 +8,9 @@ pub enum ExternalProductIcon {
     Figma,
     Github,
     Slack,
+    Cloudflare,
+    Gmail,
+    Composio,
 }
 
 impl ExternalProductIcon {
@@ -20,6 +23,9 @@ impl ExternalProductIcon {
             "figma" => Some(ExternalProductIcon::Figma),
             "github" => Some(ExternalProductIcon::Github),
             "slack" => Some(ExternalProductIcon::Slack),
+            "cloudflare" => Some(ExternalProductIcon::Cloudflare),
+            "gmail" => Some(ExternalProductIcon::Gmail),
+            "composio" => Some(ExternalProductIcon::Composio),
             _other => None,
         }
     }
@@ -32,6 +38,9 @@ impl ExternalProductIcon {
             ExternalProductIcon::Figma => "bundled/svg/figma.svg",
             ExternalProductIcon::Github => "bundled/svg/github.svg",
             ExternalProductIcon::Slack => "bundled/svg/slack-logo.svg",
+            ExternalProductIcon::Cloudflare => "bundled/svg/cloudflare.svg",
+            ExternalProductIcon::Gmail => "bundled/svg/gmail.svg",
+            ExternalProductIcon::Composio => "bundled/svg/composio.svg",
         }
     }
 
