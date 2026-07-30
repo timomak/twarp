@@ -10676,9 +10676,21 @@ impl ClaudeCodeView {
                     (false, true) => "\u{25C9}",  // fisheye (filled radio)
                     (false, false) => "\u{25CB}", // circle
                 };
+                // The long-form preview is revealed only on the selected option;
+                // a tall expanded row should keep the marker beside the label
+                // (top), not floating at mid-height.
+                let show_preview = is_selected
+                    && option
+                        .preview
+                        .as_ref()
+                        .is_some_and(|preview| !preview.trim().is_empty());
                 let mut option_row = Flex::row()
                     .with_main_axis_size(MainAxisSize::Max)
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_cross_axis_alignment(if show_preview {
+                        CrossAxisAlignment::Start
+                    } else {
+                        CrossAxisAlignment::Center
+                    })
                     .with_spacing(spacing::SM)
                     .with_child(
                         appearance
@@ -10726,6 +10738,31 @@ impl ClaudeCodeView {
                                 })
                                 .build()
                                 .finish(),
+                        );
+                    }
+                }
+                // PRODUCT §1: an option's `preview` carries the full explanation
+                // (the model is steered to keep `description` to one line and
+                // put the detail here — Claude Code's own TUI shows it for the
+                // focused option). Reveal it when the option is selected, as a
+                // quiet inset markdown block, so the reasoning behind an option
+                // is never silently discarded.
+                if show_preview {
+                    if let Some(preview) = &option.preview {
+                        label_col.add_child(
+                            Container::new(render_markdown_body(
+                                preview.trim(),
+                                text_color,
+                                appearance,
+                                None,
+                            ))
+                            .with_margin_top(spacing::XS)
+                            .with_padding(Padding::uniform(spacing::SM))
+                            .with_background_color(theme.surface_2().into_solid())
+                            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                                radius::CARD,
+                            )))
+                            .finish(),
                         );
                     }
                 }
@@ -10833,6 +10870,10 @@ struct ParsedQuestionOption {
     flat_index: usize,
     label: String,
     description: Option<String>,
+    /// Optional long-form explanation of the option (markdown). Claude puts
+    /// the real detail here — the description stays a one-liner — so the card
+    /// reveals it when the option is selected.
+    preview: Option<String>,
 }
 
 /// One parsed question from an `AskUserQuestion` tool call (PRODUCT §1).
@@ -10945,10 +10986,15 @@ fn parse_questions(input: &serde_json::Value) -> Vec<ParsedQuestion> {
                     .get("description")
                     .and_then(|v| v.as_str())
                     .map(str::to_owned);
+                let preview = option
+                    .get("preview")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned);
                 options.push(ParsedQuestionOption {
                     flat_index,
                     label,
                     description,
+                    preview,
                 });
                 flat_index += 1;
             }
