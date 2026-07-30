@@ -1,5 +1,5 @@
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::{mpsc, Arc, Mutex},
     time::Duration,
@@ -20,7 +20,11 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
-use twarpui::{Entity, ModelContext, SingletonEntity};
+use twarpui::{Entity, ModelContext, ModelSpawner, SingletonEntity, ViewHandle};
+
+use crate::claude_code_view::ClaudeCodeView;
+
+use super::ComputerControlState;
 
 const SERVER_NAME: &str = "twarp-computer-control";
 const SSE_PATH: &str = "/sse";
@@ -452,32 +456,75 @@ pub(crate) struct ComputerControlMcpBridge {
 
 struct ComputerControlMcpRuntime {
     url: String,
-    _runtime: tokio::runtime::Runtime,
-    _cancel: CancellationToken,
+    spawner: ModelSpawner<ComputerControlMcpBridge>,
+    /// One extra SSE server per Claude session (keyed by session id), so tool
+    /// calls carry the calling session's identity and auto-start can target
+    /// that session's pane. Same pattern as the browser MCP (14j).
+    session_servers: Mutex<HashMap<String, String>>,
+    runtime: tokio::runtime::Runtime,
+    cancel: CancellationToken,
 }
 
 impl ComputerControlMcpBridge {
-    pub(crate) fn new(_ctx: &mut ModelContext<Self>) -> Self {
-        let server = ComputerControlMcpRuntime::start()
+    pub(crate) fn new(ctx: &mut ModelContext<Self>) -> Self {
+        let spawner = ctx.spawner();
+        let server = ComputerControlMcpRuntime::start(spawner)
             .inspect_err(|err| log::warn!("Failed to start computer-control MCP server: {err}"))
             .ok();
 
         Self { server }
     }
 
-    pub(crate) fn mcp_config_json(&self) -> Option<String> {
-        let url = &self.server.as_ref()?.url;
-        Some(
-            json!({
-                "mcpServers": {
-                    SERVER_NAME: {
-                        "type": "sse",
-                        "url": url,
-                    }
+    pub(crate) fn mcp_config_json_for_session(&self, session_id: &str) -> Option<String> {
+        let runtime = self.server.as_ref()?;
+        let url = runtime
+            .session_server_url(session_id)
+            .unwrap_or_else(|err| {
+                log::warn!("Failed to start session-scoped computer-control MCP server: {err}");
+                runtime.url.clone()
+            });
+        Some(Self::config_for_url(&url))
+    }
+
+    fn config_for_url(url: &str) -> String {
+        json!({
+            "mcpServers": {
+                SERVER_NAME: {
+                    "type": "sse",
+                    "url": url,
                 }
+            }
+        })
+        .to_string()
+    }
+
+    /// Agent-initiated start: a tool call arrived while no control session is
+    /// active, so start one on the calling session's Claude pane. The pane
+    /// header chip is an indicator/kill switch, not the consent gate — macOS
+    /// Screen Recording/Accessibility grants are the consent. Returns the
+    /// resulting coordinator state, or None if no pane could be resolved.
+    fn start_control_for_session(
+        &mut self,
+        scope_session_id: Option<&str>,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<ComputerControlState> {
+        let mut views: Vec<ViewHandle<ClaudeCodeView>> = ctx
+            .window_ids()
+            .filter_map(|window_id| ctx.views_of_type::<ClaudeCodeView>(window_id))
+            .flatten()
+            .collect();
+        // An unscoped (legacy) endpoint, or a session whose pane is gone,
+        // only auto-starts when the pane is unambiguous.
+        let single = (views.len() == 1).then_some(0);
+        let index = scope_session_id
+            .and_then(|session_id| {
+                views
+                    .iter()
+                    .position(|view| view.as_ref(ctx).session_id() == session_id)
             })
-            .to_string(),
-        )
+            .or(single)?;
+        let view = views.swap_remove(index);
+        Some(view.update(ctx, |view, ctx| view.start_computer_control_for_agent(ctx)))
     }
 }
 
@@ -488,17 +535,56 @@ impl Entity for ComputerControlMcpBridge {
 impl SingletonEntity for ComputerControlMcpBridge {}
 
 impl ComputerControlMcpRuntime {
-    fn start() -> Result<Self, String> {
+    fn start(spawner: ModelSpawner<ComputerControlMcpBridge>) -> Result<Self, String> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
             .enable_all()
             .build()
             .map_err(|err| err.to_string())?;
         let cancel = CancellationToken::new();
+        let url = Self::start_server(runtime.handle(), spawner.clone(), cancel.clone(), None)?;
+        Ok(Self {
+            url,
+            spawner,
+            session_servers: Mutex::new(HashMap::new()),
+            runtime,
+            cancel,
+        })
+    }
+
+    /// Returns the SSE URL of the given session's dedicated server, starting
+    /// it on first use.
+    fn session_server_url(&self, session_id: &str) -> Result<String, String> {
+        let mut servers = self
+            .session_servers
+            .lock()
+            .map_err(|_| "computer-control MCP session-server registry is poisoned".to_owned())?;
+        if let Some(url) = servers.get(session_id) {
+            return Ok(url.clone());
+        }
+        let url = Self::start_server(
+            self.runtime.handle(),
+            self.spawner.clone(),
+            self.cancel.child_token(),
+            Some(session_id.to_owned()),
+        )?;
+        servers.insert(session_id.to_owned(), url.clone());
+        Ok(url)
+    }
+
+    /// Binds a localhost SSE server on an ephemeral port and returns its URL.
+    /// `scope_session_id` stamps every service instance created for this
+    /// endpoint with the owning Claude session.
+    fn start_server(
+        handle: &tokio::runtime::Handle,
+        spawner: ModelSpawner<ComputerControlMcpBridge>,
+        cancel: CancellationToken,
+        scope_session_id: Option<String>,
+    ) -> Result<String, String> {
         let (addr_tx, addr_rx) = mpsc::channel();
         let server_cancel = cancel.clone();
 
-        runtime.spawn(async move {
+        handle.spawn(async move {
             use rmcp::transport::sse_server::{SseServer, SseServerConfig};
 
             let config = SseServerConfig {
@@ -535,24 +621,26 @@ impl ComputerControlMcpRuntime {
                 }
             });
 
-            let _service_cancel = sse_server.with_service(ComputerControlMcpServer::new);
+            let _service_cancel = sse_server.with_service(move || {
+                ComputerControlMcpServer::new(spawner.clone(), scope_session_id.clone())
+            });
             server_cancel.cancelled().await;
         });
 
         let addr = addr_rx
             .recv_timeout(Duration::from_secs(2))
             .map_err(|err| err.to_string())??;
-        Ok(Self {
-            url: format!("http://{addr}{SSE_PATH}"),
-            _runtime: runtime,
-            _cancel: cancel,
-        })
+        Ok(format!("http://{addr}{SSE_PATH}"))
     }
 }
 
 #[derive(Clone)]
 struct ComputerControlMcpServer {
     tool_router: ToolRouter<Self>,
+    spawner: ModelSpawner<ComputerControlMcpBridge>,
+    /// The Claude session this endpoint belongs to (None on the legacy shared
+    /// endpoint).
+    scope_session_id: Option<String>,
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -568,7 +656,7 @@ impl ServerHandler for ComputerControlMcpServer {
             },
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             instructions: Some(
-                "Use these tools only after the user starts computer control in twarp. First call computer_screenshot. Coordinates for computer_action are screenshot image pixels by default; twarp maps them to the captured screen or region, including downscaled screenshots."
+                "Control the user's computer. The first tool call automatically starts a computer-control session on this Claude pane (the pane header shows a live indicator and a Stop control kill switch); macOS Screen Recording and Accessibility must already be granted. First call computer_screenshot. Coordinates for computer_action are screenshot image pixels by default; twarp maps them to the captured screen or region, including downscaled screenshots."
                     .to_owned(),
             ),
             ..Default::default()
@@ -638,9 +726,46 @@ struct ScreenshotMetadata {
 
 #[tool_router(router = tool_router)]
 impl ComputerControlMcpServer {
-    fn new() -> Self {
+    fn new(
+        spawner: ModelSpawner<ComputerControlMcpBridge>,
+        scope_session_id: Option<String>,
+    ) -> Self {
         Self {
             tool_router: Self::tool_router(),
+            spawner,
+            scope_session_id,
+        }
+    }
+
+    /// Returns the active session label, auto-starting computer control on
+    /// the calling session's Claude pane when none is active.
+    async fn ensure_active_session(&self) -> Result<String, McpError> {
+        if let Ok(session) = require_active_session() {
+            return Ok(session);
+        }
+        let scope = self.scope_session_id.clone();
+        let state = self
+            .spawner
+            .spawn(move |bridge, ctx| bridge.start_control_for_session(scope.as_deref(), ctx))
+            .await
+            .map_err(|_| {
+                McpError::internal_error("Computer-control MCP bridge is unavailable", None)
+            })?;
+        match state {
+            Some(ComputerControlState::Active) => require_active_session(),
+            Some(ComputerControlState::Blocked(_)) => Err(McpError::invalid_request(
+                "Computer control can't start: macOS Screen Recording and/or Accessibility permission is missing. A Grant-permissions panel is now showing in twarp — ask the user to grant access (an app restart may be required), then retry.",
+                None,
+            )),
+            Some(ComputerControlState::Failed(error)) => Err(McpError::internal_error(
+                format!("Computer control failed to start: {error}"),
+                None,
+            )),
+            Some(_) => Err(inactive_session_error()),
+            None => Err(McpError::invalid_request(
+                "Computer control couldn't resolve this session's Claude pane to start a control session. Ask the user to start computer control from the Claude pane header.",
+                None,
+            )),
         }
     }
 
@@ -652,7 +777,7 @@ impl ComputerControlMcpServer {
         &self,
         Parameters(params): Parameters<ScreenshotToolParams>,
     ) -> Result<CallToolResult, McpError> {
-        let session = require_active_session()?;
+        let session = self.ensure_active_session().await?;
         record_activity();
         let screenshot_params = params.screenshot_params()?;
         set_status("Latest: taking screenshot");
@@ -687,7 +812,7 @@ impl ComputerControlMcpServer {
         &self,
         Parameters(params): Parameters<ComputerActionParams>,
     ) -> Result<CallToolResult, McpError> {
-        let session = require_active_session()?;
+        let session = self.ensure_active_session().await?;
         record_activity();
         let screenshot_params = params
             .screenshot

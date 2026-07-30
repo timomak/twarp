@@ -5377,6 +5377,31 @@ impl ClaudeCodeView {
         ctx.notify();
     }
 
+    /// Agent-initiated start: a computer-control MCP tool call arrived while
+    /// no session was active. The macOS permission grants are the consent
+    /// gate; the header chip is the live indicator + kill switch. Returns the
+    /// resulting state so the tool call can report Blocked/Failed precisely.
+    pub(crate) fn start_computer_control_for_agent(
+        &mut self,
+        ctx: &mut ViewContext<Self>,
+    ) -> ComputerControlState {
+        if !Self::computer_control_entrypoint_available() {
+            return ComputerControlState::Stopped;
+        }
+        if !self.computer_control.borrow().state().is_live() {
+            self.computer_control.borrow_mut().start(
+                self.computer_control_session_label(),
+                self.computer_control_chrome(ctx),
+            );
+        }
+        let generation = self.computer_control.borrow().generation();
+        if self.computer_control.borrow().state().needs_poll() {
+            self.schedule_computer_control_poll(generation, ctx);
+        }
+        ctx.notify();
+        self.computer_control.borrow().state().clone()
+    }
+
     fn schedule_computer_control_poll(&self, generation: u64, ctx: &mut ViewContext<Self>) {
         ctx.spawn(
             async move {
@@ -5469,6 +5494,21 @@ impl ClaudeCodeView {
                 .with_child(context_segment(appearance, label.to_owned(), text_color))
                 .finish()
         };
+
+        // Idle is a passive availability indicator: the agent auto-starts
+        // control on first tool use, so there's nothing to click until a
+        // session is live (Stop control), blocked (Grant permissions), or
+        // failed (Retry control).
+        if !(live || blocked || failed) {
+            return Some(
+                Container::new(content)
+                    .with_padding_left(8.)
+                    .with_padding_right(8.)
+                    .with_padding_top(4.)
+                    .with_padding_bottom(4.)
+                    .finish(),
+            );
+        }
 
         let mouse = self.computer_control_button_mouse.clone();
         Some(
@@ -12358,9 +12398,12 @@ fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> 
                 .mcp_config_json_for_session(session_id),
         );
         if crate::computer_control::platform_supported() {
+            // Session-scoped endpoint so a tool call can auto-start control
+            // on the calling session's own pane.
             merge_mcp_servers(
                 &mut servers,
-                crate::computer_control::ComputerControlMcpBridge::as_ref(app).mcp_config_json(),
+                crate::computer_control::ComputerControlMcpBridge::as_ref(app)
+                    .mcp_config_json_for_session(session_id),
             );
         }
 
