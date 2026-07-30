@@ -701,6 +701,24 @@ mod imp {
             let Some((spawner, runtime)) = self.parts() else {
                 return;
             };
+            // Skip only servers waiting on the browser: bumping one of those
+            // generations would invalidate the pending consent flow, so the
+            // callback would arrive stale and be dropped. `Connecting` is NOT
+            // skipped — `restore` sets it on every server as its seeding pass,
+            // and a superseded probe just re-probes.
+            let servers: Vec<(String, String)> = servers
+                .into_iter()
+                .filter(|(id, _)| {
+                    !matches!(
+                        self.status.get(id),
+                        Some(McpAuthStatus::WaitingForBrowser)
+                    )
+                })
+                .collect();
+            if servers.is_empty() {
+                self.rearm_refresh(ctx);
+                return;
+            }
             let generations: Vec<u64> = servers
                 .iter()
                 .map(|(id, _)| id.clone())
@@ -768,14 +786,26 @@ mod imp {
                     }
                 }
 
-                tokio::time::sleep(REFRESH_INTERVAL).await;
-                let _ = spawner
-                    .spawn(|me, ctx| {
-                        let servers = oauth_servers(ctx);
-                        me.refresh_tokens(servers, ctx);
-                    })
-                    .await;
+                // One re-arm path for the whole loop (see `rearm_refresh`),
+                // so there is a single timer rather than one here and one
+                // there.
+                let _ = spawner.spawn(|me, ctx| me.rearm_refresh(ctx)).await;
             });
+        }
+
+        /// Schedule the next refresh pass. The only place the loop's interval
+        /// is applied — both the end of a pass and an all-skipped pass come
+        /// through here, so the loop can't die out or double up.
+        fn rearm_refresh(&mut self, ctx: &mut ModelContext<Self>) {
+            ctx.spawn(
+                async move {
+                    twarpui::r#async::Timer::after(REFRESH_INTERVAL).await;
+                },
+                |me: &mut Self, _, ctx| {
+                    let servers = oauth_servers(ctx);
+                    me.refresh_tokens(servers, ctx);
+                },
+            );
         }
 
         /// Exchange the authorization code for tokens and finish the flow.
