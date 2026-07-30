@@ -155,6 +155,8 @@ impl ComputerControlCoordinator {
         let status = mcp::latest_agent_status();
         match OverlayHost::new(&session_label, chrome, &status) {
             Ok(overlay) => {
+                native::cursor_show();
+                native::status_item_show("Stop Computer Control");
                 self.permission_panel = None;
                 self.overlay = Some(overlay);
                 self.last_status = Some(status);
@@ -258,6 +260,9 @@ impl ComputerControlCoordinator {
         }
         self.overlay.take();
         self.permission_panel.take();
+        native::cursor_hide();
+        native::status_item_hide();
+        native::badge_hide();
         self.last_session_label = None;
         self.last_chrome = None;
         self.last_status = None;
@@ -275,7 +280,8 @@ impl ComputerControlCoordinator {
         let stopped = self
             .overlay
             .as_ref()
-            .is_some_and(OverlayHost::stop_requested);
+            .is_some_and(OverlayHost::stop_requested)
+            || (self.state.is_live() && native::take_stop_requested());
         if stopped {
             self.stop();
             return true;
@@ -911,6 +917,168 @@ mod platform {
             }
         }
     }
+
+    /// Thread-safe wrappers over the native computer-control extras (fake
+    /// cursor, menu-bar stop item, app targeting, controlled-window badge).
+    /// The ObjC side hops to the main queue internally.
+    pub(crate) mod native {
+        use std::ffi::{c_char, c_void, CStr};
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        use pathfinder_color::ColorU;
+
+        use super::NativeColor;
+        use crate::computer_control::sanitized_c_string;
+
+        #[repr(C)]
+        struct NativeAppInfo {
+            pid: i32,
+            name: [c_char; 256],
+            bundle_id: [c_char; 256],
+        }
+
+        extern "C" {
+            fn twarp_computer_control_cursor_show();
+            fn twarp_computer_control_cursor_move(x: f64, y: f64, animate: bool);
+            fn twarp_computer_control_cursor_hide();
+            fn twarp_computer_control_status_item_show(
+                stop_title: *const c_char,
+                callback: extern "C" fn(*mut c_void),
+                context: *mut c_void,
+            );
+            fn twarp_computer_control_status_item_set_title(stop_title: *const c_char);
+            fn twarp_computer_control_status_item_hide();
+            fn twarp_computer_control_resolve_app(
+                query: *const c_char,
+                out: *mut NativeAppInfo,
+            ) -> bool;
+            fn twarp_computer_control_app_window_bounds(
+                pid: i32,
+                out_x: *mut f64,
+                out_y: *mut f64,
+                out_width: *mut f64,
+                out_height: *mut f64,
+            ) -> bool;
+            fn twarp_computer_control_activate_app(pid: i32) -> bool;
+            fn twarp_computer_control_badge_show(
+                pid: i32,
+                label: *const c_char,
+                accent_color: NativeColor,
+                callback: extern "C" fn(*mut c_void),
+                context: *mut c_void,
+            );
+            fn twarp_computer_control_badge_hide();
+        }
+
+        /// Set when the user asks to stop from native chrome (menu-bar item
+        /// or controlled-window badge); drained by the coordinator poll.
+        static NATIVE_STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+        extern "C" fn record_native_stop(_context: *mut c_void) {
+            NATIVE_STOP_REQUESTED.store(true, Ordering::SeqCst);
+        }
+
+        pub(crate) fn take_stop_requested() -> bool {
+            NATIVE_STOP_REQUESTED.swap(false, Ordering::SeqCst)
+        }
+
+        pub(crate) fn cursor_show() {
+            unsafe { twarp_computer_control_cursor_show() }
+        }
+
+        /// `x`/`y` are physical screen pixels, top-left origin.
+        pub(crate) fn cursor_move(x: f64, y: f64, animate: bool) {
+            unsafe { twarp_computer_control_cursor_move(x, y, animate) }
+        }
+
+        pub(crate) fn cursor_hide() {
+            unsafe { twarp_computer_control_cursor_hide() }
+        }
+
+        pub(crate) fn status_item_show(stop_title: &str) {
+            let stop_title = sanitized_c_string(stop_title);
+            unsafe {
+                twarp_computer_control_status_item_show(
+                    stop_title.as_ptr(),
+                    record_native_stop,
+                    std::ptr::null_mut(),
+                );
+            }
+        }
+
+        pub(crate) fn status_item_set_title(stop_title: &str) {
+            let stop_title = sanitized_c_string(stop_title);
+            unsafe { twarp_computer_control_status_item_set_title(stop_title.as_ptr()) }
+        }
+
+        pub(crate) fn status_item_hide() {
+            unsafe { twarp_computer_control_status_item_hide() }
+        }
+
+        #[derive(Clone, Debug)]
+        pub(crate) struct AppInfo {
+            pub pid: i32,
+            pub name: String,
+            pub bundle_id: String,
+        }
+
+        fn string_from_fixed(buffer: &[c_char; 256]) -> String {
+            unsafe { CStr::from_ptr(buffer.as_ptr()) }
+                .to_string_lossy()
+                .into_owned()
+        }
+
+        pub(crate) fn resolve_app(query: &str) -> Option<AppInfo> {
+            let query = sanitized_c_string(query);
+            let mut info = NativeAppInfo {
+                pid: 0,
+                name: [0; 256],
+                bundle_id: [0; 256],
+            };
+            let found = unsafe { twarp_computer_control_resolve_app(query.as_ptr(), &mut info) };
+            found.then(|| AppInfo {
+                pid: info.pid,
+                name: string_from_fixed(&info.name),
+                bundle_id: string_from_fixed(&info.bundle_id),
+            })
+        }
+
+        /// Focused-window bounds in physical screen pixels, top-left origin.
+        pub(crate) fn app_window_bounds(pid: i32) -> Option<(f64, f64, f64, f64)> {
+            let (mut x, mut y, mut width, mut height) = (0.0, 0.0, 0.0, 0.0);
+            let ok = unsafe {
+                twarp_computer_control_app_window_bounds(
+                    pid,
+                    &mut x,
+                    &mut y,
+                    &mut width,
+                    &mut height,
+                )
+            };
+            ok.then_some((x, y, width, height))
+        }
+
+        pub(crate) fn activate_app(pid: i32) -> bool {
+            unsafe { twarp_computer_control_activate_app(pid) }
+        }
+
+        pub(crate) fn badge_show(pid: i32, label: &str, accent: ColorU) {
+            let label = sanitized_c_string(label);
+            unsafe {
+                twarp_computer_control_badge_show(
+                    pid,
+                    label.as_ptr(),
+                    accent.into(),
+                    record_native_stop,
+                    std::ptr::null_mut(),
+                );
+            }
+        }
+
+        pub(crate) fn badge_hide() {
+            unsafe { twarp_computer_control_badge_hide() }
+        }
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -994,9 +1162,43 @@ mod platform {
             false
         }
     }
+
+    pub(crate) mod native {
+        use pathfinder_color::ColorU;
+
+        pub(crate) fn take_stop_requested() -> bool {
+            false
+        }
+        pub(crate) fn cursor_show() {}
+        pub(crate) fn cursor_move(_x: f64, _y: f64, _animate: bool) {}
+        pub(crate) fn cursor_hide() {}
+        pub(crate) fn status_item_show(_stop_title: &str) {}
+        pub(crate) fn status_item_set_title(_stop_title: &str) {}
+        pub(crate) fn status_item_hide() {}
+
+        #[derive(Clone, Debug)]
+        pub(crate) struct AppInfo {
+            pub pid: i32,
+            pub name: String,
+            pub bundle_id: String,
+        }
+
+        pub(crate) fn resolve_app(_query: &str) -> Option<AppInfo> {
+            None
+        }
+        pub(crate) fn app_window_bounds(_pid: i32) -> Option<(f64, f64, f64, f64)> {
+            None
+        }
+        pub(crate) fn activate_app(_pid: i32) -> bool {
+            false
+        }
+        pub(crate) fn badge_show(_pid: i32, _label: &str, _accent: ColorU) {}
+        pub(crate) fn badge_hide() {}
+    }
 }
 
 use platform::{OverlayHost, PermissionPanelHost};
+pub(crate) use platform::native;
 
 #[cfg(test)]
 mod tests {

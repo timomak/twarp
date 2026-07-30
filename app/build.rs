@@ -43,11 +43,14 @@ fn main() -> Result<()> {
         println!("cargo:rerun-if-changed=src/platform/mac/objc/services.m");
         println!("cargo:rerun-if-changed=src/platform/mac/objc/computer_control_overlay.h");
         println!("cargo:rerun-if-changed=src/platform/mac/objc/computer_control_overlay.m");
+        println!("cargo:rerun-if-changed=src/platform/mac/objc/computer_control_extras.h");
+        println!("cargo:rerun-if-changed=src/platform/mac/objc/computer_control_extras.m");
 
         cc::Build::new()
             .file("src/platform/mac/objc/app_bundle.m")
             .file("src/platform/mac/objc/services.m")
             .file("src/platform/mac/objc/computer_control_overlay.m")
+            .file("src/platform/mac/objc/computer_control_extras.m")
             .compile("warp_objc");
 
         // Build the dock tile plugin

@@ -31,6 +31,33 @@ static NSTextField *TwarpLabel(NSRect frame, NSString *value, CGFloat fontSize, 
 
 static NSString *TwarpStringFromCString(const char *value);
 
+// Derives the animated border-gradient stops from the pane accent color:
+// the accent itself, a brightened variant, and a hue-shifted companion.
+static NSArray *TwarpGlowGradientColors(TwarpComputerControlColor color) {
+    NSColor *base = [TwarpColor(color) colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
+    CGFloat hue = 0.0, saturation = 0.0, brightness = 0.0, alpha = 1.0;
+    [base getHue:&hue saturation:&saturation brightness:&brightness alpha:&alpha];
+    NSColor *bright = [NSColor colorWithHue:hue
+                                 saturation:MAX(saturation - 0.25, 0.0)
+                                 brightness:MIN(brightness + 0.35, 1.0)
+                                      alpha:alpha];
+    NSColor *shifted = [NSColor colorWithHue:fmod(hue + 0.12, 1.0)
+                                  saturation:saturation
+                                  brightness:brightness
+                                       alpha:alpha];
+    NSColor *shiftedBack = [NSColor colorWithHue:fmod(hue + 1.0 - 0.10, 1.0)
+                                      saturation:saturation
+                                      brightness:brightness
+                                           alpha:alpha];
+    return @[
+        (id)[base CGColor],
+        (id)[shifted CGColor],
+        (id)[bright CGColor],
+        (id)[shiftedBack CGColor],
+        (id)[base CGColor],
+    ];
+}
+
 static NSString *TwarpPermissionSettingsURL(TwarpComputerControlPermissionState state, BOOL screenRecording) {
     if (state == TwarpComputerControlPermissionGranted ||
         state == TwarpComputerControlPermissionRestartRequired) {
@@ -40,23 +67,6 @@ static NSString *TwarpPermissionSettingsURL(TwarpComputerControlPermissionState 
     return screenRecording
         ? @"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
         : @"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
-}
-
-static NSString *TwarpPermissionStatusText(
-    NSString *name,
-    NSString *purpose,
-    TwarpComputerControlPermissionState state) {
-    switch (state) {
-        case TwarpComputerControlPermissionGranted:
-            return [NSString stringWithFormat:@"%@: granted", name];
-        case TwarpComputerControlPermissionMissing:
-            return [NSString stringWithFormat:@"%@: required for %@", name, purpose];
-        case TwarpComputerControlPermissionRestartRequired:
-            return [NSString stringWithFormat:@"%@: granted; restart twarp to use it", name];
-        case TwarpComputerControlPermissionDeniedOrUnknown:
-        default:
-            return [NSString stringWithFormat:@"%@: blocked or unknown", name];
-    }
 }
 
 static NSString *TwarpPermissionSummary(
@@ -69,16 +79,10 @@ static NSString *TwarpPermissionSummary(
         accessibilityState == TwarpComputerControlPermissionRestartRequired;
 
     if (restartNeeded) {
-        return @"Restart twarp before starting computer control. Permissions granted in System Settings are not usable by this running process.";
+        return @"Permissions were granted. Restart Twarp so this running process can use them.";
     }
-    if (screenBlocked && accessibilityBlocked) {
-        return @"Grant Screen Recording for screenshots and Accessibility for mouse and keyboard control.";
-    }
-    if (screenBlocked) {
-        return @"Grant Screen Recording so Claude can receive screenshots.";
-    }
-    if (accessibilityBlocked) {
-        return @"Grant Accessibility so Claude can send mouse and keyboard input.";
+    if (screenBlocked || accessibilityBlocked) {
+        return @"Twarp Computer Use needs these permissions to use apps on your Mac. They are only used when you ask the agent to perform tasks.";
     }
     return @"Permissions are ready. Retry computer control.";
 }
@@ -97,10 +101,17 @@ static void TwarpOpenSettingsURL(NSString *value) {
 @interface TwarpComputerControlPermissionsPanelHost : NSObject {
     NSPanel *_panel;
     NSView *_content;
+    NSTextField *_titleLabel;
     NSTextField *_sessionLabel;
     NSTextField *_summaryLabel;
-    NSTextField *_screenRecordingLabel;
-    NSTextField *_accessibilityLabel;
+    NSView *_accessibilityCard;
+    NSView *_screenRecordingCard;
+    NSTextField *_accessibilityTitle;
+    NSTextField *_accessibilityDetail;
+    NSTextField *_screenRecordingTitle;
+    NSTextField *_screenRecordingDetail;
+    NSTextField *_accessibilityStatus;
+    NSTextField *_screenRecordingStatus;
     NSButton *_screenRecordingButton;
     NSButton *_accessibilityButton;
     NSButton *_retryButton;
@@ -132,11 +143,105 @@ static void TwarpOpenSettingsURL(NSString *value) {
                       textColor:(TwarpComputerControlColor)textColor
                  mutedTextColor:(TwarpComputerControlColor)mutedTextColor
                     accentColor:(TwarpComputerControlColor)accentColor;
+- (NSView *)permissionCardWithFrame:(NSRect)frame
+                         symbolName:(NSString *)symbolName
+                              title:(NSString *)title
+                             detail:(NSString *)detail
+                         titleLabel:(NSTextField **)titleLabel
+                        detailLabel:(NSTextField **)detailLabel
+                        statusLabel:(NSTextField **)statusLabel
+                        allowButton:(NSButton **)allowButton
+                             action:(SEL)action
+                          textColor:(NSColor *)textColor
+                         mutedColor:(NSColor *)mutedColor;
+- (void)applyState:(TwarpComputerControlPermissionState)state
+       statusLabel:(NSTextField *)statusLabel
+       allowButton:(NSButton *)allowButton
+       accentColor:(NSColor *)accentColor;
 - (void)closePanel;
 
 @end
 
 @implementation TwarpComputerControlPermissionsPanelHost
+
+- (NSView *)permissionCardWithFrame:(NSRect)frame
+                         symbolName:(NSString *)symbolName
+                              title:(NSString *)title
+                             detail:(NSString *)detail
+                         titleLabel:(NSTextField **)titleLabel
+                        detailLabel:(NSTextField **)detailLabel
+                        statusLabel:(NSTextField **)statusLabel
+                        allowButton:(NSButton **)allowButton
+                             action:(SEL)action
+                          textColor:(NSColor *)textColor
+                         mutedColor:(NSColor *)mutedColor {
+    NSView *card = [[[NSView alloc] initWithFrame:frame] autorelease];
+    [card setWantsLayer:YES];
+    [card layer].cornerRadius = 12.0;
+    [card layer].masksToBounds = YES;
+    [card layer].backgroundColor = [[textColor colorWithAlphaComponent:0.07] CGColor];
+
+    if (@available(macOS 11.0, *)) {
+        NSImage *symbol = [NSImage imageWithSystemSymbolName:symbolName
+                                    accessibilityDescription:title];
+        if (symbol) {
+            NSImageView *symbolView =
+                [[[NSImageView alloc] initWithFrame:NSMakeRect(18.0, 19.0, 30.0, 30.0)] autorelease];
+            [symbolView setImage:symbol];
+            [symbolView setContentTintColor:textColor];
+            [symbolView setImageScaling:NSImageScaleProportionallyUpOrDown];
+            [card addSubview:symbolView];
+        }
+    }
+
+    *titleLabel = TwarpLabel(NSMakeRect(60.0, 34.0, 250.0, 20.0), title, 13.0, YES, textColor);
+    [card addSubview:*titleLabel];
+
+    *detailLabel = TwarpLabel(NSMakeRect(60.0, 14.0, 268.0, 16.0), detail, 11.0, NO, mutedColor);
+    [card addSubview:*detailLabel];
+
+    *allowButton = [NSButton buttonWithTitle:@"Allow" target:self action:action];
+    [*allowButton setFrame:NSMakeRect(352.0, 19.0, 72.0, 30.0)];
+    [*allowButton setBezelStyle:NSBezelStyleRounded];
+    [*allowButton setFont:[NSFont systemFontOfSize:12.0 weight:NSFontWeightSemibold]];
+    [card addSubview:*allowButton];
+
+    *statusLabel = TwarpLabel(NSMakeRect(300.0, 25.0, 124.0, 18.0), @"", 11.0, YES, mutedColor);
+    [*statusLabel setAlignment:NSTextAlignmentRight];
+    [*statusLabel setHidden:YES];
+    [card addSubview:*statusLabel];
+
+    return card;
+}
+
+- (void)applyState:(TwarpComputerControlPermissionState)state
+       statusLabel:(NSTextField *)statusLabel
+       allowButton:(NSButton *)allowButton
+       accentColor:(NSColor *)accentColor {
+    switch (state) {
+        case TwarpComputerControlPermissionGranted:
+            [allowButton setHidden:YES];
+            [statusLabel setStringValue:@"Granted ✓"];
+            [statusLabel setTextColor:[NSColor systemGreenColor]];
+            [statusLabel setHidden:NO];
+            break;
+        case TwarpComputerControlPermissionRestartRequired:
+            [allowButton setHidden:YES];
+            [statusLabel setStringValue:@"Restart Twarp"];
+            [statusLabel setTextColor:[NSColor systemOrangeColor]];
+            [statusLabel setHidden:NO];
+            break;
+        case TwarpComputerControlPermissionMissing:
+        case TwarpComputerControlPermissionDeniedOrUnknown:
+        default:
+            [statusLabel setHidden:YES];
+            [allowButton setHidden:NO];
+            if ([allowButton respondsToSelector:@selector(setBezelColor:)]) {
+                [allowButton setBezelColor:accentColor];
+            }
+            break;
+    }
+}
 
 - (instancetype)initWithSessionLabel:(NSString *)sessionLabel
                 screenRecordingState:(TwarpComputerControlPermissionState)screenRecordingState
@@ -166,11 +271,10 @@ static void TwarpOpenSettingsURL(NSString *value) {
     }
 
     NSRect visibleFrame = [screen visibleFrame];
-    NSSize panelSize = NSMakeSize(398.0, 252.0);
-    CGFloat margin = 18.0;
+    NSSize panelSize = NSMakeSize(480.0, 440.0);
     NSRect panelRect = NSMakeRect(
-        NSMaxX(visibleFrame) - panelSize.width - margin,
-        NSMaxY(visibleFrame) - panelSize.height - margin,
+        NSMidX(visibleFrame) - panelSize.width / 2.0,
+        NSMidY(visibleFrame) - panelSize.height / 2.0,
         panelSize.width,
         panelSize.height);
 
@@ -195,7 +299,8 @@ static void TwarpOpenSettingsURL(NSString *value) {
     [_panel setReleasedWhenClosed:NO];
     [_panel setTitleVisibility:NSWindowTitleHidden];
     [_panel setTitlebarAppearsTransparent:YES];
-    [_panel setMovable:NO];
+    [_panel setMovable:YES];
+    [_panel setMovableByWindowBackground:YES];
     [_panel setBecomesKeyOnlyIfNeeded:YES];
     [_panel setCollectionBehavior:
         NSWindowCollectionBehaviorCanJoinAllSpaces |
@@ -206,73 +311,82 @@ static void TwarpOpenSettingsURL(NSString *value) {
 
     _content = [[[NSView alloc] initWithFrame:NSMakeRect(0.0, 0.0, panelSize.width, panelSize.height)] autorelease];
     [_content setWantsLayer:YES];
-    [_content layer].cornerRadius = 10.0;
+    [_content layer].cornerRadius = 14.0;
     [_content layer].masksToBounds = YES;
     [_panel setContentView:_content];
 
     NSColor *text = TwarpColor(textColor);
     NSColor *muted = TwarpColor(mutedTextColor);
 
-    NSTextField *titleLabel = TwarpLabel(
-        NSMakeRect(16.0, 218.0, 270.0, 20.0),
-        @"Computer control blocked",
-        13.0,
+    NSImageView *iconView =
+        [[[NSImageView alloc] initWithFrame:NSMakeRect(208.0, 352.0, 64.0, 64.0)] autorelease];
+    [iconView setImage:[NSApp applicationIconImage]];
+    [iconView setImageScaling:NSImageScaleProportionallyUpOrDown];
+    [_content addSubview:iconView];
+
+    _titleLabel = TwarpLabel(
+        NSMakeRect(20.0, 314.0, 440.0, 28.0),
+        @"Enable Twarp Computer Use",
+        20.0,
         YES,
         text);
-    [_content addSubview:titleLabel];
+    [_titleLabel setAlignment:NSTextAlignmentCenter];
+    [_content addSubview:_titleLabel];
 
     _sessionLabel = TwarpLabel(
-        NSMakeRect(16.0, 198.0, 366.0, 18.0),
+        NSMakeRect(20.0, 294.0, 440.0, 16.0),
         sessionLabel,
         11.0,
         NO,
         muted);
+    [_sessionLabel setAlignment:NSTextAlignmentCenter];
     [_content addSubview:_sessionLabel];
 
     _summaryLabel = TwarpLabel(
-        NSMakeRect(16.0, 159.0, 366.0, 34.0),
+        NSMakeRect(48.0, 250.0, 384.0, 38.0),
         @"",
-        11.0,
+        12.0,
         NO,
-        text);
+        muted);
+    [_summaryLabel setAlignment:NSTextAlignmentCenter];
     [_summaryLabel setLineBreakMode:NSLineBreakByWordWrapping];
     [_summaryLabel setUsesSingleLineMode:NO];
     [_content addSubview:_summaryLabel];
 
-    _screenRecordingLabel = TwarpLabel(NSMakeRect(16.0, 126.0, 226.0, 18.0), @"", 11.0, NO, muted);
-    [_content addSubview:_screenRecordingLabel];
+    _accessibilityCard = [self permissionCardWithFrame:NSMakeRect(20.0, 166.0, 440.0, 68.0)
+                                            symbolName:@"accessibility"
+                                                 title:@"Accessibility"
+                                                detail:@"Allows Twarp to send clicks and keystrokes"
+                                            titleLabel:&_accessibilityTitle
+                                           detailLabel:&_accessibilityDetail
+                                           statusLabel:&_accessibilityStatus
+                                           allowButton:&_accessibilityButton
+                                                action:@selector(openAccessibility:)
+                                             textColor:text
+                                            mutedColor:muted];
+    [_content addSubview:_accessibilityCard];
 
-    _screenRecordingButton = [NSButton buttonWithTitle:@"Open Screen Recording" target:self action:@selector(openScreenRecording:)];
-    [_screenRecordingButton setFrame:NSMakeRect(248.0, 119.0, 134.0, 28.0)];
-    [_screenRecordingButton setBezelStyle:NSBezelStyleRounded];
-    [_screenRecordingButton setFont:[NSFont systemFontOfSize:11.0 weight:NSFontWeightMedium]];
-    [_content addSubview:_screenRecordingButton];
-
-    _accessibilityLabel = TwarpLabel(NSMakeRect(16.0, 88.0, 226.0, 18.0), @"", 11.0, NO, muted);
-    [_content addSubview:_accessibilityLabel];
-
-    _accessibilityButton = [NSButton buttonWithTitle:@"Open Accessibility" target:self action:@selector(openAccessibility:)];
-    [_accessibilityButton setFrame:NSMakeRect(248.0, 81.0, 134.0, 28.0)];
-    [_accessibilityButton setBezelStyle:NSBezelStyleRounded];
-    [_accessibilityButton setFont:[NSFont systemFontOfSize:11.0 weight:NSFontWeightMedium]];
-    [_content addSubview:_accessibilityButton];
-
-    NSTextField *footerLabel = TwarpLabel(
-        NSMakeRect(16.0, 49.0, 366.0, 18.0),
-        @"After changing settings, return here and retry.",
-        11.0,
-        NO,
-        muted);
-    [_content addSubview:footerLabel];
+    _screenRecordingCard = [self permissionCardWithFrame:NSMakeRect(20.0, 88.0, 440.0, 68.0)
+                                              symbolName:@"camera.viewfinder"
+                                                   title:@"Screenshots"
+                                                  detail:@"Twarp uses screenshots to know where to click"
+                                              titleLabel:&_screenRecordingTitle
+                                             detailLabel:&_screenRecordingDetail
+                                             statusLabel:&_screenRecordingStatus
+                                             allowButton:&_screenRecordingButton
+                                                  action:@selector(openScreenRecording:)
+                                               textColor:text
+                                              mutedColor:muted];
+    [_content addSubview:_screenRecordingCard];
 
     _retryButton = [NSButton buttonWithTitle:@"Retry" target:self action:@selector(retryPressed:)];
-    [_retryButton setFrame:NSMakeRect(237.0, 14.0, 68.0, 28.0)];
+    [_retryButton setFrame:NSMakeRect(282.0, 22.0, 80.0, 30.0)];
     [_retryButton setBezelStyle:NSBezelStyleRounded];
     [_retryButton setFont:[NSFont systemFontOfSize:12.0 weight:NSFontWeightSemibold]];
     [_content addSubview:_retryButton];
 
-    _dismissButton = [NSButton buttonWithTitle:@"Dismiss" target:self action:@selector(dismissPressed:)];
-    [_dismissButton setFrame:NSMakeRect(312.0, 14.0, 70.0, 28.0)];
+    _dismissButton = [NSButton buttonWithTitle:@"Not now" target:self action:@selector(dismissPressed:)];
+    [_dismissButton setFrame:NSMakeRect(370.0, 22.0, 90.0, 30.0)];
     [_dismissButton setBezelStyle:NSBezelStyleRounded];
     [_dismissButton setFont:[NSFont systemFontOfSize:12.0 weight:NSFontWeightRegular]];
     [_content addSubview:_dismissButton];
@@ -309,28 +423,32 @@ static void TwarpOpenSettingsURL(NSString *value) {
     [_panel setBackgroundColor:panelColorValue];
     [_content layer].backgroundColor = [panelColorValue CGColor];
     [_content layer].borderWidth = 1.0;
-    [_content layer].borderColor = [TwarpColor(accentColor) CGColor];
+    [_content layer].borderColor = [[TwarpColor(textColor) colorWithAlphaComponent:0.12] CGColor];
 
     NSColor *text = TwarpColor(textColor);
     NSColor *muted = TwarpColor(mutedTextColor);
+    NSColor *accent = TwarpColor(accentColor);
+    [_titleLabel setTextColor:text];
     [_sessionLabel setStringValue:sessionLabel ?: @""];
     [_sessionLabel setTextColor:muted];
-    [_summaryLabel setTextColor:text];
-    [_screenRecordingLabel setTextColor:muted];
-    [_accessibilityLabel setTextColor:muted];
+    [_summaryLabel setTextColor:muted];
+    [_accessibilityTitle setTextColor:text];
+    [_screenRecordingTitle setTextColor:text];
+    [_accessibilityDetail setTextColor:muted];
+    [_screenRecordingDetail setTextColor:muted];
+    [_accessibilityCard layer].backgroundColor = [[text colorWithAlphaComponent:0.07] CGColor];
+    [_screenRecordingCard layer].backgroundColor = [[text colorWithAlphaComponent:0.07] CGColor];
 
     [_summaryLabel setStringValue:TwarpPermissionSummary(screenRecordingState, accessibilityState)];
-    [_screenRecordingLabel setStringValue:TwarpPermissionStatusText(
-        @"Screen Recording",
-        @"screenshots",
-        screenRecordingState)];
-    [_accessibilityLabel setStringValue:TwarpPermissionStatusText(
-        @"Accessibility",
-        @"mouse and keyboard control",
-        accessibilityState)];
 
-    [_screenRecordingButton setHidden:TwarpPermissionSettingsURL(screenRecordingState, YES) == nil];
-    [_accessibilityButton setHidden:TwarpPermissionSettingsURL(accessibilityState, NO) == nil];
+    [self applyState:accessibilityState
+         statusLabel:_accessibilityStatus
+         allowButton:_accessibilityButton
+         accentColor:accent];
+    [self applyState:screenRecordingState
+         statusLabel:_screenRecordingStatus
+         allowButton:_screenRecordingButton
+         accentColor:accent];
 }
 
 - (void)openScreenRecording:(id)sender {
@@ -379,7 +497,7 @@ static void TwarpOpenSettingsURL(NSString *value) {
     NSPanel *_panel;
     NSWindow *_glowWindow;
     NSView *_panelContent;
-    CALayer *_glowLayer;
+    CAGradientLayer *_glowLayer;
     NSTextField *_titleLabel;
     NSTextField *_sessionLabel;
     NSTextField *_modeLabel;
@@ -615,10 +733,45 @@ static void TwarpOpenSettingsURL(NSString *value) {
 
     NSView *glowContent = [[[NSView alloc] initWithFrame:NSMakeRect(0.0, 0.0, screenFrame.size.width, screenFrame.size.height)] autorelease];
     [glowContent setWantsLayer:YES];
-    _glowLayer = [glowContent layer];
-    _glowLayer.borderWidth = 7.0;
-    _glowLayer.borderColor = [TwarpColor(glowColor) CGColor];
-    _glowLayer.backgroundColor = [[NSColor clearColor] CGColor];
+    [glowContent layer].backgroundColor = [[NSColor clearColor] CGColor];
+
+    // A slowly-shimmering gradient ring instead of a flat border: a
+    // full-screen gradient layer masked down to a 7pt edge ring.
+    _glowLayer = [CAGradientLayer layer];
+    _glowLayer.frame = NSMakeRect(0.0, 0.0, screenFrame.size.width, screenFrame.size.height);
+    _glowLayer.startPoint = CGPointMake(0.0, 0.0);
+    _glowLayer.endPoint = CGPointMake(1.0, 1.0);
+    _glowLayer.colors = TwarpGlowGradientColors(glowColor);
+
+    CAShapeLayer *ringMask = [CAShapeLayer layer];
+    CGMutablePathRef ringPath = CGPathCreateMutable();
+    CGPathAddRect(ringPath, NULL, NSRectToCGRect([glowContent bounds]));
+    CGPathAddRect(ringPath, NULL, CGRectInset(NSRectToCGRect([glowContent bounds]), 7.0, 7.0));
+    ringMask.path = ringPath;
+    CGPathRelease(ringPath);
+    ringMask.fillRule = kCAFillRuleEvenOdd;
+    _glowLayer.mask = ringMask;
+
+    CABasicAnimation *sweep = [CABasicAnimation animationWithKeyPath:@"startPoint"];
+    sweep.fromValue = [NSValue valueWithPoint:NSMakePoint(0.0, 0.0)];
+    sweep.toValue = [NSValue valueWithPoint:NSMakePoint(0.0, 1.0)];
+    sweep.duration = 3.5;
+    sweep.autoreverses = YES;
+    sweep.repeatCount = HUGE_VALF;
+    sweep.timingFunction =
+        [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+    [_glowLayer addAnimation:sweep forKey:@"twarp_glow_sweep"];
+    CABasicAnimation *sweepEnd = [CABasicAnimation animationWithKeyPath:@"endPoint"];
+    sweepEnd.fromValue = [NSValue valueWithPoint:NSMakePoint(1.0, 1.0)];
+    sweepEnd.toValue = [NSValue valueWithPoint:NSMakePoint(1.0, 0.0)];
+    sweepEnd.duration = 3.5;
+    sweepEnd.autoreverses = YES;
+    sweepEnd.repeatCount = HUGE_VALF;
+    sweepEnd.timingFunction =
+        [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+    [_glowLayer addAnimation:sweepEnd forKey:@"twarp_glow_sweep_end"];
+
+    [[glowContent layer] addSublayer:_glowLayer];
     [_glowWindow setContentView:glowContent];
 
     [_glowWindow orderFrontRegardless];
@@ -661,7 +814,7 @@ static void TwarpOpenSettingsURL(NSString *value) {
         [_stopButton setContentTintColor:text];
     }
 
-    _glowLayer.borderColor = [TwarpColor(glowColor) CGColor];
+    _glowLayer.colors = TwarpGlowGradientColors(glowColor);
 }
 
 - (void)stopPressed:(id)sender {
