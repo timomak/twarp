@@ -604,6 +604,10 @@ pub enum ClaudeCodeViewAction {
     /// twarp 17: the composer mic button (PRODUCT 17 §1–§11). Idle → start
     /// recording; recording → stop and transcribe; transcribing → no-op.
     ToggleVoiceRecording,
+    /// twarp 25: start or end the spoken conversation (PRODUCT 25 §5).
+    ToggleRealtimeCall,
+    /// twarp 25: mute/unmute the microphone without ending the call (§13).
+    ToggleRealtimeMute,
     /// twarp 17: the composer speaker button (PRODUCT 17 §12–§14) — toggles
     /// spoken replies for this pane; while speaking it also stops playback.
     /// twarp: swap between the rendered chat and the raw interactive CLI from
@@ -720,6 +724,38 @@ enum StdinCommand {
     /// Interrupt the in-flight turn (`send_interrupt`) — the session-preserving
     /// Stop (PRODUCT §11). `request_id` is echoed on the acknowledgement.
     Interrupt { request_id: String },
+    /// twarp 25: a realtime voice-conversation command. Codex-only; ignored on
+    /// other providers rather than erroring, so the pump loop stays uniform.
+    Realtime(RealtimeCommand),
+}
+
+/// twarp 25: the view→session half of the voice conversation.
+enum RealtimeCommand {
+    /// Open the spoken session on this pane's thread (PRODUCT 25 §7).
+    Start { voice: Option<String> },
+    /// One microphone chunk, base64 s16le at the capture device's own rate.
+    Audio {
+        data: String,
+        sample_rate: u32,
+        channels: u16,
+    },
+    /// Drive a spoken turn from composer text (PRODUCT 25 §18).
+    Speech { text: String },
+    /// End the session, leaving the thread alive (PRODUCT 25 §9–§10).
+    Stop,
+}
+
+/// twarp 25: what the call panel is allowed to claim is happening. Every
+/// transition is driven by a real event from the session — never by optimism
+/// about what should have happened by now (PRODUCT 25 §8).
+#[derive(Debug, Clone, PartialEq)]
+enum RealtimeState {
+    /// `start` sent; nothing has come back yet.
+    Connecting,
+    /// `thread/realtime/started` arrived — the session is genuinely live.
+    Live,
+    /// The provider's own failure text (PRODUCT 25 §20).
+    Failed(String),
 }
 
 /// An image attached directly through paste / drag-drop / file-picker (7l,
@@ -1223,6 +1259,17 @@ pub struct ClaudeCodeView {
     mic_button_mouse: MouseStateHandle,
     /// Pulse state for the mic glyph while recording (PRODUCT 17 §4).
     mic_pulse: PulsingIconStateHandle,
+    /// twarp 25: the live voice conversation, `None` when no call is up.
+    realtime: Option<RealtimeState>,
+    /// The microphone feeding the live call. Separate from `voice_recorder`
+    /// (dictation): the two never run at once, but they drain differently.
+    realtime_mic: Option<crate::voice::capture::Recorder>,
+    /// Speech output for the call — also the barge-in stop handle.
+    realtime_player: Option<crate::voice::playback::Player>,
+    /// Muted (PRODUCT 25 §13): the session stays up, the mic stops feeding it.
+    realtime_muted: bool,
+    /// Mouse state for the composer call button.
+    call_button_mouse: MouseStateHandle,
 }
 
 impl ClaudeCodeView {
@@ -1511,6 +1558,11 @@ impl ClaudeCodeView {
             voice_live_snapshot: None,
             mic_button_mouse: MouseStateHandle::default(),
             mic_pulse: PulsingIconStateHandle::default(),
+            realtime: None,
+            realtime_mic: None,
+            realtime_player: None,
+            realtime_muted: false,
+            call_button_mouse: MouseStateHandle::default(),
         };
 
         // PRODUCT §4/§8: capture the login-shell environment up front so CLI
@@ -2306,6 +2358,29 @@ impl ClaudeCodeView {
         );
     }
 
+    /// twarp 25: the Codex app-server environment. The realtime conversation
+    /// requires **API-key auth** — with only the Codex CLI's ChatGPT login,
+    /// `thread/realtime/start` succeeds and then immediately fails with
+    /// "realtime conversation requires API key auth" — so the Agent settings
+    /// key rides along as `OPENAI_API_KEY` when one is configured. Everything
+    /// else about the session is unchanged when it is absent.
+    fn codex_env_vars(&self, ctx: &AppContext) -> Option<HashMap<String, String>> {
+        let mut env_vars = self.interactive_env_vars.clone().unwrap_or_default();
+        if let Some(key) = self.api_key_for_agent(CLIAgent::Codex, ctx) {
+            env_vars
+                .entry("OPENAI_API_KEY".to_owned())
+                .or_insert_with(|| key);
+        }
+        (!env_vars.is_empty()).then_some(env_vars)
+    }
+
+    /// Whether a voice call can be started here (PRODUCT 25 §5–§6): Codex
+    /// panes only, and only once the key the realtime session needs exists.
+    fn realtime_available(&self, ctx: &AppContext) -> bool {
+        self.provider == AgentProvider::Codex
+            && self.api_key_for_agent(CLIAgent::Codex, ctx).is_some()
+    }
+
     fn api_key_for_agent(&self, agent: CLIAgent, ctx: &AppContext) -> Option<String> {
         if !app_settings::api_key_presence(AgentSettings::as_ref(ctx), agent) {
             return None;
@@ -3050,6 +3125,19 @@ impl ClaudeCodeView {
     ) {
         self.clear_reply_suggestion(ctx);
         self.clear_composer_placeholder_suggestion(ctx);
+        // twarp 25 §18: with a call up, typing joins the conversation instead
+        // of opening a second, silent turn. `appendSpeech` is the only text
+        // path that produces a reply — `appendText` merely injects an item.
+        if matches!(self.realtime, Some(RealtimeState::Live)) && message.images.is_empty() {
+            if let Some(tx) = &self.message_tx {
+                let _ = tx.try_send(StdinCommand::Realtime(RealtimeCommand::Speech {
+                    text: message.text.clone(),
+                }));
+                self.transcript.apply(TranscriptEvent::UserMessage(message.text));
+                ctx.notify();
+                return;
+            }
+        }
         // PRODUCT §1: claude is parked on an AskUserQuestion — a typed message
         // is the user's answer (the free-form "Other" path), not type-ahead
         // for after the question. Consume it as the held permission's answer.
@@ -3695,7 +3783,7 @@ impl ClaudeCodeView {
                 .flatten(),
             path_env: self.interactive_path.clone(),
             env_vars: (self.provider == AgentProvider::Codex)
-                .then(|| self.interactive_env_vars.clone())
+                .then(|| self.codex_env_vars(ctx))
                 .flatten(),
         };
         self.session_spawn_pending = true;
@@ -3804,6 +3892,35 @@ impl ClaudeCodeView {
                                 _ => send_interrupt(&mut stdin, &request_id).await,
                             }
                         }
+                        // twarp 25: realtime is a Codex-only surface; on other
+                        // providers the command is a no-op rather than an error.
+                        StdinCommand::Realtime(command) => match codex_driver.as_ref() {
+                            Some(driver) => match command {
+                                RealtimeCommand::Start { voice } => {
+                                    driver.realtime_start(&mut stdin, voice).await
+                                }
+                                RealtimeCommand::Audio {
+                                    data,
+                                    sample_rate,
+                                    channels,
+                                } => {
+                                    driver
+                                        .realtime_append_audio(
+                                            &mut stdin,
+                                            data,
+                                            sample_rate,
+                                            channels,
+                                            None,
+                                        )
+                                        .await
+                                }
+                                RealtimeCommand::Speech { text } => {
+                                    driver.realtime_append_speech(&mut stdin, text).await
+                                }
+                                RealtimeCommand::Stop => driver.realtime_stop(&mut stdin).await,
+                            },
+                            None => Ok(()),
+                        },
                     };
                     if wrote.is_err() {
                         break;
@@ -3933,6 +4050,13 @@ impl ClaudeCodeView {
         // the working spinner to the turn's ✓/✗ — repaint the tab bar.
         if matches!(&event, TranscriptEvent::TaskNotification(_)) {
             ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+        }
+        // twarp 25: session state and audio for the live call. Handled here and
+        // NOT forwarded to the transcript model — the spoken words arrive
+        // separately as ordinary assistant text.
+        if let TranscriptEvent::Realtime(realtime) = event {
+            self.on_realtime_event(realtime, ctx);
+            return;
         }
         if let TranscriptEvent::Ended { reason } = &event {
             log::warn!(
@@ -4166,6 +4290,10 @@ impl ClaudeCodeView {
     /// session's EOF/events stale so they can't spam the transcript or wipe
     /// the next session's handles.
     fn detach_live_session(&mut self) {
+        // twarp 25 §9: the call cannot outlive the process carrying it — drop
+        // the microphone and silence playback with the session.
+        self.teardown_realtime_audio();
+        self.realtime = None;
         self.resume_session_id = Some(self.session_id.clone());
         self.session_epoch += 1;
         self.child = None; // kill_on_drop
@@ -4996,6 +5124,195 @@ impl ClaudeCodeView {
         if auto_send && self.voice_composer_was_empty && was_empty {
             self.submit(ctx);
         }
+    }
+
+    // --- twarp 25: the voice conversation (PRODUCT 25 §5–§19) ---
+
+    /// The call button: start a spoken session, or end the live one.
+    fn toggle_realtime_call(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.realtime.is_some() {
+            self.end_realtime_call(ctx);
+            return;
+        }
+        self.voice_status = None;
+        // §6: unconfigured points at settings instead of failing mutely.
+        if !self.realtime_available(ctx) {
+            self.voice_status = Some("Add an API key in Settings → Agent to use voice".to_owned());
+            ctx.notify();
+            return;
+        }
+        let Some(tx) = self.message_tx.clone() else {
+            self.voice_status = Some("Send a message first to start the session".to_owned());
+            ctx.notify();
+            return;
+        };
+        // Dictation and a call share one microphone; the call wins.
+        self.cancel_voice_recording(ctx);
+        if !crate::voice::try_begin_recording() {
+            self.voice_status = Some("Already recording in another pane".to_owned());
+            ctx.notify();
+            return;
+        }
+        match crate::voice::capture::Recorder::start_streaming() {
+            Ok(recorder) => self.realtime_mic = Some(recorder),
+            Err(error) => {
+                crate::voice::end_recording();
+                self.voice_status = Some(error.to_string());
+                ctx.notify();
+                return;
+            }
+        }
+        let voice = Some(claude_code::codex::protocol::DEFAULT_REALTIME_VOICE.to_owned());
+        let _ = tx.try_send(StdinCommand::Realtime(RealtimeCommand::Start { voice }));
+        // §7–§8: Connecting until the session says otherwise.
+        self.realtime = Some(RealtimeState::Connecting);
+        self.realtime_muted = false;
+        log::info!("twarp 25: realtime call starting");
+        self.schedule_realtime_tick(ctx);
+        ctx.notify();
+    }
+
+    /// §9: end the call, release the microphone, keep the thread and the
+    /// transcript.
+    fn end_realtime_call(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.realtime.is_none() && self.realtime_mic.is_none() {
+            return;
+        }
+        if let Some(tx) = &self.message_tx {
+            let _ = tx.try_send(StdinCommand::Realtime(RealtimeCommand::Stop));
+        }
+        self.teardown_realtime_audio();
+        self.realtime = None;
+        log::info!("twarp 25: realtime call ended");
+        ctx.notify();
+    }
+
+    /// Release the microphone and silence playback without touching session
+    /// state — shared by End, failure, and pane teardown.
+    fn teardown_realtime_audio(&mut self) {
+        if let Some(recorder) = self.realtime_mic.take() {
+            recorder.cancel();
+            crate::voice::end_recording();
+        }
+        if let Some(player) = &self.realtime_player {
+            player.stop();
+        }
+        self.realtime_muted = false;
+    }
+
+    /// §13: mute stops feeding the session; the agent may still finish talking.
+    fn toggle_realtime_mute(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.realtime.is_none() {
+            return;
+        }
+        self.realtime_muted = !self.realtime_muted;
+        if let Some(recorder) = &self.realtime_mic {
+            recorder.set_muted(self.realtime_muted);
+        }
+        ctx.notify();
+    }
+
+    /// Realtime session events (PRODUCT 25 §8, §14, §20).
+    fn on_realtime_event(&mut self, event: claude_code::RealtimeEvent, ctx: &mut ViewContext<Self>) {
+        match event {
+            claude_code::RealtimeEvent::Started => {
+                self.realtime = Some(RealtimeState::Live);
+                self.voice_status = None;
+                log::info!("twarp 25: realtime session live");
+            }
+            claude_code::RealtimeEvent::Audio {
+                pcm,
+                sample_rate,
+                channels: _,
+            } => {
+                self.play_realtime_audio(pcm, sample_rate);
+            }
+            claude_code::RealtimeEvent::Error(message) => {
+                log::warn!("twarp 25: realtime session failed: {message}");
+                self.teardown_realtime_audio();
+                self.realtime = Some(RealtimeState::Failed(message));
+            }
+            claude_code::RealtimeEvent::Closed => {
+                log::info!("twarp 25: realtime session closed by the provider");
+                self.teardown_realtime_audio();
+                // A failure already explains itself; don't overwrite it with a
+                // bare "closed".
+                if !matches!(self.realtime, Some(RealtimeState::Failed(_))) {
+                    self.realtime = None;
+                }
+            }
+        }
+        ctx.notify();
+    }
+
+    /// Queue one spoken chunk. Chunks carry their own rate, so playback follows
+    /// the provider rather than a constant.
+    fn play_realtime_audio(&mut self, pcm: Vec<u8>, sample_rate: u32) {
+        if self.realtime_player.is_none() {
+            match crate::voice::playback::Player::start() {
+                Ok(player) => self.realtime_player = Some(player),
+                Err(error) => {
+                    log::warn!("twarp 25: realtime playback unavailable: {error}");
+                    return;
+                }
+            }
+        }
+        if let Some(player) = &self.realtime_player {
+            if player.is_active() {
+                player.append(pcm, sample_rate);
+            } else {
+                player.play(pcm, sample_rate);
+            }
+        }
+    }
+
+    /// The call beat: drains the microphone into the session while unmuted and
+    /// repaints so the panel's live state stays honest. Self-rearming, because
+    /// `repaint_after` never re-runs `render()`.
+    fn schedule_realtime_tick(&self, ctx: &mut ViewContext<Self>) {
+        ctx.spawn(
+            async move {
+                Timer::after(Duration::from_millis(120)).await;
+            },
+            move |me, _, ctx| {
+                if !matches!(
+                    me.realtime,
+                    Some(RealtimeState::Connecting | RealtimeState::Live)
+                ) {
+                    return;
+                }
+                me.pump_realtime_mic();
+                ctx.notify();
+                me.schedule_realtime_tick(ctx);
+            },
+        );
+    }
+
+    /// §12: stream captured speech to the session. §14: local speech stops the
+    /// agent's audio, so the user can talk over it.
+    fn pump_realtime_mic(&mut self) {
+        let (Some(recorder), Some(tx)) = (&self.realtime_mic, &self.message_tx) else {
+            return;
+        };
+        let Some(drained) = recorder.drain() else {
+            return;
+        };
+        if speech_present(&drained.pcm) {
+            if let Some(player) = &self.realtime_player {
+                if player.is_active() {
+                    player.stop();
+                }
+            }
+        }
+        let data = base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            &drained.pcm,
+        );
+        let _ = tx.try_send(StdinCommand::Realtime(RealtimeCommand::Audio {
+            data,
+            sample_rate: drained.sample_rate,
+            channels: drained.channels,
+        }));
     }
 
     /// The voice beat (the `schedule_elapsed_tick` pattern): while recording it
@@ -8607,6 +8924,46 @@ impl ClaudeCodeView {
     /// twarp 17 (PRODUCT 17 §1, §4–§5): the composer mic button, right of the
     /// paperclip. Idle → muted glyph; recording → pulsing accent glyph plus an
     /// m:ss elapsed label; transcribing → muted glyph plus an ellipsis label.
+    /// twarp 25 (PRODUCT 25 §5): the call button, right of the mic. Present
+    /// only on Codex panes — the provider that can hold a spoken conversation.
+    /// Accent while a call is up, muted otherwise; warn while failed.
+    fn render_call_button(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+        if self.provider != AgentProvider::Codex {
+            return None;
+        }
+        let theme = appearance.theme();
+        let color = match &self.realtime {
+            Some(RealtimeState::Failed(_)) => twarp_core::ui::theme::Fill::warn().into_solid(),
+            Some(_) => self.render_accent.get(),
+            None => theme.nonactive_ui_text_color().into_solid(),
+        };
+        // Pulse only once the session is genuinely live (§8) — a connecting
+        // call must not look like a listening one.
+        let glyph: Box<dyn Element> = if matches!(self.realtime, Some(RealtimeState::Live)) {
+            PulsingIcon::new(
+                crate::ui_components::icons::Icon::Speaker.into(),
+                color,
+                self.mic_pulse.clone(),
+            )
+            .finish()
+        } else {
+            Icon::new(crate::ui_components::icons::Icon::Speaker.into(), color).finish()
+        };
+        Some(
+            Hoverable::new(self.call_button_mouse.clone(), move |_| {
+                ConstrainedBox::new(glyph)
+                    .with_width(16.)
+                    .with_height(16.)
+                    .finish()
+            })
+            .with_cursor(Cursor::PointingHand)
+            .on_click(|ctx, _, _| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleRealtimeCall);
+            })
+            .finish(),
+        )
+    }
+
     fn render_mic_button(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
         let muted = theme.nonactive_ui_text_color().into_solid();
@@ -8779,14 +9136,18 @@ impl ClaudeCodeView {
         // (model · effort, with context + MCP folded into its menu) and the
         // action circle, so the row fits every pane width without the old
         // per-density chip-dropping tiers.
-        let left = Flex::row()
+        let mut left = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(spacing::SM)
             .with_child(self.render_permission_control(appearance))
             .with_child(make_attach())
-            // twarp 17 (PRODUCT 17 §1, §12): voice input + spoken replies.
-            .with_child(self.render_mic_button(appearance))
-            .finish();
+            // twarp 17 (PRODUCT 17 §1): dictation into the composer.
+            .with_child(self.render_mic_button(appearance));
+        // twarp 25 (PRODUCT 25 §5): the spoken conversation, Codex-only.
+        if let Some(call) = self.render_call_button(appearance) {
+            left.add_child(call);
+        }
+        let left = left.finish();
         let right = Flex::row()
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -9352,6 +9713,8 @@ impl TypedActionView for ClaudeCodeView {
             }
             ClaudeCodeViewAction::AttachFromPicker => self.open_attach_picker(ctx),
             ClaudeCodeViewAction::ToggleVoiceRecording => self.toggle_voice_recording(ctx),
+            ClaudeCodeViewAction::ToggleRealtimeCall => self.toggle_realtime_call(ctx),
+            ClaudeCodeViewAction::ToggleRealtimeMute => self.toggle_realtime_mute(ctx),
             ClaudeCodeViewAction::RemoveDirectAttachment(index) => {
                 if *index < self.direct_attachments.len() {
                     self.direct_attachments.remove(*index);
@@ -11827,6 +12190,17 @@ fn render_context_progress(fraction: f32, filled: ColorU, track: ColorU) -> Box<
 
 /// Black or white, whichever reads better on `bg` (#10) — for the primary
 /// button label on an arbitrary tab colour.
+/// twarp 25 §14 (barge-in): whether a captured chunk is loud enough to be
+/// someone talking rather than room noise. Deliberately crude — this only
+/// decides when to duck the agent's audio, and the far side's own VAD decides
+/// what counts as a turn.
+fn speech_present(pcm: &[u8]) -> bool {
+    /// Peak amplitude (of i16::MAX) that counts as speech.
+    const SPEECH_PEAK: i16 = 2_000;
+    pcm.chunks_exact(2)
+        .any(|frame| i16::from_le_bytes([frame[0], frame[1]]).saturating_abs() > SPEECH_PEAK)
+}
+
 fn contrasting_text(bg: ColorU) -> ColorU {
     let luminance = 0.299 * bg.r as f32 + 0.587 * bg.g as f32 + 0.114 * bg.b as f32;
     if luminance > 150. {

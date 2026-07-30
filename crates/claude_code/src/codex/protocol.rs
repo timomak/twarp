@@ -196,3 +196,132 @@ pub fn turn_interrupt_request(id: String, thread_id: &str, turn_id: &str) -> Val
         params: TurnInterruptParams { thread_id, turn_id },
     })
 }
+
+// --- twarp 25: realtime voice conversation (TECH 25 "Verified protocol facts") ---
+
+/// The `-c` override that unlocks `thread/realtime/*`. Without it every
+/// realtime method is rejected; the `experimentalApi` capability in
+/// [`initialize_request`] is the other half of the gate.
+pub const REALTIME_FEATURE_FLAG: &str = "features.realtime_conversation=true";
+
+/// Codex's default v2 realtime voice (`thread/realtime/listVoices`).
+pub const DEFAULT_REALTIME_VOICE: &str = "marin";
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealtimeStartParams<'a> {
+    pub thread_id: &'a str,
+    /// `audio` or `text`.
+    pub output_modality: &'static str,
+    pub transport: RealtimeTransport,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voice: Option<&'a str>,
+    pub version: &'static str,
+    /// Deliver the coding agent's own responses into the voice conversation as
+    /// items — Codex's bridge between the thread and the spoken session.
+    pub codex_responses_as_items: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "type")]
+pub enum RealtimeTransport {
+    /// Codex owns the upstream socket, so twarp never terminates media itself
+    /// and needs no WebRTC stack.
+    #[serde(rename = "websocket")]
+    Websocket,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealtimeAppendAudioParams<'a> {
+    pub thread_id: &'a str,
+    pub audio: RealtimeAudioChunk<'a>,
+}
+
+/// A microphone chunk. Codex resamples, so these are the *device's* real
+/// values — twarp never resamples on the UI path.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealtimeAudioChunk<'a> {
+    /// base64 s16le samples.
+    pub data: &'a str,
+    pub sample_rate: u32,
+    pub num_channels: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub samples_per_channel: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealtimeAppendSpeechParams<'a> {
+    pub thread_id: &'a str,
+    pub text: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealtimeThreadParams<'a> {
+    pub thread_id: &'a str,
+}
+
+pub fn realtime_start_request(
+    id: String,
+    thread_id: &str,
+    voice: Option<&str>,
+    speak: bool,
+) -> Value {
+    json!(JsonRpcRequest {
+        id,
+        method: "thread/realtime/start",
+        params: RealtimeStartParams {
+            thread_id,
+            output_modality: if speak { "audio" } else { "text" },
+            transport: RealtimeTransport::Websocket,
+            voice,
+            version: "v2",
+            codex_responses_as_items: true,
+        },
+    })
+}
+
+pub fn realtime_append_audio_request(
+    id: String,
+    thread_id: &str,
+    data: &str,
+    sample_rate: u32,
+    num_channels: u16,
+    samples_per_channel: Option<u32>,
+) -> Value {
+    json!(JsonRpcRequest {
+        id,
+        method: "thread/realtime/appendAudio",
+        params: RealtimeAppendAudioParams {
+            thread_id,
+            audio: RealtimeAudioChunk {
+                data,
+                sample_rate,
+                num_channels,
+                samples_per_channel,
+            },
+        },
+    })
+}
+
+/// The **turn trigger**. `appendText` only injects a conversation item and
+/// never produces a reply; `appendSpeech` drives a spoken turn, and the model
+/// answers the text conversationally rather than reading it back.
+pub fn realtime_append_speech_request(id: String, thread_id: &str, text: &str) -> Value {
+    json!(JsonRpcRequest {
+        id,
+        method: "thread/realtime/appendSpeech",
+        params: RealtimeAppendSpeechParams { thread_id, text },
+    })
+}
+
+pub fn realtime_stop_request(id: String, thread_id: &str) -> Value {
+    json!(JsonRpcRequest {
+        id,
+        method: "thread/realtime/stop",
+        params: RealtimeThreadParams { thread_id },
+    })
+}

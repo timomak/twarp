@@ -22,7 +22,10 @@ use crate::driver::{
     resolve_in_path, AgentOutputParser, Decision, DriverCapabilities, DriverFuture,
     OutgoingMessage, PermissionMode, SpawnOptions, SpawnedSession,
 };
-use crate::{EndReason, McpServerInfo, TodoItem, TodoStatus, ToolOutput, TranscriptEvent, Usage};
+use crate::{
+    EndReason, McpServerInfo, RealtimeEvent, TodoItem, TodoStatus, ToolOutput, TranscriptEvent,
+    Usage,
+};
 
 #[derive(Clone, Debug, Default)]
 pub struct CodexSessionState {
@@ -107,6 +110,11 @@ impl CodexDriver {
         cmd.arg("app-server")
             .arg("--listen")
             .arg("stdio://")
+            // twarp 25: unlock `thread/realtime/*`. Harmless when no call is
+            // ever started, and the flag has to be set at spawn — there is no
+            // way to enable it on a running app-server.
+            .arg("-c")
+            .arg(protocol::REALTIME_FEATURE_FLAG)
             .current_dir(&opts.cwd)
             .kill_on_drop(true)
             .stdin(Stdio::piped())
@@ -197,6 +205,94 @@ impl CodexDriver {
         _decision: Decision,
     ) -> DriverFuture<'a, ()> {
         Box::pin(async { Ok(()) })
+    }
+
+    // --- twarp 25: realtime voice conversation ---
+
+    /// Open a spoken session on this thread (PRODUCT 25 §7). The session is
+    /// thread-scoped, so it shares the pane's history and tools.
+    pub fn realtime_start<'a>(
+        &'a self,
+        stdin: &'a mut ChildStdin,
+        voice: Option<String>,
+    ) -> DriverFuture<'a, ()> {
+        Box::pin(async move {
+            let thread_id = self.realtime_thread_id()?;
+            let request = protocol::realtime_start_request(
+                protocol::next_request_id(),
+                &thread_id,
+                voice.as_deref(),
+                true,
+            );
+            write_json_line(stdin, &request)
+                .await
+                .context("write thread/realtime/start to codex stdin")
+        })
+    }
+
+    /// Stream one microphone chunk. `sample_rate`/`channels` are the capture
+    /// device's own — Codex resamples, so twarp never does.
+    pub fn realtime_append_audio<'a>(
+        &'a self,
+        stdin: &'a mut ChildStdin,
+        data: String,
+        sample_rate: u32,
+        channels: u16,
+        samples_per_channel: Option<u32>,
+    ) -> DriverFuture<'a, ()> {
+        Box::pin(async move {
+            let thread_id = self.realtime_thread_id()?;
+            let request = protocol::realtime_append_audio_request(
+                protocol::next_request_id(),
+                &thread_id,
+                &data,
+                sample_rate,
+                channels,
+                samples_per_channel,
+            );
+            write_json_line(stdin, &request)
+                .await
+                .context("write thread/realtime/appendAudio to codex stdin")
+        })
+    }
+
+    /// Drive a spoken turn from text (PRODUCT 25 §18). This is the *only*
+    /// text path that produces a reply — `appendText` merely injects an item.
+    pub fn realtime_append_speech<'a>(
+        &'a self,
+        stdin: &'a mut ChildStdin,
+        text: String,
+    ) -> DriverFuture<'a, ()> {
+        Box::pin(async move {
+            let thread_id = self.realtime_thread_id()?;
+            let request = protocol::realtime_append_speech_request(
+                protocol::next_request_id(),
+                &thread_id,
+                &text,
+            );
+            write_json_line(stdin, &request)
+                .await
+                .context("write thread/realtime/appendSpeech to codex stdin")
+        })
+    }
+
+    /// End the spoken session without touching the underlying thread
+    /// (PRODUCT 25 §10).
+    pub fn realtime_stop<'a>(&'a self, stdin: &'a mut ChildStdin) -> DriverFuture<'a, ()> {
+        Box::pin(async move {
+            let thread_id = self.realtime_thread_id()?;
+            let request =
+                protocol::realtime_stop_request(protocol::next_request_id(), &thread_id);
+            write_json_line(stdin, &request)
+                .await
+                .context("write thread/realtime/stop to codex stdin")
+        })
+    }
+
+    fn realtime_thread_id(&self) -> Result<String> {
+        self.state
+            .thread_id()
+            .ok_or_else(|| anyhow!("Codex thread is not initialized yet"))
     }
 
     pub fn new_parser(state: CodexSessionState, cwd: PathBuf) -> CodexParser {
@@ -454,6 +550,37 @@ impl CodexParser {
                     .unwrap_or(EndReason::Completed);
                 self.state.set_turn_id(None);
                 out.push_back(TranscriptEvent::Ended { reason });
+            }
+            // twarp 25: realtime voice conversation. The spoken transcript is
+            // deliberately mapped onto the ordinary assistant-text events so it
+            // renders, scrolls, selects and copies like any other reply.
+            "thread/realtime/started" => {
+                out.push_back(TranscriptEvent::Realtime(RealtimeEvent::Started));
+            }
+            "thread/realtime/transcript/delta" => {
+                if let Some(delta) = params.get("delta").and_then(Value::as_str) {
+                    if !delta.is_empty() {
+                        out.push_back(TranscriptEvent::AssistantTextDelta {
+                            text: delta.to_owned(),
+                        });
+                    }
+                }
+            }
+            "thread/realtime/transcript/done" => {
+                out.push_back(TranscriptEvent::AssistantTextDone);
+            }
+            "thread/realtime/outputAudio/delta" => {
+                if let Some(event) = parse_realtime_audio(params) {
+                    out.push_back(TranscriptEvent::Realtime(event));
+                }
+            }
+            "thread/realtime/error" => {
+                let message = string_field(params, &["message", "error"])
+                    .unwrap_or_else(|| "The voice conversation failed.".to_owned());
+                out.push_back(TranscriptEvent::Realtime(RealtimeEvent::Error(message)));
+            }
+            "thread/realtime/closed" => {
+                out.push_back(TranscriptEvent::Realtime(RealtimeEvent::Closed));
             }
             "item/started" => {
                 if let Some(item) = params.get("item") {
@@ -834,6 +961,29 @@ fn provider_message(value: &Value) -> String {
     }
 }
 
+/// twarp 25: decode one `thread/realtime/outputAudio/delta` chunk. The chunk
+/// declares its own rate and channel count, so playback follows the provider
+/// rather than assuming a constant (the old TTS path's fixed 24 kHz left with
+/// `voice/tts.rs`).
+fn parse_realtime_audio(params: &Value) -> Option<RealtimeEvent> {
+    let audio = params.get("audio").unwrap_or(params);
+    let data = audio.get("data").and_then(Value::as_str)?;
+    let pcm = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data)
+        .map_err(|err| log::warn!("codex realtime: undecodable audio chunk: {err}"))
+        .ok()?;
+    if pcm.is_empty() {
+        return None;
+    }
+    Some(RealtimeEvent::Audio {
+        pcm,
+        sample_rate: audio
+            .get("sampleRate")
+            .and_then(Value::as_u64)
+            .unwrap_or(24_000) as u32,
+        channels: audio.get("numChannels").and_then(Value::as_u64).unwrap_or(1) as u16,
+    })
+}
+
 fn todo_from_plan_item(value: &Value) -> Option<TodoItem> {
     let text = value.get("text").and_then(Value::as_str)?.to_owned();
     let status = match value.get("status").and_then(Value::as_str) {
@@ -885,6 +1035,74 @@ mod tests {
             parser.parse_value(&value, &mut out);
         }
         out.into_iter().collect()
+    }
+
+    /// twarp 25: a realtime session maps onto the seam the way the pane
+    /// expects — spoken words become ordinary assistant text (so scrollback,
+    /// selection and copy keep working) while audio and lifecycle stay
+    /// session-level events.
+    #[test]
+    fn realtime_notifications_split_transcript_from_audio() {
+        // "AAAA" decodes to 3 bytes of silence; enough to prove the decode path.
+        let events = parse(&[
+            r#"{"method":"thread/realtime/started","params":{"threadId":"thread-1"}}"#,
+            r#"{"method":"thread/realtime/transcript/delta","params":{"threadId":"thread-1","delta":"All "}}"#,
+            r#"{"method":"thread/realtime/transcript/delta","params":{"threadId":"thread-1","delta":"green."}}"#,
+            r#"{"method":"thread/realtime/outputAudio/delta","params":{"threadId":"thread-1","audio":{"data":"AAAA","sampleRate":16000,"numChannels":2}}}"#,
+            r#"{"method":"thread/realtime/transcript/done","params":{"threadId":"thread-1"}}"#,
+            r#"{"method":"thread/realtime/closed","params":{"threadId":"thread-1"}}"#,
+        ]);
+        assert!(matches!(
+            events[0],
+            TranscriptEvent::Realtime(RealtimeEvent::Started)
+        ));
+        let spoken: String = events
+            .iter()
+            .filter_map(|event| match event {
+                TranscriptEvent::AssistantTextDelta { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(spoken, "All green.");
+        // Audio follows the chunk's own rate, not a hardcoded one: the fixed
+        // 24 kHz assumption left with the deleted TTS path.
+        assert!(events.iter().any(|event| matches!(
+            event,
+            TranscriptEvent::Realtime(RealtimeEvent::Audio { pcm, sample_rate, channels })
+                if pcm == &[0, 0, 0] && *sample_rate == 16_000 && *channels == 2
+        )));
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, TranscriptEvent::AssistantTextDone)));
+        assert!(matches!(
+            events.last(),
+            Some(TranscriptEvent::Realtime(RealtimeEvent::Closed))
+        ));
+    }
+
+    /// The provider's own words reach the user verbatim (PRODUCT 25 §20) —
+    /// this is the message that would have explained the missing API key.
+    #[test]
+    fn realtime_error_carries_the_provider_message() {
+        let events = parse(&[
+            r#"{"method":"thread/realtime/error","params":{"threadId":"thread-1","message":"realtime conversation requires API key auth"}}"#,
+        ]);
+        assert!(matches!(
+            &events[..],
+            [TranscriptEvent::Realtime(RealtimeEvent::Error(message))]
+                if message == "realtime conversation requires API key auth"
+        ));
+    }
+
+    /// An empty or undecodable chunk must not surface as a zero-length
+    /// utterance that resets the player mid-sentence.
+    #[test]
+    fn realtime_skips_empty_and_undecodable_audio() {
+        let events = parse(&[
+            r#"{"method":"thread/realtime/outputAudio/delta","params":{"threadId":"thread-1","audio":{"data":"","sampleRate":24000,"numChannels":1}}}"#,
+            r#"{"method":"thread/realtime/outputAudio/delta","params":{"threadId":"thread-1","audio":{"data":"!!!not base64!!!","sampleRate":24000,"numChannels":1}}}"#,
+        ]);
+        assert!(events.is_empty(), "expected no events, got {events:?}");
     }
 
     #[test]
