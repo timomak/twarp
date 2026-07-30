@@ -309,6 +309,10 @@ pub struct PersistedMcpServer {
     pub enabled_codex: bool,
     /// twarp 23a: owning plugin's UUID; `None` = not yet migrated.
     pub plugin_id: Option<String>,
+    /// twarp 24a: JSON string->string object of extra HTTP headers.
+    pub headers: Option<String>,
+    /// twarp 24a: "none" | "headers" | "oauth"; `None` on pre-24a rows.
+    pub auth: Option<String>,
 }
 
 /// twarp 07: the last-used Claude session settings persisted in the single

@@ -268,6 +268,8 @@ diesel::table! {
         enabled_claude -> Bool,
         enabled_codex -> Bool,
         plugin_id -> Nullable<Text>,
+        headers -> Nullable<Text>,
+        auth -> Nullable<Text>,
     }
 }
 

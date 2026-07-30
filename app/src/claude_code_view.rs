@@ -3726,6 +3726,7 @@ impl ClaudeCodeView {
                     crate::mcp_registry::McpRegistryModel::as_ref(ctx).codex_config_overrides(
                         &crate::plugin_registry::PluginRegistryModel::as_ref(ctx)
                             .provider_toggles_by_id(),
+                        &crate::mcp_oauth::McpOauthModel::as_ref(ctx).access_tokens(),
                     )
                 })
                 .flatten(),
@@ -12388,6 +12389,7 @@ fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> 
             crate::mcp_registry::McpRegistryModel::as_ref(app).claude_mcp_config_json(
                 &crate::plugin_registry::PluginRegistryModel::as_ref(app)
                     .provider_toggles_by_id(),
+                &crate::mcp_oauth::McpOauthModel::as_ref(app).access_tokens(),
             ),
         );
         // twarp 14j: session-scoped endpoint — browser tools target/open

@@ -62,8 +62,11 @@ Codex-app-style design language from feature 19).
      provider's authorization page; the editor shows **Waiting for
      browser…** with a Cancel affordance.
    - If the server demands a static credential (401 without OAuth
-     metadata) → the editor opens Advanced with the Headers field focused
-     and an inline hint ("This server expects an Authorization header").
+     metadata) → the row reads **Needs authorization** with the hint "This
+     server expects an Authorization header", pointing at the Headers field
+     in Advanced. A server already recorded as OAuth whose grant has expired
+     looks identical on the wire, so it returns to **Not connected** (press
+     Connect again) rather than claiming to want a header.
 6. Completing consent in the browser returns the user to twarp
    automatically; the pane transitions to **Connected** without further
    input. Denying consent, closing the browser tab, or pressing Cancel
@@ -80,12 +83,17 @@ Codex-app-style design language from feature 19).
 ### Status, everywhere the server appears
 
 9. Each remote server row (editor and plugin card) shows a status chip:
-   **Connected** (with tool count), **Needs authorization**, **Error**
-   (with a hover/expand for the message), or **Local** for stdio servers
-   (no probe is attempted for stdio).
+    **Connected · N tools**, **Not connected**, **Connecting…**, **Waiting
+    for browser…**, **Needs authorization**, or **Error** (with its message
+    beneath). Stdio servers read **Local** and are never probed. A plugin
+    card with more than one remote server prefixes each chip with the server
+    name.
 10. A connected server row offers **Disconnect** (revokes locally: deletes
-    stored tokens, returns to Needs authorization). A needs-auth row offers
-    **Connect**. Status chips update live when a background refresh fails.
+    stored tokens, returns to Not connected). A row waiting on the browser
+    offers **Cancel**. Every other state offers **Connect**, which saves the
+    plugin first so the OAuth redirect has a persisted server to return to —
+    if validation fails, the editor stays open and nothing connects. Status
+    chips update live when a background refresh fails.
 11. Agents (Claude and Codex sessions) using a connected server get working
     auth transparently — a session started after Connect succeeds must be
     able to call the server's tools with no extra user step. If a server the

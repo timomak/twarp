@@ -3411,6 +3411,8 @@ fn get_mcp_registry(conn: &mut SqliteConnection) -> Result<Vec<PersistedMcpServe
             enabled_claude: row.enabled_claude,
             enabled_codex: row.enabled_codex,
             plugin_id: row.plugin_id,
+            headers: row.headers,
+            auth: row.auth,
         })
         .collect())
 }
@@ -3761,6 +3763,8 @@ fn replace_mcp_servers(
                     enabled_claude: server.enabled_claude,
                     enabled_codex: server.enabled_codex,
                     plugin_id: server.plugin_id,
+                    headers: server.headers,
+                    auth: server.auth,
                 })
                 .execute(conn)?;
         }

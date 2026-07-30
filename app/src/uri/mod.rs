@@ -401,8 +401,12 @@ impl UriHost {
                 ctx.dispatch_global_action("root_view::open_new", &());
             }
             UriHost::Mcp => {
-                // twarp 2c-d: MCP OAuth callback handler removed.
-                log::warn!("MCP URI handler is no longer supported: {url}");
+                // twarp 24b: the OAuth consent redirect for a remote MCP
+                // server added on the Plugins page.
+                match url.path_segments().into_iter().flatten().last() {
+                    Some("oauth2callback") => crate::mcp_oauth::handle_oauth_callback(url, ctx),
+                    _ => log::warn!("Unrecognized MCP URI: {url}"),
+                }
             }
             UriHost::Codex => {
                 dispatch_action_in_new_or_existing_window(
