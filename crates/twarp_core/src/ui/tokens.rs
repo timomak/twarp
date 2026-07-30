@@ -56,40 +56,45 @@ pub struct TypeStyle {
 /// Type ramp. Six styles; UI code outside the terminal grid uses exactly
 /// these.
 ///
+/// twarp: the whole ramp was raised one point (2026-07-30) — the original
+/// 11–14pt scale read too small on Retina at normal viewing distance. The
+/// relative steps are unchanged, so nothing about the hierarchy moves; only
+/// the floor.
+///
 /// `CODE` is for code, paths, and commands rendered inside UI surfaces
 /// (tool cards, diff cards); monospace content inside the terminal grid keeps
 /// `monospace_font_size()`. Mono is never used for UI labels.
 pub mod type_ramp {
     use super::TypeStyle;
 
-    /// 14/1.55 — conversation prose, empty-state copy. The reading style.
+    /// 15/1.55 — conversation prose, empty-state copy. The reading style.
     pub const PROSE: TypeStyle = TypeStyle {
-        size: 14.0,
+        size: 15.0,
         line_height: 1.55,
     };
-    /// 13/1.4 — interactive UI: buttons, inputs, list items, tabs.
+    /// 14/1.4 — interactive UI: buttons, inputs, list items, tabs.
     pub const UI: TypeStyle = TypeStyle {
-        size: 13.0,
+        size: 14.0,
         line_height: 1.4,
     };
-    /// 12/1.35 — secondary labels, meta rows, pill text.
+    /// 13/1.35 — secondary labels, meta rows, pill text.
     pub const LABEL: TypeStyle = TypeStyle {
-        size: 12.0,
+        size: 13.0,
         line_height: 1.35,
     };
-    /// 11/1.3 — captions, timestamps, section headers (tracked-out caps).
+    /// 12/1.3 — captions, timestamps, section headers (tracked-out caps).
     pub const CAPTION: TypeStyle = TypeStyle {
-        size: 11.0,
+        size: 12.0,
         line_height: 1.3,
     };
-    /// 12.5/1.45 — monospace code/paths/commands inside UI surfaces.
+    /// 13.5/1.45 — monospace code/paths/commands inside UI surfaces.
     pub const CODE: TypeStyle = TypeStyle {
-        size: 12.5,
+        size: 13.5,
         line_height: 1.45,
     };
-    /// 16/1.3 — the one heading size (semibold at the call site).
+    /// 17/1.3 — the one heading size (semibold at the call site).
     pub const HEADING: TypeStyle = TypeStyle {
-        size: 16.0,
+        size: 17.0,
         line_height: 1.3,
     };
 }

@@ -6,7 +6,7 @@ use std::{
 
 use settings::Setting as _;
 use twarp_core::ui::theme::Fill as ThemeFill;
-use twarp_core::ui::tokens::{border, radius, spacing, type_ramp};
+use twarp_core::ui::tokens::{border, radius, spacing, type_ramp, TypeStyle};
 use twarp_core::ui::Icon;
 use twarpui::elements::{
     resizable_state_handle, Align, Border, ChildView, ClippedScrollable, ConstrainedBox, Container,
@@ -213,10 +213,16 @@ fn project_tab_title(custom_title: Option<&str>, display_title: &str) -> String 
         .to_owned()
 }
 
+/// twarp: sidebar legibility. The sidebar is read at a glance from across the
+/// window, so its rows use the reading style (`PROSE`) rather than the dense
+/// 13pt `UI` style, and its meta text uses `LABEL` rather than `CAPTION`.
+const SIDEBAR_ROW_TEXT: TypeStyle = type_ramp::PROSE;
+const SIDEBAR_META_TEXT: TypeStyle = type_ramp::LABEL;
+
 fn sidebar_icon(icon: Icon, color: ThemeFill) -> Box<dyn Element> {
     ConstrainedBox::new(icon.to_warpui_icon(color).finish())
-        .with_width(spacing::MD)
-        .with_height(spacing::MD)
+        .with_width(spacing::LG)
+        .with_height(spacing::LG)
         .finish()
 }
 
@@ -462,9 +468,9 @@ impl Workspace {
         let label = Text::new_inline(
             "PROJECTS",
             appearance.ui_font_family(),
-            type_ramp::CAPTION.size,
+            SIDEBAR_META_TEXT.size,
         )
-        .with_line_height_ratio(type_ramp::CAPTION.line_height)
+        .with_line_height_ratio(SIDEBAR_META_TEXT.line_height)
         .with_color(theme.sub_text_color(theme.background()).into())
         .with_style(Properties::default().weight(Weight::Semibold))
         .finish();
@@ -561,9 +567,9 @@ impl Workspace {
                             Text::new_inline(
                                 label,
                                 appearance.ui_font_family(),
-                                type_ramp::UI.size,
+                                SIDEBAR_ROW_TEXT.size,
                             )
-                            .with_line_height_ratio(type_ramp::UI.line_height)
+                            .with_line_height_ratio(SIDEBAR_ROW_TEXT.line_height)
                             .with_color(theme.main_text_color(theme.background()).into())
                             .finish(),
                         )
@@ -577,9 +583,9 @@ impl Workspace {
                     Text::new_inline(
                         count.to_string(),
                         appearance.ui_font_family(),
-                        type_ramp::LABEL.size,
+                        SIDEBAR_META_TEXT.size,
                     )
-                    .with_line_height_ratio(type_ramp::LABEL.line_height)
+                    .with_line_height_ratio(SIDEBAR_META_TEXT.line_height)
                     .with_color(theme.sub_text_color(theme.background()).into())
                     .finish(),
                 );
@@ -759,11 +765,15 @@ impl Workspace {
         let title_element: Box<dyn Element> = if is_renaming_project {
             ChildView::new(&self.project_rename_editor).finish()
         } else {
-            Text::new_inline(title.clone(), appearance.ui_font_family(), type_ramp::UI.size)
-                .with_line_height_ratio(type_ramp::UI.line_height)
-                .with_clip(twarpui::text_layout::ClipConfig::end())
-                .with_color(theme.main_text_color(theme.background()).into())
-                .finish()
+            Text::new_inline(
+                title.clone(),
+                appearance.ui_font_family(),
+                SIDEBAR_ROW_TEXT.size,
+            )
+            .with_line_height_ratio(SIDEBAR_ROW_TEXT.line_height)
+            .with_clip(twarpui::text_layout::ClipConfig::end())
+            .with_color(theme.main_text_color(theme.background()).into())
+            .finish()
         };
         let project_row = Hoverable::new(row_mouse_state, move |state| {
             let identity = sidebar_icon(Icon::CircleFilled, color);
@@ -895,7 +905,9 @@ impl Workspace {
                 tab.color()
                     .map(|tab_color| {
                         ThemeFill::Solid(
-                            tab_color.to_tab_color(&theme.terminal_colors().normal).into(),
+                            tab_color
+                                .to_tab_color(&theme.terminal_colors().normal)
+                                .into(),
                         )
                     })
                     .unwrap_or_else(|| ThemeFill::from(color))
@@ -915,9 +927,9 @@ impl Workspace {
                 Text::new_inline(
                     title.clone(),
                     appearance.ui_font_family(),
-                    type_ramp::UI.size,
+                    SIDEBAR_ROW_TEXT.size,
                 )
-                .with_line_height_ratio(type_ramp::UI.line_height)
+                .with_line_height_ratio(SIDEBAR_ROW_TEXT.line_height)
                 .with_color(theme.main_text_color(theme.background()).into())
                 .finish(),
             );
@@ -1053,8 +1065,8 @@ impl Workspace {
         labels.add_child(if is_renaming_project {
             ChildView::new(&self.project_rename_editor).finish()
         } else {
-            Text::new_inline(title, appearance.ui_font_family(), type_ramp::UI.size)
-                .with_line_height_ratio(type_ramp::UI.line_height)
+            Text::new_inline(title, appearance.ui_font_family(), SIDEBAR_ROW_TEXT.size)
+                .with_line_height_ratio(SIDEBAR_ROW_TEXT.line_height)
                 .with_color(theme.main_text_color(theme.background()).into())
                 .finish()
         });
@@ -1063,9 +1075,9 @@ impl Workspace {
                 Text::new_inline(
                     disambiguation,
                     appearance.ui_font_family(),
-                    type_ramp::CAPTION.size,
+                    SIDEBAR_META_TEXT.size,
                 )
-                .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                .with_line_height_ratio(SIDEBAR_META_TEXT.line_height)
                 .with_color(theme.hint_text_color(theme.background()).into())
                 .finish(),
             );
@@ -1173,8 +1185,8 @@ impl Workspace {
             };
             list.add_child(
                 Container::new(
-                    Text::new_inline(label, appearance.ui_font_family(), type_ramp::PROSE.size)
-                        .with_line_height_ratio(type_ramp::PROSE.line_height)
+                    Text::new_inline(label, appearance.ui_font_family(), SIDEBAR_ROW_TEXT.size)
+                        .with_line_height_ratio(SIDEBAR_ROW_TEXT.line_height)
                         .with_color(theme.sub_text_color(theme.background()).into())
                         .finish(),
                 )
@@ -1198,9 +1210,9 @@ impl Workspace {
                                         Text::new_inline(
                                             "New project",
                                             appearance.ui_font_family(),
-                                            type_ramp::UI.size,
+                                            SIDEBAR_ROW_TEXT.size,
                                         )
-                                        .with_line_height_ratio(type_ramp::UI.line_height)
+                                        .with_line_height_ratio(SIDEBAR_ROW_TEXT.line_height)
                                         .with_color(
                                             theme.main_text_color(theme.background()).into(),
                                         )
@@ -1257,9 +1269,9 @@ impl Workspace {
                         Text::new_inline(
                             "Settings",
                             appearance.ui_font_family(),
-                            type_ramp::UI.size,
+                            SIDEBAR_ROW_TEXT.size,
                         )
-                        .with_line_height_ratio(type_ramp::UI.line_height)
+                        .with_line_height_ratio(SIDEBAR_ROW_TEXT.line_height)
                         .with_color(theme.main_text_color(theme.background()).into())
                         .finish(),
                     )

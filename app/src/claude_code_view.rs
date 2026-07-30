@@ -11700,7 +11700,10 @@ fn render_notice(message: &str, appearance: &Appearance) -> Box<dyn Element> {
 /// non-blank line, ellipsized. Falls back to the empty string for blank input
 /// (the caller then keeps the generic pane title).
 fn pane_tab_title(text: &str) -> String {
-    const MAX: usize = 40;
+    // Generous safety cap only — the tab strip, pane header, and sidebar all
+    // ellipsize by available width at the layout level, so a tight char cap
+    // here just wastes sidebar width. Matches `short_title` in sessions.rs.
+    const MAX: usize = 200;
     let head = text
         .lines()
         .map(str::trim)
