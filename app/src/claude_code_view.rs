@@ -477,6 +477,10 @@ pub enum ClaudeCodeViewAction {
     /// Remove a direct attachment chip (paste / drop / picker) by index
     /// (PRODUCT §49–§51, 7l).
     RemoveDirectAttachment(usize),
+    /// Open the composer attachment at render index (mention images first,
+    /// then direct attachments) in the full-window lightbox. Pasted
+    /// attachments with no on-disk thumbnail are skipped.
+    PreviewAttachment(usize),
     /// twarp: open a sent-image preview (#8) in the OS default image app —
     /// a click on the thumbnail above a user turn reveals the full image.
     OpenSentImage(String),
@@ -932,12 +936,18 @@ pub struct ClaudeCodeView {
     attachment_optouts: HashSet<PathBuf>,
     /// Stable per-chip mouse handles for attachment removal.
     attachment_chip_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Stable per-card mouse handles for opening a mention-sourced attachment
+    /// in the lightbox (the card body, distinct from the ✕ badge).
+    attachment_card_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
     /// Images attached directly via paste / drag-drop / file picker (PRODUCT
     /// §49–§51, 7l) — not tied to the draft text, so they survive edits until
     /// the message sends. Combined with `pending_images` at send time.
     direct_attachments: Vec<DirectAttachment>,
     /// Stable per-chip mouse handles for the direct-attachment chips.
     direct_chip_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
+    /// Stable per-card mouse handles for opening a direct attachment in the
+    /// lightbox (the card body, distinct from the ✕ badge).
+    direct_card_mouse: std::cell::RefCell<Vec<MouseStateHandle>>,
     /// Mouse state for the composer's "＋ attach" file-picker button (§51).
     attach_button: MouseStateHandle,
     /// twarp: mouse state for the floating "scroll to bottom" button, shown
@@ -1438,8 +1448,10 @@ impl ClaudeCodeView {
             pending_images: Vec::new(),
             attachment_optouts: HashSet::new(),
             attachment_chip_mouse: std::cell::RefCell::new(Vec::new()),
+            attachment_card_mouse: std::cell::RefCell::new(Vec::new()),
             direct_attachments: Vec::new(),
             direct_chip_mouse: std::cell::RefCell::new(Vec::new()),
+            direct_card_mouse: std::cell::RefCell::new(Vec::new()),
             attach_button: MouseStateHandle::default(),
             scroll_to_bottom_button: MouseStateHandle::default(),
             message_queue: Vec::new(),
@@ -2614,20 +2626,22 @@ impl ClaudeCodeView {
         let mut row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(spacing::SM);
+        let stable_handle = |states: &std::cell::RefCell<Vec<MouseStateHandle>>, index: usize| {
+            let mut states = states.borrow_mut();
+            while states.len() <= index {
+                states.push(MouseStateHandle::default());
+            }
+            states[index].clone()
+        };
         for (index, path) in self.pending_images.iter().enumerate() {
-            let chip_mouse = {
-                let mut states = self.attachment_chip_mouse.borrow_mut();
-                while states.len() <= index {
-                    states.push(MouseStateHandle::default());
-                }
-                states[index].clone()
-            };
             let preview = Self::attachment_preview_image(path);
             let chip_path = path.display().to_string();
             row.add_child(Self::attachment_thumbnail_card(
                 appearance,
                 preview,
-                chip_mouse,
+                stable_handle(&self.attachment_card_mouse, index),
+                stable_handle(&self.attachment_chip_mouse, index),
+                Some(ClaudeCodeViewAction::PreviewAttachment(index)),
                 ClaudeCodeViewAction::RemoveAttachment(chip_path),
             ));
         }
@@ -2636,13 +2650,6 @@ impl ClaudeCodeView {
         // (no path) shows an image glyph. The ✕ drops it entirely (unlike a
         // mention chip, there is no underlying text to fall back to).
         for (index, attachment) in self.direct_attachments.iter().enumerate() {
-            let chip_mouse = {
-                let mut states = self.direct_chip_mouse.borrow_mut();
-                while states.len() <= index {
-                    states.push(MouseStateHandle::default());
-                }
-                states[index].clone()
-            };
             let preview: Box<dyn Element> = match &attachment.thumbnail_path {
                 Some(path) => Self::attachment_preview_image(path),
                 None => Container::new(
@@ -2667,7 +2674,11 @@ impl ClaudeCodeView {
             row.add_child(Self::attachment_thumbnail_card(
                 appearance,
                 preview,
-                chip_mouse,
+                stable_handle(&self.direct_card_mouse, index),
+                stable_handle(&self.direct_chip_mouse, index),
+                attachment.thumbnail_path.is_some().then(|| {
+                    ClaudeCodeViewAction::PreviewAttachment(self.pending_images.len() + index)
+                }),
                 ClaudeCodeViewAction::RemoveDirectAttachment(index),
             ));
         }
@@ -2688,12 +2699,15 @@ impl ClaudeCodeView {
     }
 
     /// A Codex-style attachment card: a large rounded square thumbnail with a
-    /// circular ✕ badge overlapping its top-right corner. Only the badge is
-    /// clickable; clicking it dispatches `remove_action`.
+    /// circular ✕ badge overlapping its top-right corner. Clicking the badge
+    /// dispatches `remove_action`; clicking the card body dispatches
+    /// `open_action` (a lightbox preview), when there is one.
     fn attachment_thumbnail_card(
         appearance: &Appearance,
         preview: Box<dyn Element>,
+        card_mouse: MouseStateHandle,
         chip_mouse: MouseStateHandle,
+        open_action: Option<ClaudeCodeViewAction>,
         remove_action: ClaudeCodeViewAction,
     ) -> Box<dyn Element> {
         // Thumbnail edge: a size, not a spacing step — no token exists for
@@ -2710,6 +2724,15 @@ impl ClaudeCodeView {
         .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
         .finish();
+        let card = match open_action {
+            Some(open_action) => Hoverable::new(card_mouse, move |_| card)
+                .with_cursor(Cursor::PointingHand)
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(open_action.clone());
+                })
+                .finish(),
+            None => card,
+        };
         let glyph = appearance
             .ui_builder()
             .span("\u{2715}".to_owned())
@@ -9622,6 +9645,42 @@ impl TypedActionView for ClaudeCodeView {
                 if *index < self.direct_attachments.len() {
                     self.direct_attachments.remove(*index);
                     ctx.notify();
+                }
+            }
+            ClaudeCodeViewAction::PreviewAttachment(index) => {
+                use ui_components::lightbox::{LightboxImage, LightboxImageSource};
+                // Combined render order: mention images, then direct
+                // attachments. Pathless (pasted, glyph-card) attachments are
+                // not previewable and are skipped, so the lightbox index can
+                // differ from the render index.
+                let mut images = Vec::new();
+                let mut initial_index = 0;
+                let paths = self
+                    .pending_images
+                    .iter()
+                    .map(Some)
+                    .chain(self.direct_attachments.iter().map(|a| a.thumbnail_path.as_ref()));
+                for (render_index, path) in paths.enumerate() {
+                    let Some(path) = path else { continue };
+                    if render_index == *index {
+                        initial_index = images.len();
+                    }
+                    images.push(LightboxImage {
+                        source: LightboxImageSource::Resolved {
+                            asset_source: AssetSource::LocalFile {
+                                path: path.display().to_string(),
+                            },
+                        },
+                        description: path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned()),
+                    });
+                }
+                if !images.is_empty() {
+                    ctx.dispatch_typed_action(&WorkspaceAction::OpenLightbox {
+                        images,
+                        initial_index,
+                    });
                 }
             }
             ClaudeCodeViewAction::OpenSentImage(path) => {
