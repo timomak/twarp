@@ -6175,6 +6175,22 @@ impl PaneGroup {
             .max_by_key(urgency)
     }
 
+    /// The user is viewing this tab: its Claude panes' ✓/✗ indicators have
+    /// served their purpose, so unseen completions flip to seen and failure
+    /// marks drop — the same acknowledgement pane focus performs (7p). Called
+    /// on tab activation because a completed chat can be read without keyboard
+    /// focus ever landing inside it (e.g. via a sidebar tab-row click), which
+    /// used to leave the "unreviewed" colored ✓ stuck on.
+    pub fn mark_claude_code_attention_seen(&mut self, ctx: &mut ViewContext<Self>) {
+        let views: Vec<_> = self
+            .panes_of::<ClaudeCodePane>()
+            .map(|pane| pane.claude_code_view(ctx))
+            .collect();
+        for view in views {
+            view.update(ctx, |view, ctx| view.clear_tab_attention(ctx));
+        }
+    }
+
     /// Working directories of the Claude Code panes in this group (twarp
     /// feature 07). Unlike `code_view_local_paths` these are directories, not
     /// file paths — they feed the working-directories model so the Open

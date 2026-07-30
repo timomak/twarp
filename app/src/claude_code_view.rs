@@ -4584,9 +4584,11 @@ impl ClaudeCodeView {
     }
 
     /// The user has seen the pane (7p): a failure's ✗ is dropped, and a
-    /// completed turn's blue ✓ turns into the reviewed green ✓ (it stays until
-    /// the next turn overwrites it).
-    fn clear_tab_attention(&mut self, ctx: &mut ViewContext<Self>) {
+    /// completed turn's blue ✓ turns into the reviewed muted ✓ (it stays until
+    /// the next turn overwrites it). Fired on pane focus and on tab
+    /// activation — glancing at the tab counts even when keyboard focus never
+    /// lands inside the chat pane.
+    pub(crate) fn clear_tab_attention(&mut self, ctx: &mut ViewContext<Self>) {
         match self.tab_attention {
             Some(true) if !self.tab_attention_seen => {
                 self.tab_attention_seen = true;
