@@ -1,18 +1,21 @@
-//! twarp 17: voice chat for the Claude pane.
+//! twarp 17: voice dictation for the agent pane.
 //!
 //! Speech-to-text (`gpt-4o-transcribe` on Azure AI Foundry or any
-//! OpenAI-compatible endpoint) and text-to-speech (OpenAI voices) for the
-//! Claude Code pane. Capture and playback each run on a dedicated thread
-//! owning its cpal stream (cpal streams are `!Send`, and the UI thread must
-//! never block on CoreAudio); the async HTTP clients marshal back to the view
-//! via `ctx.spawn`, the `agent_suggestions` pattern.
+//! OpenAI-compatible endpoint) types into the composer. Capture and playback
+//! each run on a dedicated thread owning its cpal stream (cpal streams are
+//! `!Send`, and the UI thread must never block on CoreAudio); the async HTTP
+//! clients marshal back to the view via `ctx.spawn`, the `agent_suggestions`
+//! pattern.
+//!
+//! Feature 25 removed the text-to-speech path — spoken replies read the
+//! *rendered* reply, which is lossy by construction for a coding agent (see
+//! `roadmap/25-voice-conversation/PRODUCT.md`). `playback` stays: it is the
+//! audio sink for the realtime conversation that replaces it.
 
 pub mod capture;
 pub mod config;
 pub mod playback;
-pub mod prose;
 pub mod stt;
-pub mod tts;
 mod wav;
 
 use std::sync::atomic::{AtomicBool, Ordering};

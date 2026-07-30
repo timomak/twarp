@@ -1,11 +1,16 @@
-//! Speech playback on a dedicated thread (twarp 17, PRODUCT §13–§15, §18).
+//! Speech playback on a dedicated thread.
 //!
 //! One thread owns the cpal output stream (same `!Send` rationale as
-//! [`super::capture`]) and drains a shared queue of s16 samples that arrive as
-//! TTS chunks. `play` replaces whatever is queued (PRODUCT §15), `append`
-//! extends the current utterance (§16 chunking), `stop` silences immediately
-//! (§14/§18). `is_active` is polled by the view's tick timer to drive the
-//! speaker button's speaking state.
+//! [`super::capture`]) and drains a shared queue of s16 samples. `play`
+//! replaces whatever is queued, `append` extends the current utterance, `stop`
+//! silences immediately. `is_active` is polled by the view's tick timer to
+//! drive a speaking indicator.
+//!
+//! Feature 25 removed the text-to-speech path this was written for; it is now
+//! the audio sink for the realtime conversation (see
+//! `roadmap/25-voice-conversation/TECH.md`). Chunks carry their own sample
+//! rate, so callers must pass the rate the provider declared rather than
+//! assuming a fixed one.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -30,8 +35,7 @@ pub struct Player {
     commands: mpsc::Sender<Command>,
     active: Arc<AtomicBool>,
     /// Real samples played (output-device rate) since the current utterance's
-    /// `play` — drives the §33 karaoke position. Reset by the playback thread
-    /// when it handles `Play`.
+    /// `play`. Reset by the playback thread when it handles `Play`.
     consumed: Arc<AtomicU64>,
     /// The output device's sample rate, for converting `consumed` to seconds.
     output_rate: u32,
@@ -64,8 +68,7 @@ impl Player {
         }
     }
 
-    /// Seconds of audio audibly played since the current utterance's `play`
-    /// (the §33 karaoke clock).
+    /// Seconds of audio audibly played since the current utterance's `play`.
     pub fn position_secs(&self) -> f32 {
         if self.output_rate == 0 {
             return 0.0;
