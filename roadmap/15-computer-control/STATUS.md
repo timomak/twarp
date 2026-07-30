@@ -47,3 +47,15 @@ low cherry-pick risk.
 - **Two restart-gated TCC grants** (Screen Recording + Accessibility) — onboarding UX matters.
 - Broad capture + CGEvent injection rule out App Store sandbox; fine for `WarpOss.app`, but confirm signing/entitlements don't regress.
 - High blast radius — Stop + confirm-before-act are required, not optional.
+
+## 2026-07-30 control rework (post-#298)
+
+- [x] **Gradient border.** The full-screen glow ring is now an animated gradient (accent-derived stops, slow sweep) via `CAGradientLayer` + even-odd ring mask instead of a flat `borderWidth` border.
+- [x] **Chat name in overlay.** The overlay/permissions chrome shows the pane's derived tab title (first user message) instead of `Claude Code session <uuid8>`.
+- [x] **Codex-style permissions window.** Centered "Enable Twarp Computer Use" card (app icon, Accessibility + Screenshots rows with Allow/Granted/Restart states) replaces the corner blocked panel.
+- [x] **Fake cursor.** Capture-excluded arrow overlay (black, white outline, radial glow) that glides to each pointer target (~320ms ease) before injection and stays visible while control is live.
+- [x] **Per-app control.** `app` param on both MCP tools scopes capture (AX focused-window bounds → region capture) and input (activation + click-bounds guard) to one app; `app="screen"` returns to whole-screen.
+- [x] **Controlled-window badge.** Indigo pill pinned over the target window's traffic-light corner (AX-tracked), click to stop.
+- [x] **Menu-bar stop item.** Cursor-arrow status item while live; menu shows "Stop Using <App>" / "Stop Computer Control".
+
+Deferred: ScreenCaptureKit capture backend (occluded/off-main-display windows, true background control via per-pid event posting) — current app scope requires the target window visible on the main display.

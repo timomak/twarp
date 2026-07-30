@@ -24,7 +24,7 @@ use twarpui::{Entity, ModelContext, ModelSpawner, SingletonEntity, ViewHandle};
 
 use crate::claude_code_view::ClaudeCodeView;
 
-use super::ComputerControlState;
+use super::{native, ComputerControlState};
 
 const SERVER_NAME: &str = "twarp-computer-control";
 const SSE_PATH: &str = "/sse";
@@ -53,7 +53,24 @@ struct AgentState {
     action_log: VecDeque<ActionLogEntry>,
     held_inputs: HeldInputs,
     last_activity: Option<Instant>,
+    /// When set, capture and input are scoped to this app's focused window.
+    target: Option<AppTarget>,
 }
+
+/// A specific app the agent controls instead of the whole screen.
+#[derive(Clone, Debug)]
+struct AppTarget {
+    pid: i32,
+    name: String,
+}
+
+/// Accent for the controlled-window badge (Codex-style indigo pill).
+const BADGE_ACCENT: pathfinder_color::ColorU = pathfinder_color::ColorU {
+    r: 94,
+    g: 92,
+    b: 230,
+    a: 255,
+};
 
 #[derive(Clone, Copy, Debug, Serialize)]
 struct CaptureBounds {
@@ -203,6 +220,7 @@ pub(crate) fn activate_agent_session(session_label: &str) {
     let mut state = AGENT_STATE.lock().expect("computer-control state poisoned");
     state.active_session_label = Some(session_label.to_owned());
     state.latest_capture = None;
+    state.target = None;
     state.pending_confirmation = None;
     state.action_log.clear();
     state.held_inputs = HeldInputs::default();
@@ -241,6 +259,7 @@ fn deactivate_agent_session_with_status(
         }
         state.active_session_label = None;
         state.latest_capture = None;
+        state.target = None;
         state.pending_confirmation = None;
         state.latest_status = status.to_owned();
         state.last_activity = None;
@@ -349,6 +368,145 @@ fn update_capture(bounds: CaptureBounds) {
         .lock()
         .expect("computer-control state poisoned")
         .latest_capture = Some(bounds);
+}
+
+fn current_target() -> Option<AppTarget> {
+    AGENT_STATE
+        .lock()
+        .expect("computer-control state poisoned")
+        .target
+        .clone()
+}
+
+fn set_target(target: Option<AppTarget>) {
+    AGENT_STATE
+        .lock()
+        .expect("computer-control state poisoned")
+        .target = target;
+}
+
+/// Applies a tool call's `app` parameter to the control scope: omitted keeps
+/// the current scope, "screen" (and friends) returns to whole-screen control,
+/// anything else resolves a running app and pins capture+input to it. Also
+/// keeps the native chrome (badge, menu-bar item) in sync.
+fn apply_app_param(app: Option<&str>) -> Result<Option<AppTarget>, McpError> {
+    let Some(query) = app.map(str::trim).filter(|query| !query.is_empty()) else {
+        return Ok(current_target());
+    };
+
+    if matches!(
+        normalized(query).as_str(),
+        "screen" | "full_screen" | "whole_screen" | "desktop" | "none"
+    ) {
+        if current_target().is_some() {
+            set_target(None);
+            native::badge_hide();
+            native::status_item_set_title("Stop Computer Control");
+            push_log("Control scope: whole screen");
+        }
+        return Ok(None);
+    }
+
+    let info = native::resolve_app(query).ok_or_else(|| {
+        invalid_params(format!(
+            "No running app matches `{query}`. Use the app's visible name or bundle id, or `screen` for whole-screen control."
+        ))
+    })?;
+    let target = AppTarget {
+        pid: info.pid,
+        name: info.name.clone(),
+    };
+    let changed = current_target().map(|current| current.pid) != Some(target.pid);
+    set_target(Some(target.clone()));
+    if changed {
+        native::badge_show(info.pid, &info.name, BADGE_ACCENT);
+        native::status_item_set_title(&format!("Stop Using {}", info.name));
+        set_status(format!("Latest: controlling {}", info.name));
+        push_log(format!("Control scope: {}", info.name));
+    }
+    Ok(Some(target))
+}
+
+/// The target app's focused-window bounds as a capture region (physical
+/// pixels, clamped to the visible screen origin).
+fn target_window_region(target: &AppTarget) -> Result<ScreenshotRegion, McpError> {
+    let (x, y, width, height) = native::app_window_bounds(target.pid).ok_or_else(|| {
+        McpError::internal_error(
+            format!(
+                "Couldn't read {}'s window bounds. The app may have quit or have no windows.",
+                target.name
+            ),
+            None,
+        )
+    })?;
+    let left = x.max(0.0) as i32;
+    let top = y.max(0.0) as i32;
+    let right = (x + width) as i32;
+    let bottom = (y + height) as i32;
+    let region = ScreenshotRegion {
+        top_left: Vector2I::new(left, top),
+        bottom_right: Vector2I::new(right.max(left + 1), bottom.max(top + 1)),
+    };
+    region.validate().map_err(invalid_params)?;
+    Ok(region)
+}
+
+/// Rejects pointer actions that land outside the target app's window, so an
+/// app-scoped session can't click through to whatever is behind or beside it.
+fn guard_actions_within_target(actions: &[Action], target: &AppTarget) -> Result<(), McpError> {
+    let points: Vec<Vector2I> = actions
+        .iter()
+        .filter_map(|action| match action {
+            Action::MouseDown { at, .. } => Some(*at),
+            Action::MouseMove { to } => Some(*to),
+            Action::MouseWheel { at, .. } => Some(*at),
+            _ => None,
+        })
+        .collect();
+    if points.is_empty() {
+        return Ok(());
+    }
+    let (x, y, width, height) = native::app_window_bounds(target.pid).ok_or_else(|| {
+        McpError::internal_error(
+            format!(
+                "Couldn't read {}'s window bounds. The app may have quit or have no windows.",
+                target.name
+            ),
+            None,
+        )
+    })?;
+    for point in points {
+        let px = point.x() as f64;
+        let py = point.y() as f64;
+        if px < x || py < y || px >= x + width || py >= y + height {
+            return Err(invalid_params(format!(
+                "({}, {}) is outside {}'s window ({}, {})-({}, {}). Take a fresh computer_screenshot, or pass app=\"screen\" for whole-screen control.",
+                point.x(),
+                point.y(),
+                target.name,
+                x as i32,
+                y as i32,
+                (x + width) as i32,
+                (y + height) as i32,
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Glides the fake cursor to the first pointer target before injecting, so
+/// the user sees where the agent is about to act.
+async fn animate_cursor_to_actions(actions: &[Action]) {
+    let Some(point) = actions.iter().find_map(|action| match action {
+        Action::MouseDown { at, .. } => Some(*at),
+        Action::MouseMove { to } => Some(*to),
+        Action::MouseWheel { at, .. } => Some(*at),
+        _ => None,
+    }) else {
+        return;
+    };
+    native::cursor_move(point.x() as f64, point.y() as f64, true);
+    tokio::time::sleep(Duration::from_millis(320)).await;
 }
 
 async fn confirm_action(summary: &str) -> Result<(), McpError> {
@@ -656,7 +814,7 @@ impl ServerHandler for ComputerControlMcpServer {
             },
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             instructions: Some(
-                "Control the user's computer. The first tool call automatically starts a computer-control session on this Claude pane (the pane header shows a live indicator and a Stop control kill switch); macOS Screen Recording and Accessibility must already be granted. First call computer_screenshot. Coordinates for computer_action are screenshot image pixels by default; twarp maps them to the captured screen or region, including downscaled screenshots."
+                "Control the user's computer. The first tool call automatically starts a computer-control session on this Claude pane (the pane header shows a live indicator and a Stop control kill switch); macOS Screen Recording and Accessibility must already be granted. First call computer_screenshot. Coordinates for computer_action are screenshot image pixels by default; twarp maps them to the captured screen or region, including downscaled screenshots. To control one specific app, pass app=\"<name or bundle id>\" (e.g. app=\"Safari\") on either tool: capture and clicks are then scoped to that app's focused window until you pass app=\"screen\"."
                     .to_owned(),
             ),
             ..Default::default()
@@ -674,6 +832,10 @@ struct RegionParams {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct ScreenshotToolParams {
+    /// Scope control to a specific app by name or bundle id (e.g. "Safari").
+    /// Use "screen" to return to whole-screen control. Omit to keep the
+    /// current scope.
+    app: Option<String>,
     /// Optional capture region in physical screen pixels.
     region: Option<RegionParams>,
     /// Downscale the returned PNG so its longer edge is at most this many pixels.
@@ -686,6 +848,10 @@ struct ScreenshotToolParams {
 struct ComputerActionParams {
     /// One of: mouse_move, mouse_down, mouse_up, click, double_click, scroll, type_text, key_down, key_up, wait.
     action: String,
+    /// Scope control to a specific app by name or bundle id (e.g. "Safari").
+    /// Use "screen" to return to whole-screen control. Omit to keep the
+    /// current scope.
+    app: Option<String>,
     /// X coordinate. By default this is in the latest screenshot image's pixel space.
     x: Option<i32>,
     /// Y coordinate. By default this is in the latest screenshot image's pixel space.
@@ -779,7 +945,15 @@ impl ComputerControlMcpServer {
     ) -> Result<CallToolResult, McpError> {
         let session = self.ensure_active_session().await?;
         record_activity();
-        let screenshot_params = params.screenshot_params()?;
+        let target = apply_app_param(params.app.as_deref())?;
+        let mut screenshot_params = params.screenshot_params()?;
+        if let Some(target) = &target {
+            native::activate_app(target.pid);
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            if screenshot_params.region.is_none() {
+                screenshot_params.region = Some(target_window_region(target)?);
+            }
+        }
         set_status("Latest: taking screenshot");
         push_log("Screenshot requested");
         let result = perform_actor_actions(Vec::new(), screenshot_params)
@@ -814,7 +988,8 @@ impl ComputerControlMcpServer {
     ) -> Result<CallToolResult, McpError> {
         let session = self.ensure_active_session().await?;
         record_activity();
-        let screenshot_params = params
+        let target = apply_app_param(params.app.as_deref())?;
+        let mut screenshot_params = params
             .screenshot
             .as_ref()
             .map(ScreenshotToolParams::screenshot_params)
@@ -828,8 +1003,17 @@ impl ComputerControlMcpServer {
         })?;
         confirm_action(&summary).await?;
         require_active_session()?;
+        if let Some(target) = &target {
+            native::activate_app(target.pid);
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            guard_actions_within_target(&actions, target)?;
+            if screenshot_params.region.is_none() {
+                screenshot_params.region = Some(target_window_region(target)?);
+            }
+        }
         set_status(format!("Latest: executing {summary}"));
         push_log(format!("Executing action: {summary}"));
+        animate_cursor_to_actions(&actions).await;
         let result = perform_actor_actions(actions, screenshot_params)
             .await
             .inspect_err(|_| {
@@ -1293,6 +1477,7 @@ mod tests {
         set_test_capture();
         let point = validated_point(&ComputerActionParams {
             action: "mouse_move".to_owned(),
+            app: None,
             x: Some(320),
             y: Some(180),
             coordinate_space: None,
@@ -1313,6 +1498,7 @@ mod tests {
     fn waits_are_bounded() {
         let err = validate_action(&ComputerActionParams {
             action: "wait".to_owned(),
+            app: None,
             x: None,
             y: None,
             coordinate_space: None,

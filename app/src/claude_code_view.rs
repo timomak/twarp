@@ -5319,9 +5319,10 @@ impl ClaudeCodeView {
         crate::computer_control::platform_supported()
     }
 
+    /// The label shown in the native control overlay/permissions chrome: the
+    /// chat's tab title (first user message), not the raw session UUID.
     fn computer_control_session_label(&self) -> String {
-        let short_session = self.session_id.get(..8).unwrap_or(self.session_id.as_str());
-        format!("Claude Code session {short_session}")
+        self.derived_tab_title()
     }
 
     fn computer_control_chrome(&self, app: &AppContext) -> ComputerControlChrome {
