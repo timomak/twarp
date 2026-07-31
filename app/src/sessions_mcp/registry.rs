@@ -17,8 +17,42 @@ use std::{
 
 use claude_code::TranscriptItem;
 use serde::Serialize;
+#[cfg(not(target_family = "wasm"))]
+use tokio::sync::broadcast;
 
 use super::status::SessionStatus;
+
+/// twarp 26c: one event on a live session's broadcast channel. Every watcher
+/// (an SSE watch forwarder or a pending `wait_for_completion`) subscribes to
+/// the same sender, so all of them receive every event (PRODUCT P#9).
+#[cfg(not(target_family = "wasm"))]
+#[derive(Clone, Debug)]
+pub enum SessionEvent {
+    /// A transcript item was appended (already final — the projection holds
+    /// streaming items back, so an emitted item never changes).
+    Item(FlatTranscriptItem),
+    /// The session's status changed to this value.
+    Status(SessionStatus),
+    /// The pane closed / the view dropped. Terminal: no further events.
+    Closed,
+}
+
+/// Watchers that fall this many events behind resync from the registry
+/// snapshot (`RecvError::Lagged` handling in `events.rs`) instead of wedging.
+#[cfg(not(target_family = "wasm"))]
+const EVENT_CHANNEL_CAPACITY: usize = 256;
+
+/// A subscription to a live session's events plus the state it was taken
+/// against — receiver, status, and transcript tail are captured under one
+/// registry lock, so a subscriber can check "already terminal?" and then wait
+/// without a gap a transition could slip through.
+#[cfg(not(target_family = "wasm"))]
+pub struct SessionSubscription {
+    pub receiver: broadcast::Receiver<SessionEvent>,
+    pub status: SessionStatus,
+    pub last_index: Option<u64>,
+    pub last_assistant_text: Option<String>,
+}
 
 /// One item of the flat transcript projection (PRODUCT P#6): a stable,
 /// monotonically increasing `index`, a role/kind, and text content —
@@ -48,6 +82,18 @@ struct SessionRecord {
     status: SessionStatus,
     last_activity: SystemTime,
     transcript: Vec<FlatTranscriptItem>,
+    #[cfg(not(target_family = "wasm"))]
+    events: broadcast::Sender<SessionEvent>,
+}
+
+impl SessionRecord {
+    fn last_assistant_text(&self) -> Option<String> {
+        self.transcript
+            .iter()
+            .rev()
+            .find(|item| item.role == "assistant")
+            .map(|item| item.text.clone())
+    }
 }
 
 /// Shared between the main thread (publisher) and the MCP runtime (reader).
@@ -88,19 +134,33 @@ impl SessionRegistry {
                 status: SessionStatus::Idle,
                 last_activity: SystemTime::now(),
                 transcript: Vec::new(),
+                #[cfg(not(target_family = "wasm"))]
+                events: broadcast::channel(EVENT_CHANNEL_CAPACITY).0,
             });
-        let activity = projected.len() != record.transcript.len() || status != record.status;
+        let status_changed = status != record.status;
+        let activity = projected.len() != record.transcript.len() || status_changed;
         if projected.len() < record.transcript.len() {
+            // Wholesale replace (restarted conversation): indices reset, so
+            // there is no meaningful append event to broadcast — watchers of
+            // a restarted pane resync via `transcript_since` on next lag or
+            // read.
             record.transcript = projected;
         } else {
-            record
-                .transcript
-                .extend(projected.into_iter().skip(record.transcript.len()));
+            let appended = &projected[record.transcript.len()..];
+            #[cfg(not(target_family = "wasm"))]
+            for item in appended {
+                let _ = record.events.send(SessionEvent::Item(item.clone()));
+            }
+            record.transcript.extend_from_slice(appended);
         }
         record.provider = provider;
         record.cwd = cwd;
         record.title = title;
         record.status = status;
+        #[cfg(not(target_family = "wasm"))]
+        if status_changed {
+            let _ = record.events.send(SessionEvent::Status(status));
+        }
         if activity {
             record.last_activity = SystemTime::now();
         }
@@ -109,10 +169,20 @@ impl SessionRegistry {
     /// Drop a session's row (pane closed / view dropped, or the pane's id
     /// changed and the old key is stale).
     pub fn remove(&self, session_id: &str) {
-        self.sessions
+        let removed = self
+            .sessions
             .lock()
             .expect("session registry poisoned")
             .remove(session_id);
+        // 26c: watchers get a terminal `closed` event so waits resolve
+        // instead of hanging (PRODUCT P#12, P#29). Dropping the sender after
+        // this also closes every receiver, which watchers treat the same.
+        #[cfg(not(target_family = "wasm"))]
+        if let Some(record) = removed {
+            let _ = record.events.send(SessionEvent::Closed);
+        }
+        #[cfg(target_family = "wasm")]
+        drop(removed);
     }
 
     pub fn snapshot(&self) -> Vec<LiveSession> {
@@ -142,6 +212,61 @@ impl SessionRegistry {
         let sessions = self.sessions.lock().expect("session registry poisoned");
         let record = sessions.get(session_id)?;
         Some(items_since(&record.transcript, since_index))
+    }
+
+    /// Subscribe to a live session's events (26c). `None` = no live session
+    /// with that id. Receiver and current state are captured atomically so
+    /// callers can check the pre-subscription status without a race window.
+    #[cfg(not(target_family = "wasm"))]
+    pub fn subscribe(&self, session_id: &str) -> Option<SessionSubscription> {
+        let sessions = self.sessions.lock().expect("session registry poisoned");
+        let record = sessions.get(session_id)?;
+        Some(SessionSubscription {
+            receiver: record.events.subscribe(),
+            status: record.status,
+            last_index: record.transcript.last().map(|item| item.index),
+            last_assistant_text: record.last_assistant_text(),
+        })
+    }
+
+    /// Subscribe to every live session at once (26c: `wait_for_completion`
+    /// on `"any"`). Sessions created after this call are not included.
+    #[cfg(not(target_family = "wasm"))]
+    pub fn subscribe_all(&self) -> Vec<(String, SessionSubscription)> {
+        let sessions = self.sessions.lock().expect("session registry poisoned");
+        sessions
+            .iter()
+            .map(|(session_id, record)| {
+                (
+                    session_id.clone(),
+                    SessionSubscription {
+                        receiver: record.events.subscribe(),
+                        status: record.status,
+                        last_index: record.transcript.last().map(|item| item.index),
+                        last_assistant_text: record.last_assistant_text(),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// The live session's current status (`None` = closed / never existed).
+    /// Used by lagged watchers to resync (26c).
+    pub fn status_of(&self, session_id: &str) -> Option<SessionStatus> {
+        self.sessions
+            .lock()
+            .expect("session registry poisoned")
+            .get(session_id)
+            .map(|record| record.status)
+    }
+
+    /// The live session's latest final assistant message text, if any.
+    pub fn last_assistant_text(&self, session_id: &str) -> Option<String> {
+        self.sessions
+            .lock()
+            .expect("session registry poisoned")
+            .get(session_id)
+            .and_then(SessionRecord::last_assistant_text)
     }
 }
 

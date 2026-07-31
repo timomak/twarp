@@ -73,6 +73,14 @@ impl SessionStatus {
         }
     }
 
+    /// Whether this status resolves a `wait_for_completion` (26c, PRODUCT
+    /// P#10): the done states plus `needs_input` — a session parked on a
+    /// permission/question needs its caller's attention just as much as a
+    /// finished one.
+    pub fn resolves_wait(self) -> bool {
+        matches!(self, Self::DoneOk | Self::DoneError | Self::NeedsInput)
+    }
+
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "running" => Some(Self::Running),

@@ -1,7 +1,8 @@
-//! twarp 26b: the `twarp-sessions` MCP bridge, runtime, and per-connection
-//! service — the `browser_mcp.rs` shape with a read-only tool surface
-//! (`list_sessions`, `get_transcript`, `list_projects`). Session
-//! create/watch/wait land in 26c–26d.
+//! twarp 26b/26c: the `twarp-sessions` MCP bridge, runtime, and
+//! per-connection service — the `browser_mcp.rs` shape. 26b's read surface
+//! (`list_sessions`, `get_transcript`, `list_projects`) plus 26c's event
+//! surface (`watch_session`, `wait_for_completion`). Session create lands in
+//! 26d.
 
 use std::{
     collections::HashMap,
@@ -13,8 +14,12 @@ use std::{
 
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{CallToolResult, Content, Implementation, ServerCapabilities, ServerInfo},
-    schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
+    model::{
+        CallToolResult, Content, Implementation, LoggingLevel, LoggingMessageNotificationParam,
+        ServerCapabilities, ServerInfo,
+    },
+    schemars, tool, tool_handler, tool_router, ErrorData as McpError, Peer, RoleServer,
+    ServerHandler,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -22,6 +27,7 @@ use tokio_util::sync::CancellationToken;
 use twarpui::{Entity, ModelContext, ModelSpawner, SingletonEntity};
 
 use super::{
+    events::{self, WaitOutcome, WatchNotification},
     registry::{items_since, SessionRegistry},
     status::SessionStatus,
     store,
@@ -237,9 +243,12 @@ impl ServerHandler for SessionsMcpServer {
                 icons: None,
                 website_url: None,
             },
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            capabilities: ServerCapabilities::builder()
+                .enable_tools()
+                .enable_logging()
+                .build(),
             instructions: Some(
-                "Read twarp's agent sessions and projects: list live and stored chat sessions with their status, read any session's transcript, and list sidebar projects. Statuses match the twarp tab UI exactly."
+                "Read and monitor twarp's agent sessions and projects: list live and stored chat sessions with their status, read any session's transcript, list sidebar projects, watch a session's live events, and wait for a session to complete. Statuses match the twarp tab UI exactly."
                     .to_owned(),
             ),
             ..Default::default()
@@ -267,6 +276,26 @@ struct GetTranscriptParams {
     /// yields an empty list). Omit for the full transcript.
     since_index: Option<u64>,
 }
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct WatchSessionParams {
+    /// The live session to watch.
+    session_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct WaitForCompletionParams {
+    /// A live session id, or "any" to wait on every live session at once.
+    session_id: String,
+    /// How long to wait before returning a timed_out result. Defaults to 300
+    /// seconds; capped at 3600.
+    timeout_seconds: Option<f64>,
+}
+
+/// `wait_for_completion` timeout bounds (PRODUCT P#29: nothing may hang
+/// indefinitely, so the cap is hard).
+const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(300);
+const MAX_WAIT_TIMEOUT: Duration = Duration::from_secs(3600);
 
 #[derive(Debug, Serialize)]
 struct SessionRow {
@@ -421,6 +450,114 @@ impl SessionsMcpServer {
             "is_live": false,
             "items": items_since(&items, params.since_index),
         }))
+    }
+
+    #[tool(
+        name = "watch_session",
+        description = "Subscribe this connection to a live session: subsequent transcript items and status changes arrive as notifications/message MCP notifications (logger \"twarp-sessions\", data.type \"session_event\") until the session closes. A terminal {event: \"closed\"} notification is sent when the pane closes."
+    )]
+    async fn watch_session(
+        &self,
+        peer: Peer<RoleServer>,
+        Parameters(params): Parameters<WatchSessionParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let Some(subscription) = SessionRegistry::global().subscribe(&params.session_id) else {
+            return Err(McpError::invalid_params(
+                "No live session exists with that id",
+                Some(json!({ "code": "not-found", "session_id": params.session_id })),
+            ));
+        };
+        let status = subscription.status;
+
+        // The forwarder produces notification payloads into a channel; the
+        // drain task pushes them onto this SSE connection. When the client
+        // disconnects the notify fails, the receiver drops, and the
+        // forwarder's next send unblocks it into exit — nothing hangs (P#29).
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<WatchNotification>(64);
+        tokio::spawn(events::forward_watch_events(
+            SessionRegistry::global(),
+            params.session_id.clone(),
+            subscription,
+            tx,
+        ));
+        tokio::spawn(async move {
+            while let Some(WatchNotification(data)) = rx.recv().await {
+                if peer
+                    .notify_logging_message(LoggingMessageNotificationParam {
+                        level: LoggingLevel::Info,
+                        logger: Some(SERVER_NAME.to_owned()),
+                        data,
+                    })
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+
+        json_result(json!({
+            "watching": params.session_id,
+            "status": status.as_str(),
+        }))
+    }
+
+    #[tool(
+        name = "wait_for_completion",
+        description = "Block until a live session (or any live session, with session_id \"any\") transitions to done_ok, done_error, or needs_input, then return its final status and last assistant message text. A closed pane resolves as done_error with reason \"closed\". On timeout returns result \"timed_out\" (not an error)."
+    )]
+    async fn wait_for_completion(
+        &self,
+        Parameters(params): Parameters<WaitForCompletionParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let registry = SessionRegistry::global();
+        let targets = if params.session_id == "any" {
+            let targets = registry.subscribe_all();
+            if targets.is_empty() {
+                return Err(McpError::invalid_params(
+                    "No live sessions to wait on",
+                    Some(json!({ "code": "not-found", "session_id": "any" })),
+                ));
+            }
+            targets
+        } else {
+            let Some(subscription) = registry.subscribe(&params.session_id) else {
+                return Err(McpError::invalid_params(
+                    "No live session exists with that id",
+                    Some(json!({ "code": "not-found", "session_id": params.session_id })),
+                ));
+            };
+            vec![(params.session_id.clone(), subscription)]
+        };
+
+        let timeout = match params.timeout_seconds {
+            None => DEFAULT_WAIT_TIMEOUT,
+            Some(seconds) if seconds.is_finite() && seconds >= 0.0 => {
+                Duration::from_secs_f64(seconds).min(MAX_WAIT_TIMEOUT)
+            }
+            Some(seconds) => {
+                return Err(McpError::invalid_params(
+                    "timeout_seconds must be a non-negative number",
+                    Some(json!({ "code": "invalid-argument", "timeout_seconds": seconds })),
+                ));
+            }
+        };
+        match events::wait_for_completion(registry, targets, timeout).await {
+            WaitOutcome::Completed {
+                session_id,
+                status,
+                reason,
+                last_assistant_text,
+            } => json_result(json!({
+                "result": "completed",
+                "session_id": session_id,
+                "status": status.as_str(),
+                "reason": reason,
+                "last_assistant_text": last_assistant_text,
+            })),
+            // PRODUCT P#10: a distinct timed_out result, not an error.
+            WaitOutcome::TimedOut => json_result(json!({ "result": "timed_out" })),
+        }
     }
 
     #[tool(

@@ -9,6 +9,8 @@
 //! — a main-thread-published mirror of every live agent pane — so the MCP
 //! runtime never touches views.
 
+#[cfg(not(target_family = "wasm"))]
+pub(crate) mod events;
 pub(crate) mod registry;
 pub(crate) mod status;
 #[cfg(not(target_family = "wasm"))]
