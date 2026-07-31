@@ -604,9 +604,15 @@ pub enum ClaudeCodeViewAction {
     /// twarp 17: the composer mic button (PRODUCT 17 §1–§11). Idle → start
     /// recording; recording → stop and transcribe; transcribing → no-op.
     ToggleVoiceRecording,
+    /// twarp 25: start or end the spoken conversation (PRODUCT 25 §5).
+    ToggleRealtimeCall,
+    /// twarp 25: mute/unmute the microphone without ending the call (§13).
+    ToggleRealtimeMute,
+    /// twarp 25: re-establish a failed call (§20) without losing the
+    /// transcript or reopening the pane.
+    RetryRealtimeCall,
     /// twarp 17: the composer speaker button (PRODUCT 17 §12–§14) — toggles
     /// spoken replies for this pane; while speaking it also stops playback.
-    ToggleSpeakReplies,
     /// twarp: swap between the rendered chat and the raw interactive CLI from
     /// the header menu's segmented toggle. The menu overlay lives in this
     /// view's own tree (unlike the old header toggle), so it dispatches the
@@ -721,6 +727,38 @@ enum StdinCommand {
     /// Interrupt the in-flight turn (`send_interrupt`) — the session-preserving
     /// Stop (PRODUCT §11). `request_id` is echoed on the acknowledgement.
     Interrupt { request_id: String },
+    /// twarp 25: a realtime voice-conversation command. Codex-only; ignored on
+    /// other providers rather than erroring, so the pump loop stays uniform.
+    Realtime(RealtimeCommand),
+}
+
+/// twarp 25: the view→session half of the voice conversation.
+enum RealtimeCommand {
+    /// Open the spoken session on this pane's thread (PRODUCT 25 §7).
+    Start { voice: Option<String> },
+    /// One microphone chunk, base64 s16le at the capture device's own rate.
+    Audio {
+        data: String,
+        sample_rate: u32,
+        channels: u16,
+    },
+    /// Drive a spoken turn from composer text (PRODUCT 25 §18).
+    Speech { text: String },
+    /// End the session, leaving the thread alive (PRODUCT 25 §9–§10).
+    Stop,
+}
+
+/// twarp 25: what the call panel is allowed to claim is happening. Every
+/// transition is driven by a real event from the session — never by optimism
+/// about what should have happened by now (PRODUCT 25 §8).
+#[derive(Debug, Clone, PartialEq)]
+enum RealtimeState {
+    /// `start` sent; nothing has come back yet.
+    Connecting,
+    /// `thread/realtime/started` arrived — the session is genuinely live.
+    Live,
+    /// The provider's own failure text (PRODUCT 25 §20).
+    Failed(String),
 }
 
 /// An image attached directly through paste / drag-drop / file-picker (7l,
@@ -1206,16 +1244,6 @@ pub struct ClaudeCodeView {
     /// twarp 17: one-line voice status / error under the composer controls
     /// (PRODUCT 17 §2–§3, §8, §17). Cleared when the next voice action starts.
     voice_status: Option<String>,
-    /// twarp 17: speak replies aloud (PRODUCT 17 §12). Per-pane, off by
-    /// default, not persisted.
-    speak_replies: bool,
-    /// twarp 17: the playback thread, spawned lazily on first speech and kept
-    /// for the pane's lifetime (dropping it silences and tears down the
-    /// output stream — PRODUCT 17 §18's close-pane stop for free).
-    voice_player: Option<crate::voice::playback::Player>,
-    /// Guards stale TTS chunks after a newer turn started speaking (§15) or
-    /// the toggle flipped off (§14).
-    voice_tts_generation: u64,
     /// twarp 17 §30–§31: the composer suffix owned by live transcription
     /// (including its leading separator). Live updates replace exactly this
     /// suffix and stand down the moment the user edits it.
@@ -1230,29 +1258,25 @@ pub struct ClaudeCodeView {
     /// `try_recv` on the voice tick so the UI thread never blocks on audio.
     voice_live_snapshot:
         Option<std::sync::mpsc::Receiver<Result<Vec<u8>, crate::voice::VoiceError>>>,
-    /// twarp 17 §32: transcript index of the assistant item being spoken.
-    voice_tts_item: Option<usize>,
-    /// The prose already queued for synthesis, verbatim — comparing against a
-    /// fresh markdown→prose pass keeps offsets honest while text streams.
-    voice_tts_spoken_prose: String,
-    /// Sentences awaiting synthesis (§32) — synthesized one at a time so the
-    /// audio queue stays ordered.
-    voice_tts_pending: std::collections::VecDeque<String>,
-    /// A synthesis request is in flight (§32).
-    voice_tts_inflight: bool,
-    /// The next queued chunk starts a new utterance (player `play`, not
-    /// `append`) — set when a new reply begins speaking (§15).
-    voice_tts_first_chunk: bool,
-    /// twarp 17 §33: spoken chunks of the current utterance —
-    /// `(text, start_secs, len_secs)` at the TTS sample rate — mapped against
-    /// the player position for the karaoke highlight.
-    voice_karaoke_chunks: Vec<(String, f32, f32)>,
     /// Mouse state for the composer mic button.
     mic_button_mouse: MouseStateHandle,
     /// Pulse state for the mic glyph while recording (PRODUCT 17 §4).
     mic_pulse: PulsingIconStateHandle,
-    /// Mouse state for the composer speaker button.
-    speaker_button_mouse: MouseStateHandle,
+    /// twarp 25: the live voice conversation, `None` when no call is up.
+    realtime: Option<RealtimeState>,
+    /// The microphone feeding the live call. Separate from `voice_recorder`
+    /// (dictation): the two never run at once, but they drain differently.
+    realtime_mic: Option<crate::voice::capture::Recorder>,
+    /// Speech output for the call — also the barge-in stop handle.
+    realtime_player: Option<crate::voice::playback::Player>,
+    /// Muted (PRODUCT 25 §13): the session stays up, the mic stops feeding it.
+    realtime_muted: bool,
+    /// Mouse state for the composer call button.
+    call_button_mouse: MouseStateHandle,
+    /// Mouse state for the call panel's Mute / End / Retry buttons.
+    call_mute_button_mouse: MouseStateHandle,
+    call_end_button_mouse: MouseStateHandle,
+    call_retry_button_mouse: MouseStateHandle,
 }
 
 impl ClaudeCodeView {
@@ -1534,23 +1558,21 @@ impl ClaudeCodeView {
             voice_generation: 0,
             voice_composer_was_empty: false,
             voice_status: None,
-            speak_replies: false,
-            voice_player: None,
-            voice_tts_generation: 0,
             voice_live_text: String::new(),
             voice_live_owned: false,
             voice_live_inflight: false,
             voice_live_last: None,
             voice_live_snapshot: None,
-            voice_tts_item: None,
-            voice_tts_spoken_prose: String::new(),
-            voice_tts_pending: std::collections::VecDeque::new(),
-            voice_tts_inflight: false,
-            voice_tts_first_chunk: true,
-            voice_karaoke_chunks: Vec::new(),
             mic_button_mouse: MouseStateHandle::default(),
             mic_pulse: PulsingIconStateHandle::default(),
-            speaker_button_mouse: MouseStateHandle::default(),
+            realtime: None,
+            realtime_mic: None,
+            realtime_player: None,
+            realtime_muted: false,
+            call_button_mouse: MouseStateHandle::default(),
+            call_mute_button_mouse: MouseStateHandle::default(),
+            call_end_button_mouse: MouseStateHandle::default(),
+            call_retry_button_mouse: MouseStateHandle::default(),
         };
 
         // PRODUCT §4/§8: capture the login-shell environment up front so CLI
@@ -2346,6 +2368,29 @@ impl ClaudeCodeView {
         );
     }
 
+    /// twarp 25: the Codex app-server environment. The realtime conversation
+    /// requires **API-key auth** — with only the Codex CLI's ChatGPT login,
+    /// `thread/realtime/start` succeeds and then immediately fails with
+    /// "realtime conversation requires API key auth" — so the Agent settings
+    /// key rides along as `OPENAI_API_KEY` when one is configured. Everything
+    /// else about the session is unchanged when it is absent.
+    fn codex_env_vars(&self, ctx: &AppContext) -> Option<HashMap<String, String>> {
+        let mut env_vars = self.interactive_env_vars.clone().unwrap_or_default();
+        if let Some(key) = self.api_key_for_agent(CLIAgent::Codex, ctx) {
+            env_vars
+                .entry("OPENAI_API_KEY".to_owned())
+                .or_insert_with(|| key);
+        }
+        (!env_vars.is_empty()).then_some(env_vars)
+    }
+
+    /// Whether a voice call can be started here (PRODUCT 25 §5–§6): Codex
+    /// panes only, and only once the key the realtime session needs exists.
+    fn realtime_available(&self, ctx: &AppContext) -> bool {
+        self.provider == AgentProvider::Codex
+            && self.api_key_for_agent(CLIAgent::Codex, ctx).is_some()
+    }
+
     fn api_key_for_agent(&self, agent: CLIAgent, ctx: &AppContext) -> Option<String> {
         if !app_settings::api_key_presence(AgentSettings::as_ref(ctx), agent) {
             return None;
@@ -2478,7 +2523,10 @@ impl ClaudeCodeView {
                     .with_main_axis_size(MainAxisSize::Min)
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_child(name_span(matched, text_color))
-                    .with_child(name_span(rest, theme.nonactive_ui_text_color().into_solid()))
+                    .with_child(name_span(
+                        rest,
+                        theme.nonactive_ui_text_color().into_solid(),
+                    ))
                     .finish()
             } else {
                 name_span(suggestion, text_color)
@@ -3087,6 +3135,20 @@ impl ClaudeCodeView {
     ) {
         self.clear_reply_suggestion(ctx);
         self.clear_composer_placeholder_suggestion(ctx);
+        // twarp 25 §18: with a call up, typing joins the conversation instead
+        // of opening a second, silent turn. `appendSpeech` is the only text
+        // path that produces a reply — `appendText` merely injects an item.
+        if matches!(self.realtime, Some(RealtimeState::Live)) && message.images.is_empty() {
+            if let Some(tx) = &self.message_tx {
+                let _ = tx.try_send(StdinCommand::Realtime(RealtimeCommand::Speech {
+                    text: message.text.clone(),
+                }));
+                self.transcript
+                    .apply(TranscriptEvent::UserMessage(message.text));
+                ctx.notify();
+                return;
+            }
+        }
         // PRODUCT §1: claude is parked on an AskUserQuestion — a typed message
         // is the user's answer (the free-form "Other" path), not type-ahead
         // for after the question. Consume it as the held permission's answer.
@@ -3732,7 +3794,7 @@ impl ClaudeCodeView {
                 .flatten(),
             path_env: self.interactive_path.clone(),
             env_vars: (self.provider == AgentProvider::Codex)
-                .then(|| self.interactive_env_vars.clone())
+                .then(|| self.codex_env_vars(ctx))
                 .flatten(),
         };
         self.session_spawn_pending = true;
@@ -3841,6 +3903,35 @@ impl ClaudeCodeView {
                                 _ => send_interrupt(&mut stdin, &request_id).await,
                             }
                         }
+                        // twarp 25: realtime is a Codex-only surface; on other
+                        // providers the command is a no-op rather than an error.
+                        StdinCommand::Realtime(command) => match codex_driver.as_ref() {
+                            Some(driver) => match command {
+                                RealtimeCommand::Start { voice } => {
+                                    driver.realtime_start(&mut stdin, voice).await
+                                }
+                                RealtimeCommand::Audio {
+                                    data,
+                                    sample_rate,
+                                    channels,
+                                } => {
+                                    driver
+                                        .realtime_append_audio(
+                                            &mut stdin,
+                                            data,
+                                            sample_rate,
+                                            channels,
+                                            None,
+                                        )
+                                        .await
+                                }
+                                RealtimeCommand::Speech { text } => {
+                                    driver.realtime_append_speech(&mut stdin, text).await
+                                }
+                                RealtimeCommand::Stop => driver.realtime_stop(&mut stdin).await,
+                            },
+                            None => Ok(()),
+                        },
                     };
                     if wrote.is_err() {
                         break;
@@ -3922,7 +4013,10 @@ impl ClaudeCodeView {
                     );
                     // 7p: the turn is now parked on the user. Notify if
                     // they're away, and flip the tab dot to blocked.
-                    self.maybe_send_attention_notification(NotificationsTrigger::NeedsAttention, ctx);
+                    self.maybe_send_attention_notification(
+                        NotificationsTrigger::NeedsAttention,
+                        ctx,
+                    );
                     ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
                     ctx.notify();
                     return;
@@ -3968,6 +4062,13 @@ impl ClaudeCodeView {
         if matches!(&event, TranscriptEvent::TaskNotification(_)) {
             ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
         }
+        // twarp 25: session state and audio for the live call. Handled here and
+        // NOT forwarded to the transcript model — the spoken words arrive
+        // separately as ordinary assistant text.
+        if let TranscriptEvent::Realtime(realtime) = event {
+            self.on_realtime_event(realtime, ctx);
+            return;
+        }
         if let TranscriptEvent::Ended { reason } = &event {
             log::warn!(
                 "QDIAG turn Ended (streaming->false), had_pending_questions={}",
@@ -4002,12 +4103,6 @@ impl ClaudeCodeView {
                             ctx,
                         );
                     }
-                    // twarp 17 (PRODUCT 17 §13/§18, §32): speak whatever the
-                    // live pump hasn't yet — for a turn that streamed with the
-                    // toggle on this is just the trailing partial sentence; with
-                    // the toggle flipped on late it's the whole reply. Only this
-                    // branch — interrupted turns stay silent.
-                    self.pump_live_tts(true, ctx);
                 }
                 claude_code::EndReason::Error(_) => {
                     self.tab_attention = Some(false);
@@ -4074,11 +4169,6 @@ impl ClaudeCodeView {
                 self.raw_cli_pending = false;
                 self.open_raw_cli(ctx);
             }
-        }
-        // twarp 17 §32: sentence-by-sentence readout keeps pace with the
-        // stream. Cheap when the toggle is off (single bool check).
-        if assistant_text_grew {
-            self.pump_live_tts(false, ctx);
         }
         if turn_completed {
             self.drain_message_queue(ctx);
@@ -4211,6 +4301,10 @@ impl ClaudeCodeView {
     /// session's EOF/events stale so they can't spam the transcript or wipe
     /// the next session's handles.
     fn detach_live_session(&mut self) {
+        // twarp 25 §9: the call cannot outlive the process carrying it — drop
+        // the microphone and silence playback with the session.
+        self.teardown_realtime_audio();
+        self.realtime = None;
         self.resume_session_id = Some(self.session_id.clone());
         self.session_epoch += 1;
         self.child = None; // kill_on_drop
@@ -4248,11 +4342,8 @@ impl ClaudeCodeView {
 
     fn open_raw_cli(&mut self, ctx: &mut ViewContext<Self>) {
         // twarp 17 (PRODUCT 17 §9): switching to Raw CLI cancels a live
-        // recording silently and stops any spoken reply.
+        // recording silently.
         self.cancel_voice_recording(ctx);
-        if let Some(player) = &self.voice_player {
-            player.stop();
-        }
         self.detach_live_session();
         ctx.emit(ClaudeCodeViewEvent::SwapToRawCli {
             provider: self.provider,
@@ -5046,243 +5137,212 @@ impl ClaudeCodeView {
         }
     }
 
-    /// The speaker button (PRODUCT 17 §12, §14): off → on (when configured);
-    /// on → stop playback and off.
-    fn toggle_speak_replies(&mut self, ctx: &mut ViewContext<Self>) {
+    // --- twarp 25: the voice conversation (PRODUCT 25 §5–§19) ---
+
+    /// The call button: start a spoken session, or end the live one.
+    fn toggle_realtime_call(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.realtime.is_some() {
+            self.end_realtime_call(ctx);
+            return;
+        }
         self.voice_status = None;
-        if self.speak_replies {
-            self.speak_replies = false;
-            self.voice_tts_generation = self.voice_tts_generation.wrapping_add(1);
-            self.voice_tts_item = None;
-            self.voice_tts_spoken_prose.clear();
-            self.voice_tts_pending.clear();
-            self.voice_tts_inflight = false;
-            self.voice_karaoke_chunks.clear();
-            if let Some(player) = &self.voice_player {
-                player.stop();
-            }
-        } else if AgentSettings::as_ref(ctx).voice_tts_config().is_none() {
-            // §12: unconfigured → same settings pointer as the mic.
-            self.voice_status = Some("Configure voice in Settings → Agent".to_owned());
-        } else {
-            self.speak_replies = true;
-        }
-        ctx.notify();
-    }
-
-    /// §32: speak the trailing assistant reply as it streams — each newly
-    /// completed sentence is queued for synthesis the moment it lands; `flush`
-    /// (turn end) speaks whatever remains, including an unterminated tail.
-    /// Also the §13 whole-reply path: with nothing spoken yet, a flush covers
-    /// the full text.
-    fn pump_live_tts(&mut self, flush: bool, ctx: &mut ViewContext<Self>) {
-        if !self.speak_replies {
+        // §6: unconfigured points at settings instead of failing mutely.
+        if !self.realtime_available(ctx) {
+            self.voice_status = Some("Add an API key in Settings → Agent to use voice".to_owned());
+            ctx.notify();
             return;
         }
-        let Some((item_index, text)) =
-            self.transcript
-                .items()
-                .iter()
-                .enumerate()
-                .rev()
-                .find_map(|(index, item)| match item {
-                    TranscriptItem::Assistant { text, .. } if !text.trim().is_empty() => {
-                        Some((index, text.clone()))
-                    }
-                    _ => None,
-                })
-        else {
-            return;
-        };
-        if self.voice_tts_item != Some(item_index) {
-            // §15: a new reply replaces the previous utterance.
-            self.voice_tts_item = Some(item_index);
-            self.voice_tts_spoken_prose.clear();
-            self.voice_tts_pending.clear();
-            self.voice_tts_first_chunk = true;
-            self.voice_tts_inflight = false;
-            self.voice_karaoke_chunks.clear();
-            self.voice_tts_generation = self.voice_tts_generation.wrapping_add(1);
-        }
-        // While streaming, only complete lines feed the prose conversion — a
-        // full line's markdown→prose mapping never changes as more text
-        // arrives (fence state included), so what we've spoken stays a stable
-        // prefix of every later pass.
-        let markdown = if flush {
-            text.as_str()
-        } else {
-            &text[..text.rfind('\n').map(|i| i + 1).unwrap_or(0)]
-        };
-        let prose = crate::voice::prose::markdown_to_prose(markdown);
-        let spoken = &self.voice_tts_spoken_prose;
-        let fresh = match prose.strip_prefix(spoken.as_str()) {
-            Some(fresh) => fresh,
-            // Defensive: if the prefix drifted (it shouldn't), fall back to a
-            // length cut (floored to a char boundary) rather than re-speaking
-            // from the top.
-            None => {
-                let mut at = spoken.len().min(prose.len());
-                while !prose.is_char_boundary(at) {
-                    at -= 1;
-                }
-                &prose[at..]
-            }
-        };
-        let cut = if flush {
-            fresh.len()
-        } else {
-            crate::voice::tts::complete_sentence_prefix_len(fresh)
-        };
-        if cut == 0 {
-            return;
-        }
-        let speakable = &fresh[..cut];
-        self.voice_tts_spoken_prose.push_str(speakable);
-        for chunk in crate::voice::tts::chunk_text(speakable, crate::voice::tts::TTS_INPUT_CAP) {
-            self.voice_tts_pending.push_back(chunk);
-        }
-        self.spawn_next_live_tts(ctx);
-    }
-
-    /// Synthesize the next pending sentence and queue its audio, then recurse
-    /// — sequential so chunks arrive in order (§16); a failed chunk surfaces
-    /// once and drops the rest of the queue (§17).
-    fn spawn_next_live_tts(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.voice_tts_inflight {
-            return;
-        }
-        let Some(text) = self.voice_tts_pending.pop_front() else {
-            return;
-        };
-        let Some(mut config) = AgentSettings::as_ref(ctx).voice_tts_config() else {
-            // Keys were removed while the toggle was on (§22).
-            self.voice_status = Some("Configure voice in Settings → Agent".to_owned());
+        let Some(tx) = self.message_tx.clone() else {
+            self.voice_status = Some("Send a message first to start the session".to_owned());
             ctx.notify();
             return;
         };
-        let key_account = AgentSettings::as_ref(ctx).voice_tts_key_storage_key();
-        match self.voice_api_key(key_account, ctx) {
-            Some(key) => config.api_key = key,
-            None => {
-                self.voice_status = Some("Configure voice in Settings → Agent".to_owned());
+        // Dictation and a call share one microphone; the call wins.
+        self.cancel_voice_recording(ctx);
+        if !crate::voice::try_begin_recording() {
+            self.voice_status = Some("Already recording in another pane".to_owned());
+            ctx.notify();
+            return;
+        }
+        match crate::voice::capture::Recorder::start_streaming() {
+            Ok(recorder) => self.realtime_mic = Some(recorder),
+            Err(error) => {
+                crate::voice::end_recording();
+                self.voice_status = Some(error.to_string());
                 ctx.notify();
                 return;
             }
         }
-        if self.voice_player.is_none() {
+        let voice = Some(claude_code::codex::protocol::DEFAULT_REALTIME_VOICE.to_owned());
+        let _ = tx.try_send(StdinCommand::Realtime(RealtimeCommand::Start { voice }));
+        // §7–§8: Connecting until the session says otherwise.
+        self.realtime = Some(RealtimeState::Connecting);
+        self.realtime_muted = false;
+        log::info!("twarp 25: realtime call starting");
+        self.schedule_realtime_tick(ctx);
+        ctx.notify();
+    }
+
+    /// §9: end the call, release the microphone, keep the thread and the
+    /// transcript.
+    fn end_realtime_call(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.realtime.is_none() && self.realtime_mic.is_none() {
+            return;
+        }
+        if let Some(tx) = &self.message_tx {
+            let _ = tx.try_send(StdinCommand::Realtime(RealtimeCommand::Stop));
+        }
+        self.teardown_realtime_audio();
+        self.realtime = None;
+        log::info!("twarp 25: realtime call ended");
+        ctx.notify();
+    }
+
+    /// Release the microphone and silence playback without touching session
+    /// state — shared by End, failure, and pane teardown.
+    fn teardown_realtime_audio(&mut self) {
+        if let Some(recorder) = self.realtime_mic.take() {
+            recorder.cancel();
+            crate::voice::end_recording();
+        }
+        if let Some(player) = &self.realtime_player {
+            player.stop();
+        }
+        self.realtime_muted = false;
+    }
+
+    /// §20/§22: re-establish a failed call. The transcript is untouched and the
+    /// pane never has to be reopened — the failure state is just cleared and
+    /// the session started again.
+    fn retry_realtime_call(&mut self, ctx: &mut ViewContext<Self>) {
+        if !matches!(self.realtime, Some(RealtimeState::Failed(_))) {
+            return;
+        }
+        log::info!("twarp 25: retrying the realtime call");
+        self.teardown_realtime_audio();
+        self.realtime = None;
+        self.toggle_realtime_call(ctx);
+    }
+
+    /// §13: mute stops feeding the session; the agent may still finish talking.
+    fn toggle_realtime_mute(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.realtime.is_none() {
+            return;
+        }
+        self.realtime_muted = !self.realtime_muted;
+        if let Some(recorder) = &self.realtime_mic {
+            recorder.set_muted(self.realtime_muted);
+        }
+        ctx.notify();
+    }
+
+    /// Realtime session events (PRODUCT 25 §8, §14, §20).
+    fn on_realtime_event(
+        &mut self,
+        event: claude_code::RealtimeEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match event {
+            claude_code::RealtimeEvent::Started => {
+                self.realtime = Some(RealtimeState::Live);
+                self.voice_status = None;
+                log::info!("twarp 25: realtime session live");
+            }
+            claude_code::RealtimeEvent::Audio {
+                pcm,
+                sample_rate,
+                channels: _,
+            } => {
+                self.play_realtime_audio(pcm, sample_rate);
+            }
+            claude_code::RealtimeEvent::Error(message) => {
+                log::warn!("twarp 25: realtime session failed: {message}");
+                self.teardown_realtime_audio();
+                self.realtime = Some(RealtimeState::Failed(message));
+            }
+            claude_code::RealtimeEvent::Closed => {
+                log::info!("twarp 25: realtime session closed by the provider");
+                self.teardown_realtime_audio();
+                // A failure already explains itself; don't overwrite it with a
+                // bare "closed".
+                if !matches!(self.realtime, Some(RealtimeState::Failed(_))) {
+                    self.realtime = None;
+                }
+            }
+        }
+        ctx.notify();
+    }
+
+    /// Queue one spoken chunk. Chunks carry their own rate, so playback follows
+    /// the provider rather than a constant.
+    fn play_realtime_audio(&mut self, pcm: Vec<u8>, sample_rate: u32) {
+        if self.realtime_player.is_none() {
             match crate::voice::playback::Player::start() {
-                Ok(player) => self.voice_player = Some(player),
+                Ok(player) => self.realtime_player = Some(player),
                 Err(error) => {
-                    self.voice_status = Some(error.to_string());
-                    ctx.notify();
+                    log::warn!("twarp 25: realtime playback unavailable: {error}");
                     return;
                 }
             }
         }
+        if let Some(player) = &self.realtime_player {
+            if player.is_active() {
+                player.append(pcm, sample_rate);
+            } else {
+                player.play(pcm, sample_rate);
+            }
+        }
+    }
 
-        self.voice_tts_inflight = true;
-        let generation = self.voice_tts_generation;
-        let request_text = text.clone();
+    /// The call beat: drains the microphone into the session while unmuted and
+    /// repaints so the panel's live state stays honest. Self-rearming, because
+    /// `repaint_after` never re-runs `render()`.
+    fn schedule_realtime_tick(&self, ctx: &mut ViewContext<Self>) {
         ctx.spawn(
-            async move { crate::voice::tts::synthesize(&config, &request_text).await },
-            move |view, result, ctx| {
-                view.voice_tts_inflight = false;
-                // A newer utterance (§15) or the toggle flipping off (§14)
-                // obsoletes this chunk.
-                if view.voice_tts_generation != generation || !view.speak_replies {
+            async move {
+                Timer::after(Duration::from_millis(120)).await;
+            },
+            move |me, _, ctx| {
+                if !matches!(
+                    me.realtime,
+                    Some(RealtimeState::Connecting | RealtimeState::Live)
+                ) {
                     return;
                 }
-                match result {
-                    Ok(pcm) => {
-                        let secs =
-                            (pcm.len() / 2) as f32 / crate::voice::tts::TTS_SAMPLE_RATE as f32;
-                        if let Some(player) = &view.voice_player {
-                            if view.voice_tts_first_chunk {
-                                view.voice_tts_first_chunk = false;
-                                view.voice_karaoke_chunks.clear();
-                                player.play(pcm, crate::voice::tts::TTS_SAMPLE_RATE);
-                            } else {
-                                player.append(pcm, crate::voice::tts::TTS_SAMPLE_RATE);
-                            }
-                        }
-                        // §33: log the chunk's audio span for the karaoke clock.
-                        let start = view
-                            .voice_karaoke_chunks
-                            .last()
-                            .map(|(_, start, len)| start + len)
-                            .unwrap_or(0.0);
-                        view.voice_karaoke_chunks.push((text, start, secs));
-                        view.spawn_next_live_tts(ctx);
-                        view.schedule_voice_tick(ctx);
-                        ctx.notify();
-                    }
-                    Err(error) => {
-                        view.voice_status = Some(error.to_string());
-                        view.voice_tts_pending.clear();
-                        ctx.notify();
-                    }
-                }
+                me.pump_realtime_mic();
+                ctx.notify();
+                me.schedule_realtime_tick(ctx);
             },
         );
     }
 
-    /// §33: the sentence being spoken right now and how far through it the
-    /// audio is (linear chars-over-time estimate — the TTS API returns no word
-    /// timings). `None` when idle, so the highlight vanishes when speech ends.
-    fn active_karaoke(&self, app: &AppContext) -> Option<KaraokeHighlight> {
-        if !self.speak_replies {
-            return None;
-        }
-        let player = self.voice_player.as_ref()?;
-        if !player.is_active() {
-            return None;
-        }
-        let item_index = self.voice_tts_item?;
-        let pos = player.position_secs();
-        let (chunk, start, len) = self
-            .voice_karaoke_chunks
-            .iter()
-            .find(|(_, start, len)| pos >= *start && pos < start + len)?;
-        let frac = ((pos - start) / len.max(0.001)).clamp(0.0, 1.0);
-        let chunk_chars: Vec<char> = chunk.chars().collect();
-        let char_pos = ((chunk_chars.len() as f32 * frac) as usize).min(chunk_chars.len());
-        // A chunk can pack several sentences (§16); karaoke lights the one the
-        // audio is inside, with a proportional fill.
-        let mut sentence_start = 0;
-        let mut sentence_end = chunk_chars.len();
-        let mut consumed = 0;
-        for piece in crate::voice::tts::split_sentences(chunk) {
-            let piece_chars = piece.chars().count();
-            if char_pos < consumed + piece_chars || consumed + piece_chars >= chunk_chars.len() {
-                sentence_start = consumed;
-                sentence_end = consumed + piece_chars;
-                break;
+    /// §12: stream captured speech to the session. §14: local speech stops the
+    /// agent's audio, so the user can talk over it.
+    fn pump_realtime_mic(&mut self) {
+        let (Some(recorder), Some(tx)) = (&self.realtime_mic, &self.message_tx) else {
+            return;
+        };
+        let Some(drained) = recorder.drain() else {
+            return;
+        };
+        if speech_present(&drained.pcm) {
+            if let Some(player) = &self.realtime_player {
+                if player.is_active() {
+                    player.stop();
+                }
             }
-            consumed += piece_chars;
         }
-        let sentence: String = chunk_chars[sentence_start..sentence_end].iter().collect();
-        let trimmed = sentence.trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-        let leading_ws = sentence.chars().take_while(|c| c.is_whitespace()).count();
-        let spoken_chars = char_pos
-            .saturating_sub(sentence_start + leading_ws)
-            .min(trimmed.chars().count());
-        let accent = self.accent(app);
-        Some(KaraokeHighlight {
-            item_index,
-            sentence: trimmed.to_owned(),
-            spoken_chars,
-            sentence_color: ColorU::new(accent.r, accent.g, accent.b, 36),
-            spoken_color: ColorU::new(accent.r, accent.g, accent.b, 96),
-        })
+        let data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &drained.pcm);
+        let _ = tx.try_send(StdinCommand::Realtime(RealtimeCommand::Audio {
+            data,
+            sample_rate: drained.sample_rate,
+            channels: drained.channels,
+        }));
     }
 
-    /// The voice beat (the `schedule_elapsed_tick` pattern): while recording
-    /// it repaints the elapsed label and enforces the §9 cap / §11 device-loss
-    /// stop; while speaking it repaints so the speaker button's active state
-    /// clears when playback drains. Dies on its own once both are idle.
+    /// The voice beat (the `schedule_elapsed_tick` pattern): while recording it
+    /// repaints the elapsed label and enforces the §9 cap / §11 device-loss
+    /// stop. Dies on its own once recording is idle.
     fn schedule_voice_tick(&self, ctx: &mut ViewContext<Self>) {
         ctx.spawn(
             async move {
@@ -5301,11 +5361,6 @@ impl ClaudeCodeView {
                 if me.voice_recorder.is_some() {
                     // §30: the live transcription cadence rides the same beat.
                     me.pump_live_transcription(ctx);
-                }
-                if let Some(player) = &me.voice_player {
-                    if player.is_active() {
-                        rearm = true;
-                    }
                 }
                 ctx.notify();
                 if rearm {
@@ -5726,17 +5781,12 @@ impl ClaudeCodeView {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        // §33: only the item being spoken carries a karaoke highlight.
-        let karaoke = self
-            .active_karaoke(app)
-            .filter(|karaoke| karaoke.item_index == index);
         let row = render_message_row(
             false,
             provider_copy(self.provider).assistant_icon,
             text,
             self.render_accent.get(),
             appearance,
-            karaoke.as_ref(),
         );
         // Fork is offered only at the end of a reply (the last assistant
         // message of a turn) — not on intermediate assistant messages that sit
@@ -5789,7 +5839,7 @@ impl ClaudeCodeView {
             .theme()
             .main_text_color(appearance.theme().background())
             .into_solid();
-        let response = Container::new(render_markdown_body(text, text_color, appearance, None))
+        let response = Container::new(render_markdown_body(text, text_color, appearance))
             .with_horizontal_padding(spacing::LG)
             .with_vertical_padding(spacing::SM)
             .finish();
@@ -8900,6 +8950,215 @@ impl ClaudeCodeView {
     /// twarp 17 (PRODUCT 17 §1, §4–§5): the composer mic button, right of the
     /// paperclip. Idle → muted glyph; recording → pulsing accent glyph plus an
     /// m:ss elapsed label; transcribing → muted glyph plus an ellipsis label.
+    /// twarp 25 (PRODUCT 25 §25–§30): the floating call panel. A detached card
+    /// over the pane — the transcript stays visible and scrollable behind it.
+    /// Chrome surface class, so every value comes from `tokens.rs`.
+    fn render_call_panel(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+        let state = self.realtime.as_ref()?;
+        let theme = appearance.theme();
+        let accent = self.render_accent.get();
+        let muted = theme.nonactive_ui_text_color().into_solid();
+        let warn = twarp_core::ui::theme::Fill::warn().into_solid();
+        let speaking = self
+            .realtime_player
+            .as_ref()
+            .is_some_and(|player| player.is_active());
+
+        // §8: every label below is a real event, never an assumption. A
+        // connecting call must never claim to be listening.
+        let (status, status_color): (String, ColorU) = match state {
+            RealtimeState::Connecting => ("Connecting…".to_owned(), muted),
+            RealtimeState::Failed(message) => (message.clone(), warn),
+            RealtimeState::Live if self.realtime_muted => ("Muted".to_owned(), muted),
+            RealtimeState::Live if speaking => ("Speaking".to_owned(), accent),
+            RealtimeState::Live => ("Listening".to_owned(), accent),
+        };
+
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(spacing::SM);
+
+        // Title row: a live dot + the voice carrying the conversation.
+        let dot = ConstrainedBox::new(
+            Container::new(Empty::new().finish())
+                .with_background_color(match state {
+                    RealtimeState::Failed(_) => warn,
+                    RealtimeState::Connecting => muted,
+                    RealtimeState::Live => accent,
+                })
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                .finish(),
+        )
+        // Empty stubs lay out at the constraint's max, so the dot MUST be
+        // constrained on both axes or it fills the card.
+        .with_width(8.)
+        .with_height(8.)
+        .finish();
+        column.add_child(
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(spacing::SM)
+                .with_child(dot)
+                .with_child(
+                    appearance
+                        .ui_builder()
+                        .span("Voice".to_owned())
+                        .with_style(UiComponentStyles {
+                            font_color: Some(
+                                theme.main_text_color(theme.background()).into_solid(),
+                            ),
+                            font_size: Some(type_ramp::UI.size),
+                            ..Default::default()
+                        })
+                        .build()
+                        .finish(),
+                )
+                .with_child(
+                    appearance
+                        .ui_builder()
+                        .span(claude_code::codex::protocol::DEFAULT_REALTIME_VOICE.to_owned())
+                        .with_style(UiComponentStyles {
+                            font_color: Some(muted),
+                            font_size: Some(type_ramp::CAPTION.size),
+                            ..Default::default()
+                        })
+                        .build()
+                        .finish(),
+                )
+                .finish(),
+        );
+
+        // The status line — the panel's whole job.
+        column.add_child(
+            appearance
+                .ui_builder()
+                .wrappable_text(status, true)
+                .with_style(UiComponentStyles {
+                    font_color: Some(status_color),
+                    font_size: Some(type_ramp::LABEL.size),
+                    ..Default::default()
+                })
+                .build()
+                .finish(),
+        );
+
+        // Controls. A failed call offers Retry (the computer-control pattern);
+        // a live one offers Mute + End.
+        let mut controls = Flex::row()
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(spacing::SM);
+        match state {
+            RealtimeState::Failed(_) => {
+                controls.add_child(call_panel_button(
+                    appearance,
+                    "Retry",
+                    accent,
+                    self.call_retry_button_mouse.clone(),
+                    ClaudeCodeViewAction::RetryRealtimeCall,
+                ));
+                controls.add_child(call_panel_button(
+                    appearance,
+                    "Dismiss",
+                    muted,
+                    self.call_end_button_mouse.clone(),
+                    ClaudeCodeViewAction::ToggleRealtimeCall,
+                ));
+            }
+            _ => {
+                controls.add_child(call_panel_button(
+                    appearance,
+                    if self.realtime_muted {
+                        "Unmute"
+                    } else {
+                        "Mute"
+                    },
+                    muted,
+                    self.call_mute_button_mouse.clone(),
+                    ClaudeCodeViewAction::ToggleRealtimeMute,
+                ));
+                controls.add_child(call_panel_button(
+                    appearance,
+                    "End",
+                    warn,
+                    self.call_end_button_mouse.clone(),
+                    ClaudeCodeViewAction::ToggleRealtimeCall,
+                ));
+            }
+        }
+        column.add_child(controls.finish());
+
+        let card = Container::new(
+            Container::new(column.finish())
+                .with_padding(Padding::uniform(spacing::MD))
+                .finish(),
+        )
+        .with_background_color(theme.surface_1().into_solid())
+        .with_border(Border::all(border::HAIRLINE_WIDTH).with_border_fill(theme.outline()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::PANEL)))
+        .finish();
+        // A detached surface, so PANEL elevation — not the POPOVER shadow menus
+        // use.
+        let (offset_y, blur_radius, spread_radius, alpha) = elevation::PANEL;
+        let card = Container::new(card)
+            .with_drop_shadow(DropShadow {
+                color: ColorU::new(0, 0, 0, (alpha * 255.).round() as u8),
+                offset: vec2f(0., offset_y),
+                blur_radius,
+                spread_radius,
+            })
+            .finish();
+        // Both min AND max width: a positioned overlay child is measured
+        // against the whole pane's constraints and would otherwise stretch.
+        Some(
+            ConstrainedBox::new(card)
+                .with_min_width(200.)
+                .with_max_width(320.)
+                .finish(),
+        )
+    }
+
+    /// twarp 25 (PRODUCT 25 §5): the call button, right of the mic. Present
+    /// only on Codex panes — the provider that can hold a spoken conversation.
+    /// Accent while a call is up, muted otherwise; warn while failed.
+    fn render_call_button(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
+        if self.provider != AgentProvider::Codex {
+            return None;
+        }
+        let theme = appearance.theme();
+        let color = match &self.realtime {
+            Some(RealtimeState::Failed(_)) => twarp_core::ui::theme::Fill::warn().into_solid(),
+            Some(_) => self.render_accent.get(),
+            None => theme.nonactive_ui_text_color().into_solid(),
+        };
+        // Pulse only once the session is genuinely live (§8) — a connecting
+        // call must not look like a listening one.
+        let glyph: Box<dyn Element> = if matches!(self.realtime, Some(RealtimeState::Live)) {
+            PulsingIcon::new(
+                crate::ui_components::icons::Icon::Speaker.into(),
+                color,
+                self.mic_pulse.clone(),
+            )
+            .finish()
+        } else {
+            Icon::new(crate::ui_components::icons::Icon::Speaker.into(), color).finish()
+        };
+        Some(
+            Hoverable::new(self.call_button_mouse.clone(), move |_| {
+                ConstrainedBox::new(glyph)
+                    .with_width(16.)
+                    .with_height(16.)
+                    .finish()
+            })
+            .with_cursor(Cursor::PointingHand)
+            .on_click(|ctx, _, _| {
+                ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleRealtimeCall);
+            })
+            .finish(),
+        )
+    }
+
     fn render_mic_button(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
         let muted = theme.nonactive_ui_text_color().into_solid();
@@ -8960,43 +9219,6 @@ impl ClaudeCodeView {
             .finish()
     }
 
-    /// twarp 17 (PRODUCT 17 §12, §14): the speaker toggle right of the mic —
-    /// accent while on, muted while off.
-    fn render_speaker_button(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let theme = appearance.theme();
-        let muted = theme.nonactive_ui_text_color().into_solid();
-        let speaking = self
-            .voice_player
-            .as_ref()
-            .is_some_and(|player| player.is_active());
-        let color = if self.speak_replies {
-            self.render_accent.get()
-        } else {
-            muted
-        };
-        let glyph: Box<dyn Element> = if speaking && self.speak_replies {
-            PulsingIcon::new(
-                crate::ui_components::icons::Icon::Speaker.into(),
-                color,
-                self.mic_pulse.clone(),
-            )
-            .finish()
-        } else {
-            Icon::new(crate::ui_components::icons::Icon::Speaker.into(), color).finish()
-        };
-        Hoverable::new(self.speaker_button_mouse.clone(), move |_| {
-            ConstrainedBox::new(glyph)
-                .with_width(16.)
-                .with_height(16.)
-                .finish()
-        })
-        .with_cursor(Cursor::PointingHand)
-        .on_click(|ctx, _, _| {
-            ctx.dispatch_typed_action(ClaudeCodeViewAction::ToggleSpeakReplies);
-        })
-        .finish()
-    }
-
     fn render_input(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
         let muted = theme.nonactive_ui_text_color().into_solid();
@@ -9040,9 +9262,8 @@ impl ClaudeCodeView {
             let progress = self
                 .action_anim_started
                 .map(|started| {
-                    (started.elapsed().as_secs_f32()
-                        / ACTION_ANIM_DURATION.as_secs_f32())
-                    .clamp(0., 1.)
+                    (started.elapsed().as_secs_f32() / ACTION_ANIM_DURATION.as_secs_f32())
+                        .clamp(0., 1.)
                 })
                 .unwrap_or(1.);
             let eased = 1. - (1. - progress).powi(3);
@@ -9110,15 +9331,18 @@ impl ClaudeCodeView {
         // (model · effort, with context + MCP folded into its menu) and the
         // action circle, so the row fits every pane width without the old
         // per-density chip-dropping tiers.
-        let left = Flex::row()
+        let mut left = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(spacing::SM)
             .with_child(self.render_permission_control(appearance))
             .with_child(make_attach())
-            // twarp 17 (PRODUCT 17 §1, §12): voice input + spoken replies.
-            .with_child(self.render_mic_button(appearance))
-            .with_child(self.render_speaker_button(appearance))
-            .finish();
+            // twarp 17 (PRODUCT 17 §1): dictation into the composer.
+            .with_child(self.render_mic_button(appearance));
+        // twarp 25 (PRODUCT 25 §5): the spoken conversation, Codex-only.
+        if let Some(call) = self.render_call_button(appearance) {
+            left.add_child(call);
+        }
+        let left = left.finish();
         let right = Flex::row()
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -9264,13 +9488,31 @@ impl ClaudeCodeView {
             .filter(|menu| !(self.header_menu_expanded && menu.opens_downward()))
             .zip(self.render_composer_menu(appearance));
 
+        // twarp 25 §25: the call panel floats over the pane while a call is up.
+        let call_panel = self.render_call_panel(appearance);
+
         // Nothing floats over the composer — return it bare.
-        if scroll_button.is_none() && open_menu.is_none() {
+        if scroll_button.is_none() && open_menu.is_none() && call_panel.is_none() {
             return composer;
         }
 
         let mut stack = Stack::new();
         stack.add_child(composer);
+        // §25/§27: an *overlay* child so it paints above the transcript and its
+        // clicks land (the same hit-test reason as the scroll button below);
+        // the transcript keeps its own drag and wheel gestures because the
+        // panel only covers its own rect.
+        if let Some(panel) = call_panel {
+            stack.add_positioned_overlay_child(
+                panel,
+                OffsetPositioning::offset_from_parent(
+                    vec2f(TRANSCRIPT_GUTTER, -spacing::SM),
+                    ParentOffsetBounds::Unbounded,
+                    ParentAnchor::TopLeft,
+                    ChildAnchor::BottomLeft,
+                ),
+            );
+        }
         // Anchor the button's bottom-right just above the composer's top-right
         // (indented by the composer's own right gutter so it lines up with the
         // input card's edge). It rides with the centered, width-capped composer
@@ -9684,7 +9926,9 @@ impl TypedActionView for ClaudeCodeView {
             }
             ClaudeCodeViewAction::AttachFromPicker => self.open_attach_picker(ctx),
             ClaudeCodeViewAction::ToggleVoiceRecording => self.toggle_voice_recording(ctx),
-            ClaudeCodeViewAction::ToggleSpeakReplies => self.toggle_speak_replies(ctx),
+            ClaudeCodeViewAction::ToggleRealtimeCall => self.toggle_realtime_call(ctx),
+            ClaudeCodeViewAction::ToggleRealtimeMute => self.toggle_realtime_mute(ctx),
+            ClaudeCodeViewAction::RetryRealtimeCall => self.retry_realtime_call(ctx),
             ClaudeCodeViewAction::RemoveDirectAttachment(index) => {
                 if *index < self.direct_attachments.len() {
                     self.direct_attachments.remove(*index);
@@ -9699,11 +9943,11 @@ impl TypedActionView for ClaudeCodeView {
                 // differ from the render index.
                 let mut images = Vec::new();
                 let mut initial_index = 0;
-                let paths = self
-                    .pending_images
-                    .iter()
-                    .map(Some)
-                    .chain(self.direct_attachments.iter().map(|a| a.thumbnail_path.as_ref()));
+                let paths = self.pending_images.iter().map(Some).chain(
+                    self.direct_attachments
+                        .iter()
+                        .map(|a| a.thumbnail_path.as_ref()),
+                );
                 for (render_index, path) in paths.enumerate() {
                     let Some(path) = path else { continue };
                     if render_index == *index {
@@ -9715,9 +9959,7 @@ impl TypedActionView for ClaudeCodeView {
                                 path: path.display().to_string(),
                             },
                         },
-                        description: path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned()),
+                        description: path.file_name().map(|n| n.to_string_lossy().into_owned()),
                     });
                 }
                 if !images.is_empty() {
@@ -10174,7 +10416,6 @@ impl ClaudeCodeView {
                     text,
                     self.render_accent.get(),
                     appearance,
-                    None,
                 );
                 // #8: any images sent with this turn preview above the bubble.
                 let row = match self.sent_images.get(&index) {
@@ -10521,7 +10762,7 @@ impl ClaudeCodeView {
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(spacing::MD)
             .with_child(header)
-            .with_child(render_markdown_body(plan, text_color, appearance, None));
+            .with_child(render_markdown_body(plan, text_color, appearance));
 
         // The live controls only make sense while the session is still in plan
         // mode and idle; otherwise the card is a record of an approved/aborted
@@ -10796,7 +11037,6 @@ impl ClaudeCodeView {
                                 preview.trim(),
                                 text_color,
                                 appearance,
-                                None,
                             ))
                             .with_margin_top(spacing::XS)
                             .with_padding(Padding::uniform(spacing::SM))
@@ -11073,29 +11313,12 @@ fn pooled_mouse_state(
 /// the recording grows — see `pump_live_transcription`).
 const LIVE_STT_INTERVAL: Duration = Duration::from_millis(2500);
 
-/// twarp 17 §33: the karaoke state for the sentence currently being spoken —
-/// computed per render from the player position, applied as background
-/// highlights on the rendered prose.
-struct KaraokeHighlight {
-    /// Transcript index of the assistant item being spoken.
-    item_index: usize,
-    /// The (prose-form, trimmed) sentence currently audible.
-    sentence: String,
-    /// Chars of the sentence estimated already spoken (the "fill").
-    spoken_chars: usize,
-    /// Wash behind the whole active sentence.
-    sentence_color: ColorU,
-    /// Stronger wash behind the spoken prefix.
-    spoken_color: ColorU,
-}
-
 fn render_message_row(
     is_user: bool,
     icon_svg: &'static str,
     text: &str,
     accent: ColorU,
     appearance: &Appearance,
-    karaoke: Option<&KaraokeHighlight>,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
 
@@ -11109,7 +11332,7 @@ fn render_message_row(
         // Use the canvas foreground role so user messages stay readable in
         // both light and dark themes.
         let text_color = theme.main_text_color(theme.background()).into_solid();
-        let bubble = Container::new(render_markdown_body(text, text_color, appearance, None))
+        let bubble = Container::new(render_markdown_body(text, text_color, appearance))
             .with_padding(
                 Padding::uniform(spacing::SM)
                     .with_left(spacing::LG)
@@ -11155,8 +11378,7 @@ fn render_message_row(
         .with_child(
             Shrinkable::new(
                 1.,
-                Container::new(render_markdown_body(text, text_color, appearance, karaoke))
-                    .finish(),
+                Container::new(render_markdown_body(text, text_color, appearance)).finish(),
             )
             .finish(),
         );
@@ -11256,7 +11478,6 @@ fn render_markdown_body(
     text: &str,
     text_color: ColorU,
     appearance: &Appearance,
-    karaoke: Option<&KaraokeHighlight>,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
     let inline_code_bg = theme.surface_3().into_solid();
@@ -11276,22 +11497,10 @@ fn render_markdown_body(
     let mut column = Flex::column()
         .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
         .with_main_axis_size(MainAxisSize::Min);
-    // §33: the karaoke highlight lands on the first rendered line containing
-    // the spoken sentence; applied at most once across segments.
-    let mut karaoke = karaoke;
     for segment in split_markdown_segments(formatted) {
         let child = match segment {
             MarkdownSegment::Prose(formatted_text) => {
-                let line_texts: Vec<String> = karaoke
-                    .map(|_| {
-                        formatted_text
-                            .lines
-                            .iter()
-                            .map(|line| line.raw_text())
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let mut element = FormattedTextElement::new(
+                let element = FormattedTextElement::new(
                     formatted_text,
                     BODY_FONT_SIZE,
                     appearance.ui_font_family(),
@@ -11312,11 +11521,6 @@ fn render_markdown_body(
                 // inline_action.rs). FormattedTextElement carries the selection +
                 // copy machinery; it's just off by default.
                 .set_selectable(true);
-                if let Some(active) = karaoke {
-                    if apply_karaoke_highlight(&mut element, &line_texts, active) {
-                        karaoke = None;
-                    }
-                }
                 element.finish()
             }
             MarkdownSegment::Code(code) => render_code_block(&code, appearance),
@@ -11327,52 +11531,6 @@ fn render_markdown_body(
         column.add_child(child);
     }
     column.finish()
-}
-
-/// Paint the §33 karaoke washes over the rendered line containing the spoken
-/// sentence: a light wash over the whole sentence, a stronger one over the
-/// estimated spoken prefix. Char-index based, matching how hyperlink styles
-/// address the same lines. Returns whether the sentence was found.
-fn apply_karaoke_highlight(
-    element: &mut FormattedTextElement,
-    line_texts: &[String],
-    karaoke: &KaraokeHighlight,
-) -> bool {
-    let sentence_chars: Vec<char> = karaoke.sentence.chars().collect();
-    if sentence_chars.is_empty() {
-        return false;
-    }
-    for (line_index, line_text) in line_texts.iter().enumerate() {
-        let line_chars: Vec<char> = line_text.trim_end_matches('\n').chars().collect();
-        if line_chars.len() < sentence_chars.len() {
-            continue;
-        }
-        let Some(start) = (0..=line_chars.len() - sentence_chars.len())
-            .find(|&at| line_chars[at..at + sentence_chars.len()] == sentence_chars[..])
-        else {
-            continue;
-        };
-        let mut styles = Vec::new();
-        let spoken_end = start + karaoke.spoken_chars.min(sentence_chars.len());
-        if start < spoken_end {
-            styles.push(HighlightedRange {
-                highlight_indices: (start..spoken_end).collect(),
-                highlight: Highlight::new()
-                    .with_text_style(TextStyle::new().with_background_color(karaoke.spoken_color)),
-            });
-        }
-        if spoken_end < start + sentence_chars.len() {
-            styles.push(HighlightedRange {
-                highlight_indices: (spoken_end..start + sentence_chars.len()).collect(),
-                highlight: Highlight::new().with_text_style(
-                    TextStyle::new().with_background_color(karaoke.sentence_color),
-                ),
-            });
-        }
-        element.add_styles(line_index, styles);
-        return true;
-    }
-    false
 }
 
 /// Render a GFM table (PRODUCT §13) as a real grid — a bordered, rounded box
@@ -12246,6 +12404,55 @@ fn render_context_progress(fraction: f32, filled: ColorU, track: ColorU) -> Box<
 
 /// Black or white, whichever reads better on `bg` (#10) — for the primary
 /// button label on an arbitrary tab colour.
+/// twarp 25: one text button in the call panel. A pill, not a bordered card —
+/// a hairline would claim this is an actionable *artifact* rather than a
+/// control (PHILOSOPHY: "a border means you can act on this").
+fn call_panel_button(
+    appearance: &Appearance,
+    label: &str,
+    color: ColorU,
+    mouse: MouseStateHandle,
+    action: ClaudeCodeViewAction,
+) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let label = appearance
+        .ui_builder()
+        .span(label.to_owned())
+        .with_style(UiComponentStyles {
+            font_color: Some(color),
+            font_size: Some(type_ramp::LABEL.size),
+            ..Default::default()
+        })
+        .build()
+        .finish();
+    Hoverable::new(mouse, move |_| {
+        Container::new(label)
+            .with_padding_left(spacing::SM)
+            .with_padding_right(spacing::SM)
+            .with_padding_top(spacing::XS)
+            .with_padding_bottom(spacing::XS)
+            .with_background_color(theme.surface_2().into_solid())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CHIP)))
+            .finish()
+    })
+    .with_cursor(Cursor::PointingHand)
+    .on_click(move |ctx, _, _| {
+        ctx.dispatch_typed_action(action.clone());
+    })
+    .finish()
+}
+
+/// twarp 25 §14 (barge-in): whether a captured chunk is loud enough to be
+/// someone talking rather than room noise. Deliberately crude — this only
+/// decides when to duck the agent's audio, and the far side's own VAD decides
+/// what counts as a turn.
+fn speech_present(pcm: &[u8]) -> bool {
+    /// Peak amplitude (of i16::MAX) that counts as speech.
+    const SPEECH_PEAK: i16 = 2_000;
+    pcm.chunks_exact(2)
+        .any(|frame| i16::from_le_bytes([frame[0], frame[1]]).saturating_abs() > SPEECH_PEAK)
+}
+
 fn contrasting_text(bg: ColorU) -> ColorU {
     let luminance = 0.299 * bg.r as f32 + 0.587 * bg.g as f32 + 0.114 * bg.b as f32;
     if luminance > 150. {
@@ -12388,8 +12595,7 @@ fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> 
         merge_mcp_servers(
             &mut servers,
             crate::mcp_registry::McpRegistryModel::as_ref(app).claude_mcp_config_json(
-                &crate::plugin_registry::PluginRegistryModel::as_ref(app)
-                    .provider_toggles_by_id(),
+                &crate::plugin_registry::PluginRegistryModel::as_ref(app).provider_toggles_by_id(),
                 &crate::mcp_oauth::McpOauthModel::as_ref(app).access_tokens(),
             ),
         );

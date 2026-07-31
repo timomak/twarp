@@ -275,6 +275,35 @@ pub enum TranscriptEvent {
     /// own — the background-scripts view joins it back to the launching `Bash`
     /// card to retire the script's "running" status.
     TaskNotification(TaskNotification),
+    /// twarp 25: a realtime voice-conversation event. Carried on this stream
+    /// because it comes from the same app-server connection, but it is session
+    /// state and audio — not transcript content — so it never becomes a
+    /// [`TranscriptItem`] on its own. The spoken transcript arrives as ordinary
+    /// [`AssistantTextDelta`] / [`AssistantTextDone`] instead, so scrollback,
+    /// selection and copy keep working unchanged.
+    ///
+    /// [`AssistantTextDelta`]: TranscriptEvent::AssistantTextDelta
+    /// [`AssistantTextDone`]: TranscriptEvent::AssistantTextDone
+    Realtime(RealtimeEvent),
+}
+
+/// twarp 25: session-level events from a `thread/realtime/*` conversation.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RealtimeEvent {
+    /// The session is live — the *only* honest trigger for a "Listening" state
+    /// (PRODUCT 25 §7–§8).
+    Started,
+    /// A chunk of spoken output. `pcm` is s16le at `sample_rate`; the chunk
+    /// carries its own rate because nothing guarantees a fixed one.
+    Audio {
+        pcm: Vec<u8>,
+        sample_rate: u32,
+        channels: u16,
+    },
+    /// The provider's own failure text, shown verbatim (PRODUCT 25 §20).
+    Error(String),
+    /// The session ended, whether by `stop` or by the far side closing.
+    Closed,
 }
 
 /// One rendered item in the transcript. The panel owns an ordered `Vec` of
@@ -790,6 +819,10 @@ impl Transcript {
                     None => self.task_notifications.push(notification),
                 }
             }
+            // twarp 25: realtime session state and audio live in the view (the
+            // call panel and the player), not in the transcript model. The
+            // spoken words still land here, as ordinary assistant text.
+            TranscriptEvent::Realtime(_) => {}
             TranscriptEvent::Ended { reason } => match reason {
                 EndReason::Completed => {}
                 EndReason::Interrupted => {

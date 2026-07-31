@@ -32,6 +32,16 @@ Figma: none provided.
 - No voice features in the Raw CLI mode of the pane, the terminal, or other panes this pass.
 - macOS is the only supported platform this pass (matches twarp's mac-first posture).
 
+> **Superseded in part by feature 25 (2026-07-30).** The text-to-speech half of
+> this spec — the speaker toggle and spoken replies (§12–§18) plus the live
+> readout and karaoke amendments (§32–§33) — was **removed**, not re-tuned:
+> speaking the *rendered* reply is lossy by construction for a coding agent,
+> because the prose pass must delete the code, diffs and tables that carry the
+> meaning. Voice output now happens as a realtime spoken *conversation*; see
+> [../25-voice-conversation/PRODUCT.md](../25-voice-conversation/PRODUCT.md).
+> Everything else here — the mic button, dictation, live transcription
+> (§1–§11, §19–§20, §22–§23, §30–§31) — remains current and unchanged.
+
 ## Behavior
 
 ### Voice input (STT)
