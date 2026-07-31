@@ -923,6 +923,10 @@ pub struct ClaudeCodeView {
     /// adopts the resumed id. Synced from `init` thereafter. The raw-CLI
     /// toggle and the on-disk history refresh key off this.
     session_id: String,
+    /// twarp 26b: the session id this pane last published to the sessions MCP
+    /// registry — removed on drop, and when the id changes (SessionInit) so
+    /// no stale row lingers.
+    sessions_registry_key: Option<String>,
     /// Mouse state for the header's Raw CLI / Chat UI section toggle (PRODUCT
     /// §39, #7). One handle per segment.
     raw_cli_button: MouseStateHandle,
@@ -1454,6 +1458,7 @@ impl ClaudeCodeView {
             effort,
             resume_session_id: None,
             session_id,
+            sessions_registry_key: None,
             raw_cli_button: MouseStateHandle::default(),
             chat_ui_button: MouseStateHandle::default(),
             raw_cli: None,
@@ -1613,7 +1618,7 @@ impl ClaudeCodeView {
                 .apply(TranscriptEvent::UserMessage(prompt.clone()));
             let started = Instant::now();
             view.streaming = true;
-            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+            view.emit_tab_status_changed(ctx);
             view.turn_started = Some(started);
             view.schedule_elapsed_tick(started, ctx);
             view.begin_session(Some(OutgoingMessage::text(prompt)), ctx);
@@ -1640,6 +1645,10 @@ impl ClaudeCodeView {
         // Populate Environment for the pane's directory.
         view.refresh_repo_context(ctx);
         view.maybe_request_composer_placeholder_suggestion(ctx);
+
+        // twarp 26b: register the pane with the sessions MCP registry from
+        // birth — a freshly opened idle pane must show up in `list_sessions`.
+        view.publish_sessions_registry();
 
         view
     }
@@ -3174,7 +3183,7 @@ impl ClaudeCodeView {
         let started = Instant::now();
         self.streaming = true;
         self.animate_action_button(ctx);
-        ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+        self.emit_tab_status_changed(ctx);
         self.turn_started = Some(started);
         self.schedule_elapsed_tick(started, ctx);
         if self.codex_restore_pending {
@@ -3282,7 +3291,7 @@ impl ClaudeCodeView {
             let started = Instant::now();
             self.streaming = true;
             self.animate_action_button(ctx);
-            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+            self.emit_tab_status_changed(ctx);
             self.turn_started = Some(started);
             self.schedule_elapsed_tick(started, ctx);
         }
@@ -3452,7 +3461,7 @@ impl ClaudeCodeView {
                 let started = Instant::now();
                 self.streaming = true;
                 self.animate_action_button(ctx);
-                ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+                self.emit_tab_status_changed(ctx);
                 self.turn_started = Some(started);
                 self.schedule_elapsed_tick(started, ctx);
             }
@@ -3576,7 +3585,7 @@ impl ClaudeCodeView {
         let started = Instant::now();
         self.streaming = true;
         self.animate_action_button(ctx);
-        ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+        self.emit_tab_status_changed(ctx);
         self.turn_started = Some(started);
         self.schedule_elapsed_tick(started, ctx);
         let _ = tx.try_send(StdinCommand::Turn(message));
@@ -4017,7 +4026,7 @@ impl ClaudeCodeView {
                         NotificationsTrigger::NeedsAttention,
                         ctx,
                     );
-                    ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+                    self.emit_tab_status_changed(ctx);
                     ctx.notify();
                     return;
                 }
@@ -4055,12 +4064,12 @@ impl ClaudeCodeView {
         // AskUserQuestion path notified above and returned.
         if let TranscriptEvent::PermissionRequest { .. } = &event {
             self.maybe_send_attention_notification(NotificationsTrigger::NeedsAttention, ctx);
-            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+            self.emit_tab_status_changed(ctx);
         }
         // A background agent retiring can be what finally flips the tab from
         // the working spinner to the turn's ✓/✗ — repaint the tab bar.
         if matches!(&event, TranscriptEvent::TaskNotification(_)) {
-            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+            self.emit_tab_status_changed(ctx);
         }
         // twarp 25: session state and audio for the live call. Handled here and
         // NOT forwarded to the transcript model — the spoken words arrive
@@ -4128,7 +4137,7 @@ impl ClaudeCodeView {
                 success,
                 summary,
             });
-            ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+            self.emit_tab_status_changed(ctx);
         }
         // PRODUCT §53 (7m): a turn that completed cleanly (or was interrupted —
         // the session is still alive) dispatches the next queued message.
@@ -4252,6 +4261,9 @@ impl ClaudeCodeView {
             _ => {}
         }
         self.transcript.apply(event);
+        // twarp 26b: keep the sessions MCP registry's flat transcript (and
+        // status inputs derived from it) in lockstep with every applied event.
+        self.publish_sessions_registry();
     }
 
     /// The event stream closed — `claude`'s stdout reached EOF, so the process
@@ -4265,7 +4277,7 @@ impl ClaudeCodeView {
         self.streaming = false;
         self.animate_action_button(ctx);
         // 7p: the working spinner in the tab must stop with the stream.
-        ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+        self.emit_tab_status_changed(ctx);
         self.interrupt_pending = false;
         self.child = None;
         self.message_tx = None;
@@ -4632,40 +4644,53 @@ impl ClaudeCodeView {
     }
 
     /// The session state the tab indicator shows (7p), reusing the agent
-    /// indicator's status set: blocked-on-the-user outranks working, and an
-    /// idle pane shows the last turn's outcome until the user comes back to
-    /// it. `None` renders no indicator (a fresh or revisited idle pane).
+    /// indicator's status set. twarp 26b: the projection itself lives in
+    /// `sessions_mcp::status` — one pure function shared with the sessions
+    /// MCP registry, so `list_sessions` status can never disagree with the
+    /// tab (PRODUCT 26 P#4).
     pub fn tab_status(&self) -> Option<ConversationStatus> {
-        if self.streaming
-            && (!self.pending_question_permission.is_empty()
-                || self.transcript.has_pending_prompt())
-        {
-            return Some(ConversationStatus::Blocked {});
+        crate::sessions_mcp::status::conversation_status(self.status_inputs())
+    }
+
+    /// The live signals the shared status projection reads (26b).
+    fn status_inputs(&self) -> crate::sessions_mcp::status::StatusInputs {
+        crate::sessions_mcp::status::StatusInputs {
+            streaming: self.streaming,
+            blocked_on_user: !self.pending_question_permission.is_empty()
+                || self.transcript.has_pending_prompt(),
+            has_active_background_work: self.has_active_background_work(),
+            tab_attention: self.tab_attention,
+            tab_attention_seen: self.tab_attention_seen,
         }
-        if self.streaming {
-            return Some(ConversationStatus::InProgress);
-        }
-        // A turn can end while background sub-agents are still working — the
-        // session stays live between turns and delivers their terminal state
-        // as task notifications. Until the last one retires, the tab keeps
-        // the working spinner rather than declaring the turn complete. Gated
-        // on a live process: once `claude` is gone no notification can ever
-        // arrive, so a Running agent in a dead/restored transcript must not
-        // pin the spinner forever.
-        if self.has_active_background_work() {
-            return Some(ConversationStatus::InProgress);
-        }
-        self.tab_attention.map(|succeeded| {
-            if succeeded {
-                if self.tab_attention_seen {
-                    ConversationStatus::Success
-                } else {
-                    ConversationStatus::SuccessUnseen
-                }
-            } else {
-                ConversationStatus::Error
+    }
+
+    /// twarp 26b: mirror this pane into the sessions MCP registry. Called
+    /// wherever the tab repaints ([`Self::emit_tab_status_changed`]) and on
+    /// every ingested transcript event, so the registry's status and flat
+    /// transcript stay in lockstep with the UI.
+    fn publish_sessions_registry(&mut self) {
+        let registry = crate::sessions_mcp::registry::SessionRegistry::global();
+        if let Some(previous) = self.sessions_registry_key.take() {
+            if previous != self.session_id {
+                registry.remove(&previous);
             }
-        })
+        }
+        self.sessions_registry_key = Some(self.session_id.clone());
+        registry.publish(
+            &self.session_id,
+            self.provider.as_persistence_str(),
+            self.cwd.clone(),
+            self.derived_tab_title(),
+            crate::sessions_mcp::status::session_status(self.status_inputs()),
+            crate::sessions_mcp::registry::flatten_transcript(self.transcript.items()),
+        );
+    }
+
+    /// Every tab-status repaint publishes to the sessions registry first
+    /// (P#4: the two derive from the same signal at the same moment).
+    fn emit_tab_status_changed(&mut self, ctx: &mut ViewContext<Self>) {
+        self.publish_sessions_registry();
+        ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
     }
 
     /// Whether background scripts or sub-agents launched by this chat are still
@@ -4695,7 +4720,7 @@ impl ClaudeCodeView {
         self.tab_attention = Some(true);
         self.tab_attention_seen = false;
         self.maybe_send_attention_notification(NotificationsTrigger::AgentTaskCompleted(true), ctx);
-        ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+        self.emit_tab_status_changed(ctx);
     }
 
     /// The user has seen the pane (7p): a failure's ✗ is dropped, and a
@@ -4707,12 +4732,12 @@ impl ClaudeCodeView {
         match self.tab_attention {
             Some(true) if !self.tab_attention_seen => {
                 self.tab_attention_seen = true;
-                ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+                self.emit_tab_status_changed(ctx);
                 ctx.notify();
             }
             Some(false) => {
                 self.tab_attention = None;
-                ctx.emit(ClaudeCodeViewEvent::TabStatusChanged);
+                self.emit_tab_status_changed(ctx);
                 ctx.notify();
             }
             _ => {}
@@ -5684,6 +5709,8 @@ impl ClaudeCodeView {
         }
         self.resume_session_id = Some(session.id.clone());
         self.session_id = session.id;
+        // twarp 26b: re-key the sessions MCP registry row under the resumed id.
+        self.publish_sessions_registry();
         // The panel is gone the moment the transcript has content.
         self.recent_sessions = Vec::new();
         self.recent_session_mouse.borrow_mut().clear();
@@ -9831,6 +9858,10 @@ impl View for ClaudeCodeView {
 impl Drop for ClaudeCodeView {
     fn drop(&mut self) {
         self.computer_control.borrow_mut().stop();
+        // twarp 26b: a closed pane must vanish from `list_sessions`.
+        if let Some(key) = self.sessions_registry_key.take() {
+            crate::sessions_mcp::registry::SessionRegistry::global().remove(&key);
+        }
     }
 }
 
@@ -12615,6 +12646,13 @@ fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> 
                     .mcp_config_json_for_session(session_id),
             );
         }
+        // twarp 26b: sessions/projects read surface, session-scoped like the
+        // others (PRODUCT 26 P#19).
+        merge_mcp_servers(
+            &mut servers,
+            crate::sessions_mcp::SessionsMcpBridge::as_ref(app)
+                .mcp_config_json_for_session(session_id),
+        );
 
         (!servers.is_empty()).then(|| serde_json::json!({ "mcpServers": servers }).to_string())
     }
