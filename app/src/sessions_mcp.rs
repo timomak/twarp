@@ -11,7 +11,10 @@
 
 #[cfg(not(target_family = "wasm"))]
 pub(crate) mod events;
+#[cfg(not(target_family = "wasm"))]
+pub(crate) mod external;
 pub(crate) mod registry;
+pub(crate) mod spawn;
 pub(crate) mod status;
 #[cfg(not(target_family = "wasm"))]
 pub(crate) mod store;
@@ -20,3 +23,11 @@ pub(crate) mod store;
 mod bridge;
 #[cfg(not(target_family = "wasm"))]
 pub(crate) use bridge::SessionsMcpBridge;
+pub(crate) use spawn::SpawnOrigin;
+
+/// Default port for the external listener, as a `usize` for the settings
+/// macro (the listener itself uses [`external::DEFAULT_EXTERNAL_PORT`]).
+/// Lives here (cfg-free) so wasm builds of the settings group compile.
+pub(crate) fn external_default_port() -> usize {
+    8377
+}

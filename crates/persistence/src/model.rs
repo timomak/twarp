@@ -739,6 +739,9 @@ pub struct ClaudeCodePane {
     pub cwd: Option<String>,
     /// Runtime provider for this pane. Existing/unknown rows restore as Claude.
     pub provider: String,
+    /// twarp 26d: JSON-encoded spawn provenance for panes created via the
+    /// sessions MCP `create_chat` tool; NULL for user-opened panes.
+    pub spawn_origin: Option<String>,
 }
 
 #[derive(Insertable)]
@@ -748,6 +751,7 @@ pub struct NewClaudeCodePane {
     pub session_id: Option<String>,
     pub cwd: Option<String>,
     pub provider: String,
+    pub spawn_origin: Option<String>,
 }
 
 #[derive(Identifiable, Queryable, Selectable)]

@@ -258,6 +258,11 @@ impl PaneContent for ClaudeCodePane {
             session_id: has_session.then_some(session_id),
             cwd: cwd.map(|p| p.to_string_lossy().into_owned()),
             provider,
+            // twarp 26d: persist the spawn provenance so the header badge
+            // survives restore (PRODUCT 26 P#22).
+            spawn_origin: view
+                .spawn_origin()
+                .and_then(|origin| serde_json::to_string(origin).ok()),
         })
     }
 

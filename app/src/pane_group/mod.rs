@@ -1929,8 +1929,19 @@ impl PaneGroup {
                     resume_session_id: Some(session_id),
                     ..Default::default()
                 };
-                let pane: Box<dyn AnyPaneContent + 'static> =
-                    Box::new(ClaudeCodePane::new_resume(resume, launch, cwd, ctx));
+                let pane = ClaudeCodePane::new_resume(resume, launch, cwd, ctx);
+                // twarp 26d: restore the spawn-provenance badge (PRODUCT 26
+                // P#22). A corrupt/unknown payload restores as no badge.
+                if let Some(origin) = snapshot
+                    .spawn_origin
+                    .as_deref()
+                    .and_then(|json| serde_json::from_str(json).ok())
+                {
+                    pane.claude_code_view(ctx).update(ctx, |view, ctx| {
+                        view.set_spawn_origin(Some(origin), ctx);
+                    });
+                }
+                let pane: Box<dyn AnyPaneContent + 'static> = Box::new(pane);
                 let pane_id = pane.as_pane().id();
                 pane_contents.insert(pane_id, pane);
                 let focus = InitialFocus {

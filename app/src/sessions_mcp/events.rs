@@ -281,7 +281,7 @@ mod tests {
         status: SessionStatus,
         items: Vec<FlatTranscriptItem>,
     ) {
-        registry.publish(id, "claude", None, "t".to_owned(), status, items);
+        registry.publish(id, "claude", None, "t".to_owned(), status, items, None);
     }
 
     /// P#10/#11: the wait resolves exactly when the registry status flips to

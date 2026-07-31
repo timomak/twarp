@@ -51,8 +51,8 @@ The "user" here is an agent (MCP client): either an agent inside a twarp pane, o
 
 ### Projects
 
-17. `list_projects` returns each sidebar project's `name`, `color`, `cwd`, and the count of its sessions.
-18. `create_project(name, cwd, color?)` creates a sidebar project exactly as if made through the UI and returns it. Duplicate name for the same cwd errors; omitted `color` gets the same default the UI would assign. The new project appears in the sidebar immediately.
+17. `list_projects` returns each sidebar project's `name`, `color` (always null — projects have no persisted color), `cwd`, and the count of its sessions.
+18. `create_project(name, cwd, color?)` creates a sidebar project exactly as if made through the UI and returns it. A project already registered for the same folder is a duplicate and errors. twarp projects have no persisted color (color is a per-tab property), so `color` is accepted but ignored and the returned `color` is null — same as `list_projects` (17). The new project appears in the sidebar immediately.
 
 ### Surfaces, exposure, and auth
 
@@ -62,7 +62,7 @@ The "user" here is an agent (MCP client): either an agent inside a twarp pane, o
 
 ### Safety and provenance
 
-22. A pane created via `create_chat` shows a provenance badge in its header identifying the creator (the parent session's title, or "external: fleet"-style consumer label). The badge persists for the pane's lifetime and across restore.
+22. A pane created via `create_chat` shows a provenance badge in its header identifying the creator (the parent session's title, or an "external: …" label — the bearer token carries no consumer identity today, so external creations are labeled "external"). The badge persists for the pane's lifetime and across restore.
 23. Spawn cap: at most N concurrently *running* created sessions (default 4, configurable). At the cap, `create_chat` fails immediately with a distinct at-capacity error naming the limit; nothing is queued.
 24. Spawn depth: each created session records depth = parent's depth + 1 (user- or external-created = 0/1). Depth ≥ 3 is refused with a distinct error, so a runaway agent-spawning chain halts by construction.
 25. Session-scoped reads behave like the other built-in servers: tools are stamped with the calling session, and monitoring another session never steals its focus, moves its pane, or marks its attention state as seen.

@@ -129,6 +129,7 @@ diesel::table! {
         session_id -> Nullable<Text>,
         cwd -> Nullable<Text>,
         provider -> Text,
+        spawn_origin -> Nullable<Text>,
     }
 }
 
