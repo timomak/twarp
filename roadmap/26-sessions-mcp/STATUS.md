@@ -7,4 +7,4 @@ Phase: **26d implemented**
 - 26c events (`watch_session`, `wait_for_completion` + registry broadcast channels) — impl done 2026-07-31 (`app/src/sessions_mcp/events.rs` + registry/bridge), unit tests green; in-app smoke pending
 - 26d spawning + projects + external token-gated listener (`create_chat`, `create_project`, settings) — impl done 2026-07-31 (spawn reservation in the registry, provenance chip + persisted origin, fixed-port token-gated listener + Agents-page rows), unit tests green; in-app smoke pending
 - 26e Codex built-in-server injection parity — not started
-- 26f fleet UX-gate adoption (replaces uidrive injection) — not started
+- 26f fleet UX-gate adoption (prefers sessions MCP over uidrive injection) — impl done 2026-07-31 (`fleet/fleet.py`: settings/token pre-seed, 401 preflight, `--mcp-config` + `ssh -L` driver path, `live-mcp` provenance; pure-helper tests in `fleet/test_fleet_policy.py` green). **Acceptance gate pending:** one full live fleet UX-gate round over the new surface (needs an owner/fleet run on the display node).

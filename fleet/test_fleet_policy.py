@@ -119,5 +119,61 @@ class FleetWriteTargetTests(unittest.TestCase):
                 fleet.require_fork_origin("worker")
 
 
+
+class FleetUxMcpTests(unittest.TestCase):
+    """26f: the UX gate's sessions-MCP path — pure helpers only (no app, no SSH)."""
+
+    def test_mcp_config_shape_includes_sse_url_and_bearer_header(self):
+        conf = fleet.ux_mcp_config(8377, "tok123")
+
+        server = conf["mcpServers"]["twarp-sessions"]
+        self.assertEqual(server["type"], "sse")
+        self.assertEqual(server["url"], "http://127.0.0.1:8377/sse")
+        self.assertEqual(server["headers"]["Authorization"], "Bearer tok123")
+
+    def test_mcp_config_uses_forwarded_local_port(self):
+        conf = fleet.ux_mcp_config(54321, "t")
+
+        self.assertIn(":54321/", conf["mcpServers"]["twarp-sessions"]["url"])
+
+    def test_preflight_accepts_401_probe_with_token(self):
+        use_mcp, why = fleet.ux_mcp_decision("401", "sometoken\n")
+
+        self.assertTrue(use_mcp)
+        self.assertIn("listener up", why)
+
+    def test_preflight_rejects_missing_token(self):
+        for token in ("", None, "  \n"):
+            with self.subTest(token=token):
+                use_mcp, why = fleet.ux_mcp_decision("401", token)
+                self.assertFalse(use_mcp)
+                self.assertIn("token", why)
+
+    def test_preflight_rejects_non_401_probe(self):
+        for status in ("", "000", "200", "404", "  "):
+            with self.subTest(status=status):
+                use_mcp, why = fleet.ux_mcp_decision(status, "tok")
+                self.assertFalse(use_mcp)
+                self.assertIn("probe", why)
+
+    def test_both_drive_levels_count_as_live(self):
+        self.assertTrue(fleet.ux_level_is_live("live"))
+        self.assertTrue(fleet.ux_level_is_live("live-mcp"))
+        for level in ("bootstrap", "none", None):
+            self.assertFalse(fleet.ux_level_is_live(level))
+
+    def test_drive_prompt_formats_with_and_without_mcp_section(self):
+        base = dict(shot="/s", act="/a", final="/f.png", criteria="c", diff="d")
+
+        plain = fleet.UX_DRIVE_PROMPT.format(mcp="", **base)
+        self.assertNotIn("twarp-sessions", plain)
+
+        mcp = fleet.UX_MCP_PROMPT_SECTION.format(shot="/s", act="/a")
+        full = fleet.UX_DRIVE_PROMPT.format(mcp=mcp, **base)
+        self.assertIn("twarp-sessions", full)
+        self.assertIn("create_chat", full)
+        self.assertIn("wait_for_completion", full)
+
+
 if __name__ == "__main__":
     unittest.main()
