@@ -134,6 +134,11 @@ pub enum WorkspaceAction {
     RenameProject {
         project_root: std::path::PathBuf,
     },
+    /// Removes a project from the Projects sidebar library, closing any of its
+    /// open tabs first. Sessions remain resumable from past sessions.
+    DeleteProject {
+        project_root: std::path::PathBuf,
+    },
     RenamePane(PaneViewLocator),
     ResetPaneName(PaneViewLocator),
     RenameActiveTab,
@@ -161,6 +166,12 @@ pub enum WorkspaceAction {
     },
     ToggleProjectChatRightClickMenu {
         tab_index: usize,
+        anchor: TabContextMenuAnchor,
+    },
+    /// Context menu for a library project row (no open tabs), opened from the
+    /// row's hover "…" button or right-click.
+    ToggleLibraryProjectRightClickMenu {
+        path: PathBuf,
         anchor: TabContextMenuAnchor,
     },
     ToggleVerticalTabsPaneContextMenu {
@@ -792,6 +803,7 @@ impl WorkspaceAction {
             | RenameTab(_)
             | ResetTabName(_)
             | RenameProject { .. }
+            | DeleteProject { .. }
             | RenamePane(_)
             | ResetPaneName(_)
             | RenameActiveTab
@@ -872,6 +884,7 @@ impl WorkspaceAction {
             | ToggleTabRightClickMenu { .. }
             | ToggleProjectRightClickMenu { .. }
             | ToggleProjectChatRightClickMenu { .. }
+            | ToggleLibraryProjectRightClickMenu { .. }
             | ToggleProjectsSearch
             | ToggleProjectCreateMenu { .. }
             | ToggleProjectExpanded(_)

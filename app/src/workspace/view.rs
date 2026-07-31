@@ -6425,6 +6425,78 @@ impl Workspace {
         ctx.notify();
     }
 
+    /// Context menu for a library project row. Library rows have no backing
+    /// tab, so the items are built here rather than on `Tab`.
+    pub fn toggle_library_project_right_click_menu(
+        &mut self,
+        path: PathBuf,
+        anchor: TabContextMenuAnchor,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.show_tab_right_click_menu.is_some() {
+            self.show_tab_right_click_menu = None;
+            ctx.notify();
+            return;
+        }
+
+        let menu_items = vec![
+            MenuItemFields::new("Rename project")
+                .with_on_select_action(WorkspaceAction::RenameProject {
+                    project_root: path.clone(),
+                })
+                .into_item(),
+            MenuItemFields::new("Delete project")
+                .with_on_select_action(WorkspaceAction::DeleteProject { project_root: path })
+                .into_item(),
+        ];
+        ctx.update_view(&self.tab_right_click_menu, |context_menu, view_ctx| {
+            context_menu.set_items(menu_items, view_ctx);
+        });
+        // Library rows have no tab index; the index is only consulted for the
+        // vertical-tabs kebab anchor, which pointer anchors never hit.
+        self.show_tab_right_click_menu = Some((0, anchor));
+        ctx.focus(&self.tab_right_click_menu);
+        ctx.notify();
+    }
+
+    /// Deletes a project from the library: closes any tabs open on the
+    /// project, then drops its row (and custom name) from the model + DB.
+    pub fn delete_project(&mut self, project_root: PathBuf, ctx: &mut ViewContext<Self>) {
+        if self.project_being_renamed.as_ref() == Some(&project_root) {
+            self.cancel_project_rename(ctx);
+        }
+        let open_tab_indices: Vec<usize> = self
+            .tabs
+            .iter()
+            .enumerate()
+            .filter(|(_, tab)| tab.project_root.as_ref() == Some(&project_root))
+            .map(|(index, _)| index)
+            .collect();
+        if let Some(first_index) = open_tab_indices.first().copied() {
+            // Deleting the project is itself the explicit destructive gesture,
+            // so the batch close skips the per-tab confirmation dialogs; the
+            // closed tabs land on the undo stack and their sessions stay
+            // resumable. Batch-closing (vs. a close_tab loop) keeps the
+            // indices coherent — single closes shift later indices.
+            let closed = self.close_tabs(
+                open_tab_indices.iter().copied(),
+                OpenDialogSource::CloseTab {
+                    tab_index: first_index,
+                },
+                true,
+                true,
+                ctx,
+            );
+            if !closed {
+                return;
+            }
+        }
+        ProjectManagementModel::handle(ctx).update(ctx, |model, ctx| {
+            model.remove_project(project_root, ctx);
+        });
+        ctx.notify();
+    }
+
     pub fn toggle_vertical_tabs_pane_context_menu(
         &mut self,
         tab_index: usize,
@@ -20032,6 +20104,7 @@ impl TypedActionView for Workspace {
             MoveTabRight(index) => self.move_tab(*index, TabMovement::Right, ctx),
             RenameTab(index) => self.rename_tab(*index, ctx),
             RenameProject { project_root } => self.rename_project(project_root.clone(), ctx),
+            DeleteProject { project_root } => self.delete_project(project_root.clone(), ctx),
             ResetTabName(index) => self.clear_tab_name(*index, ctx),
             RenamePane(locator) => self.rename_pane(*locator, ctx),
             ResetPaneName(locator) => self.clear_pane_name(*locator, ctx),
@@ -20122,6 +20195,9 @@ impl TypedActionView for Workspace {
             }
             ToggleProjectChatRightClickMenu { tab_index, anchor } => {
                 self.toggle_project_chat_right_click_menu(*tab_index, *anchor, ctx)
+            }
+            ToggleLibraryProjectRightClickMenu { path, anchor } => {
+                self.toggle_library_project_right_click_menu(path.clone(), *anchor, ctx)
             }
             ToggleVerticalTabsPaneContextMenu {
                 tab_index,

@@ -297,7 +297,14 @@ impl TabData {
         if let Some(project_root) = self.project_root.clone() {
             menu_items.push(
                 MenuItemFields::new("Rename project")
-                    .with_on_select_action(WorkspaceAction::RenameProject { project_root })
+                    .with_on_select_action(WorkspaceAction::RenameProject {
+                        project_root: project_root.clone(),
+                    })
+                    .into_item(),
+            );
+            menu_items.push(
+                MenuItemFields::new("Delete project")
+                    .with_on_select_action(WorkspaceAction::DeleteProject { project_root })
                     .into_item(),
             );
             menu_items.push(MenuItem::Separator);

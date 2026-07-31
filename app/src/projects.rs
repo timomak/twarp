@@ -15,8 +15,10 @@ pub enum ProjectEvent {
         #[expect(unused, reason = "TODO(jparker): #pod-code-mode wip")]
         path: PathBuf,
     },
-    #[expect(unused, reason = "TODO(jparker): #pod-code-mode wip")]
-    Removed { path: PathBuf },
+    Removed {
+        #[expect(unused, reason = "listeners re-read the model on notify")]
+        path: PathBuf,
+    },
     Updated {
         #[expect(unused, reason = "listeners re-read the model on notify")]
         path: PathBuf,
@@ -146,6 +148,25 @@ impl ProjectManagementModel {
         };
         self.save_project(project);
         ctx.emit(ProjectEvent::Updated { path });
+    }
+
+    /// Removes a project from the library and deletes its row from the
+    /// database. Sessions under the project are untouched — only the library
+    /// entry (and its custom name/metadata) is dropped.
+    pub fn remove_project(&mut self, path: PathBuf, ctx: &mut ModelContext<Self>) {
+        let path = project_identity(path);
+        if self.projects.remove(&path).is_none() {
+            return;
+        }
+        if let Some(sender) = &self.model_event_sender {
+            let event = ModelEvent::DeleteProject {
+                path: path.to_string_lossy().into_owned(),
+            };
+            if let Err(err) = sender.send(event) {
+                log::error!("Failed to delete project from database: {err}");
+            }
+        }
+        ctx.emit(ProjectEvent::Removed { path });
     }
 
     pub fn all_projects(&self) -> impl Iterator<Item = &Project> {

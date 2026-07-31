@@ -863,6 +863,16 @@ impl Workspace {
                 ctx.dispatch_typed_action(WorkspaceAction::RenameProject { project_root })
             }
         })
+        .on_right_click({
+            let tab_indices = tab_indices.to_vec();
+            move |ctx, _, position| {
+                ctx.dispatch_typed_action(WorkspaceAction::ToggleProjectRightClickMenu {
+                    tab_index: selected_index,
+                    tab_indices: tab_indices.clone(),
+                    anchor: TabContextMenuAnchor::Pointer(position),
+                })
+            }
+        })
         .with_defer_events_to_children()
         .with_cursor(Cursor::PointingHand)
         .finish();
@@ -1094,21 +1104,56 @@ impl Workspace {
             .hovered_project_pane_drop_target
             .as_ref()
             .is_some_and(|target| target == &pane_drop_target);
-        let row_mouse_state = self
+        let ProjectRowMouseStates {
+            row: row_mouse_state,
+            menu: menu_mouse_state,
+            new_chat: _,
+        } = self
             .projects_sidebar_mouse_states
-            .project_row(Some(path.clone()))
-            .row;
+            .project_row(Some(path.clone()));
+        let pane_drag_active = self.project_pane_drag_active(app);
+        let menu_path = path.clone();
         let row = Hoverable::new(row_mouse_state, move |state| {
             let identity = Container::new(sidebar_icon(Icon::CircleFilled, color))
                 .with_padding_left(spacing::XS)
                 .finish();
-            let contents = Flex::row()
+            let mut contents = Flex::row()
                 .with_main_axis_size(MainAxisSize::Max)
+                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_spacing(spacing::SM)
-                .with_child(identity)
-                .with_child(Shrinkable::new(1., labels.finish()).finish())
+                .with_child(
+                    Flex::row()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_spacing(spacing::SM)
+                        .with_child(identity)
+                        .with_child(Shrinkable::new(1., labels.finish()).finish())
+                        .finish(),
+                );
+            if state.is_hovered() && !pane_drag_active {
+                let menu_path = menu_path.clone();
+                let menu = Hoverable::new(menu_mouse_state.clone(), move |button_state| {
+                    let color = if button_state.is_hovered() {
+                        theme.main_text_color(theme.background())
+                    } else {
+                        theme.sub_text_color(theme.background())
+                    };
+                    Container::new(sidebar_icon(Icon::DotsHorizontal, color))
+                        .with_padding_left(spacing::XS)
+                        .with_padding_right(spacing::XS)
+                        .finish()
+                })
+                .on_click(move |ctx, _, position| {
+                    ctx.dispatch_typed_action(WorkspaceAction::ToggleLibraryProjectRightClickMenu {
+                        path: menu_path.clone(),
+                        anchor: TabContextMenuAnchor::Pointer(position),
+                    })
+                })
+                .with_cursor(Cursor::PointingHand)
                 .finish();
+                contents.add_child(menu);
+            }
+            let contents = contents.finish();
             let mut container = Container::new(contents)
                 .with_padding_left(spacing::SM)
                 .with_padding_right(spacing::SM)
@@ -1130,9 +1175,18 @@ impl Workspace {
                 })
             }
         })
-        .on_double_click(move |ctx, _, _| {
-            ctx.dispatch_typed_action(WorkspaceAction::RenameProject {
-                project_root: path.clone(),
+        .on_double_click({
+            let path = path.clone();
+            move |ctx, _, _| {
+                ctx.dispatch_typed_action(WorkspaceAction::RenameProject {
+                    project_root: path.clone(),
+                })
+            }
+        })
+        .on_right_click(move |ctx, _, position| {
+            ctx.dispatch_typed_action(WorkspaceAction::ToggleLibraryProjectRightClickMenu {
+                path: path.clone(),
+                anchor: TabContextMenuAnchor::Pointer(position),
             })
         })
         .with_cursor(Cursor::PointingHand)
