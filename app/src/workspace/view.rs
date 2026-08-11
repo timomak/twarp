@@ -3370,7 +3370,13 @@ impl Workspace {
                         self.tabs[tab_index].default_directory_color =
                             saved_tab.default_directory_color;
                         self.tabs[tab_index].selected_color = saved_tab.selected_color;
-                        self.tabs[tab_index].project_root = saved_tab.project_root.clone();
+                        // Canonicalize on restore: snapshots from older builds
+                        // may hold raw roots that no longer match the
+                        // canonical library keys.
+                        self.tabs[tab_index].project_root = saved_tab
+                            .project_root
+                            .clone()
+                            .map(crate::projects::project_identity);
                         self.tabs[tab_index].project_root_initialized =
                             saved_tab.project_root_initialized;
                         if let Some(project_root) = saved_tab.project_root.clone() {
@@ -6462,6 +6468,10 @@ impl Workspace {
     /// Deletes a project from the library: closes any tabs open on the
     /// project, then drops its row (and custom name) from the model + DB.
     pub fn delete_project(&mut self, project_root: PathBuf, ctx: &mut ViewContext<Self>) {
+        // The menu's path may be the canonical library key while open tabs
+        // hold a raw (e.g. symlinked) root; compare canonicalized identities
+        // so the live group closes along with the library row.
+        let project_root = crate::projects::project_identity(project_root);
         if self.project_being_renamed.as_ref() == Some(&project_root) {
             self.cancel_project_rename(ctx);
         }
@@ -6469,7 +6479,11 @@ impl Workspace {
             .tabs
             .iter()
             .enumerate()
-            .filter(|(_, tab)| tab.project_root.as_ref() == Some(&project_root))
+            .filter(|(_, tab)| {
+                tab.project_root
+                    .clone()
+                    .is_some_and(|root| crate::projects::project_identity(root) == project_root)
+            })
             .map(|(index, _)| index)
             .collect();
         if let Some(first_index) = open_tab_indices.first().copied() {
@@ -9897,6 +9911,23 @@ impl Workspace {
             return;
         };
 
+        // Archiving the last open session of a rooted project must not make
+        // the project disappear: ensure it has a library entry so a library
+        // row remains in the sidebar. (Deleting a project explicitly removes
+        // the entry again after its tabs close.)
+        if let Some(project_root) = tab_data.project_root.clone() {
+            let other_sessions_in_project = self
+                .tabs
+                .iter()
+                .enumerate()
+                .any(|(i, tab)| i != index && tab.project_root.as_ref() == Some(&project_root));
+            if !other_sessions_in_project {
+                ProjectManagementModel::handle(ctx).update(ctx, |projects, ctx| {
+                    projects.upsert_project(project_root, ctx);
+                });
+            }
+        }
+
         // If the vertical-tabs detail sidecar is anchored to this tab's pane group, clear it.
         // Otherwise it will try to position itself against a pane row that is about to disappear
         // (either because the tab is being removed from `self.tabs`, or because we're about to
@@ -10725,7 +10756,20 @@ impl Workspace {
                 .color_for_directory(root)
                 .and_then(|color| color.ansi_color())
         });
-        let insert_index = target.tab_insert_index.min(self.tabs.len());
+        // `target.tab_insert_index` was computed at render time and can be
+        // stale by drop time (removing the source pane may have collapsed a
+        // tab). Re-derive the index from the target project's current tabs so
+        // the new session lands inside the right group.
+        let insert_index = target
+            .project_root
+            .as_ref()
+            .and_then(|root| {
+                self.tabs
+                    .iter()
+                    .rposition(|tab| tab.project_root.as_ref() == Some(root))
+                    .map(|index| index + 1)
+            })
+            .unwrap_or_else(|| target.tab_insert_index.min(self.tabs.len()));
 
         self.add_tab_from_existing_pane(pane, insert_index, ctx);
         let active_index = self.active_tab_index;
@@ -10746,6 +10790,72 @@ impl Workspace {
         }
         let pane_group = self.tabs[active_index].pane_group.clone();
         self.refresh_working_directories_for_pane_group(&pane_group, ctx);
+        ctx.dispatch_global_action("workspace:save_app", ());
+        ctx.notify();
+    }
+
+    /// Moves an open session (sidebar row drop) into another project by
+    /// reassigning its `project_root`. Sidebar grouping is derived from
+    /// `project_root`, so no tab reordering is needed for the row to join the
+    /// target group.
+    fn move_tab_to_project(
+        &mut self,
+        tab_index: usize,
+        target: ProjectSidebarPaneDropTarget,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.hovered_project_pane_drop_target = None;
+        let Some(tab) = self.tabs.get(tab_index) else {
+            ctx.notify();
+            return;
+        };
+        if tab.project_root == target.project_root {
+            ctx.notify();
+            return;
+        }
+        if let Some(root) = target.project_root.as_ref() {
+            if !(root.is_dir() && std::fs::read_dir(root).is_ok()) {
+                let window_id = ctx.window_id();
+                ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                    toast_stack.add_ephemeral_toast(
+                        DismissibleToast::error(
+                            "That project folder is no longer available".to_owned(),
+                        ),
+                        window_id,
+                        ctx,
+                    );
+                });
+                ctx.notify();
+                return;
+            }
+        }
+        let inherited_colors = self
+            .tabs
+            .iter()
+            .find(|tab| tab.project_root == target.project_root)
+            .map(|tab| (tab.selected_color, tab.default_directory_color));
+        let configured_directory_color = target.project_root.as_ref().and_then(|root| {
+            TabSettings::as_ref(ctx)
+                .directory_tab_colors
+                .value()
+                .color_for_directory(root)
+                .and_then(|color| color.ansi_color())
+        });
+        if let Some(tab) = self.tabs.get_mut(tab_index) {
+            tab.project_root = target.project_root.clone();
+            tab.project_root_initialized = true;
+            if let Some((selected, default)) = inherited_colors {
+                tab.selected_color = selected;
+                tab.default_directory_color = default;
+            } else {
+                tab.default_directory_color = configured_directory_color;
+            }
+        }
+        if let Some(project_root) = target.project_root {
+            ProjectManagementModel::handle(ctx).update(ctx, |projects, ctx| {
+                projects.upsert_project(project_root, ctx);
+            });
+        }
         ctx.dispatch_global_action("workspace:save_app", ());
         ctx.notify();
     }
@@ -12942,7 +13052,10 @@ impl Workspace {
                 .map(|directories| directories.map(|directory| directory.path).collect())
                 .unwrap_or_default();
             if roots.len() == 1 {
-                tab.project_root = roots.into_iter().next();
+                // Canonicalize so this root compares equal to library entries
+                // (which are keyed by `project_identity`); a raw symlinked
+                // path would otherwise show the same project twice.
+                tab.project_root = roots.into_iter().next().map(crate::projects::project_identity);
             }
             tab.project_root_initialized = true;
             ctx.dispatch_global_action("workspace:save_app", ());
@@ -14332,6 +14445,9 @@ impl Workspace {
             pane_group::Event::ClearHoveredTabIndex => {
                 self.hovered_tab_index = None;
                 self.hovered_project_pane_drop_target = None;
+                // Repaint, or the project-row drop highlight stays painted
+                // after the drag leaves the sidebar.
+                ctx.notify();
             }
             pane_group::Event::OpenTwarpDriveObjectInPane(uid) => {
                 self.open_twarp_drive_object_in_new_pane(uid, ctx);
@@ -19743,6 +19859,10 @@ impl Workspace {
                 }
             }
             NewProjectSource::ExistingFolder(project_root) => {
+                // Canonicalize up front so the tab's `project_root` matches
+                // the library key and the live group replaces (not
+                // duplicates) the library row.
+                let project_root = crate::projects::project_identity(project_root);
                 ProjectManagementModel::handle(ctx).update(ctx, |projects, ctx| {
                     projects.upsert_project(project_root.clone(), ctx);
                 });
@@ -21074,6 +21194,22 @@ impl TypedActionView for Workspace {
                 tab_index,
                 tab_position,
             } => self.on_tab_drag(*tab_index, *tab_position, ctx),
+            DragTabOverProject { tab_index, target } => {
+                // No highlight when hovering the session's own project — the
+                // drop would be a no-op.
+                let new_target = target.clone().filter(|target| {
+                    self.tabs
+                        .get(*tab_index)
+                        .is_none_or(|tab| tab.project_root != target.project_root)
+                });
+                if self.hovered_project_pane_drop_target != new_target {
+                    self.hovered_project_pane_drop_target = new_target;
+                    ctx.notify();
+                }
+            }
+            DropTabOnProject { tab_index, target } => {
+                self.move_tab_to_project(*tab_index, target.clone(), ctx)
+            }
             DropTab => {
                 let is_cross_window = CrossWindowTabDrag::as_ref(ctx).is_active();
                 let handed_off_tab_index =
