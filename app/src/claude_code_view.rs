@@ -317,6 +317,9 @@ const COMPOSER_CORNER_RADIUS: f32 = radius::PANEL;
 /// A short conversation does not need a navigator; showing one would add
 /// chrome without improving orientation.
 const TIMELINE_MIN_TURNS: usize = 3;
+/// Fixed width for the timeline hover preview card; the text inside wraps
+/// rather than sizing the card to its longest line.
+const TIMELINE_PREVIEW_WIDTH: f32 = 320.;
 /// Slack (px) for the streaming follow-to-bottom check. While following, the
 /// view sits exactly at the bottom; this only absorbs sub-pixel/line-height
 /// rounding so a genuine upward scroll (tens of px) reliably pauses the follow.
@@ -7488,17 +7491,16 @@ impl ClaudeCodeView {
         body.finish()
     }
 
-    /// Resolve a marker's document-relative position and whether its turn
-    /// intersects the current viewport. Saved positions are scroll-translated,
-    /// but subtracting the saved document-top position cancels that translation.
-    fn timeline_marker_layout(
+    /// Whether a marker's turn intersects the current viewport. Saved
+    /// positions are scroll-translated, but subtracting the saved
+    /// document-top position cancels that translation.
+    fn timeline_turn_visible(
         &self,
         entry: &TimelineEntry,
         entry_index: usize,
         entry_count: usize,
         app: &AppContext,
-    ) -> (f32, bool) {
-        let fallback_ratio = (entry_index + 1) as f32 / (entry_count + 1) as f32;
+    ) -> bool {
         let geometry = (
             app.element_position_by_id_at_last_frame(
                 self.window_id,
@@ -7519,29 +7521,19 @@ impl ClaudeCodeView {
         );
         let (Some(document_top), Some(document_bottom), Some(viewport), Some(turn)) = geometry
         else {
-            let visible = self.scroll_state.is_at_bottom(AUTOSCROLL_STICK_SLACK)
+            return self.scroll_state.is_at_bottom(AUTOSCROLL_STICK_SLACK)
                 && entry_index + 1 == entry_count;
-            return (fallback_ratio, visible);
         };
 
         let document_height = document_bottom.max_y() - document_top.min_y();
         if document_height <= border::HAIRLINE_WIDTH {
-            return (fallback_ratio, false);
+            return false;
         }
 
         let turn_top = (turn.min_y() - document_top.min_y()).max(0.0);
         let turn_bottom = (turn.max_y() - document_top.min_y()).max(turn_top);
-        let viewport_height = viewport.height();
         let scroll_top = self.scroll_state.scroll_start().as_f32();
-        let visible = turn_bottom >= scroll_top && turn_top <= scroll_top + viewport_height;
-
-        let mut ratio = (turn_top / document_height).clamp(0.0, 1.0);
-        // Keep the marker's hit target inside the rail at both extremes.
-        if viewport_height > spacing::LG {
-            let inset_ratio = spacing::SM / viewport_height;
-            ratio = ratio.clamp(inset_ratio, 1.0 - inset_ratio);
-        }
-        (ratio, visible)
+        turn_bottom >= scroll_top && turn_top <= scroll_top + viewport.height()
     }
 
     fn render_timeline_preview(entry: &TimelineEntry, appearance: &Appearance) -> Box<dyn Element> {
@@ -7552,7 +7544,7 @@ impl ClaudeCodeView {
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(spacing::XS)
             .with_child(
-                Text::new_inline(
+                Text::new(
                     entry.prompt_preview.clone(),
                     appearance.ui_font_family(),
                     type_ramp::UI.size,
@@ -7563,7 +7555,7 @@ impl ClaudeCodeView {
             );
         if let Some(response) = &entry.response_preview {
             content.add_child(
-                Text::new_inline(
+                Text::new(
                     response.clone(),
                     appearance.ui_font_family(),
                     type_ramp::LABEL.size,
@@ -7581,13 +7573,16 @@ impl ClaudeCodeView {
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::PANEL)))
             .finish();
         let (offset_y, blur_radius, spread_radius, alpha) = elevation::POPOVER;
-        Container::new(card)
+        let card = Container::new(card)
             .with_drop_shadow(DropShadow {
                 color: ColorU::new(0, 0, 0, (alpha * 255.0).round() as u8),
                 offset: vec2f(0.0, offset_y),
                 blur_radius,
                 spread_radius,
             })
+            .finish();
+        ConstrainedBox::new(card)
+            .with_width(TIMELINE_PREVIEW_WIDTH)
             .finish()
     }
 
@@ -7595,6 +7590,8 @@ impl ClaudeCodeView {
         &self,
         entry: &TimelineEntry,
         visible: bool,
+        ratio: f32,
+        target_height: f32,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
@@ -7637,18 +7634,27 @@ impl ClaudeCodeView {
             .finish();
             let target = ConstrainedBox::new(Align::new(marker).left().finish())
                 .with_width(spacing::XXL)
-                .with_height(spacing::MD)
+                .with_height(target_height)
                 .finish();
 
             let mut marker_stack = Stack::new().with_child(target);
             if hovered {
+                // Anchor the preview so it grows away from the nearest rail
+                // edge instead of overflowing the pane at the extremes.
+                let (parent_anchor, child_anchor) = if ratio < 0.2 {
+                    (ParentAnchor::TopRight, ChildAnchor::TopLeft)
+                } else if ratio > 0.8 {
+                    (ParentAnchor::BottomRight, ChildAnchor::BottomLeft)
+                } else {
+                    (ParentAnchor::MiddleRight, ChildAnchor::MiddleLeft)
+                };
                 marker_stack.add_positioned_overlay_child(
                     Self::render_timeline_preview(&entry, appearance),
                     OffsetPositioning::offset_from_parent(
                         vec2f(spacing::XS, 0.0),
                         ParentOffsetBounds::Unbounded,
-                        ParentAnchor::MiddleRight,
-                        ChildAnchor::MiddleLeft,
+                        parent_anchor,
+                        child_anchor,
                     ),
                 );
             }
@@ -7667,10 +7673,23 @@ impl ClaudeCodeView {
         // A full-constraint inert child gives percentage-positioned markers the
         // same height as the transcript viewport without creating a hit target.
         rail.add_child(Align::new(Empty::new().finish()).finish());
+        // Ticks are spaced evenly by turn index (an ordinal rail, not a
+        // minimap), so bunched turns can never collide. Hit targets shrink to
+        // the per-tick slot when turns outnumber the default target height,
+        // guaranteeing at most one marker hovers (and previews) at a time.
+        let slot_height = app
+            .element_position_by_id_at_last_frame(
+                self.window_id,
+                self.transcript_viewport_position_id(),
+            )
+            .map(|viewport| viewport.height() / (entries.len() + 1) as f32);
+        let target_height =
+            slot_height.map_or(spacing::MD, |slot| slot.clamp(2.0, spacing::MD));
         for (index, entry) in entries.iter().enumerate() {
-            let (ratio, visible) = self.timeline_marker_layout(entry, index, entries.len(), app);
+            let visible = self.timeline_turn_visible(entry, index, entries.len(), app);
+            let ratio = (index + 1) as f32 / (entries.len() + 1) as f32;
             rail.add_positioned_overlay_child(
-                self.render_timeline_marker(entry, visible, appearance),
+                self.render_timeline_marker(entry, visible, ratio, target_height, appearance),
                 OffsetPositioning::from_axes(
                     PositioningAxis::relative_to_parent(
                         ParentOffsetBounds::Unbounded,
