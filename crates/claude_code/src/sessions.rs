@@ -137,7 +137,54 @@ fn list_claude_sessions(cwd: &Path) -> Vec<StoredSession> {
     let Some(dir) = sessions_dir(cwd) else {
         return Vec::new();
     };
-    let entries = match std::fs::read_dir(&dir) {
+    list_claude_sessions_in_dir(&dir)
+}
+
+/// twarp 26b: list every stored Claude session across all cwd partitions,
+/// paired with the cwd its own lines record (the encoded directory name is
+/// not decodable back to a path). Feeds the sessions MCP server's
+/// `list_sessions include_past` with no cwd filter. Best-effort like every
+/// read here; a session whose lines carry no `cwd` pairs with `None`.
+pub fn list_all_claude_sessions() -> Vec<(StoredSession, Option<PathBuf>)> {
+    let Some(home) = std::env::var_os("HOME") else {
+        return Vec::new();
+    };
+    let root = PathBuf::from(home).join(".claude").join("projects");
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        for session in list_claude_sessions_in_dir(&dir) {
+            let cwd = session_cwd(&session.jsonl_path);
+            out.push((session, cwd));
+        }
+    }
+    out
+}
+
+/// The cwd a Claude session's own jsonl lines record (each line carries a
+/// top-level `cwd` field).
+fn session_cwd(path: &Path) -> Option<PathBuf> {
+    let file = std::fs::File::open(path).ok()?;
+    let reader = std::io::BufReader::new(file);
+    for line in reader.lines().take(20).map_while(Result::ok) {
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if let Some(cwd) = value.get("cwd").and_then(Value::as_str) {
+            return Some(PathBuf::from(cwd));
+        }
+    }
+    None
+}
+
+fn list_claude_sessions_in_dir(dir: &Path) -> Vec<StoredSession> {
+    let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(err) => {
             log::debug!("claude: no sessions directory at {} ({err})", dir.display());

@@ -129,6 +129,10 @@ mod safe_triangle;
 mod search_bar;
 mod server;
 mod session_management;
+// twarp 26: the sessions/projects MCP server (`twarp-sessions`). The bridge
+// and server are native-only, but the registry + status projection compile
+// everywhere — the Claude pane publishes into them unconditionally.
+mod sessions_mcp;
 mod shell_indicator;
 mod skills_store;
 mod suggestions;
@@ -1804,6 +1808,8 @@ fn initialize_app(
     ctx.add_singleton_model(crate::browser_mcp::BrowserMcpBridge::new);
     #[cfg(not(target_family = "wasm"))]
     ctx.add_singleton_model(crate::computer_control::ComputerControlMcpBridge::new);
+    #[cfg(not(target_family = "wasm"))]
+    ctx.add_singleton_model(crate::sessions_mcp::SessionsMcpBridge::new);
 
     app_state
 }

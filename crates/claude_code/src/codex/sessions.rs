@@ -114,6 +114,13 @@ fn collect_jsonl_files(dir: &Path, depth: usize, out: &mut Vec<PathBuf>, stamp: 
 /// session id when the file belongs to `cwd`. The one-line read both probes
 /// (`has_sessions`) and the full listing share.
 fn head_meta(path: &Path, cwd: &Path) -> Option<String> {
+    let (id, meta_cwd) = head_meta_any(path)?;
+    (meta_cwd == cwd).then_some(id)
+}
+
+/// Like [`head_meta`] but with no cwd filter: the id plus the owning cwd the
+/// `session_meta` line records.
+fn head_meta_any(path: &Path) -> Option<(String, PathBuf)> {
     let file = std::fs::File::open(path).ok()?;
     let mut reader = std::io::BufReader::new(file);
     let mut first_line = String::new();
@@ -123,10 +130,31 @@ fn head_meta(path: &Path, cwd: &Path) -> Option<String> {
         return None;
     }
     let payload = meta.get("payload")?;
-    if payload.get("cwd").and_then(Value::as_str).map(Path::new) != Some(cwd) {
-        return None;
-    }
-    payload.get("id").and_then(Value::as_str).map(str::to_owned)
+    let cwd = payload.get("cwd").and_then(Value::as_str)?;
+    let id = payload.get("id").and_then(Value::as_str)?;
+    Some((id.to_owned(), PathBuf::from(cwd)))
+}
+
+/// twarp 26b: list every stored codex session with its owning cwd — the
+/// sessions MCP server's `list_sessions include_past` has no cwd to filter
+/// on. Uncached (the call is rare and explicit, unlike the sidebar probes).
+pub fn list_all_sessions() -> Vec<(StoredSession, PathBuf)> {
+    let Some(root) = sessions_root() else {
+        return Vec::new();
+    };
+    let mut files = Vec::new();
+    let mut stamp = SystemTime::UNIX_EPOCH;
+    collect_jsonl_files(&root, 0, &mut files, &mut stamp);
+    let mut out: Vec<_> = files
+        .iter()
+        .filter_map(|path| {
+            let (_, cwd) = head_meta_any(path)?;
+            let session = read_session_head(path, &cwd)?;
+            Some((session, cwd))
+        })
+        .collect();
+    out.sort_by(|a, b| b.0.timestamp.cmp(&a.0.timestamp));
+    out
 }
 
 /// Parse a rollout file's head: the `session_meta` first line gives the id
