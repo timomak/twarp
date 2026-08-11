@@ -317,6 +317,9 @@ const COMPOSER_CORNER_RADIUS: f32 = radius::PANEL;
 /// A short conversation does not need a navigator; showing one would add
 /// chrome without improving orientation.
 const TIMELINE_MIN_TURNS: usize = 3;
+/// Fixed width for the timeline hover preview card; the text inside wraps
+/// rather than sizing the card to its longest line.
+const TIMELINE_PREVIEW_WIDTH: f32 = 320.;
 /// Slack (px) for the streaming follow-to-bottom check. While following, the
 /// view sits exactly at the bottom; this only absorbs sub-pixel/line-height
 /// rounding so a genuine upward scroll (tens of px) reliably pauses the follow.
@@ -3819,15 +3822,12 @@ impl ClaudeCodeView {
             allowed_tools: Vec::new(),
             mcp_config: claude_mcp_config_json(&self.session_id, ctx),
             // twarp 20b: registry servers reach Codex as config overrides on
-            // the app-server thread/start (resume included).
+            // the app-server thread/start (resume included). twarp 26e: the
+            // built-in servers ride along over streamable HTTP, scoped to
+            // this pane's session id — the same key the sessions registry
+            // publishes under, so scoping matches Claude's exactly.
             codex_config_overrides: (self.provider == AgentProvider::Codex)
-                .then(|| {
-                    crate::mcp_registry::McpRegistryModel::as_ref(ctx).codex_config_overrides(
-                        &crate::plugin_registry::PluginRegistryModel::as_ref(ctx)
-                            .provider_toggles_by_id(),
-                        &crate::mcp_oauth::McpOauthModel::as_ref(ctx).access_tokens(),
-                    )
-                })
+                .then(|| codex_config_overrides_json(&self.session_id, ctx))
                 .flatten(),
             path_env: self.interactive_path.clone(),
             env_vars: (self.provider == AgentProvider::Codex)
@@ -7558,17 +7558,16 @@ impl ClaudeCodeView {
         body.finish()
     }
 
-    /// Resolve a marker's document-relative position and whether its turn
-    /// intersects the current viewport. Saved positions are scroll-translated,
-    /// but subtracting the saved document-top position cancels that translation.
-    fn timeline_marker_layout(
+    /// Whether a marker's turn intersects the current viewport. Saved
+    /// positions are scroll-translated, but subtracting the saved
+    /// document-top position cancels that translation.
+    fn timeline_turn_visible(
         &self,
         entry: &TimelineEntry,
         entry_index: usize,
         entry_count: usize,
         app: &AppContext,
-    ) -> (f32, bool) {
-        let fallback_ratio = (entry_index + 1) as f32 / (entry_count + 1) as f32;
+    ) -> bool {
         let geometry = (
             app.element_position_by_id_at_last_frame(
                 self.window_id,
@@ -7589,29 +7588,19 @@ impl ClaudeCodeView {
         );
         let (Some(document_top), Some(document_bottom), Some(viewport), Some(turn)) = geometry
         else {
-            let visible = self.scroll_state.is_at_bottom(AUTOSCROLL_STICK_SLACK)
+            return self.scroll_state.is_at_bottom(AUTOSCROLL_STICK_SLACK)
                 && entry_index + 1 == entry_count;
-            return (fallback_ratio, visible);
         };
 
         let document_height = document_bottom.max_y() - document_top.min_y();
         if document_height <= border::HAIRLINE_WIDTH {
-            return (fallback_ratio, false);
+            return false;
         }
 
         let turn_top = (turn.min_y() - document_top.min_y()).max(0.0);
         let turn_bottom = (turn.max_y() - document_top.min_y()).max(turn_top);
-        let viewport_height = viewport.height();
         let scroll_top = self.scroll_state.scroll_start().as_f32();
-        let visible = turn_bottom >= scroll_top && turn_top <= scroll_top + viewport_height;
-
-        let mut ratio = (turn_top / document_height).clamp(0.0, 1.0);
-        // Keep the marker's hit target inside the rail at both extremes.
-        if viewport_height > spacing::LG {
-            let inset_ratio = spacing::SM / viewport_height;
-            ratio = ratio.clamp(inset_ratio, 1.0 - inset_ratio);
-        }
-        (ratio, visible)
+        turn_bottom >= scroll_top && turn_top <= scroll_top + viewport.height()
     }
 
     fn render_timeline_preview(entry: &TimelineEntry, appearance: &Appearance) -> Box<dyn Element> {
@@ -7622,7 +7611,7 @@ impl ClaudeCodeView {
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(spacing::XS)
             .with_child(
-                Text::new_inline(
+                Text::new(
                     entry.prompt_preview.clone(),
                     appearance.ui_font_family(),
                     type_ramp::UI.size,
@@ -7633,7 +7622,7 @@ impl ClaudeCodeView {
             );
         if let Some(response) = &entry.response_preview {
             content.add_child(
-                Text::new_inline(
+                Text::new(
                     response.clone(),
                     appearance.ui_font_family(),
                     type_ramp::LABEL.size,
@@ -7651,13 +7640,16 @@ impl ClaudeCodeView {
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::PANEL)))
             .finish();
         let (offset_y, blur_radius, spread_radius, alpha) = elevation::POPOVER;
-        Container::new(card)
+        let card = Container::new(card)
             .with_drop_shadow(DropShadow {
                 color: ColorU::new(0, 0, 0, (alpha * 255.0).round() as u8),
                 offset: vec2f(0.0, offset_y),
                 blur_radius,
                 spread_radius,
             })
+            .finish();
+        ConstrainedBox::new(card)
+            .with_width(TIMELINE_PREVIEW_WIDTH)
             .finish()
     }
 
@@ -7665,6 +7657,8 @@ impl ClaudeCodeView {
         &self,
         entry: &TimelineEntry,
         visible: bool,
+        ratio: f32,
+        target_height: f32,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
@@ -7707,18 +7701,27 @@ impl ClaudeCodeView {
             .finish();
             let target = ConstrainedBox::new(Align::new(marker).left().finish())
                 .with_width(spacing::XXL)
-                .with_height(spacing::MD)
+                .with_height(target_height)
                 .finish();
 
             let mut marker_stack = Stack::new().with_child(target);
             if hovered {
+                // Anchor the preview so it grows away from the nearest rail
+                // edge instead of overflowing the pane at the extremes.
+                let (parent_anchor, child_anchor) = if ratio < 0.2 {
+                    (ParentAnchor::TopRight, ChildAnchor::TopLeft)
+                } else if ratio > 0.8 {
+                    (ParentAnchor::BottomRight, ChildAnchor::BottomLeft)
+                } else {
+                    (ParentAnchor::MiddleRight, ChildAnchor::MiddleLeft)
+                };
                 marker_stack.add_positioned_overlay_child(
                     Self::render_timeline_preview(&entry, appearance),
                     OffsetPositioning::offset_from_parent(
                         vec2f(spacing::XS, 0.0),
                         ParentOffsetBounds::Unbounded,
-                        ParentAnchor::MiddleRight,
-                        ChildAnchor::MiddleLeft,
+                        parent_anchor,
+                        child_anchor,
                     ),
                 );
             }
@@ -7737,10 +7740,23 @@ impl ClaudeCodeView {
         // A full-constraint inert child gives percentage-positioned markers the
         // same height as the transcript viewport without creating a hit target.
         rail.add_child(Align::new(Empty::new().finish()).finish());
+        // Ticks are spaced evenly by turn index (an ordinal rail, not a
+        // minimap), so bunched turns can never collide. Hit targets shrink to
+        // the per-tick slot when turns outnumber the default target height,
+        // guaranteeing at most one marker hovers (and previews) at a time.
+        let slot_height = app
+            .element_position_by_id_at_last_frame(
+                self.window_id,
+                self.transcript_viewport_position_id(),
+            )
+            .map(|viewport| viewport.height() / (entries.len() + 1) as f32);
+        let target_height =
+            slot_height.map_or(spacing::MD, |slot| slot.clamp(2.0, spacing::MD));
         for (index, entry) in entries.iter().enumerate() {
-            let (ratio, visible) = self.timeline_marker_layout(entry, index, entries.len(), app);
+            let visible = self.timeline_turn_visible(entry, index, entries.len(), app);
+            let ratio = (index + 1) as f32 / (entries.len() + 1) as f32;
             rail.add_positioned_overlay_child(
-                self.render_timeline_marker(entry, visible, appearance),
+                self.render_timeline_marker(entry, visible, ratio, target_height, appearance),
                 OffsetPositioning::from_axes(
                     PositioningAxis::relative_to_parent(
                         ParentOffsetBounds::Unbounded,
@@ -12711,6 +12727,7 @@ fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> 
                 &crate::plugin_registry::PluginRegistryModel::as_ref(app).provider_toggles_by_id(),
                 &crate::mcp_oauth::McpOauthModel::as_ref(app).access_tokens(),
             ),
+            "mcpServers",
         );
         // twarp 14j: session-scoped endpoint — browser tools target/open
         // panes in THIS session's tab and stay bound to them across moves.
@@ -12718,6 +12735,7 @@ fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> 
             &mut servers,
             crate::browser_mcp::BrowserMcpBridge::as_ref(app)
                 .mcp_config_json_for_session(session_id),
+            "mcpServers",
         );
         if crate::computer_control::platform_supported() {
             // Session-scoped endpoint so a tool call can auto-start control
@@ -12726,6 +12744,7 @@ fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> 
                 &mut servers,
                 crate::computer_control::ComputerControlMcpBridge::as_ref(app)
                     .mcp_config_json_for_session(session_id),
+                "mcpServers",
             );
         }
         // twarp 26b: sessions/projects read surface, session-scoped like the
@@ -12734,16 +12753,73 @@ fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> 
             &mut servers,
             crate::sessions_mcp::SessionsMcpBridge::as_ref(app)
                 .mcp_config_json_for_session(session_id),
+            "mcpServers",
         );
 
         (!servers.is_empty()).then(|| serde_json::json!({ "mcpServers": servers }).to_string())
     }
 }
 
+/// twarp 26e: Codex twin of [`claude_mcp_config_json`] (PRODUCT 26 P#20) —
+/// the `thread/start`/`thread/resume` `{"mcp_servers": {...}}` config
+/// overrides. Registry entries merge first, then the three built-in servers'
+/// session-scoped streamable-HTTP endpoints, so on a name collision the
+/// built-ins win — the same precedence Claude sessions get.
+fn codex_config_overrides_json(session_id: &str, app: &AppContext) -> Option<serde_json::Value> {
+    #[cfg(target_family = "wasm")]
+    {
+        let _ = (session_id, app);
+        None
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    {
+        let mut servers = serde_json::Map::new();
+        merge_mcp_servers(
+            &mut servers,
+            crate::mcp_registry::McpRegistryModel::as_ref(app)
+                .codex_config_overrides(
+                    &crate::plugin_registry::PluginRegistryModel::as_ref(app)
+                        .provider_toggles_by_id(),
+                    &crate::mcp_oauth::McpOauthModel::as_ref(app).access_tokens(),
+                )
+                .map(|overrides| overrides.to_string()),
+            "mcp_servers",
+        );
+        merge_mcp_servers(
+            &mut servers,
+            crate::browser_mcp::BrowserMcpBridge::as_ref(app)
+                .codex_config_json_for_session(session_id),
+            "mcp_servers",
+        );
+        if crate::computer_control::platform_supported() {
+            merge_mcp_servers(
+                &mut servers,
+                crate::computer_control::ComputerControlMcpBridge::as_ref(app)
+                    .codex_config_json_for_session(session_id),
+                "mcp_servers",
+            );
+        }
+        merge_mcp_servers(
+            &mut servers,
+            crate::sessions_mcp::SessionsMcpBridge::as_ref(app)
+                .codex_config_json_for_session(session_id),
+            "mcp_servers",
+        );
+
+        (!servers.is_empty()).then(|| serde_json::json!({ "mcp_servers": servers }))
+    }
+}
+
+/// Folds one `{"<key>": {name: config}}` JSON fragment into `servers` —
+/// later calls overwrite earlier entries on a name collision. `key` is
+/// `"mcpServers"` for Claude `--mcp-config`, `"mcp_servers"` for Codex
+/// config overrides.
 #[cfg(not(target_family = "wasm"))]
 fn merge_mcp_servers(
     servers: &mut serde_json::Map<String, serde_json::Value>,
     config: Option<String>,
+    key: &str,
 ) {
     let Some(config) = config else {
         return;
@@ -12752,7 +12828,7 @@ fn merge_mcp_servers(
         return;
     };
     let Some(config_servers) = value
-        .get_mut("mcpServers")
+        .get_mut(key)
         .and_then(serde_json::Value::as_object_mut)
     else {
         return;
@@ -12900,6 +12976,8 @@ impl Element for RevealClip {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(target_family = "wasm"))]
+    use super::merge_mcp_servers;
     use super::{
         build_raw_cli_flags, format_metrics_line, parse_markdown_cached, parse_questions,
         question_card_title, queue_preview, raw_cli_menu_label, should_hold_question_permission,
@@ -13093,5 +13171,50 @@ mod tests {
             ttft_ms: None,
         });
         assert_eq!(line.as_deref(), Some("850ms"));
+    }
+
+    /// twarp 26e: the Codex overrides merge — registry entries and built-ins
+    /// coexist, and a built-in wins a name collision (later merge overwrites
+    /// earlier), mirroring the Claude `--mcp-config` precedence.
+    #[cfg(not(target_family = "wasm"))]
+    #[test]
+    fn codex_overrides_merge_built_ins_over_registry() {
+        let mut servers = serde_json::Map::new();
+        // Registry contribution: one user server plus a name that collides
+        // with a built-in.
+        let registry = json!({
+            "mcp_servers": {
+                "user-notes": { "command": "npx", "args": ["notes-mcp"] },
+                "twarp-browser": { "url": "http://registry.example/mcp" },
+            }
+        })
+        .to_string();
+        merge_mcp_servers(&mut servers, Some(registry), "mcp_servers");
+        // Built-in contributions, one fragment each — the bridges' shape.
+        for (name, url) in [
+            ("twarp-browser", "http://127.0.0.1:1001/mcp"),
+            ("twarp-computer-control", "http://127.0.0.1:1002/mcp"),
+            ("twarp-sessions", "http://127.0.0.1:1003/mcp"),
+        ] {
+            let fragment = json!({ "mcp_servers": { name: { "url": url } } }).to_string();
+            merge_mcp_servers(&mut servers, Some(fragment), "mcp_servers");
+        }
+
+        assert_eq!(servers.len(), 4);
+        assert_eq!(servers["user-notes"]["command"], "npx");
+        // The built-in won the collision.
+        assert_eq!(servers["twarp-browser"]["url"], "http://127.0.0.1:1001/mcp");
+        assert_eq!(
+            servers["twarp-sessions"]["url"],
+            "http://127.0.0.1:1003/mcp"
+        );
+        // A None / wrong-key fragment merges nothing.
+        merge_mcp_servers(&mut servers, None, "mcp_servers");
+        merge_mcp_servers(
+            &mut servers,
+            Some(json!({ "mcpServers": { "x": {} } }).to_string()),
+            "mcp_servers",
+        );
+        assert_eq!(servers.len(), 4);
     }
 }
