@@ -59,9 +59,25 @@ struct ProjectRowMouseStates {
     new_chat: twarpui::elements::MouseStateHandle,
 }
 
+/// Uniquely identifies a rendered project row for hover-state purposes.
+///
+/// Keying on the project root alone is not unique: every root-less
+/// ("scratch") live project keys to `None`, so all of those rows would share
+/// one `MouseState` and hovering any of them lights up (or suppresses) the
+/// hover chrome on all of them at once. Live rows therefore also carry their
+/// first tab index, which is unique per rendered group.
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum ProjectRowKey {
+    Live {
+        project_root: Option<PathBuf>,
+        first_tab_index: usize,
+    },
+    Library(PathBuf),
+}
+
 #[derive(Default)]
 pub(super) struct ProjectSidebarMouseStates {
-    project_rows: RefCell<HashMap<Option<PathBuf>, ProjectRowMouseStates>>,
+    project_rows: RefCell<HashMap<ProjectRowKey, ProjectRowMouseStates>>,
     new_session: twarpui::elements::MouseStateHandle,
     search_sessions: twarpui::elements::MouseStateHandle,
     empty_new_project: twarpui::elements::MouseStateHandle,
@@ -71,18 +87,18 @@ pub(super) struct ProjectSidebarMouseStates {
 }
 
 impl ProjectSidebarMouseStates {
-    fn project_row(&self, project_root: Option<PathBuf>) -> ProjectRowMouseStates {
+    fn project_row(&self, key: ProjectRowKey) -> ProjectRowMouseStates {
         self.project_rows
             .borrow_mut()
-            .entry(project_root)
+            .entry(key)
             .or_default()
             .clone()
     }
 
-    fn retain_project_rows(&self, project_roots: &HashSet<Option<PathBuf>>) {
+    fn retain_project_rows(&self, keys: &HashSet<ProjectRowKey>) {
         self.project_rows
             .borrow_mut()
-            .retain(|project_root, _| project_roots.contains(project_root));
+            .retain(|key, _| keys.contains(key));
     }
 }
 
@@ -748,7 +764,10 @@ impl Workspace {
             new_chat: new_chat_mouse_state,
         } = self
             .projects_sidebar_mouse_states
-            .project_row(selected_tab.project_root.clone());
+            .project_row(ProjectRowKey::Live {
+                project_root: selected_tab.project_root.clone(),
+                first_tab_index: first_index,
+            });
         let project_tab_indices = tab_indices.to_vec();
         let row_position_id = project_row_position_id(first_index);
         let menu_position_id = project_menu_position_id(first_index);
@@ -876,17 +895,22 @@ impl Workspace {
         .with_defer_events_to_children()
         .with_cursor(Cursor::PointingHand)
         .finish();
-        let project_row = SavePosition::new(
+        // Root-less ("scratch") groups are not drop targets: a dropped
+        // session would get `project_root = None` and render as its own new
+        // scratch group rather than joining this one, so offering the
+        // highlight would be a lie.
+        let project_row: Box<dyn Element> = if pane_drop_target.project_root.is_some() {
             DropTarget::new(
                 project_row,
                 ProjectSidebarPaneDropTargetData {
                     target: pane_drop_target,
                 },
             )
-            .finish(),
-            &row_position_id,
-        )
-        .finish();
+            .finish()
+        } else {
+            project_row
+        };
+        let project_row = SavePosition::new(project_row, &row_position_id).finish();
 
         let mut group = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
         group.add_child(project_row);
@@ -1026,14 +1050,54 @@ impl Workspace {
         .finish();
 
         let draggable = Draggable::new(tab.draggable_state.clone(), row)
-            .on_drag_start(|ctx, _, _| ctx.dispatch_typed_action(WorkspaceAction::StartTabDrag))
-            .on_drag(move |ctx, _, rect, _| {
-                ctx.dispatch_typed_action(WorkspaceAction::DragTab {
-                    tab_index: index,
-                    tab_position: rect,
-                })
+            // Sidebar session rows can be dropped onto project rows to move
+            // the session into that project.
+            .with_accepted_by_drop_target_fn(|drop_target_data, _| {
+                if drop_target_data
+                    .as_any()
+                    .is::<ProjectSidebarPaneDropTargetData>()
+                {
+                    twarpui::elements::AcceptedByDropTarget::Yes
+                } else {
+                    twarpui::elements::AcceptedByDropTarget::No
+                }
             })
-            .on_drop(|ctx, _, _, _| ctx.dispatch_typed_action(WorkspaceAction::DropTab));
+            .on_drag_start(|ctx, _, _| ctx.dispatch_typed_action(WorkspaceAction::StartTabDrag))
+            .on_drag(move |ctx, _, rect, data| {
+                if let Some(data) = data.and_then(|data| {
+                    data.as_any()
+                        .downcast_ref::<ProjectSidebarPaneDropTargetData>()
+                }) {
+                    // While hovering a project row, pause the reorder logic
+                    // (which would otherwise fight the drop highlight) and
+                    // just track the hovered target.
+                    ctx.dispatch_typed_action(WorkspaceAction::DragTabOverProject {
+                        tab_index: index,
+                        target: Some(data.target.clone()),
+                    });
+                } else {
+                    ctx.dispatch_typed_action(WorkspaceAction::DragTabOverProject {
+                        tab_index: index,
+                        target: None,
+                    });
+                    ctx.dispatch_typed_action(WorkspaceAction::DragTab {
+                        tab_index: index,
+                        tab_position: rect,
+                    });
+                }
+            })
+            .on_drop(move |ctx, _, _, data| {
+                if let Some(data) = data.and_then(|data| {
+                    data.as_any()
+                        .downcast_ref::<ProjectSidebarPaneDropTargetData>()
+                }) {
+                    ctx.dispatch_typed_action(WorkspaceAction::DropTabOnProject {
+                        tab_index: index,
+                        target: data.target.clone(),
+                    });
+                }
+                ctx.dispatch_typed_action(WorkspaceAction::DropTab)
+            });
         let row = SavePosition::new(draggable.finish(), &tab_position_id(index)).finish();
         Some(row)
     }
@@ -1110,7 +1174,7 @@ impl Workspace {
             new_chat: _,
         } = self
             .projects_sidebar_mouse_states
-            .project_row(Some(path.clone()));
+            .project_row(ProjectRowKey::Library(path.clone()));
         let pane_drag_active = self.project_pane_drag_active(app);
         let menu_path = path.clone();
         let row = Hoverable::new(row_mouse_state, move |state| {
@@ -1208,18 +1272,24 @@ impl Workspace {
         let mut list = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
         let mut visible_projects = 0;
         let targets = self.project_list_targets(app);
-        let project_roots = targets
+        let row_keys = targets
             .iter()
-            .map(|target| match target {
-                ProjectListTarget::LiveProject(tab_indices) => tab_indices
-                    .first()
-                    .and_then(|index| self.tabs.get(*index))
-                    .and_then(|tab| tab.project_root.clone()),
-                ProjectListTarget::Library(path) => Some(path.clone()),
+            .filter_map(|target| match target {
+                ProjectListTarget::LiveProject(tab_indices) => {
+                    let first_tab_index = *tab_indices.first()?;
+                    Some(ProjectRowKey::Live {
+                        project_root: self
+                            .tabs
+                            .get(first_tab_index)
+                            .and_then(|tab| tab.project_root.clone()),
+                        first_tab_index,
+                    })
+                }
+                ProjectListTarget::Library(path) => Some(ProjectRowKey::Library(path.clone())),
             })
             .collect();
         self.projects_sidebar_mouse_states
-            .retain_project_rows(&project_roots);
+            .retain_project_rows(&row_keys);
         for target in &targets {
             let row = match target {
                 ProjectListTarget::LiveProject(tab_indices) => {

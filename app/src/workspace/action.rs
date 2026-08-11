@@ -24,7 +24,7 @@ use crate::terminal::view::inline_banner::ZeroStatePromptSuggestionType;
 use crate::themes::theme::AnsiColorIdentifier;
 use crate::themes::theme_chooser::ThemeChooserMode;
 use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
-use crate::workspace::PaneViewLocator;
+use crate::workspace::{PaneViewLocator, ProjectSidebarPaneDropTarget};
 use session_sharing_protocol::common::SessionId;
 
 use twarpui::accessibility::AccessibilityVerbosity;
@@ -340,6 +340,18 @@ pub enum WorkspaceAction {
         tab_position: RectF,
     },
     DropTab,
+    /// A sidebar session row is being dragged over (or off, with `None`) a
+    /// project row — drives the drop highlight on the hovered project.
+    DragTabOverProject {
+        tab_index: usize,
+        target: Option<ProjectSidebarPaneDropTarget>,
+    },
+    /// A sidebar session row was dropped onto a project row: reassign the
+    /// session to that project.
+    DropTabOnProject {
+        tab_index: usize,
+        target: ProjectSidebarPaneDropTarget,
+    },
     /// Toggles the left panel. In Code Mode V1 this toggles Warp Drive.
     /// In Code Mode V2 this toggles the left panel which contains both the project explorer and
     /// Warp Drive. This happens as explicit action from the user.
@@ -848,6 +860,7 @@ impl WorkspaceAction {
             | OpenProjectLibraryEntry { .. }
             | NewProjectChat { .. }
             | NewProjectChatInDirectory { .. }
+            | DropTabOnProject { .. }
             | ToggleRightTool(_) => true,
             CopyVersion(_)
             | ConfigureKeybindingSettings { .. }
@@ -917,6 +930,7 @@ impl WorkspaceAction {
             | CreateTeamAIPrompt
             | OpenInExplorer { .. }
             | DragTab { .. }
+            | DragTabOverProject { .. }
             | StartTabDrag
             | ToggleLeftPanel
             | ToggleTwarpDrive
