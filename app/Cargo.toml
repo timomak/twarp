@@ -305,6 +305,7 @@ rmcp = { workspace = true, features = [
     "transport-streamable-http-client-reqwest",
     "transport-sse-client-reqwest",
     "transport-sse-server",
+    "transport-streamable-http-server",
     "transport-child-process",
 ] }
 notify-debouncer-full.workspace = true

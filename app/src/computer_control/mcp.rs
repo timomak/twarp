@@ -619,6 +619,9 @@ struct ComputerControlMcpRuntime {
     /// calls carry the calling session's identity and auto-start can target
     /// that session's pane. Same pattern as the browser MCP (14j).
     session_servers: Mutex<HashMap<String, String>>,
+    /// twarp 26e: streamable-HTTP twins of `session_servers` (same scoping,
+    /// different wire protocol) — the endpoints handed to Codex sessions.
+    session_http_servers: Mutex<HashMap<String, String>>,
     runtime: tokio::runtime::Runtime,
     cancel: CancellationToken,
 }
@@ -642,6 +645,24 @@ impl ComputerControlMcpBridge {
                 runtime.url.clone()
             });
         Some(Self::config_for_url(&url))
+    }
+
+    /// twarp 26e: per-session Codex config — the same scoped service over
+    /// the streamable-HTTP transport Codex's `mcp_servers.<name> = { url }`
+    /// speaks, as a `{"mcp_servers": {...}}` overrides fragment. No shared
+    /// fallback: an unscoped endpoint can't auto-start control on the
+    /// calling session's pane, so on failure the server is not injected.
+    pub(crate) fn codex_config_json_for_session(&self, session_id: &str) -> Option<String> {
+        let runtime = self.server.as_ref()?;
+        let url = runtime
+            .session_http_server_url(session_id)
+            .inspect_err(|err| {
+                log::warn!(
+                    "Failed to start session-scoped computer-control MCP HTTP server: {err}"
+                );
+            })
+            .ok()?;
+        Some(json!({ "mcp_servers": { SERVER_NAME: { "url": url } } }).to_string())
     }
 
     fn config_for_url(url: &str) -> String {
@@ -705,6 +726,7 @@ impl ComputerControlMcpRuntime {
             url,
             spawner,
             session_servers: Mutex::new(HashMap::new()),
+            session_http_servers: Mutex::new(HashMap::new()),
             runtime,
             cancel,
         })
@@ -725,6 +747,29 @@ impl ComputerControlMcpRuntime {
             self.spawner.clone(),
             self.cancel.child_token(),
             Some(session_id.to_owned()),
+        )?;
+        servers.insert(session_id.to_owned(), url.clone());
+        Ok(url)
+    }
+
+    /// twarp 26e: the streamable-HTTP URL of the given session's dedicated
+    /// server, starting it on first use — `session_server_url`'s twin on the
+    /// transport Codex consumes.
+    fn session_http_server_url(&self, session_id: &str) -> Result<String, String> {
+        let mut servers = self
+            .session_http_servers
+            .lock()
+            .map_err(|_| "computer-control MCP session-server registry is poisoned".to_owned())?;
+        if let Some(url) = servers.get(session_id) {
+            return Ok(url.clone());
+        }
+        let spawner = self.spawner.clone();
+        let scope = session_id.to_owned();
+        let url = crate::mcp_streamable_http::start_streamable_http_server(
+            self.runtime.handle(),
+            self.cancel.child_token(),
+            "computer-control",
+            move || ComputerControlMcpServer::new(spawner.clone(), Some(scope.clone())),
         )?;
         servers.insert(session_id.to_owned(), url.clone());
         Ok(url)

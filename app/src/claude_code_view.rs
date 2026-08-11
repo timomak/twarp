@@ -3794,15 +3794,12 @@ impl ClaudeCodeView {
             allowed_tools: Vec::new(),
             mcp_config: claude_mcp_config_json(&self.session_id, ctx),
             // twarp 20b: registry servers reach Codex as config overrides on
-            // the app-server thread/start (resume included).
+            // the app-server thread/start (resume included). twarp 26e: the
+            // built-in servers ride along over streamable HTTP, scoped to
+            // this pane's session id — the same key the sessions registry
+            // publishes under, so scoping matches Claude's exactly.
             codex_config_overrides: (self.provider == AgentProvider::Codex)
-                .then(|| {
-                    crate::mcp_registry::McpRegistryModel::as_ref(ctx).codex_config_overrides(
-                        &crate::plugin_registry::PluginRegistryModel::as_ref(ctx)
-                            .provider_toggles_by_id(),
-                        &crate::mcp_oauth::McpOauthModel::as_ref(ctx).access_tokens(),
-                    )
-                })
+                .then(|| codex_config_overrides_json(&self.session_id, ctx))
                 .flatten(),
             path_env: self.interactive_path.clone(),
             env_vars: (self.provider == AgentProvider::Codex)
@@ -12648,6 +12645,7 @@ fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> 
                 &crate::plugin_registry::PluginRegistryModel::as_ref(app).provider_toggles_by_id(),
                 &crate::mcp_oauth::McpOauthModel::as_ref(app).access_tokens(),
             ),
+            "mcpServers",
         );
         // twarp 14j: session-scoped endpoint — browser tools target/open
         // panes in THIS session's tab and stay bound to them across moves.
@@ -12655,6 +12653,7 @@ fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> 
             &mut servers,
             crate::browser_mcp::BrowserMcpBridge::as_ref(app)
                 .mcp_config_json_for_session(session_id),
+            "mcpServers",
         );
         if crate::computer_control::platform_supported() {
             // Session-scoped endpoint so a tool call can auto-start control
@@ -12663,6 +12662,7 @@ fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> 
                 &mut servers,
                 crate::computer_control::ComputerControlMcpBridge::as_ref(app)
                     .mcp_config_json_for_session(session_id),
+                "mcpServers",
             );
         }
         // twarp 26b: sessions/projects read surface, session-scoped like the
@@ -12671,16 +12671,73 @@ fn claude_mcp_config_json(session_id: &str, app: &AppContext) -> Option<String> 
             &mut servers,
             crate::sessions_mcp::SessionsMcpBridge::as_ref(app)
                 .mcp_config_json_for_session(session_id),
+            "mcpServers",
         );
 
         (!servers.is_empty()).then(|| serde_json::json!({ "mcpServers": servers }).to_string())
     }
 }
 
+/// twarp 26e: Codex twin of [`claude_mcp_config_json`] (PRODUCT 26 P#20) —
+/// the `thread/start`/`thread/resume` `{"mcp_servers": {...}}` config
+/// overrides. Registry entries merge first, then the three built-in servers'
+/// session-scoped streamable-HTTP endpoints, so on a name collision the
+/// built-ins win — the same precedence Claude sessions get.
+fn codex_config_overrides_json(session_id: &str, app: &AppContext) -> Option<serde_json::Value> {
+    #[cfg(target_family = "wasm")]
+    {
+        let _ = (session_id, app);
+        None
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    {
+        let mut servers = serde_json::Map::new();
+        merge_mcp_servers(
+            &mut servers,
+            crate::mcp_registry::McpRegistryModel::as_ref(app)
+                .codex_config_overrides(
+                    &crate::plugin_registry::PluginRegistryModel::as_ref(app)
+                        .provider_toggles_by_id(),
+                    &crate::mcp_oauth::McpOauthModel::as_ref(app).access_tokens(),
+                )
+                .map(|overrides| overrides.to_string()),
+            "mcp_servers",
+        );
+        merge_mcp_servers(
+            &mut servers,
+            crate::browser_mcp::BrowserMcpBridge::as_ref(app)
+                .codex_config_json_for_session(session_id),
+            "mcp_servers",
+        );
+        if crate::computer_control::platform_supported() {
+            merge_mcp_servers(
+                &mut servers,
+                crate::computer_control::ComputerControlMcpBridge::as_ref(app)
+                    .codex_config_json_for_session(session_id),
+                "mcp_servers",
+            );
+        }
+        merge_mcp_servers(
+            &mut servers,
+            crate::sessions_mcp::SessionsMcpBridge::as_ref(app)
+                .codex_config_json_for_session(session_id),
+            "mcp_servers",
+        );
+
+        (!servers.is_empty()).then(|| serde_json::json!({ "mcp_servers": servers }))
+    }
+}
+
+/// Folds one `{"<key>": {name: config}}` JSON fragment into `servers` —
+/// later calls overwrite earlier entries on a name collision. `key` is
+/// `"mcpServers"` for Claude `--mcp-config`, `"mcp_servers"` for Codex
+/// config overrides.
 #[cfg(not(target_family = "wasm"))]
 fn merge_mcp_servers(
     servers: &mut serde_json::Map<String, serde_json::Value>,
     config: Option<String>,
+    key: &str,
 ) {
     let Some(config) = config else {
         return;
@@ -12689,7 +12746,7 @@ fn merge_mcp_servers(
         return;
     };
     let Some(config_servers) = value
-        .get_mut("mcpServers")
+        .get_mut(key)
         .and_then(serde_json::Value::as_object_mut)
     else {
         return;
@@ -12837,6 +12894,8 @@ impl Element for RevealClip {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(target_family = "wasm"))]
+    use super::merge_mcp_servers;
     use super::{
         build_raw_cli_flags, format_metrics_line, parse_markdown_cached, parse_questions,
         question_card_title, queue_preview, raw_cli_menu_label, should_hold_question_permission,
@@ -13030,5 +13089,50 @@ mod tests {
             ttft_ms: None,
         });
         assert_eq!(line.as_deref(), Some("850ms"));
+    }
+
+    /// twarp 26e: the Codex overrides merge — registry entries and built-ins
+    /// coexist, and a built-in wins a name collision (later merge overwrites
+    /// earlier), mirroring the Claude `--mcp-config` precedence.
+    #[cfg(not(target_family = "wasm"))]
+    #[test]
+    fn codex_overrides_merge_built_ins_over_registry() {
+        let mut servers = serde_json::Map::new();
+        // Registry contribution: one user server plus a name that collides
+        // with a built-in.
+        let registry = json!({
+            "mcp_servers": {
+                "user-notes": { "command": "npx", "args": ["notes-mcp"] },
+                "twarp-browser": { "url": "http://registry.example/mcp" },
+            }
+        })
+        .to_string();
+        merge_mcp_servers(&mut servers, Some(registry), "mcp_servers");
+        // Built-in contributions, one fragment each — the bridges' shape.
+        for (name, url) in [
+            ("twarp-browser", "http://127.0.0.1:1001/mcp"),
+            ("twarp-computer-control", "http://127.0.0.1:1002/mcp"),
+            ("twarp-sessions", "http://127.0.0.1:1003/mcp"),
+        ] {
+            let fragment = json!({ "mcp_servers": { name: { "url": url } } }).to_string();
+            merge_mcp_servers(&mut servers, Some(fragment), "mcp_servers");
+        }
+
+        assert_eq!(servers.len(), 4);
+        assert_eq!(servers["user-notes"]["command"], "npx");
+        // The built-in won the collision.
+        assert_eq!(servers["twarp-browser"]["url"], "http://127.0.0.1:1001/mcp");
+        assert_eq!(
+            servers["twarp-sessions"]["url"],
+            "http://127.0.0.1:1003/mcp"
+        );
+        // A None / wrong-key fragment merges nothing.
+        merge_mcp_servers(&mut servers, None, "mcp_servers");
+        merge_mcp_servers(
+            &mut servers,
+            Some(json!({ "mcpServers": { "x": {} } }).to_string()),
+            "mcp_servers",
+        );
+        assert_eq!(servers.len(), 4);
     }
 }
