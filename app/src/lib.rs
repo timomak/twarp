@@ -101,6 +101,10 @@ mod linear;
 mod login_item;
 mod mcp_oauth;
 mod mcp_registry;
+// twarp 26e: streamable-HTTP hosting for the built-in MCP servers (the
+// transport Codex's `mcp_servers` config speaks).
+#[cfg(not(target_family = "wasm"))]
+mod mcp_streamable_http;
 pub mod plugin_registry;
 mod pull_requests;
 // twarp 20c: twarp-managed shared-skills store (Automation > Skills).
