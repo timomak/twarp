@@ -930,6 +930,10 @@ pub struct ClaudeCodeView {
     /// registry — removed on drop, and when the id changes (SessionInit) so
     /// no stale row lingers.
     sessions_registry_key: Option<String>,
+    /// twarp 26d: who created this pane via `create_chat`, if anyone (PRODUCT
+    /// 26 P#16, 22). Drives the header provenance chip, persists with the
+    /// pane snapshot, and rides along in the sessions registry row.
+    spawn_origin: Option<crate::sessions_mcp::SpawnOrigin>,
     /// Mouse state for the header's Raw CLI / Chat UI section toggle (PRODUCT
     /// §39, #7). One handle per segment.
     raw_cli_button: MouseStateHandle,
@@ -1311,6 +1315,7 @@ impl ClaudeCodeView {
             model,
             effort,
             resume_session_id,
+            pinned_session_id,
         } = launch;
 
         // Feature 16a: the Agent settings Chat row is authoritative for fresh
@@ -1413,6 +1418,9 @@ impl ClaudeCodeView {
         let session_id = resume
             .as_ref()
             .map(|resume| resume.session_id.clone())
+            // twarp 26d: `create_chat` pins the fresh id it already reserved
+            // (and returned to the caller) instead of minting a new one.
+            .or(pinned_session_id)
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
         let mut view = Self {
@@ -1462,6 +1470,7 @@ impl ClaudeCodeView {
             resume_session_id: None,
             session_id,
             sessions_registry_key: None,
+            spawn_origin: None,
             raw_cli_button: MouseStateHandle::default(),
             chat_ui_button: MouseStateHandle::default(),
             raw_cli: None,
@@ -1678,6 +1687,25 @@ impl ClaudeCodeView {
 
     pub fn provider(&self) -> AgentProvider {
         self.provider
+    }
+
+    /// twarp 26d: this pane's spawn provenance, if it was created by
+    /// `create_chat` (PRODUCT 26 P#16, 22).
+    pub fn spawn_origin(&self) -> Option<&crate::sessions_mcp::SpawnOrigin> {
+        self.spawn_origin.as_ref()
+    }
+
+    /// twarp 26d: attach spawn provenance (at spawn time, or on restore from
+    /// the persisted pane snapshot). Republishes the registry row so
+    /// `list_sessions` reflects the origin immediately.
+    pub fn set_spawn_origin(
+        &mut self,
+        origin: Option<crate::sessions_mcp::SpawnOrigin>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.spawn_origin = origin;
+        self.publish_sessions_registry();
+        ctx.notify();
     }
 
     pub fn has_provider_session(&self) -> bool {
@@ -4683,6 +4711,7 @@ impl ClaudeCodeView {
             self.derived_tab_title(),
             crate::sessions_mcp::status::session_status(self.status_inputs()),
             crate::sessions_mcp::registry::flatten_transcript(self.transcript.items()),
+            self.spawn_origin.as_ref(),
         );
     }
 
@@ -5520,6 +5549,43 @@ impl ClaudeCodeView {
 
     /// `compact` drops the text label (icon-only) for narrow panes — the
     /// state colours still read through the glyph.
+    /// twarp 26d: the provenance chip for a spawned pane (PRODUCT 26 P#22) —
+    /// a small passive badge next to the computer-control indicator naming
+    /// the creator ("from: <parent title>" or "external: <consumer>"). Same
+    /// chrome as the idle computer-control chip; survives restore because the
+    /// origin persists with the pane snapshot.
+    fn render_spawn_origin_chip(&self, app: &AppContext, compact: bool) -> Option<Box<dyn Element>> {
+        let origin = self.spawn_origin.as_ref()?;
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let text_color = theme.sub_text_color(theme.background()).into_solid();
+        let glyph = ConstrainedBox::new(
+            Icon::new(crate::ui_components::icons::Icon::Link.into(), text_color).finish(),
+        )
+        .with_width(12.)
+        .with_height(12.)
+        .finish();
+        let content = if compact {
+            glyph
+        } else {
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(5.)
+                .with_child(glyph)
+                .with_child(context_segment(appearance, origin.chip_label(), text_color))
+                .finish()
+        };
+        Some(
+            Container::new(content)
+                .with_padding_left(8.)
+                .with_padding_right(8.)
+                .with_padding_top(4.)
+                .with_padding_bottom(4.)
+                .finish(),
+        )
+    }
+
     fn render_computer_control_button(
         &self,
         app: &AppContext,
@@ -5786,6 +5852,7 @@ impl ClaudeCodeView {
             model: self.model.clone(),
             effort: self.effort.clone(),
             resume_session_id: None,
+            pinned_session_id: None,
         };
         ctx.emit(ClaudeCodeViewEvent::ForkSession {
             resume: ResumeSession {
@@ -10362,12 +10429,19 @@ impl BackingView for ClaudeCodeView {
         } else {
             let computer_control_button = self.render_computer_control_button(app, false);
             let has_computer_control_button = computer_control_button.is_some();
-            let assemble_cluster =
-                |computer_control_button: Option<Box<dyn Element>>| -> Box<dyn Element> {
+            let has_spawn_origin_chip = self.spawn_origin.is_some();
+            let assemble_cluster = |spawn_origin_chip: Option<Box<dyn Element>>,
+                                    computer_control_button: Option<Box<dyn Element>>|
+             -> Box<dyn Element> {
                     let mut controls = Flex::row()
                         .with_main_axis_size(MainAxisSize::Min)
                         .with_cross_axis_alignment(CrossAxisAlignment::Center)
                         .with_spacing(6.);
+                    // 26d: provenance chip sits next to the computer-control
+                    // indicator (P#22).
+                    if let Some(chip) = spawn_origin_chip {
+                        controls = controls.with_child(chip);
+                    }
                     if let Some(button) = computer_control_button {
                         controls = controls.with_child(button);
                     }
@@ -10380,14 +10454,21 @@ impl BackingView for ClaudeCodeView {
                         )
                         .finish()
                 };
-            let full_cluster = assemble_cluster(computer_control_button);
-            let compact_cluster = assemble_cluster(self.render_computer_control_button(app, true));
+            let full_cluster = assemble_cluster(
+                self.render_spawn_origin_chip(app, false),
+                computer_control_button,
+            );
+            let compact_cluster = assemble_cluster(
+                self.render_spawn_origin_chip(app, true),
+                self.render_computer_control_button(app, true),
+            );
             let full_cluster_width = 50.
                 + if has_computer_control_button {
                     132.
                 } else {
                     0.
-                };
+                }
+                + if has_spawn_origin_chip { 140. } else { 0. };
             let left_of_overflow = Shrinkable::new(
                 1.,
                 Box::new(SizeConstraintSwitch::new(
@@ -10404,7 +10485,8 @@ impl BackingView for ClaudeCodeView {
                     132.
                 } else {
                     0.
-                };
+                }
+                + if has_spawn_origin_chip { 140. } else { 0. };
             (left_of_overflow, control_container_width)
         };
         HeaderContent::Standard(StandardHeader {

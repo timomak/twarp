@@ -28,10 +28,16 @@ use twarpui::{Entity, ModelContext, ModelSpawner, SingletonEntity};
 
 use super::{
     events::{self, WaitOutcome, WatchNotification},
+    external::{self, ExternalListenerState},
     registry::{items_since, SessionRegistry},
+    spawn::{SpawnParent, SpawnRefusal},
     status::SessionStatus,
     store,
 };
+use crate::settings::AgentSettings;
+use crate::workspace::WorkspaceRegistry;
+use ::settings::Setting as _;
+use twarpui::GetSingletonModelHandle as _;
 
 const SERVER_NAME: &str = "twarp-sessions";
 const SSE_PATH: &str = "/sse";
@@ -39,6 +45,10 @@ const POST_PATH: &str = "/message";
 
 pub(crate) struct SessionsMcpBridge {
     server: Option<SessionsMcpRuntime>,
+    /// 26d: current state of the external token-gated listener, for the
+    /// settings page (PRODUCT P#30: a port conflict is an explicit error
+    /// state, never silent).
+    external_state: ExternalListenerState,
 }
 
 struct SessionsMcpRuntime {
@@ -48,11 +58,19 @@ struct SessionsMcpRuntime {
     /// every tool call carries the calling session's identity — the same
     /// scoping the other built-in servers use.
     session_servers: StdMutex<HashMap<String, String>>,
+    /// 26d: the external token-gated listener, when enabled (PRODUCT P#21).
+    /// Cancelling the token stops the listener and severs its live watchers.
+    external: StdMutex<Option<ExternalListener>>,
     /// twarp 26e: streamable-HTTP twins of `session_servers` (same scoping,
     /// different wire protocol) — the endpoints handed to Codex sessions.
     session_http_servers: StdMutex<HashMap<String, String>>,
     runtime: tokio::runtime::Runtime,
     cancel: CancellationToken,
+}
+
+struct ExternalListener {
+    cancel: CancellationToken,
+    port: u16,
 }
 
 impl SessionsMcpBridge {
@@ -62,7 +80,75 @@ impl SessionsMcpBridge {
             .inspect_err(|err| log::warn!("Failed to start twarp sessions MCP server: {err}"))
             .ok();
 
-        Self { server }
+        let mut bridge = Self {
+            server,
+            external_state: ExternalListenerState::Disabled,
+        };
+        // 26d: bring the external listener up per the persisted settings and
+        // track future settings changes (toggle / port edits on the Agents
+        // settings page).
+        bridge.apply_external_listener_settings(ctx);
+        let settings = ctx.get_singleton_model_handle::<AgentSettings>();
+        ctx.observe(&settings, |bridge, _settings, ctx| {
+            bridge.apply_external_listener_settings(ctx);
+        });
+        bridge
+    }
+
+    /// 26d: reconcile the external listener with the settings (PRODUCT P#21,
+    /// 30). Enabling generates the bearer-token file and binds the fixed
+    /// port; a bind failure becomes a settings-page error state. Disabling
+    /// (or a port change) cancels the listener's token, which severs its live
+    /// watchers (P#12).
+    fn apply_external_listener_settings(&mut self, ctx: &mut ModelContext<Self>) {
+        let settings = AgentSettings::as_ref(ctx);
+        let enabled = *settings.sessions_external_enabled.value();
+        let port =
+            u16::try_from(*settings.sessions_external_port.value()).unwrap_or(0);
+        let Some(runtime) = self.server.as_ref() else {
+            return;
+        };
+        let desired = enabled.then_some(port);
+        let current = runtime.external_port();
+        if current == desired && !matches!(self.external_state, ExternalListenerState::Failed { .. })
+        {
+            return;
+        }
+        runtime.stop_external();
+        self.external_state = match desired {
+            None => ExternalListenerState::Disabled,
+            Some(0) => ExternalListenerState::Failed {
+                port,
+                error: "Invalid port".to_owned(),
+            },
+            Some(port) => match external::ensure_token(&external::token_file_path())
+                .map_err(|err| err.to_string())
+                .and_then(|_| runtime.start_external(port))
+            {
+                Ok(()) => ExternalListenerState::Running { port },
+                Err(error) => {
+                    log::warn!(
+                        "Failed to start external sessions MCP listener on port {port}: {error}"
+                    );
+                    ExternalListenerState::Failed { port, error }
+                }
+            },
+        };
+        ctx.notify();
+    }
+
+    /// 26d: the external listener's state, for the settings page.
+    pub(crate) fn external_listener_state(&self) -> &ExternalListenerState {
+        &self.external_state
+    }
+
+    /// 26d: mint a fresh external bearer token. The middleware re-reads the
+    /// token file per request, so the old token is rejected immediately
+    /// (PRODUCT P#21).
+    pub(crate) fn regenerate_external_token(&self) -> Result<(), String> {
+        external::regenerate_token(&external::token_file_path())
+            .map(|_| ())
+            .map_err(|err| err.to_string())
     }
 
     /// Per-session MCP config (PRODUCT P#19: auto-injected into every agent
@@ -134,6 +220,245 @@ impl SessionsMcpBridge {
     }
 }
 
+/// 26d: a `create_chat` / `create_project` failure, mapped to the distinct
+/// structured MCP errors of PRODUCT P#27.
+#[derive(Debug)]
+enum SpawnToolError {
+    InvalidArgument(String),
+    AtCapacity { limit: usize },
+    DepthExceeded { depth: u8, max: u8 },
+    Internal(String),
+}
+
+impl From<SpawnRefusal> for SpawnToolError {
+    fn from(refusal: SpawnRefusal) -> Self {
+        match refusal {
+            SpawnRefusal::AtCapacity { limit } => Self::AtCapacity { limit },
+            SpawnRefusal::DepthExceeded { depth, max } => Self::DepthExceeded { depth, max },
+        }
+    }
+}
+
+impl From<SpawnToolError> for McpError {
+    fn from(error: SpawnToolError) -> Self {
+        match error {
+            SpawnToolError::InvalidArgument(message) => McpError::invalid_params(
+                message,
+                Some(json!({ "code": "invalid-argument" })),
+            ),
+            // P#23: a distinct at-capacity error naming the limit; nothing is
+            // queued.
+            SpawnToolError::AtCapacity { limit } => McpError::invalid_params(
+                format!(
+                    "At capacity: {limit} spawned sessions are already running (limit {limit}); retry after one completes"
+                ),
+                Some(json!({ "code": "at-capacity", "limit": limit })),
+            ),
+            // P#24: a distinct depth-exceeded error.
+            SpawnToolError::DepthExceeded { depth, max } => McpError::invalid_params(
+                format!("Spawn depth {depth} exceeds the maximum chain depth {max}"),
+                Some(json!({ "code": "depth-exceeded", "depth": depth, "max": max })),
+            ),
+            SpawnToolError::Internal(message) => {
+                McpError::internal_error(message, Some(json!({ "code": "internal" })))
+            }
+        }
+    }
+}
+
+impl SessionsMcpBridge {
+    /// 26d: validate and spawn a `create_chat` session on the main thread
+    /// (PRODUCT P#13–16, 22–24, 26–28). Validation happens atomically against
+    /// the registry via [`SessionRegistry::try_reserve_spawn`] — the cap slot
+    /// is reserved under the registry lock before the pane exists, so racing
+    /// calls can never exceed the cap. Returns the new session id immediately
+    /// (P#13); nothing here touches permission plumbing, so a spawned
+    /// session's prompts behave exactly like a user-opened one's (P#26).
+    fn create_chat(
+        &mut self,
+        params: CreateChatParams,
+        parent: SpawnParent,
+        ctx: &mut ModelContext<Self>,
+    ) -> Result<serde_json::Value, SpawnToolError> {
+        let cwd = PathBuf::from(&params.cwd);
+        // P#15: cwd must be an existing directory; otherwise nothing is
+        // created.
+        if !cwd.is_dir() {
+            return Err(SpawnToolError::InvalidArgument(format!(
+                "cwd is not an existing directory: {}",
+                params.cwd
+            )));
+        }
+        let settings = AgentSettings::as_ref(ctx);
+        let chat_config = settings.chat_launch_config();
+        let cap = *settings.sessions_spawn_cap.value();
+        // P#13: provider defaults to the app's configured default.
+        let provider = match params.provider.as_deref() {
+            None => chat_config
+                .provider
+                .agent_provider()
+                .unwrap_or(claude_code::driver::AgentProvider::Claude),
+            Some("claude") => claude_code::driver::AgentProvider::Claude,
+            Some("codex") => claude_code::driver::AgentProvider::Codex,
+            Some(other) => {
+                return Err(SpawnToolError::InvalidArgument(format!(
+                    "provider must be claude or codex, got: {other}"
+                )));
+            }
+        };
+        // P#15: a named project must already exist — create_chat never
+        // implicitly creates one.
+        let project_root = params
+            .project
+            .as_deref()
+            .map(|project| {
+                crate::projects::ProjectManagementModel::as_ref(ctx)
+                    .all_projects()
+                    .find(|candidate| project_display_name(candidate) == project)
+                    .map(|candidate| PathBuf::from(&candidate.path))
+                    .ok_or_else(|| {
+                        SpawnToolError::InvalidArgument(format!(
+                            "No project named {project} exists"
+                        ))
+                    })
+            })
+            .transpose()?;
+
+        // P#23–24, 28: reserve the cap slot and mint the provenance under one
+        // registry lock, keyed by the id the fresh pane will be pinned to.
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let registry = SessionRegistry::global();
+        let origin = registry.try_reserve_spawn(&session_id, &parent, cap)?;
+
+        let workspace = ctx
+            .windows()
+            .active_window()
+            .or_else(|| ctx.windows().frontmost_window_id())
+            .and_then(|window_id| WorkspaceRegistry::as_ref(ctx).get(window_id, ctx))
+            .or_else(|| {
+                WorkspaceRegistry::as_ref(ctx)
+                    .all_workspaces(ctx)
+                    .into_iter()
+                    .next()
+                    .map(|(_, workspace)| workspace)
+            });
+        let Some(workspace) = workspace else {
+            // Release the reserved slot — nothing was spawned.
+            registry.remove(&session_id);
+            return Err(SpawnToolError::Internal(
+                "No workspace is available to open an agent pane".to_owned(),
+            ));
+        };
+
+        let launch = claude_code::launch::LaunchOptions {
+            provider,
+            // P#13: the prompt is submitted as the first user message via the
+            // same submit path the composer uses — never PTY bytes.
+            prompt: Some(params.prompt),
+            permission_mode: Some(chat_config.permission_mode),
+            model: params.model.clone().or(chat_config.model),
+            effort: chat_config.effort,
+            resume_session_id: None,
+            pinned_session_id: Some(session_id.clone()),
+        };
+        workspace.update(ctx, |workspace, ctx| {
+            workspace.open_spawned_agent_chat(
+                launch,
+                cwd.clone(),
+                project_root,
+                origin.clone(),
+                ctx,
+            );
+        });
+
+        Ok(json!({
+            "session_id": session_id,
+            "provider": provider.as_persistence_str(),
+            "cwd": cwd.to_string_lossy(),
+            "spawned_by": origin.parent_label,
+            "depth": origin.depth,
+        }))
+    }
+
+    /// 26d: create a sidebar project on the main thread (PRODUCT P#18) — the
+    /// same `create_project(NewProjectSource::ExistingFolder)` path the UI
+    /// uses. Duplicate (an existing project for the same folder) errors.
+    fn create_project(
+        &mut self,
+        params: CreateProjectParams,
+        ctx: &mut ModelContext<Self>,
+    ) -> Result<serde_json::Value, SpawnToolError> {
+        let name = params.name.trim().to_owned();
+        if name.is_empty() {
+            return Err(SpawnToolError::InvalidArgument(
+                "name must not be empty".to_owned(),
+            ));
+        }
+        let root = PathBuf::from(&params.cwd);
+        if !root.is_dir() {
+            return Err(SpawnToolError::InvalidArgument(format!(
+                "cwd is not an existing directory: {}",
+                params.cwd
+            )));
+        }
+        let identity = crate::projects::project_identity(root.clone());
+        let duplicate = crate::projects::ProjectManagementModel::as_ref(ctx)
+            .all_projects()
+            .any(|project| PathBuf::from(&project.path) == identity);
+        if duplicate {
+            return Err(SpawnToolError::InvalidArgument(format!(
+                "A project already exists for {}",
+                identity.to_string_lossy()
+            )));
+        }
+
+        let workspace = ctx
+            .windows()
+            .active_window()
+            .or_else(|| ctx.windows().frontmost_window_id())
+            .and_then(|window_id| WorkspaceRegistry::as_ref(ctx).get(window_id, ctx))
+            .or_else(|| {
+                WorkspaceRegistry::as_ref(ctx)
+                    .all_workspaces(ctx)
+                    .into_iter()
+                    .next()
+                    .map(|(_, workspace)| workspace)
+            })
+            .ok_or_else(|| {
+                SpawnToolError::Internal(
+                    "No workspace is available to create a project".to_owned(),
+                )
+            })?;
+        workspace.update(ctx, |workspace, ctx| {
+            workspace.create_project_for_sessions_mcp(name.clone(), identity.clone(), ctx);
+        });
+
+        Ok(json!({
+            "name": name,
+            // Projects carry no persisted color (color is per-tab); a color
+            // argument is accepted and ignored.
+            "color": serde_json::Value::Null,
+            "cwd": identity.to_string_lossy(),
+            "session_count": claude_code::sessions::list_sessions(&identity).len(),
+        }))
+    }
+}
+
+/// A project's display name, matching `list_projects`' projection: the custom
+/// name, or the folder name, or the raw path.
+fn project_display_name(project: &crate::projects::Project) -> String {
+    project
+        .name
+        .clone()
+        .filter(|name| !name.trim().is_empty())
+        .or_else(|| {
+            Path::new(&project.path)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| project.path.clone())
+}
+
 impl Entity for SessionsMcpBridge {
     type Event = ();
 }
@@ -148,15 +473,61 @@ impl SessionsMcpRuntime {
             .build()
             .map_err(|err| err.to_string())?;
         let cancel = CancellationToken::new();
-        let url = Self::start_server(runtime.handle(), spawner.clone(), cancel.clone(), None)?;
+        let url = Self::start_server(
+            runtime.handle(),
+            spawner.clone(),
+            cancel.clone(),
+            None,
+            ListenerKind::InApp,
+        )?;
         Ok(Self {
             url,
             spawner,
             session_servers: StdMutex::new(HashMap::new()),
+            external: StdMutex::new(None),
             session_http_servers: StdMutex::new(HashMap::new()),
             runtime,
             cancel,
         })
+    }
+
+    /// 26d: the port the external listener currently serves, if running.
+    fn external_port(&self) -> Option<u16> {
+        self.external
+            .lock()
+            .ok()
+            .and_then(|external| external.as_ref().map(|listener| listener.port))
+    }
+
+    /// 26d: bind the external token-gated listener on the fixed port
+    /// (127.0.0.1 only). Errors (typically a port conflict) bubble to the
+    /// settings page (PRODUCT P#30).
+    fn start_external(&self, port: u16) -> Result<(), String> {
+        let cancel = self.cancel.child_token();
+        Self::start_server(
+            self.runtime.handle(),
+            self.spawner.clone(),
+            cancel.clone(),
+            None,
+            ListenerKind::External { port },
+        )?;
+        let mut external = self
+            .external
+            .lock()
+            .map_err(|_| "sessions MCP external-listener state is poisoned".to_owned())?;
+        *external = Some(ExternalListener { cancel, port });
+        Ok(())
+    }
+
+    /// 26d: stop the external listener. Cancelling its child token shuts the
+    /// HTTP server down and severs its live watch/wait connections (PRODUCT
+    /// P#12, 21).
+    fn stop_external(&self) {
+        if let Ok(mut external) = self.external.lock() {
+            if let Some(listener) = external.take() {
+                listener.cancel.cancel();
+            }
+        }
     }
 
     /// Returns the SSE URL of the given session's dedicated server, starting
@@ -174,6 +545,7 @@ impl SessionsMcpRuntime {
             self.spawner.clone(),
             self.cancel.child_token(),
             Some(session_id.to_owned()),
+            ListenerKind::InApp,
         )?;
         servers.insert(session_id.to_owned(), url.clone());
         Ok(url)
@@ -196,7 +568,7 @@ impl SessionsMcpRuntime {
             self.runtime.handle(),
             self.cancel.child_token(),
             "twarp sessions",
-            move || SessionsMcpServer::new(spawner.clone(), Some(scope.clone())),
+            move || SessionsMcpServer::new(spawner.clone(), Some(scope.clone()), false),
         )?;
         servers.insert(session_id.to_owned(), url.clone());
         Ok(url)
@@ -210,21 +582,35 @@ impl SessionsMcpRuntime {
         spawner: ModelSpawner<SessionsMcpBridge>,
         cancel: CancellationToken,
         scope_session_id: Option<String>,
+        kind: ListenerKind,
     ) -> Result<String, String> {
         let (addr_tx, addr_rx) = mpsc::channel();
         let server_cancel = cancel.clone();
+        let (bind_port, is_external) = match kind {
+            ListenerKind::InApp => (0, false),
+            ListenerKind::External { port } => (port, true),
+        };
 
         handle.spawn(async move {
             use rmcp::transport::sse_server::{SseServer, SseServerConfig};
 
             let config = SseServerConfig {
-                bind: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
+                // 127.0.0.1 only — the external surface is localhost-bound by
+                // construction (PRODUCT: no cloud/remote transport).
+                bind: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), bind_port),
                 sse_path: SSE_PATH.to_owned(),
                 post_path: POST_PATH.to_owned(),
                 ct: server_cancel.clone(),
                 sse_keep_alive: None,
             };
             let (sse_server, router) = SseServer::new(config);
+            // 26d: the external listener rejects every request without the
+            // current bearer token (PRODUCT P#21, 27).
+            let router = if is_external {
+                router.layer(axum::middleware::from_fn(external::require_bearer_token))
+            } else {
+                router
+            };
             let listener = match tokio::net::TcpListener::bind(sse_server.config.bind).await {
                 Ok(listener) => listener,
                 Err(err) => {
@@ -252,7 +638,7 @@ impl SessionsMcpRuntime {
             });
 
             let _service_cancel = sse_server.with_service(move || {
-                SessionsMcpServer::new(spawner.clone(), scope_session_id.clone())
+                SessionsMcpServer::new(spawner.clone(), scope_session_id.clone(), is_external)
             });
             server_cancel.cancelled().await;
         });
@@ -264,15 +650,25 @@ impl SessionsMcpRuntime {
     }
 }
 
+/// Which listener a service instance is created for: the tokenless in-app
+/// ephemeral-port servers, or the token-gated external fixed-port listener.
+#[derive(Clone, Copy)]
+enum ListenerKind {
+    InApp,
+    External { port: u16 },
+}
+
 #[derive(Clone)]
 struct SessionsMcpServer {
     spawner: ModelSpawner<SessionsMcpBridge>,
     tool_router: ToolRouter<Self>,
-    /// The Claude session this endpoint belongs to (None on the shared
-    /// endpoint). Read tools don't scope on it yet; 26c–26d provenance and
-    /// spawn depth will.
-    #[allow(dead_code)]
+    /// The Claude session this endpoint belongs to (None on the shared and
+    /// external endpoints). 26d: `create_chat`'s in-pane caller identity — the
+    /// scoped session is the spawned session's parent (PRODUCT P#16).
     scope_session_id: Option<String>,
+    /// 26d: whether this service serves the external token-gated listener
+    /// (its spawns are recorded with an external origin at depth 1).
+    external: bool,
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -291,7 +687,7 @@ impl ServerHandler for SessionsMcpServer {
                 .enable_logging()
                 .build(),
             instructions: Some(
-                "Read and monitor twarp's agent sessions and projects: list live and stored chat sessions with their status, read any session's transcript, list sidebar projects, watch a session's live events, and wait for a session to complete. Statuses match the twarp tab UI exactly."
+                "Control and monitor twarp's agent sessions and projects: create new chat sessions (create_chat) and sidebar projects (create_project), list live and stored chat sessions with their status, read any session's transcript, watch a session's live events, and wait for a session to complete. Statuses match the twarp tab UI exactly."
                     .to_owned(),
             ),
             ..Default::default()
@@ -335,6 +731,34 @@ struct WaitForCompletionParams {
     timeout_seconds: Option<f64>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct CreateChatParams {
+    /// The first user message of the new session.
+    prompt: String,
+    /// The new session's working directory. Must be an existing directory.
+    cwd: String,
+    /// claude | codex. Defaults to the app's configured chat provider.
+    provider: Option<String>,
+    /// Model id override. Defaults to the provider's configured default.
+    model: Option<String>,
+    /// Name of an existing sidebar project to file the new session under.
+    /// Errors when no such project exists (never implicitly created).
+    project: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct CreateProjectParams {
+    /// The project's display name.
+    name: String,
+    /// The project's folder. Must be an existing directory; a project already
+    /// registered for this folder is a duplicate and errors.
+    cwd: String,
+    /// Accepted for compatibility but ignored: twarp projects have no
+    /// persisted color (color is a per-tab property).
+    #[allow(dead_code)]
+    color: Option<String>,
+}
+
 /// `wait_for_completion` timeout bounds (PRODUCT P#29: nothing may hang
 /// indefinitely, so the cap is hard).
 const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(300);
@@ -350,15 +774,24 @@ struct SessionRow {
     is_live: bool,
     last_activity: String,
     project: Option<String>,
+    /// 26d: provenance for sessions created via `create_chat` (the creator's
+    /// label) and their spawn-chain depth. Null for user-opened sessions.
+    spawned_by: Option<String>,
+    spawn_depth: Option<u8>,
 }
 
 #[tool_router(router = tool_router)]
 impl SessionsMcpServer {
-    fn new(spawner: ModelSpawner<SessionsMcpBridge>, scope_session_id: Option<String>) -> Self {
+    fn new(
+        spawner: ModelSpawner<SessionsMcpBridge>,
+        scope_session_id: Option<String>,
+        external: bool,
+    ) -> Self {
         Self {
             spawner,
             tool_router: Self::tool_router(),
             scope_session_id,
+            external,
         }
     }
 
@@ -414,6 +847,11 @@ impl SessionsMcpServer {
                 is_live: true,
                 last_activity: rfc3339(session.last_activity),
                 project: None,
+                spawned_by: session
+                    .origin
+                    .as_ref()
+                    .map(|origin| origin.parent_label.clone()),
+                spawn_depth: session.origin.as_ref().map(|origin| origin.depth),
             })
             .collect();
 
@@ -438,6 +876,8 @@ impl SessionsMcpServer {
                         is_live: false,
                         last_activity: rfc3339(past.session.timestamp),
                         project: None,
+                        spawned_by: None,
+                        spawn_depth: None,
                     }),
             );
         }
@@ -614,6 +1054,64 @@ impl SessionsMcpServer {
             .await
             .map_err(|_| McpError::internal_error("Sessions MCP bridge is unavailable", None))?;
         json_result(json!({ "projects": projects }))
+    }
+
+    #[tool(
+        name = "create_chat",
+        description = "Open a new agent chat pane in a new tab, submit the prompt as its first user message, and return the new session_id immediately (combine with wait_for_completion for the reply). Validated against the spawn cap (distinct at-capacity error) and spawn-chain depth (distinct depth-exceeded error); cwd must exist and a given project must already exist."
+    )]
+    async fn create_chat(
+        &self,
+        Parameters(params): Parameters<CreateChatParams>,
+    ) -> Result<CallToolResult, McpError> {
+        // P#16: the tool's scoped session is the parent; external consumers
+        // record an external origin ("external" when unnamed) at depth 1.
+        let parent = match (&self.scope_session_id, self.external) {
+            (Some(session_id), _) => {
+                let title = SessionRegistry::global()
+                    .snapshot()
+                    .into_iter()
+                    .find(|session| &session.session_id == session_id)
+                    .map(|session| session.title)
+                    .filter(|title| !title.trim().is_empty())
+                    .unwrap_or_else(|| session_id.clone());
+                SpawnParent::InPane {
+                    session_id: session_id.clone(),
+                    title,
+                }
+            }
+            // No consumer-naming mechanism exists yet, so external callers
+            // are labeled "external"; the unscoped in-app fallback endpoint
+            // is distinguished as "in-app".
+            (None, true) => SpawnParent::External {
+                label: "external".to_owned(),
+            },
+            (None, false) => SpawnParent::External {
+                label: "in-app".to_owned(),
+            },
+        };
+        let result = self
+            .spawner
+            .spawn(move |bridge, ctx| bridge.create_chat(params, parent, ctx))
+            .await
+            .map_err(|_| McpError::internal_error("Sessions MCP bridge is unavailable", None))?;
+        json_result(result.map_err(McpError::from)?)
+    }
+
+    #[tool(
+        name = "create_project",
+        description = "Create a sidebar project (name + existing folder), exactly as through the UI, and return it. A project already registered for the folder is a duplicate and errors. Note: twarp projects have no persisted color; a color argument is accepted but ignored and the returned color is null."
+    )]
+    async fn create_project(
+        &self,
+        Parameters(params): Parameters<CreateProjectParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = self
+            .spawner
+            .spawn(move |bridge, ctx| bridge.create_project(params, ctx))
+            .await
+            .map_err(|_| McpError::internal_error("Sessions MCP bridge is unavailable", None))?;
+        json_result(result.map_err(McpError::from)?)
     }
 }
 

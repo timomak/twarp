@@ -1256,6 +1256,11 @@ pub struct ClaudeCodePaneSnapshot {
     pub session_id: Option<String>,
     pub cwd: Option<String>,
     pub provider: AgentProvider,
+    /// twarp 26d: JSON-encoded [`crate::sessions_mcp::SpawnOrigin`] for panes
+    /// created via the sessions MCP `create_chat` tool — the header
+    /// provenance badge survives restore (PRODUCT 26 P#22). `None` for
+    /// user-opened panes.
+    pub spawn_origin: Option<String>,
 }
 
 /// Snapshot of a browser pane. Only the last committed URL is durable in v1;

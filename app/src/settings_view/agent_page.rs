@@ -71,6 +71,9 @@ pub enum AgentSettingsPageAction {
     ShowVoiceKeyEditor,
     SaveVoiceKey,
     RemoveVoiceKey,
+    // twarp 26d: external sessions MCP listener (PRODUCT 26 P#21, 30).
+    ToggleSessionsExternal,
+    RegenerateSessionsToken,
 }
 
 pub enum AgentSettingsPageEvent {}
@@ -114,6 +117,10 @@ pub struct AgentSettingsPageView {
     voice_stt_key_remove_button: ViewHandle<ActionButton>,
     voice_auto_send_switch_state: SwitchStateHandle,
     show_voice_stt_key_editor: bool,
+    // twarp 26d: external sessions MCP listener rows (PRODUCT 26 P#21, 30).
+    sessions_external_switch_state: SwitchStateHandle,
+    sessions_port_editor: ViewHandle<EditorView>,
+    sessions_regenerate_button: ViewHandle<ActionButton>,
     /// Keeps the playback stream alive; dropping it kills playback.
     local_only_icon_states: RefCell<HashMap<String, twarpui::elements::MouseStateHandle>>,
 }
@@ -407,6 +414,29 @@ impl AgentSettingsPageView {
         let (voice_stt_key_save_button, voice_stt_key_replace_button, voice_stt_key_remove_button) =
             Self::new_voice_key_buttons(ctx);
 
+        // twarp 26d: external sessions MCP listener rows (PRODUCT 26 P#21).
+        let sessions_port = AgentSettings::as_ref(ctx)
+            .sessions_external_port
+            .value()
+            .to_string();
+        let sessions_port_editor = Self::new_voice_text_editor("8377", &sessions_port, ctx);
+        Self::persist_voice_editor_on_edit(&sessions_port_editor, ctx, |text, ctx| {
+            // Only persist a parseable port; partial input while typing is
+            // left alone (the listener rebinds via the settings observer).
+            if let Ok(port) = text.parse::<u16>() {
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings
+                        .sessions_external_port
+                        .set_value(port as usize, ctx));
+                });
+            }
+        });
+        let sessions_regenerate_button = ctx.add_typed_action_view(move |_| {
+            ActionButton::new("Regenerate", SecondaryTheme).on_click(move |ctx| {
+                ctx.dispatch_typed_action(AgentSettingsPageAction::RegenerateSessionsToken);
+            })
+        });
+
         let mut view = Self {
             page: PageType::new_monolith(AgentSettingsWidget, Some(PAGE_TITLE), true),
             backend_dropdown,
@@ -445,6 +475,9 @@ impl AgentSettingsPageView {
             voice_stt_key_remove_button,
             voice_auto_send_switch_state: Default::default(),
             show_voice_stt_key_editor: true,
+            sessions_external_switch_state: Default::default(),
+            sessions_port_editor,
+            sessions_regenerate_button,
             local_only_icon_states: RefCell::new(HashMap::new()),
         };
         // twarp 17 (PRODUCT §22): reconcile the voice key-presence flags with
@@ -1272,6 +1305,22 @@ impl TypedActionView for AgentSettingsPageView {
             AgentSettingsPageAction::RemoveVoiceKey => {
                 self.remove_voice_api_key(ctx);
             }
+            // twarp 26d: the sessions MCP bridge observes AgentSettings and
+            // starts/stops the external listener when this flips (P#21).
+            AgentSettingsPageAction::ToggleSessionsExternal => {
+                AgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let enabled = *settings.sessions_external_enabled.value();
+                    report_if_error!(settings.sessions_external_enabled.set_value(!enabled, ctx));
+                });
+            }
+            AgentSettingsPageAction::RegenerateSessionsToken => {
+                #[cfg(not(target_family = "wasm"))]
+                if let Err(error) = crate::sessions_mcp::SessionsMcpBridge::handle(ctx)
+                    .update(ctx, |bridge, _| bridge.regenerate_external_token())
+                {
+                    log::warn!("Failed to regenerate sessions MCP external token: {error}");
+                }
+            }
         }
         self.refresh_dropdowns(ctx);
         ctx.notify();
@@ -1322,7 +1371,7 @@ impl SettingsWidget for AgentSettingsWidget {
     type View = AgentSettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "agent claude codex gemini backend chat history terminal reply placeholder suggestions model effort permission mode voice speech microphone transcription text-to-speech"
+        "agent claude codex gemini backend chat history terminal reply placeholder suggestions model effort permission mode voice speech microphone transcription text-to-speech sessions mcp external listener token port"
     }
 
     fn render(
@@ -1403,8 +1452,102 @@ impl SettingsWidget for AgentSettingsWidget {
                 view, appearance, app,
             ))
             .with_child(render_voice_section(view, appearance, app))
+            .with_child(render_sessions_section(view, appearance, app))
             .finish()
     }
+}
+
+/// twarp 26d: the external sessions MCP listener rows (PRODUCT 26 P#21, 30):
+/// the enable toggle, the fixed port, the token file path with a Regenerate
+/// button, and — when binding failed (port conflict) — an explicit error line.
+fn render_sessions_section(
+    view: &AgentSettingsPageView,
+    appearance: &Appearance,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let settings = AgentSettings::as_ref(app);
+    let enabled = *settings.sessions_external_enabled.value();
+
+    let mut column = Flex::column()
+        .with_child(render_sub_header(appearance, "Sessions", None))
+        .with_child(render_suggestion_toggle(
+            view,
+            appearance,
+            app,
+            "Allow external agents to control sessions",
+            "Token-gated localhost MCP listener for external agents (e.g. the dev fleet).",
+            enabled,
+            settings::AgentSessionsExternalEnabled::storage_key(),
+            settings::AgentSessionsExternalEnabled::sync_to_cloud(),
+            view.sessions_external_switch_state.clone(),
+            AgentSettingsPageAction::ToggleSessionsExternal,
+        ));
+    if enabled {
+        column.add_child(render_voice_text_row(
+            view,
+            appearance,
+            app,
+            "Port",
+            "Fixed localhost port the listener binds (127.0.0.1 only).",
+            settings::AgentSessionsExternalPort::storage_key(),
+            settings::AgentSessionsExternalPort::sync_to_cloud(),
+            &view.sessions_port_editor,
+        ));
+        // Token path + Regenerate. The middleware re-reads the token file per
+        // request, so regenerating invalidates the old token immediately.
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let token_path =
+                crate::sessions_mcp::external::token_file_path();
+            let label = render_dropdown_item_label(
+                "Bearer token".to_owned(),
+                Some(format!("Token file: {}", token_path.to_string_lossy())),
+                local_only_icon_state(
+                    view,
+                    settings::AgentSessionsExternalEnabled::storage_key(),
+                    settings::AgentSessionsExternalEnabled::sync_to_cloud(),
+                    app,
+                ),
+                None,
+                appearance,
+            );
+            column.add_child(
+                Container::new(render_settings_row(
+                    label,
+                    ChildView::new(&view.sessions_regenerate_button).finish(),
+                ))
+                .with_margin_bottom(8.)
+                .finish(),
+            );
+            // P#30: a bind failure is an explicit settings-page error state.
+            if let crate::sessions_mcp::external::ExternalListenerState::Failed { port, error } =
+                crate::sessions_mcp::SessionsMcpBridge::as_ref(app).external_listener_state()
+            {
+                column.add_child(
+                    appearance
+                        .ui_builder()
+                        .span(format!(
+                            "Could not start the listener on port {port}: {error}"
+                        ))
+                        .with_style(UiComponentStyles {
+                            font_color: Some(
+                                twarp_core::ui::theme::Fill::warn().into(),
+                            ),
+                            font_size: Some(12.),
+                            margin: Some(Coords {
+                                top: 2.,
+                                bottom: 8.,
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        })
+                        .build()
+                        .finish(),
+                );
+            }
+        }
+    }
+    column.finish()
 }
 
 fn render_auth_section(

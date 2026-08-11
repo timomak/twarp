@@ -245,6 +245,33 @@ define_settings_group!(AgentSettings, settings: [
         toml_path: "agent.auth.voice_stt.api_key_set",
         description: "Whether a voice speech-to-text API key is stored in the OS keychain.",
     },
+    sessions_external_enabled: AgentSessionsExternalEnabled {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.sessions_mcp.external_enabled",
+        description: "Whether external agents may control twarp sessions over the token-gated localhost sessions MCP listener.",
+    },
+    sessions_external_port: AgentSessionsExternalPort {
+        type: usize,
+        default: crate::sessions_mcp::external_default_port(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.sessions_mcp.external_port",
+        description: "Fixed localhost port for the external sessions MCP listener.",
+    },
+    sessions_spawn_cap: AgentSessionsSpawnCap {
+        type: usize,
+        default: crate::sessions_mcp::spawn::DEFAULT_SPAWN_CAP,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agent.sessions_mcp.spawn_cap",
+        description: "Maximum concurrently running sessions created via the sessions MCP create_chat tool.",
+    },
 ]);
 
 #[derive(Clone, Debug, PartialEq, Eq)]

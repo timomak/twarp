@@ -7,7 +7,8 @@ use std::{
 use chrono::Utc;
 use twarpui::{Entity, ModelContext, SingletonEntity};
 
-use crate::persistence::{model::Project, ModelEvent};
+pub(crate) use crate::persistence::model::Project;
+use crate::persistence::ModelEvent;
 
 #[derive(Debug)]
 pub enum ProjectEvent {
@@ -36,7 +37,7 @@ impl Entity for ProjectManagementModel {
 
 impl SingletonEntity for ProjectManagementModel {}
 
-fn project_identity(path: PathBuf) -> PathBuf {
+pub(crate) fn project_identity(path: PathBuf) -> PathBuf {
     #[cfg(feature = "local_fs")]
     {
         dunce::canonicalize(&path).unwrap_or(path)

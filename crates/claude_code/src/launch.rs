@@ -32,6 +32,10 @@ pub struct LaunchOptions {
     /// `--resume <id>` / `-r <id>`. A bare `--resume` (the CLI's interactive
     /// picker) carries no id and is ignored — the pane has no picker.
     pub resume_session_id: Option<String>,
+    /// twarp 26d: pin a fresh pane's minted session id to this value instead
+    /// of a random UUID. Lets `create_chat` reserve its spawn-cap slot (and
+    /// return the id) before the pane exists. Ignored when resuming.
+    pub pinned_session_id: Option<String>,
 }
 
 impl Default for LaunchOptions {
@@ -43,6 +47,7 @@ impl Default for LaunchOptions {
             model: None,
             effort: None,
             resume_session_id: None,
+            pinned_session_id: None,
         }
     }
 }

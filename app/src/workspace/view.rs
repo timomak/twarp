@@ -13253,6 +13253,7 @@ impl Workspace {
             model: fire.model.clone(),
             effort: fire.effort.clone(),
             resume_session_id: None,
+            pinned_session_id: None,
         };
         let pane = ClaudeCodePane::new(launch, Some(cwd), ctx);
         let claude_view = pane.claude_code_view(ctx);
@@ -13391,7 +13392,20 @@ impl Workspace {
     ) {
         let mut launch = claude_code::launch::parse_launch_args(args.iter().map(String::as_str));
         launch.provider = provider;
+        self.open_claude_code_pane_with_launch(launch, cwd, ctx);
+    }
+
+    /// twarp 26d: the [`Self::open_claude_code_pane`] recipe for callers that
+    /// already hold parsed [`LaunchOptions`] (the sessions MCP `create_chat`).
+    /// Returns the created view so the caller can attach spawn provenance.
+    pub(crate) fn open_claude_code_pane_with_launch(
+        &mut self,
+        launch: claude_code::launch::LaunchOptions,
+        cwd: Option<PathBuf>,
+        ctx: &mut ViewContext<Self>,
+    ) -> ViewHandle<crate::claude_code_view::ClaudeCodeView> {
         let pane = ClaudeCodePane::new(launch, cwd, ctx);
+        let view = pane.claude_code_view(ctx);
         let pane_group = self.active_tab_pane_group().clone();
         pane_group.update(ctx, |pane_group, ctx| {
             // The pane that ran `claude` is the focused one — swap it for the
@@ -13403,6 +13417,37 @@ impl Workspace {
         // the code-review / Open Changes panel resolves its folder without
         // waiting on a focus event to drive the refresh.
         self.refresh_working_directories_for_pane_group(&pane_group, ctx);
+        view
+    }
+
+    /// twarp 26d: spawn a new agent chat in a new tab for the sessions MCP
+    /// `create_chat` tool (PRODUCT 26 P#13–16, 22). The
+    /// [`Self::open_claude_code_tab`] recipe (`add_terminal_tab` + pane
+    /// replace), with the prompt riding in `launch.prompt` (it enters the same
+    /// first-turn submit path the composer uses — never PTY bytes), the spawn
+    /// provenance attached to the created view (header chip + persistence),
+    /// and, when `project_root` is given, the new tab filed under that
+    /// project (the `NewProjectSource::ExistingFolder` tail).
+    pub(crate) fn open_spawned_agent_chat(
+        &mut self,
+        launch: claude_code::launch::LaunchOptions,
+        cwd: PathBuf,
+        project_root: Option<PathBuf>,
+        origin: crate::sessions_mcp::SpawnOrigin,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.add_terminal_tab(true /* hide_homepage */, ctx);
+        if let Some(project_root) = project_root {
+            ProjectManagementModel::handle(ctx).update(ctx, |projects, ctx| {
+                projects.upsert_project(project_root.clone(), ctx);
+            });
+            if let Some(tab) = self.tabs.get_mut(self.active_tab_index) {
+                tab.project_root = Some(project_root);
+                tab.project_root_initialized = true;
+            }
+        }
+        let view = self.open_claude_code_pane_with_launch(launch, Some(cwd), ctx);
+        view.update(ctx, |view, ctx| view.set_spawn_origin(Some(origin), ctx));
     }
 
     /// twarp 07 (7h, PRODUCT §36): reopen a stored Claude Code session from
@@ -19669,6 +19714,23 @@ impl Workspace {
         }
 
         self.create_project(NewProjectSource::ExistingFolder(project_root), ctx);
+    }
+
+    /// twarp 26d: create a sidebar project for the sessions MCP
+    /// `create_project` tool (PRODUCT 26 P#18) — the same
+    /// [`Self::create_project`] path the UI uses (project row + a Welcome tab
+    /// filed under it), plus the caller-chosen display name. Duplicate
+    /// detection happens in the bridge before this is called.
+    pub(crate) fn create_project_for_sessions_mcp(
+        &mut self,
+        name: String,
+        project_root: PathBuf,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.create_project(NewProjectSource::ExistingFolder(project_root.clone()), ctx);
+        ProjectManagementModel::handle(ctx).update(ctx, |projects, ctx| {
+            projects.set_project_name(project_root, Some(name), ctx);
+        });
     }
 
     fn create_project(&mut self, source: NewProjectSource, ctx: &mut ViewContext<Self>) {
