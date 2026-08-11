@@ -752,6 +752,83 @@ def _ux_criteria(it):
     return ("Exercise the user-facing behavior introduced by this PR's diff and confirm it works "
             "without visual glitches.")
 
+# ---------- 26f: sessions-MCP UX path (preferred over uidrive CGEvent injection) ----------
+# The launched build exposes the token-gated external sessions MCP listener (26d): 127.0.0.1-only
+# SSE on a fixed port, every request needs `Authorization: Bearer <token file>`. The fleet pre-seeds
+# the build's settings + token BEFORE launch (both live under ~/.twarp-oss — debug builds run the
+# Oss channel, where data_dir == config_local_dir == ~/.twarp-oss and the app applies
+# agent.sessions_mcp.* from settings.toml at startup; ensure_token keeps a pre-existing non-empty
+# token file). After launch a preflight probes the port; ANY preflight failure falls back to the
+# unchanged uidrive path, so this can only widen the gate, never make it stricter/flakier.
+UX_MCP_PORT = 8377                    # agent.sessions_mcp.external_port default
+UX_MCP_CONF = "$HOME/.twarp-oss"      # Oss-channel config/data dir on the display pod
+UX_MCP_TOKEN = f"{UX_MCP_CONF}/sessions_mcp_external_token"
+
+def ux_mcp_config(port, token, name="twarp-sessions"):
+    """--mcp-config payload for the `claude -p` driver: the twarp-sessions SSE endpoint plus the
+    bearer token. Pure so the JSON shape is unit-testable."""
+    return {"mcpServers": {name: {
+        "type": "sse",
+        "url": f"http://127.0.0.1:{port}/sse",
+        "headers": {"Authorization": f"Bearer {token}"},
+    }}}
+
+def ux_mcp_decision(probe_status, token):
+    """Preflight decision: (use_mcp, why). `probe_status` is the HTTP status a token-less request
+    got from the listener ('401' when it's up — the bearer middleware rejects everything else);
+    `token` is the token-file contents. Pure; fails toward the uidrive path."""
+    token = (token or "").strip()
+    if not token:
+        return False, "token file missing or empty"
+    status = (probe_status or "").strip()
+    if status != "401":
+        return False, f"listener probe expected 401, got {status or 'no response'!r}"
+    return True, "external sessions listener up + token readable"
+
+def ux_level_is_live(level):
+    """Both drive levels count as a real live drive for report/risk purposes."""
+    return level in ("live", "live-mcp")
+
+def _ux_seed_mcp(name, port):
+    """Pre-seed the launched build's external-listener settings + bearer token on the display pod so
+    the app brings the listener up at startup (no UI enable needed). Appends an
+    [agent.sessions_mcp] table to settings.toml only if no agent.sessions_mcp keys exist yet (an
+    existing user value wins — the preflight probe decides either way), and mints a 0600 token file
+    only if absent/empty (the app's ensure_token then keeps it). Best-effort: never fails the gate."""
+    cmd = (f"set -e\nCONF={UX_MCP_CONF}\nmkdir -p \"$CONF\"\ntouch \"$CONF/settings.toml\"\n"
+           f"if ! grep -q 'agent.sessions_mcp' \"$CONF/settings.toml\"; then\n"
+           f"  printf '\\n[agent.sessions_mcp]\\nexternal_enabled = true\\nexternal_port = {port}\\n'"
+           f" >> \"$CONF/settings.toml\"\nfi\n"
+           f"TOK={UX_MCP_TOKEN}\n"
+           f"if ! [ -s \"$TOK\" ]; then (umask 177; uuidgen | tr -d '\\n-' | tr 'A-Z' 'a-z' > \"$TOK\"); fi\n")
+    try:
+        bash_on(name, cmd, timeout=30)
+    except Exception as e:
+        say(f"  UX mcp seed warning on {name}: {e}")
+
+def ux_mcp_probe(name, port):
+    """Probe the launched app's external sessions listener on the display pod (locally for self,
+    over SSH otherwise). Returns (http_status, token) — '' on any failure."""
+    try:
+        r = bash_on(name, f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 3 "
+                          f"http://127.0.0.1:{port}/sse\n", timeout=30)
+        status = (r.stdout or "").strip().splitlines()[-1] if (r.stdout or "").strip() else ""
+        token = bash_on(name, f"cat {UX_MCP_TOKEN} 2>/dev/null\n", timeout=20).stdout.strip()
+        return status, token
+    except Exception:
+        return "", ""
+
+UX_MCP_PROMPT_SECTION = """
+PREFERRED CONTROL PATH — twarp-sessions MCP: this session has the `twarp-sessions` MCP server \
+connected, talking to the RUNNING twarp build. PREFER its tools over {act} for agent flows: \
+list_sessions / get_transcript read the app's REAL session state; create_chat starts an agent \
+session (this is how you exercise agent features); wait_for_completion / watch_session follow it \
+to the end. Still use {shot} for the VISUAL half of every check — MCP tells you what the app \
+thinks, the screenshot proves what the user sees. Fall back to {act} clicks only for UI the MCP \
+tools can't reach. If an MCP call errors mid-drive, note it and continue with {shot}/{act}; judge \
+the FEATURE, not the tooling.
+"""
+
 UX_DRIVE_PROMPT = """You are a UX QA agent debugging the twarp macOS app live, like a human tester. \
 A freshly-built twarp from this PR is running on screen. Drive it with two shell helpers (Bash tool):
 
@@ -772,7 +849,7 @@ KNOWN INJECTOR QUIRKS (work around these, don't fight them):
 - `type` can DROP the first keystrokes if the field just gained focus. After typing, screenshot to \
 confirm the text landed; if it didn't, click the field again and re-issue `type`. Prefer one \
 `type <word>` then verify over many rapid calls.
-
+{mcp}
 Your job: verify the feature below actually works in the running twarp. Capture first to see the \
 state, navigate to the feature, exercise it, and inspect the result after each action. If twarp \
 isn't frontmost, click its window first. Save your final evidence screenshot to {final}.
@@ -913,23 +990,55 @@ def ux_drive_gate(it):
         act.write_text(f'#!/bin/bash\nssh {host} "~/.local/bin/uinject \\"$*\\""\n')
     os.chmod(shot, 0o755); os.chmod(act, 0o755)
 
+    mcp_port = int(cfg().get("ux_mcp_port", UX_MCP_PORT))
     with _screenlock:                          # one display → one UX session at a time
+        _ux_seed_mcp(name, mcp_port)           # 26f: enable listener + token BEFORE the app launches
         launched, ltail = _ux_launch(it, name)
         if not launched:
             say(f"  [{iid}] UX: app build/launch failed → bootstrap gate")
             _ux_teardown(it, name)
             return _stamp_ux(iid, "bootstrap", *uxgate(it.get("ux_test", UXTEST)))
+        # 26f preflight: prefer the sessions-MCP path; ANY failure → unchanged uidrive path.
+        status, token = ux_mcp_probe(name, mcp_port)
+        use_mcp, why = ux_mcp_decision(status, token)
+        if not use_mcp:
+            say(f"  [{iid}] UX: sessions-MCP preflight failed ({why}) → uidrive injection path")
+        tunnel = None
         try:
             sh(["git", "-C", str(SELF_REPO), "fetch", "-q", "origin"])
             diff = sh(["git", "-C", str(SELF_REPO), "diff",
                        f"origin/master...origin/fleet/{iid}"]).stdout[:8000]
+            argv = ["claude", "-p", None, "--dangerously-skip-permissions"]
+            mcp = ""
+            if use_mcp:
+                driver_port = mcp_port
+                if not is_self:
+                    # the listener binds 127.0.0.1 only — forward it here for the driver's lifetime
+                    import socket
+                    s = socket.socket(); s.bind(("127.0.0.1", 0))
+                    driver_port = s.getsockname()[1]; s.close()
+                    tunnel = subprocess.Popen(
+                        ["ssh", "-o", "ConnectTimeout=10", "-N",
+                         "-L", f"{driver_port}:127.0.0.1:{mcp_port}", host],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    time.sleep(2)              # let the forward come up before the driver connects
+                mcp_json = evid / "mcp.json"   # fleet/runs is gitignored; token never enters git
+                mcp_json.write_text(json.dumps(ux_mcp_config(driver_port, token), indent=2) + "\n")
+                argv += ["--mcp-config", str(mcp_json)]
+                mcp = UX_MCP_PROMPT_SECTION.format(shot=shot, act=act)
+                say(f"  [{iid}] UX: driving over sessions MCP (port {driver_port})")
             prompt = UX_DRIVE_PROMPT.format(shot=shot, act=act, final=evid / "final.png",
-                                            criteria=_ux_criteria(it), diff=diff or "(no diff)")
+                                            criteria=_ux_criteria(it), diff=diff or "(no diff)",
+                                            mcp=mcp)
+            argv[2] = prompt
             drv_start = time.time()
-            r = sh(["claude", "-p", prompt, "--dangerously-skip-permissions"], timeout=1200)
+            r = sh(argv, timeout=1200)
             _collect_driver_trace(evid, drv_start)   # persist the driver's full conversation for review
         finally:
+            if tunnel:
+                tunnel.terminate()
             _ux_teardown(it, name)
+    level = "live-mcp" if use_mcp else "live"
     out = (r.stdout or "").strip()
     (evid / "transcript.txt").write_text(out)
     line = next((l for l in out.splitlines() if "VERDICT" in l.upper()),
@@ -938,7 +1047,7 @@ def ux_drive_gate(it):
     if "VERDICT" not in out.upper() and _LIMIT_RE.search(out):
         # The driver itself is quota-limited — that's not a pass and not an app error; the caller
         # waits and re-drives rather than letting the item merge un-verified.
-        return _stamp_ux(iid, "live", "unavailable", evid)
+        return _stamp_ux(iid, level, "unavailable", evid)
     # Token right after VERDICT decides; prose like "no regression observed" in a pass
     # line must not flip the verdict (bit 19b round 2: pass misrouted to fix-agent).
     m = re.search(r"\bVERDICT\b\W{0,4}(pass|regression|fail|error)", line, re.I)
@@ -948,7 +1057,7 @@ def ux_drive_gate(it):
         low = line.lower()
         verdict = ("regression" if ("regression" in low or "verdict fail" in low)
                    else "pass" if "pass" in low else "error")
-    return _stamp_ux(iid, "live", verdict, evid)
+    return _stamp_ux(iid, level, verdict, evid)
 
 
 # ---------- gate (on the pod that authored) ----------
@@ -1226,7 +1335,8 @@ def write_run_report():
     rows.sort(key=lambda r: r["id"])
     index = {"generated": round(time.time(), 3), "items": rows}
     (LOG / "index.json").write_text(json.dumps(index, indent=2))
-    risky = [r for r in rows if r["status"] == "merged" and r["ux"] and r["ux_level"] != "live"]
+    risky = [r for r in rows if r["status"] == "merged" and r["ux"]
+             and not ux_level_is_live(r["ux_level"])]
     lines = ["# fleet run report", "",
              "| item | status | ux | ux_level | ux_verdict | gate_rounds | dur(s) | evidence |",
              "|------|--------|----|----------|-----------|-------------|--------|----------|"]

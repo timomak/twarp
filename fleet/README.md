@@ -54,6 +54,30 @@ render runs at a time. Items in `queue.json` flagged `"ux": true` get this gate 
 Validated end-to-end: a fresh capture vs golden → `pass`; a deliberately broken (cropped) image →
 `regression`, correctly described.
 
+### Sessions-MCP drive path (26f — preferred)
+
+The dynamic UX gate (`ux_drive_gate`) now prefers twarp's own **token-gated external sessions MCP
+listener** (feature 26d) over uidrive CGEvent injection. Before launching the PR's build it pre-seeds
+the build's config on the display pod — `~/.twarp-oss/settings.toml` gets an
+`[agent.sessions_mcp]` table (`external_enabled = true`, `external_port = 8377`, only if no
+`agent.sessions_mcp` keys exist yet) and a `0600` token file is minted at
+`~/.twarp-oss/sessions_mcp_external_token` if absent (the app keeps a pre-existing token). After
+launch a preflight probes `http://127.0.0.1:8377/sse` (expects **401** without a token — the bearer
+middleware) and reads the token off the node. When ready, the `claude -p` driver gets an
+`--mcp-config` pointing at the endpoint (`{"type":"sse","url":...,"headers":{"Authorization":
+"Bearer <token>"}}`); for a remote display pod the port is forwarded here via `ssh -L` for the
+driver's lifetime (the listener binds 127.0.0.1 only). The prompt tells the driver to prefer the
+`twarp-sessions` tools (`list_sessions` / `get_transcript` / `create_chat` /
+`wait_for_completion`) for agent flows, keeping the screenshot helper for visual verdicts and
+uidrive `act` as in-drive fallback. **Any preflight failure falls back to the unchanged uidrive
+path** (with a logged reason) — the MCP path can only widen the gate, never make it flakier.
+Provenance: the item's `ux_level` records `live-mcp` vs `live`; both count as a real live drive in
+`report.md`.
+
+What the display pod needs: nothing manual — the seeding is automatic. If the pod's twarp config
+already sets `agent.sessions_mcp.external_enabled = false` (or the port differs from
+`config.ux_mcp_port`, default 8377), the preflight fails and the gate uses uidrive.
+
 ## Parallel batch loop + per-PR iterate
 
 `fleet.py run` is a continuous loop (`config.batch`, default 5):

@@ -27,4 +27,7 @@ This policy applies only when `fleet/fleet.py` embeds it in a worker prompt.
   files changed. Do not launch GUI checks unless the assignment explicitly requests them.
 - If a required check cannot run in the worker environment, preserve the implementation and report
   the exact limitation; the fleet gate owns final validation.
+- The fleet's UX gate may verify your change by driving the built app over its sessions MCP surface
+  (`agent.sessions_mcp.*` settings + the token-gated localhost listener) in addition to screenshots.
+  Do not disable or reconfigure that surface unless the assignment explicitly covers it.
 - End with the exact completion marker supplied in the prompt.
