@@ -72,21 +72,25 @@ feature-19 tokens and the existing 720px settings column.
    single "Server URL" field — plus one sentence of guidance and a link to
    the page where the user obtains the value (the Composio dashboard). The
    primary button is Connect, disabled until the field parses as an http(s)
-   URL. On Connect the dialog closes and the flow continues exactly as
-   invariant 3. The placeholder `YOUR_SERVER_ID` URL is never shown in an
-   editable URL field as if it were valid, and can never be persisted.
+   URL. Pressing Connect with an invalid value shows an inline error and
+   saves nothing; with a valid value the dialog closes and the flow
+   continues exactly as invariant 3. The placeholder `YOUR_SERVER_ID` URL
+   is never shown in an editable URL field as if it were valid, and can
+   never be persisted.
 5. **Credential-based flow (Slack):** Set up… opens a dialog with one
    labeled field per required credential (e.g. "Bot token", "Team ID") —
    never raw `KEY=` env lines — each with a one-line description and a link
-   to where the credential is created. The primary button is Add, disabled
-   while any required field is empty. On Add the plugin is saved with both
+   to where the credential is created. The primary button is Add; pressing
+   it while any required field is empty shows an inline error and saves
+   nothing. On Add the plugin is saved with both
    providers enabled and appears in Installed; no browser consent is
    involved and the card does not claim one will happen.
 6. Dialogs from invariants 4–5 are dismissable (Esc, click-outside, or a
    Cancel button) without saving anything.
 7. A connector that already has an installed entry shows that state on its
    gallery card (e.g. a checkmark or **Added**), and its action changes to
-   **Manage**, which scrolls/jumps to the installed entry. Pressing the
+   **Manage**, which opens that plugin's editor (the page has no scroll
+   anchors; the editor renders directly under the gallery). Pressing the
    card's action repeatedly can never create a second entry for the same
    connector; a second distinct instance of the same service is still
    possible via Add custom plugin.

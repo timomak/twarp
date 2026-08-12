@@ -32,6 +32,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | 24 | [Plugin auth: remote-first add flow + MCP OAuth](24-plugin-auth/STATUS.md) | impl-in-review | [#297](https://github.com/timomak/twarp/pull/297) | 24a–24c bundled [#299](https://github.com/timomak/twarp/pull/299) |
 | 25 | [Voice conversation (Codex realtime)](25-voice-conversation/PRODUCT.md) | merged (owner smoke test pending) | — | 25b–25d [#303](https://github.com/timomak/twarp/pull/303) |
 | 26 | [Sessions & Projects MCP server](26-sessions-mcp/STATUS.md) | spec-in-review | — | — |
+| 27 | [Plugin gallery UX (connector-style add flow)](27-plugin-gallery-ux/STATUS.md) | spec-in-review | [#314](https://github.com/timomak/twarp/pull/314) | — |
 
 _Features 20–22 (automation shell / PR pages / MCP quick-add) shipped owner-directed without roadmap dirs; see git history (PRs #265–#276)._
 
