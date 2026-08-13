@@ -51,42 +51,53 @@ use super::view::{AutomationView, AutomationViewAction};
 /// Content column width; matches the conversation measure used app-wide.
 const CONTENT_MAX_WIDTH: f32 = 720.;
 
-/// A quick-add template: one click opens the Add form prefilled as a
-/// single-server plugin with the service's known transport/command/URL and
-/// the env keys it needs, leaving only credentials for the user to paste in.
-/// The record shape allows presets to bundle skills later; none do yet.
+/// twarp 27: how a gallery connector gets added, which decides its card's
+/// single primary action.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PresetKind {
+    /// Fixed public URL + browser sign-in: the card's Connect saves the
+    /// plugin and starts the OAuth flow directly — no form, no dialog.
+    OneClick,
+    /// The server URL is per-user (Composio): Set up… asks for just the URL.
+    SetupUrl,
+    /// No hosted server; a local process wants pasted credentials (Slack).
+    /// With an empty `fields` list this degenerates to add-on-click (Gmail,
+    /// whose npx server negotiates its own auth).
+    Credentials,
+}
+
+/// One labeled credential input in a [`PresetKind::Credentials`] setup
+/// dialog; lands as an env var on the saved server.
+struct CredentialField {
+    env_key: &'static str,
+    label: &'static str,
+    help: &'static str,
+}
+
+/// A gallery connector: enough compiled-in metadata to create its plugin
+/// directly (twarp 27) — the generic editor is no longer involved.
 struct PluginPreset {
     /// Stable key used in actions and as the base for generated names.
     key: &'static str,
     label: &'static str,
     /// One-line gallery-card description.
     description: &'static str,
+    kind: PresetKind,
     transport: McpTransport,
     command: Option<&'static str>,
     args: &'static [&'static str],
+    /// Fixed server URL ([`PresetKind::OneClick`] only).
     url: Option<&'static str>,
-    /// Env keys prefilled as `KEY=` lines for the user to complete.
-    env_keys: &'static [&'static str],
-}
-
-impl PluginPreset {
-    fn entry(&self, name: String) -> McpServerEntry {
-        McpServerEntry {
-            name,
-            transport: self.transport,
-            command: self.command.map(str::to_owned),
-            args: self.args.iter().map(|a| (*a).to_owned()).collect(),
-            url: self.url.map(str::to_owned),
-            env: self
-                .env_keys
-                .iter()
-                .map(|k| ((*k).to_owned(), String::new()))
-                .collect(),
-            enabled_claude: true,
-            enabled_codex: true,
-            ..Default::default()
-        }
-    }
+    /// Host a user-supplied URL is expected on; also how an installed
+    /// [`PresetKind::SetupUrl`] entry is recognized.
+    url_host: Option<&'static str>,
+    /// One sentence shown in the Set up… dialog.
+    setup_guidance: Option<&'static str>,
+    /// Caveat line shown under the guidance (e.g. unmaintained server).
+    setup_note: Option<&'static str>,
+    /// Where the user obtains the URL/credentials; opened in the browser.
+    doc_link: Option<&'static str>,
+    fields: &'static [CredentialField],
 }
 
 const PRESETS: &[PluginPreset] = &[
@@ -94,73 +105,186 @@ const PRESETS: &[PluginPreset] = &[
         key: "slack",
         label: "Slack",
         description: "Read and post to Slack workspaces.",
+        kind: PresetKind::Credentials,
         transport: McpTransport::Stdio,
         command: Some("npx"),
         args: &["-y", "@modelcontextprotocol/server-slack"],
         url: None,
-        env_keys: &["SLACK_BOT_TOKEN", "SLACK_TEAM_ID"],
+        url_host: None,
+        setup_guidance: Some(
+            "Create a Slack app with a bot token, then paste its credentials.",
+        ),
+        setup_note: Some(
+            "Runs the community Slack MCP server locally; it is no longer \
+             maintained upstream.",
+        ),
+        doc_link: Some("https://api.slack.com/apps"),
+        fields: &[
+            CredentialField {
+                env_key: "SLACK_BOT_TOKEN",
+                label: "Bot token",
+                help: "The xoxb-… token from your app's OAuth & Permissions page.",
+            },
+            CredentialField {
+                env_key: "SLACK_TEAM_ID",
+                label: "Team ID",
+                help: "Your workspace ID (starts with T), from your workspace URL.",
+            },
+        ],
     },
     PluginPreset {
         key: "composio",
         label: "Composio",
         description: "Bridge to hundreds of Composio tool integrations.",
+        kind: PresetKind::SetupUrl,
         transport: McpTransport::Http,
         command: None,
         args: &[],
-        url: Some("https://mcp.composio.dev/YOUR_SERVER_ID"),
-        env_keys: &[],
+        url: None,
+        url_host: Some("mcp.composio.dev"),
+        setup_guidance: Some(
+            "Paste your personal server URL from the Composio dashboard.",
+        ),
+        setup_note: None,
+        doc_link: Some("https://mcp.composio.dev"),
+        fields: &[],
     },
     PluginPreset {
         key: "notion",
         label: "Notion",
         description: "Search and edit Notion pages and databases.",
+        kind: PresetKind::OneClick,
         transport: McpTransport::Http,
         command: None,
         args: &[],
         url: Some("https://mcp.notion.com/mcp"),
-        env_keys: &[],
+        url_host: None,
+        setup_guidance: None,
+        setup_note: None,
+        doc_link: None,
+        fields: &[],
     },
     PluginPreset {
         key: "linear",
         label: "Linear",
         description: "Manage Linear issues, projects, and cycles.",
+        kind: PresetKind::OneClick,
         transport: McpTransport::Http,
         command: None,
         args: &[],
         url: Some("https://mcp.linear.app/mcp"),
-        env_keys: &[],
+        url_host: None,
+        setup_guidance: None,
+        setup_note: None,
+        doc_link: None,
+        fields: &[],
     },
     PluginPreset {
         key: "github",
         label: "GitHub",
         description: "Work with GitHub repos, issues, and pull requests.",
+        kind: PresetKind::OneClick,
         transport: McpTransport::Http,
         command: None,
         args: &[],
         url: Some("https://api.githubcopilot.com/mcp/"),
-        env_keys: &[],
+        url_host: None,
+        setup_guidance: None,
+        setup_note: None,
+        doc_link: None,
+        fields: &[],
     },
     PluginPreset {
         key: "cloudflare",
         label: "Cloudflare",
         description: "Inspect and manage Cloudflare Workers bindings.",
+        kind: PresetKind::OneClick,
         transport: McpTransport::Http,
         command: None,
         args: &[],
         url: Some("https://bindings.mcp.cloudflare.com/mcp"),
-        env_keys: &[],
+        url_host: None,
+        setup_guidance: None,
+        setup_note: None,
+        doc_link: None,
+        fields: &[],
     },
     PluginPreset {
         key: "gmail",
         label: "Gmail",
         description: "Read, search, and draft Gmail messages.",
+        kind: PresetKind::Credentials,
         transport: McpTransport::Stdio,
         command: Some("npx"),
         args: &["-y", "@gongrzhe/server-gmail-autoauth-mcp"],
         url: None,
-        env_keys: &[],
+        url_host: None,
+        setup_guidance: None,
+        setup_note: None,
+        doc_link: None,
+        fields: &[],
     },
 ];
+
+impl PluginPreset {
+    fn by_key(key: &str) -> Option<&'static PluginPreset> {
+        PRESETS.iter().find(|p| p.key == key)
+    }
+
+    /// Whether the card's action needs the setup dialog before anything can
+    /// be saved.
+    fn needs_setup(&self) -> bool {
+        match self.kind {
+            PresetKind::OneClick => false,
+            PresetKind::SetupUrl => true,
+            PresetKind::Credentials => !self.fields.is_empty(),
+        }
+    }
+
+    /// The server entry this preset creates, minus ids (twarp 27).
+    fn server_entry(
+        &self,
+        name: String,
+        url: Option<String>,
+        env: Vec<(String, String)>,
+    ) -> McpServerEntry {
+        McpServerEntry {
+            name,
+            transport: self.transport,
+            command: self.command.map(str::to_owned),
+            args: self.args.iter().map(|a| (*a).to_owned()).collect(),
+            url: url.or_else(|| self.url.map(str::to_owned)),
+            env: env.into_iter().collect(),
+            enabled_claude: true,
+            enabled_codex: true,
+            ..Default::default()
+        }
+    }
+
+    /// Whether an existing registry server was created from this preset —
+    /// what turns the card into Added/Manage (P7) and blocks duplicates.
+    fn matches_server(&self, server: &McpServerEntry) -> bool {
+        match self.kind {
+            PresetKind::OneClick => {
+                self.url.is_some() && server.url.as_deref() == self.url
+            }
+            PresetKind::SetupUrl => server
+                .url
+                .as_deref()
+                .and_then(|u| url::Url::parse(u).ok())
+                .and_then(|u| u.host_str().map(str::to_owned))
+                .as_deref()
+                == self.url_host,
+            PresetKind::Credentials => {
+                // The npm package name is the stable fingerprint.
+                let package = self.args.last().copied().unwrap_or_default();
+                server.transport == McpTransport::Stdio
+                    && !package.is_empty()
+                    && server.args.iter().any(|a| a == package)
+            }
+        }
+    }
+}
 
 /// Actions dispatched by the Plugins page's controls, wrapped in
 /// [`AutomationViewAction::Plugins`]. Per-sub-form actions are keyed by a
@@ -170,8 +294,26 @@ const PRESETS: &[PluginPreset] = &[
 pub enum PluginsPageAction {
     /// Open the inline editor with a blank form.
     OpenAdd,
-    /// Open the inline editor prefilled from the named quick-add preset.
-    OpenPreset(String),
+    /// twarp 27: a gallery card's primary action for a connector that needs
+    /// no input — create the plugin (if absent) and, for remote servers,
+    /// start the OAuth flow. Also the Retry action after a failure.
+    ConnectPreset(String),
+    /// twarp 27: open the Set up… panel for a connector that needs input.
+    OpenPresetSetup(String),
+    /// twarp 27: dismiss the Set up… panel without saving.
+    CancelPresetSetup,
+    /// twarp 27: validate the Set up… panel, create the plugin, and (for
+    /// remote servers) start the OAuth flow.
+    SubmitPresetSetup(String),
+    /// twarp 27: abandon a gallery-initiated consent flow waiting on the
+    /// browser.
+    CancelPresetConnect(String),
+    /// twarp 27: an installed connector's card action — opens its plugin's
+    /// editor (the page has no scroll anchors; the editor renders directly
+    /// under the gallery).
+    OpenPresetManage(String),
+    /// twarp 27: open a setup dialog's documentation link in the browser.
+    OpenPresetDocLink(String),
     /// Open the inline editor prefilled from the given plugin.
     OpenEdit(String),
     /// First click of the two-click delete affordance.
@@ -216,6 +358,39 @@ struct RowUi {
     edit_button: ViewHandle<ActionButton>,
     delete_button: ViewHandle<ActionButton>,
     confirm_delete_button: ViewHandle<ActionButton>,
+}
+
+/// twarp 27: persistent per-gallery-card UI. An [`ActionButton`]'s label is
+/// fixed at construction, so each state the card can be in gets its own
+/// pre-built handle; at most one is mounted per render.
+struct PresetUi {
+    hover: MouseStateHandle,
+    /// "Connect" ([`PresetKind::OneClick`]) or "Add" (credential presets
+    /// with nothing to ask for).
+    primary_button: ViewHandle<ActionButton>,
+    /// "Set up…" for presets that need input first.
+    setup_button: ViewHandle<ActionButton>,
+    /// "Manage" once an entry from this preset is installed.
+    manage_button: ViewHandle<ActionButton>,
+    /// "Cancel" while the consent page is open in the browser.
+    cancel_button: ViewHandle<ActionButton>,
+    /// "Retry" after a failed connect.
+    retry_button: ViewHandle<ActionButton>,
+}
+
+/// twarp 27: the inline Set up… panel for one preset — only the inputs the
+/// connector actually needs (a URL, or labeled credential fields).
+struct PresetSetup {
+    key: &'static str,
+    /// `Some` for [`PresetKind::SetupUrl`].
+    url_editor: Option<ViewHandle<EditorView>>,
+    /// One editor per [`CredentialField`], in preset order.
+    field_editors: Vec<ViewHandle<EditorView>>,
+    error: Option<String>,
+    submit_button: ViewHandle<ActionButton>,
+    cancel_button: ViewHandle<ActionButton>,
+    /// `Some` when the preset has a documentation link.
+    doc_button: Option<ViewHandle<ActionButton>>,
 }
 
 /// One MCP-server sub-form in the inline editor.
@@ -297,10 +472,11 @@ pub struct PluginsPageState {
     /// Dedicated CTA for the empty state — a view handle can't be mounted
     /// both in the header and in the empty state at once.
     empty_add_button: ViewHandle<ActionButton>,
-    /// One button per [`PRESETS`] entry, in the same order.
-    /// One persistent hover state per quick-add gallery card, keyed by
-    /// [`PRESETS`] key.
-    preset_hover: HashMap<&'static str, MouseStateHandle>,
+    /// twarp 27: persistent per-gallery-card UI (hover + one pre-built
+    /// button per possible label), keyed by [`PRESETS`] key.
+    presets: HashMap<&'static str, PresetUi>,
+    /// twarp 27: the open Set up… panel, if any (at most one at a time).
+    preset_setup: Option<PresetSetup>,
     rows: HashMap<String, RowUi>,
     adopt_buttons: HashMap<String, ViewHandle<ActionButton>>,
     editor: Option<PluginEditor>,
@@ -324,15 +500,76 @@ impl PluginsPageState {
                 ));
             })
         });
-        let preset_hover = PRESETS
+        let preset_button = |ctx: &mut ViewContext<AutomationView>,
+                             label: &'static str,
+                             key: &'static str,
+                             action: fn(String) -> PluginsPageAction|
+         -> ViewHandle<ActionButton> {
+            ctx.add_typed_action_view(|_| {
+                let button = if matches!(label, "Connect" | "Add") {
+                    ActionButton::new(label, PrimaryTheme)
+                } else {
+                    ActionButton::new(label, SecondaryTheme)
+                };
+                button.on_click(move |ctx| {
+                    ctx.dispatch_typed_action(AutomationViewAction::Plugins(action(
+                        key.to_owned(),
+                    )));
+                })
+            })
+        };
+        let presets = PRESETS
             .iter()
-            .map(|preset| (preset.key, MouseStateHandle::default()))
+            .map(|preset| {
+                let primary_label = if preset.kind == PresetKind::OneClick {
+                    "Connect"
+                } else {
+                    "Add"
+                };
+                (
+                    preset.key,
+                    PresetUi {
+                        hover: MouseStateHandle::default(),
+                        primary_button: preset_button(
+                            ctx,
+                            primary_label,
+                            preset.key,
+                            PluginsPageAction::ConnectPreset,
+                        ),
+                        setup_button: preset_button(
+                            ctx,
+                            "Set up…",
+                            preset.key,
+                            PluginsPageAction::OpenPresetSetup,
+                        ),
+                        manage_button: preset_button(
+                            ctx,
+                            "Manage",
+                            preset.key,
+                            PluginsPageAction::OpenPresetManage,
+                        ),
+                        cancel_button: preset_button(
+                            ctx,
+                            "Cancel",
+                            preset.key,
+                            PluginsPageAction::CancelPresetConnect,
+                        ),
+                        retry_button: preset_button(
+                            ctx,
+                            "Retry",
+                            preset.key,
+                            PluginsPageAction::ConnectPreset,
+                        ),
+                    },
+                )
+            })
             .collect();
         let mut state = Self {
             scroll_state: Default::default(),
             add_button,
             empty_add_button,
-            preset_hover,
+            presets,
+            preset_setup: None,
             rows: HashMap::new(),
             adopt_buttons: HashMap::new(),
             editor: None,
@@ -432,16 +669,37 @@ impl PluginsPageState {
             PluginsPageAction::OpenAdd => {
                 self.editor = Some(self.new_editor(None, None, ctx));
             }
-            PluginsPageAction::OpenPreset(key) => {
-                if let Some(preset) = PRESETS.iter().find(|p| p.key == key) {
-                    let name = PluginRegistryModel::as_ref(ctx).unique_name(preset.key);
-                    let server = preset.entry(name.clone());
-                    let mut editor = self.new_editor(None, Some(preset.description), ctx);
-                    set_editor_text(&editor.name_editor, &name, ctx);
-                    editor.servers = vec![self.new_server_form(Some(server), ctx)];
-                    self.editor = Some(editor);
+            PluginsPageAction::ConnectPreset(key) => {
+                if let Some(preset) = PluginPreset::by_key(key) {
+                    self.connect_preset(preset, None, Vec::new(), ctx);
                 }
             }
+            PluginsPageAction::OpenPresetSetup(key) => {
+                if let Some(preset) = PluginPreset::by_key(key) {
+                    self.preset_setup = Some(self.new_preset_setup(preset, ctx));
+                }
+            }
+            PluginsPageAction::CancelPresetSetup => self.preset_setup = None,
+            PluginsPageAction::SubmitPresetSetup(key) => self.submit_preset_setup(key, ctx),
+            PluginsPageAction::CancelPresetConnect(key) => {
+                if let Some(server) = PluginPreset::by_key(key)
+                    .and_then(|preset| installed_preset_server(preset, ctx))
+                {
+                    McpOauthModel::handle(ctx).update(ctx, |m, mctx| m.cancel(&server.id, mctx));
+                }
+            }
+            PluginsPageAction::OpenPresetManage(key) => {
+                if let Some(plugin_id) = PluginPreset::by_key(key)
+                    .and_then(|preset| installed_preset_server(preset, ctx))
+                    .and_then(|server| server.plugin_id)
+                {
+                    let entry = PluginRegistryModel::as_ref(ctx).get(&plugin_id).cloned();
+                    if let Some(entry) = entry {
+                        self.editor = Some(self.new_editor(Some(entry), None, ctx));
+                    }
+                }
+            }
+            PluginsPageAction::OpenPresetDocLink(url) => ctx.open_url(url),
             PluginsPageAction::OpenEdit(id) => {
                 let entry = PluginRegistryModel::as_ref(ctx).get(id).cloned();
                 if let Some(entry) = entry {
@@ -621,6 +879,128 @@ impl PluginsPageState {
             skill_names: vec![name.to_owned()],
         };
         PluginRegistryModel::handle(ctx).update(ctx, |m, mctx| m.upsert(entry, mctx));
+    }
+
+    /// twarp 27: the gallery's create-and-connect path. Creates the preset's
+    /// plugin if it doesn't exist yet (P7: repeated presses never
+    /// duplicate), then starts the OAuth flow for remote servers. Stdio
+    /// presets just land Installed — no consent is involved (P5).
+    fn connect_preset(
+        &mut self,
+        preset: &'static PluginPreset,
+        url: Option<String>,
+        env: Vec<(String, String)>,
+        ctx: &mut ViewContext<AutomationView>,
+    ) {
+        let server = match installed_preset_server(preset, ctx) {
+            Some(existing) => existing,
+            None => {
+                let Some(created) = create_preset_plugin(preset, url, env, ctx) else {
+                    return;
+                };
+                created
+            }
+        };
+        if server.transport == McpTransport::Http {
+            McpOauthModel::handle(ctx).update(ctx, |m, mctx| m.connect(&server, mctx));
+        }
+    }
+
+    /// twarp 27: build the Set up… panel — a URL field for
+    /// [`PresetKind::SetupUrl`], labeled credential editors otherwise.
+    fn new_preset_setup(
+        &self,
+        preset: &'static PluginPreset,
+        ctx: &mut ViewContext<AutomationView>,
+    ) -> PresetSetup {
+        let url_editor = (preset.kind == PresetKind::SetupUrl)
+            .then(|| new_single_line_editor("https://…", "", ctx));
+        let field_editors = preset
+            .fields
+            .iter()
+            .map(|field| new_single_line_editor(field.label, "", ctx))
+            .collect();
+        let submit_key = preset.key;
+        let submit_label = if preset.transport == McpTransport::Http {
+            "Connect"
+        } else {
+            "Add"
+        };
+        let submit_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new(submit_label, PrimaryTheme).on_click(move |ctx| {
+                ctx.dispatch_typed_action(AutomationViewAction::Plugins(
+                    PluginsPageAction::SubmitPresetSetup(submit_key.to_owned()),
+                ));
+            })
+        });
+        let cancel_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Cancel", SecondaryTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(AutomationViewAction::Plugins(
+                    PluginsPageAction::CancelPresetSetup,
+                ));
+            })
+        });
+        let doc_button = preset.doc_link.map(|link| {
+            ctx.add_typed_action_view(|_| {
+                ActionButton::new("Open in browser", SecondaryTheme).on_click(move |ctx| {
+                    ctx.dispatch_typed_action(AutomationViewAction::Plugins(
+                        PluginsPageAction::OpenPresetDocLink(link.to_owned()),
+                    ));
+                })
+            })
+        });
+        PresetSetup {
+            key: preset.key,
+            url_editor,
+            field_editors,
+            error: None,
+            submit_button,
+            cancel_button,
+            doc_button,
+        }
+    }
+
+    /// twarp 27: validate the Set up… panel and create/connect. Invalid
+    /// input shows an inline error and saves nothing (P4, P5).
+    fn submit_preset_setup(&mut self, key: &str, ctx: &mut ViewContext<AutomationView>) {
+        let Some(setup) = self.preset_setup.as_ref() else {
+            return;
+        };
+        let Some(preset) = PluginPreset::by_key(key).filter(|p| p.key == setup.key) else {
+            return;
+        };
+
+        let url = setup.url_editor.as_ref().map(|editor| {
+            editor.as_ref(ctx).buffer_text(ctx).trim().to_owned()
+        });
+        if let Some(url) = &url {
+            if !valid_http_url(url) {
+                let guidance = preset
+                    .setup_guidance
+                    .unwrap_or("Enter the server URL (https://…).");
+                self.set_setup_error(format!("Enter a valid URL. {guidance}"));
+                return;
+            }
+        }
+
+        let mut env = Vec::new();
+        for (field, editor) in preset.fields.iter().zip(&setup.field_editors) {
+            let value = editor.as_ref(ctx).buffer_text(ctx).trim().to_owned();
+            if value.is_empty() {
+                self.set_setup_error(format!("{} is required.", field.label));
+                return;
+            }
+            env.push((field.env_key.to_owned(), value));
+        }
+
+        self.preset_setup = None;
+        self.connect_preset(preset, url, env, ctx);
+    }
+
+    fn set_setup_error(&mut self, error: String) {
+        if let Some(setup) = self.preset_setup.as_mut() {
+            setup.error = Some(error);
+        }
     }
 
     fn new_editor(
@@ -1289,6 +1669,10 @@ impl PluginsPageState {
                 .finish(),
         );
 
+        if let Some(setup) = &self.preset_setup {
+            column.add_child(self.render_preset_setup(setup, app));
+        }
+
         if let Some(editor) = &self.editor {
             column.add_child(self.render_editor(editor, app));
         }
@@ -1405,15 +1789,48 @@ impl PluginsPageState {
     ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        let Some(state) = self.preset_hover.get(preset.key) else {
+        let Some(ui) = self.presets.get(preset.key) else {
             return Flex::row().with_main_axis_size(MainAxisSize::Min).finish();
         };
+
+        // twarp 27: the card carries exactly one primary action, chosen from
+        // the installed entry's connection state (P2, P3, P7).
+        let installed = installed_preset_server(preset, app);
+        let status = installed
+            .as_ref()
+            .map(|server| McpOauthModel::as_ref(app).status(server));
+        let button = match &status {
+            None => {
+                if preset.needs_setup() {
+                    Some(&ui.setup_button)
+                } else {
+                    Some(&ui.primary_button)
+                }
+            }
+            Some(McpAuthStatus::WaitingForBrowser) => Some(&ui.cancel_button),
+            // A probe in flight has nothing to cancel — it settles on its own.
+            Some(McpAuthStatus::Connecting) => None,
+            Some(McpAuthStatus::Error(_)) => Some(&ui.retry_button),
+            // A remote entry that exists but was disconnected/cancelled can
+            // reconnect straight from the card.
+            Some(McpAuthStatus::NotConnected) => Some(&ui.primary_button),
+            // Connected, Local, NeedsStaticAuth, Named: manage in the editor.
+            Some(_) => Some(&ui.manage_button),
+        };
+        // Chip for in-flight/connected/error states; redundant next to the
+        // plain Connect/Set up… buttons, so omitted until something happens.
+        let status_chip = status
+            .as_ref()
+            .filter(|status| {
+                !matches!(status, McpAuthStatus::Local | McpAuthStatus::NotConnected)
+            })
+            .map(|status| render_status_chip(status, appearance));
 
         let family = appearance.ui_font_family();
         let main = theme.main_text_color(theme.background());
         let sub = theme.sub_text_color(theme.background());
         let key = preset.key;
-        let card = Hoverable::new(state.clone(), move |hover| {
+        let body = Hoverable::new(ui.hover.clone(), move |hover| {
             let icon_color = main;
             let chip = match ExternalProductIcon::from_string(key) {
                 Some(product) => super::render_chip(
@@ -1454,20 +1871,144 @@ impl PluginsPageState {
                     .with_child(Shrinkable::new(1., Align::new(labels).left().finish()).finish())
                     .finish(),
             )
-            .with_uniform_padding(spacing::MD)
-            .with_border(Border::all(1.).with_border_fill(theme.outline()))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)));
+            .with_uniform_padding(spacing::MD);
             if hover.is_hovered() {
                 container = container.with_background(theme.surface_overlay_1());
             }
             container.finish()
-        });
-        card.on_click(move |ctx, _, _| {
-            ctx.dispatch_typed_action(AutomationViewAction::Plugins(
-                PluginsPageAction::OpenPreset(key.to_owned()),
-            ));
         })
+        .finish();
+
+        // Action row under the body: status chip left, button right.
+        let mut action_row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(spacing::MD);
+        match status_chip {
+            Some(chip) => action_row.add_child(Shrinkable::new(1., chip).finish()),
+            None => action_row.add_child(
+                Expanded::new(1., Flex::row().with_main_axis_size(MainAxisSize::Min).finish())
+                    .finish(),
+            ),
+        }
+        if let Some(button) = button {
+            action_row.add_child(ChildView::new(button).finish());
+        }
+
+        Container::new(
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_child(body)
+                .with_child(
+                    Container::new(action_row.finish())
+                        .with_padding_left(spacing::MD)
+                        .with_padding_right(spacing::MD)
+                        .with_padding_bottom(spacing::MD)
+                        .finish(),
+                )
+                .finish(),
+        )
+        .with_border(Border::all(1.).with_border_fill(theme.outline()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
         .finish()
+    }
+
+    /// twarp 27: the inline Set up… panel — only the inputs the connector
+    /// needs, one sentence of guidance, and an optional documentation link.
+    fn render_preset_setup(&self, setup: &PresetSetup, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let Some(preset) = PluginPreset::by_key(setup.key) else {
+            return Flex::row().with_main_axis_size(MainAxisSize::Min).finish();
+        };
+        let family = appearance.ui_font_family();
+        let sub = theme.sub_text_color(theme.background());
+
+        let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+        column.add_child(render_form_label(
+            &format!("Set up {}", preset.label),
+            type_ramp::UI.size,
+            appearance,
+        ));
+        if let Some(guidance) = preset.setup_guidance {
+            column.add_child(
+                Container::new(
+                    Text::new(guidance, family, type_ramp::CAPTION.size)
+                        .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                        .with_color(sub.into())
+                        .finish(),
+                )
+                .with_margin_bottom(spacing::SM)
+                .finish(),
+            );
+        }
+        if let Some(note) = preset.setup_note {
+            column.add_child(
+                Container::new(
+                    Text::new(note, family, type_ramp::CAPTION.size)
+                        .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                        .with_color(sub.into())
+                        .finish(),
+                )
+                .with_margin_bottom(spacing::SM)
+                .finish(),
+            );
+        }
+        if let Some(doc_button) = &setup.doc_button {
+            column.add_child(
+                Container::new(
+                    Flex::row()
+                        .with_child(ChildView::new(doc_button).finish())
+                        .finish(),
+                )
+                .with_margin_bottom(spacing::SM)
+                .finish(),
+            );
+        }
+
+        if let Some(url_editor) = &setup.url_editor {
+            column.add_child(render_form_field("Server URL", url_editor, appearance));
+        }
+        for (field, editor) in preset.fields.iter().zip(&setup.field_editors) {
+            column.add_child(render_form_field(field.label, editor, appearance));
+            column.add_child(
+                Container::new(
+                    Text::new(field.help, family, type_ramp::CAPTION.size)
+                        .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                        .with_color(sub.into())
+                        .finish(),
+                )
+                .with_margin_bottom(spacing::SM)
+                .finish(),
+            );
+        }
+
+        if let Some(error) = &setup.error {
+            column.add_child(
+                Container::new(
+                    Text::new(error.clone(), family, type_ramp::CAPTION.size)
+                        .with_line_height_ratio(type_ramp::CAPTION.line_height)
+                        .with_color(theme.ui_error_color())
+                        .finish(),
+                )
+                .with_margin_bottom(spacing::SM)
+                .finish(),
+            );
+        }
+
+        column.add_child(
+            Flex::row()
+                .with_spacing(spacing::SM)
+                .with_child(ChildView::new(&setup.submit_button).finish())
+                .with_child(ChildView::new(&setup.cancel_button).finish())
+                .finish(),
+        );
+
+        Container::new(column.finish())
+            .with_uniform_padding(spacing::MD)
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(radius::CARD)))
+            .with_margin_bottom(spacing::MD)
+            .finish()
     }
 
     fn render_card(&self, entry: &PluginEntry, app: &AppContext) -> Box<dyn Element> {
@@ -2084,6 +2625,60 @@ impl PluginsPageState {
 
 /// Combined conflict caption for a plugin card, from its member skills'
 /// existing conflict states, or `None` when healthy.
+/// twarp 27: the registry server created from this preset, if one exists.
+/// What makes repeated card presses idempotent (P7).
+fn installed_preset_server(
+    preset: &'static PluginPreset,
+    app: &AppContext,
+) -> Option<McpServerEntry> {
+    McpRegistryModel::as_ref(app)
+        .servers()
+        .iter()
+        .find(|server| preset.matches_server(server))
+        .cloned()
+}
+
+/// twarp 27: create a preset's single-server plugin without the editor
+/// (mirrors [`PluginsPageState::orphan_server_into_plugin`]). Returns the
+/// committed server entry, ready for [`McpOauthModel::connect`].
+fn create_preset_plugin(
+    preset: &'static PluginPreset,
+    url: Option<String>,
+    env: Vec<(String, String)>,
+    ctx: &mut ViewContext<AutomationView>,
+) -> Option<McpServerEntry> {
+    let plugin_name = PluginRegistryModel::as_ref(ctx).unique_name(preset.label);
+    // Server names have their own uniqueness domain in the MCP registry.
+    let server_name = {
+        let registry = McpRegistryModel::as_ref(ctx);
+        let mut candidate = preset.label.to_owned();
+        let mut counter = 2;
+        while registry.name_taken(&candidate, None) {
+            candidate = format!("{} {counter}", preset.label);
+            counter += 1;
+        }
+        candidate
+    };
+
+    let plugin_id = uuid::Uuid::new_v4().to_string();
+    let mut server = preset.server_entry(server_name, url, env);
+    server.id = uuid::Uuid::new_v4().to_string();
+    server.plugin_id = Some(plugin_id.clone());
+    McpRegistryModel::handle(ctx).update(ctx, |m, mctx| m.upsert(server.clone(), mctx));
+
+    let entry = PluginEntry {
+        id: plugin_id,
+        name: plugin_name,
+        description: preset.description.to_owned(),
+        enabled_claude: true,
+        enabled_codex: true,
+        server_ids: vec![server.id.clone()],
+        skill_names: Vec::new(),
+    };
+    PluginRegistryModel::handle(ctx).update(ctx, |m, mctx| m.upsert(entry, mctx));
+    Some(server)
+}
+
 fn plugin_conflict_note(entry: &PluginEntry, app: &AppContext) -> Option<String> {
     let store = SkillsStoreModel::as_ref(app);
     let (mut claude, mut codex) = (false, false);
@@ -2476,5 +3071,95 @@ mod tests {
         assert!(!valid_http_url("mcp.composio.dev/abc"));
         assert!(!valid_http_url("file:///etc/passwd"));
         assert!(!valid_http_url(""));
+    }
+
+    /// twarp 27 P2: every preset's kind implies exactly the inputs its flow
+    /// asks for — one-click cards carry a fixed URL, setup-URL cards a host
+    /// to validate against, credential cards labeled fields (or none, which
+    /// degenerates to add-on-click).
+    #[test]
+    fn preset_kinds_match_their_required_inputs() {
+        for preset in PRESETS {
+            match preset.kind {
+                PresetKind::OneClick => {
+                    assert!(preset.url.is_some(), "{}: one-click needs a URL", preset.key);
+                    assert!(!preset.needs_setup());
+                }
+                PresetKind::SetupUrl => {
+                    // twarp 27 P4: no placeholder URL that could be persisted.
+                    assert!(preset.url.is_none(), "{}: user supplies the URL", preset.key);
+                    assert!(preset.url_host.is_some());
+                    assert!(preset.needs_setup());
+                }
+                PresetKind::Credentials => {
+                    assert_eq!(preset.transport, McpTransport::Stdio);
+                    assert!(preset.command.is_some());
+                    assert_eq!(preset.needs_setup(), !preset.fields.is_empty());
+                }
+            }
+        }
+    }
+
+    /// twarp 27 P7: installed-entry recognition per kind, which is what
+    /// makes repeated card presses idempotent.
+    #[test]
+    fn preset_matching_recognizes_installed_servers() {
+        let notion = PluginPreset::by_key("notion").unwrap();
+        let composio = PluginPreset::by_key("composio").unwrap();
+        let slack = PluginPreset::by_key("slack").unwrap();
+
+        let mut server = McpServerEntry {
+            transport: McpTransport::Http,
+            url: Some("https://mcp.notion.com/mcp".to_owned()),
+            ..Default::default()
+        };
+        assert!(notion.matches_server(&server));
+        assert!(!composio.matches_server(&server));
+
+        server.url = Some("https://mcp.composio.dev/my-server-id/mcp".to_owned());
+        assert!(composio.matches_server(&server));
+        assert!(!notion.matches_server(&server));
+
+        let stdio = McpServerEntry {
+            transport: McpTransport::Stdio,
+            command: Some("npx".to_owned()),
+            args: vec![
+                "-y".to_owned(),
+                "@modelcontextprotocol/server-slack".to_owned(),
+            ],
+            ..Default::default()
+        };
+        assert!(slack.matches_server(&stdio));
+        assert!(!slack.matches_server(&server));
+        // A different stdio server is not mistaken for the preset.
+        let other = McpServerEntry {
+            transport: McpTransport::Stdio,
+            command: Some("npx".to_owned()),
+            args: vec!["-y".to_owned(), "@other/server".to_owned()],
+            ..Default::default()
+        };
+        assert!(!slack.matches_server(&other));
+    }
+
+    /// twarp 27: preset-created servers carry the user's inputs, not
+    /// placeholders.
+    #[test]
+    fn preset_server_entry_uses_supplied_inputs() {
+        let composio = PluginPreset::by_key("composio").unwrap();
+        let entry = composio.server_entry(
+            "Composio".to_owned(),
+            Some("https://mcp.composio.dev/abc".to_owned()),
+            Vec::new(),
+        );
+        assert_eq!(entry.url.as_deref(), Some("https://mcp.composio.dev/abc"));
+
+        let slack = PluginPreset::by_key("slack").unwrap();
+        let entry = slack.server_entry(
+            "Slack".to_owned(),
+            None,
+            vec![("SLACK_BOT_TOKEN".to_owned(), "xoxb-1".to_owned())],
+        );
+        assert_eq!(entry.env["SLACK_BOT_TOKEN"], "xoxb-1");
+        assert!(entry.url.is_none());
     }
 }
