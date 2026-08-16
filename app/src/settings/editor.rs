@@ -237,6 +237,15 @@ define_settings_group!(AppEditorSettings, settings: [
         toml_path: "text_editing.code_editor_line_number_mode",
         description: "How line numbers are displayed in code editors.",
     },
+    code_editor_git_blame: CodeEditorGitBlame {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        private: false,
+        toml_path: "text_editing.code_editor_git_blame",
+        description: "Whether per-line git blame annotations are shown in the code editor gutter.",
+    },
     autocomplete_symbols: AutocompleteSymbols {
         type: bool,
         default: true,

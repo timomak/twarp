@@ -13,7 +13,7 @@ Twarp already has a file-editing workflow, diff indicators, and commit timeline 
 1. Make per-line authorship visible in the editor with minimal disruption to line numbers, diff indicators, comments, and text selection.
 2. Keep the editor responsive while Git data is loading, stale, unavailable, or expensive to compute.
 3. Provide a direct path from a blamed line to the commit message and the commit diff relevant to the open file.
-4. Keep partially implemented work dark behind a feature flag until both sub-phases are complete enough for users.
+4. Keep the gutter opt-in: blame is off by default, and the user turns it on deliberately when they want line history.
 
 ## Non-goals
 
@@ -95,13 +95,17 @@ Figma: none provided.
 
 29. Text selection, copy, search, line-number selection, comment gutter buttons, diff hunk buttons, and code navigation continue to behave as they did before blame was enabled.
 
-30. The feature is available only when the Git blame feature flag is enabled. When the flag is disabled, no blame commands run and the editor gutter is unchanged from the current behavior.
+30. Blame is off by default. It is controlled by the `text_editing.code_editor_git_blame` setting, which the user toggles either from Settings > Features > Text Editing or from the editor's right-click menu (`Show git blame` / `Hide git blame`). While the setting is off, no blame commands run and the editor gutter is unchanged from the pre-blame behavior.
+
+31. Toggling the setting applies to already-open editors immediately: turning it on fetches and shows annotations without reopening the file, turning it off clears the annotations, the cached blame, and any open popover, and returns the gutter to line-number width.
+
+32. The right-click toggle is offered only in editors where blame can render — not in diff or code-review editors, and not for new unsaved files.
 
 ## Smoke test
 
 ### 11a - Blame parser + gutter rendering
 
-1. Build and launch the `warp-oss`/twarp binary with the Git blame feature flag enabled.
+1. Build and launch the twarp binary, then turn on git blame (right-click in the editor > `Show git blame`, or Settings > Features > Text Editing).
 2. Create a temporary Git repository with a text file containing at least three lines; commit line 1 as author `Alice`, then change line 2 and commit as author `Bob`.
 3. Open the repository and the committed file in twarp.
 4. Verify the editor still shows normal line numbers, syntax highlighting, and any diff indicators, and that the blame gutter shows `Alice` on line 1 and `Bob` on line 2 with 7-character hashes and relative dates.

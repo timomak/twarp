@@ -54,6 +54,8 @@ use twarpui::{
 use twarpui::{platform::SaveFilePickerConfiguration, ModelHandle};
 use vec1::Vec1;
 
+use settings::{Setting as _, ToggleableSetting as _};
+
 use crate::menu::{Event, Menu, MenuItem, MenuItemFields};
 
 use crate::{
@@ -69,7 +71,7 @@ use crate::{
         SaveOutcome, ShowFindReferencesCardProvider,
     },
     debounce::debounce,
-    settings::{AISettings, CodeSettings},
+    settings::{AISettings, AppEditorSettings, CodeSettings},
     terminal::TerminalView,
     util::sync::Condition,
 };
@@ -282,6 +284,7 @@ pub enum LocalCodeEditorAction {
     NavigateToTarget(FileLocation),
     GotoDefinition,
     FindReferences,
+    ToggleGitBlame,
     OpenContextMenu,
     /// Lazily fetch find-references and show the card (triggered on cmd-click when at definition).
     /// This is the fallback when go-to-definition has no different location to navigate to.
@@ -423,6 +426,12 @@ impl LocalCodeEditorView {
         });
         ctx.subscribe_to_view(&context_menu, |me, _, event, ctx| {
             me.handle_menu_event(event, ctx);
+        });
+
+        // Blame visibility is a user setting, so pick up toggles from the context
+        // menu or the settings page without reopening the file.
+        ctx.subscribe_to_model(&AppEditorSettings::handle(ctx), |me, _, _, ctx| {
+            me.request_git_blame(ctx);
         });
 
         ctx.subscribe_to_view(&editor, |me, _, event, ctx| match event {
@@ -1107,10 +1116,10 @@ impl LocalCodeEditorView {
         });
     }
 
-    fn is_lsp_server_available(&self, ctx: &mut ViewContext<Self>) -> bool {
+    fn is_lsp_server_available(&self, app: &AppContext) -> bool {
         self.lsp_server
             .as_ref()
-            .map(|server| server.as_ref(ctx).is_ready_for_requests())
+            .map(|server| server.as_ref(app).is_ready_for_requests())
             .unwrap_or(false)
     }
 
@@ -1744,10 +1753,11 @@ impl LocalCodeEditorView {
         })
     }
 
-    fn git_blame_enabled(&self) -> bool {
+    fn git_blame_enabled(&self, app: &AppContext) -> bool {
         self.diff_type.is_none()
             && !self.is_new_file
             && !self.suppress_git_blame
+            && *AppEditorSettings::as_ref(app).code_editor_git_blame
     }
 
     /// Marks this editor as a review diff. Review actions get the gutter and
@@ -1761,7 +1771,7 @@ impl LocalCodeEditorView {
     }
 
     fn resolve_blame_request(&self, ctx: &AppContext) -> Option<BlameRequest> {
-        if !self.git_blame_enabled() {
+        if !self.git_blame_enabled(ctx) {
             return None;
         }
 
@@ -1788,7 +1798,7 @@ impl LocalCodeEditorView {
     }
 
     fn request_git_blame(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.git_blame_enabled() {
+        if self.git_blame_enabled(ctx) {
             if let Some(path) = self.file_path() {
                 if DetectedRepositories::as_ref(ctx)
                     .get_root_for_path(path)
@@ -1929,7 +1939,7 @@ impl LocalCodeEditorView {
         parsed: &ParsedBlame,
         ctx: &AppContext,
     ) -> Vec<BlameGutterAnnotation> {
-        if !self.git_blame_enabled() {
+        if !self.git_blame_enabled(ctx) {
             return Vec::new();
         }
 
@@ -1984,7 +1994,7 @@ impl LocalCodeEditorView {
         line: EditorLineLocation,
         ctx: &AppContext,
     ) -> Option<CommitDetailRequest> {
-        if !self.git_blame_enabled() {
+        if !self.git_blame_enabled(ctx) {
             return None;
         }
 
@@ -2629,15 +2639,38 @@ impl LocalCodeEditorView {
     }
 
     /// Creates menu items for the context menu
-    fn context_menu_items(&self) -> Vec<MenuItem<LocalCodeEditorAction>> {
-        vec![
-            MenuItemFields::new("Go to definition")
-                .with_on_select_action(LocalCodeEditorAction::GotoDefinition)
-                .into_item(),
-            MenuItemFields::new("Find references")
-                .with_on_select_action(LocalCodeEditorAction::FindReferences)
-                .into_item(),
-        ]
+    fn context_menu_items(&self, app: &AppContext) -> Vec<MenuItem<LocalCodeEditorAction>> {
+        let mut items = Vec::new();
+
+        if self.is_lsp_server_available(app) {
+            items.push(
+                MenuItemFields::new("Go to definition")
+                    .with_on_select_action(LocalCodeEditorAction::GotoDefinition)
+                    .into_item(),
+            );
+            items.push(
+                MenuItemFields::new("Find references")
+                    .with_on_select_action(LocalCodeEditorAction::FindReferences)
+                    .into_item(),
+            );
+        }
+
+        // Blame is a diff/review-free affordance, so only offer the toggle where
+        // the annotations could actually render.
+        if self.diff_type.is_none() && !self.is_new_file && !self.suppress_git_blame {
+            let label = if *AppEditorSettings::as_ref(app).code_editor_git_blame {
+                "Hide git blame"
+            } else {
+                "Show git blame"
+            };
+            items.push(
+                MenuItemFields::new(label)
+                    .with_on_select_action(LocalCodeEditorAction::ToggleGitBlame)
+                    .into_item(),
+            );
+        }
+
+        items
     }
 
     /// Perform find references at the cursor position and show the references card.
@@ -3000,16 +3033,27 @@ impl TypedActionView for LocalCodeEditorView {
                 self.find_references_at_cursor(ctx);
             }
             LocalCodeEditorAction::OpenContextMenu => {
-                // Only show context menu if LSP is available
-                if self.is_lsp_server_available(ctx) {
+                let menu_items = self.context_menu_items(ctx);
+                if !menu_items.is_empty() {
                     self.context_menu_state.is_open = true;
-                    let menu_items = self.context_menu_items();
                     self.context_menu.update(ctx, move |menu, ctx| {
                         menu.set_items(menu_items, ctx);
                         ctx.notify();
                     });
                     ctx.notify();
                 }
+            }
+            LocalCodeEditorAction::ToggleGitBlame => {
+                self.context_menu_state.is_open = false;
+                AppEditorSettings::handle(ctx).update(ctx, |editor_settings, ctx| {
+                    if let Err(err) = editor_settings
+                        .code_editor_git_blame
+                        .toggle_and_save_value(ctx)
+                    {
+                        log::error!("failed to toggle git blame setting: {err}");
+                    }
+                });
+                ctx.notify();
             }
             LocalCodeEditorAction::FetchAndShowFindReferences {
                 lsp_position,

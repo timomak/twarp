@@ -113,5 +113,5 @@ Risks and mitigations:
 
 1. Expensive blame on large files: fetch asynchronously, cache by file/version/HEAD, and avoid per-keystroke subprocesses.
 2. Stale attribution on dirty buffers: dirty-line overlay must prefer `(uncommitted)` or blank over stale committed metadata whenever mapping is uncertain.
-3. Gutter layout regressions: keep blame disabled by default until 11b lands, and preserve current width/rendering exactly when the feature flag is off.
+3. Gutter layout regressions: blame is off by default via the `text_editing.code_editor_git_blame` setting (`app/src/settings/editor.rs`), and the gutter keeps its pre-blame width/rendering exactly while the setting is off.
 4. Popover scope creep: keep 11b file-scoped and read-only; reuse the existing read-only diff-pane work only as a reference, not as a second full review surface inside the popover.

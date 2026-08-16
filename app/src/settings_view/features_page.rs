@@ -50,10 +50,10 @@ use crate::settings::{
 use crate::settings::{
     AliasExpansionEnabled, AliasExpansionSettings, AppEditorSettings, AtContextMenuInTerminalMode,
     AutocompleteSymbols, AutosuggestionKeybindingHint, CloudPreferencesSettings,
-    CodeEditorLineNumberMode, CodeEditorLineNumberModeSetting, CodeSettings, CommandCorrections,
-    CompletionsOpenWhileTyping, CopyOnSelect, CtrlTabBehavior, DefaultSessionMode,
-    EnableSlashCommandsInTerminal, EnableSshWrapper, ErrorUnderliningEnabled, ExtraMetaKeys,
-    GPUSettings, GlobalHotkeyMode, InputSettings, InputSettingsChangedEvent,
+    CodeEditorGitBlame, CodeEditorLineNumberMode, CodeEditorLineNumberModeSetting, CodeSettings,
+    CommandCorrections, CompletionsOpenWhileTyping, CopyOnSelect, CtrlTabBehavior,
+    DefaultSessionMode, EnableSlashCommandsInTerminal, EnableSshWrapper, ErrorUnderliningEnabled,
+    ExtraMetaKeys, GPUSettings, GlobalHotkeyMode, InputSettings, InputSettingsChangedEvent,
     LinuxSelectionClipboard, MiddleClickPasteEnabled, MouseScrollMultiplier,
     OutlineCodebaseSymbolsForAtContextMenu, PreferLowPowerGPU, PreferredGraphicsBackend,
     QuakeModeSettings, ScrollSettings, SelectionSettings, ShowAutosuggestionIgnoreButton,
@@ -742,6 +742,7 @@ pub enum FeaturesPageAction {
     ToggleNotifications,
     ToggleRestoreSession,
     ToggleAutocompleteSymbols,
+    ToggleCodeEditorGitBlame,
     ToggleLinuxClipboardSelection,
     ToggleOpenLinksInDesktopApp,
     #[deprecated]
@@ -933,6 +934,10 @@ impl FeaturesPageAction {
             Self::ToggleAutocompleteSymbols => TelemetryEvent::FeaturesPageAction {
                 action: "ToggleAutocompleteSymbols".to_string(),
                 value: to_string(*AppEditorSettings::as_ref(ctx).autocomplete_symbols),
+            },
+            Self::ToggleCodeEditorGitBlame => TelemetryEvent::FeaturesPageAction {
+                action: "ToggleCodeEditorGitBlame".to_string(),
+                value: to_string(*AppEditorSettings::as_ref(ctx).code_editor_git_blame),
             },
             #[allow(deprecated)]
             Self::ToggleSshWrapper => TelemetryEvent::FeaturesPageAction {
@@ -1517,6 +1522,13 @@ impl TypedActionView for FeaturesPageView {
                 AppEditorSettings::handle(ctx).update(ctx, |editor_settings, ctx| {
                     report_if_error!(editor_settings
                         .autocomplete_symbols
+                        .toggle_and_save_value(ctx));
+                })
+            }
+            ToggleCodeEditorGitBlame => {
+                AppEditorSettings::handle(ctx).update(ctx, |editor_settings, ctx| {
+                    report_if_error!(editor_settings
+                        .code_editor_git_blame
                         .toggle_and_save_value(ctx));
                 })
             }
@@ -2830,6 +2842,13 @@ impl FeaturesPageView {
             .is_supported_on_current_platform()
         {
             text_editing_widgets.push(Box::new(CodeEditorLineNumberModeWidget::default()));
+        }
+
+        if app_editor_settings
+            .code_editor_git_blame
+            .is_supported_on_current_platform()
+        {
+            text_editing_widgets.push(Box::new(CodeEditorGitBlameWidget::default()));
         }
 
         if app_editor_settings
@@ -5798,6 +5817,60 @@ impl SettingsWidget for AutocompleteSymbolsWidget {
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(FeaturesPageAction::ToggleAutocompleteSymbols);
+                })
+                .finish(),
+            None,
+        )
+    }
+}
+
+#[derive(Default)]
+struct CodeEditorGitBlameWidget {
+    switch_state: SwitchStateHandle,
+    additional_info: MouseStateHandle,
+}
+
+impl SettingsWidget for CodeEditorGitBlameWidget {
+    type View = FeaturesPageView;
+
+    fn search_terms(&self) -> &str {
+        "git blame annotations gutter author commit code editor"
+    }
+
+    fn render(
+        &self,
+        view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let ui_builder = appearance.ui_builder();
+        render_body_item::<FeaturesPageAction>(
+            "Show git blame in the code editor gutter".into(),
+            Some(AdditionalInfo {
+                mouse_state: self.additional_info.clone(),
+                on_click_action: None,
+                secondary_text: None,
+                tooltip_override_text: Some(
+                    "Annotates every line with its author and commit. Can also be toggled from the editor's right-click menu.".into(),
+                ),
+            }),
+            LocalOnlyIconState::for_setting(
+                CodeEditorGitBlame::storage_key(),
+                CodeEditorGitBlame::sync_to_cloud(),
+                &mut view
+                    .button_mouse_states
+                    .local_only_icon_tooltip_states
+                    .borrow_mut(),
+                app,
+            ),
+            ToggleState::Enabled,
+            appearance,
+            ui_builder
+                .switch(self.switch_state.clone())
+                .check(*AppEditorSettings::as_ref(app).code_editor_git_blame)
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(FeaturesPageAction::ToggleCodeEditorGitBlame);
                 })
                 .finish(),
             None,
