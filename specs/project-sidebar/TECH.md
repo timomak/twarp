@@ -500,11 +500,11 @@ cargo clippy --workspace -- -D warnings
 
 If the full clippy/test suite has a baseline or environment failure, report it separately and retain successful targeted evidence for the changed modules.
 
-The 2026-10-01 repair passed the targeted PR context (11), folder replacement (9), Search context (4), working-directory model (11), context resolution (7), sidebar animation (4), Files view (48), and repository metadata (61) tests. Both isolated workspace integrations passed: rootless session to PR/Settings with visible Files, and independent PR state in two windows. Fixtures use temporary directories and an offline GitHub CLI stub.
+Final validation on 2026-10-01 passed 251 targeted unit tests, covering PR context, folder replacement, Search cancellation, working-directory overlays, context resolution, animation, Files, repository metadata, provider history, and the nullable transcript-path migration. Three isolated workspace integrations passed: rootless session to PR/Settings with visible Files, independent PR state in two windows, and an ambiguous restored PR page requiring a project choice. Fixtures use temporary directories and an offline GitHub CLI stub.
 
 The full UI-core suite passed 284 tests, ignored 7, and reproduced the existing `test_model_resurrected_before_flush_survives` failure on clean baseline `85dddf7e`. All four new resize/zoom dependency tests passed. Workspace clippy stops at the unchanged `new_scrollable::mousewheel` argument-count warning. Repository formatting also fails on existing baseline files; changed code was formatted without rewriting unrelated sections.
 
-Native `cargo build --bin twarp-oss` is blocked on this validation host by the missing Xcode Metal compiler. Non-graphics app and integration tests used a temporary shader-build bypass, which was removed after testing. Those results do not validate GPU rendering or establish a measured live-resize improvement. The remaining gate is a normal native build plus populated-tree toggle/resize profiling at default and non-default zoom. The installed app and real sessions were not modified.
+The normal native `cargo build --bin twarp-oss` passed with real Metal compilation. The rootless PR/Files integration also passed with a real GPU display in an isolated profile. The temporary shader bypass used during initial investigation is absent from the final source and validation. Populated-tree toggle/resize profiling at default and non-default zoom remains unmeasured; the tests establish correctness without claiming a quantified live-resize improvement. GitHub Actions are disabled on the writable fork, so there are no hosted checks for this change.
 
 ## Risks and mitigations
 
